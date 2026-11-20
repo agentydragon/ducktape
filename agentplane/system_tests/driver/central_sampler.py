@@ -6,7 +6,7 @@ import json
 import shutil
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
 from uuid import uuid4
@@ -44,9 +44,7 @@ MODEL = GPT6_LUNA_RESPONSES.id
 @dataclass(frozen=True)
 class CentralStack:
     dispatcher: session_dispatcher_pb2_grpc.SessionDispatcherAsyncStub
-    metadata: tuple[tuple[str, str], ...] = field(repr=False)
     sampler_admin: sampler_admin_pb2_grpc.SamplerAdminAsyncStub
-    sampler_metadata: tuple[tuple[str, str], ...] = field(repr=False)
     history: HistoryServiceClient
     sandbox: str
     sandbox_uid: str
@@ -177,7 +175,7 @@ async def capture_sampler_diagnostics(cluster: Cluster, core: k8s.CoreV1Api | No
 
 
 @asynccontextmanager
-async def central_stack(cluster: Cluster, directory: Path, *, template: str) -> AsyncIterator[CentralStack]:
+async def central_stack(cluster: Cluster, *, template: str) -> AsyncIterator[CentralStack]:
     async with AsyncExitStack() as cleanup, AsyncExitStack() as stack:
         with tracer.start_as_current_span(
             "system_test.central_sampler.setup", record_exception=False, set_status_on_exception=False
@@ -248,9 +246,7 @@ async def central_stack(cluster: Cluster, directory: Path, *, template: str) -> 
             )
             deployed = CentralStack(
                 dispatcher=session_dispatcher_pb2_grpc.SessionDispatcherStub(dispatcher_channel),
-                metadata=(),
                 sampler_admin=sampler_admin_pb2_grpc.SamplerAdminStub(sampler_channel),
-                sampler_metadata=(),
                 history=history,
                 sandbox=sandbox,
                 sandbox_uid=uid,

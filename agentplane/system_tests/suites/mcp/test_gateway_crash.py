@@ -1,7 +1,5 @@
 """Abrupt Runtime proxy loss with an in-flight central-sampler executor read."""
 
-from pathlib import Path
-
 import pytest
 import pytest_bazel
 
@@ -19,11 +17,10 @@ pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin",)
 @pytest.mark.scripted_model
 @pytest.mark.timeout(600)
 async def test_gateway_crash_settles_live_central_read_and_accepts_next_input(
-    cluster: Cluster, deployment: Stack, tmp_path: Path, scripted: ScriptedUpstream
+    cluster: Cluster, deployment: Stack, scripted: ScriptedUpstream
 ) -> None:
     await central_sampler.gateway_crash_settles_live_central_read_and_accepts_next_input(
         cluster,
-        tmp_path,
         scripted,
         Executor(template=POD_TEMPLATE, cwd="/state/workspaces/central-gateway-crash"),
         (str(deployment.k3s.binary), "crictl", "--config", str(deployment.k3s.work / "crictl.yaml")),

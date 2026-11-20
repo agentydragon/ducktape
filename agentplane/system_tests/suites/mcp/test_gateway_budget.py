@@ -1,7 +1,5 @@
 """Runtime proxy reconnect-budget exhaustion with an in-flight central-sampler executor read."""
 
-from pathlib import Path
-
 import pytest
 import pytest_bazel
 
@@ -18,10 +16,10 @@ pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin",)
 @pytest.mark.scripted_model
 @pytest.mark.timeout(600)
 async def test_gateway_retry_exhaustion_reports_unknown_and_accepts_next_input(
-    cluster: Cluster, tmp_path: Path, scripted: ScriptedUpstream
+    cluster: Cluster, scripted: ScriptedUpstream
 ) -> None:
     await central_sampler.gateway_retry_exhaustion_reports_unknown_and_accepts_next_input(
-        cluster, tmp_path, scripted, Executor(template=POD_TEMPLATE, cwd="/state/workspaces/central-gateway-budget")
+        cluster, scripted, Executor(template=POD_TEMPLATE, cwd="/state/workspaces/central-gateway-budget")
     )
 
 
