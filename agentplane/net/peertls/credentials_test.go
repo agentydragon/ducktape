@@ -261,22 +261,33 @@ func TestClientTLSConfigReloadsSameIdentityAndRejectsChangedIdentity(t *testing.
 	}
 }
 
-func tlsHandshake(t *testing.T, clientConfig, serverConfig *tls.Config) (tls.ConnectionState, tls.ConnectionState, error) {
+// loopbackPair returns both ends of a TCP connection over the loopback interface, closed when the test ends.
+func loopbackPair(t *testing.T) (client, server net.Conn) {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer listener.Close()
-	clientRaw, err := net.Dial("tcp", listener.Addr().String())
+	client, err = net.Dial("tcp", listener.Addr().String())
 	if err != nil {
 		t.Fatal(err)
 	}
-	serverRaw, err := listener.Accept()
+	server, err = listener.Accept()
 	if err != nil {
-		_ = clientRaw.Close()
+		_ = client.Close()
 		t.Fatal(err)
 	}
+	t.Cleanup(func() {
+		_ = client.Close()
+		_ = server.Close()
+	})
+	return client, server
+}
+
+func tlsHandshake(t *testing.T, clientConfig, serverConfig *tls.Config) (tls.ConnectionState, tls.ConnectionState, error) {
+	t.Helper()
+	clientRaw, serverRaw := loopbackPair(t)
 	deadline := time.Now().Add(5 * time.Second)
 	_ = clientRaw.SetDeadline(deadline)
 	_ = serverRaw.SetDeadline(deadline)
@@ -291,8 +302,6 @@ func tlsHandshake(t *testing.T, clientConfig, serverConfig *tls.Config) (tls.Con
 	}
 	serverErr := <-serverResult
 	clientState, serverState := client.ConnectionState(), server.ConnectionState()
-	_ = clientRaw.Close()
-	_ = serverRaw.Close()
 	if clientErr != nil {
 		return tls.ConnectionState{}, tls.ConnectionState{}, clientErr
 	}
@@ -821,24 +830,7 @@ func handshakeWithApplicationData(t *testing.T, client, server credentials.Trans
 
 func handshakeWithApplicationDataMode(t *testing.T, client, server credentials.TransportCredentials, exchange bool) (clientInfo, serverInfo credentials.AuthInfo, err error) {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer listener.Close()
-	clientRaw, err := net.Dial("tcp", listener.Addr().String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	serverRaw, err := listener.Accept()
-	if err != nil {
-		clientRaw.Close()
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_ = clientRaw.Close()
-		_ = serverRaw.Close()
-	})
+	clientRaw, serverRaw := loopbackPair(t)
 	type result struct {
 		conn net.Conn
 		info credentials.AuthInfo
@@ -961,20 +953,7 @@ func TestCertificateExpiryClosesEachEndpointIndependently(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				listener, err := net.Listen("tcp", "127.0.0.1:0")
-				if err != nil {
-					t.Fatal(err)
-				}
-				defer listener.Close()
-				clientRaw, err := net.Dial("tcp", listener.Addr().String())
-				if err != nil {
-					t.Fatal(err)
-				}
-				serverRaw, err := listener.Accept()
-				if err != nil {
-					t.Fatal(err)
-				}
-				t.Cleanup(func() { _ = clientRaw.Close(); _ = serverRaw.Close() })
+				clientRaw, serverRaw := loopbackPair(t)
 				type result struct {
 					conn net.Conn
 					err  error
