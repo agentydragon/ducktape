@@ -584,7 +584,6 @@ py_library(
         ":events",
         ":fixed_point",
         ":holdings",
-        ":ids",
         ":managed",
         ":payments",
         ":private_equity",

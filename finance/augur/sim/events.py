@@ -195,7 +195,6 @@ ROLLOUT_FAILURE_EVENT_SCHEMA = pl.Schema(
         "month_index": pl.Int64(),
         "cause_id": pl.Utf8(),
         "agent_id": pl.Utf8(),
-        "deficit_quanta": pl.Int64(),
         "obligation_id": pl.Utf8(),
         "obligation_type": pl.Utf8(),
         "amount_due_quanta": pl.Int64(),
