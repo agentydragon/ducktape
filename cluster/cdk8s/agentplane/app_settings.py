@@ -97,13 +97,9 @@ def _reasoning_efforts(route: Route, models: HarnessRoutes) -> list[str]:
 
 
 def model_catalog(models: HarnessRoutes, *, central_sampler_enabled: bool = False) -> ModelCatalog:
-    chat_ids = {chat_completions_id(route) for route in models.central_sampler_chat}
     options = {
         route.id: ModelOption(
-            model=route.id,
-            display_name=_picker_model_name(route),
-            # A shared picker entry must also accept the sampler's default-only effort.
-            reasoning_efforts=[] if route.id in chat_ids else _reasoning_efforts(route, models),
+            model=route.id, display_name=_picker_model_name(route), reasoning_efforts=_reasoning_efforts(route, models)
         )
         for route in models.all
     }
@@ -119,7 +115,7 @@ def model_catalog(models: HarnessRoutes, *, central_sampler_enabled: bool = Fals
                 options[model_id] = ModelOption(
                     model=model_id,
                     display_name=f"{route.display_name} — TabbyAPI Chat Completions",
-                    reasoning_efforts=[],
+                    reasoning_efforts=list(route.reasoning_efforts),
                 )
             sampler_ids.append(model_id)
         harnesses[Harness.CENTRAL_SAMPLER] = sampler_ids

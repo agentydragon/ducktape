@@ -469,7 +469,7 @@ def test_shared_coding_models_preserve_provider_protocols(catalog_manifests: lis
     assert abliterated_id in catalog["harnesses"]["HARNESS_CODEX"]
     assert QWEN_CHAT_CANARY_ID not in catalog["harnesses"]["HARNESS_CODEX"]
     [abliterated_option] = [model for model in catalog["models"] if model["model"] == abliterated_id]
-    assert abliterated_option["reasoning_efforts"] == []
+    assert abliterated_option["reasoning_efforts"] == ["low", "medium", "high"]
     assert set(catalog["harnesses"]["HARNESS_CODEX"]) < set(catalog["harnesses"]["HARNESS_CENTRAL_SAMPLER"])
     assert "central_sampler" not in catalog
     sampler = json.loads(_by_name(catalog_manifests, "ConfigMap", "central-sampler-settings")["data"]["settings.json"])
@@ -480,7 +480,7 @@ def test_shared_coding_models_preserve_provider_protocols(catalog_manifests: lis
             "provider_model": provider_model,
             "connection": "llm-ingress",
             "exec_encoding": "json",
-            "reasoning_efforts": [""],
+            "reasoning_efforts": ["", "high", "low", "medium"],
             "chat_compaction": {"max_tokens": 8192, "keep_recent_turns": 2, "auto_compact_tokens": 196608},
         }
     for route in STAGING_APP_MODELS.central_sampler:
