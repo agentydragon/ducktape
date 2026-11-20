@@ -337,7 +337,7 @@ to `test.outputs/vm-codex-oom.json`, alongside the guest console and scripted up
 The OOM template explicitly sets `agentplane.cgroup-observer=1`, starting a root observer outside
 the execution slices to publish read-only snapshots of executor limits and OOM counters. Other
 guests retain the observer unit for the unprivileged restart-denial check without starting its
-polling process ([native CPU evidence](../debug/codex_tool_oom/vm_observer_scope.md)). Tool processes retain
+polling process. Tool processes retain
 production's UID and cgroup permissions.
 The executor aggregate's hierarchical OOM counter proves the constrained subtree, while the leaf's
 victim counter proves the single kill: either the aggregate or leaf limit can trigger first.
@@ -347,7 +347,9 @@ binaries; it does not boot the production NixOS image or force exec-server death
 Only this OOM sandbox selects the `environment-vm-codex-oom` template to enable the guest
 cgroup observer. Its guest RAM and all resource budgets match `environment-vm`, including the
 256 MiB native executor leaf. The command grows above that limit so the kernel exercises the OOM
-path while the Codex session remains active; see [the measured budget probe](../debug/codex_tool_oom/vm_oom_budget.md).
+path while the Codex session remains active. A 96 MiB leaf was tried and withdrawn: a later EROFS page
+fault reached the same cgroup limit and the kernel also killed Codex, so the session was lost. A workspace
+`nofail` mount and a `quiet` kernel argument showed no measured startup gain and were not adopted.
 
 KubeVirt's and Kyverno's images are Bazel-pulled layouts (`vm_sandboxes/`, pinned in `MODULE.bazel`),
 imported before their releases are applied, so no Pod pulls them; the releases roll out while the
