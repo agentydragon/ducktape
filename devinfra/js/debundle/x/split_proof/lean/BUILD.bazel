@@ -146,6 +146,12 @@ lean_axiom_test(
         "PropertyRead.inherited_setter_rejected",
         "PropertyRead.missing_read_depends_on_prototype",
         "PropertyRead.prototype_mutation_invalidates_guard",
+        "PropertyRead.own_readonly_throws",
+        "PropertyRead.inherited_readonly_throws",
+        "PropertyRead.inherited_writable_creates_own",
+        "PropertyRead.throwing_getter_stops_write",
+        "PropertyRead.throwing_setter_preserves_prior_trace",
+        "PropertyRead.missing_setter_throws",
     ],
 )
 
