@@ -1,6 +1,6 @@
 // Fuzzer for the translation checker: does `translate` ever accept a tree that behaves differently from its bundle?
 //
-//   node fuzz.mjs [--count N] [--seed S] [--trees T] [--jobs J] [--leaks] [--callback-corpus] [--out DIR] [--keep] [--require-accepted]
+//   node fuzz.mjs [--count N] [--seed S] [--trees T] [--jobs J] [--leaks] [--callback-corpus] [--ast-corpus] [--out DIR] [--keep] [--require-accepted]
 //
 // Each round generates a small random bundle from a catalog of unit templates (values, functions, classes, mutable
 // counters, getters, iterators, globals, `var` hoisting, ...), then T random trees of ES modules for it: a random placement
@@ -19,6 +19,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { frontBundle, frontTree } from "./frontend.mjs";
+import { generateAstBundle, astStatistics, printAst } from "./ast_generator.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const translate = process.env.TRANSLATE ?? path.join(here, "../../lean/.lake/build/bin/translate");
@@ -764,7 +765,7 @@ function split(bundle, r, opts) {
   const n = bundle.units.length;
   const modules = opts.place ? Math.max(...opts.place) + 1 : 1 + r.int(5);
   const effectful = (u) => u.tmpl !== "constLit" && !/^(const|function|class|let|var) /.test(u.src);
-  const strategy = opts.place ? "callbackCorpus" : r.pick(["effectsInEntry", "random", "ranges"]);
+  const strategy = opts.place ? (opts.controlName ?? "callbackCorpus") : r.pick(["effectsInEntry", "random", "ranges"]);
   // the entry imports m1, m2, ... in ascending order and runs last, so range k of the bundle goes to module (k + 1) % modules
   const place = bundle.units.map((u, i) => {
     if (opts.place) return opts.place[i];
@@ -809,7 +810,7 @@ function split(bundle, r, opts) {
     search: for (const m of r.shuffle([...order.keys()])) {
       for (const i of order[m]) {
         const u = bundle.units[i];
-        const locals = [...new Set([...u.src.matchAll(LOCAL)].map((x) => x[1]))];
+        const locals = u.ast ? u.locals : [...new Set([...u.src.matchAll(LOCAL)].map((x) => x[1]))];
         const foreign = u.uses.filter((name) => owner.get(name) !== m);
         if (locals.length > 0 && foreign.length > 0) {
           aliasOf.set(`${m}/${foreign[0]}`, localName(locals[0]));
@@ -854,10 +855,15 @@ function split(bundle, r, opts) {
     for (const i of order[m]) {
       const u = bundle.units[i];
       lines.push(
-        u.src
-          .replace(TOP, (_, name) => (u.defs.includes(name) ? topName(name) : nameIn(m, name)))
-          .replace(LOCAL, (_, name) => localName(name))
-          .replace(LITERAL, (_, name) => name)
+        u.ast
+          ? printAst(u.ast, {
+              top: (name) => (u.defs.includes(name) ? topName(name) : nameIn(m, name)),
+              local: localName,
+            })
+          : u.src
+              .replace(TOP, (_, name) => (u.defs.includes(name) ? topName(name) : nameIn(m, name)))
+              .replace(LOCAL, (_, name) => localName(name))
+              .replace(LITERAL, (_, name) => name)
       );
     }
     const out = [...exportsOf[m]].map((name) =>
@@ -924,6 +930,12 @@ async function main() {
   const jobs = Number(option("jobs", Math.max(1, os.cpus().length)));
   const leaks = args.includes("--leaks");
   const callbackCorpus = args.includes("--callback-corpus");
+  const astCorpus = args.includes("--ast-corpus");
+  if (callbackCorpus && astCorpus) throw new Error("choose one structured corpus");
+  const astTypes = {};
+  const astFeatures = {};
+  const planTypes = {};
+  let astDepth = 0;
   const outDir = option("out", process.env.TEST_UNDECLARED_OUTPUTS_DIR);
   const work = mkdtempSync(path.join(process.env.TEST_TMPDIR ?? os.tmpdir(), "translation_fuzz_"));
   const tally = {};
@@ -936,11 +948,21 @@ async function main() {
 
   const oneBundle = async (round) => {
     const r = rng(seed * 100003 + round);
-    const bundle = callbackCorpus ? callbackBundle(r, round, seed) : generate(r, leaks);
+    const bundle = astCorpus
+      ? generateAstBundle(seed, round)
+      : callbackCorpus
+        ? callbackBundle(r, round, seed)
+        : generate(r, leaks);
+    if (astCorpus) {
+      const stats = astStatistics(bundle);
+      astDepth = Math.max(astDepth, stats.maxDepth);
+      for (const [type, n] of Object.entries(stats.types)) astTypes[type] = (astTypes[type] ?? 0) + n;
+      for (const [feature, n] of Object.entries(stats.features)) astFeatures[feature] = (astFeatures[feature] ?? 0) + n;
+    }
     const dir = path.join(work, `b${round}`);
     mkdirSync(dir, { recursive: true });
     const bundleFile = path.join(dir, "bundle.mjs");
-    writeFileSync(bundleFile, renderBundle(bundle));
+    writeFileSync(bundleFile, astCorpus ? bundle.source : renderBundle(bundle));
     const reference = behavior(await run(process.execPath, [bundleFile]));
     if (reference.status !== 0) {
       invalidBundles++;
@@ -958,8 +980,18 @@ async function main() {
       const tr = rng(seed * 7919 + round * 131 + t);
       const place = callbackCorpus
         ? bundle.units.map((_, i) => (t % 2 === 1 ? Number(bundle.side.includes(i)) : round % 2))
-        : undefined;
-      const plan = split(bundle, tr, { renameLocals: !callbackCorpus && tr.chance(0.5), place });
+        : astCorpus && t === 0
+          ? bundle.units.map(() => 0)
+          : astCorpus && t === 1 && bundle.guidedPlace
+            ? bundle.guidedPlace
+            : undefined;
+      const plan = split(bundle, tr, {
+        renameLocals: !callbackCorpus && tr.chance(0.5),
+        place,
+        controlName:
+          astCorpus && t === 0 ? "astControl" : astCorpus && t === 1 && bundle.guidedPlace ? "astGuided" : undefined,
+      });
+      if (astCorpus) planTypes[plan.strategy] = (planTypes[plan.strategy] ?? 0) + 1;
       const treeDir = path.join(dir, `t${t}`, "out");
       mkdirSync(treeDir, { recursive: true });
       writeFileSync(path.join(treeDir, "package.json"), '{"type":"module"}');
@@ -985,6 +1017,11 @@ async function main() {
           `bundle ${round} tree ${t}: unexpected translate exit ${checked.status}\n${checked.stdout}${checked.stderr}`
         );
       const verdict = outcome.name;
+      if (astCorpus && plan.strategy === "astGuided" && !same) bump("ast/guidedDifferent");
+      if (astCorpus && /inferred identity call/.test(checked.stdout)) bump("ast/inferredIdentity");
+      if (astCorpus && /inferred closure factory/.test(checked.stdout)) bump("ast/inferredFactory");
+      if (astCorpus && t === 0 && (!same || verdict !== "accept"))
+        throw new Error(`AST safe control ${round}: ${verdict}, same=${same}`);
       if (callbackCorpus && t % 2 === 0 && (!same || verdict !== "accept"))
         throw new Error(`${bundle.caseName}: safe control failed: ${verdict}, same=${same}`);
       if (callbackCorpus && t % 2 === 1 && same)
@@ -995,6 +1032,8 @@ async function main() {
       const intent = plan.capture ? "capture" : "relocation";
       bump(`${verdict}/${same ? "same" : "differs"}`);
       const record = {
+        seed,
+        mode: astCorpus ? "ast" : callbackCorpus ? "callback" : "templates",
         round,
         tree: t,
         verdict,
@@ -1016,6 +1055,10 @@ async function main() {
           mkdirSync(keep, { recursive: true });
           cpSync(treeDir, path.join(keep, "out"), { recursive: true });
           cpSync(bundleFile, path.join(keep, "bundle.mjs"));
+          cpSync(bundleJson, path.join(keep, "bundle.json"));
+          cpSync(outputJson, path.join(keep, "output.json"));
+          cpSync(certJson, path.join(keep, "cert.json"));
+          if (astCorpus) writeFileSync(path.join(keep, "ast.json"), JSON.stringify(bundle.ast, null, 2));
           writeFileSync(path.join(keep, "record.json"), JSON.stringify(record, null, 2));
         }
       }
@@ -1029,9 +1072,26 @@ async function main() {
       while (next < count) await oneBundle(next++);
     })
   );
-  if (!args.includes("--keep")) rmSync(work, { recursive: true, force: true });
-  else console.log(`kept ${work}`);
+  if (args.includes("--keep") || (!outDir && (wrongAccepts.length > 0 || (astCorpus && invalidBundles > 0))))
+    console.log(`kept ${work}`);
+  else rmSync(work, { recursive: true, force: true });
 
+  if (astCorpus && invalidBundles) throw new Error(`AST generator produced ${invalidBundles} invalid bundles`);
+  if (astCorpus)
+    console.log(
+      "AST corpus:",
+      JSON.stringify({
+        seed,
+        count,
+        maxDepth: astDepth,
+        types: astTypes,
+        features: astFeatures,
+        plans: planTypes,
+        inferredIdentityPlans: tally["ast/inferredIdentity"] ?? 0,
+        inferredFactoryPlans: tally["ast/inferredFactory"] ?? 0,
+        guidedDifferentPlans: tally["ast/guidedDifferent"] ?? 0,
+      })
+    );
   if (callbackCorpus && (count < 1 || trees < 2))
     throw new Error("--callback-corpus needs at least one bundle and two trees");
   if (callbackCorpus && (invalidBundles || refused))
@@ -1048,6 +1108,39 @@ async function main() {
       )
     );
   const cell = (v, s) => tally[`${v}/${s}`] ?? 0;
+  if (astCorpus && args.includes("--require-ast-coverage")) {
+    const required = [
+      "FunctionDeclaration",
+      "ArrowFunctionExpression",
+      "IfStatement",
+      "ConditionalExpression",
+      "AssignmentExpression",
+      "ObjectExpression",
+      "ArrayExpression",
+      "CallExpression",
+    ];
+    const missing = required.filter((name) => !astTypes[name]);
+    if (
+      missing.length ||
+      astDepth < 6 ||
+      !astFeatures.returnedClosures ||
+      !astFeatures.callbackStores ||
+      !astFeatures.callbackCalls ||
+      !astFeatures.aliases ||
+      !astFeatures.forwardReferences ||
+      !astFeatures.earlyCallbacks ||
+      cell("obligations", "differs") + cell("reject", "differs") === 0
+    )
+      throw new Error(
+        `AST coverage incomplete: missing=${missing.join(",")} depth=${astDepth} features=${JSON.stringify(astFeatures)}`
+      );
+  }
+  if (astCorpus && args.includes("--require-updates") && !astTypes.UpdateExpression)
+    throw new Error("AST corpus did not exercise mutable updates");
+  if (astCorpus && args.includes("--require-inferred-identity") && !tally["ast/inferredIdentity"])
+    throw new Error("AST corpus did not exercise identity inference");
+  if (astCorpus && args.includes("--require-inferred-factory") && !tally["ast/inferredFactory"])
+    throw new Error("AST corpus did not exercise factory inference");
   console.log(
     `${count} bundles x ${trees} trees, seed ${seed}${leaks ? ", with leak templates" : ""}; ${invalidBundles} invalid bundles skipped, ${refused} trees the front end refused`
   );
