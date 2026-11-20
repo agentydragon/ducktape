@@ -479,6 +479,7 @@ def test_shared_coding_models_preserve_provider_protocols(catalog_manifests: lis
             "api": "chat_completions",
             "provider_model": provider_model,
             "connection": "llm-ingress",
+            "response_header_timeout_seconds": 360,
             "exec_encoding": "json",
             "reasoning_efforts": ["", "high", "low", "medium"],
             "chat_compaction": {"max_tokens": 8192, "keep_recent_turns": 2, "auto_compact_tokens": 196608},
