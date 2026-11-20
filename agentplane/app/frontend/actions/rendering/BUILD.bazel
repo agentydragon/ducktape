@@ -272,9 +272,11 @@ ts_library(
         ":presentation",
         ":result_entry",
         "//:node_modules/@mantine/core",
+        "//:node_modules/@tanstack/react-query",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/zod",
+        "//agentplane/app/frontend/actions:action_client",
     ],
 )
 

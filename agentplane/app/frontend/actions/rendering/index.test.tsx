@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { create } from "@bufbuild/protobuf";
 import { act } from "react";
 
@@ -9,7 +9,7 @@ import {
   type ActionIdentity,
 } from "../../../../action_service/api/contracts/action_service_pb";
 import { CallToolResultView, type CallToolResult, parseCallToolResult } from "../call_tool_result";
-import { button, mount, SSH_EXEC_ARGUMENTS, sshExec } from "../testing/harness";
+import { answerApi, button, mount, SSH_EXEC_ARGUMENTS, sshExec } from "../testing/harness";
 import { executionResult } from "../presentation";
 import {
   actionCompactCardExpands,
@@ -439,6 +439,27 @@ describe("Action presentation slots", () => {
     expect(view.textContent).toContain("Kefir · 3 Bottle in Fridge");
     expect(view.textContent).toContain("1 opened");
     expect(view.textContent).toContain("Best before 2026-11-25");
+  });
+
+  it("resolves pending Grocy targets by saved request and keeps an unresolved ID link", async () => {
+    const id = "70000000-0000-4000-8000-000000000007";
+    const path = `/upstream/actions/v1/operator/action-requests/${id}/grocy-reference-summaries`;
+    const sent = answerApi((request) =>
+      request.path === path ? Response.json({ references: [{ key: "products/11", name: "Coffee" }] }) : undefined
+    );
+    const view = await mount(
+      renderDetailsArguments(identity("grocy_sf", "products_merge"), { productIdToKeep: 11, productIdToRemove: 22 }, id)
+    );
+    await vi.waitFor(() => {
+      expect(view.querySelector('a[href="https://grocy-sf.allegedly.works/product/11"]')?.textContent).toBe("Coffee");
+    });
+    expect(view.querySelector('a[href="https://grocy-sf.allegedly.works/product/22"]')?.textContent).toBe(
+      "Product #22"
+    );
+    expect(view.textContent).not.toContain("Product #11");
+    expect(sent.map((request) => [request.method, request.path, request.query.toString(), request.body])).toEqual([
+      ["GET", path, "", undefined],
+    ]);
   });
 
   it("shows Grocy 204 acknowledgements only for successful empty receipts", async () => {

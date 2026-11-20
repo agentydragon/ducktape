@@ -3,7 +3,16 @@ import type { ReactNode } from "react";
 import { z } from "zod";
 
 import { defineCallPreview, definePreview } from "./entry";
-import { batchError, batchOutcome, displayRef, grocyRequest, Line, objectLink, reference } from "./grocy_shared";
+import {
+  batchError,
+  batchOutcome,
+  displayRef,
+  GrocyReview,
+  grocyRequest,
+  Line,
+  objectLink,
+  reference,
+} from "./grocy_shared";
 import { type ActionPresentation, expandsForRejectedArguments } from "./presentation";
 import { defineResultPreview } from "./result_entry";
 
@@ -129,24 +138,18 @@ function deletionReceipt(result: z.infer<typeof deletion>, product?: string | nu
   );
 }
 function deletionRequest({ args }: { args: z.infer<typeof removeProduct> }) {
-  return (
-    <Line>
-      Permanently delete{" "}
-      {typeof args.product === "number"
-        ? objectLink("product", args.product, `Product #${args.product}`)
-        : args.product}{" "}
-      and every stock entry for it.
-    </Line>
-  );
+  return <Line>Permanently delete {displayRef(args.product, "products")} and every stock entry for it.</Line>;
 }
 
 const merge = z.strictObject({ productIdToKeep: id, productIdToRemove: id });
 const merged = defineResultPreview(z.null(), () => <Line>Products merged</Line>);
-const mergeReview = definePreview(merge, ({ args }) => (
-  <Stack gap={4}>
-    <Line>Keep {objectLink("product", args.productIdToKeep, `Product #${args.productIdToKeep}`)}</Line>
-    <Line>Merge and remove {objectLink("product", args.productIdToRemove, `Product #${args.productIdToRemove}`)}</Line>
-  </Stack>
+const mergeReview = definePreview(merge, ({ args, requestId }) => (
+  <GrocyReview requestId={requestId}>
+    <Stack gap={4}>
+      <Line>Keep {displayRef(args.productIdToKeep, "products")}</Line>
+      <Line>Merge and remove {displayRef(args.productIdToRemove, "products")}</Line>
+    </Stack>
+  </GrocyReview>
 ));
 
 export const grocyCatalogRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
@@ -154,15 +157,15 @@ export const grocyCatalogRenderers: ReadonlyMap<string, ActionPresentation> = ne
     "products_create",
     createView("Create Grocy products", product, "product", (item) => (
       <>
-        <Line>Default location · {displayRef(item.location)}</Line>
-        <Line>Stock unit · {displayRef(item.stock_qu)}</Line>
+        <Line>Default location · {displayRef(item.location, "locations")}</Line>
+        <Line>Stock unit · {displayRef(item.stock_qu, "quantity_units")}</Line>
         {item.purchase_qu != null && (
           <Line>
-            Purchase unit · {displayRef(item.purchase_qu)}
+            Purchase unit · {displayRef(item.purchase_qu, "quantity_units")}
             {item.purchase_qu !== item.stock_qu && " · May create a 1:1 conversion"}
           </Line>
         )}
-        {item.consume_qu != null && <Line>Consume unit · {displayRef(item.consume_qu)}</Line>}
+        {item.consume_qu != null && <Line>Consume unit · {displayRef(item.consume_qu, "quantity_units")}</Line>}
         <Line>
           Default shelf life ·{" "}
           {item.default_best_before_days === -1 ? "Never expires" : `${item.default_best_before_days} days`} ·{" "}
@@ -170,11 +173,11 @@ export const grocyCatalogRenderers: ReadonlyMap<string, ActionPresentation> = ne
         </Line>
         {item.min_stock_amount !== undefined && item.min_stock_amount > 0 && (
           <Line>
-            Minimum stock · {item.min_stock_amount} {displayRef(item.stock_qu)}
+            Minimum stock · {item.min_stock_amount} {displayRef(item.stock_qu, "quantity_units")}
           </Line>
         )}
-        {item.product_group != null && <Line>Product group · {displayRef(item.product_group)}</Line>}
-        {item.parent_product != null && <Line>Variant of · {displayRef(item.parent_product)}</Line>}
+        {item.product_group != null && <Line>Product group · {displayRef(item.product_group, "product_groups")}</Line>}
+        {item.parent_product != null && <Line>Variant of · {displayRef(item.parent_product, "products")}</Line>}
       </>
     )),
   ],
@@ -187,12 +190,14 @@ export const grocyCatalogRenderers: ReadonlyMap<string, ActionPresentation> = ne
         deletionRequest,
         defineResultPreview(deletion, ({ result }) => deletionReceipt(result))
       ),
-      call: defineCallPreview(removeProduct, deletion, ({ args, result }) => (
-        <Stack gap={4}>
-          {deletionRequest({ args })}
-          {result && deletionReceipt(result, args.product)}
-        </Stack>
-      )),
+      call: defineCallPreview(removeProduct, deletion, ({ args, result }) =>
+        result ? (
+          <Stack gap={4}>
+            {deletionRequest({ args })}
+            {deletionReceipt(result, args.product)}
+          </Stack>
+        ) : null
+      ),
       outcome: (value) => {
         const parsed = deletion.safeParse(value);
         return parsed.success && parsed.data.kind === "error" ? { label: "Delete failed", failed: true } : undefined;

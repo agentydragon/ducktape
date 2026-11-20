@@ -5,7 +5,7 @@ import { z } from "zod";
 import { defineCallPreview, definePreview } from "./entry";
 import { type ActionPresentation, expandsForRejectedArguments } from "./presentation";
 import { defineResultPreview, type ResultPreview } from "./result_entry";
-import { batchError, batchOutcome, displayRef, Line, objectLink, reference } from "./grocy_shared";
+import { batchError, batchOutcome, displayRef, GrocyReview, Line, objectLink, reference } from "./grocy_shared";
 import { grocyCatalogRenderers } from "./grocy_catalog";
 import { grocyEntityRenderers } from "./grocy_entities";
 import { grocyShoppingRenderers } from "./grocy_shopping";
@@ -149,10 +149,10 @@ function editChanges(item: z.infer<typeof editProduct>): [string, ReactNode][] {
   const clears = new Set(item.clear_fields);
   const fields: [string, ReactNode][] = [
     ["Name", item.name],
-    ["Default location", item.location != null && displayRef(item.location)],
-    ["Stock unit", item.stock_qu != null && displayRef(item.stock_qu)],
-    ["Purchase unit", item.purchase_qu != null && displayRef(item.purchase_qu)],
-    ["Consume unit", item.consume_qu != null && displayRef(item.consume_qu)],
+    ["Default location", item.location != null && displayRef(item.location, "locations")],
+    ["Stock unit", item.stock_qu != null && displayRef(item.stock_qu, "quantity_units")],
+    ["Purchase unit", item.purchase_qu != null && displayRef(item.purchase_qu, "quantity_units")],
+    ["Consume unit", item.consume_qu != null && displayRef(item.consume_qu, "quantity_units")],
     [
       "Minimum stock",
       item.min_stock_amount != null &&
@@ -160,8 +160,14 @@ function editChanges(item: z.infer<typeof editProduct>): [string, ReactNode][] {
     ],
     ["Default shelf life", item.default_best_before_days != null && defaultShelfLife(item.default_best_before_days)],
     ["Due date means", item.due_type != null && (item.due_type === 2 ? "Expiration" : "Best before")],
-    ["Parent product", !clears.has("parent_product") && item.parent_product != null && displayRef(item.parent_product)],
-    ["Product group", !clears.has("product_group") && item.product_group != null && displayRef(item.product_group)],
+    [
+      "Parent product",
+      !clears.has("parent_product") && item.parent_product != null && displayRef(item.parent_product, "products"),
+    ],
+    [
+      "Product group",
+      !clears.has("product_group") && item.product_group != null && displayRef(item.product_group, "product_groups"),
+    ],
     ["Description", !clears.has("description") ? item.description : undefined],
   ];
   return [
@@ -179,11 +185,7 @@ function ProductChanges({ args }: { args: z.infer<typeof editProductArguments> }
         return (
           <Stack gap={2} key={index}>
             <Line>
-              <strong>
-                {typeof item.product === "number"
-                  ? objectLink("product", item.product, `Product #${item.product}`)
-                  : item.product}
-              </strong>
+              <strong>{displayRef(item.product, "products")}</strong>
             </Line>
             {changes.map(([label, value]) => (
               <Line key={label}>
@@ -219,7 +221,7 @@ const editProductReceipt = defineResultPreview(editProductResult, ({ result }) =
 ));
 
 const editProductCall = defineCallPreview(editProductArguments, editProductResult, ({ args, result }) => {
-  if (!result) return <ProductChanges args={args} />;
+  if (!result) return null;
   const sameItems = result.length === args.items.length;
   return (
     <Stack gap="sm">
@@ -248,13 +250,17 @@ const editProductCall = defineCallPreview(editProductArguments, editProductResul
   );
 });
 
-const edits = definePreview(editProductArguments, ProductChanges);
+const edits = definePreview(editProductArguments, ({ args, requestId }) => (
+  <GrocyReview requestId={requestId}>
+    <ProductChanges args={args} />
+  </GrocyReview>
+));
 
 const stockGetArguments = z.strictObject({
   products: z.array(reference).optional(),
   locations: z.array(reference).optional(),
 });
-const scopedStock = definePreview(stockGetArguments, ({ args }) => {
+const scopedStock = definePreview(stockGetArguments, ({ args, requestId }) => {
   const filters = [
     args.products && args.products.length > 0 && (
       <>
@@ -262,7 +268,7 @@ const scopedStock = definePreview(stockGetArguments, ({ args }) => {
         {args.products.map((value, i) => (
           <span key={i}>
             {i > 0 && ", "}
-            {displayRef(value)}
+            {displayRef(value, "products")}
           </span>
         ))}
       </>
@@ -273,20 +279,22 @@ const scopedStock = definePreview(stockGetArguments, ({ args }) => {
         {args.locations.map((value, i) => (
           <span key={i}>
             {i > 0 && ", "}
-            {displayRef(value)}
+            {displayRef(value, "locations")}
           </span>
         ))}
       </>
     ),
   ].filter(Boolean);
   return (
-    <Stack gap={4}>
-      {filters.length === 0 ? (
-        <Line>All products and locations</Line>
-      ) : (
-        filters.map((filter, index) => <Line key={index}>{filter}</Line>)
-      )}
-    </Stack>
+    <GrocyReview requestId={requestId}>
+      <Stack gap={4}>
+        {filters.length === 0 ? (
+          <Line>All products and locations</Line>
+        ) : (
+          filters.map((filter, index) => <Line key={index}>{filter}</Line>)
+        )}
+      </Stack>
+    </GrocyReview>
   );
 });
 

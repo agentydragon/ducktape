@@ -111,6 +111,7 @@ func New(options Options) *Gate {
 		web_push_servicepb.WebPushService_WatchPushSubscriptions_FullMethodName:                  g.authenticateOperator,
 		web_push_servicepb.WebPushService_CreatePushSubscription_FullMethodName:                  g.authenticateOperator,
 		web_push_servicepb.WebPushService_DeletePushSubscription_FullMethodName:                  g.authenticateOperator,
+		operator_action_servicepb.OperatorActionService_GetGrocyReferenceSummaries_FullMethodName: g.authenticateOperator,
 		// The OAuth callback proves its own single-use state; the metadata document is public.
 		linkage_servicepb.LinkageService_CompleteCallback_FullMethodName:  nil,
 		linkage_servicepb.LinkageService_GetClientMetadata_FullMethodName: nil,

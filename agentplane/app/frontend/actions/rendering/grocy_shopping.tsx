@@ -185,13 +185,7 @@ export const grocyShoppingRenderers: ReadonlyMap<string, ActionPresentation> = n
     grocyRequest(
       "View Grocy shopping list",
       selectList,
-      ({ args }) => (
-        <Line>
-          {typeof args.shopping_list === "number"
-            ? objectLink("shoppinglist", args.shopping_list, `List #${args.shopping_list}`)
-            : args.shopping_list}
-        </Line>
-      ),
+      ({ args }) => <Line>{displayRef(args.shopping_list, "shopping_lists")}</Line>,
       listItems
     ),
   ],
@@ -200,7 +194,9 @@ export const grocyShoppingRenderers: ReadonlyMap<string, ActionPresentation> = n
     grocyRequest(
       "Empty Grocy shopping list",
       selectList,
-      ({ args }) => <Line>Remove every item from {displayRef(args.shopping_list)} and keep the list.</Line>,
+      ({ args }) => (
+        <Line>Remove every item from {displayRef(args.shopping_list, "shopping_lists")} and keep the list.</Line>
+      ),
       cleared
     ),
   ],
@@ -215,8 +211,8 @@ export const grocyShoppingRenderers: ReadonlyMap<string, ActionPresentation> = n
             {args.items.map((item, i) => (
               <Stack key={i} gap={2}>
                 <Line>
-                  <strong>{item.product == null ? item.note : displayRef(item.product)}</strong> · {item.amount ?? 1}{" "}
-                  for {displayRef(item.shopping_list)}
+                  <strong>{item.product == null ? item.note : displayRef(item.product, "products")}</strong> ·{" "}
+                  {item.amount ?? 1} for {displayRef(item.shopping_list, "shopping_lists")}
                 </Line>
                 {item.product != null && item.note != null && <Line>Note · {item.note || "(empty text)"}</Line>}
               </Stack>

@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import { JsonBlock } from "../../ui/text_block";
 import { defineCallPreview, type PreviewProps } from "./entry";
-import { batchError, batchOutcome, GROCY_BASE, grocyRequest, Line, objectLink } from "./grocy_shared";
+import { batchError, batchOutcome, displayRef, GROCY_BASE, grocyRequest, Line, objectLink } from "./grocy_shared";
 import { type ActionPresentation, expandsForRejectedArguments } from "./presentation";
 import { defineResultPreview, type ResultPreview } from "./result_entry";
 
@@ -76,6 +76,19 @@ function textName(body: Record<string, unknown>): string | undefined {
   return [body.name, body.display_name, body.username, body.barcode, body.note].find(
     (value): value is string => typeof value === "string" && value.length > 0
   );
+}
+
+function namedTarget(kind: string, id: number): ReactNode {
+  switch (kind) {
+    case "products":
+    case "locations":
+    case "quantity_units":
+    case "product_groups":
+    case "shopping_lists":
+      return displayRef(id, kind);
+    default:
+      return subject(kind, id);
+  }
 }
 
 function subject(entity: string, objectId?: number, name?: string): ReactNode {
@@ -334,7 +347,13 @@ export const grocyEntityRenderers: ReadonlyMap<string, ActionPresentation> = new
         get,
         ({ args }) => (
           <Line>
-            {entityName(args.entity_type)} · {args.object_ids.join(", ")}
+            {entityName(args.entity_type)} ·{" "}
+            {args.object_ids.map((id, i) => (
+              <span key={i}>
+                {i > 0 && ", "}
+                {namedTarget(args.entity_type, id)}
+              </span>
+            ))}
           </Line>
         ),
         fetchedReceipt
@@ -359,7 +378,7 @@ export const grocyEntityRenderers: ReadonlyMap<string, ActionPresentation> = new
     acknowledged(
       "Delete Grocy record",
       target,
-      ({ args }) => <Line>Permanently delete {subject(args.entity, args.objectId)}</Line>,
+      ({ args }) => <Line>Permanently delete {namedTarget(args.entity, args.objectId)}</Line>,
       "Record deleted"
     ),
   ],
@@ -370,7 +389,7 @@ export const grocyEntityRenderers: ReadonlyMap<string, ActionPresentation> = new
       update,
       ({ args }) => (
         <Stack gap={4}>
-          <Line>{subject(args.entity, args.objectId)}</Line>
+          <Line>{namedTarget(args.entity, args.objectId)}</Line>
           <WriteFields body={args.body} />
         </Stack>
       ),

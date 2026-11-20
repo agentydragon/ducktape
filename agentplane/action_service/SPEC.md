@@ -111,6 +111,11 @@ within the same two-second budget. The calendar and event or series IDs come fro
 arguments. The response projects only identity, title, provider link, time and scope. An unavailable
 preview leaves the IDs visible. Receipts draw their event details from the recorded result.
 
+`GetGrocyReferenceSummaries` resolves exact numeric references from pending Grocy SF requests.
+It reads only the types and fields defined for each supported tool, using `entities_get` and
+`stock_entries_list` within the same bounded lookup budget. Once a request leaves pending review,
+the operation uses the names and identifiers in its saved inputs and result.
+
 An external MCP
 bearer is resolved by the edge to an active grant and Connection bound to an exact live Identity;
 the edge delegates as its own component caller and carries typed Connection/grant provenance. It

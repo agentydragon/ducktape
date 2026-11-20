@@ -32,6 +32,9 @@ type IntegrationPreviews struct {
 		TanaNodeSummaries(context.Context, []string) []*operator_action_servicepb.TanaNodeSummary
 		TanaWorkspaceSummary(context.Context, string) *operator_action_servicepb.TanaWorkspaceSummary
 	}
+	Grocy interface {
+		GrocyReferenceSummaries(context.Context, []string) []*operator_action_servicepb.GrocyReferenceSummary
+	}
 }
 
 func (s *OperatorService) GetGmailThreadSummaries(ctx context.Context, request *operator_action_servicepb.GetGmailThreadSummariesRequest) (*operator_action_servicepb.GetGmailThreadSummariesResponse, error) {

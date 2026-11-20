@@ -170,8 +170,9 @@ function scopedAmount(item: {
 }) {
   return (
     <Line>
-      <strong>{displayRef(item.product)}</strong> · {item.amount}{" "}
-      {item.qu == null ? "stock units" : displayRef(item.qu)} in {displayRef(item.location)}
+      <strong>{displayRef(item.product, "products")}</strong> · {item.amount}{" "}
+      {item.qu == null ? "stock units" : displayRef(item.qu, "quantity_units")} in{" "}
+      {displayRef(item.location, "locations")}
     </Line>
   );
 }
@@ -475,10 +476,10 @@ export const grocyStockRenderers: ReadonlyMap<string, ActionPresentation> = new 
             {args.items.map((item, i) => (
               <Stack gap={2} key={i}>
                 <Line>
-                  <strong>{displayRef(item.product)}</strong> · Set total to {item.new_amount}{" "}
-                  {item.qu == null ? "stock units" : displayRef(item.qu)}
+                  <strong>{displayRef(item.product, "products")}</strong> · Set total to {item.new_amount}{" "}
+                  {item.qu == null ? "stock units" : displayRef(item.qu, "quantity_units")}
                 </Line>
-                <Line>Storage for added units · {displayRef(item.location)}</Line>
+                <Line>Storage for added units · {displayRef(item.location, "locations")}</Line>
                 <Fields
                   values={[
                     ["Due date for added units", item.best_before_date && dateLabel(item.best_before_date)],
@@ -503,10 +504,11 @@ export const grocyStockRenderers: ReadonlyMap<string, ActionPresentation> = new 
         ({ args }) => (
           <Stack gap={4}>
             <Line>
-              <strong>{displayRef(args.product)}</strong> · {args.amount} {displayRef(args.qu)}
+              <strong>{displayRef(args.product, "products")}</strong> · {args.amount}{" "}
+              {displayRef(args.qu, "quantity_units")}
             </Line>
             <Line>
-              {displayRef(args.from_location)} → {displayRef(args.to_location)}
+              {displayRef(args.from_location, "locations")} → {displayRef(args.to_location, "locations")}
             </Line>
             <Line>Moving into or out of a freezer may change the due date.</Line>
           </Stack>
@@ -528,7 +530,12 @@ export const grocyStockRenderers: ReadonlyMap<string, ActionPresentation> = new 
         ({ args }) => (
           <Line>
             {args.products ? "All entries for" : "Specific entries"} ·{" "}
-            {(args.products ?? args.entry_ids ?? []).map(String).join(", ")}
+            {(args.products ?? args.entry_ids ?? []).map((item, index) => (
+              <span key={index}>
+                {index > 0 && ", "}
+                {displayRef(item, args.products ? "products" : "stock_entries")}
+              </span>
+            ))}
           </Line>
         ),
         entryResult
@@ -546,14 +553,14 @@ export const grocyStockRenderers: ReadonlyMap<string, ActionPresentation> = new 
           <Stack gap="xs">
             {args.items.map((item, i) => (
               <Stack gap={2} key={i}>
-                <Line>{objectLink("stockentry", item.entry_id, `Stock entry #${item.entry_id}`)}</Line>
+                <Line>{displayRef(item.entry_id, "stock_entries")}</Line>
                 <Fields
                   values={[
                     ["Amount in stock units", item.amount],
                     ["Due date", item.best_before_date && dateLabel(item.best_before_date)],
                     ["Purchased", !item.clear_fields?.includes("purchased_date") && item.purchased_date],
                     ["Price per unit", !item.clear_fields?.includes("price") && item.price],
-                    ["Location", item.location != null && displayRef(item.location)],
+                    ["Location", item.location != null && displayRef(item.location, "locations")],
                     ["Opened", item.open == null ? null : item.open ? "Yes" : "No"],
                     ["Note", !item.clear_fields?.includes("note") && item.note],
                     ...[...new Set(item.clear_fields)].map((name): [string, string] => [fieldLabels[name], "Clear"]),
@@ -573,7 +580,7 @@ export const grocyStockRenderers: ReadonlyMap<string, ActionPresentation> = new 
     grocyRequest(
       "View stock for a Grocy product",
       productArguments,
-      ({ args }) => <Line>{objectLink("product", args.productId, `Product #${args.productId}`)}</Line>,
+      ({ args }) => <Line>{displayRef(args.productId, "products")}</Line>,
       productStock
     ),
   ],
@@ -621,7 +628,7 @@ export const grocyStockRenderers: ReadonlyMap<string, ActionPresentation> = new 
       ({ args }) => (
         <Stack gap={4}>
           <Line>
-            {args.amount} stock units of {objectLink("product", args.productId, `Product #${args.productId}`)}
+            {args.amount} stock units of {displayRef(args.productId, "products")}
           </Line>
           {args.stock_entry_id && <Line>Exact stock entry · {args.stock_entry_id}</Line>}
           {args.allow_subproduct_substitution && <Line>Use variant stock if needed</Line>}

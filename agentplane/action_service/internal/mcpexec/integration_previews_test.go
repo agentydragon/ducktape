@@ -117,3 +117,23 @@ func TestCalendarEventPreviewProjectsOccurrenceMetadata(t *testing.T) {
 		t.Errorf("mismatched event produced %v", got)
 	}
 }
+
+func TestGrocySummariesMatchExactTypedReferences(t *testing.T) {
+	result := &mcp.CallToolResult{StructuredContent: map[string]any{
+		"result": []map[string]any{{"kind": "ok", "entity_type": "locations", "object_id": 7, "data": map[string]any{"name": "Pantry", "description": "internal"}}},
+	}}
+	if got := grocyEntitySummary("locations/7", result); got.GetName() != "Pantry" || got.GetKey() != "locations/7" {
+		t.Errorf("summary = %v", got)
+	}
+	for _, key := range []string{"products/7", "locations/8"} {
+		if got := grocyEntitySummary(key, result); got != nil {
+			t.Errorf("mismatched reference %q produced %v", key, got)
+		}
+	}
+	entry := &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{Text: `[{"kind":"ok","entry":{"entry_id":12,"product_name":"Kefir","location_name":"Fridge"}}]`}},
+	}
+	if got := grocyStockEntrySummary("stock_entries/12", entry); got.GetName() != "Kefir · Fridge" {
+		t.Errorf("entry summary = %v", got)
+	}
+}
