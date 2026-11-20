@@ -26,6 +26,7 @@ const source =
 const designSource =
   "https://github.com/agentydragon/ducktape/blob/d81bd68165097b089cace9ae168b6e8f202f1b7e/";
 const github = "https://github.com/agentydragon/ducktape/";
+const currentSource = github + "blob/2aa028749c5a77cfa56c26abd1242d86b44bd12b/";
 const modeLabels = {
   Off: "Recommend",
   Initial: "Initial",
@@ -199,7 +200,7 @@ function Report() {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   useEffect(() => {
-    fetch("./evidence.json?v=policy-20261120")
+    fetch("./evidence.json?v=batches-20261120-0824")
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
@@ -238,11 +239,12 @@ function Report() {
       >
       <${Text} size="lg" mt="md"
         >Use VPA for requests much more widely, but select the update mode and
-        resource ownership per workload. Preserve existing request-and-limit
-        policies unless evidence justifies changing them.<//
+        resource ownership by workload class. Roll out shared policies in
+        cohorts, preserving existing request-and-limit policies unless evidence
+        justifies changing them.<//
       >
       <${Text} size="sm" c="dimmed" mt="sm"
-        >${`Cluster snapshot around 20 November 2026, 02:58 UTC · latest seven-day query ${data.history_end_utc} · inspected devel ${data.source_devel_commit}. Cluster state may have moved since collection.`}<//
+        >${`Cluster snapshot around 20 November 2026, 02:58 UTC · latest seven-day query ${data.history_end_utc} · inspected devel ${data.source_devel_commit}. Batch review and selected live checks: 20 November 2026, 08:24 UTC. Inventory and charts remain historical.`}<//
       >
       <${Group} mt="sm" gap="md"
         ><${Anchor} href="./evidence.json">Evidence and inventory JSON<//
@@ -278,21 +280,24 @@ function Report() {
 
     <${Alert}
       color="orange"
-      title="Two current sizing problems deserve attention before a rollout"
+      title="Earlier OOMs: historical evidence and current follow-up"
       mt="xl"
     >
       <${Text} component="p" mb="xs"
         ><strong>tofu-controller:</strong> OOM-killed at 02:57 UTC with a 1 GiB
         limit and a 128 MiB request; a later sample was 944 MiB. Its namespace
-        disables Goldilocks. Diagnose the memory growth and correct the limit
-        and request separately; request-only VPA cannot raise that limit.<//
+        disabled Goldilocks. The former controller was race-instrumented and
+        processed an oversized private source artifact; the private root moved
+        to Crossplane and the controller switched to upstream v0.17.0. The new
+        pod had zero restarts at 08:24 UTC; keep monitoring. Request-only VPA
+        cannot raise a memory limit.<//
       >
       <${Text} component="p" mb=${0}
         ><strong>Attic:</strong> OOM-killed on 19 November with an 8 GiB limit;
-        its VPA target was 8.52 GiB. Its current singleton has a roughly 5.7 GiB
-        admitted request. Investigate memory and limit headroom; request-only
-        mode is capped by the limit and the updater’s default two-replica guard
-        blocks a singleton eviction.<//
+        its VPA target was 8.52 GiB. Its singleton had a roughly 5.7 GiB
+        admitted request. Follow the existing Attic tracking issue; do not start
+        a duplicate investigation. Request-only mode is capped by the limit and
+        the updater’s default two-replica guard blocks a singleton eviction.<//
       >
     <//>
 
@@ -337,22 +342,18 @@ function Report() {
           >
         <//>
       <//>
-      <${Text} component="p"
-        >The cluster’s Kyverno default injects <${Code}>RequestsOnly<//> for
-        auto-labeled namespaces. It does <em>not</em> apply to Initial
-        namespaces. Request-only leaves existing limits as declared; the default
-        requests-and-limits policy scales existing limits proportionally.
-        Missing limits stay a separate policy decision, not an instruction to
-        create a hard cap. ${" "}
-        <${Anchor} href=${source + "cluster/cdk8s/kyverno/policies.py#L267"}
-          >Local policy and incident context<//
+      <${Text} component="p">
+        cdk8s now renders the <${Code}>RequestsOnly<//> default for auto-mode
+        namespaces, and the corresponding Kyverno policy has been removed. This
+        default does not apply to Initial namespaces. Existing explicit
+        policies, including <${Code}>RequestsAndLimits<//>, take precedence and
+        should not be silently weakened. Request-only leaves existing limits as
+        declared; missing limits are a separate decision. ${" "}
+        <${Anchor} href=${currentSource + "cluster/cdk8s/namespaces.py"}>
+          Namespace defaults<//
         >
-        ·
-        <${Anchor}
-          href="https://github.com/kubernetes/autoscaler/blob/vertical-pod-autoscaler-1.7.1/vertical-pod-autoscaler/docs/faq.md"
-          >VPA FAQ<//
-        ><//
-      >
+        ${" · "}<${Anchor} href=${github + "pull/18085"}>Kyverno removal<//>
+      <//>
     </section>
 
     <section id="architecture">
@@ -366,23 +367,28 @@ function Report() {
         The intended direction is broader VPA request coverage and, eventually,
         no Kyverno. Author the common behavior in cdk8s once, keep Goldilocks as
         the owner of VPAs it generates, and remove each Kyverno responsibility
-        only after its remaining runtime inputs have another owner. The first
-        refactor should preserve today’s effective behavior; adoption changes
-        belong in separately reviewable batches.
+        only after its remaining runtime inputs have another owner. The shared
+        profile refactor and Kyverno VPA default removal are merged; adoption
+        can proceed in coherent, independently reviewable cohorts.
       <//>
       <${Title} order=${3} size="h4" mt="md"
         >Small profiles, explicit exceptions<//
       >
       <${Text} component="p">
-        Extend the existing namespace helper with typed profiles for
-        recommendation only, Initial and Recreate, and for requests-only versus
-        requests-and-limits. Use the same policy builder for workload
-        annotations, controlled resources, per-container bounds and exclusions.
-        These names are illustrative, not an existing API:
+        The merged <${Code}>VpaProfile<//> and <${Code}>ContainerPolicy<//>
+        helpers express modes, request/limit ownership, bounds and exclusions.
+        Apply shared profiles at the namespace level where every workload is
+        eligible; use workload-level overrides or split namespaces where they
+        are not. Preserve policies that already control limits. ${" "}
+        <${Anchor} href=${currentSource + "cluster/cdk8s/namespaces.py"}>
+          Namespace profiles<//
+        >
+        ${" · "}<${Anchor}
+          href=${currentSource + "cluster/cdk8s/vpa_policy.py"}
+        >
+          Container policies<//
+        >
       <//>
-      <${Code} block
-        >${"namespace(..., vpa=initial_requests())\nnamespace(..., vpa=recreate_requests())\nnamespace(..., vpa=initial_requests_and_limits())"}<//
-      >
       <${Text} component="p" mt="sm">
         An eligible new service can choose Initial request-only in one
         expression; promote it to Recreate when eviction is acceptable. Preserve
@@ -422,10 +428,10 @@ function Report() {
           >
           <${Table.Tbody}>
             <${Table.Tr}
-              ><${Table.Td}>1 · Refactor<//
+              ><${Table.Td}>1 · Done: profiles<//
               ><${Table.Td}
-                >Add the shared profile / annotation builder and use it for
-                existing repeated policies.<//
+                >Shared typed profile and annotation builders merged in
+                #18021.<//
               ><${Table.Td}
                 >Compare rendered metadata and effective VPA specs; preserve
                 modes, values, overrides and single ownership.<//
@@ -434,23 +440,22 @@ function Report() {
             <${Table.Tr}
               ><${Table.Td}>2 · Adopt<//
               ><${Table.Td}
-                >Convert reviewed workloads to Initial or Recreate profiles in
-                small batches.<//
+                >Apply cohort-wide Initial profiles, then enable Recreate for
+                suitable replicated workloads in batches.<//
               ><${Table.Td}
                 >Check admission, HPA, node fit, bounds and disruption; compare
                 actual pod resources after a normal creation.<//
               ><//
             >
             <${Table.Tr}
-              ><${Table.Td}>3 · Retire VPA fallback<//
+              ><${Table.Td}>3 · Done: VPA fallback<//
               ><${Table.Td}
-                >Keep the current Kyverno auto-mode default temporarily while
-                migrating its callers.<//
+                >cdk8s now renders the auto-mode default; Kyverno fallback
+                removed in #18085.<//
               ><${Table.Td}
-                >Inventory namespaces from Helm, operators and other
-                repositories; ensure each intended input has an explicit owner
-                before removing the mutation. Never blanket-default existing
-                Initial VPAs to requests-only.<//
+                >Existing auto policies matched before and after; new namespaces
+                outside cdk8s must supply their own policy. Never
+                blanket-default existing Initial VPAs to requests-only.<//
               ><//
             >
             <${Table.Tr}
@@ -469,11 +474,12 @@ function Report() {
       <//>
       <${Title} order=${3} size="h4" mt="lg">What Kyverno still owns<//>
       <${Text} component="p">
-        The live inventory found 7 ClusterPolicies and 2 namespaced
-        CleanupPolicies, with no ClusterCleanupPolicies or legacy exceptions.
-        This is a cluster snapshot, not an inventory of every test cluster or
-        private repository. cdk8s can render its own inputs, but cannot
-        retroactively author Pods created by KubeVirt or another operator.
+        The 03:36 UTC inventory found 7 ClusterPolicies and 2 namespaced
+        CleanupPolicies. The Goldilocks default was subsequently removed; six
+        ClusterPolicies and both cleanup policies remained at 08:24 UTC. This is
+        not an inventory of every test cluster or private repository. cdk8s can
+        render its own inputs, but cannot retroactively author Pods created by
+        KubeVirt or another operator.
       <//>
       <${Table.ScrollContainer}
         minWidth=${980}
@@ -491,14 +497,16 @@ function Report() {
             ><//
           >
           <${Table.Tbody}>
-            ${data.architecture_review.kyverno.policies.map(
-              (p) =>
-                html`<${Table.Tr} key=${p.name}>
-                  <${Table.Td}><${Code}>${p.name}<//><//
-                  ><${Table.Td}>${p.role}<//><${Table.Td}>${p.direction}<//
-                  ><${Table.Td}>${cutoverProof[p.name]}<//>
-                <//>`,
-            )}
+            ${data.architecture_review.kyverno.policies
+              .filter((p) => p.name !== "default-vpa-requests-only")
+              .map(
+                (p) =>
+                  html`<${Table.Tr} key=${p.name}>
+                    <${Table.Td}><${Code}>${p.name}<//><//
+                    ><${Table.Td}>${p.role}<//><${Table.Td}>${p.direction}<//
+                    ><${Table.Td}>${cutoverProof[p.name]}<//>
+                  <//>`,
+              )}
             <${Table.Tr}>
               <${Table.Td}
                 ><${Code}>sandbox-janitor<//> / <${Code}>reap-wedged-jobs<//><//
@@ -674,12 +682,12 @@ function Report() {
         <${Paper} withBorder p="md" radius="md"
           ><${Title} order=${3} size="h4">Limit downsizing has broken startup<//
           ><${Text} component="p"
-            >The local Kyverno policy records a LiteLLM outage:
+            >The earlier Kyverno policy recorded a LiteLLM outage:
             request-and-limit scaling reduced its CPU limit and both replicas
-            failed startup for six hours. The policy now defaults auto
-            namespaces to request-only. This is evidence for a targeted
-            exception, not a reason to replace every existing
-            requests-and-limits policy. ${" "}
+            failed startup for six hours. The cdk8s default now makes auto
+            namespaces request-only. This is evidence for a targeted exception,
+            not a reason to replace every existing requests-and-limits policy.
+            ${" "}
             <${Anchor} href=${source + "cluster/cdk8s/kyverno/policies.py#L267"}
               >Policy rationale<//
             ><//
@@ -726,124 +734,119 @@ function Report() {
 
     <section id="batches">
       <${Title} order=${2} mt="xl">Recommended batches<//>
-      <${Text} component="p"
-        >These are proposed changes, not approvals or forecasts. Split
-        independently reviewable changes into focused PRs. Preserve existing VPA
-        limit ownership, resource bounds and workload overrides unless a
-        separate investigation justifies changing them.<//
-      >
-      <${Stack} gap="sm">
-        <${Paper} withBorder p="md" radius="md"
-          ><${Badge} color="red" variant="light">0 · immediate diagnosis<//
-          ><${Title} order=${3} size="h4" mt="xs"
-            >Fix the two OOMing limits on their own merits<//
-          ><${Text} component="p" mb=${0}
-            >Investigate tofu-controller’s recent 1 GiB OOM and Attic’s 8 GiB
-            OOM, memory trajectory and appropriate limits/requests. For Attic,
-            the 8.52 GiB target cannot be fully admitted below its 8 GiB limit.
-            For tofu-controller, decide whether a scoped VPA is safe for the
-            GitOps control plane only after restoring headroom and understanding
-            the cause. Keep limit repairs separate from the adoption rollout.<//
-          ><//
+      <${Text} component="p">
+        The goal is requests for almost all supported workloads, with automatic
+        resizing wherever disruption is acceptable. Do not serialize the rollout
+        one Deployment at a time: select cohorts by ownership and risk, use the
+        shared profile once per namespace or chart, and review the effective
+        policies together. The examples below were checked around 08:24 UTC;
+        validate current resource values and eligibility before changing them.
+      <//>
+      <${Alert} color="orange" title="Reconciliation is a rollout gate" my="md">
+        Goldilocks watches Pods and Namespaces, not Deployment metadata. CDviz’s
+        annotations landed after its last reconciliation and its VPA stayed Off
+        until a namespace update at 08:17 UTC. Verify every intended VPA after
+        each batch and trigger a namespace update when needed; investigate a
+        durable level-triggered fix. CDviz is now Initial, memory-only and
+        RequestsOnly; its existing pod remains running and new-pod admission has
+        not yet been verified. ${" "}
+        <${Anchor}
+          href="https://github.com/FairwindsOps/goldilocks/blob/v4.16.1/pkg/controller/controller.go"
         >
-        <${Paper} withBorder p="md" radius="md"
-          ><${Badge} color="blue" variant="light">1 · Initial pilots<//
-          ><${Title} order=${3} size="h4" mt="xs"
-            >CDviz, then carefully selected controllers<//
-          ><${Text} component="p" mb=${0}
-            >Start with CDviz collector in request-only Initial mode: its
-            current request is below observed use, and VPA would not
-            deliberately restart its singleton webhook receiver. The namespace
-            also contains a retention CronJob; verify its VPA behavior and
-            exclude it if needed. Next assess external-dns and trust-manager
-            individually, including node fit, startup and rollback. GitHub does
-            not automatically redeliver failed webhook deliveries, so do not
-            make CDviz auto-evictable until delivery recovery is verified.
-            ${" "}
-            <${Anchor}
-              href="https://docs.github.com/en/webhooks/testing-and-troubleshooting-webhooks/redelivering-webhooks"
-              >GitHub delivery behavior<//
-            ><//
-          ><//
-        >
-        <${Paper} withBorder p="md" radius="md"
-          ><${Badge} color="blue" variant="light">2 · automatic pilots<//
-          ><${Title} order=${3} size="h4" mt="xs"
-            >Expand Recreate where interruption is acceptable<//
-          ><${Text} component="p" mb=${0}
-            >The GitLab acceptance demo is already a request-only Recreate
-            canary; observe its replacements and cap behavior. After an Initial
-            pilot, external-dns is a candidate if a short reconciliation gap is
-            acceptable. Assess the GitLab spike exporter and runner separately,
-            including whether restarting the runner affects in-flight jobs. The
-            exporter shares a namespace with HPAs and stateful services: use a
-            workload-scoped mode and explicit resource policy, not a blanket
-            namespace switch. Kyverno's request-only default matches the
-            namespace label, not an individual workload override. For
-            singletons, explicitly decide whether to retain the default
-            two-replica eviction guard or permit downtime with
-            <${Code}>minReplicas: 1<//>; Goldilocks applies that setting at
-            namespace scope, so inspect every affected VPA. For replicas, check
-            PDBs, scheduling and dependency readiness before evictions.<//
-          ><//
-        >
-        <${Paper} withBorder p="md" radius="md"
-          ><${Badge} color="cyan" variant="light">3 · custom operators<//
-          ><${Title} order=${3} size="h4" mt="xs"
-            >Pilot CNPG sizing without automatic failover<//
-          ><${Text} component="p" mb=${0}
-            >The installed CNPG version exposes the scale selector, making a
-            custom-target VPA plausible; it does not prove Goldilocks creates
-            one or that admission, reconciliation, backup sidecars and failover
-            are safe. Use a disposable or explicitly chosen cluster with a
-            separately owned Off VPA, then test Initial request-only admission
-            and operator reconciliation. Compare explicit CNPG resource requests
-            as the fallback. Do not mass-enable database evictions.<//
-          ><//
-        >
-        <${Paper} withBorder p="md" radius="md"
-          ><${Badge} color="cyan" variant="light"
-            >4 · infrastructure and dynamic workloads<//
-          ><${Title} order=${3} size="h4" mt="xs"
-            >Measure Piraeus, CSI, Flux, agent workloads and VMs separately<//
-          ><${Text} component="p" mb=${0}
-            >Piraeus and CSI include many no-request DaemonSet containers and
-            node-specific components; add evidence-based requests at the owning
-            operator or pilot narrowly after proving recovery. Review disabled
-            Agentplane and platform namespaces one workload at a time.
-            Sandboxes, Terraform runners, KubeVirt VMs, short-lived Jobs and
-            unobserved startup peaks need explicit ownership and sizing
-            experiments rather than inferred coverage from a namespace
-            toggle.<//
-          ><//
-        >
-        <${Paper} withBorder p="md" radius="md"
-          ><${Badge} color="gray" variant="light">guardrail · HPA<//
-          ><${Title} order=${3} size="h4" mt="xs"
-            >Keep CPU HPA and CPU VPA from competing<//
-          ><${Text} component="p" mb=${0}
-            >The GitLab spike has four CPU HPAs; the registry uses CPU
-            utilization, which depends directly on the request. Consider
-            memory-only VPA for those workloads, leaving CPU to HPA, and test
-            any CPU-based combination against upstream guidance. The separate
-            KEDA VM pool uses an external metric and needs its own
-            operator-specific assessment. ${" "}
-            <${Anchor}
-              href="https://github.com/kubernetes/autoscaler/blob/vertical-pod-autoscaler-1.7.1/vertical-pod-autoscaler/docs/known-limitations.md"
-              >VPA limitations<//
-            ><//
-          ><//
+          Goldilocks watchers<//
         >
       <//>
-      <${Text} component="p" mt="md"
-        >For every batch: record the old and new effective request and limit,
-        current and historical usage, peak/startup uncertainty, node/zone fit,
-        HPA and PDB constraints; verify the generated VPA and a normally created
-        pod after rollout. Watch scheduling failures, restarts, throttling and
-        application health; revert the declarative setting if the result is
-        unsafe. <${Code}>Initial<//> is not an immediate fix for an already
-        running under-requested pod.<//
-      >
+      <${Stack} gap="sm">
+        <${Paper} withBorder p="md" radius="md">
+          <${Badge} color="blue" variant="light">1 · broad Initial cohorts<//>
+          <${Title} order=${3} size="h4" mt="xs"
+            >Adopt requests together across ordinary controllers<//
+          >
+          <${Text} component="p">
+            First proposed cohort: external-dns; cert-manager controller,
+            cainjector and webhook; external-secrets controller and webhook; and
+            the three KEDA Deployments. These nine currently have Off VPAs with
+            recommendations. Group changes by chart or namespace in one or a few
+            PRs and stage dependent infrastructure families separately; they do
+            not need nine serial pilots. Use Initial and RequestsOnly for new
+            policies, initially controlling memory where CPU ownership or HPA is
+            uncertain. Existing CPU requests, limits and policies stay intact.
+          <//>
+          <${Text} component="p" mb=${0}>
+            These are candidates, not pre-approved changes: confirm the chart’s
+            metadata support, full namespace membership, recommendation quality,
+            startup peaks, minimums, limits and aggregate node/zone headroom.
+            Constrain low recommendations where appropriate. Initial will not
+            evict existing pods, but a later ordinary replacement will receive a
+            different request and could fail to schedule; it does not repair an
+            under-requested running pod. Trust-manager is a later candidate
+            after assessing its fail-closed webhook and startup behavior.
+          <//>
+        <//>
+        <${Paper} withBorder p="md" radius="md">
+          <${Badge} color="blue" variant="light">2 · coverage by class<//>
+          <${Title} order=${3} size="h4" mt="xs"
+            >Expand to eligible namespaces, not a bespoke change per workload<//
+          >
+          <${Text} component="p" mb=${0}>
+            Inventory all recommendation-only and unprotected controllers; apply
+            shared Initial request profiles in cohorts where every affected
+            workload is understood. The 02:58 snapshot had 89 Off VPA objects
+            and 68 of 237 controller templates without a direct VPA target;
+            these populations overlap imperfectly and include different resource
+            kinds. Separate existing requests-and-limits VPAs, HPAs, singleton
+            delivery receivers, unsupported target owners and disabled
+            namespaces into explicit exceptions. Add recommendations first for
+            eligible uncovered controllers; do not treat lack of a VPA as proof
+            that namespace mode alone will cover a custom operator target.
+          <//>
+        <//>
+        <${Paper} withBorder p="md" radius="md">
+          <${Badge} color="cyan" variant="light">3 · automatic cohorts<//>
+          <${Title} order=${3} size="h4" mt="xs"
+            >Promote replicated workloads to Recreate in groups<//
+          >
+          <${Text} component="p" mb=${0}>
+            Candidate replicated controllers include external-secrets,
+            kubeapi-proxy and the Kyverno admission controller. Check each
+            cohort’s rollout topology, PDB, redundancy, availability budget,
+            startup and node fit before enabling eviction; avoid simultaneous
+            changes across tightly coupled control-plane dependencies. VPA’s
+            installed two-replica minimum is a guard, not a guarantee of service
+            availability. Preserve existing request-and-limit ownership. Do not
+            lower namespace-wide <${Code}>minReplicas<//> for a singleton
+            without reviewing every VPA in that namespace. CDviz and ntfy remain
+            non-evicting until their delivery and availability requirements are
+            addressed. For CPU HPA targets, keep CPU ownership separate or prove
+            the interaction; memory-only policies are a useful default.
+          <//>
+        <//>
+        <${Paper} withBorder p="md" radius="md">
+          <${Badge} color="gray" variant="light"
+            >4 · operator-owned exceptions<//
+          >
+          <${Title} order=${3} size="h4" mt="xs"
+            >Cover databases and dynamic workloads through their owners<//
+          >
+          <${Text} component="p" mb=${0}>
+            Group CNPG, CSI and other operator-managed workloads by owner. A
+            Goldilocks namespace switch does not prove custom targets are
+            covered; establish one VPA owner and prove admission and operator
+            reconciliation, or set explicit requests in the owning resource. For
+            sandboxes, Terraform runners, VMs and short-lived Jobs, account for
+            transient peaks and admission paths before broadening coverage.
+            Coordinate storage workloads with the separate storage work.
+          <//>
+        <//>
+      <//>
+      <${Text} component="p" mt="md">
+        For each cohort, compare generated policies and existing request/limit
+        ownership, HPA and PDB interactions, realistic recommendations and
+        startup bounds, and total scheduling impact in eligible zones. Verify
+        each live VPA after reconciliation, then verify admitted resources,
+        scheduling and health as pods are normally created. Track cohort-level
+        coverage and failures; stop or revert a cohort if its gates fail.
+      <//>
     </section>
 
     <section id="inventory">
@@ -879,8 +882,9 @@ function Report() {
         controllers need separate ownership and admission checks.
         Instance/replica count can change. Limits, requests and recommendations
         are distinct; the scheduler uses admitted requests and placement
-        constraints, not today’s usage. No cluster resources were changed to
-        produce this report.<//
+        constraints, not today’s usage. The original snapshot collection was
+        read-only; the later CDviz namespace update was an operational
+        intervention, separately described above.<//
       >
       <${Group} gap="md" my="sm"
         ><${Anchor}
