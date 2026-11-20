@@ -8,22 +8,20 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func dispatchState(state string) (dispatcherpb.DeliveryState, error) {
+func dispatchState(state string) dispatcherpb.DeliveryState {
 	switch state {
 	case QueueState:
-		return dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER, nil
+		return dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER
 	case DeliveringState:
-		return dispatcherpb.DeliveryState_DELIVERY_STATE_DELIVERING_TO_RUNNER, nil
+		return dispatcherpb.DeliveryState_DELIVERY_STATE_DELIVERING_TO_RUNNER
 	case AdmittedState:
-		return dispatcherpb.DeliveryState_DELIVERY_STATE_RUNNER_ADMITTED, nil
+		return dispatcherpb.DeliveryState_DELIVERY_STATE_RUNNER_ADMITTED
 	case FailedState:
-		return dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED, nil
+		return dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED
 	case CancelledState:
-		return dispatcherpb.DeliveryState_DELIVERY_STATE_CANCELLED_IN_DISPATCHER, nil
-	case UnknownState:
-		return dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN, nil
+		return dispatcherpb.DeliveryState_DELIVERY_STATE_CANCELLED_IN_DISPATCHER
 	default:
-		return dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN, nil
+		return dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN
 	}
 }
 
@@ -45,17 +43,13 @@ func dispatchOperation(operation string) (commandpb.Operation, error) {
 // DescribeDispatch is the single wire projection for reads and terminal Watch
 // events. It never substitutes runner admission for a queued receipt.
 func DescribeDispatch(row *Dispatch) (*dispatcherpb.Dispatch, error) {
-	state, err := dispatchState(row.State)
-	if err != nil {
-		return nil, err
-	}
 	operation, err := dispatchOperation(row.Operation)
 	if err != nil {
 		return nil, err
 	}
 	result := &dispatcherpb.Dispatch{
 		CommandId: row.CommandID, SessionId: row.SessionID, Sandbox: row.SandboxName,
-		SandboxUid: row.SandboxUID, Operation: operation, State: state,
+		SandboxUid: row.SandboxUID, Operation: operation, State: dispatchState(row.State),
 		Admission: row.Admission, CreatedAt: timestamppb.New(row.CreatedAt), UpdatedAt: timestamppb.New(row.UpdatedAt),
 		DeliveryBlocker: row.DeliveryBlocker, WakeAssessment: row.WakeAssessment,
 	}

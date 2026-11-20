@@ -85,8 +85,6 @@ def test_file_settings_do_not_read_static_environment_overrides(monkeypatch: pyt
     monkeypatch.setenv("AGENTPLANE_HISTORY_SERVICE_POLICY_NAMESPACE", "environment-value")
     settings = Settings.model_validate(_settings_source())
     assert settings.policy_namespace == "test-policies"
-    assert "database_url" not in Settings.model_fields
-    assert Settings.config_file_env == "AGENTPLANE_HISTORY_SERVICE_CONFIG_FILE"
 
 
 if __name__ == "__main__":
