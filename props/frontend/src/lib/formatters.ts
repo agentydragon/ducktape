@@ -14,28 +14,18 @@ const pctFormatter = new Intl.NumberFormat(undefined, {
   maximumFractionDigits: 1,
 });
 
-const pctFormatterWhole = new Intl.NumberFormat(undefined, {
-  style: "percent",
-  minimumFractionDigits: 0,
-  maximumFractionDigits: 0,
-});
-
 /** Format a 0.0-1.0 value as percentage string. */
-export function formatPct(value: number, decimals = 1): string {
-  return decimals === 0 ? pctFormatterWhole.format(value) : pctFormatter.format(value);
+export function formatPct(value: number): string {
+  return pctFormatter.format(value);
 }
 
 /** Format StatsWithCI as "mean ± margin". */
-export function formatStatsWithCI(stats: StatsWithCi, options?: { showN?: boolean }): string {
+export function formatStatsWithCI(stats: StatsWithCi): string {
   const mean = formatPct(stats.mean);
 
   if (stats.lcb95 != null && stats.ucb95 != null) {
     const margin = (stats.ucb95 - stats.lcb95) / 2;
     return `${mean} ± ${formatPct(margin)}`;
-  }
-
-  if (options?.showN) {
-    return `${mean} (n=${stats.n})`;
   }
 
   return mean;
