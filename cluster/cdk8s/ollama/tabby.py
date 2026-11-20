@@ -1,7 +1,5 @@
 """TabbyAPI serving the staged EXL3 Flash-Next checkpoints on wyrm2."""
 
-from hashlib import sha256
-
 from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import ConfigMap, k8s
 from constructs import Construct
@@ -69,21 +67,24 @@ def _local_claim(scope: Construct, path: str, claim: str, capacity: str) -> None
     )
 
 
-def _deploy(scope: Construct, config: ConfigMap, config_checksum: str) -> None:
+def _deploy(scope: Construct, config: ConfigMap) -> None:
     models = k8s.HttpGetAction(path=MODELS_PATH, port=k8s.IntOrString.from_string(SERVICE.port.name))
     k8s.KubeDeployment(
         scope,
         "tabbyapi-deployment",
-        metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE, labels=_PODS.selector),
+        metadata=k8s.ObjectMeta(
+            name=NAME,
+            namespace=NAMESPACE,
+            labels=_PODS.selector,
+            # The config and template use subPath mounts and need a pod restart.
+            annotations={"configmap.reloader.stakater.com/reload": config.name},
+        ),
         spec=k8s.DeploymentSpec(
             replicas=1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
             selector=k8s.LabelSelector(match_labels=_PODS.selector),
             template=k8s.PodTemplateSpec(
-                metadata=k8s.ObjectMeta(
-                    labels={**_PODS.selector, **_SWITCHING_LABEL},
-                    annotations={"ducktape.org/tabbyapi-config-sha256": config_checksum},
-                ),
+                metadata=k8s.ObjectMeta(labels={**_PODS.selector, **_SWITCHING_LABEL}),
                 spec=k8s.PodSpec(
                     automount_service_account_token=False,
                     runtime_class_name="nvidia",
@@ -174,13 +175,12 @@ def _deploy(scope: Construct, config: ConfigMap, config_checksum: str) -> None:
 
 def add_tabbyapi(scope: Construct) -> None:
     sources = Runfiles.CreateOrRaise().root() / _SOURCE_DIR
-    config_yaml = (sources / "tabbyapi-config.yml").read_text()
     config = ConfigMap(
         scope,
         "tabbyapi-config",
         metadata=ApiObjectMetadata(name=f"{NAME}-config", namespace=NAMESPACE),
         data={
-            "config.yml": config_yaml,
+            "config.yml": (sources / "tabbyapi-config.yml").read_text(),
             "tabbyapi_serve.py": (sources / "tabbyapi_serve.py").read_text(),
             "chat_template.jinja": (sources / "tabbyapi-chat-template.jinja").read_text(),
         },
@@ -188,7 +188,7 @@ def add_tabbyapi(scope: Construct) -> None:
     for _, name, claim, capacity in _CHECKPOINTS:
         _local_claim(scope, f"/games/llm-models/{name}", claim, capacity)
     _local_claim(scope, "/games/tabbyapi-prefix-cache", _PREFIX_CACHE, "16Gi")
-    _deploy(scope, config, sha256(config_yaml.encode()).hexdigest())
+    _deploy(scope, config)
     k8s.KubeService(
         scope,
         "tabbyapi-service",

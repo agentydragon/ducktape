@@ -1057,6 +1057,8 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  annotations:
+    configmap.reloader.stakater.com/reload: tabbyapi-config
   labels:
     app.kubernetes.io/name: tabbyapi
   name: tabbyapi
@@ -1070,8 +1072,6 @@ spec:
     type: Recreate
   template:
     metadata:
-      annotations:
-        ducktape.org/tabbyapi-config-sha256: 058938af9943cd8aa5fe9a1719751fb3285cae3b45a1cc7829a82bee000ced30
       labels:
         app.kubernetes.io/name: tabbyapi
         ducktape.org/tabbyapi-model-switching: "true"
