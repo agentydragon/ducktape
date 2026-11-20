@@ -177,3 +177,26 @@ js_test(
     ],
     shard_count = 12,
 )
+
+js_test(
+    name = "fuzz_test",
+    data = [
+        "Bindings.lean",
+        "Effects.lean",
+        "Semantics.lean",
+        "bindings.mjs",
+        "fuzz.mjs",
+        "//:node_modules/acorn",
+        "@lean_dist//:lean_bin",
+        "@lean_dist//:runtime",
+    ],
+    entry_point = "fuzz_test.mjs",
+    env = {
+        "LEAN_RLOCATION": "$(rlocationpath @lean_dist//:lean_bin)",
+    },
+    no_copy_to_bin = [
+        "@lean_dist//:lean_bin",
+        "@lean_dist//:runtime",
+    ],
+    shard_count = 4,
+)

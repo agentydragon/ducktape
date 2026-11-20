@@ -1,0 +1,24 @@
+import assert from "node:assert/strict";
+import { writeFile } from "node:fs/promises";
+import { resolve } from "node:path";
+
+if (process.env.ACORN_RLOCATION)
+  process.env.JS_MODULE_PROOF_ACORN = resolve(process.env.TEST_SRCDIR, process.env.ACORN_RLOCATION);
+process.env.JS_MODULE_PROOF_LEAN = resolve(process.env.TEST_SRCDIR, process.env.LEAN_RLOCATION);
+if (process.env.TEST_SHARD_STATUS_FILE) await writeFile(process.env.TEST_SHARD_STATUS_FILE, "");
+const { makeCase, runFuzz } = await import("./fuzz.mjs");
+const shard = Number(process.env.TEST_SHARD_INDEX ?? 0);
+const shards = Number(process.env.TEST_TOTAL_SHARDS ?? 1);
+assert.deepEqual(makeCase(123, 42), makeCase(123, 42));
+assert.notDeepEqual(makeCase(123, 42), makeCase(124, 42));
+const examples = Array.from({ length: 100 }, (_, i) => makeCase(123, i));
+assert.ok(new Set(examples.map((c) => c.source)).size > 90);
+assert.ok(new Set(examples.map((c) => JSON.stringify(c.spec))).size > 90);
+const result = await runFuzz({ seed: 123, cases: 16, outputDir: process.env.TEST_TMPDIR, shard, shards });
+assert.equal(result.cases, 16 / shards);
+if (shards === 4 && shard === 0) assert.equal(result.proved, result.cases);
+if (shards === 4 && shard === 1) assert.equal(result.unsafe, result.cases);
+if (shards === 4 && shard === 3) assert.equal(result.refused, result.cases);
+if (shards === 4 && shard === 2) assert.ok(result.mutated > 0);
+assert.equal(result.generated, result.compared);
+console.log(JSON.stringify(result));

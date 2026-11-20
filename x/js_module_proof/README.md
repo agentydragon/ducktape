@@ -124,6 +124,40 @@ Loading, reflection, source text and module identity are not observed. The JSON
 certificate can be replayed by concatenating `Semantics.lean`, `Effects.lean`,
 `Bindings.lean`, and the certificate and running `lean --trust=0 --stdin`.
 
+## Differential fuzzer
+
+`fuzz.mjs` constructs seeded ESTree programs and module assignments, invokes the
+actual multiple-bindings splitter, and executes the source and generated entry
+in separate fresh Node processes. It compares recorded events, public exports,
+return values and exceptions after a generated sequence of exported calls. It
+also runs the Lean-backed validator and checks that a proved result agrees with
+Node and that an unsafe result's witness matches the independently observed
+initialization. Some trials mutate generated modules to exercise the validator;
+other trials generate valid but unsupported JavaScript and require refusal.
+
+```sh
+nix develop .#js-module-proof
+node x/js_module_proof/fuzz.mjs --seed 123 --cases 1000 --output-dir "$OUTPUT_DIR"
+```
+
+The seed and case index determine each case independently; `--start N --cases 1`
+replays one case. Failure artifacts include source, assignment, generated files,
+Node observations and, if available, the validator verdict. Cases with a Node difference and an unknown or unvalidated verdict are retained
+for investigation; other non-failing cases are removed. The fuzzer keeps files only inside the chosen output directory.
+Lean checking is expensive: `--validate-every N` selects a reproducible
+approximately 1/N sample for validation while still splitting and running all
+supported cases in Node. The summary distinguishes unvalidated cases, unknowns,
+proved results, unsafe witnesses and Node differences. A Node difference in an
+unvalidated or unknown case is useful evidence, not itself a validator error.
+
+The generator covers a deliberately small, extensible ESTree grammar: integer
+bindings, functions, calls, records and exports, plus several unsupported AST
+node types. It varies values, statement orders, effect placement, module
+assignments, graph edges and public call sequences; it does not cover arbitrary
+JavaScript or establish the JavaScript semantics assumed by the proof. Values
+and call counts are bounded to stay within the safe-integer assumption. Node
+runs are empirical checks, not a second proof of all executions.
+
 ## What the certificate says
 
 The Acorn frontend converts the supported syntax into `SourceAst` and
