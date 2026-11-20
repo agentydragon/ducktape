@@ -20,8 +20,9 @@ from props.backend.routes import runs
 from props.db.database import Database
 from props.db.models import AgentRunBudgetStatus, AgentRunStatus
 from props.orchestration.agent_registry import BudgetExceededError, ImageResolutionError, ResolvedImage
-from props.testing.constants import BUDGET_TEST_MODEL, TRAIN_EXAMPLE
+from props.testing.examples import TRAIN_EXAMPLE
 from props.testing.fixtures.runs import FAKE_CRITIC_DIGEST, make_fake_critic_run, make_llm_request
+from props.testing.models import BUDGET_TEST_MODEL
 
 # gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep //props/testing/fixtures:db

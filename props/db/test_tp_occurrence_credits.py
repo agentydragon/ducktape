@@ -8,7 +8,6 @@ from props.core.models.examples import ExampleKind, SingleFileSetExample
 from props.core.splits import Split
 from props.db.examples import Example
 from props.db.models import AgentRunStatus, GradingEdge, RecallByDefinitionSplitKind, RecallByExample
-from props.testing.constants import DEFAULT_TEST_MODEL
 from props.testing.fixtures.runs import (
     FAKE_CRITIC_DIGEST,
     make_fake_critic_run,
@@ -16,6 +15,7 @@ from props.testing.fixtures.runs import (
     make_fake_grader_run_with_credit,
     make_reported_issues,
 )
+from props.testing.models import DEFAULT_TEST_MODEL
 
 # gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep //props/testing/fixtures:db

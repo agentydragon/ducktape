@@ -228,7 +228,7 @@ py_test(
         "//props/db:models",
         "//props/db:snapshots",
         "//props/testing:assertions",
-        "//props/testing:constants",
+        "//props/testing:models",
         "//props/testing/fixtures:runs",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
@@ -257,7 +257,7 @@ py_test(
         "//props/db:models",
         "//props/db:snapshots",
         "//props/testing:assertions",
-        "//props/testing:constants",
+        "//props/testing:models",
         "//props/testing/fixtures:runs",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
@@ -287,7 +287,7 @@ py_test(
         "//props/db:models",
         "//props/db:snapshots",
         "//props/testing:assertions",
-        "//props/testing:constants",
+        "//props/testing:models",
         "//props/testing/fixtures:runs",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
@@ -313,7 +313,7 @@ py_test(
         "//props/db:database",
         "//props/db:models",
         "//props/db:snapshots",
-        "//props/testing:constants",
+        "//props/testing:models",
         "//props/testing/fixtures:runs",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",

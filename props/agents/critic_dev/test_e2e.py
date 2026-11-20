@@ -38,8 +38,8 @@ from props.core.eval_api_models import CriticRunStatus, GradingStatusResponse, R
 from props.core.ids import DefinitionId, SnapshotSlug
 from props.core.models.examples import ExampleKind, WholeSnapshotExample
 from props.db.models import AgentRun, AgentRunStatus
-from props.testing.constants import DEFAULT_TEST_MODEL
 from props.testing.mocks import get_system_prompt_text
+from props.testing.models import DEFAULT_TEST_MODEL
 from util.exec.models import BaseExecResult
 
 # gazelle:include_dep //testing:postgres_fixtures

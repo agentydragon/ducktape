@@ -68,8 +68,8 @@ from props.orchestration.agent_registry import AgentRegistry, ResolvedImage
 from props.orchestration.docker_env import PROPS_NETWORK_NAME
 from props.orchestration.docker_executor import DockerExecutor
 from props.registry_proxy.app import create_app as create_registry_proxy_app
-from props.testing.constants import DEFAULT_TEST_MODEL
 from props.testing.fake_openai_server import FakeOpenAIServer
+from props.testing.models import DEFAULT_TEST_MODEL
 from testing.asgi import bind_http_server
 
 logger = logging.getLogger(__name__)
