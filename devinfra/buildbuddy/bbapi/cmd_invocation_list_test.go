@@ -46,9 +46,7 @@ func TestInvocationListFiltersAndPaginatesAllPages(t *testing.T) {
 	}}
 	startBuildBuddyTestServer(t, service)
 
-	previousJSONOutput := jsonOutput
-	jsonOutput = true
-	t.Cleanup(func() { jsonOutput = previousJSONOutput })
+	setJSONOutput(t, true)
 
 	cmd := invocationListCmd()
 	flags := map[string]string{
@@ -130,9 +128,7 @@ func TestInvocationListKeepsDefaultRepoQueryAndSinglePage(t *testing.T) {
 		},
 	}}
 	startBuildBuddyTestServer(t, service)
-	previousJSONOutput := jsonOutput
-	jsonOutput = true
-	t.Cleanup(func() { jsonOutput = previousJSONOutput })
+	setJSONOutput(t, true)
 
 	cmd := invocationListCmd()
 	if err := cmd.Flags().Set("repo", "https://repo.test/project"); err != nil {
@@ -172,9 +168,7 @@ func TestInvocationListGroupWithoutRepoDoesNotAutodetectRepository(t *testing.T)
 		"": {Invocation: []*invocationpb.Invocation{{InvocationId: "group-invocation"}}},
 	}}
 	startBuildBuddyTestServer(t, service)
-	previousJSONOutput := jsonOutput
-	jsonOutput = false
-	t.Cleanup(func() { jsonOutput = previousJSONOutput })
+	setJSONOutput(t, false)
 
 	cmd := invocationListCmd()
 	if err := cmd.Flags().Set("group", "test-group"); err != nil {
