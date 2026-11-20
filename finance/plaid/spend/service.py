@@ -58,9 +58,10 @@ from finance.plaid.spend.models import (
 from finance.plaid.spend.net_worth import NetWorthHistory, read_net_worth
 from finance.plaid.spend.pace_history import pace_history
 from finance.plaid.spend.pace_history_models import PaceHistory
+from finance.plaid.spend.plaid_valuation import unavailable_source
 from finance.plaid.spend.policy_queries import select_policy_accounts, select_policy_transactions
 from finance.plaid.spend.portfolio import CoinbaseClient, read_portfolio
-from finance.plaid.spend.portfolio_models import PortfolioView, SourceValuation
+from finance.plaid.spend.portfolio_models import PortfolioView
 from finance.plaid.spend.reconciliation_views import allowance_view, sustainability_view
 from finance.plaid.spend.statement_queries import (
     select_card_accounts,
@@ -73,7 +74,6 @@ from finance.plaid.spend.sustainability import (
     SustainabilityView,
     calculate_sustainability,
     disabled_view,
-    empty_portfolio,
 )
 from finance.plaid.spend.transaction_views import project_transactions
 
@@ -545,7 +545,7 @@ class SpendService:
     async def _read_current_portfolio(self, now: datetime) -> PortfolioView:
         policy = self._configuration.sustainability
         if policy is None:
-            return empty_portfolio()
+            return PortfolioView.unavailable([])
         async with self._portfolio_lock:
             cached = self._portfolio_cache
             if cached is not None and now - cached[0] < timedelta(seconds=60):
@@ -555,22 +555,7 @@ class SpendService:
                     self._require_read_sessions(), policy.portfolio, now=now, coinbase_client=self._coinbase_client
                 )
             except SQLAlchemyError:
-                view = PortfolioView(
-                    status="unavailable",
-                    net_minor_units=None,
-                    assets_minor_units=None,
-                    liabilities_minor_units=None,
-                    excluded_minor_units=None,
-                    sources=[
-                        SourceValuation(
-                            name="plaid",
-                            status="unavailable",
-                            amount_minor_units=None,
-                            as_of=None,
-                            issues=["The Plaid mirror could not be read."],
-                        )
-                    ],
-                )
+                view = PortfolioView.unavailable([unavailable_source("plaid", "The Plaid mirror could not be read.")])
             if view.status == "ready":
                 self._portfolio_cache = (now, view)
             return view
