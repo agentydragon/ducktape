@@ -77,6 +77,7 @@ async def test_failed_materialization_without_history(view: VisualPage, app: Age
     await app.mount_thread(thread_id)
     await expect(view.page.get_by_role("alert").filter(has_text="invalid model")).to_be_visible()
     await expect(view.page.get_by_text("Sandbox no longer exists", exact=False)).to_have_count(0)
+    await expect(view.page.get_by_text("Thread sync failed", exact=False)).to_have_count(0)
     await view.capture()
 
 

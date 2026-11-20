@@ -3258,6 +3258,7 @@ function shapeRow(relation: string, value: Record<string, unknown>) {
 
 /** Positions in the order the fixture lists its rows, which is the order they were first written. */
 function threadRows(threadId: string): Record<string, unknown>[] {
+  if (unrecordedSessions.has(threadId)) return [];
   return threadEntityRows(threadId).map((row, index) => electricEntity({ ...row, entity_index: String(index) }));
 }
 
