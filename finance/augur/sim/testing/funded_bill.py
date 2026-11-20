@@ -16,7 +16,7 @@ from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.claims import ObligationType
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
+from finance.augur.sim.ids import CHECKING, AgentId, AssetId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import HYPOTHETICAL_FLAT_TAX, flat_income_tax
 from finance.augur.sim.market_path import MarketPath, Series
@@ -31,7 +31,6 @@ from finance.augur.sim.world import World
 
 # Reaches the month-12 payment of the tax on the month-0 sale.
 HORIZON = 13
-CHECKING = AccountId("checking")
 HOUSEHOLD = AgentId("example-household")
 CREDITOR = AgentId("example-creditor")
 TAX_AUTHORITY = AgentId("example-tax")

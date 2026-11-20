@@ -15,7 +15,7 @@ from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.claims import ObligationType
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
+from finance.augur.sim.ids import CHECKING, AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath, Series
@@ -31,7 +31,6 @@ from finance.augur.sim.testing.issuer_protocol import issuer_protocol
 from finance.augur.sim.testing.session import each, finish
 from finance.augur.sim.world import World
 
-CHECKING = AccountId("checking")
 PRIVATE = AccountId("private")
 FEDERAL = JurisdictionId("federal_us")
 ALICE = AgentId("alice")

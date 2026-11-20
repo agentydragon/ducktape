@@ -20,7 +20,7 @@ from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book, SecurityLotState
 from finance.augur.sim.capture import FinancialCapture, FinancialOutput
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE, quantity_scale_for_asset
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
+from finance.augur.sim.ids import CHECKING, AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, Taxable
 from finance.augur.sim.jurisdictions import HYPOTHETICAL_FLAT_TAX, flat_income_tax
 from finance.augur.sim.market_path import Amount, IndexedAmount, MarketPath, Series
@@ -37,7 +37,6 @@ SECOND = SecurityKey(symbol=SecuritySymbol("second"))
 SCALE = quantity_scale_for_asset(STOCK)
 ALICE = AgentId("alice")
 WORLD = AgentId("world")
-CHECKING = AccountId("checking")
 BROKERAGE = AccountId("brokerage")
 TAX = flat_income_tax(HYPOTHETICAL_FLAT_TAX, ordinary_rate=Decimal("0.20"), ltcg_rate=Decimal("0.10"))
 

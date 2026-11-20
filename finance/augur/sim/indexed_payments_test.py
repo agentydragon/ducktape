@@ -14,7 +14,7 @@ from finance.augur.sim.books import AccountRef, Book
 from finance.augur.sim.claims import ObligationType
 from finance.augur.sim.external_series import ExternalSeriesContext, compile_series
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
-from finance.augur.sim.ids import AccountId, AgentId
+from finance.augur.sim.ids import CHECKING, AgentId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import IndexedAmount, MarketPath, Series
 from finance.augur.sim.money import USD
@@ -26,7 +26,6 @@ from finance.augur.sim.world import World
 
 RENT = RentKey(location_id=LocationId("san_francisco_ca"))
 QUANTUM = Decimal("0.01")
-CHECKING = AccountId("checking")
 
 
 def _series(levels: list[list[float]], *, horizon_months: int) -> tuple[Series, ...]:

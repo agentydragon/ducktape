@@ -42,7 +42,7 @@ from finance.augur.sim.actions import Action, LotSale, Sell
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta, rate_to_ppb
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LiabilityId, LotId, PropertyId
+from finance.augur.sim.ids import CHECKING, AgentId, AssetId, JurisdictionId, LiabilityId, LotId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath, Series
@@ -74,7 +74,6 @@ from finance.augur.sim.world import World
 
 QUANTA_PER_UNIT = 100
 ALICE = AgentId("alice")
-CHECKING = AccountId("checking")
 FEDERAL = JurisdictionId("federal_us")
 VTI = SecurityKey(symbol=SecuritySymbol("vti"))
 VTI_SCALE = quantity_scale_for_asset(VTI)

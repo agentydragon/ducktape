@@ -13,7 +13,7 @@ from finance.augur.policy.funding import full_payments
 from finance.augur.sim.actions import Action, Liquidate, LotSale, Sell, Withdraw
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId, PortfolioId
+from finance.augur.sim.ids import CHECKING, AccountId, AgentId, AssetId, JurisdictionId, LotId, PortfolioId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath, Series
@@ -35,7 +35,6 @@ IRS = AgentId("irs")
 SP500 = SecurityKey(symbol=SP500_SYMBOL)
 GAINCO = SecurityKey(symbol=SecuritySymbol("gainco"))
 BROKERAGE = AccountId("brokerage")
-CHECKING = AccountId("checking")
 FEDERAL = JurisdictionId("federal_us")
 PARAMS = TlhAssumptions(
     peak_annual_yield=0.12,

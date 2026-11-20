@@ -16,7 +16,7 @@ from finance.augur.sim.actions import ClaimId, DecisionActions, Transfer
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
+from finance.augur.sim.ids import CHECKING, AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
@@ -39,7 +39,6 @@ from finance.augur.sim.world import World
 VTI = SecurityKey(symbol=SecuritySymbol("vti"))
 CHECKING_TARGET = {(AccountId("checking"), AssetId("vti")): 1}
 SCALE = quantity_scale_for_asset(VTI)
-CHECKING = AccountId("checking")
 
 
 def ref(agent_id: AgentId, account_id: AccountId = CHECKING) -> AccountRef:

@@ -44,7 +44,7 @@ from finance.augur.model.series import LocationId
 from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.books import AccountRef, TaxAccrual
 from finance.augur.sim.fixed_point import rate_to_ppb
-from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LiabilityId, PropertyId
+from finance.augur.sim.ids import CHECKING, AgentId, JurisdictionId, LiabilityId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath, Series
@@ -79,7 +79,6 @@ OWNER, EMPLOYER, TENANT, SELLER, BANK, COUNTY, IRS = (
     AgentId("test-county"),
     AgentId("test-irs"),
 )
-CHECKING = AccountId("checking")
 HOME = PropertyId("test-home")
 FEDERAL, CALIFORNIA = JurisdictionId("federal_us"), JurisdictionId("california")
 HORIZON, LET, SOLD = 120, 36, 84

@@ -18,7 +18,7 @@ from finance.augur.sim.fixed_point import (
     quantity_to_quanta,
     rate_to_ppb,
 )
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
+from finance.augur.sim.ids import CHECKING, AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME, TransferIncomeCategory, income_source_sort_key
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath, Series
@@ -58,7 +58,6 @@ from finance.augur.sim.world import World
 QUANTUM = Decimal("0.01")
 ALICE = AgentId("alice")
 IRS = AgentId("irs")
-CHECKING = AccountId("checking")
 BROKERAGE = AccountId("brokerage")
 FILED_IN = (JurisdictionId("federal_us"), JurisdictionId("california"))
 

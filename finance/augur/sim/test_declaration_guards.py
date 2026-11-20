@@ -19,6 +19,7 @@ from finance.augur.model.series import LocationId
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.ids import (
+    CHECKING,
     AccountId,
     AgentId,
     AssetId,
@@ -58,7 +59,6 @@ from finance.augur.sim.world import World
 
 HOLDER = AgentId("test-holder")
 COUNTERPARTY = AgentId("test-counterparty")
-CHECKING = AccountId("checking")
 BROKERAGE = AccountId("brokerage")
 STOCK = AssetId("test-stock")
 LOT = LotId("test-lot")

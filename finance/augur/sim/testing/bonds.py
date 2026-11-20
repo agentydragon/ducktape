@@ -12,7 +12,7 @@ from finance.augur.model.series import InflationKey
 from finance.augur.sim.bonds import coupon_amount_quanta
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb
-from finance.augur.sim.ids import AccountId, AgentId, BondId, JurisdictionId
+from finance.augur.sim.ids import CHECKING, AccountId, AgentId, BondId, JurisdictionId
 from finance.augur.sim.income import (
     ORDINARY_INCOME,
     InterestCharacter,
@@ -33,7 +33,6 @@ from finance.augur.sim.testing.series import level_series
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
-CHECKING = AccountId("checking")
 HORIZON = 14
 # Long enough to outlive the horizon, for the cases that are about coupons rather than
 # redemption.

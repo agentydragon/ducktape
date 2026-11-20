@@ -24,7 +24,7 @@ from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.claims import ObligationType
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta, rate_to_ppb
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
+from finance.augur.sim.ids import CHECKING, AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath, Series
@@ -45,7 +45,6 @@ QUANTA_PER_UNIT = 100
 ALICE = AgentId("alice")
 SPEND_SINK = AgentId("spend_sink")
 IRS = AgentId("irs")
-CHECKING = AccountId("checking")
 SAVINGS = AccountId("savings")
 FEDERAL = JurisdictionId("federal_us")
 ISSUER = IssuerId("acme")

@@ -19,7 +19,7 @@ from finance.augur.sim.books import AccountRef, Book
 from finance.augur.sim.capture import FinancialCapture, FinancialOutput
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.holdings import Disposition
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
+from finance.augur.sim.ids import CHECKING, AgentId, AssetId, LotId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.schedule import Recurring
@@ -32,7 +32,6 @@ HORIZON = 4
 PRICE = Decimal(100)
 ALICE = AgentId("alice")
 LANDLORD = AgentId("landlord")
-CHECKING = AccountId("checking")
 # Weights default equal against a 9:1 holding, so stock is the overweight sleeve and every
 # raise has to come out of it first.
 STOCK_UNITS, BOND_UNITS = 900, 100

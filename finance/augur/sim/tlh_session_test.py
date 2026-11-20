@@ -12,7 +12,7 @@ from finance.augur.product.action_projection import metric_arrays
 from finance.augur.sim.actions import Action, Contribute, DecisionActions, Liquidate, Withdraw
 from finance.augur.sim.books import AccountRef, Book, TlhPortfolioState
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, PortfolioId
+from finance.augur.sim.ids import CHECKING, AgentId, AssetId, JurisdictionId, PortfolioId
 from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, Taxable, TransferIncomeCategory, Treasury
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath, Series
@@ -34,7 +34,6 @@ WHOLE_DOLLARS = Currency(code="USD", quantum=Decimal(1))
 OWNER = AgentId("owner")
 OTHER = AgentId("other")
 IRS = AgentId("irs")
-CHECKING = AccountId("checking")
 FEDERAL = JurisdictionId("federal_us")
 
 

@@ -31,7 +31,7 @@ from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.claims import ObligationType
 from finance.augur.sim.fixed_point import rate_to_ppb, round_currency_amount
-from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LiabilityId, PropertyId
+from finance.augur.sim.ids import CHECKING, AgentId, JurisdictionId, LiabilityId, PropertyId
 from finance.augur.sim.income import (
     ORDINARY_INCOME,
     InterestIncome,
@@ -68,7 +68,6 @@ from finance.augur.sim.testing.situs import START_YEAR, UNTAXED, flat_parcel
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
-CHECKING = AccountId("checking")
 OWNER = AgentId("owner")
 TENANT = AgentId("tenant")
 AGENCY = AgentId("property_management_agency")

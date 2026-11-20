@@ -21,7 +21,7 @@ import pytest_bazel
 from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.fixed_point import currency_amount_to_quanta
-from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId
+from finance.augur.sim.ids import CHECKING, AgentId, JurisdictionId
 from finance.augur.sim.income import (
     ORDINARY_INCOME,
     InterestIncome,
@@ -44,7 +44,6 @@ from finance.augur.sim.testing.session import each, finish
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
-CHECKING = AccountId("checking")
 PAYER = AgentId("payer")
 IRS = AgentId("irs")
 # Every recipient is a California resident filing federally too.

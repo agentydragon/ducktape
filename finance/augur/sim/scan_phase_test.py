@@ -11,7 +11,7 @@ import pytest_bazel
 from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book
-from finance.augur.sim.ids import AccountId, AgentId
+from finance.augur.sim.ids import CHECKING, AccountId, AgentId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
@@ -19,7 +19,6 @@ from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.world import World
 
 ALICE = AgentId("alice")
-CHECKING = AccountId("checking")
 
 
 def ref(agent_id: AgentId, account_id: AccountId = CHECKING) -> AccountRef:

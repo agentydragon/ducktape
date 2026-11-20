@@ -12,7 +12,7 @@ from finance.augur.model.series import LocationId
 from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.fixed_point import rate_to_ppb
-from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, PropertyId
+from finance.augur.sim.ids import CHECKING, AgentId, JurisdictionId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath, Series
@@ -27,7 +27,6 @@ from finance.augur.sim.testing.situs import START_YEAR, UNTAXED
 from finance.augur.sim.world import World
 
 OWNER, SELLER, COUNTY = AgentId("test-owner"), AgentId("test-seller"), AgentId("test-county")
-CHECKING = AccountId("checking")
 HOME = PropertyId("test-home")
 SAN_FRANCISCO = compile_situs(load_jurisdiction(JurisdictionId("san_francisco")), currency=USD)
 MAINLAND_VALLEJO = compile_situs(load_jurisdiction(JurisdictionId("solano_tra_007000")), currency=USD)

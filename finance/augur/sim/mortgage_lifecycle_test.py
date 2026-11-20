@@ -18,7 +18,7 @@ from finance.augur.sim.actions import ClaimId, PayClaim
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book, JournalEntry
 from finance.augur.sim.fixed_point import rate_to_ppb
-from finance.augur.sim.ids import AccountId, AgentId, LiabilityId, PropertyId
+from finance.augur.sim.ids import CHECKING, AgentId, LiabilityId, PropertyId
 from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import USD
 from finance.augur.sim.property import Housing, MortgageFinancing, Purchase, Sale, ScheduledPurchase, ScheduledSale
@@ -31,7 +31,6 @@ from finance.augur.sim.world import World
 
 ALICE = AgentId("alice")
 BOB = AgentId("bob")
-CHECKING = AccountId("checking")
 # Each home's parcel, taxed a flat 1.2% of its price.
 HOME_PARCEL = flat_parcel(Decimal("0.012"))
 SF_HOME = HomeValueKey(location_id=LocationId("sf"))
