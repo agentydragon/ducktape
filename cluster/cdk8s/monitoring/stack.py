@@ -203,6 +203,8 @@ def _values() -> dict[str, object]:
                 "KubeControllerManagerInstanceUnreachable": True,
                 "KubeSchedulerDown": True,
                 "KubeSchedulerInstanceUnreachable": True,
+                # Replaced by the filtered rules in rules.py.
+                "KubeClientCertificateExpiration": True,
                 # Forked in `rules.py` to exclude offline roaming nodes.
                 "TargetDown": True,
                 # Replaced by NodeIOPressure in cluster/cdk8s/monitoring/rules.py, which measures stalled tasks

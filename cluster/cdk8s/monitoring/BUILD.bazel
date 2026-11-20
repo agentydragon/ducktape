@@ -284,6 +284,7 @@ py_library(
     name = "rules",
     srcs = ["rules.py"],
     data = [
+        "apiserver-client-certificate-quantile.promql",
         "clickhouse-disk-usage.promql",
         "container-page-cache-thrash-warning.promql",
         "control-plane-lease-put-latency-critical.promql",
@@ -328,6 +329,7 @@ py_test(
     srcs = ["test_rules.py"],
     data = [
         "testdata/alloy_roaming_rules.yaml",
+        "testdata/client_certificate_rules.yaml",
         "testdata/disk_usage_rules.yaml",
         "testdata/github_quota_rules.yaml",
         "testdata/io_pressure_rules.yaml",
