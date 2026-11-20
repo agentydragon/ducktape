@@ -1,7 +1,7 @@
 # gazelle:ignore
 # gazelle:resolve py kyverno_clusterpolicy_crds //cluster/cdk8s/providers/kyverno:clusterpolicy
-# gazelle:resolve py kyverno_cleanuppolicy_crds //cluster/cdk8s/providers/kyverno:cleanuppolicy
 # gazelle:resolve py kyverno_mutatingpolicy_crds //cluster/cdk8s/providers/kyverno:mutatingpolicy
+# gazelle:resolve py kyverno_namespaceddeletingpolicy_crds //cluster/cdk8s/providers/kyverno:namespaceddeletingpolicy
 # gazelle:resolve py kyverno_validatingpolicy_crds //cluster/cdk8s/providers/kyverno:validatingpolicy
 
 load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
@@ -16,10 +16,10 @@ cdk8s_import(
 )
 
 cdk8s_import(
-    name = "cleanuppolicy",
-    crd = "@kyverno_cleanuppolicy_crd//file",
-    module_name = "kyverno_cleanuppolicy_crds",
-    module_path = "io/kyverno",
+    name = "namespaceddeletingpolicy",
+    crd = "@kyverno_namespaceddeletingpolicy_crd//file",
+    module_name = "kyverno_namespaceddeletingpolicy_crds",
+    module_path = "io/kyverno/policies",
     visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 

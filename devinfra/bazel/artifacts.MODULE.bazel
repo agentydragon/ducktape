@@ -661,10 +661,10 @@ http_file(
 )
 
 http_file(
-    name = "kyverno_cleanuppolicy_crd",
-    downloaded_file_path = "kyverno.io_cleanuppolicies.yaml",
-    sha256 = "84d8f500897ad14122177129adfeb3cbb0dac1d24796abf7cf22001c2ac9eb25",
-    urls = ["https://raw.githubusercontent.com/kyverno/kyverno/v1.19.1/config/crds/kyverno/kyverno.io_cleanuppolicies.yaml"],
+    name = "kyverno_namespaceddeletingpolicy_crd",
+    downloaded_file_path = "policies.kyverno.io_namespaceddeletingpolicies.yaml",
+    sha256 = "e722c8415fb040b02e2a24bf0d093ba0a35647a4e6e73265ac1f4f92d4bd2806",
+    urls = ["https://raw.githubusercontent.com/kyverno/kyverno/v1.19.1/config/crds/policies.kyverno.io/policies.kyverno.io_namespaceddeletingpolicies.yaml"],
 )
 
 # The k3s fixture's Kyverno (agentplane/system_tests/vm/sandboxes.py); keep the `kyverno_*` images'
