@@ -4,7 +4,7 @@ account, acting as the owning account, and never takes over an object that accou
 from __future__ import annotations
 
 import copy
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from typing import Any, cast
 
 import cdk8s
@@ -13,6 +13,7 @@ from cdk8s import Chart
 from kubernetes_asyncio import client as k8s_client
 from more_itertools import one
 
+from agentplane.crd_group import GROUP, VERSION
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.kubernetes_apiserver import (
     KubernetesApiServer,
@@ -25,10 +26,7 @@ from cluster.cdk8s.agentplane.kubernetes_accounts import KubernetesAccount
 from cluster.cdk8s.agentplane.managed_account_admission import add_managed_account_admission
 
 Body = dict[str, Any]
-Admits = Callable[[str, Body], Awaitable[bool]]
 
-GROUP = "agentplane.allegedly.works"
-VERSION = "v1alpha1"
 NAMESPACE = "test-policy"
 ACCOUNTS_NAMESPACE = "test-policy-accounts"
 CONTROLLER = ServiceAccountRef(namespace=NAMESPACE, name="test-policy-controller")

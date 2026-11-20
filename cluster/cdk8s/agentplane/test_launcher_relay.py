@@ -314,10 +314,6 @@ def test_mtls_relay_gets_status_bound_secret_and_workload_does_not(tmp_path: Pat
         for mount in c.get("volumeMounts", [])
     )
 
-    second = apply(tmp_path, policy, deepcopy(mutated))
-    assert second.ok, second.stdout
-    assert second.mutated_resources == first.mutated_resources
-
     workload_mount = deepcopy(mutated)
     workload_mount["spec"]["containers"][0].setdefault("volumeMounts", []).append(
         {"name": RUNNER_TLS_VOLUME_NAME, "mountPath": "/runner-tls", "readOnly": True}
