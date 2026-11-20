@@ -131,11 +131,7 @@ pub(super) struct ChunkPlanBuilder {
     /// caller fails the pipeline at the end with the rolled-up list.
     unmatched_spec_claims: Vec<crate::UnmatchedSpecClaim>,
     /// Name-keyed index into `bindings_catalogue` for the
-    /// duplicate-claim check inside `add_explicit_request`. The
-    /// previous shape — a linear scan of the entire `bindings_catalogue`
-    /// HashMap on every member of every request — was the dominant
-    /// cost in `build_module_plans` on chunks with thousands of spec
-    /// modules (O(N^2) over the growing catalogue). Every catalogue
+    /// duplicate-claim check inside `add_explicit_request`. Every catalogue
     /// key is constructed via `top_level_id(name,
     /// chunk_top_level_mark)`, so the `name` alone uniquely
     /// identifies the catalogue entry within a chunk; we mirror
@@ -360,8 +356,8 @@ impl ChunkPlanBuilder {
     /// claim each member that does not need chunk-analysis facts, and append a
     /// `ModulePlan`.
     /// Solver-resolved members and anonymous statement selectors are left
-    /// unclaimed until `resolve_and_claim_global_selectors` runs over chunk
-    /// analysis facts. Duplicate-claim detection across all explicit requests is
+    /// unclaimed until `claim_resolution` applies the selector resolution.
+    /// Duplicate-claim detection across all explicit requests is
     /// keyed by binding-name via the builder's scratch indexes.
     pub(super) fn add_explicit_request(
         &mut self,
@@ -497,10 +493,7 @@ impl ChunkPlanBuilder {
                 self.bindings_catalogue.insert(binding_id, kind);
             } else {
                 // The spec claimed a binding name that does not
-                // appear as a top-level declaration in this chunk —
-                // the previous behavior silently dropped the claim,
-                // leaving the destination module short one export
-                // and the binding falling into the residual sweep.
+                // appear as a top-level declaration in this chunk.
                 // Record it so the pipeline can fail at the end
                 // with the full list across every chunk; meanwhile
                 // keep lowering as if the spec had not claimed the

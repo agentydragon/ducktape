@@ -19,10 +19,7 @@ use super::edge::{DependencyEdge, DependencyEdgeId, EdgeReason, EdgeRole};
 /// Storage is **flat-edges + CSR adjacency**, the canonical compiler-IR
 /// shape: one [`DependencyEdge`] per reason, indexed by [`DependencyEdgeId`]
 /// (= position in `edges`), with per-node `out_edges` / `in_edges`
-/// adjacency lists for O(deg) traversal. The previous representation
-/// kept two parallel views — a `petgraph::DiGraphMap` for random
-/// access by `(from, to)` and a separate `Vec<DependencyEdge>` for
-/// stable indices into edges; this collapses them.
+/// adjacency lists for O(deg) traversal.
 ///
 /// [`ModuleAssignment`]: crate::module_assignment::ModuleAssignment
 #[derive(Debug, Clone, Default)]
