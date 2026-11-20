@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::{Context, Result};
 use readoff_render::kept_spans_for_anchor_sets;
-use source_match_holes::{AST_CONTAINS_STRING_PREDICATE, DECLARATORS_HOLE_KEYWORD};
+use source_match_holes::AST_CONTAINS_STRING_PREDICATE;
 use swc_common::{DUMMY_SP, Spanned, SyntaxContext};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
@@ -85,11 +85,11 @@ fn descendant_string_selector(
     })));
     let mut decls = Vec::new();
     if target_slot > 0 {
-        decls.push(declarator_hole(DECLARATORS_HOLE_KEYWORD));
+        decls.push(declarator_hole());
     }
     decls.push(selected);
     if target_slot + 1 < var.decls.len() {
-        decls.push(declarator_hole(DECLARATORS_HOLE_KEYWORD));
+        decls.push(declarator_hole());
     }
     let mut holed_var = var.clone();
     holed_var.declare = false;

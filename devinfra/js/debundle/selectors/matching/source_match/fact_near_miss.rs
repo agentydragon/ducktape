@@ -630,8 +630,7 @@ fn first_var_decl_divergence(
         });
     }
     // Declarator alignment over facts (wrapper symmetry + keyword already hold at
-    // this point, so a `None` is purely a declarator-list mismatch — exactly
-    // `match_var_declarator_slice_with_alignment().is_none()` on the AST side).
+    // this point, so a `None` is purely a declarator-list mismatch).
     let aligns = selector_match::var_declarator_alignment_indexed(
         needle_index,
         candidate_index,

@@ -883,7 +883,6 @@ fn rewrite_name_bindings_to_source_match(
                         local: target.selector_local.clone(),
                         name: member.export_name.clone(),
                     }],
-                    None,
                 ));
                 replacements.insert(member.member_index, None);
             }
@@ -1053,11 +1052,7 @@ fn validate_annotation_field_value(
     Ok(())
 }
 
-fn source_match_claim_value(
-    match_source: &str,
-    bindings: Vec<MigratedSourceBinding>,
-    note: Option<String>,
-) -> Value {
+fn source_match_claim_value(match_source: &str, bindings: Vec<MigratedSourceBinding>) -> Value {
     let mut claim = serde_yaml::Mapping::new();
     claim.insert(yk("match"), Value::String(match_source.to_string()));
     claim.insert(
@@ -1069,9 +1064,6 @@ fn source_match_claim_value(
                 .collect(),
         ),
     );
-    if let Some(note) = note {
-        claim.insert(yk("note"), Value::String(note));
-    }
     Value::Mapping(claim)
 }
 
@@ -1096,7 +1088,6 @@ fn synthesized_source_match_claim_value(synthesized: &SynthesizedSelectorGroup) 
                 name: target.export_name.clone(),
             })
             .collect(),
-        None,
     )
 }
 

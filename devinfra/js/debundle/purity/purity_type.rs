@@ -12,12 +12,10 @@ pub use saved_purity_proto::debundle::saved_purity::PurityRule;
 /// observable side effects; `NotPure { reasons }` carries the
 /// classifier rules that fired directly in the expression and its
 /// sub-expressions (in source order). Known impure callees are linked
-/// through shared cause nodes rather than flattened into this list. The classifier
-/// previously distinguished `Impure` from `Unknown` for an internal
-/// soundness argument, but downstream consumers (dependency graph
-/// `has_side_effect`) collapsed both to "not pure"; this type
-/// matches that contract and replaces the bool with the full
-/// rationale via those links.
+/// through shared cause nodes rather than flattened into this list.
+/// Downstream consumers (dependency graph `has_side_effect`) treat every
+/// non-`Pure` verdict alike, so this type matches that contract and
+/// carries the full rationale via those links instead of a bool.
 ///
 /// Reasons collected by `Purity::worst` are concatenated, so a
 /// composite like `f() + g()` records both `UnknownCall` reasons
@@ -40,10 +38,9 @@ pub enum Purity {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PurityReason {
     pub rule: PurityRule,
-    /// Resolved by `resolve_reason_locations` once the per-chunk
-    /// source-span resolver is in scope (inside
-    /// `analyze_item_facts`). The classifier itself only fills
-    /// `span` — the wire-emitted reason has `source_location`
+    /// Resolved from `span` where the per-chunk `SourceLocator` is in scope
+    /// (`facts/analyze.rs`, `purity/code_graph.rs`). The classifier itself
+    /// only fills `span` — the wire-emitted reason has `source_location`
     /// populated and `span` skipped.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_location: Option<SourceLocation>,
@@ -431,7 +428,8 @@ impl Purity {
 
 impl PurityReason {
     /// A reason with `source_location` left unresolved: the classifier fills only
-    /// `span`; `resolve_reason_locations` populates `source_location` later.
+    /// `span`; a caller holding the `SourceLocator` populates `source_location`
+    /// later.
     pub(crate) fn new(rule: PurityRule, span: Span, detail: Option<String>) -> Self {
         Self {
             rule,
