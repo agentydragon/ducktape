@@ -226,15 +226,27 @@ theorem reassigned_rejected : inferIdentity
     (program ++ [⟨["identity"], .lam "x" (.log (.lvar "x")), false⟩])
     1 "identity" "x" 1 = false := by decide +kernel
 
+theorem derived_reassigned_rejected :
+    (deriveIdentity (program ++ [⟨["identity"], .lam "x" (.log (.lvar "x")), false⟩]) 1).isSome = false := by
+  decide +kernel
+
 theorem effectful_body_rejected : inferIdentity
     [⟨["identity"], .lam "x" (.log (.lvar "x")), true⟩,
      ⟨["result"], .app (.gvar "identity") (.num 1), false⟩]
     1 "identity" "x" 1 = false := by decide +kernel
 
+theorem derived_effectful_body_rejected : (deriveIdentity
+    [⟨["identity"], .lam "x" (.log (.lvar "x")), true⟩,
+     ⟨["result"], .app (.gvar "identity") (.num 1), false⟩] 1).isSome = false := by decide +kernel
+
 theorem effectful_argument_rejected : inferIdentity
     [⟨["identity"], .lam "x" (.lvar "x"), true⟩,
      ⟨["result"], .app (.gvar "identity") (.log (.num 1)), false⟩]
     1 "identity" "x" 1 = false := by decide +kernel
+
+theorem derived_effectful_argument_rejected : (deriveIdentity
+    [⟨["identity"], .lam "x" (.lvar "x"), true⟩,
+     ⟨["result"], .app (.gvar "identity") (.log (.num 1)), false⟩] 1).isSome = false := by decide +kernel
 
 /-- A concrete effectful `log` crosses the inferred identity call. -/
 def crossingPlan : Plan := {
