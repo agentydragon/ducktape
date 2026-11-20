@@ -76,6 +76,14 @@ spec:
         key: node-role.kubernetes.io/control-plane
         operator: Exists
     webhook:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/instance: external-secrets
+                  app.kubernetes.io/name: external-secrets-webhook
+              topologyKey: kubernetes.io/hostname
       certManager:
         cert:
           issuerRef:
@@ -84,8 +92,12 @@ spec:
             name: external-secrets-selfsigned-issuer
         enabled: true
       create: true
+      podDisruptionBudget:
+        enabled: true
+        minAvailable: 1
       port: 9443
       priorityClassName: system-cluster-critical
+      replicaCount: 2
       tolerations:
         - effect: NoSchedule
           key: node-role.kubernetes.io/control-plane
