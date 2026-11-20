@@ -6,7 +6,7 @@ See https://code.claude.com/docs/en/hooks for the full API spec.
 from enum import StrEnum
 from typing import Any, Literal
 
-from devinfra.claude.claude_api.hooks.common import CamelModel, HookInputBase
+from devinfra.claude.claude_api.hooks.hook_base import CamelModel, HookInputBase
 
 
 class PermissionDecision(StrEnum):

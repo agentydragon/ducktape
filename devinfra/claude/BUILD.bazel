@@ -29,7 +29,7 @@ py_test(
     deps = [
         ":conftest",
         "//:conftest",
-        "//devinfra/claude/claude_api/hooks:common",
+        "//devinfra/claude/claude_api/hooks:hook_base",
         "//devinfra/claude/claude_api/hooks:session_start",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

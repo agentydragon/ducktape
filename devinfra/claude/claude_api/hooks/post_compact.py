@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from devinfra.claude.claude_api.hooks.common import HookInputBase
+from devinfra.claude.claude_api.hooks.hook_base import HookInputBase
 from devinfra.claude.claude_api.hooks.pre_compact import CompactTrigger
 
 
