@@ -164,7 +164,18 @@ class Ntfy(Construct):
     def __init__(self, scope: Construct, id: str) -> None:
         super().__init__(scope, id)
         namespaces.namespace(
-            self, "namespace", name=NAMESPACE, vpa=Vpa.RECOMMEND, labels={"app.kubernetes.io/name": NAMESPACE}
+            self,
+            "namespace",
+            name=NAMESPACE,
+            # TODO: Revisit automatic VPA updates once ntfy supports multiple replicas:
+            # https://github.com/agentydragon/ducktape/issues/17987
+            vpa=Vpa.INITIAL,
+            labels={"app.kubernetes.io/name": NAMESPACE},
+            annotations={
+                namespaces.VPA_RESOURCE_POLICY_ANNOTATION: (
+                    '{"containerPolicies": [{"containerName": "*", "controlledValues": "RequestsOnly"}]}'
+                )
+            },
         )
         _secret_store(self)
         _database(self)
