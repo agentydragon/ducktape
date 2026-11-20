@@ -86,7 +86,7 @@ theorem Bundle.step_comm (B : Bundle) (M : Meaning V W) {i j : Nat}
     · simp [hu, hW u hu]
     · simp [hu]
   have hnot : ¬((B.stmt i).effect = true ∧ (B.stmt j).effect = true) :=
-    fun ⟨a, b⟩ => by simp [hE a] at b
+    fun ⟨a, b⟩ => by simp [hE.1.1 a] at b
   by_cases hei : (B.stmt i).effect = true <;> by_cases hej : (B.stmt j).effect = true
   · exact absurd ⟨hei, hej⟩ hnot
   all_goals

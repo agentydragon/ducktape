@@ -378,7 +378,7 @@ def translate (bundleJ outJ certJ : Json) : Except String Result := do
 /-- The bundle as the checker sees it: one statement per unit, footprints from `Lower`. -/
 def bundleOfFootprints (fps : Array Lower.Footprint) : Bundle :=
   fps.toList.map fun f =>
-    { src := "", defs := f.defs, writes := f.writes, assigns := f.assigns, eager := f.eager, lazy := f.lazy, hoisted := f.hoisted, effect := f.effect }
+    { src := "", defs := f.defs, writes := f.writes, assigns := f.assigns, eager := f.eager, lazy := f.lazy, hoisted := f.hoisted, effect := f.effect, observedInit := f.observedInit }
 
 def bundleOf (units : Array Json) : Bundle :=
   bundleOfFootprints (Lower.finalize (units.map Lower.analyzeTop))

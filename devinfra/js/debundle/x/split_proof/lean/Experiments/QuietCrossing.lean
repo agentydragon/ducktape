@@ -17,6 +17,7 @@ variable {V W : Type}
 def Bundle.bindingConflict (B : Bundle) (i j : Nat) : Bool :=
   let a := B.stmt i
   let b := B.stmt j
+  (a.effect && b.observedInit) || (b.effect && a.observedInit) ||
   (!b.hoisted && b.binds.any (B.readsOf i).contains)
     || (!a.hoisted && a.binds.any (B.readsOf j).contains)
     || a.binds.any b.binds.contains
@@ -39,7 +40,7 @@ def QuietCertificates (M : Meaning V W) (quiet : Nat → Bool) : Prop :=
 /-- No proposed certificates means no extra crossing is permitted. -/
 theorem Bundle.conditionalConflict_none (B : Bundle) (i j : Nat) :
     B.conditionalConflict (fun _ => false) i j = B.conflict i j := by
-  simp [Bundle.conditionalConflict, Bundle.bindingConflict, Bundle.conflict, Bool.or_comm, Bool.or_assoc]
+  simp [Bundle.conditionalConflict, Bundle.bindingConflict, Bundle.conflict, Bool.or_comm, Bool.or_left_comm, Bool.or_assoc]
 
 /-- A certified quiet statement may cross another statement if their binding
 footprints do not conflict. This is a strong all-worlds condition. -/
@@ -53,7 +54,7 @@ theorem Bundle.step_comm_conditional (B : Bundle) (M : Meaning V W) (quiet : Nat
   · rw [B.step_hoisted M hb, B.step_hoisted M hb]
   simp only [Bool.not_eq_true] at ha hb
   simp [Bundle.conditionalConflict, Bundle.bindingConflict, ha, hb, List.any_eq_false] at h
-  obtain ⟨⟨⟨hR1, hR2⟩, hW⟩, hE⟩ := h
+  obtain ⟨⟨⟨⟨⟨_, _⟩, hR1⟩, hR2⟩, hW⟩, hE⟩ := h
   have ej : ∀ (f : Name → V) (x : V), (B.reads j).map (fun u => if (B.stmt i).binds.contains u = true
       then x else f u) = (B.reads j).map f := fun f x =>
     List.map_congr_left fun u hu => by

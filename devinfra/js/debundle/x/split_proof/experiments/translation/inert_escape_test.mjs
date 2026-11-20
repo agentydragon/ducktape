@@ -14,6 +14,12 @@ const run = (bin, args) => spawnSync(bin, args, { encoding: "utf8" });
 const frontend = path.join(here, "frontend.mjs");
 const fixture = (name) => readFileSync(path.join(here, "testdata/inert_escape", name), "utf8");
 const tests = [
+  ["literal_read_tdz", `const result = 7;\nconst alias = result;\nconsole.log(alias);`, [1, 2]],
+  [
+    "literal_callback",
+    `function f() { return result; }\nglobalThis.saved = f;\nconst result = 7;\nconsole.log(globalThis.saved());`,
+    [0, 1, 3],
+  ],
   [
     "direct",
     `function f() { return result(); }\nglobalThis.saved = f;\nconst result = () => 7;\nconsole.log(globalThis.saved());`,
@@ -114,6 +120,66 @@ for (const [name, code, side] of tests) {
   assert.equal(before.status, 0, before.stderr);
   assert.equal(after.status, 0, after.stderr);
   assert.equal(after.stdout, before.stdout);
+}
+
+// The returned callback makes both literal bindings observable later. The split
+// reverses only their initialization, while leaving the callback after both.
+{
+  const code = `const a = 1;\nconst b = 2;\nfunction f() { return a + b; }\nconsole.log(f());`;
+  const dir = path.join(temp, "constant_pair");
+  mkdirSync(dir, { recursive: true });
+  const source = path.join(temp, "constant_pair.mjs");
+  const input = path.join(temp, "constant_pair-ast.json");
+  const spec = path.join(temp, "constant_pair-spec.json");
+  const certificate = path.join(temp, "constant_pair-generated.lean");
+  writeFileSync(source, code);
+  writeFileSync(input, JSON.stringify(lowerDump(code, acorn, eslintScope)));
+  writeFileSync(
+    spec,
+    JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["#0", "#2", "#3"], "side.mjs": ["#1"] } })
+  );
+  const emitted = run(process.env.LOWERSPLIT, [input, spec, dir, "--lean", certificate]);
+  assert.equal(emitted.status, 0, `${emitted.stdout}\n${emitted.stderr}`);
+  assert.match(readFileSync(certificate, "utf8"), /observedInit := true/);
+  const before = run(process.execPath, [source]);
+  const after = run(process.execPath, [path.join(dir, "entry.mjs")]);
+  assert.equal(before.status, 0, before.stderr);
+  assert.equal(after.status, 0, after.stderr);
+  assert.equal(after.stdout, before.stdout);
+  const bundle = path.join(temp, "constant_pair-bundle.json");
+  const tree = path.join(temp, "constant_pair-tree.json");
+  const cert = path.join(temp, "constant_pair-cert.json");
+  for (const args of [
+    [frontend, "bundle", source, "--out", bundle],
+    [frontend, "tree", dir, "--entry", "entry.mjs", "--out", tree],
+    [path.join(here, "pair.mjs"), bundle, tree, "--out", cert],
+  ]) {
+    const result = run(process.execPath, args);
+    assert.equal(result.status, 0, result.stderr);
+  }
+  const checked = run(process.env.TRANSLATE, [bundle, tree, cert]);
+  assert.equal(checked.status, 0, `${checked.stdout}\n${checked.stderr}`);
+}
+
+// The normalized frontend records RegExp and BigInt kinds in `lit`, not the
+// original ESTree fields. Neither is eligible for primitive-constant inference.
+for (const [name, initializer] of [
+  ["regexp", "/x/"],
+  ["bigint", "1n"],
+]) {
+  const code = `const a = ${initializer};\nconst b = 2;\nfunction f() { return [a, b]; }\nconsole.log(f());`;
+  const dir = path.join(temp, name);
+  mkdirSync(dir, { recursive: true });
+  const input = path.join(temp, `${name}-ast.json`);
+  const spec = path.join(temp, `${name}-spec.json`);
+  writeFileSync(input, JSON.stringify(lowerDump(code, acorn, eslintScope)));
+  writeFileSync(
+    spec,
+    JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["#0", "#2", "#3"], "side.mjs": ["#1"] } })
+  );
+  const rejected = run(process.env.LOWERSPLIT, [input, spec, dir]);
+  assert.equal(rejected.status, 1, `${rejected.stdout}\n${rejected.stderr}`);
+  assert.match(rejected.stdout, /FAIL\s+OrderOk/);
 }
 
 // Exported declarations have no export-specifier read in the input AST, yet
