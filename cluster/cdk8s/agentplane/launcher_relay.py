@@ -1,5 +1,5 @@
 """The egress relay of a VM Sandbox. KubeVirt builds a VM's virt-launcher Pod from the VirtualMachine,
-not from our SandboxTemplate's Pod, so this Kyverno policy adds the relay when the Pod is created: the
+not from our SandboxTemplate's Pod, so a Kyverno `ClusterPolicy` adds the relay when the Pod is created: the
 same egress sidecar, routes and workload trust files as a runner Pod's (environment_sandbox.py), copied from the
 rendered runner template, with settings rendered from the template's own so the two cannot drift.
 
@@ -13,7 +13,7 @@ The launcher runs as the namespace's default account with no token: the relay au
 Sandbox's WorkloadCredential, as the Identity the Sandbox acts as, and the egress proxy grants it what that
 Identity's bindings grant. The policy admits a launcher only when KubeVirt's controller creates it for a
 live VMI of a live VirtualMachine controlled by one of our Sandboxes, whose WorkloadCredential has
-accepted that VMI.
+accepted that VMI; that check is a CEL `ValidatingPolicy` reading those objects with `resource.Get`.
 
 The relay is a native sidecar so the guest can flush telemetry until compute exits. It starts
 after KubeVirt's existing initializers, alongside the filesystem daemons below.
@@ -24,13 +24,14 @@ state and credential volumes during shutdown. Only volumes referenced by a VMI v
 device qualify; disk-only volumes do not. ContainerPath daemons remain ordinary containers because
 KubeVirt reconciles them there.
 
-Failure scope: the policy registers its own webhook, narrowed by match conditions to this namespace's
+Failure scope: each policy registers its own webhook, narrowed by match conditions to this namespace's
 launcher creates and updates of Pods carrying the token volume. With Kyverno down, only VM Sandboxes
 fail to start; nothing else in the namespace or the cluster waits on it.
 """
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 from cdk8s import ApiObjectMetadata
@@ -53,17 +54,22 @@ from kyverno_clusterpolicy_crds.io.kyverno import (
     ClusterPolicySpecRulesMutateForeachPreconditions,
     ClusterPolicySpecRulesMutateForeachPreconditionsAll,
     ClusterPolicySpecRulesMutateForeachPreconditionsAllOperator,
-    ClusterPolicySpecRulesValidate,
-    ClusterPolicySpecRulesValidateForeach,
-    ClusterPolicySpecRulesValidateForeachContext,
-    ClusterPolicySpecRulesValidateForeachContextVariable,
-    ClusterPolicySpecRulesValidateForeachDeny,
-    ClusterPolicySpecRulesValidateForeachPreconditions,
-    ClusterPolicySpecRulesValidateForeachPreconditionsAll,
-    ClusterPolicySpecRulesValidateForeachPreconditionsAllOperator,
-    ClusterPolicySpecValidationFailureAction,
     ClusterPolicySpecWebhookConfiguration,
     ClusterPolicySpecWebhookConfigurationMatchConditions,
+)
+from kyverno_validatingpolicy_crds.io.kyverno.policies import (
+    ValidatingPolicy,
+    ValidatingPolicySpec,
+    ValidatingPolicySpecEvaluation,
+    ValidatingPolicySpecEvaluationAdmission,
+    ValidatingPolicySpecEvaluationBackground,
+    ValidatingPolicySpecFailurePolicy,
+    ValidatingPolicySpecMatchConditions,
+    ValidatingPolicySpecMatchConstraints,
+    ValidatingPolicySpecMatchConstraintsResourceRules,
+    ValidatingPolicySpecValidationActions,
+    ValidatingPolicySpecValidations,
+    ValidatingPolicySpecVariables,
 )
 from more_itertools import one
 
@@ -72,7 +78,7 @@ from agentplane.egress import sidecar_config
 from cluster.cdk8s.agentplane import sandbox_pod
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.cert_manager import cluster_ca
-from cluster.cdk8s.providers.kyverno.cluster_policy import Validate, match_resources
+from cluster.cdk8s.providers.kyverno.cluster_policy import match_resources
 
 LAUNCHER_LABELS = {"kubevirt.io": "virt-launcher"}
 # Where a masquerade-networked guest reaches its launcher Pod, and so the relay.
@@ -80,8 +86,6 @@ GUEST_GATEWAY = "10.0.2.1"
 CONTROLLER_USERNAME = "system:serviceaccount:kubevirt:kubevirt-controller"
 _KUBEVIRT_API_VERSION = "kubevirt.io/v1"
 _SANDBOX_API_VERSION = f"{GROUP}/{VERSION}"
-_FILESYSTEM_NAMES = "(vmi.spec.domain.devices.filesystems[?virtiofs != null].name || `[]`)"
-_ELIGIBLE_VOLUMES = "(vmi.spec.volumes[?persistentVolumeClaim || secret || configMap] || `[]`)"
 _ELIGIBLE_DAEMON_NAMES = (
     "(vmi.spec.volumes[?persistentVolumeClaim || secret || configMap].join('', ['virtiofs-', name]) || `[]`)"
 )
@@ -99,7 +103,7 @@ def _controller(kind: str, api_version: str) -> str:
 
 
 def _context() -> list[ClusterPolicySpecRulesContext]:
-    """Launcher Pod -> VMI -> VirtualMachine -> Sandbox, and the Sandbox's WorkloadCredential, each read live."""
+    """Launcher Pod -> VMI -> VirtualMachine -> Sandbox, and the Sandbox's WorkloadCredential, each read live, for the mutation."""
     return [
         ClusterPolicySpecRulesContext(
             name="vmiOwner",
@@ -132,15 +136,6 @@ def _context() -> list[ClusterPolicySpecRulesContext]:
             ),
         ),
         ClusterPolicySpecRulesContext(
-            name="sandboxLive",
-            api_call=ClusterPolicySpecRulesContextApiCall(
-                url_path=(
-                    f"/apis/{_SANDBOX_API_VERSION}/namespaces/{{{{request.namespace}}}}/sandboxes/"
-                    "{{sandbox.name || 'missing'}}"
-                )
-            ),
-        ),
-        ClusterPolicySpecRulesContext(
             name="credential",
             api_call=ClusterPolicySpecRulesContextApiCall(
                 url_path=(
@@ -149,62 +144,136 @@ def _context() -> list[ClusterPolicySpecRulesContext]:
                 )
             ),
         ),
-        ClusterPolicySpecRulesContext(
-            name="credentialOwner",
-            variable=ClusterPolicySpecRulesContextVariable(
-                jmes_path=f"credential.{_controller('Sandbox', _SANDBOX_API_VERSION)}", default={}
-            ),
-        ),
     ]
 
 
-def _mismatch(key: str, value: object) -> dict[str, object]:
-    return {"key": "{{ " + key + " }}", "operator": "NotEquals", "value": value}
+def _cel_strings(items: Sequence[str]) -> str:
+    return "[" + ", ".join(f"'{item}'" for item in items) + "]"
 
 
-def _token_mounts(containers: str, token_volume: str) -> str:
-    return f"length(({containers} || `[]`)[].volumeMounts[] | [?name=='{token_volume}'])"
+def _owner(kind: str, api_version: str, of: str) -> str:
+    return (
+        f"{of}.metadata.ownerReferences.filter(r, r.kind == '{kind}' && r.apiVersion == '{api_version}' "
+        "&& has(r.controller) && r.controller == true)[0]"
+    )
 
 
-def _protected_mounts(containers: str, volume_names: tuple[str, ...]) -> list[dict[str, object]]:
-    return [_mismatch(_token_mounts(containers, name), 0) for name in volume_names]
+def _get(api_version: str, resource: str, name: str) -> str:
+    return f"resource.Get('{api_version}', '{resource}', request.namespace, {name})"
 
 
-class LauncherRelayPolicy(ClusterPolicy):
+def _launcher_variables(*, relay_name: str) -> list[ValidatingPolicySpecVariables]:
+    """What the launcher's validation reads: the live chain Launcher Pod -> VMI -> VirtualMachine -> Sandbox, and
+    the Sandbox's WorkloadCredential. A missing owner or object is a CEL error, which the policy's failure
+    policy turns into a denial."""
+    in_pod = "object.spec"
+    devices = "variables.vmi.spec.domain.devices"
+    variables = {
+        "vmiOwner": _owner("VirtualMachineInstance", _KUBEVIRT_API_VERSION, "object"),
+        "vmi": _get(_KUBEVIRT_API_VERSION, "virtualmachineinstances", "variables.vmiOwner.name"),
+        "vmOwner": _owner("VirtualMachine", _KUBEVIRT_API_VERSION, "variables.vmi"),
+        "vm": _get(_KUBEVIRT_API_VERSION, "virtualmachines", "variables.vmOwner.name"),
+        "sandboxOwner": _owner("Sandbox", _SANDBOX_API_VERSION, "variables.vm"),
+        "sandbox": _get(_SANDBOX_API_VERSION, "sandboxes", "variables.sandboxOwner.name"),
+        "credential": _get(_SANDBOX_API_VERSION, "workloadcredentials", "variables.sandboxOwner.name"),
+        "credentialOwner": _owner("Sandbox", _SANDBOX_API_VERSION, "variables.credential"),
+        "vmiVolumes": "(has(variables.vmi.spec.volumes) ? variables.vmi.spec.volumes : [])",
+        "initContainers": f"(has({in_pod}.initContainers) ? {in_pod}.initContainers : [])",
+        # Ephemeral containers count whole: the relay is never one.
+        "containersOutsideRelay": (
+            f"{in_pod}.containers.filter(c, c.name != '{relay_name}') + "
+            f"variables.initContainers.filter(c, c.name != '{relay_name}') + "
+            f"(has({in_pod}.ephemeralContainers) ? {in_pod}.ephemeralContainers : [])"
+        ),
+        "virtiofsNames": (
+            f"(has(variables.vmi.spec.domain) && has({devices}) && has({devices}.filesystems) "
+            f"? {devices}.filesystems : []).filter(f, has(f.virtiofs)).map(f, f.name)"
+        ),
+        # Only a volume backed by a PVC, Secret or ConfigMap and exposed as a virtiofs device has a daemon.
+        "eligibleVirtiofs": (
+            "variables.vmiVolumes.filter(v, (has(v.persistentVolumeClaim) || has(v.secret) || has(v.configMap)) "
+            "&& v.name in variables.virtiofsNames).map(v, v.name)"
+        ),
+    }
+    return [ValidatingPolicySpecVariables(name=name, expression=expression) for name, expression in variables.items()]
+
+
+def _launcher_validations(
+    *, relay_name: str, protected_volumes: Sequence[str]
+) -> list[ValidatingPolicySpecValidations]:
+    on_create = "request.operation != 'CREATE' || "
+    annotations = "variables.vm.metadata.annotations"
+    uid = "variables.vmi.metadata.uid"
+    daemon = "'virtiofs-' + n"
+    native_daemons = f"variables.initContainers.filter(c, c.name == {daemon})"
+    in_pod = "object.spec"
+    checks = [
+        (
+            "Only the launcher relay may mount the runner credential and trust files.",
+            "!variables.containersOutsideRelay.exists(c, has(c.volumeMounts) "
+            f"&& c.volumeMounts.exists(m, m.name in {_cel_strings(protected_volumes)}))",
+        ),
+        (
+            "A launcher must be created by KubeVirt's controller.",
+            f"{on_create}request.userInfo.username == '{CONTROLLER_USERNAME}'",
+        ),
+        (
+            "A launcher must be owned by a live VMI of a live VirtualMachine, and the guest gets no Kubernetes token.",
+            f"{on_create}(variables.vmiOwner.uid == {uid} && variables.vmOwner.uid == variables.vm.metadata.uid "
+            "&& !variables.vmiVolumes.exists(v, has(v.serviceAccount)))",
+        ),
+        (
+            "The launcher's VirtualMachine must be controlled by a live Sandbox whose WorkloadCredential accepted its VMI.",
+            f"{on_create}(variables.sandbox.metadata.uid == variables.sandboxOwner.uid "
+            "&& variables.sandbox.metadata.name == variables.sandboxOwner.name "
+            "&& variables.sandbox.status.runnerCredential.kind == 'VM' "
+            f"&& variables.sandbox.status.runnerCredential.lastVmiUid == {uid} "
+            "&& variables.credentialOwner.uid == variables.sandboxOwner.uid "
+            f"&& variables.credential.spec.binding.vmiUID == {uid} "
+            f"&& variables.credential.status.acceptedBinding.vmiUID == {uid} "
+            f"&& variables.credential.status.credentialID == {annotations}['{RUNNER_CREDENTIAL_ID_ANNOTATION}'] "
+            f"&& {annotations}['{RUNNER_CREDENTIAL_VMI_UID_ANNOTATION}'] == {uid} "
+            f"&& variables.vmi.metadata.labels['{RUNNER_CREDENTIAL_LABEL}'] == variables.credential.status.credentialID)",
+        ),
+        (
+            "Every PVC-, Secret-, or ConfigMap-backed VMI virtiofs daemon must be one native sidecar.",
+            f"{on_create}variables.eligibleVirtiofs.all(n, "
+            f"{in_pod}.containers.filter(c, c.name == {daemon}).size() == 0 "
+            f"&& {native_daemons}.size() == 1 "
+            f"&& {native_daemons}.filter(c, has(c.restartPolicy) && c.restartPolicy == 'Always').size() == 1 "
+            f"&& {native_daemons}.exists(c, has(c.command) && c.command.size() > 0 "
+            "&& c.command[0] == '/usr/libexec/virtiofsd'))",
+        ),
+        (
+            "The launcher must have exactly one native relay init sidecar.",
+            f"{on_create}({in_pod}.serviceAccountName == 'default' "
+            f"&& has({in_pod}.automountServiceAccountToken) && {in_pod}.automountServiceAccountToken == false "
+            f"&& {in_pod}.containers.filter(c, c.name == '{relay_name}').size() == 0 "
+            f"&& variables.initContainers.filter(c, c.name == '{relay_name}').size() == 1 "
+            f"&& variables.initContainers.filter(c, c.name == '{relay_name}' "
+            "&& has(c.restartPolicy) && c.restartPolicy == 'Always').size() == 1)",
+        ),
+    ]
+    return [ValidatingPolicySpecValidations(expression=expression, message=message) for message, expression in checks]
+
+
+class LauncherRelayPolicy(Construct):
     """`runner_pod` is the runner SandboxTemplate's rendered Pod template, whose egress sidecar
     and pull secrets the relay copies. `settings_config_map` holds the relay's own sidecar
     settings, which listen where the guest can reach; the runner fence keeps every other peer off
-    those ports."""
+    those ports.
+
+    Mutation is a `ClusterPolicy` and validation a `ValidatingPolicy`: Kyverno runs every mutating
+    webhook before any validating one, so validation sees the mutated Pod."""
 
     def __init__(
         self, scope: Construct, id: str, *, namespace: str, runner_pod: dict[str, Any], settings_config_map: str
     ) -> None:
+        super().__init__(scope, id)
         pod_spec = runner_pod["spec"]
         relay = dict(one(c for c in pod_spec["initContainers"] if c["name"] == sidecar_config.CONTAINER_NAME))
         # A deployment that pulls without credentials (the k3s fixture) has none to copy.
         pull_secrets = {"imagePullSecrets": pod_spec["imagePullSecrets"]} if "imagePullSecrets" in pod_spec else {}
-        runner_tls_checks = [
-            _mismatch("sandboxLive.metadata.uid || ''", "{{sandbox.uid || 'none'}}"),
-            _mismatch("sandboxLive.metadata.name || ''", "{{sandbox.name || 'none'}}"),
-            _mismatch("sandboxLive.status.runnerCredential.kind || ''", "VM"),
-            _mismatch("sandboxLive.status.runnerCredential.lastVmiUid || ''", "{{vmi.metadata.uid || 'none'}}"),
-            # The Sandbox's WorkloadCredential has accepted this VMI, for the credential the VM carries.
-            _mismatch("credentialOwner.uid || ''", "{{sandbox.uid || 'none'}}"),
-            _mismatch("credential.spec.binding.vmiUID || ''", "{{vmi.metadata.uid || 'none'}}"),
-            _mismatch("credential.status.acceptedBinding.vmiUID || ''", "{{vmi.metadata.uid || 'none'}}"),
-            _mismatch(
-                "credential.status.credentialID || ''",
-                f"{{{{vm.metadata.annotations.\"{RUNNER_CREDENTIAL_ID_ANNOTATION}\" || 'none'}}}}",
-            ),
-            _mismatch(
-                f"vm.metadata.annotations.\"{RUNNER_CREDENTIAL_VMI_UID_ANNOTATION}\" || ''",
-                "{{vmi.metadata.uid || 'none'}}",
-            ),
-            _mismatch(
-                f"vmi.metadata.labels.\"{RUNNER_CREDENTIAL_LABEL}\" || ''",
-                "{{credential.status.credentialID || 'none'}}",
-            ),
-        ]
         # A runner Pod sets these Pod-wide; the launcher's own Pod security context is KubeVirt's.
         relay["securityContext"] = {
             **relay["securityContext"],
@@ -252,20 +321,6 @@ class LauncherRelayPolicy(ClusterPolicy):
                 selector=ClusterPolicySpecRulesMatchAnyResourcesSelector(match_labels=LAUNCHER_LABELS),
             )
         )
-        updates = match_resources(
-            ClusterPolicySpecRulesMatchAnyResources(
-                kinds=["Pod", "Pod/ephemeralcontainers"],
-                namespaces=[namespace],
-                operations=[ClusterPolicySpecRulesMatchAnyResourcesOperations.UPDATE],
-            )
-        )
-        relay_only = [
-            *_protected_mounts(f"request.object.spec.containers[?name!='{relay['name']}']", tuple(protected_volumes)),
-            *_protected_mounts(
-                f"request.object.spec.initContainers[?name!='{relay['name']}']", tuple(protected_volumes)
-            ),
-            *_protected_mounts("request.object.spec.ephemeralContainers", tuple(protected_volumes)),
-        ]
         # A Pod's volumes are immutable, so only a Pod created with the token volume can be updated to mount it.
         is_launcher = " && ".join(
             f"has(object.metadata.labels) && '{key}' in object.metadata.labels && object.metadata.labels['{key}'] == '{value}'"
@@ -275,60 +330,58 @@ class LauncherRelayPolicy(ClusterPolicy):
             f"object.spec.volumes.exists(v, v.name == '{name}')" for name in protected_volumes
         ]
         has_protected_volume = "has(object.spec.volumes) && (" + " || ".join(protected_volume_predicates) + ")"
-        # The webhook is cluster-wide and the rules' `namespaces` match applies only inside Kyverno, so
+        # The webhooks are cluster-wide and the rules' `namespaces` match applies only inside Kyverno, so
         # without this an outage would fail every namespace's launchers.
         in_namespace = f"request.namespace == '{namespace}'"
-        super().__init__(
-            scope,
-            id,
-            metadata=ApiObjectMetadata(
-                name=f"{namespace}-launcher-relay", annotations={"pod-policies.kyverno.io/autogen-controllers": "none"}
+        name = f"{namespace}-launcher-relay"
+        ValidatingPolicy(
+            self,
+            "validation",
+            metadata=ApiObjectMetadata(name=name),
+            spec=ValidatingPolicySpec(
+                validation_actions=[ValidatingPolicySpecValidationActions.DENY],
+                failure_policy=ValidatingPolicySpecFailurePolicy.FAIL,
+                # Reads request.userInfo and live objects, which only admission has.
+                evaluation=ValidatingPolicySpecEvaluation(
+                    admission=ValidatingPolicySpecEvaluationAdmission(enabled=True),
+                    background=ValidatingPolicySpecEvaluationBackground(enabled=False),
+                ),
+                match_constraints=ValidatingPolicySpecMatchConstraints(
+                    resource_rules=[
+                        ValidatingPolicySpecMatchConstraintsResourceRules(
+                            api_groups=[""],
+                            api_versions=["v1"],
+                            operations=["CREATE", "UPDATE"],
+                            resources=["pods", "pods/ephemeralcontainers"],
+                        )
+                    ]
+                ),
+                match_conditions=[
+                    ValidatingPolicySpecMatchConditions(name="in-namespace", expression=in_namespace),
+                    ValidatingPolicySpecMatchConditions(
+                        name="launcher-or-relay-credential-volume",
+                        expression=f"request.operation == 'CREATE' ? ({is_launcher}) : ({has_protected_volume})",
+                    ),
+                ],
+                variables=_launcher_variables(relay_name=relay["name"]),
+                validations=_launcher_validations(relay_name=relay["name"], protected_volumes=protected_volumes),
             ),
+        )
+        ClusterPolicy(
+            self,
+            "mutation",
+            metadata=ApiObjectMetadata(name=name, annotations={"pod-policies.kyverno.io/autogen-controllers": "none"}),
             spec=ClusterPolicySpec(
                 background=False,
                 failure_policy=ClusterPolicySpecFailurePolicy.FAIL,
-                validation_failure_action=ClusterPolicySpecValidationFailureAction.ENFORCE,
                 webhook_configuration=ClusterPolicySpecWebhookConfiguration(
                     match_conditions=[
                         ClusterPolicySpecWebhookConfigurationMatchConditions(
-                            name="launcher-or-relay-credential-volume",
-                            expression=(
-                                f"{in_namespace} && (request.operation == 'CREATE' ? ({is_launcher}) : ({has_protected_volume}))"
-                            ),
+                            name="launcher", expression=f"{in_namespace} && ({is_launcher})"
                         )
                     ]
                 ),
                 rules=[
-                    ClusterPolicySpecRules(
-                        name="protect-relay-credentials-on-update",
-                        match=updates,
-                        validate=Validate.deny(
-                            message="Only the launcher relay may mount the runner credential and trust files.",
-                            conditions={"any": [*relay_only]},
-                        ),
-                    ),
-                    ClusterPolicySpecRules(
-                        name="authenticate-launcher",
-                        match=launchers,
-                        context=_context(),
-                        validate=Validate.deny(
-                            message=(
-                                "A launcher must be created by KubeVirt for a live VirtualMachine controlled by a "
-                                "live Sandbox whose WorkloadCredential accepted its VMI."
-                            ),
-                            conditions={
-                                "any": [
-                                    _mismatch("request.userInfo.username", CONTROLLER_USERNAME),
-                                    _mismatch("vmiOwner.uid", "{{vmi.metadata.uid}}"),
-                                    _mismatch("vmOwner.uid", "{{vm.metadata.uid}}"),
-                                    *relay_only,
-                                    *runner_tls_checks,
-                                    # The guest gets no Kubernetes token of its own.
-                                    _mismatch("length(vmi.spec.volumes[?serviceAccount] || `[]`)", 0),
-                                ]
-                            },
-                        ),
-                    ),
                     ClusterPolicySpecRules(
                         name="inject-relay",
                         match=launchers,
@@ -422,84 +475,6 @@ class LauncherRelayPolicy(ClusterPolicy):
                                     ),
                                 )
                             ]
-                        ),
-                    ),
-                    ClusterPolicySpecRules(
-                        name="require-native-virtiofs-daemons",
-                        match=launchers,
-                        context=_context(),
-                        validate=ClusterPolicySpecRulesValidate(
-                            message="Every PVC-, Secret-, or ConfigMap-backed VMI virtiofs daemon must be one native sidecar.",
-                            foreach=[
-                                ClusterPolicySpecRulesValidateForeach(
-                                    list=_ELIGIBLE_VOLUMES,
-                                    preconditions=ClusterPolicySpecRulesValidateForeachPreconditions(
-                                        all=[
-                                            ClusterPolicySpecRulesValidateForeachPreconditionsAll(
-                                                key="{{ contains(" + _FILESYSTEM_NAMES + ", element.name) }}",
-                                                operator=ClusterPolicySpecRulesValidateForeachPreconditionsAllOperator.EQUALS,
-                                                value=True,
-                                            )
-                                        ]
-                                    ),
-                                    context=[
-                                        ClusterPolicySpecRulesValidateForeachContext(
-                                            name="daemonName",
-                                            variable=ClusterPolicySpecRulesValidateForeachContextVariable(
-                                                jmes_path="join('', ['virtiofs-', element.name])"
-                                            ),
-                                        ),
-                                        *[
-                                            ClusterPolicySpecRulesValidateForeachContext(
-                                                name=context_name,
-                                                variable=ClusterPolicySpecRulesValidateForeachContextVariable(
-                                                    jmes_path=f"request.object.spec.{containers}[?name=='{{{{ daemonName }}}}']"
-                                                ),
-                                            )
-                                            for context_name, containers in [
-                                                ("ordinaryDaemons", "containers"),
-                                                ("nativeDaemons", "initContainers"),
-                                            ]
-                                        ],
-                                    ],
-                                    deny=ClusterPolicySpecRulesValidateForeachDeny(
-                                        conditions={
-                                            "any": [
-                                                _mismatch("length(ordinaryDaemons || `[]`)", 0),
-                                                _mismatch("length(nativeDaemons || `[]`)", 1),
-                                                _mismatch("length(nativeDaemons[?restartPolicy=='Always'] || `[]`)", 1),
-                                                _mismatch(
-                                                    "nativeDaemons[0].command[0] || ''", "/usr/libexec/virtiofsd"
-                                                ),
-                                            ]
-                                        }
-                                    ),
-                                )
-                            ],
-                        ),
-                    ),
-                    ClusterPolicySpecRules(
-                        name="validate-relay",
-                        match=launchers,
-                        context=_context(),
-                        validate=Validate.deny(
-                            message="The launcher must have exactly one native relay init sidecar.",
-                            conditions={
-                                "any": [
-                                    _mismatch("request.object.spec.serviceAccountName", "default"),
-                                    _mismatch("request.object.spec.automountServiceAccountToken", False),
-                                    _mismatch(f"length(request.object.spec.containers[?name=='{relay['name']}'])", 0),
-                                    _mismatch(
-                                        f"length(request.object.spec.initContainers[?name=='{relay['name']}'])", 1
-                                    ),
-                                    _mismatch(
-                                        "length(request.object.spec.initContainers[?name=='"
-                                        f"{relay['name']}' && restartPolicy=='Always'])",
-                                        1,
-                                    ),
-                                    *relay_only,
-                                ]
-                            },
                         ),
                     ),
                 ],

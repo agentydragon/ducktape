@@ -82,11 +82,16 @@ Kyverno 1.20 stops enforcing `kyverno.io` `ClusterPolicy`/`Policy`/`CleanupPolic
 go away in 1.21. The chart is held at 3.9.x (Kyverno 1.19) in `renovate.json5` until done.
 
 Move to `policies.kyverno.io/v1` kinds (CEL; `preconditions` -> `matchConditions`,
-`context` -> `spec.variables`, `patchStrategicMerge` -> `ApplyConfiguration`/`JSONPatch`):
-`require-gitops`, `default-disable-service-links`, `require-secret-store-conditions`
-(`cluster/cdk8s/kyverno/policies.py`), the janitor `CleanupPolicy` (`kyverno/janitor.py`),
-then `agentplane-staging-launcher-relay` (`agentplane/launcher_relay.py`; `apiCall` contexts
-and 3 mutate rules -- confirm `ValidatingPolicy`/`MutatingPolicy` can do them first).
+`context` -> `spec.variables`, `patchStrategicMerge` -> `ApplyConfiguration`/`JSONPatch`).
+Moved: `require-gitops`, `default-disable-service-links`, `require-secret-store-conditions`,
+the janitor, and `agentplane-staging-launcher-relay`'s validation (`ValidatingPolicy` with
+`resource.Get` variables). Left: the launcher relay's three mutate rules
+(`agentplane/launcher_relay.py`, `ClusterPolicy`), and downstream `CleanupPolicy` users
+(props reaper, gaffer-private Job reaper).
+
+Offline `kyverno apply` evaluates `resource.Get` only for kinds it can map (core kinds with
+`--context-file`); for KubeVirt and Agentplane kinds the tests substitute `json.unmarshal`
+variables, so the live lookups run only in the cluster.
 
 Done: no `kyverno.io` policy kinds remain; `providers/kyverno` wrapper targets the new CRDs;
 CRD pins in `devinfra/bazel/artifacts.MODULE.bazel` and the `kyverno` CLI pin match 1.20; the
