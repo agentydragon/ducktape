@@ -48,14 +48,13 @@ async def _probe_one(client: TanaProxyClient, model_id: str, max_tokens: int, ti
     return ProbeResult(model_id=model_id, ok=True, elapsed_seconds=elapsed, detail=text[:120])
 
 
-async def _main_async() -> int:
+async def _main_async() -> None:
     args = _parse_args()
     requested = args.model or [model.model_id for model in TANA_LLM_MODELS]
     known_model_ids = {model.model_id for model in TANA_LLM_MODELS}
     unknown = [model_id for model_id in requested if model_id not in known_model_ids]
     if unknown:
-        print(f"Unknown model IDs: {', '.join(unknown)}")
-        return 2
+        raise SystemExit(f"Unknown model IDs: {', '.join(unknown)}")
 
     client = TanaProxyClient()
     failures = 0
@@ -67,12 +66,13 @@ async def _main_async() -> int:
             failures += 1
             if not args.continue_on_error:
                 break
-    return 1 if failures else 0
+    if failures:
+        raise SystemExit(1)
 
 
-def main() -> int:
-    return asyncio.run(_main_async())
+def main() -> None:
+    asyncio.run(_main_async())
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()
