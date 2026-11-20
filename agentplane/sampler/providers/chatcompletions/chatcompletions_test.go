@@ -68,6 +68,7 @@ func TestStreamingToolCallsAndReplay(t *testing.T) {
 func TestStreamCompletion(t *testing.T) {
 	const tool = `{"id":"chat","choices":[{"delta":{"tool_calls":[{"index":0,"id":"a","type":"function","function":{"name":"exec","arguments":"{}"}}]}}]}`
 	const callFinish = `{"id":"chat","choices":[{"delta":{},"finish_reason":"tool_calls"}]}`
+	const reasoning = `{"id":"chat","choices":[{"delta":{"reasoning_content":"checking"}}]}`
 	const stop = `{"id":"chat","choices":[{"delta":{"content":"Done"},"finish_reason":"stop"}]}`
 	for _, tc := range []struct {
 		name      string
@@ -78,6 +79,7 @@ func TestStreamCompletion(t *testing.T) {
 		{name: "clean stop", frames: []string{stop, "[DONE]"}},
 		{name: "truncated after tool delta", frames: []string{tool}, transient: true, fails: true},
 		{name: "truncated after finish reason", frames: []string{tool, callFinish}, transient: true, fails: true},
+		{name: "tool calls finish without tool deltas", frames: []string{reasoning, callFinish, "[DONE]"}, transient: true, fails: true},
 		{name: "contradictory finish reason", frames: []string{tool, stop, "[DONE]"}, fails: true},
 		{name: "output limit", frames: []string{`{"id":"chat","choices":[{"delta":{"content":"Partial"},"finish_reason":"length"}]}`, "[DONE]"}, fails: true},
 		{name: "provider error", frames: []string{`{"error":{"message":"completion aborted"}}`}, fails: true},

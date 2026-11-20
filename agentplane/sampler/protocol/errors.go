@@ -28,7 +28,7 @@ type KnownFailureError struct {
 	Message  string
 }
 
-// ProviderTransientError marks an upstream transport, status, or truncated-stream failure that
+// ProviderTransientError marks an upstream transport, status, or incomplete response failure that
 // is safe to resample because provider sampling has no external mutation effect.
 type ProviderTransientError struct {
 	Cause      error

@@ -589,8 +589,10 @@ normal `Script failed` output. Internal store, host-protocol and transport failu
 classified as model input errors.
 
 Provider sampling and compaction use at most three attempts per prepared step. HTTP 408, 429 and
-5xx, upstream transport/truncated-stream failures, and response-head/semantic-idle timeouts are
-transient. After the joined call ends, the owner abandons its exact intent, retains raw evidence,
+5xx, upstream transport/truncated-stream failures, response-head/semantic-idle timeouts, and a
+Chat Completions stream that reports `tool_calls` without emitting any calls are transient.
+The sampler logs a warning for the empty tool-call response. After the joined call ends, the
+owner abandons its exact intent, retains raw evidence,
 and records retry due time using PostgreSQL. Backoff starts at one second and doubles, honoring
 `Retry-After` up to 30 seconds. A retry has a fresh intent ID, the same accepted command and step,
 and the frozen prepared body; steering input and notifications wait until that step settles.
