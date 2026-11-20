@@ -15999,5 +15999,386 @@
     },
     "goldilocks": "v4.16.1 reads namespace defaults, workload-level mode/resource policy overrides, and namespace-level minReplicas; workload resource policy replaces rather than merges the namespace policy.",
     "preferred_direction": "Central typed cdk8s VPA profiles, preserving existing effective modes and RequestsAndLimits policies; retire Kyverno only after dynamic mutations, enforcement and cleanup have equivalent ownership or explicitly accepted outcomes."
+  },
+  "rollout_review": {
+    "observed_at_utc": "2026-11-20T08:24:15Z",
+    "source_devel_commit": "2aa028749c5a77cfa56c26abd1242d86b44bd12b",
+    "scope": "Selected live VPA modes, target recommendations and Deployment template resources; not a refreshed full cluster or seven-day metrics snapshot.",
+    "initial_candidates": [
+      {
+        "namespace": "cert-manager",
+        "name": "cert-manager",
+        "mode": "Off",
+        "desired_replicas": 1,
+        "ready_replicas": 1,
+        "template_containers": [
+          {
+            "name": "cert-manager-controller",
+            "requests": {
+              "cpu": "10m",
+              "memory": "32Mi"
+            },
+            "limits": {
+              "cpu": "100m",
+              "memory": "128Mi"
+            }
+          }
+        ],
+        "recommendations": [
+          {
+            "containerName": "cert-manager-controller",
+            "lowerBound": {
+              "cpu": "15m",
+              "memory": "100Mi"
+            },
+            "target": {
+              "cpu": "15m",
+              "memory": "126805489"
+            },
+            "uncappedTarget": {
+              "cpu": "15m",
+              "memory": "126805489"
+            },
+            "upperBound": {
+              "cpu": "15m",
+              "memory": "128785363"
+            }
+          }
+        ]
+      },
+      {
+        "namespace": "cert-manager",
+        "name": "cert-manager-cainjector",
+        "mode": "Off",
+        "desired_replicas": 1,
+        "ready_replicas": 1,
+        "template_containers": [
+          {
+            "name": "cert-manager-cainjector",
+            "requests": {
+              "cpu": "10m",
+              "memory": "128Mi"
+            },
+            "limits": {
+              "cpu": "100m",
+              "memory": "512Mi"
+            }
+          }
+        ],
+        "recommendations": [
+          {
+            "containerName": "cert-manager-cainjector",
+            "lowerBound": {
+              "cpu": "15m",
+              "memory": "163373382"
+            },
+            "target": {
+              "cpu": "15m",
+              "memory": "225384266"
+            },
+            "uncappedTarget": {
+              "cpu": "15m",
+              "memory": "225384266"
+            },
+            "upperBound": {
+              "cpu": "15m",
+              "memory": "228604712"
+            }
+          }
+        ]
+      },
+      {
+        "namespace": "cert-manager",
+        "name": "cert-manager-webhook",
+        "mode": "Off",
+        "desired_replicas": 1,
+        "ready_replicas": 1,
+        "template_containers": [
+          {
+            "name": "cert-manager-webhook",
+            "requests": {
+              "cpu": "10m",
+              "memory": "32Mi"
+            },
+            "limits": {
+              "cpu": "100m",
+              "memory": "128Mi"
+            }
+          }
+        ],
+        "recommendations": [
+          {
+            "containerName": "cert-manager-webhook",
+            "lowerBound": {
+              "cpu": "15m",
+              "memory": "100Mi"
+            },
+            "target": {
+              "cpu": "15m",
+              "memory": "100Mi"
+            },
+            "uncappedTarget": {
+              "cpu": "15m",
+              "memory": "100Mi"
+            },
+            "upperBound": {
+              "cpu": "15m",
+              "memory": "100Mi"
+            }
+          }
+        ]
+      },
+      {
+        "namespace": "external-dns",
+        "name": "external-dns",
+        "mode": "Off",
+        "desired_replicas": 1,
+        "ready_replicas": 1,
+        "template_containers": [
+          {
+            "name": "external-dns",
+            "requests": {
+              "cpu": "25m",
+              "memory": "64Mi"
+            },
+            "limits": {
+              "cpu": "250m",
+              "memory": "256Mi"
+            }
+          }
+        ],
+        "recommendations": [
+          {
+            "containerName": "external-dns",
+            "lowerBound": {
+              "cpu": "15m",
+              "memory": "126722435"
+            },
+            "target": {
+              "cpu": "15m",
+              "memory": "126805489"
+            },
+            "uncappedTarget": {
+              "cpu": "15m",
+              "memory": "126805489"
+            },
+            "upperBound": {
+              "cpu": "15m",
+              "memory": "168352679"
+            }
+          }
+        ]
+      },
+      {
+        "namespace": "external-secrets-system",
+        "name": "external-secrets",
+        "mode": "Off",
+        "desired_replicas": 2,
+        "ready_replicas": 2,
+        "template_containers": [
+          {
+            "name": "external-secrets",
+            "requests": {
+              "cpu": "100m",
+              "memory": "256Mi"
+            },
+            "limits": {
+              "cpu": "500m",
+              "memory": "512Mi"
+            }
+          }
+        ],
+        "recommendations": [
+          {
+            "containerName": "external-secrets",
+            "lowerBound": {
+              "cpu": "15m",
+              "memory": "100Mi"
+            },
+            "target": {
+              "cpu": "15m",
+              "memory": "109814751"
+            },
+            "uncappedTarget": {
+              "cpu": "15m",
+              "memory": "109814751"
+            },
+            "upperBound": {
+              "cpu": "15m",
+              "memory": "111297606"
+            }
+          }
+        ]
+      },
+      {
+        "namespace": "external-secrets-system",
+        "name": "external-secrets-webhook",
+        "mode": "Off",
+        "desired_replicas": 1,
+        "ready_replicas": 1,
+        "template_containers": [
+          {
+            "name": "webhook",
+            "requests": {},
+            "limits": {}
+          }
+        ],
+        "recommendations": [
+          {
+            "containerName": "webhook",
+            "lowerBound": {
+              "cpu": "15m",
+              "memory": "100Mi"
+            },
+            "target": {
+              "cpu": "15m",
+              "memory": "100Mi"
+            },
+            "uncappedTarget": {
+              "cpu": "15m",
+              "memory": "100Mi"
+            },
+            "upperBound": {
+              "cpu": "15m",
+              "memory": "100Mi"
+            }
+          }
+        ]
+      },
+      {
+        "namespace": "keda",
+        "name": "keda-admission-webhooks",
+        "mode": "Off",
+        "desired_replicas": 1,
+        "ready_replicas": 1,
+        "template_containers": [
+          {
+            "name": "keda-admission-webhooks",
+            "requests": {
+              "cpu": "25m",
+              "memory": "64Mi"
+            },
+            "limits": {
+              "cpu": "100m",
+              "memory": "128Mi"
+            }
+          }
+        ],
+        "recommendations": [
+          {
+            "containerName": "keda-admission-webhooks",
+            "lowerBound": {
+              "cpu": "15m",
+              "memory": "100Mi"
+            },
+            "target": {
+              "cpu": "15m",
+              "memory": "100Mi"
+            },
+            "uncappedTarget": {
+              "cpu": "15m",
+              "memory": "100Mi"
+            },
+            "upperBound": {
+              "cpu": "15m",
+              "memory": "100Mi"
+            }
+          }
+        ]
+      },
+      {
+        "namespace": "keda",
+        "name": "keda-operator",
+        "mode": "Off",
+        "desired_replicas": 1,
+        "ready_replicas": 1,
+        "template_containers": [
+          {
+            "name": "keda-operator",
+            "requests": {
+              "cpu": "50m",
+              "memory": "128Mi"
+            },
+            "limits": {
+              "cpu": "250m",
+              "memory": "256Mi"
+            }
+          }
+        ],
+        "recommendations": [
+          {
+            "containerName": "keda-operator",
+            "lowerBound": {
+              "cpu": "15m",
+              "memory": "183038334"
+            },
+            "target": {
+              "cpu": "15m",
+              "memory": "248153480"
+            },
+            "uncappedTarget": {
+              "cpu": "15m",
+              "memory": "248153480"
+            },
+            "upperBound": {
+              "cpu": "15m",
+              "memory": "253996299"
+            }
+          }
+        ]
+      },
+      {
+        "namespace": "keda",
+        "name": "keda-operator-metrics-apiserver",
+        "mode": "Off",
+        "desired_replicas": 1,
+        "ready_replicas": 1,
+        "template_containers": [
+          {
+            "name": "keda-operator-metrics-apiserver",
+            "requests": {
+              "cpu": "50m",
+              "memory": "128Mi"
+            },
+            "limits": {
+              "cpu": "250m",
+              "memory": "256Mi"
+            }
+          }
+        ],
+        "recommendations": [
+          {
+            "containerName": "keda-operator-metrics-apiserver",
+            "lowerBound": {
+              "cpu": "15m",
+              "memory": "100Mi"
+            },
+            "target": {
+              "cpu": "15m",
+              "memory": "100Mi"
+            },
+            "uncappedTarget": {
+              "cpu": "15m",
+              "memory": "100Mi"
+            },
+            "upperBound": {
+              "cpu": "15m",
+              "memory": "100Mi"
+            }
+          }
+        ]
+      }
+    ],
+    "cdviz": {
+      "mode": "Initial",
+      "controlled_values": "RequestsOnly",
+      "controlled_resources": ["memory"],
+      "observed_at_utc": "2026-11-20T08:17:28Z",
+      "collector_pod_restarted_by_intervention": false,
+      "new_pod_admission_verified": false,
+      "retention_vpa_mode": "Off"
+    },
+    "goldilocks_reconcile": "Deployment annotation change did not trigger a reconcile; a subsequent namespace annotation update did.",
+    "kyverno_vpa_default": "Removed after cdk8s ownership; six ClusterPolicies and two namespaced CleanupPolicies observed."
   }
 }
