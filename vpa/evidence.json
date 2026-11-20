@@ -19042,7 +19042,7 @@
   },
   "retirement_progress": {
     "observed_at_utc": "2026-11-20T11:00:13Z",
-    "source_devel_commit": "679e908a4d7d325c7e47f21d583a9da99f33a612",
+    "source_devel_commit": "11255152640ec562060e995b13e269718d7b5603",
     "prs": {
       "18145": {
         "draft": true,
@@ -19113,6 +19113,16 @@
         "number": 18158,
         "state": "open",
         "title": "[Explicit -1 contract gate] Retire the Kyverno revision-history default"
+      },
+      "18149": {
+        "number": 18149,
+        "title": "Spread VPA admission controllers across nodes",
+        "state": "closed",
+        "draft": false,
+        "merged_at": "2026-11-20T10:54:58Z",
+        "merge_commit_sha": "11255152640ec562060e995b13e269718d7b5603",
+        "html_url": "https://github.com/agentydragon/ducktape/pull/18149",
+        "head_sha": "dd68e6ec8293354de55e93df81d264322dcc8a2e"
       }
     },
     "rollouts": {
@@ -19148,6 +19158,41 @@
         "api_service_tls_readiness_verified_on_both_endpoints": true,
         "existing_autoscaler_metric_query_succeeded": true,
         "checks_observed_at_utc": "2026-11-20T10:55:30Z"
+      },
+      "vpa-admission-controller": {
+        "pr": 18149,
+        "version": "1.7.1",
+        "helm_ready_at_utc": "2026-11-20T10:57Z",
+        "ready": 2,
+        "ready_endpoints": 2,
+        "distinct_ready_endpoint_nodes": 2,
+        "disruptions_allowed": 1,
+        "tls_verified_on_both_endpoints": true,
+        "owner_cache_race": {
+          "first_pod_at_utc": "2026-11-20T10:56:16.141901Z",
+          "first_pod_webhook_outcome": "ReplicaSet absent from informer store; no matching VPA",
+          "first_pod_requests": {
+            "cpu": "25m",
+            "memory": "128Mi"
+          },
+          "first_pod_limits": {
+            "cpu": "200m",
+            "memory": "256Mi"
+          },
+          "second_pod_at_utc": "2026-11-20T10:56:27.538645Z",
+          "second_pod_webhook_outcome": "same webhook updated resource requirements",
+          "second_pod_requests": {
+            "cpu": "15m",
+            "memory": "109814751"
+          },
+          "second_pod_limits": {
+            "cpu": "120m",
+            "memory": "219629502"
+          },
+          "apiserver_fail_open_counters_increased": false,
+          "per_request_apiserver_audit_available": false,
+          "source": "https://github.com/kubernetes/autoscaler/blob/vertical-pod-autoscaler-1.7.1/vertical-pod-autoscaler/pkg/target/controller_fetcher/controller_fetcher.go#L163-L198"
+        }
       }
     },
     "retirement": {

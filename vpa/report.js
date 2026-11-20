@@ -1199,7 +1199,9 @@ function Report() {
           <//>
         <//>
         <${Paper} id="adoption-progress" withBorder p="md" radius="md">
-          <${Title} order=${3} size="h4">Kyverno and KEDA follow-up<//>
+          <${Title} order=${3} size="h4"
+            >Kyverno, KEDA and VPA webhook follow-up<//
+          >
           <${Text} size="sm" c="dimmed" mt="xs">
             Observed 20 November 2026 at ${progressTime} UTC
           <//>
@@ -1220,12 +1222,33 @@ function Report() {
               >PR #18148<//
             >
           <//>
-          <${Text} component="p" mt="sm" mb=${0}>
+          <${Text} component="p" mt="sm">
             <strong>KEDA external metrics.</strong>${" "} Two Ready endpoints
             serve from separate nodes, with one disruption allowed. Both passed
             TLS readiness with the APIService’s CA and DNS identity, and a live
             autoscaler metric query succeeded. VPA stays Initial.
             ${" "}<${Anchor} href=${progress.prs[18152].html_url}>PR #18152<//>
+          <//>
+          <${Text} component="p" mt="sm">
+            <strong>VPA webhook.</strong>${" "} The two replacements were Ready
+            on separate nodes, each passed direct TLS verification, and the
+            budget allowed one disruption. ${" "}<${Anchor}
+              href=${progress.prs[18149].html_url}
+              >PR #18149<//
+            >
+          <//>
+          <${Text} component="p" mt="sm" mb=${0}>
+            <strong>VPA owner-cache race.</strong>${" "} At 10:56:16 UTC the old
+            webhook could not find the first new Pod’s ReplicaSet in its
+            informer cache and reported no matching VPA. The Pod retained its
+            declared 25m CPU and 128 MiB memory requests. At 10:56:27 UTC the
+            same webhook applied 15m CPU and about 105 MiB memory to the second
+            Pod. API server fail-open counters stayed at zero. Check actual
+            requests on the first Pods from a new ReplicaSet, even when an
+            existing owner passed admission dry runs. ${" "}<${Anchor}
+              href=${progress.rollouts["vpa-admission-controller"].owner_cache_race.source}
+              >VPA owner lookup<//
+            >
           <//>
         <//>
       <//>

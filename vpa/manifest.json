@@ -5,8 +5,8 @@
   "seven_day_queries_end_utc": "2026-11-20T03:03:48.752000+00:00",
   "scope": "Live VPA, workload, resource, scheduling and selected historical metrics snapshot; independently curated action plan.",
   "report_html_sha256": "ae9dbab9b12958cef57f40a7dd04403e4b91f14bdf566e281902eb5d977ba7b5",
-  "report_script_sha256": "ec9b72c7b2f28d9bcd8b9337f9517fb0d91c8dcba5c617273026ec64f372149b",
-  "evidence_sha256": "86b809428005d9be402080a902f0afc732c85282ce7c373e646deffe80eaf11f",
+  "report_script_sha256": "97e4e51da20891bc22cffa59834704aea7c69f1186c2c5d954d995a3b8b2a49a",
+  "evidence_sha256": "752032c453577a374b2809e492841e01e6c0e303fda300e310c65652bd41f565",
   "architecture_source_devel_commit": "d81bd68165097b089cace9ae168b6e8f202f1b7e",
   "architecture_reviewed_at_utc": "2026-11-20T03:36:52Z",
   "batch_reviewed_at_utc": "2026-11-20T08:24:15Z",
@@ -24,5 +24,5 @@
   "latest_rollout_wave_source_devel_commit": "346dba542bacc233937f8780c8150302ca5e1c46",
   "plan_reviewed_at_utc": "2026-11-20T10:37Z",
   "retirement_progress_at_utc": "2026-11-20T11:00:13Z",
-  "retirement_progress_source_devel_commit": "679e908a4d7d325c7e47f21d583a9da99f33a612"
+  "retirement_progress_source_devel_commit": "11255152640ec562060e995b13e269718d7b5603"
 }
