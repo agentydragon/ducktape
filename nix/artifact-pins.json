@@ -61,8 +61,8 @@
       "sha256": "kbXgtJUumnBie2mxs6bSTJ47g6oxukQwpOMUiR62EU8="
     },
     "debundle": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-b546c9aece6f/debundle",
-      "sha256": "tUbJrs5va37UPYm1Ni+hoZlltTXymyjVkix/H9Qdp4o="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-80b0b2c2a1b2/debundle",
+      "sha256": "gLCywqGybf+SV9mPiXagG4tSJPc5Usll0LaE64sawek="
     },
     "skill-cluster_health": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cluster_health-a7f98120a8a1/cluster_health.skill",
@@ -213,8 +213,8 @@
       "sha256": "JO1oQlzdGS0Y/uQurGZvQks4E0h3wwve2kaBWwWbtY8="
     },
     "aw-importer": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/aw-importer-db6d24741cb4/aw_importer_bin",
-      "sha256": "220kdBy0h22lgELIpjBvAMc1F5VUMNkl2VGZghD4WNc="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/aw-importer-ed5f873d2919/aw_importer_bin",
+      "sha256": "7V+HPSkZRrSAVPnsGFmN679eMd/yzN5M6Y4oLSr4ygw="
     },
     "skill-semantic_branch_pruner": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-semantic_branch_pruner-cdc68e38255f/semantic_branch_pruner.skill",
