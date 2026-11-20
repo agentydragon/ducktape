@@ -16380,5 +16380,390 @@
     },
     "goldilocks_reconcile": "Deployment annotation change did not trigger a reconcile; a subsequent namespace annotation update did.",
     "kyverno_vpa_default": "Removed after cdk8s ownership; six ClusterPolicies and two namespaced CleanupPolicies observed."
+  },
+  "rollout_progress": {
+    "observed_at_utc": "2026-11-20T09:10:44.562658+00:00",
+    "source_devel_commit": "a7127689c20ba5d233cd3145caa782ee9db18a32",
+    "method": "Server-side CREATE dry run of current running pod specs with matching ReplicaSet owner references; no pods created. Actual next scheduling and startup unverified.",
+    "cohort": [
+      {
+        "namespace": "external-dns",
+        "deployment": "external-dns",
+        "vpa_mode": "Initial",
+        "ready_replicas": 1,
+        "desired_replicas": 1,
+        "current_pod_resources": [
+          {
+            "name": "external-dns",
+            "requests": {
+              "cpu": "25m",
+              "memory": "64Mi"
+            },
+            "limits": {
+              "cpu": "250m",
+              "memory": "256Mi"
+            }
+          }
+        ],
+        "dry_run_admitted_resources": [
+          {
+            "name": "external-dns",
+            "requests": {
+              "cpu": "25m",
+              "memory": "126805489"
+            },
+            "limits": {
+              "cpu": "250m",
+              "memory": "256Mi"
+            }
+          }
+        ],
+        "dry_run_vpa_updates": "Pod resources updated by goldilocks-external-dns: container 0: memory request"
+      },
+      {
+        "namespace": "keda",
+        "deployment": "keda-operator",
+        "vpa_mode": "Initial",
+        "ready_replicas": 1,
+        "desired_replicas": 1,
+        "current_pod_resources": [
+          {
+            "name": "keda-operator",
+            "requests": {
+              "cpu": "50m",
+              "memory": "128Mi"
+            },
+            "limits": {
+              "cpu": "250m",
+              "memory": "256Mi"
+            }
+          }
+        ],
+        "dry_run_admitted_resources": [
+          {
+            "name": "keda-operator",
+            "requests": {
+              "cpu": "50m",
+              "memory": "248153480"
+            },
+            "limits": {
+              "cpu": "250m",
+              "memory": "256Mi"
+            }
+          }
+        ],
+        "dry_run_vpa_updates": "Pod resources updated by goldilocks-keda-operator: container 0: memory request"
+      },
+      {
+        "namespace": "keda",
+        "deployment": "keda-operator-metrics-apiserver",
+        "vpa_mode": "Initial",
+        "ready_replicas": 1,
+        "desired_replicas": 1,
+        "current_pod_resources": [
+          {
+            "name": "keda-operator-metrics-apiserver",
+            "requests": {
+              "cpu": "50m",
+              "memory": "128Mi"
+            },
+            "limits": {
+              "cpu": "250m",
+              "memory": "256Mi"
+            }
+          }
+        ],
+        "dry_run_admitted_resources": [
+          {
+            "name": "keda-operator-metrics-apiserver",
+            "requests": {
+              "cpu": "50m",
+              "memory": "128Mi"
+            },
+            "limits": {
+              "cpu": "250m",
+              "memory": "256Mi"
+            }
+          }
+        ],
+        "dry_run_vpa_updates": "Pod resources updated by goldilocks-keda-operator-metrics-apiserver: container 0: memory request"
+      },
+      {
+        "namespace": "keda",
+        "deployment": "keda-admission-webhooks",
+        "vpa_mode": "Initial",
+        "ready_replicas": 1,
+        "desired_replicas": 1,
+        "current_pod_resources": [
+          {
+            "name": "keda-admission-webhooks",
+            "requests": {
+              "cpu": "25m",
+              "memory": "64Mi"
+            },
+            "limits": {
+              "cpu": "100m",
+              "memory": "128Mi"
+            }
+          }
+        ],
+        "dry_run_admitted_resources": [
+          {
+            "name": "keda-admission-webhooks",
+            "requests": {
+              "cpu": "25m",
+              "memory": "100Mi"
+            },
+            "limits": {
+              "cpu": "100m",
+              "memory": "128Mi"
+            }
+          }
+        ],
+        "dry_run_vpa_updates": "Pod resources updated by goldilocks-keda-admission-webhooks: container 0: memory request"
+      },
+      {
+        "namespace": "cert-manager",
+        "deployment": "cert-manager",
+        "vpa_mode": "Initial",
+        "ready_replicas": 1,
+        "desired_replicas": 1,
+        "current_pod_resources": [
+          {
+            "name": "cert-manager-controller",
+            "requests": {
+              "cpu": "10m",
+              "memory": "32Mi"
+            },
+            "limits": {
+              "cpu": "100m",
+              "memory": "128Mi"
+            }
+          }
+        ],
+        "dry_run_admitted_resources": [
+          {
+            "name": "cert-manager-controller",
+            "requests": {
+              "cpu": "10m",
+              "memory": "126805489"
+            },
+            "limits": {
+              "cpu": "100m",
+              "memory": "128Mi"
+            }
+          }
+        ],
+        "dry_run_vpa_updates": "Pod resources updated by goldilocks-cert-manager: container 0: memory request"
+      },
+      {
+        "namespace": "cert-manager",
+        "deployment": "cert-manager-cainjector",
+        "vpa_mode": "Initial",
+        "ready_replicas": 1,
+        "desired_replicas": 1,
+        "current_pod_resources": [
+          {
+            "name": "cert-manager-cainjector",
+            "requests": {
+              "cpu": "10m",
+              "memory": "128Mi"
+            },
+            "limits": {
+              "cpu": "100m",
+              "memory": "512Mi"
+            }
+          }
+        ],
+        "dry_run_admitted_resources": [
+          {
+            "name": "cert-manager-cainjector",
+            "requests": {
+              "cpu": "10m",
+              "memory": "224Mi"
+            },
+            "limits": {
+              "cpu": "100m",
+              "memory": "512Mi"
+            }
+          }
+        ],
+        "dry_run_vpa_updates": "Pod resources updated by goldilocks-cert-manager-cainjector: container 0: memory request"
+      },
+      {
+        "namespace": "cert-manager",
+        "deployment": "cert-manager-webhook",
+        "vpa_mode": "Initial",
+        "ready_replicas": 1,
+        "desired_replicas": 1,
+        "current_pod_resources": [
+          {
+            "name": "cert-manager-webhook",
+            "requests": {
+              "cpu": "10m",
+              "memory": "32Mi"
+            },
+            "limits": {
+              "cpu": "100m",
+              "memory": "128Mi"
+            }
+          }
+        ],
+        "dry_run_admitted_resources": [
+          {
+            "name": "cert-manager-webhook",
+            "requests": {
+              "cpu": "10m",
+              "memory": "100Mi"
+            },
+            "limits": {
+              "cpu": "100m",
+              "memory": "128Mi"
+            }
+          }
+        ],
+        "dry_run_vpa_updates": "Pod resources updated by goldilocks-cert-manager-webhook: container 0: memory request"
+      },
+      {
+        "namespace": "external-secrets-system",
+        "deployment": "external-secrets",
+        "vpa_mode": "Initial",
+        "ready_replicas": 2,
+        "desired_replicas": 2,
+        "current_pod_resources": [
+          {
+            "name": "external-secrets",
+            "requests": {
+              "cpu": "100m",
+              "memory": "256Mi"
+            },
+            "limits": {
+              "cpu": "500m",
+              "memory": "512Mi"
+            }
+          }
+        ],
+        "dry_run_admitted_resources": [
+          {
+            "name": "external-secrets",
+            "requests": {
+              "cpu": "100m",
+              "memory": "256Mi"
+            },
+            "limits": {
+              "cpu": "500m",
+              "memory": "512Mi"
+            }
+          }
+        ],
+        "dry_run_vpa_updates": "Pod resources updated by goldilocks-external-secrets: container 0: memory request"
+      },
+      {
+        "namespace": "external-secrets-system",
+        "deployment": "external-secrets-webhook",
+        "vpa_mode": "Initial",
+        "ready_replicas": 1,
+        "desired_replicas": 1,
+        "current_pod_resources": [
+          {
+            "name": "webhook",
+            "requests": {},
+            "limits": {}
+          }
+        ],
+        "dry_run_admitted_resources": [
+          {
+            "name": "webhook",
+            "requests": {
+              "cpu": "15m",
+              "memory": "256Mi"
+            },
+            "limits": {}
+          }
+        ],
+        "dry_run_vpa_updates": "Pod resources updated by goldilocks-external-secrets-webhook: container 0: cpu request, memory request"
+      }
+    ],
+    "daemonset_admission_check": {
+      "observed_at_utc": "2026-11-20T09:13:12.992335+00:00",
+      "target_namespace": "monitoring",
+      "target_daemonset": "gateway-probe",
+      "vpa": "goldilocks-gateway-probe",
+      "vpa_mode": "Initial",
+      "dry_run_vpa_updates": "Pod resources updated by goldilocks-gateway-probe: container 0: cpu: limit NOT set since originalLimit is nil or 0, memory request, cpu request, memory limit",
+      "method": "Server-side create dry run using a real DaemonSet-owned pod; no pod created.",
+      "source": "https://github.com/kubernetes/autoscaler/blob/vertical-pod-autoscaler-1.7.1/vertical-pod-autoscaler/pkg/target/fetcher.go#L111-L150"
+    }
+  },
+  "second_cohort": {
+    "reviewed_at_utc": "2026-11-20T09:15:00Z",
+    "scope": "Proposed policies from linked PRs; rollout and actual new-pod admission are not yet established.",
+    "node_feature_discovery_pr": "https://github.com/agentydragon/ducktape/pull/18111",
+    "kyverno_pr": "https://github.com/agentydragon/ducktape/pull/18110",
+    "workloads": [
+      {
+        "namespace": "node-feature-discovery",
+        "name": "node-feature-discovery-gc",
+        "kind": "Deployment",
+        "replicas": 1,
+        "cpu_request": "10m",
+        "memory_floor": "128Mi",
+        "memory_ceiling": "256Mi"
+      },
+      {
+        "namespace": "node-feature-discovery",
+        "name": "node-feature-discovery-master",
+        "kind": "Deployment",
+        "replicas": 1,
+        "cpu_request": "100m",
+        "memory_floor": "128Mi",
+        "memory_ceiling": "256Mi"
+      },
+      {
+        "namespace": "node-feature-discovery",
+        "name": "node-feature-discovery-worker",
+        "kind": "DaemonSet",
+        "replicas": 9,
+        "cpu_request": "5m",
+        "memory_floor": "96Mi",
+        "memory_ceiling": "128Mi"
+      },
+      {
+        "namespace": "kyverno",
+        "name": "kyverno-admission-controller",
+        "kind": "Deployment",
+        "replicas": 3,
+        "cpu_request": "100m",
+        "memory_floor": "224Mi",
+        "memory_ceiling": "384Mi"
+      },
+      {
+        "namespace": "kyverno",
+        "name": "kyverno-background-controller",
+        "kind": "Deployment",
+        "replicas": 1,
+        "cpu_request": "50m",
+        "memory_floor": "208Mi",
+        "memory_ceiling": "256Mi"
+      },
+      {
+        "namespace": "kyverno",
+        "name": "kyverno-cleanup-controller",
+        "kind": "Deployment",
+        "replicas": 1,
+        "cpu_request": "10m",
+        "memory_floor": "124Mi",
+        "memory_ceiling": "128Mi"
+      },
+      {
+        "namespace": "kyverno",
+        "name": "kyverno-reports-controller",
+        "kind": "Deployment",
+        "replicas": 1,
+        "cpu_request": "100m",
+        "memory_floor": "256Mi",
+        "memory_ceiling": "512Mi"
+      }
+    ]
   }
 }

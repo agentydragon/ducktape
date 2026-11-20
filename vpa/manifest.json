@@ -5,10 +5,13 @@
   "seven_day_queries_end_utc": "2026-11-20T03:03:48.752000+00:00",
   "scope": "Live VPA, workload, resource, scheduling and selected historical metrics snapshot; independently curated action plan.",
   "report_html_sha256": "ae9dbab9b12958cef57f40a7dd04403e4b91f14bdf566e281902eb5d977ba7b5",
-  "report_script_sha256": "1bde174f9975d68b9ca7f46483beb59db32c193051b2499b043c9233ddbdb9d9",
-  "evidence_sha256": "4902e881755ae58051ed480d0b601f81d446805c91f24d16ecf0e814605ed8a3",
+  "report_script_sha256": "9512b76a5c2705b235a9179a8d548658d5fbeeadc363af916362eba88e9db4db",
+  "evidence_sha256": "582b70345ad71473cad59d2cf34c42cdd8f4270f0e2ec7605d682221215c4c47",
   "architecture_source_devel_commit": "d81bd68165097b089cace9ae168b6e8f202f1b7e",
   "architecture_reviewed_at_utc": "2026-11-20T03:36:52Z",
   "batch_reviewed_at_utc": "2026-11-20T08:24:15Z",
-  "batch_review_source_devel_commit": "2aa028749c5a77cfa56c26abd1242d86b44bd12b"
+  "batch_review_source_devel_commit": "2aa028749c5a77cfa56c26abd1242d86b44bd12b",
+  "rollout_verified_at_utc": "2026-11-20T09:10:44Z",
+  "rollout_source_devel_commit": "a7127689c20ba5d233cd3145caa782ee9db18a32",
+  "daemonset_admission_verified_at_utc": "2026-11-20T09:13:12Z"
 }

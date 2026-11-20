@@ -200,7 +200,7 @@ function Report() {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   useEffect(() => {
-    fetch("./evidence.json?v=batches-20261120-0824")
+    fetch("./evidence.json?v=cohort-20261120-0910")
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
@@ -244,7 +244,7 @@ function Report() {
         justifies changing them.<//
       >
       <${Text} size="sm" c="dimmed" mt="sm"
-        >${`Cluster snapshot around 20 November 2026, 02:58 UTC · latest seven-day query ${data.history_end_utc} · inspected devel ${data.source_devel_commit}. Batch review and selected live checks: 20 November 2026, 08:24 UTC. Inventory and charts remain historical.`}<//
+        >${`Cluster snapshot around 20 November 2026, 02:58 UTC · latest seven-day query ${data.history_end_utc} · inspected devel ${data.source_devel_commit}. First-cohort rollout and admission checked 20 November 2026, 09:10 UTC. Inventory and charts remain historical.`}<//
       >
       <${Group} mt="sm" gap="md"
         ><${Anchor} href="./evidence.json">Evidence and inventory JSON<//
@@ -739,8 +739,9 @@ function Report() {
         resizing wherever disruption is acceptable. Do not serialize the rollout
         one Deployment at a time: select cohorts by ownership and risk, use the
         shared profile once per namespace or chart, and review the effective
-        policies together. The examples below were checked around 08:24 UTC;
-        validate current resource values and eligibility before changing them.
+        policies together. First-cohort rollout was checked at 09:10 UTC; the
+        next cohort is in progress and its live values must be checked again
+        before rollout.
       <//>
       <${Alert} color="orange" title="Reconciliation is a rollout gate" my="md">
         Goldilocks watches Pods and Namespaces, not Deployment metadata. CDviz’s
@@ -749,7 +750,7 @@ function Report() {
         each batch and trigger a namespace update when needed; investigate a
         durable level-triggered fix. CDviz is now Initial, memory-only and
         RequestsOnly; its existing pod remains running and new-pod admission has
-        not yet been verified. ${" "}
+        not yet been verified for that collector. ${" "}
         <${Anchor}
           href="https://github.com/FairwindsOps/goldilocks/blob/v4.16.1/pkg/controller/controller.go"
         >
@@ -758,34 +759,143 @@ function Report() {
       <//>
       <${Stack} gap="sm">
         <${Paper} withBorder p="md" radius="md">
-          <${Badge} color="blue" variant="light">1 · broad Initial cohorts<//>
-          <${Title} order=${3} size="h4" mt="xs"
-            >Adopt requests together across ordinary controllers<//
+          <${Badge} color="green" variant="light"
+            >1 · deployed Initial cohort<//
           >
-          <${Text} component="p">
-            First proposed cohort: external-dns; cert-manager controller,
-            cainjector and webhook; external-secrets controller and webhook; and
-            the three KEDA Deployments. These nine currently have Off VPAs with
-            recommendations. Group changes by chart or namespace in one or a few
-            PRs and stage dependent infrastructure families separately; they do
-            not need nine serial pilots. Use Initial and RequestsOnly for new
-            policies, initially controlling memory where CPU ownership or HPA is
-            uncertain. Memory-only policies leave CPU requests intact; existing
-            limits and policies are preserved.
+          <${Title} order=${3} size="h4" mt="xs">
+            Nine Deployments: rollout and admission verified
           <//>
-          <${Text} component="p" mb=${0}>
-            These are candidates, not pre-approved changes: confirm the chart’s
-            metadata support, full namespace membership, recommendation quality,
-            startup peaks, minimums, limits and aggregate node/zone headroom.
-            Constrain low recommendations where appropriate. Initial will not
-            evict existing pods, but a later ordinary replacement will receive a
-            different request and could fail to schedule; it does not repair an
-            under-requested running pod. Trust-manager is a later candidate
-            after assessing its fail-closed webhook and startup behavior.
+          <${Text} component="p">
+            All nine VPAs in external-dns, cert-manager, KEDA and
+            external-secrets are Initial and the Deployments were ready at 09:10
+            UTC. A server-side CREATE dry run using each running pod’s actual
+            ReplicaSet owner invoked the VPA webhook. All nine produced the
+            intended requests and retained their existing limits; no pods were
+            created or evicted. These checks do not prove future scheduling or
+            startup. The External Secrets webhook intentionally gains a 15m CPU
+            request; the other eight retain their existing CPU requests.
+            ${" "}<${Anchor} href=${github + "pull/18101"}>external-dns<//>
+            ${" · "}<${Anchor} href=${github + "pull/18103"}>KEDA<//>
+            ${" · "}<${Anchor} href=${github + "pull/18104"}>cert-manager<//>
+            ${" · "}<${Anchor} href=${github + "pull/18105"}
+              >External Secrets<//
+            >
+          <//>
+          <${Table.ScrollContainer}
+            minWidth=${800}
+            type="native"
+            tabIndex=${0}
+            aria-label="First cohort admission dry runs"
+          >
+            <${Table} striped withTableBorder verticalSpacing="sm">
+              <${Table.Thead}
+                ><${Table.Tr}>
+                  <${Table.Th}>Namespace / Deployment<//>
+                  <${Table.Th}>Ready<//>
+                  <${Table.Th}>Memory request: running → dry run<//>
+                  <${Table.Th}>CPU request: running → dry run<//>
+                <//><//
+              >
+              <${Table.Tbody}>
+                ${data.rollout_progress.cohort.map((row) => {
+                  const current = row.current_pod_resources[0].requests;
+                  const admitted = row.dry_run_admitted_resources[0].requests;
+                  const memory = (value) =>
+                    value == null ? "unset" : quantityMiB(value);
+                  return html`<${Table.Tr}
+                    key=${`${row.namespace}/${row.deployment}`}
+                  >
+                    <${Table.Td}>${`${row.namespace} / ${row.deployment}`}<//>
+                    <${Table.Td}
+                      >${`${row.ready_replicas}/${row.desired_replicas}`}<//
+                    >
+                    <${Table.Td}
+                      >${`${memory(current.memory)} → ${memory(admitted.memory)}`}<//
+                    >
+                    <${Table.Td}
+                      >${`${current.cpu ?? "unset"} → ${admitted.cpu ?? "unset"}`}<//
+                    >
+                  <//>`;
+                })}
+              <//>
+            <//>
+          <//>
+          <${Text} size="sm" c="dimmed" mt="sm" mb=${0}>
+            Running-pod requests and admission results are a 09:10 UTC sample,
+            not a live view. Limits in the dry-run output matched the running
+            pod.
           <//>
         <//>
         <${Paper} withBorder p="md" radius="md">
-          <${Badge} color="blue" variant="light">2 · coverage by class<//>
+          <${Badge} color="blue" variant="light">2 · next Initial cohort<//>
+          <${Title} order=${3} size="h4" mt="xs">
+            Node Feature Discovery and Kyverno controllers
+          <//>
+          <${Text} component="p" mb=${0}>
+            Prepare Node Feature Discovery’s two Deployments and its worker
+            DaemonSet, plus Kyverno’s four controller Deployments, as two
+            service-family changes. VPA handles DaemonSet selectors without a
+            scale subresource: a dry run against an already enabled monitoring
+            DaemonSet confirmed admission mutation. Verify the Node Feature
+            Discovery worker after rollout too. ${" "}
+            <${Anchor}
+              href="https://github.com/kubernetes/autoscaler/blob/vertical-pod-autoscaler-1.7.1/vertical-pod-autoscaler/pkg/target/fetcher.go#L111-L150"
+              >VPA selector handling<//
+            >
+            ${" "}Kyverno has an existing migration Job VPA and multiple
+            controllers sharing the container name <${Code}>controller<//>; keep
+            the namespace default Off and opt in the four Deployments separately
+            so the Job remains Off. Goldilocks does not watch Deployment
+            annotations: verify their VPA modes after Helm applies them and
+            trigger a namespace event if necessary. Review startup, HPA/PDB,
+            placement and combined request increases before rollout. ${" "}
+            <${Anchor} href=${data.second_cohort.node_feature_discovery_pr}
+              >Node Feature Discovery PR<//
+            >
+            ${" · "}<${Anchor} href=${data.second_cohort.kyverno_pr}
+              >Kyverno PR<//
+            >
+          <//>
+          <${Table.ScrollContainer}
+            minWidth=${760}
+            type="native"
+            tabIndex=${0}
+            aria-label="Second cohort proposed VPA bounds"
+          >
+            <${Table} striped withTableBorder verticalSpacing="sm">
+              <${Table.Thead}
+                ><${Table.Tr}>
+                  <${Table.Th}>Namespace / workload<//
+                  ><${Table.Th}>Kind / replicas<//>
+                  <${Table.Th}>Memory request floor–ceiling<//
+                  ><${Table.Th}>Existing CPU request<//>
+                <//><//
+              >
+              <${Table.Tbody}>
+                ${data.second_cohort.workloads.map(
+                  (row) =>
+                    html`<${Table.Tr} key=${`${row.namespace}/${row.name}`}>
+                      <${Table.Td}>${`${row.namespace} / ${row.name}`}<//>
+                      <${Table.Td}>${`${row.kind} / ${row.replicas}`}<//>
+                      <${Table.Td}
+                        >${`${row.memory_floor}–${row.memory_ceiling}`}<//
+                      >
+                      <${Table.Td}>${row.cpu_request}<//>
+                    <//>`,
+                )}
+              <//>
+            <//>
+          <//>
+          <${Text} size="sm" c="dimmed" mt="sm" mb=${0}>
+            Proposed PR bounds, not proof of deployment. CPU requests and
+            container limits stay as declared; Initial does not evict running
+            pods. Kyverno cleanup’s 30-day peak was 123 MiB against its existing
+            128 MiB limit, so the request adjustment does not fix its narrow
+            limit headroom.
+          <//>
+        <//>
+        <${Paper} withBorder p="md" radius="md">
+          <${Badge} color="blue" variant="light">3 · coverage by class<//>
           <${Title} order=${3} size="h4" mt="xs"
             >Expand to eligible namespaces, not a bespoke change per workload<//
           >
@@ -803,7 +913,7 @@ function Report() {
           <//>
         <//>
         <${Paper} withBorder p="md" radius="md">
-          <${Badge} color="cyan" variant="light">3 · automatic cohorts<//>
+          <${Badge} color="cyan" variant="light">4 · automatic cohorts<//>
           <${Title} order=${3} size="h4" mt="xs"
             >Promote replicated workloads to Recreate in groups<//
           >
@@ -824,7 +934,7 @@ function Report() {
         <//>
         <${Paper} withBorder p="md" radius="md">
           <${Badge} color="gray" variant="light"
-            >4 · operator-owned exceptions<//
+            >5 · operator-owned exceptions<//
           >
           <${Title} order=${3} size="h4" mt="xs"
             >Cover databases and dynamic workloads through their owners<//
@@ -839,6 +949,17 @@ function Report() {
             Coordinate storage workloads with the separate storage work.
           <//>
         <//>
+      <//>
+      <${Text} component="p" mt="md">
+        VPA 1.7.1 can briefly admit a stale CPU recommendation after a policy
+        switches from Off to memory-only Initial. The first cohort pins existing
+        CPU requests with equal minimum and maximum bounds through that
+        transition; the webhook with no prior CPU request explicitly adopts CPU
+        sizing instead. Verify live target resources and limits, not just the
+        requested mode. ${" "}<${Anchor}
+          href="https://github.com/kubernetes/autoscaler/blob/vertical-pod-autoscaler-1.7.1/vertical-pod-autoscaler/pkg/utils/vpa/capping.go"
+          >VPA admission capping<//
+        >
       <//>
       <${Text} component="p" mt="md">
         For each cohort, compare generated policies and existing request/limit
