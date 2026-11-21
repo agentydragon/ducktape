@@ -24,13 +24,3 @@ firecracker_test(
         "manual",
     ],
 )
-
-firecracker_test(
-    name = "test_firecracker_shared_cache_canary",
-    pool = "kvm-vm-cache-canary",
-    recycle = False,
-    tags = [
-        "bench",
-        "manual",
-    ],
-)
