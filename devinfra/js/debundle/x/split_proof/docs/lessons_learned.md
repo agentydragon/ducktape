@@ -40,7 +40,7 @@ Numbers are for one production bundle of 9,707 units and its reviewed tree of 2,
 
 ## What the inputs require
 
-- **Nearly the whole language.** The inputs use classes with private members and static blocks, generators, async generators, `for await`, `using` and tagged templates ([`../README.md`](../README.md)).
+- **Nearly the whole language.** The inputs use classes with private members and static blocks, generators, async generators, `for await`, `using` and tagged templates ([`../SUPPORT.md`](../SUPPORT.md)).
 - **Nearly the whole standard library.** The names of all but 37 of the 378 members of Node 22's standard objects occur in the inputs, with 226 web platform globals and 42 host modules ([`../HOST_FEATURES.md`](../HOST_FEATURES.md)).
 - **Patches of standard objects are real.** The inputs assign `Object.prototype.toString`, `Function.prototype.toString`, `Array.prototype.reduce` and four more by name. Premise P1 cannot be "nobody patches"; it has to be "the analysis sees the patches".
 - **So no small fragment covers the inputs.** A model of JavaScript can be precise only on a core. Everything else has to count as unknown code under one stated assumption.

@@ -162,6 +162,18 @@ export const three = 3;
   assert.equal(refused.checked.status, 3, refused.log);
 }
 
+// A top-level `await` stays outside the model: the module that awaits lets a module imported after it run first.
+// The same split with the `await` inside an async function is taken.
+{
+  const modules = { "first.mjs": ["#0", "#1"], "second.mjs": ["#2"], "entry.mjs": ["#3"] };
+  const rest = `console.log("first", typeof a);\nconsole.log("second");\nconsole.log("third");\n`;
+  for (const awaiting of [`const a = await Promise.resolve(1);\n`, `for await (const x of [1]) globalThis.a = x;\n`]) {
+    const refused = split("top_level_await", { code: awaiting + rest, modules });
+    assert.equal(refused.checked.status, 3, refused.log);
+  }
+  same("await_in_function", { code: `const a = (async () => await Promise.resolve(1))();\n${rest}`, modules }, []);
+}
+
 // One statement per declarator, also under `export`: the declarators of a list go to different modules. A
 // destructuring declarator stays whole.
 {
