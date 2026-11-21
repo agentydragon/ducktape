@@ -365,10 +365,7 @@ if (runSection(0)) {
   await writeFile(expressionSpec, JSON.stringify(generatedSpec));
   const unsupported = cli("generate", expressionSource, expressionSpec, join(root, "unsupported-renamed-local-out"));
   assert.equal(unsupported.value.result, "unknown");
-  assert.match(
-    unsupported.value.reason,
-    /local import renaming supports simple readers, records, calls, and local updates only/
-  );
+  assert.match(unsupported.value.reason, /local import renaming supports only parameterless pure expressions/);
 
   const observedSource = join(root, "observed-renamed-local-source.mjs");
   const observedSpec = join(root, "observed-renamed-local-spec.json");
@@ -482,6 +479,34 @@ if (runSection(0)) {
   const nonnumeric = spawnSync(process.execPath, ["--input-type=module", "-e", nonnumericScript], { encoding: "utf8" });
   assert.equal(nonnumeric.status, 0, nonnumeric.stderr);
   assert.equal(nonnumeric.stdout.trim(), "function");
+
+  const numericSource = join(root, "numeric-renamed-local-source.mjs");
+  const numericSpec = join(root, "numeric-renamed-local-spec.json");
+  const numericOut = join(root, "numeric-renamed-local-out");
+  await writeFile(
+    numericSource,
+    `let first = 3;\nlet second = 4;\nfunction compute() { return first * 2 + second; }\nexport { compute };\n`
+  );
+  generatedSpec.modules["state.mjs"].statements = [0, 1];
+  generatedSpec.modules["logic.mjs"].statements = [2];
+  await writeFile(numericSpec, JSON.stringify(generatedSpec));
+  assert.equal(cli("generate", numericSource, numericSpec, numericOut).value.result, "generated");
+  const numeric = cli("validate", numericSource, numericSpec, numericOut).value;
+  assert.equal(numeric.result, "proved under assumptions", JSON.stringify(numeric));
+  assert.match(numeric.certificate, /binding_simple_future_calls/);
+  assert.deepEqual(execute(numericSource, [{ name: "compute", args: [] }]), { events: [], results: [10] });
+  assert.deepEqual(execute(join(numericOut, "entry.mjs"), [{ name: "compute", args: [] }]), {
+    events: [],
+    results: [10],
+  });
+  const numericLogic = join(numericOut, "logic.mjs");
+  const numericText = await readFile(numericLogic, "utf8");
+  assert.match(numericText, /first as __split_local_0/);
+  await writeFile(numericLogic, numericText.replace("first as __split_local_0", "second as __split_local_0"));
+  const numericRedirect = cli("validate", numericSource, numericSpec, numericOut).value;
+  assert.equal(numericRedirect.result, "unsafe", JSON.stringify(numericRedirect));
+  assert.deepEqual(execute(numericSource, numericRedirect.calls), { events: [], results: [10] });
+  assert.deepEqual(execute(join(numericOut, "entry.mjs"), numericRedirect.calls), { events: [], results: [12] });
 }
 
 if (runSection(0)) {

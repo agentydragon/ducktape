@@ -1410,22 +1410,64 @@ function generateFiles(source, spec, names) {
       if (module.renameLocalImports) {
         const renamed = references(item.ast).filter((reference) => providers[name].has(reference));
         if (renamed.length) {
-          check(
-            ["reader", "record", "call", "function"].includes(item.ast.kind) && renamed.length === 1,
-            "local import renaming supports simple readers, records, calls, and local updates only"
-          );
-          const node = parseModule(statement)[0];
-          const reference =
-            item.ast.kind === "reader"
-              ? node.body.body[0].argument
-              : item.ast.kind === "function"
-                ? node.body.body[0].expression.right
-                : item.ast.kind === "record"
-                  ? node.expression.arguments[0]
-                  : node.expression.callee;
-          check(reference.type === "Identifier" && reference.name === renamed[0], "unexpected imported reference");
-          statement =
-            statement.slice(0, reference.start) + localAliases.get(renamed[0]) + statement.slice(reference.end);
+          if (item.ast.kind === "expressionFunction") {
+            const node = parseModule(statement)[0];
+            check(
+              node.params.length === 0 && node.body.body.length === 1 && node.body.body[0].type === "ReturnStatement",
+              "local import renaming supports only parameterless pure expressions"
+            );
+            const edits = [];
+            const visit = (expression) => {
+              if (expression?.type === "Literal") return;
+              if (expression?.type === "Identifier") {
+                if (renamed.includes(expression.name)) edits.push(expression);
+                return;
+              }
+              if (
+                expression?.type === "BinaryExpression" ||
+                (expression?.type === "LogicalExpression" && expression.operator === "&&")
+              ) {
+                visit(expression.left);
+                visit(expression.right);
+                return;
+              }
+              if (expression?.type === "ConditionalExpression") {
+                visit(expression.test);
+                visit(expression.consequent);
+                visit(expression.alternate);
+                return;
+              }
+              if (expression?.type === "UnaryExpression" && expression.operator === "!") {
+                visit(expression.argument);
+                return;
+              }
+              check(false, "local import renaming supports only parameterless pure expressions");
+            };
+            visit(node.body.body[0].argument);
+            check(
+              renamed.every((name) => edits.some((edit) => edit.name === name)),
+              "missing imported expression reference"
+            );
+            for (const edit of edits.sort((left, right) => right.start - left.start))
+              statement = statement.slice(0, edit.start) + localAliases.get(edit.name) + statement.slice(edit.end);
+          } else {
+            check(
+              ["reader", "record", "call", "function"].includes(item.ast.kind) && renamed.length === 1,
+              "local import renaming supports simple readers, records, calls, and local updates only"
+            );
+            const node = parseModule(statement)[0];
+            const reference =
+              item.ast.kind === "reader"
+                ? node.body.body[0].argument
+                : item.ast.kind === "function"
+                  ? node.body.body[0].expression.right
+                  : item.ast.kind === "record"
+                    ? node.expression.arguments[0]
+                    : node.expression.callee;
+            check(reference.type === "Identifier" && reference.name === renamed[0], "unexpected imported reference");
+            statement =
+              statement.slice(0, reference.start) + localAliases.get(renamed[0]) + statement.slice(reference.end);
+          }
         }
       }
       return `${shouldExport ? "export " : ""}${statement}`;
@@ -1970,16 +2012,16 @@ theorem binding_aliased_future_calls (calls : ${aliasCallType}) :
     module.imports.some((imported) => imported.links.some((link) => !sourceNames.has(link.local)))
   );
   const simpleAliasCertificate = `
-def binding_simple_output_table := (witnessedOutputDefinitions bindingModules).bind (fun definitions => publicFunctionTable definitions bindingExports)
+def binding_simple_output_table := (witnessedOutputDefinitions bindingModules).bind (fun definitions => ${aliasTable} definitions bindingExports)
 theorem binding_simple_graph : simpleAliasGraphValid bindingSource bindingModules bindingEntry = true := by decide
 theorem binding_simple_public : witnessedPublicMappings bindingModules bindingEntry bindingOutputMappings = some bindingPublicMappings := by decide
 theorem binding_simple_initialization : sourceBindingState bindingSource = witnessedOutputState bindingSource bindingModules bindingEntry := by decide
 theorem binding_simple_output_ready : (witnessedOutputState bindingSource bindingModules bindingEntry).isSome = true := by decide
-theorem binding_simple_table : publicFunctionTable bindingSource bindingExports = binding_simple_output_table := by decide
-theorem binding_simple_table_ready : (publicFunctionTable bindingSource bindingExports).isSome = true := by decide
-theorem binding_simple_future_calls (calls : List String) :
-  (sourceBindingState bindingSource).bind (fun state => (publicFunctionTable bindingSource bindingExports).bind (fun table => (aliasPublicTable table bindingPublicMappings).bind (fun aliases => runExportedCalls aliases state calls))) =
-  (witnessedOutputState bindingSource bindingModules bindingEntry).bind (fun state => binding_simple_output_table.bind (fun table => (aliasPublicTable table bindingPublicMappings).bind (fun aliases => runExportedCalls aliases state calls))) := by
+theorem binding_simple_table : ${aliasTable} bindingSource bindingExports = binding_simple_output_table := by decide
+theorem binding_simple_table_ready : (${aliasTable} bindingSource bindingExports).isSome = true := by decide
+theorem binding_simple_future_calls (calls : ${aliasCallType}) :
+  (sourceBindingState bindingSource).bind (fun state => (${aliasTable} bindingSource bindingExports).bind (fun table => (aliasPublicTable table bindingPublicMappings).bind (fun aliases => ${aliasRunner} aliases state calls))) =
+  (witnessedOutputState bindingSource bindingModules bindingEntry).bind (fun state => binding_simple_output_table.bind (fun table => (aliasPublicTable table bindingPublicMappings).bind (fun aliases => ${aliasRunner} aliases state calls))) := by
   rw [binding_simple_initialization, binding_simple_table]
 #print axioms binding_simple_graph
 #print axioms binding_simple_public
@@ -1990,9 +2032,7 @@ theorem binding_simple_future_calls (calls : List String) :
 #print axioms binding_simple_future_calls
 `;
   const simpleAliasProof =
-    !legacyValid && !relationValid && !hasExpressions && renamedLocal
-      ? runLean(definitionPrefix + simpleAliasCertificate)
-      : null;
+    !legacyValid && !relationValid && renamedLocal ? runLean(definitionPrefix + simpleAliasCertificate) : null;
   const simpleAliasValid =
     simpleAliasProof?.status === 0 &&
     [

@@ -23,8 +23,9 @@ if (shards === 4) {
   assert.equal(aliases.localImportAliasRequestedCases, 1);
   assert.equal(aliases.localImportAliasGeneratedCases, 1);
   assert.equal(aliases.localImportAliasComparedCases, 1);
-  if (shard === 2 || shard === 3) {
-    assert.equal(aliases.mutationKinds[shard === 2 ? "localAliasRedirect" : "localAliasInitRedirect"], 1);
+  if (shard >= 1) {
+    const mutation = { 1: "localAliasNumericRedirect", 2: "localAliasRedirect", 3: "localAliasInitRedirect" }[shard];
+    assert.equal(aliases.mutationKinds[mutation], 1);
     assert.equal(aliases.mutatedDifferent, 1);
     assert.equal(aliases.mutatedVerdicts.unsafe, 1);
     assert.equal(aliases.certifiedWitnesses.length, 1);
@@ -87,6 +88,31 @@ if (shards === 4 && shard === 0) {
   });
   assert.equal(unchangedUpdate.localImportAliasProvedCases, 1);
   assert.equal(unchangedUpdate.equal, 1);
+}
+if (shards === 4 && (shard === 2 || shard === 3)) {
+  const start = shard === 2 ? 13 : 25;
+  const changedNumeric = await runFuzz({
+    seed: 773,
+    start,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "alias",
+    validateEvery: 1,
+  });
+  assert.equal(changedNumeric.mutationKinds.localAliasNumericRedirect, 1);
+  assert.equal(changedNumeric.mutatedDifferent, 1);
+  assert.equal(changedNumeric.mutatedVerdicts.unsafe, 1);
+  const unchangedNumeric = await runFuzz({
+    seed: 773,
+    start,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "alias",
+    mutationMode: "disabled",
+    validateEvery: 1,
+  });
+  assert.equal(unchangedNumeric.localImportAliasProvedCases, 1);
+  assert.equal(unchangedNumeric.equal, 1);
 }
 if (shards === 4 && shard === 1) {
   const relay = await runFuzz({

@@ -208,8 +208,9 @@ Generated import aliases can travel through those reexport chains. A relay may
 set `renameReexports: true` to export generated names; later relays and imports
 follow those names back to their original declarations.
 A module may also set `renameLocalImports: true` to rename imported bindings
-used by simple readers, top-level records and calls, and local addition updates.
-Other renamed local uses currently return `unknown` from generation.
+used by simple readers, top-level records and calls, local addition updates,
+and parameterless pure numeric expressions. Other renamed local uses currently
+return `unknown` from generation.
 Source declarations have unique names, function
 writes must target a mutable local binding, and each module preserves its assigned
 statements' source order. Unsupported syntax, linking, cycles, or uninitialized
@@ -367,11 +368,11 @@ independently generated function bodies. It can be combined with either split mo
 `--grammar async` generates promise-based functions and observes each call to
 completion in Node. Pending promises and timeouts are inconclusive. Async
 execution is not yet part of the Lean proof-supported subset.
-Use `--grammar alias` to generate simple readers and initialization observations
-with renamed local imports, varying reexport chains and partitions. Some cases
-redirect an import and are checked as Node-reproduced unsafe witnesses, during
-initialization, in readers, and in updates observed by later calls; replay with
-`--mutations disabled` to check the corresponding unchanged split.
+Use `--grammar alias` to generate simple readers, initialization observations,
+local updates, and parameterless numeric expressions with renamed local imports,
+varying reexport chains and partitions. Some cases redirect an import and are
+checked as Node-reproduced unsafe witnesses, during initialization and later
+calls; replay with `--mutations disabled` to check the corresponding unchanged split.
 
 ```sh
 nix develop .#js-module-proof

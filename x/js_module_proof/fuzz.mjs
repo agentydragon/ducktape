@@ -977,9 +977,11 @@ export function makeLocalAliasCase(seed, index) {
   const readerNames = Array.from({ length: bindings.length + rand(2) }, (_, i) => `read${i}`);
   const initial = rand(6);
   const updateBindings = index % 4 === 0 ? ["increment", "otherIncrement"] : [];
+  const numericBindings = index % 4 === 1 ? ["numericLeft", "numericOther", "numericRight"] : [];
   const state = [
     ...bindings.map((name, i) => variable(name, initial + i)),
     ...updateBindings.map((name, i) => variable(name, initial + i + 1)),
+    ...numericBindings.map((name, i) => variable(name, initial + i + 1)),
     ...(index % 2 ? [record(bindings[0])] : []),
   ];
   const observation = index % 4 === 3 ? [record(bindings[0])] : [];
@@ -995,8 +997,25 @@ export function makeLocalAliasCase(seed, index) {
         functionNode("current", [], [returnNode(id("total"))]),
       ]
     : [];
+  const numericExpression = [
+    {
+      type: "BinaryExpression",
+      operator: "+",
+      left: { type: "BinaryExpression", operator: "*", left: id("numericLeft"), right: literal(2) },
+      right: id("numericRight"),
+    },
+    { type: "BinaryExpression", operator: "-", left: id("numericRight"), right: id("numericLeft") },
+    {
+      type: "ConditionalExpression",
+      test: { type: "BinaryExpression", operator: "<", left: id("numericLeft"), right: id("numericRight") },
+      consequent: { type: "BinaryExpression", operator: "+", left: id("numericLeft"), right: literal(1) },
+      alternate: id("numericRight"),
+    },
+  ][Math.floor(index / 12) % 3];
+  const numeric = numericBindings.length ? [functionNode("compute", [], [returnNode(numericExpression)])] : [];
   const readerStart = state.length + observation.length + localState.length;
   const updateStart = readerStart + readers.length;
+  const numericStart = updateStart + updates.length;
   const relay = index % 3 === 1;
   const splitReaders = index % 3 === 2;
   const provider = relay ? "relay.mjs" : "state.mjs";
@@ -1007,7 +1026,7 @@ export function makeLocalAliasCase(seed, index) {
           "relay.mjs": {
             imports: ["state.mjs"],
             statements: [],
-            reexports: { "state.mjs": [...bindings, ...updateBindings] },
+            reexports: { "state.mjs": [...bindings, ...updateBindings, ...numericBindings] },
             renameReexports: index % 4 === 1,
           },
         }
@@ -1019,6 +1038,7 @@ export function makeLocalAliasCase(seed, index) {
         ...localState.map((_, i) => state.length + observation.length + i),
         ...readers.flatMap((_, i) => (!splitReaders || i % 2 === 0 ? [readerStart + i] : [])),
         ...updates.map((_, i) => updateStart + i),
+        ...numeric.map((_, i) => numericStart + i),
       ],
       renameLocalImports: true,
       aliasImports: index % 4 === 3,
@@ -1043,9 +1063,14 @@ export function makeLocalAliasCase(seed, index) {
       ...localState,
       ...readers,
       ...updates,
+      ...numeric,
       {
         type: "ExportNamedDeclaration",
-        specifiers: [...readerNames, ...(updates.length ? ["bump", "current"] : [])].map((name) => ({
+        specifiers: [
+          ...readerNames,
+          ...(updates.length ? ["bump", "current"] : []),
+          ...(numeric.length ? ["compute"] : []),
+        ].map((name) => ({
           type: "ExportSpecifier",
           local: id(name),
           exported: id(name),
@@ -1057,6 +1082,7 @@ export function makeLocalAliasCase(seed, index) {
     ast,
     source: print(ast),
     grammar: "alias",
+    numericLeftIndex: bindings.length + updateBindings.length,
     unsupported: false,
     cyclic: false,
     invalidAssignment: false,
@@ -1066,7 +1092,11 @@ export function makeLocalAliasCase(seed, index) {
       entry: "entry.mjs",
       modules,
     },
-    calls: [...readerNames, ...(updates.length ? ["current", "bump", "current"] : [])].map((name) => ({
+    calls: [
+      ...readerNames,
+      ...(updates.length ? ["current", "bump", "current"] : []),
+      ...(numeric.length ? ["compute"] : []),
+    ].map((name) => ({
       name,
       args: [],
     })),
@@ -1832,7 +1862,12 @@ export async function minimizeCase(input, fails) {
 
 async function mutateOutput(out, input, kind) {
   const modules = Object.keys(input.spec.modules);
-  const files = ["localAliasRedirect", "localAliasInitRedirect", "localAliasUpdateRedirect"].includes(kind)
+  const files = [
+    "localAliasRedirect",
+    "localAliasInitRedirect",
+    "localAliasUpdateRedirect",
+    "localAliasNumericRedirect",
+  ].includes(kind)
     ? ["logic.mjs"]
     : kind === "renamedReexport"
       ? ["relay.mjs"]
@@ -1854,7 +1889,13 @@ async function mutateOutput(out, input, kind) {
       changed = original.replace(/\bvalue0 as (__split_local_+\d+)/, "value1 as $1");
     else if (kind === "localAliasUpdateRedirect")
       changed = original.replace(/\bincrement as (__split_local_+\d+)/, "otherIncrement as $1");
-    else if (kind === "localAliasInitRedirect")
+    else if (kind === "localAliasNumericRedirect") {
+      const index = input.numericLeftIndex;
+      changed = original.replace(
+        new RegExp(`(__split_reexport_+\\d+_)${index} as (__split_local_+${index})\\b`),
+        (_, prefix, local) => `${prefix}${index + 1} as ${local}`
+      );
+    } else if (kind === "localAliasInitRedirect")
       changed = original.replace(
         /(__split_alias_+)0 as (__split_local_+0)\b/,
         (_, prefix, local) => `${prefix}1 as ${local}`
@@ -2185,6 +2226,7 @@ export async function runFuzz({
       localAliasRedirect: 0,
       localAliasInitRedirect: 0,
       localAliasUpdateRedirect: 0,
+      localAliasNumericRedirect: 0,
     },
     splitCompared: 0,
     splitDifferent: 0,
@@ -2225,26 +2267,28 @@ export async function runFuzz({
               : makeCase(seed, index);
       const input = splitMode === "independent" ? independentSplit(generated, seed, index) : generated;
       const plannedMutation =
-        input.grammar === "alias" && !input.independentSplit && index % 12 === 3
-          ? "localAliasInitRedirect"
-          : input.grammar === "alias" && !input.independentSplit && index % 12 === 4
-            ? "localAliasUpdateRedirect"
-            : input.grammar === "alias" && !input.independentSplit && index % 6 === 2
-              ? "localAliasRedirect"
-              : input.grammar === "composed" && !input.independentSplit && index % 64 === 59
-                ? "renamedReexport"
-                : input.grammar === "composed" && !input.independentSplit && index % 64 === 23
-                  ? "throwValue"
-                  : input.grammar === "composed" &&
-                      !input.independentSplit &&
-                      input.hasDiscardedLiteral &&
-                      index % 52 === 16
-                    ? "composedEffect"
-                    : !["composed", "async", "alias"].includes(input.grammar) &&
+        input.grammar === "alias" && !input.independentSplit && index % 12 === 1
+          ? "localAliasNumericRedirect"
+          : input.grammar === "alias" && !input.independentSplit && index % 12 === 3
+            ? "localAliasInitRedirect"
+            : input.grammar === "alias" && !input.independentSplit && index % 12 === 4
+              ? "localAliasUpdateRedirect"
+              : input.grammar === "alias" && !input.independentSplit && index % 6 === 2
+                ? "localAliasRedirect"
+                : input.grammar === "composed" && !input.independentSplit && index % 64 === 59
+                  ? "renamedReexport"
+                  : input.grammar === "composed" && !input.independentSplit && index % 64 === 23
+                    ? "throwValue"
+                    : input.grammar === "composed" &&
                         !input.independentSplit &&
-                        index % 8 === 2
-                      ? ["binding", "effect", "function", "export", "import"][Math.floor(index / 8) % 5]
-                      : null;
+                        input.hasDiscardedLiteral &&
+                        index % 52 === 16
+                      ? "composedEffect"
+                      : !["composed", "async", "alias"].includes(input.grammar) &&
+                          !input.independentSplit &&
+                          index % 8 === 2
+                        ? ["binding", "effect", "function", "export", "import"][Math.floor(index / 8) % 5]
+                        : null;
       const mutation = mutationMode === "disabled" ? null : plannedMutation;
       if (plannedMutation === "composedEffect") input.calls = [];
       if (plannedMutation === "throwValue") input.calls = [{ name: "fuzzThrower", args: [1] }];
@@ -2252,6 +2296,7 @@ export async function runFuzz({
       if (plannedMutation === "localAliasInitRedirect") input.calls = [];
       if (plannedMutation === "localAliasUpdateRedirect")
         input.calls = ["current", "bump", "current"].map((name) => ({ name, args: [] }));
+      if (plannedMutation === "localAliasNumericRedirect") input.calls = [{ name: "compute", args: [] }];
       if (plannedMutation === "renamedReexport")
         input.calls =
           !input.redirectedCallee && (index % 256 === 187 || index % 256 === 251 || index % 512 === 315)

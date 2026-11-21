@@ -84,8 +84,8 @@ cover only part of the grammar and split space described below.
       semantics and frontend together, and test each slice end to end against Node
       on accepted, unsafe and unsupported examples. Avoid adding independent formal
       models for the fuzzer or for individual syntax features.
-- [ ] Extend renamed local imports beyond simple readers, records, calls, and
-      local addition updates.
+- [ ] Extend renamed local imports beyond simple readers, records, calls, local
+      addition updates, and parameterless pure numeric expressions.
       The generator and an axiom-free acceptance certificate cover these cases,
       including relayed imports; the AST fuzzer also redirects reader imports to
       check unsafe witnesses.
