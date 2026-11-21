@@ -3,8 +3,8 @@
   "audited_at_utc": "2026-11-21 05:16:41 UTC",
   "snapshot_utc": "2026-11-21T05:16:41Z",
   "scope": "Current Kubernetes VPA policies, workload owners, metrics samples and rollout review cohorts. Earlier evidence retains its original observation window.",
-  "report_html_sha256": "d855bc5739ddc5cd39de7acc1d14b0fe33bb83a4de9b5d0dd06e97b9e893243f",
-  "report_script_sha256": "41af1fd563d3dbb7200fad6dc81e9add4396f2ca483f0c8816bfc8384f43ff6e",
+  "report_html_sha256": "0d66c8dc2a09b9feb2916cc8c8c987095f9fd6d08d31aef91418d3f06d123e10",
+  "report_script_sha256": "6793c2c40430ad0e471a8f3fb1962896f749687dabb738b8fc759ccd3b3a3475",
   "evidence_sha256": "c69cc4092a6f9640579e2dce32e0f2f37af78498b947522c2320f49698a86a28",
   "architecture_source_devel_commit": "d81bd68165097b089cace9ae168b6e8f202f1b7e",
   "architecture_reviewed_at_utc": "2026-11-20T03:36:52Z",
@@ -94,6 +94,11 @@
           "observed_generation": 1
         }
       ]
+    },
+    "capacity_model": {
+      "noncohort_reservations_observed_utc": "2026-11-21T05:04Z",
+      "tightest_ovh_worker_remaining_millicores": 95,
+      "scope": "Eight worker-only services at their CPU and memory ceilings per OVH worker, one replica each. Two ingress replicas placed on separate OVH control-plane hosts. Noncohort reservations held fixed."
     }
   }
 }
