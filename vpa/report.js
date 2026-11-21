@@ -246,7 +246,7 @@ function Inventory({ workloads, initialGroup }) {
           ><${Table.Tr}
             ><${Table.Th}>Namespace / owner<//><${Table.Th}>Direct VPA policy<//
             ><${Table.Th}>Template and admitted resources<//
-            ><${Table.Th}>Memory observations<//
+            ><${Table.Th}>Usage observations<//
             ><${Table.Th}>VPA recommendation / HPA<//><//
           ><//
         >
@@ -438,7 +438,7 @@ function Report() {
             ${chart.map(({ mode, controllers }) => `${mode} ${controllers}`).join(" · ")}
           <//>
           <${Text} size="sm" c="dimmed" mt="xs">
-            ${`Active means desired replicas or scheduled DaemonSet Pods above zero. The cluster has ${counts.all_vpa_objects} VPA objects across all targets.`}
+            ${`Active means desired replicas or eligible DaemonSet nodes above zero. The cluster has ${counts.all_vpa_objects} VPA objects across all targets.`}
           <//>
         <//>
         <${Paper} withBorder p="md" radius="md">
