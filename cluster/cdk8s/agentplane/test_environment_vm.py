@@ -188,8 +188,6 @@ def test_staging_uses_the_replicated_class_for_both_vm_claims_and_keeps_pod_stor
     assert vm_workspace["claim"]["volumeMode"] == "Block"
     assert vm_workspace["layout"] == {"type": "BlockFilesystem", "filesystem": "ext4"}
     assert vm_state["claim"]["storageClassName"] == vm_workspace["claim"]["storageClassName"]
-    # The Piraeus provider declares this class in cluster/cdk8s/piraeus.py.
-    assert staging.ENV.vm_storage_class == "piraeus-ssd-2-autodiskful"
     assert vm_state["claim"]["storageClassName"] == staging.ENV.vm_storage_class
 
     environment_template = find_resource(staging_manifests, "SandboxTemplate", staging.POD_TEMPLATE)

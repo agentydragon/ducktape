@@ -182,12 +182,12 @@ py_test(
         ":secrets",
         ":upstreams",
         "//:conftest",
+        "//cluster/cdk8s:conftest",
         "//cluster/cdk8s/testing:manifests",
         "//model_catalog:catalog",
         "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
         "@pypi_tana_litellm_proxy//litellm",
     ],
 )

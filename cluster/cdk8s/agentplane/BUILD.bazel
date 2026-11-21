@@ -1588,6 +1588,7 @@ py_test(
         ":sandbox_pod",
         "//:conftest",
         "//agentplane:crd_group",
+        "//cluster/cdk8s:conftest",
         "//cluster/cdk8s/kyverno:apply",
         "@pypi//cdk8s",
         "@pypi//more_itertools",

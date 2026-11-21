@@ -274,8 +274,8 @@ def _container_mounts(config: str, captures: str, ca: str, origin: str) -> dict[
     }
 
 
-def _deployed_recorder_contract() -> tuple[str, list[str]]:
-    objects = Cdk8sTesting.synth(remote.chart(App(), record_upstream_traffic=True))
+def _deployed_recorder_contract(app: App) -> tuple[str, list[str]]:
+    objects = Cdk8sTesting.synth(remote.chart(app, record_upstream_traffic=True))
     recorders = [
         container
         for obj in objects
@@ -290,8 +290,8 @@ def _deployed_recorder_contract() -> tuple[str, list[str]]:
     return image, list(command)
 
 
-def test_recorder_proxy_trusts_client_and_appends_full_flows_after_restart() -> None:
-    deployed_image, deployed_command = _deployed_recorder_contract()
+def test_recorder_proxy_trusts_client_and_appends_full_flows_after_restart(scratch_app: App) -> None:
+    deployed_image, deployed_command = _deployed_recorder_contract(scratch_app)
     pinned_image = os.environ["MITMPROXY_TEST_IMAGE_REFERENCE"]
     for registry in ("mirror.gcr.io/", "docker.io/"):
         if pinned_image.startswith(registry):

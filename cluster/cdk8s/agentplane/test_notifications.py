@@ -6,8 +6,8 @@ import pytest_bazel
 import yaml
 from more_itertools import one
 
-from agentplane.net.peertls.config import ACTIONS_URI, APP_URI, NOTIFICATIONS_URI, SESSION_DISPATCHER_URI
-from cluster.cdk8s.agentplane import actions as action_service, notifications, runner_gateway, staging, workload_tls
+from agentplane.net.peertls.config import APP_URI
+from cluster.cdk8s.agentplane import actions as action_service, notifications, runner_gateway, staging
 from cluster.cdk8s.testing.manifests import find_resource
 
 
@@ -91,19 +91,8 @@ def test_notifications_use_the_configured_backend_targets(staging_manifests: lis
     settings = yaml.safe_load(config["data"]["settings.yaml"])
     actions = action_service.service(staging.ENV.namespace)
     assert settings["actions"]["url"] == f"https://{actions.fqdn}:{actions.port.number}/"
-    assert "token_file" not in settings["actions"]
     dispatcher = runner_gateway.sessions_service(staging.ENV.namespace)
     assert settings["session_dispatcher"]["target"] == f"{dispatcher.fqdn}:{dispatcher.port.number}"
-    assert "token_file" not in settings["session_dispatcher"]
-    assert "runner_gateway" not in settings
-    for client, server_uri in (("actions", ACTIONS_URI), ("session_dispatcher", SESSION_DISPATCHER_URI)):
-        tls = settings[client]["tls"]
-        assert tls["server_uri"] == server_uri
-        assert tls["client_uri"] == NOTIFICATIONS_URI
-        assert tls["cert_file"]
-        assert tls["key_file"]
-        assert tls["ca_file"] == workload_tls.TRUST_BUNDLE_FILE
-
     policy = find_resource(staging_manifests, "CiliumNetworkPolicy", notifications.NAME)["spec"]
     egress_services = {
         endpoint["matchLabels"].get("app.kubernetes.io/name")

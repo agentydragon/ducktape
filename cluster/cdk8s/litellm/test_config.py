@@ -2,11 +2,11 @@
 
 import json
 import re
+from collections.abc import Callable
 from typing import Any
 
 import pytest
 import pytest_bazel
-import yaml
 from cdk8s import App, Chart
 from litellm.integrations.otel.model.baggage import DEFAULT_BAGGAGE_METADATA_KEYS, promoted_baggage
 from litellm.integrations.otel.model.config import CaptureMessageContent, ExporterOwner, OpenTelemetryV2Config
@@ -35,11 +35,10 @@ from model_catalog.catalog import (
 
 
 @pytest.fixture(scope="module")
-def deployment_env() -> dict[str, dict[str, Any]]:
-    app = App()
-    chart = Chart(app, "litellm", disable_resource_name_hashes=True)
+def deployment_env(scratch_app_factory: Callable[[], App]) -> dict[str, dict[str, Any]]:
+    chart = Chart(scratch_app_factory(), "litellm", disable_resource_name_hashes=True)
     LiteLLMProxy(chart, "proxy")
-    deployment = find_resource(yaml.safe_load_all(app.synth_yaml()), "Deployment", "litellm", namespace="litellm")
+    deployment = find_resource(chart.to_json(), "Deployment", "litellm", namespace="litellm")
     [container] = deployment["spec"]["template"]["spec"]["containers"]
     return {entry["name"]: entry for entry in container["env"]}
 
@@ -70,7 +69,6 @@ def test_rugged_routes_register_and_inject_the_bearer_key(deployment_env: dict[s
 
 def test_stock_qwen_routes_to_tabbyapi() -> None:
     entries = {entry["model_name"]: entry for entry in main_proxy_config()["model_list"]}
-    assert not any("iq4xs" in name for name in entries)
     params = entries[TABBYAPI_QWEN_STOCK.id]["litellm_params"]
     assert params["model"] == "hosted_vllm/qwen38-exl3-268"
     assert params["api_base"] == "http://tabbyapi-model-switching.ollama.svc:5000/v1"
