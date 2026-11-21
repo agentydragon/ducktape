@@ -1306,6 +1306,58 @@ export { calculate };
   assert.notEqual(cli("validate", source, spec, out).result, "proved under assumptions");
 }
 
+if (shard === 4) {
+  const source = join(root, "import-alias-live.mjs");
+  const spec = join(root, "import-alias-live.json");
+  const out = join(root, "import-alias-live-out");
+  await writeFile(
+    source,
+    `let count = 0;
+let amount = 1;
+function bump() { count += amount; }
+function read() { return count; }
+export { bump, read };
+`
+  );
+  await writeFile(
+    spec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0, 1, 2] },
+        "reader.mjs": { imports: ["state.mjs"], aliasImports: true, statements: [3] },
+        "entry.mjs": { imports: ["state.mjs", "reader.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", source, spec, out).result, "generated");
+  const proof = cli("validate", source, spec, out);
+  assert.equal(proof.result, "proved under assumptions", JSON.stringify(proof));
+  const calls = ["bump", "read", "bump", "read"];
+  const trace = execute(source, calls);
+  assert.deepEqual(trace, execute(join(out, "entry.mjs"), calls));
+  assert.deepEqual(trace.results[1], { value: 1 });
+  assert.deepEqual(trace.results[3], { value: 2 });
+  const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
+    encoding: "utf8",
+    input:
+      models +
+      proof.certificate +
+      `
+theorem imported_alias_live_cell :
+  ((sourceBindingState bindingSource).bind (fun state =>
+    (publicFunctionTable bindingSource bindingExports).bind (fun table =>
+      (aliasPublicTable table bindingPublicMappings).bind (fun aliases =>
+        runExportedCalls aliases state ["bump", "read", "bump", "read"])))).map
+    (fun state => state.returns) = some [none, some 1, none, some 2] := by decide
+#print axioms imported_alias_live_cell
+`,
+  });
+  assert.equal(replay.status, 0, replay.stdout + replay.stderr);
+  assert.match(replay.stdout, /'imported_alias_live_cell' does not depend on any axioms/);
+}
+
 if (shard === 14) {
   const logicalSource = join(root, "logical-values.mjs");
   const logicalSpec = join(root, "logical-values.json");
