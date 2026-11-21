@@ -100,6 +100,57 @@ theorem fixture_reference : ∃ owner declaration,
   }
 }
 
+if (runSection(4)) {
+  const source = join(root, "finally-throw-source.mjs");
+  const spec = join(root, "finally-throw-spec.json");
+  const out = join(root, "finally-throw-out");
+  await writeFile(
+    source,
+    `let original = 3;\nlet alternate = 5;\nfunction compute() { try { return original; } finally { throw alternate; } }\nexport { compute };\n`
+  );
+  await writeFile(
+    spec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0, 1] },
+        "logic.mjs": { imports: ["state.mjs"], statements: [2], renameLocalImports: true },
+        "entry.mjs": { imports: ["logic.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", source, spec, out).value.result, "generated");
+  const logic = join(out, "logic.mjs");
+  const text = await readFile(logic, "utf8");
+  const unchanged = cli("validate", source, spec, out).value;
+  assert.equal(unchanged.result, "proved under assumptions", JSON.stringify(unchanged));
+  assert.match(text, /alternate as __split_local_1/);
+  await writeFile(logic, text.replace("alternate as __split_local_1", "original as __split_local_1"));
+  const redirected = cli("validate", source, spec, out).value;
+  assert.equal(redirected.result, "unsafe", JSON.stringify(redirected));
+  const thrown = (path) => {
+    const code = `const m = await import(${JSON.stringify(pathToFileURL(path).href)}); try { m.compute(); } catch (value) { console.log(JSON.stringify(value)); }`;
+    const child = spawnSync(process.execPath, ["--input-type=module", "-e", code], { encoding: "utf8" });
+    assert.equal(child.status, 0, child.stderr);
+    return JSON.parse(child.stdout);
+  };
+  assert.equal(thrown(source), 5);
+  assert.equal(thrown(join(out, "entry.mjs")), 3);
+
+  const priorThrowSource = join(root, "finally-prior-throw-source.mjs");
+  const priorThrowOut = join(root, "finally-prior-throw-out");
+  await writeFile(
+    priorThrowSource,
+    `let original = 3;\nlet alternate = 5;\nfunction compute() { try { throw original; } finally { throw alternate; } }\nexport { compute };\n`
+  );
+  assert.equal(cli("generate", priorThrowSource, spec, priorThrowOut).value.result, "generated");
+  const priorThrowResult = cli("validate", priorThrowSource, spec, priorThrowOut).value;
+  assert.equal(priorThrowResult.result, "proved under assumptions", JSON.stringify(priorThrowResult));
+  assert.equal(thrown(priorThrowSource), 5);
+  assert.equal(thrown(join(priorThrowOut, "entry.mjs")), 5);
+}
+
 if (runSection(3)) {
   const source = join(root, "conditional-throw-source.mjs");
   const spec = join(root, "conditional-throw-spec.json");

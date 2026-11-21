@@ -131,12 +131,12 @@ try and catch blocks must return or throw using supported statements. A nontermi
 may instead consist of supported assignments or updates, optionally ending
 in a throw, before execution continues. The finalizer consists of
 supported local assignments or updates; it runs after either completion, and
-an exception from its expressions replaces the pending completion. A used catch binding
+an exception from its expressions or a terminal `throw` replaces the pending completion. A used catch binding
 requires the try block to end in a numeric throw of an identifier, nonnegative safe
 integer literal, or an expression composed of those with `+` and `*`. Prior
 statements in that block are limited to numeric `=`, `+=`, `*=` and local `++`.
-Using a binding for other caught values and direct `return` or `throw` statements
-in the finalizer remain unsupported.
+Using a binding for other caught values and direct `return` statements in the
+finalizer remain unsupported.
 Functions also support `for (let i = A; i < N; i++)` and inclusive `<=`
 bounds and either `i++` or `i += 1`, with literals `A` and `N` from 0 through
 8, at most eight iterations, and a block of supported local assignments or
