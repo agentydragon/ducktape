@@ -111,14 +111,22 @@ class AppProps:
 
 @dataclass(frozen=True)
 class BearerMcpMount:
-    """The environment's copy of one static-bearer MCP backend's bearer Secret, mounted at
-    `/run/secrets/<name>/<file_name>` for an `action_groups` entry's `bearer_file` to name."""
+    """The environment's copy of one static-bearer MCP backend's bearer Secret, mounted in `mount_dir`
+    for an `action_groups` entry's `bearer_file` to name as `path`."""
 
     name: str
     secret_name: str
     secret_key: str
     file_name: str = "bearer-token"
     optional: bool = False
+
+    @property
+    def mount_dir(self) -> str:
+        return f"/run/secrets/{self.name}"
+
+    @property
+    def path(self) -> str:
+        return f"{self.mount_dir}/{self.file_name}"
 
 
 @dataclass(frozen=True)

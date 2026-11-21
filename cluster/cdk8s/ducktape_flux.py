@@ -1,6 +1,8 @@
 """The `ducktape-flux` Namespace every generated Flux Kustomization lives in, the
-namespace-local Ducktape GitRepository they and the ArtifactGenerator read, and the
-read-only diagnostics grant on it for trusted agent identities.
+namespace-local Ducktape GitRepository they and the ArtifactGenerator read, the
+read-only diagnostics grant on it for trusted agent identities, and the private Finance
+source with the isolated namespace, applier identity and Kustomization that deliver its
+spend-policy Secret.
 
 `cluster/k8s/flux/ducktape-flux` is applied by the bootstrap `flux-system` Kustomization,
 not by a node in the generated Flux chart.
@@ -18,9 +20,10 @@ from flux_gitrepository_crds.io.fluxcd.toolkit.source import (
     GitRepositorySpecRef,
     GitRepositorySpecSecretRef,
 )
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecSourceRef, KustomizationSpecSourceRefKind
 
 from cluster.cdk8s import agent_access_profiles as access, namespaces
-from cluster.cdk8s.flux import NAMESPACE
+from cluster.cdk8s.flux import NAMESPACE, Kustomization, flux_kustomization
 from cluster.cdk8s.forgejo import secret_copy
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT, PARKED_ROOT
@@ -194,6 +197,30 @@ def chart(app: App) -> Chart:
         subjects=[subject.k8s() for subject in access.HAKU_IDENTITIES],
     )
     return chart
+
+
+def plaid_spend_policy(chart: Chart) -> Kustomization:
+    """Reconcile the private Finance policy Secret into its isolated namespace."""
+    return flux_kustomization(
+        chart,
+        "plaid-spend-policy",
+        KustomizationSpecSourceRef(
+            kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name=_FINANCE_SOURCE, namespace=NAMESPACE
+        ),
+        path="./config/plaid-spend",
+        interval="5m",
+        retry_interval="1m",
+        timeout="2m",
+        prune=False,
+        target_namespace=_FINANCE_SPEND_CONFIG_NAMESPACE,
+        service_account_name=_SPEND_POLICY_APPLIER,
+        description=(
+            "Reconciles the private Finance spend-policy Secret into the isolated finance-spend-config namespace. "
+            "The impersonated service account can create Secrets of any name there and can get, patch, or update "
+            "only the named policy Secret; it cannot delete resources, create namespaces, or manage other resource "
+            "kinds. Ducktape owns the namespace and the Secret copy consumed by the app."
+        ),
+    )
 
 
 def write_manifests(root: Path) -> None:

@@ -266,10 +266,7 @@ func TestDispatchVersionCheckpointWaitsForEarlierSequenceWriter(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer txFirst.Rollback()
-	var firstPID int
-	if err := txFirst.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&firstPID); err != nil {
-		t.Fatal(err)
-	}
+	firstPID := postgres.BackendPID(t, ctx, txFirst)
 	firstVersion := insertVersionTestDispatch(t, ctx, txFirst, "test-version-order-first")
 
 	txSecond, err := store.DB.BeginTx(ctx, nil)
@@ -309,10 +306,7 @@ func TestDispatchVersionCheckpointWaitsForEarlierSequenceWriter(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer checkpointTx.Rollback()
-	var checkpointPID int
-	if err := checkpointTx.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&checkpointPID); err != nil {
-		t.Fatal(err)
-	}
+	checkpointPID := postgres.BackendPID(t, ctx, checkpointTx)
 	locked := make(chan error, 1)
 	go func() {
 		_, err := checkpointTx.ExecContext(ctx, "LOCK TABLE dispatch, dispatch_tombstone IN SHARE MODE")

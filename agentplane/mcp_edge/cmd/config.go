@@ -142,10 +142,10 @@ func (c config) validate() error {
 	if err := auth.ValidateServiceCallers(c.OperatorServices); err != nil {
 		return fmt.Errorf("invalid operator_services: %w", err)
 	}
-	if len(c.OperatorServices) > 0 && (c.RPCTLS == nil || c.RPCTLS.ClientCAFile == "") {
+	if len(c.OperatorServices) > 0 && c.RPCTLS.ClientCAFile == "" {
 		return errors.New("operator_services requires rpc_tls.client_ca_file")
 	}
-	if c.RPCTLS != nil && c.RPCTLS.ClientCAFile != "" && len(c.OperatorServices) == 0 {
+	if c.RPCTLS.ClientCAFile != "" && len(c.OperatorServices) == 0 {
 		return errors.New("rpc_tls.client_ca_file requires operator_services")
 	}
 	if c.OAuth == nil {

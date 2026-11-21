@@ -16,16 +16,11 @@ from finance.augur.sim.market_path import Series
 from finance.augur.sim.money import MIN_COUNT
 from finance.augur.sim.observations import TlhPortfolioObservation
 from finance.augur.sim.testing.accounting import CASH, HOUSEHOLD, INCOME_SOURCES, accounting, world_on
-from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
+from finance.augur.sim.testing.tlh import NO_HARVEST
+from finance.augur.sim.tlh import TlhOpeningCohort
 from finance.augur.sim.world import World
 
 PRICES = Series(series_id="security:test_fund", snapshots=3, values=(100, 110, 120) * 2)
-
-
-# No modeled harvest: the portfolio's value moves only with the index and its own actions.
-QUIET = TlhAssumptions(
-    peak_annual_yield=0, floor_annual_yield=0, maturity_decay_exponent=1, drawdown_sensitivity=0, short_term_fraction=1
-)
 
 
 @pytest.fixture
@@ -60,7 +55,7 @@ def composed(spec: Portfolio, rollout_id: int) -> World:
         account_id=spec.account_id,
         asset_id=spec.asset_id,
         initial_cohorts=(TlhOpeningCohort(value=100, cost_basis=80, purchase_month_index=-1),),
-        assumptions=QUIET,
+        assumptions=NO_HARVEST,
     )
     return world
 

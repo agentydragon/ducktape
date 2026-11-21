@@ -2,8 +2,6 @@
 // tables and the categorical chart panel. Kept in one place so those panels (which live in
 // separate files) don't each re-derive probability/KL formatting or duplicate the brand icons.
 
-import React from "react";
-
 import { fmtPct } from "./lib/format";
 import type { fetchCalibrationRun } from "./client";
 

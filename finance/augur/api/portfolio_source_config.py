@@ -9,8 +9,8 @@ from enum import StrEnum
 from pydantic import Field, NonNegativeInt, model_validator
 
 from finance.augur.api.finance import FinanceSnapshot
-from finance.augur.api.portfolio import HoldingKind, PortfolioAccountType, PortfolioConfig, PositiveCurrencyAmount
-from finance.augur.api.schemas import ID_PATTERN, ApiModel
+from finance.augur.api.portfolio import HoldingKind, PortfolioAccountType, PortfolioConfig
+from finance.augur.api.schemas import ID_PATTERN, ApiModel, PositiveCurrencyAmount
 from finance.augur.sim.ids import AccountId, AgentId
 from finance.augur.sim.tlh import TlhAssumptions
 

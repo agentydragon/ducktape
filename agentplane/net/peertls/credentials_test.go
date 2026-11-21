@@ -312,41 +312,37 @@ func tlsHandshake(t *testing.T, clientConfig, serverConfig *tls.Config) (tls.Con
 	return clientState, serverState, nil
 }
 
-func TestClientPinsExactPeerURI(t *testing.T) {
+// Each client differs from the Gateway that TestGatewayClientAuthenticatesEnvironmentRuntimeServer accepts in one
+// respect: the runner it pins, its own identity, or its root.
+func TestCredentialsRejectWrongPeersAndMissingEKU(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
+	otherCA := environmentruntimetransporttesting.NewCA(t)
 	runnerURI := workloadURI(t, "pod-uid")
-	otherEnvironmentRuntimeURI := workloadURI(t, "other-pod-uid")
 	runner := ca.IssueWithUsage(t, runnerURI, x509.ExtKeyUsageServerAuth)
-	gateway := ca.IssueWithUsage(t, peertls.GatewayURI, x509.ExtKeyUsageClientAuth)
-	clientCredentials, err := gateway.ClientCredentials(otherEnvironmentRuntimeURI)
-	if err != nil {
-		t.Fatal(err)
-	}
 	serverCredentials, err := runner.ServerCredentials(peertls.GatewayURI)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = handshake(t, clientCredentials, serverCredentials)
-	if err == nil {
-		t.Fatal("handshake succeeded with the wrong expected peer URI")
+	for name, tc := range map[string]struct {
+		client peertls.Config
+		pinned string
+	}{
+		"client pins another runner":     {ca.IssueWithUsage(t, peertls.GatewayURI, x509.ExtKeyUsageClientAuth), workloadURI(t, "other-pod-uid")},
+		"another runner as the client":   {ca.IssueWithUsage(t, runnerURI, x509.ExtKeyUsageClientAuth), runnerURI},
+		"Gateway from an untrusted root": {otherCA.IssueWithUsage(t, peertls.GatewayURI, x509.ExtKeyUsageClientAuth), runnerURI},
+	} {
+		t.Run(name, func(t *testing.T) {
+			clientCredentials, err := tc.client.ClientCredentials(tc.pinned)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, _, err := handshake(t, clientCredentials, serverCredentials); err == nil {
+				t.Fatal("handshake succeeded")
+			}
+		})
 	}
-}
-
-func TestEnvironmentRuntimeServerRejectsAnotherRunnerAsClient(t *testing.T) {
-	ca := environmentruntimetransporttesting.NewCA(t)
-	runnerURI := workloadURI(t, "credential-id")
-	runner := ca.IssueWithUsage(t, runnerURI, x509.ExtKeyUsageServerAuth)
-	client := ca.IssueWithUsage(t, runnerURI, x509.ExtKeyUsageClientAuth)
-	clientCredentials, err := client.ClientCredentials(runnerURI)
-	if err != nil {
-		t.Fatal(err)
-	}
-	serverCredentials, err := runner.ServerCredentials(peertls.GatewayURI)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := handshake(t, clientCredentials, serverCredentials); err == nil {
-		t.Fatal("runner accepted another runner as its Gateway")
+	if _, err := runner.ClientCredentials(peertls.GatewayURI); err == nil {
+		t.Fatal("client credentials accepted a certificate without clientAuth EKU")
 	}
 }
 
@@ -465,31 +461,6 @@ func TestClientsVerifyServerSVIDsAgainstTheWorkloadCAAlone(t *testing.T) {
 	}
 	if _, _, err := handshake(t, gateway, runnerServer(root.IssueWithUsage(t, runnerURI, x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth))); err == nil {
 		t.Fatal("the Gateway accepted a root-signed leaf naming the runner")
-	}
-}
-
-func TestCredentialsRejectUntrustedRootsAndMissingEKU(t *testing.T) {
-	trustedCA := environmentruntimetransporttesting.NewCA(t)
-	otherCA := environmentruntimetransporttesting.NewCA(t)
-	runnerURI := workloadURI(t, "pod-uid")
-	runner := trustedCA.Issue(t, runnerURI)
-	gateway := otherCA.Issue(t, peertls.GatewayURI)
-	clientCredentials, err := gateway.ClientCredentials(runnerURI)
-	if err != nil {
-		t.Fatal(err)
-	}
-	serverCredentials, err := runner.ServerCredentials(peertls.GatewayURI)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, _, err = handshake(t, clientCredentials, serverCredentials)
-	if err == nil {
-		t.Fatal("handshake succeeded across untrusted roots")
-	}
-
-	wrongUsage := trustedCA.IssueWithUsage(t, runnerURI, x509.ExtKeyUsageServerAuth)
-	if _, err := wrongUsage.ClientCredentials(peertls.GatewayURI); err == nil {
-		t.Fatal("client credentials accepted a certificate without clientAuth EKU")
 	}
 }
 

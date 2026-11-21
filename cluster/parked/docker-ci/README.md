@@ -58,7 +58,7 @@ route that does not trip the listener conflict
 ## Kubernetes Resources
 
 - **Namespace**: `docker-ci` (privileged PSA — DinD requires it)
-- **Deployment**: `docker:27-dind` with `--tlsverify`, scheduled on OVH workers
+- **Deployment**: `docker:dind` (tag pinned in `deployment.yaml`) with `--tlsverify`, scheduled on OVH workers
   (`topology.kubernetes.io/region: hil`); `reloader.stakater.com/auto` for cert rotation
 - **Storage**: `emptyDir` (30Gi) for `/var/lib/docker` — a disposable overlay2
   cache, hence no PVC (rationale in `deployment.yaml`).

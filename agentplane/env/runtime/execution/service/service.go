@@ -171,15 +171,16 @@ func runWithReady(ctx context.Context, config Config, start codexexecserver.Star
 		}
 		return fmt.Errorf("execution backend readiness: %w", err)
 	}
-	go func() {
-		if err := codexexecserver.Monitor(lifetime, config.ExecutorURL); err != nil {
+	monitor := func(label string, check codexexecserver.Probe) {
+		if err := codexexecserver.Monitor(lifetime, label, check); err != nil {
 			select {
 			case backendDone <- err:
 			default:
 			}
 			cancel()
 		}
-	}()
+	}
+	go monitor("execution backend stopped responding", codexexecserver.ProbeAt(config.ExecutorURL))
 
 	var executionAdapter interface {
 		executorpb.ExecutorServer
@@ -191,7 +192,7 @@ func runWithReady(ctx context.Context, config Config, start codexexecserver.Star
 			Acquire: func(context.Context) (string, error) { return config.ExecutorURL, nil },
 		})
 	} else {
-		go monitorTypedBackend(lifetime, cancel, backendDone, checkTyped)
+		go monitor("typed execution backend health", checkTyped)
 		executionAdapter, err = typedproxy.New(lifetime, executorpb.NewExecutorClient(backendConn), config.admit, nil)
 	}
 	if err != nil {
@@ -238,38 +239,6 @@ func runWithReady(ctx context.Context, config Config, start codexexecserver.Star
 		err = errors.Join(err, closeErr)
 	}
 	return err
-}
-
-func monitorTypedBackend(lifetime context.Context, cancel context.CancelFunc, backendDone chan<- error, checkTyped codexexecserver.Probe) {
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
-	failures := 0
-	for {
-		select {
-		case <-lifetime.Done():
-			return
-		case <-ticker.C:
-		}
-		attempt, end := context.WithTimeout(lifetime, 3*time.Second)
-		err := checkTyped(attempt)
-		end()
-		if lifetime.Err() != nil {
-			return
-		}
-		if err == nil {
-			failures = 0
-			continue
-		}
-		failures++
-		if failures >= 3 {
-			select {
-			case backendDone <- errors.Join(codexexecserver.ErrExecutionBackendLost, fmt.Errorf("typed execution backend health: %w", err)):
-			default:
-			}
-			cancel()
-			return
-		}
-	}
 }
 
 // Runtime authenticates the environment owner; Gateway authorizes remote callers. This service

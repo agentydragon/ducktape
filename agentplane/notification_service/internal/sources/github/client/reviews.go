@@ -9,13 +9,6 @@ import (
 	"github.com/google/go-github/v88/github"
 )
 
-const reviewPageSize = 100
-
-type reviewPage struct {
-	reviews  []*github.PullRequestReview
-	response *github.Response
-}
-
 // PullRequestReviews reads submitted and dismissed reviews for one pull request. Pending reviews are not events
 // and are omitted. GitHub returns review records in chronological order; the client preserves that order.
 func (c *Client) PullRequestReviews(ctx context.Context, repository string, number int, installationID int64) ([]githubmodel.ReviewObservation, error) {
@@ -29,12 +22,12 @@ func (c *Client) PullRequestReviews(ctx context.Context, repository string, numb
 
 	observations := make([]githubmodel.ReviewObservation, 0)
 	for page := 1; ; {
-		result, err := callAsInstallation(ctx, c, installationID, false, func(ctx context.Context, client *github.Client) (reviewPage, *github.Response, error) {
+		result, err := callAsInstallation(ctx, c, installationID, false, func(ctx context.Context, client *github.Client) (resourcePage[[]*github.PullRequestReview], *github.Response, error) {
 			reviews, response, err := client.PullRequests.ListReviews(ctx, owner, name, number, &github.ListOptions{
-				PerPage: reviewPageSize,
+				PerPage: pageSize,
 				Page:    page,
 			})
-			return reviewPage{reviews: reviews, response: response}, response, err
+			return resourcePage[[]*github.PullRequestReview]{value: reviews, response: response}, response, err
 		})
 		if err != nil {
 			return nil, err
@@ -42,7 +35,7 @@ func (c *Client) PullRequestReviews(ctx context.Context, repository string, numb
 		if result.response == nil {
 			return nil, &InvalidResponseError{Reason: "pull request reviews response is missing"}
 		}
-		for _, review := range result.reviews {
+		for _, review := range result.value {
 			observation, err := ReviewObservation(review)
 			if err != nil {
 				return nil, err

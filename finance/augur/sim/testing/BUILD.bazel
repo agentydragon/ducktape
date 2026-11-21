@@ -176,3 +176,9 @@ py_library(
         "//finance/augur/sim:money",
     ],
 )
+
+py_library(
+    name = "tlh",
+    srcs = ["tlh.py"],
+    deps = ["//finance/augur/sim:tlh"],
+)

@@ -9,8 +9,8 @@ exact service grants and typed delegation policy. EnvironmentService has its own
 delivers through the Environments Runtime proxy once the exact Sandbox is ready, with a
 per-Session PostgreSQL delivery lease.
 
-The manual queue, replica and wake probes are documented in the
-[system tests](../../system_tests/README.md#dispatcher-queue-and-replicas).
+The queue, replica and wake probes run in the `test_dispatcher` system test, described in the
+[system tests guide](../../system_tests/README.md#dispatcher-queue-and-replicas).
 
 ## Contract
 

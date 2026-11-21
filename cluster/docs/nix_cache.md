@@ -7,7 +7,7 @@ metadata and a replicated Piraeus volume for NAR chunk storage. Manifests in
 ## Architecture
 
 - **Server**: `attic-next`, pinned to the previous server's image digest
-- **Database**: database `attic_local` in CNPG cluster `attic-db` (3 instances on OVH Piraeus SSD)
+- **Database**: database `attic_local` in CNPG cluster `attic-db` (2 instances on OVH Piraeus SSD)
 - **Recovery**: the database is not backed up. Bootstrap recreates cache identities using
   stored signing keys, but rediscovery of existing chunks after database loss is unverified.
 - **Cache storage**: `attic-local-storage`, a 100 GiB `piraeus-hdd-2` volume with two synchronous copies in OVH

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -32,10 +33,7 @@ func TestVersionWatchCheckpointWaitsForLowerAllocatedVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer low.Rollback()
-	var lowPID int
-	if err := low.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&lowPID); err != nil {
-		t.Fatal(err)
-	}
+	lowPID := postgres.BackendPID(t, ctx, low)
 	if _, err := low.ExecContext(ctx, "UPDATE dispatch SET reason='test-low-version' WHERE command_id='test-order-a'"); err != nil {
 		t.Fatal(err)
 	}
@@ -91,10 +89,7 @@ func TestVersionWatchSnapshotQueryDoesNotBlockDispatchWriter(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer barrier.Rollback()
-	var barrierPID int
-	if err := barrier.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&barrierPID); err != nil {
-		t.Fatal(err)
-	}
+	barrierPID := postgres.BackendPID(t, ctx, barrier)
 	if _, err := barrier.ExecContext(ctx, "LOCK TABLE session IN ACCESS EXCLUSIVE MODE"); err != nil {
 		t.Fatal(err)
 	}

@@ -4,8 +4,7 @@ import { create } from "@bufbuild/protobuf";
 import { describe, expect, it, vi } from "vitest";
 
 import { ActionIdentitySchema } from "../../../../action_service/api/contracts/action_service_pb";
-import { parseCallToolResult } from "../call_tool_result";
-import { answerApi, mount } from "../testing/harness";
+import { answerApi, mount, toolResult } from "../testing/harness";
 import { renderActionCall, renderDetailsArguments, renderDetailsResult } from "./index";
 
 const identity = (name: string) => create(ActionIdentitySchema, { group: "google_calendar", name });
@@ -14,12 +13,7 @@ const link = "https://calendar.google.com/calendar/event?eid=occurrence-1";
 const calendarLink = "https://calendar.google.com/calendar?cid=ZmFjaWxpdGllc0BleGFtcGxlLnRlc3Q";
 
 function success(value: unknown) {
-  const envelope = parseCallToolResult({
-    structuredContent: value,
-    content: [{ type: "text", text: JSON.stringify(value) }],
-  });
-  if (!envelope) throw new Error("invalid test envelope");
-  return envelope;
+  return toolResult({ structuredContent: value, content: [{ type: "text", text: JSON.stringify(value) }] });
 }
 
 describe("Calendar Action review", () => {
@@ -248,12 +242,11 @@ describe("Calendar Action results", () => {
 
   it("confirms only a successful empty delete result", async () => {
     const action = identity("delete_event");
-    const wrapped = parseCallToolResult({
+    const wrapped = toolResult({
       content: [],
       structuredContent: { result: null },
       _meta: { fastmcp: { wrap_result: true } },
     });
-    if (!wrapped) throw new Error("invalid delete envelope");
     const result = await mount(renderDetailsResult(action, wrapped));
     expect(result.textContent).toContain("Deletion confirmed.");
     expect(renderDetailsResult(action, { content: [], isError: true })).toBeUndefined();

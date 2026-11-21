@@ -236,33 +236,22 @@ def _add_egress_fence(chart: Chart) -> None:
 
 def _dind() -> InitContainer:
     """dind is a NATIVE SIDECAR (an initContainer with restartPolicy: Always), not an ordinary
-    container. Two things depend on that, and both are load-bearing:
+    container, for two reasons:
 
-    1. TERMINATION ORDER. Ordinary containers are SIGTERMed in parallel, so dockerd died alongside
-       the runner and took the build containers with it -- which is why
-       `shutdown_timeout: 30m` + a 2100s grace period did NOT save the reaped builds they were
-       added for: the runner waited gracefully on a job whose containers no longer existed.
-       Native sidecars are terminated only AFTER the main container exits.
-    2. JOB COMPLETION. In a Job, an ordinary dind container would never exit, so the Job would
-       never reach Complete. A native sidecar is torn down by the kubelet when `runner` finishes.
-       Without this the ScaledJob does not work at all.
+    1. TERMINATION ORDER. The kubelet stops a native sidecar only AFTER the main container exits.
+       Ordinary containers are SIGTERMed in parallel, so dockerd would die alongside the runner and
+       take the build containers with it while the runner waits out `shutdown_timeout`.
+    2. JOB COMPLETION. The kubelet tears a native sidecar down when `runner` finishes. An ordinary
+       dind container never exits, so the Job would never reach Complete.
 
-    The startupProbe gates the runner on dockerd actually listening -- under a Deployment a
-    too-early runner just crash-looped until dind was up, but with restartPolicy: Never that first
-    crash would fail the whole Job. It probes `httpGet /_ping` rather than a bare `tcpSocket`
-    connect: dockerd opens its listener before it can serve requests, so a TCP-only check can pass
-    while an actual API call still gets "connection reset by peer" (observed: runner start raced
-    dind and failed this way). `_ping` is the same endpoint the runner's own docker client calls
-    first, so the probe only succeeds once the daemon can genuinely answer it.
+    The startupProbe gates the runner on dockerd answering: with restartPolicy: Never a runner that
+    starts too early crashes and fails the whole Job. It probes `httpGet /_ping` rather than a bare
+    `tcpSocket` connect: dockerd opens its listener before it can serve requests, so a TCP-only
+    check can pass while an actual API call still gets "connection reset by peer" (observed).
+    `_ping` is the endpoint the runner's own docker client calls first.
 
-    privileged: true is the documented requirement for docker:dind-rootless -- it provides /dev
-    (incl. /dev/net/tun for RootlessKit) and disables the mount masks that otherwise hide those
-    devices from RootlessKit's nested namespaces. The non-privileged path cleared seccomp (PSA) +
-    user.max_user_namespaces (the OVH worker sysctl) but still couldn't create the rootless TAP
-    because of the masks. Crucially the DAEMON still runs ROOTLESS (UID 1000 via the -rootless
-    image), so this is strictly better than classic rootful dind; the privileged POD is the price,
-    contained by haku-ci being operator-only (no Haku RBAC), off control planes, and
-    egress-fenced. See README.md.
+    privileged: true is the documented requirement for docker:dind-rootless; the daemon itself
+    still runs rootless. See README.md, "Trust model".
     """
     return InitContainer(
         name="dind",
@@ -326,11 +315,9 @@ def _register() -> InitContainer:
         name="register",
         image=_RUNNER_IMAGE,
         command=["forgejo-runner"],
-        # --ephemeral tells Forgejo to DELETE this runner registration once it has run one job. The
-        # old Deployment re-registered on every pod start and never deregistered -- its comment
-        # claimed "ephemeral" but the flag was absent, and the repo had accumulated 529 runner
-        # registrations, 525 of them offline. --ephemeral is refused outright by servers older
-        # than Forgejo 15, so this fails loudly rather than drifting silently.
+        # --ephemeral tells Forgejo to DELETE this runner registration once it has run one job. It is
+        # refused outright by servers older than Forgejo 15, so this fails loudly rather than
+        # drifting silently.
         #
         # `$(VAR)` is expanded by the kubelet from `env`, not by a shell.
         args=[
@@ -404,10 +391,8 @@ def _volumes(config: ConfigMap) -> list[Volume]:
         Volume(name="runner-data", empty_dir=EmptyDir()),
         Volume(name="docker-data", empty_dir=EmptyDir()),
         # Bazel cache (output base + --disk_cache + repo cache), bind-mounted into each job
-        # container's ~/.cache. Under the old Deployment it also warmed SUCCESSIVE jobs on a
-        # surviving pod; one job per pod means it now only spans the Bazel invocations WITHIN a
-        # single CI job (bazel-ci's `Test` step then `Build`), which is still most of the win. See
-        # README for the cost and the follow-up.
+        # container's ~/.cache. One job per pod, so it spans only the Bazel invocations WITHIN a
+        # single CI job (bazel-ci's `Test` step then `Build`). See README, "What this costs".
         Volume(name="bazel-cache", empty_dir=EmptyDir()),
         # Agentplane egress's interception trust bundle, which trust-manager writes into this
         # namespace (an external workload namespace of agentplane/staging.py). Mounted into both
@@ -441,27 +426,16 @@ def _add_runner(chart: Chart) -> None:
             ]
         ),
     )
-    # ScaledJob, NOT ScaledObject -- this is the whole point.
-    #
-    # The forgejo-runner trigger counts QUEUED jobs. Under a ScaledObject that metric drives an HPA
-    # over a long-lived Deployment, and the same number that scales up also scales down: the moment
-    # a runner picks a job up the metric returns to zero, the HPA concludes the pods are idle, and
-    # it deletes one at random. It has no way to know which pod is mid-build. That reaped builds on
-    # `haku-state` repeatedly (see README, "Queue autoscaling").
-    #
-    # Under a ScaledJob the same metric is only ever a CREATE signal. KEDA translates "N jobs
-    # queued" into "create N Kubernetes Jobs", never deletes a running one, and each pod ends its
-    # own life when its single CI job is done. There is no scale-down path to get wrong, so the
-    # failure mode is structurally absent rather than mitigated. This is also the shape the scaler
-    # is documented for: https://keda.sh/docs/2.20/scalers/forgejo/
+    # ScaledJob, NOT ScaledObject: the forgejo-runner trigger counts QUEUED jobs, so it may only ever
+    # CREATE pods. Behind an HPA the same metric also scales down, and a running build reads as zero
+    # demand, so the HPA can delete its pod (README, "Why `ScaledJob` and not `ScaledObject`").
     keda.ScaledJob(
         chart,
         "scaled-job",
         metadata=ApiObjectMetadata(name=_RUNNER, namespace=NAMESPACE, labels=_LABELS),
         spec=keda.ScaledJobSpec(
-            # One pod per queued job, up to four concurrently. No minimum: between bursts there are
-            # no runner pods at all, which was already true under the ScaledObject
-            # (minReplicaCount: 0) -- the runner holds no state worth keeping warm.
+            # One pod per queued job, up to four concurrently. No minimum: the runner holds no state
+            # worth keeping warm, so between bursts there are no runner pods at all.
             max_replica_count=4,
             polling_interval=15,
             successful_jobs_history_limit=3,
@@ -471,8 +445,7 @@ def _add_runner(chart: Chart) -> None:
             failed_jobs_history_limit=5,
             # gradual = editing this ScaledJob does NOT delete Jobs already running. The default
             # ("immediate") would kill in-flight builds on every Flux reconcile that touches this
-            # object, reintroducing the exact bug this migration removes, just with a different
-            # trigger.
+            # object.
             rollout=keda.ScaledJobSpecRollout(strategy=keda.ScaledJobSpecRolloutStrategy.GRADUAL),
             job_target_ref=keda.ScaledJobSpecJobTargetRef(
                 parallelism=1,
@@ -499,10 +472,10 @@ def _add_runner(chart: Chart) -> None:
                             )
                         ),
                         automount_service_account_token=False,
-                        # Only matters for eviction/drain now -- nothing deletes this pod mid-build
-                        # any more. Slightly above the runner's shutdown timeout so a drained node
-                        # lets a build of up to that length finish instead of dropping it; at or
-                        # below it, the kubelet SIGKILLs before that timeout can elapse.
+                        # Matters only for eviction/drain. Slightly above the runner's shutdown timeout
+                        # so a drained node lets a build of up to that length finish instead of
+                        # dropping it; at or below it, the kubelet SIGKILLs before that timeout can
+                        # elapse.
                         termination_grace_period_seconds=_SHUTDOWN_TIMEOUT_SECONDS + 30,
                         # No node affinity: this privileged, agent-controlled build compute may land
                         # on any worker -- the HIL workers, the home OptiPlex, wyrm2, and the roaming

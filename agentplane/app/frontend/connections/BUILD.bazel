@@ -1,6 +1,7 @@
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("//agentplane/app/frontend:vitest.bzl", "agentplane_vitest_test")
 load("//devinfra/js:ts_library.bzl", "ts_library")
+load("//devinfra/js:vitest.bzl", "check_vitest_specs")
 
 package(default_visibility = ["//agentplane/app:__subpackages__"])
 
@@ -140,7 +141,6 @@ agentplane_vitest_test(
     name = "management_test",
     srcs = ["management.test.tsx"],
     deps = [
-        ":connection_service_client",
         ":management",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@types/react",
@@ -155,3 +155,5 @@ agentplane_vitest_test(
         "//agentplane/proto:identity_pb",
     ],
 )
+
+check_vitest_specs()

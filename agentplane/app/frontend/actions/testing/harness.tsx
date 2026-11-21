@@ -22,6 +22,7 @@ import {
   type ListActionRequestHistoryResponse,
 } from "../../../../action_service/api/contracts/action_service_pb";
 import type { McpServerLinkage } from "../../../../action_service/api/contracts/operator_action_service_pb";
+import { parseCallToolResult, type CallToolResult } from "../call_tool_result";
 import {
   actionGroupUpsertProtoJson,
   actionGroupsSnapshotCompleteProtoJson,
@@ -147,6 +148,13 @@ export function sshExec(state: ActionState, returned: Record<string, unknown> = 
     });
   }
   return row;
+}
+
+/** `value` as a `CallToolResult`, throwing for a fixture that is not one. */
+export function toolResult(value: unknown): CallToolResult {
+  const result = parseCallToolResult(value);
+  if (result === null) throw new Error("the fixture is not a CallToolResult");
+  return result;
 }
 
 const mounted: Array<{ root: ReturnType<typeof createRoot>; container: HTMLDivElement; queryClient: QueryClient }> = [];

@@ -338,8 +338,8 @@ func ProbeAt(endpoint string) Probe {
 	return func(ctx context.Context) error { return probe(ctx, endpoint) }
 }
 
-// Monitor bounds dispatcher liveness for the embedded service lifetime.
-func Monitor(ctx context.Context, endpoint string) error {
+// Monitor bounds backend liveness for the embedded service lifetime; label names the probed surface in the loss error.
+func Monitor(ctx context.Context, label string, check Probe) error {
 	ticker := time.NewTicker(healthInterval)
 	defer ticker.Stop()
 	failures := 0
@@ -350,7 +350,7 @@ func Monitor(ctx context.Context, endpoint string) error {
 		case <-ticker.C:
 		}
 		attempt, cancel := context.WithTimeout(ctx, healthDeadline)
-		err := probe(attempt, endpoint)
+		err := check(attempt)
 		cancel()
 		if ctx.Err() != nil {
 			return nil
@@ -361,7 +361,7 @@ func Monitor(ctx context.Context, endpoint string) error {
 		}
 		failures++
 		if failures >= healthFailureLimit {
-			return errors.Join(ErrExecutionBackendLost, fmt.Errorf("execution backend stopped responding: %w", err))
+			return errors.Join(ErrExecutionBackendLost, fmt.Errorf("%s: %w", label, err))
 		}
 	}
 }

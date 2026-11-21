@@ -191,9 +191,8 @@ an `http_file` in `MODULE.bazel` pinned by sha256 to the version the cluster dep
 (the same tag as the operator's `GitRepository` or Terraform install). The jsii-backed
 Python bindings are build-time output, never committed. Put each import declaration and
 its optional smoke test in `cluster/cdk8s/providers/<provider>/BUILD.bazel`, beside the
-CRD's generic wrapper modules; keep upstream CRD source pins in `MODULE.bazel`. Current
-providers are
-`//cluster/cdk8s/providers/{agent_sandbox,cert_manager,cilium,clickhouse,cnpg,external_secrets,external_snapshotter,flux,gateway_api,grafana_operator,keda,kubevirt,kyverno,prometheus_operator,redis_operator,seaweedfs,source_watcher,tofu_controller,volsync}`.
+CRD's generic wrapper modules; keep upstream CRD source pins in `MODULE.bazel`. Every
+directory under `cluster/cdk8s/providers/` is one provider.
 `//agentplane/crds` declares the imports of Agentplane's first-party CRDs beside their
 YAML; `providers/agentplane` holds only their wrappers, and `agentplane_crds.py` points Flux
 at the same authored directory under `agentplane/crds/manifests`.

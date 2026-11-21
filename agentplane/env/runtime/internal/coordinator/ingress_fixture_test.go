@@ -3,11 +3,11 @@ package coordinator
 import (
 	"fmt"
 	"io"
-	"net"
 	"sync"
 	"testing"
 
 	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/api/ingress/session_ingresspb"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 )
@@ -21,15 +21,7 @@ func startAcknowledgingHistory(t *testing.T) string {
 
 func startHistoryService(t *testing.T, history *acknowledgingHistory) string {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := grpc.NewServer()
-	ingresspb.RegisterSessionJournalIngressServer(server, history)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
-	return listener.Addr().String()
+	return grpcserver.ServeRegistered(t, func(server *grpc.Server) { ingresspb.RegisterSessionJournalIngressServer(server, history) })
 }
 
 type acknowledgingHistory struct {

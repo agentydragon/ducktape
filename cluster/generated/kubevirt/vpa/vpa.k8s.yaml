@@ -1,0 +1,131 @@
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: virt-api
+  namespace: kubevirt
+spec:
+  resourcePolicy:
+    containerPolicies:
+      - containerName: virt-api
+        controlledResources:
+          - cpu
+          - memory
+        controlledValues: RequestsOnly
+      - containerName: "*"
+        mode: "Off"
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: virt-api
+  updatePolicy:
+    updateMode: Initial
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: virt-controller
+  namespace: kubevirt
+spec:
+  resourcePolicy:
+    containerPolicies:
+      - containerName: virt-controller
+        controlledResources:
+          - cpu
+          - memory
+        controlledValues: RequestsOnly
+      - containerName: "*"
+        mode: "Off"
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: virt-controller
+  updatePolicy:
+    updateMode: Initial
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: virt-operator
+  namespace: kubevirt
+spec:
+  resourcePolicy:
+    containerPolicies:
+      - containerName: virt-operator
+        controlledResources:
+          - cpu
+          - memory
+        controlledValues: RequestsOnly
+      - containerName: "*"
+        mode: "Off"
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: virt-operator
+  updatePolicy:
+    updateMode: Initial
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: cdi-apiserver
+  namespace: cdi
+spec:
+  resourcePolicy:
+    containerPolicies:
+      - containerName: cdi-apiserver
+        controlledResources:
+          - cpu
+          - memory
+        controlledValues: RequestsOnly
+      - containerName: "*"
+        mode: "Off"
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: cdi-apiserver
+  updatePolicy:
+    updateMode: Initial
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: cdi-deployment
+  namespace: cdi
+spec:
+  resourcePolicy:
+    containerPolicies:
+      - containerName: cdi-deployment
+        controlledResources:
+          - cpu
+          - memory
+        controlledValues: RequestsOnly
+      - containerName: "*"
+        mode: "Off"
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: cdi-deployment
+  updatePolicy:
+    updateMode: Initial
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: cdi-uploadproxy
+  namespace: cdi
+spec:
+  resourcePolicy:
+    containerPolicies:
+      - containerName: cdi-uploadproxy
+        controlledResources:
+          - cpu
+          - memory
+        controlledValues: RequestsOnly
+      - containerName: "*"
+        mode: "Off"
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: cdi-uploadproxy
+  updatePolicy:
+    updateMode: Initial

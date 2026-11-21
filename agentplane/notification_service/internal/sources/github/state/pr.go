@@ -86,13 +86,6 @@ func githubReviewParent(ctx context.Context, q Querier, key ReviewRefreshKey) (i
 	return generation, exists, err
 }
 
-func invalidateGitHubReviewForInstallation(ctx context.Context, tx transaction.Tx, appID, installationID int64) error {
-	_, err := tx.ExecContext(ctx, `UPDATE github_review_refresh SET generation = generation + 1, last_success_at = NULL,
-		next_attempt = CASE WHEN error IS NOT NULL THEN next_attempt END, claim = NULL, claim_until = NULL
-		WHERE app_id = $1 AND installation_id = $2`, appID, installationID)
-	return err
-}
-
 func invalidateGitHubReviewForPullRequest(ctx context.Context, tx transaction.Tx, repositoryID int64, number int64) error {
 	_, err := tx.ExecContext(ctx, `UPDATE github_review_refresh SET generation = generation + 1, last_success_at = NULL,
 		next_attempt = CASE WHEN error IS NOT NULL THEN next_attempt END, claim = NULL, claim_until = NULL

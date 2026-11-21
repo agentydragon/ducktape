@@ -285,10 +285,7 @@ func TestCloseBootstrapStatusReadFailureRetainsOwner(t *testing.T) {
 	if err := r.Close(context.Background()); !errors.Is(err, failure) {
 		t.Fatalf("Close status observation = %v, want %v", err, failure)
 	}
-	if owner, err := openTestRuntimeStore(stateDir); err == nil {
-		_ = owner.Close()
-		t.Fatal("bootstrap status read failure released environment owner")
-	}
+	requireOwnerRetained(t, stateDir, "bootstrap status read failure released environment owner")
 	resources.fail.Store(false)
 }
 
@@ -313,10 +310,7 @@ func TestRuntimeCloseEngineCancelJoinsBootstrapWaitAndRetainsOwner(t *testing.T)
 	if err := waitClose(t, closeDone); err == nil {
 		t.Fatal("Close succeeded after its lifecycle engine was canceled")
 	}
-	if owner, err := openTestRuntimeStore(stateDir); err == nil {
-		_ = owner.Close()
-		t.Fatal("engine cancellation released environment owner")
-	}
+	requireOwnerRetained(t, stateDir, "engine cancellation released environment owner")
 }
 
 type bootstrapEventWriteFailureState struct {

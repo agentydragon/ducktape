@@ -43,6 +43,28 @@ func settingsFile(t *testing.T, contents string) string {
 	return path
 }
 
+// testOAuthSettings is a complete provider-owned OAuth settings file. The identity values keep their case.
+const testOAuthSettings = `upstream_client_id: client
+upstream_client_secret_file: /etc/agentplane-mcp/client-secret
+base_url: https://edge.example
+integration_app_url: https://app.example
+upstream_issuer: https://operator.example/issuer
+upstream_subject: SubjectCaseSensitive
+approving_operator:
+  issuer: https://operator.example
+  subject: OperatorCaseSensitive
+`
+
+// oauthFileSetting writes contents as the OAuth settings file and returns the settings line that names it.
+func oauthFileSetting(t *testing.T, contents string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "oauth.yaml")
+	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return fmt.Sprintf("oauth_file: %q\n", path)
+}
+
 func TestLoadConfigReadsDatabaseURLFromExplicitSecretInput(t *testing.T) {
 	settingsFile(t, testSettings)
 	c, err := loadConfig()
@@ -181,22 +203,7 @@ func TestStaticEnvironmentDoesNotOverrideFileSettings(t *testing.T) {
 }
 
 func TestOAuthSettingsComeFromFileAndValidateWithProjectedToken(t *testing.T) {
-	oauthPath := filepath.Join(t.TempDir(), "oauth.yaml")
-	oauth := `upstream_client_id: client
-upstream_client_secret_file: /etc/agentplane-mcp/client-secret
-base_url: https://edge.example
-integration_app_url: https://app.example
-upstream_issuer: https://operator.example/issuer
-upstream_subject: SubjectCaseSensitive
-approving_operator:
-  issuer: https://operator.example
-  subject: OperatorCaseSensitive
-`
-	if err := os.WriteFile(oauthPath, []byte(oauth), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	settings := testSettings + fmt.Sprintf("oauth_file: %q\n", oauthPath)
-	settingsFile(t, settings)
+	settingsFile(t, testSettings+oauthFileSetting(t, testOAuthSettings))
 	t.Setenv(settingPrefix+"OAUTH_FILE", filepath.Join(t.TempDir(), "ignored.yaml"))
 	t.Setenv(settingPrefix+"OAUTH__UPSTREAM_SUBJECT", "overridden")
 	c, err := loadConfig()
@@ -213,36 +220,11 @@ approving_operator:
 
 func TestOAuthSettingsFileRejectsUnknownKeysAndAdditionalDocuments(t *testing.T) {
 	for name, oauth := range map[string]string{
-		"unknown key": `upstream_client_id: client
-upstream_client_secret_file: /etc/agentplane-mcp/client-secret
-base_url: https://edge.example
-integration_app_url: https://app.example
-upstream_issuer: https://operator.example/issuer
-upstream_subject: subject
-approving_operator:
-  issuer: https://operator.example
-  subject: operator
-unknown: true
-`,
-		"second document": `upstream_client_id: client
-upstream_client_secret_file: /etc/agentplane-mcp/client-secret
-base_url: https://edge.example
-integration_app_url: https://app.example
-upstream_issuer: https://operator.example/issuer
-upstream_subject: subject
-approving_operator:
-  issuer: https://operator.example
-  subject: operator
----
-upstream_subject: another
-`,
+		"unknown key":     testOAuthSettings + "unknown: true\n",
+		"second document": testOAuthSettings + "---\nupstream_subject: another\n",
 	} {
 		t.Run(name, func(t *testing.T) {
-			oauthPath := filepath.Join(t.TempDir(), "oauth.yaml")
-			if err := os.WriteFile(oauthPath, []byte(oauth), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			settingsFile(t, testSettings+fmt.Sprintf("oauth_file: %q\n", oauthPath))
+			settingsFile(t, testSettings+oauthFileSetting(t, oauth))
 			if _, err := loadConfig(); err == nil {
 				t.Fatal("accepted an invalid provider-owned OAuth settings file")
 			}
@@ -258,44 +240,17 @@ func TestOAuthSettingsFileMustExist(t *testing.T) {
 }
 
 func TestOAuthFileAndInlineSettingsAreMutuallyExclusive(t *testing.T) {
-	oauthPath := filepath.Join(t.TempDir(), "oauth.yaml")
-	if err := os.WriteFile(oauthPath, []byte("upstream_client_id: client\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	settings := testSettings + fmt.Sprintf("oauth_file: %q\n", oauthPath) + `oauth:
-  upstream_client_id: client
-  upstream_client_secret_file: /etc/agentplane-mcp/client-secret
-  base_url: https://edge.example
-  integration_app_url: https://app.example
-  upstream_issuer: https://operator.example/issuer
-  upstream_subject: SubjectCaseSensitive
-  approving_operator:
-    issuer: https://operator.example
-    subject: OperatorCaseSensitive
-`
-	settingsFile(t, settings)
+	// Both forms are complete, so only the exclusion can reject them.
+	inline := "oauth:\n  " + strings.ReplaceAll(strings.TrimSuffix(testOAuthSettings, "\n"), "\n", "\n  ") + "\n"
+	settingsFile(t, testSettings+oauthFileSetting(t, testOAuthSettings)+inline)
 	if _, err := loadConfig(); err == nil {
 		t.Fatal("accepted inline and provider-owned OAuth settings together")
 	}
 }
 
 func TestOAuthRequiresExactlyOneActionCallerCredential(t *testing.T) {
-	oauthPath := filepath.Join(t.TempDir(), "oauth.yaml")
-	oauth := `upstream_client_id: client
-upstream_client_secret_file: /etc/agentplane-mcp/client-secret
-base_url: https://edge.example
-integration_app_url: https://app.example
-upstream_issuer: https://operator.example/issuer
-upstream_subject: subject
-approving_operator:
-  issuer: https://operator.example
-  subject: operator
-`
-	if err := os.WriteFile(oauthPath, []byte(oauth), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	base := strings.Replace(testSettings, "actions_token_file: /run/agentplane/action-token/token\n", "", 1)
-	oauthFile := fmt.Sprintf("oauth_file: %q\n", oauthPath)
+	oauthFile := oauthFileSetting(t, testOAuthSettings)
 	serverTLS := `actions_tls:
   ca_file: /etc/agentplane/ca/ca.crt
   server_uri: spiffe://agentplane/actions
