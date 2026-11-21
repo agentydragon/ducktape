@@ -11,9 +11,10 @@ from model_catalog.catalog import (
     ANTIGRAVITY_OPUS,
     ANTIGRAVITY_SONNET,
     GEMINI_ROUTES,
-    GPT6_ASTRA_RESPONSES,
+    GPT6_1_TERRA_RESPONSES,
+    GPT6_2_ASTRA_RESPONSES,
+    GPT6_2_SOL_RESPONSES,
     GPT6_LUNA_RESPONSES,
-    GPT6_SOL_RESPONSES,
     OLLAMA_EMBEDDING_ROUTE,
     Provider,
     Route,
@@ -60,7 +61,7 @@ def config() -> dict:
                 "coder": {"name": "Coder"},
                 "haku_console_tpm": {
                     "name": "Haku Console TPM",
-                    "model": {"primary": f"litellm/{GPT6_ASTRA_RESPONSES.id}"},
+                    "model": {"primary": f"litellm/{GPT6_2_ASTRA_RESPONSES.id}"},
                 },
             },
         },
@@ -139,10 +140,11 @@ def config() -> dict:
                     # context/output values are client settings, not provider capacity
                     # claims; provider metadata alone does not opt a route in.
                     "models": [
-                        _model_entry(GPT6_ASTRA_RESPONSES, context_budget=872_000, output_budget=128_000),
+                        _model_entry(GPT6_1_TERRA_RESPONSES, context_budget=500_000, output_budget=128_000),
+                        _model_entry(GPT6_2_ASTRA_RESPONSES, context_budget=872_000, output_budget=128_000),
                         *(
                             _model_entry(route, context_budget=372_000, output_budget=128_000)
-                            for route in (GPT6_LUNA_RESPONSES, GPT6_SOL_RESPONSES)
+                            for route in (GPT6_LUNA_RESPONSES, GPT6_2_SOL_RESPONSES)
                         ),
                         *(
                             _model_entry(route, context_budget=1_048_576, output_budget=65_536)

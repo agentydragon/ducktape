@@ -4,14 +4,13 @@ from dataclasses import dataclass
 
 from agentplane.llm_ingress.models import ModelConfig
 from model_catalog.catalog import (
-    ANTHROPIC_API_LATEST_ROUTES,
+    ANTHROPIC_API_ROUTES,
     ANTIGRAVITY_GEMINI_38_FLASH_HIGH,
     ANTIGRAVITY_GEMINI_FLASH,
     ANTIGRAVITY_GEMINI_FLASH_LITE,
     ANTIGRAVITY_OPUS,
     ANTIGRAVITY_SONNET,
     GPT6_RESPONSES_ROUTES,
-    GPT6_SOL_RESPONSES,
     TABBYAPI_QWEN_ABLITERATED,
     TABBYAPI_QWEN_STOCK,
     Route,
@@ -46,9 +45,6 @@ _AGENTPLANE_ANTIGRAVITY_ROUTES = (
     ANTIGRAVITY_GEMINI_38_FLASH_HIGH,
 )
 
-# GPT-6 Sol remains served for other clients, but Agentplane exposes GPT-6.1 Sol instead.
-_AGENTPLANE_GPT6_RESPONSES_ROUTES = tuple(route for route in GPT6_RESPONSES_ROUTES if route != GPT6_SOL_RESPONSES)
-
 
 def chat_completions_id(route: Route, responses_routes: tuple[Route, ...]) -> str:
     return f"{route.id}-chat-completions" if route in responses_routes else route.id
@@ -57,17 +53,12 @@ def chat_completions_id(route: Route, responses_routes: tuple[Route, ...]) -> st
 STAGING_APP_MODELS = HarnessRoutes(
     central_sampler_chat=(TABBYAPI_QWEN_STOCK, TABBYAPI_QWEN_ABLITERATED),
     claude=_AGENTPLANE_ANTIGRAVITY_ROUTES,
-    codex=(
-        *_AGENTPLANE_GPT6_RESPONSES_ROUTES,
-        *_AGENTPLANE_ANTIGRAVITY_ROUTES,
-        TABBYAPI_QWEN_STOCK,
-        TABBYAPI_QWEN_ABLITERATED,
-    ),
+    codex=(*GPT6_RESPONSES_ROUTES, *_AGENTPLANE_ANTIGRAVITY_ROUTES, TABBYAPI_QWEN_STOCK, TABBYAPI_QWEN_ABLITERATED),
     central_sampler=(
-        *_AGENTPLANE_GPT6_RESPONSES_ROUTES,
+        *GPT6_RESPONSES_ROUTES,
         *_AGENTPLANE_ANTIGRAVITY_ROUTES,
         TABBYAPI_QWEN_STOCK,
-        *ANTHROPIC_API_LATEST_ROUTES,
+        *ANTHROPIC_API_ROUTES,
     ),
 )
 

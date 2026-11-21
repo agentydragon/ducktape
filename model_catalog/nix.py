@@ -8,7 +8,7 @@ from model_catalog.catalog import (
     ANTIGRAVITY_GEMINI_FLASH,
     GEMINI_FLASH,
     GEMINI_FLASH_LITE,
-    GPT6_ASTRA_MESSAGES,
+    GPT6_2_ASTRA_MESSAGES,
     GPT6_LUNA_MESSAGES,
     HAIKU_SUBSCRIPTION,
     SONNET_SUBSCRIPTION,
@@ -44,7 +44,7 @@ def claude_wrapper_models() -> dict[str, dict[str, str | int]]:
     # leaves the client's default in place; these wrappers remain paused (#9121).
     return {
         "codex-claude": _wrapper(
-            GPT6_ASTRA_MESSAGES,
+            GPT6_2_ASTRA_MESSAGES,
             GPT6_LUNA_MESSAGES,
             KEY_MODEL_LANES["codex_client_models"],
             max_context_tokens=872_000,
