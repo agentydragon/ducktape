@@ -56,7 +56,7 @@ See [CI executor routing](../../devinfra/ci/README.md#where-bazel-ci-runs-tests)
 
 `test_vm_tcg`, `test_vm_manual`, `test_vm_oom`, `test_vm_kvm` and `test_vm_profile` carry the `manual` tag. The staging checks
 [`test_thread_latency`](suites/live/test_thread_latency.py) and
-[`test_ollama_routes`](suites/live/test_ollama_routes.py) carry both `manual` and `no-remote-exec`;
+[`test_tabbyapi_routes`](suites/live/test_tabbyapi_routes.py) carry both `manual` and `no-remote-exec`;
 the [live-test instructions](#running-live) explain how to run them.
 
 Pod, MCP Actions, and VM harness cases use the same bounded batch runner. Pytest selection determines
@@ -239,7 +239,7 @@ and caching enabled for other tests.
 
 The default deployment is `https://agentplane-staging.allegedly.works` in namespace
 `agentplane-staging`. Set `AGENTPLANE_SYSTEM_TEST_TOKEN` to an operator ID token accepted by the
-target app; the live suite does not mint an app ServiceAccount token. `test_ollama_routes` reads the
+target app; the live suite does not mint an app ServiceAccount token. `test_tabbyapi_routes` reads the
 deployed catalog and uses the caller kubeconfig for Sandbox operations. Do not print or save credentials.
 
 | Variable                           | Default                                      |
@@ -267,9 +267,9 @@ bazelisk test //agentplane/system_tests/suites/live:test_thread_latency --test_o
 ```
 
 `test_thread_latency` times a model turn and the cold and warm reads used to open its thread; its
-module docstring defines the stages and limits. `test_ollama_routes` selects routes offered by the
-staging catalog and requires a recorded shell-tool result. Set `OLLAMA_SMOKE_CASE` to one pytest
-case ID to narrow it, or `OLLAMA_SMOKE_HOLD_SECONDS` to retain the Sandbox briefly for diagnosis
+module docstring defines the stages and limits. `test_tabbyapi_routes` selects routes offered by the
+staging catalog and requires a recorded shell-tool result. Set `TABBYAPI_SMOKE_CASE` to one pytest
+case ID to narrow it, or `TABBYAPI_SMOKE_HOLD_SECONDS` to retain the Sandbox briefly for diagnosis
 (the test caps this at 30 seconds). Each target writes evidence under its `test.outputs/` directory;
 a rerun replaces local outputs, so save evidence first if needed.
 

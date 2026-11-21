@@ -110,11 +110,11 @@ def model_catalog(models: HarnessRoutes, *, central_sampler_enabled: bool = Fals
     if central_sampler_enabled:
         sampler_ids = [route.id for route in models.central_sampler]
         for route in models.central_sampler_chat:
-            model_id = chat_completions_id(route)
+            model_id = chat_completions_id(route, models.central_sampler)
             if model_id not in options:
                 options[model_id] = ModelOption(
                     model=model_id,
-                    display_name=f"{route.display_name} — TabbyAPI Chat Completions",
+                    display_name=f"{_picker_model_name(route)} Chat Completions",
                     reasoning_efforts=list(route.reasoning_efforts),
                 )
             sampler_ids.append(model_id)

@@ -51,12 +51,12 @@ from cluster.cdk8s.agentplane.egress import (
 )
 from cluster.cdk8s.agentplane.egress_staging_credentials import AIQUOTA_READ_POLICY
 from cluster.cdk8s.agentplane.kubernetes_account_ref import shared_diagnostics
-from cluster.cdk8s.agentplane.model_selections import QWEN_CHAT_CANARY_ID, QWEN_CHAT_CANARY_ROUTE, STAGING_APP_MODELS
+from cluster.cdk8s.agentplane.model_selections import STAGING_APP_MODELS, chat_completions_id
 from cluster.cdk8s.agentplane.namespaces import kubernetes_accounts_namespace
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.testing.manifests import config_map_yaml, find_resource
-from model_catalog.catalog import Provider
+from model_catalog.catalog import TABBYAPI_QWEN_STOCK, Provider
 
 
 def _sandbox_preset_policy_sets(docs: list[dict[str, Any]]) -> dict[str, set[str]]:
@@ -428,14 +428,15 @@ def test_shared_coding_models_preserve_provider_protocols(catalog_manifests: lis
     catalog = config["models"]
     assert catalog["harnesses"]["HARNESS_CODEX"] == [route.id for route in STAGING_APP_MODELS.codex]
     abliterated_id = "tabbyapi/oai-chat/qwen3.8-flash-next-abliterated"
-    chat_models = {QWEN_CHAT_CANARY_ID: QWEN_CHAT_CANARY_ROUTE.id, abliterated_id: abliterated_id}
+    stock_chat_id = chat_completions_id(TABBYAPI_QWEN_STOCK, STAGING_APP_MODELS.central_sampler)
+    chat_models = {stock_chat_id: TABBYAPI_QWEN_STOCK.id, abliterated_id: abliterated_id}
     assert catalog["harnesses"]["HARNESS_CENTRAL_SAMPLER"] == [
         *(route.id for route in STAGING_APP_MODELS.central_sampler),
         *chat_models,
     ]
     assert set(chat_models).isdisjoint(catalog["harnesses"]["HARNESS_CLAUDE"])
     assert abliterated_id in catalog["harnesses"]["HARNESS_CODEX"]
-    assert QWEN_CHAT_CANARY_ID not in catalog["harnesses"]["HARNESS_CODEX"]
+    assert stock_chat_id not in catalog["harnesses"]["HARNESS_CODEX"]
     [abliterated_option] = [model for model in catalog["models"] if model["model"] == abliterated_id]
     assert abliterated_option["reasoning_efforts"] == ["low", "medium", "high"]
     assert set(catalog["harnesses"]["HARNESS_CODEX"]) < set(catalog["harnesses"]["HARNESS_CENTRAL_SAMPLER"])

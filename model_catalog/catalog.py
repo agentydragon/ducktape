@@ -532,18 +532,16 @@ def _ollama_routes(variant: ollama.ChatVariant, *, openai_reasoning_efforts: tup
     )
 
 
-# The efforts a client can ask Ollama for that Qwen3.8's chat template
-# (cluster/cdk8s/ollama/qwen38-chat-template.jinja) accepts. The template takes xhigh (its
-# default), medium and low, and treats `high` as xhigh. Ollama rewrites a requested `xhigh`
-# to `max` unless the model has thinking metadata, which a GGUF registered through
-# /api/create lacks, and the template rejects `max`: `high` is how a client asks for
-# Qwen's xhigh. Declared on the OpenAI-compatible wire only: on the native wire LiteLLM's
-# mapper fails on the reasoning object Codex sends.
+# TabbyAPI accepts these efforts; its template maps high to Qwen's xhigh.
 _QWEN_EFFORTS = ("low", "medium", "high")
 
-OLLAMA_QWEN_IQ4XS_128K = _ollama_routes(ollama.QWEN_IQ4XS_128K, openai_reasoning_efforts=_QWEN_EFFORTS)
-OLLAMA_QWEN_IQ4XS_256K = _ollama_routes(ollama.QWEN_IQ4XS_256K, openai_reasoning_efforts=_QWEN_EFFORTS)
 TABBYAPI_CHAT = Upstream(Provider.TABBYAPI, "hosted_vllm", "chat", supports_function_calling=True)
+TABBYAPI_QWEN_STOCK = Route(
+    Model("qwen3.8-flash-next-exl3-256k", display_name="Qwen3.8 Flash-Next EXL3 2.68 bpw (256K)", reasoning=True),
+    TABBYAPI_CHAT,
+    upstream_model="qwen38-exl3-268",
+    reasoning_efforts=_QWEN_EFFORTS,
+)
 TABBYAPI_QWEN_ABLITERATED = Route(
     Model(
         "qwen3.8-flash-next-abliterated", display_name="Qwen3.8 Flash-Next Abliterated (EXL3 2.50 bpw)", reasoning=True
@@ -557,8 +555,6 @@ OLLAMA_GPT_OSS_20B_128K = _GPT_OSS_20B_128K.openai
 _GPT_OSS_120B_128K = _ollama_routes(ollama.ChatVariant(ollama.GPT_OSS_120B, 128 * 1024))
 _GEMMA4_128K = _ollama_routes(ollama.ChatVariant(ollama.GEMMA4, 128 * 1024))
 _OLLAMA_ROUTE_GROUPS = (
-    (OLLAMA_QWEN_IQ4XS_128K.openai, OLLAMA_QWEN_IQ4XS_128K.native),
-    (OLLAMA_QWEN_IQ4XS_256K.openai, OLLAMA_QWEN_IQ4XS_256K.native),
     (
         _GPT_OSS_20B_128K.openai,
         _GPT_OSS_20B_128K.native,
@@ -783,6 +779,7 @@ MISTRAL_ROUTES = tuple(Route(model, MISTRAL_CHAT, publish_limits=True) for model
 # Rugged's local routes are served through LiteLLM alongside the other providers.
 SERVED_ROUTES: tuple[Route | RouteAlias, ...] = (
     *_OLLAMA_PROXY_ROUTES,
+    TABBYAPI_QWEN_STOCK,
     TABBYAPI_QWEN_ABLITERATED,
     *RUGGED_LOCAL_CANDIDATE_ROUTES,
     *RUGGED_LOCAL_EXPERIMENTAL_ROUTES,

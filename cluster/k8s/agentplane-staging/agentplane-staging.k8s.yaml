@@ -1101,7 +1101,7 @@ data:
         },
         {
           "context_window": 262144,
-          "display_name": "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k",
+          "display_name": "tabbyapi/oai-chat/qwen3.8-flash-next-abliterated",
           "experimental_supported_tools": [],
           "include_apps_usage_instructions": false,
           "max_context_window": 262144,
@@ -1110,7 +1110,7 @@ data:
           },
           "priority": 99,
           "shell_type": "unified_exec",
-          "slug": "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k",
+          "slug": "tabbyapi/oai-chat/qwen3.8-flash-next-abliterated",
           "support_verbosity": false,
           "supported_in_api": true,
           "supported_reasoning_levels": [],
@@ -1122,7 +1122,7 @@ data:
         },
         {
           "context_window": 262144,
-          "display_name": "tabbyapi/oai-chat/qwen3.8-flash-next-abliterated",
+          "display_name": "tabbyapi/oai-chat/qwen3.8-flash-next-exl3-256k",
           "experimental_supported_tools": [],
           "include_apps_usage_instructions": false,
           "max_context_window": 262144,
@@ -1131,7 +1131,7 @@ data:
           },
           "priority": 99,
           "shell_type": "unified_exec",
-          "slug": "tabbyapi/oai-chat/qwen3.8-flash-next-abliterated",
+          "slug": "tabbyapi/oai-chat/qwen3.8-flash-next-exl3-256k",
           "support_verbosity": false,
           "supported_in_api": true,
           "supported_reasoning_levels": [],
@@ -3159,9 +3159,9 @@ data:
             "medium"
           ]
         },
-        "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k": {
+        "tabbyapi/oai-chat/qwen3.8-flash-next-exl3-256k": {
           "connection": "llm-ingress",
-          "provider_model": "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k",
+          "provider_model": "tabbyapi/oai-chat/qwen3.8-flash-next-exl3-256k",
           "response_header_timeout_seconds": 360,
           "api": "responses",
           "responses": {
@@ -3173,42 +3173,6 @@ data:
             "high",
             "low",
             "medium"
-          ]
-        },
-        "ollama/oai-chat/gpt-oss-20b-128k": {
-          "connection": "llm-ingress",
-          "provider_model": "ollama/oai-chat/gpt-oss-20b-128k",
-          "api": "responses",
-          "responses": {
-            "dialect": "standard"
-          },
-          "exec_encoding": "json",
-          "reasoning_efforts": [
-            ""
-          ]
-        },
-        "ollama/oai-chat/gpt-oss-120b-128k": {
-          "connection": "llm-ingress",
-          "provider_model": "ollama/oai-chat/gpt-oss-120b-128k",
-          "api": "responses",
-          "responses": {
-            "dialect": "standard"
-          },
-          "exec_encoding": "json",
-          "reasoning_efforts": [
-            ""
-          ]
-        },
-        "ollama/oai-chat/gemma4-31b-it-q8_0-128k": {
-          "connection": "llm-ingress",
-          "provider_model": "ollama/oai-chat/gemma4-31b-it-q8_0-128k",
-          "api": "responses",
-          "responses": {
-            "dialect": "standard"
-          },
-          "exec_encoding": "json",
-          "reasoning_efforts": [
-            ""
           ]
         },
         "anthropic-api/ant-messages/claude-opus-5-5": {
@@ -3347,9 +3311,9 @@ data:
             "xhigh"
           ]
         },
-        "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k-chat-completions": {
+        "tabbyapi/oai-chat/qwen3.8-flash-next-exl3-256k-chat-completions": {
           "connection": "llm-ingress",
-          "provider_model": "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k",
+          "provider_model": "tabbyapi/oai-chat/qwen3.8-flash-next-exl3-256k",
           "response_header_timeout_seconds": 360,
           "api": "chat_completions",
           "chat_compaction": {
@@ -3752,21 +3716,12 @@ data:
             - high
             - xhigh
             - max
-        - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
-          display_name: Qwen3.8 Flash Next IQ4_XS (256K) — cluster Ollama
+        - model: tabbyapi/oai-chat/qwen3.8-flash-next-exl3-256k
+          display_name: Qwen3.8 Flash-Next EXL3 2.68 bpw (256K) — TabbyAPI
           reasoning_efforts:
             - low
             - medium
             - high
-        - model: ollama/oai-chat/gpt-oss-20b-128k
-          display_name: GPT-OSS 20B (128K) — cluster Ollama
-          reasoning_efforts: []
-        - model: ollama/oai-chat/gpt-oss-120b-128k
-          display_name: GPT-OSS 120B (128K) — cluster Ollama
-          reasoning_efforts: []
-        - model: ollama/oai-chat/gemma4-31b-it-q8_0-128k
-          display_name: Gemma 4 31B (128K) — cluster Ollama
-          reasoning_efforts: []
         - model: tabbyapi/oai-chat/qwen3.8-flash-next-abliterated
           display_name: Qwen3.8 Flash-Next Abliterated (EXL3 2.50 bpw) — TabbyAPI
           reasoning_efforts:
@@ -3805,8 +3760,8 @@ data:
             - high
             - xhigh
             - max
-        - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k-chat-completions
-          display_name: Qwen3.8 Flash Next IQ4_XS (256K) — TabbyAPI Chat Completions
+        - model: tabbyapi/oai-chat/qwen3.8-flash-next-exl3-256k-chat-completions
+          display_name: Qwen3.8 Flash-Next EXL3 2.68 bpw (256K) — TabbyAPI Chat Completions
           reasoning_efforts:
             - low
             - medium
@@ -3827,10 +3782,7 @@ data:
           - antigravity/ant-messages/gemini-3-flash
           - antigravity/ant-messages/gemini-3.5-flash-lite
           - antigravity/ant-messages/gemini-3.8-flash-high
-          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
-          - ollama/oai-chat/gpt-oss-20b-128k
-          - ollama/oai-chat/gpt-oss-120b-128k
-          - ollama/oai-chat/gemma4-31b-it-q8_0-128k
+          - tabbyapi/oai-chat/qwen3.8-flash-next-exl3-256k
           - tabbyapi/oai-chat/qwen3.8-flash-next-abliterated
         HARNESS_CENTRAL_SAMPLER:
           - chatgpt-sub/oai-responses/gpt-6-astra
@@ -3841,15 +3793,12 @@ data:
           - antigravity/ant-messages/gemini-3-flash
           - antigravity/ant-messages/gemini-3.5-flash-lite
           - antigravity/ant-messages/gemini-3.8-flash-high
-          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
-          - ollama/oai-chat/gpt-oss-20b-128k
-          - ollama/oai-chat/gpt-oss-120b-128k
-          - ollama/oai-chat/gemma4-31b-it-q8_0-128k
+          - tabbyapi/oai-chat/qwen3.8-flash-next-exl3-256k
           - anthropic-api/ant-messages/claude-opus-5-5
           - anthropic-api/ant-messages/claude-sonnet-5-5
           - anthropic-api/ant-messages/claude-haiku-5-5
           - anthropic-api/ant-messages/claude-fable-5-1
-          - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k-chat-completions
+          - tabbyapi/oai-chat/qwen3.8-flash-next-exl3-256k-chat-completions
           - tabbyapi/oai-chat/qwen3.8-flash-next-abliterated
     thread_presets:
       public-coder-codex:
@@ -3883,7 +3832,7 @@ data:
       haku-codex:
         title: Haku
         harness: HARNESS_CENTRAL_SAMPLER
-        model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
+        model: tabbyapi/oai-chat/qwen3.8-flash-next-exl3-256k
         cwd: /state/workspaces/{session_id}/haku-state
         reasoning_effort: medium
         instructions: "You are Haku, the operator's tireless background executive assistant. Your current directory is your haku-state checkout: your durable home for memory, notes, and other agent state. The ducktape checkout is at ../ducktape. Make changes in the checkout of the repository that owns them; never copy another repository into haku-state. Commit and push every persistent change to the owning repository's upstream or authorized fork as you go. A new Thread starts from fresh checkouts. Git auth is already in place. haku-state also holds who you are: read AGENTS.md, SOUL.md and MEMORY.md at its root, then your run procedure at memory/procedures/run.md. Read those, then execute the run procedure end to end."
@@ -6864,21 +6813,12 @@ data:
                 - high
                 - xhigh
                 - max
-            - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
-              display_name: Qwen3.8 Flash Next IQ4_XS (256K) — cluster Ollama
+            - model: tabbyapi/oai-chat/qwen3.8-flash-next-exl3-256k
+              display_name: Qwen3.8 Flash-Next EXL3 2.68 bpw (256K) — TabbyAPI
               reasoning_efforts:
                 - low
                 - medium
                 - high
-            - model: ollama/oai-chat/gpt-oss-20b-128k
-              display_name: GPT-OSS 20B (128K) — cluster Ollama
-              reasoning_efforts: []
-            - model: ollama/oai-chat/gpt-oss-120b-128k
-              display_name: GPT-OSS 120B (128K) — cluster Ollama
-              reasoning_efforts: []
-            - model: ollama/oai-chat/gemma4-31b-it-q8_0-128k
-              display_name: Gemma 4 31B (128K) — cluster Ollama
-              reasoning_efforts: []
             - model: tabbyapi/oai-chat/qwen3.8-flash-next-abliterated
               display_name: Qwen3.8 Flash-Next Abliterated (EXL3 2.50 bpw) — TabbyAPI
               reasoning_efforts:
@@ -6917,8 +6857,8 @@ data:
                 - high
                 - xhigh
                 - max
-            - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k-chat-completions
-              display_name: Qwen3.8 Flash Next IQ4_XS (256K) — TabbyAPI Chat Completions
+            - model: tabbyapi/oai-chat/qwen3.8-flash-next-exl3-256k-chat-completions
+              display_name: Qwen3.8 Flash-Next EXL3 2.68 bpw (256K) — TabbyAPI Chat Completions
               reasoning_efforts:
                 - low
                 - medium
@@ -6939,10 +6879,7 @@ data:
               - antigravity/ant-messages/gemini-3-flash
               - antigravity/ant-messages/gemini-3.5-flash-lite
               - antigravity/ant-messages/gemini-3.8-flash-high
-              - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
-              - ollama/oai-chat/gpt-oss-20b-128k
-              - ollama/oai-chat/gpt-oss-120b-128k
-              - ollama/oai-chat/gemma4-31b-it-q8_0-128k
+              - tabbyapi/oai-chat/qwen3.8-flash-next-exl3-256k
               - tabbyapi/oai-chat/qwen3.8-flash-next-abliterated
             HARNESS_CENTRAL_SAMPLER:
               - chatgpt-sub/oai-responses/gpt-6-astra
@@ -6953,15 +6890,12 @@ data:
               - antigravity/ant-messages/gemini-3-flash
               - antigravity/ant-messages/gemini-3.5-flash-lite
               - antigravity/ant-messages/gemini-3.8-flash-high
-              - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
-              - ollama/oai-chat/gpt-oss-20b-128k
-              - ollama/oai-chat/gpt-oss-120b-128k
-              - ollama/oai-chat/gemma4-31b-it-q8_0-128k
+              - tabbyapi/oai-chat/qwen3.8-flash-next-exl3-256k
               - anthropic-api/ant-messages/claude-opus-5-5
               - anthropic-api/ant-messages/claude-sonnet-5-5
               - anthropic-api/ant-messages/claude-haiku-5-5
               - anthropic-api/ant-messages/claude-fable-5-1
-              - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k-chat-completions
+              - tabbyapi/oai-chat/qwen3.8-flash-next-exl3-256k-chat-completions
               - tabbyapi/oai-chat/qwen3.8-flash-next-abliterated
         templates:
           environment-tools:
@@ -7813,7 +7747,7 @@ data:
               create_session:
                 spec:
                   harness: HARNESS_CENTRAL_SAMPLER
-                  model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
+                  model: tabbyapi/oai-chat/qwen3.8-flash-next-exl3-256k
                   cwd: /state/workspaces/{session_id}/haku-state
                   reasoning_effort: medium
                   instructions: "You are Haku, the operator's tireless background executive assistant. Your current directory is your haku-state checkout: your durable home for memory, notes, and other agent state. The ducktape checkout is at ../ducktape. Make changes in the checkout of the repository that owns them; never copy another repository into haku-state. Commit and push every persistent change to the owning repository's upstream or authorized fork as you go. A new Thread starts from fresh checkouts. Git auth is already in place. haku-state also holds who you are: read AGENTS.md, SOUL.md and MEMORY.md at its root, then your run procedure at memory/procedures/run.md. Read those, then execute the run procedure end to end."

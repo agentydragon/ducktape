@@ -20,12 +20,11 @@ from cluster.cdk8s.litellm.proxy import _LiteralEnv, _SecretEnv, proxy_specs
 from cluster.cdk8s.litellm.secrets import LANGFUSE_EXPORTERS_TEMPLATE
 from cluster.cdk8s.litellm.upstreams import RUGGED_LOCAL_LLM_API_BASE, RUGGED_LOCAL_LLM_KEY_ENV
 from model_catalog.catalog import (
-    OLLAMA_QWEN_IQ4XS_128K,
-    OLLAMA_QWEN_IQ4XS_256K,
     RUGGED_LOCAL_CANDIDATE_ROUTES,
     RUGGED_LOCAL_EXPERIMENTAL_ROUTES,
     RUGGED_LOCAL_OPENAI,
     TABBYAPI_QWEN_ABLITERATED,
+    TABBYAPI_QWEN_STOCK,
     TANA_ROUTES,
     Model,
     Route,
@@ -57,18 +56,14 @@ def test_rugged_routes_register_and_inject_the_bearer_key() -> None:
     assert RUGGED_LOCAL_LLM_KEY_ENV in {entry.name for entry in spec.env}
 
 
-def test_existing_qwen_model_names_route_to_tabbyapi() -> None:
+def test_stock_qwen_routes_to_tabbyapi() -> None:
     entries = {entry["model_name"]: entry for entry in main_proxy_config()["model_list"]}
-    for family in (OLLAMA_QWEN_IQ4XS_128K, OLLAMA_QWEN_IQ4XS_256K):
-        for route in (family.openai, family.native):
-            entry = entries[route.id]
-            assert entry["model_info"]["mode"] == "chat"
-            params = entry["litellm_params"]
-            assert params["model"] == "hosted_vllm/qwen38-exl3-268"
-            assert params["api_base"] == "http://tabbyapi.ollama.svc:5000/v1"
-            assert params["allowed_openai_params"] == ["reasoning_effort"]
-            assert params["use_chat_completions_api"] is True
-            assert "extra_body" not in params
+    assert not any("iq4xs" in name for name in entries)
+    params = entries[TABBYAPI_QWEN_STOCK.id]["litellm_params"]
+    assert params["model"] == "hosted_vllm/qwen38-exl3-268"
+    assert params["api_base"] == "http://tabbyapi-model-switching.ollama.svc:5000/v1"
+    assert params["allowed_openai_params"] == ["reasoning_effort"]
+    assert params["use_chat_completions_api"] is True
 
 
 def test_abliterated_qwen_routes_to_its_own_checkpoint() -> None:

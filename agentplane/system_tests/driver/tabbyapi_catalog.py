@@ -7,11 +7,8 @@ from agentplane.sandboxes.runtimeconfig.model_catalog import ModelCatalog
 # gazelle:include_dep @pypi//protobuf
 
 
-def ollama_cases(catalog: ModelCatalog) -> list[tuple[session_pb2.Harness, str]]:
-    routes = sorted(
-        (option.model for option in catalog.models if option.model.startswith("ollama/")),
-        key=lambda route: not route.endswith("-128k"),
-    )
+def tabbyapi_cases(catalog: ModelCatalog) -> list[tuple[session_pb2.Harness, str]]:
+    routes = sorted(option.model for option in catalog.models if option.model.startswith("tabbyapi/"))
     cases = [
         (harness, route)
         for route in routes
@@ -19,5 +16,5 @@ def ollama_cases(catalog: ModelCatalog) -> list[tuple[session_pb2.Harness, str]]
         if route in catalog.harnesses[Harness(session_pb2.Harness.Name(harness))]
     ]
     if not cases:
-        raise ValueError("deployed model catalog offers no Ollama smoke cases")
+        raise ValueError("deployed model catalog offers no TabbyAPI smoke cases")
     return cases
