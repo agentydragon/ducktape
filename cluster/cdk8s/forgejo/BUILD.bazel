@@ -12,7 +12,6 @@ py_library(
         ":db",
         ":namespace",
         "//cluster/cdk8s:cilium",
-        "//cluster/cdk8s:flux",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:helm",
@@ -69,10 +68,8 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":namespace",
-        "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s/cnpg:backup",
         "//cluster/cdk8s/cnpg:cluster",
@@ -86,7 +83,6 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:generation",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
@@ -98,9 +94,7 @@ py_library(
     srcs = ["gitops_modules.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
-        "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
-        "@pypi//cdk8s",
     ],
 )
 

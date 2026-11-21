@@ -18,6 +18,7 @@ from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 
 from cluster.cdk8s.config_format import yaml_config
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import ConfigMapArgs, kustomize_kustomization
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME
 from cluster.cdk8s.generation import write_charts, write_yaml
@@ -112,10 +113,7 @@ def _pod_spec(container_name: str) -> k8s.PodSpec:
                 security_context=k8s.SecurityContext(
                     allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
                 ),
-                resources=k8s.ResourceRequirements(
-                    requests={"cpu": k8s.Quantity.from_string("25m"), "memory": k8s.Quantity.from_string("64Mi")},
-                    limits={"memory": k8s.Quantity.from_string("128Mi")},
-                ),
+                resources=container_resources(cpu="25m", memory="64Mi", memory_limit="128Mi"),
             )
         ],
     )

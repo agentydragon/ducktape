@@ -28,6 +28,7 @@ from python.runfiles import Runfiles
 from att_gateway.settings import Settings, SyslogLevel, SyslogSettings
 from cluster.cdk8s import pod_policy
 from cluster.cdk8s.att_gateway_exporter import access_code
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.home_lan import HOME_LAN
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
@@ -50,10 +51,7 @@ _SERVICE = ServiceRef(
 _IMAGE = f"git.allegedly.works/ducktape-ci/{NAME}:unset"
 
 
-_RESOURCES = k8s.ResourceRequirements(
-    requests={"cpu": k8s.Quantity.from_string("10m"), "memory": k8s.Quantity.from_string("64Mi")},
-    limits={"cpu": k8s.Quantity.from_string("200m"), "memory": k8s.Quantity.from_string("128Mi")},
-)
+_RESOURCES = container_resources(cpu="10m", memory="64Mi", cpu_limit="200m", memory_limit="128Mi")
 
 
 def _gateway_env(settings: type[BaseSettings]) -> list[k8s.EnvVar]:

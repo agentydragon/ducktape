@@ -9,10 +9,9 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization
 
 
 def external_secrets_crds(chart: Chart) -> Kustomization:
-    name = "external-secrets-crds"
     return flux_kustomization(
         chart,
-        name,
+        "external-secrets-crds",
         # CRDs from the external-secrets repository
         KustomizationSpecSourceRef(
             kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY,

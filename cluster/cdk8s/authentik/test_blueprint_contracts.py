@@ -108,7 +108,49 @@ def _blueprint_entries(blueprints_dir: Path) -> list[_BlueprintEntry]:
     ]
 
 
-def check_proxy_provider_outpost_assignment(blueprints_dir: Path) -> list[str]:
+@dataclasses.dataclass(frozen=True)
+class _Wiring:
+    """Proxy-provider names by blueprint `state`, and each `present` outpost's `providers` resolved to names.
+
+    A reference that resolves to no proxy-provider name is `None`.
+    """
+
+    present: set[str]
+    absent: set[str]
+    outposts: list[list[str | None]]
+
+
+@pytest.fixture(scope="session")
+def wiring(runfiles: Runfiles) -> _Wiring:
+    blueprints_dir = runfiles.root() / _BLUEPRINTS_DIR
+    if not blueprints_dir.exists():
+        raise FileNotFoundError(f"Expected {blueprints_dir} to exist")
+    entries = _blueprint_entries(blueprints_dir)
+    id_to_name: dict[str, str] = {}
+    present: set[str] = set()
+    absent: set[str] = set()
+    for entry in entries:
+        name = entry.identifiers.name
+        if entry.model != _PROXY_PROVIDER_MODEL or name is None:
+            continue
+        if entry.id is not None:
+            id_to_name[entry.id] = name
+        if entry.state == "present":
+            present.add(name)
+        elif entry.state == "absent":
+            absent.add(name)
+    return _Wiring(
+        present=present,
+        absent=absent,
+        outposts=[
+            [_resolve_provider_ref(ref, id_to_name) for ref in entry.attrs.providers]
+            for entry in entries
+            if entry.model == _OUTPOST_MODEL and entry.state == "present"
+        ],
+    )
+
+
+def test_proxy_providers_assigned_to_outpost(wiring: _Wiring) -> None:
     """Every `present` authentik proxy provider must be assigned to an outpost.
 
     A proxy provider that exists but is on no outpost has no host->backend mapping: the
@@ -117,106 +159,32 @@ def check_proxy_provider_outpost_assignment(blueprints_dir: Path) -> list[str]:
     the wrong host and Google rejects it with `redirect_uri_mismatch`. This guards the
     wiring that broke `haku.allegedly.works` (and, latently, `tandoor.allegedly.works`).
     """
-    if not blueprints_dir.exists():
-        raise FileNotFoundError(f"Expected {blueprints_dir} to exist")
-
-    entries = _blueprint_entries(blueprints_dir)
-
-    # Map blueprint id -> provider name (for !KeyOf) and collect present provider names.
-    id_to_name: dict[str, str] = {}
-    present: set[str] = set()
-    for entry in entries:
-        if entry.model != _PROXY_PROVIDER_MODEL:
-            continue
-        name = entry.identifiers.name
-        if name is None:
-            continue
-        if entry.id is not None:
-            id_to_name[entry.id] = name
-        if entry.state == "present":
-            present.add(name)
-
-    assigned = {
-        name
-        for entry in entries
-        if entry.model == _OUTPOST_MODEL and entry.state == "present"
-        for ref in entry.attrs.providers
-        if (name := _resolve_provider_ref(ref, id_to_name)) is not None
-    }
-
-    return [
-        f"Authentik proxy provider '{name}' is defined but assigned to no outpost. Add it to the "
-        f"embedded outpost's providers in blueprints/embedded-outpost.yaml (see goldilocks); "
-        f"otherwise its host 302s to a login flow served on itself and Google SSO fails with "
-        f"redirect_uri_mismatch."
-        for name in sorted(present - assigned)
-    ]
+    assigned = {name for outpost in wiring.outposts for name in outpost}
+    unassigned = sorted(wiring.present - assigned)
+    assert not unassigned, (
+        f"Authentik proxy providers {unassigned} are defined but assigned to no outpost. Add them to the "
+        "embedded outpost's providers in blueprints/embedded-outpost.yaml (see goldilocks)."
+    )
 
 
-def check_outpost_provider_references(blueprints_dir: Path) -> list[str]:
-    """Reject malformed or explicitly retired embedded-outpost provider references.
+def test_outpost_provider_references_resolve(wiring: _Wiring) -> None:
+    """Embedded-outpost refs are valid and do not target retired providers.
 
     Authentik accepts a blueprint with a dangling ``!KeyOf`` reference and only
     reports the broken outpost wiring during reconciliation. Provider names that
     are not defined in blueprints are allowed because the ownership split also has
     Terraform-managed providers; explicit ``state: absent`` tombstones are not.
     """
-    if not blueprints_dir.exists():
-        raise FileNotFoundError(f"Expected {blueprints_dir} to exist")
-
-    entries = _blueprint_entries(blueprints_dir)
-    id_to_name: dict[str, str] = {}
-    absent: set[str] = set()
-    for entry in entries:
-        if entry.model != _PROXY_PROVIDER_MODEL:
-            continue
-        name = entry.identifiers.name
-        if name is None:
-            continue
-        if entry.id is not None:
-            id_to_name[entry.id] = name
-        if entry.state == "absent":
-            absent.add(name)
-
-    errors: list[str] = []
-    for entry in entries:
-        if entry.model != _OUTPOST_MODEL or entry.state != "present":
-            continue
-        for index, ref in enumerate(entry.attrs.providers):
-            name = _resolve_provider_ref(ref, id_to_name)
-            if name is None:
-                errors.append(
-                    f"Authentik outpost provider reference {index} in blueprint outpost "
-                    "does not resolve to a proxy-provider name or blueprint entry."
-                )
-            elif name in absent:
-                errors.append(
-                    f"Authentik outpost references retired proxy provider '{name}'. Remove "
-                    "the reference from embedded-outpost.yaml."
-                )
-    return errors
-
-
-@pytest.fixture(scope="session")
-def blueprints_dir(runfiles: Runfiles) -> Path:
-    return runfiles.root() / _BLUEPRINTS_DIR
-
-
-def test_proxy_providers_assigned_to_outpost(blueprints_dir: Path) -> None:
-    """Every present Authentik proxy provider must be assigned to an outpost.
-
-    An unassigned proxy provider (HTTPRoute present, but not on the embedded outpost)
-    302s to a login flow served on its own host, breaking Google SSO with
-    redirect_uri_mismatch — the haku.allegedly.works failure mode.
-    """
-    errors = check_proxy_provider_outpost_assignment(blueprints_dir)
-    assert not errors, "\n".join(errors)
-
-
-def test_outpost_provider_references_resolve(blueprints_dir: Path) -> None:
-    """Embedded-outpost refs are valid and do not target retired providers."""
-    errors = check_outpost_provider_references(blueprints_dir)
-    assert not errors, "\n".join(errors)
+    for outpost in wiring.outposts:
+        unresolved = [index for index, name in enumerate(outpost) if name is None]
+        assert not unresolved, (
+            f"Authentik outpost provider references {unresolved} do not resolve to a proxy-provider name "
+            "or blueprint entry."
+        )
+        retired = sorted(wiring.absent.intersection(outpost))
+        assert not retired, (
+            f"Authentik outpost references retired proxy providers {retired}. Remove them from embedded-outpost.yaml."
+        )
 
 
 if __name__ == "__main__":

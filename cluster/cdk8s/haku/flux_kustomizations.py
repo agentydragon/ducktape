@@ -16,10 +16,9 @@ def haku_mailbox(
     external_secrets_operator: Kustomization,
     seaweedfs_operator: Kustomization,
 ) -> Kustomization:
-    name = "haku-mailbox"
     return flux_kustomization(
         chart,
-        name,
+        "haku-mailbox",
         directory,
         timeout="5m",
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,

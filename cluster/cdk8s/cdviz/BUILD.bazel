@@ -34,7 +34,6 @@ copy_file(
 py_library(
     name = "config",
     srcs = ["config.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:secret_ref",
@@ -75,6 +74,7 @@ py_library(
         ":config",
         ":timescale",
         "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:namespaces",
