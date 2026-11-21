@@ -434,7 +434,12 @@ applications").
   once, but its Flux Kustomization had already been retired. The image source remains
   in place for possible revival, though its flake evaluation currently fails. Its two
   SOPS Secret manifests remain parked at `cluster/parked/codex-pod/`; replace
-  them with runtime-managed credentials before reactivation.
+  them with runtime-managed credentials before reactivation. Its Forgejo service user,
+  SSH key, read grant on `ducktape` and token-mint Secret are no longer provisioned
+  (`tf/gitops/forgejo-agentydragon-repos`, restore from `d36a089448`), and neither is its
+  rotated Forgejo tea token (`secrets/codex-pod-forgejo-tea-token.yaml`, last rotated
+  2026-09-03). The two LiteLLM virtual keys `codex-pod` and `codex-pod-messages`
+  (`cluster/cdk8s/litellm/crossplane_keys.py`) are still provisioned.
 - **budget (Fava)**: `cluster/parked/budget/` — decommissioned read-only Beancount
   ledger viewer. Its `budget` namespace remains active at
   `cluster/generated/forgejo/budget-namespace/` because it holds the ESO copy of the ledger's

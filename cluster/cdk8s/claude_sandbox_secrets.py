@@ -70,11 +70,7 @@ def chart(app: App) -> Chart:
     )
     _external_creds_secret(chart, _TELEGRAM_BOT_TOKEN, key="token", deletion_policy=None)
     _external_creds_secret(
-        chart,
-        _BUILDBUDDY_API_KEY,
-        key="api-key",
-        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-        mirror_namespaces=("codex-pod",),
+        chart, _BUILDBUDDY_API_KEY, key="api-key", deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN
     )
     # tf/gitops/forgejo-claude's account, which agent sessions fetch on demand
     # (devinfra/claude/claude_hook/creds_banner.sh).
