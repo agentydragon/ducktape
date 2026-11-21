@@ -1329,7 +1329,17 @@ def simpleAliasNumericExpr : NumericExpr → Bool
     simpleAliasNumericExpr initial && simpleAliasNumericExpr body
   | .assign _ value body => simpleAliasNumericExpr value && simpleAliasNumericExpr body
   | .raise value => simpleAliasNumericExpr value
-  | .raisePrimitive _ => false
+  | .raisePrimitive (.number _) => true
+  | .raisePrimitive (.text _) => false
+  | .raisePrimitive (.negativeNumber _) => false
+  | .raisePrimitive .negativeZero => false
+  | .raisePrimitive .notANumber => false
+  | .raisePrimitive .positiveInfinity => false
+  | .raisePrimitive .negativeInfinity => false
+  | .raisePrimitive (.bigInteger _ _) => false
+  | .raisePrimitive (.boolean _) => false
+  | .raisePrimitive .nullValue => false
+  | .raisePrimitive .undefined => false
   | .argumentsNil => false
   | .argumentsCons _ _ => false
   | .invoke _ _ _ _ => false

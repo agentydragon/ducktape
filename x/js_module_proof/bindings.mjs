@@ -782,10 +782,17 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
           return Object.values(node).some((value) => (Array.isArray(value) ? value.some(mentions) : mentions(value)));
         };
         if (mentions(statement.handler.body)) {
+          const numericThrow = (node) =>
+            node?.type === "Identifier" ||
+            (node?.type === "Literal" && Number.isSafeInteger(node.value) && node.value >= 0) ||
+            (node?.type === "BinaryExpression" &&
+              ["+", "*"].includes(node.operator) &&
+              numericThrow(node.left) &&
+              numericThrow(node.right));
           check(
             statement.block.body.length === 1 &&
               statement.block.body[0].type === "ThrowStatement" &&
-              statement.block.body[0].argument.type === "Identifier",
+              numericThrow(statement.block.body[0].argument),
             "used catch bindings require a single numeric throw"
           );
           caught = candidate;

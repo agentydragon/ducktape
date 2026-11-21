@@ -1079,3 +1079,56 @@ if (runSection(6)) {
   assert.deepEqual(execute(shadowCatch, calls), { events: [], results: [13, 17] });
   assert.deepEqual(execute(join(shadowCatchOut, "entry.mjs"), calls), { events: [], results: [13, 17] });
 }
+
+if (runSection(7)) {
+  const arithmeticSource = join(root, "catch-arithmetic-source.mjs");
+  const arithmeticSpec = join(root, "catch-arithmetic-spec.json");
+  const arithmeticOut = join(root, "catch-arithmetic-out");
+  await writeFile(
+    arithmeticSource,
+    `let value = 3;\nlet other = 5;\nfunction compute(p) { let local = p; try { throw value + p; } catch (caught) { local += caught; } finally { local += value; } return local; }\nexport { compute };\n`
+  );
+  await writeFile(
+    arithmeticSpec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0, 1] },
+        "logic.mjs": { imports: ["state.mjs"], statements: [2], renameLocalImports: true },
+        "entry.mjs": { imports: ["logic.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", arithmeticSource, arithmeticSpec, arithmeticOut).value.result, "generated");
+  const arithmeticState = join(arithmeticOut, "state.mjs");
+  await writeFile(arithmeticState, (await readFile(arithmeticState, "utf8")) + "export { other };\n");
+  const arithmeticLogic = join(arithmeticOut, "logic.mjs");
+  const arithmeticText = await readFile(arithmeticLogic, "utf8");
+  const arithmeticResult = cli("validate", arithmeticSource, arithmeticSpec, arithmeticOut).value;
+  assert.equal(arithmeticResult.result, "proved under assumptions", JSON.stringify(arithmeticResult));
+  const calls = [
+    { name: "compute", args: [0] },
+    { name: "compute", args: [4] },
+  ];
+  assert.deepEqual(execute(arithmeticSource, calls), { events: [], results: [6, 14] });
+  assert.deepEqual(execute(join(arithmeticOut, "entry.mjs"), calls), { events: [], results: [6, 14] });
+  assert.match(arithmeticText, /value as __split_local_0/);
+  await writeFile(arithmeticLogic, arithmeticText.replace("value as __split_local_0", "other as __split_local_0"));
+  const redirected = cli("validate", arithmeticSource, arithmeticSpec, arithmeticOut).value;
+  assert.equal(redirected.result, "unsafe", JSON.stringify(redirected));
+  assert.deepEqual(execute(arithmeticSource, redirected.calls), { events: [], results: [6] });
+  assert.deepEqual(execute(join(arithmeticOut, "entry.mjs"), redirected.calls), { events: [], results: [10] });
+
+  const literalSource = join(root, "catch-literal-source.mjs");
+  const literalOut = join(root, "catch-literal-out");
+  await writeFile(
+    literalSource,
+    `let value = 3;\nlet other = 5;\nfunction compute(p) { let local = p; try { throw 1; } catch (caught) { local += caught; } finally { local += value; } return local; }\nexport { compute };\n`
+  );
+  assert.equal(cli("generate", literalSource, arithmeticSpec, literalOut).value.result, "generated");
+  const literalResult = cli("validate", literalSource, arithmeticSpec, literalOut).value;
+  assert.equal(literalResult.result, "proved under assumptions", JSON.stringify(literalResult));
+  assert.deepEqual(execute(literalSource, calls), { events: [], results: [4, 8] });
+  assert.deepEqual(execute(join(literalOut, "entry.mjs"), calls), { events: [], results: [4, 8] });
+}

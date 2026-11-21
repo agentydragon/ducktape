@@ -1083,7 +1083,22 @@ export function makeLocalAliasCase(seed, index) {
                             right: id("numericLeft"),
                           }),
                         ]),
-                    ...(withThrownFinally ? [{ type: "ThrowStatement", argument: id("numericLeft") }] : []),
+                    ...(withThrownFinally
+                      ? [
+                          {
+                            type: "ThrowStatement",
+                            argument:
+                              withCatchBinding && index >= 1333
+                                ? {
+                                    type: "BinaryExpression",
+                                    operator: "+",
+                                    left: id("numericLeft"),
+                                    right: id("numericRight"),
+                                  }
+                                : id("numericLeft"),
+                          },
+                        ]
+                      : []),
                   ],
                 },
                 handler: withCaughtFinally
