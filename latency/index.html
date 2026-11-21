@@ -63,7 +63,7 @@
       import { BarChart, LineChart } from "@mantine/charts";
       import { html, mount } from "../report.js?v=ebc2503d323c1b76";
       const response = await fetch(
-        "./evidence.json?v=22b798b2794e95d0068e2e222d637d0b6280a067aee07eb1d76fa729e134811f",
+        "./evidence.json?v=e4153b2053a9a050865503d5ae4892f63aa8c0606380ad3a5bc901cc53fe93a6",
       );
       if (!response.ok) throw new Error(`Evidence HTTP ${response.status}`);
       const evidence = await response.json();
@@ -81,6 +81,7 @@
       };
       const cacheTrial = evidence.kvm_shared_cache_trial;
       const kvmPlacement = evidence.kvm_worker_placement;
+      const kvmWorkDisk = evidence.kvm_work_disk_trial;
       const gh = "https://github.com/agentydragon/ducktape";
       const source = evidence.source_devel_commit;
       const post = "after shadow retired";
@@ -155,7 +156,7 @@
               ${link("../", "Ducktape reports")}
               <${Title} order=${1} mt="md" mb="xs">PR time to green<//>
               <${Text} size="lg">Across 13–19 November, 247 of 350 sampled heads reached green. Median ${time(evidence.weekly_feedback.pooled.median_s)} · p90 ${time(evidence.weekly_feedback.pooled.p90_s)} among those heads, including five successful reruns.<//>
-              <${Text} c="dimmed" size="sm" mt="sm">Seven complete UTC days · KVM worker placement updated 21 November<//>
+              <${Text} c="dimmed" size="sm" mt="sm">Seven complete UTC days · KVM work-disk comparison added 21 November<//>
               <${Group} gap="md" mt="xs">${link("./evidence.json", "Evidence")}${link("./manifest.json", "Manifest")}<//>
               <${Text} mt="sm">In the ${hhmm(census.window_utc[0])}–${hhmm(census.window_utc[1])} UTC refresh on 21 November, ${census.overall.outcomes.green ?? 0} of ${census.eligible_prs} current exact PR heads reached required green. Median ${time(census.overall.median_s)} · p90 ${time(census.overall.p90_s)} among the green heads. At collection ${census.eligible_prs - (census.overall.outcomes.green ?? 0)} heads had yet to reach green.<//>
               <${Text} c="dimmed" size="sm">The refresh reviewed ${census.workflow_runs} workflow runs. It excludes superseded and unmatched heads. The weekly chart retains its original population.<//>
@@ -262,10 +263,89 @@
                 ]),
                 350,
               )}
-              <${Text} mt="sm">Another wyrm2 worker was booting during the first pair. In the second pair both wyrm2 scenarios passed, then teardown lacked shutdown-completion evidence for one launcher. A separate profiled wyrm2 repeat passed in ${seconds(kvmPlacement.profiled_repeat.process_seconds)}. ${build(kvmPlacement.profiled_repeat.invocation, "Profiled repeat")}<//>
+              <${Text} mt="sm">Another wyrm2 worker was booting during the first pair. In the second pair both wyrm2 scenarios passed. One guest's shutdown grace period expired and KubeVirt forcibly stopped it. The shutdown census also found earlier forced stops on an OVH worker. ${pr(18674)} shutdown census. A separate profiled wyrm2 repeat passed in ${seconds(kvmPlacement.profiled_repeat.process_seconds)}. ${build(kvmPlacement.profiled_repeat.invocation, "Profiled repeat")}<//>
               <${Text} mt="sm">The OVH control plane uses an Intel bare-metal host. Wyrm2 uses AMD hardware with an extra Proxmox layer. CPU, storage paths and load also differ, so these runs leave the cause of the gap unresolved. Warm recycled VM performance and placement effects on required-check feedback remain unmeasured.<//>
-              <${Text} mt="sm">Keep wyrm2 eligible and revisit placement if shutdown failures recur. Compare an HDD-backed worker next.<//>
+              <${Text} mt="sm">Keep wyrm2 eligible and revisit placement if shutdown failures recur. ${link("#kvm-work-disk", "Same-host SSD and HDD trial")}<//>
               <${Text} size="sm" c="dimmed" mt="sm">21 November UTC · <code>${kvmPlacement.target}</code> · ${link(`${gh}/tree/${kvmPlacement.source_commit}/agentplane/system_tests/x/vm_kvm`, "Test source")}<//>
+            </section>
+            <section id="kvm-work-disk">
+              <${Title} order=${2}>SSD and HDD work disks on wyrm2<//>
+              <${Text} my="sm">${kvmWorkDisk.finding}<//>
+              <${Text} my="sm">${kvmWorkDisk.method}<//>
+              ${table(
+                ["Fixture and executor cache", "SSD", "HDD"],
+                kvmWorkDisk.comparisons.map((pair) => [
+                  pair.label,
+                  ...["ssd", "hdd"].map((medium) => {
+                    const run = pair[medium];
+                    return run
+                      ? build(
+                          run.invocation,
+                          `${seconds(run.clocks_seconds.process)} · ${run.result}`,
+                        )
+                      : "Unobserved";
+                  }),
+                ]),
+                350,
+              )}
+              <${Text} size="sm" my="sm">${kvmWorkDisk.clocks}<//>
+              <${Accordion} variant="contained" my="md">
+                <${Accordion.Item} value="image-inventory">
+                  <${Accordion.Control}>Image sizes and cold import times<//>
+                  <${Accordion.Panel}>
+                    <${Text} my="sm">${kvmWorkDisk.images.note}<//>
+                    ${table(
+                      [
+                        "Image",
+                        "Stored layer bytes",
+                        "Gzip bytes",
+                        "SSD import",
+                        "HDD import",
+                      ],
+                      kvmWorkDisk.images.rows.map((row) => [
+                        row.label,
+                        row.stored_bytes.toLocaleString("en-US"),
+                        row.gzip_bytes.toLocaleString("en-US"),
+                        seconds(row.ssd_seconds),
+                        seconds(row.hdd_seconds),
+                      ]),
+                      680,
+                    )}
+                  <//>
+                <//>
+                <${Accordion.Item} value="disk-io">
+                  <${Accordion.Control}>Observed disk I/O and pressure<//>
+                  <${Accordion.Panel}>
+                    <${Text} my="sm">${kvmWorkDisk.io.note}<//>
+                    ${table(
+                      [
+                        "Run",
+                        "Wall",
+                        "Counter window",
+                        "Read",
+                        "Written",
+                        "Disk busy",
+                        "I/O PSI some",
+                      ],
+                      kvmWorkDisk.io.selected.map((row) => [
+                        row.label,
+                        seconds(row.wall_seconds),
+                        seconds(row.counter_seconds),
+                        `${row.read_gib.toFixed(2)} GiB`,
+                        `${row.written_gib.toFixed(2)} GiB`,
+                        `${row.disk_busy_pct.toFixed(1)}%`,
+                        `${row.node_io_some_pct.toFixed(1)}%`,
+                      ]),
+                      660,
+                    )}
+                    <${Text} my="sm">${kvmWorkDisk.io.qemu_note}<//>
+                    <${Text} size="sm" my="sm">${link("./evidence.json", "Evidence with counter boundaries and per-image spans")}<//>
+                  <//>
+                <//>
+              <//>
+              <${Text} my="sm">${kvmWorkDisk.capacity}<//>
+              <${Text} my="sm">${kvmWorkDisk.cleanup}<//>
+              <${Text} size="sm" c="dimmed" my="sm">21 November UTC · ${link(kvmWorkDisk.tracking_pr, "Trial evidence and operating record")}<//>
             </section>
             <section id="managed-pod">
               <${Title} order=${2}>Two PR heads had over a minute of Pod queue headroom<//>

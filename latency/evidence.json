@@ -26195,5 +26195,2795 @@
       "The manual test does not quantify warm recycled required VM execution, pool admission delays or time to required green."
     ],
     "next": "Keep wyrm2 eligible while tracking teardown outcomes on fresh runs. Revisit placement if shutdown failures recur. Compare an HDD-backed worker next."
+  },
+  "kvm_work_disk_trial": {
+    "source_commit": "0d1f154903b9e9c58b1c7fb5f4484651b800caf2",
+    "previous_report_commit": "4bc3ada82394dd7597653ccd5467fd93e602f68c",
+    "tracking_pr": "https://github.com/agentydragon/ducktape/pull/18689",
+    "execution_window_utc": [
+      "2026-11-21T13:22:31+00:00",
+      "2026-11-21T14:32:52.380066Z"
+    ],
+    "finding": "Keep the production pool on SSD. Cold HDD took 2.81× as long as SSD. With warm worker caches and a fresh fixture, HDD took 1.95× as long.",
+    "method": "One active worker at a time on the same wyrm2 host. The worker image, resources, 80 GiB work disk and complete Bazel action were matched. Each cell is one run of both VM scenarios.",
+    "comparisons": [
+      {
+        "label": "Cold worker, fresh fixture",
+        "ssd": {
+          "label": "ssd-cold",
+          "invocation": "db721c4d-306c-470b-a4cf-b1aa3245eba1",
+          "target": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+          "telemetry": {
+            "cache_download_files": 7513,
+            "cache_download_bytes": 2944982951,
+            "download_retries_seen_in_guest_journal": null
+          },
+          "start_utc": "2026-11-21T13:30:08.914619Z",
+          "end_utc": "2026-11-21T13:38:47.269287Z",
+          "action_digest": {
+            "hash": "97ee70e0e47d4c73b042cb96cd881728a36e9c5e3f360cf9dea7297c593223a3",
+            "sizeBytes": "609"
+          },
+          "input_root_digest": {
+            "hash": "9e205c54e1108565210af137c58f6bca91ce29e3651a9c1de337f41b67059c4c",
+            "sizeBytes": "165"
+          },
+          "clocks_seconds": {
+            "queue": null,
+            "setup": 82.557,
+            "input": 72.359,
+            "process": 518.355,
+            "upload": 0.485,
+            "worker": 673.755
+          },
+          "guest_console_seconds": [
+            {
+              "linux_to_systemd": 31.8,
+              "request_to_completion": 19.896,
+              "request_to_powerdown": 21.498
+            },
+            {
+              "linux_to_systemd": 31.201,
+              "request_to_completion": 20.082,
+              "request_to_powerdown": 20.782
+            }
+          ],
+          "scenario_cases": [
+            {
+              "name": "test_vm_scenarios[claude]",
+              "result": "pass",
+              "call_seconds": 236.441
+            },
+            {
+              "name": "test_vm_scenarios[codex]",
+              "result": "pass",
+              "call_seconds": 238.604
+            }
+          ],
+          "fixture_spans_s": {
+            "k3s_bootstrap": [11.829],
+            "k3s_start": [12.278],
+            "stack_setup": [246.821],
+            "sandbox_ready": [118.34, 126.952],
+            "sandbox_cleanup": [36.673, 36.079],
+            "case": [236.441, 238.604],
+            "k3s_stop": [6.476]
+          },
+          "work_disk": {
+            "storage_class": "piraeus-ssd-local-delete",
+            "capacity": "88919245Ki",
+            "volume_mode": "Filesystem"
+          },
+          "result": "pass"
+        },
+        "hdd": {
+          "label": "hdd-cold",
+          "invocation": "2824f5fe-7609-4ad1-9434-ef70ad7693fd",
+          "target": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+          "telemetry": {
+            "cache_download_files": 7513,
+            "cache_download_bytes": 2944982951,
+            "download_retries_seen_in_guest_journal": null
+          },
+          "start_utc": "2026-11-21T13:55:57.624879Z",
+          "end_utc": "2026-11-21T14:20:15.421526Z",
+          "action_digest": {
+            "hash": "97ee70e0e47d4c73b042cb96cd881728a36e9c5e3f360cf9dea7297c593223a3",
+            "sizeBytes": "609"
+          },
+          "input_root_digest": {
+            "hash": "9e205c54e1108565210af137c58f6bca91ce29e3651a9c1de337f41b67059c4c",
+            "sizeBytes": "165"
+          },
+          "clocks_seconds": {
+            "queue": null,
+            "setup": 98.22,
+            "input": 159.155,
+            "process": 1457.797,
+            "upload": 0.966,
+            "worker": 1716.138
+          },
+          "guest_console_seconds": [
+            {
+              "linux_to_systemd": 28.798,
+              "request_to_completion": 12.996,
+              "request_to_powerdown": 14.796
+            },
+            {
+              "linux_to_systemd": 31.591,
+              "request_to_completion": 9.193,
+              "request_to_powerdown": 10.693
+            }
+          ],
+          "scenario_cases": [
+            {
+              "name": "test_vm_scenarios[claude]",
+              "result": "pass",
+              "call_seconds": 406.672
+            },
+            {
+              "name": "test_vm_scenarios[codex]",
+              "result": "pass",
+              "call_seconds": 471.669
+            }
+          ],
+          "fixture_spans_s": {
+            "k3s_bootstrap": [20.878],
+            "k3s_start": [21.921],
+            "stack_setup": [918.512],
+            "sandbox_ready": [202.436, 208.523],
+            "sandbox_cleanup": [41.93, 29.672],
+            "case": [406.672, 471.669],
+            "k3s_stop": [16.44]
+          },
+          "work_disk": {
+            "storage_class": "piraeus-hdd-local",
+            "capacity": "88919245Ki",
+            "volume_mode": "Filesystem"
+          },
+          "result": "pass"
+        }
+      },
+      {
+        "label": "Warm worker caches, fresh fixture",
+        "ssd": {
+          "label": "ssd-warm-1",
+          "invocation": "695cdf27-02b2-44d6-b36d-ba94913ec65b",
+          "target": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+          "telemetry": {
+            "cache_download_files": 0,
+            "cache_download_bytes": 0,
+            "download_retries_seen_in_guest_journal": null
+          },
+          "start_utc": "2026-11-21T13:39:35.720270Z",
+          "end_utc": "2026-11-21T13:45:20.601779Z",
+          "action_digest": {
+            "hash": "97ee70e0e47d4c73b042cb96cd881728a36e9c5e3f360cf9dea7297c593223a3",
+            "sizeBytes": "609"
+          },
+          "input_root_digest": {
+            "hash": "9e205c54e1108565210af137c58f6bca91ce29e3651a9c1de337f41b67059c4c",
+            "sizeBytes": "165"
+          },
+          "clocks_seconds": {
+            "queue": null,
+            "setup": 0.01,
+            "input": 0.3,
+            "process": 344.882,
+            "upload": 0.486,
+            "worker": 345.678
+          },
+          "guest_console_seconds": [
+            {
+              "linux_to_systemd": 33.0,
+              "request_to_completion": 12.104,
+              "request_to_powerdown": 15.003
+            },
+            {
+              "linux_to_systemd": 33.104,
+              "request_to_completion": 20.893,
+              "request_to_powerdown": 21.992
+            }
+          ],
+          "scenario_cases": [
+            {
+              "name": "test_vm_scenarios[claude]",
+              "result": "pass",
+              "call_seconds": 210.403
+            },
+            {
+              "name": "test_vm_scenarios[codex]",
+              "result": "pass",
+              "call_seconds": 222.983
+            }
+          ],
+          "fixture_spans_s": {
+            "k3s_bootstrap": [6.991],
+            "k3s_start": [7.093],
+            "stack_setup": [92.1],
+            "sandbox_ready": [110.683, 116.471],
+            "sandbox_cleanup": [31.096, 39.689],
+            "case": [210.402, 222.983],
+            "k3s_stop": [7.244]
+          },
+          "work_disk": {
+            "storage_class": "piraeus-ssd-local-delete",
+            "capacity": "88919245Ki",
+            "volume_mode": "Filesystem"
+          },
+          "result": "pass"
+        },
+        "hdd": {
+          "label": "hdd-warm-1",
+          "invocation": "07c5e06f-b9fa-4a01-b01e-20e4804025f9",
+          "target": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+          "telemetry": {
+            "cache_download_files": 0,
+            "cache_download_bytes": 0,
+            "download_retries_seen_in_guest_journal": null
+          },
+          "start_utc": "2026-11-21T14:21:39.915624Z",
+          "end_utc": "2026-11-21T14:32:52.380066Z",
+          "action_digest": {
+            "hash": "97ee70e0e47d4c73b042cb96cd881728a36e9c5e3f360cf9dea7297c593223a3",
+            "sizeBytes": "609"
+          },
+          "input_root_digest": {
+            "hash": "9e205c54e1108565210af137c58f6bca91ce29e3651a9c1de337f41b67059c4c",
+            "sizeBytes": "165"
+          },
+          "clocks_seconds": {
+            "queue": null,
+            "setup": 4.665,
+            "input": 0.64,
+            "process": 672.464,
+            "upload": 0.681,
+            "worker": 678.45
+          },
+          "guest_console_seconds": [
+            {
+              "linux_to_systemd": 34.597,
+              "request_to_completion": 10.798,
+              "request_to_powerdown": 12.397
+            },
+            {
+              "linux_to_systemd": 35.501,
+              "request_to_completion": 13.385,
+              "request_to_powerdown": 14.783
+            }
+          ],
+          "scenario_cases": [
+            {
+              "name": "test_vm_scenarios[claude]",
+              "result": "pass",
+              "call_seconds": 325.772
+            },
+            {
+              "name": "test_vm_scenarios[codex]",
+              "result": "pass",
+              "call_seconds": 363.925
+            }
+          ],
+          "fixture_spans_s": {
+            "k3s_bootstrap": [14.168],
+            "k3s_start": [14.305],
+            "stack_setup": [209.756],
+            "sandbox_ready": [169.293, 177.206],
+            "sandbox_cleanup": [32.519, 33.477],
+            "case": [325.772, 363.925],
+            "k3s_stop": [16.835]
+          },
+          "work_disk": {
+            "storage_class": "piraeus-hdd-local",
+            "capacity": "88919245Ki",
+            "volume_mode": "Filesystem"
+          },
+          "result": "pass"
+        }
+      }
+    ],
+    "clocks": "From TestRunner execution start to completion. Worker start-to-Ready was 267s on SSD and 309s on HDD. Cold nested imports took 199.1s and 876.5s. The underlying data preserves worker preparation, input fetch, guest readiness and shutdown spans. Required CI's retained fixture and PR feedback time remain unmeasured for this storage comparison.",
+    "images": {
+      "note": "The 25 images contain 2.43 GiB of unique layer blobs. About 2.20 GiB is uncompressed tar and 239 MiB is gzip. The 25 image totals reuse some blobs. Each import clock includes streaming and containerd snapshot work.",
+      "rows": [
+        {
+          "label": "kyverno:v1.19.1",
+          "stored_bytes": 47761602,
+          "gzip_bytes": 47761602,
+          "ssd_seconds": 4.607,
+          "hdd_seconds": 24.971
+        },
+        {
+          "label": "kyvernopre:v1.19.1",
+          "stored_bytes": 42553542,
+          "gzip_bytes": 42553542,
+          "ssd_seconds": 3.629,
+          "hdd_seconds": 48.152
+        },
+        {
+          "label": "virt-api:v1.8.2",
+          "stored_bytes": 81479386,
+          "gzip_bytes": 8150746,
+          "ssd_seconds": 12.226,
+          "hdd_seconds": 57.96
+        },
+        {
+          "label": "virt-controller:v1.8.2",
+          "stored_bytes": 80178906,
+          "gzip_bytes": 8150746,
+          "ssd_seconds": 3.941,
+          "hdd_seconds": 27.561
+        },
+        {
+          "label": "virt-handler:v1.8.2",
+          "stored_bytes": 260376794,
+          "gzip_bytes": 8150746,
+          "ssd_seconds": 9.242,
+          "hdd_seconds": 56.386
+        },
+        {
+          "label": "virt-launcher:v1.8.2",
+          "stored_bytes": 538430170,
+          "gzip_bytes": 8150746,
+          "ssd_seconds": 26.462,
+          "hdd_seconds": 59.284
+        },
+        {
+          "label": "virt-operator:v1.8.2",
+          "stored_bytes": 133181146,
+          "gzip_bytes": 8150746,
+          "ssd_seconds": 11.772,
+          "hdd_seconds": 42.514
+        },
+        {
+          "label": "cert-manager-cainjector:v1.21.2",
+          "stored_bytes": 12391408,
+          "gzip_bytes": 12391408,
+          "ssd_seconds": 8.135,
+          "hdd_seconds": 49.59
+        },
+        {
+          "label": "cert-manager-controller:v1.21.2",
+          "stored_bytes": 24888546,
+          "gzip_bytes": 24888546,
+          "ssd_seconds": 8.875,
+          "hdd_seconds": 14.325
+        },
+        {
+          "label": "cert-manager-webhook:v1.21.2",
+          "stored_bytes": 19818817,
+          "gzip_bytes": 19818817,
+          "ssd_seconds": 9.324,
+          "hdd_seconds": 29.339
+        },
+        {
+          "label": "trust-manager:v0.25.0",
+          "stored_bytes": 13952822,
+          "gzip_bytes": 13952822,
+          "ssd_seconds": 2.057,
+          "hdd_seconds": 8.278
+        },
+        {
+          "label": "agentplane-action-service",
+          "stored_bytes": 79878718,
+          "gzip_bytes": 856638,
+          "ssd_seconds": 8.718,
+          "hdd_seconds": 63.643
+        },
+        {
+          "label": "agentplane-app",
+          "stored_bytes": 66433598,
+          "gzip_bytes": 856638,
+          "ssd_seconds": 8.219,
+          "hdd_seconds": 19.451
+        },
+        {
+          "label": "agentplane-egress-proxy",
+          "stored_bytes": 70416958,
+          "gzip_bytes": 856638,
+          "ssd_seconds": 6.246,
+          "hdd_seconds": 24.674
+        },
+        {
+          "label": "agentplane-egress-sidecar",
+          "stored_bytes": 42328638,
+          "gzip_bytes": 856638,
+          "ssd_seconds": 4.102,
+          "hdd_seconds": 22.701
+        },
+        {
+          "label": "agentplane-environments",
+          "stored_bytes": 62911038,
+          "gzip_bytes": 856638,
+          "ssd_seconds": 8.568,
+          "hdd_seconds": 20.565
+        },
+        {
+          "label": "agentplane-history-service",
+          "stored_bytes": 60924478,
+          "gzip_bytes": 856638,
+          "ssd_seconds": 6.575,
+          "hdd_seconds": 22.756
+        },
+        {
+          "label": "agentplane-llm-ingress",
+          "stored_bytes": 57012798,
+          "gzip_bytes": 856638,
+          "ssd_seconds": 3.125,
+          "hdd_seconds": 21.818
+        },
+        {
+          "label": "agentplane-notification-service",
+          "stored_bytes": 68317758,
+          "gzip_bytes": 856638,
+          "ssd_seconds": 3.346,
+          "hdd_seconds": 24.276
+        },
+        {
+          "label": "agentplane-policy-controller",
+          "stored_bytes": 51329598,
+          "gzip_bytes": 856638,
+          "ssd_seconds": 2.812,
+          "hdd_seconds": 22.554
+        },
+        {
+          "label": "agentplane-postgres",
+          "stored_bytes": 82606366,
+          "gzip_bytes": 82606366,
+          "ssd_seconds": 6.656,
+          "hdd_seconds": 18.819
+        },
+        {
+          "label": "agentplane-runner-disk",
+          "stored_bytes": 180940800,
+          "gzip_bytes": 0,
+          "ssd_seconds": 4.574,
+          "hdd_seconds": 22.981
+        },
+        {
+          "label": "agentplane-sessions",
+          "stored_bytes": 62675518,
+          "gzip_bytes": 856638,
+          "ssd_seconds": 3.69,
+          "hdd_seconds": 36.813
+        },
+        {
+          "label": "agentplane-vm-guest-boot",
+          "stored_bytes": 15380480,
+          "gzip_bytes": 0,
+          "ssd_seconds": 1.132,
+          "hdd_seconds": 24.319
+        },
+        {
+          "label": "agentplane-vm-guest-root",
+          "stored_bytes": 560568320,
+          "gzip_bytes": 0,
+          "ssd_seconds": 27.039,
+          "hdd_seconds": 108.61
+        }
+      ],
+      "full": {
+        "inventory": [
+          {
+            "name": "git.allegedly.works/ducktape-ci/agentplane-action-service:unset",
+            "group": "fixture",
+            "layer_bytes": 79878718,
+            "layer_references": 15,
+            "media_bytes": {
+              "application/vnd.oci.image.layer.v1.tar+gzip": 856638,
+              "application/vnd.oci.image.layer.v1.tar": 79022080
+            }
+          },
+          {
+            "name": "git.allegedly.works/ducktape-ci/agentplane-app:unset",
+            "group": "fixture",
+            "layer_bytes": 66433598,
+            "layer_references": 14,
+            "media_bytes": {
+              "application/vnd.oci.image.layer.v1.tar+gzip": 856638,
+              "application/vnd.oci.image.layer.v1.tar": 65576960
+            }
+          },
+          {
+            "name": "git.allegedly.works/ducktape-ci/agentplane-egress-proxy:unset",
+            "group": "fixture",
+            "layer_bytes": 70416958,
+            "layer_references": 15,
+            "media_bytes": {
+              "application/vnd.oci.image.layer.v1.tar+gzip": 856638,
+              "application/vnd.oci.image.layer.v1.tar": 69560320
+            }
+          },
+          {
+            "name": "git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset",
+            "group": "fixture",
+            "layer_bytes": 42328638,
+            "layer_references": 14,
+            "media_bytes": {
+              "application/vnd.oci.image.layer.v1.tar+gzip": 856638,
+              "application/vnd.oci.image.layer.v1.tar": 41472000
+            }
+          },
+          {
+            "name": "git.allegedly.works/ducktape-ci/agentplane-environments:unset",
+            "group": "fixture",
+            "layer_bytes": 62911038,
+            "layer_references": 14,
+            "media_bytes": {
+              "application/vnd.oci.image.layer.v1.tar+gzip": 856638,
+              "application/vnd.oci.image.layer.v1.tar": 62054400
+            }
+          },
+          {
+            "name": "git.allegedly.works/ducktape-ci/agentplane-history-service:unset",
+            "group": "fixture",
+            "layer_bytes": 60924478,
+            "layer_references": 15,
+            "media_bytes": {
+              "application/vnd.oci.image.layer.v1.tar+gzip": 856638,
+              "application/vnd.oci.image.layer.v1.tar": 60067840
+            }
+          },
+          {
+            "name": "git.allegedly.works/ducktape-ci/agentplane-llm-ingress:unset",
+            "group": "fixture",
+            "layer_bytes": 57012798,
+            "layer_references": 15,
+            "media_bytes": {
+              "application/vnd.oci.image.layer.v1.tar+gzip": 856638,
+              "application/vnd.oci.image.layer.v1.tar": 56156160
+            }
+          },
+          {
+            "name": "git.allegedly.works/ducktape-ci/agentplane-notification-service:unset",
+            "group": "fixture",
+            "layer_bytes": 68317758,
+            "layer_references": 15,
+            "media_bytes": {
+              "application/vnd.oci.image.layer.v1.tar+gzip": 856638,
+              "application/vnd.oci.image.layer.v1.tar": 67461120
+            }
+          },
+          {
+            "name": "git.allegedly.works/ducktape-ci/agentplane-policy-controller:unset",
+            "group": "fixture",
+            "layer_bytes": 51329598,
+            "layer_references": 14,
+            "media_bytes": {
+              "application/vnd.oci.image.layer.v1.tar+gzip": 856638,
+              "application/vnd.oci.image.layer.v1.tar": 50472960
+            }
+          },
+          {
+            "name": "git.allegedly.works/ducktape-ci/agentplane-postgres:unset",
+            "group": "fixture",
+            "layer_bytes": 82606366,
+            "layer_references": 3,
+            "media_bytes": {
+              "application/vnd.oci.image.layer.v1.tar+gzip": 82606366
+            }
+          },
+          {
+            "name": "git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset",
+            "group": "fixture",
+            "layer_bytes": 180940800,
+            "layer_references": 2,
+            "media_bytes": {
+              "application/vnd.oci.image.layer.v1.tar": 180940800
+            }
+          },
+          {
+            "name": "git.allegedly.works/ducktape-ci/agentplane-sessions:unset",
+            "group": "fixture",
+            "layer_bytes": 62675518,
+            "layer_references": 15,
+            "media_bytes": {
+              "application/vnd.oci.image.layer.v1.tar+gzip": 856638,
+              "application/vnd.oci.image.layer.v1.tar": 61818880
+            }
+          },
+          {
+            "name": "git.allegedly.works/ducktape-ci/agentplane-vm-guest-boot:unset",
+            "group": "guest",
+            "layer_bytes": 15380480,
+            "layer_references": 1,
+            "media_bytes": {
+              "application/vnd.oci.image.layer.v1.tar": 15380480
+            }
+          },
+          {
+            "name": "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root:unset",
+            "group": "guest",
+            "layer_bytes": 560568320,
+            "layer_references": 1,
+            "media_bytes": {
+              "application/vnd.oci.image.layer.v1.tar": 560568320
+            }
+          },
+          {
+            "name": "quay.io/jetstack/cert-manager-cainjector:v1.21.2",
+            "group": "pki",
+            "layer_bytes": 12391408,
+            "layer_references": 16,
+            "media_bytes": {
+              "application/vnd.docker.image.rootfs.diff.tar.gzip": 12391408
+            }
+          },
+          {
+            "name": "quay.io/jetstack/cert-manager-controller:v1.21.2",
+            "group": "pki",
+            "layer_bytes": 24888546,
+            "layer_references": 16,
+            "media_bytes": {
+              "application/vnd.docker.image.rootfs.diff.tar.gzip": 24888546
+            }
+          },
+          {
+            "name": "quay.io/jetstack/cert-manager-webhook:v1.21.2",
+            "group": "pki",
+            "layer_bytes": 19818817,
+            "layer_references": 16,
+            "media_bytes": {
+              "application/vnd.docker.image.rootfs.diff.tar.gzip": 19818817
+            }
+          },
+          {
+            "name": "quay.io/jetstack/trust-manager:v0.25.0",
+            "group": "pki",
+            "layer_bytes": 13952822,
+            "layer_references": 4,
+            "media_bytes": {
+              "application/vnd.oci.image.layer.v1.tar+gzip": 13952822
+            }
+          },
+          {
+            "name": "ghcr.io/kyverno/kyverno:v1.19.1",
+            "group": "vm",
+            "layer_bytes": 47761602,
+            "layer_references": 3,
+            "media_bytes": {
+              "application/vnd.oci.image.layer.v1.tar+gzip": 47761602
+            }
+          },
+          {
+            "name": "ghcr.io/kyverno/kyvernopre:v1.19.1",
+            "group": "vm",
+            "layer_bytes": 42553542,
+            "layer_references": 3,
+            "media_bytes": {
+              "application/vnd.oci.image.layer.v1.tar+gzip": 42553542
+            }
+          },
+          {
+            "name": "quay.io/kubevirt/virt-api:v1.8.2",
+            "group": "vm",
+            "layer_bytes": 81479386,
+            "layer_references": 17,
+            "media_bytes": {
+              "application/vnd.oci.image.layer.v1.tar+gzip": 8150746,
+              "application/vnd.oci.image.layer.v1.tar": 73328640
+            }
+          },
+          {
+            "name": "quay.io/kubevirt/virt-controller:v1.8.2",
+            "group": "vm",
+            "layer_bytes": 80178906,
+            "layer_references": 17,
+            "media_bytes": {
+              "application/vnd.oci.image.layer.v1.tar+gzip": 8150746,
+              "application/vnd.oci.image.layer.v1.tar": 72028160
+            }
+          },
+          {
+            "name": "quay.io/kubevirt/virt-handler:v1.8.2",
+            "group": "vm",
+            "layer_bytes": 260376794,
+            "layer_references": 20,
+            "media_bytes": {
+              "application/vnd.oci.image.layer.v1.tar+gzip": 8150746,
+              "application/vnd.oci.image.layer.v1.tar": 252226048
+            }
+          },
+          {
+            "name": "quay.io/kubevirt/virt-launcher:v1.8.2",
+            "group": "vm",
+            "layer_bytes": 538430170,
+            "layer_references": 24,
+            "media_bytes": {
+              "application/vnd.oci.image.layer.v1.tar+gzip": 8150746,
+              "application/vnd.oci.image.layer.v1.tar": 530279424
+            }
+          },
+          {
+            "name": "quay.io/kubevirt/virt-operator:v1.8.2",
+            "group": "vm",
+            "layer_bytes": 133181146,
+            "layer_references": 17,
+            "media_bytes": {
+              "application/vnd.oci.image.layer.v1.tar+gzip": 8150746,
+              "application/vnd.oci.image.layer.v1.tar": 125030400
+            }
+          }
+        ],
+        "stored_layer_bytes_summed_per_image": 2716738205,
+        "stored_layer_bytes_unique_by_digest": 2611660534,
+        "layer_references": 306,
+        "unique_layer_count": 85,
+        "stored_layer_bytes_unique_by_media_type": {
+          "application/vnd.docker.image.rootfs.diff.tar.gzip": 55429743,
+          "application/vnd.oci.image.layer.v1.tar": 2360653312,
+          "application/vnd.oci.image.layer.v1.tar+gzip": 195577479
+        },
+        "by_run": {
+          "hdd-cold": {
+            "imported": 25,
+            "skipped": 0,
+            "import_span_seconds": 872.34,
+            "import_envelope_seconds": 876.477,
+            "spans": [
+              {
+                "name": "ghcr.io/kyverno/kyverno:v1.19.1",
+                "start_utc": "2026-11-21T13:57:00.638770+00:00",
+                "end_utc": "2026-11-21T13:57:25.609589+00:00",
+                "seconds": 24.971,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "ghcr.io/kyverno/kyvernopre:v1.19.1",
+                "start_utc": "2026-11-21T13:57:25.609969+00:00",
+                "end_utc": "2026-11-21T13:58:13.761672+00:00",
+                "seconds": 48.152,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "quay.io/kubevirt/virt-api:v1.8.2",
+                "start_utc": "2026-11-21T13:58:13.764321+00:00",
+                "end_utc": "2026-11-21T13:59:11.724568+00:00",
+                "seconds": 57.96,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "quay.io/kubevirt/virt-controller:v1.8.2",
+                "start_utc": "2026-11-21T13:59:11.725294+00:00",
+                "end_utc": "2026-11-21T13:59:39.285959+00:00",
+                "seconds": 27.561,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "quay.io/kubevirt/virt-handler:v1.8.2",
+                "start_utc": "2026-11-21T13:59:39.286430+00:00",
+                "end_utc": "2026-11-21T14:00:35.672858+00:00",
+                "seconds": 56.386,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "quay.io/kubevirt/virt-launcher:v1.8.2",
+                "start_utc": "2026-11-21T14:00:35.673379+00:00",
+                "end_utc": "2026-11-21T14:01:34.957871+00:00",
+                "seconds": 59.284,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "quay.io/kubevirt/virt-operator:v1.8.2",
+                "start_utc": "2026-11-21T14:01:34.958306+00:00",
+                "end_utc": "2026-11-21T14:02:17.472303+00:00",
+                "seconds": 42.514,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "quay.io/jetstack/cert-manager-cainjector:v1.21.2",
+                "start_utc": "2026-11-21T14:02:18.764396+00:00",
+                "end_utc": "2026-11-21T14:03:08.354254+00:00",
+                "seconds": 49.59,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "quay.io/jetstack/cert-manager-controller:v1.21.2",
+                "start_utc": "2026-11-21T14:03:08.354950+00:00",
+                "end_utc": "2026-11-21T14:03:22.679643+00:00",
+                "seconds": 14.325,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "quay.io/jetstack/cert-manager-webhook:v1.21.2",
+                "start_utc": "2026-11-21T14:03:22.680744+00:00",
+                "end_utc": "2026-11-21T14:03:52.019475+00:00",
+                "seconds": 29.339,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "quay.io/jetstack/trust-manager:v0.25.0",
+                "start_utc": "2026-11-21T14:03:52.019830+00:00",
+                "end_utc": "2026-11-21T14:04:00.297402+00:00",
+                "seconds": 8.278,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-action-service:unset",
+                "start_utc": "2026-11-21T14:04:02.089778+00:00",
+                "end_utc": "2026-11-21T14:05:05.732296+00:00",
+                "seconds": 63.643,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-app:unset",
+                "start_utc": "2026-11-21T14:05:05.732655+00:00",
+                "end_utc": "2026-11-21T14:05:25.183707+00:00",
+                "seconds": 19.451,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-egress-proxy:unset",
+                "start_utc": "2026-11-21T14:05:25.184159+00:00",
+                "end_utc": "2026-11-21T14:05:49.858039+00:00",
+                "seconds": 24.674,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset",
+                "start_utc": "2026-11-21T14:05:49.858836+00:00",
+                "end_utc": "2026-11-21T14:06:12.559702+00:00",
+                "seconds": 22.701,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-environments:unset",
+                "start_utc": "2026-11-21T14:06:12.560040+00:00",
+                "end_utc": "2026-11-21T14:06:33.124773+00:00",
+                "seconds": 20.565,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-history-service:unset",
+                "start_utc": "2026-11-21T14:06:33.125207+00:00",
+                "end_utc": "2026-11-21T14:06:55.881319+00:00",
+                "seconds": 22.756,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-llm-ingress:unset",
+                "start_utc": "2026-11-21T14:06:55.882416+00:00",
+                "end_utc": "2026-11-21T14:07:17.700664+00:00",
+                "seconds": 21.818,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-notification-service:unset",
+                "start_utc": "2026-11-21T14:07:17.701013+00:00",
+                "end_utc": "2026-11-21T14:07:41.977210+00:00",
+                "seconds": 24.276,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-policy-controller:unset",
+                "start_utc": "2026-11-21T14:07:41.977495+00:00",
+                "end_utc": "2026-11-21T14:08:04.531352+00:00",
+                "seconds": 22.554,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-postgres:unset",
+                "start_utc": "2026-11-21T14:08:04.531721+00:00",
+                "end_utc": "2026-11-21T14:08:23.350350+00:00",
+                "seconds": 18.819,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset",
+                "start_utc": "2026-11-21T14:08:23.350661+00:00",
+                "end_utc": "2026-11-21T14:08:46.331392+00:00",
+                "seconds": 22.981,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-sessions:unset",
+                "start_utc": "2026-11-21T14:08:46.331801+00:00",
+                "end_utc": "2026-11-21T14:09:23.144907+00:00",
+                "seconds": 36.813,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-vm-guest-boot:unset",
+                "start_utc": "2026-11-21T14:09:24.185066+00:00",
+                "end_utc": "2026-11-21T14:09:48.503993+00:00",
+                "seconds": 24.319,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root:unset",
+                "start_utc": "2026-11-21T14:09:48.504891+00:00",
+                "end_utc": "2026-11-21T14:11:37.115383+00:00",
+                "seconds": 108.61,
+                "skipped_cached_image": false
+              }
+            ]
+          },
+          "hdd-warm-1": {
+            "imported": 0,
+            "skipped": 25,
+            "import_span_seconds": 0,
+            "import_envelope_seconds": null,
+            "spans": [
+              {
+                "name": "ghcr.io/kyverno/kyverno:v1.19.1",
+                "start_utc": "2026-11-21T14:22:57.256876+00:00",
+                "end_utc": "2026-11-21T14:22:57.256889+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "ghcr.io/kyverno/kyvernopre:v1.19.1",
+                "start_utc": "2026-11-21T14:22:57.256979+00:00",
+                "end_utc": "2026-11-21T14:22:57.256986+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "quay.io/kubevirt/virt-api:v1.8.2",
+                "start_utc": "2026-11-21T14:22:57.257027+00:00",
+                "end_utc": "2026-11-21T14:22:57.257031+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "quay.io/kubevirt/virt-controller:v1.8.2",
+                "start_utc": "2026-11-21T14:22:57.257061+00:00",
+                "end_utc": "2026-11-21T14:22:57.257064+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "quay.io/kubevirt/virt-handler:v1.8.2",
+                "start_utc": "2026-11-21T14:22:57.257195+00:00",
+                "end_utc": "2026-11-21T14:22:57.257205+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "quay.io/kubevirt/virt-launcher:v1.8.2",
+                "start_utc": "2026-11-21T14:22:57.257288+00:00",
+                "end_utc": "2026-11-21T14:22:57.257293+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "quay.io/kubevirt/virt-operator:v1.8.2",
+                "start_utc": "2026-11-21T14:22:57.257375+00:00",
+                "end_utc": "2026-11-21T14:22:57.257381+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "quay.io/jetstack/cert-manager-cainjector:v1.21.2",
+                "start_utc": "2026-11-21T14:22:58.216685+00:00",
+                "end_utc": "2026-11-21T14:22:58.216702+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "quay.io/jetstack/cert-manager-controller:v1.21.2",
+                "start_utc": "2026-11-21T14:22:58.222404+00:00",
+                "end_utc": "2026-11-21T14:22:58.222422+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "quay.io/jetstack/cert-manager-webhook:v1.21.2",
+                "start_utc": "2026-11-21T14:22:58.222687+00:00",
+                "end_utc": "2026-11-21T14:22:58.222696+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "quay.io/jetstack/trust-manager:v0.25.0",
+                "start_utc": "2026-11-21T14:22:58.222814+00:00",
+                "end_utc": "2026-11-21T14:22:58.222821+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-action-service:unset",
+                "start_utc": "2026-11-21T14:23:03.023894+00:00",
+                "end_utc": "2026-11-21T14:23:03.023916+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-app:unset",
+                "start_utc": "2026-11-21T14:23:03.024276+00:00",
+                "end_utc": "2026-11-21T14:23:03.024291+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-egress-proxy:unset",
+                "start_utc": "2026-11-21T14:23:03.024664+00:00",
+                "end_utc": "2026-11-21T14:23:03.024673+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset",
+                "start_utc": "2026-11-21T14:23:03.024899+00:00",
+                "end_utc": "2026-11-21T14:23:03.024983+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-environments:unset",
+                "start_utc": "2026-11-21T14:23:03.025356+00:00",
+                "end_utc": "2026-11-21T14:23:03.025568+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-history-service:unset",
+                "start_utc": "2026-11-21T14:23:03.025923+00:00",
+                "end_utc": "2026-11-21T14:23:03.025932+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-llm-ingress:unset",
+                "start_utc": "2026-11-21T14:23:03.026330+00:00",
+                "end_utc": "2026-11-21T14:23:03.026407+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-notification-service:unset",
+                "start_utc": "2026-11-21T14:23:03.026773+00:00",
+                "end_utc": "2026-11-21T14:23:03.026784+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-policy-controller:unset",
+                "start_utc": "2026-11-21T14:23:03.027157+00:00",
+                "end_utc": "2026-11-21T14:23:03.027169+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-postgres:unset",
+                "start_utc": "2026-11-21T14:23:03.029277+00:00",
+                "end_utc": "2026-11-21T14:23:03.029290+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset",
+                "start_utc": "2026-11-21T14:23:03.029911+00:00",
+                "end_utc": "2026-11-21T14:23:03.029998+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-sessions:unset",
+                "start_utc": "2026-11-21T14:23:03.030304+00:00",
+                "end_utc": "2026-11-21T14:23:03.030384+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-vm-guest-boot:unset",
+                "start_utc": "2026-11-21T14:23:42.183422+00:00",
+                "end_utc": "2026-11-21T14:23:42.183433+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root:unset",
+                "start_utc": "2026-11-21T14:23:42.183496+00:00",
+                "end_utc": "2026-11-21T14:23:42.183501+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              }
+            ]
+          },
+          "ssd-cold": {
+            "imported": 25,
+            "skipped": 0,
+            "import_span_seconds": 195.072,
+            "import_envelope_seconds": 199.129,
+            "spans": [
+              {
+                "name": "ghcr.io/kyverno/kyverno:v1.19.1",
+                "start_utc": "2026-11-21T13:30:38.765193+00:00",
+                "end_utc": "2026-11-21T13:30:43.371751+00:00",
+                "seconds": 4.607,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "ghcr.io/kyverno/kyvernopre:v1.19.1",
+                "start_utc": "2026-11-21T13:30:43.372266+00:00",
+                "end_utc": "2026-11-21T13:30:47.001513+00:00",
+                "seconds": 3.629,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "quay.io/kubevirt/virt-api:v1.8.2",
+                "start_utc": "2026-11-21T13:30:47.001882+00:00",
+                "end_utc": "2026-11-21T13:30:59.227536+00:00",
+                "seconds": 12.226,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "quay.io/kubevirt/virt-controller:v1.8.2",
+                "start_utc": "2026-11-21T13:30:59.228107+00:00",
+                "end_utc": "2026-11-21T13:31:03.168776+00:00",
+                "seconds": 3.941,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "quay.io/kubevirt/virt-handler:v1.8.2",
+                "start_utc": "2026-11-21T13:31:03.169725+00:00",
+                "end_utc": "2026-11-21T13:31:12.411745+00:00",
+                "seconds": 9.242,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "quay.io/kubevirt/virt-launcher:v1.8.2",
+                "start_utc": "2026-11-21T13:31:12.412515+00:00",
+                "end_utc": "2026-11-21T13:31:38.874403+00:00",
+                "seconds": 26.462,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "quay.io/kubevirt/virt-operator:v1.8.2",
+                "start_utc": "2026-11-21T13:31:38.877444+00:00",
+                "end_utc": "2026-11-21T13:31:50.648985+00:00",
+                "seconds": 11.772,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "quay.io/jetstack/cert-manager-cainjector:v1.21.2",
+                "start_utc": "2026-11-21T13:31:52.201342+00:00",
+                "end_utc": "2026-11-21T13:32:00.336012+00:00",
+                "seconds": 8.135,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "quay.io/jetstack/cert-manager-controller:v1.21.2",
+                "start_utc": "2026-11-21T13:32:00.338417+00:00",
+                "end_utc": "2026-11-21T13:32:09.213720+00:00",
+                "seconds": 8.875,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "quay.io/jetstack/cert-manager-webhook:v1.21.2",
+                "start_utc": "2026-11-21T13:32:09.214690+00:00",
+                "end_utc": "2026-11-21T13:32:18.538889+00:00",
+                "seconds": 9.324,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "quay.io/jetstack/trust-manager:v0.25.0",
+                "start_utc": "2026-11-21T13:32:18.540523+00:00",
+                "end_utc": "2026-11-21T13:32:20.597414+00:00",
+                "seconds": 2.057,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-action-service:unset",
+                "start_utc": "2026-11-21T13:32:22.346450+00:00",
+                "end_utc": "2026-11-21T13:32:31.064390+00:00",
+                "seconds": 8.718,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-app:unset",
+                "start_utc": "2026-11-21T13:32:31.065130+00:00",
+                "end_utc": "2026-11-21T13:32:39.284415+00:00",
+                "seconds": 8.219,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-egress-proxy:unset",
+                "start_utc": "2026-11-21T13:32:39.285483+00:00",
+                "end_utc": "2026-11-21T13:32:45.531322+00:00",
+                "seconds": 6.246,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset",
+                "start_utc": "2026-11-21T13:32:45.531739+00:00",
+                "end_utc": "2026-11-21T13:32:49.634194+00:00",
+                "seconds": 4.102,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-environments:unset",
+                "start_utc": "2026-11-21T13:32:49.634683+00:00",
+                "end_utc": "2026-11-21T13:32:58.202872+00:00",
+                "seconds": 8.568,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-history-service:unset",
+                "start_utc": "2026-11-21T13:32:58.203295+00:00",
+                "end_utc": "2026-11-21T13:33:04.777960+00:00",
+                "seconds": 6.575,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-llm-ingress:unset",
+                "start_utc": "2026-11-21T13:33:04.778525+00:00",
+                "end_utc": "2026-11-21T13:33:07.903412+00:00",
+                "seconds": 3.125,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-notification-service:unset",
+                "start_utc": "2026-11-21T13:33:07.903719+00:00",
+                "end_utc": "2026-11-21T13:33:11.249886+00:00",
+                "seconds": 3.346,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-policy-controller:unset",
+                "start_utc": "2026-11-21T13:33:11.250323+00:00",
+                "end_utc": "2026-11-21T13:33:14.061944+00:00",
+                "seconds": 2.812,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-postgres:unset",
+                "start_utc": "2026-11-21T13:33:14.062297+00:00",
+                "end_utc": "2026-11-21T13:33:20.718452+00:00",
+                "seconds": 6.656,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset",
+                "start_utc": "2026-11-21T13:33:20.719422+00:00",
+                "end_utc": "2026-11-21T13:33:25.293768+00:00",
+                "seconds": 4.574,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-sessions:unset",
+                "start_utc": "2026-11-21T13:33:25.294110+00:00",
+                "end_utc": "2026-11-21T13:33:28.983872+00:00",
+                "seconds": 3.69,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-vm-guest-boot:unset",
+                "start_utc": "2026-11-21T13:33:29.723943+00:00",
+                "end_utc": "2026-11-21T13:33:30.855485+00:00",
+                "seconds": 1.132,
+                "skipped_cached_image": false
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root:unset",
+                "start_utc": "2026-11-21T13:33:30.855809+00:00",
+                "end_utc": "2026-11-21T13:33:57.894487+00:00",
+                "seconds": 27.039,
+                "skipped_cached_image": false
+              }
+            ]
+          },
+          "ssd-warm-1": {
+            "imported": 0,
+            "skipped": 25,
+            "import_span_seconds": 0,
+            "import_envelope_seconds": null,
+            "spans": [
+              {
+                "name": "ghcr.io/kyverno/kyverno:v1.19.1",
+                "start_utc": "2026-11-21T13:39:53.036715+00:00",
+                "end_utc": "2026-11-21T13:39:53.036732+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "ghcr.io/kyverno/kyvernopre:v1.19.1",
+                "start_utc": "2026-11-21T13:39:53.036839+00:00",
+                "end_utc": "2026-11-21T13:39:53.036847+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "quay.io/kubevirt/virt-api:v1.8.2",
+                "start_utc": "2026-11-21T13:39:53.036897+00:00",
+                "end_utc": "2026-11-21T13:39:53.036901+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "quay.io/kubevirt/virt-controller:v1.8.2",
+                "start_utc": "2026-11-21T13:39:53.036946+00:00",
+                "end_utc": "2026-11-21T13:39:53.036950+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "quay.io/kubevirt/virt-handler:v1.8.2",
+                "start_utc": "2026-11-21T13:39:53.036987+00:00",
+                "end_utc": "2026-11-21T13:39:53.036990+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "quay.io/kubevirt/virt-launcher:v1.8.2",
+                "start_utc": "2026-11-21T13:39:53.037028+00:00",
+                "end_utc": "2026-11-21T13:39:53.037030+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "quay.io/kubevirt/virt-operator:v1.8.2",
+                "start_utc": "2026-11-21T13:39:53.037058+00:00",
+                "end_utc": "2026-11-21T13:39:53.037060+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "quay.io/jetstack/cert-manager-cainjector:v1.21.2",
+                "start_utc": "2026-11-21T13:39:54.034745+00:00",
+                "end_utc": "2026-11-21T13:39:54.034783+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "quay.io/jetstack/cert-manager-controller:v1.21.2",
+                "start_utc": "2026-11-21T13:39:54.040087+00:00",
+                "end_utc": "2026-11-21T13:39:54.040100+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "quay.io/jetstack/cert-manager-webhook:v1.21.2",
+                "start_utc": "2026-11-21T13:39:54.040330+00:00",
+                "end_utc": "2026-11-21T13:39:54.040338+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "quay.io/jetstack/trust-manager:v0.25.0",
+                "start_utc": "2026-11-21T13:39:54.040450+00:00",
+                "end_utc": "2026-11-21T13:39:54.040457+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-action-service:unset",
+                "start_utc": "2026-11-21T13:40:00.609938+00:00",
+                "end_utc": "2026-11-21T13:40:00.609947+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-app:unset",
+                "start_utc": "2026-11-21T13:40:00.610110+00:00",
+                "end_utc": "2026-11-21T13:40:00.610118+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-egress-proxy:unset",
+                "start_utc": "2026-11-21T13:40:00.610191+00:00",
+                "end_utc": "2026-11-21T13:40:00.610252+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset",
+                "start_utc": "2026-11-21T13:40:00.610344+00:00",
+                "end_utc": "2026-11-21T13:40:00.610351+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-environments:unset",
+                "start_utc": "2026-11-21T13:40:00.610394+00:00",
+                "end_utc": "2026-11-21T13:40:00.610398+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-history-service:unset",
+                "start_utc": "2026-11-21T13:40:00.610620+00:00",
+                "end_utc": "2026-11-21T13:40:00.610627+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-llm-ingress:unset",
+                "start_utc": "2026-11-21T13:40:00.610670+00:00",
+                "end_utc": "2026-11-21T13:40:00.610674+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-notification-service:unset",
+                "start_utc": "2026-11-21T13:40:00.610707+00:00",
+                "end_utc": "2026-11-21T13:40:00.610710+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-policy-controller:unset",
+                "start_utc": "2026-11-21T13:40:00.610735+00:00",
+                "end_utc": "2026-11-21T13:40:00.610738+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-postgres:unset",
+                "start_utc": "2026-11-21T13:40:00.610765+00:00",
+                "end_utc": "2026-11-21T13:40:00.610767+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset",
+                "start_utc": "2026-11-21T13:40:00.610792+00:00",
+                "end_utc": "2026-11-21T13:40:00.610795+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-sessions:unset",
+                "start_utc": "2026-11-21T13:40:00.610820+00:00",
+                "end_utc": "2026-11-21T13:40:00.610822+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-vm-guest-boot:unset",
+                "start_utc": "2026-11-21T13:40:21.851563+00:00",
+                "end_utc": "2026-11-21T13:40:21.851572+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              },
+              {
+                "name": "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root:unset",
+                "start_utc": "2026-11-21T13:40:21.851635+00:00",
+                "end_utc": "2026-11-21T13:40:21.851640+00:00",
+                "seconds": 0.0,
+                "skipped_cached_image": true
+              }
+            ]
+          }
+        },
+        "method": "The OCI manifests and SHA256-validated CAS file receipts describe the exact Bazel input tree. Layer bytes use each blob's stored TAR or gzip representation. Root filesystem allocation, gzip expansion or CAS network bytes are outside this accounting. Per-image spans time K3s import, including streaming and containerd snapshot work."
+      }
+    },
+    "io": {
+      "note": "Original node-exporter scrapes about one minute apart. The durations and bytes cover only scrapes inside each phase. The evidence also includes the scrapes that bound each phase. Wyrm2 device counters include other workloads on each virtual disk. Image import sits inside TestRunner.",
+      "selected": [
+        {
+          "label": "ssd-first-boot · startup",
+          "wall_seconds": 267.0,
+          "counter_seconds": 180.0,
+          "read_gib": 0.016344070434570312,
+          "written_gib": 3.587146759033203,
+          "disk_busy_pct": 16.539444444444445,
+          "node_io_some_pct": 7.581111111111112
+        },
+        {
+          "label": "hdd-first-boot · startup",
+          "wall_seconds": 309.0,
+          "counter_seconds": 240.0,
+          "read_gib": 0.08075809478759766,
+          "written_gib": 3.119525909423828,
+          "disk_busy_pct": 61.804583333333326,
+          "node_io_some_pct": 6.682666666666666
+        },
+        {
+          "label": "hdd-cold · process",
+          "wall_seconds": 1457.797,
+          "counter_seconds": 1380.0,
+          "read_gib": 3.1254100799560547,
+          "written_gib": 9.548046112060547,
+          "disk_busy_pct": 93.09898550724638,
+          "node_io_some_pct": 10.490144927536234
+        },
+        {
+          "label": "hdd-cold · nested image import envelope",
+          "wall_seconds": 876.477,
+          "counter_seconds": 840.0,
+          "read_gib": 1.8379402160644531,
+          "written_gib": 7.275791168212891,
+          "disk_busy_pct": 98.25238095238095,
+          "node_io_some_pct": 11.666226190476191
+        },
+        {
+          "label": "hdd-warm-1 · process",
+          "wall_seconds": 672.464,
+          "counter_seconds": 600.0,
+          "read_gib": 0.7126569747924805,
+          "written_gib": 1.8872299194335938,
+          "disk_busy_pct": 84.72516666666667,
+          "node_io_some_pct": 9.31075
+        },
+        {
+          "label": "ssd-cold · process",
+          "wall_seconds": 518.355,
+          "counter_seconds": 480.0,
+          "read_gib": 4.333071708679199,
+          "written_gib": 8.728702545166016,
+          "disk_busy_pct": 40.595,
+          "node_io_some_pct": 4.684458333333334
+        },
+        {
+          "label": "ssd-cold · nested image import envelope",
+          "wall_seconds": 199.129,
+          "counter_seconds": 120.0,
+          "read_gib": 1.2826042175292969,
+          "written_gib": 3.5653343200683594,
+          "disk_busy_pct": 58.78,
+          "node_io_some_pct": 7.761333333333332
+        },
+        {
+          "label": "ssd-warm-1 · process",
+          "wall_seconds": 344.882,
+          "counter_seconds": 240.0,
+          "read_gib": 0.540959358215332,
+          "written_gib": 0.8529090881347656,
+          "disk_busy_pct": 24.4175,
+          "node_io_some_pct": 3.964833333333333
+        }
+      ],
+      "full": {
+        "device_serials": {
+          "vdh": "piraeus-ssd",
+          "vdi": "piraeus-hdd"
+        },
+        "method": "Differences of monotonic node-exporter counters on original Mimir scrapes. Inside uses first and last scrapes within the interval, and bracket uses the nearest before and after. Their deltas bound whole-device activity during the interval. Device accounting includes every user of that virtual device. Worker, TestRunner and image-import windows overlap.",
+        "scopes": [
+          {
+            "label": "ssd-first-boot",
+            "medium": "ssd",
+            "phase": "startup",
+            "start_utc": "2026-11-21T13:22:31+00:00",
+            "end_utc": "2026-11-21T13:26:58+00:00",
+            "wall_seconds": 267.0,
+            "devices": {
+              "vdh": {
+                "inside": {
+                  "first_sample_utc": "2026-11-21T13:23:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T13:26:23.276000+00:00",
+                  "sample_interval_s": 180.0,
+                  "read_bytes": 17549312.0,
+                  "written_bytes": 3851669504.0,
+                  "busy_seconds": 29.771,
+                  "read_seconds": 0.106,
+                  "write_seconds": 53.458,
+                  "reads": 230.0,
+                  "writes": 68184.0
+                },
+                "bracket": {
+                  "first_sample_utc": "2026-11-21T13:22:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T13:27:23.276000+00:00",
+                  "sample_interval_s": 300.0,
+                  "read_bytes": 64534528.0,
+                  "written_bytes": 5533247488.0,
+                  "busy_seconds": 49.737,
+                  "read_seconds": 0.478,
+                  "write_seconds": 86.056,
+                  "reads": 1711.0,
+                  "writes": 98888.0
+                }
+              },
+              "vdi": {
+                "inside": {
+                  "first_sample_utc": "2026-11-21T13:23:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T13:26:23.276000+00:00",
+                  "sample_interval_s": 180.0,
+                  "read_bytes": 8650752.0,
+                  "written_bytes": 0.0,
+                  "busy_seconds": 0.222,
+                  "read_seconds": 0.225,
+                  "write_seconds": 0.0,
+                  "reads": 66.0,
+                  "writes": 0.0
+                },
+                "bracket": {
+                  "first_sample_utc": "2026-11-21T13:22:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T13:27:23.276000+00:00",
+                  "sample_interval_s": 300.0,
+                  "read_bytes": 90767360.0,
+                  "written_bytes": 319488.0,
+                  "busy_seconds": 15.031,
+                  "read_seconds": 14.857,
+                  "write_seconds": 0.249,
+                  "reads": 17438.0,
+                  "writes": 12.0
+                }
+              }
+            },
+            "node_pressure": {
+              "inside": {
+                "first_sample_utc": "2026-11-21T13:23:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T13:26:23.276000+00:00",
+                "sample_interval_s": 180.0,
+                "io_some_seconds": 13.646,
+                "io_full_seconds": 10.3018,
+                "cpu_some_seconds": 5.4475
+              },
+              "bracket": {
+                "first_sample_utc": "2026-11-21T13:22:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T13:27:23.276000+00:00",
+                "sample_interval_s": 300.0,
+                "io_some_seconds": 22.0099,
+                "io_full_seconds": 16.6704,
+                "cpu_some_seconds": 9.8893
+              }
+            }
+          },
+          {
+            "label": "hdd-first-boot",
+            "medium": "hdd",
+            "phase": "startup",
+            "start_utc": "2026-11-21T13:45:42+00:00",
+            "end_utc": "2026-11-21T13:50:51+00:00",
+            "wall_seconds": 309.0,
+            "devices": {
+              "vdh": {
+                "inside": {
+                  "first_sample_utc": "2026-11-21T13:46:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T13:50:23.276000+00:00",
+                  "sample_interval_s": 240.0,
+                  "read_bytes": 17563648.0,
+                  "written_bytes": 0.0,
+                  "busy_seconds": 0.433,
+                  "read_seconds": 0.432,
+                  "write_seconds": 0.0,
+                  "reads": 134.0,
+                  "writes": 0.0
+                },
+                "bracket": {
+                  "first_sample_utc": "2026-11-21T13:45:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T13:51:23.276000+00:00",
+                  "sample_interval_s": 360.0,
+                  "read_bytes": 32206848.0,
+                  "written_bytes": 12144640.0,
+                  "busy_seconds": 1.321,
+                  "read_seconds": 0.489,
+                  "write_seconds": 0.28,
+                  "reads": 268.0,
+                  "writes": 360.0
+                }
+              },
+              "vdi": {
+                "inside": {
+                  "first_sample_utc": "2026-11-21T13:46:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T13:50:23.276000+00:00",
+                  "sample_interval_s": 240.0,
+                  "read_bytes": 86713344.0,
+                  "written_bytes": 3349565440.0,
+                  "busy_seconds": 148.331,
+                  "read_seconds": 33.03,
+                  "write_seconds": 146.149,
+                  "reads": 17591.0,
+                  "writes": 60791.0
+                },
+                "bracket": {
+                  "first_sample_utc": "2026-11-21T13:45:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T13:51:23.276000+00:00",
+                  "sample_interval_s": 360.0,
+                  "read_bytes": 125642752.0,
+                  "written_bytes": 4504897536.0,
+                  "busy_seconds": 177.867,
+                  "read_seconds": 34.663,
+                  "write_seconds": 183.931,
+                  "reads": 19091.0,
+                  "writes": 82080.0
+                }
+              }
+            },
+            "node_pressure": {
+              "inside": {
+                "first_sample_utc": "2026-11-21T13:46:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T13:50:23.276000+00:00",
+                "sample_interval_s": 240.0,
+                "io_some_seconds": 16.0384,
+                "io_full_seconds": 12.7707,
+                "cpu_some_seconds": 7.0735
+              },
+              "bracket": {
+                "first_sample_utc": "2026-11-21T13:45:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T13:51:23.276000+00:00",
+                "sample_interval_s": 360.0,
+                "io_some_seconds": 20.8385,
+                "io_full_seconds": 16.8775,
+                "cpu_some_seconds": 8.2799
+              }
+            }
+          },
+          {
+            "label": "hdd-cold",
+            "medium": "hdd",
+            "phase": "worker",
+            "start_utc": "2026-11-21T13:51:40.250068Z",
+            "end_utc": "2026-11-21T14:20:16.387669Z",
+            "wall_seconds": 1716.138,
+            "devices": {
+              "vdh": {
+                "inside": {
+                  "first_sample_utc": "2026-11-21T13:52:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T14:19:23.276000+00:00",
+                  "sample_interval_s": 1620.0,
+                  "read_bytes": 130416640.0,
+                  "written_bytes": 0.0,
+                  "busy_seconds": 0.476,
+                  "read_seconds": 0.471,
+                  "write_seconds": 0.0,
+                  "reads": 995.0,
+                  "writes": 0.0
+                },
+                "bracket": {
+                  "first_sample_utc": "2026-11-21T13:51:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T14:20:23.276000+00:00",
+                  "sample_interval_s": 1740.0,
+                  "read_bytes": 136970240.0,
+                  "written_bytes": 0.0,
+                  "busy_seconds": 0.5,
+                  "read_seconds": 0.494,
+                  "write_seconds": 0.0,
+                  "reads": 1045.0,
+                  "writes": 0.0
+                }
+              },
+              "vdi": {
+                "inside": {
+                  "first_sample_utc": "2026-11-21T13:52:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T14:19:23.276000+00:00",
+                  "sample_interval_s": 1620.0,
+                  "read_bytes": 3382380544.0,
+                  "written_bytes": 15657426944.0,
+                  "busy_seconds": 1507.23,
+                  "read_seconds": 680.169,
+                  "write_seconds": 1921.334,
+                  "reads": 98270.0,
+                  "writes": 351048.0
+                },
+                "bracket": {
+                  "first_sample_utc": "2026-11-21T13:51:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T14:20:23.276000+00:00",
+                  "sample_interval_s": 1740.0,
+                  "read_bytes": 3414498304.0,
+                  "written_bytes": 16490569728.0,
+                  "busy_seconds": 1575.826,
+                  "read_seconds": 688.045,
+                  "write_seconds": 2007.876,
+                  "reads": 99392.0,
+                  "writes": 370523.0
+                }
+              }
+            },
+            "node_pressure": {
+              "inside": {
+                "first_sample_utc": "2026-11-21T13:52:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T14:19:23.276000+00:00",
+                "sample_interval_s": 1620.0,
+                "io_some_seconds": 172.9755,
+                "io_full_seconds": 154.3297,
+                "cpu_some_seconds": 14.334
+              },
+              "bracket": {
+                "first_sample_utc": "2026-11-21T13:51:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T14:20:23.276000+00:00",
+                "sample_interval_s": 1740.0,
+                "io_some_seconds": 179.255,
+                "io_full_seconds": 159.9636,
+                "cpu_some_seconds": 15.0998
+              }
+            }
+          },
+          {
+            "label": "hdd-cold",
+            "medium": "hdd",
+            "phase": "process",
+            "start_utc": "2026-11-21T13:55:57.624879Z",
+            "end_utc": "2026-11-21T14:20:15.421526Z",
+            "wall_seconds": 1457.797,
+            "devices": {
+              "vdh": {
+                "inside": {
+                  "first_sample_utc": "2026-11-21T13:56:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T14:19:23.276000+00:00",
+                  "sample_interval_s": 1380.0,
+                  "read_bytes": 112721920.0,
+                  "written_bytes": 0.0,
+                  "busy_seconds": 0.41,
+                  "read_seconds": 0.412,
+                  "write_seconds": 0.0,
+                  "reads": 860.0,
+                  "writes": 0.0
+                },
+                "bracket": {
+                  "first_sample_utc": "2026-11-21T13:55:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T14:20:23.276000+00:00",
+                  "sample_interval_s": 1500.0,
+                  "read_bytes": 119930880.0,
+                  "written_bytes": 0.0,
+                  "busy_seconds": 0.435,
+                  "read_seconds": 0.436,
+                  "write_seconds": 0.0,
+                  "reads": 915.0,
+                  "writes": 0.0
+                }
+              },
+              "vdi": {
+                "inside": {
+                  "first_sample_utc": "2026-11-21T13:56:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T14:19:23.276000+00:00",
+                  "sample_interval_s": 1380.0,
+                  "read_bytes": 3355883520.0,
+                  "written_bytes": 10252136448.0,
+                  "busy_seconds": 1284.766,
+                  "read_seconds": 646.902,
+                  "write_seconds": 1597.693,
+                  "reads": 94444.0,
+                  "writes": 254214.0
+                },
+                "bracket": {
+                  "first_sample_utc": "2026-11-21T13:55:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T14:20:23.276000+00:00",
+                  "sample_interval_s": 1500.0,
+                  "read_bytes": 3388718080.0,
+                  "written_bytes": 11982643200.0,
+                  "busy_seconds": 1386.093,
+                  "read_seconds": 655.714,
+                  "write_seconds": 1722.074,
+                  "reads": 95638.0,
+                  "writes": 289299.0
+                }
+              }
+            },
+            "node_pressure": {
+              "inside": {
+                "first_sample_utc": "2026-11-21T13:56:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T14:19:23.276000+00:00",
+                "sample_interval_s": 1380.0,
+                "io_some_seconds": 144.764,
+                "io_full_seconds": 129.3447,
+                "cpu_some_seconds": 12.2444
+              },
+              "bracket": {
+                "first_sample_utc": "2026-11-21T13:55:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T14:20:23.276000+00:00",
+                "sample_interval_s": 1500.0,
+                "io_some_seconds": 159.105,
+                "io_full_seconds": 142.254,
+                "cpu_some_seconds": 13.1179
+              }
+            }
+          },
+          {
+            "label": "hdd-cold",
+            "medium": "hdd",
+            "phase": "input",
+            "start_utc": "2026-11-21T13:53:18.470078Z",
+            "end_utc": "2026-11-21T13:55:57.624876Z",
+            "wall_seconds": 159.155,
+            "devices": {
+              "vdh": {
+                "inside": {
+                  "first_sample_utc": "2026-11-21T13:53:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T13:55:23.276000+00:00",
+                  "sample_interval_s": 120.0,
+                  "read_bytes": 10485760.0,
+                  "written_bytes": 0.0,
+                  "busy_seconds": 0.038,
+                  "read_seconds": 0.034,
+                  "write_seconds": 0.0,
+                  "reads": 80.0,
+                  "writes": 0.0
+                },
+                "bracket": {
+                  "first_sample_utc": "2026-11-21T13:52:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T13:56:23.276000+00:00",
+                  "sample_interval_s": 240.0,
+                  "read_bytes": 17694720.0,
+                  "written_bytes": 0.0,
+                  "busy_seconds": 0.066,
+                  "read_seconds": 0.059,
+                  "write_seconds": 0.0,
+                  "reads": 135.0,
+                  "writes": 0.0
+                }
+              },
+              "vdi": {
+                "inside": {
+                  "first_sample_utc": "2026-11-21T13:53:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T13:55:23.276000+00:00",
+                  "sample_interval_s": 120.0,
+                  "read_bytes": 18214912.0,
+                  "written_bytes": 2698362880.0,
+                  "busy_seconds": 119.591,
+                  "read_seconds": 27.001,
+                  "write_seconds": 141.252,
+                  "reads": 2876.0,
+                  "writes": 49120.0
+                },
+                "bracket": {
+                  "first_sample_utc": "2026-11-21T13:52:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T13:56:23.276000+00:00",
+                  "sample_interval_s": 240.0,
+                  "read_bytes": 26497024.0,
+                  "written_bytes": 5405290496.0,
+                  "busy_seconds": 222.464,
+                  "read_seconds": 33.267,
+                  "write_seconds": 323.641,
+                  "reads": 3826.0,
+                  "writes": 96834.0
+                }
+              }
+            },
+            "node_pressure": {
+              "inside": {
+                "first_sample_utc": "2026-11-21T13:53:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T13:55:23.276000+00:00",
+                "sample_interval_s": 120.0,
+                "io_some_seconds": 13.6485,
+                "io_full_seconds": 12.0103,
+                "cpu_some_seconds": 1.1376
+              },
+              "bracket": {
+                "first_sample_utc": "2026-11-21T13:52:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T13:56:23.276000+00:00",
+                "sample_interval_s": 240.0,
+                "io_some_seconds": 28.2115,
+                "io_full_seconds": 24.985,
+                "cpu_some_seconds": 2.0896
+              }
+            }
+          },
+          {
+            "label": "hdd-cold",
+            "medium": "hdd",
+            "phase": "nested image import envelope",
+            "start_utc": "2026-11-21T13:57:00.638770Z",
+            "end_utc": "2026-11-21T14:11:37.115383Z",
+            "wall_seconds": 876.477,
+            "devices": {
+              "vdh": {
+                "inside": {
+                  "first_sample_utc": "2026-11-21T13:57:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T14:11:23.276000+00:00",
+                  "sample_interval_s": 840.0,
+                  "read_bytes": 65536000.0,
+                  "written_bytes": 0.0,
+                  "busy_seconds": 0.256,
+                  "read_seconds": 0.255,
+                  "write_seconds": 0.0,
+                  "reads": 500.0,
+                  "writes": 0.0
+                },
+                "bracket": {
+                  "first_sample_utc": "2026-11-21T13:56:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T14:12:23.276000+00:00",
+                  "sample_interval_s": 960.0,
+                  "read_bytes": 82575360.0,
+                  "written_bytes": 0.0,
+                  "busy_seconds": 0.303,
+                  "read_seconds": 0.305,
+                  "write_seconds": 0.0,
+                  "reads": 630.0,
+                  "writes": 0.0
+                }
+              },
+              "vdi": {
+                "inside": {
+                  "first_sample_utc": "2026-11-21T13:57:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T14:11:23.276000+00:00",
+                  "sample_interval_s": 840.0,
+                  "read_bytes": 1973473280.0,
+                  "written_bytes": 7812321280.0,
+                  "busy_seconds": 825.32,
+                  "read_seconds": 503.08,
+                  "write_seconds": 911.852,
+                  "reads": 64311.0,
+                  "writes": 179936.0
+                },
+                "bracket": {
+                  "first_sample_utc": "2026-11-21T13:56:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T14:12:23.276000+00:00",
+                  "sample_interval_s": 960.0,
+                  "read_bytes": 2129543168.0,
+                  "written_bytes": 9042599936.0,
+                  "busy_seconds": 919.775,
+                  "read_seconds": 526.958,
+                  "write_seconds": 1114.336,
+                  "reads": 67143.0,
+                  "writes": 205923.0
+                }
+              }
+            },
+            "node_pressure": {
+              "inside": {
+                "first_sample_utc": "2026-11-21T13:57:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T14:11:23.276000+00:00",
+                "sample_interval_s": 840.0,
+                "io_some_seconds": 97.9963,
+                "io_full_seconds": 88.0427,
+                "cpu_some_seconds": 7.1688
+              },
+              "bracket": {
+                "first_sample_utc": "2026-11-21T13:56:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T14:12:23.276000+00:00",
+                "sample_interval_s": 960.0,
+                "io_some_seconds": 108.9715,
+                "io_full_seconds": 97.8315,
+                "cpu_some_seconds": 8.0014
+              }
+            }
+          },
+          {
+            "label": "hdd-warm-1",
+            "medium": "hdd",
+            "phase": "worker",
+            "start_utc": "2026-11-21T14:21:34.610556Z",
+            "end_utc": "2026-11-21T14:32:53.060803Z",
+            "wall_seconds": 678.45,
+            "devices": {
+              "vdh": {
+                "inside": {
+                  "first_sample_utc": "2026-11-21T14:22:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T14:32:23.276000+00:00",
+                  "sample_interval_s": 600.0,
+                  "read_bytes": 43909120.0,
+                  "written_bytes": 0.0,
+                  "busy_seconds": 0.159,
+                  "read_seconds": 0.166,
+                  "write_seconds": 0.0,
+                  "reads": 335.0,
+                  "writes": 0.0
+                },
+                "bracket": {
+                  "first_sample_utc": "2026-11-21T14:21:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T14:33:23.276000+00:00",
+                  "sample_interval_s": 720.0,
+                  "read_bytes": 54394880.0,
+                  "written_bytes": 0.0,
+                  "busy_seconds": 0.482,
+                  "read_seconds": 0.492,
+                  "write_seconds": 0.0,
+                  "reads": 415.0,
+                  "writes": 0.0
+                }
+              },
+              "vdi": {
+                "inside": {
+                  "first_sample_utc": "2026-11-21T14:22:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T14:32:23.276000+00:00",
+                  "sample_interval_s": 600.0,
+                  "read_bytes": 765209600.0,
+                  "written_bytes": 2026397696.0,
+                  "busy_seconds": 508.351,
+                  "read_seconds": 185.226,
+                  "write_seconds": 866.16,
+                  "reads": 22420.0,
+                  "writes": 79019.0
+                },
+                "bracket": {
+                  "first_sample_utc": "2026-11-21T14:21:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T14:33:23.276000+00:00",
+                  "sample_interval_s": 720.0,
+                  "read_bytes": 880344064.0,
+                  "written_bytes": 2800377856.0,
+                  "busy_seconds": 587.749,
+                  "read_seconds": 212.753,
+                  "write_seconds": 1005.977,
+                  "reads": 33434.0,
+                  "writes": 126310.0
+                }
+              }
+            },
+            "node_pressure": {
+              "inside": {
+                "first_sample_utc": "2026-11-21T14:22:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T14:32:23.276000+00:00",
+                "sample_interval_s": 600.0,
+                "io_some_seconds": 55.8645,
+                "io_full_seconds": 49.3083,
+                "cpu_some_seconds": 6.6837
+              },
+              "bracket": {
+                "first_sample_utc": "2026-11-21T14:21:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T14:33:23.276000+00:00",
+                "sample_interval_s": 720.0,
+                "io_some_seconds": 64.9573,
+                "io_full_seconds": 57.5736,
+                "cpu_some_seconds": 7.6148
+              }
+            }
+          },
+          {
+            "label": "hdd-warm-1",
+            "medium": "hdd",
+            "phase": "process",
+            "start_utc": "2026-11-21T14:21:39.915624Z",
+            "end_utc": "2026-11-21T14:32:52.380066Z",
+            "wall_seconds": 672.464,
+            "devices": {
+              "vdh": {
+                "inside": {
+                  "first_sample_utc": "2026-11-21T14:22:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T14:32:23.276000+00:00",
+                  "sample_interval_s": 600.0,
+                  "read_bytes": 43909120.0,
+                  "written_bytes": 0.0,
+                  "busy_seconds": 0.159,
+                  "read_seconds": 0.166,
+                  "write_seconds": 0.0,
+                  "reads": 335.0,
+                  "writes": 0.0
+                },
+                "bracket": {
+                  "first_sample_utc": "2026-11-21T14:21:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T14:33:23.276000+00:00",
+                  "sample_interval_s": 720.0,
+                  "read_bytes": 54394880.0,
+                  "written_bytes": 0.0,
+                  "busy_seconds": 0.482,
+                  "read_seconds": 0.492,
+                  "write_seconds": 0.0,
+                  "reads": 415.0,
+                  "writes": 0.0
+                }
+              },
+              "vdi": {
+                "inside": {
+                  "first_sample_utc": "2026-11-21T14:22:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T14:32:23.276000+00:00",
+                  "sample_interval_s": 600.0,
+                  "read_bytes": 765209600.0,
+                  "written_bytes": 2026397696.0,
+                  "busy_seconds": 508.351,
+                  "read_seconds": 185.226,
+                  "write_seconds": 866.16,
+                  "reads": 22420.0,
+                  "writes": 79019.0
+                },
+                "bracket": {
+                  "first_sample_utc": "2026-11-21T14:21:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T14:33:23.276000+00:00",
+                  "sample_interval_s": 720.0,
+                  "read_bytes": 880344064.0,
+                  "written_bytes": 2800377856.0,
+                  "busy_seconds": 587.749,
+                  "read_seconds": 212.753,
+                  "write_seconds": 1005.977,
+                  "reads": 33434.0,
+                  "writes": 126310.0
+                }
+              }
+            },
+            "node_pressure": {
+              "inside": {
+                "first_sample_utc": "2026-11-21T14:22:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T14:32:23.276000+00:00",
+                "sample_interval_s": 600.0,
+                "io_some_seconds": 55.8645,
+                "io_full_seconds": 49.3083,
+                "cpu_some_seconds": 6.6837
+              },
+              "bracket": {
+                "first_sample_utc": "2026-11-21T14:21:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T14:33:23.276000+00:00",
+                "sample_interval_s": 720.0,
+                "io_some_seconds": 64.9573,
+                "io_full_seconds": 57.5736,
+                "cpu_some_seconds": 7.6148
+              }
+            }
+          },
+          {
+            "label": "hdd-warm-1",
+            "medium": "hdd",
+            "phase": "input",
+            "start_utc": "2026-11-21T14:21:39.275570Z",
+            "end_utc": "2026-11-21T14:21:39.915623Z",
+            "wall_seconds": 0.64,
+            "devices": {
+              "vdh": {
+                "inside": null,
+                "bracket": {
+                  "first_sample_utc": "2026-11-21T14:21:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T14:22:23.276000+00:00",
+                  "sample_interval_s": 60.0,
+                  "read_bytes": 3276800.0,
+                  "written_bytes": 0.0,
+                  "busy_seconds": 0.014,
+                  "read_seconds": 0.016,
+                  "write_seconds": 0.0,
+                  "reads": 25.0,
+                  "writes": 0.0
+                }
+              },
+              "vdi": {
+                "inside": null,
+                "bracket": {
+                  "first_sample_utc": "2026-11-21T14:21:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T14:22:23.276000+00:00",
+                  "sample_interval_s": 60.0,
+                  "read_bytes": 73551872.0,
+                  "written_bytes": 717787136.0,
+                  "busy_seconds": 46.913,
+                  "read_seconds": 13.946,
+                  "write_seconds": 88.727,
+                  "reads": 2373.0,
+                  "writes": 43306.0
+                }
+              }
+            },
+            "node_pressure": {
+              "inside": null,
+              "bracket": {
+                "first_sample_utc": "2026-11-21T14:21:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T14:22:23.276000+00:00",
+                "sample_interval_s": 60.0,
+                "io_some_seconds": 5.6124,
+                "io_full_seconds": 5.0801,
+                "cpu_some_seconds": 0.3986
+              }
+            }
+          },
+          {
+            "label": "ssd-cold",
+            "medium": "ssd",
+            "phase": "worker",
+            "start_utc": "2026-11-21T13:27:33.999012Z",
+            "end_utc": "2026-11-21T13:38:47.754281Z",
+            "wall_seconds": 673.755,
+            "devices": {
+              "vdh": {
+                "inside": {
+                  "first_sample_utc": "2026-11-21T13:28:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T13:38:23.276000+00:00",
+                  "sample_interval_s": 600.0,
+                  "read_bytes": 4697488384.0,
+                  "written_bytes": 14309445632.0,
+                  "busy_seconds": 227.807,
+                  "read_seconds": 34.889,
+                  "write_seconds": 284.266,
+                  "reads": 52364.0,
+                  "writes": 340861.0
+                },
+                "bracket": {
+                  "first_sample_utc": "2026-11-21T13:27:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T13:39:23.276000+00:00",
+                  "sample_interval_s": 720.0,
+                  "read_bytes": 4735208448.0,
+                  "written_bytes": 15389855744.0,
+                  "busy_seconds": 246.355,
+                  "read_seconds": 35.476,
+                  "write_seconds": 301.472,
+                  "reads": 54269.0,
+                  "writes": 365472.0
+                }
+              },
+              "vdi": {
+                "inside": {
+                  "first_sample_utc": "2026-11-21T13:28:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T13:38:23.276000+00:00",
+                  "sample_interval_s": 600.0,
+                  "read_bytes": 118513664.0,
+                  "written_bytes": 360448.0,
+                  "busy_seconds": 26.371,
+                  "read_seconds": 26.159,
+                  "write_seconds": 0.581,
+                  "reads": 20751.0,
+                  "writes": 31.0
+                },
+                "bracket": {
+                  "first_sample_utc": "2026-11-21T13:27:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T13:39:23.276000+00:00",
+                  "sample_interval_s": 720.0,
+                  "read_bytes": 124411904.0,
+                  "written_bytes": 397312.0,
+                  "busy_seconds": 34.613,
+                  "read_seconds": 26.187,
+                  "write_seconds": 0.734,
+                  "reads": 20796.0,
+                  "writes": 39.0
+                }
+              }
+            },
+            "node_pressure": {
+              "inside": {
+                "first_sample_utc": "2026-11-21T13:28:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T13:38:23.276000+00:00",
+                "sample_interval_s": 600.0,
+                "io_some_seconds": 28.4007,
+                "io_full_seconds": 24.0209,
+                "cpu_some_seconds": 8.4975
+              },
+              "bracket": {
+                "first_sample_utc": "2026-11-21T13:27:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T13:39:23.276000+00:00",
+                "sample_interval_s": 720.0,
+                "io_some_seconds": 31.6002,
+                "io_full_seconds": 26.7764,
+                "cpu_some_seconds": 10.0092
+              }
+            }
+          },
+          {
+            "label": "ssd-cold",
+            "medium": "ssd",
+            "phase": "process",
+            "start_utc": "2026-11-21T13:30:08.914619Z",
+            "end_utc": "2026-11-21T13:38:47.269287Z",
+            "wall_seconds": 518.355,
+            "devices": {
+              "vdh": {
+                "inside": {
+                  "first_sample_utc": "2026-11-21T13:30:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T13:38:23.276000+00:00",
+                  "sample_interval_s": 480.0,
+                  "read_bytes": 4652600320.0,
+                  "written_bytes": 9372372992.0,
+                  "busy_seconds": 194.856,
+                  "read_seconds": 33.917,
+                  "write_seconds": 222.933,
+                  "reads": 51053.0,
+                  "writes": 251020.0
+                },
+                "bracket": {
+                  "first_sample_utc": "2026-11-21T13:29:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T13:39:23.276000+00:00",
+                  "sample_interval_s": 600.0,
+                  "read_bytes": 4727819264.0,
+                  "written_bytes": 12674650112.0,
+                  "busy_seconds": 218.786,
+                  "read_seconds": 35.424,
+                  "write_seconds": 266.518,
+                  "reads": 54170.0,
+                  "writes": 315526.0
+                }
+              },
+              "vdi": {
+                "inside": {
+                  "first_sample_utc": "2026-11-21T13:30:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T13:38:23.276000+00:00",
+                  "sample_interval_s": 480.0,
+                  "read_bytes": 111828992.0,
+                  "written_bytes": 360448.0,
+                  "busy_seconds": 26.287,
+                  "read_seconds": 26.072,
+                  "write_seconds": 0.581,
+                  "reads": 20700.0,
+                  "writes": 31.0
+                },
+                "bracket": {
+                  "first_sample_utc": "2026-11-21T13:29:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T13:39:23.276000+00:00",
+                  "sample_interval_s": 600.0,
+                  "read_bytes": 120086528.0,
+                  "written_bytes": 360448.0,
+                  "busy_seconds": 26.363,
+                  "read_seconds": 26.151,
+                  "write_seconds": 0.581,
+                  "reads": 20763.0,
+                  "writes": 31.0
+                }
+              }
+            },
+            "node_pressure": {
+              "inside": {
+                "first_sample_utc": "2026-11-21T13:30:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T13:38:23.276000+00:00",
+                "sample_interval_s": 480.0,
+                "io_some_seconds": 22.4854,
+                "io_full_seconds": 19.1865,
+                "cpu_some_seconds": 5.1319
+              },
+              "bracket": {
+                "first_sample_utc": "2026-11-21T13:29:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T13:39:23.276000+00:00",
+                "sample_interval_s": 600.0,
+                "io_some_seconds": 27.6589,
+                "io_full_seconds": 23.4736,
+                "cpu_some_seconds": 7.7579
+              }
+            }
+          },
+          {
+            "label": "ssd-cold",
+            "medium": "ssd",
+            "phase": "input",
+            "start_utc": "2026-11-21T13:28:56.555634Z",
+            "end_utc": "2026-11-21T13:30:08.914618Z",
+            "wall_seconds": 72.359,
+            "devices": {
+              "vdh": {
+                "inside": null,
+                "bracket": {
+                  "first_sample_utc": "2026-11-21T13:28:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T13:30:23.276000+00:00",
+                  "sample_interval_s": 120.0,
+                  "read_bytes": 44888064.0,
+                  "written_bytes": 4937072640.0,
+                  "busy_seconds": 32.951,
+                  "read_seconds": 0.972,
+                  "write_seconds": 61.333,
+                  "reads": 1311.0,
+                  "writes": 89841.0
+                }
+              },
+              "vdi": {
+                "inside": null,
+                "bracket": {
+                  "first_sample_utc": "2026-11-21T13:28:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T13:30:23.276000+00:00",
+                  "sample_interval_s": 120.0,
+                  "read_bytes": 6684672.0,
+                  "written_bytes": 0.0,
+                  "busy_seconds": 0.084,
+                  "read_seconds": 0.087,
+                  "write_seconds": 0.0,
+                  "reads": 51.0,
+                  "writes": 0.0
+                }
+              }
+            },
+            "node_pressure": {
+              "inside": null,
+              "bracket": {
+                "first_sample_utc": "2026-11-21T13:28:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T13:30:23.276000+00:00",
+                "sample_interval_s": 120.0,
+                "io_some_seconds": 5.9153,
+                "io_full_seconds": 4.8344,
+                "cpu_some_seconds": 3.3656
+              }
+            }
+          },
+          {
+            "label": "ssd-cold",
+            "medium": "ssd",
+            "phase": "nested image import envelope",
+            "start_utc": "2026-11-21T13:30:38.765193Z",
+            "end_utc": "2026-11-21T13:33:57.894487Z",
+            "wall_seconds": 199.129,
+            "devices": {
+              "vdh": {
+                "inside": {
+                  "first_sample_utc": "2026-11-21T13:31:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T13:33:23.276000+00:00",
+                  "sample_interval_s": 120.0,
+                  "read_bytes": 1377185792.0,
+                  "written_bytes": 3828248576.0,
+                  "busy_seconds": 70.536,
+                  "read_seconds": 10.848,
+                  "write_seconds": 80.071,
+                  "reads": 14715.0,
+                  "writes": 91062.0
+                },
+                "bracket": {
+                  "first_sample_utc": "2026-11-21T13:30:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T13:34:23.276000+00:00",
+                  "sample_interval_s": 240.0,
+                  "read_bytes": 3433918464.0,
+                  "written_bytes": 8323739648.0,
+                  "busy_seconds": 150.684,
+                  "read_seconds": 27.119,
+                  "write_seconds": 179.461,
+                  "reads": 34851.0,
+                  "writes": 206677.0
+                }
+              },
+              "vdi": {
+                "inside": {
+                  "first_sample_utc": "2026-11-21T13:31:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T13:33:23.276000+00:00",
+                  "sample_interval_s": 120.0,
+                  "read_bytes": 58626048.0,
+                  "written_bytes": 249856.0,
+                  "busy_seconds": 13.851,
+                  "read_seconds": 13.686,
+                  "write_seconds": 0.359,
+                  "reads": 12351.0,
+                  "writes": 19.0
+                },
+                "bracket": {
+                  "first_sample_utc": "2026-11-21T13:30:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T13:34:23.276000+00:00",
+                  "sample_interval_s": 240.0,
+                  "read_bytes": 63737856.0,
+                  "written_bytes": 249856.0,
+                  "busy_seconds": 13.915,
+                  "read_seconds": 13.756,
+                  "write_seconds": 0.359,
+                  "reads": 12390.0,
+                  "writes": 19.0
+                }
+              }
+            },
+            "node_pressure": {
+              "inside": {
+                "first_sample_utc": "2026-11-21T13:31:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T13:33:23.276000+00:00",
+                "sample_interval_s": 120.0,
+                "io_some_seconds": 9.3136,
+                "io_full_seconds": 7.7745,
+                "cpu_some_seconds": 1.4718
+              },
+              "bracket": {
+                "first_sample_utc": "2026-11-21T13:30:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T13:34:23.276000+00:00",
+                "sample_interval_s": 240.0,
+                "io_some_seconds": 17.6339,
+                "io_full_seconds": 15.0743,
+                "cpu_some_seconds": 3.0331
+              }
+            }
+          },
+          {
+            "label": "ssd-warm-1",
+            "medium": "ssd",
+            "phase": "worker",
+            "start_utc": "2026-11-21T13:39:35.410482Z",
+            "end_utc": "2026-11-21T13:45:21.088033Z",
+            "wall_seconds": 345.678,
+            "devices": {
+              "vdh": {
+                "inside": {
+                  "first_sample_utc": "2026-11-21T13:40:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T13:44:23.276000+00:00",
+                  "sample_interval_s": 240.0,
+                  "read_bytes": 580850688.0,
+                  "written_bytes": 915804160.0,
+                  "busy_seconds": 58.602,
+                  "read_seconds": 7.351,
+                  "write_seconds": 59.616,
+                  "reads": 10807.0,
+                  "writes": 50953.0
+                },
+                "bracket": {
+                  "first_sample_utc": "2026-11-21T13:39:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T13:45:23.276000+00:00",
+                  "sample_interval_s": 360.0,
+                  "read_bytes": 872590336.0,
+                  "written_bytes": 1781235712.0,
+                  "busy_seconds": 77.386,
+                  "read_seconds": 11.616,
+                  "write_seconds": 83.083,
+                  "reads": 25581.0,
+                  "writes": 75877.0
+                }
+              },
+              "vdi": {
+                "inside": {
+                  "first_sample_utc": "2026-11-21T13:40:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T13:44:23.276000+00:00",
+                  "sample_interval_s": 240.0,
+                  "read_bytes": 61763584.0,
+                  "written_bytes": 331776.0,
+                  "busy_seconds": 12.21,
+                  "read_seconds": 12.02,
+                  "write_seconds": 0.37,
+                  "reads": 12404.0,
+                  "writes": 20.0
+                },
+                "bracket": {
+                  "first_sample_utc": "2026-11-21T13:39:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T13:45:23.276000+00:00",
+                  "sample_interval_s": 360.0,
+                  "read_bytes": 68448256.0,
+                  "written_bytes": 331776.0,
+                  "busy_seconds": 12.46,
+                  "read_seconds": 12.269,
+                  "write_seconds": 0.37,
+                  "reads": 12455.0,
+                  "writes": 20.0
+                }
+              }
+            },
+            "node_pressure": {
+              "inside": {
+                "first_sample_utc": "2026-11-21T13:40:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T13:44:23.276000+00:00",
+                "sample_interval_s": 240.0,
+                "io_some_seconds": 9.5156,
+                "io_full_seconds": 7.4361,
+                "cpu_some_seconds": 2.9218
+              },
+              "bracket": {
+                "first_sample_utc": "2026-11-21T13:39:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T13:45:23.276000+00:00",
+                "sample_interval_s": 360.0,
+                "io_some_seconds": 13.3122,
+                "io_full_seconds": 10.5479,
+                "cpu_some_seconds": 4.8336
+              }
+            }
+          },
+          {
+            "label": "ssd-warm-1",
+            "medium": "ssd",
+            "phase": "process",
+            "start_utc": "2026-11-21T13:39:35.720270Z",
+            "end_utc": "2026-11-21T13:45:20.601779Z",
+            "wall_seconds": 344.882,
+            "devices": {
+              "vdh": {
+                "inside": {
+                  "first_sample_utc": "2026-11-21T13:40:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T13:44:23.276000+00:00",
+                  "sample_interval_s": 240.0,
+                  "read_bytes": 580850688.0,
+                  "written_bytes": 915804160.0,
+                  "busy_seconds": 58.602,
+                  "read_seconds": 7.351,
+                  "write_seconds": 59.616,
+                  "reads": 10807.0,
+                  "writes": 50953.0
+                },
+                "bracket": {
+                  "first_sample_utc": "2026-11-21T13:39:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T13:45:23.276000+00:00",
+                  "sample_interval_s": 360.0,
+                  "read_bytes": 872590336.0,
+                  "written_bytes": 1781235712.0,
+                  "busy_seconds": 77.386,
+                  "read_seconds": 11.616,
+                  "write_seconds": 83.083,
+                  "reads": 25581.0,
+                  "writes": 75877.0
+                }
+              },
+              "vdi": {
+                "inside": {
+                  "first_sample_utc": "2026-11-21T13:40:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T13:44:23.276000+00:00",
+                  "sample_interval_s": 240.0,
+                  "read_bytes": 61763584.0,
+                  "written_bytes": 331776.0,
+                  "busy_seconds": 12.21,
+                  "read_seconds": 12.02,
+                  "write_seconds": 0.37,
+                  "reads": 12404.0,
+                  "writes": 20.0
+                },
+                "bracket": {
+                  "first_sample_utc": "2026-11-21T13:39:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T13:45:23.276000+00:00",
+                  "sample_interval_s": 360.0,
+                  "read_bytes": 68448256.0,
+                  "written_bytes": 331776.0,
+                  "busy_seconds": 12.46,
+                  "read_seconds": 12.269,
+                  "write_seconds": 0.37,
+                  "reads": 12455.0,
+                  "writes": 20.0
+                }
+              }
+            },
+            "node_pressure": {
+              "inside": {
+                "first_sample_utc": "2026-11-21T13:40:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T13:44:23.276000+00:00",
+                "sample_interval_s": 240.0,
+                "io_some_seconds": 9.5156,
+                "io_full_seconds": 7.4361,
+                "cpu_some_seconds": 2.9218
+              },
+              "bracket": {
+                "first_sample_utc": "2026-11-21T13:39:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T13:45:23.276000+00:00",
+                "sample_interval_s": 360.0,
+                "io_some_seconds": 13.3122,
+                "io_full_seconds": 10.5479,
+                "cpu_some_seconds": 4.8336
+              }
+            }
+          },
+          {
+            "label": "ssd-warm-1",
+            "medium": "ssd",
+            "phase": "input",
+            "start_utc": "2026-11-21T13:39:35.420368Z",
+            "end_utc": "2026-11-21T13:39:35.720269Z",
+            "wall_seconds": 0.3,
+            "devices": {
+              "vdh": {
+                "inside": null,
+                "bracket": {
+                  "first_sample_utc": "2026-11-21T13:39:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T13:40:23.276000+00:00",
+                  "sample_interval_s": 60.0,
+                  "read_bytes": 230313984.0,
+                  "written_bytes": 539312128.0,
+                  "busy_seconds": 9.676,
+                  "read_seconds": 1.789,
+                  "write_seconds": 10.21,
+                  "reads": 4888.0,
+                  "writes": 13277.0
+                }
+              },
+              "vdi": {
+                "inside": null,
+                "bracket": {
+                  "first_sample_utc": "2026-11-21T13:39:23.276000+00:00",
+                  "last_sample_utc": "2026-11-21T13:40:23.276000+00:00",
+                  "sample_interval_s": 60.0,
+                  "read_bytes": 2359296.0,
+                  "written_bytes": 0.0,
+                  "busy_seconds": 0.03,
+                  "read_seconds": 0.028,
+                  "write_seconds": 0.0,
+                  "reads": 18.0,
+                  "writes": 0.0
+                }
+              }
+            },
+            "node_pressure": {
+              "inside": null,
+              "bracket": {
+                "first_sample_utc": "2026-11-21T13:39:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T13:40:23.276000+00:00",
+                "sample_interval_s": 60.0,
+                "io_some_seconds": 0.8301,
+                "io_full_seconds": 0.6645,
+                "cpu_some_seconds": 0.9543
+              }
+            }
+          }
+        ]
+      },
+      "qemu_note": "QEMU counted 3,077,193,728 read bytes and 18,499,571,712 written bytes on the canary's own HDD work device from boot to the warm action submission. That includes worker bootstrap, the cold action and its input staging. Across the separately bracketed warm action it counted 697,199,616 read bytes and 1,684,799,488 written bytes. The QEMU counts describe the guest work disk. The table above counts all I/O on the underlying wyrm2 virtual device. These are measurements at two layers of the same path.",
+      "qemu_work_disk": {
+        "cold_hdd_through_before_warm": {
+          "rd_req": 36757,
+          "rd_bytes": 3077193728,
+          "wr_req": 70847,
+          "wr_bytes": 18499571712,
+          "flush_operations": 19384,
+          "rd_total_times": 807137448591,
+          "wr_total_times": 32391522380260,
+          "flush_total_times": 1162874838922
+        },
+        "warm_hdd_before": "2026-11-21T14:20:39,034534406+00:00",
+        "warm_hdd_after": "2026-11-21T14:33:00,388663356+00:00",
+        "warm_hdd_delta": {
+          "rd_req": 22004,
+          "rd_bytes": 697199616,
+          "wr_req": 31793,
+          "wr_bytes": 1684799488,
+          "flush_operations": 10741,
+          "rd_total_times": 205078343772,
+          "wr_total_times": 2258209228883,
+          "flush_total_times": 521777085547
+        }
+      }
+    },
+    "capacity": "The KubeVirt compute container requests 8,468 MiB. OVH HDD worker memory request headroom was ovh-ns102453 4.23 GiB, ovh-ns103656 4.11 GiB, ovh-ns103711 4.90 GiB. All three had nested KVM and fell below the matched worker's memory request, so the trial stayed on wyrm2.",
+    "cleanup": "Production was Ready in all 127 samples. Both canary disks and all other trial objects were removed. The HDD volume was released and detached before deletion. Its pool regained 16.48 GiB.",
+    "cleanup_complete_utc": "2026-11-21T14:33:44+00:00",
+    "native_hdd_headroom": {
+      "collected_at_utc": "2026-11-21T14:34:29.770118+00:00",
+      "nodes": [
+        {
+          "node": "ovh-ns102453",
+          "memory_request_headroom_gib": 4.231,
+          "cpu_request_headroom_millicores": 2408,
+          "nested_vmx": true,
+          "ready": true
+        },
+        {
+          "node": "ovh-ns103656",
+          "memory_request_headroom_gib": 4.111,
+          "cpu_request_headroom_millicores": 2335,
+          "nested_vmx": true,
+          "ready": true
+        },
+        {
+          "node": "ovh-ns103711",
+          "memory_request_headroom_gib": 4.9,
+          "cpu_request_headroom_millicores": 2700,
+          "nested_vmx": true,
+          "ready": true
+        }
+      ]
+    },
+    "cleanup_receipt": "Production was fully Ready in 127 of 127 samples during the monitored interval. After the final action, the canary was idle and drained. Both work claims, VMs, VolumeAttachments, runtime configuration and the trial pull secret were removed. SSD PV pvc-6b6f6e4f-a4d8-4c1a-8aab-ab6aa626c4fa reclaimed automatically. An ownership and detach check confirmed the HDD Retain PV pvc-7f559530-66ea-4c3a-97b4-5897a1e46ca0 before removing its PV and LINSTOR resource. LINSTOR showed wyrm2's HDD pool free space rise from 325.21 GiB to 341.69 GiB."
   }
 }
