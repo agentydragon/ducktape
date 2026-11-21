@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Generator, Iterator
+from pathlib import Path
 
+import httpx
 import pytest
+from python.runfiles import Runfiles
 from sqlalchemy import create_engine
 
 from study_casino.store import _run_alembic_migrations
@@ -16,6 +19,15 @@ from testing.postgres_fixtures import (
     postgres_container,
     postgres_image,
 )
+
+
+@pytest.fixture(scope="session")
+def frontend_dist(runfiles: Runfiles) -> Path:
+    return Path(str(runfiles.root() / "ducktape/study_casino/frontend/dist/index.html")).parent
+
+
+def post_json(origin: str, path: str, payload: dict[str, object]) -> None:
+    httpx.post(f"{origin}{path}", json=payload, timeout=10).raise_for_status()
 
 
 @pytest.fixture(scope="session")
