@@ -1,10 +1,10 @@
 {
-  "source_devel_commit": "ca1ec04d7521c4ddc11b31960cbf8d90dff95fd8",
-  "audited_at_utc": "2026-11-21 08:06:40 UTC",
-  "snapshot_utc": "2026-11-21T08:06:40Z",
+  "source_devel_commit": "4dbc58e410cd435dd48073b2592e05b32f208a56",
+  "audited_at_utc": "2026-11-21 09:19:39 UTC",
+  "snapshot_utc": "2026-11-21T09:19:39Z",
   "scope": "Current Kubernetes VPA policies, workload owners, metrics samples and rollout review cohorts. Earlier evidence retains its original observation window.",
-  "report_html_sha256": "171a94cba5014e6fec6f557896792ea64e3c80f1c28aa89c023f7efd23e53a68",
-  "report_script_sha256": "8a3f0fe98cc1f76f5ed1d301128747ffc06da0d3eb65f2d8ddfb4ca5a0e81b0e",
+  "report_html_sha256": "4ce8899e61421d5210813a1a5187794c675e5695f121027271c4258f85f97933",
+  "report_script_sha256": "42cc0b59040b7a7de7e6d8a6b54f53aaa388186c2ba7f10618fb0471c68c4b26",
   "evidence_sha256": "c69cc4092a6f9640579e2dce32e0f2f37af78498b947522c2320f49698a86a28",
   "architecture_source_devel_commit": "d81bd68165097b089cace9ae168b6e8f202f1b7e",
   "architecture_reviewed_at_utc": "2026-11-20T03:36:52Z",
@@ -45,12 +45,12 @@
   "current_state_observed_at_utc": "2026-11-20T20:30:00Z",
   "current_state_source_devel_commit": "7514082e13cff17faa64056a67b285c7e259f3e2",
   "pod_resources_observed_at_utc": "2026-11-20T20:34:45Z",
-  "current_inventory_collection_started_utc": "2026-11-21T08:06:25Z",
-  "current_inventory_collection_finished_utc": "2026-11-21T08:06:40Z",
-  "flux_source_observed_at_utc": "2026-11-21T08:06:40Z",
-  "inventory_sha256": "105cb5175d08e912d861e047bd8956a0c66fc42ecd9638ad2b26e8269e687e7a",
+  "current_inventory_collection_started_utc": "2026-11-21T09:19:27Z",
+  "current_inventory_collection_finished_utc": "2026-11-21T09:19:39Z",
+  "flux_source_observed_at_utc": "2026-11-21T09:19:39Z",
+  "inventory_sha256": "2eadd05671c639c706f65704d082696c83851fd4b6b7521428bd4bd9990af74d",
   "inventory_collector_sha256": "2e9ddc1e228afc13ca9e434678431c9d45af626d5ffd814210ae33ebeeb222ce",
-  "current_inventory_flux_source_devel_commit": "ca1ec04d7521c4ddc11b31960cbf8d90dff95fd8",
+  "current_inventory_flux_source_devel_commit": "4dbc58e410cd435dd48073b2592e05b32f208a56",
   "secret_store_hourly_scan_verified_at_utc": "2026-11-20T21:17:28Z",
   "study_casino_initial_verified_at_utc": "2026-11-20T21:20:49Z",
   "platform_sessions_provider_initial_verified_at_utc": "2026-11-20T21:31:31Z",
@@ -72,7 +72,7 @@
   "archived_evidence_snapshot_utc": "2026-11-20T02:58:40Z",
   "archived_evidence_source_devel_commit": "05a4c55db085311363fad8cce0ba4dfe3f4ecb0f",
   "archived_evidence_seven_day_queries_end_utc": "2026-11-20T03:03:48.752000+00:00",
-  "current_inventory_seven_day_queries_end_utc": "2026-11-21T06:56:52Z",
+  "current_inventory_seven_day_queries_end_utc": "2026-11-21T09:19:31Z",
   "staging_request_wave": {
     "policy_pr": 18487,
     "policy_source_devel_commit": "b3824f2237ec27bc377a0a9fa9639c644451ca5b",
@@ -1119,5 +1119,298 @@
     "pr_queue_observed_utc": "2026-11-21T07:00Z",
     "ready_pull_requests": [18543, 18549],
     "condition_blocked_pull_requests": [18553, 18555, 18528, 18498, 18542]
+  },
+  "application_initial_wave": {
+    "pull_request": 18591,
+    "merge_commit": "5b0a59193ff357306eeb208c24eb881b962caf3e",
+    "merged_utc": "2026-11-21T09:07:11Z",
+    "flux": {
+      "platform-sessions-remote": {
+        "applied_revision": "latest@sha256:71d8d11fcb63094a87072469098b5cbb8edd34dfff0ce0bfadf85308e7f1765b",
+        "ready": "True"
+      },
+      "plaid-mcp": {
+        "applied_revision": "latest@sha256:0f25af9601f43c3c0e639694f7022eb5f49020ccbcdab603b8ab4af8f7c7a489",
+        "ready": "True"
+      }
+    },
+    "workloads": {
+      "platform-sessions/myquest": {
+        "deployment_mode_annotation": "initial",
+        "deployment_resource_policy": {
+          "containerPolicies": [
+            {
+              "containerName": "provider",
+              "controlledValues": "RequestsOnly",
+              "minAllowed": {
+                "cpu": "175m",
+                "memory": "1Gi"
+              },
+              "controlledResources": ["cpu", "memory"]
+            },
+            {
+              "containerName": "*",
+              "controlledValues": "RequestsOnly",
+              "mode": "Off"
+            }
+          ]
+        },
+        "ready_replicas": 1,
+        "vpa": "goldilocks-myquest",
+        "vpa_mode": "Initial",
+        "vpa_resource_policy": {
+          "containerPolicies": [
+            {
+              "containerName": "provider",
+              "controlledResources": ["cpu", "memory"],
+              "controlledValues": "RequestsOnly",
+              "minAllowed": {
+                "cpu": "175m",
+                "memory": "1Gi"
+              }
+            },
+            {
+              "containerName": "*",
+              "controlledValues": "RequestsOnly",
+              "mode": "Off"
+            }
+          ]
+        },
+        "vpa_generation": 2,
+        "vpa_observed_generation": 2,
+        "recommendations": [
+          {
+            "container": "provider",
+            "target": {
+              "cpu": "175m",
+              "memory": "1Gi"
+            }
+          }
+        ]
+      },
+      "platform-sessions/thrive": {
+        "deployment_mode_annotation": "initial",
+        "deployment_resource_policy": {
+          "containerPolicies": [
+            {
+              "containerName": "provider",
+              "controlledValues": "RequestsOnly",
+              "minAllowed": {
+                "cpu": "50m",
+                "memory": "768Mi"
+              },
+              "controlledResources": ["cpu", "memory"]
+            },
+            {
+              "containerName": "*",
+              "controlledValues": "RequestsOnly",
+              "mode": "Off"
+            }
+          ]
+        },
+        "ready_replicas": 1,
+        "vpa": "goldilocks-thrive",
+        "vpa_mode": "Initial",
+        "vpa_resource_policy": {
+          "containerPolicies": [
+            {
+              "containerName": "provider",
+              "controlledResources": ["cpu", "memory"],
+              "controlledValues": "RequestsOnly",
+              "minAllowed": {
+                "cpu": "50m",
+                "memory": "768Mi"
+              }
+            },
+            {
+              "containerName": "*",
+              "controlledValues": "RequestsOnly",
+              "mode": "Off"
+            }
+          ]
+        },
+        "vpa_generation": 2,
+        "vpa_observed_generation": 2,
+        "recommendations": [
+          {
+            "container": "provider",
+            "target": {
+              "cpu": "50m",
+              "memory": "768Mi"
+            }
+          }
+        ]
+      },
+      "plaid-mcp/plaid-mcp": {
+        "deployment_mode_annotation": "initial",
+        "deployment_resource_policy": {
+          "containerPolicies": [
+            {
+              "containerName": "plaid-web",
+              "controlledValues": "RequestsOnly",
+              "minAllowed": {
+                "cpu": "50m",
+                "memory": "384Mi"
+              },
+              "controlledResources": ["cpu", "memory"]
+            },
+            {
+              "containerName": "*",
+              "controlledValues": "RequestsOnly",
+              "mode": "Off"
+            }
+          ]
+        },
+        "ready_replicas": 1,
+        "vpa": "goldilocks-plaid-mcp",
+        "vpa_mode": "Initial",
+        "vpa_resource_policy": {
+          "containerPolicies": [
+            {
+              "containerName": "plaid-web",
+              "controlledResources": ["cpu", "memory"],
+              "controlledValues": "RequestsOnly",
+              "minAllowed": {
+                "cpu": "50m",
+                "memory": "384Mi"
+              }
+            },
+            {
+              "containerName": "*",
+              "controlledValues": "RequestsOnly",
+              "mode": "Off"
+            }
+          ]
+        },
+        "vpa_generation": 2,
+        "vpa_observed_generation": 2,
+        "recommendations": [
+          {
+            "container": "plaid-web",
+            "target": {
+              "cpu": "50m",
+              "memory": "384Mi"
+            }
+          }
+        ]
+      }
+    },
+    "observed_utc": "2026-11-21T09:19:27Z",
+    "owner_matched_admission": {
+      "observed_utc": "2026-11-21T09:15Z",
+      "method": "Owner-matched server dry run",
+      "admitted_requests": {
+        "platform-sessions/myquest": {
+          "cpu": "175m",
+          "memory": "1Gi"
+        },
+        "platform-sessions/thrive": {
+          "cpu": "50m",
+          "memory": "768Mi"
+        },
+        "plaid-mcp/plaid-mcp": {
+          "cpu": "50m",
+          "memory": "384Mi"
+        }
+      },
+      "unchanged": [
+        "container limits",
+        "Thrive recorder and CA init container resources"
+      ],
+      "running_pod_replacement_verified": false
+    }
+  },
+  "controller_initial_cpu_wave": {
+    "pull_request": 18592,
+    "merge_commit": "4dbc58e410cd435dd48073b2592e05b32f208a56",
+    "merged_utc": "2026-11-21T09:15:56Z",
+    "flux": {
+      "external-dns": {
+        "applied_revision": "latest@sha256:adad0023414333ef19f75af8407b45d8b828abfc2b6d4745ae4684ba17fa6524",
+        "ready": "True"
+      },
+      "keda": {
+        "applied_revision": "latest@sha256:4623b4f83bbb5f514b9237758cd51bd5da21c475aba929c86cb309be86759e72",
+        "ready": "True"
+      },
+      "kyverno": {
+        "applied_revision": "latest@sha256:35c4d8ce1b962f4d79bb5e263240b3962628c5f00100b8474a504bb321b33f8c",
+        "ready": "True"
+      },
+      "loki-read-proxy": {
+        "applied_revision": "latest@sha256:f31833b817c2ce2a287601edcd54594e59512377925b37e99d62bc7fb167f34b",
+        "ready": "True"
+      },
+      "roaming-node-controller": {
+        "applied_revision": "latest@sha256:c97873f1e4d47e3b0b74d1f7607001fb6253bd7861382624a25a242464785c29",
+        "ready": "True"
+      }
+    },
+    "workloads": {
+      "external-dns/external-dns": {
+        "container": "external-dns",
+        "cpu_sizing_annotation_present": true,
+        "vpa_mode": "Initial",
+        "vpa_cpu_sizing_effective": true,
+        "vpa_generation": 3,
+        "vpa_observed_generation": 2,
+        "cpu_target": null
+      },
+      "keda/keda-operator": {
+        "container": "keda-operator",
+        "cpu_sizing_annotation_present": true,
+        "vpa_mode": "Initial",
+        "vpa_cpu_sizing_effective": true,
+        "vpa_generation": 3,
+        "vpa_observed_generation": 2,
+        "cpu_target": null
+      },
+      "kyverno/kyverno-background-controller": {
+        "container": "controller",
+        "cpu_sizing_annotation_present": true,
+        "vpa_mode": "Initial",
+        "vpa_cpu_sizing_effective": true,
+        "vpa_generation": 3,
+        "vpa_observed_generation": 2,
+        "cpu_target": null
+      },
+      "kyverno/kyverno-cleanup-controller": {
+        "container": "controller",
+        "cpu_sizing_annotation_present": true,
+        "vpa_mode": "Initial",
+        "vpa_cpu_sizing_effective": true,
+        "vpa_generation": 3,
+        "vpa_observed_generation": 2,
+        "cpu_target": null
+      },
+      "kyverno/kyverno-reports-controller": {
+        "container": "controller",
+        "cpu_sizing_annotation_present": true,
+        "vpa_mode": "Initial",
+        "vpa_cpu_sizing_effective": true,
+        "vpa_generation": 3,
+        "vpa_observed_generation": 2,
+        "cpu_target": null
+      },
+      "loki-read-proxy/loki-read-proxy": {
+        "container": "proxy",
+        "cpu_sizing_annotation_present": true,
+        "vpa_mode": "Initial",
+        "vpa_cpu_sizing_effective": true,
+        "vpa_generation": 3,
+        "vpa_observed_generation": 2,
+        "cpu_target": null
+      },
+      "roaming-node-controller/roaming-node-controller": {
+        "container": "controller",
+        "cpu_sizing_annotation_present": true,
+        "vpa_mode": "Initial",
+        "vpa_cpu_sizing_effective": true,
+        "vpa_generation": 3,
+        "vpa_observed_generation": 2,
+        "cpu_target": null
+      }
+    },
+    "observed_utc": "2026-11-21T09:19:17Z"
   }
 }
