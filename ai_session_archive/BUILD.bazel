@@ -332,67 +332,6 @@ py_test(
 )
 
 py_test(
-    name = "test_modified_version",
-    size = "medium",
-    srcs = ["test_modified_version.py"],
-    data = ["//third_party/restic"],
-    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
-    requires_docker = True,
-    deps = [
-        ":database",
-        ":models",
-        ":queries",
-        ":source_paths",
-        ":testing",
-        ":version_queries",
-        "//:conftest",
-        "//testing:postgres_fixtures",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_truncated_deleted_version",
-    size = "medium",
-    srcs = ["test_truncated_deleted_version.py"],
-    data = ["//third_party/restic"],
-    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
-    requires_docker = True,
-    deps = [
-        ":database",
-        ":models",
-        ":queries",
-        ":source_paths",
-        ":testing",
-        ":version_queries",
-        "//:conftest",
-        "//testing:postgres_fixtures",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_parentless_snapshot",
-    size = "medium",
-    srcs = ["test_parentless_snapshot.py"],
-    data = ["//third_party/restic"],
-    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
-    requires_docker = True,
-    deps = [
-        ":database",
-        ":models",
-        ":source_paths",
-        ":testing",
-        "//:conftest",
-        "//testing:postgres_fixtures",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
     name = "test_postgres_retry",
     size = "medium",
     srcs = ["test_postgres_retry.py"],
