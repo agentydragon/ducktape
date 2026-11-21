@@ -23,8 +23,8 @@ from crossplane_pkg_provider_crds.io.crossplane.pkg import (
     ProviderSpecPackagePullSecrets,
     ProviderSpecRuntimeConfigRef,
 )
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs
 
+from cluster.cdk8s import crossplane
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME as FORGEJO_PULL_SECRET
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
@@ -119,14 +119,7 @@ def resources(
         timeout="15m",
         prune=False,
         wait=True,
-        health_check_exprs=[
-            KustomizationSpecHealthCheckExprs(
-                api_version="pkg.crossplane.io/v1",
-                kind="Provider",
-                current="has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'True')",
-                failed="has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'False')",
-            )
-        ],
+        health_check_exprs=[crossplane.PROVIDER_HEALTH],
         depends_on=flux_kustomization_depends_on_many(litellm_provider, litellm, cert_manager_environment),
         description="Install the BuildBuddy provider after Crossplane and its registry credentials are ready.",
     )

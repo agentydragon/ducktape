@@ -44,7 +44,7 @@ LITELLM_PROVIDER_PACKAGE = "git.allegedly.works/ducktape-ci/provider-litellm:v2.
 OPENTOFU_PROVIDER_KUSTOMIZATION_NAME = "crossplane-provider-opentofu"
 OPENTOFU_PROVIDER_OUTPUT_DIR = f"{GENERATED_ROOT}/{OPENTOFU_PROVIDER_KUSTOMIZATION_NAME}"
 OPENTOFU_PROVIDER_PACKAGE = "xpkg.upbound.io/upbound/provider-opentofu:v1.1.10"
-_PROVIDER_HEALTH = KustomizationSpecHealthCheckExprs(
+PROVIDER_HEALTH = KustomizationSpecHealthCheckExprs(
     api_version="pkg.crossplane.io/v1",
     kind="Provider",
     current="has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'True')",
@@ -223,7 +223,7 @@ def litellm_provider(
         timeout="15m",
         prune=False,
         wait=True,
-        health_check_exprs=[_FORGEJO_PULL_SECRET_HEALTH, _PROVIDER_HEALTH],
+        health_check_exprs=[_FORGEJO_PULL_SECRET_HEALTH, PROVIDER_HEALTH],
         depends_on=[
             flux_kustomization_depends_on(crossplane),
             flux_kustomization_depends_on(external_secrets_operator),
@@ -259,7 +259,7 @@ def opentofu_provider(chart: Chart, directory: RenderedDirectory, crossplane: Ku
         timeout="15m",
         prune=False,
         wait=True,
-        health_check_exprs=[_PROVIDER_HEALTH],
+        health_check_exprs=[PROVIDER_HEALTH],
         depends_on=[flux_kustomization_depends_on(crossplane)],
         description="Install the OpenTofu provider after Crossplane core; its Workspace resources reconcile separately.",
     )
