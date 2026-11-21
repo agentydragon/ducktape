@@ -192,33 +192,16 @@ def chart(app: App) -> Chart:
         ),
     )
 
-    Team(
-        chart,
-        "team-codex-clients",
-        metadata=ApiObjectMetadata(name="team-codex-clients", namespace=NAMESPACE),
-        spec=_team_spec(
-            name="team-codex-clients",
-            fallbacks=[route.id for route in KEY_MODEL_LANES["codex_client_models"].fallbacks],
-        ),
-    )
-    Team(
-        chart,
-        "team-gemini-clients",
-        metadata=ApiObjectMetadata(name="team-gemini-clients", namespace=NAMESPACE),
-        spec=_team_spec(
-            name="team-gemini-clients",
-            fallbacks=[route.id for route in KEY_MODEL_LANES["gemini_client_models"].fallbacks],
-        ),
-    )
-    Team(
-        chart,
-        "team-antigravity-clients",
-        metadata=ApiObjectMetadata(name="team-antigravity-clients", namespace=NAMESPACE),
-        spec=_team_spec(
-            name="team-antigravity-clients",
-            fallbacks=[route.id for route in KEY_MODEL_LANES["antigravity_client_models"].fallbacks],
-        ),
-    )
+    for client in ("codex", "gemini", "antigravity"):
+        team_name = f"team-{client}-clients"
+        Team(
+            chart,
+            team_name,
+            metadata=ApiObjectMetadata(name=team_name, namespace=NAMESPACE),
+            spec=_team_spec(
+                name=team_name, fallbacks=[route.id for route in KEY_MODEL_LANES[f"{client}_client_models"].fallbacks]
+            ),
+        )
 
     dynamic_keys = [
         _DynamicKey(
