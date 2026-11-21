@@ -7,8 +7,6 @@ Goal: turn a minified production bundle into readable modules, with a machine-ch
 
 The design is "untrusted search, trusted check". The footprint analysis is the one place that breaks it: `Effects.lean` is unproved, and the checker believes it.
 
-**Decided (2026-11-21).** Fix the two blockers that are not about footprints, before any precision work: glue exports that collide with the entry's own export names (step 4 below), and bundles with import statements and several declarators in a statement (parts of steps 2 and 6). In progress.
-
 **Proposed, not decided.**
 
 1. **No new precision rules in the unproved interpreter**, beyond the one or two that a measurement shows are blocking. Each such rule is one more unproved claim that a construct commutes. Fixing a wrong rule is always in scope: F1 to F3 in [`generator_findings`](experiments/translation/debug/generator_findings/README.md) are open, and so are F4 and F5 of ducktape#18429.
@@ -41,11 +39,10 @@ The design is "untrusted search, trusted check". The footprint analysis is the o
 
 ## Order of work
 
-1. Glue export names and chunk input (decided, in progress).
-2. The order-keeping planner of item 5, if agreed.
-3. F1 to F5.
-4. The spike of item 4, if started.
-5. Then by measured yield: per-unit reasons in `lower` ([`TODO.md`](TODO.md)), a vendor table by library family, a rule for decorator applications. A stack-safe interpreter comes before any analysis of library code.
+1. The order-keeping planner of item 5, if agreed.
+2. F1 to F6.
+3. The spike of item 4, if started.
+4. Then by measured yield: per-unit reasons in `lower` ([`TODO.md`](TODO.md)), a vendor table by library family, a rule for decorator applications. A stack-safe interpreter comes before any analysis of library code.
 
 ## More of debundle's cases through the Lean checker
 
