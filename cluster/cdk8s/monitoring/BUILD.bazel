@@ -118,6 +118,7 @@ py_library(
         "//cluster/cdk8s/att_gateway_exporter:__pkg__",
     ],
     deps = [
+        ":alloy_endpoints",
         ":grafana_helmrepository",
         ":loki",
         ":mimir",
@@ -144,6 +145,7 @@ py_library(
         "//cluster/cdk8s/gatus:__pkg__",
     ],
     deps = [
+        ":alloy_endpoints",
         ":grafana_helmrepository",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:flux",
@@ -321,6 +323,7 @@ py_library(
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        ":alloy_endpoints",
         ":namespace",
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
         "//cluster/cdk8s/providers/prometheus_operator:prometheusrule",
@@ -610,5 +613,15 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//testcontainers",
         "@rules_python//python/runfiles",
+    ],
+)
+
+py_library(
+    name = "alloy_endpoints",
+    srcs = ["alloy_endpoints.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":namespace",
+        "//cluster/cdk8s:service_ref",
     ],
 )

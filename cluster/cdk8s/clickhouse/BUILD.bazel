@@ -50,6 +50,7 @@ py_library(
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/external_secrets:minted_secret",
+        "//cluster/cdk8s/monitoring:alloy_endpoints",
         "//cluster/cdk8s/providers/clickhouse:clickhouseinstallation",
         "//cluster/cdk8s/providers/clickhouse:clickhousekeeperinstallation",
         "//cluster/cdk8s/providers/flux:kustomization",

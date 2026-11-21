@@ -47,6 +47,7 @@ from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.platform_instructions import agent_cli_environment, platform_instructions, service_urls
 from cluster.cdk8s.cert_manager import cluster_ca
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME as REGISTRY_SECRET_NAME
+from cluster.cdk8s.monitoring import alloy_endpoints
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
@@ -91,7 +92,7 @@ def environment_chart(
         "otel-egress",
         metadata=ApiObjectMetadata(name="otel-egress", namespace=env.namespace),
         endpoint_selector=telemetry.EMITTER_SERVICE_CLASS_LABELS,
-        egress=[telemetry.ALLOY_OTLP_GRPC.egress()],
+        egress=[alloy_endpoints.OTLP_GRPC.egress()],
     )
     database.Db(chart, "db", env, db)
     app_credentials = database.postgres(env).app_secret

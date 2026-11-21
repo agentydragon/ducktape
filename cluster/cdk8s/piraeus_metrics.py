@@ -15,9 +15,10 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import PrometheusRule, PrometheusRuleSpec
 from python.runfiles import Runfiles
 
-from cluster.cdk8s import cilium, node_scheduling
+from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.container_resources import container_resources
-from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
+from cluster.cdk8s.monitoring import alloy_endpoints
+from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Rule, group
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 
@@ -188,7 +189,7 @@ def add_thin_pool_monitoring(
             annotations={"description": "Allow only node-local Alloy to scrape the LVM textfile exporter."},
         ),
         endpoint_selector=pod_labels,
-        ingress=[IngressRule.from_endpoints(cilium.endpoint_labels("monitoring", "alloy-node"), ports=[_METRICS_PORT])],
+        ingress=[alloy_endpoints.NODE.admit(_METRICS_PORT)],
     )
 
     ServiceMonitor(

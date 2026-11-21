@@ -5,8 +5,9 @@
 // must end in the bundle's state.
 //
 // `scripts` maps `"identity/part"` to requests `[op, operand…]`. Part 0 is the statement; part `k` is its `k`-th
-// function declaration, or a function the world made with `newFunction`. A binding is named by its position in the
-// statement's names: what it declares, then its functions, then the other names it mentions, in source order.
+// function declaration, then the functions it makes when it only makes functions (no part 0 then), or a function the
+// world made with `newFunction`. A binding is named by its position in the statement's names: what it declares, then
+// its functions, then the other names it mentions, in source order.
 // An operand is a primitive (`["u"]`, `["n"]`, `["b", true]`, `["d", bits]`, `["s", text]`) or a register,
 // `["r", k]`: register 0 is the callee, 1 is `this`, then the arguments, then the answer to each request in turn.
 import { bits } from "./to_core.mjs";
@@ -42,7 +43,6 @@ export const opaqueCases = [
     `,
     // part 1 of statement 0 is the body of `twice`: register 2 is `f`, 3 is `x`
     scripts: {
-      "0/0": [],
       "0/1": [
         ["call", r(2), ["u"], r(3)],
         ["call", r(2), ["u"], r(4)],
@@ -57,7 +57,21 @@ export const opaqueCases = [
       try { fail(7); } catch (e) { console.log("caught", e); }
       console.log("after");
     `,
-    scripts: { "0/0": [], "0/1": [["throw", r(2)]] },
+    scripts: { "0/1": [["throw", r(2)]] },
+  },
+  {
+    name: "an arrow with destructuring and default parameters is made without the world and called by the program",
+    source: `
+      const pick = ({ k }, d = 0) => k + d;
+      console.log(pick({ k: 2 }), pick.name, pick.length, typeof pick);
+    `,
+    // part 1 of statement 0 is the body of `pick`: register 2 is the first argument
+    scripts: {
+      "0/1": [
+        ["get", r(2), ["s", "k"]],
+        ["done", num(2)],
+      ],
+    },
   },
   {
     name: "opaque code writes a binding and a property that the program reads",

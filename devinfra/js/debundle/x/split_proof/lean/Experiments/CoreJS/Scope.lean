@@ -268,6 +268,22 @@ theorem enterBlock_congr {N N' : List Name} {env env' : Env} (ss : List Stmt) {k
         initVar_agree (h1.vars _ (List.mem_append_right _ (funDecl_name_lex (funDecl_of_mem hf)))) v
     · exact hk _ _ (h1.mono fun x hx => List.mem_append_left _ hx)
 
+/-- An opaque statement that only makes functions does the same in two scopes that agree on the names it declares. -/
+theorem initClosures_agree (code : Nat) (cells : List (Option Addr)) {env env' : Env} :
+    ∀ (decls : List (Name × DeclKind)) (fns : List (String × Nat × Bool)) (part : Nat),
+      (∀ x ∈ decls.map (·.1), env.vars.lookup x = env'.vars.lookup x) →
+      (initClosures code cells env decls fns part : M W Unit) = initClosures code cells env' decls fns part
+  | [], [], _, _ => rfl
+  | [], _ :: _, _, _ => rfl
+  | _ :: _, [], _, _ => rfl
+  | (x, kind) :: decls, (name, length, constructor) :: fns, part, h => by
+    unfold initClosures
+    refine M.bind_congr rfl fun v => M.bind_congr ?_ fun _ =>
+      initClosures_agree code cells decls fns (part + 1) fun y hy => h y (List.mem_cons_of_mem _ hy)
+    split
+    · exact writeVar_agree (h x List.mem_cons_self) v
+    · exact initVar_agree (h x List.mem_cons_self) v
+
 /-- An opaque statement is handed the same bindings in two scopes that agree on its names. -/
 theorem opaqueCells_agree {decls : List (Name × DeclKind)} {funs : List (Name × Nat × Bool)} {free : List Name}
     {env env' : Env} (h : Agree (opaqueNames decls funs free) env env') :
@@ -537,10 +553,17 @@ theorem Same.stmt_succ (env env' : Env) (s : Stmt) (hN : Agree s.free env env') 
     unfold execStmt
     dsimp only
     rw [ih.stmt env env' body (hN.mono (by free_mem)), ih.stmt env env' finalizer (hN.mono (by free_mem))]
-  | «opaque» code decls funs free =>
-    unfold execStmt
-    dsimp only
-    rw [hN.this, opaqueCells_agree hN]
+  | «opaque» code decls funs free run =>
+    cases run with
+    | world =>
+      unfold execStmt
+      dsimp only
+      rw [hN.this, opaqueCells_agree hN]
+    | closures fns =>
+      unfold execStmt
+      dsimp only
+      rw [opaqueCells_agree hN, initClosures_agree code _ decls fns _ fun x hx =>
+        hN.vars x (by simp only [Stmt.free, opaqueNames]; exact List.mem_append_left _ hx)]
   | _ => unfold execStmt; same ih hN
 
 theorem Same.loop_succ (env env' : Env) (fresh : List Name) (test update : Expr) (body : Stmt)

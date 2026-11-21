@@ -38,7 +38,6 @@ from cluster.cdk8s.agentplane import (
     notifications,
     policy_controller,
     runner_gateway,
-    telemetry,
     workload_tls,
 )
 from cluster.cdk8s.agentplane.environment import Environment
@@ -47,6 +46,7 @@ from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_registry.pull_credentials import forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
+from cluster.cdk8s.monitoring import alloy_endpoints
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
@@ -198,7 +198,9 @@ class App(Construct):
             image=f"{_APP_IMAGE}:{_PLACEHOLDER_TAG}",
             env_variables={
                 **env,
-                "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": EnvValue.from_value(telemetry.OTLP_HTTP_ENDPOINT + "/v1/traces"),
+                "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": EnvValue.from_value(
+                    alloy_endpoints.OTLP_HTTP_ENDPOINT + "/v1/traces"
+                ),
                 "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL": EnvValue.from_value("http/protobuf"),
             },
             readiness=http_probe("/readyz", port=self.service.pod_port, initial_delay_seconds=3, period_seconds=10),
@@ -284,7 +286,7 @@ class App(Construct):
                 actions.service(namespace).egress(),
                 *([self.electric.egress()] if self.electric is not None else []),
                 # The browser's same-origin OTLP relay is served by this App Pod and sends HTTP OTLP.
-                telemetry.ALLOY_OTLP_HTTP.egress(),
+                alloy_endpoints.OTLP_HTTP.egress(),
                 database.egress(namespace),
             ],
         )

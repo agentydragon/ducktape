@@ -435,6 +435,43 @@ theorem decl_local {r : Nat} {R : Addr → Prop} {e : Expr} (he : e.allocOnly = 
     all_goals
       exact ((allocOnly_local r R n).1 env e he hw).bind' fun v => (local_initVar hx v).bind' fun _ => local_pure _
 
+theorem local_makeOpaque (code part : Nat) (cells : List (Option Addr)) (name : String) (length : Nat)
+    (constructor : Bool) : Local r R (makeOpaque code part cells name length constructor : M W Val) := by
+  unfold makeOpaque
+  refine (local_alloc _).bind fun a ⟨s, s', hr, h⟩ => ?_
+  have ha : a.region = r := (alloc_region h).trans hr
+  refine Local.bind' ?_ fun _ => local_pure _
+  split
+  · unfold addPrototype
+    exact (local_alloc _).bind' fun _ => local_modifyObj ha _
+  · exact local_pure _
+
+theorem local_initClosures {env : Env} (code : Nat) (cells : List (Option Addr)) :
+    ∀ (decls : List (Name × DeclKind)) (fns : List (String × Nat × Bool)) (part : Nat),
+      (∀ x ∈ decls.map (·.1), ∀ c, env.vars.lookup x = some c → c.region = r) →
+      Local r R (initClosures code cells env decls fns part : M W Unit)
+  | [], [], _, _ => by unfold initClosures; exact local_pure _
+  | [], _ :: _, _, _ => by unfold initClosures; exact local_unknown _
+  | _ :: _, [], _, _ => by unfold initClosures; exact local_unknown _
+  | (x, kind) :: decls, (name, length, constructor) :: fns, part, h => by
+    unfold initClosures
+    refine (local_makeOpaque _ _ _ _ _ _).bind' fun v => Local.bind' ?_ fun _ =>
+      local_initClosures code cells decls fns (part + 1) fun y hy => h y (List.mem_cons_of_mem _ hy)
+    split
+    · exact local_writeVar (h x List.mem_cons_self) v
+    · exact local_initVar (h x List.mem_cons_self) v
+
+/-- **An opaque statement that only makes functions is local**: run in region `r`, it sees only region `r` and
+changes region `r`, when the bindings it declares are in region `r`. -/
+theorem closures_local {r : Nat} {R : Addr → Prop} (n : Nat) (env : Env) (code : Nat)
+    (decls : List (Name × DeclKind)) (funs : List (Name × Nat × Bool)) (free : List Name) (fns : List (String × Nat × Bool))
+    (hx : ∀ x ∈ decls.map (·.1), ∀ c, env.vars.lookup x = some c → c.region = r) :
+    Local r R (execStmt n env (.opaque code decls funs free (.closures fns)) : M W Flow) := by
+  cases n with
+  | zero => unfold execStmt; exact local_outOfFuel
+  | succ n =>
+    unfold execStmt
+    exact (local_initClosures code _ decls fns _ hx).bind' fun _ => local_pure _
 
 /-! ## Two units commute -/
 
@@ -517,7 +554,8 @@ theorem local_units_commute {n i j : Nat} {e1 e2 : Env} {st1 st2 : Stmt} {R1 R2 
 
 /-! ## A unit that does nothing when it runs commutes with every unit
 
-A function declaration and a `var` declaration without initializer do their work when the program is linked. -/
+A function declaration, a `var` declaration without initializer and an opaque statement that declares only functions
+do their work when the program is linked. -/
 
 theorem runUnit_region (n id : Nat) (env : Env) (st : Stmt) (s : State W) (k : Nat) :
     runUnit n env id st { s with region := k } = runUnit n env id st s := rfl
@@ -536,7 +574,18 @@ theorem inert_unit {n id : Nat} {env : Env} {st : Stmt} (hst : st.inert = true) 
   | succ n =>
     have hrun : ∀ x : State W, execStmt (n + 1) env st x = .ok .normal x := by
       intro x
-      cases st <;> simp only [Stmt.inert, Bool.false_eq_true] at hst <;> unfold execStmt <;> rfl
+      cases st with
+      | «opaque» code decls funs free run =>
+        cases decls with
+        | cons => simp [Stmt.inert] at hst
+        | nil =>
+          cases run with
+          | world => simp [Stmt.inert] at hst
+          | closures fns =>
+            cases fns with
+            | cons => simp [Stmt.inert] at hst
+            | nil => unfold execStmt; rfl
+      | _ => first | (unfold execStmt; rfl) | simp [Stmt.inert] at hst
     rw [hrun] at hu0
     cases hu0
     exact ⟨rfl, rfl, fun x => runUnit_of (s := x) (u := { x with region := id + 1 }) (hrun _)⟩
@@ -562,18 +611,25 @@ theorem inert_commute {n i j : Nat} {e1 e2 : Env} {st1 st2 : Stmt} (h1 : st1.ine
 
 theorem mayMove_symm (a b : Stmt) : mayMove a b = mayMove b a := by
   unfold mayMove
-  rcases a.allocDecl with _ | ⟨x, e⟩ <;> rcases b.allocDecl with _ | ⟨y, e'⟩ <;>
+  rcases a.allocs with _ | ⟨xs, rs⟩ <;> rcases b.allocs with _ | ⟨ys, rs'⟩ <;>
     simp only [Bool.or_comm, Bool.and_comm]
 
-theorem allocDecl_eq {s : Stmt} {x : Name} {e : Expr} (h : s.allocDecl = some (x, e)) :
-    ∃ k, s = .decl k x e ∧ e.allocOnly = true := by
-  cases s <;> simp only [Stmt.allocDecl, reduceCtorEq] at h
-  rename_i k x' e'
-  by_cases he : e'.allocOnly = true
-  · simp only [he, ↓reduceIte, Option.some.injEq, Prod.mk.injEq] at h
-    obtain ⟨rfl, rfl⟩ := h
-    exact ⟨k, rfl, he⟩
-  · simp [he] at h
+theorem allocs_eq {s : Stmt} {xs rs : List Name} (h : s.allocs = some (xs, rs)) :
+    (∃ k x e, s = .decl k x e ∧ e.allocOnly = true ∧ xs = [x] ∧ rs = e.readsNow) ∨
+      ∃ code decls funs free fns, s = .opaque code decls funs free (.closures fns) ∧
+        xs = decls.map (·.1) ++ funs.map (·.1) ∧ rs = [] := by
+  cases s <;> simp only [Stmt.allocs, reduceCtorEq] at h
+  case decl k x e =>
+    by_cases he : e.allocOnly = true
+    · simp only [he, ↓reduceIte, Option.some.injEq, Prod.mk.injEq] at h
+      exact .inl ⟨k, x, e, rfl, he, h.1.symm, h.2.symm⟩
+    · simp [he] at h
+  case «opaque» code decls funs free run =>
+    cases run with
+    | world => simp at h
+    | closures fns =>
+      simp only [Option.some.injEq, Prod.mk.injEq] at h
+      exact .inr ⟨code, decls, funs, free, fns, rfl, h.1.symm, h.2.symm⟩
 
 theorem decl_binding_names {k : DeclKind} {x z : Name} {e : Expr} :
     z ∈ (Stmt.decl k x e).bindings.map (·.1) ↔ z = x := by
@@ -660,34 +716,45 @@ variable {ss : List Stmt} {B : EsmSplit.Bundle} {frames : List (Nat × List (Nam
 include hfp hF hreg hud
 
 omit hF hreg hud in
-/-- The names a declaration declares are those of its statement. -/
-theorem decl_defs {i : Nat} {k : DeclKind} {x : Name} {e : Expr} (hs : ss[i]? = some (.decl k x e)) {z : Name} :
-    z ∈ (B.stmt i).defs ↔ z = x := by
-  rw [(hfp.2 i _ hs).1 z, decl_binding_names]
+/-- The names a statement that only allocates declares are those of its statement. -/
+theorem allocs_defs {i : Nat} {s : Stmt} {xs rs : List Name} (hs : ss[i]? = some s) (h : s.allocs = some (xs, rs))
+    {z : Name} : z ∈ (B.stmt i).defs ↔ z ∈ xs := by
+  rw [(hfp.2 i _ hs).1 z]
+  rcases allocs_eq h with ⟨k, x, e, rfl, -, rfl, -⟩ | ⟨code, decls, funs, free, fns, rfl, rfl, -⟩
+  · rw [decl_binding_names]; simp
+  · simp [Stmt.bindings, Function.comp_def]
 
-/-- What an allocating declaration reads, in the bundle's scope. -/
-def readCells (env : Env) (e : Expr) (c : Addr) : Prop := ∃ z ∈ e.readsNow, env.vars.lookup z = some c
+/-- What a statement that only allocates reads, in the bundle's scope. -/
+def readCells (env : Env) (rs : List Name) (c : Addr) : Prop := ∃ z ∈ rs, env.vars.lookup z = some c
 
-theorem decl_unit_local {i : Nat} {k : DeclKind} {x : Name} {e : Expr} (hs : ss[i]? = some (.decl k x e))
-    (he : e.allocOnly = true) (n : Nat) :
-    Local (i + 1) (readCells (bundleEnv ss frames) e) (execStmt n (bundleEnv ss frames) (.decl k x e) : M W Flow) := by
-  refine decl_local he n _ k x (fun z hz c hc => Or.inl ⟨z, hz, hc⟩) fun c hc => ?_
-  obtain ⟨k', hk', hx, hr⟩ := bundleEnv_lookup hfp hF hreg hud hc
+/-- A name that statement `i` declares means a binding of region `i + 1`. -/
+theorem own_region {i : Nat} {s : Stmt} {xs rs : List Name} (hs : ss[i]? = some s) (h : s.allocs = some (xs, rs))
+    {x : Name} (hx : x ∈ xs) : ∀ c, (bundleEnv ss frames).vars.lookup x = some c → c.region = i + 1 := by
+  intro c hc
+  obtain ⟨k', hk', hxk, hr⟩ := bundleEnv_lookup hfp hF hreg hud hc
   have hi : i < ss.length := (List.getElem?_eq_some_iff.1 hs).1
-  rw [unique_defs hud (hfp.1 ▸ hk') (hfp.1 ▸ hi) hx ((decl_defs hfp hs).2 rfl)] at hr
+  rw [unique_defs hud (hfp.1 ▸ hk') (hfp.1 ▸ hi) hxk ((allocs_defs hfp hs h).2 hx)] at hr
   exact hr
 
-theorem readCells_other {i : Nat} {k : DeclKind} {y : Name} {e' e : Expr} (hs : ss[i]? = some (.decl k y e'))
-    (hy : e.readsNow.contains y = false) {c : Addr} (hc : readCells (bundleEnv ss frames) e c) : c.region ≠ i + 1 := by
+theorem allocs_unit_local {i : Nat} {s : Stmt} {xs rs : List Name} (hs : ss[i]? = some s)
+    (h : s.allocs = some (xs, rs)) (n : Nat) :
+    Local (i + 1) (readCells (bundleEnv ss frames) rs) (execStmt n (bundleEnv ss frames) s : M W Flow) := by
+  have hown : ∀ x ∈ xs, _ := fun x hx => own_region hfp hF hreg hud hs h (x := x) hx
+  rcases allocs_eq h with ⟨k, x, e, rfl, he, rfl, rfl⟩ | ⟨code, decls, funs, free, fns, rfl, rfl, rfl⟩
+  · exact decl_local he n _ k x (fun z hz c hc => Or.inl ⟨z, hz, hc⟩) (hown x List.mem_cons_self)
+  · exact closures_local n _ code decls funs free fns fun x hx => hown x (List.mem_append_left _ hx)
+
+theorem readCells_other {i : Nat} {s : Stmt} {ys rs' rs : List Name} (hs : ss[i]? = some s)
+    (h : s.allocs = some (ys, rs')) (hy : rs.any ys.contains = false) {c : Addr}
+    (hc : readCells (bundleEnv ss frames) rs c) : c.region ≠ i + 1 := by
   obtain ⟨z, hz, hl⟩ := hc
   obtain ⟨k', hk', hzk, hr⟩ := bundleEnv_lookup hfp hF hreg hud hl
   intro heq
   have hk : k' = i := by omega
   subst hk
-  have := (decl_defs hfp hs).1 hzk
-  subst this
-  simp at hy
-  exact hy hz
+  have := (allocs_defs hfp hs h).1 hzk
+  simp only [List.any_eq_false, List.contains_iff_mem] at hy
+  exact absurd this (by simpa using hy z hz)
 
 theorem mayMove_commute {i j : Nat} {a b : Stmt} (hij : i ≠ j) (ha : ss[i]? = some a) (hb : ss[j]? = some b)
     (hm : mayMove a b = true) (n : Nat) :
@@ -696,20 +763,18 @@ theorem mayMove_commute {i j : Nat} {a b : Stmt} (hij : i ≠ j) (ha : ss[i]? = 
   cases hai : a.inert
   · cases hbi : b.inert
     · simp only [hai, hbi, Bool.false_or] at hm
-      cases hda : a.allocDecl with
+      cases hda : a.allocs with
       | none => simp [hda] at hm
       | some p =>
-        cases hdb : b.allocDecl with
+        cases hdb : b.allocs with
         | none => simp [hda, hdb] at hm
         | some q =>
-          obtain ⟨x, e⟩ := p
-          obtain ⟨y, e'⟩ := q
+          obtain ⟨xs, rs⟩ := p
+          obtain ⟨ys, rs'⟩ := q
           simp only [hda, hdb, Bool.and_eq_true, Bool.not_eq_true'] at hm
-          obtain ⟨k, rfl, he⟩ := allocDecl_eq hda
-          obtain ⟨k', rfl, he'⟩ := allocDecl_eq hdb
-          exact local_units_commute hij (decl_unit_local hfp hF hreg hud ha he n)
-            (decl_unit_local hfp hF hreg hud hb he' n) (fun c hc => readCells_other hfp hF hreg hud hb hm.1 hc)
-            (fun c hc => readCells_other hfp hF hreg hud ha hm.2 hc)
+          exact local_units_commute hij (allocs_unit_local hfp hF hreg hud ha hda n)
+            (allocs_unit_local hfp hF hreg hud hb hdb n) (fun c hc => readCells_other hfp hF hreg hud hb hdb hm.1 hc)
+            (fun c hc => readCells_other hfp hF hreg hud ha hda hm.2 hc)
     · exact commute_inert hbi
   · exact inert_commute hai
 

@@ -12,7 +12,7 @@ from cluster.cdk8s import cilium, namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.monitoring import grafana_helmrepository
+from cluster.cdk8s.monitoring import alloy_endpoints, grafana_helmrepository
 from cluster.cdk8s.namespaces import PRIVILEGED_POD_SECURITY, Vpa
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.seaweedfs import s3
@@ -246,16 +246,14 @@ def _network_policy(chart: Chart) -> None:
             # Central Alloy → Loki (OTel log forwarding), the syslog Alloy → Loki (the home switch's
             # logs); the per-node Alloys scrape the components' metrics on the same port.
             IngressRule.from_endpoints(
-                {"app.kubernetes.io/name": "alloy", namespace_label: "monitoring"},
-                {"app.kubernetes.io/name": "alloy-node", namespace_label: "monitoring"},
-                {"app.kubernetes.io/name": "alloy-syslog", namespace_label: "monitoring"},
-                {"app.kubernetes.io/name": "alloy-journal", namespace_label: "monitoring"},
+                alloy_endpoints.CENTRAL.cilium,
+                alloy_endpoints.NODE.cilium,
+                alloy_endpoints.SYSLOG.cilium,
+                alloy_endpoints.JOURNAL.cilium,
                 ports=(3100,),
             ),
             # Per-node Alloy → Loki canary metrics (ServiceMonitor scraping)
-            IngressRule.from_endpoints(
-                {"app.kubernetes.io/name": "alloy-node", namespace_label: "monitoring"}, ports=(3500,)
-            ),
+            alloy_endpoints.NODE.admit(3500),
             # Gatus → Loki (health checks)
             cilium.PROBER.admit(3100),
             # Authentik proxy outpost → Loki (SSO-protected external access)

@@ -96,7 +96,6 @@ jobs:
           installables: ".#pr-visuals"
 
       - name: Publish visual review
-        id: visuals
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.PR_VISUALS_ACCESS_KEY }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.PR_VISUALS_SECRET_KEY }}
