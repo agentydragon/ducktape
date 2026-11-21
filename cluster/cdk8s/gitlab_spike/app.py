@@ -224,12 +224,22 @@ def _values() -> dict[str, object]:
                 "maxReplicas": 2,
                 "workerProcesses": 1,
                 "deployment": {
+                    "annotations": _vpa_annotations(
+                        ContainerPolicy(
+                            container_name="webservice",
+                            controlled_values=ControlledValues.REQUESTS_ONLY,
+                            controlled_resources=("memory",),
+                            # Preserve the Helm CPU request if admission reads a cached CPU recommendation.
+                            min_allowed={"cpu": "300m"},
+                            max_allowed={"cpu": "300m"},
+                        )
+                    ),
                     "startupProbe": {
                         "httpGet": {"path": "/-/liveness", "port": 8080},
                         "periodSeconds": 5,
                         "timeoutSeconds": 5,
                         "failureThreshold": 60,
-                    }
+                    },
                 },
             },
             "sidekiq": {
