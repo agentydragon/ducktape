@@ -478,9 +478,12 @@ function Report() {
             not silently weaken their policies. For example, metrics-server's
             current VPA controls both requests and limits and has no explicit
             ceiling; review proportional limit changes and capacity before
-            enabling eviction. Check service-specific recovery and capacity
-            before further promotion: PDBs do not guarantee uninterrupted
-            in-flight work. Storage work has a separate owner.<//
+            enabling eviction. ${" "}<${Anchor} href=${github + "pull/18449"}
+              >The proposed metrics-server change<//
+            >
+            preserves control of both. Check service-specific recovery and
+            capacity before further promotion: PDBs do not guarantee
+            uninterrupted in-flight work. Storage work has a separate owner.<//
           ><//
         >
         <${Paper} withBorder p="md" radius="md"
