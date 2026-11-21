@@ -42,11 +42,6 @@ def test_remote_workloads_share_connections_but_not_legacy_storage(
     assert set(connections) == {item["id"] for item in gateway_integrations}
     assert "myquest-canary" not in json.loads(remote.CONFIG.data["connections.json"])
     assert {
-        item["valueFrom"]["configMapKeyRef"]["name"]
-        for item in gateway_container["env"]
-        if item["name"] in {"PLATFORM_SESSIONS_INTEGRATION_CONFIG", "PLATFORM_SESSIONS_PROVIDER_CONNECTIONS"}
-    } == {remote.CANARY_CONFIG.name}
-    assert {
         find_resource(objects, "Deployment", instance)["spec"]["template"]["spec"]["containers"][0]["image"]
         for instance in ("openai", "anthropic", "thrive")
     } == {f"{remote.REGISTRY}/{remote.SHARED_PROVIDERS_IMAGE}:unset"}
@@ -184,7 +179,9 @@ def test_myquest_recording_switch_is_canary_only(
     scratch_app: App, monkeypatch: pytest.MonkeyPatch, record_upstream_traffic: bool, state_dir: str
 ) -> None:
     monkeypatch.setattr(config, "MYQUEST_CANARY_RECORD_UPSTREAM_TRAFFIC", record_upstream_traffic)
-    canary_config = remote.canary_config(record_upstream_traffic)
+    # CANARY_CONFIG is created at import. Use a distinct name so stale references fail.
+    canary_config = remote.canary_config(record_upstream_traffic).model_copy(update={"name": "canary-mode-test"})
+    monkeypatch.setattr(remote, "CANARY_CONFIG", canary_config)
     assert canary_config.data is not None
     [integration] = json.loads(canary_config.data["myquest-canary-integration.json"])["integrations"]
     assert integration["state_dir"] == state_dir
@@ -192,7 +189,21 @@ def test_myquest_recording_switch_is_canary_only(
     assert integration["type"] == "myquest"
 
     objects = Cdk8sTesting.synth(remote.chart(scratch_app))
+    gateway = find_resource(objects, "Deployment", "gateway")["spec"]["template"]["spec"]
+    [gateway_container] = gateway["containers"]
+    refs = {
+        env["name"]: env["valueFrom"]["configMapKeyRef"]
+        for env in gateway_container["env"]
+        if "configMapKeyRef" in env.get("valueFrom", {})
+    }
+    assert refs["PLATFORM_SESSIONS_INTEGRATION_CONFIG"] == {
+        "name": canary_config.name,
+        "key": "gateway-integrations.json",
+    }
+    assert refs["PLATFORM_SESSIONS_PROVIDER_CONNECTIONS"] == {"name": canary_config.name, "key": "connections.json"}
     canary = find_resource(objects, "Deployment", "myquest-canary")["spec"]["template"]["spec"]
+    config_volume = next(volume for volume in canary["volumes"] if volume["name"] == "config")
+    assert config_volume["configMap"]["name"] == canary_config.name
     production = find_resource(objects, "Deployment", "myquest")["spec"]["template"]["spec"]
     [canary_provider] = canary["containers"]
     [production_provider] = production["containers"]
