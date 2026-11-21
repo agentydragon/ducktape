@@ -286,6 +286,7 @@ py_library(
     deps = [
         "//agentplane/net/peertls:config",
         "@pypi//pydantic",
+        "@pypi//pydantic_settings",
     ],
 )
 

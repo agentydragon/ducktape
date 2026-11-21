@@ -6,6 +6,7 @@ from typing import ClassVar, Literal, Self
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_serializer, field_validator, model_validator
+from pydantic_settings import SettingsConfigDict
 
 from agentplane.net.peertls.config import (
     CENTRAL_SAMPLER_URI,
@@ -255,7 +256,7 @@ class Settings(BaseModel):
     history_tls: ClientTLS | None = None
     gateway_tls: ClientTLS | None = None
     config_file_env: ClassVar[str] = "AGENTPLANE_CENTRAL_SAMPLER_CONFIG"
-    model_config = ConfigDict(extra="forbid")
+    model_config = SettingsConfigDict(extra="forbid", env_prefix="AGENTPLANE_CENTRAL_SAMPLER_")
 
     actions: ActionsConfig | None = None
     database_url: str | None = None
