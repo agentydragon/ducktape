@@ -671,9 +671,14 @@ def generate_manifests(root: Path) -> None:
             "(parked) worker."
         ),
     )
+    claude_rbac_app = App()
+    claude_rbac_chart = agent_rbac_base.chart(claude_rbac_app)
     claude_rbac_artifact = artifact("claude-rbac", agent_rbac_base.OUTPUT_DIR)
     claude_rbac_kustomization = agent_rbac_base.claude_rbac(
-        flux_chart, write_directory(root, claude_rbac_artifact, agent_rbac_base.chart), kyverno_policies_kustomization
+        flux_chart,
+        write_directory(root, claude_rbac_artifact, app=claude_rbac_app),
+        kyverno_policies_kustomization,
+        health_checks=flux.health_checks(claude_rbac_chart, ["Namespace"]),
     )
     vpa_artifact = artifact("vpa", vpa.OUTPUT_DIR)
     vpa_kustomization = flux.flux_kustomization(
@@ -1060,9 +1065,14 @@ def generate_manifests(root: Path) -> None:
         write_directory(root, external_dns_records_artifact, functools.partial(external_dns.records_chart, mesh=mesh)),
         depends_on=[flux.flux_kustomization_depends_on(external_dns_kustomization)],
     )
+    infra_drift_app = App()
+    infra_drift_chart = drift_watch.chart(infra_drift_app)
     infra_drift_artifact = artifact("infra-drift", drift_watch.OUTPUT_DIR)
     drift_watch.infra_drift(
-        flux_chart, write_directory(root, infra_drift_artifact, drift_watch.chart), tofu_controller_kustomization
+        flux_chart,
+        write_directory(root, infra_drift_artifact, app=infra_drift_app),
+        tofu_controller_kustomization,
+        health_checks=flux.health_checks(infra_drift_chart, ["Terraform"]),
     )
     alloy_otlp_bearer_artifact = artifact("alloy-otlp-bearer", alloy_otlp_bearer.OUTPUT_DIR)
     flux.flux_kustomization(

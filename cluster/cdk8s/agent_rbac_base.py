@@ -301,7 +301,13 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def claude_rbac(flux_chart: Chart, directory: RenderedDirectory, kyverno_policies: Kustomization) -> Kustomization:
+def claude_rbac(
+    flux_chart: Chart,
+    directory: RenderedDirectory,
+    kyverno_policies: Kustomization,
+    *,
+    health_checks: list[KustomizationSpecHealthChecks],
+) -> Kustomization:
     # TODO: migrate this live Flux object name to agent-rbac-base in a staged
     # change. Renaming it directly would delete the old Kustomization and may prune
     # its inventory before the replacement owns the same RBAC resources.
@@ -314,7 +320,7 @@ def claude_rbac(flux_chart: Chart, directory: RenderedDirectory, kyverno_policie
         wait=None,
         timeout="2m",
         depends_on=[flux_kustomization_depends_on(kyverno_policies)],
-        health_checks=[KustomizationSpecHealthChecks(api_version="v1", kind="Namespace", name=NAMESPACE)],
+        health_checks=health_checks,
         description=(
             "Lightweight base for agent RBAC. Claude sandbox namespace + shared "
             "ClusterRoles. Must not depend on service or database kustomizations."
