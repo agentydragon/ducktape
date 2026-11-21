@@ -21,7 +21,7 @@ from agentplane.env.config import (
 from agentplane.net.peertls.config import HISTORY_SERVICE_URI, MTLS, TLS
 from agentplane.sandboxes.runtimeconfig.model_catalog import WORKSPACE_ROOT
 from cluster.cdk8s.agentplane import history_service, llm_ingress, platform_routes, sandbox_pod, telemetry
-from cluster.cdk8s.agentplane.environment import Environment, runtime_config_json
+from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.cert_manager import cluster_ca
 
 _ENVIRONMENT_RUNTIME_PORT = 9090
@@ -116,7 +116,7 @@ def guest_config_data(
         ),
     )
     return {
-        "environment-runtime.json": runtime_config_json(env, config),
+        "environment-runtime.json": config.model_dump_json(exclude_none=True),
         _ENVIRONMENT_RUNTIME_ENV_FILE: "".join(
             f'{name}="{value}"\n'
             for name, value in sorted(

@@ -155,10 +155,9 @@ must be `ws://127.0.0.1:<nonzero port>`. `CODEX_EXEC_SERVER_URL` belongs to Envi
 the harness environment. Lifecycle, recovery and scope are documented in
 [Codex executor isolation](../execution/docs/codex_executor.md).
 
-The Go loader temporarily interprets a missing `placement` as `direct` in existing templates.
-Staging can emit the field once its `agentplane-runner-disk` pin selects an image accepting it.
-Remove omission support after every template emits the field and Sandbox incarnations with older configuration
-are retired. Enabling `systemd` placement in VM templates also requires the guest image containing `agentplane-commands.slice`.
+An executor configuration must specify `placement`. For a configuration that previously omitted it,
+set `placement: "direct"` to preserve its execution behavior. Enabling `systemd` placement in VM
+templates also requires a guest image containing `agentplane-commands.slice`.
 
 ## Shared layout
 

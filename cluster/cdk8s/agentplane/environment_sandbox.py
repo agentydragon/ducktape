@@ -56,7 +56,7 @@ from cluster.cdk8s.agentplane import (
     telemetry,
     workload_routes,
 )
-from cluster.cdk8s.agentplane.environment import Environment, runtime_config_json
+from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.platform_instructions import agent_cli_environment, platform_instructions, service_urls
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy, isolate_ingress
 from cluster.cdk8s.service_ref import Pods
@@ -316,7 +316,7 @@ class EnvironmentSandboxTemplate(Construct):
             self,
             "environment-runtime-config",
             metadata=ApiObjectMetadata(name=self.config_map_name, namespace=self.env.namespace),
-            data={"environment-runtime.json": runtime_config_json(self.env, config)},
+            data={"environment-runtime.json": config.model_dump_json(exclude_none=True)},
         )
         return k8s.Container(
             name="environment-runtime",

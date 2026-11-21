@@ -161,7 +161,7 @@ func TestConfigurationExecutorPlacementWireContract(t *testing.T) {
 			field map[string]any
 			valid bool
 		}{
-			{name: "legacy omission", valid: true},
+			{name: "missing"},
 			{name: "direct", field: map[string]any{"placement": codexexecserver.PlacementDirect}, valid: true},
 			{name: "null", field: map[string]any{"placement": nil}},
 			{name: "empty", field: map[string]any{"placement": ""}},
@@ -291,7 +291,7 @@ func TestConfigurationRejectsInvalidPolicyBeforeEnvironmentChanges(t *testing.T)
 		{"missing Pod supervision", func(v map[string]any) { v["environment"] = map[string]any{"kind": "pod"} }},
 		{"unknown Pod supervision", func(v map[string]any) { v["environment"] = map[string]any{"kind": "pod", "supervision": "unknown"} }},
 		{"partial container executor", func(v map[string]any) {
-			v["environment"] = map[string]any{"kind": "pod", "supervision": "pid1", "executor": map[string]any{"url": "ws://127.0.0.1:4501"}}
+			v["environment"] = map[string]any{"kind": "pod", "supervision": "pid1", "executor": map[string]any{"url": "ws://127.0.0.1:4501", "placement": codexexecserver.PlacementDirect}}
 		}},
 		{"VM launcher in Pod", func(v map[string]any) {
 			v["environment"] = map[string]any{"kind": "pod", "supervision": "pid1", "resources": validGuestResources()}
@@ -304,7 +304,7 @@ func TestConfigurationRejectsInvalidPolicyBeforeEnvironmentChanges(t *testing.T)
 		}},
 		{"VM endpoint without budget", func(v map[string]any) {
 			env := configurationVMEnvironment()
-			env["executor"] = map[string]any{"url": "ws://127.0.0.1:4501"}
+			env["executor"] = map[string]any{"url": "ws://127.0.0.1:4501", "placement": codexexecserver.PlacementDirect}
 			v["environment"] = env
 		}},
 		{"VM budget without endpoint", func(v map[string]any) {

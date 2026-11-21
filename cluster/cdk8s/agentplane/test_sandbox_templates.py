@@ -87,7 +87,7 @@ def test_runner_pod_gives_codex_a_private_executor_with_shared_paths(staging_man
     assert config["environment"]["kind"] == "pod"
     assert config["environment"]["supervision"] == "pid1"
     assert config["environment"]["executor"]["implementation"] == "native"
-    assert "placement" not in config["environment"]["executor"]
+    assert config["environment"]["executor"]["placement"] == "direct"
     assert executor["command"] == ["/run/agentplane/environment/bin/agentplane-execution-service"]
     args = executor["args"]
     assert args[0] == "companion"
