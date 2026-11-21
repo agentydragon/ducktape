@@ -143,3 +143,26 @@ func TestFinishProviderResolvesAmbiguousPersistenceWithoutResampling(t *testing.
 		})
 	}
 }
+
+func TestRemovedRouteFailsWithoutBlockingSession(t *testing.T) {
+	store, session, owner := runtimetesting.ClaimedSession(t, integrationDatabase)
+	admitProviderCommand(t, store, owner, session.ID, "input-with-removed-route", false)
+	current, err := store.GetSession(t.Context(), session.ID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime := &Driver{store: store, settings: samplersettings.Settings{RPCTimeoutSeconds: 5}}
+	_, err = runtime.advance(t.Context(), owner, nil, nil, current)
+	var known *protocol.KnownFailureError
+	if !errors.As(err, &known) {
+		t.Fatalf("missing route error=%v", err)
+	}
+	commandID := "input-with-removed-route"
+	if err := store.FailExecution(t.Context(), owner, session.ID, &commandID, err); err != nil {
+		t.Fatal(err)
+	}
+	current, err = store.GetSession(t.Context(), session.ID, "")
+	if err != nil || current.Blocked || current.ActiveTurn != nil {
+		t.Fatalf("session=%+v err=%v", current, err)
+	}
+}

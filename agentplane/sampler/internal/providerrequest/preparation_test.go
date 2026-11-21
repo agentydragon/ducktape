@@ -235,3 +235,35 @@ func TestChatEffortUpdatesNewRequestsWithoutChangingRetainedRequests(t *testing.
 		})
 	}
 }
+
+func TestChatModelSwitchUpdatesNewRequestWithoutChangingRetainedRequest(t *testing.T) {
+	memory := memoryContent{}
+	config := samplersettings.ModelConfig{API: protocol.APIStyleChatCompletions, ProviderModel: "old-model", ExecEncoding: protocol.ExecEncodingJSON}
+	preparation := Preparation{ModelConfig: config, SessionEffort: "low"}
+	snapshot := Snapshot{API: config.API}
+	first, err := Prepare(memory, snapshot, preparation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot.PreviousProfileID, snapshot.PreviousFirstID = first.ProfileID, first.PrefixIDs[0]
+	preparation.ModelConfig.ProviderModel = "new-model"
+	next, err := Prepare(memory, snapshot, preparation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		recipe Recipe
+		model  string
+	}{{first, "old-model"}, {next, "new-model"}} {
+		wire, err := Render(memory, config.API, tc.recipe.ProfileID, tc.recipe.PrefixIDs)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var body struct {
+			Model string `json:"model"`
+		}
+		if err := json.Unmarshal(wire, &body); err != nil || body.Model != tc.model {
+			t.Fatalf("request=%s err=%v, want model %s", wire, err, tc.model)
+		}
+	}
+}

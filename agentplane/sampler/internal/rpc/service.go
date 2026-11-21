@@ -177,19 +177,35 @@ func (s *Sampler) commandUsing(
 	if input := command.GetSubmitInput(); input != nil && (input.GetText() == "" || len(input.GetText()) > 1024*1024) {
 		return nil, status.Error(codes.InvalidArgument, "invalid sampler request")
 	}
-	validate := func(session *sessionstore.Session) error {
-		currentConfig, ok := s.Settings.Models[session.Model]
-		if !ok {
-			return protocol.ErrPrecondition
-		}
+	validate := func(session *sessionstore.Session, conversation *sessionstore.Conversation) error {
+		currentConfig, currentConfigured := s.Settings.Models[session.Model]
 		if model := command.GetChangeModel(); model != nil {
 			targetConfig, targetConfigured := s.Settings.Models[model.GetModel()]
 			if !targetConfigured || !slices.Contains(targetConfig.ReasoningEfforts, session.Effort) {
 				return protocol.ErrInvalid
 			}
+			if !currentConfigured {
+				// Chat Completions retains plain messages and JSON tool calls. A deliberate
+				// switch can continue a settled conversation on another Chat route even
+				// when the old route configuration has gone away. Responses and Anthropic
+				// may retain model-bound opaque items, so require their old contract.
+				if conversation.API != protocol.APIStyleChatCompletions || targetConfig.API != conversation.API ||
+					session.ActiveTurn != nil || session.ActiveCommand != nil || conversation.Pending != nil {
+					return protocol.ErrPrecondition
+				}
+				if err := conversation.Transcript.CheckSettled(); err != nil {
+					return protocol.ErrPrecondition
+				}
+				if err := conversation.Context().CheckSettled(); err != nil {
+					return protocol.ErrPrecondition
+				}
+				return nil
+			}
 			if !currentConfig.Compatible(targetConfig) {
 				return protocol.ErrPrecondition
 			}
+		} else if !currentConfigured {
+			return protocol.ErrPrecondition
 		}
 		if effort := command.GetChangeReasoningEffort(); effort != nil && !slices.Contains(currentConfig.ReasoningEfforts, effort.GetEffort()) {
 			return protocol.ErrInvalid
