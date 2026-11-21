@@ -38,12 +38,15 @@ from external_secrets_crds.io.external_secrets import (
 )
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 
-from aiquota.config import CLIProxyAPISettings, Config
-from aiquota.providers.anthropic_platform import AnthropicPlatformSettings
-from aiquota.providers.claude import ClaudeSettings
-from aiquota.providers.codex import CodexSettings
-from aiquota.providers.openai_platform import OpenAIPlatformSettings
-from aiquota.providers.zai import ZaiSettings
+from aiquota.config import (
+    AnthropicPlatformSettings,
+    ClaudeSettings,
+    CLIProxyAPISettings,
+    CodexSettings,
+    Config,
+    OpenAIPlatformSettings,
+    ZaiSettings,
+)
 from aiquota.settings import Settings
 from cluster.cdk8s import pod_policy
 from cluster.cdk8s.agentplane.egress_credentials import STAGING_CREDENTIALS_NAMESPACE

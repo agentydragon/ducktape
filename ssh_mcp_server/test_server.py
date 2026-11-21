@@ -11,7 +11,8 @@ from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
 from ssh_mcp_server import server as ssh_server
-from ssh_mcp_server.server import SshSettings, TargetConfig, build_mcp, create_app, load_settings
+from ssh_mcp_server.server import build_mcp, create_app, load_settings
+from ssh_mcp_server.settings import SshSettings, TargetConfig
 
 
 def _settings(tmp_path: Path, *, identity: bool = True) -> SshSettings:

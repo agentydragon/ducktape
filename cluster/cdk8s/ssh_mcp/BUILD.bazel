@@ -19,7 +19,7 @@ py_library(
         "//cluster/cdk8s:home_lan",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
-        "//ssh_mcp_server:server",
+        "//ssh_mcp_server:settings",
         "@rules_python//python/runfiles",
     ],
 )

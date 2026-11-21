@@ -62,11 +62,6 @@ py_library(
     srcs = ["config.py"],
     visibility = ["//visibility:public"],
     deps = [
-        "//aiquota/providers:anthropic_platform_lib",
-        "//aiquota/providers:claude_lib",
-        "//aiquota/providers:codex_lib",
-        "//aiquota/providers:openai_platform_lib",
-        "//aiquota/providers:zai_lib",
         "@pypi//platformdirs",
         "@pypi//pydantic",
     ],
