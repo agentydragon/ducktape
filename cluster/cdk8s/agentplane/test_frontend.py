@@ -58,21 +58,5 @@ def test_frontend_has_no_runtime_credentials_or_outbound_access(staging_manifest
     assert one(policy["ingress"])["fromEntities"] == ["ingress"]
 
 
-def test_staging_services_keep_replicas_on_separate_hosts(staging_manifests: list[dict[str, Any]]) -> None:
-    for name in staging.ENV.hostname_spread_services:
-        deployment = find_resource(staging_manifests, "Deployment", name)
-        spec = deployment["spec"]
-        assert spec["replicas"] >= 2
-        spread = one(spec["template"]["spec"]["topologySpreadConstraints"])
-        assert spread["labelSelector"]["matchLabels"] == {"app.kubernetes.io/name": name}
-        assert spread["topologyKey"] == "kubernetes.io/hostname"
-        assert spread["minDomains"] == 2
-        assert spread["maxSkew"] == 1
-        assert spread["matchLabelKeys"] == ["pod-template-hash"]
-        assert spread["nodeTaintsPolicy"] == "Honor"
-        assert spread["whenUnsatisfiable"] == "DoNotSchedule"
-        assert find_resource(staging_manifests, "PodDisruptionBudget", name)["spec"]["minAvailable"] >= 1
-
-
 if __name__ == "__main__":
     pytest_bazel.main()

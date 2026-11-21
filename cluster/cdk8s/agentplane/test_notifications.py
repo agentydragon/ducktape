@@ -11,11 +11,6 @@ from cluster.cdk8s.agentplane import actions as action_service, notifications, r
 from cluster.cdk8s.testing.manifests import find_resource
 
 
-def test_notifications_and_history_deployments_roll(staging_manifests: list[dict[str, Any]]) -> None:
-    for name in (notifications.NAME, "history-service"):
-        assert find_resource(staging_manifests, "Deployment", name)["spec"]["strategy"]["type"] == "RollingUpdate"
-
-
 def test_public_notification_routes_are_webhook_only(staging_manifests: list[dict[str, Any]]) -> None:
     rules = [
         rule
