@@ -92,7 +92,7 @@ def chart(app: App) -> Chart:
 
 
 def haku_workspaces(
-    chart: Chart, directory: RenderedDirectory, haku_rbac: Kustomization, external_secrets_operator: Kustomization
+    chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization
 ) -> Kustomization:
     name = "haku-workspaces"
     return flux_kustomization(
@@ -101,10 +101,8 @@ def haku_workspaces(
         directory,
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
-            # Namespace and mirrored-secret destinations
-            haku_rbac,
             # ExternalSecret CRD and ESO's failurePolicy: Fail webhook
-            external_secrets_operator,
+            external_secrets_operator
         ),
         description="Haku workspace credential mirrors in haku-sandbox.",
     )

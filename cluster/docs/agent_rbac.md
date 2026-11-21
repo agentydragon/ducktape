@@ -24,7 +24,7 @@ Contains:
 
 ### 2. `shared-rbac` — cluster-scoped bindings
 
-Depends on: `agent-rbac-base`.
+Depends on: nothing.
 
 Contains:
 
@@ -33,7 +33,7 @@ Contains:
 ### 3. Per-service RBAC
 
 Service charts own exceptional and sensitive grants. Those bindings follow the service's Flux
-dependencies. For example, the `haku-rbac` Kustomization depends on `haku-namespace`.
+dependencies.
 
 ### 4. `agents/namespace-rbac/<namespace>/` — common diagnostics
 
@@ -201,9 +201,9 @@ edit the referenced roles' rules. Its own Flux Kustomization owns delegation in 
 and at cluster scope. Each external target namespace has a separate, GitRepository-sourced Flux
 Kustomization for the Policy Controller's RoleBinding management Role and RoleBinding
 (`cluster/cdk8s/agentplane/binding_delegation.py`). The `haku-sandbox` delegation depends on
-`haku-rbac`, which depends on the namespace owner. A failure in this delegation Kustomization
-does not block the Agentplane app Kustomization. Keep an external delegation while its
-namespace is in the retained cleanup scopes, even if its catalog entry is removed.
+`haku-rbac`. A failure in this delegation Kustomization does not block the Agentplane app
+Kustomization. Keep an external delegation while its namespace is in the retained cleanup
+scopes, even if its catalog entry is removed.
 
 The Policy Controller's exact-name `bind` rules limit which assignable ClusterRoles it can grant,
 but not their subjects. Kubernetes RBAC cannot scope top-level ClusterRoleBinding creation by
