@@ -16,7 +16,11 @@ ownership, grants, Secret handling and stateful Flux migration rules.
 
 1. **Inventory and authorize.** Identify the physical bucket, every identity and
    credential claimant across namespaces, all bucket grants/policy bindings, target
-   Secrets and Flux owners. Check actual bucket contents and current consumers.
+   Secrets and Flux owners. Check actual bucket contents and current consumers. A broad
+   scan for the legacy Secret name stops on Reloader's historical
+   `reloader.stakater.com/last-reloaded-from` annotation (Mimir gateway, Tempo): exclude
+   only that annotation under `metadata.annotations` and keep every other spec and
+   annotation in the scan.
    Use `Delete` only for explicitly disposable or approved obsolete state. Keep
    shared identities and keys needed by another consumer.
 2. **Stage policies.** Set intended `Delete` reclaim policies while keeping the
@@ -29,7 +33,11 @@ ownership, grants, Secret handling and stateful Flux migration rules.
    identity and credentials present. Ensure no surviving Bucket or policy writer
    can recreate or update that user. Preserve shared buckets; revoke only the
    retiring tenant's grants on them and verify reconciliation instead.
-4. **Revoke credentials.** Remove obsolete S3Credentials with `Delete`, keeping
+4. **Revoke credentials.** First probe the replacement credentials on each bucket:
+   conditionally create a unique tiny object, read back identical bytes, delete exactly
+   that object and confirm a 404, leaving existing objects untouched. Revoke only after
+   every probe passes and IAM shows exactly the obsolete key and the current key.
+   Remove obsolete S3Credentials with `Delete`, keeping
    the S3Identity present. Wait for finalizers and verify the recorded keys were
    revoked through each filer; compare keys in memory and report only booleans or
    counts. Check operator-owned Secret deletion separately. Foreign Secrets are
