@@ -9,7 +9,6 @@ cluster/docs/cdk8s.md.
 
 from __future__ import annotations
 
-from functools import partial
 from pathlib import Path
 
 from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, Duration, JsonPatch, Size
@@ -57,7 +56,7 @@ from cluster.cdk8s.forgejo_registry.pull_credentials import (
     forgejo_images_creds_secret_ref,
 )
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.generation import write_app, write_yaml
 from cluster.cdk8s.litellm import database
 from cluster.cdk8s.litellm.config import main_proxy_config
 from cluster.cdk8s.litellm.database import NAMESPACE
@@ -327,15 +326,17 @@ def _rugged_local_llm_endpoint(scope: Construct, mesh: Mesh) -> None:
     )
 
 
-def write_manifests(root: Path, mesh: Mesh) -> None:
+def write_manifests(root: Path, mesh: Mesh) -> Chart:
+    app = App()
+    chart = _chart(app, mesh)
     write_yaml(
         root / APP_DIR / "kustomization.yaml",
         kustomize_kustomization(
-            namespace=NAMESPACE,
-            resources=[write_charts(root, APP_DIR, partial(_chart, mesh=mesh))],
-            components=["./image-pins"],
+            namespace=NAMESPACE, resources=[write_app(root, APP_DIR, app)], components=["./image-pins"]
         ),
     )
+
+    return chart
 
 
 def litellm(
@@ -345,6 +346,8 @@ def litellm(
     external_secrets_operator: Kustomization,
     monitoring_crds: Kustomization,
     seaweedfs_operator: Kustomization,
+    *,
+    health_checks: list[KustomizationSpecHealthChecks],
 ) -> Kustomization:
     return flux_kustomization(
         flux_chart,
@@ -354,15 +357,7 @@ def litellm(
         decryption=SOPS_DECRYPTION,
         timeout="10m",
         wait=None,
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="postgresql.cnpg.io/v1", kind="Cluster", name=database.DATABASE.name, namespace=NAMESPACE
-            ),
-            KustomizationSpecHealthChecks(api_version="apps/v1", kind="Deployment", name=NAME, namespace=NAMESPACE),
-            KustomizationSpecHealthChecks(
-                api_version="gateway.networking.k8s.io/v1", kind="HTTPRoute", name=NAME, namespace=NAMESPACE
-            ),
-        ],
+        health_checks=health_checks,
         depends_on=flux_kustomization_depends_on_many(
             cnpg, external_secrets_operator, monitoring_crds, seaweedfs_operator
         ),
