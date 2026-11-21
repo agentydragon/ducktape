@@ -32,6 +32,12 @@ def _environment_vm_manifests(
     env = replace(
         staging.ENV,
         vm_console_autologin=console_autologin,
+        vm_executor_placement="direct" if omit_executor_placement_from_config else staging.ENV.vm_executor_placement,
+        vm_resources=(
+            staging.STAGING_VM_RESOURCES.model_copy(update={"executor_workload": None})
+            if omit_executor_placement_from_config
+            else staging.STAGING_VM_RESOURCES
+        ),
         omit_executor_placement_from_config=omit_executor_placement_from_config,
     )
     guest_config = ConfigMap(
