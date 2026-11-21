@@ -2039,7 +2039,6 @@ py_library(
 py_library(
     name = "artifact_generators",
     srcs = ["artifact_generators.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":flux",
         ":generation",
