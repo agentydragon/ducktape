@@ -92,6 +92,9 @@ cover only part of the grammar and split space described below.
       (including `++`) followed by
       an identifier, numeric literal, or bounded addition/multiplication throw;
       extend this conservatively.
+      Terminal `finally` returns are lowered through the shared completion
+      semantics; nonterminal `finally` returns need an explicit return
+      completion before later statements can be modeled safely.
       The generator and an axiom-free acceptance certificate cover these cases,
       including relayed imports; the AST fuzzer also redirects reader imports to
       check unsafe witnesses.

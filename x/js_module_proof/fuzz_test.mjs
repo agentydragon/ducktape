@@ -21,12 +21,13 @@ const { assessCorpus } = await import("./real_corpus.mjs");
 const shard = Number(process.env.TEST_SHARD_INDEX ?? 0);
 const shards = Number(process.env.TEST_TOTAL_SHARDS ?? 1);
 if (shards === 4 && shard === 0) {
-  const exceptions = Array.from({ length: 13 }, (_, index) => makeExceptionCase(773, index));
+  const exceptions = Array.from({ length: 15 }, (_, index) => makeExceptionCase(773, index));
   assert.equal(exceptions.filter((input) => input.withCatchBinding).length, 8);
   assert.equal(exceptions.filter((input) => input.expectThrow).length, 5);
   assert.equal(exceptions.filter((input) => input.earlyConditionalThrow).length, 1);
   assert.equal(exceptions.filter((input) => input.finallyThrow).length, 2);
-  assert.equal(exceptions.filter((input) => input.finallyOverridesThrow).length, 1);
+  assert.equal(exceptions.filter((input) => input.finallyReturn).length, 2);
+  assert.equal(exceptions.filter((input) => input.finallyOverridesThrow).length, 2);
   assert.equal(exceptions.filter((input) => input.catchShadow).length, 2);
   assert.equal(exceptions.filter((input) => input.terminalCatch).length, 1);
   assert.equal(makeExceptionCase(773, 3).source, makeExceptionCase(773, 3).source);
@@ -107,6 +108,14 @@ if (shards === 4 && shard === 1) {
   assert.equal(redirected.finallyThrowComparedCases, 1);
   assert.equal(redirected.mutatedDifferent, 1);
   assert.equal(redirected.mutatedVerdicts.unsafe, 1);
+  const returning = { ...options, start: 14 };
+  const unchangedReturn = await runFuzz({ ...returning, mutationMode: "disabled" });
+  assert.equal(unchangedReturn.finallyReturnProvedCases, 1);
+  assert.equal(unchangedReturn.equal, 1);
+  const redirectedReturn = await runFuzz(returning);
+  assert.equal(redirectedReturn.finallyReturnComparedCases, 1);
+  assert.equal(redirectedReturn.mutatedDifferent, 1);
+  assert.equal(redirectedReturn.mutatedVerdicts.unsafe, 1);
 }
 if (shards === 4) {
   const aliases = await runFuzz({

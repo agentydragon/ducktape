@@ -135,8 +135,11 @@ an exception from its expressions or a terminal `throw` replaces the pending com
 requires the try block to end in a numeric throw of an identifier, nonnegative safe
 integer literal, or an expression composed of those with `+` and `*`. Prior
 statements in that block are limited to numeric `=`, `+=`, `*=` and local `++`.
-Using a binding for other caught values and direct `return` statements in the
-finalizer remain unsupported.
+Using a binding for other caught values remains unsupported. A terminal
+`try` may end its finalizer with `return`; the frontend lowers this to the
+shared catch and sequencing operations so the finalizer replaces either
+pending completion. A `return` in the finalizer of a nonterminal `try` remains
+unsupported.
 Functions also support `for (let i = A; i < N; i++)` and inclusive `<=`
 bounds and either `i++` or `i += 1`, with literals `A` and `N` from 0 through
 8, at most eight iterations, and a block of supported local assignments or

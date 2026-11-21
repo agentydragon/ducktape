@@ -717,6 +717,7 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
         continuation: sequence(rest),
       };
     if (first.type === "TryStatement" && rest.length > 0) {
+      check(first.finalizer?.body.at(-1)?.type !== "ReturnStatement", "nonterminal finally return is unsupported");
       const nonreturning = (block) => {
         const throws = block.body.at(-1)?.type === "ThrowStatement";
         check(
@@ -814,13 +815,21 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
           : { kind: "catchError", body, handler: sequence(statement.handler.body.body) };
       if (!statement.finalizer) return body;
       const finalizerThrows = statement.finalizer.body.at(-1)?.type === "ThrowStatement";
+      const finalizerReturns = statement.finalizer.body.at(-1)?.type === "ReturnStatement";
       check(
         statement.finalizer.body.every(
           (item, index) =>
-            item.type === "ExpressionStatement" || (finalizerThrows && index === statement.finalizer.body.length - 1)
+            item.type === "ExpressionStatement" ||
+            ((finalizerThrows || finalizerReturns) && index === statement.finalizer.body.length - 1)
         ),
         "unsupported finalizer statement"
       );
+      if (finalizerReturns)
+        return {
+          kind: "followedBy",
+          first: { kind: "catchError", body, handler: { kind: "literal", value: 0 } },
+          continuation: sequence(statement.finalizer.body),
+        };
       return {
         kind: "finally",
         body,
@@ -1487,12 +1496,14 @@ function generateFiles(source, spec, names) {
               terminal.alternate &&
               completionBranch(terminal.consequent) &&
               completionBranch(terminal.alternate);
-            const validFinalizer = (finalizer) =>
+            const validFinalizer = (finalizer, allowReturn = false) =>
               finalizer === null ||
               (finalizer.type === "BlockStatement" &&
                 finalizer.body.every(
                   (item, index) =>
-                    isWrite(item) || (index === finalizer.body.length - 1 && item.type === "ThrowStatement")
+                    isWrite(item) ||
+                    (index === finalizer.body.length - 1 &&
+                      (item.type === "ThrowStatement" || (allowReturn && item.type === "ReturnStatement")))
                 ));
             const isTry = (statement) =>
               statement.type === "TryStatement" &&
@@ -1515,7 +1526,7 @@ function generateFiles(source, spec, names) {
               (terminal.handler === null ||
                 ((terminal.handler.param === null || terminal.handler.param.type === "Identifier") &&
                   completedBlock(terminal.handler.body))) &&
-              validFinalizer(terminal.finalizer);
+              validFinalizer(terminal.finalizer, true);
             const isLoop = (statement) =>
               statement.type === "ForStatement" &&
               statement.init?.type === "VariableDeclaration" &&

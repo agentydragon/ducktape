@@ -494,6 +494,18 @@ example : (evaluateExpression [("caught", 9)] []
 example : evaluateExpression [] []
     (.catchBound "caught" (.raisePrimitive (.text [120])) (.name "caught")) = none := by decide
 
+/- A terminal finally return ignores a pending completion while retaining
+   local writes made before an exception. -/
+example : (evaluateExpression [("x", 1)] []
+    (.followedBy (.catchError (.assign "x" (.literal 2) (.raise (.literal 3))) (.literal 0)) (.name "x"))).map
+      (fun result => (result.locals, match result.completion with | .ok value => some value | .error _ => none)) =
+    some ([("x", 2)], some 2) := by decide
+
+example : (evaluateExpression [] []
+    (.followedBy (.catchError (.literal 3) (.literal 0)) (.literal 5))).map
+      (fun result => match result.completion with | .ok value => some value | .error _ => none) =
+    some (some 5) := by decide
+
 /- Captured cells belong to the same execution state as module bindings, but
    have their own store. An environment maps lexical names to cell identities. -/
 def loadCaptures (bindings : List (String × Nat)) : List (String × String) → Option (List (String × Nat))

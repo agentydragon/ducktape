@@ -100,6 +100,63 @@ theorem fixture_reference : ∃ owner declaration,
   }
 }
 
+if (runSection(5)) {
+  const source = join(root, "finally-return-source.mjs");
+  const spec = join(root, "finally-return-spec.json");
+  const out = join(root, "finally-return-out");
+  await writeFile(
+    source,
+    `let original = 3;\nlet alternate = 5;\nfunction compute() { try { throw original; } finally { return alternate; } }\nexport { compute };\n`
+  );
+  await writeFile(
+    spec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0, 1] },
+        "logic.mjs": { imports: ["state.mjs"], statements: [2], renameLocalImports: true },
+        "entry.mjs": { imports: ["logic.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", source, spec, out).value.result, "generated");
+  const logic = join(out, "logic.mjs");
+  const text = await readFile(logic, "utf8");
+  const unchanged = cli("validate", source, spec, out).value;
+  assert.equal(unchanged.result, "proved under assumptions", JSON.stringify(unchanged));
+  const calls = [{ name: "compute", args: [] }];
+  assert.deepEqual(execute(source, calls), { events: [], results: [5] });
+  assert.deepEqual(execute(join(out, "entry.mjs"), calls), { events: [], results: [5] });
+  assert.match(text, /alternate as __split_local_1/);
+  await writeFile(logic, text.replace("alternate as __split_local_1", "original as __split_local_1"));
+  const redirected = cli("validate", source, spec, out).value;
+  assert.equal(redirected.result, "unsafe", JSON.stringify(redirected));
+  assert.deepEqual(execute(join(out, "entry.mjs"), redirected.calls), { events: [], results: [3] });
+
+  const returningSource = join(root, "finally-return-pending-return.mjs");
+  const returningOut = join(root, "finally-return-pending-return-out");
+  await writeFile(
+    returningSource,
+    `let original = 3;\nlet alternate = 5;\nfunction compute() { try { return original; } finally { return alternate; } }\nexport { compute };\n`
+  );
+  assert.equal(cli("generate", returningSource, spec, returningOut).value.result, "generated");
+  const returning = cli("validate", returningSource, spec, returningOut).value;
+  assert.equal(returning.result, "proved under assumptions", JSON.stringify(returning));
+  assert.deepEqual(execute(returningSource, calls), { events: [], results: [5] });
+  assert.deepEqual(execute(join(returningOut, "entry.mjs"), calls), { events: [], results: [5] });
+
+  const nonterminal = join(root, "finally-return-nonterminal.mjs");
+  await writeFile(
+    nonterminal,
+    `let original = 3;\nlet alternate = 5;\nfunction compute() { try { throw original; } finally { return alternate; } return original; }\nexport { compute };\n`
+  );
+  assert.equal(
+    cli("generate", nonterminal, spec, join(root, "finally-return-nonterminal-out")).value.result,
+    "unknown"
+  );
+}
+
 if (runSection(4)) {
   const source = join(root, "finally-throw-source.mjs");
   const spec = join(root, "finally-throw-spec.json");

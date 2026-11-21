@@ -1382,7 +1382,7 @@ export function makeLocalAliasCase(seed, index) {
 // exception shapes densely instead of waiting 96 cases for each one.
 export function makeExceptionCase(seed, index) {
   const variedSeed = (seed ^ Math.imul(index, 0x9e3779b9)) >>> 0;
-  const variant = index % 13;
+  const variant = index % 15;
   const result = makeLocalAliasCase(variedSeed, 1237 + 96 * (variant % 8));
   if (variant >= 8) {
     const fn = result.ast.body.find(
@@ -1404,14 +1404,14 @@ export function makeExceptionCase(seed, index) {
         },
         ...(variant === 10 ? [returnNode(id("numericLeft"))] : []),
       ];
-    if (variant === 11 || variant === 12)
+    if (variant >= 11)
       fn.body.body = [
         {
           type: "TryStatement",
           block: {
             type: "BlockStatement",
             body: [
-              variant === 11
+              variant === 11 || variant === 13
                 ? returnNode(id("numericRight"))
                 : { type: "ThrowStatement", argument: id("numericRight") },
             ],
@@ -1419,21 +1419,41 @@ export function makeExceptionCase(seed, index) {
           handler: null,
           finalizer: {
             type: "BlockStatement",
-            body: [{ type: "ThrowStatement", argument: id("numericLeft") }],
+            body: [
+              variant <= 12 ? { type: "ThrowStatement", argument: id("numericLeft") } : returnNode(id("numericLeft")),
+            ],
           },
         },
       ];
+    if (variant === 14) {
+      const tryStatement = fn.body.body[0];
+      fn.body.body.unshift({
+        type: "VariableDeclaration",
+        kind: "let",
+        declarations: [{ type: "VariableDeclarator", id: id("offset"), init: id("numericLeft") }],
+      });
+      tryStatement.block.body.unshift(
+        expr({ type: "AssignmentExpression", operator: "+=", left: id("offset"), right: id("numericRight") })
+      );
+      tryStatement.finalizer.body = [
+        returnNode({ type: "BinaryExpression", operator: "+", left: id("offset"), right: id("numericLeft") }),
+      ];
+    }
     result.source = print(result.ast);
-    result.withTry = variant === 11 || variant === 12;
+    result.withTry = variant >= 11;
+    result.withThrow = variant !== 13;
     result.withCatch = false;
     result.withCatchBinding = false;
+    result.catchShadow = false;
+    result.terminalCatch = false;
     result.composedAliasExpression = false;
-    result.expectThrow = true;
+    result.expectThrow = variant <= 12;
     result.directNumericThrow = variant === 8;
     result.conditionalThrow = variant === 9 || variant === 10;
     result.earlyConditionalThrow = variant === 10;
     result.finallyThrow = variant === 11 || variant === 12;
-    result.finallyOverridesThrow = variant === 12;
+    result.finallyReturn = variant === 13 || variant === 14;
+    result.finallyOverridesThrow = variant === 12 || variant === 14;
   }
   return result;
 }
@@ -2535,6 +2555,9 @@ export async function runFuzz({
     finallyThrowCases: 0,
     finallyThrowComparedCases: 0,
     finallyThrowProvedCases: 0,
+    finallyReturnCases: 0,
+    finallyReturnComparedCases: 0,
+    finallyReturnProvedCases: 0,
     loopShadowCases: 0,
     loopShadowComparedCases: 0,
     loopShadowUnknownCases: 0,
@@ -2803,6 +2826,7 @@ export async function runFuzz({
       if (input.directNumericThrow) summary.directNumericThrowCases++;
       if (input.conditionalThrow) summary.conditionalThrowCases++;
       if (input.finallyThrow) summary.finallyThrowCases++;
+      if (input.finallyReturn) summary.finallyReturnCases++;
       if (input.loopShadow) summary.loopShadowCases++;
       if (modules.some((module) => module.renameReexports)) summary.renamedReexportRequestedCases++;
       const importCount = modules.reduce((count, module) => count + module.imports.length, 0);
@@ -3023,6 +3047,7 @@ export async function runFuzz({
       if (input.directNumericThrow) summary.directNumericThrowComparedCases++;
       if (input.conditionalThrow) summary.conditionalThrowComparedCases++;
       if (input.finallyThrow) summary.finallyThrowComparedCases++;
+      if (input.finallyReturn) summary.finallyReturnComparedCases++;
       if (input.loopShadow) summary.loopShadowComparedCases++;
       if (input.grammar === "alias" && input.numericArguments.length) {
         summary.parameterizedAliasComparedCases++;
@@ -3128,6 +3153,7 @@ export async function runFuzz({
           if (input.directNumericThrow) summary.directNumericThrowProvedCases++;
           if (input.conditionalThrow) summary.conditionalThrowProvedCases++;
           if (input.finallyThrow) summary.finallyThrowProvedCases++;
+          if (input.finallyReturn) summary.finallyReturnProvedCases++;
           if (input.grammar === "alias" && input.numericArguments.length) summary.parameterizedAliasProvedCases++;
           if (input.grammar === "alias" && input.numericArguments.length > 1)
             summary.multipleParameterAliasProvedCases++;
