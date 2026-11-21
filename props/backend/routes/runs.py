@@ -377,7 +377,7 @@ def edges_to_info(edges: list[GradingEdge]) -> list[GradingEdgeInfo]:
 
 
 @router.get("/active")
-def list_active_runs(request: Request, caller_db: CallerDb) -> ActiveRunsResponse:
+def list_active_runs(caller_db: CallerDb) -> ActiveRunsResponse:
     """List all active agent runs.
 
     Queries database for runs with IN_PROGRESS status.

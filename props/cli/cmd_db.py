@@ -167,10 +167,7 @@ def cmd_db_restore(backup_file: Path = RESTORE_BACKUP_FILE_ARG, yes: bool = REST
 
     console.print(f"Restoring from: {backup_file}")
 
-    # Determine if gzipped
-    is_gzipped = backup_file.suffix == ".gz" or str(backup_file).endswith(".sql.gz")
-
-    if is_gzipped:
+    if backup_file.suffix == ".gz":
         with gzip.open(backup_file, "rt") as f:
             sql_content = f.read()
         result = subprocess.run(cmd, input=sql_content, text=True, capture_output=True, check=False)

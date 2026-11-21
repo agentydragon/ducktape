@@ -30,6 +30,7 @@ from props.agents.runtime import (
     get_current_agent_run_id,
     render_system_prompt,
     render_template_string,
+    setup_logging,
 )
 from props.core.models.examples import WholeSnapshotExample
 from props.db.database import Database
@@ -168,17 +169,14 @@ def _create_tools(exit_state: ExitState, db: Database) -> list:
             agent_run_id = get_current_agent_run_id(session)
             issues = session.query(ReportedIssue).filter_by(agent_run_id=agent_run_id).all()
 
-            issue_infos = []
-            for issue in issues:
-                occurrences = (
-                    session.query(ReportedIssueOccurrence)
-                    .filter_by(agent_run_id=agent_run_id, reported_issue_id=issue.issue_id)
-                    .all()
+            issue_infos = [
+                IssueInfo(
+                    issue_id=issue.issue_id,
+                    rationale=issue.rationale,
+                    occurrences=[OccurrenceInfo(locations=list(occ.locations)) for occ in issue.occurrences],
                 )
-                occurrence_infos = [OccurrenceInfo(locations=list(occ.locations)) for occ in occurrences]
-                issue_infos.append(
-                    IssueInfo(issue_id=issue.issue_id, rationale=issue.rationale, occurrences=occurrence_infos)
-                )
+                for issue in issues
+            ]
 
             return ListIssuesResponse(issues=issue_infos).model_dump_json()
 
@@ -198,21 +196,15 @@ def _create_tools(exit_state: ExitState, db: Database) -> list:
 
             total_occurrences = 0
             for issue in issues:
-                occurrences = (
-                    session.query(ReportedIssueOccurrence)
-                    .filter_by(agent_run_id=agent_run_id, reported_issue_id=issue.issue_id)
-                    .all()
-                )
-
-                if len(occurrences) == 0:
+                if not issue.occurrences:
                     raise ValueError(
                         f"Issue '{issue.issue_id}' has no occurrences. "
                         f"Every issue must have at least one occurrence showing where it occurs in the code."
                     )
 
-                total_occurrences += len(occurrences)
+                total_occurrences += len(issue.occurrences)
 
-                for occ in occurrences:
+                for occ in issue.occurrences:
                     _validate_occurrence(occ)
 
             # Note: Agent cannot update its own status due to RLS.
@@ -285,7 +277,7 @@ async def _run_agent_loop(system_prompt: str, db: Database) -> int:
 
 async def main() -> int:
     """Main entry point for critic agent."""
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    setup_logging()
 
     logger.info("Critic agent starting")
     db = Database.from_env()

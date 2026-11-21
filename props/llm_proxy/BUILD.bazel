@@ -26,7 +26,6 @@ py_library(
         "//openai_utils:model",
         "//props:config",
         "//props/backend:auth",
-        "//props/backend:deps",
         "//props/db:async_database",
         "//props/db:models",
         "@pypi//fastapi",

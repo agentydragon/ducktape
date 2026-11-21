@@ -14,7 +14,6 @@ py_library(
     srcs = ["deps.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//props:config",
         "//props/db:database",
         "@pypi//fastapi",
     ],
