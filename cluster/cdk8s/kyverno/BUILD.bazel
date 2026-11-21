@@ -61,7 +61,6 @@ py_library(
     testonly = True,
     srcs = ["test_utils.py"],
     deps = [
-        ":apply",
         ":policies",
         "@pypi//cdk8s",
         "@pypi//pyyaml",

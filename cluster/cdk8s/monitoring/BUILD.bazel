@@ -429,7 +429,6 @@ py_library(
 py_library(
     name = "blackbox_exporter",
     srcs = ["blackbox_exporter.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
 )
 
 py_library(
