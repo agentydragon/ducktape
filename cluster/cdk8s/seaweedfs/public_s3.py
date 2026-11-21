@@ -280,10 +280,9 @@ def seaweedfs_public_s3(
     kyverno: Kustomization,
     monitoring_crds: Kustomization,
 ) -> Kustomization:
-    name = "seaweedfs-public-s3"
     return flux_kustomization(
         chart,
-        name,
+        "seaweedfs-public-s3",
         directory,
         depends_on=flux_kustomization_depends_on_many(
             # S3Identity, S3Credentials, S3Policy and S3PolicyBinding CRDs

@@ -16,10 +16,9 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization
 
 
 def snapshot_controller(chart: Chart) -> Kustomization:
-    name = "snapshot-controller"
     return flux_kustomization(
         chart,
-        name,
+        "snapshot-controller",
         KustomizationSpecSourceRef(
             kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY,
             name="external-snapshotter-source",
@@ -43,10 +42,9 @@ def snapshot_controller(chart: Chart) -> Kustomization:
 
 
 def snapshot_controller_crds(chart: Chart) -> Kustomization:
-    name = "snapshot-controller-crds"
     return flux_kustomization(
         chart,
-        name,
+        "snapshot-controller-crds",
         KustomizationSpecSourceRef(
             kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY,
             name="external-snapshotter-source",

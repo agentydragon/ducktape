@@ -32,10 +32,9 @@ def chart(app: App) -> Chart:
 def seaweedfs_drivefs_artifacts_bucket(
     chart: Chart, directory: RenderedDirectory, seaweedfs_operator: Kustomization
 ) -> Kustomization:
-    name = "seaweedfs-drivefs-artifacts-bucket"
     return flux_kustomization(
         chart,
-        name,
+        "seaweedfs-drivefs-artifacts-bucket",
         directory,
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         depends_on=[flux_kustomization_depends_on(seaweedfs_operator)],

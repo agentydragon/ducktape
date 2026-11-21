@@ -351,10 +351,9 @@ def chart(app: App) -> Chart:
 def matrix(
     chart: Chart, directory: RenderedDirectory, cnpg: Kustomization, seaweedfs_operator: Kustomization
 ) -> Kustomization:
-    name = "matrix"
     return flux_kustomization(
         chart,
-        name,
+        "matrix",
         directory,
         timeout="10m",
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,

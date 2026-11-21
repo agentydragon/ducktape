@@ -75,10 +75,9 @@ def chart(app: App) -> Chart:
 def matrix_user_provisioner(
     chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization, matrix: Kustomization
 ) -> Kustomization:
-    name = "matrix-user-provisioner"
     return flux_kustomization(
         chart,
-        name,
+        "matrix-user-provisioner",
         directory,
         wait=None,
         timeout="5m",
