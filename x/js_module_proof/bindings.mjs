@@ -417,12 +417,15 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
       const index = identifier(init.declarations[0].id);
       check(!["globalThis", "eval", "arguments"].includes(index), "unsupported loop binding");
       check(
-        init.declarations[0].init?.type === "Literal" && init.declarations[0].init.value === 0,
+        init.declarations[0].init?.type === "Literal" &&
+          Number.isInteger(init.declarations[0].init.value) &&
+          init.declarations[0].init.value >= 0 &&
+          init.declarations[0].init.value <= 8,
         "unsupported loop initial value"
       );
       check(
         first.test?.type === "BinaryExpression" &&
-          first.test.operator === "<" &&
+          ["<", "<="].includes(first.test.operator) &&
           first.test.left?.type === "Identifier" &&
           first.test.left.name === index &&
           first.test.right?.type === "Literal" &&
@@ -432,10 +435,16 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
         "unsupported loop bound"
       );
       check(
-        first.update?.type === "UpdateExpression" &&
+        (first.update?.type === "UpdateExpression" &&
           first.update.operator === "++" &&
           first.update.argument?.type === "Identifier" &&
-          first.update.argument.name === index,
+          first.update.argument.name === index) ||
+          (first.update?.type === "AssignmentExpression" &&
+            first.update.operator === "+=" &&
+            first.update.left?.type === "Identifier" &&
+            first.update.left.name === index &&
+            first.update.right?.type === "Literal" &&
+            first.update.right.value === 1),
         "unsupported loop update"
       );
       check(
@@ -452,14 +461,23 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
           }),
         "unsupported loop body"
       );
-      const iterations = Array.from({ length: first.test.right.value }, () => [
+      const initial = init.declarations[0].init.value;
+      const count = Math.max(0, first.test.right.value - initial + (first.test.operator === "<=" ? 1 : 0));
+      check(count <= 8, "unsupported loop iteration count");
+      const iterations = Array.from({ length: count }, () => [
         ...first.body.body,
         { type: "ExpressionStatement", expression: first.update },
       ]).flat();
       const loopBody = sequence([...iterations, { type: "ReturnStatement", argument: { type: "Literal", value: 0 } }]);
       return {
         kind: "followedBy",
-        first: { kind: "local", name: index, mutable: true, initial: { kind: "literal", value: 0 }, body: loopBody },
+        first: {
+          kind: "local",
+          name: index,
+          mutable: true,
+          initial: { kind: "literal", value: initial },
+          body: loopBody,
+        },
         continuation: sequence(rest),
       };
     }
@@ -522,6 +540,32 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
         },
         continuation: sequence(rest),
       };
+    if (first.type === "TryStatement" && rest.length > 0) {
+      const nonreturning = (block) => {
+        const throws = block.body.at(-1)?.type === "ThrowStatement";
+        check(
+          block.body.every(
+            (item, index) => item.type === "ExpressionStatement" || (throws && index === block.body.length - 1)
+          ),
+          "unsupported nonreturning try block"
+        );
+        return {
+          ...block,
+          body: throws
+            ? block.body
+            : [...block.body, { type: "ReturnStatement", argument: { type: "Literal", value: 0 } }],
+        };
+      };
+      return {
+        kind: "followedBy",
+        first: returning({
+          ...first,
+          block: nonreturning(first.block),
+          handler: first.handler ? { ...first.handler, body: nonreturning(first.handler.body) } : null,
+        }),
+        continuation: sequence(rest),
+      };
+    }
     if (first.type === "IfStatement" && !first.alternate && rest.length > 0)
       return {
         kind: "guard",

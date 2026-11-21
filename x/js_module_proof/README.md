@@ -122,14 +122,18 @@ mutate surrounding numeric bindings. The checker rejects recursion, local
 function identities that escape, and cases where a captured name or the
 function itself could be shadowed at a call site.
 Returning or throwing functions may use a terminal `try`/`catch`, with no catch
-binding or an unused simple binding, optionally followed by `finally`. Both the try and catch blocks
-must return or throw using supported statements. The finalizer consists of
+binding or an unused simple binding, optionally followed by `finally`. Both the
+try and catch blocks must return or throw using supported statements. A nonterminal try and catch
+may instead consist of supported assignments or updates, optionally ending
+in a throw, before execution continues. The finalizer consists of
 supported local assignments or updates; it runs after either completion, and
-an exception from its expressions replaces the pending completion. Used catch bindings and direct `return` or `throw` statements in the finalizer
-remain unsupported.
-Functions also support `for (let i = 0; i < N; i++)` with a literal `N`
-from 0 through 8 and a block of supported local assignments or updates. The
-body cannot write the loop variable. The frontend unrolls these bounded loops
+an exception from its expressions replaces the pending completion. Used catch
+bindings and direct `return` or `throw` statements in the finalizer remain
+unsupported.
+Functions also support `for (let i = A; i < N; i++)` and inclusive `<=`
+bounds and either `i++` or `i += 1`, with literals `A` and `N` from 0 through
+8, at most eight iterations, and a block of supported local assignments or
+updates. The body cannot write the loop variable. The frontend unrolls these bounded loops
 into the shared expression semantics; dynamic bounds and other loop forms
 return `unknown`.
 Functions can also allocate nonescaping local object literals and arrays with

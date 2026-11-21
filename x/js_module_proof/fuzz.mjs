@@ -972,10 +972,28 @@ export function makeComposedCase(seed, index) {
         const target = mutableNames[rand(mutableNames.length)];
         body.push({
           type: "ForStatement",
-          init: variable(index, 0),
-          test: { type: "BinaryExpression", operator: "<", left: id(index), right: literal(rand(5)) },
-          update: { type: "UpdateExpression", operator: "++", prefix: false, argument: id(index) },
+          init: variable(index, rand(4)),
+          test: { type: "BinaryExpression", operator: rand(2) ? "<" : "<=", left: id(index), right: literal(rand(5)) },
+          update: rand(2)
+            ? { type: "UpdateExpression", operator: "++", prefix: false, argument: id(index) }
+            : { type: "AssignmentExpression", operator: "+=", left: id(index), right: literal(1) },
           body: { type: "BlockStatement", body: [add(target, index)] },
+        });
+      }
+      if (mutableNames.length && rand(4) === 0) {
+        const target = mutableNames[rand(mutableNames.length)];
+        body.push({
+          type: "TryStatement",
+          block: {
+            type: "BlockStatement",
+            body: [add(target, target), ...(rand(4) === 0 ? [{ type: "ThrowStatement", argument: literal(7) }] : [])],
+          },
+          handler: {
+            type: "CatchClause",
+            param: rand(2) ? id("caught") : null,
+            body: { type: "BlockStatement", body: [add(target, target)] },
+          },
+          finalizer: rand(2) ? { type: "BlockStatement", body: [add(target, target)] } : null,
         });
       }
       let terminal;
