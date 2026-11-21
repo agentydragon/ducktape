@@ -18,7 +18,7 @@ lack both. The 229 VPA objects also include Jobs and other targets; 66 were
 
 | Workload                                    | Target update mode | Resource ownership                                                                                           |
 | ------------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------ |
-| Replicated and restart-safe                 | `Recreate`         | CPU and memory requests where compatible; reviewed bounds                                                    |
+| Replicated and restart-safe                 | `Recreate`         | CPU and memory requests where compatible                                                                     |
 | Singleton or restart-sensitive              | `Initial`          | CPU and memory requests where compatible; no VPA eviction                                                    |
 | Insufficient history or uncertain ownership | `Off`              | Recommendations until a safe policy is established                                                           |
 | Operator-managed, dynamic or short-lived    | Case by case       | VPA only where its owner, history and admission behavior are reliable; otherwise intentional static requests |
@@ -68,9 +68,16 @@ a wave as a group; do not impose a serial PR-and-observation cycle per workload.
   resources, startup and historical usage. Keep existing limit control and
   non-VPA-owned sidecars intact.
 - Broaden existing memory-only policies to CPU **and** memory requests where CPU
-  is not HPA-controlled and the observed range supports useful bounds. Apply
+  is not HPA-controlled and the workload can use the resulting requests. Apply
   `Initial` to compatible uncovered services in reviewed namespaces, including
   request gaps; leave automatic eviction as a separate choice.
+- Give VPA room to respond to demand. Set a request floor or ceiling only for a
+  concrete workload or placement constraint. State the constraint and the
+  evidence for it. Use historical peaks as sizing evidence and derive any
+  ceiling from the underlying constraint. A VPA request bound affects
+  reservations and placement. A container limit governs runtime CPU or memory.
+  Use current recommendations, observed workload demand, and concrete
+  replacement or failover scenarios to size capacity, with uncertainty stated.
 - Review admitted CPU requests on ordinary replacements for the nine replicated
   Agentplane staging services already expanded in
   [#18487](https://github.com/agentydragon/ducktape/pull/18487). Track uncapped

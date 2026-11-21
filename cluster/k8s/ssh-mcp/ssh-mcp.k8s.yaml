@@ -94,7 +94,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "server", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "50m", "memory": "144Mi"}, "maxAllowed": {"cpu": "75m", "memory": "512Mi"}, "controlledResources": ["cpu", "memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
+    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "server", "controlledValues": "RequestsOnly", "minAllowed": {"memory": "144Mi"}, "controlledResources": ["cpu", "memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
     goldilocks.fairwinds.com/vpa-update-mode: initial
   labels:
     app.kubernetes.io/name: ssh-mcp

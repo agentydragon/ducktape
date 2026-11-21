@@ -172,7 +172,7 @@ kind: Deployment
 metadata:
   annotations:
     description: Writable Home Assistant MCP server behind the shared MCP facade, cluster-internal and gated by a static bearer that only agentplane-staging's Action Service holds. The upstream HA token remains server-side, and the Action Service applies its own per-call approval policy.
-    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "ha-mcp", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "50m", "memory": "256Mi"}, "maxAllowed": {"cpu": "75m", "memory": "1024Mi"}, "controlledResources": ["cpu", "memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
+    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "ha-mcp", "controlledValues": "RequestsOnly", "controlledResources": ["cpu", "memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
     goldilocks.fairwinds.com/vpa-update-mode: initial
   labels:
     app.kubernetes.io/name: ha-mcp

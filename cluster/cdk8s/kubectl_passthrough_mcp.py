@@ -55,13 +55,7 @@ def _deployment(chart: Chart) -> None:
             labels=SERVICE.pods.selector,
             annotations={
                 **namespaces.initial_request_annotations(
-                    ContainerPolicy.cpu_and_memory_requests_only(
-                        "server",
-                        cpu_floor=_CPU_REQUEST,
-                        cpu_ceiling="100m",
-                        memory_floor=_MEMORY_REQUEST,
-                        memory_ceiling=_MEMORY_LIMIT,
-                    )
+                    ContainerPolicy.cpu_and_memory_requests_only("server", memory_floor=_MEMORY_REQUEST)
                 ),
                 "description": (
                     "containers/kubernetes-mcp-server in OAuth passthrough mode. Caller's Authentik JWT is"

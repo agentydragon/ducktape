@@ -22,30 +22,27 @@ from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 NAME = "agentplane-staging-vpa"
 OUTPUT_DIR = f"{GENERATED_ROOT}/agentplane-staging/vpa"
 
-# (Deployment, container, memory bounds, optional CPU bounds).
-# CPU floors preserve the Deployment reservations. CPU ceilings leave margin above
-# measured demand while bounding the extra reservation on OVH workers.
+# (Deployment, container, memory floor, memory ceiling, controlled resources).
+_CPU_AND_MEMORY = ("cpu", "memory")
+_MEMORY = ("memory",)
 _WORKLOADS = (
-    ("actions", "actions", ("128Mi", "160Mi"), ("50m", "75m")),
-    ("app", "app", ("128Mi", "160Mi"), ("50m", "350m")),
-    ("electric", "electric", ("448Mi", "576Mi"), None),
-    ("environments", "environments", ("64Mi", "112Mi"), ("10m", "50m")),
-    ("frontend", "frontend", ("32Mi", "40Mi"), None),
-    ("history-service", "history-service", ("128Mi", "256Mi"), ("20m", "1025m")),
-    ("llm-ingress", "ingress", ("128Mi", "160Mi"), ("50m", "75m")),
-    ("mcp-edge", "mcp-edge", ("128Mi", "160Mi"), ("50m", "75m")),
-    ("notifications", "notifications", ("128Mi", "160Mi"), ("50m", "600m")),
-    ("policy-controller", "policy-controller", ("64Mi", "112Mi"), ("10m", "25m")),
-    ("sessions", "sessions", ("256Mi", "320Mi"), ("100m", "150m")),
+    ("actions", "actions", "128Mi", "160Mi", _CPU_AND_MEMORY),
+    ("app", "app", "128Mi", "160Mi", _CPU_AND_MEMORY),
+    ("electric", "electric", "448Mi", "576Mi", _MEMORY),
+    ("environments", "environments", "64Mi", "112Mi", _CPU_AND_MEMORY),
+    ("frontend", "frontend", "32Mi", "40Mi", _MEMORY),
+    ("history-service", "history-service", "128Mi", "256Mi", _CPU_AND_MEMORY),
+    ("llm-ingress", "ingress", "128Mi", "160Mi", _CPU_AND_MEMORY),
+    ("mcp-edge", "mcp-edge", "128Mi", "160Mi", _CPU_AND_MEMORY),
+    ("notifications", "notifications", "128Mi", "160Mi", _CPU_AND_MEMORY),
+    ("policy-controller", "policy-controller", "64Mi", "112Mi", _CPU_AND_MEMORY),
+    ("sessions", "sessions", "256Mi", "320Mi", _CPU_AND_MEMORY),
 )
 
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    for deployment, container, memory, cpu in _WORKLOADS:
-        bounds = {"memory": memory}
-        if cpu is not None:
-            bounds["cpu"] = cpu
+    for deployment, container, memory_floor, memory_ceiling, resources in _WORKLOADS:
         VerticalPodAutoscaler(
             chart,
             deployment,
@@ -61,19 +58,17 @@ def chart(app: App) -> Chart:
                     container_policies=[
                         VerticalPodAutoscalerSpecResourcePolicyContainerPolicies(
                             container_name=container,
-                            controlled_resources=sorted(bounds),
+                            controlled_resources=list(resources),
                             controlled_values="RequestsOnly",
                             min_allowed={
-                                resource: VerticalPodAutoscalerSpecResourcePolicyContainerPoliciesMinAllowed.from_string(
-                                    floor
+                                "memory": VerticalPodAutoscalerSpecResourcePolicyContainerPoliciesMinAllowed.from_string(
+                                    memory_floor
                                 )
-                                for resource, (floor, _) in bounds.items()
                             },
                             max_allowed={
-                                resource: VerticalPodAutoscalerSpecResourcePolicyContainerPoliciesMaxAllowed.from_string(
-                                    ceiling
+                                "memory": VerticalPodAutoscalerSpecResourcePolicyContainerPoliciesMaxAllowed.from_string(
+                                    memory_ceiling
                                 )
-                                for resource, (_, ceiling) in bounds.items()
                             },
                         ),
                         # Future sidecars do not silently acquire a resource policy.

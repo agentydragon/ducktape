@@ -30,16 +30,13 @@ class ContainerPolicy(BaseModel):
     mode: Literal["Auto", "Off"] | None = None
 
     @classmethod
-    def cpu_and_memory_requests_only(
-        cls, container_name: str, *, cpu_floor: str, cpu_ceiling: str, memory_floor: str, memory_ceiling: str
-    ) -> Self:
-        """Bound the CPU and memory requests of one container."""
+    def cpu_and_memory_requests_only(cls, container_name: str, *, memory_floor: str | None = None) -> Self:
+        """Size both requests, with a memory floor where the workload needs a reservation."""
         return cls(
             container_name=container_name,
             controlled_values=ControlledValues.REQUESTS_ONLY,
             controlled_resources=("cpu", "memory"),
-            min_allowed={"cpu": cpu_floor, "memory": memory_floor},
-            max_allowed={"cpu": cpu_ceiling, "memory": memory_ceiling},
+            min_allowed={"memory": memory_floor} if memory_floor is not None else None,
         )
 
     @classmethod

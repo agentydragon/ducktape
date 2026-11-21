@@ -59,9 +59,7 @@ from cluster.cdk8s.vpa_policy import ContainerPolicy
 
 NAME = "google-mcp"
 _CPU_REQUEST_MILLIS = 50
-_CPU_REQUEST = f"{_CPU_REQUEST_MILLIS}m"
 _MEMORY_LIMIT_MIB = 512
-_MEMORY_LIMIT = f"{_MEMORY_LIMIT_MIB}Mi"
 OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}"
 PINS_DIR = f"{HAND_WRITTEN_ROOT}/google-mcp-image-pins"
 _IMAGE_NAME = "git.allegedly.works/ducktape-ci/google-mcp"
@@ -113,13 +111,7 @@ class GoogleMcpApp(Construct):
                 labels=SERVICE.pods.selector,
                 annotations=namespaces.initial_request_annotations(
                     # Peak 30-day working set was 196Mi, including startup.
-                    ContainerPolicy.cpu_and_memory_requests_only(
-                        "server",
-                        cpu_floor=_CPU_REQUEST,
-                        cpu_ceiling="75m",
-                        memory_floor="224Mi",
-                        memory_ceiling=_MEMORY_LIMIT,
-                    )
+                    ContainerPolicy.cpu_and_memory_requests_only("server", memory_floor="224Mi")
                 ),
             ),
             pod_metadata=ApiObjectMetadata(labels=SERVICE.pods.selector),

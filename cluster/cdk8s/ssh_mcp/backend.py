@@ -52,9 +52,7 @@ from cluster.scripts.nebula_mesh import Mesh
 IMAGE_NAME = "git.allegedly.works/ducktape-ci/ssh-mcp"
 PLACEHOLDER_TAG = "unset"
 _CPU_REQUEST_MILLIS = 50
-_CPU_REQUEST = f"{_CPU_REQUEST_MILLIS}m"
 _MEMORY_LIMIT_MIB = 512
-_MEMORY_LIMIT = f"{_MEMORY_LIMIT_MIB}Mi"
 _BEARER = SecretRef(namespace=NAMESPACE, name=BEARER_SECRET_NAME).key(BEARER_SECRET_KEY)
 _KEY_VOLUMES = (
     ("keys", "ssh-mcp-keys", f"{CONFIG_DIR}/keys"),
@@ -140,13 +138,7 @@ class SshMcp(Construct):
                 labels=SERVICE.pods.selector,
                 annotations=namespaces.initial_request_annotations(
                     # Peak 30-day working set was 123Mi.
-                    ContainerPolicy.cpu_and_memory_requests_only(
-                        "server",
-                        cpu_floor=_CPU_REQUEST,
-                        cpu_ceiling="75m",
-                        memory_floor="144Mi",
-                        memory_ceiling=_MEMORY_LIMIT,
-                    )
+                    ContainerPolicy.cpu_and_memory_requests_only("server", memory_floor="144Mi")
                 ),
             ),
             pod_metadata=ApiObjectMetadata(labels=SERVICE.pods.selector),

@@ -56,7 +56,6 @@ from cluster.cdk8s.vpa_policy import ContainerPolicy
 
 NAME = "ha-mcp"
 _CPU_REQUEST_MILLIS = 50
-_CPU_REQUEST = f"{_CPU_REQUEST_MILLIS}m"
 _BACKEND_MEMORY_LIMIT_MIB = 1024
 _NAMESPACE = "ha-mcp"
 OUTPUT_DIR = f"{GENERATED_ROOT}/agents/ha-mcp/app"
@@ -184,16 +183,7 @@ class HaMcpApp(Construct):
                 namespace=_NAMESPACE,
                 labels=FACADE.pods.selector,
                 annotations={
-                    **namespaces.initial_request_annotations(
-                        # Peak 30-day working set was 126Mi.
-                        ContainerPolicy.cpu_and_memory_requests_only(
-                            "ha-mcp",
-                            cpu_floor=_CPU_REQUEST,
-                            cpu_ceiling="75m",
-                            memory_floor="256Mi",
-                            memory_ceiling=f"{_BACKEND_MEMORY_LIMIT_MIB}Mi",
-                        )
-                    ),
+                    **namespaces.initial_request_annotations(ContainerPolicy.cpu_and_memory_requests_only("ha-mcp")),
                     "description": (
                         "Writable Home Assistant MCP server behind the shared MCP facade, cluster-internal "
                         "and gated by a static bearer that only agentplane-staging's Action Service holds. "

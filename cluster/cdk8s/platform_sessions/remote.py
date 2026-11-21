@@ -424,26 +424,16 @@ def _provider_workload(chart: Chart, instance: str, *, provider_type: str, recor
         if record_upstream_traffic
         else []
     )
-    # Reserve the sampled working-set peaks in the providers that fit at their ceilings.
+    # Retain the memory reservations for providers with sampled working-set peaks near those requests.
     # Recorder and other init-container resources are outside these policies.
     vpa_policy: ContainerPolicy | None
     match instance:
         case "anthropic" | "chatgpt" | "openai":
-            vpa_policy = ContainerPolicy.cpu_and_memory_requests_only(
-                "provider",
-                cpu_floor=_CPU_REQUEST,
-                cpu_ceiling="125m" if instance == "chatgpt" else "75m",
-                memory_floor="128Mi",
-                memory_ceiling="192Mi",
-            )
+            vpa_policy = ContainerPolicy.cpu_and_memory_requests_only("provider", memory_floor="128Mi")
         case "blueshield":
-            vpa_policy = ContainerPolicy.cpu_and_memory_requests_only(
-                "provider", cpu_floor=_CPU_REQUEST, cpu_ceiling="125m", memory_floor="416Mi", memory_ceiling="512Mi"
-            )
+            vpa_policy = ContainerPolicy.cpu_and_memory_requests_only("provider", memory_floor="416Mi")
         case "quest-scheduler":
-            vpa_policy = ContainerPolicy.cpu_and_memory_requests_only(
-                "provider", cpu_floor=_CPU_REQUEST, cpu_ceiling="75m", memory_floor="576Mi", memory_ceiling="704Mi"
-            )
+            vpa_policy = ContainerPolicy.cpu_and_memory_requests_only("provider", memory_floor="576Mi")
         case _:
             vpa_policy = None
     _deployment(
@@ -642,9 +632,7 @@ def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
             ),
         ],
         selector_name=GATEWAY,
-        vpa_policy=ContainerPolicy.cpu_and_memory_requests_only(
-            "gateway", cpu_floor=_CPU_REQUEST, cpu_ceiling="75m", memory_floor="64Mi", memory_ceiling="96Mi"
-        ),
+        vpa_policy=ContainerPolicy.cpu_and_memory_requests_only("gateway"),
     )
     _service(
         chart,
