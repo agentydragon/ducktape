@@ -50,6 +50,7 @@ py_test(
     deps = [
         ":invocation_census",
         ":invocation_ids",
+        "//devinfra/buildbuddy:cli",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

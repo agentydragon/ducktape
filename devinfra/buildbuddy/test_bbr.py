@@ -29,6 +29,7 @@ from devinfra.buildbuddy.bbr import (
 )
 
 BB = "/usr/bin/bb"
+USER_INVOCATION_ID = "12345678-1234-1234-1234-123456789abc"
 
 
 def _make_repo(tmp_path: Path) -> pygit2.Repository:
@@ -157,30 +158,30 @@ class TestBuildCommand:
             monkeypatch.setenv(k, v)
         return build_command(user_args)
 
-    def test_basic_test(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_basic_test(self, monkeypatch: pytest.MonkeyPatch) -> None:
         cmd, inv_id = self._build(["test", "//foo:bar"], monkeypatch)
         assert cmd == [BB, "remote", "--disable_retry=true", "test", f"--invocation_id={inv_id}", "//foo:bar"]
 
-    def test_each_run_mints_fresh_id(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_each_run_mints_fresh_id(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr("devinfra.buildbuddy.bbr._find_bb", lambda: BB)
         _, first = build_command(["test", "//foo"])
         _, second = build_command(["test", "//foo"])
         assert first != second
 
-    def test_user_supplied_invocation_id_adopted(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    @pytest.mark.parametrize(
+        "flag",
+        [
+            pytest.param([f"--invocation_id={USER_INVOCATION_ID}"], id="equals-form"),
+            pytest.param(["--invocation_id", USER_INVOCATION_ID], id="space-form"),
+        ],
+    )
+    def test_user_supplied_invocation_id_adopted(self, flag: list[str], monkeypatch: pytest.MonkeyPatch) -> None:
         """An explicit --invocation_id is reported as-is, not overridden by a minted one."""
-        user_id = "12345678-1234-1234-1234-123456789abc"
-        cmd, inv_id = self._build(["test", f"--invocation_id={user_id}", "//foo"], monkeypatch)
-        assert inv_id == user_id
-        assert [arg for arg in cmd if "--invocation_id" in arg] == [f"--invocation_id={user_id}"]
+        cmd, inv_id = self._build(["test", *flag, "//foo"], monkeypatch)
+        assert inv_id == USER_INVOCATION_ID
+        assert [arg for arg in cmd if "--invocation_id" in arg] == [flag[0]]
 
-    def test_user_supplied_invocation_id_space_form(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        user_id = "12345678-1234-1234-1234-123456789abc"
-        cmd, inv_id = self._build(["test", "--invocation_id", user_id, "//foo"], monkeypatch)
-        assert inv_id == user_id
-        assert [arg for arg in cmd if "--invocation_id" in arg] == ["--invocation_id"]
-
-    def test_basic_build_with_user_override(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_basic_build_with_user_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
         cmd, inv_id = self._build(["build", "--config=nolint", "//foo"], monkeypatch)
         assert cmd == [
             BB,
@@ -226,7 +227,7 @@ class TestBuildCommand:
             "--nocache_test_results",
         ]
 
-    def test_startup_options_before_verb(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_startup_options_before_verb(self, monkeypatch: pytest.MonkeyPatch) -> None:
         cmd, inv_id = self._build(["--output_base=/tmp/bazel", "build", "//foo"], monkeypatch)
         assert cmd == [
             BB,
@@ -238,7 +239,7 @@ class TestBuildCommand:
             "//foo",
         ]
 
-    def test_no_verb(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_no_verb(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """When no verb is found, everything is startup options and no ID is minted."""
         cmd, inv_id = self._build(["--flag", "//foo"], monkeypatch)
         assert inv_id is None

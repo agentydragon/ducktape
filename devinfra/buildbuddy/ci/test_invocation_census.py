@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 import pytest_bazel
 
+from devinfra.buildbuddy import cli
 from devinfra.buildbuddy.ci import invocation_census
 from devinfra.buildbuddy.ci.invocation_census import (
     QueryFailure,
@@ -191,9 +192,9 @@ def test_empty_proto_response_is_missing_but_unrecognized_response_is_invalid() 
 
 def test_live_query_classifies_timeout_without_exposing_error_text(monkeypatch: pytest.MonkeyPatch) -> None:
     def timeout(*args: str, **kwargs: object) -> bytes:
-        raise invocation_census.CLIError("private stderr") from subprocess.TimeoutExpired(args, 30)
+        raise cli.CLIError("private stderr") from subprocess.TimeoutExpired(args, 30)
 
-    monkeypatch.setattr(invocation_census, "bbapi", timeout)
+    monkeypatch.setattr(cli, "run", timeout)
     result = query_live("id", timeout_seconds=30)
 
     assert result == QueryFailure("timeout")
@@ -201,12 +202,12 @@ def test_live_query_classifies_timeout_without_exposing_error_text(monkeypatch: 
 
 def test_live_query_classifies_command_and_invalid_json_errors(monkeypatch: pytest.MonkeyPatch) -> None:
     def command_failed(*args: str, **kwargs: object) -> bytes:
-        raise invocation_census.CLIError("private stderr") from subprocess.CalledProcessError(1, args)
+        raise cli.CLIError("private stderr") from subprocess.CalledProcessError(1, args)
 
-    monkeypatch.setattr(invocation_census, "bbapi", command_failed)
+    monkeypatch.setattr(cli, "run", command_failed)
     assert query_live("id", timeout_seconds=5) == QueryFailure("bbapi_failed")
 
-    monkeypatch.setattr(invocation_census, "bbapi", lambda *args, **kwargs: b"not json")
+    monkeypatch.setattr(cli, "run", lambda *args, **kwargs: b"not json")
     assert query_live("id", timeout_seconds=5) == QueryFailure("invalid_response")
 
 
@@ -218,7 +219,7 @@ def test_live_query_uses_pinned_bbapi_status_json_and_timeout(monkeypatch: pytes
         called["kwargs"] = kwargs
         return b'{"invocation": []}'
 
-    monkeypatch.setattr(invocation_census, "bbapi", status)
+    monkeypatch.setattr(cli, "run", status)
     assert query_live("requested-id", timeout_seconds=9) == StatusResponse(())
     assert called == {"args": ("--json", "invocation", "status", "requested-id"), "kwargs": {"timeout": 9}}
 
