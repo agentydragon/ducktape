@@ -194,9 +194,120 @@ Production was fully Ready in 127 of 127 samples during the monitored interval. 
 
 ### Follow-up before changing production placement
 
-Run the required `//agentplane/system_tests/suites:test_vm` on matched SSD
-and HDD workers on one host. Check `recycled-runner.json` and
-`persistence-suite.json` for the same runner and a warm fixture with
-complete cleanup. This trial warmed caches with the preceding action and
-kept each worker running. A repeat on the same warmed work volumes after
-reboot would measure the effect of losing in-memory state.
+The required suite has an [SSD retained-fixture baseline](#required-vm-suite-with-the-retained-fixture-on-ssd).
+Before changing production storage placement, repeat the required suite on
+matched SSD and HDD workers on one host with the same action and cold/retained
+fixture states. Check both native receipts for runner reuse and complete
+cleanup. The earlier test warmed caches with the preceding action and kept
+each worker running. A repeat on the same warmed work volumes after reboot
+would measure the effect of losing in-memory state.
+
+## Required VM suite with the retained fixture on SSD
+
+The first reuse on one SSD canary cut TestRunner time from
+508.92 to 357.18 s and writes from
+7.79 to 1.07 GiB (86% fewer writes).
+The measured process write reduction was 6.71–7.25 GiB
+using the nearest QEMU samples around each interval boundary. Fixture setup
+accounted for about 6.61 GiB of that difference.
+
+[Cold seed](https://app.buildbuddy.io/invocation/2c96930a-37fc-4880-a693-97b0ddcfe27f) · [Retained reuse](https://app.buildbuddy.io/invocation/63d2489f-cf0b-476a-a3e2-88752c53e45c) ·
+[Explicit disposal](https://app.buildbuddy.io/invocation/97707a54-1297-4b86-8165-136de539aeb1) ·
+[Counter boundaries and import spans](https://agentydragon.github.io/ducktape/latency/#kvm-retained-vm-ssd) ·
+[Fixture options](../../../../agentplane/system_tests/deployment/vm_fixture_architecture.md)
+
+Both runs executed the normal required `//agentplane/system_tests/suites:test_vm`
+with an uncached TestRunner on the same boot of a 4 vCPU, 8 GiB worker and its
+fresh 80 GiB SSD claim on `wyrm2`. The worker used the production NixOS image
+`git.allegedly.works/ducktape-ci/buildbuddy-kvm-worker-spike@sha256:8490616944d9817efd3a756a22ad54824639e3d615c7fd3de76deb9b053a0268`. The source was devel `5451c306fc0e81ed1c7e89583c078995dd0b01d7`
+with the action's `Pool` changed to `kvm-retained-ssd-trial`. The remote
+runner applied the checkout patch on its current devel base for each run.
+The evidence records both base SHAs and patch digests. Both invocations
+were pinned to the only registered executor in the private pool. They shared
+REAPI action `2d29a08e04f173ae27b2f3f7786ab1bfaa52f9df9528d7baad79d1122f0adcab/2007`, command `54152c3e6f1099428be6fd71645ff12969f5061802652519b9f44f82b4aa34bc/5907`,
+input root `3653a08ac5d3bc6e9cce4bc38f96cf8bdbe18b9a9dd2daae25f5ca95af7d4c81/165` and Docker action image
+`docker://ghcr.io/agentydragon/rbe-container-image@sha256:c73af98850208e2a898120f9992f4cb8c320c488bc3f3c8607cc06ace96be3c5`.
+
+The reused action's `previous_action` field links to the cold action. The Docker container ID, paused process PID
+and its start ticks, PID/mount/cgroup namespaces and ext4 mount ID and device
+matched. Initial KubeVirt installation marks the root recursively shared, which
+adds a propagation tag to the mount receipt. The fixture receipt showed the
+same baseline fingerprint, K3s kube-system namespace and node UIDs, server
+process identity, and the same KubeVirt and PKI
+controller UIDs. The workload and collector namespaces, PostgreSQL pod, root certificate,
+root secret and workspace StorageClass had new UIDs on reuse. Both runs passed Claude and Codex,
+and both fixture receipts recorded complete cleanup and two released workspace loops.
+
+### Work-disk I/O by phase
+
+QEMU sampled only the canary's `vdb` counters at a median 2.03 s
+cadence. The table uses the first and last samples inside each phase. For
+write windows shorter than the sampling interval, an upper bound comes from
+the surrounding samples. The worker boot clock is request through Ready.
+Its work-disk counts begin at the first zero counter and omit the separately
+mounted worker image. Reads and writes are virtual block traffic on `vdb`.
+The import envelope overlaps fixture setup and includes other activity
+running during image import. Individual cases share the worker and overlap.
+
+| Phase                                   | Cold wall, s | Cold written, GiB | Cold read, GiB | Reused wall, s | Reused written, GiB | Reused read, GiB |
+| --------------------------------------- | -----------: | ----------------: | -------------: | -------------: | ------------------: | ---------------: |
+| Complete TestRunner                     |       508.92 |              7.79 |           4.85 |         357.18 |                1.07 |             2.67 |
+| One-time worker startup                 |       199.00 |              4.47 |           0.01 |              — |                   — |                — |
+| Worker prep                             |        54.32 |              1.38 |           0.00 |           0.10 |                   0 |                — |
+| Input staging                           |        57.74 |              2.76 |           0.00 |           0.51 |               ≤0.02 |                — |
+| TestRunner startup before fixture setup |         9.93 |              0.11 |           0.04 |           8.31 |                0.00 |             0.06 |
+| Fixture setup                           |       227.50 |              7.03 |           3.47 |          65.65 |                0.43 |             0.77 |
+| Nested image import envelope            |       204.88 |              6.12 |           3.37 |              — |                   — |                — |
+| Cases and pre-cleanup diagnostics       |       239.26 |              0.54 |           0.92 |         249.84 |                0.48 |             0.98 |
+| Fixture cleanup                         |        28.34 |              0.10 |           0.01 |          30.29 |                0.14 |             0.03 |
+| TestRunner tail after fixture cleanup   |         3.89 |             ≤0.02 |              — |           3.09 |                0.00 |             0.68 |
+| Output upload                           |         0.53 |             ≤0.01 |              — |           0.61 |               ≤0.01 |                — |
+
+The fresh worker wrote 4.47 GiB through Ready
+before the action. Bazel staged 2,945,048,350 logical input
+bytes across 7,515 files on the cold run. On reuse the
+inputs came from the worker cache, with 0 files and
+0 bytes downloaded. The cold stage wrote
+2.76 GiB in 57.74 s. On reuse,
+staging took 0.51 s with at most
+11.7 MB of writes over its
+bracketing interval. The QEMU and logical CAS counters measure different operations.
+
+The cold fixture streamed 25 images in a
+204.88 s envelope. During that window QEMU
+counted 6.12 GiB of writes. The retained run validated
+14 already-usable images and left 11
+baseline images in place. It streamed zero. The cases still ran both nested
+guests. Claude took 230.41/237.48 s
+and Codex took 234.39/244.68 s
+on the cold seed / retained reuse. These case clocks overlap. Guest
+readiness took 118.48 / 124.54 s
+cold and 124.33 / 132.31 s on reuse.
+
+### Host counters and teardown
+
+The node-exporter `vdh` counters cover wyrm2's entire Piraeus SSD device,
+including concurrent workloads. Node I/O PSI covers the whole node. Each row
+uses interior scrapes of the named phase. The QEMU counts and these
+host counters measure different layers of the same storage path.
+
+| Run                               | Counter window, s | Read, GiB | Written, GiB | Device busy | I/O PSI some | I/O PSI full |
+| --------------------------------- | ----------------: | --------: | -----------: | ----------: | -----------: | -----------: |
+| One-time worker startup           |               120 |      0.01 |         2.17 |        8.6% |         4.1% |         3.6% |
+| Cold seed                         |               480 |      4.43 |         9.20 |       42.8% |         5.4% |         4.9% |
+| Cold nested image import envelope |               120 |      1.71 |         3.83 |       66.3% |         6.7% |         6.0% |
+| Retained reuse                    |               300 |      1.07 |         0.95 |       19.3% |         2.9% |         2.5% |
+
+The explicit disposal action used the retained runner and requested
+disposal. The executor removed that Docker container, its loop device
+disappeared and assigned CPU and active tasks returned to zero before the
+worker stopped. The canary VMI, work claim, configuration, secrets and
+attachments were removed, and PV `pvc-e12c17aa-05aa-40d7-819d-76c49b9e5eef` and its LINSTOR resource
+disappeared after Delete reclaim. Production was 2/2 Ready in 44 of
+44 samples. Cleanup finished at `2026-11-21T15:26:19+00:00`.
+
+Prioritize retaining compatible fixtures and warming the worker input cache
+to avoid the repeat costs seen here. A cold worker still pays image setup and
+staging, and each action still creates workloads, runs the guest lifecycle and
+cleans up. This pinned single-worker pair leaves fleet hit rate, required-check
+feedback, physical disk writes and a matched HDD retained run open.
