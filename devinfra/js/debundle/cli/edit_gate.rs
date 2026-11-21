@@ -52,7 +52,7 @@ use anonymous_resolution::{
     resolve_source_claims,
 };
 use anyhow::{Context, Result, bail};
-use graph_provenance::VerifiedGraphSourceContext;
+use graph_provenance::{CurrentRoots, VerifiedGraphSourceContext};
 use serde::Serialize;
 use source_identity::SourceUnitId;
 use spec::{BindingSourceKind, MemberSelectorSpec, ModulePath};
@@ -107,12 +107,23 @@ impl GraphEditArgs {
                 .transpose()?,
         )
     }
+
+    pub fn verify_graph(&self, roots: &CurrentRoots) -> Result<Option<VerifiedGraphSourceContext>> {
+        let Some(graph) = &self.dependency_graph_path else {
+            return Ok(None);
+        };
+        crate::verify_graph_compatibility(
+            graph,
+            &self.modules_root,
+            self.source_root.as_deref(),
+            roots,
+            None,
+        )
+        .map(Some)
+    }
 }
 
-/// How a spec-mutating CLI verb validates its edit. Replaces the
-/// `(no_verify: bool, dependency_graph_path: Option<&Path>)` pair whose
-/// `(false, None)` combination used to silently skip the
-/// realizability gate.
+/// How a spec-mutating CLI verb validates its edit.
 #[derive(Debug)]
 pub enum Gate<'a> {
     /// Run name-collision checks and the post-edit realizability +

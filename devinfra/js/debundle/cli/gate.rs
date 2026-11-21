@@ -523,25 +523,28 @@ fn diagnose_binding(
             unreachable!("filtered promoted report role")
         };
 
+        let trace = |coverage, matched_contract, code, witness| GateDiagnoseTrace {
+            ownership_target: GateDiagnoseOwnershipTarget {
+                binding: args.binding.clone(),
+                source_unit: target.id.clone(),
+                module: target_module,
+            },
+            constraining_dependency: dependency_report(edge, callee_source_unit),
+            call_site_source_location: call_site.source_location.clone(),
+            coverage,
+            matched_contract,
+            first_rejected_guard: GateDiagnoseGuard { code, witness },
+        };
+
         if call_site.callback_factory_barriers.is_empty() {
-            let trace = GateDiagnoseTrace {
-                ownership_target: GateDiagnoseOwnershipTarget {
-                    binding: args.binding.clone(),
-                    source_unit: target.id.clone(),
-                    module: target_module,
-                },
-                constraining_dependency: dependency_report(edge, callee_source_unit),
-                call_site_source_location: call_site.source_location.clone(),
-                coverage: GateDiagnoseCoverage::InconclusiveNoSupportedCallbackFactoryBarrier,
-                matched_contract: None,
-                first_rejected_guard: GateDiagnoseGuard {
-                    code: GateDiagnoseGuardCode::NoSupportedCallbackFactoryBarrier,
-                    witness: None,
-                },
-            };
             total_count += 1;
             if limit.is_none_or(|limit| traces.len() < limit) {
-                traces.push(trace);
+                traces.push(trace(
+                    GateDiagnoseCoverage::InconclusiveNoSupportedCallbackFactoryBarrier,
+                    None,
+                    GateDiagnoseGuardCode::NoSupportedCallbackFactoryBarrier,
+                    None,
+                ));
             }
             continue;
         }
@@ -549,21 +552,12 @@ fn diagnose_binding(
         if call_site.callback_factory_barriers.len() != 1 {
             total_count += 1;
             if limit.is_none_or(|limit| traces.len() < limit) {
-                traces.push(GateDiagnoseTrace {
-                    ownership_target: GateDiagnoseOwnershipTarget {
-                        binding: args.binding.clone(),
-                        source_unit: target.id.clone(),
-                        module: target_module,
-                    },
-                    constraining_dependency: dependency_report(edge, callee_source_unit),
-                    call_site_source_location: call_site.source_location.clone(),
-                    coverage: GateDiagnoseCoverage::InconclusiveAmbiguousCallbackFactoryBarrierLink,
-                    matched_contract: None,
-                    first_rejected_guard: GateDiagnoseGuard {
-                        code: GateDiagnoseGuardCode::AmbiguousCallbackFactoryBarrierLink,
-                        witness: None,
-                    },
-                });
+                traces.push(trace(
+                    GateDiagnoseCoverage::InconclusiveAmbiguousCallbackFactoryBarrierLink,
+                    None,
+                    GateDiagnoseGuardCode::AmbiguousCallbackFactoryBarrierLink,
+                    None,
+                ));
             }
             continue;
         }
@@ -595,54 +589,30 @@ fn diagnose_binding(
             continue;
         }
         if callback_link.is_none() {
-            traces.push(GateDiagnoseTrace {
-                ownership_target: GateDiagnoseOwnershipTarget {
-                    binding: args.binding.clone(),
-                    source_unit: target.id.clone(),
-                    module: target_module,
-                },
-                constraining_dependency: dependency_report(edge, callee_source_unit),
-                call_site_source_location: call_site.source_location.clone(),
-                coverage: GateDiagnoseCoverage::InconclusiveUnresolvedCallbackArgumentSource,
-                matched_contract: None,
-                first_rejected_guard: GateDiagnoseGuard {
-                    code: GateDiagnoseGuardCode::CallbackArgumentSourceUnresolved,
-                    witness: None,
-                },
-            });
+            traces.push(trace(
+                GateDiagnoseCoverage::InconclusiveUnresolvedCallbackArgumentSource,
+                None,
+                GateDiagnoseGuardCode::CallbackArgumentSourceUnresolved,
+                None,
+            ));
             continue;
         }
         if callback_link == Some(false) {
-            traces.push(GateDiagnoseTrace {
-                ownership_target: GateDiagnoseOwnershipTarget {
-                    binding: args.binding.clone(),
-                    source_unit: target.id.clone(),
-                    module: target_module,
-                },
-                constraining_dependency: dependency_report(edge, callee_source_unit),
-                call_site_source_location: call_site.source_location.clone(),
-                coverage: GateDiagnoseCoverage::InconclusiveCallbackArgumentSourceMismatch,
-                matched_contract: None,
-                first_rejected_guard: GateDiagnoseGuard {
-                    code: GateDiagnoseGuardCode::CallbackArgumentSourceMismatch,
-                    witness: None,
-                },
-            });
+            traces.push(trace(
+                GateDiagnoseCoverage::InconclusiveCallbackArgumentSourceMismatch,
+                None,
+                GateDiagnoseGuardCode::CallbackArgumentSourceMismatch,
+                None,
+            ));
             continue;
         }
         let (coverage, code, witness) = diagnose_barrier_witness(barrier, args, inspection_roots)?;
-        traces.push(GateDiagnoseTrace {
-            ownership_target: GateDiagnoseOwnershipTarget {
-                binding: args.binding.clone(),
-                source_unit: target.id.clone(),
-                module: target_module,
-            },
-            constraining_dependency: dependency_report(edge, callee_source_unit),
-            call_site_source_location: call_site.source_location.clone(),
+        traces.push(trace(
             coverage,
-            matched_contract: Some(barrier.contract.clone()),
-            first_rejected_guard: GateDiagnoseGuard { code, witness },
-        });
+            Some(barrier.contract.clone()),
+            code,
+            witness,
+        ));
     }
     Ok((traces, total_count, has_supported_witness))
 }
