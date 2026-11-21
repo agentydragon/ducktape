@@ -5,7 +5,6 @@ from collections.abc import Awaitable, Callable
 from typing import Annotated, Any, Literal, Self, cast
 
 from openai import AsyncOpenAI
-from openai.types.chat.completion_create_params import CompletionCreateParamsNonStreaming
 from openai.types.responses import (
     Response,
     ResponseFunctionToolCall,
@@ -333,9 +332,6 @@ class ResponsesResult(BaseModel):
         return cls(id=sdk_resp.id, usage=usage, output=out_items)
 
 
-type WireRequest = ResponsesRequest | CompletionCreateParamsNonStreaming
-
-
 class Model(ABC):
     api_shape = LLMApiShape.RESPONSES
 
@@ -343,11 +339,11 @@ class Model(ABC):
     @abstractmethod
     def model(self) -> str: ...
 
-    def prepare(self, request: ResponsesRequest) -> WireRequest:
+    def prepare(self, request: ResponsesRequest) -> ResponsesRequest:
         return request.model_copy(update={"model": self.model})
 
     @abstractmethod
-    async def sample(self, request: WireRequest) -> ResponsesResult: ...
+    async def sample(self, request: ResponsesRequest) -> ResponsesResult: ...
 
 
 class ResponsesModel(Model):
@@ -362,9 +358,7 @@ class ResponsesModel(Model):
     def prepare(self, request: ResponsesRequest) -> ResponsesRequest:
         return ResponsesRequest.model_validate({**request.model_dump(), "model": self._model})
 
-    async def sample(self, request: WireRequest) -> ResponsesResult:
-        if not isinstance(request, ResponsesRequest):
-            raise TypeError("ResponsesModel expects a prepared Responses request")
+    async def sample(self, request: ResponsesRequest) -> ResponsesResult:
         create: Callable[..., Awaitable[Response]] = cast(
             Callable[..., Awaitable[Response]], self._client.responses.create
         )
