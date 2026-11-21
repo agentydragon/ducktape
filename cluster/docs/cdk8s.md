@@ -127,6 +127,9 @@ ServiceAccount. Each local Flux owner with a `targetNamespace` is built independ
 with the pinned Flux CLI in dry-run mode. Other local builds use plain Kustomize and
 omit Flux-level patches. Validation skips ExternalSecrets still missing a namespace
 and evaluates ClusterExternalSecret selectors against rendered Namespace labels.
+It reports affected consumers when it cannot resolve a namespace or store condition,
+including when multiple rendered Namespace objects have different labels, and identifies
+ClusterExternalSecret selectors limited to rendered namespaces.
 External source trees, runtime substitutions and labels, unsupported Go regexes,
 and live secret readiness are outside this check.
 
