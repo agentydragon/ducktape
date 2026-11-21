@@ -61,18 +61,17 @@ let
   # localModelSettings (opt-in via ducktape.codex.localModels);
   # the writable-roots sandbox block is appended only under workspace-write.
   baseSettings = {
-    model = "gpt-6-astra";
+    model = "gpt-6.1-terra";
     # To exceed a model's default, set `model_context_window = <tokens>;` here;
     # Codex clamps it to that model's catalogued maximum (Astra: 872000).
-    model_reasoning_effort = "medium";
+    model_reasoning_effort = "xhigh";
     plan_mode_reasoning_effort = "medium";
-    # TODO: Consider disabling terminal animations with tui.animations = false.
+    # 2026-11-20: Trial disabling animations to see how the UX feels: less
+    # feedback that things are happening, but hopefully less lag in tmux.
+    tui.animations = false;
 
     features = {
-      streamable_shell = true;
-      rmcp_client = true;
       unified_exec = true;
-      view_image_tool = true;
       shell_tool = true; # enable `/shell`
       apply_patch_freeform = true; # freeform patch syntax
       memories = true; # experimental memory read/write pipeline
