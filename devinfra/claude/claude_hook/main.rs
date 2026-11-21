@@ -351,7 +351,6 @@ fn handle_session_start(
         hook_specific_output: Some(AnyHookSpecificOutput::SessionStart(
             SessionStartSpecificOutput {
                 additional_context: Some(banner),
-                ..Default::default()
             },
         )),
         ..Default::default()
