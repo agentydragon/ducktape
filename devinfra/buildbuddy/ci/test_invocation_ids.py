@@ -62,12 +62,7 @@ def test_bazel_ci_outputs_keep_allocated_ids_aligned_across_consumers(tmp_path: 
     assert outputs["linkage_roles"].split(",") == ["test", "build"]
     all_ids = outputs["all_invocation_ids"].split(",")
     assert all_ids == [role_ids[role] for role in ("test", "build")]
-    assert list(zip(outputs["linkage_roles"].split(","), all_ids, strict=True)) == [
-        ("test", role_ids["test"]),
-        ("build", role_ids["build"]),
-    ]
     assert outputs["publication"].split(",") == [role_ids["build"]]
-    assert role_ids["test"] not in outputs["publication"].split(",")
     assert outputs["env_overrides"].splitlines() == [
         f"TEST_INVOCATION_ID={role_ids['test']}",
         f"BUILD_INVOCATION_ID={role_ids['build']}",

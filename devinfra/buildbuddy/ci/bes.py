@@ -61,10 +61,6 @@ class Invocation:
     child_invocation_ids: tuple[str, ...] = ()
     exit_code_name: str | None = None
 
-    def by_path(self) -> dict[str, Output]:
-        """Outputs keyed by their full path. A later duplicate wins, as in Bazel."""
-        return {output.path: output for output in self.outputs}
-
     def by_label(self) -> dict[str, list[Output]]:
         """Outputs grouped by the target that produced them.
 

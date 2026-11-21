@@ -302,6 +302,18 @@ def capture_proc_snapshot(paths: ProbePaths, phase: str, servers: list[dict[str,
     return {"root": str(root), "global_files": files, "processes": processes}
 
 
+def summarize_servers(entry: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {
+            "pid": p.get("pid"),
+            "start_time": p.get("start_time"),
+            "age_seconds": p.get("age_seconds"),
+            "cmdline_sha256": p.get("cmdline_sha256"),
+        }
+        for p in entry.get("bazel_servers", [])
+    ]
+
+
 def summarize_jsonl(path: Path, *, tail: int = 5, max_bytes: int = 5_000_000) -> dict[str, Any]:
     if not path.exists():
         return {"exists": False, "path": str(path)}
@@ -318,10 +330,10 @@ def summarize_jsonl(path: Path, *, tail: int = 5, max_bytes: int = 5_000_000) ->
             entries.append({"raw": line})
     phases = [entry.get("phase") for entry in entries if isinstance(entry, dict)]
     last = entries[-1] if entries else None
-    tail_summaries = []
+    tail_summaries: list[dict[str, Any]] = []
     for entry in entries[-tail:]:
         if not isinstance(entry, dict):
-            tail_summaries.append({"raw": entry.get("raw") if isinstance(entry, dict) else str(entry)})
+            tail_summaries.append({"raw": str(entry)})
             continue
         tail_summaries.append(
             {
@@ -329,15 +341,7 @@ def summarize_jsonl(path: Path, *, tail: int = 5, max_bytes: int = 5_000_000) ->
                 "timestamp": entry.get("timestamp"),
                 "boot_id": entry.get("boot_id"),
                 "uptime_seconds": entry.get("uptime_seconds"),
-                "bazel_servers": [
-                    {
-                        "pid": p.get("pid"),
-                        "start_time": p.get("start_time"),
-                        "age_seconds": p.get("age_seconds"),
-                        "cmdline_sha256": p.get("cmdline_sha256"),
-                    }
-                    for p in entry.get("bazel_servers", [])
-                ],
+                "bazel_servers": summarize_servers(entry),
                 "git_head": entry.get("git", {}).get("head", {}).get("stdout"),
             }
         )
@@ -352,17 +356,7 @@ def summarize_jsonl(path: Path, *, tail: int = 5, max_bytes: int = 5_000_000) ->
         "first_timestamp_in_sample": entries[0].get("timestamp") if entries else None,
         "last_timestamp_in_sample": last.get("timestamp") if isinstance(last, dict) else None,
         "last_phase": last.get("phase") if isinstance(last, dict) else None,
-        "last_bazel_servers": [
-            {
-                "pid": p.get("pid"),
-                "start_time": p.get("start_time"),
-                "age_seconds": p.get("age_seconds"),
-                "cmdline_sha256": p.get("cmdline_sha256"),
-            }
-            for p in (last or {}).get("bazel_servers", [])
-        ]
-        if isinstance(last, dict)
-        else [],
+        "last_bazel_servers": summarize_servers(last) if isinstance(last, dict) else [],
         "tail_summaries": tail_summaries,
     }
 
