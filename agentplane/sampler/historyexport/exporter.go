@@ -40,38 +40,22 @@ type Outbox interface {
 	PendingSessionIDs(context.Context, string, string, int) ([]string, error)
 }
 
-// exportChannels carries the sampler's own token while delegating each History push to the
-// Identity the Session executes as.
-type exportChannels struct {
-	delegated *grpc.ClientConn
-}
-
-func dialExportChannels(target, tokenFile string, tls *peertls.ClientTLS) (exportChannels, error) {
-	delegated, err := workloadgrpc.DialDelegated(target, tokenFile, 30*time.Second, tls, workloadgrpc.ClientInterceptors{})
-	if err != nil {
-		return exportChannels{}, err
-	}
-	return exportChannels{delegated: delegated}, nil
-}
-
-func (c exportChannels) close() {
-	c.delegated.Close()
+// dialHistory connects with the sampler's own credential; each push delegates to the Identity the
+// Session executes as.
+func dialHistory(target, tokenFile string, tls *peertls.ClientTLS) (*grpc.ClientConn, error) {
+	return workloadgrpc.DialDelegated(target, tokenFile, 30*time.Second, tls, workloadgrpc.ClientInterceptors{})
 }
 
 // pushContext delegates one Session's push to the exact Identity recorded at admission.
-func (c exportChannels) pushContext(ctx context.Context, session *sessionpb.Attached) (context.Context, *grpc.ClientConn, error) {
+func pushContext(ctx context.Context, session *sessionpb.Attached) (context.Context, error) {
 	identity := session.GetExecutionIdentity()
 	if identity == nil || identity.GetName() == "" || identity.GetUid() == "" {
-		return nil, nil, errors.New("History export Session has no execution Identity")
+		return nil, errors.New("History export Session has no execution Identity")
 	}
-	delegated, err := workloadgrpc.WithDelegation(ctx, &delegationpb.Delegation{
+	return workloadgrpc.WithDelegation(ctx, &delegationpb.Delegation{
 		EffectiveCaller: &delegationpb.Delegation_Identity{Identity: identity},
 		Provenance:      &delegationpb.Delegation_Session{Session: &delegationpb.SessionProvenance{SessionId: session.GetSessionId()}},
 	})
-	if err != nil {
-		return nil, nil, err
-	}
-	return delegated, c.delegated, nil
 }
 
 const (
@@ -84,17 +68,17 @@ const (
 )
 
 func ExportSession(ctx context.Context, outbox Outbox, sessionID, target, tokenFile string, tls *peertls.ClientTLS) error {
-	channels, err := dialExportChannels(target, tokenFile, tls)
+	history, err := dialHistory(target, tokenFile, tls)
 	if err != nil {
 		return err
 	}
-	defer channels.close()
-	_, err = exportSession(ctx, outbox, sessionID, target, channels)
+	defer history.Close()
+	_, err = exportSession(ctx, outbox, sessionID, target, history)
 	return err
 }
 
 // exportSession sends at most one scheduling quantum and reports whether History has caught up.
-func exportSession(ctx context.Context, outbox Outbox, sessionID, target string, channels exportChannels) (bool, error) {
+func exportSession(ctx context.Context, outbox Outbox, sessionID, target string, history *grpc.ClientConn) (bool, error) {
 	pages := 0
 	for refresh := 0; refresh < exportPagesPerTurn; refresh++ {
 		session, err := outbox.ExportSnapshot(ctx, sessionID)
@@ -103,11 +87,11 @@ func exportSession(ctx context.Context, outbox Outbox, sessionID, target string,
 		}
 		callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		err = func() error {
-			pushCtx, channel, err := channels.pushContext(callCtx, session.Description.GetAttached())
+			pushCtx, err := pushContext(callCtx, session.Description.GetAttached())
 			if err != nil {
 				return err
 			}
-			call, err := ingresspb.NewSessionJournalIngressClient(channel).Push(pushCtx)
+			call, err := ingresspb.NewSessionJournalIngressClient(history).Push(pushCtx)
 			if err != nil {
 				return err
 			}
@@ -307,13 +291,13 @@ func Run(ctx context.Context, outbox Outbox, target, tokenFile, outboxChannel st
 		return err
 	}
 	defer unsubscribe()
-	channels, err := dialExportChannels(target, tokenFile, tls)
+	history, err := dialHistory(target, tokenFile, tls)
 	if err != nil {
 		return err
 	}
-	defer channels.close()
+	defer history.Close()
 	queue := newExportQueue(workqueue.TypedRateLimitingQueueConfig[string]{}, func(ctx context.Context, sessionID string) (bool, error) {
-		return exportSession(ctx, outbox, sessionID, target, channels)
+		return exportSession(ctx, outbox, sessionID, target, history)
 	})
 	tasks, taskCtx := errgroup.WithContext(ctx)
 	for range exportConcurrency {

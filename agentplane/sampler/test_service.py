@@ -52,6 +52,14 @@ from agentplane.testing.codex_fixtures import ExecutorServer
 pytest_plugins = ("agentplane.sampler.testing_fixtures",)
 
 
+def with_json_exec(config: Settings, dialect: Literal["lite", "standard"]) -> Settings:
+    """`config` routing only `test-model`, over the Responses `dialect` with JSON exec."""
+    model = config.models["test-model"].model_copy(
+        update={"responses": ResponsesConfig(dialect=dialect), "exec_encoding": "json"}
+    )
+    return config.model_copy(update={"models": {"test-model": model}})
+
+
 async def test_flat_model_routes_enforce_effort_and_session_contract(
     endpoint: Endpoint, config: Settings, tmp_path: Path
 ) -> None:
@@ -862,20 +870,7 @@ async def test_unknown_json_function_call_returns_function_output(
     dialect: Literal["lite", "standard"],
     function_name: str,
 ) -> None:
-    config = config.model_copy(
-        update={
-            "models": {
-                "test-model": ModelConfig(
-                    connection="provider",
-                    provider_model="test-model",
-                    reasoning_efforts={"", "high"},
-                    api="responses",
-                    responses=ResponsesConfig(dialect=dialect),
-                    exec_encoding="json",
-                )
-            }
-        }
-    )
+    config = with_json_exec(config, dialect)
     request = create_request(tmp_path)
     request.spec.reasoning_effort = ""
     async with service(config) as stub:
@@ -1139,20 +1134,7 @@ async def test_chat_completions_compaction(
 async def test_json_exec_runs_shell_resumes_and_recovers(
     endpoint: Endpoint, config: Settings, tmp_path: Path, dialect: Literal["lite", "standard"]
 ) -> None:
-    config = config.model_copy(
-        update={
-            "models": {
-                "test-model": ModelConfig(
-                    connection="provider",
-                    provider_model="test-model",
-                    reasoning_efforts={"", "high"},
-                    api="responses",
-                    responses=ResponsesConfig(dialect=dialect),
-                    exec_encoding="json",
-                )
-            }
-        }
-    )
+    config = with_json_exec(config, dialect)
     Image.new("RGB", (1, 1), (255, 0, 0)).save(tmp_path / "small.png")
     request = create_request(tmp_path)
     request.spec.reasoning_effort = ""
