@@ -44,7 +44,6 @@ py_library(
     srcs = ["model.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":api_shape",
         ":errors",
         "@pypi//openai",
         "@pypi//pydantic",

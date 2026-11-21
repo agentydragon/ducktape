@@ -15,7 +15,6 @@ from openai.types.responses import (
 from openai.types.responses.response_reasoning_item import Content as SdkReasoningContent, ResponseReasoningItem
 from pydantic import BaseModel, ConfigDict, Field
 
-from openai_utils.api_shape import LLMApiShape
 from openai_utils.errors import translate_context_length
 
 
@@ -333,8 +332,6 @@ class ResponsesResult(BaseModel):
 
 
 class Model(ABC):
-    api_shape = LLMApiShape.RESPONSES
-
     @property
     @abstractmethod
     def model(self) -> str: ...
