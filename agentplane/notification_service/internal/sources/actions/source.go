@@ -59,17 +59,14 @@ func (s *Source) Events(ctx context.Context, owner inboxstore.Owner, requestID u
 	}
 	submitted := request.GetActionRequest()
 	caller := submitted.GetCallerIdentity()
-	owned := owner.Identity.Name != "" && owner.Identity.UID != "" &&
-		caller.GetName() == owner.Identity.Name && caller.GetUid() == owner.Identity.UID
-	if !owned {
+	if caller.GetName() != owner.Identity.Name || caller.GetUid() != owner.Identity.UID {
 		return nil, &sources.ProviderError{Kind: model.FailureAccessDenied, Message: "SourceNotOwnedError"}
 	}
 	if afterSequence < 0 || afterSequence > maxEventSequence {
 		return nil, validationFailure()
 	}
-	limit := int32(eventsPageSize)
 	page, err := s.Service.ListActionRequestEvents(ctx, &action_servicepb.ListActionRequestEventsRequest{
-		RequestId: requestID.String(), AfterSequence: int32(afterSequence), Limit: proto.Int32(limit),
+		RequestId: requestID.String(), AfterSequence: int32(afterSequence), Limit: proto.Int32(eventsPageSize),
 	})
 	if err != nil {
 		return nil, rpcFailure(ctx, err)
