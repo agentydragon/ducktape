@@ -41,8 +41,8 @@ node summarize.mjs results/cases.jsonl > results/summary.md
 | `strict-and-breaks` | 1       | I reject. debundle accepts. My plan, written anyway, does not load.                                      |
 | `unsound-accept`    | 0       | I accept. The emitted modules print something else.                                                      |
 | `lenient`           | 0       | I accept what debundle rejects, and the output is the same.                                              |
-| `refusal-test`      | 13      | debundle must fail with a given stderr text. There is nothing to compare.                                |
-| not run             | 103     | The adapter cannot translate the spec yet (below). 36 `reject: stderr` entries in all are refusal tests. |
+| `refusal-test`      | 7       | debundle must fail with a given stderr text. There is nothing to compare.                                |
+| not run             | 109     | The adapter cannot translate the spec yet (below). 36 `reject: stderr` entries in all are refusal tests. |
 
 - **No unsound accept in the final run.** The corpus found two before I fixed them (§ Soundness findings).
 - **The agreeing accepts are real splits.** 61 of the 69 move statements out of the entry: 159 of 323 statements. The other 8 keep everything in the entry.
@@ -58,7 +58,7 @@ node summarize.mjs results/cases.jsonl > results/summary.md
 | `emission/duplicate_declaration/repeated_var`, `emission/hoisted_var/repeated_statements`, `initialization/repeated_var_accessor/colocated`            | `UniqueDefs` | Two `var` declarations of one name. That is legal inside one module, and debundle keeps such sites together. `UniqueDefs` wants one declaration per name.                                                                                                                                             | checker (`Plan.lean`) |
 | `realizability/initialization_order/early_entry_importer_does_not_pull_scc_in_wrong_order`                                                             | `OrderOk`    | `mod_init` calls `readT`, which reads `T` from `mod_logger`. My plan has no import that makes `mod_logger` run first.                                                                                                                                                                                 | splitter (`mkPlan`)   |
 
-## Why 103 entries do not run
+## Why 109 entries do not run
 
 | Family                          | Entries | What is missing                                                                                                                                                                                                                                                                                         |
 | ------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -69,9 +69,10 @@ node summarize.mjs results/cases.jsonl > results/summary.md
 | Statement granularity           | 4       | Two modules claim parts of one statement: the declarators of a comma list, or a binding and an anonymous template. debundle's units are declarators. Mine are statements.                                                                                                                               |
 | Audited premises                | 5       | `annotations` 3 and `chunk_analysis_options` 2: facts the spec author vouches for (purity, commuting statements, dataflow summaries).                                                                                                                                                                   |
 | Spec-contract violations, parse | 10      | `import_order` omits a module 5, input does not parse 3, `import_order` names a generated residual that stays empty 2. Nine of the ten expect `reject: stderr`: they test debundle's diagnostics. The tenth, `emission/sibling_declarator_ownership`, is the granularity case again.                    |
+| Outside the model               | 6       | `lowersplit` refuses the bundle: a direct `eval` 3, a top-level `await` 3 ([`SUPPORT.md`](../../SUPPORT.md)). All six expect `reject: stderr`: debundle refuses them too. Before the refusal these ran, and `lowersplit` accepted them.                                                                 |
 
 41 of the template entries and 13 of the dataflow entries expect `accept`. The other 12 expect `reject: stderr`.
-In all, 36 entries (13 run, 23 not run) test debundle's error text and have no counterpart here.
+In all, 36 entries (7 run, 29 not run) test debundle's error text and have no counterpart here.
 
 ## Soundness findings
 

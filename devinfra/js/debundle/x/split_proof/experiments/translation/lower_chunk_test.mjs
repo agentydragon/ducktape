@@ -162,16 +162,29 @@ export const three = 3;
   assert.equal(refused.checked.status, 3, refused.log);
 }
 
-// A top-level `await` stays outside the model: the module that awaits lets a module imported after it run first.
-// The same split with the `await` inside an async function is taken.
+// Outside the model, refused before any check: a top-level `await` (the module that awaits lets a module imported
+// after it run first), a top-level `using`, and a direct `eval` anywhere (it reaches bindings by their spelling, so a
+// split can part it from a name no statement mentions). The same split is taken with the `await` inside an async
+// function and with an indirect eval, which runs in the global scope.
 {
   const modules = { "first.mjs": ["#0", "#1"], "second.mjs": ["#2"], "entry.mjs": ["#3"] };
   const rest = `console.log("first", typeof a);\nconsole.log("second");\nconsole.log("third");\n`;
-  for (const awaiting of [`const a = await Promise.resolve(1);\n`, `for await (const x of [1]) globalThis.a = x;\n`]) {
-    const refused = split("top_level_await", { code: awaiting + rest, modules });
-    assert.equal(refused.checked.status, 3, refused.log);
+  for (const refusedStatement of [
+    `const a = await Promise.resolve(1);`,
+    `for await (const x of [1]) globalThis.a = x;`,
+    `using a = { [Symbol.dispose]() {} };`,
+    `const a = eval("1");`,
+    `const a = () => eval("rest");`,
+  ]) {
+    const refused = split("outside_model", { code: `${refusedStatement}\n${rest}`, modules });
+    assert.equal(refused.checked.status, 3, `${refusedStatement}: ${refused.log}`);
   }
-  same("await_in_function", { code: `const a = (async () => await Promise.resolve(1))();\n${rest}`, modules }, []);
+  for (const [name, taken] of [
+    ["await_in_function", `const a = (async () => await Promise.resolve(1))();`],
+    ["indirect_eval", `const a = (0, eval)("1");`],
+  ]) {
+    same(name, { code: `${taken}\n${rest}`, modules }, []);
+  }
 }
 
 // One statement per declarator, also under `export`: the declarators of a list go to different modules. A
