@@ -24,7 +24,7 @@ For RLS testing, tests use:
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator, Iterator
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from uuid import UUID
 
 import pytest
@@ -70,12 +70,11 @@ async def critic_dev_optimize_creds(synced_db: Database) -> AsyncGenerator[Agent
 @contextmanager
 def _role_session(synced_db: Database, creds: AgentCredentials) -> Iterator[Session]:
     """Database session connected as the agent's own Postgres role, with its RLS policies active."""
-    engine = create_engine(synced_db.config.with_user(creds.username, creds.password).url)
-    try:
+    with ExitStack() as cleanup:
+        engine = create_engine(synced_db.config.with_user(creds.username, creds.password).url)
+        cleanup.callback(engine.dispose)
         with Session(engine) as session:
             yield session
-    finally:
-        engine.dispose()
 
 
 @pytest_asyncio.fixture
