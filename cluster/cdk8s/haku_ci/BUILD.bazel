@@ -19,6 +19,8 @@ py_library(
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/providers/agentplane:workload_credential",
         "//cluster/cdk8s/providers/cilium:network_policy",
+        "//cluster/cdk8s/providers/vpa:policy",
+        "//cluster/cdk8s/providers/vpa:verticalpodautoscaler",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",

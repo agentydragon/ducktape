@@ -25,13 +25,6 @@ Audit findings deferred for later.
       `secrets/*-forgejo-tea-token.yaml`; keep `.sops.yaml`, home-manager
       modules, and rotator configs in sync when moving them.
 
-## InvenTree secrets if reviving
-
-- [ ] Add SOPS secrets for InvenTree admin and database passwords before
-      reviving it. The old Vault `kv/inventree/*` values are gone with
-      Vault (decommissioned 2026-04-19; <../docs/decisions.md> § "Secrets: SOPS
-      SSOT"), so generate fresh values.
-
 ## Mobile Nebula phone followups
 
 - [ ] Wire the phone into ActivityWatch: a phone-specific exporter/importer
@@ -44,22 +37,6 @@ Audit findings deferred for later.
 - [ ] Consider running an SSH daemon on the phone for emergency access back to
       the device, probably via Termux/OpenSSH, with explicit keys and a clear
       power/background-execution story.
-
-## OpenHands: self-hosted git provider
-
-OpenHands supports GitHub and GitLab natively (PAT or OAuth App). Consider pointing
-it at a self-hosted option — either cluster Forgejo (`git.allegedly.works`) or a
-self-hosted GitLab instance — so agent work can land in private repos without relying
-on `github.com`. GitLab PAT just needs `GITLAB_TOKEN` env var (same pattern as
-`GITHUB_TOKEN`); Forgejo would need a git-credential helper or embedded PAT in URLs
-since there's no first-class Forgejo provider in OpenHands.
-
-## OpenHands sandbox egress isolation
-
-- [ ] Add NetworkPolicy/CiliumNetworkPolicy to `openhands-sandboxes` namespace blocking
-      egress to internal cluster IP ranges (pod CIDR `10.244.0.0/16`, service CIDR
-      `10.96.0.0/12`). Only allow egress to external internet + DNS (port 53 to
-      kube-dns). Agent pods shouldn't reach internal cluster services by default.
 
 ## Proxmox drift watch
 
@@ -244,22 +221,6 @@ already shows replays, the marginal-link canary), ECC, thermal/power violations.
       DCGM's PCIe replay counter already covers the marginal-link canary, so this is
       optional; a small textfile/exporter DaemonSet reading `aer_dev_*` would add the raw
       AER counts.
-
-## agent-box follow-ups
-
-The agent-box VM configuration is parked (see
-<../parked/agent-box/README.md>). Revisit these follow-ups only if resuming it:
-
-- [ ] **`claude` agent user** on agent-box: same multi-user pattern as `codex`
-      (the `agentUsers` list + a per-user HM module under
-      `cluster/parked/agent-box/nix/home/`),
-      but running Claude Code against Anthropic directly (not via LiteLLM/z.ai).
-- [ ] **Auto-provision the Codex CLI auth credential** (`~/.codex/auth.json`):
-      today the ChatGPT login is done manually via the device-code flow and is lost
-      on every image rebuild + VM recreate. Investigate SOPS-planting it (decrypted
-      with the `agent-box-codex-user` key) — caveat: the token likely carries a
-      refresh token that rotates on use, so a static plant could go stale; check
-      whether the Codex CLI rewrites `auth.json` after refresh.
 
 ## Alloy `allow_arbitrary_file_access`: decide the residual components
 

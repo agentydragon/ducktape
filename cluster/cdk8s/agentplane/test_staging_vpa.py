@@ -18,8 +18,10 @@ def _mib(quantity: str) -> int:
 
 
 def test_vpas_target_only_static_deployments(scratch_app: App, staging_manifests: list[dict[str, Any]]) -> None:
-    vpas = staging_vpa.chart(scratch_app).to_json()
-    assert len(vpas) == 11
+    resources = staging_vpa.chart(scratch_app).to_json()
+    assert {resource["metadata"]["namespace"] for resource in resources} == {"agentplane-staging", "haku-ci"}
+    vpas = [resource for resource in resources if resource["metadata"]["namespace"] == "agentplane-staging"]
+    assert len(vpas) == 13
     assert all(vpa["apiVersion"] == "autoscaling.k8s.io/v1" and vpa["kind"] == "VerticalPodAutoscaler" for vpa in vpas)
     assert (
         find_resource(staging_manifests, "Namespace", "agentplane-staging")["metadata"]["labels"][
@@ -28,24 +30,26 @@ def test_vpas_target_only_static_deployments(scratch_app: App, staging_manifests
         == "false"
     )
 
+    assert {"central-sampler", "egress"} <= {vpa["metadata"]["name"] for vpa in vpas}
+    expected_modes = {"central-sampler": "Off", "frontend": "Recreate"}
     for vpa in vpas:
         spec = vpa["spec"]
         target = spec["targetRef"]
         assert target == {"apiVersion": "apps/v1", "kind": "Deployment", "name": vpa["metadata"]["name"]}
         assert vpa["metadata"]["namespace"] == "agentplane-staging"
-        assert spec["updatePolicy"] == {"updateMode": "Recreate" if target["name"] == "frontend" else "Initial"}
+        assert spec["updatePolicy"] == {"updateMode": expected_modes.get(target["name"], "Initial")}
         deployment = find_resource(staging_manifests, "Deployment", target["name"])
         container = one(deployment["spec"]["template"]["spec"]["containers"])
         selected, wildcard = spec["resourcePolicy"]["containerPolicies"]
         assert selected["containerName"] == container["name"]
         assert set(selected["controlledResources"]) == {"cpu", "memory"}
         assert selected["controlledValues"] == "RequestsOnly"
-        if target["name"] == "frontend":
+        if target["name"] in {"central-sampler", "egress", "frontend"}:
             assert "minAllowed" not in selected
         else:
             assert set(selected["minAllowed"]) == {"memory"}
             assert _mib(selected["minAllowed"]["memory"]) >= _mib(container["resources"]["requests"]["memory"])
-        if target["name"] in {"electric", "frontend"}:
+        if target["name"] in {"central-sampler", "egress", "electric", "frontend"}:
             assert "maxAllowed" not in selected
         else:
             assert set(selected["maxAllowed"]) == {"memory"}
