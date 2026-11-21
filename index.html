@@ -113,12 +113,15 @@
                 <${Anchor} href="vpa/">Cluster VPA rollout<//>
               <//>
               <${Text} component="p" my="sm">
-                CPU and memory request coverage, a searchable workload snapshot
-                and ${" "}<${Anchor} href="vpa/#remaining-work"
-                  >next rollout waves<//
+                CPU and memory request coverage, a searchable workload snapshot,
+                ${" "}<${Anchor} href="vpa/#rollout-status"
+                  >recent rollout status<//
+                >
+                ${" "}and ${" "}<${Anchor} href="vpa/#open-rollout-decisions"
+                  >open rollout gates<//
                 >.
               <//>
-              <${ManifestStamp} src="vpa/manifest.json" />
+              <${ManifestStamp} src="vpa/manifest.json?v=20261121091939" />
               <${Text} component="p" my="sm">
                 <${Anchor} href="vpa/inventory.json">inventory<//>
                 ${" · "}
