@@ -87,7 +87,7 @@ MUTANTS = {
     ),
     "parameters are not bound": (
         EFFECTS,
-        "    else bindPattern fr1 p (args[i]?.getD past)",
+        "    else bindPattern frP p (args[i]?.getD past)",
         "    else pure ()",
         "a function writes its argument",
     ),
@@ -141,8 +141,8 @@ MUTANTS = {
     ),
     "class fields do not run": (
         EFFECTS,
-        '      if typ m == "PropertyDefinition" && !flag m "static" then',
-        "      if false then",
+        '    if typ m == "PropertyDefinition" && !flag m "static" then',
+        "    if false then",
         "an instance field initializer with an effect",
     ),
     "constructors do not run": (
@@ -171,7 +171,7 @@ MUTANTS = {
     ),
     "defineProperty stores nothing": (
         EFFECTS,
-        "  setAV target none (← contentsOf d)\n",
+        "  setAV target none v\n  noteProps target v\n",
         "  pure ()\n",
         "a value defined on an object, read through another name",
     ),
@@ -427,7 +427,7 @@ MUTANTS = {
     ),
     "Object.assign copies no property values": (
         EFFECTS,
-        "  for (src, dst) in s.copies do setAV (pos dst) none (← contentsOf (pos src))\n",
+        "  for (src, dst) in s.copies do\n    let v ← contentsOf (pos src)\n    setAV (pos dst) none v\n    noteProps (pos dst) v\n",
         "",
         "Object.assign runs a getter of its source",
     ),
@@ -526,8 +526,8 @@ MUTANTS = {
     ),
     "assign copies from one source": (
         EFFECTS,
-        "    for i in [first:args.length + 1] do setAV (pos dst) none (← contentsOf (pos i))",
-        "    for i in [first:first + 1] do setAV (pos dst) none (← contentsOf (pos i))",
+        "    for i in [first:args.length + 1] do\n      let v ← contentsOf (pos i)",
+        "    for i in [first:first + 1] do\n      let v ← contentsOf (pos i)",
         "`Object.assign` with several sources",
     ),
     "an assignment does not convert its key": (
@@ -598,7 +598,7 @@ MUTANTS = {
     ),
     "arguments is not a binding": (
         EFFECTS,
-        '  let bindsArguments := !isArrow && !declared.contains "arguments" && (← codeInfo code).1.contains "arguments"',
+        '  let bindsArguments := !isArrow && !(paramNames ++ bodyNames).contains "arguments" && (← codeInfo code).1.contains "arguments"',
         "  let bindsArguments := false",
         "`arguments` in a function and in an arrow function inside it",
     ),
@@ -658,8 +658,8 @@ MUTANTS = {
     ),
     "a function under an unknown key of an array is not a hook": (
         EFFECTS,
-        "        if c ≥ 2 then modObj (c - 1) ({ · with hook := true })",
-        "        if c ≥ 2 then pure ()",
+        "    if (memberKey t).isNone then noteProps o v\n",
+        "    pure ()\n",
         "an array with an own `Symbol.iterator`",
     ),
     "a hooked array is iterated natively": (
@@ -703,6 +703,124 @@ MUTANTS = {
         '("Object.prototype.toLocaleString", { callsMethods := [(0, "toString", [])] })',
         '("Object.prototype.toLocaleString", {})',
         "`x.toLocaleString()` calls an own `toString`",
+    ),
+    # the core language
+    "the memo replays a run that grew the heap": (
+        EFFECTS,
+        "  unless s2.broke || s2.changes != s.changes do\n",
+        "  unless s2.broke do\n",
+        "two identical calls move a value one hop each; a loop of calls",
+    ),
+    "a replayed call drops what it threw": (
+        EFFECTS,
+        "unk := s.unk || u, thrown := s.thrown.join th }",
+        "unk := s.unk || u }",
+        "`catch (e)` after a call that was replayed",
+    ),
+    "a named read of an array skips what has no name": (
+        EFFECTS,
+        "isElements && isStandardMember k | none => false",
+        "isElements && !(k.all Char.isDigit) | none => false",
+        '`arr.foo` after `arr["fo" + "o"] = o`',
+    ),
+    "a prototype of the program is no hook of an array": (
+        EFFECTS,
+        "        | .builtin _ => pure ()\n        | _ => modObj o ({ · with hook := true })",
+        "        | _ => pure ()",
+        "`Object.setPrototypeOf(arr, { toString() {} })`",
+    ),
+    "properties copied onto an array are no hooks": (
+        EFFECTS,
+        "      if c ≥ 2 && (← getObj (c - 1)).kind matches .array | .coll then modObj (c - 1) ({ · with hook := true })",
+        "      if c ≥ 2 && (← getObj (c - 1)).kind matches .array | .coll then pure ()",
+        "`Object.assign(arr, { [Symbol.iterator]() {} })`, then a spread",
+    ),
+    "a hooked array converts as a plain one": (
+        EFFECTS,
+        "let f ← if ob.hook then hookFns ((← getVal c (some k)).join ob.any) else pure (ob.props.getD k #[])",
+        "let f ← pure (ob.props.getD k #[])",
+        "a `toString` found on the replaced prototype of an array",
+    ),
+    "the fields of a derived class run before super": (
+        EFFECTS,
+        ("    unless derived do initFields cls inst fr0\n", "  initFields cls inst fr\n  return r"),
+        ("    initFields cls inst fr0\n", "  return r"),
+        "a field initializer reads what the parent constructor set",
+    ),
+    "a parent constructor's returned object is not this": (
+        EFFECTS,
+        '    escapeAV others\n    setWorld "a parent constructor returned another object"',
+        "    pure ()",
+        "a derived class whose parent constructor returns an object",
+    ),
+    "super into a standard constructor builds nothing": (
+        EFFECTS,
+        "do setAV fr.this none (← contentsOf (← callBuiltin path fr.this args fr 41))",
+        "do let _ ← callBuiltin path fr.this args fr 41",
+        "`class M extends Map {}` holds the entries given to `super`",
+    ),
+    "a static block runs in text order": (
+        EFFECTS,
+        (
+            '    | "StaticBlock" => pure ()\n    | t => giveUp t m',
+            "      for s in stmts do exec fr'' s\n    | _ => pure ()",
+        ),
+        (
+            '    | "StaticBlock" =>\n      let stmts := items (fld m "body")\n      let fr\'\' ← newFrame fr\' (lexicalNames stmts ++ stmts.toList.flatMap varNames)\n'
+            "      hoistFns fr'' stmts\n      for s in stmts do exec fr'' s\n    | t => giveUp t m",
+            "      pure ()\n    | _ => pure ()",
+        ),
+        "a static block calls a method defined after it",
+    ),
+    "a static field runs in text order": (
+        EFFECTS,
+        (
+            '    | "PropertyDefinition" =>\n      if flag m "static" && !isNull (fld m "value") then',
+            '        convert [← eval fr\' (fld m "key")] fr\' (shallow m)\n    | "StaticBlock" => pure ()',
+        ),
+        (
+            '    | "PropertyDefinition" =>\n      if false then',
+            '        convert [← eval fr\' (fld m "key")] fr\' (shallow m)\n      if flag m "static" && !isNull (fld m "value") then\n'
+            '        let v ← eval fr\' (fld m "value")\n        recWrite C\n        match propKey m with\n        | some k => joinProp C k v\n        | none => joinAny C v\n    | "StaticBlock" => pure ()',
+        ),
+        "a static field calls a method defined after it",
+    ),
+    "a parameter default sees the body's declarations": (
+        EFFECTS,
+        (
+            '(if bindsArguments then ["arguments"] else []) ++ selfName ++ paramNames)',
+            "  let fr1 ← if bodyNames.isEmpty then pure frP else newFrame frP bodyNames",
+        ),
+        (
+            '(if bindsArguments then ["arguments"] else []) ++ selfName ++ paramNames ++ bodyNames)',
+            "  let fr1 ← pure frP",
+        ),
+        "`function f(a = o) { var o; }` uses the outer `o`",
+    ),
+    "a switch binds no functions": (EFFECTS, "    hoistFns fr' bodies\n", "", "a function declared in a `switch` case"),
+    "a closure site keeps the last closure": (
+        EFFECTS,
+        "let (nw, grew) := joinKind (← getObj o).kind k",
+        "let (nw, grew) := (k, false)",
+        "two `f.bind(x)` or two arrows made by one call site",
+    ),
+    "a standard function is no hook": (
+        EFFECTS,
+        "      | .func .. | .klass .. | .bound .. | .builtin _ => r := r.join (AV.ofObj (d - 1))",
+        "      | .func .. | .klass .. | .bound .. => r := r.join (AV.ofObj (d - 1))",
+        "`valueOf: Array.prototype.shift`",
+    ),
+    "a standard function is no accessor": (
+        EFFECTS,
+        "      | .func .. | .klass .. | .bound .. | .builtin _ => programs := programs.join (AV.ofObj (d - 1))",
+        "      | .func .. | .klass .. | .bound .. => programs := programs.join (AV.ofObj (d - 1))",
+        "`get: Array.prototype.pop`",
+    ),
+    "nested accessors are unbounded": (
+        EFFECTS,
+        "  if (← get).accessorDepth ≥ maxDepth then",
+        "  if false then",
+        "a standard function used as a getter reads the getter it is",
     ),
 }
 
