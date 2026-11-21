@@ -81,3 +81,12 @@ export const httpApi: SessionBrowserApi = {
 export function harnessLabel(harness: Harness): string {
   return harness === "claude" ? "Claude Code" : "Codex CLI";
 }
+
+export function errorMessage(reason: unknown, fallback = "Could not load local sessions."): string {
+  return reason instanceof Error ? reason.message : fallback;
+}
+
+/** The last item with each ID wins, at the position of that ID's first occurrence. */
+export function uniqueById<T extends { id: string }>(items: T[]): T[] {
+  return [...new Map(items.map((item) => [item.id, item])).values()];
+}
