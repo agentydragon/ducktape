@@ -299,6 +299,7 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
   check(name !== "globalThis" && !parameters.includes("globalThis"), "unsupported globalThis binding");
   check(new Set(parameters).size === parameters.length, "duplicate parameters");
   check(node.body.body.length > 0, "expected a returning function body");
+  let logicalIndex = 0;
   const expression = (node) => {
     check(--budget.remaining >= 0, "expression expansion limit exceeded");
     if (node?.type === "Literal") {
@@ -340,6 +341,34 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
         right: expression(node.right),
       };
     }
+    if (node?.type === "LogicalExpression" && ["&&", "||"].includes(node.operator)) {
+      const left = expression(node.left),
+        right = expression(node.right);
+      if (node.operator === "&&")
+        return { kind: "conditional", test: left, consequent: right, alternative: { kind: "literal", value: 0 } };
+      // A name that cannot be a JavaScript identifier keeps the evaluated
+      // operand available without evaluating it a second time.
+      const temporary = `@logical:${name}:${logicalIndex++}`;
+      return {
+        kind: "local",
+        name: temporary,
+        mutable: false,
+        initial: left,
+        body: {
+          kind: "conditional",
+          test: { kind: "name", name: temporary },
+          consequent: { kind: "name", name: temporary },
+          alternative: right,
+        },
+      };
+    }
+    if (node?.type === "ConditionalExpression")
+      return {
+        kind: "conditional",
+        test: condition(node.test),
+        consequent: expression(node.consequent),
+        alternative: expression(node.alternate),
+      };
     if (node?.type === "CallExpression" && !node.optional) {
       const target = identifier(node.callee);
       check(target !== name, "recursive calls are unsupported");
@@ -384,17 +413,17 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
     check(--budget.remaining >= 0, "expression expansion limit exceeded");
     if (node?.type === "Literal" && typeof node.value === "boolean")
       return { kind: "literal", value: node.value ? 1 : 0 };
-    if (node?.type === "BinaryExpression" && ["===", "<", ">"].includes(node.operator))
+    if (node?.type === "BinaryExpression" && ["===", "==", "<", ">"].includes(node.operator))
       return {
-        kind: node.operator === "===" ? "equal" : node.operator === "<" ? "less" : "greater",
+        kind: ["===", "=="].includes(node.operator) ? "equal" : node.operator === "<" ? "less" : "greater",
         left: expression(node.left),
         right: expression(node.right),
       };
-    if (node?.type === "BinaryExpression" && ["!==", ">=", "<="].includes(node.operator))
+    if (node?.type === "BinaryExpression" && ["!==", "!=", ">=", "<="].includes(node.operator))
       return {
         kind: "conditional",
         test: {
-          kind: node.operator === "!==" ? "equal" : node.operator === ">=" ? "less" : "greater",
+          kind: ["!==", "!="].includes(node.operator) ? "equal" : node.operator === ">=" ? "less" : "greater",
           left: expression(node.left),
           right: expression(node.right),
         },

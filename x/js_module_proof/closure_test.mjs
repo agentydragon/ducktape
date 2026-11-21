@@ -863,6 +863,78 @@ export { counter };
   assert.equal(cli("generate", used, spec, join(root, "catch-binding-used-out")).result, "unknown");
 }
 
+if (shard === 14) {
+  const logicalSource = join(root, "logical-values.mjs");
+  const logicalSpec = join(root, "logical-values.json");
+  const logicalOut = join(root, "logical-values-out");
+  await writeFile(
+    logicalSource,
+    `function boom(x) { if (x) throw 7; return x; }
+function count(x) { let n = x; function next() { n += 1; return n; } return next() || 9; }
+function and(x) { return x && boom(1); }
+function or(x) { return x || boom(1); }
+function nested(x) { return (x || 2) || 3; }
+export { count, and, or, nested };
+`
+  );
+  await writeFile(
+    logicalSpec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "helpers.mjs": { imports: [], statements: [0] },
+        "functions.mjs": { imports: ["helpers.mjs"], statements: [1, 2, 3, 4] },
+        "entry.mjs": { imports: ["functions.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", logicalSource, logicalSpec, logicalOut).result, "generated");
+  const proof = cli("validate", logicalSource, logicalSpec, logicalOut);
+  assert.equal(proof.result, "proved under assumptions", JSON.stringify(proof));
+  const calls = [
+    { name: "count", args: [0] },
+    { name: "and", args: [0] },
+    { name: "or", args: [2] },
+    { name: "nested", args: [0] },
+    { name: "nested", args: [5] },
+  ];
+  const trace = execute(logicalSource, calls);
+  assert.deepEqual(trace.results, [{ value: 1 }, { value: 0 }, { value: 2 }, { value: 2 }, { value: 5 }]);
+  assert.deepEqual(execute(join(logicalOut, "entry.mjs"), calls), trace);
+  for (const call of [
+    { name: "and", args: [1] },
+    { name: "or", args: [0] },
+  ]) {
+    const thrown = execute(logicalSource, [call]);
+    assert.deepEqual(thrown.error?.thrown, { kind: "number", value: 7 });
+    assert.deepEqual(execute(join(logicalOut, "entry.mjs"), [call]), thrown);
+  }
+  const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
+    encoding: "utf8",
+    input:
+      models +
+      proof.certificate +
+      `
+theorem logical_values_observation :
+  ((sourceBindingState bindingSource).bind (fun state =>
+    (publicCallableTable bindingSource bindingExports).bind (fun table =>
+      runArgumentCalls table state [("count", [0]), ("and", [0]), ("or", [2]), ("nested", [0]), ("nested", [5])]))).map
+    (fun state => state.returns) = some [some 1, some 0, some 2, some 2, some 5] := by decide
+#print axioms logical_values_observation
+theorem logical_throw_observation :
+  ((sourceBindingState bindingSource).bind (fun state =>
+    (publicCallableTable bindingSource bindingExports).bind (fun table =>
+      runArgumentCalls table state [("or", [0])]))).map
+    (fun state => state.thrown) = some (some (.number 7)) := by decide
+#print axioms logical_throw_observation
+`,
+  });
+  assert.equal(replay.status, 0, replay.stdout + replay.stderr);
+  assert.match(replay.stdout, /'logical_values_observation' does not depend on any axioms/);
+  assert.match(replay.stdout, /'logical_throw_observation' does not depend on any axioms/);
+}
+
 if (shard === 15) {
   const loopSource = join(root, "loop-source.mjs");
   const loopSpec = join(root, "loop-spec.json");
@@ -881,7 +953,11 @@ function remainder(x) { return x % 3; }
 function remainderAssign(x) { let value = x; value %= 3; return value; }
 function divide(x) { return x / 2; }
 function divideAssign(x) { let value = x; value /= 2; return value; }
-export { sum, zero, interrupted, inclusive, reversed, recover, direct, remainder, remainderAssign, divide, divideAssign };
+function looseEqual(x) { if (x == 2) return 1; return 0; }
+function looseNotEqual(x) { if (x != 2) return 1; return 0; }
+function ternary(x) { return x ? maybe(x) : 4; }
+function shortCircuit(x) { return x ? 4 : maybe(2); }
+export { sum, zero, interrupted, inclusive, reversed, recover, direct, remainder, remainderAssign, divide, divideAssign, looseEqual, looseNotEqual, ternary, shortCircuit };
 `
   );
   await writeFile(
@@ -891,7 +967,7 @@ export { sum, zero, interrupted, inclusive, reversed, recover, direct, remainder
       entry: "entry.mjs",
       modules: {
         "helpers.mjs": { imports: [], statements: [0] },
-        "functions.mjs": { imports: ["helpers.mjs"], statements: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] },
+        "functions.mjs": { imports: ["helpers.mjs"], statements: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15] },
         "entry.mjs": { imports: ["functions.mjs"], statements: [] },
       },
     })
@@ -914,6 +990,13 @@ export { sum, zero, interrupted, inclusive, reversed, recover, direct, remainder
     { name: "remainderAssign", args: [7] },
     { name: "divide", args: [8] },
     { name: "divideAssign", args: [6] },
+    { name: "looseEqual", args: [2] },
+    { name: "looseEqual", args: [3] },
+    { name: "looseNotEqual", args: [2] },
+    { name: "looseNotEqual", args: [3] },
+    { name: "ternary", args: [0] },
+    { name: "ternary", args: [1] },
+    { name: "shortCircuit", args: [1] },
     { name: "interrupted", args: [1] },
   ];
   const trace = execute(loopSource, calls);
@@ -929,9 +1012,19 @@ export { sum, zero, interrupted, inclusive, reversed, recover, direct, remainder
     { value: 1 },
     { value: 4 },
     { value: 3 },
+    { value: 1 },
+    { value: 0 },
+    { value: 0 },
+    { value: 1 },
+    { value: 4 },
+    { value: 1 },
+    { value: 4 },
   ]);
-  assert.deepEqual(trace.error, { name: null, phase: "call", index: 11, thrown: { kind: "number", value: 9 } });
+  assert.deepEqual(trace.error, { name: null, phase: "call", index: 18, thrown: { kind: "number", value: 9 } });
   assert.deepEqual(execute(join(loopOut, "entry.mjs"), calls), trace);
+  const thrownTernary = [{ name: "shortCircuit", args: [0] }];
+  assert.deepEqual(execute(loopSource, thrownTernary).error?.thrown, { kind: "number", value: 9 });
+  assert.deepEqual(execute(join(loopOut, "entry.mjs"), thrownTernary), execute(loopSource, thrownTernary));
   const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
     encoding: "utf8",
     input:
@@ -941,9 +1034,15 @@ export { sum, zero, interrupted, inclusive, reversed, recover, direct, remainder
 theorem loop_modeled_observation :
   ((sourceBindingState bindingSource).bind (fun state =>
     (publicCallableTable bindingSource bindingExports).bind (fun table =>
-      runArgumentCalls table state [("sum", [2]), ("zero", [4]), ("inclusive", [1]), ("reversed", [6]), ("recover", [0]), ("recover", [2]), ("direct", [4]), ("remainder", [8]), ("remainderAssign", [7]), ("divide", [8]), ("divideAssign", [6]), ("interrupted", [1])]))).map
-    (fun state => (state.returns, state.thrown)) = some ([some 10, some 4, some 10, some 6, some 3, some 8, some 7, some 2, some 1, some 4, some 3], some (.number 9)) := by decide
+      runArgumentCalls table state [("sum", [2]), ("zero", [4]), ("inclusive", [1]), ("reversed", [6]), ("recover", [0]), ("recover", [2]), ("direct", [4]), ("remainder", [8]), ("remainderAssign", [7]), ("divide", [8]), ("divideAssign", [6]), ("looseEqual", [2]), ("looseEqual", [3]), ("looseNotEqual", [2]), ("looseNotEqual", [3]), ("ternary", [0]), ("ternary", [1]), ("shortCircuit", [1]), ("interrupted", [1])]))).map
+    (fun state => (state.returns, state.thrown)) = some ([some 10, some 4, some 10, some 6, some 3, some 8, some 7, some 2, some 1, some 4, some 3, some 1, some 0, some 0, some 1, some 4, some 1, some 4], some (.number 9)) := by decide
 #print axioms loop_modeled_observation
+theorem ternary_throw_observation :
+  ((sourceBindingState bindingSource).bind (fun state =>
+    (publicCallableTable bindingSource bindingExports).bind (fun table =>
+      runArgumentCalls table state [("shortCircuit", [0])]))).map
+    (fun state => state.thrown) = some (some (.number 9)) := by decide
+#print axioms ternary_throw_observation
 example : evaluateExpression [] [] (.remainder (.literal 4) (.literal 0)) = none := by decide
 example : evaluateExpression [] [] (.divide (.literal 4) (.literal 0)) = none := by decide
 example : evaluateExpression [] [] (.divide (.literal 5) (.literal 2)) = none := by decide
@@ -951,6 +1050,7 @@ example : evaluateExpression [] [] (.divide (.literal 5) (.literal 2)) = none :=
   });
   assert.equal(replay.status, 0, replay.stdout + replay.stderr);
   assert.match(replay.stdout, /'loop_modeled_observation' does not depend on any axioms/);
+  assert.match(replay.stdout, /'ternary_throw_observation' does not depend on any axioms/);
   const emitted = join(loopOut, "functions.mjs");
   const originalOutput = await readFile(emitted, "utf8");
   assert.ok(originalOutput.includes("x / 2"));
@@ -971,6 +1071,7 @@ example : evaluateExpression [] [] (.divide (.literal 5) (.literal 2)) = none :=
     ["divide-zero", "x / 2", "x / 0"],
     ["divide-fraction", "x / 2", "5 / 2"],
     ["divide-assign-zero", "value /= 2", "value /= 0"],
+    ["loose-coercion", "x == 2", "x == '2'"],
   ]) {
     const invalid = join(root, `${name}.mjs`);
     const invalidOut = join(root, `${name}-out`);

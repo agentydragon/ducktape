@@ -58,6 +58,8 @@ function print(node) {
     case "BinaryExpression":
     case "LogicalExpression":
       return `(${print(node.left)} ${node.operator} ${print(node.right)})`;
+    case "ConditionalExpression":
+      return `(${print(node.test)} ? ${print(node.consequent)} : ${print(node.alternate)})`;
     case "CallExpression":
       return `${print(node.callee)}(${node.arguments.map(print).join(", ")})`;
     case "MemberExpression":
@@ -937,6 +939,20 @@ export function makeComposedCase(seed, index) {
         if (!names.length) return literal(rand(4));
         return rand(3) ? id(names[rand(names.length)]) : literal(rand(4));
       }
+      if (rand(7) === 0)
+        return {
+          type: "LogicalExpression",
+          operator: rand(2) ? "&&" : "||",
+          left: expression(visible, depth - 1, forbidden),
+          right: expression(visible, depth - 1, forbidden),
+        };
+      if (rand(7) === 0)
+        return {
+          type: "ConditionalExpression",
+          test: expression(visible, depth - 1, forbidden),
+          consequent: expression(visible, depth - 1, forbidden),
+          alternate: expression(visible, depth - 1, forbidden),
+        };
       if (rand(6) === 0) {
         const divisor = 1 + rand(4);
         return {
@@ -1025,7 +1041,7 @@ export function makeComposedCase(seed, index) {
       }
       let terminal;
       if (depth && rand(2)) {
-        const operators = ["<", "<=", ">", ">=", "===", "!=="];
+        const operators = ["<", "<=", ">", ">=", "===", "!==", "==", "!="];
         terminal = {
           type: "IfStatement",
           test: {
