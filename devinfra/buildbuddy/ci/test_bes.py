@@ -54,12 +54,10 @@ def test_read_adapts_structured_export_and_preserves_present_zero_counts(monkeyp
             path="bazel-out/k8-fastbuild/bin/pkg/wheel.whl",
             uri="bytestream://host/blobs/abc/12",
             digest="abc",
-            size=12,
             output_group="default",
             aspect="",
         )
     ]
-    assert invocation.test_status == {"//pkg:test": "PASSED"}
     assert invocation.test_summaries == [
         TestSummary("//pkg:test", "cfg", "PASSED", 0, 0),
         TestSummary("//pkg:test", "other", "PASSED", None, None),
@@ -131,14 +129,11 @@ def test_fetch_blob_wraps_cli_errors(monkeypatch) -> None:
         bes.fetch_blob("bytestream://host/blobs/abc/12")
 
 
-def test_merge_deduplicates_shared_outputs_and_combines_test_status() -> None:
-    output = Output(label="//p:t", path="bazel-out/bin/p/t.whl", uri="u", digest="d", size=1, output_group="default")
-    one = Invocation(outputs=[output], test_status={"//p:a": "PASSED"})
-    two = Invocation(outputs=[output], test_status={"//p:b": "FAILED"})
-    merged = merge([one, two])
+def test_merge_deduplicates_shared_outputs() -> None:
+    output = Output(label="//p:t", path="bazel-out/bin/p/t.whl", uri="u", digest="d", output_group="default")
+    merged = merge([Invocation(outputs=[output]), Invocation(outputs=[output])])
     assert merged is not None
     assert merged.outputs == [output]
-    assert merged.test_status == {"//p:a": "PASSED", "//p:b": "FAILED"}
     assert merge([]) is None
 
 

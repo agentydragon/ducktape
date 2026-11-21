@@ -12,7 +12,7 @@ BIN = "bazel-out/k8-fastbuild/bin"
 
 
 def out(path: str, label: str = "//:a") -> Output:
-    return Output(label=label, path=path, uri="u", digest="d", size=1, output_group="default")
+    return Output(label=label, path=path, uri="u", digest="d", output_group="default")
 
 
 def test_a_resolved_asset_is_the_streams_path_under_bb_out() -> None:
