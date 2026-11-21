@@ -1,6 +1,8 @@
 import Experiments.Automation
 import Experiments.CoreJS.Frame
 import Experiments.CoreJS.Fuel
+import Experiments.CoreJS.Scope
+import Experiments.CoreJS.Split
 import Experiments.Ladder
 import Experiments.MiniJS
 import Experiments.MiniJSExample
