@@ -9,12 +9,24 @@ The design is "untrusted search, trusted check". The footprint analysis is the o
 
 **Decided (2026-11-21).** The model of item 3 is built up as a longer-term investment beside fixing the known wrong rules. Its first slice exists, and the first rule proved against it is the allocation rule of item 4.
 
-**The theorem to reach.** Two statements about the model, for programs inside its fragment:
+**The theorem to reach.** It does not mention footprints. `split` is the whole tool as one total function: it takes a program and a spec and returns the split program, or refuses.
 
-- _A derived footprint is true._ If the rules derive footprint `fp` for unit `u`, then every run of `u` in the model reads and changes only what `fp` lists. A rule that is not proved yet is a named assumption of this statement, and the list shrinks one rule at a time.
-- _True footprints justify the move._ Two units whose true footprints do not conflict end in the same state in either order. With `Valid → Correct`, an accepted split then behaves like the bundle.
+```lean
+theorem split_preserves : InFragment P → split P spec = some P' → run P = run P'
+```
 
-The rules may be as cautious as they like: "runs unknown code" is always true. They may not be wrong. The first statement is about the code that derives footprints, so that code has to be total functions over the model's syntax; `Effects.lean` is `partial` over JSON, and Lean can prove nothing about it. The proved rules therefore start as a new derivation over `CoreJS` that answers "unknown code" except where a rule is proved, beginning with the allocation rule, and `Effects.lean` stays in use until the proved derivation covers what it covers. A unit where the proved derivation says "effect" and `Effects.lean` says "none" is a finding.
+`run` is the model, `CoreJS`. `InFragment` is a check on the program's text; it may be "the tool derives a footprint other than unknown code for these units". What the tool calls footprints, `Valid` and the conflict rule are then inside the proof, and a reader has to trust only the model and this statement.
+
+Inside the proof, two lemmas carry it, for programs in the fragment:
+
+- _A derived footprint is true:_ a unit reads and changes only what its footprint lists. This needs no new definition. [`Meaning`](lean/EsmSplit/Semantics.lean) already has the shape (a statement without effects is a function of the values it reads), and "real JavaScript is assumed to fit" is assumption 2 of [`README.md`](README.md) § What is not proved. The work is to show that `CoreJS` fits it for the fragment.
+- _True footprints justify the move:_ this is `Valid → Correct`, proved.
+
+What the statement forces:
+
+- **`split` has to be total Lean code.** `Effects.lean` is `partial` over JSON and Lean can prove nothing about it. So the fragment's footprints come from a new derivation over `CoreJS`'s syntax that answers "unknown code" except where a rule is proved, beginning with the allocation rule. `Effects.lean` stays in use outside the fragment, unproved, until the derivation covers what it covers. A unit where the derivation says "effect" and `Effects.lean` says "none" is a finding.
+- **`run P'` needs modules in the model.** `CoreJS` has no `import`. A first version compares `P` with the units of `P'` in the order the split evaluates them (`Plan.visit`, tested against Node, not derived from a model).
+- **A run that reaches unknown code says nothing after that point.** The first version covers programs that stay inside the model. Real bundles do not: 1,584 of the large bundle's 9,707 units touch the world. Covering them needs unknown code as a step of the model that may read and change what it can reach, and nothing else.
 
 **Proposed, not decided.**
 
