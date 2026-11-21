@@ -756,6 +756,19 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
     if (statement?.type === "ReturnStatement") return expression(statement.argument);
     if (statement?.type === "ThrowStatement") {
       const argument = statement.argument;
+      if (argument?.type === "Literal" && typeof argument.value === "bigint")
+        return { kind: "raiseBigInteger", negative: false, magnitude: argument.value.toString() };
+      if (
+        argument?.type === "UnaryExpression" &&
+        argument.operator === "-" &&
+        argument.argument.type === "Literal" &&
+        typeof argument.argument.value === "bigint"
+      )
+        return {
+          kind: "raiseBigInteger",
+          negative: argument.argument.value !== 0n,
+          magnitude: argument.argument.value.toString(),
+        };
       if (
         argument?.type === "Literal" &&
         (argument.value === null || typeof argument.value === "boolean" || typeof argument.value === "string")
@@ -826,6 +839,7 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
       case "raise":
         return free(item.value, bound);
       case "raisePrimitive":
+      case "raiseBigInteger":
         return [];
       case "invoke":
         return [item.name, ...item.arguments.flatMap((argument) => free(argument, bound))];
@@ -1528,6 +1542,8 @@ function leanExpression(expression) {
               : `.text ${str(value)}`;
       return `.raisePrimitive (${primitive})`;
     }
+    case "raiseBigInteger":
+      return `.raisePrimitive (.bigInteger ${expression.negative} ${expression.magnitude})`;
   }
   throw new Error("unknown expression");
 }
@@ -1962,7 +1978,7 @@ theorem binding_aliased_future_calls (calls : ${aliasCallType}) :
           : []),
         "globalThis.record is a stable synchronous host function which returns normally without reentry or asynchronous effects",
         "Only initialization calls, their record observations, and calls through the entry exports after successful initialization are observed; loading, reflection, source text and identity are excluded",
-        "Supported thrown values are nonnegative safe integers other than negative zero, booleans, null, undefined or ASCII strings; a throw ends the observed call sequence",
+        "Supported thrown values are nonnegative safe integers other than negative zero, BigInt literals, booleans, null, undefined or ASCII strings; a throw ends the observed call sequence",
       ],
     };
   }
@@ -2053,6 +2069,12 @@ theorem binding_export_difference :
         return `some (.text ${str(value.value)})`;
       if (value.kind === "number" && Number.isSafeInteger(value.value) && value.value >= 0)
         return `some (.number ${value.value})`;
+      if (
+        value.kind === "bigint" &&
+        typeof value.value === "string" &&
+        /^(?:0|[1-9]\d*|-[1-9]\d*)$(?![\s\S])/.test(value.value)
+      )
+        return `some (.bigInteger ${value.value.startsWith("-")} ${value.value.replace(/^-/, "")})`;
       return null;
     };
     const sourceEvents = events(original),
@@ -2209,7 +2231,7 @@ theorem binding_export_difference :
       return value > body ? value : body;
     }
     if (expression.kind === "raise") return expressionBound(expression.value, bound);
-    if (expression.kind === "raisePrimitive") return 0n;
+    if (expression.kind === "raisePrimitive" || expression.kind === "raiseBigInteger") return 0n;
     if (expression.kind === "invoke" || expression.kind === "invokeLocal") {
       const args = expression.arguments.map((argument) => expressionBound(argument, bound));
       const callBound = args.reduce((largest, value) => (value > largest ? value : largest), bound);

@@ -528,7 +528,12 @@ export { read, fail };
   assert.match(throwReplay.stdout, /'binding_throw_values' does not depend on any axioms/);
   const emitted = join(throwOut, "fail.mjs");
   await writeFile(emitted, (await readFile(emitted, "utf8")).replace("throw 7", "throw 8"));
-  assert.equal(cli("validate", throwSource, throwSpec, throwOut).result, "unknown");
+  const changedThrow = cli("validate", throwSource, throwSpec, throwOut);
+  assert.equal(changedThrow.result, "unsafe", JSON.stringify(changedThrow));
+  assert.notDeepEqual(
+    execute(throwSource, changedThrow.calls).error,
+    execute(join(throwOut, "entry.mjs"), changedThrow.calls).error
+  );
   assert.notDeepEqual(execute(join(throwOut, "entry.mjs"), calls).error, beforeThrow.error);
 }
 
@@ -694,7 +699,8 @@ function text(flag) { if (flag) { throw "oops"; } else { return seed; } }
 function boolean(flag) { if (flag) { throw false; } else { return seed; } }
 function nil(flag) { if (flag) { throw null; } else { return seed; } }
 function undef(flag) { if (flag) { throw void 0; } else { return seed; } }
-export { maybe, text, boolean, nil, undef };
+function big(flag) { if (flag) { throw -0n; } else { return seed; } }
+export { maybe, text, boolean, nil, undef, big };
 `
   );
   await writeFile(
@@ -704,7 +710,7 @@ export { maybe, text, boolean, nil, undef };
       entry: "entry.mjs",
       modules: {
         "state.mjs": { imports: [], statements: [0] },
-        "logic.mjs": { imports: ["state.mjs"], statements: [1, 2, 3, 4, 5] },
+        "logic.mjs": { imports: ["state.mjs"], statements: [1, 2, 3, 4, 5, 6] },
         "entry.mjs": { imports: ["logic.mjs"], statements: [] },
       },
     })
@@ -726,6 +732,7 @@ export { maybe, text, boolean, nil, undef };
     ["boolean", { kind: "boolean", value: false }],
     ["nil", { kind: "null" }],
     ["undef", { kind: "undefined" }],
+    ["big", { kind: "bigint", value: "0" }],
   ]) {
     const primitiveCalls = [
       { name, args: [0] },
@@ -743,7 +750,10 @@ export { maybe, text, boolean, nil, undef };
   assert.equal(replay.status, 0, replay.stdout + replay.stderr);
   assert.match(replay.stdout, /'binding_throw_values' does not depend on any axioms/);
   const logic = join(primitiveOut, "logic.mjs");
-  await writeFile(logic, (await readFile(logic, "utf8")).replace('throw "oops"', 'throw "changed"'));
+  const originalLogic = await readFile(logic, "utf8");
+  await writeFile(logic, originalLogic.replace("throw -0n", "throw 0n"));
+  assert.equal(cli("validate", primitiveSource, primitiveSpec, primitiveOut).result, "proved under assumptions");
+  await writeFile(logic, originalLogic.replace('throw "oops"', 'throw "changed"'));
   const witness = cli("validate", primitiveSource, primitiveSpec, primitiveOut);
   assert.equal(witness.result, "unsafe", JSON.stringify(witness));
   assert.deepEqual(execute(primitiveSource, witness.calls).error.thrown, { kind: "string", value: "oops" });

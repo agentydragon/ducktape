@@ -15,6 +15,7 @@ inductive Observation where
 
 inductive ThrownValue where
   | number (value : Nat)
+  | bigInteger (negative : Bool) (magnitude : Nat)
   | text (value : String)
   | boolean (value : Bool)
   | null

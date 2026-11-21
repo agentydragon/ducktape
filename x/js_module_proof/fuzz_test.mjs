@@ -59,6 +59,17 @@ if (shards === 4 && shard === 1) {
   assert.equal(changedThrow.mutationKinds.throwValue, 1);
   assert.equal(changedThrow.mutatedDifferent, 1);
   assert.equal(changedThrow.mutatedVerdicts.unsafe, 1);
+  const changedBigIntegerThrow = await runFuzz({
+    seed: 51981,
+    start: 87,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "composed",
+    validateEvery: 1,
+  });
+  assert.equal(changedBigIntegerThrow.mutationKinds.throwValue, 1);
+  assert.equal(changedBigIntegerThrow.mutatedDifferent, 1);
+  assert.equal(changedBigIntegerThrow.mutatedVerdicts.unsafe, 1);
 }
 if (shards === 4 && shard === 3) {
   const mutated = await runFuzz({
