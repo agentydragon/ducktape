@@ -255,7 +255,7 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
     interface    = "virtio12"
     iothread     = true
     discard      = "on"
-    size         = 150
+    size         = 600
     serial       = "piraeus-ssd"
     backup       = false
     replicate    = false
