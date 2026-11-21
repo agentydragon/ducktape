@@ -96,7 +96,6 @@ func (a *codexAdapter) BlocksCommandDispatch() bool {
 func (a *codexAdapter) Handshake(ctx context.Context) (nativeID string, resultErr error) {
 	ctx, span := observability.Start(ctx, "agentplane.codex.thread.handshake")
 	defer func() { observability.End(span, resultErr) }()
-	var response jsonrpc.Message
 	snapshot := a.host.Session()
 	a.mu.Lock()
 	threadID := a.threadID
@@ -105,15 +104,12 @@ func (a *codexAdapter) Handshake(ctx context.Context) (nativeID string, resultEr
 	var result json.RawMessage
 	if threadID != "" {
 		method = "thread/resume"
-		requestID, err := a.nextID()
-		if err != nil {
-			return "", err
-		}
+		requestID := a.nextID()
 		excludeTurns := true
 		// Codex replays the old developer message on resume but rebuilds it from
 		// this configuration at the next compaction.
 		instructions := snapshot.Instructions
-		response, err = a.request(ctx, jsonrpc.Request[any]{
+		response, err := a.request(ctx, jsonrpc.Request[any]{
 			ID: requestID, Method: method,
 			Params: protocol.ThreadResumeParams{
 				ThreadID: threadID, ExcludeTurns: &excludeTurns, Config: threadEnvironment(snapshot.Environment),
@@ -128,10 +124,7 @@ func (a *codexAdapter) Handshake(ctx context.Context) (nativeID string, resultEr
 		}
 		result = response.Result
 	} else {
-		requestID, err := a.nextID()
-		if err != nil {
-			return "", err
-		}
+		requestID := a.nextID()
 		never := protocol.Never
 		sandbox := protocol.SandboxMode("danger-full-access")
 		ephemeral := false
@@ -146,7 +139,7 @@ func (a *codexAdapter) Handshake(ctx context.Context) (nativeID string, resultEr
 		if snapshot.Instructions != "" {
 			params.DeveloperInstructions = &snapshot.Instructions
 		}
-		response, err = a.request(ctx, jsonrpc.Request[any]{ID: requestID, Method: method, Params: params})
+		response, err := a.request(ctx, jsonrpc.Request[any]{ID: requestID, Method: method, Params: params})
 		if err != nil {
 			return "", fmt.Errorf("Codex thread/start: %w", err)
 		}
@@ -340,10 +333,7 @@ func (a *codexAdapter) Submit(ctx context.Context, commandID, text string) error
 	if threadID == "" {
 		return errors.New("Codex thread is not initialized")
 	}
-	requestID, err := a.nextID()
-	if err != nil {
-		return err
-	}
+	requestID := a.nextID()
 	start := codexTurnStart{commandID: commandID, text: text, modelChange: modelChange, effortChange: effortChange}
 	commandIDs := []string{commandID}
 	if modelChange != nil {
@@ -382,10 +372,7 @@ func (a *codexAdapter) Interrupt(ctx context.Context, turnID string) error {
 	a.mu.Lock()
 	threadID := a.threadID
 	a.mu.Unlock()
-	requestID, err := a.nextID()
-	if err != nil {
-		return err
-	}
+	requestID := a.nextID()
 	return a.send(ctx, jsonrpc.Request[any]{
 		ID: requestID, Method: "turn/interrupt",
 		Params: protocol.TurnInterruptParams{ThreadID: threadID, TurnID: turnID},
@@ -861,8 +848,8 @@ func (a *codexAdapter) requestEvidence(ctx context.Context, request jsonrpc.Requ
 }
 
 // nextID names a request uniquely on the shared app-server, which carries every Codex Session's requests.
-func (a *codexAdapter) nextID() (string, error) {
-	return "agentplane-" + uuid.NewString(), nil
+func (a *codexAdapter) nextID() string {
+	return "agentplane-" + uuid.NewString()
 }
 
 func (a *codexAdapter) send(ctx context.Context, value any) error {
