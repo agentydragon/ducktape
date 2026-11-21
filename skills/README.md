@@ -52,4 +52,6 @@ build event stream. Consumers: `.github/workflows/release.yml`,
    the pin.
 
 Component-specific skills may live beside their component (`cpap/skill/`,
-`cluster/skills/`, the debundle skills) — same macro, same registry.
+`cluster/skills/`, the debundle skills) — same `skill_package` macro, same registry.
+The debundle skills call the `debundle_skill` wrapper
+(<../devinfra/js/debundle/skills/shared/defs.bzl>), which adds their shared references.

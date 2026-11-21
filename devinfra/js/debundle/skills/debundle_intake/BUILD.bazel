@@ -1,12 +1,3 @@
-load("//devinfra/js/debundle/skills/shared:defs.bzl", "DEBUNDLE_REFERENCES")
-load("//skills:defs.bzl", "skill_mapping", "skill_package")
+load("//devinfra/js/debundle/skills/shared:defs.bzl", "debundle_skill")
 
-skill_package(
-    name = "debundle_intake",
-    contents = [
-        skill_mapping(
-            srcs = ["SKILL.md"],
-            preserve_paths = True,
-        ),
-    ] + DEBUNDLE_REFERENCES,
-)
+debundle_skill(name = "debundle_intake")
