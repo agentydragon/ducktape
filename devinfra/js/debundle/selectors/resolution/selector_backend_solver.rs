@@ -12,16 +12,15 @@ use std::fmt;
 
 use selector_constraint_backend::{
     BackendAssignment, BackendAssignmentCoverage, BackendAssignmentError, BackendSolveResult,
-    BackendSolveStatus, BackendVariableAssignment, CompiledSelectorProblem, ConstraintValue,
-    ConstraintVariableId, MAX_ALTERNATIVES_PER_VARIABLE, SelectorProblemBackend,
-    TargetBindingProjection,
+    BackendSolveStatus, BackendVariableAssignment, CompiledSelectorProblem, ConstraintVariableId,
+    MAX_ALTERNATIVES_PER_VARIABLE, SelectorProblemBackend, TargetBindingProjection,
 };
 use selector_constraint_model_builder::{
     CompiledSelectorProblemBuildError, compile_selector_problem,
 };
 use selector_ir::{
     ClaimKind, ClaimOutcome, ResolvedClaim, SelectorFact, SelectorFactStore, SelectorProgram,
-    SelectorTargetId, SolverClaim, SolverResult,
+    SelectorProjectedValue, SelectorTargetId, SolverClaim, SolverResult,
 };
 use source_identity::SourceUnitId;
 
@@ -121,7 +120,7 @@ pub enum SelectorBackendSolveError<E> {
     DecodedAssignmentDomainMismatch {
         variable: ConstraintVariableId,
         expected: selector_ir::VariableDomain,
-        actual: ConstraintValue,
+        actual: SelectorProjectedValue,
     },
     MissingSourceUnitFact {
         source_unit: SourceUnitId,
@@ -379,11 +378,11 @@ fn decode_satisfying_assignments<E>(
 }
 
 fn assigned_source_unit<E>(
-    assignment: &BTreeMap<ConstraintVariableId, ConstraintValue>,
+    assignment: &BTreeMap<ConstraintVariableId, SelectorProjectedValue>,
     variable: ConstraintVariableId,
 ) -> Result<SourceUnitId, SelectorBackendSolveError<E>> {
     match assignment.get(&variable) {
-        Some(ConstraintValue::SourceUnit(source_unit)) => Ok(*source_unit),
+        Some(SelectorProjectedValue::SourceUnit(source_unit)) => Ok(*source_unit),
         Some(value) => Err(SelectorBackendSolveError::DecodedAssignmentDomainMismatch {
             variable,
             expected: selector_ir::VariableDomain::SourceUnit,
@@ -394,11 +393,11 @@ fn assigned_source_unit<E>(
 }
 
 fn assigned_string<E>(
-    assignment: &BTreeMap<ConstraintVariableId, ConstraintValue>,
+    assignment: &BTreeMap<ConstraintVariableId, SelectorProjectedValue>,
     variable: ConstraintVariableId,
 ) -> Result<String, SelectorBackendSolveError<E>> {
     match assignment.get(&variable) {
-        Some(ConstraintValue::String(value)) => Ok(value.clone()),
+        Some(SelectorProjectedValue::String(value)) => Ok(value.clone()),
         Some(value) => Err(SelectorBackendSolveError::DecodedAssignmentDomainMismatch {
             variable,
             expected: selector_ir::VariableDomain::String,
@@ -484,7 +483,6 @@ impl MaterializationFacts {
 mod tests {
     use std::convert::Infallible;
 
-    use selector_constraint_backend::ConstraintValue;
     use selector_constraint_backend::{
         BackendAssignment, BackendAssignmentCoverage, BackendSolveResult, BackendSolveStatus,
         BackendValueId, BackendVariableAssignment,
@@ -497,7 +495,7 @@ mod tests {
 
     #[derive(Debug)]
     struct SelectingBackend {
-        assignments: Vec<Vec<(ConstraintVariableId, ConstraintValue)>>,
+        assignments: Vec<Vec<(ConstraintVariableId, SelectorProjectedValue)>>,
         coverage: BackendAssignmentCoverage,
         status: BackendSolveStatus,
     }
@@ -547,7 +545,7 @@ mod tests {
 
     fn backend_value_for(
         problem: &CompiledSelectorProblem,
-        value: &ConstraintValue,
+        value: &SelectorProjectedValue,
     ) -> BackendValueId {
         problem
             .value_dictionary
@@ -555,12 +553,12 @@ mod tests {
             .expect("test backend value must be in dictionary")
     }
 
-    fn source_unit(value: usize) -> ConstraintValue {
-        ConstraintValue::SourceUnit(SourceUnitId(value))
+    fn source_unit(value: usize) -> SelectorProjectedValue {
+        SelectorProjectedValue::SourceUnit(SourceUnitId(value))
     }
 
-    fn string(value: &str) -> ConstraintValue {
-        ConstraintValue::String(value.to_string())
+    fn string(value: &str) -> SelectorProjectedValue {
+        SelectorProjectedValue::String(value.to_string())
     }
 
     fn binding_program() -> (SelectorProgram, SelectorTargetId) {

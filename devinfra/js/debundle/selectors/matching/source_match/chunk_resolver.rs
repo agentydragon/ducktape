@@ -244,8 +244,7 @@ fn matching_body_indices(
     // tokens (a sound superset); the root-kind prefilter and full match then
     // filter. This path matches without a prebind, so an exact-mode needle may also
     // require its identifier spellings (`allow_exact_ident = true`). A non-extractable
-    // statement projects to empty facts (no root, no tokens) and so matches nothing —
-    // the same outcome as the old skip.
+    // statement projects to empty facts (no root, no tokens) and so matches nothing.
     for body_idx in chunk.candidate_bodies(&needle_index, mode, true) {
         if let Some(kind) = prefilter
             && chunk.body_root_kinds[body_idx] != Some(kind)
