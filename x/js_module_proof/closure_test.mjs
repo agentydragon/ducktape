@@ -33,7 +33,7 @@ if (shard === 6) {
   const directiveOut = join(directiveRoot, "out");
   await writeFile(
     directiveSource,
-    '"use strict";\ntrue;\nnull;\n42;\nlet value = 4;\nfunction read() { return value; }\nexport { read };\n'
+    '"use strict";\ntrue;\nnull;\n42;\nvoid 0;\n!false;\ntypeof null;\nlet value = 4;\nfunction read() { return value; }\nexport { read };\n'
   );
   await writeFile(
     directiveSpec,
@@ -41,8 +41,8 @@ if (shard === 6) {
       kind: "bindings",
       entry: "entry.mjs",
       modules: {
-        "state.mjs": { imports: [], statements: [4] },
-        "function.mjs": { imports: ["state.mjs"], statements: [0, 1, 2, 3, 5] },
+        "state.mjs": { imports: [], statements: [7] },
+        "function.mjs": { imports: ["state.mjs"], statements: [0, 1, 2, 3, 4, 5, 6, 8] },
         "entry.mjs": { imports: ["function.mjs"], statements: [] },
       },
     })
