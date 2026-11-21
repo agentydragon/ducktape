@@ -24,6 +24,19 @@ if (shards === 4 && shard === 1) {
   assert.equal(relay.reexportRelayGeneratedCases, 1);
   assert.equal(relay.reexportRelayComparedCases, 1);
   assert.equal(relay.reexportRelayProvedCases, 1);
+  const aliasedRelay = await runFuzz({
+    seed: 51981,
+    start: 11,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "composed",
+    validateEvery: 1,
+  });
+  assert.equal(aliasedRelay.reexportRelayProvedCases, 1);
+  assert.equal(aliasedRelay.importAliasGeneratedCases, 1);
+  assert.equal(aliasedRelay.importAliasComparedCases, 1);
+  assert.equal(aliasedRelay.importAliasProvedCases, 1);
+
   assert.equal(relay.discardedLiteralCases, 1);
   assert.equal(relay.discardedLiteralComparedCases, 1);
   assert.equal(relay.discardedLiteralProvedCases, 1);
@@ -612,7 +625,7 @@ assert.deepEqual(
       .filter((item) => item.hasTextObservation)
       .map((item) => item.ast.body[1].expression.arguments[0].value)
   ),
-  new Set(["start", 'quote "value"', "slash \\ path", "é 🙂\n\t\0", "👩‍💻"])
+  new Set(["start\ud800!\udc00🙂", 'quote "value"', "slash \\ path", "é 🙂\n\t\0", "👩‍💻"])
 );
 assert.deepEqual(
   new Set(

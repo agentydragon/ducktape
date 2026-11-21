@@ -1344,10 +1344,6 @@ function generateFiles(source, spec, names) {
         const dependencies = spec.modules[name].imports;
         const provider = dependencies.includes(owner) ? owner : dependencies.find((dep) => provides(dep, binding));
         check(provider, `missing dependency for ${binding}`);
-        check(
-          !spec.modules[name].aliasImports || provider === owner,
-          "aliased imports through reexports are unsupported"
-        );
         providers[name].set(binding, provider);
         neededExports.add(binding);
       }
@@ -1398,7 +1394,12 @@ function generateFiles(source, spec, names) {
             })
         : [];
     const relayed = Object.entries(module.reexports ?? {}).flatMap(([dependency, bindings]) =>
-      bindings.map((binding) => `export { ${binding} } from ${str(`./${dependency}`)};`)
+      bindings.flatMap((binding) => [
+        `export { ${binding} } from ${str(`./${dependency}`)};`,
+        ...(aliasExports.has(binding)
+          ? [`export { ${generatedAliases.get(binding)} } from ${str(`./${dependency}`)};`]
+          : []),
+      ])
     );
     const internalAliases = [...aliasExports]
       .filter((binding) => defs.get(binding) === name)

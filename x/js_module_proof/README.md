@@ -194,15 +194,15 @@ observations remain distinct from numeric observations.
 `globalThis.record(void 0)` and `void` of another primitive literal record
 `undefined` without reading a binding.
 This includes `"use strict"`: all source and emitted files are ECMAScript
-modules, which are already strict. RegExp and BigInt literals remain unsupported.
+modules, which are already strict. Discarded RegExp and BigInt literals remain unsupported.
 Public exports must be functions. The entry module may rename an exported
 function, including under multiple public names and captured closures. A module assignment may set `aliasImports: true` to import dependencies through
 generated public aliases while retaining their original local names. A non-entry
 module may relay bindings using `reexports: { "dependency.mjs": ["binding"] }`
 alongside that dependency in `imports`. Chains are resolved to their original
 declarations with a bounded search; missing owners and cycles are refused.
-Renamed reexports outside the entry module and aliased imports through relays
-remain unsupported.
+Generated import aliases can travel through those reexport chains. Renamed
+reexports outside the entry module remain unsupported.
 Source declarations have unique names, function
 writes must target a mutable local binding, and each module preserves its assigned
 statements' source order. Unsupported syntax, linking, cycles, or uninitialized

@@ -206,3 +206,35 @@ if (runSection(1)) {
   assert.equal(brokenResult.results[0], sourceResult.results[0]);
   assert.notEqual(brokenResult.results[2], sourceResult.results[2]);
 }
+
+if (runSection(2)) {
+  const aliasSource = join(root, "relay-alias-source.mjs");
+  const aliasSpec = join(root, "relay-alias-spec.json");
+  const aliasOut = join(root, "relay-alias-out");
+  await writeFile(
+    aliasSource,
+    `let first = 1;\nlet second = 2;\nfunction current() { return first; }\nfunction other() { return second; }\nexport { current, other };\n`
+  );
+  await writeFile(
+    aliasSpec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0, 1] },
+        "relay.mjs": { imports: ["state.mjs"], statements: [], reexports: { "state.mjs": ["first", "second"] } },
+        "logic.mjs": { imports: ["relay.mjs"], statements: [2, 3], aliasImports: true },
+        "entry.mjs": { imports: ["logic.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", aliasSource, aliasSpec, aliasOut).value.result, "generated");
+  assert.equal(cli("validate", aliasSource, aliasSpec, aliasOut).value.result, "proved under assumptions");
+  const logicPath = join(aliasOut, "logic.mjs");
+  const logic = await readFile(logicPath, "utf8");
+  assert.match(logic, /__split_alias_0 as first/);
+  await writeFile(logicPath, logic.replace("__split_alias_0 as first", "__split_alias_1 as first"));
+  const changed = cli("validate", aliasSource, aliasSpec, aliasOut).value;
+  assert.notEqual(changed.result, "proved under assumptions", JSON.stringify(changed));
+  assert.notDeepEqual(execute(aliasSource, ["current"]), execute(join(aliasOut, "entry.mjs"), ["current"]));
+}

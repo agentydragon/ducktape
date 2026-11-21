@@ -244,7 +244,8 @@ def ownsAliasedExport (modules : List BindingModule) (index : Nat) (localName pu
   (resolveExportFuel modules (modules.length + 1) index localName publicName).isSome
 
 def ownsExport (modules : List BindingModule) (index : Nat) (name : String) : Bool :=
-  ownsAliasedExport modules index name name
+  (modules.flatMap fun module => module.statements.filterMap declaredName).any
+    (fun localName => ownsAliasedExport modules index localName name)
 
 def visible (modules : List BindingModule) (index : Nat) (name : String) : Bool :=
   match elementAt modules index with
