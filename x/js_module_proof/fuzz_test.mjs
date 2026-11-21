@@ -42,6 +42,9 @@ if (shards === 4 && shard === 1) {
   assert.equal(relay.negativeZeroObservationCases, 1);
   assert.equal(relay.negativeZeroObservationComparedCases, 1);
   assert.equal(relay.negativeZeroObservationProvedCases, 1);
+  assert.equal(relay.specialNumberObservationCases, 1);
+  assert.equal(relay.specialNumberObservationComparedCases, 1);
+  assert.equal(relay.specialNumberObservationProvedCases, 1);
 }
 if (shards === 4 && shard === 3) {
   const mutated = await runFuzz({

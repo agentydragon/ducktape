@@ -35,14 +35,14 @@ if (shard === 10) {
   const lastText = 'omega "quoted" \\ café 🙂 👩‍💻\n\t\0';
   await writeFile(
     textSource,
-    `globalThis.record("alpha");\nglobalThis.record(true);\nglobalThis.record(null);\nglobalThis.record(7);\nglobalThis.record(void 0);\nglobalThis.record(-7);\nglobalThis.record(-0);\nlet value = 4;\nglobalThis.record(${JSON.stringify(lastText)});\nfunction read() { return value; }\nexport { read };\n`
+    `globalThis.record("alpha");\nglobalThis.record(true);\nglobalThis.record(null);\nglobalThis.record(7);\nglobalThis.record(void 0);\nglobalThis.record(-7);\nglobalThis.record(-0);\nglobalThis.record(0 / 0);\nglobalThis.record(1 / 0);\nglobalThis.record(-1 / 0);\nlet value = 4;\nglobalThis.record(${JSON.stringify(lastText)});\nfunction read() { return value; }\nexport { read };\n`
   );
   const assignment = {
     kind: "bindings",
     entry: "entry.mjs",
     modules: {
-      "state.mjs": { imports: [], statements: [0, 1, 2, 3, 4, 5, 6, 7, 9] },
-      "other.mjs": { imports: [], statements: [8] },
+      "state.mjs": { imports: [], statements: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12] },
+      "other.mjs": { imports: [], statements: [11] },
       "entry.mjs": { imports: ["state.mjs", "other.mjs"], statements: [] },
     },
   };
@@ -57,6 +57,9 @@ if (shard === 10) {
     { undefined: true },
     -7,
     { number: "-0" },
+    { number: "NaN" },
+    { number: "Infinity" },
+    { number: "-Infinity" },
     lastText,
   ]);
   assert.deepEqual(execute(join(safeOut, "entry.mjs"), ["read"]), execute(textSource, ["read"]));
@@ -67,6 +70,10 @@ if (shard === 10) {
   await writeFile(stateFile, stateText.replace("record(-0)", "record(0)"));
   const zeroWitness = cli("validate", textSource, textSpec, safeOut);
   assert.equal(zeroWitness.result, "unsafe", JSON.stringify(zeroWitness));
+  assert.notDeepEqual(execute(textSource, []).events, execute(join(safeOut, "entry.mjs"), []).events);
+  await writeFile(stateFile, stateText.replace("record(0 / 0)", "record(null)"));
+  const nanWitness = cli("validate", textSource, textSpec, safeOut);
+  assert.equal(nanWitness.result, "unsafe", JSON.stringify(nanWitness));
   assert.notDeepEqual(execute(textSource, []).events, execute(join(safeOut, "entry.mjs"), []).events);
   await writeFile(stateFile, stateText);
   assignment.modules["entry.mjs"].imports.reverse();
@@ -83,6 +90,9 @@ if (shard === 10) {
     { undefined: true },
     -7,
     { number: "-0" },
+    { number: "NaN" },
+    { number: "Infinity" },
+    { number: "-Infinity" },
   ]);
   const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
     encoding: "utf8",

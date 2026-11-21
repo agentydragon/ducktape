@@ -4,6 +4,9 @@ inductive Observation where
   | number (value : Nat)
   | negativeNumber (magnitude : Nat)
   | negativeZero
+  | notANumber
+  | positiveInfinity
+  | negativeInfinity
   | boolean (value : Bool)
   | nullValue
   | undefined

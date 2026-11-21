@@ -46,6 +46,20 @@ const recordNegative = (value) =>
       { type: "UnaryExpression", operator: "-", prefix: true, argument: literal(value) },
     ])
   );
+const recordSpecialNumber = (numerator) =>
+  expr(
+    call({ type: "MemberExpression", object: id("globalThis"), property: id("record"), computed: false }, [
+      {
+        type: "BinaryExpression",
+        operator: "/",
+        left:
+          numerator < 0
+            ? { type: "UnaryExpression", operator: "-", prefix: true, argument: literal(1) }
+            : literal(numerator),
+        right: literal(0),
+      },
+    ])
+  );
 
 function print(node) {
   switch (node.type) {
@@ -1183,6 +1197,9 @@ export function makeComposedCase(seed, index) {
           recordUndefined(),
           recordNegative(1 + (index % 7)),
           recordNegative(0),
+          recordSpecialNumber(0),
+          recordSpecialNumber(1),
+          recordSpecialNumber(-1),
         ]
       : [];
   const ast = {
@@ -1216,6 +1233,7 @@ export function makeComposedCase(seed, index) {
     hasUndefinedObservation: hasDiscardedLiteral,
     hasNegativeObservation: hasDiscardedLiteral,
     hasNegativeZeroObservation: hasDiscardedLiteral,
+    hasSpecialNumberObservation: hasDiscardedLiteral,
     hasReexportRelay: index % 8 === 3,
     earlyVar,
     hasLocalVar,
@@ -1680,6 +1698,9 @@ export async function runFuzz({
     negativeZeroObservationCases: 0,
     negativeZeroObservationComparedCases: 0,
     negativeZeroObservationProvedCases: 0,
+    specialNumberObservationCases: 0,
+    specialNumberObservationComparedCases: 0,
+    specialNumberObservationProvedCases: 0,
     varCases: 0,
     varGeneratedCases: 0,
     varComparedCases: 0,
@@ -1802,6 +1823,7 @@ export async function runFuzz({
       if (input.hasUndefinedObservation) summary.undefinedObservationCases++;
       if (input.hasNegativeObservation) summary.negativeObservationCases++;
       if (input.hasNegativeZeroObservation) summary.negativeZeroObservationCases++;
+      if (input.hasSpecialNumberObservation) summary.specialNumberObservationCases++;
       if (input.hasReexportRelay && !input.independentSplit) summary.reexportRelayCases++;
       if (input.hasLocalVar) summary.localVarCases++;
       if (input.earlyVar) summary.earlyVarCases++;
@@ -2000,6 +2022,7 @@ export async function runFuzz({
       if (input.hasUndefinedObservation) summary.undefinedObservationComparedCases++;
       if (input.hasNegativeObservation) summary.negativeObservationComparedCases++;
       if (input.hasNegativeZeroObservation) summary.negativeZeroObservationComparedCases++;
+      if (input.hasSpecialNumberObservation) summary.specialNumberObservationComparedCases++;
       if (input.hasReexportRelay && !input.independentSplit) summary.reexportRelayComparedCases++;
       if (hasVar) summary.varComparedCases++;
       if (input.hasLocalVar) summary.localVarComparedCases++;
@@ -2087,6 +2110,7 @@ export async function runFuzz({
           if (input.hasUndefinedObservation) summary.undefinedObservationProvedCases++;
           if (input.hasNegativeObservation) summary.negativeObservationProvedCases++;
           if (input.hasNegativeZeroObservation) summary.negativeZeroObservationProvedCases++;
+          if (input.hasSpecialNumberObservation) summary.specialNumberObservationProvedCases++;
           if (input.hasReexportRelay && !input.independentSplit) summary.reexportRelayProvedCases++;
           if (hasVar) summary.varProvedCases++;
           if (input.hasLocalVar) summary.localVarProvedCases++;

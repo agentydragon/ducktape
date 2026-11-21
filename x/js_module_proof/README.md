@@ -185,6 +185,8 @@ produce string observations; initialization-order counterexamples include
 those strings. Unpaired UTF-16 surrogates remain unsupported.
 Calls with boolean, null, or safe-integer literals, including negative zero, also produce
 observations and can appear in initialization-order witnesses.
+The constant forms `record(0 / 0)`, `record(1 / 0)`, and `record(-1 / 0)`
+record `NaN`, positive infinity, and negative infinity distinctly.
 `globalThis.record(void 0)` and `void` of another primitive literal record
 `undefined` without reading a binding.
 This includes `"use strict"`: all source and emitted files are ECMAScript
@@ -264,7 +266,7 @@ This result assumes correct Acorn conversion and correspondence between the
 model and ECMAScript. Numeric bindings, exported-function arguments and modeled
 numeric expression intermediates must remain nonnegative safe integers excluding
 negative zero. Independently recorded integer literals may be negative or negative zero;
-remainder and division
+the three recorded constant zero-divisions above are also supported. Other remainder and division
 divisors must be nonzero, division results must be integers, and signed bitwise
 results must be nonnegative;
 `globalThis.record` must be stable and return normally without reentry or
