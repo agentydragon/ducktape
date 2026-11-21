@@ -6,6 +6,8 @@
  * sweep's `assert_network_settled` reads.
  */
 
+import { ELECTRIC_SCHEMAS } from "../sessions/testing/electric_entity";
+
 /** An answer is a JSON body, `undefined` for 404, a ready `Response` for any other status, or
  * `UNANSWERED`. */
 export type Route = [
@@ -36,30 +38,6 @@ export interface ElectricShapeMessage {
   value?: Record<string, unknown>;
 }
 
-const ELECTRIC_SCHEMAS: Record<string, Record<string, Record<string, string | boolean | number>>> = {
-  thread_entity: {
-    cursor: { type: "int8", not_null: true },
-    entity_id: { type: "text", not_null: true, pk_index: 3 },
-    entity_index: { type: "int8", not_null: true },
-    entity_kind: { type: "text", not_null: true, pk_index: 2 },
-    pending: { type: "bool", not_null: true },
-    projection_epoch: { type: "text", not_null: true, pk_index: 1 },
-    revision_cursor: { type: "int8", not_null: true },
-    state: { type: "jsonb", not_null: true },
-    thread_id: { type: "uuid", not_null: true, pk_index: 0 },
-  },
-  thread_payload_chunk: {
-    chunk_index: { type: "int8", not_null: true, pk_index: 6 },
-    field: { type: "text", not_null: true, pk_index: 4 },
-    generation: { type: "int8", not_null: true, pk_index: 5 },
-    owner_cursor: { type: "int8", not_null: true, pk_index: 2 },
-    owner_id: { type: "text", not_null: true, pk_index: 3 },
-    projection_epoch: { type: "text", not_null: true, pk_index: 1 },
-    text: { type: "json", not_null: true },
-    thread_id: { type: "uuid", not_null: true, pk_index: 0 },
-  },
-};
-
 /**
  * Build the same JSON and protocol headers Electric's `ShapeStream` consumes in production, so the
  * thread store's column mapping, typed rows, and catch-up boundary are exercised by the browser
@@ -72,7 +50,7 @@ function relationSchema(rows: readonly ElectricShapeMessage[], fallback = "threa
   return schema;
 }
 
-function shapeHeaders(handle: string, schema: Record<string, Record<string, string | boolean | number>>): HeadersInit {
+function shapeHeaders(handle: string, schema: (typeof ELECTRIC_SCHEMAS)[string]): HeadersInit {
   return {
     "content-type": "application/json",
     "electric-cursor": "1674440",
