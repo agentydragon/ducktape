@@ -1033,14 +1033,14 @@ def bindingOperations (source : List BindingStmt) (statement : BindingStmt) : Op
     let ops ← functionOperations source name false
     let definition ← findDefinition source name
     let target ← match definition with
-      | .closure closureName _ => some closureName
-      | .wrapper _ closureName => some closureName
+      | .closure closureName _ => some (closureCell closureName)
+      | .wrapper _ closureName => some (closureCell closureName)
       | .factory _ _ _ => none
       | .variable _ _ => none
       | .hoistedVariable _ _ => none
       | .constant _ _ => none
       | .function _ _ _ => none
-      | .reader _ _ => none
+      | .reader _ sourceName => some sourceName
       | .thrower _ _ => none
       | .expressionFunction _ _ _ => none
       | .capturedFactory _ _ _ _ _ => none
@@ -1051,7 +1051,7 @@ def bindingOperations (source : List BindingStmt) (statement : BindingStmt) : Op
       | .record _ => none
       | .discardedLiteral => none
       | .recordPrimitive _ => none
-    some (ops ++ [.observeBinding (closureCell target)])
+    some (ops ++ [.observeBinding target])
   | .record name =>
     if isHoistedName source name then some [.observeHoisted name] else some [.observeBinding name]
   | .call name => functionOperations source name false
@@ -1182,7 +1182,8 @@ def witnessedOutputStatement (modules : List BindingModule) (index : Nat) : Bind
   | .variable name value => some (.variable name value)
   | .hoistedVariable name value => some (.hoistedVariable name value)
   | .constant name value => some (.constant name value)
-  | .function name target source => some (.function name target source)
+  | .function name target source => do
+    some (.function name (← witnessedName modules index [] target) (← witnessedName modules index [] source))
   | .thrower name value => some (.thrower name value)
   | .expressionFunction name parameters body =>
     let references := freeExpressionNames parameters body ++ expressionCalls body
@@ -1197,9 +1198,9 @@ def witnessedOutputStatement (modules : List BindingModule) (index : Nat) : Bind
   | .factory name localName source => some (.factory name localName source)
   | .closure name factory => some (.closure name factory)
   | .wrapper name target => some (.wrapper name target)
-  | .recordCall name => some (.recordCall name)
-  | .call name => some (.call name)
-  | .record name => some (.record name)
+  | .recordCall name => (witnessedName modules index [] name).map BindingStmt.recordCall
+  | .call name => (witnessedName modules index [] name).map BindingStmt.call
+  | .record name => (witnessedName modules index [] name).map BindingStmt.record
   | .discardedLiteral => some .discardedLiteral
   | .recordPrimitive value => some (.recordPrimitive value)
 
@@ -1216,6 +1217,22 @@ def outputBindingState (source : List BindingStmt) (modules : List BindingModule
   let indices ← order.mapM (fun label => (List.range source.length).find? (fun index => toString index == label))
   let statements ← indices.mapM (findAssignedStatement modules)
   let state ← runBindingStatements (outputDefinitions modules) statements
+  canonicalBindingState source state
+
+/- Execute the actual output statements through the same transition system,
+   resolving their module-local references before evaluating observations. -/
+def witnessedAssignedStatement (modules : List BindingModule) (assignment : Nat) : Option BindingStmt :=
+  (List.range modules.length).findSome? fun index => do
+    let module ← elementAt modules index
+    let assigned ← (module.assignment.zip module.statements).find? (fun pair => pair.1 == assignment)
+    witnessedOutputStatement modules index assigned.2
+
+def witnessedOutputState (source : List BindingStmt) (modules : List BindingModule) (entry : Nat) : Option (ExecutionState Unit) := do
+  let order ← machineTrace (asEffectModules modules) entry
+  let indices ← order.mapM (fun label => (List.range source.length).find? (fun index => toString index == label))
+  let statements ← indices.mapM (witnessedAssignedStatement modules)
+  let definitions ← witnessedOutputDefinitions modules
+  let state ← runBindingStatements definitions statements
   canonicalBindingState source state
 
 /- Captured allocation keys are model-internal identities. Give the output

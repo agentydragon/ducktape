@@ -1967,7 +1967,7 @@ theorem binding_export_difference :
     if (checked.status === 0 && has(checked, "binding_export_difference"))
       return { result: "unsafe", original, output, certificate };
   }
-  const different = `\ntheorem binding_difference : sourceBindingState bindingSource ≠ outputBindingState bindingSource bindingModules bindingEntry := by decide\n#print axioms binding_difference\n`;
+  const different = `\ntheorem binding_difference : sourceBindingState bindingSource ≠ witnessedOutputState bindingSource bindingModules bindingEntry := by decide\n#print axioms binding_difference\n`;
   let witnessFailure = proof.stdout || proof.stderr;
   const witnessed = (original, output, calls) => {
     const events = (trace) => {
@@ -2058,7 +2058,7 @@ theorem binding_export_difference :
     let left, right, expectedLeft, expectedRight;
     if (calls.length === 0) {
       left = "(sourceBindingState bindingSource).map (fun state => state.events)";
-      right = "(outputBindingState bindingSource bindingModules bindingEntry).map (fun state => state.events)";
+      right = "(witnessedOutputState bindingSource bindingModules bindingEntry).map (fun state => state.events)";
       expectedLeft = `some ${sourceEvents}`;
       expectedRight = `some ${outputEvents}`;
     } else {
@@ -2074,7 +2074,7 @@ theorem binding_export_difference :
       const table = hasExpressions ? "publicCallableTable" : "publicFunctionTable";
       const runner = hasExpressions ? "runArgumentCalls" : "runExportedCalls";
       left = `((sourceBindingState bindingSource).bind (fun state => (${table} bindingSource bindingExports).bind (fun table => (aliasPublicTable table bindingPublicMappings).bind (fun aliases => ${runner} aliases state ${leanCalls})))).map (fun state => (state.events, state.returns, state.thrown))`;
-      right = `((outputBindingState bindingSource bindingModules bindingEntry).bind (fun state => (witnessedOutputDefinitions bindingModules).bind (fun definitions => (${table} definitions (bindingOutputMappings.map Prod.fst)).bind (fun table => (aliasPublicTable table bindingOutputMappings).bind (fun aliases => ${runner} aliases state ${leanCalls}))))).map (fun state => (state.events, state.returns, state.thrown))`;
+      right = `((witnessedOutputState bindingSource bindingModules bindingEntry).bind (fun state => (witnessedOutputDefinitions bindingModules).bind (fun definitions => (${table} definitions (bindingOutputMappings.map Prod.fst)).bind (fun table => (aliasPublicTable table bindingOutputMappings).bind (fun aliases => ${runner} aliases state ${leanCalls}))))).map (fun state => (state.events, state.returns, state.thrown))`;
       expectedLeft = `some (${sourceEvents}, ${sourceReturns}, ${sourceThrown})`;
       expectedRight = `some (${outputEvents}, ${outputReturns}, ${outputThrown})`;
     }

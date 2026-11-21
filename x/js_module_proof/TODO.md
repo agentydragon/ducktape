@@ -88,8 +88,8 @@ cover only part of the grammar and split space described below.
       non-entry modules now retain their declaration identities in Lean and can be
       generated and checked. Redirected reexports used by readers and restricted
       numeric expressions have Node-reproduced Lean counterexamples, including
-      local shadowing. Extend actual-declaration witness lowering to cross-module
-      inlined calls and other statement forms.
+      local shadowing and initialization observations. Extend actual-declaration
+      witness lowering to cross-module inlined calls and other statement forms.
 - [ ] State and test each slice's observation boundary and assumptions, including
       module loading, host behavior, numeric semantics and termination. Keep
       `unknown` when the checker cannot justify its claim, and document that Node

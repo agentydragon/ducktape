@@ -186,7 +186,9 @@ Direct `globalThis.record` calls with string literals produce UTF-16 code-unit
 observations, including unpaired surrogates; initialization-order counterexamples
 include those strings.
 Calls with boolean, null, or safe-integer literals, including negative zero, also produce
-observations and can appear in initialization-order witnesses.
+observations and can appear in initialization-order witnesses. A top-level
+`globalThis.record(reader())` also supports a zero-argument reader returning a
+modeled numeric binding, as well as the supported counter-closure calls.
 The constant forms `record(0 / 0)`, `record(1 / 0)`, and `record(-1 / 0)`
 record `NaN`, positive infinity, and negative infinity distinctly.
 BigInt literals, including negated literals, can also be recorded; their

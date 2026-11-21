@@ -1250,7 +1250,7 @@ export function makeComposedCase(seed, index) {
   }
   if (index % 64 === 59) {
     functionNames.unshift("fuzzRelayRead");
-    const expressionReader = index % 128 === 123;
+    const expressionReader = index % 128 === 123 && index % 256 !== 251;
     functions.unshift(
       functionNode(
         "fuzzRelayRead",
@@ -1298,6 +1298,8 @@ export function makeComposedCase(seed, index) {
           recordBigInteger("123456789012345678901234567890", true),
         ]
       : [];
+  const observeRelayAtInit = index % 256 === 187 || index % 256 === 251;
+  const observeRelayViaCall = index % 256 === 251;
   const ast = {
     type: "Program",
     sourceType: "module",
@@ -1306,6 +1308,18 @@ export function makeComposedCase(seed, index) {
       ...globals.map((name, i) =>
         variable(name, index % 64 === 59 && i < 2 ? i + 1 : rand(4), (index + i) % 7 === 0 ? "var" : "let")
       ),
+      ...(observeRelayAtInit
+        ? [
+            observeRelayViaCall
+              ? expr(
+                  call(
+                    { type: "MemberExpression", object: id("globalThis"), property: id("record"), computed: false },
+                    [call(id("fuzzRelayRead"))]
+                  )
+                )
+              : record("global"),
+          ]
+        : []),
       ...functions,
       {
         type: "ExportNamedDeclaration",
@@ -1372,7 +1386,10 @@ export function makeComposedCase(seed, index) {
         "logic.mjs": {
           imports: [index % 16 === 11 ? "relay2.mjs" : index % 8 === 3 ? "relay.mjs" : "state.mjs"],
           aliasImports: index % 4 === 0 || index % 32 === 11,
-          statements: functionNames.map((_, index) => prefix.length + globals.length + index),
+          statements: [
+            ...(observeRelayAtInit ? [prefix.length + globals.length] : []),
+            ...functionNames.map((_, index) => prefix.length + globals.length + Number(observeRelayAtInit) + index),
+          ],
         },
         "entry.mjs": { imports: ["logic.mjs"], statements: [] },
       },
@@ -1952,7 +1969,10 @@ export async function runFuzz({
       if (mutation === "composedEffect") input.calls = [];
       if (mutation === "throwValue") input.calls = [{ name: "fuzzThrower", args: [1] }];
       if (mutation === "renamedReexport")
-        input.calls = [{ name: "fuzzRelayRead", args: index % 128 === 123 ? [1] : [] }];
+        input.calls =
+          index % 256 === 187 || index % 256 === 251
+            ? []
+            : [{ name: "fuzzRelayRead", args: index % 128 === 123 ? [1] : [] }];
       const independentCategory = input.invalidAssignment ? "invalidAssignment" : input.cyclic ? "cyclic" : "acyclic";
       if (input.independentSplit) {
         summary.independentRequested[independentCategory]++;
