@@ -469,9 +469,9 @@ edge composition are covered by `//agentplane/action_service/cmd:integration_tes
 
 ## Authentication boundaries
 
-`caller_service_account_namespaces` scopes live WorkloadCredential reads and the existing policy
-index watches. `policy_namespace` names where Identities, PolicySets and PolicyBindings are read
-and `ActionsReady` is written. Neither setting approves Actions or selects an MCP destination.
+`caller_service_account_namespaces` scopes live WorkloadCredential reads. `policy_namespace` names
+where Identities, PolicySets and PolicyBindings are read and `ActionsReady` is written. Neither
+setting approves Actions or selects an MCP destination.
 
 The [workload resolver](../identity/auth/) resolves a verified client certificate to the live Identity
 its WorkloadCredential names. It rechecks credential validity and the Identity incarnation on calls

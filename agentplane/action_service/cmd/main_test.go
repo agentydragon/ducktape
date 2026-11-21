@@ -440,7 +440,6 @@ func TestTheServiceRunsAnMCPGroupsActionOnceItsServerIsBack(t *testing.T) {
 	}
 }
 
-// fetch is the answer to a GET of address.
 // The service finishes a link at its callback, and a group the linkage authorizes follows it: a change another replica
 // commits reaches the group at once, not at its next refresh minutes later. The service also serves the shared Client
 // ID Metadata Document.
@@ -663,7 +662,7 @@ func TestTheServiceAnswersActionPolicyFromItsPolicyIndexOverGRPC(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// Once the policy index has listed, it admits the labeled caller and resolves its binding.
+	// Once the policy index has listed, it admits the caller and resolves its binding.
 	waitReady(t, service)
 
 	authorized := ctx
