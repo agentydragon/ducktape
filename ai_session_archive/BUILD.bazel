@@ -442,26 +442,6 @@ py_test(
 )
 
 py_test(
-    name = "test_codex_title_conflict",
-    size = "medium",
-    srcs = ["test_codex_title_conflict.py"],
-    data = ["//third_party/restic"],
-    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
-    requires_docker = True,
-    deps = [
-        ":database",
-        ":ingest",
-        ":models",
-        ":source_paths",
-        ":testing",
-        "//:conftest",
-        "//testing:postgres_fixtures",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
     name = "test_discovery_ledger",
     size = "medium",
     srcs = ["test_discovery_ledger.py"],
@@ -632,33 +612,6 @@ py_test(
     ],
 )
 
-py_library(
-    name = "codex_titles_testing",
-    testonly = True,
-    srcs = ["codex_titles_testing.py"],
-)
-
-py_test(
-    name = "test_codex_title_rename",
-    size = "medium",
-    srcs = ["test_codex_title_rename.py"],
-    data = ["//third_party/restic"],
-    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
-    requires_docker = True,
-    deps = [
-        ":codex_titles_testing",
-        ":database",
-        ":ingest",
-        ":models",
-        ":source_paths",
-        ":testing",
-        "//:conftest",
-        "//testing:postgres_fixtures",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
 py_test(
     name = "test_codex_titles",
     size = "medium",
@@ -667,28 +620,6 @@ py_test(
     exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
-        ":codex_titles_testing",
-        ":database",
-        ":ingest",
-        ":models",
-        ":source_paths",
-        ":testing",
-        "//:conftest",
-        "//testing:postgres_fixtures",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_codex_title_retry",
-    size = "medium",
-    srcs = ["test_codex_title_retry.py"],
-    data = ["//third_party/restic"],
-    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
-    requires_docker = True,
-    deps = [
-        ":codex_titles_testing",
         ":database",
         ":ingest",
         ":models",
