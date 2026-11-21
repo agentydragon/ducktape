@@ -80,7 +80,7 @@ let
       async_compaction = true;
       wake_on_agent_messages = true;
       send_message_to_user_async = true;
-      # TODO: Consider enabling current_time_reminder.
+      # TODO: Consider enabling current_time_reminder and context_management.
       # shell_snapshot ?  (keep off unless you want offline TUI snapshots)
     };
     # Persist command history to disk.
