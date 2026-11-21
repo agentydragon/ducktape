@@ -196,8 +196,10 @@ def check_external_secret_store_wiring(cluster: ParsedCluster) -> ExternalSecret
                     f"{origin}: ClusterExternalSecret '{resource.name}' namespace selectors cannot cover "
                     "namespaces or labels not established by the render"
                 )
-            for name, labels in namespaces.items():
-                known_labels = labels if labels is not None else {"kubernetes.io/metadata.name": name}
+            for name, namespace_labels in namespaces.items():
+                known_labels = (
+                    namespace_labels if namespace_labels is not None else {"kubernetes.io/metadata.name": name}
+                )
                 matches = [_selector_matches(selector, known_labels) for selector in selectors]
                 if True in matches:
                     selected.add(name)
