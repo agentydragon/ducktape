@@ -124,9 +124,10 @@ such file is listed; `flux_kustomization` derives it from the `RenderedDirectory
 
 Fleet rules run on every App `generation.write_app` writes, over all its charts together;
 strategic-merge patch files are not checked. Their
-`resolved_references` check rejects some same-App Secret/ConfigMap kind mismatches,
-including names derived from controller-created targets; it permits unknown references
-and does not distinguish namespaces. It does not establish reference existence.
+`reference_kind_mismatches` check rejects some same-App Secret/ConfigMap kind mismatches
+when both objects explicitly name the same namespace, including controller-created
+targets. Unknown references and namespaces remain outside its proof. It does not
+establish reference existence.
 Whole-tree validation work is tracked in <../cdk8s/TODO.md>.
 
 A `configMapGenerator` input (`cluster/k8s/haku/mailbox/nginx.conf`)

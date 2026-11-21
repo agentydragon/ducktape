@@ -62,26 +62,29 @@ def pod_hardening(objects: list[dict[str, Any]], *, unhardened: Collection[str])
     return errors
 
 
+def _outside_https_rules(obj: dict[str, Any]) -> Iterator[tuple[list[Any], bool]]:
+    """Yield each outside destination using port 443 and whether it pins TLS SNI."""
+    for rule in obj["spec"].get("egress", []):
+        destination = rule.get("toFQDNs") or sorted(_OUTSIDE_ENTITIES & set(rule.get("toEntities", [])))
+        if not destination:
+            continue
+        for to_ports in rule.get("toPorts", []):
+            if any(port["port"] == _HTTPS_PORT for port in to_ports.get("ports", [])):
+                yield destination, bool(to_ports.get("serverNames"))
+
+
 def pinned_https_egress(objects: list[dict[str, Any]], *, unpinned: Collection[str]) -> list[str]:
     """A CiliumNetworkPolicy egress rule reaching port 443 outside the cluster (world,
     remote-node, host, FQDNs) names the TLS server names it allows: without SNI it is
     "any HTTPS server". `unpinned` names the policies allowed through by design -- a
     TLS-terminating proxy whose allowlist is its own configuration."""
-    errors: list[str] = []
-    for obj in objects:
-        if obj["kind"] != _NETWORKPOLICY_KIND or obj["metadata"]["name"] in unpinned:
-            continue
-        for rule in obj["spec"].get("egress", []):
-            destination = rule.get("toFQDNs") or sorted(_OUTSIDE_ENTITIES & set(rule.get("toEntities", [])))
-            if not destination:
-                continue
-            errors.extend(
-                f"CiliumNetworkPolicy/{obj['metadata']['name']}: HTTPS egress to {destination} without serverNames"
-                for to_ports in rule.get("toPorts", [])
-                if any(port["port"] == _HTTPS_PORT for port in to_ports.get("ports", []))
-                and not to_ports.get("serverNames")
-            )
-    return errors
+    return [
+        f"CiliumNetworkPolicy/{obj['metadata']['name']}: HTTPS egress to {destination} without serverNames"
+        for obj in objects
+        if obj["kind"] == _NETWORKPOLICY_KIND and obj["metadata"]["name"] not in unpinned
+        for destination, pins_sni in _outside_https_rules(obj)
+        if not pins_sni
+    ]
 
 
 def cilium_rules_enforce_something(objects: list[dict[str, Any]]) -> list[str]:
@@ -102,16 +105,8 @@ def _outside_https_pins(obj: dict[str, Any]) -> tuple[bool, bool]:
     left_open)`, each true when at least one such rule carries `serverNames` or leaves it off. A
     destination is outside the cluster when it names FQDNs or entities from `_OUTSIDE_ENTITIES`;
     in-cluster peers (`toEndpoints`, and `toEntities: [cluster]`) never are."""
-    pins_sni = left_open = False
-    for rule in obj["spec"].get("egress", []):
-        if not (rule.get("toFQDNs") or _OUTSIDE_ENTITIES & set(rule.get("toEntities", []))):
-            continue
-        for to_ports in rule.get("toPorts", []):
-            if not any(port["port"] == _HTTPS_PORT for port in to_ports.get("ports", [])):
-                continue
-            pinned = bool(to_ports.get("serverNames"))
-            pins_sni, left_open = pins_sni or pinned, left_open or not pinned
-    return pins_sni, left_open
+    pin_states = {pins_sni for _, pins_sni in _outside_https_rules(obj)}
+    return True in pin_states, False in pin_states
 
 
 def _endpoint_scope(obj: dict[str, Any]) -> tuple[str, dict[str, str], bool]:
@@ -219,37 +214,43 @@ def _references(pod: dict[str, Any]) -> Iterator[tuple[str, str]]:
             yield from _references(item)
 
 
-def resolved_references(objects: list[dict[str, Any]]) -> list[str]:
-    """Resolve Pod references against resources synthesized in the same App.
+def reference_kind_mismatches(objects: list[dict[str, Any]]) -> list[str]:
+    """Catch some Pod references whose name is created as the other kind in the same namespace.
 
     Controllers can create resources named by an ExternalSecret, Certificate,
-    trust-manager Bundle, or CNPG Cluster. References not created in the App may
-    come from sibling files or other Kustomizations and are outside this rule's scope.
-    A same-name resource of the other kind is still a local resolution error.
+    trust-manager Bundle, or CNPG Cluster. A reference not found in the App can
+    come from another source; this rule does not prove it is missing. Namespace-less
+    resources can receive a namespace later, so they cannot prove a mismatch either.
     """
-    secrets = {
-        *(
-            o["spec"].get("target", {}).get("name", o["metadata"]["name"])
-            for o in objects
-            if o["kind"] == "ExternalSecret"
-        ),
-        *(o["metadata"]["name"] for o in objects if o["kind"] == "Secret"),
-        *(o["spec"]["secretName"] for o in objects if o["kind"] == "Certificate"),
-        *(
-            f"{o['metadata']['name']}-app"
-            for o in objects
-            if o["kind"] == "Cluster" and o["apiVersion"].startswith("postgresql.cnpg.io/")
-        ),
-    }
-    config_maps = {o["metadata"]["name"] for o in objects if o["kind"] in ("ConfigMap", "Bundle")}
-    created = {"Secret": secrets, "ConfigMap": config_maps}
+    created: dict[str, set[tuple[str | None, str]]] = {"Secret": set(), "ConfigMap": set()}
+    for obj in objects:
+        namespace = obj["metadata"].get("namespace")
+        kind = obj["kind"]
+        name = obj["metadata"]["name"]
+        if kind == "ExternalSecret":
+            created["Secret"].add((namespace, obj["spec"].get("target", {}).get("name", name)))
+        elif kind in ("Secret", "ConfigMap"):
+            created[kind].add((namespace, name))
+        elif kind == "Certificate":
+            created["Secret"].add((namespace, obj["spec"]["secretName"]))
+        elif kind == "Cluster" and obj["apiVersion"].startswith("postgresql.cnpg.io/"):
+            created["Secret"].add((namespace, f"{name}-app"))
+        elif kind == "Bundle":
+            # A Bundle may publish into several namespaces, not its own.
+            created["ConfigMap"].add((None, name))
     other_kind = {"Secret": "ConfigMap", "ConfigMap": "Secret"}
     errors: list[str] = []
-    for owner, pod in _pod_specs(objects):
-        for kind, name in _references(pod):
-            if name in created[kind] or name not in created[other_kind[kind]]:
+    for obj in objects:
+        if not embeds_pod(obj) or not (namespace := obj["metadata"].get("namespace")):
+            continue
+        owner = f"{obj['kind']}/{obj['metadata']['name']}"
+        for kind, name in _references(pod_spec(obj)):
+            if any(target == name for _, target in created[kind]) or (namespace, name) not in created[other_kind[kind]]:
                 continue
-            errors.append(f"{owner} reads {kind} {name!r}, but the app creates a {other_kind[kind]} with that name")
+            errors.append(
+                f"{owner} in namespace {namespace!r} reads {kind} {name!r}, "
+                f"but the app creates a {other_kind[kind]} with that name"
+            )
     return errors
 
 
@@ -333,7 +334,7 @@ class FleetRules:
             *pinned_https_egress(objects, unpinned=self._unpinned_https_egress),
             *https_egress_sni_conflicts(objects),
             *cilium_rules_enforce_something(objects),
-            *resolved_references(objects),
+            *reference_kind_mismatches(objects),
             *vpa_auto_mode_policies_set_controlled_values(objects),
             *daemonsets_leave_offline_nodes(objects),
             *unused_waivers(objects, unhardened=self._unhardened_pods, unpinned=self._unpinned_https_egress),
