@@ -69,8 +69,8 @@ let
     # 2026-11-20: Trial disabling animations to see how the UX feels: less
     # feedback that things are happening, but hopefully less lag in tmux.
     tui.animations = false;
-    # TODO: Consider TUI notifications, status line and presets, and enabling
-    # current_time_reminder and context_management.
+    # TODO: Consider tui.notifications, tui.status_line, tui.presets,
+    # features.current_time_reminder, and features.context_management.
 
     features = {
       unified_exec = true;
