@@ -62,26 +62,29 @@ def pod_hardening(objects: list[dict[str, Any]], *, unhardened: Collection[str])
     return errors
 
 
+def _outside_https_rules(obj: dict[str, Any]) -> Iterator[tuple[list[Any], bool]]:
+    """Yield each outside destination using port 443 and whether it pins TLS SNI."""
+    for rule in obj["spec"].get("egress", []):
+        destination = rule.get("toFQDNs") or sorted(_OUTSIDE_ENTITIES & set(rule.get("toEntities", [])))
+        if not destination:
+            continue
+        for to_ports in rule.get("toPorts", []):
+            if any(port["port"] == _HTTPS_PORT for port in to_ports.get("ports", [])):
+                yield destination, bool(to_ports.get("serverNames"))
+
+
 def pinned_https_egress(objects: list[dict[str, Any]], *, unpinned: Collection[str]) -> list[str]:
     """A CiliumNetworkPolicy egress rule reaching port 443 outside the cluster (world,
     remote-node, host, FQDNs) names the TLS server names it allows: without SNI it is
     "any HTTPS server". `unpinned` names the policies allowed through by design -- a
     TLS-terminating proxy whose allowlist is its own configuration."""
-    errors: list[str] = []
-    for obj in objects:
-        if obj["kind"] != _NETWORKPOLICY_KIND or obj["metadata"]["name"] in unpinned:
-            continue
-        for rule in obj["spec"].get("egress", []):
-            destination = rule.get("toFQDNs") or sorted(_OUTSIDE_ENTITIES & set(rule.get("toEntities", [])))
-            if not destination:
-                continue
-            errors.extend(
-                f"CiliumNetworkPolicy/{obj['metadata']['name']}: HTTPS egress to {destination} without serverNames"
-                for to_ports in rule.get("toPorts", [])
-                if any(port["port"] == _HTTPS_PORT for port in to_ports.get("ports", []))
-                and not to_ports.get("serverNames")
-            )
-    return errors
+    return [
+        f"CiliumNetworkPolicy/{obj['metadata']['name']}: HTTPS egress to {destination} without serverNames"
+        for obj in objects
+        if obj["kind"] == _NETWORKPOLICY_KIND and obj["metadata"]["name"] not in unpinned
+        for destination, pins_sni in _outside_https_rules(obj)
+        if not pins_sni
+    ]
 
 
 def cilium_rules_enforce_something(objects: list[dict[str, Any]]) -> list[str]:
@@ -102,16 +105,8 @@ def _outside_https_pins(obj: dict[str, Any]) -> tuple[bool, bool]:
     left_open)`, each true when at least one such rule carries `serverNames` or leaves it off. A
     destination is outside the cluster when it names FQDNs or entities from `_OUTSIDE_ENTITIES`;
     in-cluster peers (`toEndpoints`, and `toEntities: [cluster]`) never are."""
-    pins_sni = left_open = False
-    for rule in obj["spec"].get("egress", []):
-        if not (rule.get("toFQDNs") or _OUTSIDE_ENTITIES & set(rule.get("toEntities", []))):
-            continue
-        for to_ports in rule.get("toPorts", []):
-            if not any(port["port"] == _HTTPS_PORT for port in to_ports.get("ports", [])):
-                continue
-            pinned = bool(to_ports.get("serverNames"))
-            pins_sni, left_open = pins_sni or pinned, left_open or not pinned
-    return pins_sni, left_open
+    pin_states = {pins_sni for _, pins_sni in _outside_https_rules(obj)}
+    return True in pin_states, False in pin_states
 
 
 def _endpoint_scope(obj: dict[str, Any]) -> tuple[str, dict[str, str], bool]:
