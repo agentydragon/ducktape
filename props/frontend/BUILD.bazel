@@ -186,7 +186,9 @@ py_test(
 
 py_test(
     name = "test_dev_server_integration",
-    size = "medium",  # Cold imports, PostgreSQL image load and launcher startup; debug/dev_server_integration_budget.md.
+    # Not a wedge: on a cold RBE worker the run took 92 s with the limit lifted (PostgreSQL image load
+    # 27.8 s, container start 6.9 s), over the 60 s `small` budget.
+    size = "medium",
     srcs = ["test_dev_server_integration.py"],
     data = [":dev"],
     env = {"PROPS_DEV_RLOCATION": "$(rlocationpath :dev)"},
