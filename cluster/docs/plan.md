@@ -165,11 +165,10 @@ editing a route.
       decide placement before moving it.
 - [ ] Review Goldilocks VPA memory requests on HIL pods. The grocy-sf scheduling
       incident recorded 97% of HIL worker memory requested despite 65–78% actual use.
-      Source now defines a Kyverno policy that defaults `auto` VPA namespaces to
-      `controlledValues: RequestsOnly` (<../cdk8s/kyverno/policies.py>), so VPA leaves
-      manifest limits unchanged; it does not bound memory requests. Review the workloads
-      whose requests still threaten scheduling and set evidence-based
-      `minAllowed`/`maxAllowed` policies where useful.
+      Source now defaults `auto` VPA namespaces to `controlledValues: RequestsOnly`
+      (<../cdk8s/namespaces.py>), so VPA leaves manifest limits unchanged; it does not
+      bound memory requests. Review the workloads whose requests still threaten scheduling
+      and set evidence-based `minAllowed`/`maxAllowed` policies where useful.
       Decide separately whether noncritical workloads should use `Initial`; consider a
       descheduler only if measured post-right-sizing placement still needs rebalancing.
 - Loki + SeaweedFS S3 (MinIO retired 2026-05; Loki/Tempo/Mimir all point at the
@@ -226,7 +225,7 @@ See <plans/file_sync_evaluation.md>.
 
 ### Kyverno GitOps Enforcement
 
-Deployed in Audit mode (`require-gitops` ClusterPolicy, 3 replicas).
+Deployed in Audit mode (`require-gitops` ValidatingPolicy, 3 admission-controller replicas).
 
 - [ ] Switch to `Enforce` after validation
 - [ ] Generic operator exclusion (skip resources with `ownerReferences`)
@@ -308,10 +307,6 @@ Proxmox-only gap.)
       same OVH nodes as the databases, so losing SeaweedFS loses the backups too.
 - [ ] Verify Proxmox ZFS auto-snapshot schedule covers CNPG data directories
 
-### Velero PVC Backup
-
-Scheduled backups of PVCs (Forgejo, Loki, Postgres). No backup strategy currently.
-
 ### CiliumNetworkPolicy Rollout
 
 Most services lack network policies. Goal: default-deny per namespace.
@@ -323,38 +318,6 @@ Most services lack network policies. Goal: default-deny per namespace.
 **Priority 3 -- Remaining**:
 
 - [ ] Cert-Manager, Metrics Server, ESO webhook, Props, Nix cache
-
-### Scoped Historical Logs for `claude-sandbox`
-
-Agents in `claude-sandbox` can't reach Loki — the `ingress` CNP in `loki` only allows
-grafana/alloy/gatus/authentik, and Loki runs `auth_enabled: false` so the
-CNP is the entire access boundary. Without log access, post-mortems on dead pods
-(e.g. the 2026-05-24 `tana-mcp` livenessProbe kill) are limited to metrics +
-kubelet's short-lived previous-container buffer.
-
-Options, from cheapest to cleanest:
-
-- **A. Allowlist `claude-sandbox` on the `ingress` CNP in `loki`.** ~5 lines. Grants full
-  cluster Loki read; scoping relies on the agent querying only namespaces it has
-  business in (same trust model as `namespace-diagnostics-reader`).
-- **B. `loki-agent-proxy` deployment in `monitoring`.** nginx + njs/Lua that
-  rewrites incoming LogQL `query` params to inject `{namespace=~"<allowlist>"}`
-  before forwarding to `loki-read:3100`. CNP grants `claude-sandbox` → proxy only,
-  not Loki directly. Real per-namespace scoping. Mirrors existing precedent
-  (`tana-mcp` nginx whitelisting `/mcp` + `/health`, `activitywatch`'s `readonly`
-  proxy whitelisting `GET/POST /api/0/query`). Natural allowlist: the
-  `namespace-diagnostics-reader` and `logs-configmaps-reader` binding sets in
-  <agent_rbac.md>.
-- **C. Loki multi-tenancy.** Set `auth_enabled: true`, route per-namespace logs to
-  per-namespace tenants via Alloy, grant tenant IDs. Touches every log
-  producer; almost certainly overkill.
-
-Grafana isn't a useful proxy here: OSS Grafana's Loki datasource has no
-label-level access controls (TeamLBAC is Enterprise-only), so routing through
-Grafana shifts the trust boundary without actually scoping access.
-
-Recommendation: **B** when log access starts mattering for routine triage; **A**
-as a stop-gap if the trust-the-agent model is acceptable.
 
 ### Pod Security Standards
 
@@ -399,13 +362,6 @@ fault can cascade.
 
 VPA deployed (`generated/vpa/`). Goldilocks auto-creates VPAs cluster-wide.
 Default mode "Off" (recommendation-only). Enable per namespace.
-
-**TODO**: Require explicit `goldilocks.fairwinds.com/vpa-resource-policy` annotations
-on all namespaces/deployments that use `updateMode: auto`. Without a policy:
-
-- VPA can recommend absurdly low CPU (e.g., 15m) that causes throttling.
-  Consider a Kyverno policy to enforce this cluster-wide. See airlock namespace
-  for working example (JSON format required, not YAML).
 
 CPU limits policy for cold-start-heavy workloads:
 <decisions.md> § "CPU limits policy (VPA)".
@@ -469,7 +425,7 @@ CNPG is 2-instance primary+standby. Low priority -- survives single-node failure
 
 - `BackendTLSPolicy` for internal HTTPS (blocked on [cilium#31352](https://github.com/cilium/cilium/issues/31352))
 - Nix cache signing key -> GitOps Terraform writing a SOPS secret
-- RWX shared storage: Longhorn NFS export (try first), NFS on Proxmox, JuiceFS, SeaweedFS
+- RWX shared storage: the longer-term goal in <plans/piraeus_production.md>
 
 ## Related Documentation
 

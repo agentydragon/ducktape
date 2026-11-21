@@ -301,7 +301,9 @@ Gotchas:
   pull fails `DeadlineExceeded` with no streams at all.
 - Timestamps in the API are **nanoseconds** (hence the `000000000` suffix).
 
-Grafana also has Loki as a datasource for interactive log exploration (Explore view).
+Grafana also has Loki as a datasource for interactive log exploration (Explore view). It
+cannot scope access by namespace (TeamLBAC is Enterprise-only); namespace-scoped read
+access for agents goes through `loki-read-proxy` (<../proxies/loki_read_proxy/main.py>).
 
 ### Nix Cache
 
