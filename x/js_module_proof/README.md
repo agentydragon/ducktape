@@ -116,8 +116,10 @@ statements. Conditions may use numeric `===`, `!==`, `==`, `!=`, `<`, `<=`, `>` 
 results are supported only as conditions, not as returned boolean values.
 Guards conservatively reject references to lexical declarations later in the same
 block, including behind subsequent guards. Supported thrown
-values are nonnegative safe integers, BigInt literals, booleans, `null`, `undefined` (written as
-`void 0`), and well-formed Unicode strings. A throw stops the observed call sequence
+values include safe-integer literals (including negative zero), the constant zero-divisions
+`0 / 0`, `1 / 0`, and `-1 / 0`, BigInt literals, booleans, `null`,
+`undefined` (written as `void 0`), and well-formed Unicode strings. Nonconstant
+numeric throw expressions remain subject to the nonnegative safe-integer restriction. A throw stops the observed call sequence
 while preserving its preceding trace. The checker conservatively rejects local
 temporal-dead-zone reads.
 Functions may declare and call nonescaping local functions that capture and
@@ -269,7 +271,7 @@ This result assumes correct Acorn conversion and correspondence between the
 model and ECMAScript. Numeric bindings, exported-function arguments and modeled
 numeric expression intermediates must remain nonnegative safe integers excluding
 negative zero. Independently recorded integer literals may be negative or negative zero;
-the three recorded constant zero-divisions above are also supported. Other remainder and division
+the three constant zero-divisions above are also supported when recorded or thrown. Other remainder and division
 divisors must be nonzero, division results must be integers, and signed bitwise
 results must be nonnegative;
 `globalThis.record` must be stable and return normally without reentry or

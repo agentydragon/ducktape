@@ -677,6 +677,35 @@ function capturedCase(seed, index) {
 
 // Allocation, aliasing and indexed access are generated independently of the
 // proof frontend. These programs run in Node even when splitting is refused.
+
+function throwExpressions(variant) {
+  const negative = (value) => ({ type: "UnaryExpression", operator: "-", prefix: true, argument: literal(value) });
+  const division = (left) => ({ type: "BinaryExpression", operator: "/", left, right: literal(0) });
+  switch (variant) {
+    case "bigint":
+      return [
+        { type: "Literal", value: null, bigint: "12345678901234567890" },
+        { type: "Literal", value: null, bigint: "12345678901234567891" },
+      ];
+    case "null":
+      return [literal(null), { type: "UnaryExpression", operator: "void", prefix: true, argument: literal(0) }];
+    case "unicode":
+      return [literal(unicodeThrow), literal(`${unicodeThrow}!`)];
+    case "negative":
+      return [negative(7), negative(8)];
+    case "negativeZero":
+      return [negative(0), literal(0)];
+    case "nan":
+      return [division(literal(0)), literal(null)];
+    case "positiveInfinity":
+      return [division(literal(1)), division(negative(1))];
+    case "negativeInfinity":
+      return [division(negative(1)), division(literal(1))];
+    default:
+      return [literal("generated-left"), literal("generated-right")];
+  }
+}
+
 function objectCase(seed, index) {
   const rand = random(seed ^ 0x0b1ec7, index);
   const property = `field${rand(8)}`;
@@ -1184,12 +1213,19 @@ export function makeComposedCase(seed, index) {
   };
   const functionNames = Array.from({ length: 1 + rand(3) }, (_, i) => (i ? `calculate${i}` : "calculate"));
   const functions = functionNames.map(makeFunction);
-  const throwVariant = ["string", "bigint", "null", "unicode"][Math.floor(index / 64) % 4];
+  const throwVariant = [
+    "string",
+    "bigint",
+    "null",
+    "unicode",
+    "negative",
+    "negativeZero",
+    "nan",
+    "positiveInfinity",
+    "negativeInfinity",
+  ][Math.floor(index / 64) % 9];
   if (index % 64 === 23) {
-    const thrown =
-      throwVariant === "bigint"
-        ? { type: "Literal", value: null, bigint: "12345678901234567890" }
-        : literal(throwVariant === "null" ? null : throwVariant === "unicode" ? unicodeThrow : "generated-left");
+    const [thrown] = throwExpressions(throwVariant);
     functionNames.push("fuzzThrower");
     functions.push(
       functionNode(
@@ -1572,14 +1608,8 @@ async function mutateOutput(out, input, kind) {
       if (start >= 0) {
         const prefix = original.slice(0, start),
           body = original.slice(start);
-        const mutated =
-          input.throwVariant === "bigint"
-            ? body.replace("throw 12345678901234567890n", "throw 12345678901234567891n")
-            : input.throwVariant === "null"
-              ? body.replace("throw null", "throw void 0")
-              : input.throwVariant === "unicode"
-                ? body.replace(`throw ${JSON.stringify(unicodeThrow)}`, `throw ${JSON.stringify(`${unicodeThrow}!`)}`)
-                : body.replace('throw "generated-left"', 'throw "generated-right"');
+        const [before, after] = throwExpressions(input.throwVariant);
+        const mutated = body.replace(`throw ${print(before)}`, `throw ${print(after)}`);
         changed = prefix + mutated;
       }
     } else if (kind === "composedEffect") {

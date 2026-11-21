@@ -13,14 +13,8 @@ inductive Observation where
   | undefined
   deriving DecidableEq, Repr
 
-inductive ThrownValue where
-  | number (value : Nat)
-  | bigInteger (negative : Bool) (magnitude : Nat)
-  | text (value : String)
-  | boolean (value : Bool)
-  | null
-  | undefined
-  deriving DecidableEq, Repr
+/- Recorded values and thrown values share one representation. -/
+abbrev ThrownValue := Observation
 
 /- Expressions are evaluated by the same transition system as the original
    operations. Parameters shadow module bindings; arithmetic is restricted by
@@ -70,7 +64,6 @@ inductive Operation where
   | incrementSnapshot
   | readCell
   | readSnapshot
-  | recordText (value : String)
   | recordLiteral (value : Observation)
   | recordCell
   | declareBinding (name : String) (value : Nat)
@@ -1021,7 +1014,6 @@ def executeStep {α : Type} (state : ExecutionState α) (operation : Operation) 
     | .readSnapshot => do
       let value ← state.snapshot
       pure { state with events := state.events ++ [.number value] }
-    | .recordText value => some (recordObservation state (.text value))
     | .recordLiteral value => some (recordObservation state value)
     | .recordCell => do
       let value ← state.cell

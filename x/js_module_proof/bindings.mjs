@@ -27,6 +27,53 @@ const leanText = (value) =>
     ? str(value)
     : `(String.ofList ${list(Array.from(value, (character) => `Char.ofNat ${character.codePointAt(0)}`))})`;
 
+// One syntax-directed representation is used for both recorded and thrown
+// constants. Unsupported expressions are left to the ordinary expression parser.
+function constantObservation(node) {
+  if (node?.type === "Literal" && !node.regex) {
+    if (typeof node.value === "bigint")
+      return { kind: "bigInteger", negative: false, magnitude: node.value.toString() };
+    if (supportedText(node.value)) return { kind: "text", value: node.value };
+    if (node.value === null && !node.bigint) return { kind: "nullValue" };
+    if (typeof node.value === "boolean") return { kind: "boolean", value: node.value };
+    if (Number.isSafeInteger(node.value) && node.value >= 0) return { kind: "number", value: node.value };
+  }
+  if (node?.type === "UnaryExpression" && node.operator === "void" && primitiveLiteral(node.argument))
+    return { kind: "undefined" };
+  if (node?.type === "UnaryExpression" && node.operator === "-" && node.argument.type === "Literal") {
+    const value = node.argument.value;
+    if (typeof value === "bigint") return { kind: "bigInteger", negative: value !== 0n, magnitude: value.toString() };
+    if (Number.isSafeInteger(value) && value >= 0)
+      return value === 0 ? { kind: "negativeZero" } : { kind: "negativeNumber", magnitude: value };
+  }
+  if (
+    node?.type === "BinaryExpression" &&
+    node.operator === "/" &&
+    node.right.type === "Literal" &&
+    node.right.value === 0
+  ) {
+    if (node.left.type === "Literal" && (node.left.value === 0 || node.left.value === 1))
+      return { kind: node.left.value === 0 ? "notANumber" : "positiveInfinity" };
+    if (
+      node.left.type === "UnaryExpression" &&
+      node.left.operator === "-" &&
+      node.left.argument.type === "Literal" &&
+      node.left.argument.value === 1
+    )
+      return { kind: "negativeInfinity" };
+  }
+  return null;
+}
+
+function leanObservation(observation) {
+  if (observation.kind === "text") return `.text ${leanText(observation.value)}`;
+  if (observation.kind === "number" || observation.kind === "boolean")
+    return `.${observation.kind} ${observation.value}`;
+  if (observation.kind === "negativeNumber") return `.negativeNumber ${observation.magnitude}`;
+  if (observation.kind === "bigInteger") return `.bigInteger ${observation.negative} ${observation.magnitude}`;
+  return `.${observation.kind}`;
+}
+
 // Conservative lexical analysis for generating candidate modules before the
 // corresponding execution semantics are supported by the proof checker. Each
 // block predeclares its lexical bindings, including declarations that are not
@@ -755,35 +802,9 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
     }
     if (statement?.type === "ReturnStatement") return expression(statement.argument);
     if (statement?.type === "ThrowStatement") {
-      const argument = statement.argument;
-      if (argument?.type === "Literal" && typeof argument.value === "bigint")
-        return { kind: "raiseBigInteger", negative: false, magnitude: argument.value.toString() };
-      if (
-        argument?.type === "UnaryExpression" &&
-        argument.operator === "-" &&
-        argument.argument.type === "Literal" &&
-        typeof argument.argument.value === "bigint"
-      )
-        return {
-          kind: "raiseBigInteger",
-          negative: argument.argument.value !== 0n,
-          magnitude: argument.argument.value.toString(),
-        };
-      if (
-        argument?.type === "Literal" &&
-        (argument.value === null || typeof argument.value === "boolean" || typeof argument.value === "string")
-      ) {
-        check(typeof argument.value !== "string" || supportedText(argument.value), "unsupported thrown string");
-        return { kind: "raisePrimitive", value: argument.value };
-      }
-      if (
-        argument?.type === "UnaryExpression" &&
-        argument.operator === "void" &&
-        argument.argument?.type === "Literal" &&
-        argument.argument.value === 0
-      )
-        return { kind: "raisePrimitive", value: undefined };
-      return { kind: "raise", value: expression(argument) };
+      const observation = constantObservation(statement.argument);
+      if (observation) return { kind: "raiseConstant", observation };
+      return { kind: "raise", value: expression(statement.argument) };
     }
     if (statement?.type === "BlockStatement") return sequence(statement.body);
     if (statement?.type === "IfStatement" && statement.alternate)
@@ -838,8 +859,7 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
         ];
       case "raise":
         return free(item.value, bound);
-      case "raisePrimitive":
-      case "raiseBigInteger":
+      case "raiseConstant":
         return [];
       case "invoke":
         return [item.name, ...item.arguments.flatMap((argument) => free(argument, bound))];
@@ -1129,56 +1149,8 @@ function statement(node) {
     "expected globalThis.record(binding)"
   );
   const arg = expr.arguments[0];
-  if (arg?.type === "Literal" && typeof arg.value === "bigint")
-    return { kind: "recordBigInteger", negative: false, magnitude: arg.value.toString() };
-  if (
-    arg?.type === "UnaryExpression" &&
-    arg.operator === "-" &&
-    arg.argument.type === "Literal" &&
-    typeof arg.argument.value === "bigint"
-  )
-    return { kind: "recordBigInteger", negative: arg.argument.value !== 0n, magnitude: arg.argument.value.toString() };
-  if (
-    arg?.type === "BinaryExpression" &&
-    arg.operator === "/" &&
-    arg.right.type === "Literal" &&
-    arg.right.value === 0
-  ) {
-    if (arg.left.type === "Literal" && (arg.left.value === 0 || arg.left.value === 1))
-      return { kind: "recordSpecialNumber", value: arg.left.value === 0 ? "notANumber" : "positiveInfinity" };
-    if (
-      arg.left.type === "UnaryExpression" &&
-      arg.left.operator === "-" &&
-      arg.left.argument.type === "Literal" &&
-      arg.left.argument.value === 1
-    )
-      return { kind: "recordSpecialNumber", value: "negativeInfinity" };
-  }
-  if (
-    arg?.type === "UnaryExpression" &&
-    arg.operator === "-" &&
-    arg.argument.type === "Literal" &&
-    arg.argument.value === 0
-  )
-    return { kind: "recordNegativeZero" };
-  if (
-    arg?.type === "UnaryExpression" &&
-    arg.operator === "-" &&
-    arg.argument.type === "Literal" &&
-    Number.isSafeInteger(arg.argument.value) &&
-    arg.argument.value > 0
-  )
-    return { kind: "recordNegative", magnitude: arg.argument.value };
-  if (arg?.type === "UnaryExpression" && arg.operator === "void" && primitiveLiteral(arg.argument))
-    return { kind: "recordUndefined" };
-  if (arg?.type === "Literal" && supportedText(arg.value)) return { kind: "recordText", value: arg.value };
-  if (
-    arg?.type === "Literal" &&
-    !arg.regex &&
-    !arg.bigint &&
-    (arg.value === null || typeof arg.value === "boolean" || (Number.isSafeInteger(arg.value) && arg.value >= 0))
-  )
-    return { kind: "recordPrimitive", value: arg.value };
+  const observation = constantObservation(arg);
+  if (observation) return { kind: "recordConstant", observation };
   if (arg?.type === "CallExpression" && !arg.optional && arg.arguments.length === 0)
     return { kind: "recordCall", name: identifier(arg.callee) };
   return { kind: "record", name: identifier(arg) };
@@ -1530,20 +1502,8 @@ function leanExpression(expression) {
       );
       return `.${expression.kind} ${str(expression.name)} ${leanStrings(expression.parameters)} (${argumentsTerm}) (${leanExpression(expression.body)})`;
     }
-    case "raisePrimitive": {
-      const value = expression.value;
-      const primitive =
-        value === undefined
-          ? ".undefined"
-          : value === null
-            ? ".null"
-            : typeof value === "boolean"
-              ? `.boolean ${value}`
-              : `.text ${leanText(value)}`;
-      return `.raisePrimitive (${primitive})`;
-    }
-    case "raiseBigInteger":
-      return `.raisePrimitive (.bigInteger ${expression.negative} ${expression.magnitude})`;
+    case "raiseConstant":
+      return `.raisePrimitive (${leanObservation(expression.observation)})`;
   }
   throw new Error("unknown expression");
 }
@@ -1551,20 +1511,8 @@ function leanStatement(item) {
   switch (item.kind) {
     case "discardedLiteral":
       return ".discardedLiteral";
-    case "recordText":
-      return `.recordText ${leanText(item.value)}`;
-    case "recordPrimitive":
-      return `.recordPrimitive (${item.value === null ? ".nullValue" : typeof item.value === "boolean" ? `.boolean ${item.value}` : `.number ${item.value}`})`;
-    case "recordUndefined":
-      return ".recordPrimitive (.undefined)";
-    case "recordNegative":
-      return `.recordPrimitive (.negativeNumber ${item.magnitude})`;
-    case "recordNegativeZero":
-      return ".recordPrimitive (.negativeZero)";
-    case "recordSpecialNumber":
-      return `.recordPrimitive (.${item.value})`;
-    case "recordBigInteger":
-      return `.recordPrimitive (.bigInteger ${item.negative} ${item.magnitude})`;
+    case "recordConstant":
+      return `.recordPrimitive (${leanObservation(item.observation)})`;
     case "variable":
     case "hoistedVariable":
       return `.${item.kind} ${str(item.name)} ${item.value}`;
@@ -1978,7 +1926,7 @@ theorem binding_aliased_future_calls (calls : ${aliasCallType}) :
           : []),
         "globalThis.record is a stable synchronous host function which returns normally without reentry or asynchronous effects",
         "Only initialization calls, their record observations, and calls through the entry exports after successful initialization are observed; loading, reflection, source text and identity are excluded",
-        "Supported thrown values are nonnegative safe integers other than negative zero, BigInt literals, booleans, null, undefined or well-formed Unicode strings; a throw ends the observed call sequence",
+        "Supported thrown constants include signed safe integers, negative zero, 0/0, 1/0, -1/0, BigInt literals, booleans, null, undefined and well-formed Unicode strings; other numeric expressions remain nonnegative safe integers; a throw ends the observed call sequence",
       ],
     };
   }
@@ -2063,11 +2011,20 @@ theorem binding_export_difference :
       if (!Object.hasOwn(trace, "thrown")) return "none";
       const value = trace.thrown;
       if (value.kind === "undefined") return "some (.undefined : ThrownValue)";
-      if (value.kind === "null") return "some (.null : ThrownValue)";
+      if (value.kind === "null") return "some (.nullValue : ThrownValue)";
       if (value.kind === "boolean" && typeof value.value === "boolean") return `some (.boolean ${value.value})`;
       if (value.kind === "string" && supportedText(value.value)) return `some (.text ${leanText(value.value)})`;
-      if (value.kind === "number" && Number.isSafeInteger(value.value) && value.value >= 0)
-        return `some (.number ${value.value})`;
+      if (value.kind === "number") {
+        const special = {
+          "-0": "negativeZero",
+          NaN: "notANumber",
+          Infinity: "positiveInfinity",
+          "-Infinity": "negativeInfinity",
+        };
+        if (Object.hasOwn(special, value.value)) return `some (.${special[value.value]} : ThrownValue)`;
+        if (Number.isSafeInteger(value.value))
+          return value.value < 0 ? `some (.negativeNumber ${-value.value})` : `some (.number ${value.value})`;
+      }
       if (
         value.kind === "bigint" &&
         typeof value.value === "string" &&
@@ -2230,7 +2187,7 @@ theorem binding_export_difference :
       return value > body ? value : body;
     }
     if (expression.kind === "raise") return expressionBound(expression.value, bound);
-    if (expression.kind === "raisePrimitive" || expression.kind === "raiseBigInteger") return 0n;
+    if (expression.kind === "raiseConstant") return 0n;
     if (expression.kind === "invoke" || expression.kind === "invokeLocal") {
       const args = expression.arguments.map((argument) => expressionBound(argument, bound));
       const callBound = args.reduce((largest, value) => (value > largest ? value : largest), bound);

@@ -25,7 +25,6 @@ inductive BindingStmt where
   | call (name : String)
   | record (name : String)
   | discardedLiteral
-  | recordText (value : String)
   | recordPrimitive (value : Observation)
   deriving DecidableEq, Repr
 
@@ -62,7 +61,6 @@ def declaredName : BindingStmt → Option String
   | .call _ => none
   | .record _ => none
   | .discardedLiteral => none
-  | .recordText _ => none
   | .recordPrimitive _ => none
 
 def definitions (source : List BindingStmt) : List String := source.filterMap declaredName
@@ -91,7 +89,6 @@ def isVariable (source : List BindingStmt) (name : String) : Bool :=
     | .call _ => false
     | .record _ => false
     | .discardedLiteral => false
-    | .recordText _ => false
     | .recordPrimitive _ => false
 
 def isReadableBinding (source : List BindingStmt) (name : String) : Bool :=
@@ -115,7 +112,6 @@ def isReadableBinding (source : List BindingStmt) (name : String) : Bool :=
     | .call _ => false
     | .record _ => false
     | .discardedLiteral => false
-    | .recordText _ => false
     | .recordPrimitive _ => false
 
 def isFunction (source : List BindingStmt) (name : String) : Bool :=
@@ -139,7 +135,6 @@ def isFunction (source : List BindingStmt) (name : String) : Bool :=
     | .call _ => false
     | .record _ => false
     | .discardedLiteral => false
-    | .recordText _ => false
     | .recordPrimitive _ => false
 
 def isThrower (source : List BindingStmt) (name : String) : Bool :=
@@ -163,7 +158,6 @@ def isThrower (source : List BindingStmt) (name : String) : Bool :=
     | .call _ => false
     | .record _ => false
     | .discardedLiteral => false
-    | .recordText _ => false
     | .recordPrimitive _ => false
 
 def isFactory (source : List BindingStmt) (name : String) : Bool :=
@@ -187,7 +181,6 @@ def isFactory (source : List BindingStmt) (name : String) : Bool :=
     | .call _ => false
     | .record _ => false
     | .discardedLiteral => false
-    | .recordText _ => false
     | .recordPrimitive _ => false
 
 def isClosure (source : List BindingStmt) (name : String) : Bool :=
@@ -211,7 +204,6 @@ def isClosure (source : List BindingStmt) (name : String) : Bool :=
     | .call _ => false
     | .record _ => false
     | .discardedLiteral => false
-    | .recordText _ => false
     | .recordPrimitive _ => false
 
 /- A closure declaration owns this name, and source declarations are unique.
@@ -566,7 +558,6 @@ def callableSyntax (source : List BindingStmt) (name : String) : Option (List St
     | .call _ => none
     | .record _ => none
     | .discardedLiteral => none
-    | .recordText _ => none
     | .recordPrimitive _ => none
 
 def expressionCalls : NumericExpr → List String
@@ -661,7 +652,6 @@ def capturedFactoryData (source : List BindingStmt) (name : String) : Option (Li
     | .call _ => none
     | .record _ => none
     | .discardedLiteral => none
-    | .recordText _ => none
     | .recordPrimitive _ => none
 
 def capturedClosureDataFuel (source : List BindingStmt) : Nat → String → Option (String × List Nat × List String)
@@ -686,7 +676,6 @@ def capturedClosureDataFuel (source : List BindingStmt) : Nat → String → Opt
       | .call _ => none
       | .record _ => none
       | .discardedLiteral => none
-      | .recordText _ => none
       | .recordPrimitive _ => none
 
 def capturedClosureData (source : List BindingStmt) (name : String) : Option (String × List Nat × List String) :=
@@ -749,7 +738,6 @@ def validRefs (source : List BindingStmt) (modules : List BindingModule) (index 
   | .call name => isFunction source name && !(isThrower source name) && visible modules index name
   | .record name => isReadableBinding source name && visible modules index name
   | .discardedLiteral => true
-  | .recordText _ => true
   | .recordPrimitive _ => true
 
 def moduleValid (source : List BindingStmt) (modules : List BindingModule) (index : Nat) (module : BindingModule) : Bool :=
@@ -810,7 +798,6 @@ def referenceNames : BindingStmt → List String
   | .call name => [name]
   | .record name => [name]
   | .discardedLiteral => []
-  | .recordText _ => []
   | .recordPrimitive _ => []
 
 def referenceMatches (source : List BindingStmt) (modules : List BindingModule) (index : Nat) (name : String) : Bool :=
@@ -843,7 +830,6 @@ def capturedKeys (source : List BindingStmt) : List String :=
     | .call _ => []
     | .record _ => []
     | .discardedLiteral => []
-    | .recordText _ => []
     | .recordPrimitive _ => [])
 
 def modulesValid (source : List BindingStmt) (sourceExports : List String)
@@ -954,7 +940,6 @@ def functionOperations (source : List BindingStmt) (name : String) (observeRetur
     | .call _ => none
     | .record _ => none
     | .discardedLiteral => none
-    | .recordText _ => none
     | .recordPrimitive _ => none
 
 def capturedInitializers (prior : List (String × String)) : List CapturedLocal → List String → Option (List Operation)
@@ -984,7 +969,6 @@ def isHoistedName (source : List BindingStmt) (name : String) : Bool :=
     | .call _ => false
     | .record _ => false
     | .discardedLiteral => false
-    | .recordText _ => false
     | .recordPrimitive _ => false)
 
 def bindingOperations (source : List BindingStmt) (statement : BindingStmt) : Option (List Operation) :=
@@ -1027,7 +1011,6 @@ def bindingOperations (source : List BindingStmt) (statement : BindingStmt) : Op
     | .call _ => none
     | .record _ => none
     | .discardedLiteral => none
-    | .recordText _ => none
     | .recordPrimitive _ => none
   | .wrapper _ _ => some []
   | .recordCall name => do
@@ -1051,14 +1034,12 @@ def bindingOperations (source : List BindingStmt) (statement : BindingStmt) : Op
       | .call _ => none
       | .record _ => none
       | .discardedLiteral => none
-      | .recordText _ => none
       | .recordPrimitive _ => none
     some (ops ++ [.observeBinding (closureCell target)])
   | .record name =>
     if isHoistedName source name then some [.observeHoisted name] else some [.observeBinding name]
   | .call name => functionOperations source name false
   | .discardedLiteral => some []
-  | .recordText value => some [.recordText value]
   | .recordPrimitive value => some [.recordLiteral value]
 
 def runBindingStatements (source statements : List BindingStmt) : Option (ExecutionState Unit) := do
@@ -1086,7 +1067,6 @@ def canonicalBindingState (source : List BindingStmt) (state : ExecutionState Un
     | .call _ => []
     | .record _ => []
     | .discardedLiteral => []
-    | .recordText _ => []
     | .recordPrimitive _ => [])
   let bindings ← names.mapM (fun name => (lookupBinding state.bindings name).map (fun value => (name, value)))
   let captured ← (capturedKeys source).mapM (fun key => (lookupBinding state.captured key).map (fun value => (key, value)))
@@ -1133,7 +1113,6 @@ def outputCaptureNamespace (renames : List (String × String)) : BindingStmt →
   | .call name => .call name
   | .record name => .record name
   | .discardedLiteral => .discardedLiteral
-  | .recordText value => .recordText value
   | .recordPrimitive value => .recordPrimitive value
 
 def namespacedOutputDefinitions (renames : List (String × String)) (modules : List BindingModule) : List BindingStmt :=
@@ -1198,7 +1177,6 @@ def publicCallable (statements : List BindingStmt) (name : String) : Option Publ
     | .call _ => none
     | .record _ => none
     | .discardedLiteral => none
-    | .recordText _ => none
     | .recordPrimitive _ => none
     | .function _ target source => some (.fixed [.addBinding target source, .returnUndefined])
     | .reader _ source => some (.fixed [.returnBinding source])
@@ -1233,7 +1211,6 @@ def publicCapturedEnvironment (statements : List BindingStmt) (name : String) : 
     | .call _ => none
     | .record _ => none
     | .discardedLiteral => none
-    | .recordText _ => none
     | .recordPrimitive _ => none
 
 def callableOperations (callable : PublicCallable) (arguments : List Nat) : Option (List Operation) :=

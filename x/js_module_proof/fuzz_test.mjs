@@ -93,6 +93,21 @@ if (shards === 4 && shard === 1) {
   assert.equal(changedUnicodeThrow.mutatedDifferent, 1);
   assert.equal(changedUnicodeThrow.mutatedVerdicts.unsafe, 1);
 }
+if (shards === 4 && shard === 0) {
+  for (const start of [279, 343, 407, 471, 535]) {
+    const changedThrow = await runFuzz({
+      seed: 51981,
+      start,
+      cases: 1,
+      outputDir: process.env.TEST_TMPDIR,
+      grammarMode: "composed",
+      validateEvery: 1,
+    });
+    assert.equal(changedThrow.mutationKinds.throwValue, 1);
+    assert.equal(changedThrow.mutatedDifferent, 1);
+    assert.equal(changedThrow.mutatedVerdicts.unsafe, 1);
+  }
+}
 if (shards === 4 && shard === 3) {
   const mutated = await runFuzz({
     seed: 51981,
@@ -479,6 +494,21 @@ if (shards === 4 && shard === 2) {
   assert.equal(asyncCampaign.inconclusive, 0);
 }
 if (shards === 4 && shard === 1) assert.equal(result.unsafe, result.cases);
+if (shards === 4 && shard === 0) {
+  for (const start of [279, 343, 407, 471, 535]) {
+    const changedThrow = await runFuzz({
+      seed: 51981,
+      start,
+      cases: 1,
+      outputDir: process.env.TEST_TMPDIR,
+      grammarMode: "composed",
+      validateEvery: 1,
+    });
+    assert.equal(changedThrow.mutationKinds.throwValue, 1);
+    assert.equal(changedThrow.mutatedDifferent, 1);
+    assert.equal(changedThrow.mutatedVerdicts.unsafe, 1);
+  }
+}
 if (shards === 4 && shard === 3) {
   assert.equal(result.closureCases + result.modeledClosureCases, result.cases);
   assert.equal(result.modeledClosureCases, 1);
@@ -535,6 +565,21 @@ if (shards === 4 && shard === 1) assert.equal(bulk.different, bulk.cases);
 if (shards === 4 && shard === 2)
   for (const [kind, count] of Object.entries(bulk.mutationKinds))
     if (!["composedEffect", "throwValue"].includes(kind)) assert.ok(count > 0);
+if (shards === 4 && shard === 0) {
+  for (const start of [279, 343, 407, 471, 535]) {
+    const changedThrow = await runFuzz({
+      seed: 51981,
+      start,
+      cases: 1,
+      outputDir: process.env.TEST_TMPDIR,
+      grammarMode: "composed",
+      validateEvery: 1,
+    });
+    assert.equal(changedThrow.mutationKinds.throwValue, 1);
+    assert.equal(changedThrow.mutatedDifferent, 1);
+    assert.equal(changedThrow.mutatedVerdicts.unsafe, 1);
+  }
+}
 if (shards === 4 && shard === 3) {
   assert.equal(bulk.closureSourceExecuted, bulk.closureCases);
   assert.ok(bulk.finallyCases > 0);
