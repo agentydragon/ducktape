@@ -7,7 +7,7 @@ Assistant uses a Restic `ReplicationSource`, and the shared `ResticBackup`
 construct is used by paused Public Coder backup resources. Grocy's existing
 PVC-to-PVC backups still use `rsyncTLS`. Tana-MCP's OAuth state is in a shared
 CNPG database whose base backups and WAL already go to SeaweedFS; copying that
-backup offsite needs a separate CNPG-aware path ([mcp_oauth_state.py](../../cdk8s/mcp_oauth_state.py#L82)).
+backup offsite needs a separate CNPG-aware path ([mcp_oauth_state.py](../../cdk8s/mcp_oauth_state.py)).
 Migrating Grocy's PVCs and adding the offsite Drive stage remain open work.
 **Scope**: small high-value data sets: Grocy SF/Vallejo config PVCs, the Tana-MCP
 OAuth-state database, and app config databases. Large media is explicitly out of scope for now.
@@ -155,7 +155,7 @@ write — acceptable for crash-consistent restore.
 
 **Airlock is already an OAuth token broker**, so it — not a hand-minted SOPS
 secret — owns the Drive credential. Its `oauth.providers` list
-(<../../k8s/agents/airlock/kustomization.yaml#L10>) declares providers (oura, google, bsc);
+(<../../k8s/agents/airlock/kustomization.yaml>) declares providers (oura, google, google-write, bsc);
 a background `token_refresh_loop` (<../../../airlock/oauth/refresh.py>) keeps
 each access token fresh and writes two k8s Secrets per provider:
 

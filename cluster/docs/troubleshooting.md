@@ -399,9 +399,9 @@ provisioners carry `ttlSecondsAfterFinished`, which deletes the finished Job so 
 reconcile recreates and re-runs it — recovery without a human. Change-driven scripts
 (the `readonly-role` GRANT Jobs) deliberately do **not**: a TTL there would convert a
 run-on-change script into a run-on-schedule one. Those stay on the manual recovery above.
-Rationale lives next to the Jobs themselves — see
-`HaMcpCredentialsProvisioner._add_job` in <../cdk8s/ha_mcp.py> and
-`_readonly_provisioner` in <../cdk8s/study_casino/app.py>.
+Rationale lives next to the Jobs themselves — see the TTL comment in
+<../cdk8s/atuin/user_provisioner.py> and `_readonly_provisioner` in
+<../cdk8s/study_casino/app.py>.
 
 ## Removing a CRD Operator (Uninstall Runbook)
 

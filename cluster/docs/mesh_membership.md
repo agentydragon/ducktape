@@ -92,8 +92,7 @@ For nodes not provisioned by TF: `wyrm2`/`rugged`/`iguana` (`nixos`), `atlas`
 (`mobile`).
 
 1. Generate the cert under `secrets/nebula/<host>.crt` /
-   `secrets/nebula/<host>.sops.key` — see <secrets.md> "Nebula Certs for
-   Non-Talos Nodes".
+   `secrets/nebula/<host>.sops.key` — see <secrets.md> "Generating a new cert".
 2. Edit `nebula-mesh.json`: add the host with `nebula_ip` (matching the cert),
    role, `managed_by: "nixos"` / `"ansible"` / `"mobile"`. No endpoint, no
    lighthouse (unless you really mean to serve as one).

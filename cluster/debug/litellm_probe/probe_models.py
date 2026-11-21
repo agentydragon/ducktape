@@ -371,10 +371,8 @@ def _backend_name(litellm_params: dict[str, Any]) -> str:
     if "ollama" in api_base:
         return "ollama"
     model = str(litellm_params.get("model", ""))
-    if "api.z.ai" in api_base or "z.ai" in api_base:
+    if "z.ai" in api_base:
         return "z.ai"
-    if model.startswith("chatgpt/"):
-        return "chatgpt"
     if "/" in model:
         return model.split("/", 1)[0]
     return "unknown"
@@ -417,17 +415,8 @@ def _error_detail(body: Any) -> str | None:
 
 
 def _chat_content_detail(body: Any) -> str | None:
-    if isinstance(body, dict):
-        choices = body.get("choices")
-        if isinstance(choices, list) and choices:
-            first = choices[0]
-            if isinstance(first, dict):
-                message = first.get("message")
-                if isinstance(message, dict):
-                    content = message.get("content")
-                    if isinstance(content, str):
-                        return _compact_detail(content)
-    return None
+    content = _first_chat_message(body).get("content")
+    return _compact_detail(content) if isinstance(content, str) else None
 
 
 def _json_field_detail(field: str) -> DetailExtractor:
