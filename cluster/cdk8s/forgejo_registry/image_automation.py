@@ -85,7 +85,6 @@ IMAGES = (
     "loki-read-proxy",
     "matrix-user-provisioner",
     "mcp-oauth-facade",
-    "osm-mcp",
     "plaid-mcp-server",
     "plaid-mcp-sync",
     "plaid-spend",
