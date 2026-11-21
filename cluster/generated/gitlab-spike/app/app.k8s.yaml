@@ -51,7 +51,7 @@ spec:
       gitlab-shell:
         deployment:
           annotations:
-            goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies":[{"containerName":"gitlab-shell","controlledValues":"RequestsOnly","minAllowed":{"cpu":"23m","memory":"96Mi"},"maxAllowed":{"cpu":"23m","memory":"128Mi"},"controlledResources":["memory"]},{"containerName":"*","controlledValues":"RequestsOnly","mode":"Off"}]}'
+            goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies":[{"containerName":"gitlab-shell","controlledValues":"RequestsOnly","minAllowed":{"cpu":"23m"},"maxAllowed":{"cpu":"23m"},"controlledResources":["memory"]},{"containerName":"*","controlledValues":"RequestsOnly","mode":"Off"}]}'
             goldilocks.fairwinds.com/vpa-update-mode: auto
         resources:
           requests:

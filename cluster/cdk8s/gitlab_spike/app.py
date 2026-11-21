@@ -192,9 +192,7 @@ def _values() -> dict[str, object]:
                 "resources": {"requests": {"cpu": _SHELL_CPU_REQUEST}},
                 "deployment": {
                     "annotations": _vpa_annotations(
-                        ContainerPolicy.memory_requests_only(
-                            "gitlab-shell", cpu_request=_SHELL_CPU_REQUEST, memory_floor="96Mi", memory_limit="128Mi"
-                        ),
+                        ContainerPolicy.memory_requests_only("gitlab-shell", cpu_request=_SHELL_CPU_REQUEST),
                         mode=Vpa.AUTO,
                     )
                 },
