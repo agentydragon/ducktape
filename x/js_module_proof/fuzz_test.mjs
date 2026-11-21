@@ -504,6 +504,14 @@ const composedPrograms = Array.from({ length: 192 }, (_, i) => makeComposedCase(
 assert.deepEqual(
   new Set(
     composedPrograms
+      .filter((item) => item.hasTextObservation)
+      .map((item) => item.ast.body[1].expression.arguments[0].value)
+  ),
+  new Set(["start", 'quote "value"', "slash \\ path", "é 🙂\n\t\0", "👩‍💻"])
+);
+assert.deepEqual(
+  new Set(
+    composedPrograms
       .filter((item) => item.hasDiscardedLiteral && item.ast.body[0].expression.type === "Literal")
       .map((item) => item.ast.body[0].expression.value)
   ),

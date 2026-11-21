@@ -32,7 +32,7 @@ if (shard === 10) {
   const textSpec = join(textRoot, "spec.json");
   const safeOut = join(textRoot, "safe");
   const unsafeOut = join(textRoot, "unsafe");
-  const lastText = 'omega "quoted" \\ café 🙂\n\t\0';
+  const lastText = 'omega "quoted" \\ café 🙂 👩‍💻\n\t\0';
   await writeFile(
     textSource,
     `globalThis.record("alpha");\nglobalThis.record(true);\nglobalThis.record(null);\nglobalThis.record(7);\nglobalThis.record(void 0);\nlet value = 4;\nglobalThis.record(${JSON.stringify(lastText)});\nfunction read() { return value; }\nexport { read };\n`
