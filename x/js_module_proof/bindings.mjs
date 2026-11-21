@@ -1431,12 +1431,12 @@ function generateFiles(source, spec, names) {
                 declarations.every(
                   (declaration) =>
                     declaration.type === "VariableDeclaration" &&
-                    declaration.kind === "const" &&
+                    ["const", "let"].includes(declaration.kind) &&
                     declaration.declarations.length === 1 &&
                     declaration.declarations[0].id.type === "Identifier" &&
                     declaration.declarations[0].init
                 ),
-              "local import renaming supports only pure returning expressions and const locals"
+              "local import renaming supports only pure returning expressions and unwritten locals"
             );
             const localNames = new Set([
               ...node.params.map((parameter) => parameter.name),

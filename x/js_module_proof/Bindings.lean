@@ -1285,7 +1285,7 @@ example : witnessedExpression [] 0 [("outer", "x")]
     (.local "x" false (.literal 0) (.name "x")) =
     some (.local "##" false (.literal 0) (.name "##")) := by decide
 
-/- Pure expressions may contain immutable local bindings, including frontend-
+/- Pure expressions may contain unwritten local bindings, including frontend-
    generated temporaries for short-circuit values. -/
 def simpleAliasNumericExpr : NumericExpr → Bool
   | .literal _ => true
@@ -1309,8 +1309,8 @@ def simpleAliasNumericExpr : NumericExpr → Bool
   | .finally _ _ => false
   | .catchError _ _ => false
   | .followedBy _ _ => false
-  | .local _ mutable initial body =>
-    !mutable && simpleAliasNumericExpr initial && simpleAliasNumericExpr body
+  | .local _ _ initial body =>
+    simpleAliasNumericExpr initial && simpleAliasNumericExpr body
   | .assign _ _ _ => false
   | .raise _ => false
   | .raisePrimitive _ => false

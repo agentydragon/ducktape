@@ -114,6 +114,30 @@ if (shards === 4 && shard === 0) {
   assert.equal(unchangedLocal.localImportAliasProvedCases, 1);
   assert.equal(unchangedLocal.equal, 1);
 }
+if (shards === 4 && shard === 1) {
+  const changedLet = await runFuzz({
+    seed: 773,
+    start: 109,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "alias",
+    validateEvery: 1,
+  });
+  assert.match(makeLocalAliasCase(773, 109).source, /let offset = numericLeft/);
+  assert.equal(changedLet.mutatedDifferent, 1);
+  assert.equal(changedLet.mutatedVerdicts.unsafe, 1);
+  const unchangedLet = await runFuzz({
+    seed: 773,
+    start: 109,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "alias",
+    mutationMode: "disabled",
+    validateEvery: 1,
+  });
+  assert.equal(unchangedLet.localImportAliasProvedCases, 1);
+  assert.equal(unchangedLet.equal, 1);
+}
 if (shards === 4 && shard === 3) {
   const changedValue = await runFuzz({
     seed: 773,

@@ -361,7 +361,7 @@ if (runSection(0)) {
   const expressionSpec = join(root, "unsupported-renamed-local-spec.json");
   await writeFile(
     expressionSource,
-    `let value = 3;\nfunction read(arg) { let local = arg; return value + local; }\nexport { read };\n`
+    `let value = 3;\nfunction read(arg) { let local = arg; local += value; return local; }\nexport { read };\n`
   );
   generatedSpec.modules["state.mjs"].statements = [0];
   generatedSpec.modules["logic.mjs"].statements = [1];
@@ -370,7 +370,7 @@ if (runSection(0)) {
   assert.equal(unsupported.value.result, "unknown");
   assert.match(
     unsupported.value.reason,
-    /local import renaming supports only pure returning expressions and const locals/
+    /local import renaming supports only pure returning expressions and unwritten locals/
   );
 
   const observedSource = join(root, "observed-renamed-local-source.mjs");
@@ -790,4 +790,16 @@ if (runSection(1)) {
   assert.equal(redirected.result, "unsafe", JSON.stringify(redirected));
   assert.deepEqual(execute(constSource, redirected.calls), { events: [], results: [6] });
   assert.deepEqual(execute(join(constOut, "entry.mjs"), redirected.calls), { events: [], results: [10] });
+
+  const letSource = join(root, "let-alias-source.mjs");
+  const letOut = join(root, "let-alias-out");
+  await writeFile(
+    letSource,
+    `let value = 3;\nlet other = 5;\nfunction compute(p) { let offset = p + value; return offset + value; }\nexport { compute };\n`
+  );
+  assert.equal(cli("generate", letSource, constSpec, letOut).value.result, "generated");
+  const letResult = cli("validate", letSource, constSpec, letOut).value;
+  assert.equal(letResult.result, "proved under assumptions", JSON.stringify(letResult));
+  assert.deepEqual(execute(letSource, calls), { events: [], results: [6, 8] });
+  assert.deepEqual(execute(join(letOut, "entry.mjs"), calls), { events: [], results: [6, 8] });
 }

@@ -1031,13 +1031,13 @@ export function makeLocalAliasCase(seed, index) {
     (body, parameter) => ({ type: "BinaryExpression", operator: "+", left: body, right: id(parameter) }),
     numericExpression
   );
-  const withConstLocal = numericBindings.length > 0 && index % 96 === 61;
+  const withLocal = numericBindings.length > 0 && index >= 61 && index % 48 === 13;
   const localDeclaration = {
     type: "VariableDeclaration",
-    kind: "const",
+    kind: index % 96 === 61 ? "const" : "let",
     declarations: [{ type: "VariableDeclarator", id: id("offset"), init: id("numericLeft") }],
   };
-  const computedBody = withConstLocal
+  const computedBody = withLocal
     ? [
         localDeclaration,
         returnNode({ type: "BinaryExpression", operator: "+", left: id("offset"), right: numericBody }),
