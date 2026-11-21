@@ -435,8 +435,8 @@ applications").
   `cluster/generated/forgejo/budget-namespace/` because it holds the ESO copy of the ledger's
   git credentials (`budget-ledger-git-creds`). The underlying ledger data (a Forgejo git
   repo provisioned by `tf/gitops/budget-ledger/`) is untouched. Its Authentik
-  SSO blueprint was tombstoned (`fava-sso-retire.yaml`, replacing `fava-sso.yaml`) per
-  <sso.md> § "Deleting Authentik providers or applications".
+  application and proxy provider were deleted through a `state: absent` blueprint, since
+  removed, per <sso.md> § "Deleting Authentik providers or applications".
 - **augur-evidence**: `cluster/parked/augur-evidence/` — retired Forgejo evidence
   repository provisioning and Flux package. The repository and credentials are retained;
   the market roster is kept at `finance/scraper/market-roster.yaml` for a future revival.
