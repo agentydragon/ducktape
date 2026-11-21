@@ -195,17 +195,6 @@ label: a namespace-wide read where the sandboxes run would hand the proxy the mo
 database credential along with the ones it is meant to substitute. Staging uses
 `agentplane-staging-egress-credentials`.
 
-### Rejected: binding a bearer to its Pod's source address
-
-Reading the calling Pod and refusing a connection whose source is not that Pod's IP, on every
-request including cache hits, stops a token copied out of its Pod from being replayed elsewhere in
-the cluster. It costs a `pods` read in every `allowed_service_account_namespaces` entry, the grant
-the rule above keeps at nothing. Without it the exposure is bounded (<SPEC.md> § Identity): one
-in-cluster workload borrowing another's egress rules, not a way past the egress policy. Restore it if that
-borrowing becomes a real concern — for example, where workloads can obtain another subject's SVID or
-a namespace whose Pod specs are not ours — with a pod IP on the principal, the check in `identity`,
-the peer-address read in `proxy`, and that `pods` read.
-
 ## Decision history
 
 `history.Log.Record` puts an immutable `decision.Record` on a bounded queue (2,000 by default,
