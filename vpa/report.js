@@ -366,6 +366,16 @@ function Report() {
             MiB memory request per replacement. This is a point-in-time capacity
             and endpoint check, not a failover test.<//
           >
+          <${Text} component="p"
+            >By 04:02 UTC, ${" "}<${Anchor} href=${github + "pull/18449"}
+              >metrics-server<//
+            >, ${" "}<${Anchor} href=${github + "pull/18453"}
+              >Crossplane core and trust-manager<//
+            >${" "}used Recreate. Their Deployments were respectively 2/2, 3/3
+            and 2/2 Ready. The Crossplane VPA required a namespace
+            reconciliation trigger. These observations do not prove an eviction,
+            leader handoff or failover.<//
+          >
           <${Text} component="p" mb=${0}
             >Website and Haku use revision-scoped hostname spread with
             minDomains 2: a second replica stays Pending when only one host is
@@ -476,12 +486,10 @@ function Report() {
             is safe. Preserve VPAs already managing both requests and limits; do
             not silently weaken their policies. For example, metrics-server's
             current VPA controls both requests and limits and has no explicit
-            ceiling; review proportional limit changes and capacity before
-            enabling eviction. ${" "}<${Anchor} href=${github + "pull/18449"}
-              >The proposed metrics-server change<//
-            >${" "}preserves control of both. Check service-specific recovery
-            and capacity before further promotion: PDBs do not guarantee
-            uninterrupted in-flight work. Storage work has a separate owner.<//
+            ceiling; monitor proportional limit changes and capacity after
+            enabling eviction. Check service-specific recovery and capacity
+            before further promotion: PDBs do not guarantee uninterrupted
+            in-flight work. Storage work has a separate owner.<//
           ><//
         >
         <${Paper} withBorder p="md" radius="md"
