@@ -193,8 +193,7 @@ def build_batch_tools_mcp(settings: ServerSettings, *, client_provider: HTTPClie
     """A bare FastMCP with only the custom batch tools — no OpenAPI-generated tools, no auth.
 
     Registration reads only the tool signatures, so the provider is not called
-    until a tool invocation. Haku-console supplies a provider that fails if called
-    while reflecting preview schemas; see `haku/console/mcp/export_tool_schemas.py`.
+    until a tool invocation.
     """
     mcp: FastMCP = FastMCP(name="grocy-batch-tools")
     register_batch_tools(mcp, settings, client_provider=client_provider)

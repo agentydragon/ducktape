@@ -91,8 +91,9 @@ and is missing `ShoppingList`, `ProductGroup`, `Recipe` entirely.
 Action: file an issue + PR against https://github.com/grocy/grocy adding
 the missing properties and the three missing schemas. Maintainer (berrnd)
 has accepted similar drift fixes (#1451, #1967, #2198, #2694). Once a
-Grocy release shipping the upstream fix is pinned in `MODULE.bazel`,
-remove the corresponding downstream patches from `fix_openapi_spec.py`.
+Grocy release shipping the upstream fix is pinned as `@grocy_openapi_spec`
+in <../devinfra/bazel/artifacts.MODULE.bazel>, remove the corresponding
+downstream patches from `fix_openapi_spec.py`.
 Checked 2026-10-28: upstream `master` still lacks the patched Product fields,
 the cited Location/QuantityUnit/ShoppingListItem fields, and the three named
 schemas. A repository issue/PR search for missing OpenAPI schemas found no
