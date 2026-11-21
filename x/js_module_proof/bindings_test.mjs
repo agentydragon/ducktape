@@ -1194,4 +1194,33 @@ if (runSection(0)) {
   assert.equal(inserted.result, "unsafe", JSON.stringify(inserted));
   assert.deepEqual(execute(insertedSource, []), { events: [], results: [] });
   assert.deepEqual(execute(join(insertedOut, "entry.mjs"), []), { events: [3], results: [] });
+
+  const removedSource = join(root, "removed-before-call-source.mjs");
+  const removedSpec = join(root, "removed-before-call-spec.json");
+  const removedOut = join(root, "removed-before-call-out");
+  await writeFile(removedSource, `let value = 3;\n0;\nfunction read(p) { return value + p; }\nexport { read };\n`);
+  await writeFile(
+    removedSpec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0, 1] },
+        "entry.mjs": { imports: ["state.mjs"], statements: [2] },
+      },
+    })
+  );
+  assert.equal(cli("generate", removedSource, removedSpec, removedOut).value.result, "generated");
+  const removedState = join(removedOut, "state.mjs");
+  const removedStateText = await readFile(removedState, "utf8");
+  assert.match(removedStateText, /0;/);
+  await writeFile(removedState, removedStateText.replace("0;", ""));
+  const removedEntry = join(removedOut, "entry.mjs");
+  const removedEntryText = await readFile(removedEntry, "utf8");
+  assert.match(removedEntryText, /return value \+ p;/);
+  await writeFile(removedEntry, removedEntryText.replace("return value + p;", "return value + p + 1;"));
+  const removed = cli("validate", removedSource, removedSpec, removedOut).value;
+  assert.equal(removed.result, "unsafe", JSON.stringify(removed));
+  assert.deepEqual(execute(removedSource, removed.calls), { events: [], results: [3] });
+  assert.deepEqual(execute(removedEntry, removed.calls), { events: [], results: [4] });
 }
