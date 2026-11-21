@@ -69,16 +69,13 @@ class GatewayProcess:
 
     @property
     def client_tls(self) -> runtime_transport.ClientTLS:
-        return self.service_tls(runtime_transport.APP_URI)
-
-    def service_tls(self, service: str) -> runtime_transport.ClientTLS:
-        cert_file, key_file = self.service_certificates[service]
+        cert_file, key_file = self.service_certificates[runtime_transport.APP_URI]
         return runtime_transport.ClientTLS(
             ca_file=self.environment_service.ca_file,
             server_uri=_SESSION_DISPATCHER_URI,
             cert_file=cert_file,
             key_file=key_file,
-            client_uri=service,
+            client_uri=runtime_transport.APP_URI,
         )
 
     def service_credentials(self, service: str) -> grpc.ChannelCredentials:
@@ -188,11 +185,7 @@ async def run_gateway(
                 settings_path = settings_directory / "settings.yaml"
                 settings_path.write_text(yaml.safe_dump(settings, sort_keys=False))
                 environment = {
-                    **{
-                        key: value
-                        for key, value in os.environ.items()
-                        if not key.startswith("AGENTPLANE_RUNNER_GATEWAY_")
-                    },
+                    **os.environ,
                     "AGENTPLANE_SESSIONS_CONFIG_FILE": str(settings_path),
                     "AGENTPLANE_SESSIONS_DISPATCHER_DATABASE_URL": _wire_database_url(database_url),
                 }
