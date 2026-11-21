@@ -1,13 +1,30 @@
 # Plan
 
 Goal: turn a minified production bundle into readable modules, with a machine-checked guarantee that the split program behaves like the original, resting on as few unproved assumptions as possible, each one stated.
-[`docs/lessons_learned.md`](docs/lessons_learned.md) has the experience this plan follows from. [`experiments/translation/PLAN.md`](experiments/translation/PLAN.md) plans the translation checker, and [`TODO.md`](TODO.md) holds the smaller items.
+
+The work was parked on 2026-11-21. This file is the hand-over: what exists, what to do next and in which order, and what is still owed. [`docs/lessons_learned.md`](docs/lessons_learned.md) has the experience behind it, [`SUPPORT.md`](SUPPORT.md) what a debundler has to support, [`experiments/translation/PLAN.md`](experiments/translation/PLAN.md) the plan of the translation checker, and [`TODO.md`](TODO.md) the smaller items.
+
+## State when parked
+
+The design is "untrusted search, trusted check": a planner proposes a split, and Lean checks it (`Valid`, nine checks; `Valid → Correct` is proved). The check trusts one input that is not proved, the footprint of each statement, which [`Effects.lean`](lean/Experiments/Effects.lean) computes by abstract interpretation.
+
+- **The tool works on a real bundle.** On the large bundle (9,707 units, 2,793 reviewed modules) `lowersplit` accepts a split that keeps 2,366 modules whole and runs them in bundle order (`"sequential": true`), and one of 886 modules with no order kept. The first loaded in a browser like the original, before the last rule fixes; it was not loaded again after them.
+- **The footprint analysis is tested, not proved.** Seven wrong rules were found by generators and a footprint oracle (F1 to F7); six are fixed, F7 is open. A `throw` that is reached and not caught is unknown code. 288 golden cases, the fuzzers, the footprint oracle and a mutation harness guard it ([`experiments/effects/README.md`](experiments/effects/README.md)).
+- **A model of JavaScript exists to prove against**: `CoreJS` ([`experiments/README.md`](experiments/README.md) § 14), a total interpreter in Lean tested against Node. It has closures, objects with prototypes and accessors, plain classes, exceptions, modules, and a world as a parameter for host functions on primitives. `fuel_mono` makes "the program ends with `r`" well defined. A four-way test runs bundle and split, each in Node and in the model, on what `lowersplit` accepts.
+- **One footprint fact is proved in the model**, for every world: a declaration whose initializer only allocates changes nothing that existed and binds only its name (`decl_allocOnly`). It is not connected to `Effects.lean`, and no theorem yet says that a split behaves like its bundle in the model.
+- **The order-kept slice of the theorem is not landed.** It was being written when the work was parked; step N1 says where it stands.
+- **Measured on the inputs** (3,363 files of the private repository): nearly the whole language and standard library occur ([`HOST_FEATURES.md`](HOST_FEATURES.md), [`SUPPORT.md`](SUPPORT.md)). Start-up of the large bundle enters 1% of the application chunk's functions and 10% of the vendor chunk's, and still uses 37 of 45 tracked language features and about 110 standard functions.
+
+## Picking this up
+
+- **Build and test.** `./run.sh` and its flags ([`README.md`](README.md)); CI runs `bbr test //devinfra/js/debundle/x/split_proof/...`. By hand, in `lean/`: `nix shell nixpkgs#lean4 nixpkgs#gcc --command lake build EsmSplit render Experiments lower lowersplit evalorder translate corejs` (about 2 minutes clean). The golden cases: `node ../effects/run.mjs` in `experiments/translation` (90 s). The model: `node differential.mjs --count 40 --seed 1` in `experiments/model` (20 s). Each `experiments/*/package.json.in` is copied to `package.json` before `npm ci`; never commit a `package.json`.
+- **After any change to `Effects.lean`**: the golden cases, `node test.mjs`, `node fuzz.mjs --count 150 --seed <new>`, `footprint_oracle_sweep.mjs --samples 40 --seed <new>`, `experiments/debundle_cases` (its committed results must be regenerated if they change), and `fuzz_mutate.py` (about an hour; say so if it is skipped). Then measure the large bundle: the count of units that touch the world must be reported with the change.
+- **The private evidence** is in the private repository `gaffer-private`, under the large bundle's `debug/translation-validation/`: `peel-probe/` (what peels, the bundle-order split, the browser load, the counts after the rule fixes), `startup-coverage/` (what runs at start-up) and the host inventory under `devinfra/debundle/host_inventory/`. Its scripts rebuild the inputs: the statement dump comes from [`experiments/lowering/dump.mjs`](experiments/lowering/dump.mjs) on the chunk, the footprints from `lower <dump> --premises <file>` (3 minutes, 1.5 GB), the partition from `scripts/peel_all.mjs`. The scratch copies of these inputs did not outlive the session that made them.
+- **What reaches this repository from there** is counts and names that are public already. No spec names, no minified identifiers, no application names. Fixtures use neutral names.
+- **Independent attempts pay.** Half an hour of a fresh agent told to break the analysis found dozens of wrong accepts each time. Repeat it after every change to the rules, and give the agent the generators and the oracle.
+- **Review with programs the author did not write.** Every layer of the model was checked that way before it merged, on a seed its author had not used.
 
 ## Direction
-
-The design is "untrusted search, trusted check". The footprint analysis is the one place that breaks it: `Effects.lean` is unproved, and the checker believes it.
-
-**Decided (2026-11-21).** The model of item 3 is built up as a longer-term investment beside fixing the known wrong rules. Its first slice exists, and the first rule proved against it is the allocation rule of item 4.
 
 **The theorem to reach.** It does not mention footprints. `split` is the whole tool as one total function: it takes a program and a spec and returns the split program, or refuses.
 
@@ -47,48 +64,105 @@ What the statement forces:
 - **A run that reaches unknown code says nothing after that point.** The first version covers programs that stay inside the model. Real bundles do not: 1,584 of the large bundle's 9,707 units touch the world. The vendor code is in the bundle's chunks, so it can be part of the program; then only the host is unknown. Either way the model has to take the world as a parameter, a function that may read and change what it is given and nothing else, and the theorem holds for every world. The first stage exists: host functions on primitives ([`experiments/README.md`](experiments/README.md) § 14). The second, host code that is handed objects, is designed there and not built.
 - **The standard library cannot be defined function by function.** Start-up runs little code and most of the language ([`docs/lessons_learned.md`](docs/lessons_learned.md) § The first slice of a model): about 110 standard functions by name, regular expressions among them. They enter the model as part of the world, each with a stated class of behaviour ("a function of its primitive arguments", "reads its receiver", "may call its argument"). That table stays an assumption about the engine, tested and not proved. 88 functions of the first two classes are in it (`worldFunction`), and the test replays Node's answers for them.
 
-**Proposed, not decided.**
+**Decided so far.**
 
-1. **No new precision rules in the unproved interpreter**, beyond the one or two that a measurement shows are blocking. Each such rule is one more unproved claim that a construct commutes. Fixing a wrong rule is always in scope: F1 to F6 are fixed, and F7 in [`generator_findings`](experiments/translation/debug/generator_findings/README.md) is open (premise P3 and code the world runs).
-2. **When to stop chipping at the interpreter.** Two signals, measured after every round of fixes:
-   - _Soundness does not converge._ Run the same independent attack and the footprint oracle again. If the count of new wrong footprints does not clearly fall, the analysis is not getting safer.
-   - _Precision yield falls._ If the next rule unlocks only a few percent of the blocked peels, the rest is a long tail.
+- **No new precision rule goes into the unproved interpreter** unless a measurement shows it is blocking. Fixing a wrong rule is always in scope, and its cost on the large bundle is measured before it is adopted.
+- **The model is built up beside the tested analysis**, as a spike with a kill rule: stop if step N2 below does not work, or if the proved part covers under about half of the units that get precise footprints today. Then the tested analysis stays, labelled as trusted.
+- **A proof for a narrow fragment is worth landing.** Each is its own slice of the theorem; the tool's verdict is to say which slice covered a split.
+- **What is refused** ([`SUPPORT.md`](SUPPORT.md)): a top-level `await`, a top-level `using`, a direct `eval` anywhere, a name declared twice in one list. A `Proxy` is never covered by premise P3.
+- **An exception that ends evaluation**: a `throw` statement keeps its place; an exception the language raises itself is covered by the hypothesis that the bundle's evaluation completes.
 
-   The record so far (dozens per attack, a new finding for each part of the language the generator reached) says the first signal has fired.
+**Open decisions for the owner.**
 
-3. **The alternative: footprints as a checked certificate.**
-   - A JavaScript execution model in Lean for a core fragment, written as an executable interpreter, so it can be tested against Node and test262: a program has one right answer, a footprint does not.
-   - A small footprint checker proved sound against that model, and the commutation of units with disjoint footprints proved once in it (today only the tiny `MiniJS` derives this).
-   - `Effects.lean` stays, as the untrusted proposer. A wrong proposal is then rejected instead of accepted.
-   - Anything outside the fragment is unknown code under one stated assumption: it reads and changes only what it can reach. The inputs use nearly the whole language and standard library, so the fragment cannot be "what the inputs use".
-   - This does not decide program equivalence. The check stays a sufficient condition; the change is that the condition is proved.
-   - **It can be gradual, because the rules are already Lean code.** A rule is proved against the model for the part of JavaScript the model covers; a rule that is not proved yet stays, as a named assumption. The soundness theorem is then "sound if these named rules are", and the list shrinks one rule at a time. Three things have to exist before the first rule can be proved:
-     - what a footprint means in the model (the invariant that relates the interpreter's abstract values to real states); every rule's proof is a step of it, so it comes first;
-     - rules that can be taken one at a time: a typed syntax tree and total functions instead of `partial` ones over JSON ([`TODO.md`](TODO.md)), with one definition per construct;
-     - a ledger: the interpreter records which rules a unit's footprint used, and a verdict prints the unproved ones. "Units whose footprint used only proved rules" is then the measure of progress, and how often a rule fires on the large bundle orders the proofs.
+- Whether premise P3 may assume that code of the program which the world runs adds no accessor or hook (finding F7), or the analysis gives up P3 where such code may do it. Step E1 measures the middle way first.
+- How the four input files with a direct `eval("require")` are admitted: a check of the string, or an audited premise.
+- Whether a reviewed vendor table is worth its review cost. Alone it does not change which modules peel.
+- Whether the vendor chunk becomes part of the program in the model. It removes most unknown code, and the model then has to run what the vendor code runs at start-up, regular expressions included.
 
-4. **Run it as a spike with a kill rule**, so it cannot become open-ended.
-   - _Exists:_ the model, `CoreJS` ([`experiments/README.md`](experiments/README.md) § 14): closures, objects with prototypes and accessors, plain classes and exceptions, as a total interpreter tested against Node, with unknown code as an outcome of its own.
-   - _First rule, proved in part:_ a unit that only allocates has no footprint beyond the name it declares. Proved for one unit built from literals, names, functions, object and array literals: it changes nothing that existed and binds only its name. 7,123 of the 9,707 units of the large bundle only allocate ([`allocate_only_census.mjs`](experiments/translation/allocate_only_census.mjs)); that count includes plain classes, which the proof does not cover yet.
-   - _Addresses are settled by the model:_ two such units in the other order create the same objects. The model gives each unit a region of its own to allocate in, so the two orders end in equal states and no renaming of object identities is needed.
-   - _Next:_ the same rule for plain classes; that two such units commute (`AllocOnlyUnitsCommute` in [`Frame.lean`](lean/Experiments/CoreJS/Frame.lean), stated, not proved); then what a footprint means in this model, the invariant that relates `Effects.lean`'s abstract values to its states, including what unknown code may change.
-   - _What the model covers next, from the measurement of start-up:_ host code that is handed objects (arrays first: their methods are what ends most runs of generated programs now); `class … extends`, which every start-up evaluates; then the syntax that runs rarely in an application chunk (spread, destructuring, optional chains, `for`-`of`). Modules and host functions on primitives are covered.
-   - _Second rule:_ unknown code cannot write a name declared later, except through an object that escaped earlier. It is the largest lever the peel probe measured, and it needs a statement of what unknown code may change.
-   - _Success:_ commutation proved for closures, objects with prototypes, accessors and exceptions, and that fragment covers most of the units that get precise footprints today.
-   - _Kill:_ the proof is not done within the budget set at the start, or coverage is under about half. Then the tested analysis stays, labelled as trusted.
+## Next steps
 
-5. **Let footprints remove the order that a sequence imposes.** A spec with `sequential` keeps the bundle's order by imports, and `Valid` checks the plan ([`README.md`](README.md)). On the large bundle that makes 2,367 of the 2,793 modules of the reviewed tree valid whole, and `lowersplit` accepts the split. It is not yet what a person would write: 629 of its 3,049 modules get imports they need only for the order (2,744 bare imports), and the imports nest 466 deep. Each such import is a candidate to drop, and dropping one is a claim that two modules commute, which is where a footprint, or a proof, is needed. First candidates: a module that only declares functions can run early without harm, so a forward mention of one needs no ordering import. This turns "is the split valid" from the hard question into the easy one, and makes precision a matter of how natural the imports look. Step 5 below is a special case.
+Two tracks. The proof track is ordered: each step needs the one before. The engineering track is independent of it and of itself, so its steps can run in parallel. Every step ends with its checks run and its numbers in the PR.
 
-**Open decisions for the owner.** What budget the spike gets before its kill rule applies. Whether premise P3 may assume that code of the program which the world runs adds no accessor or hook (finding F7), or the analysis gives up P3 where such code may do it. Whether a reviewed vendor table is worth its review cost before the rule in item 4 exists: alone it does not change which modules peel.
+### Proof track
 
-## Order of work
+**N1. Finish the order-kept slice.** `order_kept_preserves`: a split whose plan runs the statements in the bundle's order ends like the bundle, for every world and every ending. It needs a Lean function from the bundle's statements and an `EsmSplit.Plan` to the model's module program (the mirror of `Module.render` on syntax trees), a definition of `≈` (prefer equal heaps and cells, with only the maps from names to cells differing), and hypotheses that the tool can check or that `Valid` gives. Done when the theorem is proved with no `sorry`, is in `corejs_axioms_test`, and [`experiments/README.md`](experiments/README.md) § 14 says exactly what `≈` is.
 
-1. F7: a rule that reads the text of escaped code for the constructs that add a hook to an existing object, measured on the large bundle before it is adopted.
-2. In the model: the second stage of the world, host code that is handed objects. Modules, `fuel_mono` and the first stage of the world (host functions on primitives) exist.
-3. Two slices of `split_preserves`, independent of each other: a split that keeps the bundle's order, which needs no footprint rule; and units that only allocate may move, which needs the allocation rule of item 4 for plain classes and the commutation of two units.
-4. `import.meta` ([`SUPPORT.md`](SUPPORT.md)): the one common feature the tools refuse.
-5. Which rules fire per unit at start-up: it orders the rules to prove after the allocation rule.
-6. Then by measured yield: fewer ordering imports (item 5): per-unit reasons in `lower` ([`TODO.md`](TODO.md)), a vendor table by library family, a rule for decorator applications. A stack-safe interpreter comes before any analysis of library code.
+**N2. Make the order-kept slice cover real bundles. This is the decision point of the spike.**
+
+- _Goal:_ `order_kept_preserves` holds for a bundle whose statements are mostly outside the model's syntax.
+- _Idea:_ a split that keeps the order runs the same statements in the same order, so the theorem does not need to know what a statement does. A statement outside the fragment becomes an opaque step that the world takes: it may read and change what it can reach and call what it was handed.
+- _Needs:_ the second stage of the world, designed at the end of [`experiments/README.md`](experiments/README.md) § 14: the model keeps the list of addresses the world was handed, and the world names objects only by position in that list. And a front end that turns a statement it cannot translate into an opaque one, with the names it declares and mentions taken from the scope analysis.
+- _First actions:_ write the opaque step and restate the theorem with it; check on paper that the proof of N1 does not look inside a statement; then build the world's second stage.
+- _Checks:_ the model's tests; the four-way test with opaque statements mixed in; the front end accepts the large bundle's dump.
+- _Done when:_ the theorem's hypotheses hold for the 2,366-module split of the large bundle, checked by the tool, and the PR lists what stays trusted: the model of modules, `≈`, and the front end's reading of which names a statement declares.
+- _Stop if:_ an opaque step cannot be given a meaning that keeps the theorem true and non-trivial. Then the proof track cannot reach real bundles without most of the language in the model: record why, and go to the owner.
+
+**N3. The verdict names the slice.** `lowersplit` prints which proved slice covered the accepted split, or that none did, next to the premises it prints today. Done when a verdict on the large bundle's order-kept split says so. This keeps the proofs attached to the tool.
+
+**N4. The first slice that moves code: units that only allocate.**
+
+- _Goal:_ `split_preserves` for a split that moves such units past each other and past function declarations. That is the case of the 886 modules that peel with no order kept; of the 873 that peel alone, 812 hold only function declarations.
+- _Needs, in order:_ the allocation rule for plain classes (the model runs them; `Expr.allocOnly` does not include them, and the proof needs a lemma that the field initializers `evalMembers` returns come from the members); that such an expression never ends `unknown` (a well-formedness invariant of the state); that its value depends only on the bindings it reads (`Expr.readsNow`); then `AllocOnlyUnitsCommute` ([`Frame.lean`](lean/Experiments/CoreJS/Frame.lean), stated, not proved); then a derivation `derive : Stmt → Footprint` as total Lean code that knows this one rule and answers "unknown code" otherwise, and the instance of [`Meaning`](lean/EsmSplit/Semantics.lean) that connects it to `Valid → Correct`.
+- _Checks:_ `derive` against `Effects.lean` on the large bundle: every unit where `derive` gives a footprint, `Effects.lean` must give the same or a weaker one. A unit where `derive` says "effect" and `Effects.lean` says "none" is a finding.
+- _Done when:_ the theorem is proved, and the share of the large bundle's units with a proved footprint is reported. The census predicts 73% ([`allocate_only_census.mjs`](experiments/translation/allocate_only_census.mjs)); far less means the shape is wrong.
+- _Then delete `MiniJS`_ ([`lean/Experiments/MiniJS.lean`](lean/Experiments/MiniJS.lean) and its two companions): `CoreJS` replaces it once commutation is proved there.
+
+**N5. Remove the imports that exist only for order.** The order-kept split of the large bundle has 2,744 bare imports in 629 modules, nested 466 deep. Each is a candidate to drop, and dropping one is a claim that two modules commute. First candidates: a forward mention of a module that only declares functions. The count of ordering imports going down is the measure of how readable the output is. The second rule to prove belongs here: unknown code cannot write a name declared later, except through an object that escaped earlier. The peel probe measured it as the largest lever (873 modules that peel alone would become about 1,624, an optimistic count).
+
+### Engineering track
+
+**E1. Finding F7** ([`generator_findings`](experiments/translation/debug/generator_findings/README.md), five programs that are wrong accepts with P3 on). Code of the program that the world runs adds a getter, a `toString` or a prototype to an object the world holds, and P3 reads the object as plain. The simple sound rule, P3 off once program code has escaped, costs 30% more units that touch the world on the large bundle. First measure the cheaper rule without building it: scan the code that escapes for the constructs that add a hook to an existing object (`defineProperty`, `defineProperties`, `__defineGetter__`, `setPrototypeOf`, `__proto__`, `Reflect`, a store under `toString`, `valueOf` or a computed key) and count the units that would lose P3. Build it if the cost is a few percent; otherwise it is the owner's decision above.
+
+**E2. `import.meta`.** `translate` rejects a unit that reads it, except `new URL("/absolute", import.meta.url)`; 71 input files read it at the top level. What moving code changes is `import.meta.url` and what is resolved against it. Supporting it means rewriting or pinning the base when a unit moves to a module in another directory. Done when the fixtures `meta_relative` and `meta_absolute` have accepted counterparts that Node agrees with, and the count of input files refused for it is reported.
+
+**E3. `class … extends` in the model.** Every start-up evaluates every class: 162 with `extends` in the application chunk of the large bundle. Needs the prototype chain of constructors, `super(…)` and `super.m()`, and the dead zone of `this` before `super` returns. Then, by how often they ran at start-up there: spread (70), regular expression literals as allocation (38), destructuring (12), optional chains (12), `for`-`of` (5).
+
+**E4. The mutants that survive.** `fuzz_mutate.py` leaves 7 of 155. `no Hygienic` is known, and `nested hooks are unbounded` is harmless since the hook depth is counted. Five survived before the last fixes too and were never looked into: `a replayed call drops what it threw`, `memoized calls replay no writes`, `an unseen constructor does not escape`, `Intl reads no options`, `Error reads no options`. For each: a case that kills it, or the reason it is equivalent. The harness was not run after the `throw` rule; run it first.
+
+**E5. Evidence that went stale.** After the rule fixes and the `throw` rule only the counts of units and of whole modules were measured again. Not measured again: the order obligations of the reviewed tree (670,997 before), the census of single peels (873), the vendor ladder, and the browser load of the accepted split (3,052 files now). The lessons file says which numbers are from before.
+
+**E6. Library code.** `lower` aborted on the 20,032-unit vendor chunk with a stack overflow. The cause of F5 (a hook that reaches itself) fits that symptom better than deep syntax, and F5 is fixed: run the chunk again before anything else is built for it.
+
+## Debts
+
+What is owed beyond the steps above. Each is a known gap, not a plan.
+
+**In the model and its proofs**
+
+- `Program.evalOrder` is the same function as `Plan.visit` of the proved checker: tested on every program of the model's test, not proved.
+- The table of 88 host functions (`worldFunction` in [`Value.lean`](lean/Experiments/CoreJS/Value.lean)) is an assumption about the engine: called on primitives, each returns a primitive or throws and reads nothing the program can change. It was checked from memory of the specification, not against its text.
+- A world with one state orders every pair of host calls. The model cannot yet say that `Math.abs` does not read or change the world, which a split that moves code needs.
+- Read-only imports rest on the front end: [`to_core.mjs`](experiments/model/to_core.mjs) decides from the text which assignment targets are imports (`Target.frozen`).
+- The front end is trusted and is JavaScript: it decides what a host global is by asking the Node that runs it, and which declaration a name means.
+- Not in the model: `**` (the specification leaves it to the implementation, and the C library's result differed from V8's in the last bit), `instanceof`, conversion of an object to a primitive (`valueOf`, `toString`), writes to arrays, namespace imports, re-exports.
+- A run that ends out of fuel keeps no output, so a program that prints and then runs forever is not compared.
+- The generated programs barely reach the model: 17% of their units run. The hand-written cases carry the object model.
+- That a split ends normally exactly when its bundle does is expected and not proved ("The theorem to reach").
+
+**In the footprint analysis**
+
+- It is `partial` code over JSON, so nothing about it can be proved as it is.
+- Premise P4: an exception that the language raises itself in pure code is not ordered. `lowersplit` accepts a split that moves `const w = o.a.b` across a `console.log` when `o.a` is `undefined` (a named case of the model's test).
+- The `throw` rule does not follow which branch is taken (`if (n > 5) throw …` counts when `n` is 1). Calls under a `try` are remembered apart from the same call outside one, and no test tells that from a shared memory: three attempts to make a caught call be replayed for an uncaught one failed, because a run that grows the heap is not remembered.
+- Three precise rules went in where the fail-safe one cost too much: `Array(n)` is an array, iterating a collection yields pairs, and the `prototype` of a class is not the world's. Each has a case and a mutant.
+- `catch` binds the world's value only when the unit ran code the analysis did not see. This rests on every skipped piece of code setting that flag.
+- 55 of the 69 units that the fix of F6 made effects on the large bundle come from "every row converts its arguments". A flag per row would win them back.
+- `lower` alone gives a unit with a direct `eval` a footprint without the names the string assigns; `lowersplit` and `translate` refuse such a bundle.
+- A top-level `await` in a module that the bundle imports is not detected: the tools do not read those modules.
+- The libraries (`lodash`, `acorn`, `semver`, `zod`) were not run through the footprint oracle after the fixes.
+- The known gaps of premise P1 and of the general rules, five programs each ([`TODO.md`](TODO.md)).
+
+**In the checker and the planner**
+
+- The entry's public surface is not in `Valid`, and the rule that `import` and `export` statements stay in the entry is outside it (step 4 of the next section, and [`TODO.md`](TODO.md)).
+- The order-keeping planner nests imports 466 deep on the large bundle. Node loaded a chain 3,000 deep and failed at 10,000.
+- [`README.md`](README.md) § What is not proved lists the rest: the ES order model, hygiene, the printer, the lowering front end.
+
+**In the evidence**
+
+- The browser load checks start-up and the first render of a signed-out page with the network cut off. Nothing was logged in or used.
+- The start-up coverage is one such load. A signed-in start runs more.
+- The host inventory did not scan one vendor module that could not be rebuilt in the session that made it.
 
 ## More of debundle's cases through the Lean checker
 
