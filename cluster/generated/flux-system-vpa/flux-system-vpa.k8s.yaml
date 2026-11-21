@@ -11,12 +11,6 @@ spec:
           - cpu
           - memory
         controlledValues: RequestsOnly
-        maxAllowed:
-          cpu: 175m
-          memory: 384Mi
-        minAllowed:
-          cpu: 100m
-          memory: 64Mi
       - containerName: "*"
         mode: "Off"
   targetRef:
@@ -39,12 +33,6 @@ spec:
           - cpu
           - memory
         controlledValues: RequestsOnly
-        maxAllowed:
-          cpu: "1"
-          memory: 1Gi
-        minAllowed:
-          cpu: 100m
-          memory: 64Mi
       - containerName: "*"
         mode: "Off"
   targetRef:
@@ -67,12 +55,6 @@ spec:
           - cpu
           - memory
         controlledValues: RequestsOnly
-        maxAllowed:
-          cpu: 125m
-          memory: 864Mi
-        minAllowed:
-          cpu: 100m
-          memory: 64Mi
       - containerName: "*"
         mode: "Off"
   targetRef:
@@ -95,12 +77,6 @@ spec:
           - cpu
           - memory
         controlledValues: RequestsOnly
-        maxAllowed:
-          cpu: "1"
-          memory: 704Mi
-        minAllowed:
-          cpu: 100m
-          memory: 64Mi
       - containerName: "*"
         mode: "Off"
   targetRef:
@@ -123,12 +99,6 @@ spec:
           - cpu
           - memory
         controlledValues: RequestsOnly
-        maxAllowed:
-          cpu: 125m
-          memory: 192Mi
-        minAllowed:
-          cpu: 100m
-          memory: 64Mi
       - containerName: "*"
         mode: "Off"
   targetRef:
@@ -151,12 +121,6 @@ spec:
           - cpu
           - memory
         controlledValues: RequestsOnly
-        maxAllowed:
-          cpu: "1"
-          memory: 1Gi
-        minAllowed:
-          cpu: 50m
-          memory: 64Mi
       - containerName: "*"
         mode: "Off"
   targetRef:
@@ -179,12 +143,6 @@ spec:
           - cpu
           - memory
         controlledValues: RequestsOnly
-        maxAllowed:
-          cpu: 100m
-          memory: 128Mi
-        minAllowed:
-          cpu: 50m
-          memory: 64Mi
       - containerName: "*"
         mode: "Off"
   targetRef:
