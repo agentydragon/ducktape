@@ -467,12 +467,13 @@ function Report() {
           <strong>Claude Session Sync.</strong> The namespace reconciliation
           brought the API and control VPAs to Initial, RequestsOnly CPU and
           memory policies. At the 08:06 UTC census the API was 2/2 Ready and
-          control was 1/1 Ready. A separate 08:08 UTC status read showed policy
-          generation 2 but recommender generation 1 for both: the displayed 15m
-          and 63m CPU targets are from the older generation. Check the next
-          recommender cycle, verify admission with each real owner, and observe
-          natural replacements. Initial does not evict running Pods.
-          ${" "}<${Anchor} href=${github + "pull/18543"}>Policy change<//>.
+          control was 1/1 Ready. By 08:15 UTC the recommender had observed both
+          current policies. Owner-matched server dry runs admitted 15m CPU for
+          the API and 63m for control, each with about 237 MiB memory; limits
+          were unchanged. Observe natural replacements. Initial does not evict
+          running Pods. ${" "}<${Anchor} href=${github + "pull/18543"}
+            >Policy change<//
+          >.
         <//>
         <${Text} id="sampler-recommendation">
           <strong>Central Sampler.</strong> The VPA is Off: it recommends but
