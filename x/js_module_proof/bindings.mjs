@@ -14,6 +14,11 @@ const identifier = (node) => {
   check(node?.type === "Identifier", `expected an identifier, got ${node?.type ?? "nothing"}`);
   return node.name;
 };
+const primitiveLiteral = (node) =>
+  node?.type === "Literal" &&
+  !node.regex &&
+  !node.bigint &&
+  (node.value === null || ["string", "boolean", "number"].includes(typeof node.value));
 const list = (values) => `[${values.join(", ")}]`;
 const str = JSON.stringify;
 
@@ -969,13 +974,7 @@ function candidateStatement(node, functions) {
     expression?.type === "UnaryExpression" && ["void", "!", "typeof"].includes(expression.operator)
       ? expression.argument
       : expression;
-  if (
-    literal?.type === "Literal" &&
-    !literal.regex &&
-    !literal.bigint &&
-    (literal.value === null || ["string", "boolean", "number"].includes(typeof literal.value))
-  )
-    return { kind: "discardedLiteral" };
+  if (primitiveLiteral(literal)) return { kind: "discardedLiteral" };
   try {
     const recognized = statement(node);
     if (recognized.kind === "closure" && functions?.has(recognized.factory)) {
@@ -1111,6 +1110,8 @@ function statement(node) {
     "expected globalThis.record(binding)"
   );
   const arg = expr.arguments[0];
+  if (arg?.type === "UnaryExpression" && arg.operator === "void" && primitiveLiteral(arg.argument))
+    return { kind: "recordUndefined" };
   if (arg?.type === "Literal" && typeof arg.value === "string" && !/[^\x20-\x7e]/.test(arg.value))
     return { kind: "recordText", value: arg.value };
   if (
@@ -1494,6 +1495,8 @@ function leanStatement(item) {
       return `.recordText ${str(item.value)}`;
     case "recordPrimitive":
       return `.recordPrimitive (${item.value === null ? ".nullValue" : typeof item.value === "boolean" ? `.boolean ${item.value}` : `.number ${item.value}`})`;
+    case "recordUndefined":
+      return ".recordPrimitive (.undefined)";
     case "variable":
     case "hoistedVariable":
       return `.${item.kind} ${str(item.name)} ${item.value}`;

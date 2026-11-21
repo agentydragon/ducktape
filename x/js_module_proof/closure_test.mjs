@@ -35,28 +35,40 @@ if (shard === 10) {
   const lastText = 'omega "quoted" \\';
   await writeFile(
     textSource,
-    `globalThis.record("alpha");\nglobalThis.record(true);\nglobalThis.record(null);\nglobalThis.record(7);\nlet value = 4;\nglobalThis.record(${JSON.stringify(lastText)});\nfunction read() { return value; }\nexport { read };\n`
+    `globalThis.record("alpha");\nglobalThis.record(true);\nglobalThis.record(null);\nglobalThis.record(7);\nglobalThis.record(void 0);\nlet value = 4;\nglobalThis.record(${JSON.stringify(lastText)});\nfunction read() { return value; }\nexport { read };\n`
   );
   const assignment = {
     kind: "bindings",
     entry: "entry.mjs",
     modules: {
-      "state.mjs": { imports: [], statements: [0, 1, 2, 3, 4, 6] },
-      "other.mjs": { imports: [], statements: [5] },
+      "state.mjs": { imports: [], statements: [0, 1, 2, 3, 4, 5, 7] },
+      "other.mjs": { imports: [], statements: [6] },
       "entry.mjs": { imports: ["state.mjs", "other.mjs"], statements: [] },
     },
   };
   await writeFile(textSpec, JSON.stringify(assignment));
   assert.equal(cli("generate", textSource, textSpec, safeOut).result, "generated");
   assert.equal(cli("validate", textSource, textSpec, safeOut).result, "proved under assumptions");
-  assert.deepEqual(execute(textSource, ["read"]).events, ["alpha", true, null, 7, lastText]);
+  assert.deepEqual(execute(textSource, ["read"]).events, ["alpha", true, null, 7, { undefined: true }, lastText]);
   assert.deepEqual(execute(join(safeOut, "entry.mjs"), ["read"]), execute(textSource, ["read"]));
+  const stateFile = join(safeOut, "state.mjs");
+  const stateText = await readFile(stateFile, "utf8");
+  await writeFile(stateFile, stateText.replace("void 0", "void missing"));
+  assert.equal(cli("validate", textSource, textSpec, safeOut).result, "unknown");
+  await writeFile(stateFile, stateText);
   assignment.modules["entry.mjs"].imports.reverse();
   await writeFile(textSpec, JSON.stringify(assignment));
   assert.equal(cli("generate", textSource, textSpec, unsafeOut).result, "generated");
   const witness = cli("validate", textSource, textSpec, unsafeOut);
   assert.equal(witness.result, "unsafe", JSON.stringify(witness));
-  assert.deepEqual(execute(join(unsafeOut, "entry.mjs"), []).events, [lastText, "alpha", true, null, 7]);
+  assert.deepEqual(execute(join(unsafeOut, "entry.mjs"), []).events, [
+    lastText,
+    "alpha",
+    true,
+    null,
+    7,
+    { undefined: true },
+  ]);
   const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
     encoding: "utf8",
     input: models + witness.certificate,

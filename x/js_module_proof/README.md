@@ -184,6 +184,8 @@ Direct `globalThis.record` calls with printable ASCII string literals produce
 string observations; initialization-order counterexamples include those strings.
 Calls with boolean, null, or nonnegative safe-integer literals also produce
 observations and can appear in initialization-order witnesses.
+`globalThis.record(void 0)` and `void` of another primitive literal record
+`undefined` without reading a binding.
 This includes `"use strict"`: all source and emitted files are ECMAScript
 modules, which are already strict. RegExp and BigInt literals remain unsupported.
 Public exports must be functions. The entry module may rename an exported
