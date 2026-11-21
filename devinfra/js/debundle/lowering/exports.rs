@@ -5,7 +5,7 @@
 use crate::naturalize::NaturalizedModuleBody;
 use crate::rename_ledger::{RenameIntent, RenameLedger, RenameOrigin, RenameScope};
 use analysis::{BindingKind, top_level_id};
-use binding_targets::{ExportReferences, ReferenceCollector};
+use binding_targets::{ExportReferences, ReferenceCollector, public_export_name};
 use frontend_elaboration::chunk_ast::{ExportedNameOrigin, SourceExportIdentity, TopLevelDecl};
 use js_ast::{named_export_module_item, named_export_specifier};
 use rustc_hash::FxHashSet;
@@ -198,12 +198,7 @@ pub(super) fn omit_existing_local_exports(
                 let ModuleExportName::Ident(local) = &named.orig else {
                     return None;
                 };
-                let public = named
-                    .exported
-                    .as_ref()
-                    .map(binding_targets::module_export_name)
-                    .unwrap_or_else(|| local.sym.to_string());
-                Some((local.sym.to_string(), public))
+                Some((local.sym.to_string(), public_export_name(named)))
             }
             _ => None,
         })

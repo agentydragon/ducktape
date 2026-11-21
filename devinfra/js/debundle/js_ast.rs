@@ -8,12 +8,13 @@ use swc_common::comments::{Comment, CommentKind, Comments, SingleThreadedComment
 use swc_common::sync::Lrc;
 use swc_common::{
     BytePos, DUMMY_SP, EqIgnoreSpan, FileName, GLOBALS, Globals, Mark, SourceMap, Span, Spanned,
+    SyntaxContext,
 };
 use swc_ecma_ast::{
-    ComputedPropName, Decl, EsReserved, ExportNamedSpecifier, ExportSpecifier, Expr, Id, Ident,
-    IdentName, ImportDecl, ImportNamedSpecifier, ImportPhase, ImportSpecifier, Lit, MemberProp,
-    Module, ModuleDecl, ModuleExportName, ModuleItem, NamedExport, Stmt, Str, VarDecl, VarDeclKind,
-    VarDeclarator,
+    ComputedPropName, Decl, EsReserved, ExportNamedSpecifier, ExportSpecifier, Expr, ExprOrSpread,
+    Id, Ident, IdentName, ImportDecl, ImportNamedSpecifier, ImportPhase, ImportSpecifier, Lit,
+    MemberExpr, MemberProp, MetaPropExpr, MetaPropKind, Module, ModuleDecl, ModuleExportName,
+    ModuleItem, NamedExport, NewExpr, Stmt, Str, VarDecl, VarDeclKind, VarDeclarator,
 };
 use swc_ecma_codegen::text_writer::JsWriter;
 use swc_ecma_codegen::{Config, Emitter};
@@ -918,6 +919,38 @@ pub fn named_export_module_item(
         type_only: false,
         with: None,
     }))
+}
+
+/// `new URL("<source>", import.meta.url)`, the module-relative form a worker
+/// URL needs at runtime.
+pub fn new_url_expr(source: &str) -> Expr {
+    Expr::New(NewExpr {
+        span: DUMMY_SP,
+        ctxt: SyntaxContext::empty(),
+        callee: Box::new(Expr::Ident(Ident::new_no_ctxt("URL".into(), DUMMY_SP))),
+        args: Some(vec![
+            ExprOrSpread {
+                spread: None,
+                expr: Box::new(Expr::Lit(Lit::Str(Str {
+                    span: DUMMY_SP,
+                    value: source.into(),
+                    raw: None,
+                }))),
+            },
+            ExprOrSpread {
+                spread: None,
+                expr: Box::new(Expr::Member(MemberExpr {
+                    span: DUMMY_SP,
+                    obj: Box::new(Expr::MetaProp(MetaPropExpr {
+                        span: DUMMY_SP,
+                        kind: MetaPropKind::ImportMeta,
+                    })),
+                    prop: MemberProp::Ident(IdentName::new("url".into(), DUMMY_SP)),
+                })),
+            },
+        ]),
+        type_args: None,
+    })
 }
 
 #[cfg(test)]
