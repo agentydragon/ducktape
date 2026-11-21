@@ -6,9 +6,9 @@ server image carries no CLI at all. The haku-mailbox init container needs both
 binaries so it can run normal Stalwart, apply the plan locally, and exit before
 the production container starts. This repack layers the pinned static CLI and a
 capability-free copy of the official server release binary onto the pinned
-upstream image. All pins live in
-MODULE.bazel (`stalwart` oci.pull, `stalwart_server` and `stalwart_cli`
-http_archives) — bump them together on Stalwart upgrades.
+upstream image. The pins live in `devinfra/bazel/oci.MODULE.bazel` (`stalwart`
+oci.pull) and `devinfra/bazel/artifacts.MODULE.bazel` (`stalwart_server` and
+`stalwart_cli` http_archives) — bump them together on Stalwart upgrades.
 
 Load for local testing:
   bb run //cluster/k8s/haku/mailbox/image:load
