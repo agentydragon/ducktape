@@ -39,7 +39,7 @@ _WORKLOADS = (
     ("policy-controller", "policy-controller", "64Mi", "112Mi"),
     ("sessions", "sessions", "256Mi", "320Mi"),
 )
-_UPDATE_MODES = {"central-sampler": "Off", "frontend": "Recreate"}
+_UPDATE_MODES = {"frontend": "Recreate"}
 
 
 def chart(app: App) -> Chart:

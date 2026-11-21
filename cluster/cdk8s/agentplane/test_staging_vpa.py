@@ -31,7 +31,7 @@ def test_vpas_target_only_static_deployments(scratch_app: App, staging_manifests
     )
 
     assert {"central-sampler", "egress"} <= {vpa["metadata"]["name"] for vpa in vpas}
-    expected_modes = {"central-sampler": "Off", "frontend": "Recreate"}
+    expected_modes = {"frontend": "Recreate"}
     for vpa in vpas:
         spec = vpa["spec"]
         target = spec["targetRef"]
