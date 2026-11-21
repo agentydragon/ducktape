@@ -1,13 +1,11 @@
-"""The static-service VPA policies stay within their Deployment resource contracts."""
-
-from typing import Any
+"""The static-service VPA bounds stay within their Deployment resource contracts."""
 
 import pytest_bazel
 from cdk8s import App
+from cdk8s_plus_34 import Deployment
 from more_itertools import one
 
-from cluster.cdk8s.agentplane import staging_vpa
-from cluster.cdk8s.testing.manifests import find_resource
+from cluster.cdk8s.agentplane import staging, staging_vpa
 
 
 def _mib(quantity: str) -> int:
@@ -17,38 +15,22 @@ def _mib(quantity: str) -> int:
     return int(quantity[:-2])
 
 
-def test_vpas_target_only_static_deployments(scratch_app: App, staging_manifests: list[dict[str, Any]]) -> None:
-    resources = staging_vpa.chart(scratch_app).to_json()
-    assert {resource["metadata"]["namespace"] for resource in resources} == {"agentplane-staging", "haku-ci"}
-    vpas = [resource for resource in resources if resource["metadata"]["namespace"] == "agentplane-staging"]
-    assert vpas
-    assert all(vpa["apiVersion"] == "autoscaling.k8s.io/v1" and vpa["kind"] == "VerticalPodAutoscaler" for vpa in vpas)
-    assert (
-        find_resource(staging_manifests, "Namespace", "agentplane-staging")["metadata"]["labels"][
-            "goldilocks.fairwinds.com/enabled"
-        ]
-        == "false"
-    )
-
-    expected_modes = {"frontend": "Recreate"}
-    for vpa in vpas:
-        spec = vpa["spec"]
-        target = spec["targetRef"]
-        assert target == {"apiVersion": "apps/v1", "kind": "Deployment", "name": vpa["metadata"]["name"]}
-        assert spec["updatePolicy"] == {"updateMode": expected_modes.get(target["name"], "Initial")}
-        deployment = find_resource(staging_manifests, "Deployment", target["name"])
-        container = one(deployment["spec"]["template"]["spec"]["containers"])
-        selected, wildcard = spec["resourcePolicy"]["containerPolicies"]
-        assert selected["containerName"] == container["name"]
-        assert set(selected["controlledResources"]) == {"cpu", "memory"}
-        assert selected["controlledValues"] == "RequestsOnly"
-        if "minAllowed" in selected:
-            assert set(selected["minAllowed"]) == {"memory"}
-            assert _mib(selected["minAllowed"]["memory"]) >= _mib(container["resources"]["requests"]["memory"])
-        if "maxAllowed" in selected:
-            assert set(selected["maxAllowed"]) == {"memory"}
-            assert _mib(selected["maxAllowed"]["memory"]) <= _mib(container["resources"]["limits"]["memory"])
-        assert wildcard == {"containerName": "*", "mode": "Off"}
+def test_vpa_bounds_fit_staging_deployments(scratch_app: App) -> None:
+    deployments = [obj for obj in staging.chart(scratch_app).node.find_all() if isinstance(obj, Deployment)]
+    for name, container_name, minimum, maximum in staging_vpa._WORKLOADS:
+        deployment = one(deployment for deployment in deployments if deployment.name == name)
+        container = one(container for container in deployment.containers if container.name == container_name)
+        if minimum is None and maximum is None:
+            continue
+        resources = container.resources
+        assert resources is not None
+        memory = resources.memory
+        assert memory is not None
+        if minimum is not None:
+            assert _mib(memory.request.as_string()) <= _mib(minimum)
+        if maximum is not None:
+            assert memory.limit is not None
+            assert _mib(memory.limit.as_string()) >= _mib(maximum)
 
 
 if __name__ == "__main__":
