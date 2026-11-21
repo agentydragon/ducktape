@@ -11,13 +11,7 @@
 //! The matcher (`source_match`) is the fidelity source of truth for which
 //! children matter and in what order; this extractor mirrors those structural
 //! decisions, and the corpus differential is what proves the mirror is faithful.
-//! Coverage grew construct by construct until the corpus extracts with zero
-//! `Unsupported`: it now projects **100%** of the top-level statements of every
-//! measured `tana/re` chunk (index, ReactGraph, Calendar, VoiceChatModal —
-//! declarations, function/class bodies, control flow, calls/members, objects,
-//! assignments, operators, destructuring patterns, templates, module
-//! imports/exports). Any not-yet-modeled construct (e.g. TS-only nodes) still
-//! errors loudly rather than projecting silently-incomplete facts.
+//! Constructs it does not model (e.g. TS-only nodes) raise [`Unsupported`].
 
 use std::collections::{BTreeMap, HashMap};
 

@@ -1480,8 +1480,7 @@ fn synthesize_simplest_selector_for_group(
     let rewritten_holes = specialized.rewritten_holes;
 
     // `--candidates N > 1`: collect the rest of the ranked read-off menu beyond the
-    // primary pick (deduped against it). Object/multi-declarator-var menus yield
-    // none until their read-off forms are wired through the menu path.
+    // primary pick (deduped against it).
     let alternatives = if candidates_limit > 1 {
         synthesize_specialized_selector_candidates(index, item, decl, &targets, candidates_limit)?
             .into_iter()
@@ -1831,9 +1830,7 @@ fn synthesize_specialized_selector(
 }
 
 /// Up to `limit` ranked candidate selectors for the item — the
-/// `synthesize-selectors --candidates N` menu. The function/class read-off forms
-/// return their full ranked walk; object/multi-declarator-var emit only the single
-/// pick for now (their menus are not yet wired through the var/object read-off).
+/// `synthesize-selectors --candidates N` menu.
 fn synthesize_specialized_selector_candidates(
     index: &ChunkSelectorIndex<'_>,
     item: &ModuleItem,

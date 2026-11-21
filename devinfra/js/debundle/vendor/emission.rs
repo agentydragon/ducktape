@@ -375,9 +375,8 @@ fn emit_vendor_residual(
         .iter()
         .position(|(file_path, _, _)| file_path == entry_file)
         .expect("residual job extraction verified the entry AST is present");
-    // Strip the entry last and keep it last in re-insertion order,
-    // matching the former stage order (strip re-appended the entry
-    // after the pass-through and self-rewrite waves).
+    // Strip the entry after the per-file rewrites above (the strip consumes the
+    // `replacement_import_locals` they seed) and re-insert it last.
     let (_, _, entry_ast) = &mut files[entry_index];
     let global_use_elisions = strip_one_chunk_with_replacement_imports(
         &mut entry_ast.module,
