@@ -2050,7 +2050,7 @@ async function mutateOutput(out, input, kind) {
           ? ["state.mjs"]
           : kind === "binding" || kind === "effect"
             ? [input.cell0Owner]
-            : kind === "function"
+            : kind === "function" || kind === "independentNumericInitializer"
               ? modules
               : [input.spec.entry];
   for (const name of files) {
@@ -2058,6 +2058,8 @@ async function mutateOutput(out, input, kind) {
     const original = await readFile(file, "utf8");
     let changed = original;
     if (kind === "binding") changed = original.replace(/let cell0 = (\d+);/, (_, n) => `let cell0 = ${Number(n) + 1};`);
+    else if (kind === "independentNumericInitializer")
+      changed = original.replace(/(let numericLeft = )(\d+);/, (_, prefix, n) => `${prefix}${Number(n) + 1};`);
     else if (kind === "localAliasRedirect")
       changed = original.replace(/\bvalue0 as (__split_local_+\d+)/, "value1 as $1");
     else if (kind === "localAliasUpdateRedirect")
@@ -2420,6 +2422,7 @@ export async function runFuzz({
       localAliasInitRedirect: 0,
       localAliasUpdateRedirect: 0,
       localAliasNumericRedirect: 0,
+      independentNumericInitializer: 0,
     },
     splitCompared: 0,
     splitDifferent: 0,
@@ -2461,28 +2464,30 @@ export async function runFuzz({
               : makeCase(seed, index);
       const input = splitMode === "independent" ? independentSplit(generated, seed, index) : generated;
       const plannedMutation =
-        input.grammar === "alias" && !input.independentSplit && index % 12 === 1
-          ? "localAliasNumericRedirect"
-          : input.grammar === "alias" && !input.independentSplit && index % 12 === 3
-            ? "localAliasInitRedirect"
-            : input.grammar === "alias" && !input.independentSplit && index % 12 === 4
-              ? "localAliasUpdateRedirect"
-              : input.grammar === "alias" && !input.independentSplit && index % 6 === 2
-                ? "localAliasRedirect"
-                : input.grammar === "composed" && !input.independentSplit && index % 64 === 59
-                  ? "renamedReexport"
-                  : input.grammar === "composed" && !input.independentSplit && index % 64 === 23
-                    ? "throwValue"
-                    : input.grammar === "composed" &&
-                        !input.independentSplit &&
-                        input.hasDiscardedLiteral &&
-                        index % 52 === 16
-                      ? "composedEffect"
-                      : !["composed", "async", "alias"].includes(input.grammar) &&
+        input.grammar === "alias" && input.independentSplit && (index % 12 === 1 || index % 24 === 5)
+          ? "independentNumericInitializer"
+          : input.grammar === "alias" && !input.independentSplit && index % 12 === 1
+            ? "localAliasNumericRedirect"
+            : input.grammar === "alias" && !input.independentSplit && index % 12 === 3
+              ? "localAliasInitRedirect"
+              : input.grammar === "alias" && !input.independentSplit && index % 12 === 4
+                ? "localAliasUpdateRedirect"
+                : input.grammar === "alias" && !input.independentSplit && index % 6 === 2
+                  ? "localAliasRedirect"
+                  : input.grammar === "composed" && !input.independentSplit && index % 64 === 59
+                    ? "renamedReexport"
+                    : input.grammar === "composed" && !input.independentSplit && index % 64 === 23
+                      ? "throwValue"
+                      : input.grammar === "composed" &&
                           !input.independentSplit &&
-                          index % 8 === 2
-                        ? ["binding", "effect", "function", "export", "import"][Math.floor(index / 8) % 5]
-                        : null;
+                          input.hasDiscardedLiteral &&
+                          index % 52 === 16
+                        ? "composedEffect"
+                        : !["composed", "async", "alias"].includes(input.grammar) &&
+                            !input.independentSplit &&
+                            index % 8 === 2
+                          ? ["binding", "effect", "function", "export", "import"][Math.floor(index / 8) % 5]
+                          : null;
       const mutation = mutationMode === "disabled" ? null : plannedMutation;
       if (plannedMutation === "composedEffect") input.calls = [];
       if (plannedMutation === "throwValue") input.calls = [{ name: "fuzzThrower", args: [1] }];

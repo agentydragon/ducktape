@@ -1006,11 +1006,24 @@ if (shards === 4 && shard === 2) {
     outputDir: process.env.TEST_TMPDIR,
     grammarMode: "alias",
     splitMode: "independent",
+    mutationMode: "disabled",
     validateEvery: 1,
   });
   assert.equal(aliasProof.parameterizedAliasFunctionImportComparedCases, 1);
   assert.equal(aliasProof.parameterizedAliasProvedCases, 1);
   assert.equal(aliasProof.equal, 1);
+  const independentMutation = await runFuzz({
+    seed: 157,
+    start: 29,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "alias",
+    splitMode: "independent",
+    validateEvery: 1,
+  });
+  assert.equal(independentMutation.mutationKinds.independentNumericInitializer, 1);
+  assert.equal(independentMutation.mutatedDifferent, 1);
+  assert.equal(independentMutation.mutatedVerdicts.unsafe, 1);
   assert.deepEqual(makeComposedCase(1, 2), makeComposedCase(1, 2));
   const composed = await runFuzz({
     seed: 7,

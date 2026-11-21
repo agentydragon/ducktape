@@ -376,7 +376,9 @@ checked as Node-reproduced unsafe witnesses, during initialization and later
 calls; replay with `--mutations disabled` to check the corresponding unchanged split.
 Combine it with `--splits independent` to vary module graphs and request local
 import renaming on independently chosen modules; many graphs are refused, and
-requested, generated, and Node-compared aliases are counted separately.
+requested, generated, and Node-compared aliases are counted separately. Some
+independent splits also mutate a numeric initializer in its actual owning module;
+use `--mutations disabled` to check the unchanged partition.
 Later case indices also compose seeded arithmetic and conditional expression
 trees; their generated, Node-compared, and Lean-proved counts are reported
 separately.
