@@ -1164,7 +1164,10 @@ export function makeComposedCase(seed, index) {
   const prefix = earlyVar
     ? [record(globals[0])]
     : hasDiscardedLiteral
-      ? [expr(discardedForms[Math.floor(index / 13) % discardedForms.length]), recordLiteral(`case-${index % 7}`)]
+      ? [
+          expr(discardedForms[Math.floor(index / 13) % discardedForms.length]),
+          recordLiteral(["start", 'quote "value"', "slash \\ path", ""][Math.floor(index / 13) % 4]),
+        ]
       : [];
   const ast = {
     type: "Program",

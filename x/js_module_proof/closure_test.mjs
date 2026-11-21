@@ -32,9 +32,10 @@ if (shard === 10) {
   const textSpec = join(textRoot, "spec.json");
   const safeOut = join(textRoot, "safe");
   const unsafeOut = join(textRoot, "unsafe");
+  const lastText = 'omega "quoted" \\';
   await writeFile(
     textSource,
-    'globalThis.record("alpha");\nlet value = 4;\nglobalThis.record("omega");\nfunction read() { return value; }\nexport { read };\n'
+    `globalThis.record("alpha");\nlet value = 4;\nglobalThis.record(${JSON.stringify(lastText)});\nfunction read() { return value; }\nexport { read };\n`
   );
   const assignment = {
     kind: "bindings",
@@ -48,14 +49,14 @@ if (shard === 10) {
   await writeFile(textSpec, JSON.stringify(assignment));
   assert.equal(cli("generate", textSource, textSpec, safeOut).result, "generated");
   assert.equal(cli("validate", textSource, textSpec, safeOut).result, "proved under assumptions");
-  assert.deepEqual(execute(textSource, ["read"]).events, ["alpha", "omega"]);
+  assert.deepEqual(execute(textSource, ["read"]).events, ["alpha", lastText]);
   assert.deepEqual(execute(join(safeOut, "entry.mjs"), ["read"]), execute(textSource, ["read"]));
   assignment.modules["entry.mjs"].imports.reverse();
   await writeFile(textSpec, JSON.stringify(assignment));
   assert.equal(cli("generate", textSource, textSpec, unsafeOut).result, "generated");
   const witness = cli("validate", textSource, textSpec, unsafeOut);
   assert.equal(witness.result, "unsafe", JSON.stringify(witness));
-  assert.deepEqual(execute(join(unsafeOut, "entry.mjs"), []).events, ["omega", "alpha"]);
+  assert.deepEqual(execute(join(unsafeOut, "entry.mjs"), []).events, [lastText, "alpha"]);
   const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
     encoding: "utf8",
     input: models + witness.certificate,
