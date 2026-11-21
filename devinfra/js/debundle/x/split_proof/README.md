@@ -273,6 +273,8 @@ Running `example/output/` in Node also found a bug in the first printer (no `exp
 
 ## Going further
 
+[`docs/lessons_learned.md`](docs/lessons_learned.md) records what broke and what the measurements said; [`PLAN.md`](PLAN.md) has the direction that follows from it.
+
 [`experiments/README.md`](experiments/README.md):
 
 1. the `Sound` plan predicate and its correctness theorem;
