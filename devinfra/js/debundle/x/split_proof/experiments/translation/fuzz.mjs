@@ -1039,7 +1039,7 @@ function renderBundle(bundle) {
       .replace(TOP, (_, n) => n)
       .replace(LOCAL, (_, n) => n)
       .replace(LITERAL, (_, n) => n);
-  const lines = bundle.units.map((u) => spell(u.src));
+  const lines = [...(bundle.imports ?? []), ...bundle.units.map((u) => spell(u.src))];
   if (bundle.exports.length > 0) lines.push(`export { ${bundle.exports.join(", ")} };`);
   return lines.join("\n") + "\n";
 }
@@ -1132,7 +1132,7 @@ function split(bundle, r, opts) {
   const used = order.map((list, m) => m === 0 || list.length > 0 || exportsOf[m].size > 0);
   for (let m = 0; m < modules; m++) {
     if (!used[m]) continue;
-    const lines = [];
+    const lines = [...(bundle.imports ?? [])]; // imports of the program are every module's own
     const sources = new Set(needs[m].keys());
     if (m === 0) for (let k = 1; k < modules; k++) if (used[k]) sources.add(k);
     let importOrder = [...sources].sort((a, b) => a - b);
