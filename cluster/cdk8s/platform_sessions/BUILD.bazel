@@ -28,6 +28,7 @@ py_library(
     ],
     visibility = [
         "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/agentplane:__pkg__",
         "//cluster/cdk8s/forgejo_registry:__pkg__",
     ],
     deps = [
