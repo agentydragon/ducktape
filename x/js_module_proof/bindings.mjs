@@ -355,7 +355,7 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
 }
 
 // A factory captures its parameters and initialized lexical declarations.
-// The returned arrow is lowered through the same expression grammar used for
+// The returned function is lowered through the same expression grammar used for
 // ordinary functions; cell keys are checked for freshness in Lean.
 function capturedFactory(node, functions) {
   check(node.type === "FunctionDeclaration" && !node.async && !node.generator, "unsupported factory");
@@ -363,12 +363,26 @@ function capturedFactory(node, functions) {
   const parameters = node.params.map(identifier);
   const statements = node.body.body;
   const last = statements.at(-1);
+  check(last?.type === "ReturnStatement", "expected returned function");
+  let closure = last.argument;
+  let functionName = null;
+  let declarations = statements.slice(0, -1);
+  if (closure?.type === "Identifier") {
+    functionName = identifier(closure);
+    const matches = declarations.filter(
+      (statement) => statement.type === "FunctionDeclaration" && statement.id?.name === functionName
+    );
+    check(matches.length === 1, "expected one returned local function declaration");
+    closure = matches[0];
+    declarations = declarations.filter((statement) => statement !== closure);
+  }
   check(
-    last?.type === "ReturnStatement" && last.argument?.type === "ArrowFunctionExpression" && !last.argument.async,
-    "expected returned arrow"
+    ["ArrowFunctionExpression", "FunctionDeclaration"].includes(closure?.type) && !closure.async && !closure.generator,
+    "unsupported returned function"
   );
-  const arrow = last.argument;
-  const closureParameters = arrow.params.map(identifier);
+  const closureParameters = closure.params.map(identifier);
+  const visibleFunctions = new Map(functions);
+  if (functionName !== null) visibleFunctions.delete(functionName);
   const locals = [];
   const refs = [];
   const synthetic = (idName, params, body) => ({
@@ -380,7 +394,7 @@ function capturedFactory(node, functions) {
         ? body
         : { type: "BlockStatement", body: [{ type: "ReturnStatement", argument: body }] },
   });
-  for (const statement of statements.slice(0, -1)) {
+  for (const statement of declarations) {
     check(
       statement.type === "VariableDeclaration" &&
         ["let", "const"].includes(statement.kind) &&
@@ -396,7 +410,7 @@ function capturedFactory(node, functions) {
         [...parameters, ...locals.map((local) => local.name)],
         declaration.init
       ),
-      functions,
+      visibleFunctions,
       [name]
     );
     locals.push({ name: localName, mutable: statement.kind === "let", initial: initial.expression });
@@ -404,20 +418,30 @@ function capturedFactory(node, functions) {
   }
   const captured = [...parameters, ...locals.map((local) => local.name)];
   check(
-    new Set(captured).size === captured.length && new Set(closureParameters).size === closureParameters.length,
+    new Set(captured).size === captured.length &&
+      new Set(closureParameters).size === closureParameters.length &&
+      (functionName === null || (!captured.includes(functionName) && !closureParameters.includes(functionName))),
     "duplicate lexical bindings"
   );
-  const closure = expressionFunction(synthetic("factory_closure", closureParameters, arrow.body), functions, [name]);
-  refs.push(...closure.references.filter((reference) => !captured.includes(reference)));
+  const closureBody = expressionFunction(
+    synthetic("factory_closure", closureParameters, closure.body),
+    visibleFunctions,
+    [name]
+  );
+  check(
+    functionName === null || ![...refs, ...closureBody.references].includes(functionName),
+    "local function identity or recursion is unsupported"
+  );
+  refs.push(...closureBody.references.filter((reference) => !captured.includes(reference)));
   return {
     kind: "capturedFactory",
     name,
     parameters,
     locals,
     closureParameters,
-    body: closure.expression,
+    body: closureBody.expression,
     references: [...new Set(refs)],
-    writes: closure.writes.filter((target) => !captured.includes(target)),
+    writes: closureBody.writes.filter((target) => !captured.includes(target)),
   };
 }
 

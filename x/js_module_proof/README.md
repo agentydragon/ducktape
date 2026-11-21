@@ -129,7 +129,7 @@ different name from `seed`. The shared Lean lexical lookup treats a nearer
 uninitialized binding as a temporal-dead-zone reference rather than falling
 through to an outer one. The checker also supports factories with numeric
 parameters and initialized lexical locals that return a parameterized arrow
-function. The arrow can mutate captured `let` bindings and parameters through
+or a named local function declaration. The returned function can mutate captured `let` bindings and parameters through
 the supported numeric expression grammar. Top-level `const` declarations call
 these factories with numeric literals; each call receives independent captured
 cells. A chain of top-level `const` aliases can name one such closure, and
@@ -160,7 +160,13 @@ scheduler and the shared named-cell
 execution state then model initialization and future exported calls. Each
 recognized closure instance has private modeled cells initialized when its
 factory is called; closure identity, arbitrary allocation and escaping beyond
-the accepted calls are excluded. A safe
+the accepted calls are excluded. The shared captured-frame evaluator has an
+axiom-free lemma relating equal captured values under different cell keys when
+the globals are the same. Captured-frame writeback checks that reading the cells
+reconstructs the updated frame, and an axiom-free lemma relates successful
+writebacks of the same frame under different cell keys. The overall split certificate still uses the existing
+factory-specific representation and does not yet prove preservation under
+arbitrary allocation renaming. A safe
 result proves equal modeled initialization and matching return values and
 state for any finite sequence of subsequent calls. Function return values are
 modeled separately from host-recorded events; ignored top-level call results

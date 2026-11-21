@@ -535,17 +535,23 @@ function capturedCase(seed, index) {
   const count = 2 + rand(2);
   const unsafe = index % 128 === 92;
   const target = unsafe || rand(2) === 0 ? "value" : "start";
+  const namedClosure = Math.floor(index / 128) % 2 === 1;
+  const closureBody = [add(target, "step"), returnNode(id(target))];
   const factory = functionNode(
     "make",
     ["start"],
     [
       declaration("value", { type: "BinaryExpression", operator: "+", left: id("start"), right: id("seed") }),
-      returnNode({
-        type: "ArrowFunctionExpression",
-        params: [id("step")],
-        async: false,
-        body: { type: "BlockStatement", body: [add(target, "step"), returnNode(id(target))] },
-      }),
+      ...(namedClosure
+        ? [functionNode("increment", ["step"], closureBody), returnNode(id("increment"))]
+        : [
+            returnNode({
+              type: "ArrowFunctionExpression",
+              params: [id("step")],
+              async: false,
+              body: { type: "BlockStatement", body: closureBody },
+            }),
+          ]),
     ]
   );
   const closures = Array.from({ length: count }, (_, i) => {

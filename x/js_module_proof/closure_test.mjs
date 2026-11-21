@@ -570,7 +570,7 @@ if (shard === 6) {
   await writeFile(
     source,
     `let seed = 1;
-function make(start) { let value = start + seed; return (step) => { value += step; return value; }; }
+function make(start) { let value = start + seed; function increment(step) { value += step; return value; } return increment; }
 const first = make(2);
 const second = make(3);
 export { first, second };
@@ -628,7 +628,7 @@ if (shard === 7) {
     `let seed = 1;
 let amount = 1;
 function bump() { seed += amount; }
-function make(start) { let value = start + seed; return (step) => { value += step; return value; }; }
+function make(start) { let value = start + seed; function increment(step) { value += step; return value; } return increment; }
 bump();
 const first = make(2);
 export { first };
@@ -661,10 +661,55 @@ export { first };
 }
 
 if (shard === 8) {
+  const independentSource = join(root, "independent-named.mjs");
+  const independentSpec = join(root, "independent-named.json");
+  const independentOut = join(root, "independent-named-out");
+  await writeFile(
+    independentSource,
+    `function make(start) {
+  let value = start;
+  function increment(delta) { value += delta; return value; }
+  return increment;
+}
+const first = make(1);
+const second = make(10);
+export { first, second };
+`
+  );
+  await writeFile(
+    independentSpec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "factory.mjs": { imports: [], statements: [0] },
+        "instances.mjs": { imports: ["factory.mjs"], statements: [1, 2] },
+        "entry.mjs": { imports: ["instances.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", independentSource, independentSpec, independentOut).result, "generated");
+  const independentProof = cli("validate", independentSource, independentSpec, independentOut);
+  assert.equal(independentProof.result, "proved under assumptions", JSON.stringify(independentProof));
+  const independentCalls = [
+    { name: "first", args: [2] },
+    { name: "second", args: [3] },
+    { name: "first", args: [4] },
+    { name: "second", args: [1] },
+  ];
+  const independentTrace = execute(independentSource, independentCalls);
+  assert.deepEqual(independentTrace.results, [{ value: 3 }, { value: 13 }, { value: 7 }, { value: 14 }]);
+  assert.deepEqual(execute(join(independentOut, "entry.mjs"), independentCalls), independentTrace);
+  const independentReplay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
+    encoding: "utf8",
+    input: models + independentProof.certificate,
+  });
+  assert.equal(independentReplay.status, 0, independentReplay.stdout + independentReplay.stderr);
+  assert.match(independentReplay.stdout, /'binding_future_calls' does not depend on any axioms/);
   await writeFile(
     source,
     `let seed = 1;
-function make(start) { let value = start + seed; return (step) => { value += step; return value; }; }
+function make(start) { let value = start + seed; function increment(step) { value += step; return value; } return increment; }
 const first = make(2);
 const second = make(5);
 const alias = first;
@@ -693,10 +738,30 @@ export { first, second, alias, alias2 };
   assert.deepEqual(execute(join(out, "entry.mjs"), calls), trace);
   const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
     encoding: "utf8",
-    input: models + proof.certificate,
+    input:
+      models +
+      proof.certificate +
+      `
+example : relatedCapturedEnvironments [("left-cell", 3)] [("right-cell", 3)]
+    [("value", "left-cell")] [("value", "right-cell")] := by
+  exact ⟨[("value", 3)], rfl, rfl⟩
+example : evaluateCapturedFrame [] [("left-cell", 3)] [("value", "left-cell")] [] []
+    (.assign "value" (.add (.name "value") (.literal 2)) (.name "value")) =
+      some ⟨[("value", 5)], .ok 5⟩ := by rfl
+example : (storeCapturedFrame [("left-cell", 3)] [("value", "left-cell")]
+    [("value", 5)]).map Subtype.val = some [("left-cell", 5)] := by decide
+example : (storeCapturedFrame [("cell", 3)] [("first", "cell"), ("second", "cell")]
+    [("first", 4), ("second", 5)]).map Subtype.val = none := by decide
+#print axioms captured_frame_evaluation_preserved
+#print axioms captured_frame_writeback_preserved
+#print axioms captured_call_frame_preserved
+`,
   });
   assert.equal(replay.status, 0, replay.stdout + replay.stderr);
   assert.match(replay.stdout, /'binding_future_calls' does not depend on any axioms/);
+  assert.match(replay.stdout, /'captured_frame_evaluation_preserved' does not depend on any axioms/);
+  assert.match(replay.stdout, /'captured_frame_writeback_preserved' does not depend on any axioms/);
+  assert.match(replay.stdout, /'captured_call_frame_preserved' does not depend on any axioms/);
   const emitted = join(out, "alias.mjs");
   await writeFile(emitted, (await readFile(emitted, "utf8")).replaceAll("first", "second"));
   assert.equal(cli("validate", source, spec, out).result, "unknown");
@@ -743,6 +808,25 @@ export { first, second, alias, alias2 };
   assert.equal(cli("generate", cycleSource, cycleSpec, cycleOut).result, "generated");
   assert.equal(cli("validate", cycleSource, cycleSpec, cycleOut).result, "unknown");
   assert.equal(execute(cycleSource, []).error.name, "ReferenceError");
+  const recursiveSource = join(root, "shadowed-recursion.mjs");
+  const recursiveSpec = join(root, "shadowed-recursion.json");
+  await writeFile(
+    recursiveSource,
+    `function increment(step) { return step; }
+function make(start) { function increment(step) { return increment(step); } return increment; }
+const first = make(1);
+export { first };
+`
+  );
+  await writeFile(
+    recursiveSpec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: { "entry.mjs": { imports: [], statements: [0, 1, 2] } },
+    })
+  );
+  assert.equal(cli("generate", recursiveSource, recursiveSpec, join(root, "shadowed-recursion-out")).result, "unknown");
 }
 
 if (shard === 9) {

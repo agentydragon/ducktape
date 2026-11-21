@@ -222,6 +222,29 @@ def loadCaptures (bindings : List (String × Nat)) : List (String × String) →
     let tail ← loadCaptures bindings rest
     pure ((name, value) :: tail)
 
+/- Environments correspond when each lexical name reads the same value,
+   even if the two executions allocated that value under different cell keys. -/
+def relatedCapturedEnvironments (leftStore rightStore : List (String × Nat))
+    (leftCapture rightCapture : List (String × String)) : Prop :=
+  ∃ frame, loadCaptures leftStore leftCapture = some frame ∧
+    loadCaptures rightStore rightCapture = some frame
+
+def evaluateCapturedFrame (globals store : List (String × Nat)) (captures : List (String × String))
+    (parameters : List String) (arguments : List Nat) (body : NumericExpr) : Option (ExpressionResult Nat) := do
+  if parameters.length != arguments.length then none else
+    let values ← loadCaptures store captures
+    evaluateExpression (parameters.zip arguments ++ values) globals body
+
+theorem captured_frame_evaluation_preserved
+    (globals leftStore rightStore : List (String × Nat)) (leftCapture rightCapture : List (String × String))
+    (parameters : List String) (arguments : List Nat) (body : NumericExpr)
+    (related : relatedCapturedEnvironments leftStore rightStore leftCapture rightCapture) :
+    evaluateCapturedFrame globals leftStore leftCapture parameters arguments body =
+      evaluateCapturedFrame globals rightStore rightCapture parameters arguments body := by
+  obtain ⟨frame, left, right⟩ := related
+  unfold evaluateCapturedFrame
+  rw [left, right]
+
 def storeCaptures (bindings : List (String × Nat)) : List (String × String) → List (String × Nat) → Option (List (String × Nat))
   | [], [] => some bindings
   | (name, key) :: rest, (actual, value) :: values => do
@@ -230,6 +253,38 @@ def storeCaptures (bindings : List (String × Nat)) : List (String × String) �
       storeCaptures updated rest values
   | [], _ :: _ => none
   | _ :: _, [] => none
+
+/- Writeback returns a store only when reading its captured cells again yields
+   exactly the updated lexical frame. This rejects conflicting aliases instead
+   of silently losing a write. -/
+def storeCapturedFrame (store : List (String × Nat)) (captures : List (String × String))
+    (values : List (String × Nat)) : Option { result : List (String × Nat) // loadCaptures result captures = some values } := do
+  let result ← storeCaptures store captures values
+  if valid : loadCaptures result captures = some values then some ⟨result, valid⟩ else none
+
+theorem captured_frame_writeback_preserved
+    (leftCapture rightCapture : List (String × String)) (values : List (String × Nat))
+    (left : { result : List (String × Nat) // loadCaptures result leftCapture = some values })
+    (right : { result : List (String × Nat) // loadCaptures result rightCapture = some values }) :
+    relatedCapturedEnvironments left.val right.val leftCapture rightCapture :=
+  ⟨values, left.property, right.property⟩
+
+/- One call preserves corresponding capture frames when both writebacks
+   succeed. The returned subtype is produced by the same checked writeback
+   operation used by the machine; allocation keys need not be equal. -/
+theorem captured_call_frame_preserved
+    (globals leftStore rightStore : List (String × Nat)) (leftCapture rightCapture : List (String × String))
+    (parameters : List String) (arguments : List Nat) (body : NumericExpr) (result : ExpressionResult Nat)
+    (related : relatedCapturedEnvironments leftStore rightStore leftCapture rightCapture)
+    (evaluated : evaluateCapturedFrame globals leftStore leftCapture parameters arguments body = some result)
+    (left : { store : List (String × Nat) // loadCaptures store leftCapture = some (result.locals.drop parameters.length) })
+    (right : { store : List (String × Nat) // loadCaptures store rightCapture = some (result.locals.drop parameters.length) }) :
+    evaluateCapturedFrame globals rightStore rightCapture parameters arguments body = some result ∧
+      relatedCapturedEnvironments left.val right.val leftCapture rightCapture := by
+  constructor
+  · rw [← captured_frame_evaluation_preserved globals leftStore rightStore leftCapture rightCapture parameters arguments body related]
+    exact evaluated
+  · exact captured_frame_writeback_preserved leftCapture rightCapture _ left right
 
 def ExecutionState.cell (state : ExecutionState α) : Option Nat := lookupBinding state.bindings "$live"
 def ExecutionState.snapshot (state : ExecutionState α) : Option Nat := lookupBinding state.bindings "$snapshot"
@@ -301,13 +356,12 @@ def executeStep {α : Type} (state : ExecutionState α) (operation : Operation) 
       | .error _ => none
       | .ok value => declare state key value
     | .invokeCaptured captures parameters arguments body => do
-      if parameters.length != arguments.length then none else
-        let values ← loadCaptures state.bindings captures
-        let result ← evaluateExpression (parameters.zip arguments ++ values) state.bindings body
-        let bindings ← storeCaptures state.bindings captures (result.locals.drop parameters.length)
-        match result.completion with
-        | .error value => pure { state with bindings, thrown := some value }
-        | .ok value => pure { state with bindings, returns := state.returns ++ [some value] }
+      let result ← evaluateCapturedFrame state.bindings state.bindings captures parameters arguments body
+      let stored ← storeCapturedFrame state.bindings captures (result.locals.drop parameters.length)
+      let bindings := stored.val
+      match result.completion with
+      | .error value => pure { state with bindings, thrown := some value }
+      | .ok value => pure { state with bindings, returns := state.returns ++ [some value] }
 
 def runExecution {α : Type} : ExecutionState α → List Operation → Option (ExecutionState α)
   | state, [] => some state

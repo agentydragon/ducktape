@@ -134,6 +134,9 @@ if (shards === 4 && shard === 0) {
   const captured = await runFuzz({ seed: 123, start: 28, cases: 1, outputDir: process.env.TEST_TMPDIR });
   assert.equal(captured.capturedCompared, 1);
   assert.equal(captured.capturedProved, 1);
+  const namedCaptured = await runFuzz({ seed: 123, start: 156, cases: 1, outputDir: process.env.TEST_TMPDIR });
+  assert.equal(namedCaptured.capturedCompared, 1);
+  assert.equal(namedCaptured.capturedProved, 1);
   const parameterIndex = Array.from({ length: 32 }, (_, i) => 28 + 128 * i).find(
     (index) => makeCase(123, index).captureTarget === "start"
   );
