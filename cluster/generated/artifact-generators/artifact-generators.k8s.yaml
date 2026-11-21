@@ -749,6 +749,11 @@ spec:
       name: kubevirt-operator
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/kubevirt/vpa/**"
+          to: "@artifact/cluster/generated/kubevirt/vpa/"
+      name: kubevirt-cdi-vpa
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/k8s/langfuse/**"
           to: "@artifact/cluster/k8s/langfuse/"
       name: langfuse
