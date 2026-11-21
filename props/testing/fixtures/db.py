@@ -6,6 +6,7 @@ a fresh PostgreSQL container, and each test gets its own isolated database.
 
 import os
 from collections.abc import Generator
+from contextlib import ExitStack
 
 import pytest
 from python.runfiles import Runfiles
@@ -52,11 +53,10 @@ def postgres_base_config(postgres_container: PostgresContainer) -> DatabaseConfi
 def postgres_template(postgres_base_config: DatabaseConfig) -> Generator[PostgresDatabaseTemplate]:
     """Migrate once; ordinary test databases copy this untouched schema."""
     with PostgresDatabaseTemplate(postgres_base_config.url, "props_test_template") as template:
-        database = Database(postgres_base_config.with_database("props_test_template"))
-        try:
+        with ExitStack() as cleanup:
+            database = Database(postgres_base_config.with_database("props_test_template"))
+            cleanup.callback(database.dispose)
             database.recreate()
-        finally:
-            database.dispose()
         yield template
 
 

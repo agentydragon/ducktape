@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from typing import Any
 
 from psycopg2.extras import register_composite
@@ -38,6 +38,19 @@ from props.db.config import DatabaseConfig
 from props.db.setup import recreate_database
 
 logger = logging.getLogger(__name__)
+
+
+def _register_composite_types(
+    dbapi_connection: Any, connection_record: ConnectionPoolEntry, connection_proxy: Any
+) -> None:
+    """Register the stats_with_ci adapter on a freshly checked-out connection.
+
+    NullPool creates a fresh connection per checkout, so this runs on every use.
+    """
+    try:
+        register_composite("stats_with_ci", dbapi_connection, globally=False)
+    except Exception as e:
+        logger.debug(f"Could not register stats_with_ci composite type: {e}")
 
 
 class Database:
@@ -62,55 +75,29 @@ class Database:
         Used by get_caller_db for caller credential passthrough. Caller must
         call dispose() when done.
         """
-        db = cls.__new__(cls)
-        db._config = config
-        db._engine = create_engine(config.url, echo=False, poolclass=NullPool)
+        return cls(config, verify=False)
 
-        @event.listens_for(db._engine, "checkout")
-        def _register_composite_types(
-            dbapi_connection: Any, connection_record: ConnectionPoolEntry, connection_proxy: Any
-        ) -> None:
-            try:
-                register_composite("stats_with_ci", dbapi_connection, globally=False)
-            except Exception as e:
-                logger.debug(f"Could not register stats_with_ci composite type: {e}")
-
-        db._scoped_factory = scoped_session(sessionmaker(bind=db._engine))
-        return db
-
-    def __init__(self, config: DatabaseConfig) -> None:
+    def __init__(self, config: DatabaseConfig, *, verify: bool = True) -> None:
+        """`verify=False` skips the startup connection probe and its log line (see `per_request`)."""
         self._config = config
-        url = config.url
-
-        logger.info(f"Connecting to database: {config.host}:{config.port}/{config.database}")
-        self._engine: Engine = create_engine(url, echo=False, poolclass=NullPool)
-
-        # Register composite type adapter on each checkout.
-        # NullPool creates a fresh connection per checkout, so this runs on every use.
-        @event.listens_for(self._engine, "checkout")
-        def _register_composite_types(
-            dbapi_connection: Any, connection_record: ConnectionPoolEntry, connection_proxy: Any
-        ) -> None:
-            try:
-                register_composite("stats_with_ci", dbapi_connection, globally=False)
-            except Exception as e:
-                logger.debug(f"Could not register stats_with_ci composite type: {e}")
-
-        self._verify_connection()
+        self._engine: Engine = create_engine(config.url, echo=False, poolclass=NullPool)
+        event.listen(self._engine, "checkout", _register_composite_types)
+        if verify:
+            logger.info(f"Connecting to database: {config.host}:{config.port}/{config.database}")
+            self._verify_connection()
         self._scoped_factory = scoped_session(sessionmaker(bind=self._engine))
 
     def _verify_connection(self, timeout_secs: int = 2) -> None:
-        test_engine = create_engine(
-            self._engine.url.render_as_string(hide_password=False),
-            echo=False,
-            connect_args={"connect_timeout": timeout_secs},
-        )
-        try:
+        with ExitStack() as cleanup:
+            test_engine = create_engine(
+                self._engine.url.render_as_string(hide_password=False),
+                echo=False,
+                connect_args={"connect_timeout": timeout_secs},
+            )
+            cleanup.callback(test_engine.dispose)
             with test_engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
             logger.debug("Database connection validated")
-        finally:
-            test_engine.dispose()
 
     @contextmanager
     def session(self) -> Iterator[Session]:
