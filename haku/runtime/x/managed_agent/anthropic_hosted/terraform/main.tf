@@ -143,10 +143,9 @@ resource "claude-managed-agents_vault_credential" "haku_kube" {
   }
 }
 
-# haku-console's Agent bearer for the static "Haku" Agent slot, read straight from
-# its haku-sandbox copy (tf/gitops/haku-state's kubernetes_secret.haku_console_agent_api
-# writes the same value into both haku-sandbox and haku-console) — the tf-runner has
-# cluster-wide secret read, so no separate reflected copy is needed here.
+# haku-console's static Agent bearer. Nothing creates this Secret since #11897 retired
+# static Agents and deleted its source in tf/gitops/haku-state, so this read fails.
+# Reviving this root needs a new bearer source for `haku_console`, or dropping that credential.
 data "kubernetes_secret_v1" "haku_console_agent_api" {
   metadata {
     name      = "haku-console-agent-api"
