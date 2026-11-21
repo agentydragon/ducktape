@@ -105,10 +105,7 @@ py_library(
 py_library(
     name = "telemetry",
     srcs = ["telemetry.py"],
-    visibility = [
-        "//cluster/cdk8s:__pkg__",
-        "//cluster/cdk8s/monitoring:__pkg__",
-    ],
+    visibility = ["//cluster/cdk8s/monitoring:__pkg__"],
     deps = [
         "//cluster/cdk8s:service_ref",
     ],
@@ -333,11 +330,7 @@ genrule(
     outs = ["codex_upstream_models.json"],
     cmd = 'CODEX_HOME="$$(mktemp -d)" $(location @agentplane_codex_cli_linux_x64//:codex_binary) debug models --bundled > "$@"',
     tools = ["@agentplane_codex_cli_linux_x64//:codex_binary"],
-    visibility = [
-        "//agentplane/native/codex/testing:__pkg__",
-        "//agentplane/system_tests/deployment:__pkg__",
-        "//cluster/cdk8s:__pkg__",
-    ],
+    visibility = ["//agentplane/native/codex/testing:__pkg__"],
 )
 
 py_library(
@@ -547,7 +540,6 @@ py_library(
     srcs = ["actions.py"],
     visibility = [
         "//agentplane/system_tests/deployment:__pkg__",
-        "//cluster/cdk8s:__pkg__",
         "//cluster/cdk8s/haku:__pkg__",
         "//cluster/cdk8s/public_coder:__pkg__",
     ],
@@ -659,11 +651,7 @@ py_library(
         "ducktape_pr_instructions.md",
         "public_coder_instructions.md",
     ],
-    visibility = [
-        "//agentplane/system_tests/deployment:__pkg__",
-        "//cluster/cdk8s:__pkg__",
-        "//cluster/cdk8s/agentplane:__pkg__",
-    ],
+    visibility = ["//agentplane/system_tests/deployment:__pkg__"],
     deps = [
         ":egress",
         ":environment_service",
@@ -716,7 +704,7 @@ py_library(
         "finance_agent_thread_setup.sh",
         "haku_thread_setup.sh",
     ],
-    visibility = ["//cluster/cdk8s:__pkg__"],
+    visibility = ["//visibility:private"],
     deps = [
         ":actions_staging_policies",
         ":app_settings",
@@ -739,10 +727,7 @@ py_library(
 py_library(
     name = "staging_grants",
     srcs = ["staging_grants.py"],
-    visibility = [
-        "//cluster/cdk8s:__pkg__",
-        "//cluster/cdk8s/agentplane:__pkg__",
-    ],
+    visibility = ["//visibility:private"],
     deps = [
         ":kubernetes_grants",
         ":sandbox_pod",
@@ -755,7 +740,6 @@ py_library(
     srcs = ["environment.py"],
     visibility = [
         "//agentplane/system_tests/deployment:__pkg__",
-        "//cluster/cdk8s:__pkg__",
         "//cluster/cdk8s/agentplane/testing:__pkg__",
         "//cluster/cdk8s/haku_ci:__pkg__",
     ],
@@ -1563,7 +1547,6 @@ py_library(
     visibility = [
         "//agentplane/system_tests/deployment:__pkg__",
         "//agentplane/system_tests/vm:__pkg__",
-        "//cluster/cdk8s:__pkg__",
     ],
     deps = [
         ":sandbox_pod",
@@ -1606,12 +1589,7 @@ py_test(
 py_library(
     name = "platform_routes",
     srcs = ["platform_routes.py"],
-    visibility = [
-        "//agentplane/system_tests/deployment:__pkg__",
-        "//cluster/cdk8s:__pkg__",
-        "//cluster/cdk8s/agentplane/testing:__pkg__",
-        "//cluster/cdk8s/public_coder:__pkg__",
-    ],
+    visibility = ["//cluster/cdk8s/public_coder:__pkg__"],
     deps = [
         ":egress",
         ":environment_service",
