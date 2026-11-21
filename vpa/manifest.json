@@ -1,10 +1,10 @@
 {
-  "source_devel_commit": "b454f6face9fc0a9d184ba1ce280a4935d28f7ce",
-  "audited_at_utc": "2026-11-21 05:53:34 UTC",
-  "snapshot_utc": "2026-11-21T05:53:34Z",
+  "source_devel_commit": "f32a59b0aee99fab5eceab04635e4f5ddd95535c",
+  "audited_at_utc": "2026-11-21 06:56:58 UTC",
+  "snapshot_utc": "2026-11-21T06:56:58Z",
   "scope": "Current Kubernetes VPA policies, workload owners, metrics samples and rollout review cohorts. Earlier evidence retains its original observation window.",
-  "report_html_sha256": "8433893dd8a14bd62b27f107afb38ea9c9039f80d62340300a978763499a6982",
-  "report_script_sha256": "cd220a0ac680f1c24fa82d3048d0f61501e578d60ab886595a0e3a3041718c25",
+  "report_html_sha256": "87340cc624d33aee5afb97831cfe524489888a310d6a6e7d5cce234b74388a77",
+  "report_script_sha256": "b397a620cac83aae87e1c26d21fba301047e4892f654e554b39b3bcca99cb8ee",
   "evidence_sha256": "c69cc4092a6f9640579e2dce32e0f2f37af78498b947522c2320f49698a86a28",
   "architecture_source_devel_commit": "d81bd68165097b089cace9ae168b6e8f202f1b7e",
   "architecture_reviewed_at_utc": "2026-11-20T03:36:52Z",
@@ -45,12 +45,12 @@
   "current_state_observed_at_utc": "2026-11-20T20:30:00Z",
   "current_state_source_devel_commit": "7514082e13cff17faa64056a67b285c7e259f3e2",
   "pod_resources_observed_at_utc": "2026-11-20T20:34:45Z",
-  "current_inventory_collection_started_utc": "2026-11-21T05:53:23Z",
-  "current_inventory_collection_finished_utc": "2026-11-21T05:53:34Z",
-  "flux_source_observed_at_utc": "2026-11-21T05:53:34Z",
-  "inventory_sha256": "ba3d3e3bc98dd34337e7faf5dd8f49e4423674510fe4565e3a97e8bf01802e4e",
+  "current_inventory_collection_started_utc": "2026-11-21T06:56:47Z",
+  "current_inventory_collection_finished_utc": "2026-11-21T06:56:58Z",
+  "flux_source_observed_at_utc": "2026-11-21T06:56:58Z",
+  "inventory_sha256": "873f5fcd5051009e4f0efcf6e3d23f106dac0fffd3efc24f83431839a598b957",
   "inventory_collector_sha256": "2e9ddc1e228afc13ca9e434678431c9d45af626d5ffd814210ae33ebeeb222ce",
-  "current_inventory_flux_source_devel_commit": "b454f6face9fc0a9d184ba1ce280a4935d28f7ce",
+  "current_inventory_flux_source_devel_commit": "f32a59b0aee99fab5eceab04635e4f5ddd95535c",
   "secret_store_hourly_scan_verified_at_utc": "2026-11-20T21:17:28Z",
   "study_casino_initial_verified_at_utc": "2026-11-20T21:20:49Z",
   "platform_sessions_provider_initial_verified_at_utc": "2026-11-20T21:31:31Z",
@@ -72,7 +72,7 @@
   "archived_evidence_snapshot_utc": "2026-11-20T02:58:40Z",
   "archived_evidence_source_devel_commit": "05a4c55db085311363fad8cce0ba4dfe3f4ecb0f",
   "archived_evidence_seven_day_queries_end_utc": "2026-11-20T03:03:48.752000+00:00",
-  "current_inventory_seven_day_queries_end_utc": "2026-11-21T05:53:27Z",
+  "current_inventory_seven_day_queries_end_utc": "2026-11-21T06:56:52Z",
   "staging_request_wave": {
     "policy_pr": 18487,
     "policy_source_devel_commit": "b3824f2237ec27bc377a0a9fa9639c644451ca5b",
@@ -656,5 +656,269 @@
       "peak_sensitivity": "Substitute selected measured NFD, Flux source and Flux Kustomize CPU peaks and Loki working-set memory. CPU and memory minima are across cases and can occur on different hosts.",
       "availability_limits": "A third Loki read replica requires a third eligible OVH worker. Platform providers with capture volumes local to the failed worker cannot relocate. Concurrent home-node loss is outside the model."
     }
+  },
+  "recent_rollout_followup": {
+    "applications": {
+      "pull_request": 18519,
+      "before_cycle": {
+        "observed_utc": "2026-11-21T06:58:34+00:00",
+        "matched_spec_count": 3,
+        "current_cpu_target_count": 0,
+        "policies": {
+          "agentplane-staging/electric": {
+            "owner": "flux",
+            "desired_policy_applied": true,
+            "generation": 2,
+            "recommendation_generation": 1,
+            "cpu_targets": {
+              "electric": null
+            }
+          },
+          "cdviz/collector": {
+            "owner": "goldilocks",
+            "desired_policy_applied": false,
+            "generation": 2,
+            "recommendation_generation": 2,
+            "cpu_targets": {
+              "collector": null
+            }
+          },
+          "home-assistant/home-assistant": {
+            "owner": "goldilocks",
+            "desired_policy_applied": false,
+            "generation": 2,
+            "recommendation_generation": 2,
+            "cpu_targets": {
+              "caddy": null,
+              "home-assistant": null
+            }
+          },
+          "plaid-mcp/plaid-pgweb": {
+            "owner": "goldilocks",
+            "desired_policy_applied": false,
+            "generation": 2,
+            "recommendation_generation": 2,
+            "cpu_targets": {
+              "pgweb": null
+            }
+          },
+          "plaid-mcp/plaid-spend": {
+            "owner": "goldilocks",
+            "desired_policy_applied": false,
+            "generation": 2,
+            "recommendation_generation": 2,
+            "cpu_targets": {
+              "plaid-spend": null
+            }
+          },
+          "study-casino/study-casino": {
+            "owner": "flux",
+            "desired_policy_applied": true,
+            "generation": 2,
+            "recommendation_generation": 1,
+            "cpu_targets": {
+              "app": null
+            }
+          },
+          "gitlab-spike/gitlab-spike-gitlab-exporter": {
+            "owner": "goldilocks",
+            "desired_policy_applied": true,
+            "generation": 3,
+            "recommendation_generation": 2,
+            "cpu_targets": {
+              "gitlab-exporter": null
+            }
+          },
+          "gitlab-spike-ci/gitlab-spike-runner-gitlab-runner": {
+            "owner": "goldilocks",
+            "desired_policy_applied": false,
+            "generation": 2,
+            "recommendation_generation": 2,
+            "cpu_targets": {
+              "gitlab-spike-runner-gitlab-runner": null
+            }
+          }
+        }
+      },
+      "after_cycle": {
+        "observed_utc": "2026-11-21T07:00:24+00:00",
+        "matched_spec_count": 4,
+        "current_cpu_target_count": 4,
+        "policies": {
+          "agentplane-staging/electric": {
+            "owner": "flux",
+            "desired_policy_applied": true,
+            "generation": 2,
+            "recommendation_generation": 2,
+            "cpu_targets": {
+              "electric": "49m"
+            }
+          },
+          "cdviz/collector": {
+            "owner": "goldilocks",
+            "desired_policy_applied": false,
+            "generation": 2,
+            "recommendation_generation": 2,
+            "cpu_targets": {
+              "collector": null
+            }
+          },
+          "home-assistant/home-assistant": {
+            "owner": "goldilocks",
+            "desired_policy_applied": true,
+            "generation": 3,
+            "recommendation_generation": 3,
+            "cpu_targets": {
+              "caddy": "11m",
+              "home-assistant": "11m"
+            }
+          },
+          "plaid-mcp/plaid-pgweb": {
+            "owner": "goldilocks",
+            "desired_policy_applied": false,
+            "generation": 2,
+            "recommendation_generation": 2,
+            "cpu_targets": {
+              "pgweb": null
+            }
+          },
+          "plaid-mcp/plaid-spend": {
+            "owner": "goldilocks",
+            "desired_policy_applied": false,
+            "generation": 2,
+            "recommendation_generation": 2,
+            "cpu_targets": {
+              "plaid-spend": null
+            }
+          },
+          "study-casino/study-casino": {
+            "owner": "flux",
+            "desired_policy_applied": true,
+            "generation": 2,
+            "recommendation_generation": 2,
+            "cpu_targets": {
+              "app": "15m"
+            }
+          },
+          "gitlab-spike/gitlab-spike-gitlab-exporter": {
+            "owner": "goldilocks",
+            "desired_policy_applied": true,
+            "generation": 3,
+            "recommendation_generation": 3,
+            "cpu_targets": {
+              "gitlab-exporter": "23m"
+            }
+          },
+          "gitlab-spike-ci/gitlab-spike-runner-gitlab-runner": {
+            "owner": "goldilocks",
+            "desired_policy_applied": false,
+            "generation": 2,
+            "recommendation_generation": 2,
+            "cpu_targets": {
+              "gitlab-spike-runner-gitlab-runner": null
+            }
+          }
+        }
+      }
+    },
+    "recommender_cycle_started_utc": "2026-11-21T07:00:16.998Z",
+    "staging_frontend": {
+      "pull_request": 18523,
+      "followup_utc": "2026-11-21T06:47:25Z",
+      "ready_replicas": 2,
+      "distinct_hosts": 2,
+      "disruptions_allowed": 1,
+      "sequential_replacements": 2,
+      "admitted_requests": {
+        "cpu": "15m",
+        "memory": "100Mi"
+      },
+      "memory_limit": "128Mi"
+    },
+    "vpa_admission": {
+      "pull_request": 18531,
+      "endpoints_observed_utc": "2026-11-21T06:57:09Z",
+      "ready_endpoints": 3,
+      "distinct_hosts": 3,
+      "budget_observed_utc": "2026-11-21T06:59:00Z",
+      "minimum_healthy": 2,
+      "disruptions_allowed": 1,
+      "failure_policy": "Ignore",
+      "timeout_seconds": 5
+    },
+    "snapshot_controller": {
+      "pull_requests": [18496, 18499],
+      "ready_replicas": 2,
+      "distinct_hosts": 2,
+      "disruptions_allowed": 1,
+      "leader_lease_renewed_utc": "2026-11-21T06:58:58.441Z",
+      "update_mode": "Recreate",
+      "controlled_values": "RequestsAndLimits",
+      "policy_generation": 2,
+      "observed_generation_before_cycle": 1,
+      "observed_generation_after_cycle": 2,
+      "targets_after_cycle": {
+        "cpu": "15m",
+        "memory": "100Mi"
+      }
+    },
+    "virtualization": {
+      "pull_request": 18518,
+      "observed_utc": "2026-11-21T06:47:18+00:00",
+      "policies": {
+        "virt-api": {
+          "target": {
+            "cpu": "15m",
+            "memory": "442809964"
+          },
+          "generation": 1,
+          "replicas": 2
+        },
+        "virt-controller": {
+          "target": {
+            "cpu": "15m",
+            "memory": "297164212"
+          },
+          "generation": 1,
+          "replicas": 2
+        },
+        "virt-operator": {
+          "target": {
+            "cpu": "35m",
+            "memory": "476450463"
+          },
+          "generation": 1,
+          "replicas": 2
+        },
+        "cdi-apiserver": {
+          "target": {
+            "cpu": "15m",
+            "memory": "100Mi"
+          },
+          "generation": 1,
+          "replicas": 1
+        },
+        "cdi-deployment": {
+          "target": {
+            "cpu": "23m",
+            "memory": "351198544"
+          },
+          "generation": 1,
+          "replicas": 1
+        },
+        "cdi-uploadproxy": {
+          "target": {
+            "cpu": "15m",
+            "memory": "100Mi"
+          },
+          "generation": 1,
+          "replicas": 1
+        }
+      },
+      "unchanged_live_pods": 9
+    },
+    "pr_queue_observed_utc": "2026-11-21T07:00Z",
+    "ready_pull_requests": [18543, 18549],
+    "condition_blocked_pull_requests": [18553, 18555, 18528, 18498, 18542]
   }
 }
