@@ -79,13 +79,10 @@ pub struct MaterializeLogicalModulesResult {
     pub selected_lowerings: Vec<SelectedModuleLowering>,
     pub module_count: usize,
     /// Spec claims that named a binding for which no top-level
-    /// declaration exists in the source chunk. Previously dropped
-    /// silently — the binding would fall through to the residual and
-    /// the named module's export list would be one entry short. Now
-    /// collected across every chunk so reconstruction can diagnose
-    /// all claims (the chunk lowers as if the missing claim were absent).
-    /// Final validation rejects the full list before writing the output. See
-    /// [`UnmatchedSpecClaim`].
+    /// declaration exists in the source chunk, collected across every chunk
+    /// so reconstruction can diagnose all claims (the chunk lowers as if the
+    /// missing claim were absent). Final validation rejects the full list
+    /// before writing the output. See [`UnmatchedSpecClaim`].
     pub unmatched_spec_claims: Vec<UnmatchedSpecClaim>,
     /// Chunks the realizability gate rejected but lowered anyway under
     /// [`GateRejectionPolicy::LowerUnrunnable`]; empty under
