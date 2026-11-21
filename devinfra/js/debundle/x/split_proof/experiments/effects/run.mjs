@@ -12,16 +12,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
-
-// `CASES=path` runs another file of cases with the same shape; `node run.mjs` takes `cases.mjs` and `cases_general.mjs`
-// beside it. A case without `premises` of its own gets those of its file.
-const modules = await Promise.all(
-  (process.env.CASES ? [path.resolve(process.env.CASES)] : ["./cases.mjs", "./cases_general.mjs"]).map((f) => import(f))
-);
-const cases = modules.flatMap((m) =>
-  m.cases.map((c) => (c.premises === undefined ? { ...c, premises: m.premises } : c))
-);
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const lower = process.env.LOWER ?? path.join(here, "../../lean/.lake/build/bin/lower");
@@ -30,11 +21,28 @@ const pair = path.join(here, "../translation/pair.mjs");
 const frontend = path.join(here, "../translation/frontend.mjs");
 const show = process.argv.includes("--show");
 const option = (name, fallback) => {
-  const i = process.argv.indexOf(`--${name}`);
+  const i = process.argv.lastIndexOf(`--${name}`);
   return i < 0 ? fallback : Number(process.argv[i + 1]);
 };
 const permutations = option("permutations", 0);
-let seed = option("seed", 1);
+const caseSeed = option("seed", 1);
+let seed = caseSeed;
+
+// `CASES=path` runs another file of cases with the same shape; a relative path is from this script's directory. Without
+// it, `node run.mjs` takes `cases.mjs` and `cases_general.mjs` beside it. A generated module may export
+// `generateCases(seed)` and `requiredFamilies`. A case without `premises` of its own gets those of its file.
+const caseFiles = process.env.CASES ? [process.env.CASES] : ["./cases.mjs", "./cases_general.mjs"];
+const modules = await Promise.all(caseFiles.map((f) => import(pathToFileURL(path.resolve(here, f)).href)));
+const cases = modules.flatMap((m) => {
+  const generated = m.generateCases ? m.generateCases(caseSeed) : m.cases;
+  return generated.map((c) => (c.premises === undefined ? { ...c, premises: m.premises } : c));
+});
+const requiredFamilies = Object.assign({}, ...modules.map((m) => m.requiredFamilies ?? {}));
+const familyCounts = new Map();
+for (const c of cases) if (c.family) familyCounts.set(c.family, (familyCounts.get(c.family) ?? 0) + 1);
+for (const [family, minimum] of Object.entries(requiredFamilies)) {
+  if ((familyCounts.get(family) ?? 0) < minimum) throw new Error(`generator emitted too few ${family} cases`);
+}
 // mulberry32: a small seeded generator, so a failing permutation can be run again
 const random = () => {
   seed = (seed + 0x6d2b79f5) >>> 0;
@@ -89,8 +97,10 @@ writeFileSync(
 
 const nodeOutput = (file) => {
   const r = spawnSync(process.execPath, [file], { encoding: "utf8", timeout: 20000 });
-  return `${r.status}\n${r.stdout}${r.status === 0 ? "" : r.stderr.split("\n")[0]}`;
+  return { status: r.status, stdout: r.stdout, firstError: r.status === 0 ? "" : r.stderr.split("\n")[0] };
 };
+const sameNodeOutput = (left, right) =>
+  left.status === right.status && left.stdout === right.stdout && left.firstError === right.firstError;
 
 // The verdict of `translate` on the bundle's units in `order`, all in one module, and Node's verdict.
 const reorder = (c, bundleFile, bundleJson, lines, order) => {
@@ -118,6 +128,7 @@ const reorder = (c, bundleFile, bundleJson, lines, order) => {
 };
 
 let failures = 0;
+const observedFamilies = new Set();
 for (const [n, raw] of cases.entries()) {
   const c = { ...raw, source: raw.source.replaceAll("%VENDOR%", vendorFile), premisesFile: premisesOf(raw, n) };
   const source = path.join(work, "case.mjs");
@@ -140,20 +151,21 @@ for (const [n, raw] of cases.entries()) {
   for (const r of c.reorders ?? []) {
     const original = nodeOutput(source);
     const res = reorder(c, source, bundle, lines, r.order);
-    const differs = res.node !== original;
+    const differs = !sameNodeOutput(res.node, original);
     const problems = [];
     if (differs !== (r.behavior === "differs"))
       problems.push(`Node ${differs ? "differs" : "agrees"}, the case says ${r.behavior}`);
+    if (r.stdoutDiffers && res.node.stdout === original.stdout) problems.push("Node stdout did not differ");
     if (differs && res.verdict === "accepted") problems.push("WRONG ACCEPT");
     if (r.accepted && res.verdict !== "accepted") problems.push(`wanted accepted, got ${res.verdict}`);
     if (problems.length) failures++;
+    if (differs && c.family) observedFamilies.add(c.family);
     console.log(
       `  ${problems.length ? "FAIL" : "pass"}  [${r.order}] ${res.verdict}; Node ${differs ? "differs" : "agrees"}${problems.length ? ` (${problems.join("; ")})` : ""}`
     );
   }
   // a bundle that throws in Node is outside premise P4: its permutations would differ by the error's file and line
-  if (permutations && !nodeOutput(source).startsWith("0\n"))
-    console.log("  skip  permutations: the case throws in Node");
+  if (permutations && nodeOutput(source).status !== 0) console.log("  skip  permutations: the case throws in Node");
   else if (permutations) {
     const original = nodeOutput(source);
     const tally = { accepted: 0, obligations: 0, rejected: 0 };
@@ -162,7 +174,7 @@ for (const [n, raw] of cases.entries()) {
       const order = shuffled(lines.length);
       const res = reorder(c, source, bundle, lines, order);
       tally[res.verdict]++;
-      if (res.verdict === "accepted" && res.node !== original) wrong.push(order);
+      if (res.verdict === "accepted" && !sameNodeOutput(res.node, original)) wrong.push(order);
     }
     if (wrong.length) failures++;
     console.log(
@@ -181,5 +193,9 @@ for (const [n, raw] of cases.entries()) {
   }
 }
 rmSync(work, { recursive: true, force: true });
-if (failures) throw new Error(`${failures} cases gave the wrong classification`);
+const missingFamilies = Object.keys(requiredFamilies).filter((family) => !observedFamilies.has(family));
+if (failures) {
+  const missing = missingFamilies.length ? `; no observable differing reorder for: ${missingFamilies.join(", ")}` : "";
+  throw new Error(`${failures} cases gave the wrong classification${missing}`);
+}
 console.log(`${cases.length} cases`);
