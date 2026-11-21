@@ -377,12 +377,9 @@ Rationale lives next to the Jobs themselves — see
 
 ## Removing a CRD Operator (Uninstall Runbook)
 
-Distilled from the Longhorn uninstall incident
-(<lessons_learned/2026_05_13_longhorn_uninstall.md>). "Suspend the Flux resource
-
-- delete some pods by hand" is **not**
-  equivalent to an uninstall. Cluster-scoped admission webhooks make the order
-  matter, and Helm/chart-specific uninstall hooks exist for a reason.
+Distilled from the 2026-05 Longhorn uninstall. Suspending the Flux resource and deleting
+some pods by hand is **not** equivalent to an uninstall. Cluster-scoped admission webhooks
+make the order matter, and Helm/chart-specific uninstall hooks exist for a reason.
 
 ### Standard order for removing a CRD operator
 
@@ -451,7 +448,8 @@ Distilled from the Longhorn uninstall incident
 
 ### Emergency unblock (webhook is already wedging the cluster)
 
-If you arrive _after_ the zombie webhook is already rejecting unrelated PVCs:
+If you arrive _after_ the zombie webhook is already rejecting unrelated PVCs
+(`failed calling webhook "<name>": … connect: operation not permitted`):
 
 ```bash
 kubectl patch validatingwebhookconfiguration <name> --type=json \
