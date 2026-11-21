@@ -575,6 +575,7 @@ _MODEL = "//devinfra/js/debundle/x/split_proof/experiments/model"
 
 js_test(
     name = "corejs_differential_test",
+    size = "medium",
     args = [
         "--count",
         "12",
@@ -585,7 +586,11 @@ js_test(
         _MODEL + ":sources",
         "//:node_modules/acorn",
         "//devinfra/js/debundle/x/split_proof/lean:corejs",
+        "//devinfra/js/debundle/x/split_proof/lean:evalorder",
     ],
     entry_point = _MODEL + ":differential",
-    env = {"COREJS": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:corejs)"},
+    env = {
+        "COREJS": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:corejs)",
+        "EVALORDER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:evalorder)",
+    },
 )

@@ -1,11 +1,22 @@
 // The front end of the CoreJS model (`lean/Experiments/CoreJS`): acorn's tree for a module, as the model's syntax.
 //
-//   node to_core.mjs [--allow-host] program.mjs     one line of JSON on stdout: the program in postfix tokens
+//   node to_core.mjs [--allow-host] program.mjs     one line of JSON on stdout: the program, with the modules it imports
 //
-// The output is a JSON array of tokens `[tag, operand…]` in postfix order: the parts of a tree come before its token
-// (`Decode.lean` reads it with a stack). Anything outside the fragment is refused with the type of the node. So is a
-// name the program does not declare and the host defines (`Math`, `JSON`, `Error`, …): the model says nothing about what
-// it holds. `allowHost` lets those through as host values, to test that the model then stops with "unknown".
+// The statements of a module are a JSON array of tokens `[tag, operand…]` in postfix order: the parts of a tree come
+// before its token (`Decode.lean` reads it with a stack). A program is `{entry, modules}`, each module with its
+// `import`s, its exports, its tokens and the identity of each of its statements.
+//
+// Modules: `import { a as b } from "./m.mjs"`, `import d from`, a bare `import`, `export { a as b }`, `export` before a
+// declaration and `export default`. Refused: `import * as`, `export … from`, import attributes, a name written as a
+// string, and a module that is not a relative path.
+//
+// Identities: the top-level statements of a file are numbered in order, a declaration list counting once for each
+// name, an `import` not at all. `lowering/dump_core.mjs` numbers the statements of a bundle without imports the same
+// way, and `ids` gives a file other numbers: the ones its statements had in the bundle they were taken from.
+//
+// Anything outside the fragment is refused with the type of the node. So is a name the program does not declare and
+// the host defines (`Math`, `JSON`, `Error`, …): the model says nothing about what it holds. `allowHost` lets those
+// through as host values, to test that the model then stops with "unknown".
 //
 // `**` is refused: the specification leaves its result to the implementation, and the C library's `pow` gives another
 // last bit than V8's for some operands.
@@ -13,6 +24,7 @@
 // The names of functions and classes (`fn.name`) are decided here, as the specification's NamedEvaluation does, and a
 // program that would compute one at run time (a function under a computed key) is refused.
 import { readFileSync } from "node:fs";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "acorn";
 
@@ -77,6 +89,7 @@ function varNames(statements) {
         if (s.kind === "var") for (const d of s.declarations) if (d.id.type === "Identifier") names.push(d.id.name);
         break;
       case "ExportNamedDeclaration":
+      case "ExportDefaultDeclaration":
         visit(s.declaration);
         break;
       case "IfStatement":
@@ -108,24 +121,39 @@ function varNames(statements) {
 function lexicalNames(statements) {
   const names = [];
   for (const statement of statements) {
-    const s = statement.type === "ExportNamedDeclaration" && statement.declaration ? statement.declaration : statement;
+    const exported =
+      (statement.type === "ExportNamedDeclaration" || statement.type === "ExportDefaultDeclaration") &&
+      statement.declaration;
+    const s = exported || statement;
     if (s.type === "VariableDeclaration" && s.kind !== "var") {
       for (const d of s.declarations) if (d.id.type === "Identifier") names.push(d.id.name);
-    } else if (s.type === "FunctionDeclaration" || s.type === "ClassDeclaration") names.push(s.id.name);
+    } else if ((s.type === "FunctionDeclaration" || s.type === "ClassDeclaration") && s.id) names.push(s.id.name);
   }
   return names;
 }
 
+/** The name an `import` or `export` gives; one written as a string is refused. */
+const moduleName = (node) => (node.type === "Identifier" ? node.name : refuse(node, "a name written as a string"));
+
 /**
- * The program `source` (a module) as `{ tokens, units }`: the tokens, and how many statements of the model the top level
- * became. Throws `Refused` outside the fragment, and acorn's error on a syntax error.
+ * The module `source` as `{ tokens, units, ids, spans, imports, exports, numbered }`: the tokens, how many statements
+ * of the model the top level became, the identity of each and where its tokens begin and end,
+ * `{ source, names: [[exported, local]] }` for each `import`, `[public, local]` for each export, and how many
+ * statements of the file were numbered. The `k`-th numbered statement has the identity `ids[k]` when `ids` is given,
+ * else `idBase + k`.
+ * Throws `Refused` outside the fragment, and acorn's error on a syntax error.
  */
-export function toCore(source, { allowHost = false } = {}) {
+export function toCore(source, { allowHost = false, ids = null, idBase = 0 } = {}) {
   const ast = parse(source, { ecmaVersion: "latest", sourceType: "module" });
   const out = [];
   const emit = (...token) => out.push(token);
   const scopes = [];
   const declared = (name) => scopes.some((scope) => scope.has(name));
+  const imports = [];
+  const exports = [];
+  const importedNames = new Set();
+  /** Does `name` mean a binding that an `import` made? The module's scope is the outermost one. */
+  const isImport = (name) => importedNames.has(name) && !scopes.slice(1).some((scope) => scope.has(name));
   const within = (names, body) => {
     scopes.push(new Set(names));
     try {
@@ -221,7 +249,7 @@ export function toCore(source, { allowHost = false } = {}) {
     if (node.type === "Identifier") {
       if (!declared(node.name) && node.name in globalThis)
         refuse(node, `an assignment to the host global ${node.name}`);
-      emit("targetVar", node.name);
+      emit(isImport(node.name) ? "targetFrozen" : "targetVar", node.name);
     } else if (node.type === "MemberExpression") {
       member(node);
       emit("targetMember");
@@ -531,20 +559,123 @@ export function toCore(source, { allowHost = false } = {}) {
       case "EmptyStatement":
       case "DebuggerStatement":
         return 0;
-      case "ExportNamedDeclaration":
-        if (node.source) refuse(node, "an export from another module");
-        return node.declaration ? statement(node.declaration) : 0;
       default:
         return refuse(node, "outside the fragment");
     }
   }
 
-  const units = within([...varNames(ast.body), ...lexicalNames(ast.body)], () => statements(ast.body));
-  return { tokens: out, units };
+  function importDeclaration(node) {
+    if (node.attributes?.length) refuse(node, "an import attribute");
+    if (!/^\.\.?\//.test(node.source.value)) refuse(node, "an import of a module that is not a relative path");
+    const names = node.specifiers.map((specifier) => {
+      if (specifier.type === "ImportNamespaceSpecifier") refuse(specifier, "a namespace import");
+      const exported = specifier.type === "ImportDefaultSpecifier" ? "default" : moduleName(specifier.imported);
+      return [exported, specifier.local.name];
+    });
+    imports.push({ source: node.source.value, names });
+  }
+
+  const unitIds = [];
+  const spans = [];
+  let numbered = 0;
+  /** The next numbered statement of the file, which `emitStatement` writes: at most one statement of the model. */
+  function unit(node, emitStatement) {
+    const id = ids === null ? idBase + numbered : ids[numbered];
+    numbered++;
+    const start = out.length;
+    const count = emitStatement();
+    if (count > 1) refuse(node, "a top-level statement that is several statements of the model");
+    if (count === 1) {
+      if (id === undefined) refuse(node, "a statement without an identity");
+      unitIds.push(id);
+      spans.push([start, out.length]);
+    }
+  }
+
+  /** A top-level statement or declaration of the module. */
+  function topLevel(node) {
+    switch (node.type) {
+      case "ImportDeclaration":
+        return importDeclaration(node);
+      case "VariableDeclaration":
+        for (const d of node.declarations) unit(d, () => declaration({ ...node, declarations: [d] }));
+        return;
+      case "ExportNamedDeclaration":
+        if (node.source) refuse(node, "an export from another module");
+        if (node.attributes?.length) refuse(node, "an import attribute");
+        if (node.declaration) {
+          const d = node.declaration;
+          topLevel(d);
+          const own = d.type === "VariableDeclaration" ? d.declarations.map((x) => x.id.name) : [d.id.name];
+          for (const name of own) exports.push([name, name]);
+        } else {
+          for (const s of node.specifiers) exports.push([moduleName(s.exported), moduleName(s.local)]);
+          unit(node, () => 0);
+        }
+        return;
+      case "ExportDefaultDeclaration": {
+        const d = node.declaration;
+        if (d.type === "FunctionDeclaration") {
+          // a declared function is bound under its name; one without a name under `default`, which is its `name`
+          const name = d.id?.name ?? "default";
+          unit(node, () => {
+            func(d, name, "normal");
+            emit("funDecl");
+            return 1;
+          });
+          exports.push(["default", name]);
+        } else {
+          const isClass = d.type === "ClassDeclaration";
+          const name = isClass && d.id ? d.id.name : "*default*";
+          unit(node, () => {
+            if (isClass) classTree(d, d.id?.name ?? "default");
+            else named(d, "default");
+            emit("decl", isClass ? "let" : "const", name);
+            return 1;
+          });
+          exports.push(["default", name]);
+        }
+        return;
+      }
+      default:
+        return unit(node, () => statement(node));
+    }
+  }
+
+  for (const node of ast.body)
+    if (node.type === "ImportDeclaration") for (const s of node.specifiers) importedNames.add(s.local.name);
+  within([...varNames(ast.body), ...lexicalNames(ast.body), ...importedNames], () => ast.body.forEach(topLevel));
+  return { tokens: out, units: unitIds.length, ids: unitIds, spans, imports, exports, numbered };
+}
+
+/**
+ * The program that starts at the file `entry`, with every module it reaches: `{ entry, modules }` as `Decode.lean`
+ * reads it. A module's name is its path from the directory of the entry. `ids[name]` gives the identities of the
+ * statements of that module; without it the statements are numbered on through the modules, in the order they are read.
+ */
+export function toCoreProgram(entry, { allowHost = false, ids = {} } = {}) {
+  const root = path.dirname(entry);
+  const modules = [];
+  const seen = new Set();
+  let idBase = 0;
+  const load = (name) => {
+    if (seen.has(name)) return;
+    seen.add(name);
+    const source = readFileSync(path.join(root, name), "utf8");
+    const translated = toCore(source, { allowHost, ids: ids[name] ?? null, idBase });
+    idBase += translated.numbered;
+    const imports = translated.imports.map((i) => ({
+      source: path.posix.join(path.posix.dirname(name), i.source),
+      names: i.names,
+    }));
+    modules.push({ ...translated, name, imports });
+    for (const i of imports) load(i.source);
+  };
+  load(path.basename(entry));
+  return { entry: path.basename(entry), modules };
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const rest = process.argv.slice(2).filter((a) => a !== "--allow-host");
-  const { tokens } = toCore(readFileSync(rest[0], "utf8"), { allowHost: process.argv.includes("--allow-host") });
-  console.log(JSON.stringify(tokens));
+  console.log(JSON.stringify(toCoreProgram(rest[0], { allowHost: process.argv.includes("--allow-host") })));
 }

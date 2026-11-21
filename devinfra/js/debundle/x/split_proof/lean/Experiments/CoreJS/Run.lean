@@ -5,9 +5,10 @@ import Experiments.CoreJS.Eval
 # CoreJS: the `corejs` executable
 
 `corejs programs.jsonl [--fuel N]` runs each line, a program as `to_core.mjs` writes it, and prints one line for it:
-`{"out": […], "end": "normal" | "throw" | "unknown" | "fuel" | "malformed", "detail": …, "region": …}`. `out` has one
-entry for each `console.log`. `detail` describes a thrown value as `differential.mjs` describes Node's, or says which
-unknown code the run reached; `region` is 1 + the index of the unit it ended in. `corejs --host-names` prints the members the model gives the host's prototypes.
+`{"out": […], "end": "normal" | "throw" | "unknown" | "fuel" | "malformed", "detail": …, "region": …, "order": […]}`.
+`out` has one entry for each `console.log`. `detail` describes a thrown value as `differential.mjs` describes Node's, or
+says which unknown code the run reached; `region` is 1 + the identity of the statement it ended in; `order` is the
+order in which the modules run. `corejs --host-names` prints the members the model gives the host's prototypes.
 -/
 
 open Lean (Json)
@@ -24,21 +25,25 @@ def describe (s : State) : Val → String
   | .obj a => if isCallable s (.obj a) then "function" else "object"
   | .error .type _ => "TypeError"
   | .error .reference _ => "ReferenceError"
+  | .error .syntax _ => "SyntaxError"
   | .host _ => "host"
 
-/-- `s`: the state the run ended in. Its region says where: 0 before the first unit, `j + 1` in unit `j`. -/
-def report (s : State) (ending detail : String) : String :=
-  (Json.mkObj [("out", Json.arr (s.out.map Json.str)), ("end", ending), ("detail", detail), ("region", s.region)]).compress
+/-- `s`: the state the run ended in. Its region says where: 0 outside every statement, `i + 1` in the statement
+with identity `i`. -/
+def report (order : List String) (s : State) (ending detail : String) : String :=
+  (Json.mkObj [("out", Json.arr (s.out.map Json.str)), ("end", ending), ("detail", detail), ("region", s.region),
+    ("order", Json.arr (order.toArray.map Json.str))]).compress
 
 def runLine (fuel : Nat) (line : String) : String :=
   match Json.parse line >>= Decode.program with
-  | .error msg => report (initialState 0) "malformed" msg
+  | .error msg => report [] (initialState 0) "malformed" msg
   | .ok program =>
+    let order := program.evalOrder
     match runProgram fuel program with
-    | .ok () s => report s "normal" ""
-    | .throw v s => report s "throw" (describe s v)
-    | .unknown why s => report s "unknown" why
-    | .fuel => report (initialState 0) "fuel" ""
+    | .ok () s => report order s "normal" ""
+    | .throw v s => report order s "throw" (describe s v)
+    | .unknown why s => report order s "unknown" why
+    | .fuel => report order (initialState 0) "fuel" ""
 
 def main (args : List String) : IO UInt32 := do
   match args with

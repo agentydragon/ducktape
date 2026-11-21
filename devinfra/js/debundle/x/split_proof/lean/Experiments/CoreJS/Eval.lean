@@ -6,7 +6,7 @@ import Experiments.CoreJS.Value
 Total functions, by recursion on a bound `fuel` on the depth of the evaluation: every rule spends one unit on each
 part it evaluates. A program that needs more ends in `Res.fuel`.
 
-A scope's bindings are made when the scope is entered (a block, a function body, the program): `var` names start as
+A scope's bindings are made when the scope is entered (a block, a function body; for a module, when the program is linked): `var` names start as
 `undefined`, `let`, `const` and class names start uninitialized, and function declarations are made right away. A
 declaration statement then only gives its binding a value.
 -/
@@ -23,14 +23,17 @@ inductive Flow where
 /-- What an assignment writes to. -/
 inductive Ref where
   | name (x : Name)
+  /-- A name that an `import` binds. -/
+  | frozen (x : Name)
   | prop (base key : Val)
 
 def getRef (call : Call) (env : Env) : Ref → M Val
-  | .name x => readVar env x
+  | .name x | .frozen x => readVar env x
   | .prop base key => getProp call base key
 
 def putRef (call : Call) (env : Env) : Ref → Val → M Unit
   | .name x, v => writeVar env x v
+  | .frozen _, _ => throwErr .type "assignment to constant variable"
   | .prop base key, v => setProp call base key v
 
 /-- The scope the body of a function or a class sees: with a binding for its own name, if it has one (`self`). -/
@@ -197,6 +200,7 @@ def evalArgs : Nat → Env → List Expr → M (List Val)
 def evalTarget : Nat → Env → Target → M Ref
   | 0, _, _ => outOfFuel
   | _ + 1, _, .var x => pure (.name x)
+  | _ + 1, _, .frozen x => pure (.frozen x)
   | n + 1, env, .member o k => do
     let base ← evalExpr n env o
     pure (.prop base (← evalExpr n env k))
@@ -367,39 +371,164 @@ end
 
 /-! ## Programs
 
-A program is its top-level statements, the units. Unit `j` allocates in region `j + 1`; region 0 holds the host's
-objects and what entering the program makes (the top-level bindings and the declared functions).
+**Regions.** The statement with identity `i` owns region `i + 1`: its bindings and, for a function declaration, its
+function are made there when the program is linked, and what it allocates when it runs goes there too. Region 0 holds
+the host's objects. So where a statement allocates depends on its identity and on nothing else: not on its module, and
+not on what ran before it.
+
+**Linking** makes every binding of every loaded module, then the scope of each module, then the declared functions,
+before any statement runs. It visits the statements of all modules in the order of their identities. No program code
+runs while a program is linked, so the order cannot be observed; this one does not depend on how the statements are
+divided into modules.
+
+**Evaluation** follows the specification for modules without a top-level `await`: depth-first over the `import`s in
+source order, a module after the modules it imports, a module that was entered already skipped (that is how a cycle
+ends). The order does not depend on what the modules do, so it is computed first (`Program.evalOrder`).
 -/
 
-def initialState (units : Nat) : State where
-  heap := #[builtins] ++ Array.replicate units #[]
-  cells := Array.replicate (units + 1) #[]
+def initialState (regions : Nat) : State where
+  heap := #[builtins] ++ Array.replicate regions #[]
+  cells := Array.replicate (regions + 1) #[]
   region := 0
   out := #[]
 
-/-- The scope of the program: `this` is `undefined` in a module. -/
-def enterProgram (ss : List Stmt) : M Env := do
-  let vars := (varNamesOf ss).eraseDups.map fun x => (x, { value := some .undef, mutable := true : Binding })
-  enterBlock (← declare { vars := [], this := .undef } vars) ss
+def Program.find (P : Program) (name : String) : Option Module := P.modules.find? (·.name == name)
 
-/-- Run unit `j` of the program in its own region. -/
-def runUnit (fuel : Nat) (env : Env) (ss : List Stmt) (j : Nat) : M Flow := do
-  match ss[j]? with
-  | none => pure .normal
-  | some unit =>
-    modifyState fun s => { s with region := j + 1 }
-    let flow ← execStmt fuel env unit
-    modifyState fun s => { s with region := 0 }
-    pure flow
+/-- One step of the order: `entered` are the modules visited so far, `done` the ones whose turn has come, in order.
+`fuel` bounds the depth; the count of modules and one more is enough. -/
+def Program.visit (P : Program) : Nat → String → List String × List String → List String × List String
+  | 0, _, st => st
+  | fuel + 1, m, (entered, done) =>
+    if entered.contains m then (entered, done) else
+      let sources := ((P.find m).map fun md => md.imports.map (·.source)).getD []
+      let st := sources.foldl (fun st s => P.visit fuel s st) (m :: entered, done)
+      (st.1, st.2 ++ [m])
 
-/-- Run the units in `order`. Each has `fuel` for itself. -/
-def runUnits (fuel : Nat) (env : Env) (ss : List Stmt) : List Nat → M Unit
+/-- The order in which the modules run. -/
+def Program.evalOrder (P : Program) : List String := (P.visit (P.modules.length + 1) P.entry ([], [])).2
+
+/-- The modules the entry reaches, in the order they run. -/
+def Program.loaded (P : Program) : List Module := P.evalOrder.filterMap P.find
+
+/-- A top-level statement of a loaded module, with its identity and the name of its module. -/
+structure Top where
+  id : Nat
+  home : String
+  stmt : Stmt
+
+/-- The top-level statements of the loaded modules, in the order of their identities. -/
+def Program.tops (P : Program) : List Top :=
+  (P.loaded.flatMap fun m => m.body.map fun (id, stmt) => { id, home := m.name, stmt : Top }).mergeSort
+    fun a b => decide (a.id ≤ b.id)
+
+/-- One more than the largest identity: the regions a run needs besides region 0. -/
+def Program.regions (P : Program) : Nat :=
+  (P.modules.flatMap fun m => m.body.map (·.1 + 1)).foldl max 0
+
+/-- Run `m` in the region of the statement with identity `id`. A run that does not end well stays there. -/
+def inRegion {α : Type} (id : Nat) (m : M α) : M α := do
+  modifyState fun s => { s with region := id + 1 }
+  let a ← m
+  modifyState fun s => { s with region := 0 }
+  pure a
+
+/-- The bindings a top-level statement declares: its `var` names start as `undefined`, the others uninitialized. -/
+def Stmt.bindings (s : Stmt) : List (Name × Binding) :=
+  ((varNamesOf [s]).eraseDups.map fun x => (x, { value := some .undef, mutable := true })) ++
+    (lexDecls [s]).map fun (x, mutable) => (x, { value := none, mutable })
+
+/-- The bindings of each statement, made in its region: its identity with its names and where they are. -/
+def declareTops : List Top → M (List (Nat × List (Name × Addr)))
+  | [] => pure []
+  | t :: rest => do
+    let frame ← inRegion t.id (newCells t.stmt.bindings)
+    let frames ← declareTops rest
+    pure ((t.id, frame) :: frames)
+
+/-- The names a module declares itself, given the bindings of every statement. A name that two statements declare
+(`var`) means the first one's binding. -/
+def Module.scope (frames : List (Nat × List (Name × Addr))) (m : Module) : List (Name × Addr) :=
+  m.body.flatMap fun (id, _) => (frames.lookup id).getD []
+
+/-- What `import { name as … } from source` binds: the binding of the name that `source` exports as `name`, itself.
+Importing a name that the module does not export is an error of the program, found before anything runs. -/
+def Program.importCell (P : Program) (frames : List (Nat × List (Name × Addr))) (source : String) (name : Name) :
+    Except Abort Addr :=
+  match P.find source with
+  | none => .error (.unknown "model: an import of a module that is not in the program")
+  | some m =>
+    match m.exports.lookup name with
+    | none => .error (.error .syntax s!"the module {source} does not export {name}")
+    | some x =>
+      match (m.scope frames).lookup x with
+      | some a => pure a
+      | none => .error (.unknown "an export of a name that the module imports")
+
+def Program.importCells (P : Program) (frames : List (Nat × List (Name × Addr))) (source : String) :
+    List (Name × Name) → Except Abort (List (Name × Addr))
+  | [] => pure []
+  | (name, x) :: rest => do
+    let a ← P.importCell frames source name
+    pure ((x, a) :: (← P.importCells frames source rest))
+
+/-- The bindings a module's `import`s give it, under their local names. -/
+def Program.imported (P : Program) (frames : List (Nat × List (Name × Addr))) :
+    List Import → Except Abort (List (Name × Addr))
+  | [] => pure []
+  | i :: rest => do
+    let cells ← if (P.find i.source).isSome then P.importCells frames i.source i.names else
+      .error (.unknown "model: an import of a module that is not in the program")
+    pure (cells ++ (← P.imported frames rest))
+
+/-- The scope of each module: what it declares and what it imports. `this` is `undefined` in a module. -/
+def Program.scopes (P : Program) (frames : List (Nat × List (Name × Addr))) : List Module → Except Abort (List (Module × Env))
+  | [] => pure []
+  | m :: rest => do
+    let imported ← P.imported frames m.imports
+    pure ((m, { vars := m.scope frames ++ imported, this := .undef }) :: (← P.scopes frames rest))
+
+/-- A declared function gets its value, in the region of its declaration and the scope of its module. -/
+def initFunction (scopes : List (Module × Env)) (t : Top) : M Unit :=
+  match t.stmt, scopes.find? (·.1.name == t.home) with
+  | .funDecl f, some (_, env) => inRegion t.id (do initVar env f.name (← makeFunc env f))
+  | _, _ => pure ()
+
+def initFunctions (scopes : List (Module × Env)) : List Top → M Unit
   | [] => pure ()
-  | j :: rest => do
-    let _ ← runUnit fuel env ss j
-    runUnits fuel env ss rest
+  | t :: rest => do
+    initFunction scopes t
+    initFunctions scopes rest
 
-def runProgram (fuel : Nat) (ss : List Stmt) : Res Unit :=
-  (do runUnits fuel (← enterProgram ss) ss (List.range ss.length)) (initialState ss.length)
+/-- Is every identity in use once? The bindings of a statement are looked up by it. -/
+def checkIdentities (tops : List Top) : M Unit :=
+  if (tops.map (·.id)).Nodup then pure () else unknown "model: two statements have one identity"
+
+/-- Link the program: the loaded modules with their scopes, in the order they run. -/
+def link (P : Program) : M (List (Module × Env)) := do
+  let tops := P.tops
+  checkIdentities tops
+  let frames ← declareTops tops
+  let scopes ← lift (P.scopes frames P.loaded)
+  initFunctions scopes tops
+  pure scopes
+
+/-- Run a top-level statement in its region. -/
+def runUnit (fuel : Nat) (env : Env) (id : Nat) (s : Stmt) : M Flow := inRegion id (execStmt fuel env s)
+
+/-- Run the statements of a module in order. Each has `fuel` for itself. -/
+def runBody (fuel : Nat) (env : Env) : List (Nat × Stmt) → M Unit
+  | [] => pure ()
+  | (id, s) :: rest => do
+    let _ ← runUnit fuel env id s
+    runBody fuel env rest
+
+def runModules (fuel : Nat) : List (Module × Env) → M Unit
+  | [] => pure ()
+  | (m, env) :: rest => do
+    runBody fuel env m.body
+    runModules fuel rest
+
+def runProgram (fuel : Nat) (P : Program) : Res Unit :=
+  (do runModules fuel (← link P)) (initialState P.regions)
 
 end CoreJS
