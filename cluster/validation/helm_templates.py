@@ -1,19 +1,16 @@
 """Validate Helm templates can render without errors.
 
-Finds Cilium values files via runfiles and runs helm template dry-run.
+Finds the Cilium values file via runfiles and runs helm template dry-run.
 """
 
 from __future__ import annotations
 
 import asyncio
-import logging
 from pathlib import Path
 
 from python.runfiles import Runfiles
 
-logger = logging.getLogger(__name__)
-
-_CILIUM_VALUES_RLOCATIONS = ["ducktape/cluster/terraform/main/cilium-values.yaml"]
+_CILIUM_VALUES_RLOCATION = "ducktape/cluster/terraform/main/cilium-values.yaml"
 
 
 async def _exec(*args: str | Path) -> tuple[int, bytes, bytes]:
@@ -49,14 +46,12 @@ async def _ensure_cilium_repo(helm: Path) -> None:
 
 
 async def validate_helm_templates() -> list[str]:
-    """Validate all Cilium Helm templates. Returns list of error strings."""
+    """Validate the Cilium Helm template. Returns list of error strings."""
     root = Runfiles.CreateOrRaise().root()
     helm = root / "multitool/tools/helm/helm"
-    values_files = [root / rloc for rloc in _CILIUM_VALUES_RLOCATIONS]
-    if not values_files:
-        return []
-
     await _ensure_cilium_repo(helm)
-
-    results = await asyncio.gather(*[_validate_helm_template(helm, vf) for vf in values_files], return_exceptions=True)
-    return [str(e) for e in results if isinstance(e, HelmTemplateError)]
+    try:
+        await _validate_helm_template(helm, root / _CILIUM_VALUES_RLOCATION)
+    except HelmTemplateError as exc:
+        return [str(exc)]
+    return []
