@@ -1,23 +1,12 @@
-load("@rules_tf//tf:def.bzl", "tf_module", "tf_providers_versions")
+load("//devinfra/tf:defs.bzl", "tf_module")
 
-tf_providers_versions(
-    name = "providers",
+tf_module(
+    name = "forgejo-agentydragon-repos",
     providers = {
         "forgejo": "svalabs/forgejo:~>1.5",
         "kubernetes": "hashicorp/kubernetes:~>3.0",
         "random": "hashicorp/random:~>3.9.0",
     },
-    tf_version = "1.12.6",
-)
-
-tf_module(
-    name = "forgejo-agentydragon-repos",
-    providers = [
-        "forgejo",
-        "kubernetes",
-        "random",
-    ],
-    providers_versions = ":providers",
 )
 
 # Native HCL assembled by cdk8s into the Inline Workspace.
