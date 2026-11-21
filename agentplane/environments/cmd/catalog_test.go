@@ -11,10 +11,10 @@ import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
+	"github.com/agentydragon/ducktape/agentplane/testing/testscheme"
 	"google.golang.org/grpc"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -52,13 +52,6 @@ func TestConfiguredHarnessNamesRoundTripThroughEnvironmentService(t *testing.T) 
 		t.Fatalf("loadConfig returned noncanonical harness catalog: %#v", got)
 	}
 
-	scheme := runtime.NewScheme()
-	if err := api.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
-	}
-	if err := corev1.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
-	}
 	sandboxUID := types.UID("sandbox-uid")
 	controller := true
 	sandbox := &api.Sandbox{
@@ -71,7 +64,7 @@ func TestConfiguredHarnessNamesRoundTripThroughEnvironmentService(t *testing.T) 
 			APIVersion: api.GroupVersion.String(), Kind: "Sandbox", Name: "workspace", UID: sandboxUID, Controller: &controller,
 		}},
 	}}
-	objects := clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(sandbox, executionAccount).Build()
+	objects := clientfake.NewClientBuilder().WithScheme(testscheme.New(t)).WithObjects(sandbox, executionAccount).Build()
 	lifecycleManager, err := resume.NewManager(lifecycle.Options{
 		Namespace: "agentplane", Objects: objects,
 	})

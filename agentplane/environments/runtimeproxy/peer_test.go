@@ -7,9 +7,9 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
+	"github.com/agentydragon/ducktape/agentplane/testing/testscheme"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
@@ -73,13 +73,7 @@ func testVMRuntimeOwnership(t *testing.T, mode peertls.SecurityMode) {
 				Status: corev1.PodStatus{Phase: corev1.PodRunning, PodIP: "192.0.2.90", Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}}},
 			}
 			change(sandbox, pod, vmi, vm)
-			scheme := runtime.NewScheme()
-			for _, add := range []func(*runtime.Scheme) error{corev1.AddToScheme, sandboxapi.AddToScheme, kubevirtv1.AddToScheme} {
-				if err := add(scheme); err != nil {
-					t.Fatal(err)
-				}
-			}
-			objects := fake.NewClientBuilder().WithScheme(scheme).WithObjects(sandbox, vmi, vm, pod).Build()
+			objects := fake.NewClientBuilder().WithScheme(testscheme.New(t)).WithObjects(sandbox, vmi, vm, pod).Build()
 			g := &Server{
 				config: Config{Namespace: sandbox.Namespace, RunnerSecurity: peertls.Security{Mode: mode}}, objects: objects,
 			}
