@@ -25,12 +25,6 @@ class BindMount(BaseModel, frozen=True):
         return f"{self.host_path}:{self.container_path}:{self.mode}"
 
 
-# -- CwdPolicy: controls how the `cwd` field is exposed in the exec tool schema --
-#
-# Discriminated union via Pydantic's tagged union support. JSON-serializable
-# so it can be embedded in ContainerExecServerConfig.
-
-
 class ModelChooses(BaseModel, frozen=True):
     """Model picks the cwd via a required tool input field."""
 
@@ -93,9 +87,6 @@ class ContainerExecServerConfig(BaseModel):
             "Tty": False,
             "HostConfig": host_config,
         }
-
-
-# -- Container info (for MCP resource responses) --
 
 
 class ContainerImageInfo(BaseModel):

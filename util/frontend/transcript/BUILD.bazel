@@ -57,11 +57,6 @@ ts_library(
     name = "history_diagnostics",
     srcs = ["history_diagnostics.ts"],
     tsconfig = "//util/frontend:tsconfig",
-    visibility = [
-        "//agentplane:__subpackages__",
-        "//ai_session_archive/frontend:__pkg__",
-        "//devinfra/claude/session_export/frontend:__pkg__",
-    ],
 )
 
 ts_library(
@@ -71,7 +66,6 @@ ts_library(
     visibility = [
         "//agentplane:__subpackages__",
         "//ai_session_archive/frontend:__pkg__",
-        "//devinfra/claude/session_export/frontend:__pkg__",
     ],
     deps = [":history_diagnostics"],
 )

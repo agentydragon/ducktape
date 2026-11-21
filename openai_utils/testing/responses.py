@@ -95,19 +95,6 @@ class ResponsesFactory(ItemFactory):
     def __init__(self) -> None:
         super().__init__(call_id_prefix="test")
 
-    def make_assistant_message(self, text: str) -> ResponsesResult:
-        return ResponsesResult(
-            id="resp_msg",
-            usage=ResponseUsage(
-                input_tokens=0,
-                input_tokens_details=InputTokensDetails(cached_tokens=0, cache_write_tokens=0),
-                output_tokens=1,
-                output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
-                total_tokens=1,
-            ),
-            output=[self.assistant_text(text)],
-        )
-
     def make(self, *items: ResponseOutItem) -> ResponsesResult:
         return _make_response(*items)
 
@@ -173,12 +160,8 @@ class GeneratorMock(ItemFactory, Model):
         if result is None:
             raise RuntimeError("Generator yielded None when response expected")
         if isinstance(result, list):
-            return self._make(*result)
-        return self._make(result)
-
-    def _make(self, *items: ResponseOutItem) -> ResponsesResult:
-        """Create ResponsesResult from items."""
-        return _make_response(*items)
+            return _make_response(*result)
+        return _make_response(result)
 
 
 class DecoratorMock(GeneratorMock):

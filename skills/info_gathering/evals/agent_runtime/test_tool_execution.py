@@ -127,7 +127,7 @@ async def _run_malformed_json_test(mcp_tool_provider_echo, *first_turn_calls: Fu
     async def handle_request(req: ResponsesRequest) -> ResponsesResult:
         if len(req.input) == 1:
             return factory.make(*first_turn_calls)
-        return factory.make_assistant_message("I received an error")
+        return factory.make(factory.assistant_text("I received an error"))
 
     client = make_mock(handle_request)
     capture = TextCaptureHandler()
