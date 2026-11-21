@@ -49,24 +49,6 @@ def token_audiences(payload: dict[str, Any]) -> list[str]:
     return [aud] if isinstance(aud, str) else list(aud)
 
 
-def stamped_audiences(sops_file: Path) -> list[str] | None:
-    """Audiences from the plaintext `audiences_unencrypted` stamp, or None if absent.
-
-    Lets the freshness check notice an audience-expectation change without
-    decrypting the token (the rotator has no in-cluster age key).
-    """
-    return unencrypted_stamps(sops_file).get("audiences_unencrypted")
-
-
-def stamped_claims(sops_file: Path) -> dict[str, str] | None:
-    """Claims from the plaintext `claims_unencrypted` stamp, or None if absent.
-
-    Lets the freshness check notice a claim-expectation change (e.g. an Authentik
-    service account's email getting fixed) without decrypting the token.
-    """
-    return unencrypted_stamps(sops_file).get("claims_unencrypted")
-
-
 def mint_jwt(client: httpx.Client, rotation: Rotation) -> str:
     client_id = (rotation.credentials_dir / "client_id").read_text().strip()
     data = {"grant_type": "client_credentials", "scope": rotation.scopes}
@@ -169,14 +151,15 @@ def published_token_rejected(client: httpx.Client, name: str, out: K8sSecretOutp
 
 def rotate_one(client: httpx.Client, rotation: Rotation, config: Config) -> bool:
     """Mint + write a fresh token for one rotation. Returns True if it wrote."""
-    remaining = remaining_hours(rotation.sops_file)
+    stamps = unencrypted_stamps(rotation.sops_file)
+    remaining = remaining_hours(stamps)
     fresh = remaining is not None and remaining > config.rotate_below_hours
     # An audience expectation the stored token doesn't already satisfy forces a
     # re-mint regardless of remaining validity — otherwise adding an audience
     # wouldn't take effect until the (~44-day) expiry. Read from the plaintext
     # `audiences_unencrypted` stamp (no SOPS decryption needed).
     if fresh and rotation.expected_audiences:
-        stored = stamped_audiences(rotation.sops_file)
+        stored = stamps.get("audiences_unencrypted")
         if stored is None or not set(rotation.expected_audiences) <= set(stored):
             logger.info(
                 "%s: stored audiences %s do not cover expected %s; forcing re-mint",
@@ -189,7 +172,7 @@ def rotate_one(client: httpx.Client, rotation: Rotation, config: Config) -> bool
     # a stored token minted before an upstream Authentik fix landed would otherwise
     # keep being treated as fresh until its ~44-day expiry.
     if fresh and rotation.expected_claims:
-        stored_claims = stamped_claims(rotation.sops_file)
+        stored_claims = stamps.get("claims_unencrypted")
         if stored_claims is None or stored_claims != rotation.expected_claims:
             logger.info(
                 "%s: stored claims %s do not match expected %s; forcing re-mint",

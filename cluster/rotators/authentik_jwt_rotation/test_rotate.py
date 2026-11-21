@@ -1,13 +1,14 @@
 import base64
 import json
-import textwrap
 import urllib.parse
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
 import pytest_bazel
+import yaml
 from pydantic import ValidationError
 
 from cluster.rotators import sops
@@ -17,8 +18,6 @@ from cluster.rotators.authentik_jwt_rotation.rotate import (
     build_secret_manifest,
     mint_jwt,
     probe_rejects_token,
-    stamped_audiences,
-    stamped_claims,
     token_audiences,
 )
 
@@ -48,28 +47,6 @@ def test_token_audiences_normalizes_string_list_and_missing():
     assert token_audiences({"aud": "one"}) == ["one"]
     assert token_audiences({"aud": ["one", "two"]}) == ["one", "two"]
     assert token_audiences({}) == []
-
-
-@pytest.mark.parametrize(
-    ("read_stamp", "expected"), [(stamped_audiences, ["a", "b"]), (stamped_claims, {"email": "haku@allegedly.works"})]
-)
-def test_stamp_reader_returns_its_own_stamp_or_none(read_stamp, expected, tmp_path: Path):
-    f = tmp_path / "t.yaml"
-    f.write_text(
-        textwrap.dedent("""\
-            expires_unencrypted: "2030-01-01T00:00:00Z"
-            audiences_unencrypted:
-              - a
-              - b
-            claims_unencrypted:
-              email: haku@allegedly.works
-            jwt: abc
-            """)
-    )
-    assert read_stamp(f) == expected
-    f.write_text("jwt: abc\n")
-    assert read_stamp(f) is None
-    assert read_stamp(tmp_path / "absent.yaml") is None
 
 
 def test_build_secret_manifest_carries_token_exp_under_configured_keys():
@@ -261,6 +238,32 @@ def test_rotate_one_missing_token_key_forces_remint(monkeypatch, tmp_path: Path)
     seen: list[httpx.Request] = []
     assert rotate.rotate_one(_recording_client(200, seen), rotation, Config(rotations=[])) is True
     assert seen == []
+
+
+@pytest.mark.parametrize("stamp_present", [False, True])
+@pytest.mark.parametrize("covered", ["audience", "claim"])
+def test_rotation_uses_expected_claim_stamps(monkeypatch, tmp_path: Path, stamp_present: bool, covered: str):
+    rotation = _probed_rotation(tmp_path)
+    rotation.probe = None
+    claims: dict[str, Any] = {
+        "iss": rotation.expected_issuer,
+        "exp": 1_900_000_000,
+        "aud": "test-audience",
+        "email": "test-user@example.test",
+    }
+    stamps: dict[str, Any] = {"expires_unencrypted": "2030-01-01T00:00:00Z"}
+    if covered == "audience":
+        rotation.expected_audiences = ["test-audience"]
+        if stamp_present:
+            stamps["audiences_unencrypted"] = [claims["aud"]]
+    else:
+        rotation.expected_claims = {"email": claims["email"]}
+        if stamp_present:
+            stamps["claims_unencrypted"] = {"email": claims["email"]}
+    rotation.sops_file.write_text(yaml.safe_dump(stamps))
+    monkeypatch.setattr(rotate, "mint_jwt", lambda _client, _rotation: _make_jwt(claims))
+    monkeypatch.setattr(rotate, "write_sops_yaml", lambda **_kwargs: None)
+    assert rotate.rotate_one(_status_client(200), rotation, Config(rotations=[])) is (not stamp_present)
 
 
 if __name__ == "__main__":
