@@ -1,10 +1,10 @@
 # Central ClickHouse
 
 The Kubernetes resources and operator live in the `clickhouse` namespace. One
-shard with two replicated ClickHouse servers and a three-member Keeper quorum,
-all on the OVH HDD data tier. Each replica's PVC is node-local, so a node failure is tolerated
-while the other replica and the Keeper quorum stay available; permanent loss of a node's disk
-still needs a restore or manual rebuild.
+shard with two replicated ClickHouse servers on the OVH HDD data tier and a
+three-member Keeper quorum on the OVH SSD tier. Each replica's PVC is node-local,
+so a node failure is tolerated while the other replica and the Keeper quorum stay
+available; permanent loss of a node's disk still needs a restore or manual rebuild.
 
 The first tenant is `aiquota`:
 
@@ -49,9 +49,10 @@ and query profile. The schema Job creates the empty `langfuse` database; the
 Langfuse HelmRelease then runs Langfuse's own versioned table migrations with
 the dedicated `langfuse` user.
 
-Applications receive separate insert-only credentials; Grafana receives a
-read-only account. NetworkPolicy admits only those named consumers plus
-same-namespace administration and Alloy metrics scraping.
+Applications receive separate credentials that can write to their own database and
+apply its schema changes; Grafana receives a read-only account. NetworkPolicy admits
+only those named consumers plus same-namespace administration and Alloy metrics
+scraping.
 
 `public_coder_analytics` is a dedicated native ClickHouse reader for the
 Haku Console-managed public-coder agent. It can `SELECT` only the normalized

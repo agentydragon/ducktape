@@ -89,10 +89,10 @@ needs.
 
 ## Missing CiliumNetworkPolicy
 
-71% of namespaces lack network policies. Tracked in `cluster/docs/plan.md`.
+Most services lack network policies. Tracked in <../docs/plan.md> § "CiliumNetworkPolicy Rollout".
 
 **Proxy-mode services** missing the required NetworkPolicy restricting ingress
-to the authentik shared proxy outpost pod (per AGENTS.md):
+to the authentik shared proxy outpost pod (<../docs/sso.md> § "Proxy-mode NetworkPolicy"):
 proxmox.
 
 **Critical unprotected services** (no NetworkPolicy at all):
@@ -111,7 +111,7 @@ namespaces declare the same policy explicitly.
 A namespace declaring any policy of its own opts out of that default and must
 specify `controlledValues` for its container policies (`airlock`, `langfuse`).
 
-That exposed a second problem: **14 containers declared a memory limit below
+That exposed a second problem: **several containers declared a memory limit below
 what they actually use**, and only VPA silently raising the ceiling kept them
 alive. Each was raised to clear VPA's observed upper bound, tagged
 `TODO(vpa-memory-audit)` at the site. Raising them was the safe move, not
@@ -124,9 +124,6 @@ descending order of "that can't be right":
 - [ ] `forgejo` — 2Gi → 8Gi, VPA saw 3.24Gi. Git pack cache? Mirror sync?
 - [ ] `haku-console` server — 512Mi → 3Gi, VPA saw 1.29Gi for a static-file +
       API server.
-- [ ] `grocy-{sf,vallejo}` valkey — 128Mi → 384Mi, VPA saw 256Mi. Check the
-      eviction policy; this is a cache with apparently unbounded key growth.
-- [ ] `website` nginx — 64Mi → 192Mi, VPA saw 100Mi to serve static files.
 - [ ] Remaining, smaller: `grocy` mcp-base server (256Mi → 768Mi), `tana-mcp`
       firebase-resigner (128Mi → 256Mi), `tana-mcp-facade` server (256Mi →
       512Mi), `props` (1Gi → 1.5Gi), `activitywatch` readonly-proxy (64Mi →
@@ -145,18 +142,8 @@ Follow-up on the mechanism itself:
 Talos enforces `baseline` Pod Security Standards by default via PSA.
 Explicit `securityContext` on Deployments is defense-in-depth. Low urgency.
 
-Missing securityContext: ollama, devbot, grocy-sf, grocy-vallejo, proxmox-proxy,
-tana-mcp, mitmproxy, props, atuin.
-
-## Grocy MCP startup probe
-
-The Grocy MCP server (`grocy-mcp-server` deployment, instantiated per site in
-the `grocy-sf` and `grocy-vallejo` namespaces) crash-loops on first boot
-until Grocy receives its first HTTP request (which triggers database migrations).
-The MCP server tries to fetch Grocy's OpenAPI spec at startup, but Grocy returns
-errors until migrations complete. After a manual visit to the Grocy web UI,
-the MCP server starts successfully. Consider an init container or startup probe
-that pokes Grocy's `/login` endpoint before the MCP server starts.
+Missing securityContext: ollama, grocy-sf, grocy-vallejo, proxmox-proxy,
+tana-mcp, props, atuin.
 
 ## Attic cache retention
 
@@ -181,15 +168,15 @@ Agent self-exposure — an HTTPRoute in any namespace attaching to the public ga
 bypassing Authentik (`cluster/cdk8s/gateway.py`'s listeners are all `allowedRoutes:
 namespaces: from: All`) — is **already fenced**: the `restrict-agent-gateway-routes`
 ValidatingAdmissionPolicy denies route and Gateway writes in the agent namespaces, and
-`haku-sandbox-admin`/`claude-sandbox-admin` omit `httproutes`/`gateways` anyway. So the
-hole the agent-authored Haku UI (`haku/console/docs/containment.md`) relies on
-staying closed is closed. What's left is the gateway-layer belt-and-suspenders:
+`haku-sandbox-admin` and the `claude-sandbox` `admin` Role omit `httproutes`/`gateways`
+anyway. So the hole the agent-authored Haku UI (`haku/console/docs/containment.md`) relies
+on staying closed is closed. What's left is the gateway-layer belt-and-suspenders:
 
 - [ ] **Still want the `allowedRoutes` Selector eventually** (at the gateway layer
       itself, not only via a per-namespace deny). Deferred because:
-      (a) Cilium bug #42159 — per-listener `allowedRoutes` bleeds across listeners in
-      this setup (see `cluster/docs/plan.md`); (b) the kube-API routes live in the
-      built-in `default` namespace (and a flux-system route) with no in-repo `Namespace`
+      (a) Cilium bug [#42159](https://github.com/cilium/cilium/issues/42159) — per-listener
+      `allowedRoutes` bleeds across listeners in this setup; (b) the kube-API routes live in
+      the built-in `default` namespace (and a flux-system route) with no in-repo `Namespace`
       manifest to carry a selector label. Revisit if/when #42159 is fixed and there's a
       clean way to label those built-in namespaces — then switch listeners to
       `from: Selector` and the denylist becomes redundant.
@@ -263,12 +250,6 @@ already shows replays, the marginal-link canary), ECC, thermal/power violations.
 The agent-box VM configuration is parked (see
 <../parked/agent-box/README.md>). Revisit these follow-ups only if resuming it:
 
-- [ ] **Enable the attic substituter** on agent-box: the Nix wiring is tombstoned
-      in `cluster/parked/agent-box/nix/nixos.nix` +
-      `cluster/parked/agent-box/nix/home/common.nix`.
-      Flip it on once `attic-jwt-rotation` has minted+committed
-      `secrets/hosts/agent-box-attic.yaml` to devel (the path literal would
-      otherwise fail flake eval).
 - [ ] **`claude` agent user** on agent-box: same multi-user pattern as `codex`
       (the `agentUsers` list + a per-user HM module under
       `cluster/parked/agent-box/nix/home/`),
@@ -352,7 +333,7 @@ checked whether each reruns exactly when its inputs change. Reloader never rerun
 - [ ] Check which rerun mechanism each actually has against what it needs:
   - a template change, with `kustomize.toolkit.fluxcd.io/force` recreating the Job:
     reruns on a hash-suffixed ConfigMap or image change, never on an unhashed Secret;
-  - a versioned name (`clickhouse-aiquota-schema-v12`, `setup-gpt-oss-v9`): reruns only
+  - a versioned name (`clickhouse-aiquota-schema-vN`, `setup-gpt-oss-vN`): reruns only
     when someone remembers to bump it;
   - `ttlSecondsAfterFinished` plus Flux recreating the missing Job (the atuin and matrix
     provisioners): reruns every TTL whether or not anything changed;
