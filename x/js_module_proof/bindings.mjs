@@ -1115,6 +1115,15 @@ function statement(node) {
     "expected globalThis.record(binding)"
   );
   const arg = expr.arguments[0];
+  if (arg?.type === "Literal" && typeof arg.value === "bigint")
+    return { kind: "recordBigInteger", negative: false, magnitude: arg.value.toString() };
+  if (
+    arg?.type === "UnaryExpression" &&
+    arg.operator === "-" &&
+    arg.argument.type === "Literal" &&
+    typeof arg.argument.value === "bigint"
+  )
+    return { kind: "recordBigInteger", negative: arg.argument.value !== 0n, magnitude: arg.argument.value.toString() };
   if (
     arg?.type === "BinaryExpression" &&
     arg.operator === "/" &&
@@ -1538,6 +1547,8 @@ function leanStatement(item) {
       return ".recordPrimitive (.negativeZero)";
     case "recordSpecialNumber":
       return `.recordPrimitive (.${item.value})`;
+    case "recordBigInteger":
+      return `.recordPrimitive (.bigInteger ${item.negative} ${item.magnitude})`;
     case "variable":
     case "hoistedVariable":
       return `.${item.kind} ${str(item.name)} ${item.value}`;
@@ -1603,7 +1614,7 @@ export async function generateBindings(sourcePath, specPath, out) {
 }
 
 function execute(path, calls = []) {
-  const script = `const events=[];globalThis.record=v=>events.push(v===undefined?{undefined:true}:typeof v==='number'&&(Object.is(v,-0)||!Number.isFinite(v))?{number:Object.is(v,-0)?'-0':String(v)}:v);import(${str(pathToFileURL(resolve(path)).href)}).then(m=>{const exports=Object.keys(m);const results=${str(calls)}.map(call=>typeof call==='string'?m[call]():m[call.name](...call.args));console.log(JSON.stringify(${calls.length ? "{events,exports,results}" : "{events,exports}"}));});`;
+  const script = `const events=[];globalThis.record=v=>events.push(v===undefined?{undefined:true}:typeof v==='bigint'?{bigint:String(v)}:typeof v==='number'&&(Object.is(v,-0)||!Number.isFinite(v))?{number:Object.is(v,-0)?'-0':String(v)}:v);import(${str(pathToFileURL(resolve(path)).href)}).then(m=>{const exports=Object.keys(m);const results=${str(calls)}.map(call=>typeof call==='string'?m[call]():m[call.name](...call.args));console.log(JSON.stringify(${calls.length ? "{events,exports,results}" : "{events,exports}"}));});`;
   const child = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" });
   if (child.error || child.status !== 0) throw new Error(child.stderr || String(child.error));
   return JSON.parse(child.stdout);
@@ -1986,12 +1997,19 @@ theorem binding_export_difference :
         typeof value === "object" &&
         ["NaN", "Infinity", "-Infinity"].includes(value.number) &&
         Object.keys(value).length === 1;
+      const bigInteger = (value) =>
+        value &&
+        typeof value === "object" &&
+        typeof value.bigint === "string" &&
+        /^(?:0|[1-9]\d*|-[1-9]\d*)$(?![\s\S])/.test(value.bigint) &&
+        Object.keys(value).length === 1;
       if (
         !trace.events.every(
           (value) =>
             undefinedValue(value) ||
             negativeZero(value) ||
             specialNumber(value) ||
+            bigInteger(value) ||
             value === null ||
             typeof value === "boolean" ||
             supportedText(value) ||
@@ -2007,15 +2025,17 @@ theorem binding_export_difference :
               ? ".negativeZero"
               : specialNumber(value)
                 ? { NaN: ".notANumber", Infinity: ".positiveInfinity", "-Infinity": ".negativeInfinity" }[value.number]
-                : value === null
-                  ? ".nullValue"
-                  : typeof value === "boolean"
-                    ? `.boolean ${value}`
-                    : typeof value === "string"
-                      ? `.text ${leanText(value)}`
-                      : value < 0
-                        ? `.negativeNumber ${-value}`
-                        : `.number ${value}`
+                : bigInteger(value)
+                  ? `.bigInteger ${value.bigint.startsWith("-")} ${value.bigint.replace(/^-/, "")}`
+                  : value === null
+                    ? ".nullValue"
+                    : typeof value === "boolean"
+                      ? `.boolean ${value}`
+                      : typeof value === "string"
+                        ? `.text ${leanText(value)}`
+                        : value < 0
+                          ? `.negativeNumber ${-value}`
+                          : `.number ${value}`
         )
       );
     };

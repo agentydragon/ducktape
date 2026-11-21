@@ -17,7 +17,7 @@ def currentCalls (state : ExecutionState Unit) (count : Nat) : Option (List Nat)
   if state.error.isSome || state.cell.isNone then none else
     let result ← runExecution state (List.replicate count .readCell)
     pure ((result.events.drop state.events.length).filterMap (fun event =>
-      match event with | .number value => some value | .negativeNumber _ => none | .negativeZero => none | .notANumber => none | .positiveInfinity => none | .negativeInfinity => none | .text _ => none | .boolean _ => none | .nullValue => none | .undefined => none))
+      match event with | .number value => some value | .negativeNumber _ => none | .negativeZero => none | .notANumber => none | .positiveInfinity => none | .negativeInfinity => none | .bigInteger _ _ => none | .text _ => none | .boolean _ => none | .nullValue => none | .undefined => none))
 
 theorem combined_current_preserved (source output : Option (ExecutionState Unit))
     (same : source = output) (count : Nat) :

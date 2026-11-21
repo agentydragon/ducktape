@@ -75,7 +75,7 @@ theorem checked_trace_sound (modules : List EffectModule) (entry : Nat) (events 
    exhausted reply list means subsequent calls return normally. -/
 def runEffects {α : Type} (events : List String) (replies : List (Option α)) : List String × Option α :=
   match runExecution ⟨[], [], replies, none, [], none, []⟩ (events.map Operation.recordText) with
-  | some state => (state.events.filterMap (fun event => match event with | .text value => some value | .number _ => none | .negativeNumber _ => none | .negativeZero => none | .notANumber => none | .positiveInfinity => none | .negativeInfinity => none | .boolean _ => none | .nullValue => none | .undefined => none), state.error)
+  | some state => (state.events.filterMap (fun event => match event with | .text value => some value | .number _ => none | .negativeNumber _ => none | .negativeZero => none | .notANumber => none | .positiveInfinity => none | .negativeInfinity => none | .bigInteger _ _ => none | .boolean _ => none | .nullValue => none | .undefined => none), state.error)
   | none => ([], none)
 
 def outputBehavior {α : Type} (modules : List EffectModule) (entry : Nat)

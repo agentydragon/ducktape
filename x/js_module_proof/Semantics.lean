@@ -7,6 +7,7 @@ inductive Observation where
   | notANumber
   | positiveInfinity
   | negativeInfinity
+  | bigInteger (negative : Bool) (magnitude : Nat)
   | boolean (value : Bool)
   | nullValue
   | undefined

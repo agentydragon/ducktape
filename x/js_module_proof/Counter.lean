@@ -172,6 +172,7 @@ def counterOperation (state : State) (operation : Operation) : State × Option N
           | .notANumber => none
           | .positiveInfinity => none
           | .negativeInfinity => none
+          | .bigInteger _ _ => none
           | .text _ => none
           | .boolean _ => none
           | .nullValue => none
