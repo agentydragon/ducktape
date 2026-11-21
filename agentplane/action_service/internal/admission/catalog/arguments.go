@@ -49,9 +49,8 @@ type CompiledSchema struct {
 	gate   chan struct{}
 }
 
-// Validate rejects the whole validation when a regexp evaluation fails, even if `not`, `anyOf`, `if`, or
-// patternProperties would otherwise turn that match failure into acceptance. Waiting for the schema
-// and evaluating its matches share the budget; callers that wait too long fail closed.
+// Validate rejects the whole validation when a regexp evaluation fails. Waiting for the schema and evaluating
+// its matches share the same deadline.
 func (s *CompiledSchema) Validate(value any) error {
 	if s.gate == nil {
 		return s.schema.Validate(value)

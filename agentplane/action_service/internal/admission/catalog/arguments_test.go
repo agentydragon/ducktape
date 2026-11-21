@@ -54,6 +54,7 @@ func TestPatternTimeoutRejectsWholeValidation(t *testing.T) {
 	}{
 		{"not", fmt.Sprintf(`{"not":{"pattern":%q}}`, pattern), slow},
 		{"anyOf", fmt.Sprintf(`{"anyOf":[{"pattern":%q},{"type":"string"}]}`, pattern), slow},
+		{"oneOf", fmt.Sprintf(`{"oneOf":[{"pattern":%q},{"type":"string"}]}`, pattern), slow},
 		{"patternProperties", fmt.Sprintf(`{"type":"object","patternProperties":{%q:{"type":"integer"}}}`, pattern), map[string]any{slow: "not-an-integer"}},
 		{"if", fmt.Sprintf(`{"if":{"pattern":%q},"then":false,"else":true}`, pattern), slow},
 	}
