@@ -149,6 +149,7 @@ py_test(
         ":anthropic",
         ":conftest",
         "//:conftest",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -160,6 +161,7 @@ py_test(
         ":conftest",
         ":square",
         "//:conftest",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
