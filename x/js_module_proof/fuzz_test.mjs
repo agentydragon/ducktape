@@ -11,6 +11,20 @@ const { execute, independentSplit, makeCase, makeComposedCase, minimizeCase, run
 const { assessCorpus } = await import("./real_corpus.mjs");
 const shard = Number(process.env.TEST_SHARD_INDEX ?? 0);
 const shards = Number(process.env.TEST_TOTAL_SHARDS ?? 1);
+if (shards === 4 && shard === 1) {
+  const relay = await runFuzz({
+    seed: 51981,
+    start: 3,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "composed",
+    validateEvery: 1,
+  });
+  assert.equal(relay.reexportRelayCases, 1);
+  assert.equal(relay.reexportRelayGeneratedCases, 1);
+  assert.equal(relay.reexportRelayComparedCases, 1);
+  assert.equal(relay.reexportRelayProvedCases, 1);
+}
 assert.deepEqual(makeCase(123, 42), makeCase(123, 42));
 assert.notDeepEqual(makeCase(123, 42), makeCase(124, 42));
 const scopedCandidate = makeCase(123, 11);

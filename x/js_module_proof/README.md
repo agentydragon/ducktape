@@ -180,8 +180,12 @@ redeclare parameters. Nested or later function-scoped `var` declarations remain
 unsupported.
 Public exports must be functions. The entry module may rename an exported
 function, including under multiple public names and captured closures. A module assignment may set `aliasImports: true` to import dependencies through
-generated public aliases while retaining their original local names. Renamed
-reexports outside the entry module remain unsupported.
+generated public aliases while retaining their original local names. A non-entry
+module may relay bindings using `reexports: { "dependency.mjs": ["binding"] }`
+alongside that dependency in `imports`. Chains are resolved to their original
+declarations with a bounded search; missing owners and cycles are refused.
+Renamed reexports outside the entry module and aliased imports through relays
+remain unsupported.
 Source declarations have unique names, function
 writes must target a mutable local binding, and each module preserves its assigned
 statements' source order. Unsupported syntax, linking, cycles, or uninitialized

@@ -26,6 +26,59 @@ function cli(...args) {
 const models = (
   await Promise.all(["Semantics.lean", "Effects.lean", "Bindings.lean"].map((n) => readFile(join(here, n), "utf8")))
 ).join("\n");
+if (shard === 7) {
+  await writeFile(source, "let value = 4;\nfunction calculate(x) { return x + value; }\nexport { calculate };\n");
+  const relaySpec = {
+    kind: "bindings",
+    entry: "entry.mjs",
+    modules: {
+      "state.mjs": { imports: [], statements: [0] },
+      "first.mjs": { imports: ["state.mjs"], statements: [], reexports: { "state.mjs": ["value"] } },
+      "second.mjs": { imports: ["first.mjs"], statements: [], reexports: { "first.mjs": ["value"] } },
+      "logic.mjs": { imports: ["second.mjs"], statements: [1] },
+      "entry.mjs": { imports: ["logic.mjs"], statements: [] },
+    },
+  };
+  await writeFile(spec, JSON.stringify(relaySpec));
+  assert.equal(cli("generate", source, spec, out).result, "generated");
+  const proof = cli("validate", source, spec, out);
+  assert.equal(proof.result, "proved under assumptions", JSON.stringify(proof));
+  const calls = [{ name: "calculate", args: [3] }];
+  assert.deepEqual(execute(source, calls).results, [{ value: 7 }]);
+  assert.deepEqual(execute(join(out, "entry.mjs"), calls), execute(source, calls));
+  const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
+    encoding: "utf8",
+    input:
+      models +
+      proof.certificate +
+      `\ntheorem relay_owner : (resolveReference bindingModules 3 "value").map Prod.fst = some 0 := by decide\n#print axioms relay_owner\n`,
+  });
+  assert.equal(replay.status, 0, replay.stdout + replay.stderr);
+  assert.match(replay.stdout, /'relay_owner' does not depend on any axioms/);
+  const first = join(out, "first.mjs");
+  const text = await readFile(first, "utf8");
+  const entry = join(out, "entry.mjs");
+  const entryText = await readFile(entry, "utf8");
+  await writeFile(first, `${text}\nimport "./entry.mjs";\n`);
+  await writeFile(entry, entryText.replace("export { calculate }", "export { calculate as publicCalculate }"));
+  assert.match(cli("validate", source, spec, out).reason, /importing an entry module with renamed reexports/);
+  await writeFile(first, text);
+  await writeFile(entry, entryText);
+  await writeFile(first, text.replace('export { value } from "./state.mjs";', ""));
+  assert.notEqual(cli("validate", source, spec, out).result, "proved under assumptions");
+  await writeFile(first, text);
+  await writeFile(
+    join(out, "state.mjs"),
+    (await readFile(join(out, "state.mjs"), "utf8")).replace("value = 4", "value = 5")
+  );
+  const unsafeRelay = cli("validate", source, spec, out);
+  assert.equal(unsafeRelay.result, "unsafe", JSON.stringify(unsafeRelay));
+  assert.notDeepEqual(execute(join(out, "entry.mjs"), unsafeRelay.calls), execute(source, unsafeRelay.calls));
+  relaySpec.modules["first.mjs"].imports = ["second.mjs"];
+  relaySpec.modules["first.mjs"].reexports = { "second.mjs": ["value"] };
+  await writeFile(spec, JSON.stringify(relaySpec));
+  assert.equal(cli("generate", source, spec, join(root, "cycle-out")).result, "unknown");
+}
 if (shard === 0) {
   const modelCheck = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
     encoding: "utf8",

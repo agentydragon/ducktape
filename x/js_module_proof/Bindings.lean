@@ -206,10 +206,26 @@ def directExportMappings (module : BindingModule) : List (String × String) :=
 def importedMappings (imported : BindingImport) : List (String × String) :=
   if imported.links.isEmpty then imported.locals.map (fun name => (name, name)) else imported.links
 
+def localDeclaration (module : BindingModule) (name : String) : Option (Nat × BindingStmt) :=
+  (module.assignment.zip module.statements).find? (fun pair => declaredName pair.2 == some name)
+
+/- Follow explicit unrenamed reexports, bounded by the module count. A cycle
+   cannot manufacture an owner: without reaching a declaration it returns none. -/
+def resolveExportFuel (modules : List BindingModule) : Nat → Nat → String → String → Option (Nat × (Nat × BindingStmt))
+  | 0, _, _, _ => none
+  | fuel + 1, index, localName, publicName => do
+    let module ← elementAt modules index
+    let direct := if (directExportMappings module).contains (localName, publicName) then
+      (localDeclaration module localName).map (fun declaration => (index, declaration)) else none
+    match direct with
+    | some declaration => some declaration
+    | none => module.imports.findSome? (fun imported =>
+      if imported.reexports.contains publicName then
+        resolveExportFuel modules fuel imported.dependency localName publicName
+      else none)
+
 def ownsAliasedExport (modules : List BindingModule) (index : Nat) (localName publicName : String) : Bool :=
-  match elementAt modules index with
-  | none => false
-  | some module => (directExportMappings module).contains (localName, publicName) && localDefinition module localName
+  (resolveExportFuel modules (modules.length + 1) index localName publicName).isSome
 
 def ownsExport (modules : List BindingModule) (index : Nat) (name : String) : Bool :=
   ownsAliasedExport modules index name name
@@ -732,18 +748,13 @@ def publicNames (module : BindingModule) : List String :=
 def sourceDeclaration (source : List BindingStmt) (name : String) : Option (Nat × BindingStmt) :=
   ((List.range source.length).zip source).find? (fun pair => declaredName pair.2 == some name)
 
-def localDeclaration (module : BindingModule) (name : String) : Option (Nat × BindingStmt) :=
-  (module.assignment.zip module.statements).find? (fun pair => declaredName pair.2 == some name)
-
 def resolveReference (modules : List BindingModule) (index : Nat) (name : String) : Option (Nat × (Nat × BindingStmt)) := do
   let module ← elementAt modules index
   match localDeclaration module name with
   | some declaration => some (index, declaration)
   | none => module.imports.findSome? (fun imported => do
       let link ← (importedMappings imported).find? (fun link => link.1 == name)
-      let owner ← elementAt modules imported.dependency
-      if !(directExportMappings owner).contains link then none else
-        (localDeclaration owner name).map (fun declaration => (imported.dependency, declaration)))
+      resolveExportFuel modules (modules.length + 1) imported.dependency link.1 link.2)
 
 def referenceNames : BindingStmt → List String
   | .variable _ _ => []

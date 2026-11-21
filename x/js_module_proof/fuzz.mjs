@@ -1171,6 +1171,7 @@ export function makeComposedCase(seed, index) {
     ast,
     source: print(ast),
     grammar: "composed",
+    hasReexportRelay: index % 8 === 3,
     earlyVar,
     hasLocalVar,
     expectThrow: true,
@@ -1185,8 +1186,14 @@ export function makeComposedCase(seed, index) {
           imports: [],
           statements: Array.from({ length: prefix.length + globals.length }, (_, index) => index),
         },
+        ...(index % 8 === 3
+          ? { "relay.mjs": { imports: ["state.mjs"], statements: [], reexports: { "state.mjs": globals } } }
+          : {}),
+        ...(index % 16 === 11
+          ? { "relay2.mjs": { imports: ["relay.mjs"], statements: [], reexports: { "relay.mjs": globals } } }
+          : {}),
         "logic.mjs": {
-          imports: ["state.mjs"],
+          imports: [index % 16 === 11 ? "relay2.mjs" : index % 8 === 3 ? "relay.mjs" : "state.mjs"],
           aliasImports: index % 4 === 0,
           statements: functionNames.map((_, index) => prefix.length + globals.length + index),
         },
@@ -1569,6 +1576,10 @@ export async function runFuzz({
     importAliasGeneratedCases: 0,
     importAliasComparedCases: 0,
     importAliasProvedCases: 0,
+    reexportRelayCases: 0,
+    reexportRelayGeneratedCases: 0,
+    reexportRelayComparedCases: 0,
+    reexportRelayProvedCases: 0,
     varCases: 0,
     varGeneratedCases: 0,
     varComparedCases: 0,
@@ -1682,6 +1693,7 @@ export async function runFuzz({
       };
       visit(input.ast);
       if (hasVar) summary.varCases++;
+      if (input.hasReexportRelay && !input.independentSplit) summary.reexportRelayCases++;
       if (input.hasLocalVar) summary.localVarCases++;
       if (input.earlyVar) summary.earlyVarCases++;
       if (input.plannedEarlyVarReorder) summary.plannedEarlyVarReorderCases++;
@@ -1832,6 +1844,7 @@ export async function runFuzz({
       }
       if (input.invalidAssignment) throw new Error("invalid assignment unexpectedly accepted");
       summary.generated++;
+      if (input.hasReexportRelay && !input.independentSplit) summary.reexportRelayGeneratedCases++;
       if (hasVar) summary.varGeneratedCases++;
       if (modules.some((module) => module.aliasImports)) {
         const emitted = await Promise.all(
@@ -1872,6 +1885,7 @@ export async function runFuzz({
       const equal = JSON.stringify(before) === JSON.stringify(after);
       await writeFile(join(root, "node.json"), JSON.stringify({ before, after }, null, 2) + "\n");
       summary.compared++;
+      if (input.hasReexportRelay && !input.independentSplit) summary.reexportRelayComparedCases++;
       if (hasVar) summary.varComparedCases++;
       if (input.hasLocalVar) summary.localVarComparedCases++;
       if (input.earlyVar) {
@@ -1952,6 +1966,7 @@ export async function runFuzz({
         }
         if (verdict.result === "proved under assumptions") {
           summary.proved++;
+          if (input.hasReexportRelay && !input.independentSplit) summary.reexportRelayProvedCases++;
           if (hasVar) summary.varProvedCases++;
           if (input.hasLocalVar) summary.localVarProvedCases++;
           if (input.earlyVar) summary.earlyVarProvedCases++;

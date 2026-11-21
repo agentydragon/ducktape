@@ -1177,6 +1177,20 @@ function readSpec(spec, count) {
       "invalid imports or statement indices"
     );
     check(module.aliasImports === undefined || typeof module.aliasImports === "boolean", "invalid import alias option");
+    check(
+      module.reexports === undefined ||
+        (module.reexports && typeof module.reexports === "object" && !Array.isArray(module.reexports)),
+      "invalid reexport map"
+    );
+    for (const [dependency, bindings] of Object.entries(module.reexports ?? {}))
+      check(
+        name !== spec.entry &&
+          module.imports.includes(dependency) &&
+          Array.isArray(bindings) &&
+          bindings.every((binding) => typeof binding === "string") &&
+          new Set(bindings).size === bindings.length,
+        "invalid reexport declaration"
+      );
     assigned.push(...module.statements);
   }
   check(assigned.length === count && new Set(assigned).size === count, "assign every statement once");
@@ -1244,13 +1258,44 @@ function generateFiles(source, spec, names) {
       [...new Set(spec.modules[name].statements.flatMap((i) => references(source.statements[i].ast)))],
     ])
   );
+  const provides = (moduleName, binding, seen = new Set()) => {
+    if (defs.get(binding) === moduleName) return true;
+    if (seen.has(moduleName)) return false;
+    const next = new Set(seen).add(moduleName);
+    return Object.entries(spec.modules[moduleName].reexports ?? {}).some(
+      ([dependency, bindings]) => bindings.includes(binding) && provides(dependency, binding, next)
+    );
+  };
   const neededExports = new Set(source.exports);
+  for (const name of names) {
+    const declared = new Set();
+    for (const [dependency, bindings] of Object.entries(spec.modules[name].reexports ?? {}))
+      for (const binding of bindings) {
+        check(
+          !declared.has(binding) &&
+            defs.get(binding) !== name &&
+            defs.get(binding) !== spec.entry &&
+            provides(dependency, binding),
+          `invalid reexport for ${binding}`
+        );
+        declared.add(binding);
+        neededExports.add(binding);
+      }
+  }
+  const providers = Object.fromEntries(names.map((name) => [name, new Map()]));
   for (const name of names)
     for (const binding of referencesByModule[name]) {
       const owner = defs.get(binding);
       check(owner, `missing definition: ${binding}`);
       if (owner !== name) {
-        check(spec.modules[name].imports.includes(owner), `missing dependency for ${binding}`);
+        const dependencies = spec.modules[name].imports;
+        const provider = dependencies.includes(owner) ? owner : dependencies.find((dep) => provides(dep, binding));
+        check(provider, `missing dependency for ${binding}`);
+        check(
+          !spec.modules[name].aliasImports || provider === owner,
+          "aliased imports through reexports are unsupported"
+        );
+        providers[name].set(binding, provider);
         neededExports.add(binding);
       }
     }
@@ -1269,7 +1314,7 @@ function generateFiles(source, spec, names) {
   for (const name of names) {
     const module = spec.modules[name];
     const imports = module.imports.map((dep) => {
-      const bindings = referencesByModule[name].filter((binding) => defs.get(binding) === dep);
+      const bindings = referencesByModule[name].filter((binding) => providers[name].get(binding) === dep);
       const imported = bindings.map((binding) =>
         module.aliasImports ? `${generatedAliases.get(binding)} as ${binding}` : binding
       );
@@ -1299,10 +1344,13 @@ function generateFiles(source, spec, names) {
               return `export { ${local}${local === publicName ? "" : ` as ${publicName}`} }${suffix};`;
             })
         : [];
+    const relayed = Object.entries(module.reexports ?? {}).flatMap(([dependency, bindings]) =>
+      bindings.map((binding) => `export { ${binding} } from ${str(`./${dependency}`)};`)
+    );
     const internalAliases = [...aliasExports]
       .filter((binding) => defs.get(binding) === name)
       .map((binding) => `export { ${binding} as ${generatedAliases.get(binding)} };`);
-    result[name] = [...imports, ...declarations, ...internalAliases, ...reexports].join("\n") + "\n";
+    result[name] = [...imports, ...declarations, ...internalAliases, ...relayed, ...reexports].join("\n") + "\n";
   }
   return result;
 }
@@ -1498,6 +1546,12 @@ export async function validateBindings(sourcePath, specPath, out) {
     return { result: "unknown", reason: "scoped output function execution is not modeled" };
   if (actual.some((module, i) => names[i] !== spec.entry && module.aliasedReexport))
     return { result: "unknown", reason: "renamed reexports outside the entry module are unsupported" };
+  const entryIndex = names.indexOf(spec.entry);
+  if (
+    actual[entryIndex].aliasedReexport &&
+    actual.some((module) => module.imports.some((item) => item.dep === entryIndex))
+  )
+    return { result: "unknown", reason: "importing an entry module with renamed reexports is unsupported" };
   const terms = actual.map((module, i) => leanModule(module, spec.modules[names[i]].statements));
   const digest = (content) => createHash("sha256").update(content).digest("hex");
   const witnessPrefix = `\n-- Source SHA256: ${digest(text)}\n-- Output SHA256: ${names.map((name, i) => `${name}=${digest(files[i])}`).join(" ")}\ndef bindingSource : List BindingStmt := ${list(source.statements.map((item) => leanStatement(item.ast)))}\ndef bindingExports : List String := ${leanStrings(source.exports)}\ndef bindingPublicMappings : List (String × String) := ${leanMappings(source.mappings)}\ndef bindingOutputMappings : List (String × String) := ${leanMappings(actual[names.indexOf(spec.entry)].mappings)}\ndef bindingModules : List BindingModule := ${list(terms)}\ndef bindingEntry : Nat := ${names.indexOf(spec.entry)}\ntheorem binding_source_ready : (sourceBindingState bindingSource).isSome = true := by decide\ntheorem binding_output_ready : (outputBindingState bindingSource bindingModules bindingEntry).isSome = true := by decide\n#print axioms lexical_nearest_binding\n#print axioms accepted_reference_owner\n#print axioms binding_source_ready\n#print axioms binding_output_ready\n`;
