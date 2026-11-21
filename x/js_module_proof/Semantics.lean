@@ -35,6 +35,7 @@ inductive NumericExpr where
   | argumentsNil
   | argumentsCons (head tail : NumericExpr)
   | invoke (name : String) (parameters : List String) (arguments body : NumericExpr)
+  | invokeLocal (name : String) (parameters : List String) (arguments body : NumericExpr)
   deriving DecidableEq, Repr
 
 inductive Operation where
@@ -279,6 +280,15 @@ def evaluateExpression (locals globals : List (String × Nat)) : NumericExpr →
       if parameters.length == values.length then
         (evaluateExpression (parameters.zip values) globals body).map (fun result => ⟨args.locals, result.completion⟩)
       else none
+  | .invokeLocal _ parameters arguments body => do
+    let args ← evaluateArguments locals globals arguments
+    match args.completion with
+    | .error value => pure ⟨args.locals, .error value⟩
+    | .ok values =>
+      if parameters.length == values.length then
+        (evaluateExpression (parameters.zip values ++ args.locals) globals body).map
+          (fun result => ⟨result.locals.drop parameters.length, result.completion⟩)
+      else none
 
 def evaluateArguments (locals globals : List (String × Nat)) : NumericExpr → Option (ExpressionResult (List Nat))
   | .argumentsNil => some ⟨locals, .ok []⟩
@@ -308,6 +318,7 @@ def evaluateArguments (locals globals : List (String × Nat)) : NumericExpr → 
   | .raise _ => none
   | .raisePrimitive _ => none
   | .invoke _ _ _ _ => none
+  | .invokeLocal _ _ _ _ => none
 end
 
 /- Captured cells belong to the same execution state as module bindings, but
@@ -1563,4 +1574,179 @@ theorem two_distinct_captured_runs_complete_together {α : Type}
         leftDisjoint rightDisjoint leftFirstUnique rightFirstUnique leftSecondUnique rightSecondUnique
         leftOps rightOps operations left right leftFinal initial leftRun
     rw [resulting]
+    rfl
+
+/- A finite collection of corresponding environments. Distinct entries must
+   be disjoint, while repeated entries represent aliases of the same closure. -/
+abbrev CapturePair := List (String × String) × List (String × String)
+
+def capturePairsRelated {α : Type} (pairs : List CapturePair) (left right : ExecutionState α) : Prop :=
+  ∀ pair ∈ pairs, capturedStatesRelated pair.1 pair.2 left right
+
+def capturePairsUnique (pairs : List CapturePair) : Prop :=
+  ∀ pair ∈ pairs, CaptureKeysUnique pair.1 ∧ CaptureKeysUnique pair.2
+
+def capturePairsDisjoint (pairs : List CapturePair) : Prop :=
+  ∀ pair ∈ pairs, ∀ other ∈ pairs, pair ≠ other →
+    capturesDisjoint pair.1 other.1 ∧ capturesDisjoint pair.2 other.2
+
+instance {α : Type} [DecidableEq α] (pairs : List CapturePair) (left right : ExecutionState α) :
+    Decidable (capturePairsRelated pairs left right) := by
+  unfold capturePairsRelated
+  infer_instance
+
+instance (pairs : List CapturePair) : Decidable (capturePairsUnique pairs) := by
+  unfold capturePairsUnique
+  infer_instance
+
+instance (pairs : List CapturePair) : Decidable (capturePairsDisjoint pairs) := by
+  unfold capturePairsDisjoint
+  infer_instance
+
+inductive PairedCapturedListOperation (pairs : List CapturePair) : Operation → Operation → Prop where
+  | invoke (leftCapture rightCapture : List (String × String)) (parameters : List String)
+      (arguments : List Nat) (body : NumericExpr) : (leftCapture, rightCapture) ∈ pairs →
+      PairedCapturedListOperation pairs (.invokeCaptured leftCapture parameters arguments body)
+        (.invokeCaptured rightCapture parameters arguments body)
+
+theorem captured_pairs_step_simulates {α : Type} (pairs : List CapturePair)
+    (unique : capturePairsUnique pairs) (disjoint : capturePairsDisjoint pairs)
+    (left right leftNext : ExecutionState α) (leftOp rightOp : Operation)
+    (related : capturePairsRelated pairs left right) (operation : PairedCapturedListOperation pairs leftOp rightOp)
+    (leftStep : executeStep left leftOp = some leftNext) :
+    ∃ rightNext, executeStep right rightOp = some rightNext ∧ capturePairsRelated pairs leftNext rightNext := by
+  cases operation with
+  | invoke leftCapture rightCapture parameters arguments body member =>
+    have active := related (leftCapture, rightCapture) member
+    have distinct := unique (leftCapture, rightCapture) member
+    obtain ⟨rightNext, rightStep, nextActive⟩ := captured_step_simulates leftCapture rightCapture parameters arguments body
+      left right leftNext active
+      (distinct_writebacks_agree left.captured right.captured leftCapture rightCapture active.2.2.2.2.2.2
+        distinct.1 distinct.2) leftStep
+    refine ⟨rightNext, rightStep, ?_⟩
+    intro other otherMember
+    cases other with
+    | mk leftOther rightOther =>
+      by_cases same : (leftCapture, rightCapture) = (leftOther, rightOther)
+      · cases same
+        exact nextActive
+      · have separate := disjoint (leftCapture, rightCapture) member (leftOther, rightOther) otherMember same
+        have watched := (related (leftOther, rightOther) otherMember).2.2.2.2.2.2
+        have preserved := captured_step_preserves_pair leftCapture rightCapture leftOther rightOther parameters arguments body
+          left right leftNext rightNext active watched separate.1 separate.2 leftStep rightStep
+        exact capturedStates_related_with_environment leftCapture rightCapture leftOther rightOther leftNext rightNext
+          preserved.1 preserved.2
+
+theorem captured_pairs_sequence_simulates {α : Type} (pairs : List CapturePair)
+    (unique : capturePairsUnique pairs) (disjoint : capturePairsDisjoint pairs)
+    (leftOps rightOps : List Operation) (operations : RelatedOperations (PairedCapturedListOperation pairs) leftOps rightOps)
+    (left right leftFinal : ExecutionState α) (initial : capturePairsRelated pairs left right)
+    (leftRun : runExecution left leftOps = some leftFinal) :
+    ∃ rightFinal, runExecution right rightOps = some rightFinal ∧ capturePairsRelated pairs leftFinal rightFinal := by
+  apply runExecution_simulates (capturePairsRelated pairs) (PairedCapturedListOperation pairs) ?_
+    leftOps rightOps operations left right leftFinal initial leftRun
+  intro l r lo ro next related operation step
+  exact captured_pairs_step_simulates pairs unique disjoint l r next lo ro related operation step
+
+def swapCapturePair (pair : CapturePair) : CapturePair := (pair.2, pair.1)
+
+theorem map_member_forward {α β : Type} (f : α → β) (items : List α) (item : α)
+    (member : item ∈ items) : f item ∈ items.map f := by
+  induction member with
+  | head => exact .head _
+  | tail _ _ ih => exact .tail _ ih
+
+theorem map_member_backward {α β : Type} (f : α → β) (items : List α) (value : β)
+    (member : value ∈ items.map f) : ∃ item, item ∈ items ∧ f item = value := by
+  induction items with
+  | nil => cases member
+  | cons head tail ih =>
+    change value ∈ f head :: tail.map f at member
+    cases member with
+    | head => exact ⟨head, .head _, rfl⟩
+    | tail _ rest =>
+      obtain ⟨item, found, equal⟩ := ih rest
+      exact ⟨item, .tail _ found, equal⟩
+
+theorem swap_capture_pair_member (pairs : List CapturePair) (leftCapture rightCapture : List (String × String))
+    (member : (leftCapture, rightCapture) ∈ pairs) :
+    (rightCapture, leftCapture) ∈ pairs.map swapCapturePair :=
+  map_member_forward swapCapturePair pairs (leftCapture, rightCapture) member
+
+theorem swapped_capture_pairs_unique (pairs : List CapturePair) (unique : capturePairsUnique pairs) :
+    capturePairsUnique (pairs.map swapCapturePair) := by
+  intro target member
+  obtain ⟨pair, original, equal⟩ := map_member_backward swapCapturePair pairs _ member
+  rcases target with ⟨leftCapture, rightCapture⟩
+  cases pair with
+  | mk left right =>
+    change (right, left) = (leftCapture, rightCapture) at equal
+    cases equal
+    have result := unique (rightCapture, leftCapture) original
+    exact ⟨result.2, result.1⟩
+
+theorem swapped_capture_pairs_disjoint (pairs : List CapturePair) (disjoint : capturePairsDisjoint pairs) :
+    capturePairsDisjoint (pairs.map swapCapturePair) := by
+  intro target member otherTarget otherMember different
+  obtain ⟨pair, original, equal⟩ := map_member_backward swapCapturePair pairs _ member
+  obtain ⟨other, originalOther, equalOther⟩ := map_member_backward swapCapturePair pairs _ otherMember
+  rcases target with ⟨leftCapture, rightCapture⟩
+  rcases otherTarget with ⟨leftOther, rightOther⟩
+  cases pair with
+  | mk left right =>
+    cases other with
+    | mk otherLeft otherRight =>
+      change (right, left) = (leftCapture, rightCapture) at equal
+      change (otherRight, otherLeft) = (leftOther, rightOther) at equalOther
+      cases equal
+      cases equalOther
+      have notEqual : (rightCapture, leftCapture) ≠ (rightOther, leftOther) := by
+        intro same
+        cases same
+        exact different rfl
+      have result := disjoint (rightCapture, leftCapture) original (rightOther, leftOther) originalOther notEqual
+      exact ⟨result.2, result.1⟩
+
+theorem swapped_capture_pairs_related {α : Type} (pairs : List CapturePair) (left right : ExecutionState α)
+    (related : capturePairsRelated pairs left right) : capturePairsRelated (pairs.map swapCapturePair) right left := by
+  intro target member
+  obtain ⟨pair, original, equal⟩ := map_member_backward swapCapturePair pairs _ member
+  rcases target with ⟨leftCapture, rightCapture⟩
+  cases pair with
+  | mk l r =>
+    change (r, l) = (leftCapture, rightCapture) at equal
+    cases equal
+    exact captured_states_related_symmetric rightCapture leftCapture left right (related (rightCapture, leftCapture) original)
+
+theorem swapped_capture_pair_operations (pairs : List CapturePair) (leftOps rightOps : List Operation)
+    (operations : RelatedOperations (PairedCapturedListOperation pairs) leftOps rightOps) :
+    RelatedOperations (PairedCapturedListOperation (pairs.map swapCapturePair)) rightOps leftOps := by
+  induction operations with
+  | nil => exact .nil
+  | cons operation tail ih =>
+    cases operation with
+    | invoke leftCapture rightCapture parameters arguments body member =>
+      exact .cons (.invoke rightCapture leftCapture parameters arguments body
+        (swap_capture_pair_member pairs leftCapture rightCapture member)) ih
+
+theorem captured_pairs_runs_complete_together {α : Type} (pairs : List CapturePair)
+    (unique : capturePairsUnique pairs) (disjoint : capturePairsDisjoint pairs)
+    (leftOps rightOps : List Operation) (operations : RelatedOperations (PairedCapturedListOperation pairs) leftOps rightOps)
+    (left right : ExecutionState α) (initial : capturePairsRelated pairs left right) :
+    (runExecution left leftOps).isSome = (runExecution right rightOps).isSome := by
+  cases leftRun : runExecution left leftOps with
+  | none =>
+    cases rightRun : runExecution right rightOps with
+    | none => rfl
+    | some rightFinal =>
+      obtain ⟨leftFinal, result, _⟩ := captured_pairs_sequence_simulates (pairs.map swapCapturePair)
+        (swapped_capture_pairs_unique pairs unique) (swapped_capture_pairs_disjoint pairs disjoint)
+        rightOps leftOps (swapped_capture_pair_operations pairs leftOps rightOps operations)
+        right left rightFinal (swapped_capture_pairs_related pairs left right initial) rightRun
+      rw [leftRun] at result
+      cases result
+  | some leftFinal =>
+    obtain ⟨rightFinal, result, _⟩ := captured_pairs_sequence_simulates pairs unique disjoint leftOps rightOps
+      operations left right leftFinal initial leftRun
+    rw [result]
     rfl

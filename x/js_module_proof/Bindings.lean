@@ -255,6 +255,7 @@ def expressionNames : NumericExpr → List String
   | .argumentsNil => []
   | .argumentsCons head tail => expressionNames head ++ expressionNames tail
   | .invoke name _ arguments _ => [name] ++ expressionNames arguments
+  | .invokeLocal _ _ arguments body => expressionNames arguments ++ expressionNames body
 
 def laterExpressionNames : NumericExpr → List String
   | .local name _ _ body => name :: laterExpressionNames body
@@ -276,6 +277,7 @@ def laterExpressionNames : NumericExpr → List String
   | .argumentsNil => []
   | .argumentsCons _ _ => []
   | .invoke _ _ _ _ => []
+  | .invokeLocal _ _ _ _ => []
 
 /- Reject a read of a local before its initialization, including a later
    declaration in the same lowered sequence. Nested blocks can be treated
@@ -300,6 +302,7 @@ def argumentCount : NumericExpr → Option Nat
   | .raise _ => none
   | .raisePrimitive _ => none
   | .invoke _ _ _ _ => none
+  | .invokeLocal _ _ _ _ => none
 
 mutual
 def validNumericExpression : NumericExpr → Bool
@@ -331,6 +334,8 @@ def validNumericExpression : NumericExpr → Bool
   | .argumentsCons _ _ => false
   | .invoke _ parameters arguments body =>
     validNumericArguments arguments && argumentCount arguments == some parameters.length && validNumericExpression body
+  | .invokeLocal _ parameters arguments body =>
+    validNumericArguments arguments && argumentCount arguments == some parameters.length && validNumericExpression body
 
 def validNumericArguments : NumericExpr → Bool
   | .argumentsNil => true
@@ -352,6 +357,7 @@ def validNumericArguments : NumericExpr → Bool
   | .raise _ => false
   | .raisePrimitive _ => false
   | .invoke _ _ _ _ => false
+  | .invokeLocal _ _ _ _ => false
 end
 
 def expressionFreeNames (bound : List String) : NumericExpr → List String
@@ -374,6 +380,8 @@ def expressionFreeNames (bound : List String) : NumericExpr → List String
   | .argumentsNil => []
   | .argumentsCons head tail => expressionFreeNames bound head ++ expressionFreeNames bound tail
   | .invoke _ _ arguments _ => expressionFreeNames bound arguments
+  | .invokeLocal _ parameters arguments body =>
+    expressionFreeNames bound arguments ++ expressionFreeNames (parameters ++ bound) body
 
 def mutableLocal (bound : List (String × Bool)) (name : String) : Bool :=
   match bound.find? (fun binding => binding.1 == name) with
@@ -402,6 +410,8 @@ def validLocalWrites (bound : List (String × Bool)) : NumericExpr → Bool
   | .invoke name parameters arguments body =>
     !(bound.any (fun binding => binding.1 == name)) && validLocalWrites bound arguments &&
       validLocalWrites (parameters.map (fun parameter => (parameter, true))) body
+  | .invokeLocal _ parameters arguments body =>
+    validLocalWrites bound arguments && validLocalWrites (parameters.map (fun parameter => (parameter, true)) ++ bound) body
 
 def freeExpressionNames (parameters : List String) (expression : NumericExpr) : List String :=
   expressionFreeNames parameters expression
@@ -449,6 +459,7 @@ def expressionCalls : NumericExpr → List String
   | .argumentsNil => []
   | .argumentsCons head tail => expressionCalls head ++ expressionCalls tail
   | .invoke name _ arguments _ => name :: expressionCalls arguments
+  | .invokeLocal _ _ arguments body => expressionCalls arguments ++ expressionCalls body
 
 def matchingInvocations (source : List BindingStmt) : NumericExpr → Bool
   | .literal _ => true
@@ -472,6 +483,7 @@ def matchingInvocations (source : List BindingStmt) : NumericExpr → Bool
   | .invoke name parameters arguments body =>
     decide (callableSyntax source name = some (parameters, body)) &&
       matchingInvocations source arguments && matchingInvocations source body
+  | .invokeLocal _ _ arguments body => matchingInvocations source arguments && matchingInvocations source body
 
 def expressionVisible (source : List BindingStmt) (modules : List BindingModule) (index : Nat)
     (bound : List (String × Bool)) (expression : NumericExpr) : Bool :=
@@ -1333,3 +1345,160 @@ theorem two_distinct_captured_argument_calls_observations
     unfold capturedCallObservation
     rw [related.1.1, related.1.2.1, related.1.2.2.1, related.1.2.2.2.1,
       related.1.2.2.2.2.1, related.1.2.2.2.2.2.1]
+
+inductive PairedCapturedListCallable (pairs : List CapturePair) : PublicCallable → PublicCallable → Prop where
+  | captured (leftCapture rightCapture : List (String × String)) (parameters : List String) (body : NumericExpr) :
+      (leftCapture, rightCapture) ∈ pairs →
+      PairedCapturedListCallable pairs (.captured leftCapture parameters body) (.captured rightCapture parameters body)
+
+inductive PairedCapturedListTables (pairs : List CapturePair) :
+    List (String × PublicCallable) → List (String × PublicCallable) → Prop where
+  | nil : PairedCapturedListTables pairs [] []
+  | cons (name : String) {left right leftTail rightTail} : PairedCapturedListCallable pairs left right →
+      PairedCapturedListTables pairs leftTail rightTail →
+      PairedCapturedListTables pairs ((name, left) :: leftTail) ((name, right) :: rightTail)
+
+theorem paired_captured_list_table_call (pairs : List CapturePair) (leftTable rightTable : List (String × PublicCallable))
+    (paired : PairedCapturedListTables pairs leftTable rightTable) (call : String × List Nat)
+    (leftOps rightOps : List Operation) (leftCall : argumentCallOperations leftTable call = some leftOps)
+    (rightCall : argumentCallOperations rightTable call = some rightOps) :
+    RelatedOperations (PairedCapturedListOperation pairs) leftOps rightOps := by
+  induction paired with
+  | nil => cases leftCall
+  | cons name callable tail ih =>
+    simp only [argumentCallOperations, List.find?_cons] at leftCall rightCall
+    cases matched : name == call.1 with
+    | false => rw [matched] at leftCall rightCall; exact ih leftCall rightCall
+    | true =>
+      rw [matched] at leftCall rightCall
+      cases callable with
+      | captured leftCapture rightCapture parameters body member =>
+        change (if parameters.length == call.2.length then some [.invokeCaptured leftCapture parameters call.2 body] else none) = some leftOps at leftCall
+        change (if parameters.length == call.2.length then some [.invokeCaptured rightCapture parameters call.2 body] else none) = some rightOps at rightCall
+        cases enough : parameters.length == call.2.length with
+        | false => rw [enough] at leftCall; cases leftCall
+        | true =>
+          rw [enough] at leftCall rightCall
+          cases leftCall
+          cases rightCall
+          exact .cons (.invoke leftCapture rightCapture parameters call.2 body member) .nil
+
+theorem paired_captured_list_table_call_exists (pairs : List CapturePair) (leftTable rightTable : List (String × PublicCallable))
+    (paired : PairedCapturedListTables pairs leftTable rightTable) (call : String × List Nat)
+    (leftOps : List Operation) (leftCall : argumentCallOperations leftTable call = some leftOps) :
+    ∃ rightOps, argumentCallOperations rightTable call = some rightOps := by
+  induction paired with
+  | nil => cases leftCall
+  | cons name callable tail ih =>
+    simp only [argumentCallOperations, List.find?_cons] at leftCall ⊢
+    cases matched : name == call.1 with
+    | false => rw [matched] at leftCall; exact ih leftCall
+    | true =>
+      rw [matched] at leftCall
+      cases callable with
+      | captured leftCapture rightCapture parameters body member =>
+        change (if parameters.length == call.2.length then some [.invokeCaptured leftCapture parameters call.2 body] else none) = some leftOps at leftCall
+        change ∃ rightOps, (if parameters.length == call.2.length then some [Operation.invokeCaptured rightCapture parameters call.2 body] else none) = some rightOps
+        cases enough : parameters.length == call.2.length with
+        | false => rw [enough] at leftCall; cases leftCall
+        | true => exact ⟨_, rfl⟩
+
+theorem paired_captured_list_calls_exist (pairs : List CapturePair) (leftTable rightTable : List (String × PublicCallable))
+    (paired : PairedCapturedListTables pairs leftTable rightTable) (calls : List (String × List Nat))
+    (leftLists : List (List Operation)) (leftCalls : argumentCallOperationLists leftTable calls = some leftLists) :
+    ∃ rightLists, argumentCallOperationLists rightTable calls = some rightLists := by
+  induction calls generalizing leftLists with
+  | nil => exact ⟨[], rfl⟩
+  | cons call rest ih =>
+    change (argumentCallOperations leftTable call).bind (fun ops =>
+      (argumentCallOperationLists leftTable rest).bind (fun tail => some (ops :: tail))) = some leftLists at leftCalls
+    cases head : argumentCallOperations leftTable call with
+    | none => rw [head] at leftCalls; cases leftCalls
+    | some leftOps =>
+      cases tail : argumentCallOperationLists leftTable rest with
+      | none => rw [head, tail] at leftCalls; cases leftCalls
+      | some leftRest =>
+        obtain ⟨rightOps, rightHead⟩ := paired_captured_list_table_call_exists pairs leftTable rightTable paired call leftOps head
+        obtain ⟨rightRest, rightTail⟩ := ih leftRest tail
+        refine ⟨rightOps :: rightRest, ?_⟩
+        change (argumentCallOperations rightTable call).bind (fun ops =>
+          (argumentCallOperationLists rightTable rest).bind (fun tail => some (ops :: tail))) = _
+        rw [rightHead, rightTail]
+        rfl
+
+theorem captured_pairs_argument_calls_simulate (pairs : List CapturePair)
+    (unique : capturePairsUnique pairs) (disjoint : capturePairsDisjoint pairs)
+    (leftTable rightTable : List (String × PublicCallable)) (paired : PairedCapturedListTables pairs leftTable rightTable)
+    (calls : List (String × List Nat)) (left right leftFinal : ExecutionState Unit)
+    (initial : capturePairsRelated pairs left right) (leftRun : runArgumentCalls leftTable left calls = some leftFinal) :
+    ∃ rightFinal, runArgumentCalls rightTable right calls = some rightFinal ∧ capturePairsRelated pairs leftFinal rightFinal := by
+  change (argumentCallOperationLists leftTable calls).bind (fun ops => runExecution left ops.flatten) = some leftFinal at leftRun
+  cases leftCalls : argumentCallOperationLists leftTable calls with
+  | none => rw [leftCalls] at leftRun; cases leftRun
+  | some leftOps =>
+    rw [leftCalls] at leftRun
+    obtain ⟨rightOps, rightCalls⟩ := paired_captured_list_calls_exist pairs leftTable rightTable paired calls leftOps leftCalls
+    have operations := related_argument_call_operations _ leftTable rightTable
+      (paired_captured_list_table_call pairs leftTable rightTable paired) calls leftOps rightOps leftCalls rightCalls
+    obtain ⟨rightFinal, rightRun, related⟩ := captured_pairs_sequence_simulates pairs unique disjoint
+      leftOps.flatten rightOps.flatten operations left right leftFinal initial leftRun
+    refine ⟨rightFinal, ?_, related⟩
+    change (argumentCallOperationLists rightTable calls).bind (fun ops => runExecution right ops.flatten) = some rightFinal
+    rw [rightCalls]
+    exact rightRun
+
+theorem paired_captured_list_tables_symmetric (pairs : List CapturePair) (leftTable rightTable : List (String × PublicCallable))
+    (paired : PairedCapturedListTables pairs leftTable rightTable) :
+    PairedCapturedListTables (pairs.map swapCapturePair) rightTable leftTable := by
+  induction paired with
+  | nil => exact .nil
+  | cons name callable tail ih =>
+    cases callable with
+    | captured leftCapture rightCapture parameters body member =>
+      exact .cons name (.captured rightCapture leftCapture parameters body
+        (swap_capture_pair_member pairs leftCapture rightCapture member)) ih
+
+theorem captured_pairs_argument_calls_complete_together (pairs : List CapturePair)
+    (unique : capturePairsUnique pairs) (disjoint : capturePairsDisjoint pairs)
+    (leftTable rightTable : List (String × PublicCallable)) (paired : PairedCapturedListTables pairs leftTable rightTable)
+    (calls : List (String × List Nat)) (left right : ExecutionState Unit) (initial : capturePairsRelated pairs left right) :
+    (runArgumentCalls leftTable left calls).isSome = (runArgumentCalls rightTable right calls).isSome := by
+  cases leftRun : runArgumentCalls leftTable left calls with
+  | none =>
+    cases rightRun : runArgumentCalls rightTable right calls with
+    | none => rfl
+    | some rightFinal =>
+      obtain ⟨leftFinal, result, _⟩ := captured_pairs_argument_calls_simulate (pairs.map swapCapturePair)
+        (swapped_capture_pairs_unique pairs unique) (swapped_capture_pairs_disjoint pairs disjoint)
+        rightTable leftTable (paired_captured_list_tables_symmetric pairs leftTable rightTable paired)
+        calls right left rightFinal (swapped_capture_pairs_related pairs left right initial) rightRun
+      rw [leftRun] at result
+      cases result
+  | some leftFinal =>
+    obtain ⟨rightFinal, result, _⟩ := captured_pairs_argument_calls_simulate pairs unique disjoint
+      leftTable rightTable paired calls left right leftFinal initial leftRun
+    rw [result]
+    rfl
+
+theorem captured_pairs_argument_calls_observations (pairs : List CapturePair)
+    (unique : capturePairsUnique pairs) (disjoint : capturePairsDisjoint pairs)
+    (leftTable rightTable : List (String × PublicCallable)) (paired : PairedCapturedListTables pairs leftTable rightTable)
+    (leftCapture rightCapture : List (String × String)) (member : (leftCapture, rightCapture) ∈ pairs)
+    (calls : List (String × List Nat)) (left right : ExecutionState Unit) (initial : capturePairsRelated pairs left right) :
+    (runArgumentCalls leftTable left calls).map capturedCallObservation =
+      (runArgumentCalls rightTable right calls).map capturedCallObservation := by
+  have complete := captured_pairs_argument_calls_complete_together pairs unique disjoint leftTable rightTable paired calls left right initial
+  cases leftRun : runArgumentCalls leftTable left calls with
+  | none =>
+    cases rightRun : runArgumentCalls rightTable right calls with
+    | none => rfl
+    | some rightFinal => rw [leftRun, rightRun] at complete; cases complete
+  | some leftFinal =>
+    obtain ⟨rightFinal, rightRun, related⟩ := captured_pairs_argument_calls_simulate pairs unique disjoint
+      leftTable rightTable paired calls left right leftFinal initial leftRun
+    have observations := related (leftCapture, rightCapture) member
+    rw [rightRun]
+    change some (capturedCallObservation leftFinal) = some (capturedCallObservation rightFinal)
+    unfold capturedCallObservation
+    rw [observations.1, observations.2.1, observations.2.2.1, observations.2.2.2.1,
+      observations.2.2.2.2.1, observations.2.2.2.2.2.1]

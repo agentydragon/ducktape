@@ -536,7 +536,7 @@ function parameterCase(seed, index) {
 // program independently as ESTree. Each factory call allocates fresh cells.
 function capturedCase(seed, index) {
   const rand = random(seed ^ 0xcafe, index);
-  const count = 2 + rand(2);
+  const count = 1 + rand(5);
   const unsafe = index % 128 === 92;
   const target = unsafe || rand(2) === 0 ? "value" : "start";
   const namedClosure = Math.floor(index / 128) % 2 === 1;
@@ -674,12 +674,29 @@ function objectCase(seed, index) {
           }),
           immutable("alias", id("box")),
           immutable("values", { type: "ArrayExpression", elements: values.map(literal) }),
+          immutable("valuesAlias", id("values")),
+          expr({
+            type: "AssignmentExpression",
+            operator: "+=",
+            left: member("valuesAlias", firstIndex, true),
+            right: literal(8),
+          }),
           ...Array.from({ length: mutationCount }, () => ({
             type: "IfStatement",
             test: id("flag"),
             consequent: { type: "BlockStatement", body: [addProperty(firstIndex)] },
             alternate: { type: "BlockStatement", body: [addProperty(secondIndex)] },
           })),
+          ...(rand(2)
+            ? [
+                {
+                  type: "IfStatement",
+                  test: id("flag"),
+                  consequent: { type: "BlockStatement", body: [addProperty(firstIndex)] },
+                  alternate: null,
+                },
+              ]
+            : []),
           returnNode({
             type: "BinaryExpression",
             operator: "+",
@@ -713,7 +730,7 @@ function objectCase(seed, index) {
       { name: "read", args: [1] },
     ],
     grammar: "object",
-    unsupported: true,
+    unsupported: false,
     cyclic: false,
     invalidAssignment: false,
   };
@@ -839,8 +856,58 @@ export function makeComposedCase(seed, index) {
   const scope = new Scope();
   scope.declare("parameter");
   scope.declare("global");
+  const dataPrefix = [];
+  if (rand(3) === 0) {
+    const immutable = (name, initial) => {
+      const result = declaration(name, initial);
+      result.kind = "const";
+      return result;
+    };
+    const member = (object, property, computed) => ({
+      type: "MemberExpression",
+      object: id(object),
+      property: computed ? literal(property) : id(property),
+      computed,
+    });
+    dataPrefix.push(
+      immutable("box", {
+        type: "ObjectExpression",
+        properties: [
+          {
+            type: "Property",
+            key: id("value"),
+            value: literal(rand(5)),
+            kind: "init",
+            method: false,
+            shorthand: false,
+            computed: false,
+          },
+        ],
+      }),
+      immutable("alias", id("box")),
+      immutable("array", { type: "ArrayExpression", elements: [literal(rand(5)), literal(rand(5))] }),
+      expr({
+        type: "AssignmentExpression",
+        operator: "+=",
+        left: member("alias", "value", false),
+        right: member("array", rand(2), true),
+      }),
+      declaration("datum", member("box", "value", false))
+    );
+    scope.declare("datum");
+  }
+  const localPrefix = [];
+  const useLocalFunction = dataPrefix.length === 0 && rand(2) === 0;
+  if (useLocalFunction) {
+    localPrefix.push(
+      declaration("current", literal(rand(4))),
+      functionNode("nested", ["delta"], [add("current", "delta"), returnNode(id("current"))])
+    );
+    scope.declare("current");
+  }
   let nextLocal = 0;
   const expression = (visible, depth, forbidden = null) => {
+    if (useLocalFunction && depth > 0 && rand(6) === 0) return call(id("nested"), [literal(rand(4))]);
     if (depth === 0 || rand(3) === 0) {
       const names = visible.visible().filter((name) => name !== forbidden);
       if (!names.length) return literal(rand(4));
@@ -858,7 +925,10 @@ export function makeComposedCase(seed, index) {
     const count = 1 + rand(3);
     const mutableNames = [];
     for (let i = 0; i < count; i++) {
-      const candidates = visible.parent?.visible().filter((name) => !visible.names.has(name)) ?? [];
+      const candidates =
+        visible.parent
+          ?.visible()
+          .filter((name) => !visible.names.has(name) && (!useLocalFunction || name !== "current")) ?? [];
       const name =
         i === 0 && candidates.length && rand(4) === 0 ? candidates[rand(candidates.length)] : `local${nextLocal++}`;
       // A shadowing declaration's own binding is in the TDZ during its initializer.
@@ -922,7 +992,7 @@ export function makeComposedCase(seed, index) {
     sourceType: "module",
     body: [
       variable("global", rand(4)),
-      functionNode("calculate", ["parameter"], sequence(scope, 2)),
+      functionNode("calculate", ["parameter"], [...localPrefix, ...dataPrefix, ...sequence(scope, 2)]),
       {
         type: "ExportNamedDeclaration",
         specifiers: [{ type: "ExportSpecifier", local: id("calculate"), exported: id("calculate") }],
@@ -1077,15 +1147,46 @@ export async function minimizeCase(input, fails) {
   return current;
 }
 
-async function mutateCellZero(out, owner) {
-  const file = join(out, owner);
-  const original = await readFile(file, "utf8");
-  const changed = original.replace(/let cell0 = (\d+);/, (_, n) => `let cell0 = ${Number(n) + 1};`);
-  if (changed === original) throw new Error("mutation failed");
-  await writeFile(file, changed);
+async function mutateOutput(out, input, kind) {
+  const modules = Object.keys(input.spec.modules);
+  const files =
+    kind === "binding" || kind === "effect" ? [input.cell0Owner] : kind === "function" ? modules : [input.spec.entry];
+  for (const name of files) {
+    const file = join(out, name);
+    const original = await readFile(file, "utf8");
+    let changed = original;
+    if (kind === "binding") changed = original.replace(/let cell0 = (\d+);/, (_, n) => `let cell0 = ${Number(n) + 1};`);
+    else if (kind === "effect")
+      changed = original.replace(/let cell0 = (\d+);/, (declaration) => `${declaration}\nglobalThis.record(cell0);`);
+    else if (kind === "function")
+      changed = original.replace(/return (cell\d+);/, (_, binding) => `return ${binding} + 1;`);
+    else if (kind === "export")
+      changed = original.replace(
+        /^export \{ (\w+) \} from ("[^"\n]+");$/m,
+        (line, binding, path) => `${line}\nexport { ${binding} as fuzz_${binding} } from ${path};`
+      );
+    else if (kind === "import") {
+      const imports = [...original.matchAll(/^import (?:\{[^\n]+\} from )?"\.\/[^"\n]+";$/gm)];
+      if (imports.length >= 2) {
+        const first = imports[0],
+          second = imports[1];
+        changed =
+          original.slice(0, first.index) +
+          second[0] +
+          original.slice(first.index + first[0].length, second.index) +
+          first[0] +
+          original.slice(second.index + second[0].length);
+      }
+    }
+    if (changed !== original) {
+      await writeFile(file, changed);
+      return;
+    }
+  }
+  throw new Error(`mutation failed: ${kind}`);
 }
 
-async function minimizeProvedDifference(input, root, mutated = false) {
+async function minimizeProvedDifference(input, root, mutation = null) {
   const scratch = join(root, "shrink-attempt");
   const fails = async (candidate) => {
     await rm(scratch, { recursive: true, force: true });
@@ -1097,7 +1198,7 @@ async function minimizeProvedDifference(input, root, mutated = false) {
     await writeFile(spec, JSON.stringify(candidate.spec));
     try {
       await generateBindings(source, spec, out);
-      if (mutated) await mutateCellZero(out, candidate.cell0Owner);
+      if (mutation) await mutateOutput(out, candidate, mutation);
       const before = execute(source, candidate.calls),
         after = execute(join(out, candidate.spec.entry), candidate.calls);
       if (
@@ -1124,7 +1225,7 @@ async function minimizeProvedDifference(input, root, mutated = false) {
     minimizedSpec = join(destination, "spec.json"),
     minimizedOut = join(destination, "out");
   await generateBindings(minimizedSource, minimizedSpec, minimizedOut);
-  if (mutated) await mutateCellZero(minimizedOut, minimized.cell0Owner);
+  if (mutation) await mutateOutput(minimizedOut, minimized, mutation);
   await writeFile(
     join(destination, "node.json"),
     JSON.stringify(
@@ -1190,6 +1291,7 @@ export async function runFuzz({
     objectSourceExecuted: 0,
     objectRefused: 0,
     objectCompared: 0,
+    objectProved: 0,
     capturedCases: 0,
     capturedCompared: 0,
     capturedProved: 0,
@@ -1228,6 +1330,7 @@ export async function runFuzz({
     equal: 0,
     different: 0,
     mutated: 0,
+    mutationKinds: { binding: 0, effect: 0, function: 0, export: 0, import: 0 },
     splitCompared: 0,
     splitDifferent: 0,
     mutatedDifferent: 0,
@@ -1254,6 +1357,10 @@ export async function runFuzz({
     try {
       const generated = grammarMode === "composed" ? makeComposedCase(seed, index) : makeCase(seed, index);
       const input = splitMode === "independent" ? independentSplit(generated, seed, index) : generated;
+      const mutation =
+        input.grammar !== "composed" && !input.independentSplit && index % 8 === 2
+          ? ["binding", "effect", "function", "export", "import"][Math.floor(index / 8) % 5]
+          : null;
       const independentCategory = input.invalidAssignment ? "invalidAssignment" : input.cyclic ? "cyclic" : "acyclic";
       if (input.independentSplit) summary.independentRequested[independentCategory]++;
       const nodeTypes = new Set();
@@ -1285,7 +1392,8 @@ export async function runFuzz({
             unsupported: input.unsupported,
             invalidAssignment: input.invalidAssignment,
             cyclic: input.cyclic,
-            plannedMutation: input.grammar !== "composed" && !input.independentSplit && index % 8 === 2,
+            plannedMutation: mutation !== null,
+            mutation,
             splitMode,
             grammarMode,
             ...(input.independentSplit ? { splitCategory: independentCategory } : {}),
@@ -1386,11 +1494,12 @@ export async function runFuzz({
       if (input.invalidAssignment) throw new Error("invalid assignment unexpectedly accepted");
       summary.generated++;
       if (input.grammar === "closure") summary.closureGenerated++;
-      const mutated = input.grammar !== "composed" && !input.independentSplit && index % 8 === 2;
+      const mutated = mutation !== null;
       if (mutated) {
         phase = "output-mutation";
-        await mutateCellZero(out, input.cell0Owner);
+        await mutateOutput(out, input, mutation);
         summary.mutated++;
+        summary.mutationKinds[mutation]++;
       }
       phase = "node-comparison";
       const before = execute(source, input.calls);
@@ -1457,7 +1566,13 @@ export async function runFuzz({
       let verdictName = "unvalidated";
       if (random(seed ^ 0xa5a5a5a5, index)(validateEvery) === 0) {
         phase = "validation";
-        const verdict = await validateBindings(source, spec, out);
+        let verdict;
+        try {
+          verdict = await validateBindings(source, spec, out);
+        } catch (error) {
+          if (!String(error).includes("unknown:")) throw error;
+          verdict = { result: "unknown", reason: String(error) };
+        }
         summary.validated++;
         verdictName = verdict.result;
         const verdictKey = verdict.result === "proved under assumptions" ? "proved" : verdict.result;
@@ -1468,6 +1583,8 @@ export async function runFuzz({
           const expected = input.expectUnsafe ? "unsafe" : "proved under assumptions";
           if (verdict.result !== expected)
             throw new Error(`captured validation expected ${expected}, got ${verdict.result}: ${verdict.reason ?? ""}`);
+          if (!input.expectUnsafe && !verdict.certificate?.includes("binding_captured_observations"))
+            throw new Error("captured validation omitted relational observation certificate");
           if (input.expectUnsafe) summary.capturedUnsafe++;
         }
         if (input.grammar === "modeledClosure" && !input.independentSplit) {
@@ -1480,10 +1597,11 @@ export async function runFuzz({
         if (input.cyclic && verdict.result !== "unknown") throw new Error("cycle unexpectedly accepted");
         if (verdict.result === "proved under assumptions") {
           summary.proved++;
+          if (input.grammar === "object") summary.objectProved++;
           if (input.grammar === "captured") summary.capturedProved++;
           if (input.grammar === "parameter") summary.parameterProved++;
           if (!equal || ((before.error || after.error) && !input.expectThrow)) {
-            if (!equal) await minimizeProvedDifference(input, root, mutated);
+            if (!equal) await minimizeProvedDifference(input, root, mutation);
             throw new Error("proved case differs or fails in Node");
           }
         } else if (verdict.result === "unsafe") {

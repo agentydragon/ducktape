@@ -14,8 +14,8 @@ Incrementing-counter closures and factories producing parameterized closures
 with independent captured numeric cells can also be split and validated against
 the shared Lean semantics. Immutable alias chains share those cells; the fuzzer
 varies inputs and module assignments for these cases.
-The generator also runs object, array, property-access and alias-mutation
-cases in Node and reports when splitting is refused. The following broader
+The generator also exercises restricted nonescaping objects, arrays and alias
+mutation in Node and the Lean-backed checker. The following broader
 generator and syntax work remains open.
 An opt-in compositional generator now builds numeric expressions, nested
 branches, declarations and local mutations from visible scopes; independent

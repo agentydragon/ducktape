@@ -165,7 +165,9 @@ if (shards === 4 && shard === 0) {
   const objectCase = await runFuzz({ seed: 123, start: 20, cases: 1, outputDir: process.env.TEST_TMPDIR });
   assert.equal(objectCase.objectCases, 1);
   assert.equal(objectCase.objectSourceExecuted, 1);
-  assert.equal(objectCase.objectRefused + objectCase.objectCompared, 1);
+  assert.equal(objectCase.objectCompared, 1);
+  assert.equal(objectCase.proved, 1);
+  assert.equal(objectCase.objectProved, 1);
   const multiply = await runFuzz({ seed: 123, start: 108, cases: 1, outputDir: process.env.TEST_TMPDIR });
   assert.equal(multiply.parameterCompared, 1);
   assert.equal(multiply.parameterProved, 1);
@@ -251,6 +253,7 @@ if (shards === 4 && shard === 0) {
   assert.equal(bulk.objectRefused + bulk.objectCompared, bulk.objectCases);
 }
 if (shards === 4 && shard === 1) assert.equal(bulk.different, bulk.cases);
+if (shards === 4 && shard === 2) for (const count of Object.values(bulk.mutationKinds)) assert.ok(count > 0);
 if (shards === 4 && shard === 3) {
   assert.equal(bulk.closureSourceExecuted, bulk.closureCases);
   assert.ok(bulk.finallyCases > 0);
@@ -275,6 +278,8 @@ console.log(JSON.stringify(bulk));
 const parse = createRequire(import.meta.url)(process.env.JS_MODULE_PROOF_ACORN ?? "acorn").parse;
 const composedPrograms = Array.from({ length: 128 }, (_, i) => makeComposedCase(917, i));
 assert.ok(new Set(composedPrograms.map((item) => item.source)).size > 120);
+assert.ok(composedPrograms.some((item) => item.source.includes("const box =")));
+assert.ok(composedPrograms.some((item) => item.source.includes("function nested(")));
 for (const item of composedPrograms) {
   assert.deepEqual(
     parse(item.source, { ecmaVersion: "latest", sourceType: "module" }).body.map((node) => node.type),

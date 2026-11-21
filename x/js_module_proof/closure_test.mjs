@@ -788,6 +788,7 @@ theorem finally_modeled_observation :
   assert.equal(replay.status, 0, replay.stdout + replay.stderr);
   assert.match(replay.stdout, /'binding_future_calls' does not depend on any axioms/);
   assert.match(replay.stdout, /'finally_modeled_observation' does not depend on any axioms/);
+  assert.match(replay.stdout, /'binding_captured_observations' does not depend on any axioms/);
   const unsupportedSource = join(root, "finally-return.mjs");
   await writeFile(
     unsupportedSource,
@@ -852,6 +853,240 @@ theorem loop_modeled_observation :
   const unsupported = join(root, "dynamic-loop.mjs");
   await writeFile(unsupported, (await readFile(loopSource, "utf8")).replace("i < 3", "i < x"));
   assert.equal(cli("generate", unsupported, loopSpec, join(root, "dynamic-loop-out")).result, "unknown");
+}
+
+if (shard === 10) {
+  const dataSource = join(root, "local-data.mjs");
+  const dataSpec = join(root, "local-data.json");
+  const dataOut = join(root, "local-data-out");
+  await writeFile(
+    dataSource,
+    `let bias = 1;
+let amount = 2;
+function bump() { bias += amount; }
+function read(flag) { const box = { value: 3 }; const alias = box; const values = [2, 5]; if (flag) { alias.value += values[0]; } else { alias.value += values[1]; } if (flag) { alias.value += 1; } return box.value + bias; }
+bump();
+globalThis.record(bias);
+export { read };
+`
+  );
+  const specFor = (unsafe) => ({
+    kind: "bindings",
+    entry: "entry.mjs",
+    modules: {
+      "state.mjs": { imports: [], statements: [0, 1, 2] },
+      "read.mjs": { imports: ["state.mjs"], statements: unsafe ? [3, 5] : [3, 4, 5] },
+      "entry.mjs": { imports: ["state.mjs", "read.mjs"], statements: unsafe ? [4] : [] },
+    },
+  });
+  await writeFile(dataSpec, JSON.stringify(specFor(false)));
+  assert.equal(cli("generate", dataSource, dataSpec, dataOut).result, "generated");
+  const proof = cli("validate", dataSource, dataSpec, dataOut);
+  assert.equal(proof.result, "proved under assumptions", JSON.stringify(proof));
+  const calls = [
+    { name: "read", args: [0] },
+    { name: "read", args: [1] },
+  ];
+  const observed = execute(dataSource, calls);
+  assert.deepEqual(observed.results, [{ value: 11 }, { value: 9 }]);
+  assert.deepEqual(execute(join(dataOut, "entry.mjs"), calls), observed);
+  const emitted = join(dataOut, "read.mjs");
+  const contents = await readFile(emitted, "utf8");
+  const changed = contents.replace("value: 3", "value: 4");
+  assert.notEqual(changed, contents);
+  await writeFile(emitted, changed);
+  assert.notEqual(cli("validate", dataSource, dataSpec, dataOut).result, "proved under assumptions");
+  assert.notDeepEqual(execute(join(dataOut, "entry.mjs"), calls), observed);
+  await writeFile(emitted, contents);
+  const unsafeSpec = join(root, "local-data-unsafe.json"),
+    unsafeOut = join(root, "local-data-unsafe-out");
+  await writeFile(unsafeSpec, JSON.stringify(specFor(true)));
+  assert.equal(cli("generate", dataSource, unsafeSpec, unsafeOut).result, "generated");
+  const unsafe = cli("validate", dataSource, unsafeSpec, unsafeOut);
+  assert.equal(unsafe.result, "unsafe", JSON.stringify(unsafe));
+  assert.notDeepEqual(
+    execute(dataSource, unsafe.calls ?? []),
+    execute(join(unsafeOut, "entry.mjs"), unsafe.calls ?? [])
+  );
+  for (const [index, body] of [
+    "const box = { value: 1 }; return box[flag];",
+    "const box = { value: 1 }; return box;",
+    "const box = { get value() { return 1; } }; return box.value;",
+    "const box = { value: 1 }; box.missing = 2; return box.value;",
+  ].entries()) {
+    const unsupported = join(root, `local-data-unsupported-${index}.mjs`);
+    await writeFile(unsupported, `function read(flag) { ${body} } export { read };\n`);
+    const unsupportedSpec = join(root, `local-data-unsupported-${index}.json`);
+    await writeFile(
+      unsupportedSpec,
+      JSON.stringify({
+        kind: "bindings",
+        entry: "entry.mjs",
+        modules: {
+          "entry.mjs": { imports: [], statements: [0] },
+        },
+      })
+    );
+    const unsupportedOut = join(root, `local-data-unsupported-${index}-out`);
+    const generated = cli("generate", unsupported, unsupportedSpec, unsupportedOut);
+    if (generated.result === "generated")
+      assert.equal(cli("validate", unsupported, unsupportedSpec, unsupportedOut).result, "unknown");
+    else assert.equal(generated.result, "unknown");
+  }
+}
+
+if (shard === 8) {
+  const manySource = join(root, "many-captures.mjs");
+  const manySpec = join(root, "many-captures.json");
+  const manyOut = join(root, "many-captures-out");
+  await writeFile(
+    manySource,
+    `function make(start) { let value = start; return (step) => { value += step; return value; }; }
+const first = make(2);
+const second = make(5);
+const third = make(10);
+const alias = first;
+export { first, second, third, alias };
+`
+  );
+  await writeFile(
+    manySpec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0, 1, 2, 3] },
+        "aliases.mjs": { imports: ["state.mjs"], statements: [4] },
+        "entry.mjs": { imports: ["state.mjs", "aliases.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", manySource, manySpec, manyOut).result, "generated");
+  const proof = cli("validate", manySource, manySpec, manyOut);
+  assert.equal(proof.result, "proved under assumptions", JSON.stringify(proof));
+  assert.match(proof.certificate, /binding_capture_pairs_unique/);
+  const calls = [
+    { name: "first", args: [1] },
+    { name: "second", args: [2] },
+    { name: "third", args: [3] },
+    { name: "alias", args: [4] },
+  ];
+  const observed = execute(manySource, calls);
+  assert.deepEqual(observed.results, [{ value: 3 }, { value: 7 }, { value: 13 }, { value: 7 }]);
+  assert.deepEqual(execute(join(manyOut, "entry.mjs"), calls), observed);
+  const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
+    encoding: "utf8",
+    input:
+      models +
+      proof.certificate +
+      `
+theorem many_distinct_capture_keys :
+  (publicCapturedEnvironment bindingSource "first").getD [] ≠
+  (publicCapturedEnvironment (namespacedOutputDefinitions binding_output_key_names bindingModules) "first").getD [] := by decide
+#print axioms many_distinct_capture_keys
+`,
+  });
+  assert.equal(replay.status, 0, replay.stdout + replay.stderr);
+  assert.match(replay.stdout, /'binding_captured_observations' does not depend on any axioms/);
+  assert.match(replay.stdout, /'many_distinct_capture_keys' does not depend on any axioms/);
+  const aliases = join(manyOut, "aliases.mjs");
+  await writeFile(aliases, (await readFile(aliases, "utf8")).replace("alias = first", "alias = second"));
+  assert.notEqual(cli("validate", manySource, manySpec, manyOut).result, "proved under assumptions");
+  assert.notDeepEqual(execute(join(manyOut, "entry.mjs"), calls), observed);
+}
+
+if (shard === 9) {
+  const localSource = join(root, "local-functions.mjs");
+  const localSpec = join(root, "local-functions.json");
+  const localOut = join(root, "local-functions-out");
+  await writeFile(
+    localSource,
+    `function calculate(start) { let current = start; function add(delta) { current += delta; return current; } let temporary = add(2); return add(temporary); }
+function guarded(value) { function inner(flag) { if (flag) throw 9; return value; } return inner(value); }
+export { calculate, guarded };
+`
+  );
+  await writeFile(
+    localSpec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "calculate.mjs": { imports: [], statements: [0] },
+        "guarded.mjs": { imports: [], statements: [1] },
+        "entry.mjs": { imports: ["calculate.mjs", "guarded.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", localSource, localSpec, localOut).result, "generated");
+  const proof = cli("validate", localSource, localSpec, localOut);
+  assert.equal(proof.result, "proved under assumptions", JSON.stringify(proof));
+  const calls = [
+    { name: "calculate", args: [3] },
+    { name: "guarded", args: [0] },
+    { name: "guarded", args: [1] },
+  ];
+  const trace = execute(localSource, calls);
+  assert.deepEqual(trace.results, [{ value: 10 }, { value: 0 }]);
+  assert.deepEqual(trace.error, { name: null, phase: "call", index: 2, thrown: { kind: "number", value: 9 } });
+  assert.deepEqual(execute(join(localOut, "entry.mjs"), calls), trace);
+  const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
+    encoding: "utf8",
+    input:
+      models +
+      proof.certificate +
+      `
+theorem local_function_observation :
+  ((sourceBindingState bindingSource).bind (fun state =>
+    (publicCallableTable bindingSource bindingExports).bind (fun table =>
+      runArgumentCalls table state [("calculate", [3]), ("guarded", [0]), ("guarded", [1])]))).map
+    (fun state => (state.returns, state.thrown)) = some ([some 10, some 0], some (.number 9)) := by decide
+#print axioms local_function_observation
+`,
+  });
+  assert.equal(replay.status, 0, replay.stdout + replay.stderr);
+  assert.match(replay.stdout, /'local_function_observation' does not depend on any axioms/);
+  const shadowed = join(root, "local-function-shadow.mjs");
+  const shadowSpec = join(root, "local-function-shadow.json");
+  await writeFile(
+    shadowed,
+    `function bad(x) { function inner() { return x; } if (x) { let x = 2; return inner(); } return 0; } export { bad };`
+  );
+  await writeFile(
+    shadowSpec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "entry.mjs": { imports: [], statements: [0] },
+      },
+    })
+  );
+  const shadowOut = join(root, "local-function-shadow-out");
+  const generated = cli("generate", shadowed, shadowSpec, shadowOut);
+  if (generated.result === "generated")
+    assert.equal(cli("validate", shadowed, shadowSpec, shadowOut).result, "unknown");
+  else assert.equal(generated.result, "unknown");
+  const shadowedCall = join(root, "local-function-shadowed-call.mjs");
+  await writeFile(
+    shadowedCall,
+    `function bad(x) { function inner() { return 1; } if (x) { let inner = 2; return inner(); } return 0; } export { bad };`
+  );
+  const shadowedCallOut = join(root, "local-function-shadowed-call-out");
+  const shadowedCallGenerated = cli("generate", shadowedCall, shadowSpec, shadowedCallOut);
+  if (shadowedCallGenerated.result === "generated")
+    assert.equal(cli("validate", shadowedCall, shadowSpec, shadowedCallOut).result, "unknown");
+  else assert.equal(shadowedCallGenerated.result, "unknown");
+  const constWrite = join(root, "local-function-const.mjs");
+  await writeFile(
+    constWrite,
+    `function bad() { const x = 1; function inner() { x += 1; return x; } return inner(); } export { bad };`
+  );
+  const constOut = join(root, "local-function-const-out");
+  const constGenerated = cli("generate", constWrite, shadowSpec, constOut);
+  if (constGenerated.result === "generated")
+    assert.equal(cli("validate", constWrite, shadowSpec, constOut).result, "unknown");
+  else assert.equal(constGenerated.result, "unknown");
 }
 
 if (shard === 8) {
@@ -1046,6 +1281,7 @@ theorem twoFrameExample : twoCapturedStatesRelated [("value", "left-first")] [("
   assert.equal(replay.status, 0, replay.stdout + replay.stderr);
   assert.match(replay.stdout, /'binding_future_calls' does not depend on any axioms/);
   assert.match(replay.stdout, /'captured_frame_evaluation_preserved' does not depend on any axioms/);
+  assert.match(replay.stdout, /'binding_captured_observations' does not depend on any axioms/);
   assert.match(replay.stdout, /'captured_frame_writeback_preserved' does not depend on any axioms/);
   assert.match(replay.stdout, /'captured_call_frame_preserved' does not depend on any axioms/);
   assert.match(replay.stdout, /'twoFrameExample' does not depend on any axioms/);

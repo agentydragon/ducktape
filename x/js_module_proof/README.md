@@ -117,6 +117,10 @@ values are nonnegative safe integers, booleans, `null`, `undefined` (written as
 `void 0`), and ASCII strings. A throw stops the observed call sequence
 while preserving its preceding trace. The checker conservatively rejects local
 temporal-dead-zone reads.
+Functions may declare and call nonescaping local functions that capture and
+mutate surrounding numeric bindings. The checker rejects recursion, local
+function identities that escape, and cases where a captured name or the
+function itself could be shadowed at a call site.
 Returning or throwing functions may use a terminal `try`/`finally` without
 `catch`, when the finalizer consists of supported local assignments or updates.
 The finalizer runs after either completion; an exception from its expressions
@@ -127,6 +131,13 @@ from 0 through 8 and a block of supported local assignments or updates. The
 body cannot write the loop variable. The frontend unrolls these bounded loops
 into the shared expression semantics; dynamic bounds and other loop forms
 return `unknown`.
+Functions can also allocate nonescaping local object literals and arrays with
+nonnegative numeric literal fields, then access existing properties through
+static names or indices and immutable aliases. The frontend lowers each field
+to a local cell in the shared Lean model. Allocation identity, escaping the
+object, dynamic property access, missing fields, getters, setters, and later
+allocations are unsupported. This lowering is part of the trusted frontend, not
+a formal proof of the full ECMAScript object model.
 For these functions the certificate covers finite sequences of calls with
 explicit argument lists. Calls must supply exactly the declared number of
 nonnegative safe-integer arguments; intermediate results must stay in range.
@@ -179,7 +190,7 @@ writebacks of the same frame under different cell keys. A further one-call
 lemma connects evaluation and writeback to the machine's return and throw
 observations, assuming both writebacks succeed. A finite-sequence lemma relates
 interleaved calls to two disjoint captured environments under different cell
-keys when both machine runs complete. For two direct captured exports, the
+keys when both machine runs complete. For exports backed by captured closures, the
 validator also tries to include this relation in the generated certificate,
 using the actual initialized source and output states; it includes the theorem
 only when Lean verifies all its obligations without axioms. This supplementary
@@ -193,15 +204,18 @@ lemma now proves that, for related loaded environments with distinct captured
 keys, successful writeback on either side implies successful writeback on the
 other. The generated two-closure simulation certificate checks distinct keys
 and derives writeback agreement for all related states without assuming it.
-For two direct captured exports, the validator can use the relation itself for
+When every export is a captured closure, the validator can use the relation for
+any finite number of independently captured closures, including aliases of
+the same closure, to establish
 acceptance: it checks the callable tables, distinct and disjoint cells, and
 related initialized states, then proves equal observations for any finite call
 sequence. Its output execution allocates modeled captured cells in a separate
 namespace, after the checker has compared the extracted source and output
 statements. The generated certificate therefore exercises different private
 keys for the actual split. Other cases still require equal initialized states and callable tables.
-The frontend uses a factory-specific representation; arbitrary closures and
-alias patterns are not yet covered by the relational acceptance proof. A safe
+The frontend uses a factory-specific representation. Different closures that
+share only some captured cells, and arbitrary escaping closures, are not yet
+covered by the relational acceptance proof. A safe
 result proves equal modeled initialization and matching return values and
 state for any finite sequence of subsequent calls. Function return values are
 modeled separately from host-recorded events; ignored top-level call results
@@ -233,14 +247,16 @@ Node and that an unsafe result's witness matches the independently observed
 initialization. Unsafe witnesses include a Lean certificate of the exact Node
 trace and its difference, including later argument-bearing calls when supported.
 Some trials mutate generated modules to exercise the validator;
-some trials generate supported parameterized captured closures or counter
+mutations cover binding initializers, function bodies, recorded effects,
+exports and import order, with separate counts for each kind.
+Some trials generate supported parameterized captured closures or counter
 closures and check safe and unsafe
 splits against Node and Lean. Other trials generate programs with nested,
 escaping closures, parameters,
 shadowed bindings, captured writes, bounded loops and branches, plus cyclic
 graphs or invalid assignments. Separate generated cases exercise object and
-array allocation, indexed property reads and mutation through aliases in Node;
-the current proof frontend refuses these cases.
+array allocation, indexed property reads and mutation through aliases in Node
+and the Lean-backed checker within that restricted local-data subset.
 Parameterized programs also compose bounded numeric expression trees from
 visible parameters, literals, addition and multiplication; the campaign
 summary reports their generated depths.
