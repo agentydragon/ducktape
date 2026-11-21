@@ -962,6 +962,8 @@ a block StorageClass does not itself make Pod and VM layouts interchangeable. Se
 ```mermaid
 flowchart LR
     ENVIRONMENT_SUSPEND_MODES_DESIGN[Decision: distinct suspend and resume modes]
+    FIRECRACKER_INTEGRATION_DESIGN[Decision: Firecracker integration and privilege boundary]
+    FIRECRACKER_INTEGRATION_DESIGN -. related lifecycle contract .-> ENVIRONMENT_SUSPEND_MODES_DESIGN
     VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM]
     ENVIRONMENT_SUSPEND_MODES_DESIGN --> VM_RAM_SUSPEND
     VM_CONSOLE_DEFERRED_ATTACH[Unscheduled: attach the console when a starting VM becomes attachable]
@@ -970,6 +972,60 @@ flowchart LR
     STATE_VOLUME_BLOCK -. related .-> VM_RAM_SUSPEND
     LOCAL_BAZEL[Unscheduled: bounded local Bazel client in VM]
 ```
+
+### `FIRECRACKER_INTEGRATION_DESIGN` — choose Firecracker integration and privilege boundary
+
+**Decision; unscheduled; operator request, 2026-11-20.** Decide how Agentplane should run and
+manage Firecracker Sandboxes in the cluster, including whether to build on an existing integration.
+The current [Firecracker backend](../docs/firecracker_sandboxes.md) runs one launcher Pod per guest;
+its network setup needs privileges that staging's baseline Pod Security policy rejects. KubeVirt
+already uses privileged infrastructure while its launcher Pods can be unprivileged. Do not assume a
+Talos API-server exemption or a new controller is the only solution.
+
+Compare at least these patterns and their costs:
+
+- Keep our launcher, with launcher Pods in a dedicated privileged infrastructure namespace. A
+  controller's namespace does not exempt Pods created in another namespace; decide whether the
+  existing controller can own this or a separate controller provides a useful authority boundary.
+  Work through cross-namespace PVCs, Secrets, identity, network policy, ownership and cleanup;
+  Pods cannot directly mount another namespace's PVCs or Secrets, and namespaced owner references
+  cannot cross namespaces.
+- Keep launcher Pods in their current namespace, using a narrowly constrained admission exception;
+  assess the scope and operational cost of API-server exemptions and replacement policy, including
+  the proposal in [#18428](https://github.com/agentydragon/ducktape/pull/18428).
+- Follow the KubeVirt pattern: a trusted node-side helper or networking integration performs the
+  privileged setup and fencing while the launcher has reduced privileges. Account for device
+  access, TAP and firewall lifecycle, the helper's authority, and the complexity of an extra
+  node service. Consider other container runtime or Kubernetes integration patterns as well.
+- Evaluate existing systems, including [OpenSandbox Fast Sandbox](https://github.com/opensandbox-group/fast-sandbox)
+  and its [checkpoint design](https://github.com/opensandbox-group/OpenSandbox/blob/main/docs/architecture/fast-sandbox/checkpoints.md),
+  as well as [Kata](https://github.com/kata-containers/kata-containers),
+  [Cocoon](https://github.com/cocoonstack/cocoon-operator),
+  [Setec](https://github.com/zeroroot-ai/setec), and
+  [SPACE](https://github.com/perplexityai/SPACE). Check maintenance and actual implemented behavior,
+  not just advertised features; consider a bounded Fast Sandbox trial if it can resolve material
+  uncertainties. Distinguish an integration usable as-is, an adaptable component, and an
+  architectural reference. [firecracker-containerd](https://github.com/firecracker-microvm/firecracker-containerd)
+  is archived; recheck the state of each candidate when investigating.
+
+Compare security and control-plane trust, node changes, scheduling and KVM, operational and
+maintenance burden, resource accounting, workspace and persistent storage, guest networking and
+egress, and rollout and cleanup. For suspend/resume, compare process and RAM preservation,
+checkpoint storage and consistency, Pod/node loss, identity and credentials, clock repair,
+network/admission fencing and recovery from interrupted operations. The current same-Pod behavior
+is a baseline, not a requirement to retain its limitations; identify any contract changes and
+their migration. Coordinate with `ENVIRONMENT_SUSPEND_MODES_DESIGN`, `VM_RAM_SUSPEND`, and
+`SANDBOX_QUIESCENCE_DESIGN` without making their independent work wait on this investigation.
+
+**Rollout references:** [#18428](https://github.com/agentydragon/ducktape/pull/18428) proposes
+the admission exception and is closed pending this decision. The staging launch preset
+[#18421](https://github.com/agentydragon/ducktape/pull/18421) and launcher memory changes
+[#18443](https://github.com/agentydragon/ducktape/pull/18443) and
+[#18482](https://github.com/agentydragon/ducktape/pull/18482) have already merged.
+
+**Exit:** a reviewed comparison and recommendation, with a bounded experiment where needed,
+explicit authority and lifecycle boundaries, security tradeoffs and unresolved gaps. Select any
+implementation and rollout work separately; this decision does not authorize a particular backend.
 
 ### `VM_INTRA_SANDBOX_HARDENING` — optional process and state hardening inside one Sandbox
 
