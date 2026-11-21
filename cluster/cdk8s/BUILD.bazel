@@ -1259,6 +1259,7 @@ py_library(
 py_library(
     name = "ntfy",
     srcs = ["ntfy.py"],
+    visibility = ["//cluster/cdk8s/monitoring:__pkg__"],
     deps = [
         ":gateway",
         ":manifest_roots",
