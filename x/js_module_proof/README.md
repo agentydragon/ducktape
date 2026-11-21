@@ -373,6 +373,9 @@ local updates, and pure numeric expressions with renamed local imports,
 varying reexport chains and partitions. Some cases redirect an import and are
 checked as Node-reproduced unsafe witnesses, during initialization and later
 calls; replay with `--mutations disabled` to check the corresponding unchanged split.
+Combine it with `--splits independent` to vary module graphs and request local
+import renaming on independently chosen modules; many graphs are refused, and
+requested, generated, and Node-compared aliases are counted separately.
 
 ```sh
 nix develop .#js-module-proof

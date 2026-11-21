@@ -927,16 +927,22 @@ export function independentSplit(input, seed, index) {
   const owners = [...names, entry];
   owners.forEach((name, moduleIndex) => {
     if ((index + moduleIndex) % 5 === 0) modules[name].aliasImports = true;
+    if (input.grammar === "alias" && (index + moduleIndex) % 3 === 0) modules[name].renameLocalImports = true;
   });
   const statements = input.ast.body.filter((node) => node.type !== "ExportNamedDeclaration");
   // Include ordered partitions with complete earlier-module imports as well as
   // unconstrained random graphs. This samples plausible splits without deriving
   // dependencies from the split checker being tested.
   const plannedEarlyVarReorder = input.earlyVar && index % 28 === 14;
-  const ordered = index % 8 === 2 && !plannedEarlyVarReorder;
+  const ordered = (index % 8 === 2 || (input.grammar === "alias" && index % 8 === 5)) && !plannedEarlyVarReorder;
+  // Sample sorted ranks for alias programs so ordered splits do not tend to
+  // place almost every statement in the entry module.
+  const orderedRanks =
+    ordered && input.grammar === "alias" ? statements.map(() => rand(owners.length)).sort((a, b) => a - b) : null;
   let rank = 0;
   statements.forEach((_, i) => {
-    if (ordered) rank += rand(owners.length - rank);
+    if (orderedRanks) rank = orderedRanks[i];
+    else if (ordered) rank += rand(owners.length - rank);
     modules[owners[ordered ? rank : rand(owners.length)]].statements.push(i);
   });
   modules[entry].imports = shuffle(names, rand);
@@ -2131,6 +2137,8 @@ export async function runFuzz({
     localImportAliasProvedCases: 0,
     parameterizedAliasCases: 0,
     parameterizedAliasComparedCases: 0,
+    parameterizedAliasWithLocalImportComparedCases: 0,
+    parameterizedAliasFunctionImportComparedCases: 0,
     parameterizedAliasProvedCases: 0,
     reexportRelayCases: 0,
     reexportRelayGeneratedCases: 0,
@@ -2261,6 +2269,7 @@ export async function runFuzz({
     let keep = true;
     let hasGeneratedImportAlias = false;
     let hasGeneratedLocalImportAlias = false;
+    let hasGeneratedParameterizedAliasUse = false;
     let hasGeneratedRenamedReexport = false;
     let hasVar = false;
     let phase = "generate-ast";
@@ -2504,6 +2513,10 @@ export async function runFuzz({
         if (hasGeneratedImportAlias) summary.importAliasGeneratedCases++;
         hasGeneratedLocalImportAlias = emitted.some((text) => /\bas __split_local_+\d+/.test(text));
         if (hasGeneratedLocalImportAlias) summary.localImportAliasGeneratedCases++;
+        if (input.grammar === "alias" && input.numericArguments.length)
+          hasGeneratedParameterizedAliasUse = emitted.some((text) =>
+            /function compute\([^)]*\)\s*\{[^}]*\b__split_local_+\d+\b/.test(text)
+          );
         hasGeneratedRenamedReexport = emitted.some((text) => /export \{ [^}]* as __split_reexport_+\d+_\d+/.test(text));
         if (hasGeneratedRenamedReexport) summary.renamedReexportGeneratedCases++;
       }
@@ -2556,7 +2569,11 @@ export async function runFuzz({
       }
       if (hasGeneratedImportAlias) summary.importAliasComparedCases++;
       if (hasGeneratedLocalImportAlias) summary.localImportAliasComparedCases++;
-      if (input.grammar === "alias" && input.numericArguments.length) summary.parameterizedAliasComparedCases++;
+      if (input.grammar === "alias" && input.numericArguments.length) {
+        summary.parameterizedAliasComparedCases++;
+        if (hasGeneratedLocalImportAlias) summary.parameterizedAliasWithLocalImportComparedCases++;
+        if (hasGeneratedParameterizedAliasUse) summary.parameterizedAliasFunctionImportComparedCases++;
+      }
       if (hasGeneratedRenamedReexport) summary.renamedReexportComparedCases++;
       if (input.grammar === "parameter") {
         summary.parameterCompared++;

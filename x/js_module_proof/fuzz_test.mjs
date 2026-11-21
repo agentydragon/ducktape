@@ -658,6 +658,39 @@ if (shards === 4 && shard === 2) {
   assert.deepEqual(campaign.independentRequested, { acyclic: 24, cyclic: 4, invalidAssignment: 4 });
   assert.equal(campaign.independentOrdered, 4);
   assert.ok(campaign.independentOrderedRefused <= campaign.independentOrdered);
+  const aliasOriginal = makeLocalAliasCase(157, 2);
+  const independentAlias = independentSplit(aliasOriginal, 157, 2);
+  assert.deepEqual(independentAlias, independentSplit(aliasOriginal, 157, 2));
+  assert.equal(independentAlias.source, aliasOriginal.source);
+  assert.ok(Object.values(independentAlias.spec.modules).some((module) => module.renameLocalImports));
+  const aliasCampaign = await runFuzz({
+    seed: 157,
+    cases: 32,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "alias",
+    splitMode: "independent",
+    validateEvery: 1000,
+  });
+  assert.equal(aliasCampaign.generated + aliasCampaign.independentRefused, aliasCampaign.cases);
+  assert.ok(aliasCampaign.localImportAliasRequestedCases > 0);
+  assert.ok(aliasCampaign.localImportAliasGeneratedCases > 0);
+  assert.ok(aliasCampaign.localImportAliasComparedCases > 0);
+  assert.ok(aliasCampaign.parameterizedAliasComparedCases > 0);
+  assert.ok(aliasCampaign.parameterizedAliasWithLocalImportComparedCases > 0);
+  assert.ok(aliasCampaign.parameterizedAliasFunctionImportComparedCases > 0);
+  assert.ok(aliasCampaign.refused > 0);
+  const aliasProof = await runFuzz({
+    seed: 157,
+    start: 29,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "alias",
+    splitMode: "independent",
+    validateEvery: 1,
+  });
+  assert.equal(aliasProof.parameterizedAliasFunctionImportComparedCases, 1);
+  assert.equal(aliasProof.parameterizedAliasProvedCases, 1);
+  assert.equal(aliasProof.equal, 1);
   assert.deepEqual(makeComposedCase(1, 2), makeComposedCase(1, 2));
   const composed = await runFuzz({
     seed: 7,
