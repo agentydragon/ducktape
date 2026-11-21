@@ -215,6 +215,7 @@ py_library(
         "//cluster/cdk8s/monitoring/dashboards:rugged-power.json",
         "//cluster/cdk8s/monitoring/dashboards:s3-operations.json",
         "//cluster/cdk8s/monitoring/dashboards:storage-service-details.json",
+        "//cluster/cdk8s/monitoring/dashboards:tabbyapi.json",
         "//cluster/cdk8s/monitoring/dashboards:zot-cache-image-pulls.json",
     ],
     visibility = ["//cluster/cdk8s:__subpackages__"],

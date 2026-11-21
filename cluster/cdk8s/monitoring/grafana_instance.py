@@ -350,6 +350,7 @@ _DASHBOARD_DEFINITIONS: tuple[Dashboard, ...] = (
     LocalDashboard("io-pressure", "Storage", (("DS_MIMIR", "mimir"),)),
     LocalDashboard("home-network-overview", "Network", (("DS_LOKI", LOKI_DATASOURCE_UID), ("DS_MIMIR", "mimir"))),
     LocalDashboard("cpap-gateway-disk", "Cluster & Platform", (("DS_MIMIR", "mimir"),)),
+    LocalDashboard("tabbyapi", "Cluster & Platform", (("DS_MIMIR", "mimir"),)),
     LocalDashboard("flux-cluster", "Cluster & Platform", (("DS_MIMIR", "mimir"),)),
     LocalDashboard("rugged-power", "Nodes & Hardware", (("DS_MIMIR", "mimir"),)),
     GrafanaComDashboard("cert-manager", "Cluster & Platform", (("datasource", "Mimir"),), 20842, 3),
