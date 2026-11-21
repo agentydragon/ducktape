@@ -11,8 +11,9 @@
 //
 // A family (`expressions.mjs`, `statements.mjs`, …) installs productions for expressions and statements and makers of
 // units into a `Gen`. `generateProgram(seed, { families })` builds one program, in the shape the fuzzer's splitter takes:
-// `{ units: [{ tmpl, src, defs, uses }], exports }`, where `src` marks module-scope names (`top`) and the unit's own
-// names (`local`) so that the splitter can rename and import them.
+// `{ units: [{ tmpl, src, defs, uses }], exports, imports }`, where `src` marks module-scope names (`top`) and the unit's own
+// names (`local`) so that the splitter can rename and import them. `imports` are lines the splitter repeats in every module: the
+// names they bind are never marked, because a module imports them itself.
 export const top = (n) => `\u0001${n}\u0002`;
 export const local = (n) => `\u0003${n}\u0004`;
 const TOP = /\u0001([^\u0002]+)\u0002/g;
@@ -42,6 +43,7 @@ export class Gen {
     this.makers = [];
     this.observers = {}; // kind -> (g, binding) => expression text, or null
     this.exports = [];
+    this.imports = []; // import declarations: the program's first lines, and the first lines of every module it is split into
     this.notes = new Set(); // what the program contains that a family wants to count
     this.late = false; // something runs after the program (a continuation): one more observer waits for it
     this.avoid = new Set();
@@ -230,7 +232,7 @@ export class Gen {
     this.exports = [...new Set(this.exports)];
     for (const u of this.units)
       u.uses = [...new Set([...u.src.matchAll(TOP)].map((m) => m[1]))].filter((n) => !u.defs.includes(n));
-    return { units: this.units, exports: this.exports, notes: [...this.notes] };
+    return { units: this.units, exports: this.exports, imports: this.imports, notes: [...this.notes] };
   }
 }
 
@@ -254,7 +256,7 @@ export function build(seed, installers, { units, avoid = [] } = {}) {
 export function renderProgram(program, { top: renameTop = (n) => n, local: renameLocal = (n) => n } = {}) {
   const spell = (src) =>
     src.replace(TOP, (_, n) => renameTop(n)).replace(/\u0003([^\u0004]+)\u0004/g, (_, n) => renameLocal(n));
-  const lines = program.units.map((u) => spell(u.src));
+  const lines = [...program.imports, ...program.units.map((u) => spell(u.src))];
   if (program.exports.length > 0) lines.push(`export { ${program.exports.map(renameTop).join(", ")} };`);
   return lines.join("\n") + "\n";
 }
