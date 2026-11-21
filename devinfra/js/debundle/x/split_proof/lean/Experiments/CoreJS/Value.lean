@@ -857,10 +857,21 @@ def writeCell (a : Addr) (v : Val) : M W Unit := do
   | some { value := some _, mutable := false } => throwErr .type "assignment to constant variable"
   | _ => throwErr .reference "cannot access a binding before initialization"
 
-/-- The names of the own properties of an object, in the order the model keeps them. -/
+/-- An ECMAScript array-index property name: canonical decimal spelling, excluding `2^32 - 1`. -/
+def arrayIndex? (key : String) : Option Nat := do
+  let index ← key.toNat?
+  if index < 4294967295 ∧ toString index = key then some index else none
+
+/-- Own string keys: array indices in numeric order, then the other keys in insertion order. The model has no symbols. -/
+def ownPropertyKeys (props : List (String × Property)) : List String :=
+  let indexed : List (Nat × String) := props.filterMap fun (key, _) => (arrayIndex? key).map (·, key)
+  (indexed.mergeSort fun a b => decide (a.1 ≤ b.1)).map (·.2) ++
+    props.filterMap fun (key, _) => if (arrayIndex? key).isNone then some key else none
+
+/-- The names of the own properties of an object, in ECMAScript enumeration order. -/
 def ownKeys (v : Val) : M W (List String) :=
   match v with
-  | .obj a => do pure ((← getObj a).props.map (·.1))
+  | .obj a => do pure (ownPropertyKeys (← getObj a).props)
   | _ => unknown "the own keys of a value that is not an object of the program"
 
 end CoreJS

@@ -34,15 +34,18 @@ structure Recorded where
   args : List Primitive
   result : HostResult
 
-/-- A conversation of the world about one part of opaque code, as it stands: the requests of its script that are left,
-and its registers. Register 0 is the callee, 1 is `this`, then the arguments, then each answer in turn. -/
-structure Conversation where
+/-- Requests for one part of opaque code, with Node expectations for its own-key responses. -/
+structure Script where
   steps : List Request
+  expectedKeys : List (List String) := []
+
+/-- A running script and its registers. Register 0 is the callee, 1 is `this`, then the arguments, then each answer. -/
+structure Conversation extends Script where
   regs : Array WVal
 
 /-- The scripted part of opaque code: `(code, part)` and its requests, in which `WVal.handle k` stands for register
 `k`. -/
-abbrev Scripts := List ((Nat × Nat) × List Request)
+abbrev Scripts := List ((Nat × Nat) × Script)
 
 /-- Where a replay stands: the calls that are left, the first call of the model that was not the recorded one, and
 the conversations about opaque code that are under way, innermost first. -/
@@ -79,10 +82,14 @@ def Replay.next (st : Replay) : Request × Replay :=
   | [] => (.unknown "world: no conversation is under way", st)
   | c :: rest =>
     match c.steps with
-    | [] => (.done (.prim .undef), { st with talks := rest })
+    | [] =>
+      if c.expectedKeys.isEmpty then (.done (.prim .undef), { st with talks := rest })
+      else (.unknown "model: script ended before its expected own keys", st)
     | r :: more =>
       match r.fill c.regs with
-      | .done x => (.done x, { st with talks := rest })
+      | .done x =>
+        if c.expectedKeys.isEmpty then (.done x, { st with talks := rest })
+        else (.unknown "model: script ended before its expected own keys", st)
       | .throw x => (.throw x, { st with talks := rest })
       | .unknown why => (.unknown why, { st with talks := rest })
       | r => (r, { st with talks := { c with steps := more } :: rest })
@@ -93,9 +100,15 @@ def Replay.told (told : Told) (st : Replay) : Request × Replay :=
   | .run code part callee this args _, talks =>
     match st.scripts.lookup (code, part) with
     | none => (.unknown s!"world: no script for part {part} of opaque code {code}", st)
-    | some steps => Replay.next { st with talks := { steps, regs := #[callee, this] ++ args.toArray } :: talks }
+    | some script => Replay.next { st with talks := { toScript := script, regs := #[callee, this] ++ args.toArray } :: talks }
   | .value v, c :: rest => Replay.next { st with talks := { c with regs := c.regs.push v } :: rest }
-  | .keys _, c :: rest => Replay.next { st with talks := { c with regs := c.regs.push (.prim .undef) } :: rest }
+  | .keys keys, c :: rest =>
+    match c.expectedKeys with
+    | expected :: more =>
+      if keys == expected then
+        Replay.next { st with talks := { c with expectedKeys := more, regs := c.regs.push (.prim .undef) } :: rest }
+      else (.unknown s!"model: own keys {repr keys}, expected {repr expected}", st)
+    | [] => (.unknown "model: own keys have no Node expectation", st)
   | .threw v, _ :: rest => (.throw v, { st with talks := rest })
   | _, [] => (.unknown "world: no conversation is under way", st)
 
@@ -214,8 +227,11 @@ def scripts (j : Json) : Except String Scripts :=
   match j.getObjVal? "scripts" with
   | .ok all => do
     (← all.getArr?).toList.mapM fun s => do
+      let expectedKeys ← match s.getObjVal? "expectedKeys" with
+        | .ok j => (← j.getArr?).toList.mapM fun keys => do (← keys.getArr?).toList.mapM Json.getStr?
+        | .error _ => pure []
       pure ((← s.getObjValAs? Nat "code", ← s.getObjValAs? Nat "part"),
-        ← (← s.getObjVal? "steps" >>= Json.getArr?).toList.mapM request)
+        { steps := ← (← s.getObjVal? "steps" >>= Json.getArr?).toList.mapM request, expectedKeys })
   | .error _ => pure []
 
 /-- The recording that comes with a program, if one does. -/
