@@ -180,16 +180,13 @@ class AgentRegistry:
             model: asyncio.Semaphore(limit) for model, limit in (model_parallelism_limits or {}).items()
         }
 
-    async def close(self) -> None:
-        await self._executor.close()
-
     async def __aenter__(self) -> AgentRegistry:
         return self
 
     async def __aexit__(
         self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None
     ) -> None:
-        await self.close()
+        await self._executor.close()
 
     @contextlib.asynccontextmanager
     async def _model_slot(self, model: str) -> AsyncIterator[None]:
