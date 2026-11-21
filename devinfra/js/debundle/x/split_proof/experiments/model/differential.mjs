@@ -22,7 +22,8 @@
 //     The tool's verdict is for a bundle whose evaluation completes (premise P4 of `../effects/README.md`). So a split
 //     is compared with its bundle when the bundle ends normally in Node, or when the split runs the statements in the
 //     bundle's order, which keeps every ending. The other accepted splits are counted apart; the model must still
-//     agree with Node on each of them. `splitCases` of `cases.mjs` has one of those as a named case;
+//     agree with Node on each of them. `splitCases` of `cases.mjs` has one of those as a named case, and a split
+//     that the tool must reject;
 //   - the members of the host's prototypes: the model's lists must be Node's.
 //
 // The world. The model asks a world about the host functions that work on primitives (`worldFunction` of
@@ -507,6 +508,10 @@ function split(job, bundle, dump, kind, spec, named) {
     encoding: "utf8",
   });
   const label = `${job.label}, split ${kind} ${JSON.stringify(spec)}`;
+  if (named?.refused) {
+    assert.equal(run.status, 1, `${label}: lowersplit does not reject it\n${run.stdout}\n${run.stderr}`);
+    return tally.named[1]++;
+  }
   if (named) assert.equal(run.status, 0, `${label}: lowersplit does not accept it\n${run.stdout}\n${run.stderr}`);
   if (run.status === 3) return tally.unsupported++;
   if (run.status === 1) return tally[kind][1]++;
@@ -607,7 +612,7 @@ console.log("unknown code that units of generated programs were left out for:", 
 console.log(`model endings: ${JSON.stringify(ends)}; corejs took ${modelSeconds.toFixed(1)} s`);
 const verdicts = (kind) => `${kind}: ${tally[kind][0]} accepted, ${tally[kind][1]} rejected`;
 console.log(
-  `splits: ${tally.named[0]} named; ${tally.programs} programs; ${["cut", "ordered", "free"].map(verdicts).join("; ")}; ` +
+  `splits: ${tally.named[0]} named accepted, ${tally.named[1]} named rejected; ${tally.programs} programs; ${["cut", "ordered", "free"].map(verdicts).join("; ")}; ` +
     `${tally.unsupported} unsupported; ${tally.agree} accepted splits where the four runs agree, ` +
     `${tally.orderKept} of them with the statements in the bundle's order; ${apart.splits} accepted splits move code ` +
     `of a bundle that does not end normally and are not compared with it (premise P4), ${apart.differ} of them ` +
