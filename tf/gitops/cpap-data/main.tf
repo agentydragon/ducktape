@@ -75,7 +75,7 @@ resource "forgejo_collaborator" "reader" {
 
 # Read-only access for the claude agent account (user provisioned by
 # tf/gitops/forgejo-claude; until it exists this resource fails and the
-# Terraform CR retries on its interval).
+# Workspace retries).
 resource "forgejo_collaborator" "claude" {
   repository_id = forgejo_repository.data.id
   user          = "claude"

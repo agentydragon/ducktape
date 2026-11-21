@@ -3,9 +3,6 @@ resource "authentik_group" "kubectl_sandbox_users" {
   users = [data.authentik_user.agentydragon.pk]
 }
 
-# ============================================================================
-# kubectl-passthrough-mcp — Passthrough kubectl MCP (caller's own permissions)
-# ============================================================================
 # Forwards the caller's Authentik JWT directly to kube-apiserver. The caller
 # gets their own OIDC permissions — not sandbox-scoped.
 
@@ -20,10 +17,9 @@ resource "authentik_provider_oauth2" "kubectl_passthrough_mcp" {
   issuer_mode                = "per_provider"
   include_claims_in_id_token = true
 
-  # Same reason as ha-mcp.tf: agentplane-staging's `kubernetes` link holds an operator OAuth
-  # association here, and the Terraform provider's `minutes=10` default renews it ~150x/day, any
-  # one of which can permanently wedge the association. This server was wedged that way on
-  # 2026-07-30.
+  # agentplane-staging's `kubernetes` link holds an operator OAuth association here, and the
+  # Terraform provider's `minutes=10` default renews it ~150x/day, any one of which can
+  # permanently wedge the association. This server was wedged that way on 2026-07-30.
   access_token_validity = "hours=24"
 
   property_mappings = [
@@ -92,5 +88,3 @@ moved {
 
 ## Passthrough server needs no Secret — the OAuth2 provider is public (PKCE)
 ## so there's no client_secret, and passthrough mode doesn't do token exchange.
-## The previous kubernetes_secret.kubectl_passthrough_mcp was deleted above;
-## TF will destroy the state-only resource on the next apply.

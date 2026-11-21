@@ -1,6 +1,3 @@
-# ============================================================================
-# kubectl-sandbox-client-credentials — machine-to-machine OIDC for kubeconfig
-# ============================================================================
 # Non-interactive Authentik client_credentials provider for direct kubeconfig /
 # kube-api-proxy access and kubectl-machine-mcp. The provider's machine-only
 # scope mapping is an explicit principal-to-groups allowlist.
