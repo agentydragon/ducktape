@@ -25,6 +25,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/environments/internal/controller",
     visibility = [
         "//agentplane/environments/cmd:__pkg__",
+        "//agentplane/environments/internal/controller/testfixture:__pkg__",
         "//agentplane/environments/internal/runtimecontrol:__pkg__",
     ],
     deps = [

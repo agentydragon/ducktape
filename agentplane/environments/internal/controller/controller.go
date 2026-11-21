@@ -595,7 +595,7 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 	if !runtimecredentials.ValidID(w.credential.ID) {
 		return w, &unready{reason: "RunnerCredentialMissing", message: "no Environment Runtime credential is issued for the next Pod"}, nil
 	}
-	pod, blocked := render(sandbox, template, w.credential)
+	pod, blocked := RenderPod(sandbox, template, w.credential)
 	if blocked != nil {
 		return w, blocked, nil
 	}
@@ -642,7 +642,8 @@ func renderedSpec(spec any) string {
 // render is the template's Pod for this Sandbox, with the state volume filled in. It runs as the
 // namespace's default account with no ServiceAccount token mounted: the template's own projections,
 // such as its egress sidecar's, are all it gets.
-func render(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate, credential requester.Issued) (*corev1.Pod, *unready) {
+// RenderPod assembles the Sandbox controller's privileged launcher or ordinary Pod.
+func RenderPod(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate, credential requester.Issued) (*corev1.Pod, *unready) {
 	if blocked := validateStateVolume(template); blocked != nil {
 		return nil, blocked
 	}

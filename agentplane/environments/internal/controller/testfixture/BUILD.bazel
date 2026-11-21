@@ -1,0 +1,16 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+
+go_binary(
+    name = "render_pod",
+    testonly = True,
+    srcs = ["main.go"],
+    visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
+    deps = [
+        "//agentplane/environments/internal/controller",
+        "//agentplane/identity/credentials/requester",
+        "//agentplane/sandboxes/api",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/runtime",
+        "@io_k8s_sigs_controller_runtime//pkg/controller/controllerutil",
+    ],
+)

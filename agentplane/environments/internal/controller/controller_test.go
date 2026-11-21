@@ -1288,7 +1288,7 @@ func TestQuiesceAttemptDoesNotThrottleANewRuntimeIncarnationDuringDeletion(t *te
 	if err != nil || blocked != nil {
 		t.Fatalf("replacement template: blocked=%v err=%v", blocked, err)
 	}
-	replacement, blocked := render(sandbox, template, credential)
+	replacement, blocked := RenderPod(sandbox, template, credential)
 	if blocked != nil {
 		t.Fatalf("render replacement Pod: %v", blocked)
 	}
