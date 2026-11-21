@@ -10,10 +10,8 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import (
-    Capability,
     ContainerResources,
     ContainerSecurityContextProps,
-    ContainerSecutiryContextCapabilities,
     Cpu,
     CpuResources,
     Deployment,
@@ -230,12 +228,7 @@ class Ntfy(Construct):
             ),
             readiness=http_probe("/v1/health", port=SERVICE.pod_port, initial_delay_seconds=10, failure_threshold=12),
             liveness=http_probe("/v1/health", port=SERVICE.pod_port, initial_delay_seconds=20, period_seconds=20),
-            security_context=ContainerSecurityContextProps(
-                capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
-                user=65532,
-                group=65532,
-                read_only_root_filesystem=True,
-            ),
+            security_context=ContainerSecurityContextProps(user=65532, group=65532, read_only_root_filesystem=True),
         )
         pod_policy.harden(deployment)
         return deployment

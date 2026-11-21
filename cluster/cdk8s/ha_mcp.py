@@ -19,11 +19,9 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import (
-    Capability,
     ConfigMap,
     ContainerResources,
     ContainerSecurityContextProps,
-    ContainerSecutiryContextCapabilities,
     Cpu,
     CpuResources,
     Deployment,
@@ -228,9 +226,7 @@ class HaMcpApp(Construct):
             ),
             readiness=http_probe("/healthz", port=_UPSTREAM.number, initial_delay_seconds=5),
             liveness=http_probe("/healthz", port=_UPSTREAM.number, initial_delay_seconds=20, period_seconds=20),
-            security_context=ContainerSecurityContextProps(
-                capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]), user=999, group=999
-            ),
+            security_context=ContainerSecurityContextProps(user=999, group=999),
         )
         deployment.containers[0].mount("/tmp", tmp_volume)
         deployment.containers[0].mount(_APP_DATA_DIR, data_volume)

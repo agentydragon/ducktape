@@ -14,11 +14,9 @@ from pathlib import Path
 import tomli_w
 from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import (
-    Capability,
     ConfigMap,
     ContainerResources,
     ContainerSecurityContextProps,
-    ContainerSecutiryContextCapabilities,
     Cpu,
     CpuResources,
     Deployment,
@@ -263,10 +261,7 @@ class Aiquota(Construct):
             liveness=http_probe(
                 "/healthz", port=SERVICE.pod_port, initial_delay_seconds=10, period_seconds=20, timeout_seconds=5
             ),
-            security_context=ContainerSecurityContextProps(
-                capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
-                read_only_root_filesystem=False,
-            ),
+            security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
             volume_mounts=[
                 VolumeMount(
                     path=str(_CONFIG_PATH.parent),
