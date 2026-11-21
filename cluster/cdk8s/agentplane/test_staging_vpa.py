@@ -1,5 +1,7 @@
 """The static-service VPA bounds stay within their Deployment resource contracts."""
 
+from collections.abc import Callable
+
 import pytest_bazel
 from cdk8s import App
 from cdk8s_plus_34 import Deployment
@@ -15,8 +17,9 @@ def _mib(quantity: str) -> int:
     return int(quantity[:-2])
 
 
-def test_vpa_bounds_fit_staging_deployments(scratch_app: App) -> None:
-    deployments = [obj for obj in staging.chart(scratch_app).node.find_all() if isinstance(obj, Deployment)]
+def test_vpa_bounds_fit_staging_deployments(scratch_app_factory: Callable[[], App]) -> None:
+    charts = [staging.chart(scratch_app_factory()), staging.delivery_chart(scratch_app_factory())]
+    deployments = [obj for chart in charts for obj in chart.node.find_all() if isinstance(obj, Deployment)]
     for name, container_name, minimum, maximum in staging_vpa._WORKLOADS:
         deployment = one(deployment for deployment in deployments if deployment.name == name)
         container = one(container for container in deployment.containers if container.name == container_name)
