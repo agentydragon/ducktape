@@ -13,7 +13,9 @@ artifact copy in the other root. The Flux Kustomization graph is one generated c
 `cluster/k8s/flux/kustomizations.k8s.yaml`;
 the neighboring `flux/kustomization.yaml` keeps bootstrap and source objects hand-written.
 Flux reads `devel` as it always has. Regenerate with `bb run //cluster/cdk8s:generate_manifests`
-(the binary writes into the checkout, so `bb run`, not `bbr run`);
+(writes into the local checkout), or use the
+[remote generation and patch retrieval recipe](../../devinfra/buildbuddy/docs/remote.md#run-repository-writers-remotely-and-retrieve-a-patch)
+to run the writer on BuildBuddy and apply its output locally;
 `//cluster/cdk8s:test_generate_manifests` regenerates in memory and fails CI when a
 written file differs from, or is missing at, its committed path, or when `cluster/generated`
 holds a file the generator did not write. Conventions for writing a generator: <../cdk8s/AGENTS.md>.

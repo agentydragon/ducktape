@@ -170,7 +170,8 @@ precaution based on a suspected, not proven, diskless-primary reattachment issue
 Everything under `cluster/generated`, every `*.k8s.yaml` under `cluster/k8s` or
 `cluster/parked`, and files `.gitattributes` marks `linguist-generated=true` there are
 `bb run //cluster/cdk8s:generate_manifests` output: change the generator and regenerate
-(`//cluster/cdk8s:test_generate_manifests` fails on drift). A directory is under
+(`//cluster/cdk8s:test_generate_manifests` fails on drift). For remote generation and patch retrieval,
+follow <../devinfra/buildbuddy/docs/remote.md#run-repository-writers-remotely-and-retrieve-a-patch>. A directory is under
 `cluster/generated` exactly when the generator writes all of it. Layout rules above bind
 generated directories only where the generator has a knob. Invariants over generated
 objects are fleet rules or tests beside the generator, never new `cluster/validation/` tests
