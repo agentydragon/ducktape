@@ -12,10 +12,11 @@
   ...
 }:
 let
-  sshKeys = [
-    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFfzLZ7zOOMviYrrxeh1nSXdwu9uveSXr07EJI5NwFau agentydragon@wyrm2"
-    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBoGigbjJZfs1+M6yUCJSBzUlu2mFcakFTmuxrN425fO agentydragon@atlas"
-    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICweiJQQidbhojDI7tXuSuntptCc6Dy4stIGzDlI9z0b agentydragon@rugged"
+  keys = import ../../../ssh-keys.nix;
+  sshKeys = with keys; [
+    wyrm2
+    atlas
+    rugged
   ];
 in
 {

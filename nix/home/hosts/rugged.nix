@@ -112,7 +112,6 @@
     pkgs.psmisc
     pkgs.telegram-desktop
     pkgs.lightburn
-    ducktapePackages.tana-outliner
   ];
 
   # Parked with Wyrm2's XRDP service; restore together with pkgs.freerdp.
