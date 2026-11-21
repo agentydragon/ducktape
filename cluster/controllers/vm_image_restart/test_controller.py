@@ -250,7 +250,10 @@ async def test_invalid_persisted_state_is_ignored() -> None:
     assert await controller._read_state(core, _SETTINGS) is None
 
 
-async def test_watch_relists_and_uses_the_list_resource_version(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("watch_failure", [False, True], ids=["stream-ended", "watch-error"])
+async def test_watch_relists_and_uses_the_list_resource_version(
+    monkeypatch: pytest.MonkeyPatch, watch_failure: bool
+) -> None:
     name = _SETTINGS.target_vm_name
     obj = {"metadata": {"name": name}}
     store: dict[str, dict[str, Any]] = {}
@@ -276,6 +279,8 @@ async def test_watch_relists_and_uses_the_list_resource_version(monkeypatch: pyt
             assert store == {name: updated}
             assert changed.is_set()
             changed.clear()
+            if watch_failure:
+                raise ApiException(status=503)
         else:
             assert resource_version == "200"
             assert store == {}
