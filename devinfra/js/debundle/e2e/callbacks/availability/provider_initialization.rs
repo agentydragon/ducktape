@@ -1,5 +1,6 @@
 //! Imported initializer bodies and their evaluation-time availability.
 
+use super::{assert_unmoved_output, expect_single_binding_rejection};
 use debundle_e2e_support::saved_analysis::{assert_same_invocation_trees, path, staged};
 use debundle_e2e_support::*;
 
@@ -109,22 +110,8 @@ fn active_mutable_and_captured_providers_keep_the_conservative_split() {
             ("static/peer", provider),
             ("static/other", "export const value = 0;\n"),
         ];
-        let colocated = run_fixture(
-            FixtureOpts::new(&source, vec![])
-                .with_extra_chunks(&peers)
-                .with_unassigned_mode(unassigned_mode_inline()),
-        );
-        assert_preserved_entry_output(&colocated, "svg\n");
-        expect_atomic_conflict_rejection(
-            FixtureOpts::new(
-                &source,
-                vec![logical_module("icons", &[Member::new("icon")])],
-            )
-            .with_extra_chunks(&peers)
-            .with_unassigned_mode(unassigned_mode_inline()),
-            &["icons"],
-            &[],
-        );
+        assert_unmoved_output(&source, &peers, "svg\n");
+        expect_single_binding_rejection(&source, &peers, "icons", "icon");
     }
 }
 
@@ -140,22 +127,8 @@ fn early_import_cycle_keeps_the_callables_tdz() {
         {ENTRY}\nconsole.log(globalThis.early);\n"
     );
     let peers = [("static/peer", provider)];
-    let colocated = run_fixture(
-        FixtureOpts::new(&source, vec![])
-            .with_extra_chunks(&peers)
-            .with_unassigned_mode(unassigned_mode_inline()),
-    );
-    assert_preserved_entry_output(&colocated, "svg\nReferenceError\n");
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            &source,
-            vec![logical_module("icons", &[Member::new("icon")])],
-        )
-        .with_extra_chunks(&peers)
-        .with_unassigned_mode(unassigned_mode_inline()),
-        &["icons"],
-        &[],
-    );
+    assert_unmoved_output(&source, &peers, "svg\nReferenceError\n");
+    expect_single_binding_rejection(&source, &peers, "icons", "icon");
 }
 
 #[test]
@@ -166,20 +139,6 @@ fn a_callback_invoking_body_does_not_gain_the_readiness_summary() {
         "import {{ field, node }} from './peer.js';\n{ENTRY}\nconsole.log(globalThis.early);\n"
     );
     let peers = [("static/peer", provider)];
-    let colocated = run_fixture(
-        FixtureOpts::new(&source, vec![])
-            .with_extra_chunks(&peers)
-            .with_unassigned_mode(unassigned_mode_inline()),
-    );
-    assert_preserved_entry_output(&colocated, "svg\nReferenceError\n");
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            &source,
-            vec![logical_module("icons", &[Member::new("icon")])],
-        )
-        .with_extra_chunks(&peers)
-        .with_unassigned_mode(unassigned_mode_inline()),
-        &["icons"],
-        &[],
-    );
+    assert_unmoved_output(&source, &peers, "svg\nReferenceError\n");
+    expect_single_binding_rejection(&source, &peers, "icons", "icon");
 }

@@ -1,4 +1,6 @@
-use debundle_e2e_graph_support::{FixtureGraphExt, GraphFixture, source_unit_for_binding};
+use debundle_e2e_graph_support::{
+    FixtureGraphExt, GraphFixture, json_node_declaring, source_unit_for_binding,
+};
 use debundle_e2e_support::*;
 
 #[test]
@@ -16,18 +18,7 @@ export {};
     ));
     assert_preserved_entry_output(&fixture, "before\nafter 3\n");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
-    let copied = graph["nodes"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|node| {
-            node["declared_bindings"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|binding| binding["binding"] == "copied")
-        })
-        .unwrap();
+    let copied = json_node_declaring(&graph, "copied");
     if let Some(output) = std::env::var_os("TEST_UNDECLARED_OUTPUTS_DIR") {
         std::fs::write(
             std::path::PathBuf::from(output).join("primitive_set_copied.json"),
@@ -84,18 +75,7 @@ console.log("after", copied.size);
     ).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "before\niterate\nafter 2\n");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
-    let copied = graph["nodes"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|node| {
-            node["declared_bindings"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|binding| binding["binding"] == "copied")
-        })
-        .unwrap();
+    let copied = json_node_declaring(&graph, "copied");
     assert_eq!(copied["synchronous_execution"]["complete"], false);
 }
 
@@ -153,18 +133,7 @@ console.log([...copied].join(","));
     );
     assert_preserved_entry_output(&fixture, "iterator getter\nvalue\n");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
-    let copied = graph["nodes"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|node| {
-            node["declared_bindings"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|binding| binding["binding"] == "copied")
-        })
-        .unwrap();
+    let copied = json_node_declaring(&graph, "copied");
     assert_eq!(copied["synchronous_execution"]["complete"], false);
 }
 
@@ -185,18 +154,7 @@ console.log("after", calls, copied.size);
     );
     assert_preserved_entry_output(&fixture, "source 1\nafter 1 2\n");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
-    let copied = graph["nodes"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|node| {
-            node["declared_bindings"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|binding| binding["binding"] == "copied")
-        })
-        .unwrap();
+    let copied = json_node_declaring(&graph, "copied");
     assert_eq!(copied["synchronous_execution"]["complete"], false);
 }
 
@@ -209,17 +167,8 @@ fn graph_backed_refinement_cannot_split_the_proved_set_interval() {
             "members: [{selector: {binding: {name: seed}}}, {selector: {binding: {name: sibling}}}, {selector: {binding: {name: copied}}}]\n",
         )],
     );
-    let copied = fixture
-        .dependency_graph()
-        .nodes
-        .into_iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|binding| binding.binding.as_ref() == "copied")
-        })
-        .unwrap()
-        .id;
+    let graph = fixture.dependency_graph();
+    let copied = source_unit_for_binding(&graph, "copied");
     let batch = fixture.root().join("refine.json");
     std::fs::write(
         &batch,
