@@ -27,7 +27,6 @@ type Conversation struct {
 	ID         string
 	Generation int
 	Owner      *string
-	LeaseUntil *time.Time
 	API        protocol.APIStyle
 	// Transcript retains the full native conversation across compaction.
 	Transcript      protocol.Context
@@ -321,14 +320,11 @@ type ProviderAttempt struct {
 	Number          int
 	Budget          int
 	Generation      int
-	LeaseUntil      time.Time
 	Expired         bool
-	RetryAt         *time.Time
 	RetryIn         time.Duration
 	Retryable       bool
 	Ready           bool
 	FailureReason   string
-	ResultStatus    string
 	RetrySuppressed ProviderRetrySuppression
 	ProviderRequest *ProviderRequest
 }
