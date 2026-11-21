@@ -1250,6 +1250,19 @@ if (shards === 4 && shard === 2) {
   assert.equal(independentMutation.mutationKinds.independentNumericInitializer, 1);
   assert.equal(independentMutation.mutatedDifferent, 1);
   assert.equal(independentMutation.mutatedVerdicts.unsafe, 1);
+  const removedEffect = await runFuzz({
+    seed: 157,
+    start: 13,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "alias",
+    splitMode: "independent",
+    validateEvery: 1,
+  });
+  assert.equal(removedEffect.mutationKinds.independentRemoveEffect, 1);
+  assert.equal(removedEffect.mutatedDifferent, 1);
+  assert.equal(removedEffect.mutatedVerdicts.unsafe, 1);
+  assert.deepEqual(removedEffect.certifiedWitnesses[0].calls, []);
   const extraEffect = await runFuzz({
     seed: 157,
     start: 37,
@@ -1261,8 +1274,8 @@ if (shards === 4 && shard === 2) {
   });
   assert.equal(extraEffect.mutationKinds.independentExtraEffect, 1);
   assert.equal(extraEffect.mutatedDifferent, 1);
-  assert.equal(extraEffect.mutatedVerdicts.proved, 0);
-  assert.equal(extraEffect.mutatedVerdicts.unsafe + extraEffect.mutatedVerdicts.unknown, 1);
+  assert.equal(extraEffect.mutatedVerdicts.unsafe, 1);
+  assert.deepEqual(extraEffect.certifiedWitnesses[0].calls, []);
   const changedRecord = await runFuzz({
     seed: 157,
     start: 85,

@@ -1502,13 +1502,30 @@ def witnessedAssignedStatement (modules : List BindingModule) (assignment : Nat)
     let assigned ← (module.assignment.zip module.statements).find? (fun pair => pair.1 == assignment)
     witnessedOutputStatement modules index assigned.2
 
+/- Witness execution labels the statements actually present in the emitted
+   modules. The requested assignment is not a description of altered output:
+   mutations may have inserted or removed statements. -/
+def witnessedActualModules : List BindingModule → Nat → List BindingModule
+  | [], _ => []
+  | module :: rest, next =>
+    { module with assignment := (List.range module.statements.length).map (fun index => next + index) } ::
+      witnessedActualModules rest (next + module.statements.length)
+
 def witnessedOutputState (source : List BindingStmt) (modules : List BindingModule) (entry : Nat) : Option (ExecutionState Unit) := do
-  let order ← machineTrace (asEffectModules modules) entry
-  let indices ← order.mapM (fun label => (List.range source.length).find? (fun index => toString index == label))
-  let statements ← indices.mapM (witnessedAssignedStatement modules)
-  let definitions ← witnessedOutputDefinitions modules
+  let actual := witnessedActualModules modules 0
+  let count := (modules.flatMap BindingModule.statements).length
+  let order ← machineTrace (asEffectModules actual) entry
+  let indices ← order.mapM (fun label => (List.range count).find? (fun index => toString index == label))
+  let statements ← indices.mapM (witnessedAssignedStatement actual)
+  let definitions ← witnessedOutputDefinitions actual
   let state ← runBindingStatements definitions statements
   canonicalBindingState source state
+
+/- Inserted output observations must be executed even when the requested
+   assignment contains fewer statement indices. -/
+example : (witnessedOutputState [.variable "x" 1, .record "x"]
+    [{ imports := [], exports := [], statements := [.variable "x" 1, .record "x", .record "x"], assignment := [0, 1] }] 0).map
+      (fun state => state.events) = some [.number 1, .number 1] := by decide
 
 /- A small acceptance slice for local import aliases. Every extracted output
    statement is resolved through the actual graph before comparison with its

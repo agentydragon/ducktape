@@ -2235,12 +2235,6 @@ theorem binding_simple_future_calls (calls : ${aliasCallType}) :
     };
   }
   const rawOutputReady = has(proof, "binding_output_ready");
-  if (!rawOutputReady && !renamedLocal)
-    return {
-      result: "unknown",
-      reason: "Lean could not validate the extracted output initialization",
-      detail: proof.stdout || proof.stderr,
-    };
   const unsafeWitnessPrefix = rawOutputReady
     ? witnessPrefix
     : definitionPrefix +

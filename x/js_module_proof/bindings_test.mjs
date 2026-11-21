@@ -1168,3 +1168,30 @@ if (runSection(7)) {
   assert.deepEqual(execute(priorUpdateSource, calls), { events: [], results: [6, 14] });
   assert.deepEqual(execute(join(priorUpdateOut, "entry.mjs"), calls), { events: [], results: [6, 14] });
 }
+
+if (runSection(0)) {
+  const insertedSource = join(root, "inserted-event-source.mjs");
+  const insertedSpec = join(root, "inserted-event-spec.json");
+  const insertedOut = join(root, "inserted-event-out");
+  await writeFile(insertedSource, `let value = 3;\nfunction read() { return value; }\nexport { read };\n`);
+  await writeFile(
+    insertedSpec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0] },
+        "entry.mjs": { imports: ["state.mjs"], statements: [1] },
+      },
+    })
+  );
+  assert.equal(cli("generate", insertedSource, insertedSpec, insertedOut).value.result, "generated");
+  const insertedState = join(insertedOut, "state.mjs");
+  const insertedText = await readFile(insertedState, "utf8");
+  assert.match(insertedText, /let value = 3;/);
+  await writeFile(insertedState, insertedText.replace("let value = 3;", "let value = 3;\nglobalThis.record(value);"));
+  const inserted = cli("validate", insertedSource, insertedSpec, insertedOut).value;
+  assert.equal(inserted.result, "unsafe", JSON.stringify(inserted));
+  assert.deepEqual(execute(insertedSource, []), { events: [], results: [] });
+  assert.deepEqual(execute(join(insertedOut, "entry.mjs"), []), { events: [3], results: [] });
+}
