@@ -24,6 +24,8 @@ This directory owns the tools and integration code specific to that service.
   [`debug/`](debug/) holds investigations; [`x/`](x/) holds experimental tools.
 - [Snapshot reuse plan](plans/snapshot-reuse/README.md) records checked BuildBuddy
   defaults and an approval-gated validation proposal.
+- [KVM cache proxy plan](plans/node_local_cache.md) records the measurements and
+  the tests for shared and per-node placement.
 
 Image pins and their shared updater remain in [`devinfra`](../image_pins.json).
 Workspace execution policy remains in [`devinfra/bazel/rbe.bazelrc`](../bazel/rbe.bazelrc).
