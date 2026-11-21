@@ -145,11 +145,14 @@ def Faithful (B : Bundle) (S : Spec) (P : Plan) : Prop :=
   ∧ (∀ m ∈ P.mods, ∀ i ∈ m.stmts, i < B.length)
   ∧ (∀ ms ∈ S.modules, ∀ sel ∈ ms.2, ∃ i ∈ List.range B.length, sel.claims B i = true)
 
-/-- Every `import` names real exports of a real other module; no name is bound twice in a module;
-every glue `export` names a local declaration. With `ExportsUnique`, an ES engine would link these files without error. -/
+/-- Every `import` names real exports of a real other module, each a binding that module declares; no name is bound
+twice in a module; every glue `export` names a local declaration. With `ExportsUnique`, an ES engine would link these
+files without error. (An `export` statement may publish a name its module imports; importing it from there is not
+allowed, so that every import leads to the statement that declares the name in one step.) -/
 def Linkable (B : Bundle) (P : Plan) : Prop :=
   ∀ m ∈ P.mods,
-    (∀ e ∈ m.imports, e.1 ≠ m.name ∧ (P.find e.1).isSome = true ∧ ∀ u ∈ e.2, P.exportsName B e.1 u = true)
+    (∀ e ∈ m.imports, e.1 ≠ m.name ∧ (P.find e.1).isSome = true ∧
+      ∀ u ∈ e.2, P.declaresIn B e.1 u = true ∧ P.exportsName B e.1 u = true)
     ∧ (m.imports.map (·.1)).Nodup
     ∧ (m.imports.flatMap (·.2)).Nodup
     ∧ (∀ e ∈ m.imports, ∀ u ∈ e.2, m.declares B u = false)

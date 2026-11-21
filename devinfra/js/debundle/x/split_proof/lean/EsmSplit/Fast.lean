@@ -243,25 +243,22 @@ theorem Plan.hygienicB_iff (B : Bundle) (P : Plan) : P.hygienicB B.toArray = tru
 /-- `Linkable` for one module, with the tables. -/
 def linkModB (byName : Std.TreeMap ModName ModTab) (m : Module) (t : ModTab) : Bool :=
   m.imports.all (fun i => i.1 != m.name && (byName[i.1]?).isSome &&
-      i.2.all fun u => (byName[i.1]?).any (·.exported.contains u))
+      i.2.all fun u => (byName[i.1]?).any fun s => s.declared.contains u && s.exported.contains u)
     && nodupB (m.imports.map (·.1))
     && nodupB (m.imports.flatMap (·.2))
     && m.imports.all (fun i => i.2.all fun u => !t.declared.contains u)
     && m.exports.all fun e => t.declared.contains e.2
 
-private theorem any_exported (B : Bundle) (u : Name) (o : Option Module) :
-    (o.map (·.tab B.toArray)).any (·.exported.contains u) = o.any (·.exportsLocal B u) := by
-  cases o <;> simp [Module.tab_exported]
-
 theorem linkModB_iff (B : Bundle) (P : Plan) (m : Module) :
     linkModB (tabsByName (P.tabs B.toArray)) m (m.tab B.toArray) = true ↔
-      ((∀ e ∈ m.imports, e.1 ≠ m.name ∧ (P.find e.1).isSome = true ∧ ∀ u ∈ e.2, P.exportsName B e.1 u = true)
+      ((∀ e ∈ m.imports, e.1 ≠ m.name ∧ (P.find e.1).isSome = true ∧
+          ∀ u ∈ e.2, P.declaresIn B e.1 u = true ∧ P.exportsName B e.1 u = true)
         ∧ (m.imports.map (·.1)).Nodup ∧ (m.imports.flatMap (·.2)).Nodup
         ∧ (∀ e ∈ m.imports, ∀ u ∈ e.2, m.declares B u = false)
         ∧ (∀ e ∈ m.exports, m.declares B e.2 = true)) := by
   simp only [linkModB, Bool.and_eq_true, List.all_eq_true, bne_iff_ne, ne_eq, nodupB_iff,
-    Plan.tabsByName_get, Option.isSome_map, Module.tab_declared, Plan.exportsName, Bool.not_eq_true',
-    any_exported, and_assoc]
+    Plan.tabsByName_get, Option.isSome_map, Module.tab_declared, Plan.declaresIn, Plan.exportsName,
+    Bool.not_eq_true', any_tab, and_assoc]
 
 def Plan.linkableB (arr : Array Stmt) (P : Plan) : Bool :=
   let ts := P.tabs arr
