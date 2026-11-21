@@ -2,9 +2,6 @@
 #
 # To apply: sudo nixos-rebuild switch --flake ~/code/ducktape#iguana
 {
-  config,
-  pkgs,
-  lib,
   ducktapePackages,
   ...
 }:

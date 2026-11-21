@@ -37,12 +37,10 @@ let
     }
   );
 
-  enabledVars = cfg;
-
   shellExports = lib.concatStringsSep "\n" (
     lib.mapAttrsToList (
       envVar: opts: ''export ${envVar}="$(cat ${config.sops.secrets.${opts.name}.path})"''
-    ) enabledVars
+    ) cfg
   );
 in
 {
@@ -52,13 +50,13 @@ in
     description = "Environment variables to export from SOPS-decrypted secrets.";
   };
 
-  config = lib.mkIf (enabledVars != { }) {
+  config = lib.mkIf (cfg != { }) {
     sops.secrets = lib.mapAttrs' (
       _envVar: opts:
       lib.nameValuePair opts.name {
         inherit (opts) sopsFile key;
       }
-    ) enabledVars;
+    ) cfg;
 
     programs.zsh.initContent = shellExports;
     programs.bash.initExtra = shellExports;

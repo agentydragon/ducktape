@@ -231,14 +231,13 @@ let
   managedRulesFileAbsolute = "${rulesDirectoryAbsolute}/managed.rules";
   defaultRulesFileAbsolute = "${rulesDirectoryAbsolute}/default.rules";
   rulesReadmeRelative = "${codexHomeRelative}/rules/README.md";
-  skillPrefix = if useXdgDirectories then "${xdgConfigHomeRelative}/codex" else ".codex";
 
   pythonMerge = pkgs.python314.withPackages (ps: [ ps."tomli-w" ]);
   managedRulesSource = pkgs.writeText "codex-managed.rules" execPolicyRules.text;
   mkSkills = import ../skills.nix sharedSkillsArgs;
   # Codex currently skips symlinked SKILL.md files, so deploy each skill as a directory symlink.
   skillFiles = mkSkills {
-    prefix = skillPrefix;
+    prefix = codexHomeRelative;
     mode = "directory-symlink";
   };
 

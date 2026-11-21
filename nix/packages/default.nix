@@ -331,24 +331,22 @@ let
     {
       pname,
       src,
-      binaryName ? pname,
       description,
-      extraBuildInputs ? [ ],
     }:
     pkgs.stdenvNoCC.mkDerivation {
       inherit pname src;
       version = "latest";
       nativeBuildInputs = [ pkgs.autoPatchelfHook ];
-      buildInputs = [ pkgs.stdenv.cc.cc.lib ] ++ extraBuildInputs;
+      buildInputs = [ pkgs.stdenv.cc.cc.lib ];
       dontUnpack = true;
       installPhase = ''
-        install -Dm755 $src $out/bin/${binaryName}
+        install -Dm755 $src $out/bin/${pname}
       '';
       meta = {
         inherit description;
         homepage = "https://github.com/agentydragon/ducktape";
         license = lib.licenses.agpl3Only;
-        mainProgram = binaryName;
+        mainProgram = pname;
         platforms = [ "x86_64-linux" ];
       };
     };

@@ -1,11 +1,5 @@
 # NixOS VM host-specific home-manager configuration (simplified)
-{
-  config,
-  pkgs,
-  lib,
-  ...
-}:
-{
+_: {
   imports = [
     ../home.nix
     ../modules/no-screensaver.nix
