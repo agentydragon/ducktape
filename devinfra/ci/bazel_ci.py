@@ -270,6 +270,9 @@ def _select_targets(temp_dir: Path) -> TargetSelection:
     hash_command = [
         "bazel-diff",
         "generate-hashes",
+        # There is no WORKSPACE, so `//external` does not exist. Without this, bazel-diff queries it, fails with
+        # "no such package 'external'" and retries without it, twice per run.
+        "--excludeExternalTargets",
         "-co=--proto:include_synthetic_attribute_hash",
         "-w",
         str(Path.cwd()),
