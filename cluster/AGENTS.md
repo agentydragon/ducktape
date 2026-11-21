@@ -15,7 +15,7 @@ Getting these wrong is destructive or silently corrupting.
 - **Wiping a backing DB orphans tofu state.** `tf/gitops/sso-providers/` (Authentik OAuth2
   providers) and `props/deploy/forgejo/tofu/` (Forgejo registry user) record IDs of objects
   in other stateful systems; wiping that DB without clearing tofu state (CNPG
-  `tofu-state-db-ovh`, one schema per `Terraform` CR) yields
+  `tofu-state-db-ovh`, one schema per root) yields
   `Unable to read … not found with id N`. Recovery: <docs/troubleshooting.md>
   § "Resource ID Desync After Wiping a Backing Datastore".
 - **DNS and website must survive OVH-only** (README § "OVH-Only Resilience Invariants").
@@ -44,7 +44,7 @@ Getting these wrong is destructive or silently corrupting.
 
 `ovh-nodes.tf` (OVH bare metal), `home-nodes.tf` (home Talos workers), `proxmox-nodes.tf`
 (Proxmox VMs), `talos-machine-secrets.tf` (persistent), `cilium.tf`, `infrastructure.tf`
-(firewall, Talos bootstrap, registry mirrors), `persistent-auth.tf` (`prevent_destroy`),
+(Talos bootstrap, registry mirrors), `persistent-auth.tf` (`prevent_destroy`),
 `nebula.tf` (per-node config + endpoint drift check).
 
 ## Secrets

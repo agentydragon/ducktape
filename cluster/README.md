@@ -76,9 +76,16 @@ DNS (Route 53) and the public website must keep working and recover with OVH onl
 must not depend on Proxmox-pinned storage (`lvm-proxmox-*`, `local-path-proxmox`) or
 nodes. Full set and checklist: <docs/decisions.md> § "OVH-Only Resilience Invariants".
 
-## In-cluster Terraform (tofu-controller)
+## In-cluster Terraform
 
-`Terraform` CRs (`tf/gitops/*`, infra-drift) use the upstream tofu-controller chart and
+Most `tf/gitops/*` roots are Crossplane provider-opentofu `Workspace`s: cdk8s inlines a
+root's HCL into the manifest, so a `.tf` edit regenerates `cluster/generated/**`
+(<docs/crossplane-opentofu-artifact-triggers.md>, `cdk8s/opentofu.py`). The tofu-controller
+runs the `Terraform` CRs: `gitlab-spike` and `home-switch` under `tf/gitops`, and infra-drift.
+
+### tofu-controller
+
+`Terraform` CRs use the upstream tofu-controller chart and
 image, with `ExternalArtifact` enabled. Each module reads its own content-addressed
 `ArtifactGenerator` artifact (`cdk8s/terraform.py`, <cdk8s/infra_drift/README.md>), so
 only changed modules replan. Flux applies the chart release's CRD separately, since Helm
@@ -86,8 +93,8 @@ does not upgrade CRDs from the chart's `crds/` directory.
 
 The controller uses our `ghcr.io/agentydragon/tf-runner`, an upstream runner with all pinned
 providers baked in (<tf_runner/README.md>). Its upstream base must match the controller's
-release and their rollout must be coordinated. Both images come from GHCR, not Forgejo:
-the Forgejo pull credential is itself created by a Terraform CR.
+release and their rollout must be coordinated. Both images come from GHCR, not Forgejo; the
+Forgejo user behind the pull credential is created by an OpenTofu root (`tf/gitops/forgejo-images`).
 
 ## Layout
 
