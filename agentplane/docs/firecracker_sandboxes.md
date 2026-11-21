@@ -5,11 +5,11 @@ Pod. It is an alternative to `spec.pod` and `spec.vm`; exactly one arm is requir
 is a trusted, privileged host process. The guest runs the same Environment Runtime, systemd
 supervision, harnesses and Execution Service as the NixOS KubeVirt image.
 
-This backend is opt-in. `Environment.firecracker_sandboxes` defaults to false; this change does not
-add a staging launch preset or migrate existing Sandboxes. Enabling it requires a KVM-capable
-x86-64 node, the `devices.kubevirt.io/kvm` device resource, `/dev/net/tun`, native sidecars,
-Kubernetes image volumes and permission to run a privileged launcher. The launcher uses the Pod
-network namespace, not host networking, host PID or host cgroups.
+In staging, select the **Firecracker** launch preset to create a new `environment-firecracker`
+Sandbox with the standard policies and a Codex thread. The launcher image targets x86-64 and the
+Pod requests the `devices.kubevirt.io/kvm` device resource. It also requires `/dev/net/tun`, native
+sidecars, Kubernetes image volumes and permission to run a privileged container. The launcher runs
+in the Pod network namespace.
 
 ## Template and images
 

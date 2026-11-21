@@ -136,7 +136,12 @@ class EnvironmentFirecrackerTemplate(Construct):
             keep_sidecar_until_workload_exit=True,
             restart_policy="Never",
             security_context=k8s.PodSecurityContext(
-                run_as_user=0, run_as_group=0, fs_group=1000, fs_group_change_policy="OnRootMismatch"
+                run_as_user=0,
+                run_as_group=0,
+                fs_group=1000,
+                fs_group_change_policy="OnRootMismatch",
+                # The relay inherits this profile; the privileged launcher is unconfined.
+                seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),
             ),
             workload_volumes=[
                 wiring.volume,
