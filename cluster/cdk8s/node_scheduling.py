@@ -17,10 +17,12 @@ from cdk8s_plus_34 import k8s
 ZONE_LABEL = "topology.kubernetes.io/zone"
 # The OVH nodes. Pinning to it keeps a workload off the home nodes (wyrm2, optiplex).
 HIL_OVH_ZONE = "hil-ovh"
+HOME_LAN_ZONE = "home-lan"
 # Consolidate the two home zones and update replica counts with #11643.
-HOME_AND_OVH_ZONES = (HIL_OVH_ZONE, "home-lan", "atlas")
+HOME_AND_OVH_ZONES = (HIL_OVH_ZONE, HOME_LAN_ZONE, "atlas")
 # A dict typed read-only: jsii serializes only `dict` instances as maps.
 HIL_OVH_NODE_SELECTOR: Mapping[str, str] = {ZONE_LABEL: HIL_OVH_ZONE}
+HOME_LAN_NODE_SELECTOR: Mapping[str, str] = {ZONE_LABEL: HOME_LAN_ZONE}
 # NFD reconciles the host's OS release independently of kubelet registration.
 NIXOS_NODE_SELECTOR: Mapping[str, str] = {"feature.node.kubernetes.io/system-os_release.ID": "nixos"}
 # Control-plane nodes also carry this key as a label, which node affinities and selectors match.

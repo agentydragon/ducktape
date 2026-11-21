@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
@@ -31,7 +32,7 @@ from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
     PodMonitorSpecSelector,
 )
 
-from cluster.cdk8s import pod_policy
+from cluster.cdk8s import node_scheduling, pod_policy
 from cluster.cdk8s.cert_manager import cluster_ca
 from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
 from cluster.cdk8s.container_resources import container_resources
@@ -206,7 +207,7 @@ def _deployment(
     volumes: list[k8s.Volume],
     *,
     selector_name: str,
-    node_selector: dict[str, str] | None = None,
+    node_selector: Mapping[str, str] | None = None,
     init_containers: list[k8s.Container] | None = None,
     vpa_policy: ContainerPolicy | None = None,
 ) -> None:
@@ -537,7 +538,7 @@ def _provider_workload(chart: Chart, instance: str, *, provider_type: str, recor
             *recorder_volumes,
         ],
         selector_name=name,
-        node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
+        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
         init_containers=[*recorder_init, *recorder_sidecars],
         vpa_policy=vpa_policy,
     )

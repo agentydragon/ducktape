@@ -35,6 +35,7 @@ from cluster.cdk8s.flux import (
     flux_kustomization_depends_on,
 )
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
+from cluster.cdk8s.haku import mailbox
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
@@ -136,7 +137,7 @@ ROTATIONS = Config(
             # Stalwart 401s a bad bearer and 403s a token whose email claim can't be resolved to
             # a mailbox — both are credential verdicts worth a re-mint (the re-mint then asserts
             # expected_claims loudly).
-            probe=Probe(url="https://haku-mailbox.allegedly.works/jmap/session"),
+            probe=Probe(url=f"{mailbox.PUBLIC_URL}/jmap/session"),
         ),
         Rotation(
             name="alloy-otlp",

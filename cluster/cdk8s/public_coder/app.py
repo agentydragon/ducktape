@@ -433,7 +433,7 @@ def _service(scope: Construct) -> None:
         scope,
         "service",
         metadata=k8s.ObjectMeta(name=_SERVICE.name, namespace=NAMESPACE),
-        spec=k8s.ServiceSpec(selector=_SERVICE.pods.selector, ports=[_SERVICE.port.k8s_service_port()]),
+        spec=k8s.ServiceSpec(selector=_SERVICE.pods.selector, ports=[_SERVICE.k8s_service_port()]),
     )
 
 

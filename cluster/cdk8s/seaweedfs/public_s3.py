@@ -240,9 +240,7 @@ def _gateway(scope: Construct) -> None:
         "service",
         metadata=k8s.ObjectMeta(name=_S3.name, namespace=namespace.NAME, labels=_LABELS),
         spec=k8s.ServiceSpec(
-            type="ClusterIP",
-            selector=_PODS.selector,
-            ports=[_S3.port.k8s_service_port(), _METRICS.port.k8s_service_port()],
+            type="ClusterIP", selector=_PODS.selector, ports=[_S3.k8s_service_port(), _METRICS.k8s_service_port()]
         ),
     )
     ServiceMonitor(
