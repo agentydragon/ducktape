@@ -122,6 +122,7 @@ def config(
     *,
     namespace: str,
     sandbox_template: str,
+    firecracker_template: str,
     action_federation: ActionFederationSettings,
     connection_service_url: HttpEndpointUrl,
     runtime: Catalog,
@@ -269,6 +270,12 @@ def config(
         for name in presets:
             cfg.sandbox_presets[name].inbox_tags = [group]
             cfg.sandbox_presets[name].policy_sets += [send_to(group)]
+    cfg.thread_presets["firecracker-codex"] = ThreadPreset(
+        title="Firecracker / Codex", harness=Harness.CODEX, model=GPT6_LUNA_RESPONSES.id, reasoning_effort="medium"
+    )
+    cfg.sandbox_presets["firecracker"] = SandboxPreset(
+        title="Firecracker", template=firecracker_template, thread_preset="firecracker-codex"
+    )
     # Every preset grants the defaults itself, so a preset shows all a launch of it grants: the
     # baseline sets and the shared diagnostics account (operator, 2026-11-12).
     defaults = [

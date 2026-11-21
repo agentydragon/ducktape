@@ -42,6 +42,7 @@ class EnvironmentFirecrackerTemplate(Construct):
         runner_image: str,
         platform_instructions: str,
         harness_env: Mapping[str, str],
+        node_selector: Mapping[str, str] | None = None,
         image_pull_secret_name: str | None = sandbox_pod.SECRET_NAME,
         session_reconcile_concurrency: int | None = None,
         codex_readiness: CodexReadiness | None = None,
@@ -132,11 +133,17 @@ class EnvironmentFirecrackerTemplate(Construct):
             env,
             workload=launcher,
             sidecar_settings=relay,
+            node_selector={**(node_selector or {}), "kubernetes.io/arch": "amd64"},
             image_pull_secret_name=image_pull_secret_name,
             keep_sidecar_until_workload_exit=True,
             restart_policy="Never",
             security_context=k8s.PodSecurityContext(
-                run_as_user=0, run_as_group=0, fs_group=1000, fs_group_change_policy="OnRootMismatch"
+                run_as_user=0,
+                run_as_group=0,
+                fs_group=1000,
+                fs_group_change_policy="OnRootMismatch",
+                # The relay inherits this profile; the privileged launcher is unconfined.
+                seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),
             ),
             workload_volumes=[
                 wiring.volume,

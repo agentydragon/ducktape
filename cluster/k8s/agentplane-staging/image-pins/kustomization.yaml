@@ -33,6 +33,10 @@ images:
     newTag: devel-20261121025630-094dfe0 # {"$imagepolicy": "flux-system:agentplane-notification-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-history-service
     newTag: devel-20261120205757-cbf8551 # {"$imagepolicy": "flux-system:agentplane-history-service:tag"}
+  - name: git.allegedly.works/ducktape-ci/agentplane-environment-firecracker
+    newTag: devel-20261121025343-77cd80f # {"$imagepolicy": "flux-system:agentplane-environment-firecracker:tag"}
+  - name: git.allegedly.works/ducktape-ci/agentplane-firecracker-launcher
+    newTag: devel-20261120204116-3a4cafa # {"$imagepolicy": "flux-system:agentplane-firecracker-launcher:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-environment-vm
     newTag: devel-20261121025456-77cd80f # {"$imagepolicy": "flux-system:agentplane-environment-vm:tag"}
   # The `agentplane` command disk beside the VM guest and as an image volume in the environment Pod.

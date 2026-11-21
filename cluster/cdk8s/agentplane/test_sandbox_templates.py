@@ -262,9 +262,9 @@ def test_pod_template_projects_the_buildbuddy_key_to_runner_and_executor(
 ) -> None:
     """The canonical key reaches the runner container and its isolated executor, and by name the harness
     children the runner spawns (agentplane/docs/buildbuddy_remote_auth.md). The egress sidecar, which
-    holds a Session's bearers, gets neither. Every launch preset names this one template."""
+    holds a Session's bearers, gets neither. The existing coding and assistant presets launch here."""
     presets = config_map_yaml(staging_manifests, "app-config", "config.yaml")["sandbox_presets"]
-    assert {preset["template"] for preset in presets.values()} == {staging.POD_TEMPLATE}
+    assert {preset["template"] for name, preset in presets.items() if name != "firecracker"} == {staging.POD_TEMPLATE}
     key_copies = [
         doc
         for doc in staging_manifests

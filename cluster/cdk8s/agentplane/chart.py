@@ -10,7 +10,7 @@ use the Agentplane workload CA (`cluster_ca.WORKLOAD_ISSUER`).
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ConfigMap
@@ -81,6 +81,7 @@ def environment_chart(
     environment_template_name: str,
     environment_tools_image: str,
     environment_runtime_key_files: Sequence[environment_sandbox.KeyFile] = (),
+    firecracker_node_selector: Mapping[str, str] | None = None,
 ) -> Chart:
     """The shared objects. The fleet rules attach as a synth-time validation, so a caller
     may keep adding objects to the returned chart and they are still checked."""
@@ -254,6 +255,7 @@ def environment_chart(
             state_volume=firecracker_state,
             workspace_volume=firecracker_workspace,
             runner_image=environment_vm.RUNNER_DISK_IMAGE,
+            node_selector=firecracker_node_selector,
             platform_instructions=platform_instructions(
                 env, session_runtime=SessionRuntime.NATIVE_HARNESS, egress_host=guest_gateway
             ),

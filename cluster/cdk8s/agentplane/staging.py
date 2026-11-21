@@ -64,6 +64,7 @@ from cluster.cdk8s.agentplane import (
     app_settings,
     command_sandbox,
     electric,
+    environment_firecracker,
     environment_vm,
     kubernetes_account_ref,
     llm_ingress,
@@ -244,8 +245,8 @@ _CONNECTION_SERVICE = mcp_edge.tls_service(STAGING_NAMESPACE)
 POD_TEMPLATE = "environment-tools"
 _RUNTIME_CATALOG = runtime_catalog(
     STAGING_APP_MODELS,
-    templates=(POD_TEMPLATE, environment_vm.NAME),
-    workspace_root_enforced_templates=(environment_vm.NAME,),
+    templates=(POD_TEMPLATE, environment_vm.NAME, environment_firecracker.NAME),
+    workspace_root_enforced_templates=(environment_vm.NAME, environment_firecracker.NAME),
     central_sampler_enabled=True,
 )
 _ENVIRONMENT_TOOLS_IMAGE = "git.allegedly.works/ducktape-ci/environment-tools"
@@ -444,6 +445,7 @@ def _app_config(*, identity_catalog: bool) -> Settings:
     return staging_config.config(
         namespace=STAGING_NAMESPACE,
         sandbox_template=POD_TEMPLATE,
+        firecracker_template=environment_firecracker.NAME,
         runtime=_RUNTIME_CATALOG,
         action_federation=_ACTION_FEDERATION,
         connection_service_url=AnyHttpUrl(f"https://{_CONNECTION_SERVICE.fqdn}:{_CONNECTION_SERVICE.port.number}"),
@@ -721,6 +723,7 @@ ENV = Environment(
         extra_egress=(cilium.egress_via_gateway("auth.allegedly.works"), EgressRule.to_fqdns("claude.ai")),
     ),
     vm_sandboxes=True,
+    firecracker_sandboxes=True,
     vm_storage_class="piraeus-ssd-2-autodiskful",
     vm_resources=STAGING_VM_RESOURCES,
     vm_executor_placement="direct",
@@ -776,6 +779,7 @@ def chart(app: App, env: Environment = ENV) -> Chart:
         environment_template_name=POD_TEMPLATE,
         environment_tools_image=_ENVIRONMENT_TOOLS_IMAGE,
         environment_runtime_key_files=(_BUILDBUDDY_KEY,),
+        firecracker_node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
     )
     # Cluster-scoped and covering every Agentplane namespace; staging is the only environment.
     workload_certificate_admission.add_workload_certificate_admission(
