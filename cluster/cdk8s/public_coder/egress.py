@@ -32,6 +32,7 @@ from cluster.cdk8s.agentplane.egress_credentials import EXTERNAL_CREDS_STORE, cr
 from cluster.cdk8s.agentplane.standing_caller import StandingCaller
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.config_format import yaml_config
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.providers.agentplane.egress_credential import Source
 from cluster.cdk8s.providers.agentplane.policy_set import Rule
@@ -108,10 +109,7 @@ def relay_container(settings: PodWiring) -> k8s.Container:
             allow_privilege_escalation=False,
             capabilities=k8s.Capabilities(drop=["ALL"]),
         ),
-        resources=k8s.ResourceRequirements(
-            requests={"cpu": k8s.Quantity.from_string("10m"), "memory": k8s.Quantity.from_string("32Mi")},
-            limits={"memory": k8s.Quantity.from_string("128Mi")},
-        ),
+        resources=container_resources(cpu="10m", memory="32Mi", memory_limit="128Mi"),
         readiness_probe=k8s.Probe(
             http_get=k8s.HttpGetAction(
                 path=sidecar_config.READINESS_PATH, port=k8s.IntOrString.from_number(sidecar_config.READINESS_PORT)

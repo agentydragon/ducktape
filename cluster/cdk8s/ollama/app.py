@@ -28,6 +28,7 @@ from cluster.cdk8s.ollama import tabby
 from cluster.cdk8s.ollama.tabby_endpoint import NAMESPACE
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.volume_claim import volume_claim
 
 # Avoid colliding with this module's ollama Flux constructor.
 from model_catalog import ollama as models
@@ -73,25 +74,21 @@ def _namespace(scope: Construct) -> None:
 
 def _claims(scope: Construct) -> None:
     # Both on wyrm2's own Piraeus pools, which pins Ollama to the GPU host.
-    k8s.KubePersistentVolumeClaim(
+    volume_claim(
         scope,
         "piraeus-models",
-        metadata=k8s.ObjectMeta(name=_MODELS_CLAIM, namespace=NAMESPACE),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="piraeus-hdd-local",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("200Gi")}),
-        ),
+        name=_MODELS_CLAIM,
+        namespace=NAMESPACE,
+        storage_class="piraeus-hdd-local",
+        size="200Gi",
     )
-    k8s.KubePersistentVolumeClaim(
+    volume_claim(
         scope,
         "piraeus-ssd-models",
-        metadata=k8s.ObjectMeta(name=_SSD_MODELS_CLAIM, namespace=NAMESPACE),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="piraeus-ssd-local",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("100Gi")}),
-        ),
+        name=_SSD_MODELS_CLAIM,
+        namespace=NAMESPACE,
+        storage_class="piraeus-ssd-local",
+        size="100Gi",
     )
 
 

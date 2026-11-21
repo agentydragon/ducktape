@@ -165,6 +165,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":s3",
+        "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:disruption_budget",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:gateway",

@@ -41,6 +41,7 @@ from seaweed_s3policybinding_crds.com.seaweedfs.seaweed import (
 )
 
 from cluster.cdk8s import disruption_budget, node_scheduling
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -215,15 +216,8 @@ def _gateway(scope: Construct) -> None:
                                 success_threshold=1,
                                 failure_threshold=100,
                             ),
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("500m"),
-                                    "memory": k8s.Quantity.from_string("512Mi"),
-                                },
-                                limits={
-                                    "cpu": k8s.Quantity.from_string("2"),
-                                    "memory": k8s.Quantity.from_string("2Gi"),
-                                },
+                            resources=container_resources(
+                                cpu="500m", memory="512Mi", cpu_limit="2", memory_limit="2Gi"
                             ),
                             security_context=k8s.SecurityContext(
                                 allow_privilege_escalation=False,
