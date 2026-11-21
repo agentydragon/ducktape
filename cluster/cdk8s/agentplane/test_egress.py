@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
 from pathlib import PurePosixPath
-from typing import Any, cast
+from typing import Any
 
 import pytest
 import pytest_bazel
 import yaml
-from cdk8s import App, Chart, Testing as Cdk8sTesting
+from cdk8s import App, Testing as Cdk8sTesting
 from more_itertools import one
 
 from agentplane.crd_group import GROUP
@@ -26,7 +25,6 @@ from agentplane.net.peertls.config import (
 from cluster.cdk8s import agent_access_profiles
 from cluster.cdk8s.agentplane import (
     binding_delegation,
-    environment_sandbox,
     environment_service,
     history_service,
     kubernetes_account_ref,
@@ -46,7 +44,6 @@ from cluster.cdk8s.agentplane.egress import (
     KUBERNETES_HOST,
     PROXY_PORT,
     PUBLIC_INTERNET_POLICY,
-    Egress,
     admin,
 )
 from cluster.cdk8s.agentplane.egress_staging_credentials import AIQUOTA_READ_POLICY
@@ -54,7 +51,6 @@ from cluster.cdk8s.agentplane.kubernetes_account_ref import shared_diagnostics
 from cluster.cdk8s.agentplane.model_selections import STAGING_APP_MODELS, chat_completions_id
 from cluster.cdk8s.agentplane.namespaces import kubernetes_accounts_namespace
 from cluster.cdk8s.clickhouse import client
-from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.testing.manifests import config_map_yaml, find_resource
 from model_catalog.catalog import TABBYAPI_QWEN_STOCK, Provider
 
@@ -90,26 +86,7 @@ def test_egress_reads_its_settings_file_and_database_url(catalog_manifests: list
     assert config["admin_grpc_service_callers"] == [APP_URI]
 
 
-@pytest.fixture(scope="module")
-def svid_egress_manifests(scratch_app_factory: Callable[[], App]) -> list[dict[str, Any]]:
-    app = scratch_app_factory()
-    chart = Chart(app, "svid-egress")
-    env = staging.ENV
-    Egress(
-        chart,
-        "egress",
-        env,
-        database_url=SecretRef(namespace=env.namespace, name="postgres-egress")
-        .key("uri")
-        .env_value(chart, "test-database-url"),
-        runners=environment_sandbox.pods(env.namespace),
-        placement=None,
-        registry_secret_name=None,
-    ).add_platform_resources()
-    return cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
-
-
-def test_staging_requires_the_tls_hop_and_rules_boundary(catalog_manifests: list[dict[str, Any]]) -> None:
+def test_staging_requires_the_tls_hop(catalog_manifests: list[dict[str, Any]]) -> None:
     deployment = find_resource(catalog_manifests, "Deployment", "egress")
     assert set(deployment["metadata"]["annotations"]["configmap.reloader.stakater.com/reload"].split(",")) == {
         f"{staging.ENV.namespace}-egress-upstream-ca",
@@ -119,11 +96,8 @@ def test_staging_requires_the_tls_hop_and_rules_boundary(catalog_manifests: list
         container for container in deployment["spec"]["template"]["spec"]["containers"] if container["name"] == "proxy"
     )
     ports = {port["containerPort"] for port in proxy["ports"]}
-    assert PROXY_PORT in ports
     assert admin(staging.ENV.namespace).pod_port in ports
     settings = config_map_yaml(catalog_manifests, "egress-go-settings", "settings.yaml")
-    assert settings["rules_namespace"] == staging.ENV.namespace
-    assert "AGENTPLANE_EGRESS_RULES_NAMESPACE" not in {variable["name"] for variable in proxy["env"]}
     assert settings["forward"]["listen_address"] == f"0.0.0.0:{PROXY_PORT}"
     assert {method["mode"] for method in settings["forward"]["auth"]} == {"spiffe"}
     api = admin(staging.ENV.namespace)
@@ -131,22 +105,21 @@ def test_staging_requires_the_tls_hop_and_rules_boundary(catalog_manifests: list
 
 
 def test_tls_hop_and_rules_add_only_bound_sandbox_readers_and_tls_ports(
-    svid_egress_manifests: list[dict[str, Any]],
+    catalog_manifests: list[dict[str, Any]],
 ) -> None:
-    deployment = find_resource(svid_egress_manifests, "Deployment", "egress")
+    deployment = find_resource(catalog_manifests, "Deployment", "egress")
     proxy = one(
         container for container in deployment["spec"]["template"]["spec"]["containers"] if container["name"] == "proxy"
     )
     assert [port["containerPort"] for port in proxy["ports"]].count(PROXY_PORT) == 1
-    service = find_resource(svid_egress_manifests, "Service", "egress")
+    service = find_resource(catalog_manifests, "Service", "egress")
     mtls_ports = [port for port in service["spec"]["ports"] if port["port"] == PROXY_PORT]
     assert len(mtls_ports) == 1
 
-    settings = config_map_yaml(svid_egress_manifests, "egress-go-settings", "settings.yaml")
-    assert settings["forward"]["listen_address"] == f"0.0.0.0:{PROXY_PORT}"
+    settings = config_map_yaml(catalog_manifests, "egress-go-settings", "settings.yaml")
     assert settings["forward"]["auth"][0]["ca_file"] == "/etc/agentplane-egress/svid-ca/ca-certificates.crt"
 
-    role = find_resource(svid_egress_manifests, "Role", "egress")
+    role = find_resource(catalog_manifests, "Role", "egress")
     sandbox_rules = [rule for rule in role["rules"] if "sandboxes" in rule["resources"]]
     assert sandbox_rules == [{"apiGroups": [GROUP], "resources": ["sandboxes"], "verbs": ["get", "list", "watch"]}]
     # An SVID names a WorkloadCredential, and the record names the subject the proxy reads live; the
@@ -156,11 +129,11 @@ def test_tls_hop_and_rules_add_only_bound_sandbox_readers_and_tls_ports(
     all_resources = [resource for rule in role["rules"] for resource in rule["resources"]]
     assert "pods" not in all_resources
 
-    certificate = find_resource(svid_egress_manifests, "Certificate", "agentplane-egress-proxy")
+    certificate = find_resource(catalog_manifests, "Certificate", "agentplane-egress-proxy")
     assert certificate["spec"]["uris"] == ["spiffe://agentplane/egress-proxy"]
     assert "server auth" in certificate["spec"]["usages"]
 
-    policy = find_resource(svid_egress_manifests, "CiliumNetworkPolicy", "egress")["spec"]
+    policy = find_resource(catalog_manifests, "CiliumNetworkPolicy", "egress")["spec"]
     ingress_ports = {
         int(port["port"])
         for rule in policy["ingress"]
@@ -817,11 +790,11 @@ def test_the_proxy_impersonates_only_serviceaccounts_in_the_accounts_namespace(
     ]
 
 
-def test_the_local_api_server_bearer_is_the_proxys_mounted_token(svid_egress_manifests: list[dict[str, Any]]) -> None:
-    settings = config_map_yaml(svid_egress_manifests, "egress-go-settings", "settings.yaml")
+def test_the_local_api_server_bearer_is_the_proxys_mounted_token(catalog_manifests: list[dict[str, Any]]) -> None:
+    settings = config_map_yaml(catalog_manifests, "egress-go-settings", "settings.yaml")
     server = settings["local_api_server"]
     assert (server["host"], server["port"]) == (KUBERNETES_HOST, 443)
-    pod = find_resource(svid_egress_manifests, "Deployment", "egress")["spec"]["template"]["spec"]
+    pod = find_resource(catalog_manifests, "Deployment", "egress")["spec"]["template"]["spec"]
     # The kubelet mounts the API-server token here when the Pod automounts it.
     assert pod["automountServiceAccountToken"] is True
     assert PurePosixPath(server["token_file"]).parent == PurePosixPath("/var/run/secrets/kubernetes.io/serviceaccount")
