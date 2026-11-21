@@ -48,11 +48,11 @@ covers validation and report output.
 
 ## Reference
 
-- [Spec contract](SPEC.md) and [selector resolution](docs/selector_resolution.md).
-- [Design and correctness proof](docs/design.md), [implementation entry points](docs/design.md#file-references),
-  and [conditionally-correct optimizations](docs/design.md#conditionally-correct-optimizations).
-- [Work queue](TODO.md), [active plans](plans/), [performance measurements](perf/),
-  and [lessons learned](docs/lessons_learned/).
+- [Spec contract](SPEC.md) and `docs/selector_resolution.md`.
+- `docs/design.md`: the design and correctness proof, § File references for implementation entry points,
+  and § Conditionally-correct optimizations.
+- `TODO.md` work queue, `plans/` active plans, [performance measurements](perf/),
+  and `docs/lessons_learned/`.
 
 ## Bazel integration and profiling
 
