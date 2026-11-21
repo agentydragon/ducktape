@@ -1,24 +1,8 @@
 """Planner for archiving old Anthem reimbursement emails."""
 
-from datetime import datetime
-
-from pydantic import BaseModel
-
 from gmail_archiver.inbox import GmailInbox
-from gmail_archiver.models import Email
 from gmail_archiver.plan import Plan
 from gmail_archiver.planners.age_archive import plan_age_archive
-
-
-class AnthemReimbursement(BaseModel):
-    email_date: datetime | None = None
-
-
-def parse_anthem_reimbursement(email: Email) -> AnthemReimbursement:
-    email_dt = email.date
-    if email_dt:
-        email_dt = email_dt.replace(tzinfo=None)
-    return AnthemReimbursement(email_date=email_dt)
 
 
 class AnthemReimbursementPlanner:
@@ -33,8 +17,7 @@ class AnthemReimbursementPlanner:
             planner=self,
             query="label:insurance/anthem/reimbursement label:INBOX",
             days_threshold=self.DAYS_THRESHOLD,
-            parse=parse_anthem_reimbursement,
-            date_from=lambda parsed: parsed.email_date,
+            date_of=lambda email: email.date and email.date.replace(tzinfo=None),
             missing_date_reason="No email date found",
             archive_item_plural="reimbursements",
         )

@@ -5,7 +5,7 @@ from datetime import datetime
 import pytest
 import pytest_bazel
 
-from gmail_archiver.planners.anthropic import parse_anthropic
+from gmail_archiver.planners.anthropic import parse_charge_date
 
 SAMPLE_RECEIPT_FULL = """
 Anthropic, PBC
@@ -41,7 +41,7 @@ Some other text here without receipt or invoice numbers.
 def test_parse_charge_date(make_email, text: str, charge_date: datetime | None) -> None:
     msg = make_email(sender="invoice+statements@mail.anthropic.com", body=text)
 
-    assert parse_anthropic(msg).charge_date == charge_date
+    assert parse_charge_date(msg) == charge_date
 
 
 if __name__ == "__main__":

@@ -41,8 +41,7 @@ def test_plan_age_archive_preserves_date_and_label_decisions(make_email, monkeyp
         planner=cast(Planner, SimpleNamespace(name="test archive planner")),
         query="label:receipts/test label:INBOX",
         days_threshold=7,
-        parse=lambda email: email.id,
-        date_from=dates.__getitem__,
+        date_of=lambda email: dates[email.id],
         missing_date_reason="No date found",
         archive_item_plural="receipts",
     )
