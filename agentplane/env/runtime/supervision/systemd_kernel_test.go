@@ -974,13 +974,9 @@ func testCommandRelease(t *testing.T, ctx context.Context, supervisor *Superviso
 	}
 	defer out.Close()
 	defer outChild.Close()
-	stderr, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer stderr.Close()
+	// The guest's busybox-backed /bin/sh selects an applet by argv[0].
 	config := CommandConfig{
-		Path: "/bin/sh", Dir: dir,
+		Path: "/bin/bash", Dir: dir,
 		Environment: []string{"PATH=/usr/bin:/bin", "COMMAND_PROOF=handoff"},
 		Argv: []string{"argv0-proof", "-c", `
 /bin/sleep 30 </dev/null >/dev/null 2>&1 &
@@ -988,12 +984,11 @@ group=$!
 setsid /bin/sleep 30 </dev/null >/dev/null 2>&1 &
 detached=$!
 while ! { IFS=' ' read -r pid comm state ppid pgid sid rest < "/proc/$detached/stat" && [ "$sid" = "$detached" ]; }; do sleep 0.01; done
-printf '%s %s %d %d
-' "$0" "$COMMAND_PROOF" "$group" "$detached"
+printf '%s %s %d %d\n' "$0" "$COMMAND_PROOF" "$group" "$detached"
 exit 23
 `},
 	}
-	command, err := StartRemoteCommand(ctx, listener.Addr().String(), config, CommandFiles{Stdout: outChild, Stderr: stderr})
+	command, err := StartRemoteCommand(ctx, listener.Addr().String(), config, CommandFiles{Stdout: outChild, Stderr: outChild})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1008,16 +1003,16 @@ exit 23
 	if err != nil {
 		t.Fatalf("read output through natural pipe EOF: %v", err)
 	}
+	if exit, err := command.Wait(ctx); exit.Code != 23 || exit.OOMKilled || err != nil {
+		t.Fatalf("leader exit = %+v, error = %v, output = %q", exit, err, output)
+	}
 	var argv0, env string
 	var groupPID, detachedPID int
 	if _, err := fmt.Sscan(string(output), &argv0, &env, &groupPID, &detachedPID); err != nil || argv0 != "argv0-proof" || env != "handoff" {
-		t.Fatalf("command stdout = %q, scan error = %v", output, err)
+		t.Fatalf("command output = %q, scan error = %v", output, err)
 	}
 	groupFD := testCommandPIDFD(t, groupPID)
 	detachedFD := testCommandPIDFD(t, detachedPID)
-	if exit, err := command.Wait(ctx); exit.Code != 23 || exit.OOMKilled || err != nil {
-		t.Fatalf("leader exit = %+v, error = %v", exit, err)
-	}
 	if err := command.Release(ctx); err != nil {
 		t.Fatal(err)
 	}
