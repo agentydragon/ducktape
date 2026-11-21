@@ -25,6 +25,7 @@ import (
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
+	"github.com/agentydragon/ducktape/agentplane/testing/testscheme"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -34,8 +35,6 @@ import (
 	"google.golang.org/protobuf/proto"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	toolscache "k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
@@ -897,13 +896,7 @@ func TestRuntimeHeartbeatsReadNoSandboxOrPodFromTheAPIServer(t *testing.T) {
 	counted.Wrap(func(next http.RoundTripper) http.RoundTripper {
 		return countingTransport{next: next, requests: &requests}
 	})
-	scheme := runtime.NewScheme()
-	for _, add := range []func(*runtime.Scheme) error{clientgoscheme.AddToScheme, sandboxapi.AddToScheme} {
-		if err := add(scheme); err != nil {
-			t.Fatal(err)
-		}
-	}
-	inventory, err := ctrlcache.New(counted, ctrlcache.Options{Scheme: scheme, DefaultNamespaces: map[string]ctrlcache.Config{f.namespace: {}}})
+	inventory, err := ctrlcache.New(counted, ctrlcache.Options{Scheme: testscheme.New(t), DefaultNamespaces: map[string]ctrlcache.Config{f.namespace: {}}})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,0 +1,18 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_testonly = True)
+
+go_library(
+    name = "testscheme",
+    srcs = ["testscheme.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/testing/testscheme",
+    visibility = ["//agentplane:__subpackages__"],
+    deps = [
+        "//agentplane/identity/credentials/api/v1alpha1",
+        "//agentplane/policy/api/v1alpha1",
+        "//agentplane/sandboxes/api",
+        "@io_k8s_apimachinery//pkg/runtime",
+        "@io_k8s_client_go//kubernetes/scheme",
+        "@io_kubevirt_api//core/v1:core",
+    ],
+)
