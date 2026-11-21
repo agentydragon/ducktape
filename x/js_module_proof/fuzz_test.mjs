@@ -205,6 +205,12 @@ if (shards === 4 && shard === 0) {
   assert.equal(corpus.programs, 2);
   assert.equal(corpus.assignments, 6);
   assert.equal(corpus.proved + corpus.unsafe + corpus.unknown, 6);
+  assert.equal(corpus.generationRefused + corpus.validationUnknown, corpus.unknown);
+  assert.equal(
+    Object.values(corpus.unknownReasons).reduce((sum, count) => sum + count, 0),
+    corpus.unknown
+  );
+  assert.ok(corpus.generationRefused > 0);
   assert.equal(
     corpus.entries.find(
       (entry) => entry.path.endsWith("example/bindings/original.mjs") && entry.assignment === "baseline"

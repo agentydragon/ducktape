@@ -94,5 +94,6 @@ cover only part of the grammar and split space described below.
 - [ ] Add real-world JavaScript fixtures as they become useful, alongside
       generated cases, and measure how often real assignments can be checked. Do not
       weaken the proof claim simply to increase the acceptance rate.
-      `real_corpus.mjs` now measures three candidate assignments per input;
-      expand the corpus and investigate the most common reasons for unknown.
+      `real_corpus.mjs` now measures three candidate assignments per input and
+      reports generation refusals and validation unknowns by reason; expand the
+      corpus and investigate the most common reasons for unknown.

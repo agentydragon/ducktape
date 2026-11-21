@@ -10,7 +10,17 @@ const { parse } = createRequire(import.meta.url)(process.env.JS_MODULE_PROOF_ACO
 // seeking an unsafe witness, so run this only on trusted source files.
 export async function assessCorpus(paths, outputDir) {
   await mkdir(outputDir, { recursive: true });
-  const summary = { programs: 0, assignments: 0, proved: 0, unsafe: 0, unknown: 0, entries: [] };
+  const summary = {
+    programs: 0,
+    assignments: 0,
+    proved: 0,
+    unsafe: 0,
+    unknown: 0,
+    generationRefused: 0,
+    validationUnknown: 0,
+    unknownReasons: {},
+    entries: [],
+  };
   for (const path of paths) {
     summary.programs++;
     const text = await readFile(path, "utf8");
@@ -45,8 +55,10 @@ export async function assessCorpus(paths, outputDir) {
       await writeFile(source, text);
       await writeFile(spec, JSON.stringify({ kind: "bindings", entry: "entry.mjs", modules }, null, 2) + "\n");
       let verdict;
+      let stage = "generation";
       try {
         await generateBindings(source, spec, out);
+        stage = "validation";
         verdict = await validateBindings(source, spec, out);
       } catch (error) {
         if (!String(error).includes("unknown:")) throw error;
@@ -55,7 +67,20 @@ export async function assessCorpus(paths, outputDir) {
       const category = verdict.result === "proved under assumptions" ? "proved" : verdict.result;
       if (!Object.hasOwn(summary, category)) throw new Error(`unexpected verdict: ${verdict.result}`);
       summary[category]++;
-      const entry = { path, assignment, result: verdict.result, reason: verdict.reason ?? null, artifacts: root };
+      if (category === "unknown") {
+        if (stage === "generation") summary.generationRefused++;
+        else summary.validationUnknown++;
+        const reason = verdict.reason ?? "unspecified";
+        summary.unknownReasons[reason] = (summary.unknownReasons[reason] ?? 0) + 1;
+      }
+      const entry = {
+        path,
+        assignment,
+        stage,
+        result: verdict.result,
+        reason: verdict.reason ?? null,
+        artifacts: root,
+      };
       summary.entries.push(entry);
       await writeFile(join(root, "verdict.json"), JSON.stringify(verdict, null, 2) + "\n");
     }
