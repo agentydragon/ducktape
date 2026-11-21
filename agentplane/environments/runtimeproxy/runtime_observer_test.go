@@ -280,51 +280,6 @@ func startProductionRuntime(t *testing.T, f *sandboxFixture, g *Server) (runtime
 	return destination, backend
 }
 
-func runObserver(t *testing.T, g *Server, destination runtimeDestination) (context.CancelFunc, <-chan struct{}, <-chan error) {
-	t.Helper()
-	ctx, cancel := context.WithCancel(t.Context())
-	done := make(chan struct{})
-	result := make(chan error, 1)
-	go func() {
-		result <- g.observeRuntime(ctx, destination)
-		close(done)
-	}()
-	t.Cleanup(func() {
-		cancel()
-		waitObserver(t, done)
-	})
-	return cancel, done, result
-}
-
-func waitObserver(t *testing.T, done <-chan struct{}) {
-	t.Helper()
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("Runtime observer did not stop")
-	}
-}
-
-func awaitConnection(t *testing.T, g *Server, sandboxUID, bootID string, done <-chan struct{}) *runtimeConnection {
-	t.Helper()
-	deadline := time.NewTimer(5 * time.Second)
-	defer deadline.Stop()
-	poll := time.NewTicker(time.Millisecond)
-	defer poll.Stop()
-	for {
-		if connection, err := g.connections.holder(sandboxUID); err == nil && connection.bootID == bootID {
-			return connection
-		}
-		select {
-		case <-done:
-			t.Fatal("Runtime observer stopped before becoming callable")
-		case <-deadline.C:
-			t.Fatal("Runtime observer did not become callable")
-		case <-poll.C:
-		}
-	}
-}
-
 func startProxyClient(t *testing.T, g *Server) environmentruntimepb.EnvironmentRuntimeClient {
 	t.Helper()
 	return environmentruntimepb.NewEnvironmentRuntimeClient(serveServer(t, g, g.RegisterProxy))
@@ -772,25 +727,9 @@ func TestRuntimeObserverReconnectsBeforeNextDiscoveryAndFencesOldBoot(t *testing
 		cancel()
 		<-finished
 	}()
-	awaitBoot := func(bootID string) *runtimeConnection {
-		t.Helper()
-		poll := time.NewTicker(time.Millisecond)
-		defer poll.Stop()
-		for {
-			connection, err := g.connections.holder(string(f.sandbox.UID))
-			if err == nil && connection.bootID == bootID {
-				return connection
-			}
-			select {
-			case <-ctx.Done():
-				t.Fatalf("Runtime did not publish %s before the next discovery: %v", bootID, ctx.Err())
-			case <-poll.C:
-			}
-		}
-	}
-	first := awaitBoot("boot-1")
+	first := awaitConnection(t, g, string(f.sandbox.UID), "boot-1", ctx.Done())
 	close(runtime.disconnect)
-	second := awaitBoot("boot-2")
+	second := awaitConnection(t, g, string(f.sandbox.UID), "boot-2", ctx.Done())
 	if second.podUID != first.podUID {
 		t.Fatalf("reconnect changed incarnation: first=%+v second=%+v", first, second)
 	}
@@ -1016,16 +955,7 @@ func TestRuntimeHeartbeatsReadNoSandboxOrPodFromTheAPIServer(t *testing.T) {
 			}
 		}
 	}
-	for {
-		if _, err := g.connections.holder(string(f.sandbox.UID)); err == nil {
-			break
-		}
-		select {
-		case <-ctx.Done():
-			t.Fatalf("Runtime never became callable: %v", ctx.Err())
-		case <-poll.C:
-		}
-	}
+	awaitConnection(t, g, string(f.sandbox.UID), "test-heartbeating-boot", ctx.Done())
 	baseline := requests.Load()
 	awaitHeartbeats(runtime.heartbeats.Load() + 50)
 	if added := requests.Load() - baseline; added != 0 {

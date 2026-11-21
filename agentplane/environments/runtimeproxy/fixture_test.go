@@ -265,3 +265,48 @@ func serveServer(t *testing.T, g *Server, register func(*grpc.Server)) *serviceC
 	}
 	return result
 }
+
+func runObserver(t *testing.T, g *Server, destination runtimeDestination) (context.CancelFunc, <-chan struct{}, <-chan error) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	result := make(chan error, 1)
+	go func() {
+		result <- g.observeRuntime(ctx, destination)
+		close(done)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		waitObserver(t, done)
+	})
+	return cancel, done, result
+}
+
+func waitObserver(t *testing.T, done <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Runtime observer did not stop")
+	}
+}
+
+func awaitConnection(t *testing.T, g *Server, sandboxUID, bootID string, done <-chan struct{}) *runtimeConnection {
+	t.Helper()
+	deadline := time.NewTimer(5 * time.Second)
+	defer deadline.Stop()
+	poll := time.NewTicker(time.Millisecond)
+	defer poll.Stop()
+	for {
+		if connection, err := g.connections.holder(sandboxUID); err == nil && connection.bootID == bootID {
+			return connection
+		}
+		select {
+		case <-done:
+			t.Fatalf("Runtime observer stopped before becoming callable at boot %q", bootID)
+		case <-deadline.C:
+			t.Fatalf("Runtime observer did not become callable at boot %q", bootID)
+		case <-poll.C:
+		}
+	}
+}
