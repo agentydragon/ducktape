@@ -4,10 +4,10 @@ Every `ImageRepository` must be listed in some `Receiver`, so a registry webhook
 it immediately — otherwise a new tag is only picked up on the 5-minute `ImageRepository`
 poll. Also checks that no Receiver references one that no longer exists.
 
-Reads the typed resources from `ParsedCluster.rendered_resources` — the kustomize/flux build
-output the validator already produces — and isinstance-dispatches on the parsed variants, so
-it sees exactly what Flux applies and never re-walks source YAML (which would choke on the
-Authentik blueprints' custom `!Find`/`!Env` tags).
+The Receiver check uses typed local renders from `ParsedCluster.rendered_resources`.
+Local owners with `targetNamespace` use Flux dry-run. Other local owners use plain
+Kustomize, which omits Flux-level patches. Both paths omit live decryption and
+post-build variable sources.
 """
 
 from __future__ import annotations
