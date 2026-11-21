@@ -29,7 +29,7 @@ from agentplane.session_dispatcher.dispatcher.api.session import (
 from agentplane.system_tests.driver.cleanup_diagnostics import capture_without_masking, cleanup_without_masking
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.dispatcher_operations import session_until
-from agentplane.system_tests.driver.dispatcher_transport import Caller, forward, service_caller
+from agentplane.system_tests.driver.dispatcher_transport import forward, service_caller
 from agentplane.system_tests.driver.identity import LAUNCH_DEFAULT_POLICY_SETS, scenario_identity
 from agentplane.system_tests.driver.sandbox import POD_TEMPLATE
 from agentplane.system_tests.driver.sandbox_cleanup import delete_sandbox
@@ -78,14 +78,10 @@ async def _cleanup_sandbox(
         raise
 
 
-async def _dispatch_until(
-    stub: Dispatcher, caller: Caller, session: str, predicate: Callable[[pb.Dispatch], bool]
-) -> pb.Dispatch:
+async def _dispatch_until(stub: Dispatcher, session: str, predicate: Callable[[pb.Dispatch], bool]) -> pb.Dispatch:
     with tracer.start_as_current_span("system_test.dispatcher.admission"):
         stream = stub.WatchDispatches(
-            pb.WatchDispatchesRequest(filter=pb.DispatchFilter(session_id=session)),
-            metadata=caller.metadata,
-            timeout=BOUND_SECONDS,
+            pb.WatchDispatchesRequest(filter=pb.DispatchFilter(session_id=session)), timeout=BOUND_SECONDS
         )
         try:
             async for response in stream:
@@ -463,7 +459,7 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
         stub: Dispatcher = session_dispatcher_pb2_grpc.SessionDispatcherStub(channel)
         with pytest.raises(grpc.aio.AioRpcError) as retired_environment_api:
             await environment_service_pb2_grpc.EnvironmentServiceStub(channel).ListEnvironments(
-                environments_pb.ListEnvironmentsRequest(), metadata=authentication.metadata, timeout=15
+                environments_pb.ListEnvironmentsRequest(), timeout=15
             )
         assert retired_environment_api.value.code() == grpc.StatusCode.UNIMPLEMENTED
         async with dial(
@@ -482,7 +478,6 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
                 pb.ChangeReasoningEffortRequest(
                     expected_sandbox_uid=uid, session_id=session, command_id=command, effort="low"
                 ),
-                metadata=authentication.metadata,
                 timeout=15,
             )
         assert unregistered.value.code() == grpc.StatusCode.NOT_FOUND
@@ -496,19 +491,13 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
             cwd="/state/work",
             reasoning_effort="low",
         )
-        created = await stub.CreateSession(
-            pb.CreateSessionRequest(session_id=session, spec=spec), metadata=authentication.metadata, timeout=15
-        )
+        created = await stub.CreateSession(pb.CreateSessionRequest(session_id=session, spec=spec), timeout=15)
         assert created.session.status.materialization == pb.SessionStatus.SESSION_MATERIALIZATION_WAITING
         queued = await stub.ChangeReasoningEffort(
-            pb.ChangeReasoningEffortRequest(session_id=session, command_id=command, effort="low"),
-            metadata=authentication.metadata,
-            timeout=15,
+            pb.ChangeReasoningEffortRequest(session_id=session, command_id=command, effort="low"), timeout=15
         )
         assert queued.dispatch.state == pb.DELIVERY_STATE_QUEUED_IN_DISPATCHER
-        waiting = await session_until(
-            stub, authentication, session, lambda row: row.status.reason == "sandbox_operator_requested_stop"
-        )
+        waiting = await session_until(stub, session, lambda row: row.status.reason == "sandbox_operator_requested_stop")
         assert waiting.placement.environment_hosted.environment.uid == uid
         assert waiting.status.delivery_blocker.kind == lifecycle_pb.DELIVERY_BLOCKER_KIND_OPERATOR_REQUESTED_STOP
         assert waiting.status.wake_assessment.state == lifecycle_pb.WAKE_STATE_DENIED
@@ -535,9 +524,7 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
                 )
             )
             stub = session_dispatcher_pb2_grpc.SessionDispatcherStub(peer_channel)
-            retained = await stub.GetDispatch(
-                pb.GetDispatchRequest(command_id=command), metadata=authentication.metadata, timeout=15
-            )
+            retained = await stub.GetDispatch(pb.GetDispatchRequest(command_id=command), timeout=15)
             assert retained.dispatch.created_at == queued.dispatch.created_at
             assert retained.dispatch.state == pb.DELIVERY_STATE_QUEUED_IN_DISPATCHER
 
@@ -572,13 +559,9 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
             stub = session_dispatcher_pb2_grpc.SessionDispatcherStub(peer_channel)
 
         try:
-            admitted = await _dispatch_until(
-                stub, authentication, session, lambda row: row.state == pb.DELIVERY_STATE_RUNNER_ADMITTED
-            )
+            admitted = await _dispatch_until(stub, session, lambda row: row.state == pb.DELIVERY_STATE_RUNNER_ADMITTED)
         except (DispatchFailedError, grpc.aio.AioRpcError) as error:
-            failed_session = await stub.GetSession(
-                pb.GetSessionRequest(session_id=session), metadata=authentication.metadata, timeout=15
-            )
+            failed_session = await stub.GetSession(pb.GetSessionRequest(session_id=session), timeout=15)
             evidence.update(
                 {
                     "failure": str(error),
@@ -592,13 +575,9 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
         assert admitted.sandbox_uid == uid
         assert admitted.admission.event.command_admitted.command.command_id == command
         assert admitted.admission.event.command_admitted.command.change_reasoning_effort.effort == "low"
-        session_status = await stub.GetSession(
-            pb.GetSessionRequest(session_id=session), metadata=authentication.metadata, timeout=15
-        )
+        session_status = await stub.GetSession(pb.GetSessionRequest(session_id=session), timeout=15)
         assert session_status.session.status.materialization == pb.SessionStatus.SESSION_MATERIALIZATION_ACCEPTED
-        observed = await session_until(
-            stub, authentication, session, lambda row: row.status.activity.WhichOneof("kind") == "observed"
-        )
+        observed = await session_until(stub, session, lambda row: row.status.activity.WhichOneof("kind") == "observed")
         assert observed.status.activity.observed.session_id == session
         assert observed.status.activity.observed.WhichOneof("host") == "environment_hosted"
         evidence["observed_activity"] = str(observed.status.activity)
@@ -616,13 +595,10 @@ SELECT json_build_object('attempted',delivery_attempted,'created_at',created_at,
             assert receipt["attempted"] is True
             next_command = str(uuid4())
             await stub.ChangeReasoningEffort(
-                pb.ChangeReasoningEffortRequest(session_id=session, command_id=next_command, effort="low"),
-                metadata=authentication.metadata,
-                timeout=15,
+                pb.ChangeReasoningEffortRequest(session_id=session, command_id=next_command, effort="low"), timeout=15
             )
             next_admitted = await _dispatch_until(
                 stub,
-                authentication,
                 session,
                 lambda row: row.command_id == next_command and row.state == pb.DELIVERY_STATE_RUNNER_ADMITTED,
             )
@@ -666,7 +642,6 @@ SELECT json_build_object('attempted',delivery_attempted,'created_at',created_at,
             )
             suspended = await session_until(
                 stub,
-                authentication,
                 session,
                 lambda row: (
                     row.status.activity.WhichOneof("kind") == "environment_down"
@@ -678,16 +653,11 @@ SELECT json_build_object('attempted',delivery_attempted,'created_at',created_at,
             deletion_command = str(uuid4())
             cleanup_sessions = [session, deletion_session]
             cleanup_commands = [command, deletion_command]
-            await stub.CreateSession(
-                pb.CreateSessionRequest(session_id=deletion_session, spec=spec),
-                metadata=authentication.metadata,
-                timeout=15,
-            )
+            await stub.CreateSession(pb.CreateSessionRequest(session_id=deletion_session, spec=spec), timeout=15)
             await stub.ChangeReasoningEffort(
                 pb.ChangeReasoningEffortRequest(
                     expected_sandbox_uid=uid, session_id=deletion_session, command_id=deletion_command, effort="low"
                 ),
-                metadata=authentication.metadata,
                 timeout=15,
             )
             live = await _wait_for_dispatcher_replicas(cluster, 2)
@@ -706,7 +676,6 @@ SELECT json_build_object('attempted',delivery_attempted,'created_at',created_at,
                 reader = session_dispatcher_pb2_grpc.SessionDispatcherStub(channel)
                 stream = reader.WatchDispatches(
                     pb.WatchDispatchesRequest(filter=pb.DispatchFilter(session_id=deletion_session)),
-                    metadata=authentication.metadata,
                     timeout=BOUND_SECONDS,
                 )
                 stack.callback(stream.cancel)
@@ -721,7 +690,6 @@ SELECT json_build_object('attempted',delivery_attempted,'created_at',created_at,
             cleaned = True
             deleted = await session_until(
                 stub,
-                authentication,
                 session,
                 lambda row: (
                     row.status.activity.WhichOneof("kind") == "environment_down"
@@ -774,9 +742,7 @@ SELECT json_build_object('attempted',delivery_attempted,'created_at',created_at,
             await environments.SetEnvironmentIdentity(change, timeout=15)
             rebound = json.loads(await cluster.kubectl("get", "sandbox", sandbox, "-o", "json"))
             assert rebound["spec"]["identity"]["name"] == next_identity
-            retained_session = await stub.GetSession(
-                pb.GetSessionRequest(session_id=session), metadata=authentication.metadata, timeout=15
-            )
+            retained_session = await stub.GetSession(pb.GetSessionRequest(session_id=session), timeout=15)
             assert retained_session.session.identity == session_status.session.identity
             assert retained_session.session.identity.name == identity
             next_command = str(uuid4())
@@ -784,13 +750,10 @@ SELECT json_build_object('attempted',delivery_attempted,'created_at',created_at,
                 pb.SubmitInputRequest(
                     session_id=session, command_id=next_command, text="Input to a retained Session after rebinding."
                 ),
-                metadata=authentication.metadata,
                 timeout=15,
             )
             stream = stub.WatchDispatches(
-                pb.WatchDispatchesRequest(filter=pb.DispatchFilter(session_id=session)),
-                metadata=authentication.metadata,
-                timeout=BOUND_SECONDS,
+                pb.WatchDispatchesRequest(filter=pb.DispatchFilter(session_id=session)), timeout=BOUND_SECONDS
             )
             try:
                 async for response in stream:
@@ -956,7 +919,6 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
                             instructions=f"EARLY_DIAGNOSTIC_PAYLOAD_{sandbox}",
                         ),
                     ),
-                    metadata=app_authentication.metadata,
                     timeout=15,
                 )
                 queued = await notification_stub.SubmitInput(
@@ -966,7 +928,6 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
                         command_id=command,
                         text=f"LATE_DIAGNOSTIC_PAYLOAD_{sandbox} Reply with exactly OK and do not use tools.",
                     ),
-                    metadata=notification_authentication.metadata,
                     timeout=15,
                 )
                 assert created.session.status.materialization == pb.SessionStatus.SESSION_MATERIALIZATION_WAITING
@@ -994,10 +955,7 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
                 assert ready_incarnation
                 assert ready_incarnation != initial_incarnation
                 admitted = await _dispatch_until(
-                    notification_stub,
-                    notification_authentication,
-                    session,
-                    lambda row: row.state == pb.DELIVERY_STATE_RUNNER_ADMITTED,
+                    notification_stub, session, lambda row: row.state == pb.DELIVERY_STATE_RUNNER_ADMITTED
                 )
                 assert admitted.command_id == command
                 assert admitted.admission.event.command_admitted.command.submit_input.text == (
@@ -1010,9 +968,7 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
                     reraise=True,
                 ):
                     with attempt:
-                        session_status = await stub.GetSession(
-                            pb.GetSessionRequest(session_id=session), metadata=app_authentication.metadata, timeout=15
-                        )
+                        session_status = await stub.GetSession(pb.GetSessionRequest(session_id=session), timeout=15)
                         materialization = session_status.session.status.materialization
                         if materialization in (
                             pb.SessionStatus.SESSION_MATERIALIZATION_FAILED,

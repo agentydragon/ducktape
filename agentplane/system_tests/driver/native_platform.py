@@ -54,11 +54,9 @@ class NativePlatformClients:
         )
         return SandboxRunner(self.control, destination, host_control=self.host_control)
 
-    async def ready_runner(
-        self, target: identity_pb2.EnvironmentTarget, *, timeout_s: float = RUNNER_READY_SECONDS
-    ) -> SandboxRunner:
+    async def ready_runner(self, target: identity_pb2.EnvironmentTarget) -> SandboxRunner:
         """Wait for this exact Runner using only retry-safe status reads."""
-        async with asyncio.timeout(timeout_s):
+        async with asyncio.timeout(RUNNER_READY_SECONDS):
             while True:
                 runner = self.runner(target)
                 try:

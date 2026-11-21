@@ -118,12 +118,7 @@ class GoHistoryService:
     )
 
     async def writer_channel_credentials(
-        self,
-        writer: ServiceAccountRef,
-        *,
-        pod_name: str | None = None,
-        identity_name: str | None = None,
-        identity_uid: str | None = None,
+        self, writer: ServiceAccountRef, *, identity_name: str | None = None, identity_uid: str | None = None
     ) -> grpc.ChannelCredentials:
         """A live Identity workload SVID the ingress resolves through the test API server."""
         key = (writer, identity_name, identity_uid)
@@ -134,7 +129,6 @@ class GoHistoryService:
         credential_id = uuid4().hex
         workload_name = f"history-{writer_id}"
         identity_name = identity_name or f"history-{writer_id}"
-        pod_name = pod_name or f"history-{writer_id[:12]}"
         pod_uid = str(uuid4())
         custom = k8s_client.CustomObjectsApi(self.api.api)
         core = k8s_client.CoreV1Api(self.api.api)
@@ -203,7 +197,7 @@ class GoHistoryService:
                 "spec": {
                     "subject": {"identity": {"name": identity_name, "uid": identity["metadata"]["uid"]}},
                     "binding": binding,
-                    "pod": {"name": pod_name, "uid": pod_uid},
+                    "pod": {"name": f"history-{writer_id[:12]}", "uid": pod_uid},
                 },
             },
         )
