@@ -41,6 +41,10 @@ class DoorDashEmail(BaseModel):
     def display_columns(cls) -> list[tuple[str, str]]:
         return [("restaurant", "Restaurant"), ("email_type", "Type")]
 
+    @classmethod
+    def hide_subject(cls) -> bool:
+        return False
+
     def format_column(self, key: str) -> str:
         if key == "restaurant":
             return self.restaurant or ""

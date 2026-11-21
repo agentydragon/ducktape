@@ -25,6 +25,10 @@ class SquareReceipt(BaseModel):
     def display_columns(cls) -> list[tuple[str, str]]:
         return [("amount", "Amount"), ("merchant_name", "Merchant")]
 
+    @classmethod
+    def hide_subject(cls) -> bool:
+        return False
+
     def format_column(self, key: str) -> str:
         if key == "amount":
             return f"${self.amount}" if self.amount else ""
