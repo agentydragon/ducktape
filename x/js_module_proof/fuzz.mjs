@@ -28,6 +28,12 @@ const record = (name) =>
   expr(
     call({ type: "MemberExpression", object: id("globalThis"), property: id("record"), computed: false }, [id(name)])
   );
+const recordLiteral = (value) =>
+  expr(
+    call({ type: "MemberExpression", object: id("globalThis"), property: id("record"), computed: false }, [
+      literal(value),
+    ])
+  );
 
 function print(node) {
   switch (node.type) {
@@ -1158,7 +1164,7 @@ export function makeComposedCase(seed, index) {
   const prefix = earlyVar
     ? [record(globals[0])]
     : hasDiscardedLiteral
-      ? [expr(discardedForms[Math.floor(index / 13) % discardedForms.length])]
+      ? [expr(discardedForms[Math.floor(index / 13) % discardedForms.length]), recordLiteral(`case-${index % 7}`)]
       : [];
   const ast = {
     type: "Program",
@@ -1186,6 +1192,7 @@ export function makeComposedCase(seed, index) {
     source: print(ast),
     grammar: "composed",
     hasDiscardedLiteral,
+    hasTextObservation: hasDiscardedLiteral,
     hasReexportRelay: index % 8 === 3,
     earlyVar,
     hasLocalVar,
@@ -1635,6 +1642,9 @@ export async function runFuzz({
     discardedLiteralCases: 0,
     discardedLiteralComparedCases: 0,
     discardedLiteralProvedCases: 0,
+    textObservationCases: 0,
+    textObservationComparedCases: 0,
+    textObservationProvedCases: 0,
     varCases: 0,
     varGeneratedCases: 0,
     varComparedCases: 0,
@@ -1752,6 +1762,7 @@ export async function runFuzz({
       visit(input.ast);
       if (hasVar) summary.varCases++;
       if (input.hasDiscardedLiteral) summary.discardedLiteralCases++;
+      if (input.hasTextObservation) summary.textObservationCases++;
       if (input.hasReexportRelay && !input.independentSplit) summary.reexportRelayCases++;
       if (input.hasLocalVar) summary.localVarCases++;
       if (input.earlyVar) summary.earlyVarCases++;
@@ -1945,6 +1956,7 @@ export async function runFuzz({
       await writeFile(join(root, "node.json"), JSON.stringify({ before, after }, null, 2) + "\n");
       summary.compared++;
       if (input.hasDiscardedLiteral) summary.discardedLiteralComparedCases++;
+      if (input.hasTextObservation) summary.textObservationComparedCases++;
       if (input.hasReexportRelay && !input.independentSplit) summary.reexportRelayComparedCases++;
       if (hasVar) summary.varComparedCases++;
       if (input.hasLocalVar) summary.localVarComparedCases++;
@@ -2027,6 +2039,7 @@ export async function runFuzz({
         if (verdict.result === "proved under assumptions") {
           summary.proved++;
           if (input.hasDiscardedLiteral) summary.discardedLiteralProvedCases++;
+          if (input.hasTextObservation) summary.textObservationProvedCases++;
           if (input.hasReexportRelay && !input.independentSplit) summary.reexportRelayProvedCases++;
           if (hasVar) summary.varProvedCases++;
           if (input.hasLocalVar) summary.localVarProvedCases++;

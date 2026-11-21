@@ -1111,6 +1111,8 @@ function statement(node) {
     "expected globalThis.record(binding)"
   );
   const arg = expr.arguments[0];
+  if (arg?.type === "Literal" && typeof arg.value === "string" && !/[^\x20-\x7e]/.test(arg.value))
+    return { kind: "recordText", value: arg.value };
   if (arg?.type === "CallExpression" && !arg.optional && arg.arguments.length === 0)
     return { kind: "recordCall", name: identifier(arg.callee) };
   return { kind: "record", name: identifier(arg) };
@@ -1481,6 +1483,8 @@ function leanStatement(item) {
   switch (item.kind) {
     case "discardedLiteral":
       return ".discardedLiteral";
+    case "recordText":
+      return `.recordText ${str(item.value)}`;
     case "variable":
     case "hoistedVariable":
       return `.${item.kind} ${str(item.name)} ${item.value}`;
@@ -1922,9 +1926,20 @@ theorem binding_export_difference :
     const events = (trace) => {
       const undefinedValue = (value) =>
         value && typeof value === "object" && value.undefined === true && Object.keys(value).length === 1;
-      if (!trace.events.every((value) => undefinedValue(value) || (Number.isSafeInteger(value) && value >= 0)))
+      if (
+        !trace.events.every(
+          (value) =>
+            undefinedValue(value) ||
+            (typeof value === "string" && !/[^\x20-\x7e]/.test(value)) ||
+            (Number.isSafeInteger(value) && value >= 0)
+        )
+      )
         return null;
-      return list(trace.events.map((value) => (undefinedValue(value) ? ".undefined" : `.number ${value}`)));
+      return list(
+        trace.events.map((value) =>
+          undefinedValue(value) ? ".undefined" : typeof value === "string" ? `.text ${str(value)}` : `.number ${value}`
+        )
+      );
     };
     const returns = (trace) => {
       if (!trace.results.every((value) => value === null || (Number.isSafeInteger(value) && value >= 0))) return null;

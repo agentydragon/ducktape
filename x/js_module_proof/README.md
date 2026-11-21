@@ -180,6 +180,8 @@ redeclare parameters. Nested or later function-scoped `var` declarations remain
 unsupported.
 Discarded string, number, boolean and null literals are modeled as no-ops.
 The same holds for `void`, `!`, and `typeof` applied directly to those literals.
+Direct `globalThis.record` calls with printable ASCII string literals produce
+string observations; initialization-order counterexamples include those strings.
 This includes `"use strict"`: all source and emitted files are ECMAScript
 modules, which are already strict. RegExp and BigInt literals remain unsupported.
 Public exports must be functions. The entry module may rename an exported

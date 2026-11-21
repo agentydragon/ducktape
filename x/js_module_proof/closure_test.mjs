@@ -26,6 +26,49 @@ function cli(...args) {
 const models = (
   await Promise.all(["Semantics.lean", "Effects.lean", "Bindings.lean"].map((n) => readFile(join(here, n), "utf8")))
 ).join("\n");
+if (shard === 10) {
+  const textRoot = await mkdtemp(join(process.env.TEST_TMPDIR, "text-observation-"));
+  const textSource = join(textRoot, "source.mjs");
+  const textSpec = join(textRoot, "spec.json");
+  const safeOut = join(textRoot, "safe");
+  const unsafeOut = join(textRoot, "unsafe");
+  await writeFile(
+    textSource,
+    'globalThis.record("alpha");\nlet value = 4;\nglobalThis.record("omega");\nfunction read() { return value; }\nexport { read };\n'
+  );
+  const assignment = {
+    kind: "bindings",
+    entry: "entry.mjs",
+    modules: {
+      "state.mjs": { imports: [], statements: [0, 1, 3] },
+      "other.mjs": { imports: [], statements: [2] },
+      "entry.mjs": { imports: ["state.mjs", "other.mjs"], statements: [] },
+    },
+  };
+  await writeFile(textSpec, JSON.stringify(assignment));
+  assert.equal(cli("generate", textSource, textSpec, safeOut).result, "generated");
+  assert.equal(cli("validate", textSource, textSpec, safeOut).result, "proved under assumptions");
+  assert.deepEqual(execute(textSource, ["read"]).events, ["alpha", "omega"]);
+  assert.deepEqual(execute(join(safeOut, "entry.mjs"), ["read"]), execute(textSource, ["read"]));
+  assignment.modules["entry.mjs"].imports.reverse();
+  await writeFile(textSpec, JSON.stringify(assignment));
+  assert.equal(cli("generate", textSource, textSpec, unsafeOut).result, "generated");
+  const witness = cli("validate", textSource, textSpec, unsafeOut);
+  assert.equal(witness.result, "unsafe", JSON.stringify(witness));
+  assert.deepEqual(execute(join(unsafeOut, "entry.mjs"), []).events, ["omega", "alpha"]);
+  const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
+    encoding: "utf8",
+    input: models + witness.certificate,
+  });
+  assert.equal(replay.status, 0, replay.stdout + replay.stderr);
+  assert.match(replay.stdout, /'binding_witness_difference' does not depend on any axioms/);
+  await writeFile(textSource, 'globalThis.record("é");\n');
+  await writeFile(
+    textSpec,
+    JSON.stringify({ kind: "bindings", entry: "entry.mjs", modules: { "entry.mjs": { imports: [], statements: [0] } } })
+  );
+  assert.equal(cli("generate", textSource, textSpec, join(textRoot, "unsupported")).result, "unknown");
+}
 if (shard === 6) {
   const directiveRoot = await mkdtemp(join(process.env.TEST_TMPDIR, "directive-proof-"));
   const directiveSource = join(directiveRoot, "source.mjs");
