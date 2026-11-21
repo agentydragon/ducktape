@@ -1423,17 +1423,30 @@ function generateFiles(source, spec, names) {
         if (renamed.length) {
           if (item.ast.kind === "expressionFunction") {
             const node = parseModule(statement)[0];
+            const statements = node.body.body;
+            const declarations = statements.slice(0, -1);
             check(
               node.params.every((parameter) => parameter.type === "Identifier") &&
-                node.body.body.length === 1 &&
-                node.body.body[0].type === "ReturnStatement",
-              "local import renaming supports only pure returning expressions"
+                statements.at(-1)?.type === "ReturnStatement" &&
+                declarations.every(
+                  (declaration) =>
+                    declaration.type === "VariableDeclaration" &&
+                    declaration.kind === "const" &&
+                    declaration.declarations.length === 1 &&
+                    declaration.declarations[0].id.type === "Identifier" &&
+                    declaration.declarations[0].init
+                ),
+              "local import renaming supports only pure returning expressions and const locals"
             );
+            const localNames = new Set([
+              ...node.params.map((parameter) => parameter.name),
+              ...declarations.map((declaration) => declaration.declarations[0].id.name),
+            ]);
             const edits = [];
             const visit = (expression) => {
               if (expression?.type === "Literal") return;
               if (expression?.type === "Identifier") {
-                if (renamed.includes(expression.name)) edits.push(expression);
+                if (renamed.includes(expression.name) && !localNames.has(expression.name)) edits.push(expression);
                 return;
               }
               if (
@@ -1456,7 +1469,8 @@ function generateFiles(source, spec, names) {
               }
               check(false, "local import renaming supports only pure returning expressions");
             };
-            visit(node.body.body[0].argument);
+            for (const declaration of declarations) visit(declaration.declarations[0].init);
+            visit(statements.at(-1).argument);
             check(
               renamed.every((name) => edits.some((edit) => edit.name === name)),
               "missing imported expression reference"

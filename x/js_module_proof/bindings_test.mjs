@@ -368,7 +368,10 @@ if (runSection(0)) {
   await writeFile(expressionSpec, JSON.stringify(generatedSpec));
   const unsupported = cli("generate", expressionSource, expressionSpec, join(root, "unsupported-renamed-local-out"));
   assert.equal(unsupported.value.result, "unknown");
-  assert.match(unsupported.value.reason, /local import renaming supports only pure returning expressions/);
+  assert.match(
+    unsupported.value.reason,
+    /local import renaming supports only pure returning expressions and const locals/
+  );
 
   const observedSource = join(root, "observed-renamed-local-source.mjs");
   const observedSpec = join(root, "observed-renamed-local-spec.json");
@@ -746,4 +749,45 @@ if (runSection(1)) {
   const checked = cli("validate", source, spec, out).value;
   assert.equal(checked.result, "unknown", JSON.stringify(checked));
   assert.match(checked.detail, /numeric bounds/);
+}
+
+if (runSection(1)) {
+  const constSource = join(root, "const-alias-source.mjs");
+  const constSpec = join(root, "const-alias-spec.json");
+  const constOut = join(root, "const-alias-out");
+  await writeFile(
+    constSource,
+    `let value = 3;\nlet other = 5;\nfunction compute(p) { const __split_local_0 = p + value; return __split_local_0 + value; }\nexport { compute };\n`
+  );
+  await writeFile(
+    constSpec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0, 1] },
+        "logic.mjs": { imports: ["state.mjs"], statements: [2], renameLocalImports: true },
+        "entry.mjs": { imports: ["logic.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", constSource, constSpec, constOut).value.result, "generated");
+  const constState = join(constOut, "state.mjs");
+  await writeFile(constState, (await readFile(constState, "utf8")) + "export { other };\n");
+  const constLogic = join(constOut, "logic.mjs");
+  const constText = await readFile(constLogic, "utf8");
+  assert.match(constText, /value as __split_local__0/);
+  const constResult = cli("validate", constSource, constSpec, constOut).value;
+  assert.equal(constResult.result, "proved under assumptions", JSON.stringify(constResult));
+  const calls = [
+    { name: "compute", args: [0] },
+    { name: "compute", args: [2] },
+  ];
+  assert.deepEqual(execute(constSource, calls), { events: [], results: [6, 8] });
+  assert.deepEqual(execute(join(constOut, "entry.mjs"), calls), { events: [], results: [6, 8] });
+  await writeFile(constLogic, constText.replace("value as __split_local__0", "other as __split_local__0"));
+  const redirected = cli("validate", constSource, constSpec, constOut).value;
+  assert.equal(redirected.result, "unsafe", JSON.stringify(redirected));
+  assert.deepEqual(execute(constSource, redirected.calls), { events: [], results: [6] });
+  assert.deepEqual(execute(join(constOut, "entry.mjs"), redirected.calls), { events: [], results: [10] });
 }

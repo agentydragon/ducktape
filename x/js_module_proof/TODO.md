@@ -85,8 +85,8 @@ cover only part of the grammar and split space described below.
       on accepted, unsafe and unsupported examples. Avoid adding independent formal
       models for the fuzzer or for individual syntax features.
 - [ ] Extend renamed local imports beyond simple readers, records, calls, local
-      addition updates, and pure numeric expressions with parameters and
-      short-circuit values.
+      addition updates, and numeric functions with parameters, pure `const`
+      locals, and short-circuit values.
       The generator and an axiom-free acceptance certificate cover these cases,
       including relayed imports; the AST fuzzer also redirects reader imports to
       check unsafe witnesses.

@@ -1031,7 +1031,19 @@ export function makeLocalAliasCase(seed, index) {
     (body, parameter) => ({ type: "BinaryExpression", operator: "+", left: body, right: id(parameter) }),
     numericExpression
   );
-  const numeric = numericBindings.length ? [functionNode("compute", numericParameters, [returnNode(numericBody)])] : [];
+  const withConstLocal = numericBindings.length > 0 && index % 96 === 61;
+  const localDeclaration = {
+    type: "VariableDeclaration",
+    kind: "const",
+    declarations: [{ type: "VariableDeclarator", id: id("offset"), init: id("numericLeft") }],
+  };
+  const computedBody = withConstLocal
+    ? [
+        localDeclaration,
+        returnNode({ type: "BinaryExpression", operator: "+", left: id("offset"), right: numericBody }),
+      ]
+    : [returnNode(numericBody)];
+  const numeric = numericBindings.length ? [functionNode("compute", numericParameters, computedBody)] : [];
   const readerStart = state.length + observation.length + localState.length;
   const updateStart = readerStart + readers.length;
   const numericStart = updateStart + updates.length;
