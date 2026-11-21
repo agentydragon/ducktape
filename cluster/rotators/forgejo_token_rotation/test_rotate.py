@@ -1,5 +1,7 @@
 import base64
 import json
+import subprocess
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -7,7 +9,8 @@ import httpx
 import pytest
 import pytest_bazel
 
-from cluster.rotators.forgejo_token_rotation.config import FULL_ACCOUNT_SCOPES, Rotation, TeaSecretOutput
+from cluster.rotators.forgejo_token_rotation import rotate
+from cluster.rotators.forgejo_token_rotation.config import FULL_ACCOUNT_SCOPES, Config, Rotation, TeaSecretOutput
 from cluster.rotators.forgejo_token_rotation.rotate import (
     ForgejoCredentials,
     RotatedToken,
@@ -85,59 +88,32 @@ def test_minted_token_requests_full_non_admin_write_scope_set():
     ]
 
 
-def test_should_rotate_missing_stamps():
-    r = Rotation(name="haku", credentials_dir=Path("/creds"), sops_file=Path("secrets/haku.yaml"))
-    due, _ = should_rotate(r, {}, [], now=datetime(2026, 7, 1, tzinfo=UTC))
-    assert due
-
-
-def test_should_skip_fresh_present_token():
-    r = Rotation(name="haku", credentials_dir=Path("/creds"), sops_file=Path("secrets/haku.yaml"))
-    stamps = {
-        "rotated_at_unencrypted": "2026-07-01T00:00:00Z",
-        "rotate_after_days_unencrypted": 30,
-        "repository_access_unencrypted": "all",
-        "scopes_unencrypted": FULL_ACCOUNT_SCOPES,
-        "token_id_unencrypted": 12,
-        "token_name_unencrypted": "forgejo-tea-haku-20260701000000",
-        "token_last_eight_unencrypted": "34token",
-    }
-    tokens = [{"id": 12, "name": "forgejo-tea-haku-20260701000000", "token_last_eight": "34token"}]
-    due, _ = should_rotate(r, stamps, tokens, now=datetime(2026, 7, 2, tzinfo=UTC))
-    assert not due
-
-
-def test_should_rotate_when_scopes_change():
-    r = Rotation(name="haku", credentials_dir=Path("/creds"), sops_file=Path("secrets/haku.yaml"))
-    stamps = {
-        "rotated_at_unencrypted": "2026-07-01T00:00:00Z",
-        "rotate_after_days_unencrypted": 30,
-        "repository_access_unencrypted": "all",
-        "scopes_unencrypted": ["write:repository"],
-        "token_id_unencrypted": 12,
-    }
-    due, _ = should_rotate(r, stamps, [{"id": 12}], now=datetime(2026, 7, 2, tzinfo=UTC))
-    assert due
-
-
 @pytest.mark.parametrize(
-    ("token_id", "now"),
+    ("overrides", "token_id", "day", "due"),
     [
-        pytest.param(12, datetime(2026, 7, 31, tzinfo=UTC), id="age-boundary"),
-        pytest.param(13, datetime(2026, 7, 2, tzinfo=UTC), id="stamped-token-missing"),
+        pytest.param(None, 12, 2, True, id="missing-stamp"),
+        pytest.param({}, 12, 2, False, id="fresh"),
+        pytest.param({"scopes_unencrypted": ["write:repository"]}, 12, 2, True, id="scope-change"),
+        pytest.param({}, 12, 31, True, id="age-boundary"),
+        pytest.param({}, 13, 2, True, id="missing-token"),
     ],
 )
-def test_should_rotate_due_to_age_or_absent_token(token_id: int, now: datetime) -> None:
-    r = Rotation(name="haku", credentials_dir=Path("/creds"), sops_file=Path("secrets/haku.yaml"))
+def test_should_rotate_due_to_stamps_age_or_token_presence(overrides, token_id: int, day: int, due: bool) -> None:
+    rotation = Rotation(name="test-account", credentials_dir=Path("/creds"), sops_file=Path("secrets/test.yaml"))
     stamps = {
         "rotated_at_unencrypted": "2026-07-01T00:00:00Z",
         "rotate_after_days_unencrypted": 30,
         "repository_access_unencrypted": "all",
         "scopes_unencrypted": FULL_ACCOUNT_SCOPES,
         "token_id_unencrypted": 12,
+        "token_name_unencrypted": "test-token-12",
+        "token_last_eight_unencrypted": "testtail",
     }
-    due, _ = should_rotate(r, stamps, [{"id": token_id}], now=now)
-    assert due
+    tokens = [{"id": token_id, "name": f"test-token-{token_id}", "token_last_eight": "testtail"}]
+    rotate_due, _ = should_rotate(
+        rotation, (stamps | overrides) if overrides is not None else {}, tokens, now=datetime(2026, 7, day, tzinfo=UTC)
+    )
+    assert rotate_due is due
 
 
 def test_tea_config_yaml_matches_upstream_config_shape():
@@ -208,6 +184,47 @@ def test_tokens_to_prune_keeps_current_and_newest_previous():
         {"id": 1, "name": "manual-token"},
     ]
     assert tokens_to_prune(r, current, tokens) == [{"id": 2, "name": "forgejo-tea-haku-20260702000000"}]
+
+
+@pytest.mark.parametrize("pushed", [True, False, None], ids=["published", "unchanged", "push-rejected"])
+def test_only_published_rotations_prune_even_when_another_rotation_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, pushed: bool | None
+) -> None:
+    broken, healthy = [
+        Rotation(name=name, credentials_dir=tmp_path / name, sops_file=tmp_path / f"{name}.yaml")
+        for name in ("broken", "healthy")
+    ]
+    config = tmp_path / "config.yaml"
+    config.write_text(Config(rotations=[broken, healthy]).model_dump_json())
+    pat = tmp_path / "pat"
+    pat.write_text("test-pat")
+    credentials = ForgejoCredentials("test-user", "test-secret", "https://forgejo.test", "https://git.test")
+    events: list[str] = []
+
+    def rotate_one(_client: httpx.Client, rotation: Rotation) -> RotatedToken:
+        if rotation.name == broken.name:
+            raise RuntimeError("Forgejo rejected the rotation")
+        return RotatedToken(rotation=rotation, credentials=credentials, token_id=2, token_name="test-token")
+
+    def push_outputs(paths: Iterable[Path], **_kwargs: object) -> bool:
+        assert list(paths) == [healthy.sops_file]
+        events.append("push")
+        if pushed is None:
+            raise subprocess.CalledProcessError(1, "git push")
+        return pushed
+
+    monkeypatch.setattr(rotate, "enter_sparse_checkout", lambda *_args: None)
+    monkeypatch.setattr(rotate, "rotate_one", rotate_one)
+    monkeypatch.setattr(rotate, "push_outputs", push_outputs)
+    monkeypatch.setattr(rotate, "prune_old_tokens", lambda *_args: events.append("prune"))
+
+    if pushed is None:
+        with pytest.raises(subprocess.CalledProcessError):
+            rotate.main(config, pat)
+    else:
+        with pytest.raises(SystemExit, match="rotations failed: broken"):
+            rotate.main(config, pat)
+    assert events == (["push", "prune"] if pushed else ["push"])
 
 
 if __name__ == "__main__":

@@ -12,7 +12,6 @@ the old token is left intact.
 """
 
 import logging
-import os
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -24,7 +23,7 @@ import typer
 import yaml
 
 from cluster.rotators.forgejo_token_rotation.config import Config, Rotation, TeaSecretOutput
-from cluster.rotators.git_publish import github_remote, push_outputs, sparse_checkout
+from cluster.rotators.git_publish import enter_sparse_checkout, github_remote, push_outputs
 from cluster.rotators.sops import write_sops_yaml
 from cluster.rotators.sops_stamps import unencrypted_stamps
 
@@ -301,10 +300,8 @@ def main(
     config = Config.model_validate(yaml.safe_load(config_path.read_text()))
     github_pat = github_pat_file.read_text().strip()
 
-    repo_dir = Path("/tmp/repo")
-    repo_dir.mkdir()
-    os.chdir(repo_dir)
-    sparse_checkout(
+    enter_sparse_checkout(
+        Path("/tmp/repo"),
         github_remote(config.github_repo, github_pat),
         [config.sops_config, *(path for rotation in config.rotations for path in _output_paths(rotation))],
     )

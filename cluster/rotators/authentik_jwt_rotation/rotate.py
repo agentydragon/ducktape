@@ -10,7 +10,6 @@ See `README.md` for the full rotation and deployment contract.
 import base64
 import json
 import logging
-import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any
@@ -20,7 +19,7 @@ import typer
 import yaml
 
 from cluster.rotators.authentik_jwt_rotation.config import AUTH_BASE, Config, K8sSecretOutput, Probe, Rotation
-from cluster.rotators.git_publish import github_remote, push_outputs, sparse_checkout
+from cluster.rotators.git_publish import enter_sparse_checkout, github_remote, push_outputs
 from cluster.rotators.sops import write_sops_yaml
 from cluster.rotators.sops_stamps import remaining_hours, unencrypted_stamps
 
@@ -290,10 +289,8 @@ def main(
     config = Config.model_validate(yaml.safe_load(config_path.read_text()))
     github_pat = github_pat_file.read_text().strip()
 
-    repo_dir = Path("/tmp/repo")
-    repo_dir.mkdir()
-    os.chdir(repo_dir)
-    sparse_checkout(
+    enter_sparse_checkout(
+        Path("/tmp/repo"),
         github_remote(config.github_repo, github_pat),
         [config.sops_config, *(path for rotation in config.rotations for path in _output_paths(rotation))],
     )

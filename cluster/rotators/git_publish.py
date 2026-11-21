@@ -1,6 +1,7 @@
 """Publish rotation outputs from a sparse Git checkout rooted at the current directory."""
 
 import logging
+import os
 import subprocess
 from collections.abc import Iterable
 from datetime import UTC, datetime
@@ -13,7 +14,9 @@ def github_remote(repository: str, token: str) -> str:
     return f"https://x-access-token:{token}@github.com/{repository}.git"
 
 
-def sparse_checkout(remote: str, paths: Iterable[Path | str]) -> None:
+def enter_sparse_checkout(directory: Path, remote: str, paths: Iterable[Path | str]) -> None:
+    directory.mkdir()
+    os.chdir(directory)
     subprocess.run(["git", "init", "-q"], check=True)
     subprocess.run(["git", "remote", "add", "origin", remote], check=True)
     subprocess.run(["git", "config", "core.sparseCheckout", "true"], check=True)
