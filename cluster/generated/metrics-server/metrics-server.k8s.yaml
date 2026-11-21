@@ -38,6 +38,8 @@ spec:
     args:
       - --kubelet-insecure-tls
       - --kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname
+    deploymentAnnotations:
+      goldilocks.fairwinds.com/vpa-update-mode: auto
     podDisruptionBudget:
       enabled: true
       minAvailable: 1

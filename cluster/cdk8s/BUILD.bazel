@@ -1329,6 +1329,7 @@ py_library(
     deps = [
         ":helm",
         ":manifest_roots",
+        ":namespaces",
         "@pypi//cdk8s",
     ],
 )
