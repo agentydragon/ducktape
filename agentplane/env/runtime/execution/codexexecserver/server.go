@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"net"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -79,17 +80,42 @@ var ErrExecutionBackendLost = errors.New("execution backend lost")
 // lease. It is a more specific diagnostic for Pod backends.
 var ErrContainerOwnershipLost = errors.New("executor container ownership connection lost")
 
-// Config selects local systemd supervision or ownership of the Pod executor container.
+const (
+	PlacementDirect  = "direct"
+	PlacementSystemd = "systemd"
+)
+
+type Owner string
+
+const (
+	OwnerCompanion Owner = "companion"
+	OwnerSystemd   Owner = "systemd"
+)
+
+// Config describes the executor's process owner separately from command placement.
 type Config struct {
-	URL             string
-	Implementation  string
-	LimitsJSON      string
-	ContainerSocket string
-	Launcher        *supervision.SystemdLauncher
-	Readiness       Readiness
+	Owner            Owner
+	URL              string
+	Implementation   string
+	Placement        string
+	WorkloadLauncher *supervision.SystemdLauncher
+	LimitsJSON       string
+	ContainerSocket  string
+	Launcher         *supervision.SystemdLauncher
+	Readiness        Readiness
 }
 
 func (c Config) Validate(harnessLauncher *supervision.SystemdLauncher) error {
+	if c.Placement != PlacementDirect && c.Placement != PlacementSystemd {
+		return errors.New("unknown command placement")
+	}
+	if c.Placement == PlacementSystemd {
+		if c.Implementation == ImplementationCodex || c.Owner != OwnerSystemd || c.WorkloadLauncher == nil {
+			return errors.New("systemd command placement requires a native executor with a systemd owner and workload limits")
+		}
+	} else if c.WorkloadLauncher != nil {
+		return errors.New("workload launcher requires systemd command placement")
+	}
 	if _, err := ResolveImplementation(c.Implementation); err != nil {
 		return err
 	}
@@ -99,11 +125,18 @@ func (c Config) Validate(harnessLauncher *supervision.SystemdLauncher) error {
 	if _, err := c.Readiness.Resolve(); err != nil {
 		return err
 	}
-	if c.ContainerSocket != "" {
+	switch c.Owner {
+	case OwnerCompanion:
 		if !filepath.IsAbs(c.ContainerSocket) || c.Launcher != nil || harnessLauncher != nil {
-			return errors.New("container executor requires an absolute control socket and container-owned limits")
+			return errors.New("companion executor requires an absolute ownership socket and separate process supervision")
 		}
 		return nil
+	case OwnerSystemd:
+		if c.ContainerSocket != "" {
+			return errors.New("systemd executor cannot use a companion socket")
+		}
+	default:
+		return errors.New("executor requires an explicit owner")
 	}
 	if harnessLauncher == nil || c.Launcher == nil {
 		return errors.New("supervised executor requires distinct workload and executor launchers with explicit leaf limits")
@@ -154,11 +187,12 @@ func Command(implementation, binary, endpoint, limitsJSON string) ([]string, err
 }
 
 type NativeConfig struct {
-	Config      Config
-	Binary      string
-	StateDir    string
-	Environment map[string]string
-	Supervisor  *supervision.Supervisor
+	Config            Config
+	Binary            string
+	StateDir          string
+	Environment       map[string]string
+	Supervisor        *supervision.Supervisor
+	CommandSupervisor *supervision.Supervisor
 	// LaunchProcess binds an embedded native executor to Runtime's process
 	// controller.
 	LaunchProcess func(context.Context, supervision.ProcessConfig) (*supervision.ManagedProcess, error)
@@ -183,8 +217,12 @@ func NativeStart(config NativeConfig) Start {
 		for _, name := range []string{"OPENAI_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_BASE_URL", "CODEX_HOME"} {
 			delete(env, name)
 		}
-		if config.Config.ContainerSocket != "" {
+		switch config.Config.Owner {
+		case OwnerCompanion:
 			return claimContainer(ctx, config.Config.ContainerSocket, env, config.Config.Implementation, config.Config.LimitsJSON)
+		case OwnerSystemd:
+		default:
+			return nil, errors.New("execution backend requires an explicit owner")
 		}
 		if config.Supervisor == nil && config.LaunchProcess == nil {
 			return nil, errors.New("execution backend supervisor is not configured")
@@ -193,6 +231,26 @@ func NativeStart(config NativeConfig) Start {
 		if err != nil {
 			return nil, err
 		}
+		var commandListener *net.UnixListener
+		if config.Config.Placement == PlacementSystemd {
+			if config.CommandSupervisor == nil {
+				return nil, errors.New("systemd placement requires command supervisor")
+			}
+			if err := config.CommandSupervisor.WaitCommandScope(ctx); err != nil {
+				return nil, fmt.Errorf("command scope readiness: %w", err)
+			}
+			commandListener, err = supervision.ListenCommandSocket("/run/agentplane-environment-runtime-lifetime/execution-commands.sock")
+			if err != nil {
+				return nil, err
+			}
+			command = append(command, "--command-socket", commandListener.Addr().String())
+		}
+		launched := false
+		defer func() {
+			if !launched && commandListener != nil {
+				_ = commandListener.Close()
+			}
+		}()
 		processConfig := supervision.ProcessConfig{
 			Command:      command,
 			Dir:          config.StateDir,
@@ -217,6 +275,27 @@ func NativeStart(config NativeConfig) Start {
 			}
 			process = native
 		}
+		done := make(chan error, 1)
+		var stopCommands context.CancelFunc
+		var commandsDone chan struct{}
+		var commandsErr error
+		if commandListener != nil {
+			var bridgeCtx context.Context
+			bridgeCtx, stopCommands = context.WithCancel(context.Background())
+			commandsDone = make(chan struct{})
+			go func() {
+				commandsErr = supervision.ServeCommands(bridgeCtx, commandListener, config.CommandSupervisor, config.Binary, process.PID)
+				close(commandsDone)
+				if bridgeCtx.Err() == nil {
+					select {
+					case done <- errors.Join(ErrExecutionBackendLost, errors.New("command supervision stopped"), commandsErr):
+					default:
+					}
+				}
+			}()
+		}
+
+		launched = true
 		go func() { _, _ = io.Copy(io.Discard, process.Stdout()) }()
 		go func() {
 			buffer := make([]byte, 4096)
@@ -230,15 +309,28 @@ func NativeStart(config NativeConfig) Start {
 				}
 			}
 		}()
-		done := make(chan error, 1)
 		go func() {
 			code, err := process.Wait(context.Background())
-			done <- errors.Join(ErrExecutionBackendLost, fmt.Errorf("execution backend exited: code=%d; %s", code, process.ExitDescription()), err)
+			select {
+			case done <- errors.Join(ErrExecutionBackendLost, fmt.Errorf("execution backend exited: code=%d; %s", code, process.ExitDescription()), err):
+			default:
+			}
 		}()
-		return &supervision.Instance{
-			PID: process.PID(), Done: done,
-			Stop: process.Stop,
-		}, nil
+		stop := func(ctx context.Context) error {
+			err := process.Stop(ctx)
+			if stopCommands != nil {
+				stopCommands()
+				_ = commandListener.Close()
+				select {
+				case <-commandsDone:
+					err = errors.Join(err, commandsErr)
+				case <-ctx.Done():
+					err = errors.Join(err, ctx.Err())
+				}
+			}
+			return err
+		}
+		return &supervision.Instance{PID: process.PID(), Done: done, Stop: stop}, nil
 	}
 }
 
@@ -246,8 +338,8 @@ func ProbeAt(endpoint string) Probe {
 	return func(ctx context.Context) error { return probe(ctx, endpoint) }
 }
 
-// Monitor bounds dispatcher liveness for the embedded service lifetime.
-func Monitor(ctx context.Context, endpoint string) error {
+// Monitor bounds backend liveness for the embedded service lifetime; label names the probed surface in the loss error.
+func Monitor(ctx context.Context, label string, check Probe) error {
 	ticker := time.NewTicker(healthInterval)
 	defer ticker.Stop()
 	failures := 0
@@ -258,7 +350,7 @@ func Monitor(ctx context.Context, endpoint string) error {
 		case <-ticker.C:
 		}
 		attempt, cancel := context.WithTimeout(ctx, healthDeadline)
-		err := probe(attempt, endpoint)
+		err := check(attempt)
 		cancel()
 		if ctx.Err() != nil {
 			return nil
@@ -269,7 +361,7 @@ func Monitor(ctx context.Context, endpoint string) error {
 		}
 		failures++
 		if failures >= healthFailureLimit {
-			return errors.Join(ErrExecutionBackendLost, fmt.Errorf("execution backend stopped responding: %w", err))
+			return errors.Join(ErrExecutionBackendLost, fmt.Errorf("%s: %w", label, err))
 		}
 	}
 }

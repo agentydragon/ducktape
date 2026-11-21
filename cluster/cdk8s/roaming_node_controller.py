@@ -85,7 +85,7 @@ def _deployment(chart: Chart) -> None:
                     " stale, so DaemonSets and pod GC treat the absent laptop as gone; untaints on the"
                     " first renewal."
                 ),
-                **namespaces.initial_memory_request_annotations(
+                **namespaces.initial_request_annotations(
                     ContainerPolicy.memory_requests_only(
                         "controller", cpu_request="10m", memory_floor="64Mi", memory_limit="80Mi"
                     )

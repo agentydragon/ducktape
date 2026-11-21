@@ -96,7 +96,7 @@ def namespace_chart(app: App) -> Chart:
 
 def helmrelease_chart(app: App) -> Chart:
     chart = Chart(app, "helmrelease", disable_resource_name_hashes=True)
-    annotations = namespaces.initial_memory_request_annotations(
+    annotations = namespaces.initial_request_annotations(
         ContainerPolicy.memory_requests_only(
             "metrics-exporter", cpu_request="25m", memory_floor="96Mi", memory_limit="128Mi"
         ),

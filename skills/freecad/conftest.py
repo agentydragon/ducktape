@@ -4,13 +4,15 @@ import os
 import shutil
 import subprocess
 import sys
-from collections.abc import Generator
+from collections.abc import Callable, Generator
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 from opentelemetry import trace
 from python.runfiles import Runfiles
 
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from testing.otel_tracing import configure_tracing
 
 _CONDA_ENV_REPO = "rules_conda++conda+freecad_conda"
@@ -160,6 +162,46 @@ def copy_outputs(src: Path, dst: Path) -> None:
             shutil.copy2(f, dst / f.name)
 
 
+@dataclass(frozen=True)
+class Stage:
+    """One FreeCAD script run of a golden test."""
+
+    script: str  # runfiles path
+    label: str  # stem of the stdout/stderr files saved as undeclared outputs
+    gui: bool = True  # False runs headless with freecadcmd
+
+
+@dataclass(frozen=True)
+class StageRunner:
+    freecad_run: Callable[..., subprocess.CompletedProcess]
+    freecad_gui: Callable[..., subprocess.CompletedProcess]
+    runfiles: Runfiles
+    tmp_path_factory: pytest.TempPathFactory
+
+    def run(self, name: str, *stages: Stage, fcstd: str) -> Path:
+        """Run `stages` in order in a fresh directory and return it.
+
+        The first stage must produce `fcstd`; later stages get it as `INPUT`. Each stage's
+        stdout/stderr and the final directory contents are saved under undeclared outputs `name`.
+        """
+        out_dir = self.tmp_path_factory.mktemp(name)
+        uo = undeclared_outputs_dir() / name
+        uo.mkdir(parents=True, exist_ok=True)
+
+        env: dict[str, str] | None = None
+        for stage in stages:
+            runner = self.freecad_gui if stage.gui else self.freecad_run
+            result = runner(self.runfiles.root() / stage.script, outdir=out_dir, env=env)
+            assert_run_ok(result, Path(stage.script).name, uo, stage.label)
+            if env is None:
+                produced = out_dir / fcstd
+                assert produced.exists(), f"{fcstd} not produced — see {stage.label}.stderr in test outputs"
+                env = {"INPUT": str(produced)}
+
+        copy_outputs(out_dir, uo)
+        return out_dir
+
+
 @pytest.fixture(scope="session")
 def conda_root() -> Path:
     """Locate the conda env root via Rlocation."""
@@ -214,3 +256,9 @@ def freecad_gui(conda_root: Path, xvfb_display: str, freecad_home: Path):
 def freecad_run(conda_root: Path, freecad_home: Path):
     """Run a FreeCAD script headlessly via freecadcmd (no Xvfb). Returns a callable."""
     return _make_runner(conda_root / "bin" / "freecadcmd", freecad_env(conda_root, freecad_home), default_timeout=120)
+
+
+@pytest.fixture(scope="session")
+def stage_runner(freecad_run, freecad_gui, runfiles: Runfiles, tmp_path_factory: pytest.TempPathFactory) -> StageRunner:
+    """Run a golden test's FreeCAD scripts in order into one output directory."""
+    return StageRunner(freecad_run, freecad_gui, runfiles, tmp_path_factory)

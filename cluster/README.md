@@ -45,6 +45,8 @@ GPU: wyrm2 provides `nvidia.com/gpu`; GPU pods need `runtimeClassName: nvidia`
 ## Services
 
 Service inventory: [curated services](docs/topology.md#services).
+Resource sizing and availability: [VPA rollout plan](plans/vpa.md) and
+[current inventory](https://agentydragon.github.io/ducktape/vpa/).
 
 To find checked-in `HTTPRoute` manifests, run this from the repository root.
 

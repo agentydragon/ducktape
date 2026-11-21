@@ -3,9 +3,9 @@
 //   node footprint_oracle_sweep.mjs [--only id,id] [--samples N] [--seed S] [--runs R] [--timeout MS] [--keep DIR] [--jobs J] [--files a.mjs,b.mjs]
 //
 // Prints per generator how many programs were valid inputs (they complete, are deterministic and patch nothing), how many
-// (unit, binding) changes the oracle saw, and the findings: `unwritten` is a wrong footprint, `unlisted` a gap in the
+// (unit, binding) changes the oracle saw, and the findings: `unwritten` is a wrong footprint, `unlisted` the same in the
 // `writes` of an effect unit, `global`, `printed` and `foreign-definition` as in `footprint_oracle.mjs`. `--keep DIR`
-// writes every program with a finding there, for reduction. Exits 1 if any program has a finding other than `unlisted`.
+// writes every program with a finding there, for reduction. Exits 1 if any program has a finding.
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -15,7 +15,7 @@ import { checkProgram } from "./footprint_oracle.mjs";
 
 // The fuzzers' generated bundles satisfy premise P3 (the world adds no accessors or hooks); Shift's programs are run with
 // no premise beyond the always-on ones, as `shift_fuzz_test` does.
-const P3 = new Set(["templates", "callback", "ast"]);
+const P3 = new Set(["templates", "callback", "ast", "full"]);
 
 /** Check `programs` (`{ name, source }`), `jobs` at a time; the tally of what the oracle saw. */
 export async function sweep(label, programs, { premises, runs, jobs, keep, timeoutMs }) {
@@ -26,7 +26,7 @@ export async function sweep(label, programs, { premises, runs, jobs, keep, timeo
     invalid: {},
     units: 0,
     changed: 0,
-    findings: { unwritten: 0, unlisted: 0, global: 0, printed: 0, "foreign-definition": 0 },
+    findings: { unwritten: 0, unlisted: 0, global: 0, printed: 0, "foreign-definition": 0, crash: 0 },
     withFindings: [],
     tail: 0,
     patchers: 0,
@@ -51,7 +51,7 @@ export async function sweep(label, programs, { premises, runs, jobs, keep, timeo
         tally.tail += result.tail.length;
         if (result.patched.length > 0) tally.patchers++;
         for (const f of result.findings) tally.findings[f.kind]++;
-        if (result.findings.some((f) => f.kind !== "unlisted") || result.findings.length > 0) {
+        if (result.findings.length > 0) {
           tally.withFindings.push({ name: program.name, findings: result.findings });
           if (keep) {
             mkdirSync(keep, { recursive: true });
@@ -72,7 +72,7 @@ export function print(tally) {
   const f = tally.findings;
   console.log(
     `${tally.label}: ${tally.valid}/${tally.programs} valid inputs, ${tally.units} units, ${tally.changed} changes seen; ` +
-      `unwritten ${f.unwritten}, unlisted ${f.unlisted}, global ${f.global}, printed ${f.printed}, foreign definitions ${f["foreign-definition"]}; ` +
+      `unwritten ${f.unwritten}, unlisted ${f.unlisted}, global ${f.global}, printed ${f.printed}, foreign definitions ${f["foreign-definition"]}, crashes of lower ${f.crash}; ` +
       `${tally.tail} bindings changed after the last unit; ${tally.patchers} programs patch a standard object (premise P1)`
   );
   for (const [reason, n] of Object.entries(tally.invalid)) console.log(`    ${n} not valid: ${reason}`);
@@ -110,7 +110,7 @@ async function main() {
         }
       );
       print(tally);
-      failed ||= Object.entries(tally.findings).some(([kind, n]) => kind !== "unlisted" && n > 0);
+      failed ||= Object.values(tally.findings).some((n) => n > 0);
     }
     for (const gen of files ? [] : GENERATORS.filter((g) => !only || only.includes(g.id))) {
       const dir = path.join(work, gen.id);
@@ -127,7 +127,7 @@ async function main() {
         timeoutMs,
       });
       print(tally);
-      failed ||= Object.entries(tally.findings).some(([kind, n]) => kind !== "unlisted" && n > 0);
+      failed ||= Object.values(tally.findings).some((n) => n > 0);
     }
   } finally {
     rmSync(work, { recursive: true, force: true });

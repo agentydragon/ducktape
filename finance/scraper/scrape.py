@@ -13,7 +13,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-import sys
 from itertools import chain
 from pathlib import Path
 
@@ -46,10 +45,12 @@ async def async_main(argv: list[str] | None = None) -> int:
     return await fetch.run_from_args(args, markets=markets_from_args(args))
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
-    return asyncio.run(async_main(argv))
+    # The scrape Job reads this exit status: nonzero once a source is stale (`fetch.run_scrape`).
+    if exit_code := asyncio.run(async_main(argv)):
+        raise SystemExit(exit_code)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

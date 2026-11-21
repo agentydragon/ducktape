@@ -1,15 +1,15 @@
 // Oracle for the footprints of `Effects.lean`: run a program unit by unit in Node and compare, after every unit, what each
 // module-scope binding reaches with what `lower` says the unit may write.
 //
-//   node footprint_oracle.mjs <program.mjs> [--premises premises.json] [--runs 2] [--strict] [--json]
+//   node footprint_oracle.mjs <program.mjs> [--premises premises.json] [--runs 2] [--json]
 //
 // A unit is a top-level statement, or one declarator of a variable list, as in `frontend.mjs`. The program is rewritten to
 // call the harness (`oracle_harness.mjs`) before the first unit and after each one; the harness digests what every
 // top-level binding reaches. A binding whose digest changed during unit `i` must be bound by the unit: a name it declares,
 // or one in its `writes`. A unit that changed a binding and is not in either is a **wrong footprint** (`unwritten`): a
 // split that moves a reader of the binding across that unit is accepted by `translate` and run differently by Node. For a
-// unit that is an effect the same gap is reported as `unlisted`: its `writes` need not name the binding for the unit to be
-// ordered against other effects, but a pure reader of the binding can still cross it. Also checked: a unit that printed or
+// unit that is an effect the same gap is reported as `unlisted`: the unit is ordered against other effects without naming the
+// binding, but a pure reader of the binding can still cross it, so it is as wrong. Also checked: a unit that printed or
 // added a global must be an effect, and a name a unit initializes must be one it declares.
 //
 // What the oracle cannot see, and so cannot check:
@@ -142,6 +142,9 @@ async function runOnce(text, dir, tag, timeoutMs) {
   return { report };
 }
 
+/** `lower` ran and did not finish: an exit code other than 0, or a signal (the analysis ran out of stack, say). */
+export class LowerFailure extends Error {}
+
 /** The footprints `lower` computes for the program, one per unit. */
 export function footprintsOf(file, { lower = defaultLower(), premises = { noWorldHooks: true }, dir }) {
   const bundle = path.join(dir, "bundle.json");
@@ -149,7 +152,8 @@ export function footprintsOf(file, { lower = defaultLower(), premises = { noWorl
   writeFileSync(bundle, JSON.stringify(frontBundle(file)));
   writeFileSync(premisesFile, JSON.stringify(premises));
   const r = spawnSync(lower, [bundle, "--premises", premisesFile], { encoding: "utf8", maxBuffer: 1 << 28 });
-  if (r.status !== 0) throw new Error(`lower exited ${r.status}: ${r.stderr}`);
+  if (r.error) throw r.error;
+  if (r.status !== 0) throw new LowerFailure(`lower exited ${r.status ?? r.signal}: ${r.stderr}`);
   return r.stdout
     .trim()
     .split("\n")
@@ -162,6 +166,7 @@ export function footprintsOf(file, { lower = defaultLower(), premises = { noWorl
  * Kinds: `unwritten` (a binding changed, not declared or written by the unit, and the unit is not an effect),
  * `unlisted` (the same, for an effect), `global` (a global added or changed by a unit that is not an effect), `printed`
  * (output by a unit that is not an effect), `foreign-definition` (a binding initialized by a unit that does not declare it).
+ * `checkProgram` adds `crash`: `lower` itself did not finish on a valid program.
  */
 export function compare(units, footprints, report) {
   const findings = [];
@@ -191,7 +196,13 @@ export async function observe(source, { runs = 2, timeoutMs = 60000, dir } = {})
   dir ??= mkdtempSync(path.join(process.env.TEST_TMPDIR ?? process.env.TMPDIR ?? os.tmpdir(), "footprint_oracle_"));
   mkdirSync(dir, { recursive: true });
   try {
-    const { text, units, names } = instrument(source);
+    let instrumented;
+    try {
+      instrumented = instrument(source);
+    } catch (error) {
+      return { invalid: `the program cannot be run unit by unit: ${error.message.split("\n")[0]}` };
+    }
+    const { text, units, names } = instrumented;
     const reports = [];
     for (let k = 0; k < runs; k++) {
       const r = await runOnce(text, dir, k, timeoutMs);
@@ -224,7 +235,24 @@ export async function checkProgram(
     if (seen.invalid) return seen;
     const original = path.join(dir, "program.mjs");
     writeFileSync(original, source);
-    const footprints = footprintsOf(original, { lower, premises, dir });
+    let footprints;
+    try {
+      footprints = footprintsOf(original, { lower, premises, dir });
+    } catch (error) {
+      if (!(error instanceof LowerFailure)) throw error;
+      // the analysis itself fails on a valid program: a finding about it, with no footprint to compare
+      const name = error.message.split("\n").filter(Boolean).slice(0, 2).join(" | ");
+      return {
+        units: seen.units.length,
+        names: seen.names.length,
+        changed: 0,
+        findings: [{ unit: -1, kind: "crash", name, source: "" }],
+        tail: seen.report.tail,
+        patched: seen.report.patched,
+        footprints: [],
+        report: seen.report,
+      };
+    }
     if (footprints.length !== seen.units.length)
       throw new Error(`the oracle sees ${seen.units.length} units, lower ${footprints.length}`);
     return {
@@ -249,8 +277,7 @@ async function main() {
   const option = (name, fallback) => (args.includes(`--${name}`) ? args[args.indexOf(`--${name}`) + 1] : fallback);
   const valueOptions = ["--premises", "--runs"];
   const file = args.find((a, i) => !a.startsWith("--") && !valueOptions.includes(args[i - 1]));
-  if (!file)
-    throw new Error("usage: footprint_oracle.mjs <program.mjs> [--premises file] [--runs N] [--strict] [--json]");
+  if (!file) throw new Error("usage: footprint_oracle.mjs <program.mjs> [--premises file] [--runs N] [--json]");
   const premisesFile = option("premises", undefined);
   const result = await checkProgram(readFileSync(file, "utf8"), {
     premises: premisesFile ? JSON.parse(readFileSync(premisesFile, "utf8")) : { noWorldHooks: true },
@@ -266,14 +293,13 @@ async function main() {
     console.log(
       `${result.units} units, ${result.names} bindings, ${result.changed} changes seen; ` +
         `unwritten ${count("unwritten")}, unlisted ${count("unlisted")}, global ${count("global")}, printed ${count("printed")}, ` +
-        `foreign definitions ${count("foreign-definition")}; ${result.tail.length} bindings changed after the last unit`
+        `foreign definitions ${count("foreign-definition")}, crashes of lower ${count("crash")}; ${result.tail.length} bindings changed after the last unit`
     );
     if (result.patched.length > 0)
       console.log(`  premise P1 does not hold: the program patches ${result.patched.slice(0, 5).join(", ")}`);
     for (const f of result.findings) console.log(`  ${describe(f)}`);
   }
-  const hard = result.findings.filter((f) => f.kind !== "unlisted" || args.includes("--strict"));
-  process.exit(hard.length > 0 ? 1 : 0);
+  process.exit(result.findings.length > 0 ? 1 : 0);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) await main();

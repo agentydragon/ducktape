@@ -55,8 +55,8 @@ session ID (own socket and dir), so:
 - `<session_dir>` = `~/.claude/session-env/<session_id>/` (Claude Code-managed): shim
   dir, session `bazelrc`.
 - `/tmp/claude-hd/<session_id>/`: `d.sock` (hook RPC), `daemon.pid`, `daemon.log`
-  (incl. session start), `daemon.err.log`, `startup_failure.json` (client startup
-  backoff marker).
+  (daemon stdout; unused, the daemon logs to stderr), `daemon.err.log` (daemon stderr,
+  incl. session start), `startup_failure.json` (client startup backoff marker).
 
 ## Claude Code Telemetry
 

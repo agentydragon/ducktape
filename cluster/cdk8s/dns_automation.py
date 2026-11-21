@@ -7,7 +7,6 @@ from cdk8s_plus_34 import k8s
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
 from cluster.cdk8s import external_creds
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 
@@ -37,16 +36,3 @@ def chart(app: App) -> Chart:
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
     )
     return chart
-
-
-def dns_automation(
-    chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization
-) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        NAME,
-        directory,
-        wait=True,
-        depends_on=flux_kustomization_depends_on_many(external_secrets_operator),
-        description="Make Route 53 credentials available to the Crossplane domain delegation Workspace.",
-    )

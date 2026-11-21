@@ -32,6 +32,7 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/gitlab-spike/app"
 HOSTNAME = "gitlab-spike.allegedly.works"
 REGISTRY_HOSTNAME = "registry-gitlab-spike.allegedly.works"
 CHART_VERSION = "10.5.1"  # GitLab 19.5.1, published 2026-10-21 in charts.gitlab.io.
+_SHELL_CPU_REQUEST = "23m"  # Current admitted request on both GitLab Shell replicas.
 
 GITLAB_DB = cluster.PostgresRef.generated(name="gitlab-db", namespace=NAMESPACE)
 PRAEFECT_PASSWORD = SecretRef(namespace=NAMESPACE, name="praefect-db-credentials")
@@ -154,40 +155,43 @@ def _values() -> dict[str, object]:
         "gitlab-runner": {"install": False},
         "registry": {
             "storage": {"secret": f"{REGISTRY_BUCKET}-connection", "key": "config"},
+            # Spread each ReplicaSet across eligible hosts while allowing the HPA to scale beyond the host count.
+            "topologySpreadConstraints": [
+                {
+                    "maxSkew": 1,
+                    "topologyKey": "kubernetes.io/hostname",
+                    "whenUnsatisfiable": "DoNotSchedule",
+                    "nodeTaintsPolicy": "Honor",
+                    "labelSelector": {"matchLabels": REGISTRY.pods.selector},
+                    "matchLabelKeys": ["pod-template-hash"],
+                }
+            ],
             "deployment": {
                 "annotations": _vpa_annotations(
                     # Registry's HPA uses CPU utilization, which depends on the request.
                     ContainerPolicy.memory_requests_only(
                         "registry", cpu_request="50m", memory_floor="96Mi", memory_limit="128Mi"
-                    )
+                    ),
+                    mode=Vpa.AUTO,
                 )
             },
         },
         "gitlab": {
             "gitlab-exporter": {
                 "deployment": {
-                    "annotations": _vpa_annotations(
-                        ContainerPolicy.memory_requests_only(
-                            "gitlab-exporter", cpu_request="75m", memory_floor="96Mi", memory_limit="128Mi"
-                        )
-                    )
+                    "annotations": _vpa_annotations(ContainerPolicy.cpu_and_memory_requests_only("gitlab-exporter"))
                 }
             },
             "gitlab-shell": {
+                # Keep the current CPU share in the template while the HPA owns CPU.
+                # The init containers already reserve 50m, so the Pod request stays at 50m.
+                "resources": {"requests": {"cpu": _SHELL_CPU_REQUEST}},
                 "deployment": {
                     "annotations": _vpa_annotations(
-                        # Shell declares zero CPU and its HPA uses absolute CPU. Keep the maximum at
-                        # the existing effective Pod request, supplied by its init containers.
-                        ContainerPolicy(
-                            container_name="gitlab-shell",
-                            controlled_values=ControlledValues.REQUESTS_ONLY,
-                            controlled_resources=("cpu", "memory"),
-                            min_allowed={"cpu": "20m", "memory": "96Mi"},
-                            max_allowed={"cpu": "50m", "memory": "128Mi"},
-                        ),
+                        ContainerPolicy.memory_requests_only("gitlab-shell", cpu_request=_SHELL_CPU_REQUEST),
                         mode=Vpa.AUTO,
                     )
-                }
+                },
             },
             "gitaly": {
                 "persistence": {

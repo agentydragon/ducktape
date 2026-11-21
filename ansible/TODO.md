@@ -2,7 +2,9 @@
 
 ## Nix/Home-Manager Migration
 
-See <../nix/home/migration_plan.md> for full status. GPD is the last legacy holdout.
+GPD is the last host on the `legacy_gui` role, and the flake has no `gpd` output yet. Once GPD runs
+`home-manager switch`, remove the role from `gpd.yaml` and delete `ansible/roles/legacy_gui`. Its GNOME extensions
+(`meta/main.yml`) are only partly in Nix (`programs.gnome-shell.extensions` under `nix/home/`): port or drop the rest first.
 
 ## VM Provisioning Docs
 

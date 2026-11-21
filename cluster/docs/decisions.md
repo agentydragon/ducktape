@@ -368,10 +368,6 @@ applications").
 - **kubectl-machine-mcp**: `cluster/parked/kubectl-machine-mcp/` — decommissioned
   with the managed-agent consumers that used it. Its Flux Kustomization is removed
   from the active bundle; manifests remain for manual revival.
-- **Haku cloud agent**: `cluster/parked/cloud-agent-tf/` — Anthropic-hosted Managed
-  Agent; its control-plane objects were deleted at Anthropic on 2026-09-30 and the
-  cluster Flux registration and artifact generation are removed. The HCL root and design docs live under
-  `haku/runtime/x/managed_agent/` with the parked runtime component.
 - **Haku managed agent**: `haku/runtime/x/managed_agent/self_hosted/deploy/` — the
   self-hosted in-cluster worker (Runtime B), parked by operator request. Its Flux
   registration, artifact generation, and source checkout are removed; automatic image
@@ -386,7 +382,11 @@ applications").
   from Git and Ollama). The cdk8s module and image build stay for revival; automatic image
   publication, Flux tracking, and the unused image pin were removed. See its README.
 - **Paperless**: `cluster/parked/paperless/` — decommissioned; third-party
-  (`ghcr.io/paperless-ngx/paperless-ngx`), no ducktape source.
+  (`ghcr.io/paperless-ngx/paperless-ngx`), no ducktape source. Its Authentik provider,
+  application, `paperless_admins` group and reflected `paperless-sso-providers` Secret are
+  no longer provisioned. A revival restores them from `8f5c464419`
+  (`git show 8f5c464419:tf/gitops/sso-providers/provider_paperless.tf`, plus the `paperless`
+  entry in `providers.tf` of the same commit).
 - **Firecrawl**: `cluster/parked/firecrawl/` — its namespace, database, and app
   declarations remain in Git.
 - **OpenHands**: `cluster/parked/openhands/` — experimental and not currently used;
@@ -414,8 +414,9 @@ applications").
 - **sdr**: `cluster/parked/sdr/` — suspended pending the radio re-set-up
   post-relocation (not unblocked by atlas/wyrm2 returning).
 - **manifold-mcp**: `cluster/parked/manifold-mcp/` — decommissioned; third-party npm
-  MCP server (`bmorphism/manifold-mcp-server`), ducktape's OCI build wrapper
-  (`third_party/manifold_mcp_server/`) stays live and unparked. Its Flux Kustomization
+  MCP server (`bmorphism/manifold-mcp-server`). Its OCI build wrapper
+  (`third_party/manifold_mcp_server/`, a nested Bazel module) was deleted; a revival
+  restores it from `f1f1ed6e1b`. Its Flux Kustomization
   is removed from the active bundle; manifests remain for manual revival. Its API-key
   Secret had been Reflector-mirrored into an `augur` namespace defined in the separate
   `gaffer-private` repo. That namespace is now absent, so no current in-cluster consumer
@@ -423,7 +424,8 @@ applications").
 - **osm-mcp**: `cluster/parked/osm-mcp/` — decommissioned; its Flux Kustomization
   is removed from the active bundle. The third-party Go MCP server
   (`github.com/NERVsystems/osmmcp`) build wrapper (`third_party/osmmcp/`) stays live
-  and unparked. Already unwired from haku-console's tool config since 2026-07-19
+  and unparked, but its image is no longer on the publish roster or tracked by Flux.
+  Already unwired from haku-console's tool config since 2026-07-19
   (routing-profile bug), so it had no live consumer.
 - **codex-nix-pod, codex-nix-image-pod, codex-nix-pvc-uid-pod**:
   `cluster/parked/<name>/` — three successive Codex-in-a-pod experiments, previously
@@ -433,14 +435,19 @@ applications").
   once, but its Flux Kustomization had already been retired. The image source remains
   in place for possible revival, though its flake evaluation currently fails. Its two
   SOPS Secret manifests remain parked at `cluster/parked/codex-pod/`; replace
-  them with runtime-managed credentials before reactivation.
+  them with runtime-managed credentials before reactivation. Its Forgejo service user,
+  SSH key, read grant on `ducktape` and token-mint Secret are no longer provisioned
+  (`tf/gitops/forgejo-agentydragon-repos`, restore from `d36a089448`), and neither is its
+  rotated Forgejo tea token (`secrets/codex-pod-forgejo-tea-token.yaml`, last rotated
+  2026-09-03). The two LiteLLM virtual keys `codex-pod` and `codex-pod-messages`
+  (`cluster/cdk8s/litellm/crossplane_keys.py`) are still provisioned.
 - **budget (Fava)**: `cluster/parked/budget/` — decommissioned read-only Beancount
   ledger viewer. Its `budget` namespace remains active at
   `cluster/generated/forgejo/budget-namespace/` because it holds the ESO copy of the ledger's
   git credentials (`budget-ledger-git-creds`). The underlying ledger data (a Forgejo git
   repo provisioned by `tf/gitops/budget-ledger/`) is untouched. Its Authentik
-  SSO blueprint was tombstoned (`fava-sso-retire.yaml`, replacing `fava-sso.yaml`) per
-  <sso.md> § "Deleting Authentik providers or applications".
+  application and proxy provider were deleted through a `state: absent` blueprint, since
+  removed, per <sso.md> § "Deleting Authentik providers or applications".
 - **augur-evidence**: `cluster/parked/augur-evidence/` — retired Forgejo evidence
   repository provisioning and Flux package. The repository and credentials are retained;
   the market roster is kept at `finance/scraper/market-roster.yaml` for a future revival.

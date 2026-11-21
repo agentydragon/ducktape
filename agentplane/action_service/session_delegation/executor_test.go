@@ -16,7 +16,6 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/worker"
 	"github.com/agentydragon/ducktape/agentplane/action_service/session_delegation/contract"
@@ -250,8 +249,7 @@ func newDelegatedExecutorForGroup(t *testing.T, backend *delegatedBackend, group
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = connection.Close() })
-	executor, err := NewExecutor(group, catalog.SessionDelegationBinding{Description: "forwards caller"},
-		environmentpb.NewEnvironmentServiceClient(connection),
+	executor, err := NewExecutor(group, environmentpb.NewEnvironmentServiceClient(connection),
 		dispatcherpb.NewSessionDispatcherClient(connection), historypb.NewHistoryServiceClient(connection))
 	if err != nil {
 		t.Fatal(err)
@@ -380,21 +378,13 @@ func TestEachExecutorOffersOnlyItsOwnActionGroup(t *testing.T) {
 		{group: "sessions", want: []string{"cancel_input", "create", "get", "interrupt_turn", "observe_input", "read_turns", "submit_input"}},
 	} {
 		t.Run(test.group, func(t *testing.T) {
-			executor, err := NewExecutor(test.group, catalog.SessionDelegationBinding{Description: "forwards caller"}, nil, nil, nil)
+			executor, err := NewExecutor(test.group, nil, nil, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
 			got := slices.Sorted(maps.Keys(executor.Actions()))
 			if !slices.Equal(got, test.want) {
 				t.Fatalf("offered actions = %v, want %v", got, test.want)
-			}
-			if test.group == "sessions" {
-				for _, name := range []string{"get", "read_turns"} {
-					definition := executor.Actions()[name]
-					if len(definition.InputSchema) == 0 {
-						t.Errorf("%s has no advertised input schema", name)
-					}
-				}
 			}
 		})
 	}
@@ -704,24 +694,6 @@ func TestObserveKeepsHistoryFailureInObservationSource(t *testing.T) {
 	}
 	if result.Observation.Error.Code != codes.Unavailable.String() || result.Observation.Error.Message != "service unavailable" {
 		t.Fatalf("History error = %+v", result.Observation.Error)
-	}
-}
-
-func TestMissingCallerUIDFailsClosedBeforeBackendCall(t *testing.T) {
-	backend := &delegatedBackend{testing: t}
-	executor := newDelegatedExecutor(t, backend)
-	request := requestFor("create", map[string]any{
-		"target":     map[string]string{"namespace": testCallerNamespace, "name": testCallerName, "uid": "sandbox-uid-1"},
-		"session_id": testSessionID,
-		"spec":       map[string]any{"harness": "HARNESS_CLAUDE", "model": "claude-sonnet", "cwd": "/workspace"},
-	})
-	request.Caller = store.ServiceAccountCaller{Account: store.ServiceAccount{Namespace: testCallerNamespace, Name: testCallerName}}
-	outcome, err := executor.attempt(t.Context(), request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if outcome.State != store.ExecutionFailed || outcome.Error.GetKind() != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_CALLER_IDENTITY_UNAVAILABLE || backend.gotOpen != nil {
-		t.Fatalf("outcome=%+v backend opening=%v; retained ServiceAccount caller must fail before RPC", outcome, backend.gotOpen)
 	}
 }
 

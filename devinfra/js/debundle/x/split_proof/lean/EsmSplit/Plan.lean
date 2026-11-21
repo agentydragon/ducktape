@@ -5,8 +5,9 @@ import EsmSplit.Bundle
 
 A `Spec` says which statements go to which module. A `Plan` is the split program:
 for each module, the statements it holds (ids into the bundle), its `import` declarations
-in source order, and its `export` list. Statement text is not part of a plan; the renderer
-copies `Bundle.stmt i |>.src` verbatim.
+in source order, and its `export` list. These imports and exports are the glue between the modules.
+The bundle's own `export` statements are statements like any other, and keep their names
+(`Stmt.exports`). Statement text is not part of a plan; the renderer copies `Bundle.stmt i |>.src` verbatim.
 
 `Valid B S P` is a conjunction of decidable checks (`Fast.lean` decides them). Lean evaluates it on
 the concrete example with the kernel (`decide +kernel`), and `Correct.lean` proves what it implies
@@ -31,6 +32,9 @@ structure Spec where
   every module orders its imports by it. When empty, imports follow where each module's code
   first appeared in the bundle. -/
   order   : List ModName := []
+  /-- The modules run in exactly this order, the entry last: in `order` when it is given, else in the order of their
+  first statements. `mkPlan` then adds the imports that make ES evaluation follow it (`Split.nest`). -/
+  sequential : Bool := false
   deriving Repr
 
 def Selector.claims (B : Bundle) (i : Nat) : Selector → Bool
@@ -47,9 +51,11 @@ structure Module where
   name    : ModName
   /-- statement ids, in the order they appear in the module body -/
   stmts   : List Nat
-  /-- one `import { names } from "./src"` per entry, in source order; no names = `import "./src"` -/
+  /-- one `import { names } from "./src"` per entry, in source order; no names = `import "./src"`.
+  A name is a top-level binding of `src`, under the name it has there and in the bundle. -/
   imports : List (ModName × List Name)
-  exports : List Name
+  /-- glue exports, `export { local as public }` each: (public name, local name) -/
+  exports : List (Name × Name)
   deriving Repr
 
 structure Plan where
@@ -82,8 +88,24 @@ def Plan.execOrder (P : Plan) : List Nat :=
 def Module.declares (B : Bundle) (m : Module) (u : Name) : Bool :=
   m.stmts.any fun i => (B.stmt i).defs.contains u
 
-def Plan.exportsName (P : Plan) (src : ModName) (u : Name) : Bool :=
-  (P.find src).any (·.exports.contains u)
+/-- What the `export` statements among a module's statements publish. -/
+def Module.published (B : Bundle) (m : Module) : List (Name × Option Name) :=
+  m.stmts.flatMap fun i => (B.stmt i).exports
+
+/-- Every name the module exports: by its own `export` statements, then by its glue. -/
+def Module.publicNames (B : Bundle) (m : Module) : List Name :=
+  (m.published B).map (·.1) ++ m.exports.map (·.1)
+
+/-- The module exports its binding `u`: by glue, or by an `export` statement of its own that publishes `u` as `u`. -/
+def Module.exportsLocal (B : Bundle) (m : Module) (u : Name) : Bool :=
+  m.exports.any (·.2 == u) || (m.published B).contains (u, some u)
+
+/-- The name importers ask for to get the binding `u` that the module exports: the glue's, or else `u`. -/
+def Module.publicName (m : Module) (u : Name) : Name :=
+  ((m.exports.find? (·.2 == u)).map (·.1)).getD u
+
+def Plan.exportsName (B : Bundle) (P : Plan) (src : ModName) (u : Name) : Bool :=
+  (P.find src).any (·.exportsLocal B u)
 
 def Plan.declaresIn (B : Bundle) (P : Plan) (src : ModName) (u : Name) : Bool :=
   (P.find src).any (·.declares B u)
@@ -109,7 +131,7 @@ def Plan.resolve (B : Bundle) (P : Plan) (m : Module) (u : Name) : Binding :=
   if m.declares B u then .declared m.name else
     match m.imports.find? (·.2.contains u) with
     | none => .global
-    | some (src, _) => if P.declaresIn B src u && P.exportsName src u then .declared src else .unbound
+    | some (src, _) => if P.declaresIn B src u && P.exportsName B src u then .declared src else .unbound
 
 /-! ## The checks -/
 
@@ -124,15 +146,19 @@ def Faithful (B : Bundle) (S : Spec) (P : Plan) : Prop :=
   ∧ (∀ ms ∈ S.modules, ∀ sel ∈ ms.2, ∃ i ∈ List.range B.length, sel.claims B i = true)
 
 /-- Every `import` names real exports of a real other module; no name is bound twice in a module;
-every `export` names a local declaration. An ES engine would link these files without error. -/
+every glue `export` names a local declaration. With `ExportsUnique`, an ES engine would link these files without error. -/
 def Linkable (B : Bundle) (P : Plan) : Prop :=
   ∀ m ∈ P.mods,
-    (∀ e ∈ m.imports, e.1 ≠ m.name ∧ (P.find e.1).isSome = true ∧ ∀ u ∈ e.2, P.exportsName e.1 u = true)
+    (∀ e ∈ m.imports, e.1 ≠ m.name ∧ (P.find e.1).isSome = true ∧ ∀ u ∈ e.2, P.exportsName B e.1 u = true)
     ∧ (m.imports.map (·.1)).Nodup
     ∧ (m.imports.flatMap (·.2)).Nodup
     ∧ (∀ e ∈ m.imports, ∀ u ∈ e.2, m.declares B u = false)
-    ∧ m.exports.Nodup
-    ∧ (∀ u ∈ m.exports, m.declares B u = true)
+    ∧ (∀ e ∈ m.exports, m.declares B e.2 = true)
+
+/-- No module exports a name twice: its own `export` statements and its glue publish different names.
+(`export { X as u }` next to a glue export of a local `u` would be a duplicate export, or one name for two bindings.) -/
+def ExportsUnique (B : Bundle) (P : Plan) : Prop :=
+  ∀ m ∈ P.mods, (m.publicNames B).Nodup
 
 /-- Every name a statement mentions means, in its new module, the same declaration as in the bundle. -/
 def Hygienic (B : Bundle) (P : Plan) : Prop :=
@@ -171,7 +197,7 @@ theorem inverted_conflict_rejected (B : Bundle) (P : Plan) (earlier later : Nat)
     contradiction
 
 def Valid (B : Bundle) (S : Spec) (P : Plan) : Prop :=
-  UniqueDefs B ∧ ReadsClosed B ∧ Faithful B S P ∧ Linkable B P ∧ Hygienic B P ∧ AssignsHome B P
-    ∧ Permutes B P ∧ OrderOk B P
+  UniqueDefs B ∧ ReadsClosed B ∧ Faithful B S P ∧ Linkable B P ∧ ExportsUnique B P ∧ Hygienic B P
+    ∧ AssignsHome B P ∧ Permutes B P ∧ OrderOk B P
 
 end EsmSplit

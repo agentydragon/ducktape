@@ -6,16 +6,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/native"
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/coder/websocket"
 )
@@ -172,17 +169,9 @@ func writeDiscoveryFixture(t *testing.T, path, contents string) {
 
 func discoverOverWebSocket(t *testing.T, limits Limits, roots []discoveryProbeRoot) discoveryReply {
 	t.Helper()
-	core := native.New()
-	defer core.Close()
-	server := httptest.NewServer(Handler{Server: core, Limits: limits})
-	defer server.Close()
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
-	ws, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http"), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ws.CloseNow()
+	ws := dialShim(t, ctx, serveShim(t, limits))
 	return callDiscovery(t, roots, func(request []byte, expectResponse bool) []byte {
 		if err := ws.Write(ctx, websocket.MessageText, request); err != nil {
 			t.Fatal(err)

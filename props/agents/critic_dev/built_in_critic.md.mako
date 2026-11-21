@@ -65,7 +65,7 @@ The built-in critic (`props.agents.critic.main`) implements a simple single-agen
 2. Reads its `AgentRun` config (model, example, scope)
 3. Fetches the snapshot to `/workspace/`
 4. Renders a Mako system prompt with helpers (`${"${describe_relation()}"}`, `${"${include_doc()}"}`)
-5. Creates tool provider (exec, insert_issue, insert_occurrence, submit, etc.)
+5. Creates the tools (exec, insert_issue, insert_occurrence, submit, etc.)
 6. Runs the agent loop until `submit` or `report_failure` is called
 
 This is a reasonable starting point, but you're free to replace any or all of it.

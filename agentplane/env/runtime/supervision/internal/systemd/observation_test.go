@@ -69,7 +69,7 @@ func TestWaitReturnsRecordedExitBeforeCleanup(t *testing.T) {
 	if err != nil || !observed || code != 23 {
 		t.Fatalf("manager exit = (%d, %t, %v), want (23, true, nil)", code, observed, err)
 	}
-	handle.recordExit(code, err)
+	handle.recordExit(code, err, false)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	if got, err := handle.Wait(ctx); err != nil || got != 23 {
@@ -83,5 +83,30 @@ func TestWaitReturnsRecordedExitBeforeCleanup(t *testing.T) {
 	handle.completeWith(code, nil)
 	if err := handle.waitFenced(ctx); err != nil {
 		t.Fatalf("fenced wait after cleanup: %v", err)
+	}
+}
+
+func TestCommandOOMExitStatusRequiresStoppedEmptyDomain(t *testing.T) {
+	oom := UnitSnapshot{LoadState: "loaded", ActiveState: "failed", Result: "oom-kill", ExecMainPID: 1675}
+	groupEmpty := func(group string) (bool, error) {
+		if group != "/expected/service" {
+			t.Fatalf("checked cgroup = %q", group)
+		}
+		return true, nil
+	}
+	if code, observed, err := commandOOMExitStatus(oom, "/expected/service", groupEmpty); code != 137 || !observed || err != nil {
+		t.Fatalf("job-free terminal OOM exit = (%d, %t, %v)", code, observed, err)
+	}
+	if _, observed, err := commandOOMExitStatus(oom, "/expected/service", func(string) (bool, error) { return false, nil }); observed || err != nil {
+		t.Fatalf("populated OOM domain = (%t, %v)", observed, err)
+	}
+	oom.JobID = 54
+	if _, observed, err := commandOOMExitStatus(oom, "/expected/service", groupEmpty); observed || err != nil {
+		t.Fatalf("OOM with stop job still installed = (%t, %v)", observed, err)
+	}
+	oom.JobID = 0
+	oom.ActiveState = "deactivating"
+	if _, observed, err := commandOOMExitStatus(oom, "/expected/service", groupEmpty); observed || err != nil {
+		t.Fatalf("deactivating OOM unit = (%t, %v)", observed, err)
 	}
 }

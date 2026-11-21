@@ -145,7 +145,6 @@ def _values() -> dict[str, object]:
                 },
             }
         },
-        # --- Component replicas (minimal for small cluster) ---
         # All pinned to the OVH kimsufi workers. No CP tolerations — workers only.
         # No explicit limits — Goldilocks/VPA (mode: initial) manages them.
         "distributor": _component(1, "50m", "128Mi"),
@@ -160,20 +159,13 @@ def _values() -> dict[str, object]:
             "zoneAwareReplication": {"enabled": False},
             "affinity": {
                 "nodeAffinity": node_scheduling.PREFER_WORKERS.node_affinity,
-                "podAntiAffinity": {
-                    "requiredDuringSchedulingIgnoredDuringExecution": [
-                        {
-                            "labelSelector": {
-                                "matchLabels": {
-                                    "app.kubernetes.io/component": "ingester",
-                                    "app.kubernetes.io/name": NAME,
-                                    "app.kubernetes.io/instance": NAME,
-                                }
-                            },
-                            "topologyKey": "kubernetes.io/hostname",
-                        }
-                    ]
-                },
+                **node_scheduling.one_per_host(
+                    {
+                        "app.kubernetes.io/component": "ingester",
+                        "app.kubernetes.io/name": NAME,
+                        "app.kubernetes.io/instance": NAME,
+                    }
+                ),
             },
         },
         "querier": _component(1, "50m", "128Mi"),
@@ -194,7 +186,6 @@ def _values() -> dict[str, object]:
         # ServiceMonitor so TargetDown only covers real Mimir components.
         "gateway": _component(1, "10m", "32Mi", service={"labels": {"prometheus.io/service-monitor": "false"}}),
         "ruler": {"enabled": True, **_component(1, "50m", "128Mi")},
-        # --- Disabled components ---
         "alertmanager": {"enabled": False},
         "chunks-cache": {"enabled": False},
         "index-cache": {"enabled": False},

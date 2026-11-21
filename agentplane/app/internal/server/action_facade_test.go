@@ -149,28 +149,9 @@ func TestGeneratedEnvironmentFacadeReturnsRuntimeDiagnosticsEnvelopeAndErrors(t 
 			Processes:                []*sessionpb.HarnessProcessStatus{{ProcessId: "process-1", AssignedSessionIds: []string{"session-1"}}},
 		},
 	}}
-	ca := peertlstesting.NewCA(t)
-	controllerSVID := ca.Issue(t, peertls.SandboxControllerURI)
-	serverCredentials, err := controllerSVID.ServerCredentials(peertls.AppURI)
-	if err != nil {
-		t.Fatal(err)
-	}
-	grpcServer := grpc.NewServer(grpc.Creds(serverCredentials))
-	environmentpb.RegisterEnvironmentServiceServer(grpcServer, service)
-	address := grpcserver.Serve(t, grpcServer)
-	appSVID := ca.Issue(t, peertls.AppURI)
-	handler, err := facade.NewHandlerWithOptions(
-		t.Context(), address, 10*time.Second,
-		facade.HandlerOptions{TLS: &peertls.ClientTLS{
-			CAFile: ca.RootFile, ServerURI: peertls.SandboxControllerURI,
-			CertFile: appSVID.CertFile, KeyFile: appSVID.KeyFile, ClientURI: peertls.AppURI,
-		}},
-		environmentpb.RegisterEnvironmentServiceHandlerFromEndpoint,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	upstream := upstreamproxy.NewHandlerUpstream(handler, "")
+	upstream := appMTLSFacade(t, peertls.SandboxControllerURI, func(server *grpc.Server) {
+		environmentpb.RegisterEnvironmentServiceServer(server, service)
+	}, environmentpb.RegisterEnvironmentServiceHandlerFromEndpoint)
 	request := httptest.NewRequest(
 		http.MethodGet,
 		"/upstream/environments/v1/environments/team-a/sandbox-1:runtime-diagnostics?target.uid=sandbox-uid",
@@ -389,33 +370,17 @@ func (s *generatedActionService) ListActionGroups(
 
 func newGeneratedActionFacade(t *testing.T, service *generatedActionService) *upstreamproxy.HandlerUpstream {
 	t.Helper()
-	ca := peertlstesting.NewCA(t)
-	serverConfig := ca.Issue(t, peertls.ActionsURI)
-	serverCredentials, err := serverConfig.ServerCredentials(peertls.AppURI)
-	if err != nil {
-		t.Fatal(err)
+	serve := func(server *grpc.Server) {
+		actionpb.RegisterActionServiceServer(server, service)
+		operatoractionpb.RegisterOperatorActionServiceServer(server, &operatoractionpb.UnimplementedOperatorActionServiceServer{})
+		webpushpb.RegisterWebPushServiceServer(server, &webpushpb.UnimplementedWebPushServiceServer{})
 	}
-	server := grpc.NewServer(grpc.Creds(serverCredentials))
-	actionpb.RegisterActionServiceServer(server, service)
-	operatoractionpb.RegisterOperatorActionServiceServer(server, &operatoractionpb.UnimplementedOperatorActionServiceServer{})
-	webpushpb.RegisterWebPushServiceServer(server, &webpushpb.UnimplementedWebPushServiceServer{})
-	address := grpcserver.Serve(t, server)
-
-	appCertificate := ca.Issue(t, peertls.AppURI)
-	handler, err := facade.NewHandlerWithOptions(
-		t.Context(), address, 10*time.Second,
-		facade.HandlerOptions{TLS: &peertls.ClientTLS{
-			CAFile: ca.RootFile, ServerURI: peertls.ActionsURI,
-			CertFile: appCertificate.CertFile, KeyFile: appCertificate.KeyFile, ClientURI: peertls.AppURI,
-		}},
+	return appMTLSFacade(
+		t, peertls.ActionsURI, serve,
 		actionpb.RegisterActionServiceHandlerFromEndpoint,
 		operatoractionpb.RegisterOperatorActionServiceHandlerFromEndpoint,
 		webpushpb.RegisterWebPushServiceHandlerFromEndpoint,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return upstreamproxy.NewHandlerUpstream(handler, "")
 }
 
 func TestGeneratedActionFacadeUsesNativeRPCAndRequestBoundBearer(t *testing.T) {
@@ -488,29 +453,10 @@ func TestGeneratedActionFacadeCancelsRPCWithOperatorRequest(t *testing.T) {
 }
 
 func TestGeneratedConnectionFacadeUsesFederatedBearer(t *testing.T) {
-	ca := peertlstesting.NewCA(t)
-	serverConfig := ca.Issue(t, peertls.MCPEdgeURI)
-	serverCredentials, err := serverConfig.ServerCredentials(peertls.AppURI)
-	if err != nil {
-		t.Fatal(err)
-	}
 	service := &generatedConnectionService{}
-	server := grpc.NewServer(grpc.Creds(serverCredentials))
-	connectionpb.RegisterConnectionServiceServer(server, service)
-	address := grpcserver.Serve(t, server)
-	appCertificate := ca.Issue(t, peertls.AppURI)
-	handler, err := facade.NewHandlerWithOptions(
-		t.Context(), address, 10*time.Second,
-		facade.HandlerOptions{TLS: &peertls.ClientTLS{
-			CAFile: ca.RootFile, ServerURI: peertls.MCPEdgeURI,
-			CertFile: appCertificate.CertFile, KeyFile: appCertificate.KeyFile, ClientURI: peertls.AppURI,
-		}},
-		connectionpb.RegisterConnectionServiceHandlerFromEndpoint,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	upstream := upstreamproxy.NewHandlerUpstream(handler, "")
+	upstream := appMTLSFacade(t, peertls.MCPEdgeURI, func(server *grpc.Server) {
+		connectionpb.RegisterConnectionServiceServer(server, service)
+	}, connectionpb.RegisterConnectionServiceHandlerFromEndpoint)
 	request := httptest.NewRequest(http.MethodGet, "/upstream/connections/v1/operator/connections", nil)
 	response := httptest.NewRecorder()
 	if err := upstream.ForwardHTTP(response, request, request.Context(), "v1/operator/connections", "connection-token"); err != nil {
@@ -677,4 +623,31 @@ func newGeneratedDispatcherHandler(t *testing.T, service dispatcherpb.SessionDis
 		t.Fatal(err)
 	}
 	return handler
+}
+
+// appMTLSFacade serves the gRPC services registered by serve under serverURI's SVID, admitting only the
+// App, and returns the generated HTTP facade the App uses to reach them with its own SVID.
+func appMTLSFacade(t *testing.T, serverURI string, serve func(*grpc.Server), registrations ...facade.Registration) *upstreamproxy.HandlerUpstream {
+	t.Helper()
+	ca := peertlstesting.NewCA(t)
+	serverCredentials, err := ca.Issue(t, serverURI).ServerCredentials(peertls.AppURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := grpc.NewServer(grpc.Creds(serverCredentials))
+	serve(server)
+	address := grpcserver.Serve(t, server)
+	appSVID := ca.Issue(t, peertls.AppURI)
+	handler, err := facade.NewHandlerWithOptions(
+		t.Context(), address, 10*time.Second,
+		facade.HandlerOptions{TLS: &peertls.ClientTLS{
+			CAFile: ca.RootFile, ServerURI: serverURI,
+			CertFile: appSVID.CertFile, KeyFile: appSVID.KeyFile, ClientURI: peertls.AppURI,
+		}},
+		registrations...,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return upstreamproxy.NewHandlerUpstream(handler, "")
 }

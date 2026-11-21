@@ -18,7 +18,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/outputbuffer"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionstore"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/toolcontract"
-	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	execfake "github.com/agentydragon/ducktape/agentplane/testing/executor"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -1160,10 +1159,7 @@ func TestExecutorReplacesDefinitivelyLostSessionWithoutReplayingCurrentOperation
 }
 
 func TestReconcileProcessWaitsForSameSessionAcrossGatewayOutage(t *testing.T) {
-	store, owner, request := resumedExecutorStore(t, protocol.APIStyleResponses)
-	if err := store.SetExecutorSession(t.Context(), owner, "retained-executor", nil); err != nil {
-		t.Fatal(err)
-	}
+	store, owner, request := resumedStoreWithRetainedSession(t)
 	if err := store.RegisterProcess(t.Context(), owner, "running-process", false); err != nil {
 		t.Fatal(err)
 	}

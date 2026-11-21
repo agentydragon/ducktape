@@ -1,9 +1,6 @@
 package management
 
-import (
-	"fmt"
-	"strings"
-)
+import "fmt"
 
 // SandboxConflictError means a name is already owned by a different Create intent.
 type SandboxConflictError struct{ Name string }
@@ -34,13 +31,6 @@ type SandboxTearingDownError struct{ Name string }
 
 func (e *SandboxTearingDownError) Error() string {
 	return fmt.Sprintf("sandbox %s is being deleted", e.Name)
-}
-
-// LauncherPolicySetError identifies policy sets owned by another Sandbox's launcher.
-type LauncherPolicySetError struct{ Names []string }
-
-func (e *LauncherPolicySetError) Error() string {
-	return fmt.Sprintf("PolicySets %s are other Sandboxes' launcher grants", strings.Join(e.Names, ", "))
 }
 
 // SandboxNotFoundError means the requested name is absent or now belongs to another UID.

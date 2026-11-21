@@ -212,6 +212,18 @@ func (s *Store) ListSubscriptions(ctx context.Context, owner Owner, afterID *uui
 	if err != nil {
 		return nil, err
 	}
+	return readSubscriptions(ctx, s.db, rows, viewedAt)
+}
+
+// querier is the read surface a database and a transaction share.
+type querier interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+// readSubscriptions reads rows of subscriptionColumns to the end and closes them, then loads each subscription's
+// source status through q. The rows are closed first because a transaction has one connection.
+func readSubscriptions(ctx context.Context, q querier, rows *sql.Rows, viewedAt time.Time) ([]Subscription, error) {
 	defer rows.Close()
 	var subscriptions []Subscription
 	for rows.Next() {
@@ -224,11 +236,12 @@ func (s *Store) ListSubscriptions(ctx context.Context, owner Owner, afterID *uui
 	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
 		return nil, err
 	}
-	for i := range subscriptions {
-		subscriptions[i].SourceStatus, err = sourceadapter.LoadSubscriptionStatus(ctx, s.db, subscriptions[i].ID, subscriptions[i].Source)
+	for i, subscription := range subscriptions {
+		sourceStatus, err := sourceadapter.LoadSubscriptionStatus(ctx, q, subscription.ID, subscription.Source)
 		if err != nil {
 			return nil, err
 		}
+		subscriptions[i].SourceStatus = sourceStatus
 	}
 	return subscriptions, nil
 }

@@ -432,12 +432,6 @@ function EnvironmentRuntimeLifecycleCard({ lifecycle }: { lifecycle: Environment
                 In-flight admissions · {blocker.admissions}
               </Text>
             )}
-            {blocker.kind === EnvironmentRuntimeLifecycleBlockerKind.JOURNAL_SEAL && (
-              <Text size="xs" c="dimmed">
-                Journal seal · {blocker.journalSealPresent ? blocker.journalSealUid || "present" : "not present"}
-                {blocker.expectedJournalSealUid && ` · expected ${blocker.expectedJournalSealUid}`}
-              </Text>
-            )}
             {blocker.kind === EnvironmentRuntimeLifecycleBlockerKind.INGRESS_ACKNOWLEDGEMENT && (
               <Text size="xs" c="dimmed">
                 {blocker.acknowledgementPresent
@@ -445,14 +439,15 @@ function EnvironmentRuntimeLifecycleCard({ lifecycle }: { lifecycle: Environment
                   : `No acknowledgement · final cursor ${blocker.journalSealCursor}`}
               </Text>
             )}
-            {blocker.kind === EnvironmentRuntimeLifecycleBlockerKind.INGRESS_ACKNOWLEDGEMENT &&
-              blocker.expectedJournalSealUid &&
-              blocker.journalSealUid !== blocker.expectedJournalSealUid && (
-                <Text size="xs" c="dimmed">
-                  Journal seal · {blocker.journalSealPresent ? blocker.journalSealUid || "present" : "not present"}
-                  {` · expected ${blocker.expectedJournalSealUid}`}
-                </Text>
-              )}
+            {(blocker.kind === EnvironmentRuntimeLifecycleBlockerKind.JOURNAL_SEAL ||
+              (blocker.kind === EnvironmentRuntimeLifecycleBlockerKind.INGRESS_ACKNOWLEDGEMENT &&
+                blocker.expectedJournalSealUid &&
+                blocker.journalSealUid !== blocker.expectedJournalSealUid)) && (
+              <Text size="xs" c="dimmed">
+                Journal seal · {blocker.journalSealPresent ? blocker.journalSealUid || "present" : "not present"}
+                {blocker.expectedJournalSealUid && ` · expected ${blocker.expectedJournalSealUid}`}
+              </Text>
+            )}
             {blocker.finalizersPending && (
               <Text size="xs" c="dimmed">
                 Native process cleanup finalizer is still present.

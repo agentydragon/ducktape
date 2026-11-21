@@ -1079,6 +1079,15 @@ async def test_mcp_servers_linked_and_expired(view: VisualPage, app: AgentplaneF
     await view.capture(target=view.page.locator("#app"))
 
 
+@DESKTOP_AND_MOBILE
+async def test_mcp_servers_schema_warning(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.mount_app("/mcp-servers")
+    row = view.page.locator('[data-mcp-server="group:example_notes"]')
+    await expect(row.get_by_text("Some tool arguments are not validated")).to_be_visible()
+    await row.scroll_into_view_if_needed()
+    await view.capture(target=row)
+
+
 async def test_mcp_servers_unknown_linkage_status(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.set_flag(Flag.UNKNOWN_MCP_STATUS)
     await app.mount_app("/mcp-servers")
@@ -1229,7 +1238,7 @@ async def test_action_history_filter(view: VisualPage, app: AgentplaneFixture) -
     page = view.page
     filtered = page.get_by_role("radio", name="Not auto-allowed", exact=True)
     all_actions = page.get_by_role("radio", name="All actions", exact=True)
-    auto_allowed = page.get_by_text("search ducktape for auto_allow", exact=True)
+    auto_allowed = page.get_by_text("search test-repository for auto_allow", exact=True)
     await expect(filtered).to_be_checked()
     await expect(page.get_by_text("list the test backup archive", exact=True)).to_be_visible()
     await expect(auto_allowed).to_have_count(0)

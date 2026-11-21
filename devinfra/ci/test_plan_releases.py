@@ -33,13 +33,7 @@ def make_release(pkg: str = "pkg", targets: str = "//:a", filenames: str = "a.wh
 
 def output(path: str, digest: str, label: str = "//:a", output_group: str = "default", aspect: str = "") -> Output:
     return Output(
-        label=label,
-        path=path,
-        uri="bytestream://h/blobs/x/1",
-        digest=digest,
-        size=1,
-        output_group=output_group,
-        aspect=aspect,
+        label=label, path=path, uri="bytestream://h/blobs/x/1", digest=digest, output_group=output_group, aspect=aspect
     )
 
 

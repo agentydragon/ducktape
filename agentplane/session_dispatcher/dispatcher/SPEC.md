@@ -77,27 +77,22 @@ an old receiver must precede caller enablement or explicitly assess pending serv
   Session. Exact retries and authorized reads still find the record after its required Environment disappears.
   Explicit Session deletion is separate and not yet implemented; callers must not deliberately reuse a Session UUID
   after explicit deletion, and retained History can reject conflicting reuse.
-- A configured Pod-bound Dispatcher backend retains its existing privileged `CreateSession` path. A normal
-  ServiceAccount caller cannot choose a Session execution principal by supplying strings. An Identity caller may
+- A configured service caller keeps its privileged `CreateSession` path. An Identity caller may
   create only an `environment_hosted` Session and must have a current `bind_session` grant for the exact live
   Sandbox named in the placement. Central placement, an unbound Sandbox, and a target with a pending deletion or
   operator-requested stop remain refused for Identity creation.
 - An existing `CreateSession` request is a read-only idempotent retry. Before comparing its immutable request,
-  Dispatcher checks the same retained owner UID or configured Pod-bound backend authority as receipt reads; an
+  Dispatcher checks the same retained owner UID or configured service-caller authority as receipt reads; an
   Identity creator can recover its receipt only when the retained creator Identity name and UID match. An
   unauthorized caller gets `NOT_FOUND` without conflict details. The comparison is shared with
   transactional creation and includes exact environment name/UID, deterministic spec bytes, and optional
   setup bytes. Matching retries do not consult live environment inventory or change materialization,
-  attribution, pending principal binding or wake state. Delegated calls still pass middleware's current
+  attribution or wake state. Delegated calls still pass middleware's current
   effective-identity validation and never inherit their actor's privilege. An absent row still requires
   normal fresh admission; this path provides no historical deletion registry.
 - Every new opening retains the target execution Identity as its immutable logical principal and stores the
   authenticated creator separately. Ordinary Session reads continue to follow execution ownership; receipt
   recovery follows only the exact creator check above.
-- Before the controller has created the ServiceAccount, a configured Pod-bound backend may open against the
-  expected `<sandbox namespace>/<sandbox name>` account with a pending UID. Reconciliation binds the first UID
-  only after reading the exact Sandbox UID and verifying the ServiceAccount's controlling OwnerReference names
-  that Sandbox UID. The bind is conditional and cannot overwrite a UID already recorded.
 - Dispatcher is the authority for the Identity a Session executes as. Every new opening records the
   Identity its Sandbox names in `spec.identity`, read live with its UID, beside any execution ServiceAccount;
   a Sandbox naming an absent Identity cannot open a Session (`FAILED_PRECONDITION`). A Sandbox naming an
@@ -122,21 +117,19 @@ an old receiver must precede caller enablement or explicitly assess pending serv
   must act as that live Identity incarnation and its `resumePolicy.allowOwnServiceAccount` must permit its
   own principal to resume it. Messaging between Sessions of one Identity, and the wake it causes, is implied;
   a direct resume or wake request by an Identity still has no rule type and is refused.
-- Legacy openings whose owner columns are NULL stay distinct from new/pending rows. The current owner of a
-  same-named ServiceAccount is not retroactively granted those Sessions.
 
 ## Method scope
 
 - SubmitInput, ChangeModel, ChangeReasoningEffort and InterruptTurn require an existing Dispatcher Session
-  record for every caller, including configured Pod-bound backends. The supplied Sandbox name and UID must
+  record for every caller, including configured service callers. The supplied Sandbox name and UID must
   match that record. Missing records and records hidden from the caller return `NOT_FOUND`, before command
   conflict details. No Session record is reconstructed from Runtime journals or History.
 - Normal Session commands and CancelDispatch require the caller to match
-  the opening's execution account and Sandbox UID. Normal calls also compare the authenticated UID with the
-  current controller-owned account UID. A changed or missing managed account cannot authorize a write.
-- GetSession, ListSessions, WatchSessions, GetDispatch and ListDispatches filter retained rows by the recorded target account and UID.
-  These reads do not require a live Sandbox or ServiceAccount. Old rows without a trustworthy owner are hidden
-  from normal account callers but remain visible through existing privileged backend behavior.
+  the opening's execution Identity and Sandbox UID. Normal calls also require the Sandbox to still name that
+  Identity incarnation; a changed or missing Identity cannot authorize a write.
+- GetSession, ListSessions, WatchSessions, GetDispatch and ListDispatches filter retained rows by the recorded execution Identity.
+  These reads do not require a live Sandbox or Identity. Old rows without a trustworthy owner are hidden
+  from Identity callers but remain visible to service callers.
 - WatchDispatches applies the retained Session read scope to live rows and deletion receipts, authorizes
   every request, and resumes from an opaque filter-bound version token. The token carries no caller identity;
   a filter mismatch returns `INVALID_ARGUMENT`, and a cursor behind retained coverage returns `OUT_OF_RANGE`.
@@ -150,9 +143,9 @@ an old receiver must precede caller enablement or explicitly assess pending serv
   Cancellation keeps its existing retained-receipt authority, including privileged backend access.
   Interrupts use this same durable admission, delivery and cancellation path, with the target turn ID
   checked by the Runtime at admission. A delayed interrupt cannot target a successor turn.
-- The worker checks the live managed account before binding a pending owner and again
-  immediately before Runner delivery. Source errors fail closed; missing pending accounts remain queued, while
-  a changed bound account fails queued work instead of delivering it under the replacement identity.
+- The worker checks the live execution Identity before placement and again
+  immediately before Runner delivery. Source errors fail closed and retry, while
+  a changed Identity fails queued work instead of delivering it under the replacement.
 - The delivery router requires the Session record and checks its stored Sandbox name and UID for
   native and central Sessions before selecting the backend. A missing record never falls back to
   a native Runtime. This check is not an atomic fence against deletion after the read; managed

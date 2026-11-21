@@ -18,7 +18,7 @@ row() { # label bundle statements modules [replicate K]
     /\[time\] total/ { total = $(NF - 1) }
     /pass|FAIL/ && /ms\)/ { gsub(/[()]/, ""); t[$2] = $3; if ($1 == "FAIL") bad = bad " " $2 }
     /^ +FAIL/ && !/ms\)/ { bad = bad " front-end rule" }
-    /\[time\] all seven/ { checks = $(NF - 1) }
+    /\[time\] all checks/ { checks = $(NF - 1) }
     END { printf "| %s | %d | %d | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |\n", label, n, k, json, fp, plan, t["UniqueDefs"], t["ReadsClosed"], t["Faithful"], t["Linkable"], t["Hygienic"], t["Permutes"], t["OrderOk"], checks, (bad == "" ? "accepted" : "rejected:" bad) }'
 }
 
@@ -36,7 +36,7 @@ else
   row "semver" semver 59 4
   row "lodash" lodash 670 6
   row "acorn" acorn 447 5
-  row "acorn, minified" acorn.min 374 5
-  row "zod, minified" zod.min 805 8
+  row "acorn, minified" acorn.min 447 5
+  row "zod, minified" zod.min 1072 8
   row "zod" zod 1072 8
 fi

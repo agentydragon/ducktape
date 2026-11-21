@@ -293,7 +293,7 @@ func (s *Service) listIdentityEnvironments(
 		if err != nil {
 			return nil, err
 		}
-		_, _, visible, err := s.revalidateDescriptor(ctx, descriptor, caller, false)
+		visible, err := s.revalidateDescriptor(ctx, descriptor, caller, false)
 		if err != nil {
 			return nil, status.Error(codes.Unavailable, "Sandbox Identity is unavailable")
 		}
@@ -326,7 +326,7 @@ func (s *Service) listAll(ctx context.Context, request *environmentpb.ListEnviro
 		if err != nil {
 			return nil, err
 		}
-		_, _, visible, err := s.revalidateDescriptor(ctx, descriptor, caller, true)
+		visible, err := s.revalidateDescriptor(ctx, descriptor, caller, true)
 		if err != nil {
 			return nil, status.Error(codes.Unavailable, "Sandbox execution account is unavailable")
 		}
@@ -427,7 +427,7 @@ func (s *Service) getEnvironment(
 	if !found || identity.isIdentity() {
 		descriptor.ExecutionAccount = nil
 	}
-	_, _, visible, err := s.revalidateDescriptor(ctx, descriptor, identity, broad)
+	visible, err := s.revalidateDescriptor(ctx, descriptor, identity, broad)
 	if err != nil {
 		slog.ErrorContext(ctx, "Environment discovery authorization recheck failed", "error", err)
 		return nil, "", status.Error(codes.Unavailable, "Sandbox execution account is unavailable")
@@ -449,45 +449,46 @@ func deleting(object *api.Sandbox) bool {
 // revalidateDescriptor fences the authorization and target identity again after assembling the
 // Pod-inclusive projection. The extra reads close the window in which the Sandbox or its owner
 // could change while the Pod was being fetched. Broad readers still receive the current account
-// fact when available, but never a descriptor for a replaced Sandbox UID.
+// fact when available, but never a descriptor for a replaced Sandbox UID. It reports whether the
+// caller may still see the descriptor.
 func (s *Service) revalidateDescriptor(
 	ctx context.Context,
 	descriptor *environmentpb.EnvironmentDescriptor,
 	caller environmentCaller,
 	broad bool,
-) (*sandboxreader.ServiceAccountIdentity, bool, bool, error) {
+) (bool, error) {
 	target := descriptor.GetTarget()
 	if target == nil || target.GetNamespace() != s.namespace || target.GetName() == "" || target.GetUid() == "" {
-		return nil, false, false, nil
+		return false, nil
 	}
 	current, err := s.sandboxes.Get(ctx, target.GetName())
 	if status.Code(err) == codes.NotFound || (err == nil && current.Identity.Uid != target.GetUid()) {
-		return nil, false, false, nil
+		return false, nil
 	}
 	if err != nil {
-		return nil, false, false, err
+		return false, err
 	}
 	if deleting(current.Resource) && !broad {
-		return nil, false, false, nil
+		return false, nil
 	}
 	var execution *sandboxreader.ServiceAccountIdentity
 	found := false
 	if broad {
 		execution, found, err = s.sandboxes.ExecutionAccount(ctx, current.Identity)
 		if err != nil {
-			return nil, false, false, err
+			return false, err
 		}
 	}
 	if !broad {
 		if caller.identity == nil {
-			return nil, false, false, nil
+			return false, nil
 		}
 		owned, err := s.ownsSandbox(ctx, caller.identity, current.Identity)
 		if err != nil {
-			return nil, false, false, err
+			return false, err
 		}
 		if !owned {
-			return nil, false, false, nil
+			return false, nil
 		}
 	}
 	if found && !caller.isIdentity() {
@@ -499,7 +500,7 @@ func (s *Service) revalidateDescriptor(
 	if current.Resource.Spec.Identity != nil {
 		descriptor.IdentityName = &current.Resource.Spec.Identity.Name
 	}
-	return execution, found, true, nil
+	return true, nil
 }
 
 func (s *Service) describe(

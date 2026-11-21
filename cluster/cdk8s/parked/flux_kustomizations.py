@@ -15,10 +15,9 @@ def agent_box(
     external_secrets_operator: Kustomization,
     kyverno: Kustomization,
 ) -> Kustomization:
-    name = "agent-box"
     return flux_kustomization(
         chart,
-        name,
+        "agent-box",
         artifact,
         annotations={"ducktape.org/parked": "true"},
         # Keep this controller inactive while the unschedulable legacy VM is retired.
@@ -42,10 +41,9 @@ def docker_ci(
     cert_manager: Kustomization,
     kyverno: Kustomization,
 ) -> Kustomization:
-    name = "docker-ci"
     return flux_kustomization(
         chart,
-        name,
+        "docker-ci",
         artifact,
         annotations={"ducktape.org/parked": "true"},
         suspend=True,
@@ -67,10 +65,9 @@ def gecko(
     kubevirt: Kustomization,
     external_secrets_operator: Kustomization,
 ) -> Kustomization:
-    name = "gecko"
     return flux_kustomization(
         chart,
-        name,
+        "gecko",
         artifact,
         annotations={"ducktape.org/parked": "true"},
         # Keep this controller inactive while the unschedulable legacy VM is retired.
@@ -83,10 +80,9 @@ def gecko(
 
 
 def gecko_namespace(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> Kustomization:
-    name = "gecko-namespace"
     return flux_kustomization(
         chart,
-        name,
+        "gecko-namespace",
         artifact,
         annotations={"ducktape.org/parked": "true"},
         # The retired VM stack and its namespace were intentionally deleted.
@@ -99,10 +95,9 @@ def gecko_namespace(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts) -> K
 def sdr(
     chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, external_secrets_operator: Kustomization
 ) -> Kustomization:
-    name = "sdr"
     return flux_kustomization(
         chart,
-        name,
+        "sdr",
         artifact,
         annotations={"ducktape.org/parked": "true"},
         # Temporarily disabled until the radio is set up again after relocation.

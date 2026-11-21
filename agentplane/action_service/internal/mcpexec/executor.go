@@ -408,8 +408,9 @@ func (e *Executor) describe(err error) string {
 }
 
 // Execute calls the tool request names, on the session the group offered it from. It reads the server's tools first:
-// the arguments were admitted against the schema the group offered, and a tool whose schema changed since is not
-// called with them. A call whose outcome the server leaves uncertain, because the session failed under it or the
+// the arguments were admitted against the schema the group offered when supported. It checks the current schema when
+// supported; an uncompiled schema is forwarded without this check. A call whose outcome the server leaves uncertain,
+// because the session failed under it or the
 // tool says so, ends execution_unknown; a tool's error result is its answer, and succeeds.
 func (e *Executor) Execute(ctx context.Context, request store.ExecutionRequest, lease *worker.Lease) (store.ExecutionOutcome, error) {
 	s := e.pin()
@@ -481,7 +482,20 @@ func (e *Executor) call(ctx context.Context, request store.ExecutionRequest, lea
 	if !offered {
 		return worker.Failed(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_UNKNOWN_ACTION, "action is no longer offered by the backend"), nil
 	}
-	if !tool.matches(request.Arguments) {
+	if tool.definition.InputSchemaValidation.GetStatus() == action_servicepb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_NOT_ENFORCED {
+		e.mu.Lock()
+		warned := e.actions[name].InputSchemaValidation.GetStatus() == action_servicepb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_NOT_ENFORCED
+		e.mu.Unlock()
+		if !warned {
+			// Discovery may have preceded a backend schema change. Refresh the visible group warning promptly.
+			e.wake()
+		}
+	}
+	if err := tool.checkArguments(request.Arguments); err != nil {
+		if errors.Is(err, catalog.ErrPatternEvaluation) {
+			slog.WarnContext(ctx, "MCP action schema pattern could not be evaluated", "group", e.key, "tool", name)
+			return worker.Failed(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INTERNAL, "action schema could not be evaluated"), nil
+		}
 		return worker.Failed(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INCOMPATIBLE_ACTION_SCHEMA, "arguments no longer match the current tool schema"), nil
 	}
 	if err := lease.Renew(ctx); err != nil {

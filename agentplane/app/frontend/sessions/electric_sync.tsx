@@ -1122,6 +1122,10 @@ class ThreadEpochs extends Listeners {
             break;
           case "sessionRecorded":
             throw new Error("History emitted a SessionRecorded frame without a recorded_after request.");
+          case "snapshot":
+          case "summary":
+          case "removedSessionId":
+            throw new Error("History emitted a selected summary frame without a selected request.");
           case undefined:
             throw new Error("History returned an empty Session summary watch frame.");
         }

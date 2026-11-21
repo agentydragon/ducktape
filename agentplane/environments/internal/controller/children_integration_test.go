@@ -10,12 +10,12 @@ import (
 	"testing"
 	"time"
 
-	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/issuer"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/requester"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/testing/eventually"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
+	"github.com/agentydragon/ducktape/agentplane/testing/testscheme"
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -24,10 +24,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/discovery"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -165,14 +163,7 @@ func TestManagerCacheSyncNeedsOnlyGrantedSandboxWatchKinds(t *testing.T) {
 	controllerConfig.Username, controllerConfig.Password = "", ""
 	controllerConfig.TLSClientConfig.CertFile, controllerConfig.TLSClientConfig.KeyFile = "", ""
 	controllerConfig.TLSClientConfig.CertData, controllerConfig.TLSClientConfig.KeyData = nil, nil
-	scheme := runtime.NewScheme()
-	for _, add := range []func(*runtime.Scheme) error{
-		clientgoscheme.AddToScheme, sandboxapi.AddToScheme, policyapi.AddToScheme, workloadapi.AddToScheme, kubevirtv1.AddToScheme,
-	} {
-		if err := add(scheme); err != nil {
-			t.Fatal(err)
-		}
-	}
+	scheme := testscheme.New(t)
 	byObject, err := CacheByObject(false)
 	if err != nil {
 		t.Fatal(err)
@@ -219,14 +210,7 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 	if _, err := discoveryClient.ServerResourcesForGroupVersion(kubevirtv1.GroupVersion.String()); !apierrors.IsNotFound(err) {
 		t.Fatalf("envtest unexpectedly serves KubeVirt: %v", err)
 	}
-	scheme := runtime.NewScheme()
-	for _, add := range []func(*runtime.Scheme) error{
-		clientgoscheme.AddToScheme, sandboxapi.AddToScheme, policyapi.AddToScheme, kubevirtv1.AddToScheme, workloadapi.AddToScheme,
-	} {
-		if err := add(scheme); err != nil {
-			t.Fatal(err)
-		}
-	}
+	scheme := testscheme.New(t)
 	const ns = "child-ssa"
 	byObject, err := CacheByObject(false)
 	if err != nil {

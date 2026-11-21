@@ -21,6 +21,7 @@ import (
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
+	"github.com/agentydragon/ducktape/agentplane/testing/testscheme"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -31,7 +32,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -142,20 +142,7 @@ func configureDelegatedIdentity(t *testing.T, objects client.WithWatch, sandboxN
 
 func readerWithObjects(t *testing.T, objects ...client.Object) client.WithWatch {
 	t.Helper()
-	scheme := runtime.NewScheme()
-	if err := sandboxapi.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
-	}
-	if err := corev1.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
-	}
-	if err := workloadapi.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
-	}
-	if err := policyapi.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
-	}
-	builder := clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...)
+	builder := clientfake.NewClientBuilder().WithScheme(testscheme.New(t)).WithObjects(objects...)
 	// The fake client implements API field selection through explicit indexes.
 	for _, object := range []client.Object{&sandboxapi.Sandbox{}, &corev1.ServiceAccount{}} {
 		builder.WithIndex(object, "metadata.name", func(object client.Object) []string { return []string{object.GetName()} })
@@ -565,7 +552,7 @@ func TestRevalidateDescriptorRefreshesIdentityAfterSameUIDChange(t *testing.T) {
 	if err := objects.Update(t.Context(), resource); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, visible, err := service.revalidateDescriptor(t.Context(), descriptor, environmentCaller{}, true); err != nil || !visible || descriptor.GetIdentityName() != "new-agent" {
+	if visible, err := service.revalidateDescriptor(t.Context(), descriptor, environmentCaller{}, true); err != nil || !visible || descriptor.GetIdentityName() != "new-agent" {
 		t.Fatalf("revalidated identity = %q, visible %t, error %v; want new-agent", descriptor.GetIdentityName(), visible, err)
 	}
 	if err := objects.Get(t.Context(), key, resource); err != nil {
@@ -575,7 +562,7 @@ func TestRevalidateDescriptorRefreshesIdentityAfterSameUIDChange(t *testing.T) {
 	if err := objects.Update(t.Context(), resource); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, visible, err := service.revalidateDescriptor(t.Context(), descriptor, environmentCaller{}, true); err != nil || !visible || descriptor.IdentityName != nil {
+	if visible, err := service.revalidateDescriptor(t.Context(), descriptor, environmentCaller{}, true); err != nil || !visible || descriptor.IdentityName != nil {
 		t.Fatalf("revalidated unbound identity = %q, visible %t, error %v; want absent", descriptor.GetIdentityName(), visible, err)
 	}
 }

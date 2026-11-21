@@ -48,10 +48,6 @@ function VersionLink({ version }: { version: DeploymentVersion }) {
   );
 }
 
-function SectionHeading({ title }: { title: string }) {
-  return <Text fw={600}>{title}</Text>;
-}
-
 function DenseTable({ label, children }: { label: string; children: ReactNode }): JSX.Element {
   return (
     <Table.ScrollContainer minWidth={0} className="haku-dense-table-wrap">
@@ -70,7 +66,7 @@ function ResourcePanel<T>({
   isEmpty,
   children,
 }: {
-  title?: string;
+  title: string;
   resource: Pick<UseQueryResult<T>, "data" | "error">;
   label: string;
   emptyMessage?: string;
@@ -103,17 +99,12 @@ function ResourcePanel<T>({
     ) : (
       children(data)
     );
-  return title ? (
+  return (
     <Stack gap="xs" className="haku-page-list">
-      <SectionHeading title={title} />
+      <Text fw={600}>{title}</Text>
       {errorNotice}
       {body}
     </Stack>
-  ) : (
-    <>
-      {errorNotice}
-      {body}
-    </>
   );
 }
 
@@ -388,12 +379,9 @@ export function SettingsPanel(): JSX.Element {
           </ResourcePanel>
         </Tabs.Panel>
         <Tabs.Panel value="system">
-          <Stack gap="xs" className="haku-page-list">
-            <SectionHeading title="System" />
-            <ResourcePanel resource={deploymentResource} label="system status">
-              {(value) => <SystemStatusTable deployment={value} />}
-            </ResourcePanel>
-          </Stack>
+          <ResourcePanel title="System" resource={deploymentResource} label="system status">
+            {(value) => <SystemStatusTable deployment={value} />}
+          </ResourcePanel>
         </Tabs.Panel>
       </div>
     </Tabs>

@@ -25,11 +25,12 @@ patch by another script loaded before or during the bundle, one through a value 
 engine keeps (`RegExp.$1`). `experiments/effects/debug/p1_known_gaps` has a program for each.
 
 **Premise P3: the world defines no hooks.** The world (the environment and every module outside the bundle) adds no
-accessor and no conversion hook (`valueOf`, `toString`, `Symbol.toPrimitive`) to an object the program made, and
-converting a value the world made runs no program code. So a property of an object the world holds is read and
-assigned like any other. `Premises.noWorldHooks` switches this premise; off, reading or assigning a property of an
-object the world holds, and converting a value the world made or holds, are calls into the world. Accessors and hooks
-the *program* defined are found and run like any call.
+accessor and no conversion hook (`valueOf`, `toString`, `Symbol.toPrimitive`) to an object the program made. So a
+property of an object the world holds is read and assigned like any other. `Premises.noWorldHooks` switches this
+premise; off, reading, assigning or converting an object the world holds is a call into the world. Accessors and hooks
+the *program* defined are found and run like any call. The premise is about objects the analysis follows. A value the
+world *made* is not one: it may be a `Proxy` with a handler of the program, or an object of the program that came
+back, so every operation on it is unknown code (`Effects.worldValue`).
 
 Every call of a row also converts the receiver and the arguments to primitives, as the standard functions do for
 numbers, strings and keys (`Math.floor(x)`, `String(x)`, `o.hasOwnProperty(k)`): a `valueOf` or `toString` the program
@@ -52,8 +53,6 @@ namespace Effects
 inductive Ret where
   /-- a primitive -/
   | prim
-  /-- a new plain object with nothing known in it -/
-  | fresh
   /-- the receiver -/
   | thisV
   /-- argument `i` -/
@@ -66,8 +65,6 @@ inductive Ret where
   | freshOfCalls
   /-- a new array of primitives -/
   | freshPrims
-  /-- a new object of the same family as the receiver: `family` below -/
-  | member
   /-- a new plain object whose prototype is the object at the position -/
   | freshProto (pos : Nat)
   /-- the prototypes of the objects at the position -/
@@ -86,7 +83,8 @@ inductive Ret where
   | flatLike (pos : Nat)
   /-- a new array of arrays holding what the objects at the position hold, and keys (`Object.entries`) -/
   | entriesOf (pos : Nat)
-  /-- a new object `{ value, done }` whose `value` holds what the objects at the position hold (what `next` returns) -/
+  /-- a new object `{ value, done }` whose `value` holds what iterating the objects at the position yields (what `next`
+      returns) -/
   | iterResultOf (pos : Nat)
   /-- a new array holding what the callbacks return and what those hold (`flatMap`) -/
   | freshOfCallsFlat
@@ -131,7 +129,7 @@ structure Summary where
   accessors : List (Nat × Nat) := []
   /-- the callback result feeds the next call (`reduce`): it runs twice -/
   accumulates : Bool := false
-  /-- what the callbacks return may be returned (`reduce`, a reviver, a `mapFn`) -/
+  /-- what the callbacks return may be returned (`reduce`, a `mapFn`) -/
   returnsCalls : Bool := false
   /-- positions whose values may be returned (the initial value of `reduce`) -/
   alsoReturns : List Nat := []
@@ -144,18 +142,11 @@ structure Summary where
   callsMethods : List (Nat × String × List Nat) := []
   deriving Inhabited
 
-/-- The iterator helpers (`map`, `filter`, …) of the iterator of a `Map` or a `Set`, which the collection stands for: they
-run their callbacks as the iterator is consumed, which the analysis does not follow, so a call is a call into the world
-that keeps its callbacks. -/
-def iteratorHelperRows : List (String × Summary) :=
-  ["map", "filter", "flatMap", "take", "drop", "reduce", "toArray", "some", "every", "find"].flatMap fun m =>
-    ["Map", "Set"].map fun c => (c ++ ".prototype." ++ m, { world := true, retains := [1, 2] })
-
 open Ret in
 /-- Rows by path. `X.prototype.m` is a method of every `X` instance; `prim.m` a method of a string, number, boolean,
 symbol or bigint. `Function.prototype.call`, `apply` and `bind` have rows so that reading them yields the function; the
 analysis runs them itself (`callBuiltin`). -/
-def table : Std.HashMap String Summary := Std.HashMap.ofList (([
+def table : Std.HashMap String Summary := Std.HashMap.ofList [
   -- Object
   ("Object.keys", { ret := freshPrims }),
   ("Object.getOwnPropertyNames", { ret := freshPrims }),
@@ -196,7 +187,6 @@ def table : Std.HashMap String Summary := Std.HashMap.ofList (([
   ("Object.prototype.valueOf", { ret := thisV }),
   -- Symbol, JSON, Math, conversions
   ("Symbol", {}), ("Symbol.for", {}), ("Symbol.keyFor", {}),
-  ("JSON.parse", { ret := fresh, calls := [2], returnsCalls := true }),
   ("Math.abs", {}), ("Math.ceil", {}), ("Math.floor", {}), ("Math.round", {}), ("Math.trunc", {}), ("Math.sign", {}),
   ("Math.max", {}), ("Math.min", {}), ("Math.pow", {}), ("Math.sqrt", {}), ("Math.log", {}), ("Math.exp", {}),
   ("Math.random", { world := true }),
@@ -209,7 +199,7 @@ def table : Std.HashMap String Summary := Std.HashMap.ofList (([
   ("parseInt", {}), ("parseFloat", {}), ("isNaN", {}), ("isFinite", {}),
   ("encodeURIComponent", {}), ("decodeURIComponent", {}), ("encodeURI", {}), ("decodeURI", {}),
   -- Array
-  ("Array", { ret := fresh, storeArgs := true }),
+  ("Array", { ret := freshArgs }),
   ("Array.isArray", {}),
   ("Array.of", { ret := freshArgs }),
   ("Array.from", { ret := freshOf 1, calls := [2], optionalIterates := [1], returnsCalls := true }),
@@ -233,7 +223,9 @@ def table : Std.HashMap String Summary := Std.HashMap.ofList (([
   ("Array.prototype.findLast", { ret := contents 0, calls := [1] }),
   ("Array.prototype.findIndex", { calls := [1] }),
   ("Array.prototype.reduce", { ret := contents 0, calls := [1], accumulates := true, returnsCalls := true, alsoReturns := [2] }),
-  ("Array.prototype.includes", {}), ("Array.prototype.indexOf", {}), ("Array.prototype.lastIndexOf", {}),
+  -- a search reads the length and the elements of its receiver, which need not be an array
+  ("Array.prototype.includes", { readsContents := [0] }), ("Array.prototype.indexOf", { readsContents := [0] }),
+  ("Array.prototype.lastIndexOf", { readsContents := [0] }),
   ("Array.prototype.join", { convertsContents := [0] }), ("Array.prototype.at", { ret := contents 0 }),
   -- Map, Set, WeakMap, WeakSet
   ("Map", { ret := inst "Map.prototype", iterates := [1] }), ("Set", { ret := inst "Set.prototype", iterates := [1] }),
@@ -242,7 +234,8 @@ def table : Std.HashMap String Summary := Std.HashMap.ofList (([
   ("Map.prototype.set", { ret := thisV, muts := [0], storeArgs := true }),
   ("Map.prototype.has", {}), ("Map.prototype.delete", { muts := [0] }), ("Map.prototype.clear", { muts := [0] }),
   ("Map.prototype.forEach", { calls := [1] }),
-  -- the iterator of a collection is the collection: a live view of it, and `next` moves its cursor
+  -- the iterator of a collection is the collection: a live view of it, and `next` moves its cursor. The helpers of an
+  -- iterator (`map`, `some`, `toArray`, …) have no rows: `Effects.getVal` finds them as members without a summary
   ("Map.prototype.keys", { ret := thisV }), ("Map.prototype.values", { ret := thisV }),
   ("Map.prototype.entries", { ret := thisV }), ("Map.prototype.next", { ret := iterResultOf 0, muts := [0] }),
   ("Set.prototype.add", { ret := thisV, muts := [0], storeArgs := true }),
@@ -305,14 +298,14 @@ def table : Std.HashMap String Summary := Std.HashMap.ofList (([
   ("prim.startsWith", {}), ("prim.endsWith", {}), ("prim.padStart", {}), ("prim.padEnd", {}), ("prim.repeat", {}),
   ("prim.normalize", {}), ("prim.localeCompare", {}), ("prim.concat", {}), ("prim.toFixed", {}),
   ("prim.toPrecision", {}), ("prim.description", {}),
-  -- a pattern that is an object with a `Symbol.search`, `split`, `match`, `matchAll` or `replace` method gets the string
+  -- a pattern that is an object with a `Symbol.search`, `split`, `match` or `replace` method gets the string. (`matchAll`
+  -- returns an iterator, which has no model: no row)
   ("prim.search", { muts := [1], callsMethods := [(1, "@@search", [0])] }),
   ("prim.split", { ret := freshPrims, muts := [1], callsMethods := [(1, "@@split", [0, 2])] }),
   ("prim.match", { ret := freshPrims, muts := [1], callsMethods := [(1, "@@match", [0])] }),
-  ("prim.matchAll", { ret := freshPrims, muts := [1], callsMethods := [(1, "@@matchAll", [0])] }),
   ("prim.replace", { calls := [2], muts := [1], callsMethods := [(1, "@@replace", [0, 2])] }),
   ("prim.replaceAll", { calls := [2], muts := [1], callsMethods := [(1, "@@replace", [0, 2])] })
-] : List (String × Summary)) ++ iteratorHelperRows)
+]
 
 /-- Every own property of the standard objects, as `Path.member` (`prim.member` for what a string, number, boolean,
 symbol or bigint has), generated from Node by `experiments/effects/gen_members.mjs`. -/

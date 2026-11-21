@@ -93,7 +93,7 @@ func (r *Runtime) initializeSessions() error {
 
 func (r *Runtime) ensureWorkspace(ctx context.Context, cwd string) (string, error) {
 	config := workspace.Config{Root: r.config.WorkspaceRoot}
-	if r.config.VMProcessLauncher != nil {
+	if r.config.SystemdLauncher != nil {
 		config.LaunchHelper = func(ctx context.Context, processConfig supervision.ProcessConfig) (*supervision.ManagedProcess, error) {
 			return r.launchSessionProcess(ctx, "workspace-helper", r.harnessSupervisor, processConfig)
 		}

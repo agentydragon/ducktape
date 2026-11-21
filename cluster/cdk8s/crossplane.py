@@ -141,11 +141,13 @@ def chart(app: App) -> Chart:
                             target=HelmReleaseSpecPostRenderersKustomizePatchesTarget(kind="Deployment", name=NAME),
                             # Chart 2.4.2 only probes the health port's TCP listener. Crossplane's
                             # HTTP readiness endpoint waits for the actual TLS webhook server.
-                            patch=dedent("""\
+                            patch=dedent(f"""\
                                 apiVersion: apps/v1
                                 kind: Deployment
                                 metadata:
-                                  name: crossplane
+                                  name: {NAME}
+                                  annotations:
+                                    {namespaces.VPA_UPDATE_MODE_LABEL}: {Vpa.AUTO}
                                 spec:
                                   template:
                                     spec:

@@ -5,7 +5,7 @@ This is the props backend that includes:
 - Critic Run API: /api/runs/critic
 
 The data-plane proxies are separate services:
-- LLM proxy (/v1/responses and /v1/chat/completions): props/llm_proxy
+- LLM proxy (/v1/responses, /v1/chat/completions and /v1/messages): props/llm_proxy
 - Registry proxy (/v2/*): props/registry_proxy
 
 Note: wait_until_graded is implemented inside containers by polling the grading_pending
@@ -64,7 +64,6 @@ class BackendDeps:
 
     config: PropsConfig
     registry_proxy_config: RegistryProxyConfig
-    backend_url: str
     grader_model: str | None = None
     host: str = "127.0.0.1"
     port: int = 8000
@@ -107,7 +106,6 @@ def _make_lifespan(deps: BackendDeps):
         app.state.registry = None
         app.state.admin_db = None
         db_config = DatabaseConfig()
-        app.state.config = deps.config
 
         try:
             async with AsyncExitStack() as resources:
@@ -143,7 +141,7 @@ def _make_lifespan(deps: BackendDeps):
                     executor=executor,
                     db=db,
                     db_config=db_config,
-                    backend_url=deps.backend_url,
+                    backend_url=deps.config.backend_url,
                     agent_base_env=deps.config.agent_env,
                     registry_config=deps.registry_proxy_config,
                     model_parallelism_limits=model_parallelism_limits,
@@ -262,7 +260,6 @@ def default_deps(*, host: str, port: int) -> BackendDeps:
     return BackendDeps(
         config=config,
         registry_proxy_config=get_registry_proxy_config(),
-        backend_url=config.backend_url,
         grader_model=config.grader_model,
         host=host,
         port=port,

@@ -30,8 +30,8 @@ py_library(
     srcs = ["agent_credentials.py"],
     visibility = ["//props:__subpackages__"],
     deps = [
+        "//props/db:async_database",
         "//props/db:config",
-        "//util:db_url",
         "@pypi//sqlalchemy",
     ],
 )

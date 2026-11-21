@@ -10,7 +10,6 @@ go_library(
         "//agentplane/environments/lifecycle",
         "//agentplane/environments/v1:environment_service_go_proto",
         "//agentplane/proto:environment_lifecycle_go_proto",
-        "//agentplane/proto:identity_go_proto",
         "//agentplane/sandboxes/api",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",

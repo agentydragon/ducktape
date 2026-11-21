@@ -17,13 +17,6 @@ class WorkspaceNotification(BaseModel):
     annotation_key: str = Field(min_length=1)
 
 
-class KubernetesPublication(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    secret: KubernetesSecretDestination
-    notification: WorkspaceNotification
-
-
 class SopsDestination(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -31,16 +24,15 @@ class SopsDestination(BaseModel):
     sops_file: Path = Field(description="Repo-relative path to the encrypted output file")
 
 
-class KubernetesDestination(KubernetesPublication):
+class KubernetesDestination(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    secret: KubernetesSecretDestination
+    notification: WorkspaceNotification
     storage: Literal["kubernetes"] = "kubernetes"
 
 
-class MirroredDestination(KubernetesPublication):
-    storage: Literal["mirrored"] = "mirrored"
-    sops_file: Path = Field(description="Repo-relative path to the encrypted output file")
-
-
-Destination = Annotated[SopsDestination | KubernetesDestination | MirroredDestination, Field(discriminator="storage")]
+Destination = Annotated[SopsDestination | KubernetesDestination, Field(discriminator="storage")]
 
 
 class Token(BaseModel):

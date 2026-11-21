@@ -191,7 +191,6 @@ type StartRequest struct {
 	ProcessID   string
 	Argv        []string
 	Cwd         string
-	Env         map[string]string
 	Environment []string
 	TTY         bool
 	PipeStdin   bool
@@ -219,6 +218,17 @@ type FileMetadata struct {
 	Size        uint64
 }
 
+// ManagedCommand is an externally supervised process owned until Release completes.
+type ManagedCommand interface {
+	Wait(context.Context) (int, error)
+	Signal(context.Context, syscall.Signal) error
+	Release(context.Context) error
+}
+
+// CommandLauncher starts the command in its configured resource domain and borrows
+// the supplied descriptors until it returns. The caller retains descriptor ownership.
+type CommandLauncher func(context.Context, *exec.Cmd, bool) (ManagedCommand, error)
+
 type Server struct {
 	mu           sync.Mutex
 	limits       Limits
@@ -231,6 +241,7 @@ type Server struct {
 	fatal        chan error
 	fatalOnce    sync.Once
 	waitChild    func(int, *childSiginfo) error
+	launcher     CommandLauncher
 }
 type Session struct {
 	id               string
@@ -251,6 +262,7 @@ type process struct {
 	reaped             bool
 	ownershipLost      bool
 	cmd                *exec.Cmd
+	managed            ManagedCommand
 	chunks             []Chunk
 	bytes              int
 	next               uint64
@@ -284,6 +296,17 @@ func NewWithLimits(limits Limits) (*Server, error) {
 		return nil, err
 	}
 	return newServer(limits), nil
+}
+
+// NewWithLauncher uses an external owner for command placement. A nil launcher
+// retains the existing direct-child behavior.
+func NewWithLauncher(limits Limits, launcher CommandLauncher) (*Server, error) {
+	s, err := NewWithLimits(limits)
+	if err != nil {
+		return nil, err
+	}
+	s.launcher = launcher
+	return s, nil
 }
 
 func newServer(limits Limits) *Server {
@@ -559,9 +582,6 @@ func (s *Session) Start(r StartRequest) error {
 				path = v
 			}
 		}
-		if v, ok := r.Env["PATH"]; ok {
-			path = v
-		}
 		found := ""
 		for _, part := range filepath.SplitList(path) {
 			if part == "" {
@@ -589,9 +609,6 @@ func (s *Session) Start(r StartRequest) error {
 	cmd.Dir = dir
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Env = append([]string{}, r.Environment...)
-	for k, v := range r.Env {
-		cmd.Env = append(cmd.Env, k+"="+v)
-	}
 	var stdout, stderr, stdoutWrite, stderrWrite *os.File
 	var stdin *os.File
 	stream := "stdout"
@@ -635,8 +652,18 @@ func (s *Session) Start(r StartRequest) error {
 		// poller fails. The writer must be interruptible when we close stdin.
 		err = stdin.SetWriteDeadline(time.Time{})
 	}
+	var managed ManagedCommand
 	if err == nil {
-		err = cmd.Start()
+		if s.server.launcher == nil {
+			err = cmd.Start()
+		} else {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			managed, err = s.server.launcher(ctx, cmd, r.TTY)
+			cancel()
+			if err == nil && managed == nil {
+				err = errors.New("command launcher returned no owner")
+			}
+		}
 	}
 	if err != nil {
 		stdout.Close()
@@ -654,7 +681,7 @@ func (s *Session) Start(r StartRequest) error {
 	if stderrWrite != nil {
 		stderrWrite.Close()
 	}
-	p := &process{cmd: cmd, stdin: stdin, changed: make(chan struct{}), next: 1, server: s.server, session: s, id: r.ProcessID}
+	p := &process{cmd: cmd, managed: managed, stdin: stdin, changed: make(chan struct{}), next: 1, server: s.server, session: s, id: r.ProcessID}
 	if stdin != nil {
 		p.writes = make(map[string]struct{})
 		p.stdinChanged = make(chan struct{})
@@ -675,7 +702,11 @@ func (s *Session) Start(r StartRequest) error {
 		reads.Add(1)
 		go p.readPipe("stderr", stderr, &reads)
 	}
-	go p.observeExit()
+	if managed != nil {
+		go p.observeManagedExit()
+	} else {
+		go p.observeExit()
+	}
 	go func() {
 		reads.Wait()
 		stdout.Close()
@@ -758,10 +789,47 @@ func (p *process) observeExit() {
 	}
 }
 
+// observeManagedExit waits for the external owner instead of attempting waitid on a non-child.
+func (p *process) observeManagedExit() {
+	code, err := p.managed.Wait(context.Background())
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if err != nil {
+		p.ownershipLost = true
+		p.server.fail(fmt.Errorf("lost managed process ownership: %w", err))
+		return
+	}
+	p.exited = true
+	seq := p.next
+	p.next++
+	p.exitSeq = &seq
+	p.exitCode = &code
+	p.maybeClose()
+	p.notify()
+	if p.reapRequested {
+		p.reapLocked()
+	}
+}
+
 // requestReapLocked signals only while the unreaped leader still reserves the
 // group ID. Reaping happens exactly once, after exit has been observed.
 func (p *process) requestReapLocked() {
 	if p.reaped || p.reapRequested || p.ownershipLost {
+		return
+	}
+	if p.managed != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+		err := p.managed.Release(ctx)
+		cancel()
+		if err != nil {
+			p.ownershipLost = true
+			p.server.fail(fmt.Errorf("release managed process: %w", err))
+			return
+		}
+		p.reapRequested = true
+		if p.exited {
+			p.reapLocked()
+		}
 		return
 	}
 	if err := syscall.Kill(-p.cmd.Process.Pid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
@@ -779,6 +847,10 @@ func (p *process) reapLocked() {
 		return
 	}
 	p.reaped = true
+	if p.managed != nil {
+		p.server.processCount.Add(-1)
+		return
+	}
 	err := p.cmd.Wait()
 	p.server.processCount.Add(-1)
 	var exitErr *exec.ExitError
@@ -1107,6 +1179,11 @@ func (s *Session) Signal(id string) error {
 	if p.exited || p.reaped || p.reapRequested || p.ownershipLost {
 		return nil
 	}
+	if p.managed != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		return p.managed.Signal(ctx, syscall.SIGINT)
+	}
 	return syscall.Kill(-p.cmd.Process.Pid, syscall.SIGINT)
 }
 
@@ -1119,6 +1196,11 @@ func (s *Session) Terminate(id string) (bool, error) {
 	defer p.mu.Unlock()
 	if p.exited || p.reaped || p.reapRequested || p.ownershipLost {
 		return false, nil
+	}
+	if p.managed != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		return true, p.managed.Signal(ctx, syscall.SIGKILL)
 	}
 	return true, syscall.Kill(-p.cmd.Process.Pid, syscall.SIGKILL)
 }

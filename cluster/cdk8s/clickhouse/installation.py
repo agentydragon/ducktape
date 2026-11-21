@@ -105,16 +105,6 @@ def _password(secret: str) -> dict[str, object]:
     return {"valueFrom": {"secretKeyRef": {"name": secret, "key": client.PASSWORD_KEY}}}
 
 
-def _one_per_host(labels: dict[str, str]) -> dict[str, object]:
-    return {
-        "podAntiAffinity": {
-            "requiredDuringSchedulingIgnoredDuringExecution": [
-                {"labelSelector": {"matchLabels": labels}, "topologyKey": "kubernetes.io/hostname"}
-            ]
-        }
-    }
-
-
 def _claim_spec(storage: str, storage_class: str) -> dict[str, object]:
     return {
         "accessModes": ["ReadWriteOnce"],
@@ -131,7 +121,7 @@ def _clickhouse_pod_template(
         metadata={"labels": client.LABELS},
         spec={
             "nodeSelector": node_selector,
-            "affinity": _one_per_host(client.LABELS),
+            "affinity": node_scheduling.one_per_host(client.LABELS),
             "terminationGracePeriodSeconds": 120,
             "securityContext": {"fsGroup": _CLICKHOUSE_UID, "seccompProfile": _RUNTIME_DEFAULT_SECCOMP},
             "containers": [
@@ -162,7 +152,7 @@ def _keeper_pod_template(
         spec={
             "nodeSelector": node_selector,
             "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
-            "affinity": _one_per_host(_KEEPER.pods.selector),
+            "affinity": node_scheduling.one_per_host(_KEEPER.pods.selector),
             "securityContext": {"fsGroup": _CLICKHOUSE_UID, "seccompProfile": _RUNTIME_DEFAULT_SECCOMP},
             "containers": [
                 {

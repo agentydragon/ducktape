@@ -167,11 +167,9 @@ def _deployment(chart: Chart) -> None:
             namespace=NAMESPACE,
             labels=_WEB.pods.selector,
             annotations={
-                **namespaces.initial_memory_request_annotations(
+                **namespaces.initial_request_annotations(
                     # Peak 30-day working set was 338Mi.
-                    ContainerPolicy.memory_requests_only(
-                        "plaid-spend", cpu_request=_CPU_REQUEST, memory_floor="384Mi", memory_limit=_MEMORY_LIMIT
-                    )
+                    ContainerPolicy.cpu_and_memory_requests_only("plaid-spend", memory_floor="384Mi")
                 ),
                 "description": (
                     "Plaid Spend serves its Authentik-protected browser UI and desktop API from the same"

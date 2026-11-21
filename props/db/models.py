@@ -755,10 +755,7 @@ class LLMRunCost(Base):
     """Proxy-logged token usage and costs aggregated by (agent_run_id, model)."""
 
     __tablename__ = "llm_run_costs"
-    __table_args__ = {"info": {"is_view": True}, "extend_existing": True}  # noqa: RUF012
-
-    # Tell SQLAlchemy NOT to create this as a table
-    __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
+    __table_args__ = ({"info": {"is_view": True}, "extend_existing": True},)
 
     agent_run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
     model: Mapped[str] = mapped_column(String, primary_key=True)
@@ -776,8 +773,7 @@ class AgentRunBudgetStatus(Base):
     """
 
     __tablename__ = "agent_run_budget_status"
-    __table_args__ = {"info": {"is_view": True}, "extend_existing": True}  # noqa: RUF012
-    __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
+    __table_args__ = ({"info": {"is_view": True}, "extend_existing": True},)
 
     agent_run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
     budget_usd: Mapped[float] = mapped_column(nullable=False)
@@ -793,8 +789,7 @@ class TpOccurrenceCredit(Base):
     """
 
     __tablename__ = "tp_occurrence_credits"
-    __table_args__ = {"info": {"is_view": True}, "extend_existing": True}  # noqa: RUF012
-    __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
+    __table_args__ = ({"info": {"is_view": True}, "extend_existing": True},)
 
     critic_run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
     tp_id: Mapped[str] = mapped_column(String, primary_key=True)
@@ -816,8 +811,7 @@ class RecallByRun(Base):
     """Includes in-progress and terminal runs; zero missing_grading_edges means grading is complete."""
 
     __tablename__ = "recall_by_run"
-    __table_args__ = {"info": {"is_view": True}, "extend_existing": True}  # noqa: RUF012
-    __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
+    __table_args__ = ({"info": {"is_view": True}, "extend_existing": True},)
 
     critic_run_id: Mapped[UUID] = mapped_column(primary_key=True)
 
@@ -848,8 +842,7 @@ class RecallByDefinitionExample(Base):
     """
 
     __tablename__ = "recall_by_definition_example"
-    __table_args__ = {"info": {"is_view": True}, "extend_existing": True}  # noqa: RUF012
-    __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
+    __table_args__ = ({"info": {"is_view": True}, "extend_existing": True},)
 
     critic_image_digest: Mapped[str] = mapped_column(String, primary_key=True)
     critic_model: Mapped[str] = mapped_column(String, primary_key=True)
@@ -877,8 +870,7 @@ class RecallByDefinitionSplitKind(Base):
     """
 
     __tablename__ = "recall_by_definition_split_kind"
-    __table_args__ = {"info": {"is_view": True}, "extend_existing": True}  # noqa: RUF012
-    __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
+    __table_args__ = ({"info": {"is_view": True}, "extend_existing": True},)
 
     split: Mapped[Split] = mapped_column(primary_key=True)
     example_kind: Mapped[ExampleKind] = mapped_column(EXAMPLE_KIND_ENUM_TYPE, primary_key=True)
@@ -909,8 +901,7 @@ class RecallByExample(Base):
     """
 
     __tablename__ = "recall_by_example"
-    __table_args__ = {"info": {"is_view": True}, "extend_existing": True}  # noqa: RUF012
-    __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
+    __table_args__ = ({"info": {"is_view": True}, "extend_existing": True},)
 
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
     example_kind: Mapped[ExampleKind] = mapped_column(EXAMPLE_KIND_ENUM_TYPE, primary_key=True)
@@ -939,8 +930,7 @@ class ParetoFrontierByExample(Base):
     """
 
     __tablename__ = "pareto_frontier_by_example"
-    __table_args__ = {"info": {"is_view": True}, "extend_existing": True}  # noqa: RUF012
-    __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
+    __table_args__ = ({"info": {"is_view": True}, "extend_existing": True},)
 
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
     split: Mapped[Split] = mapped_column(primary_key=True)
@@ -957,8 +947,7 @@ class OccurrenceStatistics(Base):
     """Per-occurrence/run statistics: credit_stats.n is critic run count, .mean is average credit."""
 
     __tablename__ = "occurrence_statistics"
-    __table_args__ = {"info": {"is_view": True}, "extend_existing": True}  # noqa: RUF012
-    __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
+    __table_args__ = ({"info": {"is_view": True}, "extend_existing": True},)
 
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
     split: Mapped[Split] = mapped_column(primary_key=True)
@@ -984,7 +973,6 @@ class LLMRequestCost(Base):
             "comment": "Per-request LLM cost (joins llm_requests with model_metadata pricing).",
         },
     )
-    __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
     agent_run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
@@ -1006,7 +994,6 @@ class ValidationRecallByDefinition(Base):
             "comment": "Aggregated validation recall by (definition, model) over full-snapshot validation examples.",
         },
     )
-    __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
 
     critic_image_digest: Mapped[str] = mapped_column(String, primary_key=True)
     critic_model: Mapped[str] = mapped_column(String, primary_key=True)

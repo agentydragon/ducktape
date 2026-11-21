@@ -20,13 +20,10 @@ type localExecutionHandle struct {
 }
 
 func (h *localExecutionHandle) Executor() executorpb.ExecutorServer { return h.adapter }
-func (h *localExecutionHandle) StopAndFence(ctx context.Context) error {
+func (h *localExecutionHandle) StopAndFence(context.Context) error {
 	h.mu.Lock()
 	h.expected = true
 	h.mu.Unlock()
-	if err := h.adapter.Drain(ctx); err != nil {
-		return err
-	}
 	if err := h.adapter.Close(); err != nil {
 		return err
 	}
@@ -77,7 +74,7 @@ func executionRuntimeConfig(t *testing.T, url string, acquire func(context.Conte
 		}
 		localAdapter, err := typedproxy.New(context.Background(), client, func(ctx context.Context, _ *executorpb.ExecutionScope, _ bool, accept func(context.Context) error) error {
 			return accept(ctx)
-		}, nil)
+		})
 		if err != nil {
 			return nil, err
 		}

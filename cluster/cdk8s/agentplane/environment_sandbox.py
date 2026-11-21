@@ -34,12 +34,13 @@ from agentplane.env.config import (
     LAUNCH_FILE,
     Codex,
     CodexReadiness,
+    CompanionExecutorOwner,
     Configuration,
-    ContainerExecutor,
     Endpoint,
     EnvironmentRuntimeControl,
+    Executor,
     Harness,
-    PodEnvironment,
+    PID1Environment,
     SVIDEndpoint,
 )
 from agentplane.net.peertls.config import HISTORY_SERVICE_URI, MTLS, TLS
@@ -58,6 +59,7 @@ from cluster.cdk8s.agentplane import (
 )
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.platform_instructions import agent_cli_environment, platform_instructions, service_urls
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy, isolate_ingress
 from cluster.cdk8s.service_ref import Pods
 from cluster.cdk8s.settings_file import SettingsFile
@@ -243,10 +245,7 @@ class EnvironmentSandboxTemplate(Construct):
                 self.env, [*sandbox_pod.proxy_environment(), *(key.env() for key in self.key_files)]
             ),
             resources=self.executor_resources
-            or k8s.ResourceRequirements(
-                requests={"cpu": k8s.Quantity.from_string("250m"), "memory": k8s.Quantity.from_string("512Mi")},
-                limits={"cpu": k8s.Quantity.from_string("2"), "memory": k8s.Quantity.from_string("2Gi")},
-            ),
+            or container_resources(cpu="250m", memory="512Mi", cpu_limit="2", memory_limit="2Gi"),
             liveness_probe=liveness_probe,
             readiness_probe=readiness_probe,
             volume_mounts=[
@@ -272,7 +271,7 @@ class EnvironmentSandboxTemplate(Construct):
         )
         llm_url = llm_ingress.proxied_url(self.env.namespace)
         config = Configuration(
-            version=2,
+            version=3,
             session_reconcile_concurrency=self.session_reconcile_concurrency,
             codex_readiness=self.codex_readiness,
             state_dir=_STATE_DIR,
@@ -303,9 +302,14 @@ class EnvironmentSandboxTemplate(Construct):
             ),
             claude=Harness(binary="/bin/claude", base_url=llm_url, token_env="ANTHROPIC_AUTH_TOKEN"),
             codex=Codex(binary="/bin/codex", base_url=f"{llm_url}/v1", token_env="OPENAI_API_KEY"),
-            environment=PodEnvironment(
+            environment=PID1Environment(
                 supervision="pid1",
-                executor=ContainerExecutor(url=_EXECUTOR_URL, socket=_EXECUTOR_SOCKET, implementation="native")
+                executor=Executor(
+                    url=_EXECUTOR_URL,
+                    owner=CompanionExecutorOwner(socket=_EXECUTOR_SOCKET),
+                    implementation="native",
+                    placement="direct",
+                )
                 if self.env.isolated_codex_executor
                 else None,
             ),
@@ -347,10 +351,7 @@ class EnvironmentSandboxTemplate(Construct):
                 ],
             ),
             resources=self.environment_runtime_resources
-            or k8s.ResourceRequirements(
-                requests={"cpu": k8s.Quantity.from_string("500m"), "memory": k8s.Quantity.from_string("1Gi")},
-                limits={"cpu": k8s.Quantity.from_string("2"), "memory": k8s.Quantity.from_string("4Gi")},
-            ),
+            or container_resources(cpu="500m", memory="1Gi", cpu_limit="2", memory_limit="4Gi"),
             ports=[k8s.ContainerPort(name="env-runtime", container_port=ENVIRONMENT_RUNTIME_SERVICE_PORT)],
             volume_mounts=[
                 *self._execution_mounts(),

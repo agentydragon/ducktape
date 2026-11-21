@@ -348,6 +348,11 @@ Session summaries (`GetSessionSummary`, and `BatchGetSessionSummaries` for up to
 at once, leaving out any it has no history for) read that fold and report the committed cursor beside
 the folded one.
 
+`WatchSessionSummaries` in selected mode follows up to 200 named Sessions in the caller's read scope. It
+subscribes before reading and sends a full snapshot first, then changed summaries and removals.
+Notifications are wakeups, not data: after listener recovery the service rereads the selected rows.
+A reconnect starts with a new snapshot and fresh authorization.
+
 `WatchSessionSummaries` tells a reader when to re-read: each fold commit NOTIFYs the history
 database, and every replica forwards that to its watchers as a payload-free `changed`. A stream opens
 with one `changed` to cover whatever the caller missed, and an idle stream ends with

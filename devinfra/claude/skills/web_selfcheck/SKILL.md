@@ -83,9 +83,11 @@ tracebacks — the exact text is what the user needs to correlate with git log.
 
 ## SPEC acceptance checks
 
-Each check below corresponds one-to-one with a numbered criterion in
-SPEC.md. Cross-reference the SPEC for the authoritative statement of what
-the check is verifying.
+The check IDs below are this skill's own, not SPEC criterion numbers, and the
+checks do not cover every criterion: SPEC criteria 1 (daemon `/health`), 2
+(session env file) and 6 (background command output) have no check here.
+Cross-reference the SPEC for the authoritative statement of what a check is
+verifying.
 
 ### Common
 
@@ -100,7 +102,7 @@ Presence only — there is **no working lightweight HTTP probe**. The
 `remote.buildbuddy.io` gateway returns `415` for the old `GetUser` curl _with
 or without_ the key (it rejects the content type before auth), so that probe
 cannot distinguish a valid key. The authoritative validity test is the live
-RBE build in **C3 / W4**: a `401`/`403` or a BES auth rejection there is the
+RBE build in **C3 / W3**: a `401`/`403` or a BES auth rejection there is the
 real signal of a bad key.
 
 **C2 — GITHUB_TOKEN is present and valid.**
@@ -235,12 +237,19 @@ rm -rf /tmp/selfcheck2
 
 Pass: `1`.
 
-**CLI3 — `git stash` is blocked (but `list` / `show` allowed).**
+**CLI3 — `git stash` is not blocked by the git shim.**
+
+The CLI profile sets `block_stash: false` (see "CLI Profile" in SPEC.md), so the
+shim passes `git stash` through. Run it in a scratch repo: in the user's
+checkout it would stash their uncommitted changes.
 
 ```bash
-git stash 2>&1 | grep -c '\[git-shim\] BLOCKED'
-git stash list 2>&1 | grep -c '\[git-shim\] BLOCKED'  # must be 0
+(cd /tmp && mkdir -p selfcheck3 && cd selfcheck3 && \
+  git init -q && git stash 2>&1 | grep -c '\[git-shim\] BLOCKED')
+rm -rf /tmp/selfcheck3
 ```
+
+Pass: `0`. `1` means the profile in use sets `block_stash: true`.
 
 **CLI4 — direnv bridge propagates `.envrc` exports into Bash tool calls.**
 
@@ -301,10 +310,10 @@ These are not in SPEC.md but catch real-world failure modes. Include them
 in the report under a separate "Diagnostics" heading.
 
 **Before running D1/D2**, skim `devinfra/claude/docs/web-setup-debug.md`
-— it documents the historical failure modes (SHA-pinned setup URLs, the
-Firecracker "pin drift on persistent rootfs" class, the Nix 2.34.3 SIGABRT
-masking issue) and is the authoritative reference for
-how `web_setup.sh` is supposed to behave. In particular, the
+— the current runbook for `web_setup.sh` failures. It covers a stale cached
+setup-script URL, Nix local builds disabled (or a confusing assertion failure
+after build failures), non-deterministic hook release pins, and the Firecracker
+"pin drift on persistent rootfs" class. In particular, the
 **"Pin drift on persistent rootfs"** section explains why a container
 running for more than a day or two can silently have a stale `.#devtools`
 closure even though `web_setup.sh` re-runs every session, and gives the
@@ -410,7 +419,7 @@ Profile: <CLI/Web>    Summary: <healthy / degraded / broken>
 | C7  | daemon log clean               | OK/FAIL       | N errors              |
 | C8  | OTLP tracing                   | OK/FAIL       | HTTP <code>           |
 | C9  | bbr analysis cache warm        | OK/WARN/AMBIG | cold=Xs warm=Ys       |
-| CLI1–4 / W1–4                   | ...           | ...                   |
+| CLI1–4 / W1–3, W5               | ...           | ...                   |
 
 ## Out-of-SPEC diagnostics
 

@@ -20,28 +20,11 @@ import (
 	modelconfigpb "github.com/agentydragon/ducktape/agentplane/llm_ingress/v1"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/observability"
-	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
-
-// kubernetesIdentityUIDs reads the policy namespace's Identities uncached, for the central
-// samplers' delegated Identity callers.
-func kubernetesIdentityUIDs(kubeConfig *rest.Config, policyNamespace string) (auth.IdentityUIDReader, error) {
-	scheme := runtime.NewScheme()
-	if err := policyapi.AddToScheme(scheme); err != nil {
-		return nil, err
-	}
-	objects, err := client.New(kubeConfig, client.Options{Scheme: scheme})
-	if err != nil {
-		return nil, err
-	}
-	return auth.KubernetesIdentityUIDs(objects, policyNamespace)
-}
 
 func Run() int {
 	c, err := loadConfig()
@@ -78,7 +61,7 @@ func serve(ctx context.Context, c config, logger *slog.Logger) error {
 	}
 	var identityUIDs auth.IdentityUIDReader
 	if c.CentralSamplerIdentityCallers {
-		if identityUIDs, err = kubernetesIdentityUIDs(kubeConfig, c.PolicyNamespace); err != nil {
+		if identityUIDs, err = auth.NewKubernetesIdentityUIDs(kubeConfig, c.PolicyNamespace); err != nil {
 			return err
 		}
 	}
@@ -90,9 +73,6 @@ func serve(ctx context.Context, c config, logger *slog.Logger) error {
 	tlsConfig, err := c.RPC.TLSConfigWithServices(peertls.LLMIngressURI)
 	if err != nil {
 		return err
-	}
-	if tlsConfig == nil {
-		return errors.New("rpc.tls is required")
 	}
 	connState, err := peertls.ConfigureHTTPServerTLSExpiry(tlsConfig)
 	if err != nil {

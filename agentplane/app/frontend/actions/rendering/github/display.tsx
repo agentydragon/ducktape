@@ -46,6 +46,15 @@ export function RepoTarget({
   );
 }
 
+/** The compact card line of an Action on one repository: `owner/repo`. */
+export function RepoSlug({ args }: PreviewProps<RepoArgs>): JSX.Element {
+  return (
+    <Text size="sm">
+      {args.owner}/{args.repo}
+    </Text>
+  );
+}
+
 export function ResultRows({
   children,
   count,

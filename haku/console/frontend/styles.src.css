@@ -407,21 +407,6 @@
   text-transform: uppercase;
 }
 
-/* Inline (icon) form: the icon stands in for the label on the value's own line. */
-.haku-shell-field-inline {
-  display: flex;
-  align-items: baseline;
-  gap: 0.45rem;
-}
-
-.haku-shell-field-icon {
-  flex: 0 0 auto;
-  align-self: flex-start;
-  margin-top: 0.1rem;
-  color: var(--mantine-color-dimmed);
-  display: inline-flex;
-}
-
 .haku-shell-field-value {
   min-width: 0;
   overflow-wrap: anywhere;

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from functools import partial
 
 import numpy as np
 import numpy.typing as npt
@@ -128,97 +129,45 @@ def _pe_bundle_from_channels(
     )
 
 
-def level_matrix_with_month_override(*, default: float, override: float, month: int) -> LevelOverride:
-    def build(request: ExogenousSamplingRequest) -> npt.NDArray[np.float64]:
-        matrix = np.full((request.rollout_count, request.horizon_months + 1), default, dtype=np.float64)
-        matrix[:, min(month, request.horizon_months)] = override
+def _with_override[T: np.generic](
+    dtype: type[T], *, step: bool, default: float, override: float, month: int
+) -> Callable[[ExogenousSamplingRequest], npt.NDArray[T]]:
+    """Matrix of `default` with `override` at `month` (clamped to the horizon), or from `month` on when `step`."""
+
+    def build(request: ExogenousSamplingRequest) -> npt.NDArray[T]:
+        matrix = np.full((request.rollout_count, request.horizon_months + 1), default, dtype=dtype)
+        month_index = min(month, request.horizon_months)
+        matrix[:, slice(month_index, None) if step else month_index] = override
         return matrix
 
     return build
 
 
-def level_matrix_with_step(*, default: float, override: float, month: int) -> LevelOverride:
-    def build(request: ExogenousSamplingRequest) -> npt.NDArray[np.float64]:
-        matrix = np.full((request.rollout_count, request.horizon_months + 1), default, dtype=np.float64)
-        matrix[:, min(month, request.horizon_months) :] = override
-        return matrix
-
-    return build
-
-
-def event_matrix_with_month_override(*, default: bool, override: bool, month: int) -> EventOverride:
-    def build(request: ExogenousSamplingRequest) -> npt.NDArray[np.bool_]:
-        matrix = np.full((request.rollout_count, request.horizon_months + 1), default, dtype=np.bool_)
-        matrix[:, min(month, request.horizon_months)] = override
-        return matrix
-
-    return build
+level_matrix_with_month_override = partial(_with_override, np.float64, step=False)
+level_matrix_with_step = partial(_with_override, np.float64, step=True)
+event_matrix_with_month_override = partial(_with_override, np.bool_, step=False)
+event_matrix_with_step = partial(_with_override, np.bool_, step=True)
+int_matrix_with_month_override = partial(_with_override, np.int64, step=False)
+int_matrix_with_step = partial(_with_override, np.int64, step=True)
 
 
-def event_matrix_with_step(*, default: bool, override: bool, month: int) -> EventOverride:
-    def build(request: ExogenousSamplingRequest) -> npt.NDArray[np.bool_]:
-        matrix = np.full((request.rollout_count, request.horizon_months + 1), default, dtype=np.bool_)
-        matrix[:, min(month, request.horizon_months) :] = override
-        return matrix
-
-    return build
-
-
-def int_matrix_with_month_override(*, default: int, override: int, month: int) -> IntOverride:
-    def build(request: ExogenousSamplingRequest) -> npt.NDArray[np.int64]:
-        matrix = np.full((request.rollout_count, request.horizon_months + 1), default, dtype=np.int64)
-        matrix[:, min(month, request.horizon_months)] = override
-        return matrix
-
-    return build
-
-
-def int_matrix_with_step(*, default: int, override: int, month: int) -> IntOverride:
-    def build(request: ExogenousSamplingRequest) -> npt.NDArray[np.int64]:
-        matrix = np.full((request.rollout_count, request.horizon_months + 1), default, dtype=np.int64)
-        matrix[:, min(month, request.horizon_months) :] = override
-        return matrix
-
-    return build
-
-
-def _level_matrix(value: LevelOverride, request: ExogenousSamplingRequest) -> npt.NDArray[np.float64]:
+def _constant_matrix[T: np.generic](
+    value: float | npt.NDArray[T] | Callable[[ExogenousSamplingRequest], npt.NDArray[T]],
+    request: ExogenousSamplingRequest,
+    *,
+    dtype: type[T],
+) -> npt.NDArray[T]:
     raw = value(request) if callable(value) else value
-    matrix = (
-        np.asarray(raw, dtype=np.float64)
-        if isinstance(raw, np.ndarray)
-        else np.full((request.rollout_count, request.horizon_months + 1), float(raw), dtype=np.float64)
-    )
-    _check_shape(matrix, request)
-    return matrix
-
-
-def _int_matrix(value: IntOverride, request: ExogenousSamplingRequest) -> npt.NDArray[np.int64]:
-    raw = value(request) if callable(value) else value
-    matrix = (
-        np.asarray(raw, dtype=np.int64)
-        if isinstance(raw, np.ndarray)
-        else np.full((request.rollout_count, request.horizon_months + 1), int(raw), dtype=np.int64)
-    )
-    _check_shape(matrix, request)
-    return matrix
-
-
-def _event_matrix(value: EventOverride, request: ExogenousSamplingRequest) -> npt.NDArray[np.bool_]:
-    raw = value(request) if callable(value) else value
-    matrix = (
-        np.asarray(raw, dtype=np.bool_)
-        if isinstance(raw, np.ndarray)
-        else np.full((request.rollout_count, request.horizon_months + 1), bool(raw), dtype=np.bool_)
-    )
-    _check_shape(matrix, request)
-    return matrix
-
-
-def _check_shape(matrix: np.ndarray, request: ExogenousSamplingRequest) -> None:
     expected = (request.rollout_count, request.horizon_months + 1)
+    matrix = np.asarray(raw, dtype=dtype) if isinstance(raw, np.ndarray) else np.full(expected, raw, dtype=dtype)
     if matrix.shape != expected:
         raise ValueError(f"constant fixture matrix has shape {matrix.shape}; expected {expected}")
+    return matrix
+
+
+_level_matrix = partial(_constant_matrix, dtype=np.float64)
+_int_matrix = partial(_constant_matrix, dtype=np.int64)
+_event_matrix = partial(_constant_matrix, dtype=np.bool_)
 
 
 def check_two_constructions(paths: MarketPaths) -> None:

@@ -6,8 +6,7 @@ import pytest
 import pytest_bazel
 from python.runfiles import Runfiles
 
-from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
-from skills.freecad.conftest import assert_run_ok, copy_outputs
+from skills.freecad.conftest import Stage, StageRunner
 from skills.freecad.testing.compare import assert_dxf_equal, assert_pdf_equal, assert_svg_equal
 
 # The scripts below are driven by runfiles path; gazelle cannot see the dependency.
@@ -22,25 +21,14 @@ _GOLDEN_PDF = "ducktape/skills/freecad/examples/bracket/drawing.pdf"
 
 
 @pytest.fixture(scope="module")
-def export_outputs(runfiles: Runfiles, tmp_path_factory: pytest.TempPathFactory, freecad_gui) -> Path:
+def export_outputs(stage_runner: StageRunner) -> Path:
     """Run parametric_sketch.py then export_page.py and return the output directory."""
-    out_dir = tmp_path_factory.mktemp("parametric-sketch")
-    uo = undeclared_outputs_dir() / "parametric-sketch"
-    uo.mkdir(parents=True, exist_ok=True)
-
-    runfiles_root = runfiles.root()
-    result = freecad_gui(runfiles_root / _PARAMETRIC_SKETCH, outdir=out_dir)
-    assert_run_ok(result, "parametric_sketch.py", uo, "parametric_sketch")
-
-    fcstd = out_dir / "bracket.FCStd"
-    assert fcstd.exists(), "bracket.FCStd not produced — see parametric_sketch.stderr in test outputs"
-
-    result2 = freecad_gui(runfiles_root / _EXPORT_PAGE, outdir=out_dir, env={"INPUT": str(fcstd)})
-    assert_run_ok(result2, "export_page.py", uo, "export_page")
-
-    copy_outputs(out_dir, uo)
-
-    return out_dir
+    return stage_runner.run(
+        "parametric-sketch",
+        Stage(_PARAMETRIC_SKETCH, "parametric_sketch"),
+        Stage(_EXPORT_PAGE, "export_page"),
+        fcstd="bracket.FCStd",
+    )
 
 
 def test_dxf_golden(runfiles: Runfiles, export_outputs: Path) -> None:

@@ -564,34 +564,6 @@ func (m *Manager) write(host *Process, ctx context.Context, payload []byte) erro
 	return nil
 }
 
-func (m *Manager) detach(runtime *Session) {
-	m.mu.Lock()
-	if m.active[runtime.sessionID] == runtime {
-		delete(m.active, runtime.sessionID)
-	}
-	for id, pending := range m.pending {
-		if pending.session == runtime {
-			delete(m.pending, id)
-			select {
-			case pending.response <- codeReply{Err: errors.New("code-mode session detached")}:
-			default:
-			}
-			if pending.initial != nil {
-				select {
-				case pending.initial <- codeReply{Err: errors.New("code-mode session detached")}:
-				default:
-				}
-			}
-		}
-	}
-	for id, delegate := range m.delegates {
-		if delegate == runtime {
-			delete(m.delegates, id)
-		}
-	}
-	m.mu.Unlock()
-}
-
 func (m *Manager) endDelegate(runtime *Session, id int64) {
 	m.mu.Lock()
 	if m.delegates[id] == runtime {

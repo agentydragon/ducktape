@@ -11,6 +11,7 @@ import {
   githubPresentation,
   GitHubItem,
   pageInput,
+  RepoSlug,
   RepoTarget,
   repoInput,
   ResultRows,
@@ -184,11 +185,7 @@ export const discoveryRenderers: ReadonlyMap<string, ActionPresentation> = new M
     githubPresentation({
       label: "List GitHub repository collaborators",
       schema: repoInput.extend({ ...pageInput, affiliation: z.enum(["direct", "outside", "all"]).optional() }),
-      compact: ({ args }) => (
-        <Text size="sm">
-          {args.owner}/{args.repo}
-        </Text>
-      ),
+      compact: RepoSlug,
       request: ({ args }) => (
         <Stack gap={4}>
           <RepoTarget repo={args} />

@@ -45,10 +45,9 @@ def plaid_mcp(
     authentik: Kustomization,
     seaweedfs_operator: Kustomization,
 ) -> Kustomization:
-    name = "plaid-mcp"
     return flux_kustomization(
         chart,
-        name,
+        "plaid-mcp",
         directory,
         timeout="10m",
         # Web OIDC credentials are supplied by an ExternalSecret and required by

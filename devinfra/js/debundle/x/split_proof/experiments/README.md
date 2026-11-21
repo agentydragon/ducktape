@@ -96,6 +96,7 @@ The `Decidable` instances run the fast algorithms, compiled and in the kernel. T
 | `mkPlan` (untrusted)                  | list scans                                               | index maps; the same modules as before on 30 real splits                                                      |
 
 **Compiled, real bundles**, split into contiguous blocks (a timing workload; § 7 shows which block splits are valid). "Whole run" is parse JSON, footprints, `mkPlan` and the seven checks; every stage is in [`records/real_bundles_3_final.md`](records/real_bundles_3_final.md).
+The minified rows were measured with a declarator list as one statement; `dump.mjs` now writes these bundles as 447 and 1,072 statements.
 
 | Input             | Statements | Modules | Whole run before        | Whole run now | `ReadsClosed` now | Verdict                          |
 | ----------------- | ---------- | ------- | ----------------------- | ------------- | ----------------- | -------------------------------- |
@@ -156,6 +157,7 @@ same nodes, and the analysis that was my weakest trusted part (including the cal
 and later proved.
 
 [`dump.mjs`](lowering/dump.mjs) writes ESTree as JSON, with an independent oracle (`eslint-scope`) for each statement's free variables.
+A top-level `var`, `let` or `const` list of several declarators becomes one statement per declarator, so a spec can place them apart.
 [`Lower.lean`](../lean/Experiments/Lower.lean) (306 lines) reads it as `Lean.Json`, which is untyped, so **every** node type of JavaScript is representable.
 It scans what each statement declares, mentions and assigns. The scan is total and sound by construction:
 
@@ -169,16 +171,16 @@ Adding precision is the only way to get something wrong. So I compared against t
 
 | Bundle                                                      | Statements | Inert | Effect | Hoisted functions | Missed free names | Mis-classified eager | Exactly the oracle's set |
 | ----------------------------------------------------------- | ---------- | ----- | ------ | ----------------- | ----------------- | -------------------- | ------------------------ |
-| lodash (subset)                                             | 670        | 638   | 32     | 167               | 0                 | 0                    | 99.3%                    |
-| acorn                                                       | 447        | 156   | 291    | 42                | 0                 | 0                    | 99.8%                    |
-| semver (CJS)                                                | 59         | 58    | 1      | 0                 | 0                 | 0                    | 100%                     |
-| zod                                                         | 1,072      | 874   | 198    | 560               | 0                 | 0                    | 100%                     |
-| acorn, minified                                             | 374        | 84    | 290    | 42                | 0                 | 0                    | 99.7%                    |
-| zod, minified                                               | 805        | 688   | 117    | 560               | 0                 | 0                    | 100%                     |
-| scoping stress file ([`torture.mjs`](lowering/torture.mjs)) | 23         | 23    | 0      | 10                | 0                 | 0                    | 100%                     |
+| lodash (subset)                                             | 670        | 636   | 34     | 167               | 0                 | 0                    | 99.3%                    |
+| acorn                                                       | 447        | 155   | 292    | 42                | 0                 | 0                    | 99.8%                    |
+| semver (CJS)                                                | 59         | 57    | 2      | 0                 | 0                 | 0                    | 100%                     |
+| zod                                                         | 1,072      | 873   | 199    | 560               | 0                 | 0                    | 100%                     |
+| acorn, minified                                             | 447        | 155   | 292    | 42                | 0                 | 0                    | 99.8%                    |
+| zod, minified                                               | 1,072      | 873   | 199    | 560               | 0                 | 0                    | 100%                     |
+| scoping stress file ([`torture.mjs`](lowering/torture.mjs)) | 28         | 28    | 0      | 10                | 0                 | 0                    | 100%                     |
 | the 12-statement example                                    | 12         | 10    | 2      | 4                 | 0                 | 0                    | 100%                     |
 
-That is 3,427 real statements with no missed free variable. "Inert" and "effect" are the verdicts of `Effects.lean`; the oracle has none. On the example, `extract.mjs` (the first prototype, which counts every call as an effect) and the Lean analysis give identical footprints for 10 of 12 statements: the other two are the calls `register(…)`, where Lean sees that the callee only writes `registry`.
+That is 3,767 real statements with no missed free variable. A minified bundle has the statements of the readable one: its declarator lists are split. "Inert" and "effect" are the verdicts of `Effects.lean`; the oracle has none. On the example, `extract.mjs` (the first prototype, which counts every call as an effect) and the Lean analysis give identical footprints for 10 of 12 statements: the other two are the calls `register(…)`, where Lean sees that the callee only writes `registry`.
 No real bundle contained a node type the analysis does not recognize, so the fallback was exercised on a synthetic unknown node: it recorded the type and still collected every identifier below it.
 
 **Does a zero mean anything?** I injected bugs into `Lower.lean` and scored them against the oracle.
@@ -186,12 +188,12 @@ All six _unsound_ mutants were caught: skipping a member expression's object, `e
 and ignoring pattern defaults, letting parameters see body-level names, binding a catch parameter over the whole `try` (caught only by the stress file).
 One mutant, forgetting a catch parameter is local, is on the safe side and is correctly not flagged. The oracle is only as strong as its corpus.
 
-**What real bundles look like**, from the same runs. `Effects.lean` makes 929 of 3,427 statements effects (27%); the allow-list of the first version made 1,272 (37%):
+**What real bundles look like**, from the same runs. `Effects.lean` makes 1,018 of 3,767 statements effects (27%); the allow-list of the first version made 1,272 (37%):
 
-- acorn: 291 (minified, 290), of which 272 are `proto.method = function …`: a store into the prototype of an exported class, and the names a bundle exports start out held by the world;
-- semver: 1 (a call);
-- zod: 198, of which 183 are `var X = factory(…)` calls; minified, 117;
-- lodash: 32: 16 calls, 9 logical expressions, 4 conditionals, 2 member reads and an `if`.
+- acorn: 292 (minified too), of which 272 are `proto.method = function …`: a store into the prototype of an exported class, and the names a bundle exports start out held by the world;
+- semver: 2 (a call and a member read);
+- zod: 199 (minified too), of which 183 are `var X = factory(…)` calls;
+- lodash: 34: 17 calls, 9 logical expressions, 4 conditionals, 3 member reads and an `if`.
 
 The bundles also contain statements that assign to a top-level name (lodash 1, acorn 2, zod 7), which the model cannot place in another module.
 
@@ -207,13 +209,13 @@ The generated certificate is accepted by the kernel; its axioms are `propext`, `
   The principled endpoint is a typed ESTree with structural recursion: then `decide` can run the analysis inside the kernel and the certificate covers parse output → footprints → plan.
   That is a bigger build; section 2 is the template.
 - A semantics. The frame assumption is unchanged. Only its _footprint side_ moved into Lean.
-- Imports and exports in bundles (esbuild leaves some), top-level reassignment, and `import.meta`: rejected or guarded, not modeled.
+- Imports from outside modules, top-level reassignment, and `import.meta`: rejected or guarded, not modeled. `lowersplit` keeps a bundle's `import` statements in the entry and writes them first; that this keeps the order of evaluation is argued in the [README](../README.md#what-is-not-proved), not proved.
 
 Run it: `./run.sh --lowering` (installs esbuild, lodash-es, acorn, zod, semver, eslint-scope into `experiments/lowering/`).
 
 ## 7. Real splits: halves, cuts, blocks, random placements
 
-A bundle cannot be cut anywhere. This section runs the checker on 2,740 splits of six real bundles and runs each result in Node.
+A bundle cannot be cut anywhere. This section runs the checker on 2,892 splits of six real bundles and runs each result in Node.
 Run it with [`splits/run_all.sh`](splits/run_all.sh) (about 10 minutes, most of it the footprint analysis of `zod`, which runs once per bundle; after `./run.sh --lowering`).
 
 For every split, `lowersplit --force` checks it and writes the modules even when a check rejects it. Then [`splits/smoke.mjs`](splits/smoke.mjs) calls the
@@ -225,25 +227,25 @@ One JSON line per split is in [`splits/results/`](splits/results); [`results/sum
 | Strategy                                                                           | Splits    | Accepted  | Accepted, Node differs | Rejected, Node breaks | Rejected, Node fine | Failing checks (splits)                                  |
 | ---------------------------------------------------------------------------------- | --------- | --------- | ---------------------- | --------------------- | ------------------- | -------------------------------------------------------- |
 | halves: `[0, n/2)` and `[n/2, n)`, the second module is the entry                  | 6         | 6         | 0                      | 0                     | 0                   | –                                                        |
-| every single cut `[0, c)` and `[c, n)` (every 4th for zod, every cut for the rest) | 2,014     | 2,001     | 0                      | 10                    | 3                   | `AssignsHome` 13                                         |
-| 2–8 contiguous blocks                                                              | 42        | 26        | 0                      | 14                    | 2                   | `OrderOk` 16, `AssignsHome` 2                            |
-| each statement to a random one of 2, 3, 5 or 8 modules                             | 480       | 2         | 0                      | 476                   | 2                   | `OrderOk` 478, `AssignsHome` 370, `ExportNames` 158      |
-| single cuts with the _first_ module as the entry                                   | 198       | 0         | 0                      | 198                   | 0                   | `ExportOutsideEntry` 198, `OrderOk` 198, `AssignsHome` 1 |
-| **all**                                                                            | **2,740** | **2,035** | **0**                  | **698**               | **7**               |                                                          |
+| every single cut `[0, c)` and `[c, n)` (every 4th for zod, every cut for the rest) | 2,153     | 2,136     | 0                      | 14                    | 3                   | `AssignsHome` 17                                         |
+| 2–8 contiguous blocks                                                              | 42        | 26        | 0                      | 16                    | 0                   | `OrderOk` 16, `AssignsHome` 4                            |
+| each statement to a random one of 2, 3, 5 or 8 modules                             | 480       | 2         | 0                      | 476                   | 2                   | `OrderOk` 478, `AssignsHome` 378                         |
+| single cuts with the _first_ module as the entry                                   | 211       | 0         | 0                      | 211                   | 0                   | `ExportOutsideEntry` 211, `OrderOk` 211, `AssignsHome` 2 |
+| **all**                                                                            | **2,892** | **2,170** | **0**                  | **717**               | **5**               |                                                          |
 
-- **No accepted split behaved differently.** That is the soundness claim, tested on 2,035 accepted splits. It holds relative to the footprints and the front-end rules, and debundle's corpus later showed those incomplete (§ 11): a `var` nested in a top-level block, and an entry export name that collides with a glue export.
+- **No accepted split behaved differently.** That is the soundness claim, tested on 2,170 accepted splits. It holds relative to the footprints and the front-end rules, and debundle's corpus later showed those incomplete (§ 11): a `var` nested in a top-level block, and an entry export name that collides with a glue export.
 - **Halving is mostly fine, which I did not expect.** With the entry in the second half, the entry imports the first half. If the first half refers back to the second
   (a function calling a helper declared later), it imports it too, and the cycle is cut at the entry. The order of the bodies stays the bundle's order.
-  99.4% of the single cuts are accepted.
-- **A cut can still be invalid.** All 13 rejected single cuts fail `AssignsHome`: a statement assigns a top-level binding that now lives on the other side
+  99.2% of the single cuts are accepted.
+- **A cut can still be invalid.** All 17 rejected single cuts fail `AssignsHome`: a statement assigns a top-level binding that now lives on the other side
   (lodash cut at 422: statement 422 assigns `getTag`, declared by statement 421; acorn cut at 41: `warnedAboutEcmaVersion`). ES imports are read-only, so the assignment would throw.
-  Three of the 13 run fine in my smoke test, because the assignment sits in a path the test does not take.
+  Three of the 17 run fine in my smoke test, because the assignment sits in a path the test does not take.
 - **Three or more modules break the order.** A forward reference from block 0 to block 1 makes block 1 run first, because an import runs before the importer.
   Lodash and semver survive all 7 block splits. Acorn survives 5 of 7 and zod 1 of 7: the `proto.method = function …` stores of acorn and the `var X = factory(…)` calls of zod are effects (§ 13), and effects keep their order.
 - **Arbitrary placement almost never works:** 2 of 480 accepted (two semver placements, and Node agrees), and 476 break in Node. The other 2 are semver splits that reorder effects which do not show in the smoke test.
 - **Putting the entry in the wrong half loses the API.** The `export { … }` statement is a statement like any other; I had not checked that it stays in the entry module.
   `lowersplit` now rejects it (`ExportOutsideEntry`). Before this experiment the checker would have accepted a split with the exports in a non-entry module.
-- **The checker is conservative in 7 of 705 rejections** (1.0%): 3 reassignments that are not on the executed path, 2 block orders that happen to commute, and 2 random placements.
+- **The checker is conservative in 5 of 722 rejections** (0.7%): 3 reassignments that are not on the executed path and 2 random placements.
 
 ## 8. How a proof is produced
 
@@ -363,17 +365,18 @@ debundle does the same job without Lean. Its corpus ([`e2e/cases`](../../../e2e/
 [`debundle_cases/run_cases.mjs`](debundle_cases/run_cases.mjs) translates each spec, runs `lowersplit --force`, runs the original and the emitted entry in Node, and compares.
 Run it with `./run.sh --debundle-cases` (about 10 s). Details, causes and the plan: [`debundle_cases/README.md`](debundle_cases/README.md), [`PLAN.md`](../PLAN.md).
 
-| Outcome                                                                                  | Entries |
-| ---------------------------------------------------------------------------------------- | ------- |
-| both accept, same stdout                                                                 | 68      |
-| both reject (`atomic_conflict` 8, `cycle` 7)                                             | 15      |
-| I reject, debundle accepts (6 would run, 2 do not load)                                  | 8       |
-| I accept and the output differs                                                          | 0       |
-| refusal tests (debundle's error text)                                                    | 13      |
-| not run: the adapter cannot translate the spec (selectors, chunks, imports, comma lists) | 103     |
+| Outcome                                                                                    | Entries |
+| ------------------------------------------------------------------------------------------ | ------- |
+| both accept, same stdout                                                                   | 69      |
+| both reject (`atomic_conflict` 8, `cycle` 7)                                               | 15      |
+| I reject, debundle accepts (6 would run, 1 does not load)                                  | 7       |
+| I accept and the output differs                                                            | 0       |
+| refusal tests (debundle's error text)                                                      | 7       |
+| not run: the adapter cannot translate the spec (selectors, chunks, imports, comma lists)   | 103     |
+| refused by `lowersplit`: a direct `eval` or a top-level `await`; debundle rejects them too | 6       |
 
-- **It found two soundness gaps in my front end,** both fixed or guarded: a `var` nested in a top-level block (4 entries accepted, then they fail with `ReferenceError` or `SyntaxError`), and an entry export name that collides with a glue export (1 entry accepted, then `SyntaxError`).
-- **14 of the 15 expected rejections fail `OrderOk`,** and 14 of the 15 break when written anyway. Where we disagree, debundle models more: purity (3), repeated `var` (3), export names (1), and an import for evaluation order (1).
+- **It found two soundness gaps in my front end,** both fixed: a `var` nested in a top-level block (4 entries accepted, then they fail with `ReferenceError` or `SyntaxError`), and an entry export name that collides with a glue export (1 entry accepted, then `SyntaxError`; the glue now exports under a fresh name, and `ExportsUnique` checks it).
+- **14 of the 15 expected rejections fail `OrderOk`,** and 14 of the 15 break when written anyway. Where we disagree, debundle models more: purity (3), repeated `var` (3), and an import for evaluation order (1).
 
 ## 12. Translation validation: is this tree the bundle, renamed and reshuffled?
 
@@ -420,3 +423,82 @@ Evidence, none of it a proof:
 | P3 and 40 imports assumed to only allocate (unreviewed) |          730 |     344,781 |    132 s |     219 s |
 
 The obligations are effect-effect pairs the tree runs in the opposite order from the bundle: 1,583 effect units make 1.25 million pairs, and 1,527 of the units run unknown code (`EFFECTS_WHY=1 lower …` lists the first reason for each). One vendor import is called, directly or through a local wrapper, by 511 units; 451 read or assign a property of a value the world returned, which may run a getter or setter the world made (premise P3 does not cover those); 527 units apply a decorator helper to a class or a prototype (`f([decorators], C.prototype, "member", …)`); a few dozen other imports account for most of the rest. What would clear them is a reviewed table of vendor functions that only allocate, keyed by package and export, and an audited claim that decorators on different prototypes commute ([`translation/PLAN.md`](translation/PLAN.md)). The table in the last row is keyed by minified names and was written to see what a table could do: it is an illustration, not a result.
+
+## 14. An executable model of a core of JavaScript
+
+[`CoreJS`](../lean/Experiments/CoreJS/) is the model that footprint rules are to be proved against ([`PLAN.md`](../PLAN.md) § Direction). It is an interpreter: total functions by recursion on a fuel bound, no `partial`, no `sorry`. A program has one right answer, so the model is tested against Node.
+
+| File                                                    | Holds                                                                                                                   | Lines |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ----: |
+| [`Syntax.lean`](../lean/Experiments/CoreJS/Syntax.lean) | the typed syntax tree, modules, and which names a scope declares                                                        |   198 |
+| [`Number.lean`](../lean/Experiments/CoreJS/Number.lean) | `Number::toString`, `StringToNumber`, `%`, `ToInt32`, exactly, on the bits of a `Float`                                 |   170 |
+| [`Value.lean`](../lean/Experiments/CoreJS/Value.lean)   | values, the heap, bindings, conversions, operators, property operations, the standard functions                         |   596 |
+| [`Eval.lean`](../lean/Experiments/CoreJS/Eval.lean)     | the interpreter: eleven mutually recursive functions, and how a program is linked and run                               |   534 |
+| [`Frame.lean`](../lean/Experiments/CoreJS/Frame.lean)   | the proof of the allocation rule below                                                                                  |   547 |
+| [`Fuel.lean`](../lean/Experiments/CoreJS/Fuel.lean)     | more fuel never changes a run that finished                                                                             |   274 |
+| [`Decode.lean`](../lean/Experiments/CoreJS/Decode.lean) | reads a program; [`Run.lean`](../lean/Experiments/CoreJS/Run.lean) is the `corejs` executable                           |   342 |
+| [`model/to_core.mjs`](model/to_core.mjs)                | the front end: acorn's trees to the model's syntax, or a refusal with the node type                                     |   681 |
+| [`model/differential.mjs`](model/differential.mjs)      | the test against Node, with [`model/cases.mjs`](model/cases.mjs) and [`model/module_cases.mjs`](model/module_cases.mjs) |   991 |
+
+**What it covers.** Strict-mode module code. Numbers, strings, booleans, `undefined`, `null`. `var`, `let`, `const` with hoisting and the temporal dead zone. Functions, arrows and methods as closures; calls with `this`, method calls, `new`. Object literals with data properties, getters, setters and `__proto__`; array literals (read only). Classes without `extends`: methods, accessors, instance and static fields. Property read, write, `delete` and `in` along the prototype chain, with getters and setters run on the receiver. `Object.defineProperty` with the specification's validation, `Object.create`, `Object.getPrototypeOf`, `Object.setPrototypeOf`. `throw`, `try`, `catch`, `finally`; `if`, `for`, `while`, `break`, `continue`, `return`. The operators except `**` and `instanceof`; `typeof`; template literals; `console.log` of primitives.
+
+**Modules.** A program is a set of modules and an entry. A module has `import { a as b, c } from "./m.mjs"`, `import d from`, bare `import "./m.mjs"`, `export { a as b, c }`, `export` before a declaration, and `export default`. That is what `Module.render` writes and what an entry chunk has, and a little more.
+
+- _Linking comes first._ Every binding of every module the entry reaches is made before any statement runs. An imported name is the exporter's binding itself, so the importer sees every later assignment. The declared functions of all modules get their values then; `let`, `const` and class names are uninitialized until their declaration runs, and a `var` is `undefined`.
+- _Importing a name the module does not export_ ends the run with a `SyntaxError` before anything is printed, as in Node.
+- _An import cannot be assigned._ Which declaration a name means is decided by the text, so the front end marks an assignment whose target is an imported name (`Target.frozen`), and the model throws a `TypeError` there, after the right side ran.
+- _The order of evaluation_ is the specification's for modules without a top-level `await`: depth-first over the `import`s in source order, a module after the modules it imports, a module that was entered already skipped. It does not depend on what the modules do, so the model computes it first (`Program.evalOrder`) and then runs the bodies. A throw ends the run.
+- A program of one module is the case `Program.single`.
+
+**Unknown code is an outcome, not a guess.** A run ends with a value, a thrown value, out of fuel, or `unknown`: it reached code the model does not define. A global of the host (`Math`) is an opaque value; storing it is fine, and calling it, reading its properties or converting it ends the run as `unknown`. So do the methods of `Object.prototype`, `Function.prototype` and `Array.prototype` (which exist in the model's heap, as host values under their real names), a property of a string other than `length` and an index, a write to an array, the conversion of an object to a primitive (`valueOf` and `toString` are not run), and `console.log` of an object. What unknown code may change is not modelled yet.
+
+**What the front end refuses**, each with the node type: destructuring, spread, default and rest parameters, `arguments`, generators, `async`, `class … extends`, private names, static blocks, labels, `switch`, `do`, `for`-`in`, `for`-`of`, optional chains, tagged templates, regular expressions, BigInt, `import * as`, `export … from`, an import attribute, an import of anything but a relative path, `import()`, `import.meta`, `**`, `instanceof`, a string outside the Basic Multilingual Plane (the model counts code points, JavaScript code units), a function under a computed key (its `name` would be computed at run time), and any name the program does not declare and the host defines. The model ends `unknown` for a module that exports a name it imports.
+
+**Addresses, and the identity of a statement.** An object or a binding lives at `(region, index)`. JavaScript cannot observe an address, so any choice of unused ones is faithful.
+
+- Every top-level statement of a program carries an _identity_, a number no other statement of the program has. The statement with identity `i` owns region `i + 1`. Its bindings and, for a function declaration, its function are made there when the program is linked, and what it allocates when it runs goes there too.
+- So where a statement allocates depends on its identity and on nothing else: not on its module, and not on what ran before it. Two statements that only allocate end in equal states in either order, with no renaming of addresses.
+- A program that is split into modules keeps the identities of its statements. The front end numbers the top-level statements of a file as [`lowering/dump_core.mjs`](lowering/dump_core.mjs) numbers a bundle's (a declaration list counts once for each name), and takes other numbers for a file when told.
+- Linking visits the statements of all modules in the order of their identities, not module by module. No program code runs while a program is linked, so that order cannot be observed, and it makes the state after linking independent of how the statements are divided into modules.
+
+**Checked against Node** by `./run.sh --model`, and in CI by `corejs_differential_test` (72 generated programs). Both sides must print the same lines and end the same way (a thrown primitive by value, an error by its kind).
+
+- 31 hand-written cases for what the generator rarely writes: a getter three prototypes up, a setter that throws, `finally` overriding `return`, `delete` of a missing and of a fixed property, a method with another `this`, closures over a loop variable, `var` hoisting, the dead zone, descriptor validation, a getter put on `Object.prototype`, class fields, number printing. Seven of them must end `unknown`.
+- 19 hand-written programs of several modules: a live binding read after the exporter assigned it, a function called before the body of its module ran, the dead zone and `var` across modules, bare imports, a cycle of three, export and import under other names, a module imported twice, a missing export, an assigned import (also in its dead zone), default exports, a module that throws, modules in directories. For each, the order in which the model runs the modules is also compared with `Plan.evalOrder` of the proved checker (the `evalorder` executable): they agree on all 19.
+- Programs of [`translation/gen`](translation/gen/). The generator leans on the standard library, so the front end accepts no whole program. A program is cut down to the units the front end accepts alone and whose names are still declared; a unit where the model then reaches unknown code is dropped and the program is run again. Of 2,040 programs (340 for each of the six sets of families, seeds 1000 to 1339): 52,652 units, 21,931 accepted alone (42%), 4,665 left in the programs that ran (9%). 387 programs had no unit left. The other 1,653 agree with Node, all of them.
+- The members the model gives the three prototypes are compared with Node's own.
+
+The low share of generated units is the finding of [`SUPPORT.md`](../SUPPORT.md) again: no small fragment covers what programs use. The model is for proving rules about a core, not for running the inputs.
+
+One disagreement was found on the way: `x ** 2` differed from Node in the last bit for one operand. The specification leaves `**` to the implementation, and the C library's `pow` is not V8's. `**` is refused now.
+
+**What is proved** ([`Frame.lean`](../lean/Experiments/CoreJS/Frame.lean), on Lean's three standard axioms). The shape `Expr.allocOnly`: a literal, a name, a function, an object literal of named data properties, an array literal, nested.
+
+```lean
+theorem allocOnly_extends (h : e.allocOnly = true) (fuel : Nat) (env : Env) (s : State) :
+    (evalExpr fuel env e s).Keeps s
+theorem decl_allocOnly (h : e.allocOnly = true) (fuel : Nat) (env : Env) (kind : DeclKind) (x : Name) (s : State) :
+    (execStmt fuel env (.decl kind x e) s).KeepsBut (env.vars.lookup x) s
+```
+
+However the expression ends, every object and binding that existed is unchanged and nothing is printed; what it made is new. A declaration with such an initializer changes no binding but its own. This is the footprint "binds its name, no effect", proved for that shape.
+
+[`Fuel.lean`](../lean/Experiments/CoreJS/Fuel.lean) proves that the bound on the depth is only a bound:
+
+```lean
+theorem fuel_mono (h : runProgram n P = r) (hr : r ≠ .fuel) (hnm : n ≤ m) : runProgram m P = r
+def Ends (P : Program) (r : Res Unit) : Prop := ∃ n, runProgram n P = r ∧ r ≠ .fuel
+theorem Ends.unique (h : Ends P r) (h' : Ends P r') : r = r'
+```
+
+A run that ends with a value, a throw or unknown code ends the same way with any larger bound, so a program ends in at most one way. The proof compares the two runs rule by rule; no rule of the interpreter had to change for it.
+
+Not proved: the allocation rule for classes (the model runs them; the proof does not cover them yet), that such an expression never ends `unknown`, and that two such declarations commute. The last is written down as `AllocOnlyUnitsCommute`. It needs one more lemma, that the value depends only on the bindings the expression reads.
+
+**What the proofs showed about the model's shape.**
+
+- Stating every lemma against a fixed earlier state (`Extends base s`) made a change to a new object free: an address that is unused in `s` was unused in `base`.
+- The property operations take "what a call does" as a parameter, so they are outside the recursion and their lemmas need no induction.
+- Lean's `do` notation copies the rest of a block into both branches of an `if` in the middle of it. Rules written that way did not match the sequencing lemma, and three helpers (`selfScope`, `initSelf`, `addPrototype`) were split out. New rules should keep each `if` inside a helper.
+- `Float` has no equations in Lean. That costs nothing here, since a frame fact never looks at a number.
+- A proof that walks every rule of the interpreter (`fuel_mono`) is short when it is one tactic that takes a rule apart into sequences and case splits and closes each part with the hypothesis for the smaller bound. It has to match terms without unfolding definitions (`with_reducible`), or the elaborator unfolds the interpreter itself.

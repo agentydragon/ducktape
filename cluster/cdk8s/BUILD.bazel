@@ -776,6 +776,7 @@ py_library(
         ":namespaces",
         "//cluster/cdk8s/forgejo:secret_copy",
         "//cluster/cdk8s/providers/flux:gitrepository",
+        "//cluster/cdk8s/providers/flux:kustomization",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
@@ -843,7 +844,6 @@ py_library(
     visibility = ["//cluster/cdk8s/public_coder:__pkg__"],
     deps = [
         ":agent_access_profiles",
-        ":flux",
         ":manifest_roots",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -875,7 +875,6 @@ py_library(
     name = "alloy_otlp_bearer",
     srcs = ["alloy_otlp_bearer.py"],
     deps = [
-        ":flux",
         ":manifest_roots",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "@pypi//cdk8s",
@@ -1046,6 +1045,7 @@ py_library(
         ":manifest_roots",
         ":pod_policy",
         ":probes",
+        ":reflector",
         ":secret_ref",
         ":service_ref",
         "//aiquota:config",
@@ -1076,7 +1076,6 @@ py_library(
     srcs = ["dns_automation.py"],
     deps = [
         ":external_creds",
-        ":flux",
         ":manifest_roots",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
@@ -1329,6 +1328,8 @@ py_library(
     deps = [
         ":helm",
         ":manifest_roots",
+        ":namespaces",
+        ":node_scheduling",
         "@pypi//cdk8s",
     ],
 )
@@ -1541,11 +1542,23 @@ py_library(
 )
 
 py_library(
+    name = "flux_system_vpa",
+    srcs = ["flux_system_vpa.py"],
+    deps = [
+        ":manifest_roots",
+        "//cluster/cdk8s/providers/vpa:policy",
+        "//cluster/cdk8s/providers/vpa:verticalpodautoscaler",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
     name = "vpa",
     srcs = ["vpa.py"],
     deps = [
         ":helm",
         ":manifest_roots",
+        ":node_scheduling",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "@pypi//cdk8s",
     ],
@@ -1644,6 +1657,7 @@ py_library(
         ":flux_image_automation_ghcr",
         ":flux_monitoring",
         ":flux_sources",
+        ":flux_system_vpa",
         ":flux_webhook",
         ":flux_webhook_token",
         ":github_branch_protection",
@@ -1694,7 +1708,6 @@ py_library(
         "//cluster/cdk8s/agentplane:generation",
         "//cluster/cdk8s/agentplane:staging",
         "//cluster/cdk8s/agentplane:staging_vpa",
-        "//cluster/cdk8s/agents:flux_kustomizations",
         "//cluster/cdk8s/att_gateway_exporter:access_code",
         "//cluster/cdk8s/att_gateway_exporter:app",
         "//cluster/cdk8s/atuin:server",
@@ -1774,6 +1787,7 @@ py_library(
         "//cluster/cdk8s/kubevirt:app",
         "//cluster/cdk8s/kubevirt:cdi",
         "//cluster/cdk8s/kubevirt:operators",
+        "//cluster/cdk8s/kubevirt:vpa",
         "//cluster/cdk8s/kyverno:app",
         "//cluster/cdk8s/kyverno:policies",
         "//cluster/cdk8s/litellm:buildbuddy_crossplane",
@@ -1856,6 +1870,7 @@ py_library(
         ":pod_policy",
         ":secret_ref",
         ":service_ref",
+        ":vpa_policy",
         "//cluster/cdk8s:volume_claim",
         "//cluster/cdk8s/cnpg:backup",
         "//cluster/cdk8s/cnpg:cluster",
@@ -1903,7 +1918,6 @@ py_library(
     visibility = ["//cluster/cdk8s/forgejo_registry:__pkg__"],
     deps = [
         ":ducktape_flux",
-        ":flux",
         ":image_automation",
         ":manifest_roots",
         "@pypi//cdk8s",
@@ -1916,7 +1930,6 @@ py_library(
     visibility = ["//cluster/cdk8s/forgejo_registry:__pkg__"],
     deps = [
         ":config_format",
-        ":flux",
         ":gateway",
         ":manifest_roots",
         ":ntfy",
@@ -2030,7 +2043,6 @@ py_library(
 py_library(
     name = "artifact_generators",
     srcs = ["artifact_generators.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":flux",
         ":generation",

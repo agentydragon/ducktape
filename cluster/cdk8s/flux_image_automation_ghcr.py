@@ -7,7 +7,6 @@ from __future__ import annotations
 from cdk8s import App, Chart
 
 from cluster.cdk8s import ducktape_flux
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.image_automation import ImageUpdatePush
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 
@@ -37,8 +36,3 @@ def automation_chart(app: App) -> Chart:
         source_timeout=ducktape_flux.CLONE_TIMEOUT,
     )
     return chart
-
-
-def flux_image_automation_ghcr(chart: Chart, directory: RenderedDirectory) -> Kustomization:
-    name = "flux-image-automation-ghcr"
-    return flux_kustomization(chart, name, directory, retry_interval=None, wait=None)

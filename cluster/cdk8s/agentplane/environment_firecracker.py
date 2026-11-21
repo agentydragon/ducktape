@@ -94,7 +94,9 @@ class EnvironmentFirecrackerTemplate(Construct):
             ),
         )
         wiring = launcher_settings.pod_wiring(volume_name="firecracker-settings", env="FIRECRACKER_CONFIG_FILE")
-        memory = resources.guest_memory_bytes + 512 * 1024 * 1024
+        memory_request = resources.guest_memory_bytes + 512 * 1024 * 1024
+        # A full checkpoint writes a guest-sized buffered file while guest RAM is resident.
+        memory_limit = memory_request + resources.guest_memory_bytes
         launcher = k8s.Container(
             name="environment-runtime",
             image=LAUNCHER_IMAGE,
@@ -106,12 +108,12 @@ class EnvironmentFirecrackerTemplate(Construct):
             resources=k8s.ResourceRequirements(
                 requests={
                     "cpu": k8s.Quantity.from_number(resources.guest_vcpu_count),
-                    "memory": k8s.Quantity.from_number(memory),
+                    "memory": k8s.Quantity.from_number(memory_request),
                     "devices.kubevirt.io/kvm": k8s.Quantity.from_number(1),
                 },
                 limits={
                     "cpu": k8s.Quantity.from_number(resources.guest_vcpu_count),
-                    "memory": k8s.Quantity.from_number(memory),
+                    "memory": k8s.Quantity.from_number(memory_limit),
                     "devices.kubevirt.io/kvm": k8s.Quantity.from_number(1),
                 },
             ),
@@ -136,7 +138,12 @@ class EnvironmentFirecrackerTemplate(Construct):
             keep_sidecar_until_workload_exit=True,
             restart_policy="Never",
             security_context=k8s.PodSecurityContext(
-                run_as_user=0, run_as_group=0, fs_group=1000, fs_group_change_policy="OnRootMismatch"
+                run_as_user=0,
+                run_as_group=0,
+                fs_group=1000,
+                fs_group_change_policy="OnRootMismatch",
+                # The relay inherits this profile; the privileged launcher is unconfined.
+                seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),
             ),
             workload_volumes=[
                 wiring.volume,

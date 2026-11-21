@@ -1,8 +1,8 @@
 # Haku multi-agent architecture — the retired zone experiment
 
-**Status: retired** (operator, 2026-08-15). The dispatch plane, the zai/oai/local **zones**, and
-the build order below were an earlier experiment; the plane is archived and not deployed, and the
-remaining steps are not pending work. Read this as history, not as a plan — the live design for
+**Status: retired** (operator, 2026-08-15). The dispatch plane and the zai/oai/local **zones**
+were an earlier experiment; the plane is archived and not deployed, and none of its unbuilt parts
+is pending work. Read this as history, not as a plan — the live design for
 several agents at different trust levels is <../plans/information_trust_tiers.md>, which keys agent kinds
 on their workspace repo rather than on dispatch zones.
 
@@ -20,17 +20,6 @@ Documented elsewhere:
 - Security contract (enforcement inventory): <../docs/security.md>
 - Settled options survey (dispatch plane, Centaur deep-eval, harness): <2026_07_02_dispatch_plane_options.md>
 
-## Where it stands
-
-Historical: the former **zai zone** (z.ai GLM, public-by-construction prompts only,
-Claude Code CLI harness) ran end to end — `POST /jobs` from `haku-sandbox` → credential
-lint → Anthropic classifier → per-job key mint → k8s Job in the former `haku-sandbox-zai`
-namespace → result read back through the `haku_reader` role. It was built across
-build-order steps 1–4 (PRs
-[#2739](https://github.com/agentydragon/ducktape/pull/2739),
-[#2748](https://github.com/agentydragon/ducktape/pull/2748),
-[#2754](https://github.com/agentydragon/ducktape/pull/2754), plus rollout fixes).
-
 ## Goal (unchanged)
 
 - **Haku, the orchestrator** keeps all judgment: synthesis, item authoring, operator-model
@@ -42,46 +31,10 @@ build-order steps 1–4 (PRs
 - Net effect: shrink the Anthropic metered overage (~$2–3k/mo) by routing grunt work to
   ~$0.4/M-token GLM and flat-rate OpenAI subscription inference.
 
-## Remaining build order
-
-5. **`haku-sandbox-oai`** — one more perimeter namespace + a CNP entry on the
-   workers-LiteLLM + chatgpt models in its config; same worker image, Codex CLI harness.
-   Details below.
-6. **Sensors + affordances** — changedetection.io + webhook→intake; Forgejo ducktape
-   mirror automation + `haku` PR rights; base doctrine amendments. Details below.
-
-Deferred: grocery-order bounded-write MCP; PII check as a required CI status on PRs.
-
-New local-inference follow-up: `haku/x/dispatch/local_dispatch_zone.md`. It adapts the former zone
-perimeter to Ollama-hosted models and adds an active-model scheduler so local workers do
-not thrash model residency by running agents across multiple models at once.
-
-The [first kitchen stocking sketch](https://github.com/agentydragon/ducktape/blob/6a844bcfb7/haku/plans/kitchen_stocking_subagent.md)
-considered the OpenAI and local worker zones for this workload. The
-[current kitchen plan](../plans/kitchen_stocking_subagent.md) owns its open decisions.
-
-Capability-oriented follow-up: <../plans/information_trust_tiers.md>. It owns what may flow between
-tiers — where the label lives, why the classifier has to run locally, and why "delegate a
-capability, not a corpus" is the shape that lands first. It replaces a forward reference to a
-`capability_dispatch.md` that was never written; that reference's subject (capability-profile
-launches without conflating provider trust with tool authority) is the new document's.
-
-Garden-maintenance follow-up (haku-state, 2026-07-12 — lives in state, not here, since it's
-Haku's own method): operator asked for a principled model of the propagation checklists as a
-graph, motivated in part by this doc's subagent-boundary question. The resulting design —
-[`plans/propagation_graph_model.md`](https://git.allegedly.works/haku/haku-state/src/branch/main/plans/propagation_graph_model.md)
-maps propagation-graph edges onto the trust tiers this doc defines (same-trust in-session
-subagent vs. zone worker, by whether the edge touches private content) and treats a
-cross-boundary edge as needing one of the two sync mechanisms already built here (tool-call
-approval, dispatch-plane result polling) — plus four concrete maintenance-subagent proposals in
-[`plans/garden_maintenance_subagents.md`](https://git.allegedly.works/haku/haku-state/src/branch/main/plans/garden_maintenance_subagents.md),
-all reasoned to be same-trust-tier (in-session, not zone-dispatchable) since they read private
-haku-state content.
-
-## The oai zone (step 5)
+## The oai zone
 
 The middle trust level the two-level design lacked: OpenAI, subscription-billed, trusted
-between z.ai and Anthropic. It takes **moderate personal context in curated prompts**
+between z.ai (public-by-construction prompts only) and Anthropic. It takes **moderate personal context in curated prompts**
 (project/calendar-shaped facts, coarse finances) but **no** credentials, figures,
 identifiers, documents, or health data. The exact prompt line is a values call for the
 operator — seed conservatively and tune from feedback (see _Open questions_).
@@ -117,7 +70,7 @@ tier if this becomes a real zone). Dispatch should be **quota-aware** — extend
 with an OpenAI provider next to the z.ai one, check remaining quota before creating a Job,
 and queue or re-route (zai→oai→defer) rather than fail.
 
-## Sensors (step 6)
+## Sensors
 
 Prompt-less, one-way watchers: they take no input from Haku and only emit findings, so
 they run at the lowest trust level and their output is untrusted input to Haku (which
@@ -134,71 +87,26 @@ The judging model routes through our LiteLLM, so even sensor judgment stays unde
 control. Findings land in `haku-state` `intake/` via webhook. Bespoke sensor agents only
 where judgment is richer than a page-diff condition.
 
-## Remaining monitoring affordances
+## Doctrine and plumbing that outlive the zones
 
-Key containment (per-job keys, CNP reachability) and k8s object status (via
-`cluster-diagnostics-reader`) are **built** — see the cluster README and security doc.
-Still to wire:
+- **Autonomous dispatch rule** (proposed for Haku's base instructions, which moved to
+  `haku-state`: Haku's own rules, not enforced code): Haku may dispatch work to principals whose
+  privileges are a strict subset of its own and whose spend is capped by construction; launch at
+  or above Haku's own privilege stays operator-gated. `devinfra/debug/agent_fleet/README.md`
+  cites this rule.
+- **Found-credential rule**: Haku never uses a credential found in worker output; finding one
+  means reporting it as compromised so it gets rotated.
+- **Haku-authored ducktape PRs** need the in-cluster Forgejo `ducktape` mirror synced
+  automatically and PR rights for the `haku` Forgejo user; a PII/classifier check can run as a
+  required status check on such PRs. Current state is not tracked here: see the `haku/ducktape`
+  pull mirror in `tf/gitops/haku-state/main.tf`, the read-only AGit `refs/for/<branch>`
+  convention in `tf/gitops/forgejo-agentydragon-repos/main.tf`, and the open item in <../TODO.md>.
+- **Ownership split**: enforcement lives in ducktape (gates, classifier prompts, images,
+  perimeters, LiteLLM config/keys); Haku proposes by PR and cannot self-modify, so it cannot
+  bypass its own gate. Judgment lives in `haku-state` (routing policy, per-model capability
+  calibration, outcome/cost feedback).
 
-- **Langfuse `haku-workers` project + viewer key**: route the workers-LiteLLM's traffic to
-  a dedicated Langfuse project (key alias = job id → per-job attribution) and reflect a
-  viewer-scoped key into `haku-sandbox`. Worker traffic is non-sensitive by construction
-  (gated prompts), so Haku reading its own prompts/completions/costs is fine; a shared
-  all-of-LiteLLM project would expose other consumers. The trace is the highest-value
-  "stuck/looping/burning budget" signal. Concretely still missing (confirmed 2026-07-11):
-  today only the _main_ LiteLLM instance has `callbacks: ["langfuse_otel", "prometheus"]`
-  wired (`cluster/k8s/litellm/app/deployment.yaml`, one project: `langfuse-litellm-project`);
-  the workers-LiteLLM generator explicitly flags the gap
-  (`haku/x/dispatch/deploy/litellm/generate_workers_litellm.py`'s own
-  `# TODO(langfuse)` comment — `callbacks: ["prometheus"]` only). There's also **no
-  Terraform provider for Langfuse** (`tf/gitops/sso-providers/provider_langfuse.tf` is only
-  the Authentik OIDC login client) — every project/key that exists today came from Langfuse
-  Helm's one-shot `LANGFUSE_INIT_*` headless-init env vars, not a reusable provisioner.
-  Standing up a second project needs either extending that one-shot mechanism (awkward — it
-  only runs at chart install) or a new provisioner hitting Langfuse's Admin/Projects API
-  directly (matching the pattern of `cluster/provisioners/` for grocy/matrix/inventree), then
-  reflecting the resulting viewer key into `haku-sandbox` via the standard emberstack
-  pattern. **Open question raised by the kitchen-stocking-subagent plan** (operator,
-  2026-07-11): one shared `haku-workers` project for all zone traffic, or per-domain
-  sub-projects (e.g. a dedicated "Haku kitchen" project) so traces filter cleanly per
-  subagent as more get built? Leaning toward per-domain once there's more than one real
-  workload, but that's a provisioner-design call, not decided here.
-- **Raw worker logs — pre-approved in principle, skipped at v1** (operator, 2026-07-02).
-  Traces + status/events + the result blob cover v1; the case they answer poorly is
-  "harness stuck vs. waiting on a long job." If that need materializes, grant Haku
-  `pods/log` in the zone namespaces — one `RoleBinding` per zone on the
-  `logs-configmaps-reader` pattern, no code. Safe under the zone-LiteLLM design: the only
-  credential that can appear in a worker log is a per-job key, unusable from Haku's
-  namespace by CNP.
-
-## Doctrine amendments still to make
-
-**Base amendments** (edit `haku/base/instructions.md` when building — these are Haku's own
-rules, not enforced code):
-
-1. **Autonomous dispatch rule**: Haku may dispatch work to principals whose privileges are
-   a strict subset of its own and whose spend is capped by construction; operator-gated
-   launch remains required at or above Haku's own privilege.
-2. **Per-zone prompt floor**: enumerated categories that never enter a worker-zone prompt
-   (credentials, account numbers, figures, identifiers, documents, health), with the live
-   rubric in state.
-3. **PR authorship**: record Forgejo-ducktape PRs as a sanctioned bounded write.
-4. **Found-credential rule**: Haku never uses a credential found in worker output; finding
-   one means reporting it as compromised so it gets rotated.
-
-**Prerequisites for Haku's ducktape PRs**: the cluster-Forgejo ducktape mirror must become
-an automated mirror (today bumped manually — see
-`haku/runtime/x/managed_agent/self_hosted/README.md`), and the `haku` Forgejo user needs
-fork/branch/PR rights. A PII/classifier check can run as a required status check on
-worker- and Haku-authored PRs, as belt to the dispatch gate's suspenders.
-
-**Ownership split** (the principle the amendments encode): enforcement lives in ducktape
-(dispatcher, classifier prompt, worker images, Job templates, perimeters, LiteLLM
-config/keys — Haku proposes via PR, cannot self-modify, so it can't bypass its own gate);
-judgment lives in `haku-state` (routing policy, per-model capability calibration, the
-delegation register as a dispatch queue, outcome/cost feedback from Langfuse).
-
-## Routing for not-yet-built zones
+## Routing
 
 - **oai zone**: harder coding GLM botches; research needing mild personal framing; a
   judge/verifier reviewing zai-zone output before it reaches Haku.
@@ -211,8 +119,6 @@ delegation register as a dispatch queue, outcome/cost feedback from Langfuse).
   (`add_to_cart`, `submit_order` under a $-ceiling against a merchant allowlist). Once that
   exists, even an untrusted worker can operate it safely. Generalization: **bounded-write
   MCP servers are how low-trust agents get safe write capabilities.**
-
-(The live zai zone's routing is operational and lives in Haku's state runbook, not here.)
 
 ## Open questions (operator)
 

@@ -189,6 +189,47 @@ async def _reply_to_tool(
     assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
 
 
+@pytest.mark.parametrize(
+    ("executor_implementation", "backend_command"),
+    [
+        pytest.param("native", "/execution-service serve", id="native"),
+        pytest.param("codex", "/opt/codex/bin/codex exec-server", id="codex-exec-server"),
+    ],
+)
+async def test_codex_shell_uses_selected_backend(
+    driver: RunnerDriver,
+    model: ScriptedModel,
+    spec: session_pb2.SessionSpec,
+    codex_exec_server_container: CodexExecServerContainer,
+    backend_command: str,
+) -> None:
+    # The app-server's PID namespace can also see the companion's processes. Check PID 1
+    # from inside the tool to detect an accidental fallback to app-server-local execution.
+    command = textwrap.dedent(r"""
+        test "$(readlink /proc/1/exe)" = /execution-service || exit 1
+        for cmdline in /proc/[0-9]*/cmdline; do
+            args=$(tr '\000' ' ' 2>/dev/null <"$cmdline") || continue
+            case "$args" in
+                "/execution-service serve --listen "*|"/opt/codex/bin/codex exec-server --listen "*)
+                    printf 'EXECUTOR=%s\n' "$args"
+                    exit 0
+                    ;;
+            esac
+        done
+        exit 1
+    """)
+    session = await driver.attach("codex-executor-smoke", spec=spec)
+    await session.submit_input("input-1", "Run the shell tool and report its output.")
+    await _reply_to_tool(
+        model,
+        session,
+        "call-executor",
+        command,
+        "EXECUTOR_CHECKED",
+        f"EXECUTOR={backend_command} --listen {codex_exec_server_container.url}",
+    )
+
+
 async def test_codex_exec_server_container_recovers_without_restarting_app_server(
     runner: RunningRunner,
     driver: RunnerDriver,

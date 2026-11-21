@@ -178,24 +178,8 @@ func TestQueuedDeliveryThroughRuntimeProxy(t *testing.T) {
 	defer runtimeServer.Stop()
 	runtimeDestination.target = runtimeListener.Addr().String()
 
-	observerCtx, stopObserver := context.WithCancel(ctx)
-	observerDone := make(chan error, 1)
-	go func() { observerDone <- server.observeRuntime(observerCtx, runtimeDestination) }()
-	select {
-	case err := <-observerDone:
-		t.Fatalf("Runtime observer stopped: %v", err)
-	case <-time.After(5 * time.Second):
-		t.Fatal("Runtime observer did not become callable")
-	case <-waitForRuntimeConnection(ctx, server, sandboxUID):
-	}
-	defer func() {
-		stopObserver()
-		select {
-		case <-observerDone:
-		case <-time.After(time.Second):
-			t.Error("Runtime observer did not stop")
-		}
-	}()
+	_, observerDone, _ := runObserver(t, server, runtimeDestination)
+	awaitConnection(t, server, sandboxUID, runtime.bootID, observerDone)
 
 	proxy := serveServer(t, server, server.RegisterProxy)
 	sessionsCertificate := proxy.ca.Issue(t, peertls.SessionsURI)
@@ -280,26 +264,6 @@ func TestQueuedDeliveryThroughRuntimeProxy(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("worker did not stop")
 	}
-}
-
-func waitForRuntimeConnection(ctx context.Context, server *Server, sandboxUID string) <-chan struct{} {
-	ready := make(chan struct{})
-	go func() {
-		ticker := time.NewTicker(time.Millisecond)
-		defer ticker.Stop()
-		for {
-			if _, err := server.connections.holder(sandboxUID); err == nil {
-				close(ready)
-				return
-			}
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-			}
-		}
-	}()
-	return ready
 }
 
 var _ environmentruntimepb.EnvironmentRuntimeServer = (*queueRuntime)(nil)

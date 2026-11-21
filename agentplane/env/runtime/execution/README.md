@@ -15,6 +15,9 @@ the `companion` subcommand runs as PID 1 in the isolated executor container and 
 protocol. `//agentplane/env/e2e:test_executor_container` exercises process output, session resume,
 filesystem access, incarnation fencing and shutdown through Runtime with the real native executor.
 
+TODO: Reconsider embedding the native execution server in Environment Runtime once the ownership,
+resource isolation, and failure behavior of that arrangement have been evaluated.
+
 ## Pod companion invocation
 
 `//agentplane/env/runtime/execution/cmd:agentplane-execution-service` supplies the Pod companion
@@ -44,7 +47,9 @@ Native execution limits are optional overrides in the same Runtime configuration
 ```json
 "executor": {
   "url": "ws://127.0.0.1:4501",
+  "owner": { "kind": "companion", "socket": "/run/agentplane/executor/control.sock" },
   "implementation": "native",
+  "placement": "direct",
   "limits": {
     "native": { "max_sessions": 128, "max_output_bytes": 67108864 },
     "codex": { "max_message_bytes": 16777216, "max_concurrent_requests": 64 }
@@ -52,7 +57,10 @@ Native execution limits are optional overrides in the same Runtime configuration
 }
 ```
 
-Pod executors also require `socket`. Unspecified fields use `native.DefaultLimits` and
+Pod executors use a companion `owner` with an absolute `socket`; VM executors use
+`{"kind": "systemd"}` ([owner and placement rules](../docs/config.md)).
+
+Unspecified fields use `native.DefaultLimits` and
 `codexshim.DefaultLimits`; unknown fields and invalid values are rejected. Values are counts or
 bytes, except the native retention settings, which are seconds. These limits apply to the native
 implementation and cannot be set with the Codex-backed implementation. A new configuration takes
@@ -71,11 +79,13 @@ replays execution requests.
 
 - `native/`: process, session and file ownership.
 - `typedbackend/` and `typedproxy/`: internal typed operations and Runtime admission.
+- `adapter/`: typed Executor RPCs over the Codex exec-server protocol (the `codex` implementation).
 - `codexshim/`: Codex WebSocket compatibility surface.
 - `codexexecserver/`: native launch/probe/fence backends.
 - `companion/`: Pod PID-1 ownership protocol and its client, shared reaper integration.
 - `service/`: environment identity and embedded adapter lifetime under Runtime ownership.
-- `cmd/`: companion executable entrypoint; `testing/`: shared companion container fixtures.
+- `settings/`: native and Codex limit overrides, parsed for Runtime and the server.
+- `cmd/`: `agentplane-execution-service` entrypoint (`companion`, `serve`, `command-helper`); `testing/`: shared companion container fixtures.
 
 **Deviation:** the proto keeps the published `agentplane.executor` wire package while source and
 client import paths live under `env/runtime/execution`. Relocation changes neither RPC method names nor

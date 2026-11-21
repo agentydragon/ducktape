@@ -5,8 +5,7 @@
 // A `FAIL … WRONG ACCEPT` is a finding that stands. A line that passes means the author fixed it: move the case to
 // `experiments/effects/cases_general.mjs`. See README.md for the table of causes.
 //
-// Premise P3 is on: it is the setting of the fuzzers and of the large bundle. The first two findings are the same as
-// existing golden cases (`cases_general.mjs`) with a pure reader added, or with P3 on instead of off.
+// Premise P3 is on: it is the setting of the fuzzers and of the large bundle, and what F7 is about.
 export const premises = { noWorldHooks: true };
 
 const finding = (name, source, order) => ({
@@ -16,71 +15,70 @@ const finding = (name, source, order) => ({
 });
 
 export const cases = [
-  // F1: the result of an iterator helper of a Map or Set iterator is a primitive for the analysis, and consuming it runs the callback
+  // F7: code of the program that is not run here (a callback the world runs, a generator body) or a standard function without a
+  // row defines a getter or a conversion hook on an object of the program. With premise P3 a read of that object is plain
   finding(
-    "F1 toArray of an iterator helper runs the callback of map",
+    "F7 a callback the world runs defines a getter on an object of the program",
     `
 const o = { n: 0 };
-const mapped = new Map([["k", 1]]).values().map((x) => { o.n++; return x; });
-mapped.toArray();
+const obj = {};
+const install = () => { Object.defineProperty(obj, "g", { get() { o.n++; return 1; } }); };
+[1].values().forEach(install);
+obj.g;
 const seen = o.n;
 console.log(seen);
 `,
-    [0, 1, 3, 2, 4]
+    [0, 1, 2, 3, 5, 4, 6]
   ),
   finding(
-    "F1 next of an iterator helper runs the callback of map",
+    "F7 a callback the world runs stores a toString into an object of the program",
     `
 const o = { n: 0 };
-const mapped = new Map([["k", 1]]).values().map((x) => { o.n++; return x; });
-mapped.next();
+const obj = {};
+const install = () => { obj.toString = () => { o.n++; return "s"; }; };
+[1].values().forEach(install);
+\`\${obj}\`;
 const seen = o.n;
 console.log(seen);
 `,
-    [0, 1, 3, 2, 4]
+    [0, 1, 2, 3, 5, 4, 6]
   ),
   finding(
-    "F1 a spread of an iterator helper runs the callback of map",
+    "F7 a callback the world runs gives an object of the program a prototype with a getter",
     `
 const o = { n: 0 };
-const mapped = new Set([1]).values().map((x) => { o.n++; return x; });
-[...mapped];
+const obj = {};
+const install = () => { Object.setPrototypeOf(obj, { get g() { o.n++; return 1; } }); };
+[1].values().forEach(install);
+obj.g;
 const seen = o.n;
 console.log(seen);
 `,
-    [0, 1, 3, 2, 4]
+    [0, 1, 2, 3, 5, 4, 6]
   ),
   finding(
-    "F1 for-of over an iterator helper runs the callback of filter",
+    "F7 a generator body defines a getter on an object of the program",
     `
 const o = { n: 0 };
-const kept = new Set([1]).values().filter((x) => { o.n++; return true; });
-for (const x of kept) {}
+const obj = {};
+function* install() { Object.defineProperty(obj, "g", { get() { o.n++; return 1; } }); }
+install().next();
+obj.g;
 const seen = o.n;
 console.log(seen);
 `,
-    [0, 1, 3, 2, 4]
+    [0, 1, 2, 3, 5, 4, 6]
   ),
-  // F2: a getter that is more than 10 prototypes up is not run, and the read is not an effect (`getVal`, `seen.length > 10`)
   finding(
-    "F2 a getter 11 prototypes up writes o",
+    "F7 Reflect.apply of Object.defineProperty defines a getter",
     `
 const o = { n: 0 };
-const p0 = { get g() { o.n = 1; return 1; } };
-const p1 = Object.create(p0);
-const p2 = Object.create(p1);
-const p3 = Object.create(p2);
-const p4 = Object.create(p3);
-const p5 = Object.create(p4);
-const p6 = Object.create(p5);
-const p7 = Object.create(p6);
-const p8 = Object.create(p7);
-const p9 = Object.create(p8);
-const p10 = Object.create(p9);
-const p11 = Object.create(p10);
-p11.g;
-console.log(o.n);
+const obj = {};
+Reflect.apply(Object.defineProperty, null, [obj, "g", { get() { o.n++; return 1; } }]);
+obj.g;
+const seen = o.n;
+console.log(seen);
 `,
-    [...Array(13).keys(), 14, 13]
+    [0, 1, 2, 4, 3, 5]
   ),
 ];

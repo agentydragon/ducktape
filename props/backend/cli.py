@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import socket
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
@@ -56,9 +55,6 @@ def serve(
     static_dir: Annotated[Path | None, typer.Option(help="Directory with static frontend assets")] = None,
 ) -> None:
     """Start the props dashboard server."""
-    if static_dir:
-        os.environ["PROPS_DASHBOARD_STATIC_DIR"] = str(static_dir.absolute())
-
     deps = default_deps(host=host, port=port)
     app = create_app(deps=deps, static_dir=static_dir)
 

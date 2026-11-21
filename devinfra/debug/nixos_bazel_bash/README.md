@@ -220,7 +220,7 @@ Docker container test setup for reproducing these issues is at `devinfra/nixos_b
 | File                                                      | Role                                      |
 | --------------------------------------------------------- | ----------------------------------------- |
 | `~/.bazelrc`                                              | User-local NixOS workarounds (issues 1-2) |
-| `MODULE.bazel:336-349`                                    | BuildBuddy toolchain registration         |
+| `MODULE.bazel` (`toolchains_buildbuddy` block)            | BuildBuddy toolchain registration         |
 | External `toolchains_buildbuddy+/rules.bzl:84-87`         | FHS symlinks that break on NixOS          |
 | External `rules_mypy~/mypy/private/mypy.bzl:227`          | Action env missing PATH                   |
 | External `rules_python` bootstrap (`interpreter_tmpl.sh`) | Uses bare `env` command                   |

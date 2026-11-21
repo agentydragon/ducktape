@@ -30,12 +30,7 @@ deployment adds:
 
 - `tana-desktop` listens on `127.0.0.1:8262` inside the pod
 - the nginx sidecar on `8263` exposes only `/mcp` and `/health` to cluster
-  clients and explicitly blocks `/oauth/*`
-
-The proxy still blocks `/oauth/*` even though the current deployment no longer
-uses the in-pod OAuth broker. Cluster clients only need `/mcp` and `/health`,
-so exposing Tana's OAuth endpoints would just create unnecessary attack
-surface.
+  clients and explicitly blocks `/oauth/*` (`nginx-auth-proxy.conf`)
 
 ## Architecture
 
@@ -101,13 +96,8 @@ below for emergency recovery if the resigner sidecar can't drive sign-in
 
 ### Expected pre-login state
 
-Before the one-time login is completed, the deployment intentionally looks
-"half up":
-
-- `kubectl -n tana-mcp get deploy,pods` shows the deployment at `0/1` and the
-  pod at `1/2`
-
-That is the expected state before the GUI login and MCP toggle are done.
+Until the renderer is signed in, `tana-desktop` and the proxy (whose `/health`
+reaches Tana's) fail their readiness probes, so the Deployment stays unavailable.
 
 ### 1. Start from a fresh pod window
 
@@ -121,7 +111,7 @@ kubectl -n tana-mcp rollout status deploy/tana-mcp --timeout=2m
 kubectl -n tana-mcp get pods -w
 ```
 
-Wait until the new pod is `Running` and shows `1/2` ready.
+Wait until the new pod is `Running`.
 
 ### 2. Connect via noVNC
 
@@ -178,7 +168,7 @@ You can verify separately:
 kubectl -n tana-mcp get deploy,pods
 ```
 
-The deployment should move to `1/1` available and the pod to `2/2` ready.
+The deployment should become available and the pod Ready.
 
 ### 6. Disconnect noVNC
 
@@ -195,8 +185,6 @@ The MCP endpoint is cluster-internal only (no public ingress).
   `Authorization: Bearer <token>` in requests. This is a personal access token
   for the full `agentydragon@gmail.com` account, not a narrowly scoped
   broker-managed OAuth token.
-- **Exposed paths**: only `/mcp` and `/health`. Tana's `/oauth/*` endpoints are
-  intentionally not reachable through the proxy.
 
 ## Public OAuth Facade
 
@@ -244,25 +232,15 @@ kubectl port-forward -n tana-mcp svc/tana-mcp 8263:8263
 curl http://localhost:8263/health
 ```
 
-Expected path behavior through the proxy:
-
-- `POST /mcp`: allowed
-- `GET /health`: allowed
-- `/oauth/*`: `403`
-- anything else: `404`
-
 ## Troubleshooting
 
-- **Deployment stays `0/1`, pod stays `1/2`**: This is normal until the Tana
-  login is complete and **Tana Labs > Local API/MCP server (Alpha)** is turned
-  on.
+- **Deployment stays unavailable**: Normal until the Tana renderer is signed in.
 - **Pod restarts while you are logging in**: The `startupProbe` allows about 20
   minutes for the initial setup. Restart the deployment to get a fresh window,
   then reconnect via noVNC.
 - **MCP health check failing**: Tana may not be running or MCP not enabled.
   Connect via noVNC to check.
-- **Proxy returns `403` on `/oauth/*`**: This is intentional. The deployed
-  service surface is only `/mcp` and `/health`.
+- **Proxy returns `403` on `/oauth/*`**: Intentional.
 - **`Logging in using browser...` but no browser appears**: The pod is likely
   running an older `tana-desktop` image without the browser-launching
   dependencies (`xdg-utils` + GUI browser), or a browser that still has its
@@ -271,9 +249,10 @@ Expected path behavior through the proxy:
 - **PAT auth failing**: Verify the SOPS-managed secret decrypts correctly and
   that clients are using the `token` key from
   `tana-agentydragon-gmail-com-account-pat`.
-- **Session expired**: Connect via noVNC and sign in again. The PVC preserves
-  state across normal pod restarts but Tana may expire the session after
-  prolonged inactivity.
+- **Session expired**: The resigner signs the renderer back in whenever Tana is
+  unhealthy, and `tana-config` is an `emptyDir`, so a restarted pod starts signed
+  out. If the stored refresh token was revoked, re-bootstrap it (see Bootstrap
+  the refresh token) or sign in through noVNC.
 - **Updating Tana version**: Change `TANA_VERSION` in
   `tana/mcp_server/Dockerfile` and push. CI rebuilds the image and Flux
   auto-deploys.

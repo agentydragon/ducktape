@@ -331,18 +331,8 @@ exit 1
 
 
 async def _exec_server_process(cluster: Cluster, pod: str, mode: str) -> str:
-    return await cluster.kubectl(
-        "exec",
-        pod,
-        "-c",
-        "codex-executor",
-        "--",
-        "/bin/sh",
-        "-c",
-        _EXEC_SERVER_PROCESS_SCRIPT,
-        "--",
-        mode,
-        timeout_s=10,
+    return await cluster.exec(
+        pod, "/bin/sh", "-c", _EXEC_SERVER_PROCESS_SCRIPT, "--", mode, container="codex-executor", timeout_s=10
     )
 
 
@@ -503,11 +493,7 @@ async def _wait_for_active_history_through(deployed: CentralStack, session_id: s
             else:
                 if summary.folded_through >= cursor:
                     assert summary.feed_status == history_service_pb2.FEED_STATUS_ACTIVE, summary
-                    entities = await deployed.history.read_thread_entities(
-                        history_service_pb2.ReadThreadEntitiesRequest(
-                            session_id=session_id, range=history_service_pb2.EntityRange(limit=200)
-                        )
-                    )
+                    entities = await _read_thread_entities(deployed, session_id)
                     (view,) = [entity.view_state for entity in entities.entities if entity.HasField("view_state")]
                     assert view.operational.status == history_service_pb2.THREAD_FEED_STATUS_ACTIVE, view
                     return summary.folded_through
@@ -810,11 +796,7 @@ async def _assert_single_command_settlement(deployed: CentralStack, session_id: 
 
 
 async def _assert_projected_ready_for_input(deployed: CentralStack, session_id: str) -> None:
-    entities = await deployed.history.read_thread_entities(
-        history_service_pb2.ReadThreadEntitiesRequest(
-            session_id=session_id, range=history_service_pb2.EntityRange(limit=200)
-        )
-    )
+    entities = await _read_thread_entities(deployed, session_id)
     (view,) = [entity.view_state for entity in entities.entities if entity.HasField("view_state")]
     assert view.operational.status == history_service_pb2.THREAD_FEED_STATUS_ACTIVE, view
     assert not view.controls.HasField("active_turn_id"), view
@@ -920,11 +902,11 @@ def _gateway_process_start_cell(
     )
 
 
-def _gateway_process_read_cell(*, process_handle: str, wait_ms: int) -> str:
+def _gateway_process_read_cell(*, process_handle: str) -> str:
     """Build the code-mode cell that reads the retained process handle."""
     return (
         f"const handle = load({json.dumps(process_handle)});\n"
-        f"const result = await tools.write_stdin({{session_id: handle, yield_time_ms: {wait_ms}}});\n"
+        "const result = await tools.write_stdin({session_id: handle, yield_time_ms: 30000});\n"
         "text(JSON.stringify({handle, result}));"
     )
 
@@ -961,7 +943,7 @@ async def gateway_roll_keeps_live_central_read_and_turn(
         await _send_single_exec_cell(
             request,
             call_id="read-live-process",
-            source=_gateway_process_read_cell(process_handle="gateway-roll-handle", wait_ms=30000),
+            source=_gateway_process_read_cell(process_handle="gateway-roll-handle"),
         )
         read_intent = await _wait_for_executor_dispatch_after(deployed, session_id, cursor, process_id)
         (
@@ -1000,15 +982,9 @@ async def gateway_roll_keeps_live_central_read_and_turn(
         await _wait_for_turn_status(deployed, session_id, second_command, event_pb2.TURN_STATUS_COMPLETED)
         await _wait_for_folded_turn(deployed, session_id, second_command)
         await _assert_projected_ready_for_input(deployed, session_id)
-        snapshot = await deployed.sampler_admin.GetSession(
-            sampler_admin_pb2.GetSessionRequest(session_id=session_id), timeout=10
-        )
+        snapshot = await _get_sampler_session(deployed, session_id)
         assert not snapshot.blocked
-        entities = await deployed.history.read_thread_entities(
-            history_service_pb2.ReadThreadEntitiesRequest(
-                session_id=session_id, range=history_service_pb2.EntityRange(limit=200)
-            )
-        )
+        entities = await _read_thread_entities(deployed, session_id)
         for command_id in (first_command, second_command):
             assert any(
                 entity.HasField("confirmed_input") and command_id in entity.confirmed_input.origin_command_ids
@@ -1170,7 +1146,7 @@ async def gateway_crash_settles_live_central_read_and_accepts_next_input(
         await _send_single_exec_cell(
             request,
             call_id="read-crash-process",
-            source=_gateway_process_read_cell(process_handle="gateway-crash-handle", wait_ms=30000),
+            source=_gateway_process_read_cell(process_handle="gateway-crash-handle"),
         )
         await _wait_for_executor_dispatch_after(deployed, session_id, cursor, process_id, "read-crash-process")
         _, _, _, killed_native, read_failure = await _roll_runtime_proxy_for_central_session(
@@ -1241,7 +1217,7 @@ async def gateway_retry_exhaustion_reports_unknown_and_accepts_next_input(
         await _send_single_exec_cell(
             request,
             call_id="read-budget-process",
-            source=_gateway_process_read_cell(process_handle="gateway-budget-handle", wait_ms=30000),
+            source=_gateway_process_read_cell(process_handle="gateway-budget-handle"),
         )
         await _wait_for_executor_dispatch_after(deployed, session_id, cursor, process_id, "read-budget-process")
         _, _, _, killed_native, read_failure = await _roll_runtime_proxy_for_central_session(
@@ -1339,7 +1315,7 @@ async def gateway_outage_restarts_exec_server_then_notifies_model(
         await _send_single_exec_cell(
             request,
             call_id="read-expiring-process",
-            source=_gateway_process_read_cell(process_handle="gateway-loss-handle", wait_ms=30000),
+            source=_gateway_process_read_cell(process_handle="gateway-loss-handle"),
         )
         read_intent = await _wait_for_executor_dispatch_after(
             deployed, session_id, cursor, process_id, "read-expiring-process"
@@ -1598,9 +1574,7 @@ async def dispatcher_central_setup_tool_and_retained_answer(
                 pytest.fail("Sampler stream ended before completion")
         finally:
             events.cancel()
-        snapshot = await deployed.sampler_admin.GetSession(
-            sampler_admin_pb2.GetSessionRequest(session_id=session_id), timeout=10
-        )
+        snapshot = await _get_sampler_session(deployed, session_id)
         assert snapshot.executor.target.uid == deployed.sandbox_uid
         assert snapshot.expected_incarnation_uid == deployed.incarnation_uid
         assert snapshot.attached.setup_state == session_pb2.SETUP_STATE_SUCCEEDED
@@ -1643,11 +1617,7 @@ async def dispatcher_central_setup_tool_and_retained_answer(
             and "prepared-on-executor" in entry.event.item_completed.tool.output
             for entry in completed
         )
-        entities = await deployed.history.read_thread_entities(
-            history_service_pb2.ReadThreadEntitiesRequest(
-                session_id=session_id, range=history_service_pb2.EntityRange(limit=200)
-            )
-        )
+        entities = await _read_thread_entities(deployed, session_id)
         assert all(entity.session_id == session_id for entity in entities.entities)
         for text in (reasoning, answer):
             (item,) = [entry for entry in completed if entry.event.item_completed.text == text]
@@ -1817,9 +1787,7 @@ async def pod_exec_session_rebinds_after_sandbox_suspend_resume(
         await model.reply(request, Text("The resumed executor retained the workspace and completed the new command."))
         await _wait_for_turn_status(deployed, session_id, resumed_command_id, event_pb2.TURN_STATUS_COMPLETED)
 
-        snapshot = await deployed.sampler_admin.GetSession(
-            sampler_admin_pb2.GetSessionRequest(session_id=session_id), timeout=10
-        )
+        snapshot = await _get_sampler_session(deployed, session_id)
         assert len(resumed_tool_outputs) == 2, (
             "expected the exec result followed by the Sandbox incarnation notice; "
             f"expected_incarnation={snapshot.expected_incarnation_uid!r}, "
@@ -1920,9 +1888,7 @@ async def sampler_roll_retains_active_turn_and_history_accepts_next_input(
         assert continuation.native.client_metadata.session_id == session_id
         await model.hold(continuation)
 
-        snapshot = await deployed.sampler_admin.GetSession(
-            sampler_admin_pb2.GetSessionRequest(session_id=session_id), timeout=10
-        )
+        snapshot = await _get_sampler_session(deployed, session_id)
         assert snapshot.attached.active_turn_id == command_id
         summary = await _wait_for_history_fold(deployed, session_id, snapshot.attached.last_cursor)
         assert summary.attached.active_turn_id == command_id
@@ -1957,10 +1923,7 @@ async def sampler_roll_retains_active_turn_and_history_accepts_next_input(
         await _wait_for_turn_status(deployed, session_id, command_id, event_pb2.TURN_STATUS_COMPLETED)
 
         # History can lag the sampler; its fold cursor must reach the sampler's terminal event.
-        frames = deployed.sampler_admin.FollowEvents(
-            sampler_admin_pb2.FollowEventsRequest(session_id=session_id), timeout=10
-        )
-        entries = [frame.entry async for frame in frames]
+        entries = await _sampler_events_after(deployed, session_id, 0)
         terminal = next(entry for entry in entries if entry.event.HasField("turn_completed"))
         summary = await _wait_for_history_fold(deployed, session_id, terminal.cursor)
         assert summary.feed_status == history_service_pb2.FEED_STATUS_ACTIVE
@@ -2010,10 +1973,7 @@ async def sampler_roll_retains_active_turn_and_history_accepts_next_input(
         assert process_output.strip() == "started", process_output
         await model.reply(request, Text("The next input completed on the same executor."))
         await _wait_for_turn_status(deployed, session_id, next_command_id, event_pb2.TURN_STATUS_COMPLETED)
-        frames = deployed.sampler_admin.FollowEvents(
-            sampler_admin_pb2.FollowEventsRequest(session_id=session_id), timeout=10
-        )
-        entries = [frame.entry async for frame in frames]
+        entries = await _sampler_events_after(deployed, session_id, 0)
         summary = await _wait_for_history_fold(deployed, session_id, entries[-1].cursor)
         assert summary.feed_status == history_service_pb2.FEED_STATUS_ACTIVE
         assert not summary.attached.active_turn_id
@@ -2027,23 +1987,14 @@ async def sampler_roll_retains_active_turn_and_history_accepts_next_input(
             and next_command_id in entry.event.harness_user_message_confirmed.origin_command_ids
             for entry in retained.entries
         )
-        entities = await deployed.history.read_thread_entities(
-            history_service_pb2.ReadThreadEntitiesRequest(
-                session_id=session_id, range=history_service_pb2.EntityRange(limit=200)
-            )
-        )
+        entities = await _read_thread_entities(deployed, session_id)
         assert any(
             entity.HasField("confirmed_input") and next_command_id in entity.confirmed_input.origin_command_ids
             for entity in entities.entities
         )
         for settled_command_id in (command_id, next_command_id):
-            command = await deployed.sampler_admin.GetCommand(
-                sampler_admin_pb2.GetCommandRequest(session_id=session_id, command_id=settled_command_id), timeout=10
-            )
-            assert command.outcome == sampler_pb2.COMMAND_OUTCOME_APPLIED
-        snapshot = await deployed.sampler_admin.GetSession(
-            sampler_admin_pb2.GetSessionRequest(session_id=session_id), timeout=10
-        )
+            await _assert_command_applied(deployed, session_id, settled_command_id)
+        snapshot = await _get_sampler_session(deployed, session_id)
         assert not snapshot.blocked
         assert not snapshot.attached.active_turn_id
         assert snapshot.expected_incarnation_uid == deployed.incarnation_uid
@@ -2084,6 +2035,30 @@ async def _sampler_events_after(deployed: CentralStack, session_id: str, cursor:
         return [frame.entry async for frame in stream]
     finally:
         stream.cancel()
+
+
+async def _get_sampler_session(deployed: CentralStack, session_id: str) -> sampler_admin_pb2.GetSessionResponse:
+    snapshot: sampler_admin_pb2.GetSessionResponse = await deployed.sampler_admin.GetSession(
+        sampler_admin_pb2.GetSessionRequest(session_id=session_id), timeout=10
+    )
+    return snapshot
+
+
+async def _assert_command_applied(deployed: CentralStack, session_id: str, command_id: str) -> None:
+    command = await deployed.sampler_admin.GetCommand(
+        sampler_admin_pb2.GetCommandRequest(session_id=session_id, command_id=command_id), timeout=10
+    )
+    assert command.outcome == sampler_pb2.COMMAND_OUTCOME_APPLIED
+
+
+async def _read_thread_entities(
+    deployed: CentralStack, session_id: str
+) -> history_service_pb2.ReadThreadEntitiesResponse:
+    return await deployed.history.read_thread_entities(
+        history_service_pb2.ReadThreadEntitiesRequest(
+            session_id=session_id, range=history_service_pb2.EntityRange(limit=200)
+        )
+    )
 
 
 async def _ready_service_endpoint_addresses(cluster: Cluster, service: str) -> set[str]:
@@ -2144,11 +2119,7 @@ async def _wait_for_history_cursors(
                 summary = await deployed.history.get_session_summary(session_id)
                 if summary.committed_cursor >= cursor and summary.folded_through >= cursor:
                     assert summary.feed_status == history_service_pb2.FEED_STATUS_ACTIVE, summary
-                    entities = await deployed.history.read_thread_entities(
-                        history_service_pb2.ReadThreadEntitiesRequest(
-                            session_id=session_id, range=history_service_pb2.EntityRange(limit=200)
-                        )
-                    )
+                    entities = await _read_thread_entities(deployed, session_id)
                     (view,) = [entity.view_state for entity in entities.entities if entity.HasField("view_state")]
                     assert view.operational.status == history_service_pb2.THREAD_FEED_STATUS_ACTIVE, view
                     return summary
@@ -2176,9 +2147,7 @@ async def history_outage_backfills_completed_turn(
         assert request.native.client_metadata.session_id == session_id
         assert any("synthetic turn" in text for text in request.user_texts)
 
-        active = await deployed.sampler_admin.GetSession(
-            sampler_admin_pb2.GetSessionRequest(session_id=session_id), timeout=10
-        )
+        active = await _get_sampler_session(deployed, session_id)
         assert active.attached.active_turn_id == command_id
         before = await _sampler_events_after(deployed, session_id, 0)
         assert before
@@ -2248,10 +2217,7 @@ async def history_outage_backfills_completed_turn(
         assert folded_terminal.cursor == terminal.cursor
         assert folded_terminal.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
         await _assert_single_command_settlement(deployed, session_id, command_id)
-        first_command = await deployed.sampler_admin.GetCommand(
-            sampler_admin_pb2.GetCommandRequest(session_id=session_id, command_id=command_id), timeout=10
-        )
-        assert first_command.outcome == sampler_pb2.COMMAND_OUTCOME_APPLIED
+        await _assert_command_applied(deployed, session_id, command_id)
 
         await _assert_projected_ready_for_input(deployed, session_id)
         submitted = await _submit_exact_input(
@@ -2265,10 +2231,7 @@ async def history_outage_backfills_completed_turn(
         await _wait_for_folded_turn(deployed, session_id, next_command_id)
         await _assert_projected_ready_for_input(deployed, session_id)
         await _assert_single_command_settlement(deployed, session_id, command_id, next_command_id)
-        second_command = await deployed.sampler_admin.GetCommand(
-            sampler_admin_pb2.GetCommandRequest(session_id=session_id, command_id=next_command_id), timeout=10
-        )
-        assert second_command.outcome == sampler_pb2.COMMAND_OUTCOME_APPLIED
+        await _assert_command_applied(deployed, session_id, next_command_id)
         final_cursor = (await _sampler_events_after(deployed, session_id, after_outage_cursor))[-1].cursor
         (undeclared_outputs_dir() / "central-sampler-history-outage.json").write_text(
             json.dumps(

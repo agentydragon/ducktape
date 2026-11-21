@@ -93,7 +93,7 @@ def _deployment(chart: Chart) -> None:
             namespace=NAME,
             labels=SERVICE.pods.selector,
             annotations={
-                **namespaces.initial_memory_request_annotations(
+                **namespaces.initial_request_annotations(
                     ContainerPolicy.memory_requests_only(
                         "proxy", cpu_request="50m", memory_floor="128Mi", memory_limit="160Mi"
                     )
@@ -179,18 +179,7 @@ def chart(app: App) -> Chart:
         chart,
         "service",
         metadata=k8s.ObjectMeta(name=SERVICE.name, namespace=NAME, labels=SERVICE.labels),
-        spec=k8s.ServiceSpec(
-            selector=SERVICE.pods.selector,
-            ports=[
-                k8s.ServicePort(
-                    name=SERVICE.port.name,
-                    port=SERVICE.port.number,
-                    target_port=k8s.IntOrString.from_number(SERVICE.pod_port),
-                    protocol="TCP",
-                )
-            ],
-            type="ClusterIP",
-        ),
+        spec=k8s.ServiceSpec(selector=SERVICE.pods.selector, ports=[SERVICE.k8s_service_port()], type="ClusterIP"),
     )
     # Who may reach the proxy at all. Anonymous requests are authorized only by the proxy's
     # static allowlist, so this ingress fence is their access control; token-bearing requests

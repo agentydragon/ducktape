@@ -59,7 +59,6 @@
     "third_party/activitywatch/Cargo.Bazel.lock",
     // Bazel owns these locks; Renovate should watch their package.json inputs.
     "pnpm-lock.yaml",
-    "third_party/manifold_mcp_server/pnpm-lock.yaml",
     // Generated from pixi.toml; keep the manifest as Renovate's input.
     "skills/freecad/conda/pixi.lock",
     // The Prettier npm inputs are coupled to Nix package metadata and must move
@@ -167,7 +166,6 @@
         "airlock/frontend/package.json",
         "props/frontend/package.json",
         "study_casino/frontend/package.json",
-        "third_party/manifold_mcp_server/package.json",
       ],
       skipArtifactsUpdate: true,
     },
@@ -176,12 +174,6 @@
       matchManagers: ["pixi"],
       matchFileNames: ["skills/freecad/conda/pixi.toml"],
       skipArtifactsUpdate: true,
-    },
-    {
-      description: "Review the community Claude Managed Agents provider manually",
-      matchDatasources: ["terraform-provider"],
-      matchPackageNames: ["modus-agendi/anthropic-claude-managed-agents"],
-      automerge: false,
     },
   ],
 }

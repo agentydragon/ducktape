@@ -42,8 +42,8 @@ export function PreviewCard({ fixture, variant }: { fixture: PreviewFixture; var
   const { title, serverId, toolName, args, result } = fixture;
   const argumentsRecord = args as Record<string, unknown>;
   // A sample with a result renders as a finished OK call (so the result body shows); one without
-  // stays pending, like the approvals panel's cards. The fixture carries the tool's raw return;
-  // wrap it into the stored CallToolResult envelope the card renders.
+  // stays pending. The fixture carries the tool's raw return; wrap it into the stored
+  // CallToolResult envelope the card renders.
   const finished = result != null;
   const storedResult = finished ? callToolResult(result) : null;
   const fields = approvalDisplayFields({
@@ -68,7 +68,7 @@ export function PreviewCard({ fixture, variant }: { fixture: PreviewFixture; var
   });
   return (
     // `.haku-page` (position overridden to static) mirrors the real surface so the card's
-    // page-scoped CSS applies, and `.haku-shell-panels` is the real approvals-panel column class,
+    // page-scoped CSS applies, and `.haku-shell-panels` is the real shell drawer column class,
     // so the card renders at its production width and tracks that CSS if it changes — never a
     // magic-number viewport width. `.haku-preview-card` is the sweep's screenshot target: an
     // opaque background keeps the standalone PNG self-contained, and forcing no height gives a

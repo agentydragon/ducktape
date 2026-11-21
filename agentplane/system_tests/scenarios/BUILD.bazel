@@ -275,6 +275,7 @@ py_library(
         "//agentplane/system_tests/driver:tracing",
         "//devinfra/testing:undeclared_outputs",
         "@pypi//kubernetes_asyncio",
+        "@pypi//opentelemetry_api",
         "@pypi//protobuf",
     ],
 )

@@ -119,5 +119,5 @@ still hold.
 - 10Gi is a starting budget, not a retention policy: window/AFK data should fit for a
   long time, but multi-device growth is unbounded and unmeasured now that four devices
   feed it.
-- Agent read access is a static long-lived bearer (SOPS-minted, iron-substituted). A
+- Agent read access is a static long-lived bearer (SOPS-minted). A
   rotator-issued short-lived token handoff would be more hygienic.

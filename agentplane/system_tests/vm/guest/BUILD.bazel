@@ -1,3 +1,4 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
@@ -188,6 +189,24 @@ pkg_tar(
     package_dir = "/usr/sbin",
 )
 
+go_binary(
+    name = "agentplane-executor-probe",
+    srcs = ["executor_probe.go"],
+    pure = "on",
+    deps = [
+        "//agentplane/env/runtime/execution:executor_go_proto",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//credentials/insecure",
+    ],
+)
+
+pkg_tar(
+    name = "root_executor_probe",
+    srcs = [":agentplane-executor-probe"],
+    mode = "0755",
+    package_dir = "/usr/sbin",
+)
+
 pkg_files(
     name = "root_systemd_files",
     srcs = [
@@ -255,6 +274,7 @@ pkg_tar(
     name = "root_shared_systemd",
     srcs = [
         "//agentplane/env/images/systemd:agentplane.slice",
+        "//agentplane/env/images/systemd:agentplane-commands.slice",
         "//agentplane/env/images/systemd:agentplane-environment-runtime.service",
         "//agentplane/env/images/systemd:agentplane-executors.slice",
         "//agentplane/env/images/systemd:agentplane-workloads.slice",
@@ -305,6 +325,7 @@ pkg_tar(
     deps = [
         ":root_acpi",
         ":root_etc",
+        ":root_executor_probe",
         ":root_hwdb",
         ":root_init",
         ":root_journald",

@@ -10,8 +10,7 @@ import {
 import { AutosuspendBlockerSchema } from "../../../proto/environment_lifecycle_pb";
 /**
  * Visual-test harness: Python configures canned data and explicitly mounts the app. No scene registry.
- * `fetch` (stubbed by network.ts, imported first so the
- * app's client captures the stub) answers API, Electric Shape, event stream and watch routes.
+ * `fetch` (stubbed by network.ts, imported first) answers API, Electric Shape, event stream and watch routes.
  */
 import {
   electricLive,
@@ -27,11 +26,14 @@ import {
 } from "./network";
 import {
   ActionGroupSchema,
+  ActionSchema,
   ActionIdentitySchema,
   ActionRequestSchema,
   ListActionRequestHistoryResponseSchema,
   ActionState,
   ExecutorKind,
+  InputSchemaValidationStatus,
+  InputSchemaValidationReason,
   McpLifecycle,
   McpHealthSchema,
   McpUnavailableReason,
@@ -916,7 +918,7 @@ function notificationFrames(session: string, kind: string, delta: boolean): unkn
           lastSuccessAt: ago(60000),
           nextSourceCheckAt: ago(-30000),
         },
-        githubSubscription("subscription-two", "agentydragon/ducktape", 42, undefined, true),
+        githubSubscription("subscription-two", "test-owner/test-repository", 42, undefined, true),
         githubSubscription("subscription-failure-1", "owner/repo", 1, "RATE_LIMITED"),
         githubSubscription("subscription-failure-2", "owner/repo", 2, "ACCESS_DENIED"),
       ]
@@ -1399,8 +1401,8 @@ const ACTIONS: ActionRequest[] = [
   fromJson(ActionRequestSchema, {
     id: "70000000-0000-4000-8000-000000000004",
     action: { group: "github", name: "search_code" },
-    arguments: { repository: "agentydragon/ducktape", query: "auto_allow" },
-    title: "search ducktape for auto_allow",
+    arguments: { repository: "test-owner/test-repository", query: "auto_allow" },
+    title: "search test-repository for auto_allow",
     idempotencyKey: "visual-auto-approved",
     caller: { namespace: "agentplane-visual", name: "ready-sandbox" },
     state: "ACTION_STATE_SUCCEEDED",
@@ -1751,7 +1753,7 @@ function standardRows(
       threadId,
       tool: "Read",
       arguments: '{"path":"README.md"}',
-      output: "# ducktape\n\nRepository instructions are available.",
+      output: "# test-repository\n\nRepository instructions are available.",
     }),
     item(
       20,
@@ -2470,6 +2472,27 @@ function realisticRolloutRows(
   return [{ ...viewState(entries.length, null), thread_id: threadId }, ...rows];
 }
 
+/** Serves the idle Thread as a finished Codex run named `name`, whose history is `entries`. */
+function serveRollout(name: string, entries: typeof rollout | typeof reportedRollout): void {
+  mapThread = (thread) =>
+    thread.metadata.threadId === IDLE_THREAD
+      ? {
+          ...thread,
+          metadata: { ...thread.metadata, name },
+          summary: {
+            ...thread.summary,
+            lastTurnStatus: TurnStatus.COMPLETED,
+            attached: {
+              ...thread.summary.attached!,
+              spec: visualNativeSpec(Harness.CODEX, "ready-sandbox"),
+              activeTurnId: "",
+            },
+          },
+        }
+      : thread;
+  threadEntityRows = (id) => realisticRolloutRows(id, entries);
+}
+
 function threadScope(threadId: string): Record<string, unknown> {
   const through = threadEntityRows(threadId).find((row) => row.entity_kind === "view_state")?.revision_cursor ?? "0";
   return toJson(
@@ -2481,29 +2504,9 @@ function threadScope(threadId: string): Record<string, unknown> {
   ) as Record<string, unknown>;
 }
 
-function rememberPendingInput(): void {
-  const local = new LocalCommands(THREADS[2].metadata.threadId);
-  local.remember(
-    create(CommandSchema, {
-      commandId: "locally-retained",
-      operation: {
-        case: "submitInput",
-        value: { text: "Continue when ready. This message has no saved confirmation yet." },
-      },
-    })
-  );
-}
-
-function rememberInputEcho(): void {
-  const local = new LocalCommands(THREADS[2].metadata.threadId);
-  local.remember(
-    create(CommandSchema, {
-      commandId: "locally-retained",
-      operation: {
-        case: "submitInput",
-        value: { text: "This browser already knows the text it sent." },
-      },
-    })
+function rememberInput(text: string): void {
+  new LocalCommands(THREADS[2].metadata.threadId).remember(
+    create(CommandSchema, { commandId: "locally-retained", operation: { case: "submitInput", value: { text } } })
   );
 }
 
@@ -2531,26 +2534,35 @@ function enableSuspendedSandboxWakeOnMessage(): void {
   sandbox.observedState!.suspendedBy = "Requested";
 }
 
-function rememberDispatch(threadId = RUNNING_THREAD): void {
-  const command = create(CommandSchema, {
-    commandId: "queued-dispatch",
-    operation: {
-      case: "submitInput",
-      value: { text: "Continue when the Sandbox is ready." },
-    },
-  });
+/** An input `commandId` this browser sent to `threadId`, and the state and reason the Dispatcher reports for it. */
+function rememberDispatched(
+  threadId: string,
+  commandId: string,
+  text: string,
+  { state, reason }: { state: string; reason: string }
+): void {
+  const command = create(CommandSchema, { commandId, operation: { case: "submitInput", value: { text } } });
   const local = new LocalCommands(threadId);
   local.remember(command);
-  const dispatch = dispatchFromJson({
-    commandId: command.commandId,
-    sessionId: threadId,
-    ...COMMAND_TARGET,
+  local.acknowledgeDispatch(
+    command,
+    dispatchFromJson({
+      commandId,
+      sessionId: threadId,
+      ...COMMAND_TARGET,
+      state,
+      reason,
+      updatedAt: ago(1_000),
+      admission: null,
+    })
+  );
+}
+
+function rememberDispatch(threadId = RUNNING_THREAD): void {
+  rememberDispatched(threadId, "queued-dispatch", "Continue when the Sandbox is ready.", {
     state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
     reason: "sandbox_resuming",
-    updatedAt: ago(1_000),
-    admission: null,
   });
-  local.acknowledgeDispatch(command, dispatch);
 }
 
 // What the mock Dispatcher's stream reports for a queued command, where a scene gives it a reason of
@@ -2560,49 +2572,18 @@ const queuedReasons = new Map<string, string>();
 // Real reason from a staging Dispatcher whose Role lacked a verb, on a message short enough that
 // its indicator sits near the right edge of the page.
 function rememberShortRefusedWake(): void {
-  const command = create(CommandSchema, {
-    commandId: "short-wake-refused",
-    operation: { case: "submitInput", value: { text: "Short" } },
-  });
+  const commandId = "short-wake-refused";
   const reason =
     'sandbox_wake_failed: sandboxes.agentplane.allegedly.works "box" is forbidden: User "system:serviceaccount:agentplane-staging:runner-gateway" cannot update resource "sandboxes" in API group "agentplane.allegedly.works" in the namespace "agentplane-staging"';
-  queuedReasons.set(command.commandId, reason);
-  const local = new LocalCommands(RUNNING_THREAD);
-  local.remember(command);
-  local.acknowledgeDispatch(
-    command,
-    dispatchFromJson({
-      commandId: command.commandId,
-      sessionId: RUNNING_THREAD,
-      ...COMMAND_TARGET,
-      state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
-      reason,
-      updatedAt: ago(1_000),
-      admission: null,
-    })
-  );
+  queuedReasons.set(commandId, reason);
+  rememberDispatched(RUNNING_THREAD, commandId, "Short", { state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER", reason });
 }
 
 function rememberFailedDispatch(): void {
-  const command = create(CommandSchema, {
-    commandId: "wake-deadline-dispatch",
-    operation: {
-      case: "submitInput",
-      value: { text: "Please start the Sandbox when capacity is available." },
-    },
-  });
-  const local = new LocalCommands(RUNNING_THREAD);
-  local.remember(command);
-  const dispatch = dispatchFromJson({
-    commandId: command.commandId,
-    sessionId: RUNNING_THREAD,
-    ...COMMAND_TARGET,
+  rememberDispatched(RUNNING_THREAD, "wake-deadline-dispatch", "Please start the Sandbox when capacity is available.", {
     state: "DELIVERY_STATE_FAILED",
     reason: "wake_deadline_expired: Ready=False/Unschedulable: 0/2 nodes are available: PVC is not bound",
-    updatedAt: ago(1_000),
-    admission: null,
   });
-  local.acknowledgeDispatch(command, dispatch);
 }
 
 // One MCP server per row state the MCP servers page draws: linked and connected, a link whose token
@@ -2723,7 +2704,19 @@ const MCP_GROUPS: ActionGroup[] = [
     failures: 7,
   }),
   mcpGroup("gmail", "Test Gmail action group for Agentplane rendering."),
-  mcpGroup("example_notes", BEARER),
+  create(ActionGroupSchema, {
+    ...mcpGroup("example_notes", BEARER),
+    actions: [
+      create(ActionSchema, {
+        name: "search_notes",
+        inputSchemaValidation: {
+          status: InputSchemaValidationStatus.NOT_ENFORCED,
+          reason: InputSchemaValidationReason.SCHEMA_COMPILE_FAILED,
+          detail: "Agentplane could not compile this tool's input schema.",
+        },
+      }),
+    ],
+  }),
   mcpGroup("ssh", BEARER),
 ];
 const MCP_UNKNOWN_GROUPS: ActionGroup[] = [
@@ -3514,19 +3507,6 @@ routes.push(
     },
   ],
   [
-    "POST",
-    /^\/upstream\/history\/v1\/sessions:batchGetSummaries$/,
-    (_match, _query, _signal, body) => {
-      const request = body === undefined ? {} : (JSON.parse(body) as { sessionIds?: string[] });
-      const wanted = new Set(request.sessionIds ?? []);
-      return {
-        summaries: THREADS_WITH_SANDBOXES.map(mapThread)
-          .filter((thread) => wanted.has(thread.metadata.threadId))
-          .map((thread) => toJson(SessionSummarySchema, thread.summary)),
-      };
-    },
-  ],
-  [
     "GET",
     /^\/upstream\/history\/v1\/sessions\/([0-9a-f-]+)\/observations$/,
     (_match, query) => historyObservationPage(query),
@@ -4034,24 +4014,33 @@ routes.unshift(
   [
     "GET",
     /^\/upstream\/history\/v1\/session-summaries:watch$/,
-    (_match, _query, signal) =>
-      liveNdjsonWatch(
+    (_match, query, signal) => {
+      const wanted = new Set(query.getAll("selected.session_ids"));
+      const frames = () =>
+        wanted.size
+          ? [
+              {
+                snapshot: {
+                  summaries: THREADS_WITH_SANDBOXES.map(mapThread)
+                    .filter((thread) => wanted.has(thread.metadata.threadId))
+                    .map((thread) => toJson(SessionSummarySchema, thread.summary)),
+                },
+              },
+            ]
+          : [
+              toJson(
+                WatchSessionSummariesResponseSchema,
+                create(WatchSessionSummariesResponseSchema, { observation: { case: "changed", value: {} } })
+              ),
+            ];
+      return liveNdjsonWatch(
         "/upstream/history/v1/session-summaries:watch",
-        [
-          toJson(
-            WatchSessionSummariesResponseSchema,
-            create(WatchSessionSummariesResponseSchema, { observation: { case: "changed", value: {} } })
-          ),
-        ],
-        () => [
-          toJson(
-            WatchSessionSummariesResponseSchema,
-            create(WatchSessionSummariesResponseSchema, { observation: { case: "changed", value: {} } })
-          ),
-        ],
+        frames(),
+        frames,
         signal,
         flags.has("threadStreamDropped")
-      ),
+      );
+    },
   ]
 );
 
@@ -4409,50 +4398,22 @@ const visualHarness = {
   commandOutcomes(): void {
     threadEntityRows = (id) => statesRows(id, true);
   },
-  rememberPendingInput,
-  rememberInputEcho,
+  rememberPendingInput(): void {
+    rememberInput("Continue when ready. This message has no saved confirmation yet.");
+  },
+  rememberInputEcho(): void {
+    rememberInput("This browser already knows the text it sent.");
+  },
   rememberSettledCommands,
   enableSuspendedSandboxWakeOnMessage,
   rememberDispatch,
   rememberShortRefusedWake,
   rememberFailedDispatch,
   completedRollout(): void {
-    mapThread = (thread) =>
-      thread.metadata.threadId === IDLE_THREAD
-        ? {
-            ...thread,
-            metadata: { ...thread.metadata, name: "Completed diagnostic run" },
-            summary: {
-              ...thread.summary,
-              lastTurnStatus: TurnStatus.COMPLETED,
-              attached: {
-                ...thread.summary.attached!,
-                spec: visualNativeSpec(Harness.CODEX, "ready-sandbox"),
-                activeTurnId: "",
-              },
-            },
-          }
-        : thread;
-    threadEntityRows = (id) => realisticRolloutRows(id, rollout);
+    serveRollout("Completed diagnostic run", rollout);
   },
   reportedRollout(): void {
-    mapThread = (thread) =>
-      thread.metadata.threadId === IDLE_THREAD
-        ? {
-            ...thread,
-            metadata: { ...thread.metadata, name: "Reported thread excerpt" },
-            summary: {
-              ...thread.summary,
-              lastTurnStatus: TurnStatus.COMPLETED,
-              attached: {
-                ...thread.summary.attached!,
-                spec: visualNativeSpec(Harness.CODEX, "ready-sandbox"),
-                activeTurnId: "",
-              },
-            },
-          }
-        : thread;
-    threadEntityRows = (id) => realisticRolloutRows(id, reportedRollout);
+    serveRollout("Reported thread excerpt", reportedRollout);
   },
 };
 Object.assign(window, { agentplaneVisual: visualHarness });

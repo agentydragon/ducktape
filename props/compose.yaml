@@ -47,7 +47,7 @@ services:
       - props-internal
       - default # For host port publishing (internal network blocks it)
 
-  # Unified backend — see docs/backend_api.md for endpoint reference
+  # Backend (dashboard and run APIs) — see docs/backend_api.md for endpoint reference
   backend:
     image: props-backend:latest
     container_name: props-backend

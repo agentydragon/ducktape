@@ -33,8 +33,8 @@ export function literalKey(node) {
 
 const LOWER_DROP = new Set(["start", "end", "loc", "range", "raw", "regex", "bigint", "sourceType"]);
 
-/** Copy one original statement without changing its ESTree structure, adding only
- * scope/literal annotations. A new binder map is used for each original statement. */
+/** Copy one statement without changing its ESTree structure, adding only
+ * scope/literal annotations. A new binder map is used for each statement. */
 export function annotateLower(node, meaning, binders = new Map()) {
   if (Array.isArray(node)) return node.map((child) => annotateLower(child, meaning, binders));
   if (node === null || typeof node !== "object") return node;
@@ -56,13 +56,4 @@ export function annotateLower(node, meaning, binders = new Map()) {
   }
   if (node.type === "Literal") out.lit = literalKey(node);
   return out;
-}
-
-/** Annotate without splitting original statements or discarding imports/exports. */
-export function lowerStatements(program, scopes, source) {
-  const meaning = resolveIdentifiers({ scopes }, () => true);
-  return program.body.map((statement) => ({
-    ast: annotateLower(statement, meaning),
-    src: source.slice(statement.start, statement.end),
-  }));
 }

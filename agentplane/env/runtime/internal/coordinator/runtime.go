@@ -53,8 +53,7 @@ type Config struct {
 	StateDir                    string
 	Launch                      configuration.SandboxLaunch
 	Supervision                 string
-	PodPID1                     bool
-	VMProcessLauncher           *supervision.SystemdLauncher
+	SystemdLauncher             *supervision.SystemdLauncher
 	CodexExecServer             *codexexecserver.Config
 	HarnessEnvironment          map[string]string
 	InitializationCwd           string
@@ -153,6 +152,7 @@ type Runtime struct {
 	startupComplete        bool
 	harnessSupervisor      *supervision.Supervisor
 	executionSupervisor    *supervision.Supervisor
+	commandSupervisor      *supervision.Supervisor
 	harnessProcesses       *supervision.Host
 	sessionWorkers         sync.WaitGroup
 	sessionScripts         *scripts.Runner
@@ -185,14 +185,14 @@ func newRuntime(config Config, injectedState state.State, deps runtimeDeps) (*Ru
 	if config.Supervision != "pid1" && config.Supervision != "systemd" {
 		return nil, errors.New("environment Runtime requires explicit pid1 or systemd supervision")
 	}
-	if config.Supervision == "pid1" && (!config.PodPID1 || config.VMProcessLauncher != nil) {
-		return nil, errors.New("PID1 Runtime supervision requires Pod PID1 configuration")
+	if config.Supervision == "pid1" && config.SystemdLauncher != nil {
+		return nil, errors.New("PID 1 Runtime supervision cannot use a systemd launcher")
 	}
-	if config.Supervision == "systemd" && (config.PodPID1 || config.VMProcessLauncher == nil) {
-		return nil, errors.New("systemd Runtime supervision requires VM launcher configuration")
+	if config.Supervision == "systemd" && config.SystemdLauncher == nil {
+		return nil, errors.New("systemd Runtime supervision requires a systemd launcher")
 	}
 	if config.Supervision == "pid1" && os.Getpid() != 1 && deps.prepareSupervisor == nil {
-		return nil, errors.New("Pod environment Runtime must be PID 1")
+		return nil, errors.New("PID 1 supervision requires Environment Runtime to be PID 1")
 	}
 	if config.CodexExecServer != nil && (config.HarnessEnvironment == nil) {
 		return nil, errors.New("execution service requires a resolved harness environment")
@@ -292,22 +292,28 @@ func (r *Runtime) initializeLifecycle(ctx context.Context) error {
 	r.lifecycleEngine = engine
 	r.processes = supervision.NewHost(ctx, r.lifecycleState, lifecycle.Namespace, supervision.RuntimeDomain, &r.lifecycleWorkers, r.fail)
 	if r.config.Supervision == "systemd" {
-		r.supervisor, err = r.processes.DeclareSystemdScope(ctx, r.config.VMProcessLauncher, r.config.StateDir, r.config.Launch.Sandbox.UID, supervision.RuntimeOwner(RuntimeScopeID))
+		r.supervisor, err = r.processes.DeclareSystemdScope(ctx, r.config.SystemdLauncher, r.config.StateDir, r.config.Launch.Sandbox.UID, supervision.RuntimeOwner(RuntimeScopeID))
 		if err != nil {
 			return err
 		}
-		r.harnessSupervisor, err = r.processes.DeclareSystemdScope(ctx, r.config.VMProcessLauncher, r.config.StateDir, r.config.Launch.Sandbox.UID, supervision.RuntimeOwner(HarnessScopeID))
+		r.harnessSupervisor, err = r.processes.DeclareSystemdScope(ctx, r.config.SystemdLauncher, r.config.StateDir, r.config.Launch.Sandbox.UID, supervision.RuntimeOwner(HarnessScopeID))
 		if err != nil {
 			return err
 		}
-		if r.config.CodexExecServer != nil {
-			r.executionSupervisor, err = r.processes.DeclareSystemdScope(ctx, r.config.CodexExecServer.Launcher, filepath.Join(r.config.StateDir, "execution"), r.config.Launch.Sandbox.UID, supervision.RuntimeOwner("execution-service"))
+	} else {
+		r.harnessSupervisor = r.supervisor
+	}
+	if r.config.CodexExecServer != nil && r.config.CodexExecServer.Owner == codexexecserver.OwnerSystemd {
+		r.executionSupervisor, err = r.processes.DeclareSystemdScope(ctx, r.config.CodexExecServer.Launcher, filepath.Join(r.config.StateDir, "execution"), r.config.Launch.Sandbox.UID, supervision.RuntimeOwner("execution-service"))
+		if err != nil {
+			return err
+		}
+		if r.config.CodexExecServer.Placement == codexexecserver.PlacementSystemd {
+			r.commandSupervisor, err = r.processes.DeclareSystemdScope(ctx, r.config.CodexExecServer.WorkloadLauncher, filepath.Join(r.config.StateDir, "commands"), r.config.Launch.Sandbox.UID, supervision.RuntimeOwner("execution-commands"))
 			if err != nil {
 				return err
 			}
 		}
-	} else {
-		r.harnessSupervisor = r.supervisor
 	}
 	if err := engine.RegisterQController(r.processes.SystemdScopeController()); err != nil {
 		return err

@@ -2759,7 +2759,6 @@ dependencies = [
  "tokio",
  "tokio-tungstenite 0.30.0",
  "tokio-vsock",
- "tower",
  "tree-sitter",
  "tree-sitter-bash",
  "ts-rs",

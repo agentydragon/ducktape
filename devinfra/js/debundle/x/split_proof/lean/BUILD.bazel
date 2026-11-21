@@ -32,6 +32,9 @@ lean_axiom_test(
         "Example.control_claimed_twice_rejected",
         "Example.missing_import_rejected",
         "Example.dropped_module_rejected",
+        "Example.export_alias_valid",
+        "Example.export_alias_named",
+        "Example.export_collision_rejected",
         "Example.variant_cycle_valid",
         "Example.good_observes_same",
         "Example.cycle_variant_observes_same",
@@ -139,6 +142,55 @@ lean_binary(
     ],
     entry = "Experiments/LowerSplit.lean",
     visibility = ["//devinfra/js/debundle/x/split_proof/experiments/translation:__pkg__"],
+)
+
+# The order in which the modules of a plan run. `experiments/model/differential.mjs` compares the CoreJS model's with it.
+lean_binary(
+    name = "evalorder",
+    srcs = [
+        "EsmSplit/Bundle.lean",
+        "EsmSplit/Plan.lean",
+        "Experiments/EvalOrder.lean",
+    ],
+    entry = "Experiments/EvalOrder.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/experiments/translation:__pkg__"],
+)
+
+# The CoreJS model. `experiments/model/differential.mjs` runs it against Node.
+lean_binary(
+    name = "corejs",
+    srcs = glob(
+        ["Experiments/CoreJS/*.lean"],
+        # the proofs about the model; `corejs_axioms_test` checks them
+        exclude = [
+            "Experiments/CoreJS/Frame.lean",
+            "Experiments/CoreJS/Fuel.lean",
+        ],
+    ) + ["Experiments/CoreJSMain.lean"],
+    entry = "Experiments/CoreJSMain.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/experiments/translation:__pkg__"],
+)
+
+lean_axiom_test(
+    name = "corejs_axioms_test",
+    srcs = [
+        "Experiments/CoreJS/Eval.lean",
+        "Experiments/CoreJS/Frame.lean",
+        "Experiments/CoreJS/Fuel.lean",
+        "Experiments/CoreJS/Number.lean",
+        "Experiments/CoreJS/Syntax.lean",
+        "Experiments/CoreJS/Value.lean",
+    ],
+    imports = [
+        "Experiments.CoreJS.Frame",
+        "Experiments.CoreJS.Fuel",
+    ],
+    theorems = [
+        "CoreJS.allocOnly_extends",
+        "CoreJS.decl_allocOnly",
+        "CoreJS.fuel_mono",
+        "CoreJS.Ends.unique",
+    ],
 )
 
 _PROOF_FIXTURE_SOURCES = [

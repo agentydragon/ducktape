@@ -11,6 +11,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecPostRenderersKustomizePatchesTarget,
 )
 
+from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository_source_ref, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
@@ -94,24 +95,15 @@ def chart(app: App) -> Chart:
             "admissionController": _component(
                 memory_request="128Mi",
                 memory_limit="256Mi",
-                replicaCount=2,
-                podDisruptionBudget={"minAvailable": 1},
-                affinity={
-                    "podAntiAffinity": {
-                        "requiredDuringSchedulingIgnoredDuringExecution": [
-                            {
-                                "labelSelector": {
-                                    "matchLabels": {
-                                        "app.kubernetes.io/component": "admission-controller",
-                                        "app.kubernetes.io/instance": NAME,
-                                        "app.kubernetes.io/name": NAME,
-                                    }
-                                },
-                                "topologyKey": "kubernetes.io/hostname",
-                            }
-                        ]
+                replicaCount=3,
+                podDisruptionBudget={"minAvailable": 2},
+                affinity=node_scheduling.one_per_host(
+                    {
+                        "app.kubernetes.io/component": "admission-controller",
+                        "app.kubernetes.io/instance": NAME,
+                        "app.kubernetes.io/name": NAME,
                     }
-                },
+                ),
             ),
         },
     )

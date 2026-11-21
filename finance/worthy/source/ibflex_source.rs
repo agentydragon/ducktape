@@ -127,27 +127,6 @@ impl Source for IBFlexSource {
                 })
             })
             .collect()
-        //		self.logger.Println(openPosition.Symbol, openPosition.Description,
-        //			// Position:"6",
-        //			openPosition.Position,
-        //			// market price per unit
-        //			openPosition.MarkPrice,
-        //			// currency of market price
-        //			openPosition.Currency)
-        //	// TODO(prvak): add currency conversions and known market prices
-        //
-        //	//for otherCurrency, rate := range exchangeRates {
-        //	//	fmt.Println("1", otherCurrency, "=", rate, statement.AccountInformation.Currency)
-        //	//}
-        //	//for _, currency := range statement.CashReport.CashReportCurrency {
-        //	//	if currency.Currency == "BASE_SUMMARY" {
-        //	//		continue
-        //	//	}
-        //	//	if currency.LevelOfDetail != "Currency" {
-        //	//		panic("unexpected fields populated")
-        //	//	}
-        //	//	fmt.Println(currency.Currency, currency.EndingCash)
-        //	//}
-        //	return assets, nil
+        // TODO(prvak): import cash (CashReport); add currency conversions and known market prices
     }
 }

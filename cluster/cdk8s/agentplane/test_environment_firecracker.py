@@ -14,9 +14,11 @@ from agentplane.egress.platform_routes import PLATFORM_ROUTES_PORT
 from agentplane.net.peertls.config import HISTORY_SERVICE_URI, SANDBOX_CONTROLLER_URI, SESSION_DISPATCHER_URI
 from agentplane.session_instructions.platform_instructions import SessionRuntime
 from cluster.cdk8s.agentplane import environment_firecracker, environment_sandbox, history_service, staging
+from cluster.cdk8s.agentplane.egress import DEFAULT_POLICIES
+from cluster.cdk8s.agentplane.kubernetes_account_ref import shared_diagnostics
 from cluster.cdk8s.agentplane.platform_instructions import agent_cli_environment, platform_instructions, service_urls
 from cluster.cdk8s.pod_policy import harden, pod_spec
-from cluster.cdk8s.testing.manifests import find_resource
+from cluster.cdk8s.testing.manifests import config_map_yaml, find_resource
 
 
 def test_firecracker_mounts_stay_on_the_correct_side(scratch_app: App) -> None:
@@ -53,6 +55,12 @@ def test_firecracker_mounts_stay_on_the_correct_side(scratch_app: App) -> None:
     guest_config = find_resource(docs, "ConfigMap", "environment-firecracker-config")
     runtime = json.loads(guest_config["data"]["environment-runtime.json"])
     assert runtime["environment"]["block_devices"] == ["/dev/vdd"]
+    assert runtime["environment"]["executor"]["owner"] == {"kind": "systemd"}
+    assert runtime["environment"]["executor"]["placement"] == "systemd"
+    assert staging.STAGING_VM_RESOURCES.executor_workload is not None
+    assert runtime["environment"]["resources"]["executor_workload"] == (
+        staging.STAGING_VM_RESOURCES.executor_workload.model_dump()
+    )
     assert runtime["harness_environment"]["values"]["HTTP_PROXY"] == "http://192.0.2.1:3128"
     relay_config = find_resource(docs, "ConfigMap", "environment-firecracker-relay")
     relay_settings = yaml.safe_load(relay_config["data"]["settings.yaml"])
@@ -140,8 +148,43 @@ def test_firecracker_native_grpc_urls_use_the_guest_relay_gateway(scratch_app: A
     }
 
 
-def test_staging_keeps_firecracker_disabled(staging_manifests: list[dict[str, Any]]) -> None:
-    assert not any(doc["kind"] == "SandboxTemplate" and "firecracker" in doc["spec"] for doc in staging_manifests)
+def test_staging_exposes_firecracker_in_both_launch_paths(staging_manifests: list[dict[str, Any]]) -> None:
+    name = environment_firecracker.NAME
+    template = find_resource(staging_manifests, "SandboxTemplate", name)
+    pod = pod_spec(template)
+    assert pod["securityContext"]["seccompProfile"] == {"type": "RuntimeDefault"}
+    launcher = one(container for container in pod["containers"] if container["name"] == "environment-runtime")
+    assert launcher["resources"]["limits"]["devices.kubevirt.io/kvm"] == 1
+    guest_memory = template["spec"]["firecracker"]["memoryMiB"] * 1024**2
+    memory_request = launcher["resources"]["requests"]["memory"]
+    memory_limit = launcher["resources"]["limits"]["memory"]
+    assert memory_request == guest_memory + 512 * 1024**2
+    assert memory_limit - memory_request == guest_memory
+    assert template["spec"]["stateVolume"]["claim"]["resources"]["requests"]["storage"] == "100Gi"
+    for volume in ("stateVolume", "workspaceVolume"):
+        assert template["spec"][volume]["claim"]["storageClassName"] == staging.ENV.vm_storage_class
+        assert template["spec"][volume]["layout"] == {"type": "RawDiskImage", "filesystem": "ext4"}
+
+    config = config_map_yaml(staging_manifests, "environments-settings", "config.yaml")
+    runtime = config["environment_service"]["runtime_catalog"]["templates"][name]
+    assert runtime["workspace_root_enforced"] is True
+    assert runtime["workspace_root"] == "/state/workspaces"
+
+    app = config_map_yaml(staging_manifests, "app-config", "config.yaml")
+    preset = app["sandbox_presets"]["firecracker"]
+    assert preset["template"] == name
+    assert preset["policy_sets"] == [*DEFAULT_POLICIES, shared_diagnostics(staging.ENV.namespace).credential_name]
+    thread = app["thread_presets"][preset["thread_preset"]]
+    assert thread["harness"] == "HARNESS_CODEX"
+    assert thread["model"] in app["models"]["harnesses"][thread["harness"]]
+    assert thread["cwd"] == "/state/workspaces/{session_id}"
+
+    actions = config_map_yaml(staging_manifests, "actions-settings", "settings.yaml")
+    action_preset = actions["action_groups"]["orchestration_v1"]["executor"]["presets"]["firecracker"]
+    assert action_preset["launch"]["template"] == name
+    assert action_preset["launch"]["policy_sets"] == preset["policy_sets"]
+    assert action_preset["create_session"]["spec"]["harness"] == thread["harness"]
+    assert action_preset["create_session"]["spec"]["model"] == thread["model"]
 
 
 if __name__ == "__main__":

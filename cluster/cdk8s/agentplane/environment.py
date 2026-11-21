@@ -18,7 +18,7 @@ from agentplane.action_service.catalog import ActionGroup, Key
 from agentplane.action_service.mcp_settings import McpClientMetadataSettings, McpOAuthServer
 from agentplane.action_service.orchestration_v1.binding import LaunchPreset
 from agentplane.app.settings import Settings
-from agentplane.env.config import GuestResources
+from agentplane.env.config import Executor, GuestResources
 from agentplane.identity.operator.settings import OperatorOidcSettings
 from agentplane.llm_ingress.models import AttributionConfig, ModelConfig, default_attribution
 from agentplane.notification_service.settings import NoticeDebounceSettings
@@ -111,14 +111,22 @@ class AppProps:
 
 @dataclass(frozen=True)
 class BearerMcpMount:
-    """The environment's copy of one static-bearer MCP backend's bearer Secret, mounted at
-    `/run/secrets/<name>/<file_name>` for an `action_groups` entry's `bearer_file` to name."""
+    """The environment's copy of one static-bearer MCP backend's bearer Secret, mounted in `mount_dir`
+    for an `action_groups` entry's `bearer_file` to name as `path`."""
 
     name: str
     secret_name: str
     secret_key: str
     file_name: str = "bearer-token"
     optional: bool = False
+
+    @property
+    def mount_dir(self) -> str:
+        return f"/run/secrets/{self.name}"
+
+    @property
+    def path(self) -> str:
+        return f"{self.mount_dir}/{self.file_name}"
 
 
 @dataclass(frozen=True)
@@ -227,6 +235,7 @@ class Environment:
     vm_storage_class: str | None = None
     # Guest sizing and Runner cgroup budgets shared by the VM template and guest config seed.
     vm_resources: GuestResources | None = None
+    vm_executor: Executor | None = None
     # Opt-in: trusted KVM launcher with same-Pod RAM checkpoints.
     firecracker_sandboxes: bool = False
     # Whether runner Pods delegate Codex command execution to a companion with its own PID namespace.

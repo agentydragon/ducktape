@@ -5,21 +5,9 @@ ES modules come out, and Lean checks that the split is a valid reshuffle.
 
 This is an experiment. It does not use the `debundle` code; nothing here imports it.
 
-The intended replacement must support the JavaScript syntax actually used across all configured `gaffer-private` debundle inputs. Broader syntax support is welcome. This is a requirement for the replacement, not a claim that the experiment supports it today.
+[`SUPPORT.md`](SUPPORT.md) lists what a debundler built on this has to support (the syntax and the standard and host features that the real inputs use) and what it does not (a top-level `await`, a name declared twice in one list, and what the tools refuse today). It is a requirement, not a claim that the experiment meets it.
 
-The available inputs already use the following syntax, so it belongs in that requirement:
-
-- `var`, `let` and `const`; array and object destructuring, default parameters, rest parameters and spread elements. The cached CLI extraction also contains `using` and `await using`.
-- Function declarations and expressions, arrow functions, async functions, generators and async generators; calls, `new`, `this`, `super` and `new.target`.
-- Classes with `extends`, computed methods and properties, getters and setters, instance and static fields, private fields and methods, and static initialization blocks; object literals with computed keys, methods, getters and setters.
-- `if`, `switch`, `for`, `for...in`, `for...of`, `for await...of`, `while`, `do...while`, `try`/`catch`/`finally`, `throw`, labeled statements, `break`, `continue`, `await` and `yield`.
-- Template literals and tagged templates, regular-expression and BigInt literals, optional chaining (`?.`), nullish coalescing (`??`), conditional (`?:`) and sequence expressions.
-- Binary `+`, `-`, `*`, `/`, `%`, `**`, `<`, `<=`, `>`, `>=`, `==`, `!=`, `===`, `!==`, `&`, `|`, `^`, `<<`, `>>`, `>>>`, `in` and `instanceof`; `&&`, `||`, `??`; unary `!`, `+`, `-`, `~`, `typeof`, `void` and `delete`; `++`, `--`, and assignments `=`, `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`, `<<=`, `>>=`, `>>>=`, `&&=`, `||=` and `??=`.
-- Named, default and namespace imports; named and default exports; dynamic `import()` and `import.meta`.
-
-This list is a lower bound, not a complete grammar or an ECMAScript-version claim. A census on 2026-11-20, using `gaffer-private` commit `3ce58b883656` for the committed manifests, parsed 1,107 entries from seven Tana, Claude web and Platform Sessions snapshots, plus 2,256 entries from the Claude CLI extraction, using Acorn 8.19.0 with `ecmaVersion: "latest"`; all parsed without a syntax error. A rerun of the pinned extractor on the cached pinned CLI release, with the configured aliases, produced a byte-identical manifest and files. The generated Tana vendor replacement was also built and parsed; its SHA-256 is `751f15172a28e5c9712535dd568eadedbefbec7b3afb148eb2406d08cb8f0ea9`, and it added no syntax categories to this census. Package-root inputs and other configured fixtures or inputs outside these manifests were not inventoried. All files happened to parse in module grammar; that does not establish their actual host or module semantics. The census did not inspect lexical or regular-expression subfeatures, or runtime builtins. The requirement also covers syntax in configured inputs beyond this measured sample.
-
-Run everything with `./run.sh` (add `--controls`, `--fuzz`, `--experiments`, `--lowering`, `--es-order` or `--splits`).
+Run everything with `./run.sh` (add `--controls`, `--fuzz`, `--experiments`, `--lowering`, `--es-order`, `--splits` or `--model`).
 It needs `nix`, `node` and `npm`. Lean 4.35 and gcc come from `nixpkgs`. A clean build takes about 20 s, the first `./run.sh` about a minute.
 `run.sh` copies each `package.json.in` to `package.json` before `npm ci`; the repository's CI treats a committed `package.json` as a change to the whole build graph.
 
@@ -75,6 +63,8 @@ Spec, [`example/spec.json`](example/spec.json). A selector is a declared name, o
   }
 }
 ```
+
+Two optional keys set the order the modules run in. `"order": ["a.mjs", …]` is an import priority: the entry imports every module in that order. That does not fix the order of evaluation, because a module runs after the modules it imports. `"sequential": true` does: the modules run in exactly `order` (or, without `order`, in the order of their first statements), the entry last. The planner then makes a module that an earlier one mentions import that earlier module first, and every module between ([`Split.lean`](lean/EsmSplit/Split.lean), `nest`). `Valid` checks the resulting plan like any other.
 
 Output, `example/output/` (written by `./run.sh`, not committed). Lean writes the files. Statements are copied verbatim.
 
@@ -144,15 +134,16 @@ It is not "the programs are equivalent". JavaScript is never formalized.
 
 `Valid` is a conjunction of decidable checks ([`Plan.lean`](lean/EsmSplit/Plan.lean)):
 
-| Check                       | Says                                                                                               |
-| --------------------------- | -------------------------------------------------------------------------------------------------- |
-| `Faithful`                  | each statement sits in exactly the module the spec names; no selector is dangling                  |
-| `Linkable`                  | each import names a real export of another module; no name is bound twice; each export is declared |
-| `Hygienic`                  | each name a statement mentions resolves, through imports, to the declaration it had in the bundle  |
-| `AssignsHome`               | code that assigns a name sits in the module that declares it (ES imports are read-only)            |
-| `Permutes`                  | the split runs every statement exactly once                                                        |
-| `OrderOk`                   | in the order the split runs them, conflicting statements keep their bundle order                   |
-| `UniqueDefs`, `ReadsClosed` | side conditions: one flat scope; read sets are closed under calls                                  |
+| Check                       | Says                                                                                                     |
+| --------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `Faithful`                  | each statement sits in exactly the module the spec names; no selector is dangling                        |
+| `Linkable`                  | each import names a binding another module exports; no name is bound twice; each glue export is declared |
+| `ExportsUnique`             | no module exports a name twice: its glue keeps clear of the names its own `export` statements publish    |
+| `Hygienic`                  | each name a statement mentions resolves, through imports, to the declaration it had in the bundle        |
+| `AssignsHome`               | code that assigns a name sits in the module that declares it (ES imports are read-only)                  |
+| `Permutes`                  | the split runs every statement exactly once                                                              |
+| `OrderOk`                   | in the order the split runs them, conflicting statements keep their bundle order                         |
+| `UniqueDefs`, `ReadsClosed` | side conditions: one flat scope; read sets are closed under calls                                        |
 
 A statement **binds** the names it declares and the names it may assign (`writes`: reassigned variables, objects whose contents it changes,
 including what the functions it calls change; unknown code lists them all). These named mutable things are _cells_.
@@ -198,12 +189,14 @@ The main development does not use `native_decide`, so the compiler is not truste
    "May read" is the closure of reads through function bodies (`Bundle.reads`). Running a statement binds the names it declares and the names in `writes` to its value; a statement must list every name it may assign.
 3. **The ES order model**, `Plan.visit`: 10 lines. It matches Node on 500 random import graphs, 262 of them with cycles ([`experiments/README.md`](experiments/README.md) § 10). That is a test, not a proof.
 4. **Hygiene gives one flat environment.** The semantic theorem uses one environment keyed by name. `Hygienic` is the check that makes that fair. The join is argued here, not mechanized.
-5. **The printer**, [`Render.lean`](lean/EsmSplit/Render.lean): imports, then statements, then exports.
-6. **Two rules of the lowering front end that Lean does not check.** `lowersplit` rejects a split that puts an `export` statement outside the entry module (the entry's exports are the program's interface),
-   and one where the entry's glue exports a name that the entry's own `export` statements already publish (`ExportNames`: a duplicate export, or one name for two bindings).
-   The first was missing until the split experiment (`experiments/README.md` § 7) and the second until debundle's corpus (§ 11). When one fails, `lowersplit --lean` writes no certificate.
-   A third rule, that code assigning a name stays with its declaration, used to live here. It is now `AssignsHome`, a conjunct of `Valid` and of `Sound`. It was missing from the translation checker until a probe showed Node throwing on an accepted split (`experiments/translation/fixtures/assign`).
-   Moving the first into `Valid` is a small known step: a field per statement, one more conjunct, one more equivalence proof. The second needs a model of export names ([`PLAN.md`](PLAN.md) step 4).
+5. **The printer**, [`Render.lean`](lean/EsmSplit/Render.lean): imports, then statements, then exports. A binding that the glue exports under another name is imported back under its own.
+6. **The lowering front end around the model.** Lean checks none of this.
+   - **One statement per declarator.** [`dump.mjs`](experiments/lowering/dump.mjs) rewrites the source before the proof: a top-level `var`, `let` or `const` list of several declarators becomes one statement per declarator, also under `export`. This assumes the separate statements run as the list does.
+   - **Imports and exports stay in the entry.** `lowersplit` rejects a split that puts an `export` or an `import` statement outside the entry module: the entry's exports are the program's interface, and its imports load the outside modules. When the rule fails, `lowersplit --lean` writes no certificate. Moving it into `Valid` is a small known step: a field per statement, one more conjunct, one more equivalence proof.
+   - **Outside modules run first.** The model has no outside modules. An `import` statement declares nothing and does nothing in it, and an imported name is a global: the same binding in every module. The printer of `lowersplit` (`renderModule` in [`LowerSplit.lean`](lean/Experiments/LowerSplit.lean)) writes the entry's `import` and `export … from` statements before its glue imports, in their order, so the outside modules run before every statement and in the bundle's order. Another module gets an `import` line of its own for the outside names it mentions. That this keeps the order is argued, not proved. It assumes that no outside module awaits at its top level, and that the modules are written where the bundle was, so a relative specifier names the same file. `export * from` is rejected.
+   - **What an `export` statement publishes** (`Stmt.exports`) is read from its AST by the front end. `ExportsUnique` and `Linkable` rest on it. A glue export adds a name to the entry's interface (`m$1` when `m` is taken); nothing says the interface is otherwise unchanged ([`PLAN.md`](PLAN.md) step 4).
+
+   A rule that code assigning a name stays with its declaration used to live here. It is now `AssignsHome`, a conjunct of `Valid` and of `Sound`. It was missing from the translation checker until a probe showed Node throwing on an accepted split (`experiments/translation/fixtures/assign`).
 
 7. **The translation checker's front end.** [`experiments/translation/frontend.mjs`](experiments/translation/frontend.mjs) trusts `acorn` for the parse and `eslint-scope` for which variable each identifier names.
    Lean checks everything after that, but "renaming preserves meaning" is assumed, not proved, and it has an edge: a program that reads `fn.name`, calls `Function.prototype.toString` or prints a function sees the new spelling.
@@ -261,9 +254,12 @@ Running `example/output/` in Node also found a bug in the first printer (no `exp
   `native_decide` runs the same decision procedure compiled and trusts Lean's compiler (2.3 s for lodash). The theorem does not depend on size.
   All times and conditions: [`experiments/TIMINGS.md`](experiments/TIMINGS.md).
 - **Reassignment.** The JavaScript extractor `extract.mjs` rejects reassigned `let`/`var` top-level bindings. The Lean front end accepts them: writers are ordered as cells and must stay with the declaration (`AssignsHome`), because ES imports are read-only.
+- **Outside the accepted subset:** [`SUPPORT.md`](SUPPORT.md) § Not supported.
 - **Exceptions.** The model has none. Order is kept for effects, TDZ reads and reads of undeclared globals. Those are the only throws the front end allows an inert statement.
 
 ## Going further
+
+[`docs/lessons_learned.md`](docs/lessons_learned.md) records what broke and what the measurements said; [`PLAN.md`](PLAN.md) has the direction that follows from it.
 
 [`experiments/README.md`](experiments/README.md):
 
@@ -273,12 +269,14 @@ Running `example/output/` in Node also found a bug in the first printer (no `exp
 4. what `grind` can write;
 5. how far the check scales, compiled and in the kernel;
 6. lowering the AST into Lean;
-7. 2,740 real splits (halves, single cuts, blocks, random placements), each run in Node;
+7. 2,892 real splits (halves, single cuts, blocks, random placements), each run in Node;
 8. how a proof is produced, with a strategy ladder;
 9. what already exists and what I would reuse;
 10. the module-order model against Node;
 11. debundle's 207 e2e cases through the checker, with causes for the ones that do not work ([`experiments/debundle_cases/`](experiments/debundle_cases/README.md), plan in [`PLAN.md`](PLAN.md)).
 12. translation validation: is an output tree the bundle, renamed and reshuffled? ([`experiments/translation/`](experiments/translation/README.md)).
+13. footprints by abstract interpretation ([`experiments/effects/`](experiments/effects/README.md)).
+14. an executable model of a core of JavaScript, tested against Node, and the first footprint rule proved in it.
 
 ## Files
 
@@ -295,7 +293,7 @@ Running `example/output/` in Node also found a bug in the first printer (no `exp
 | `lean/EsmSplit/Controls.lean`  | buggy-splitter plans, semantic non-vacuity                                                                                                                                                                                   |
 | `lean/EsmSplit/Audit.lean`     | `#print axioms`                                                                                                                                                                                                              |
 | `lean/Main.lean`               | the `render` executable                                                                                                                                                                                                      |
-| `lean/Experiments/`            | experiments: mini-JS semantics, two tiers, lowering, strategy ladder, module order, translation checker                                                                                                                      |
+| `lean/Experiments/`            | experiments: mini-JS semantics, two tiers, lowering, strategy ladder, module order, translation checker, the CoreJS model                                                                                                    |
 | `extract/`                     | JavaScript front end for the example (`extract.mjs`)                                                                                                                                                                         |
 | `example/`                     | the 12-statement bundle, its spec, one variant that must pass, three controls that must fail                                                                                                                                 |
 | `fuzz/`                        | fuzzer and mutation test                                                                                                                                                                                                     |

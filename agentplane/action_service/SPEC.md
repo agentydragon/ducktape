@@ -75,6 +75,16 @@ lowers those maxima. Both profiles derive from the same typed input contract.
 
 Go and Python Sandbox Action names are generated from a shared JSON Schema enum. Externally
 supplied MCP schemas and policy-authored argument schemas retain their own JSON Schema contracts.
+The Action Service compiles `pattern` and `patternProperties` in Unicode-aware ECMAScript mode.
+An MCP tool whose input schema is a JSON object but cannot be compiled remains available with an
+input schema warning: Agentplane forwards object arguments without checking that tool schema at
+admission or execution. The backend may validate them. Policy schemas and built-in input contracts
+remain enforced. Action reads report a typed input-schema validation status: enforced, not enforced
+with a compile-failed reason, or unknown. Missing status means unknown. Group inspection and the MCP
+servers page derive warnings from this status. Warnings clear when discovery observes a usable schema.
+If a compiled pattern exceeds the evaluation budget or the matcher fails, Action Service refuses the
+schema check. Admission returns `UNAVAILABLE` and execution records `INTERNAL` before contacting the
+backend. An evaluation failure during compilation makes the MCP tool unavailable.
 
 ## Caller admission and Connection authority
 
@@ -225,10 +235,12 @@ Policies are evaluated once, at admission, against the objects as the service ho
 the caller's bindings, whose subject is matched from the verified direct caller or the effective
 Identity on a delegated MCP request, and never from an untrusted request field; the existing valid
 sets they name; and the first `action_auto_approve` policy that matches. A match
-auto-approves with an Execution; no match leaves the request on the human path; until the watch
-has synced, every caller is human-only. A later edit, expiry or deletion changes the next Action's
-Decision, not this one's; dispatch re-checks only caller authority. The Decision records the
-bindings with their resource versions, the sets with their generations, and the matching policy.
+auto-approves with an Execution. No match leaves the request on the human path. A pattern
+evaluation failure stops the policy chain and leaves the request on the human path, or refuses a
+`decided_only` request before persistence. Until the watch has synced, every caller is human-only.
+A later edit, expiry or deletion changes the next Action's Decision. Dispatch re-checks only caller
+authority. The Decision records bindings with their resource versions, sets with their generations,
+and the matching policy.
 A Decision names exactly one decider: an operator, with the operator's note, or a policy, with its reason code,
 description and evidence. A reason code this release does not name reads as `REASON_CODE_UNKNOWN`.
 The request is persisted only once evaluation has finished, together with any auto-decision, so a

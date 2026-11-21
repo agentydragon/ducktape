@@ -103,7 +103,6 @@ def make_fake_grader_run(
     snapshot_slug: SnapshotSlug,
     model: str = DEFAULT_TEST_MODEL,
     status: AgentRunStatus = AgentRunStatus.EXITED,
-    agent_run_id: UUID | None = None,
 ) -> AgentRun:
     """Build AgentRun for snapshot grader with fake image digest.
 
@@ -111,13 +110,10 @@ def make_fake_grader_run(
     """
     ensure_fake_agent_definitions(session)
 
-    if agent_run_id is None:
-        agent_run_id = uuid4()
-
     type_config = GraderTypeConfig(snapshot_slug=snapshot_slug)
 
     return AgentRun(
-        agent_run_id=agent_run_id,
+        agent_run_id=uuid4(),
         image_digest=FAKE_GRADER_DIGEST,
         model=model,
         status=status,
@@ -151,26 +147,63 @@ def overlap_file_for_occurrence(
 
 
 def make_reported_issues(
-    *, agent_run_id: UUID, issue_ids: list[str], session: Session, location_file: str | None = "subtract.py"
+    *, agent_run_id: UUID, issue_ids: list[str], session: Session, location_file: str = "subtract.py"
 ) -> list[ReportedIssue]:
-    """Create ReportedIssue rows (and optionally ReportedIssueOccurrence) for a critic run."""
+    """Create ReportedIssue rows, each with one occurrence at `location_file`, for a critic run."""
     issues = []
     for issue_id in issue_ids:
         issue = ReportedIssue(agent_run_id=agent_run_id, issue_id=issue_id, rationale=f"Test issue {issue_id}")
         session.add(issue)
         session.flush()
 
-        if location_file is not None:
-            occurrence = ReportedIssueOccurrence(
-                agent_run_id=agent_run_id,
-                reported_issue_id=issue_id,
-                locations=[LocationAnchor(file=location_file, start_line=1, end_line=1)],
-            )
-            session.add(occurrence)
+        occurrence = ReportedIssueOccurrence(
+            agent_run_id=agent_run_id,
+            reported_issue_id=issue_id,
+            locations=[LocationAnchor(file=location_file, start_line=1, end_line=1)],
+        )
+        session.add(occurrence)
         issues.append(issue)
 
     session.flush()
     return issues
+
+
+def _add_credited_issue(
+    *,
+    session: Session,
+    critic_run: AgentRun,
+    grader_run: AgentRun,
+    issue_id: str,
+    tp_occurrence: tuple[str, str],
+    credit: float,
+) -> None:
+    """Report `issue_id` for the critic run and add the grading edge crediting `tp_occurrence` with `credit`.
+
+    The issue is reported at a file overlapping the occurrence's match_file_restriction, which
+    the grading edge needs to be creditable (the trigger and the grading_pending view both
+    require the overlap; see `overlap_file_for_occurrence`). The issue is flushed before the
+    edge is added (FK constraint); the edge is flushed with the caller's next flush.
+    """
+    tp_id, occ_id = tp_occurrence
+    snapshot_slug = critic_run.critic_config().example.snapshot_slug
+    make_reported_issues(
+        agent_run_id=critic_run.agent_run_id,
+        issue_ids=[issue_id],
+        session=session,
+        location_file=overlap_file_for_occurrence(session, snapshot_slug, tp_id, occ_id),
+    )
+    session.add(
+        GradingEdge(
+            critique_run_id=critic_run.agent_run_id,
+            critique_issue_id=issue_id,
+            snapshot_slug=snapshot_slug,
+            tp_id=tp_id,
+            tp_occurrence_id=occ_id,
+            credit=credit,
+            rationale=f"Test (credit={credit})",
+            grader_run_id=grader_run.agent_run_id,
+        )
+    )
 
 
 def make_fake_critic_and_grader_run(
@@ -188,88 +221,37 @@ def make_fake_critic_and_grader_run(
     session.flush()
 
     if credit > 0.0:
-        for i, (tp_id, occ_id) in enumerate(tp_occurrences, start=1):
-            issue_id = f"issue-{i:03d}"
-            issue = ReportedIssue(agent_run_id=critic_run.agent_run_id, issue_id=issue_id, rationale=f"Test issue {i}")
-            session.add(issue)
-            # Report a file overlapping this occurrence's match_file_restriction so the
-            # grading edge below is creditable (the trigger and grading_pending view both
-            # require overlap). A no-file/non-overlapping critique cannot match a
-            # restricted occurrence.
-            location_file = overlap_file_for_occurrence(session, example.snapshot_slug, tp_id, occ_id)
-            occ = ReportedIssueOccurrence(
-                agent_run_id=critic_run.agent_run_id,
-                reported_issue_id=issue_id,
-                locations=[LocationAnchor(file=location_file, start_line=1, end_line=1)],
-            )
-            session.add(occ)
-
-        # Flush reported issues before adding grading edges (FK constraint)
-        session.flush()
-
-        for i, (tp_id, occ_id) in enumerate(tp_occurrences, start=1):
-            issue_id = f"issue-{i:03d}"
-            edge = GradingEdge(
-                critique_run_id=critic_run.agent_run_id,
-                critique_issue_id=issue_id,
-                snapshot_slug=example.snapshot_slug,
-                tp_id=tp_id,
-                tp_occurrence_id=occ_id,
-                fp_id=None,
-                fp_occurrence_id=None,
+        for i, tp_occurrence in enumerate(tp_occurrences, start=1):
+            _add_credited_issue(
+                session=session,
+                critic_run=critic_run,
+                grader_run=grader_run,
+                issue_id=f"issue-{i:03d}",
+                tp_occurrence=tp_occurrence,
                 credit=credit,
-                rationale=f"Test (credit={credit})",
-                grader_run_id=grader_run.agent_run_id,
             )
-            session.add(edge)
 
     return critic_run, grader_run
 
 
 def make_fake_grader_run_with_credit(
-    *,
-    session: Session,
-    critic_run: AgentRun,
-    tp_occurrence: tuple[str, str],
-    credit: float,
-    input_idx: int = 0,
-    model: str = "test-grader-model",
+    *, session: Session, critic_run: AgentRun, tp_occurrence: tuple[str, str], credit: float, input_idx: int = 0
 ) -> AgentRun:
     """Create grader run + grading_edge for a critic run using real TP occurrence IDs."""
-    tp_id, occ_id = tp_occurrence
-    issue_id = f"input-{input_idx}"
-    snapshot_slug = critic_run.critic_config().example.snapshot_slug
-
-    issue = ReportedIssue(agent_run_id=critic_run.agent_run_id, issue_id=issue_id, rationale=f"Test issue {input_idx}")
-    session.add(issue)
-    # Report a file overlapping the occurrence's match_file_restriction (see
-    # overlap_file_for_occurrence) so the grading edge below is creditable.
-    location_file = overlap_file_for_occurrence(session, snapshot_slug, tp_id, occ_id)
-    occ = ReportedIssueOccurrence(
-        agent_run_id=critic_run.agent_run_id,
-        reported_issue_id=issue_id,
-        locations=[LocationAnchor(file=location_file, start_line=1, end_line=1)],
+    grader_run = make_fake_grader_run(
+        session=session, snapshot_slug=critic_run.critic_config().example.snapshot_slug, model="test-grader-model"
     )
-    session.add(occ)
-
-    grader_run = make_fake_grader_run(session=session, snapshot_slug=snapshot_slug, model=model)
     session.add(grader_run)
     session.flush()
 
-    edge = GradingEdge(
-        critique_run_id=critic_run.agent_run_id,
-        critique_issue_id=issue_id,
-        snapshot_slug=snapshot_slug,
-        tp_id=tp_id,
-        tp_occurrence_id=occ_id,
-        fp_id=None,
-        fp_occurrence_id=None,
+    _add_credited_issue(
+        session=session,
+        critic_run=critic_run,
+        grader_run=grader_run,
+        issue_id=f"input-{input_idx}",
+        tp_occurrence=tp_occurrence,
         credit=credit,
-        rationale=f"Credit {credit}",
-        grader_run_id=grader_run.agent_run_id,
     )
-    session.add(edge)
-
     return grader_run
 
 

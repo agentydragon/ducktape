@@ -16,9 +16,7 @@ import (
 
 func TestWriteSSEPreservesJSONData(t *testing.T) {
 	response := httptest.NewRecorder()
-	if err := startSSE(response); err != nil {
-		t.Fatal(err)
-	}
+	startSSE(response)
 	if err := writeSSE(response, "event", map[string]any{"kind": "tool", "text": "hello"}); err != nil {
 		t.Fatal(err)
 	}
@@ -35,9 +33,7 @@ func TestWriteSSEPreservesJSONData(t *testing.T) {
 func TestConsoleRelayStreamsBase64OutputAndClosesOnCancellation(t *testing.T) {
 	reader, writer := io.Pipe()
 	response := newStreamingRecorder()
-	if err := startSSE(response); err != nil {
-		t.Fatal(err)
-	}
+	startSSE(response)
 	routes := &streamingRoutes{}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})

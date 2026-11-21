@@ -160,9 +160,8 @@ structure Premises where
   vendor : Std.HashMap String String := {}
   /-- per family, the members that only allocate a new object of the family -/
   members : Std.HashMap String (Std.HashSet String) := {}
-  /-- P3: the world defines no accessors and no conversion hooks on objects the program made, and converting a value
-  the world made runs no program code. Without it, reading or assigning a property of an object the world holds is a
-  call into the world, and so is every conversion of a value the world made or holds. -/
+  /-- P3: the world defines no accessors and no conversion hooks on objects the program made. Without it, reading,
+  assigning or converting an object the world holds is a call into the world. -/
   noWorldHooks : Bool := false
   deriving Inhabited
 
@@ -228,8 +227,8 @@ structure St where
   /-- calls already run: (function, call site, arguments) -> (changes when it ended, result, writes, reads, world).
   A call repeated on a state that has not changed since would do nothing new, so its footprint is replayed. -/
   memo     : Std.HashMap (UInt64 × UInt64) (Nat × AV × Array Nat × Array String × Bool × Bool × AV) := {}
-  /-- how many getters and setters run one inside another (a standard function used as a getter can read itself) -/
-  accessorDepth : Nat := 0
+  /-- how many getters, setters, conversion hooks and protocol methods run one inside another (see `callHooks`) -/
+  hookDepth : Nat := 0
   dbg      : Array Nat := #[0, 0, 0, 0]
   /-- the hash of each piece of code, by address (see `codeHash`) -/
   codeHashes : Std.HashMap USize UInt64 := {}
@@ -277,10 +276,18 @@ unsafe def codeInfoImpl (j : Json) : M (Array String × Array String) := do
 
 @[implemented_by codeInfoImpl] opaque codeInfo (j : Json) : M (Array String × Array String)
 
+/-- The expression inside parentheses and inside an optional chain (`a?.b` is a `ChainExpression` around a member
+access): a `delete`, a call and a tag look at the member access itself. -/
+partial def unwrap (j : Json) : Json :=
+  match typ j with
+  | "ParenthesizedExpression" | "ChainExpression" => unwrap (fld j "expression")
+  | _ => j
+
 /-- The root and the member names of a chain `a.b.c` (`*` for a computed name), or `none` for anything else. -/
 partial def memberChain (j : Json) : Option (String × List String) :=
   match typ j with
   | "Identifier" => some (str (fld j "name"), [])
+  | "ParenthesizedExpression" | "ChainExpression" => memberChain (fld j "expression")
   | "MemberExpression" =>
     (memberChain (fld j "object")).map fun (r, ks) =>
       (r, ks ++ [if flag j "computed" then "*" else str (fld (fld j "property") "name")])
@@ -300,6 +307,7 @@ def patchByName (r : String) (ks : List String) (key : Option String) : Option (
 
 /-- The member an assignment, an update or a `delete` changes. -/
 def targetPatch (t : Json) : Option (String × Option String) :=
+  let t := unwrap t
   match typ t with
   | "Identifier" => if intrinsicGlobals.contains (str (fld t "name")) then some ("global", some (str (fld t "name"))) else none
   | "MemberExpression" =>
@@ -326,10 +334,10 @@ partial def textPatches (j : Json) : Array (String × Option String) :=
       | "UpdateExpression" => targetPatch (fld j "argument")
       | "UnaryExpression" => if str (fld j "operator") == "delete" then targetPatch (fld j "argument") else none
       | "CallExpression" =>
-        let c := fld j "callee"
+        let c := unwrap (fld j "callee")
         if typ c == "MemberExpression" && !flag c "computed" then
           let m := str (fld (fld c "property") "name")
-          if mutatorNames.contains m && ["Object", "Reflect"].contains (str (fld (fld c "object") "name")) then
+          if mutatorNames.contains m && ["Object", "Reflect"].contains (str (fld (unwrap (fld c "object")) "name")) then
             match ((items (fld j "arguments"))[0]?).bind memberChain with
             | some (r, ks) => patchByName r ks none
             | none => none
@@ -587,10 +595,12 @@ def joinProto (o : Nat) (v : AV) : M Unit := do
   if nw.size != ob.proto.size then
     modObj o ({ · with proto := nw })
     bump
-  -- a prototype the program made may hold what an array or a collection does not have: a `Symbol.iterator`, a `toString`
+  -- a prototype the program or the world made may hold what an array or a collection does not have: a `Symbol.iterator`,
+  -- a `toString`
   if ob.kind matches .array | .coll then
     for c in v do
-      if c ≥ 2 then
+      if c == 1 then modObj o ({ · with hook := true })
+      else if c ≥ 2 then
         match (← getObj (c - 1)).kind with
         | .builtin _ => pure ()
         | _ => modObj o ({ · with hook := true })
@@ -715,6 +725,24 @@ def isStandardMember (k : String) : Bool :=
 
 mutual
 
+/-- Call functions that the language runs without a call expression (a getter, a setter, a conversion hook, a method a
+standard function calls through its protocol) on the object `recv`. A standard function used as one can reach itself
+without a level of the call chain in between: a getter that reads the property it is, `Array.prototype.toString` on an
+array that holds itself, an `exec` that is `RegExp.prototype.test`. So these calls are counted, and past the limit the
+functions are not run: they and the object are the world's. -/
+partial def callHooks (recv : Nat) (fns : AV) (args : List AV) (fr : Fr) (site : UInt64) : M AV := do
+  tick
+  if (← isBroke) then return AV.top
+  if (← get).hookDepth ≥ maxDepth then
+    escapeAV fns
+    escapeObj recv
+    setWorld "getters, setters and conversion hooks nested too deep"
+    return AV.top
+  modify fun s => { s with hookDepth := s.hookDepth + 1 }
+  let r ← callAll fns (AV.ofObj recv) args false fr site
+  modify fun s => { s with hookDepth := s.hookDepth - 1 }
+  return r
+
 /-- A getter or a setter runs on the object it was found for. The candidates that are program code are run, with the
 value for a setter. A world function, or a receiver the world holds when the world may have added accessors to it
 (`Premises.noWorldHooks` off), is unknown code. -/
@@ -732,23 +760,23 @@ partial def runAccessors (recv : Nat) (fns : AV) (args : List AV) (tag : String)
     escapeObj recv
     setWorld "getter or setter the world made"
   if programs.isEmpty then return (if unknown then AV.top else #[])
-  if (← get).accessorDepth ≥ maxDepth then
-    escapeAV fns
-    escapeObj recv
-    setWorld "getters and setters nested too deep"
-    return AV.top
-  modify fun s => { s with accessorDepth := s.accessorDepth + 1 }
   let cur := (← get).cur
-  let r ← callAll programs (AV.ofObj recv) args false cur (mixHash cur.site (hash tag))
-  modify fun s => { s with accessorDepth := s.accessorDepth - 1 }
+  let r ← callHooks recv programs args cur (mixHash cur.site (hash tag))
   return if unknown then r.join AV.top else r
 
-/-- Reading or assigning a property of an object the world holds: the world may have added accessors to it, which run
-its code (unless the premise says it adds none). -/
+/-- Reading, assigning or converting an object the world holds: the world may have added accessors and hooks to it,
+which run its code (unless the premise says it adds none). -/
 partial def worldMayHaveAccessors (recv : Nat) : M Unit := do
   unless (← get).prem.noWorldHooks do
     escapeObj recv
     setWorld "a property of an object the world holds"
+
+/-- An operation on a value the world made (a read of a property, a conversion, a query such as `in` or `Object.keys`)
+is unknown code. The analysis has one value for everything the world returns, and that may be a `Proxy` with a handler
+of the program, an object of the program with a getter or a `toString` that came back, or an instance the world made
+of a class of the program. No premise covers these: the hooks are the program's own. What they can reach is held by
+the world, which is what unknown code writes. -/
+partial def worldValue (what : String) : M Unit := setWorld (what ++ " a value the world made")
 
 /-- Values stored in an object under `key` (any key if `none`), and in what it inherits. A getter on the way is run as
 unknown code. -/
@@ -765,12 +793,14 @@ partial def getVal (c : Nat) (key : Option String) (seen : List Nat := []) : M A
   let o := c - 1
   -- what the world holds may have been changed by the world's code, which only a unit that runs unknown code runs: such
   -- a unit writes every name that reaches the world's objects, including the names of the imports (see `footprints`)
-  if o == 0 then return AV.top
+  if o == 0 then
+    worldValue "a property of"
+    return AV.top
   if seen.contains o then return #[]
-  if seen.length > 10 then return AV.top
+  -- a chain of prototypes longer than is followed: a getter further up may run, on the object the read started from
+  if seen.length > 10 then return ← runAccessors (seen.getLast?.getD o) AV.top [] "get"
   let ob ← getObj o
   match ob.kind with
-  | .world => return AV.top
   | .builtin path =>
     unless path.startsWith "env:" || path.startsWith "vendor" do recBuiltinRead path key
     match key with
@@ -799,8 +829,12 @@ partial def getVal (c : Nat) (key : Option String) (seen : List Nat := []) : M A
       else if k == "prototype" && members.contains child then return AV.ofObj (← builtinObj child)
       else if k == "constructor" && path.endsWith ".prototype" then
         return AV.ofObj (← builtinObj (path.toRawSubstring.dropRight 10).toString)
-      -- the property exists but is not summarized: a call of it is a call into the world
-      else if members.contains child then return AV.top
+      -- the property exists but is not summarized: a call of it is a call into the world. A collection stands for its
+      -- iterators, so it also has the helpers of an iterator (`map`, `some`, `toArray`, …), which run their callbacks
+      -- at once or when the result is consumed
+      else if members.contains child
+          || ((path == "Map.prototype" || path == "Set.prototype") && members.contains ("Iterator.prototype." ++ k)) then
+        return AV.top
       -- a prototype has only the members it has
       else if path.endsWith ".prototype" then return #[]
       -- an unlisted member of a namespace or a constructor
@@ -832,7 +866,9 @@ partial def getVal (c : Nat) (key : Option String) (seen : List Nat := []) : M A
       for v in ob.props.values do r := r.join v
       unless ob.acc.isEmpty do
         r := r.join (← runAccessors (seen.getLast?.getD o) (accessorFns ob key "get") [] "get*")
-    if ob.escaped then
+    -- what the world holds it may have changed, except the `prototype` of a class, which is not writable and not
+    -- configurable
+    if ob.escaped && !(key == some "prototype" && ob.kind matches .klass ..) then
       r := r.join AV.top
       worldMayHaveAccessors (seen.getLast?.getD o)
     -- a member of a vendor object: a method the premise lists allocates, anything else is unknown
@@ -864,7 +900,11 @@ partial def accessorsOn (o : Nat) (key : Option String) (kind : String) (seen : 
   let mut found := match key with | some k => ob.acc.contains k || ob.acc.contains "*" | none => !ob.acc.isEmpty
   let mut fns : AV := if found then accessorFns ob key kind else #[]
   for p in ob.proto do
-    if p ≥ 2 then
+    -- a prototype the world made may be a `Proxy` whose `set` trap runs
+    if p == 1 then
+      found := true
+      fns := fns.join AV.top
+    else if p ≥ 2 then
       let (f, a) ← accessorsOn (p - 1) key kind (o :: seen)
       found := found || f
       fns := fns.join a
@@ -910,6 +950,7 @@ partial def contentsOf (a : AV) : M AV := do
   for c in a do
     if c == 0 then parts := parts.push AV.prim
     else if c == 1 then
+      worldValue "the contents of"
       parts := parts.push AV.top
     else
       let ob ← getObj (c - 1)
@@ -926,6 +967,18 @@ partial def contentsOf (a : AV) : M AV := do
         parts := parts.push AV.top
       | _ => pure ()
   return AV.joinMany parts
+
+/-- What iterating the objects of `a` yields, as far as no code runs: what they hold, and for a collection also a pair
+that holds it. The entries of a `Map` and of a `Set` are `[key, value]` arrays, and a collection stands for each of its
+iterators (`keys`, `values`, `entries`), so any of them may be the one. -/
+partial def yieldOf (a : AV) : M AV := do
+  let mut r ← contentsOf a
+  for c in a do
+    if c ≥ 2 && (← getObj (c - 1)).kind matches .coll then
+      let pair ← alloc .array (some (mixHash 101 (UInt64.ofNat c)))
+      joinAny pair (← contentsOf #[c])
+      r := r.join (AV.ofObj pair)
+  return r
 
 /-- The keys and values inside the entries an iterable yields (`new Map(entries)`, `Object.fromEntries`): an array
 yields the pairs it holds, so they are in the contents of its contents; a collection yields its own keys and values. -/
@@ -949,6 +1002,9 @@ partial def callVal (c : Nat) (thisV : AV) (args : List AV) (isNew : Bool) (fr :
   let ob ← getObj (c - 1)
   match ob.kind with
   | .func code scope cthis =>
+    -- a generator object inherits from the `prototype` of its function: what the program puts there is found through a
+    -- value the world made
+    if flag code "generator" then escapeObj (c - 1)
     if isNew then
       let inst ← alloc .plain (some (mixHash (mixHash fr.path site) 17))
       joinProto inst (← getVal c (some "prototype"))
@@ -961,7 +1017,11 @@ partial def callVal (c : Nat) (thisV : AV) (args : List AV) (isNew : Bool) (fr :
       joinProto inst (← getVal c (some "prototype"))
       construct (c - 1) inst args fr site
     else return #[]
-  | .builtin path => callBuiltin path thisV args fr site
+  | .builtin path =>
+    -- `new String(…)`, `new Number(…)` and `new Boolean(…)` make objects that hold what is stored into them; the rows of
+    -- these functions describe the conversions, which return primitives
+    if isNew && (match table[path]? with | some { ret := .prim, .. } => true | _ => false) then worldCall (thisV :: args)
+    else callBuiltin path thisV args fr site
   | .bound target bthis bargs =>
     tick
     if (← isBroke) then return AV.top
@@ -1184,6 +1244,8 @@ partial def callBuiltin (path : String) (thisV : AV) (args : List AV) (fr : Fr) 
   match table[path]? with
   | none => worldCall (thisV :: args)
   | some s =>
+    -- a standard function called on a value the world made (`hasOwnProperty.call(v, k)`) queries it
+    if thisV.contains 1 then worldValue "a standard function called on"
     -- the standard functions convert their operands to numbers, strings and keys
     convert args fr (mixHash site 89)
     applySummary s thisV args fr site
@@ -1245,7 +1307,7 @@ partial def applySummary (s : Summary) (thisV : AV) (args : List AV) (fr : Fr) (
     -- a callback gets elements, indexes, keys, the receiver, an accumulator and a `this`, in an order that depends on the
     -- function: each parameter may hold any of them
     let others : AV := (thisV :: args).zipIdx.foldl (fun (acc : AV) (v, i) => if s.calls.contains i then acc else AV.join acc v) #[]
-    let given : AV := AV.join (AV.join (← contentsOf others) others) AV.prim
+    let given : AV := AV.join (AV.join (← yieldOf others) others) AV.prim
     for round in [0:(if s.accumulates then 2 else 1)] do
       let all := given.join calledRet
       for p in s.calls do
@@ -1257,17 +1319,14 @@ partial def applySummary (s : Summary) (thisV : AV) (args : List AV) (fr : Fr) (
   let shape : M AV := do
     match s.ret with
     | .prim => return AV.prim
-    | .fresh =>
-      let o ← alloc .plain (some (mixHash (mixHash fr.path site) 59))
-      if s.storeArgs then joinAny o (AV.joinAll args)
-      return AV.ofObj o
     | .thisV => return thisV
     | .arg i => return pos (i + 1)
     | .contents p => contentsOf (pos p)
-    | .freshOf p => mkArr ((← contentsOf (pos p)).join (if s.returnsCalls then calledRet else #[]))
+    | .freshOf p =>
+      let held ← if s.iterates.contains p || s.optionalIterates.contains p then yieldOf (pos p) else contentsOf (pos p)
+      mkArr (held.join (if s.returnsCalls then calledRet else #[]))
     | .freshOfCalls => mkArr calledRet
     | .freshPrims => mkArr AV.prim
-    | .member => return AV.top
     | .freshProto p =>
       let o ← alloc .plain (some (mixHash (mixHash fr.path site) 73))
       joinProto o (pos p)
@@ -1297,7 +1356,7 @@ partial def applySummary (s : Summary) (thisV : AV) (args : List AV) (fr : Fr) (
       return AV.ofObj o
     | .iterResultOf p =>
       let o ← alloc .plain (some (mixHash (mixHash fr.path site) 91))
-      joinProp o "value" (← contentsOf (pos p))
+      joinProp o "value" (← yieldOf (pos p))
       joinProp o "done" AV.prim
       return AV.ofObj o
     | .descriptorOf p =>
@@ -1315,11 +1374,12 @@ partial def applySummary (s : Summary) (thisV : AV) (args : List AV) (fr : Fr) (
       let given := AV.joinAll args
       mkArr (((← contentsOf thisV).join given).join (← contentsOf given))
     | .flatLike p =>
-      let mut level ← contentsOf (pos p)
-      let mut every := level
-      for _ in [0:4] do
-        level ← contentsOf level
-        every := every.join level
+      -- arrays nest to any depth: until a level adds nothing
+      let mut every ← contentsOf (pos p)
+      repeat
+        let more := every.join (← contentsOf every)
+        if more == every then break
+        every := more
       mkArr every
     | .entriesOf p => mkArr (← mkArr ((← contentsOf (pos p)).join AV.prim))
     | .freshOfCallsFlat => mkArr (calledRet.join (← contentsOf calledRet))
@@ -1328,7 +1388,7 @@ partial def applySummary (s : Summary) (thisV : AV) (args : List AV) (fr : Fr) (
       joinProto o (AV.ofObj (← builtinObj proto))
       -- `new Map(entries)` holds the keys and values inside the entries, `new Set(items)` the items
       if proto == "Map.prototype" then joinAny o (← entryContents (pos 1))
-      else if proto == "Set.prototype" then joinAny o (← contentsOf (pos 1))
+      else if proto == "Set.prototype" then joinAny o (← yieldOf (pos 1))
       else joinAny o (AV.joinAll args)
       if proto == "Error.prototype" then
         joinProp o "message" AV.prim
@@ -1336,7 +1396,7 @@ partial def applySummary (s : Summary) (thisV : AV) (args : List AV) (fr : Fr) (
       return AV.ofObj o
 
   let r ← shape
-  -- what a callback returned (`reduce`, a reviver) and the initial value may be what the call returns
+  -- what a callback returned (`reduce`) and the initial value may be what the call returns
   let extra : AV := AV.join (s.alsoReturns.foldl (fun (acc : AV) p => AV.join acc (pos p)) #[]) (if s.returnsCalls then calledRet else #[])
   return r.join extra
 
@@ -1345,8 +1405,7 @@ partial def applySummary (s : Summary) (thisV : AV) (args : List AV) (fr : Fr) (
 /-- What an operator, a template string or a property key does to an operand: it converts it to a primitive, which runs
 the operand's `valueOf` and `toString` (and `Symbol.toPrimitive`, which is a computed key and so is among the members
 looked up). The lookups find what the program defines, and the calls are run; an object the world may hold has a
-callee that is the world. Only a value the *world* made (`top`) is not looked into, by premise P3 (see
-`Premises.noWorldHooks`). -/
+callee that is the world, and a value the world made is unknown code (`worldValue`). -/
 partial def convert (vs : List AV) (fr : Fr) (site : UInt64) : M Unit := do
   -- each array is looked into once, however the arrays nest
   let mut seen : Std.HashSet Nat := {}
@@ -1355,10 +1414,10 @@ partial def convert (vs : List AV) (fr : Fr) (site : UInt64) : M Unit := do
     let v :: rest := work | break
     work := rest
     for c in v do
-      if c == 1 then
-        unless (← get).prem.noWorldHooks do let _ ← worldCall [v]
+      if c == 1 then worldValue "a conversion of"
       else if c ≥ 2 then
         let ob ← getObj (c - 1)
+        if ob.escaped then worldMayHaveAccessors (c - 1)
         match ob.kind with
         | .builtin _ => pure ()
         | .array | .coll =>
@@ -1368,13 +1427,13 @@ partial def convert (vs : List AV) (fr : Fr) (site : UInt64) : M Unit := do
             seen := seen.insert c
             for k in ["valueOf", "toString", "join"] do
               let f ← if ob.hook then hookFns ((← getVal c (some k)).join ob.any) else pure (ob.props.getD k #[])
-              unless f.isEmpty do let _ ← callAll f (AV.ofObj (c - 1)) [] false fr (mixHash site (hash k))
+              unless f.isEmpty do let _ ← callHooks (c - 1) f [] fr (mixHash site (hash k))
             if ob.kind matches .array then work := ob.any :: work
         | _ =>
           if ← chainHasHook (c - 1) then
             for k in ["valueOf", "toString"] do
               let f ← hookFns (← getVal c (some k))
-              unless f.isEmpty do let _ ← callAll f (AV.ofObj (c - 1)) [] false fr (mixHash site (hash k))
+              unless f.isEmpty do let _ ← callHooks (c - 1) f [] fr (mixHash site (hash k))
 
 /-- Whether converting the object may run a function: it or what it inherits has a hook. -/
 partial def chainHasHook (o : Nat) (seen : List Nat := []) : M Bool := do
@@ -1383,17 +1442,16 @@ partial def chainHasHook (o : Nat) (seen : List Nat := []) : M Bool := do
   let ob ← getObj o
   if ob.hook || !ob.acc.isEmpty then return true
   for p in ob.proto do
-    if p ≥ 2 && (← chainHasHook (p - 1) (o :: seen)) then return true
+    if p == 1 || (p ≥ 2 && (← chainHasHook (p - 1) (o :: seen))) then return true
   return false
 
 /-- The candidates for a hook: the functions of the program and the standard ones (a standard function used as a hook
-does what its row says: `valueOf: Array.prototype.shift` changes its receiver), and a value the world made runs no
-code by P3 (`Premises.noWorldHooks`; without it, the world is a callee). -/
+does what its row says: `valueOf: Array.prototype.shift` changes its receiver), and a value the world made, which may
+be a function of the program that came back. -/
 partial def hookFns (f : AV) : M AV := do
   let mut r : AV := #[]
   for d in f do
-    if d == 1 then
-      unless (← get).prem.noWorldHooks do r := r.join AV.top
+    if d == 1 then r := r.join AV.top
     else if d ≥ 2 then
       match (← getObj (d - 1)).kind with
       | .func .. | .klass .. | .bound .. | .builtin _ => r := r.join (AV.ofObj (d - 1))
@@ -1406,13 +1464,14 @@ partial def runProtocol (target : AV) (name : String) (args : List AV) (fr : Fr)
   for c in target do
     if c ≥ 2 then
       let fns ← hookFns (← getVal c (some name))
-      unless fns.isEmpty do let _ ← callAll fns (AV.ofObj (c - 1)) args false fr site
+      unless fns.isEmpty do let _ ← callHooks (c - 1) fns args fr site
 
 /-- A thenable the program defined has its `then` called when a promise is resolved with it (`await`, the value an async
 function returns). -/
 partial def callThenables (v : AV) (fr : Fr) (site : UInt64) : M Unit := do
   for c in v do
-    if c ≥ 2 then
+    if c == 1 then worldValue "the then of"
+    else if c ≥ 2 then
       let mut fns : AV := #[]
       for d in ← getVal c (some "then") do
         if d ≥ 2 then
@@ -1473,7 +1532,17 @@ partial def mayHaveComputedKey (o : Nat) (seen : List Nat := []) : M Bool := do
   if ob.kind matches .builtin _ then return false
   if !ob.any.isEmpty || !ob.acc.isEmpty || ob.escaped || ob.fam.isSome then return true
   for p in ob.proto do
-    if p ≥ 2 && (← mayHaveComputedKey (p - 1) (o :: seen)) then return true
+    if p == 1 || (p ≥ 2 && (← mayHaveComputedKey (p - 1) (o :: seen))) then return true
+  return false
+
+/-- Whether a value the world made is among `v` or among what the objects of `v` inherit from: a query that walks the
+prototypes (`in`, `instanceof`, `for…in`) then reaches it. -/
+partial def reachesWorldValue (v : AV) (seen : List Nat := []) : M Bool := do
+  for c in v do
+    if c == 1 then return true
+    if c ≥ 2 && !seen.contains (c - 1) then
+      if seen.length > 10 then return true
+      if ← reachesWorldValue (← getObj (c - 1)).proto ((c - 1) :: seen) then return true
   return false
 
 /-- The values iterating `v` yields (spread, `for … of`, array destructuring). -/
@@ -1488,7 +1557,7 @@ partial def iterate (v : AV) (optional : Bool := false) : M AV := do
       | .array | .coll =>
         -- unless the program stored a function under a key the analysis does not know: that may be a `Symbol.iterator`
         if ob.hook then r := r.join (← worldCall [AV.ofObj (c - 1)])
-        else r := r.join (← contentsOf (AV.ofObj (c - 1)))
+        else r := r.join (← yieldOf (AV.ofObj (c - 1)))
       | _ =>
         -- another object is iterable only through a `Symbol.iterator` the program defined, which is a computed key
         if optional && !(← mayHaveComputedKey (c - 1)) then r := r.join (← contentsOf (AV.ofObj (c - 1)))
@@ -1520,11 +1589,7 @@ partial def eval (fr : Fr) (j : Json) : M AV := do
     convert vs fr (shallow j)
     return AV.prim
   | "TaggedTemplateExpression" =>
-    let tag := fld j "tag"
-    let (callee, thisV) ← if typ tag == "MemberExpression" then do
-        let o ← eval fr (fld tag "object")
-        pure (← getAV o (memberKey tag), o)
-      else pure (← eval fr tag, AV.prim)
+    let (callee, thisV) ← evalCallee fr (fld j "tag")
     let q := fld j "quasi"
     let vs ← (items (fld q "expressions")).toList.mapM (eval fr)
     let strs ← alloc .array (some (siteOf fr j))
@@ -1542,7 +1607,7 @@ partial def eval (fr : Fr) (j : Json) : M AV := do
   | "ClassExpression" => evalClass fr j
   | "UnaryExpression" =>
     let op := str (fld j "operator")
-    let arg := fld j "argument"
+    let arg := if op == "delete" then unwrap (fld j "argument") else fld j "argument"
     if op == "delete" && typ arg == "MemberExpression" then
       let o ← eval fr (fld arg "object")
       let k ← if flag arg "computed" then (do convert [← eval fr (fld arg "property")] fr (shallow arg); pure (memberKey arg)) else pure (memberKey arg)
@@ -1555,8 +1620,12 @@ partial def eval (fr : Fr) (j : Json) : M AV := do
     let a ← eval fr (fld j "left")
     let b ← eval fr (fld j "right")
     let op := str (fld j "operator")
-    if op == "in" then recBuiltinsRead b
-    if op == "instanceof" then runProtocol b "@@hasInstance" [a] fr (shallow j)
+    if op == "in" then
+      recBuiltinsRead b
+      if ← reachesWorldValue b then worldValue "in on"
+    if op == "instanceof" then
+      runProtocol b "@@hasInstance" [a] fr (shallow j)
+      if ← reachesWorldValue a then worldValue "instanceof on"
     if op == "===" || op == "!==" then pure () else convert [a, b] fr (shallow j)
     return AV.prim
   | "LogicalExpression" =>
@@ -1715,29 +1784,28 @@ partial def calleeLabel (fr : Fr) (j : Json) : M String := do
   | "ThisExpression" => return "this"
   | t => return t
 
+/-- The function a call or a tagged template calls, and its `this`: the object of a member access, also through
+parentheses and an optional chain (`(a?.b)()` calls with `a` as `this`, like `a.b()`). -/
+partial def evalCallee (fr : Fr) (calleeJ : Json) : M (AV × AV) := do
+  let m := unwrap calleeJ
+  if typ m == "MemberExpression" && typ (fld m "object") != "Super" then
+    let o ← eval fr (fld m "object")
+    if flag m "computed" then
+      convert [← eval fr (fld m "property")] fr (shallow m)
+    return (← getAV o (memberKey m), o)
+  else return (← eval fr calleeJ, AV.prim)
+
 partial def evalCall (fr : Fr) (j : Json) (isNew : Bool) : M AV := do
   let calleeJ := fld j "callee"
   let site := shallow j
   if typ calleeJ == "Super" then
     let args ← evalArgs fr (items (fld j "arguments"))
     return ← superCall fr args
-  if typ calleeJ == "Identifier" && str (fld calleeJ "name") == "eval" && !isNew then
+  if typ (unwrap calleeJ) == "Identifier" && str (fld (unwrap calleeJ) "name") == "eval" && !isNew then
     -- a direct eval reads any name in scope by its spelling: everything this unit can see escapes
     giveUp "direct eval" j
     return AV.top
-  let (callee, thisV) ←
-    if typ calleeJ == "MemberExpression" && typ (fld calleeJ "object") != "Super" then
-      let o ← eval fr (fld calleeJ "object")
-      if flag calleeJ "computed" then
-        let _ ← eval fr (fld calleeJ "property")
-      pure (← getAV o (memberKey calleeJ), o)
-    else if typ calleeJ == "ChainExpression" && typ (fld calleeJ "expression") == "MemberExpression" then
-      let m := fld calleeJ "expression"
-      let o ← eval fr (fld m "object")
-      if flag m "computed" then
-        let _ ← eval fr (fld m "property")
-      pure (← getAV o (memberKey m), o)
-    else pure (← eval fr calleeJ, AV.prim)
+  let (callee, thisV) ← evalCallee fr calleeJ
   let args ← evalArgs fr (items (fld j "arguments"))
   let label ← calleeLabel fr calleeJ
   modify fun s => { s with callLabel := label }
@@ -1876,7 +1944,9 @@ partial def exec (fr : Fr) (s : Json) : M Unit := do
     if typ left == "VariableDeclaration" && (str (fld left "kind")).endsWith "using" then giveUp "using" s
     let fr' ← newFrame fr (lexicalNames #[left])
     let right ← eval fr (fld s "right")
-    if typ s == "ForInStatement" then recBuiltinsRead right
+    if typ s == "ForInStatement" then
+      recBuiltinsRead right
+      if ← reachesWorldValue right then worldValue "for-in over"
     let elems ← if typ s == "ForOfStatement" then iterate right else pure AV.prim
     if flag s "await" then awaitValue elems fr (shallow s)
     fixLoop do
@@ -1898,7 +1968,9 @@ partial def exec (fr : Fr) (s : Json) : M Unit := do
       joinProto err (AV.ofObj (← builtinObj "Error.prototype"))
       joinProp err "message" AV.prim
       joinProp err "stack" AV.prim
-      unless isNull param do bindPattern fr' param ((← get).thrown.join (AV.ofObj err))
+      -- code that was not run here may have thrown anything the world holds
+      let foreign : AV := if (← get).unk then AV.top else #[]
+      unless isNull param do bindPattern fr' param (((← get).thrown.join (AV.ofObj err)).join foreign)
       exec fr' (fld h "body")
     unless isNull (fld s "finalizer") do exec fr (fld s "finalizer")
   | "SwitchStatement" =>
@@ -2130,16 +2202,33 @@ def takeFlag (name : String) : List String → Option String × List String
     if a == name then (some v, rest) else let (r, l) := takeFlag name (v :: rest); (r, a :: l)
   | l => (none, l)
 
-/-- The local names of a bundle's imports, with the module and the name each one imports. -/
+/-- The local names of a bundle's imports, with the module and the name each one imports (`default`, or `*` for the
+namespace): the list the translation front end wrote, or the `import` declarations of an ESTree dump. -/
 def importsOf (bundleJ : Json) : Std.HashMap String (String × String) :=
-  (items (fld bundleJ "imports")).foldl
+  let listed := (items (fld bundleJ "imports")).foldl
     (fun acc i => acc.insert (str (fld i "local")) (str (fld i "from"), str (fld i "imported"))) {}
+  (items (fld bundleJ "statements")).foldl (fun acc s =>
+    let d := fld s "ast"
+    if typ d != "ImportDeclaration" then acc else
+      (items (fld d "specifiers")).foldl (fun acc sp =>
+        let imported := match typ sp with
+          | "ImportDefaultSpecifier" => "default"
+          | "ImportNamespaceSpecifier" => "*"
+          | _ => specName (fld sp "imported")
+        acc.insert (str (fld (fld sp "local") "name")) (specName (fld d "source"), imported)) acc) listed
+
+/-- The units of an ESTree dump: its top-level statements. An `import` declaration runs nothing and `importsOf` says
+what its names stand for, so its unit is an empty statement. -/
+def dumpUnits (bundleJ : Json) : Array Json :=
+  (items (fld bundleJ "statements")).map fun s =>
+    let ast := fld s "ast"
+    if typ ast == "ImportDeclaration" then Json.mkObj [("type", "EmptyStatement")] else ast
 
 /-- What a verdict rests on, one line each: the premises of this analysis and what it did not understand. -/
 def premiseLines (prem : Premises) (r : Result) : List String :=
   ["  analysis premises (assumed, not checked):",
    "    P1 nothing the analysis cannot see patches the intrinsics (`Object`, `Array`, `Map`, `Promise`, …)",
-   s!"    P3 the world defines no accessors or conversion hooks on program objects, and converting a value it made runs no program code: {prem.noWorldHooks}",
+   s!"    P3 the world defines no accessors or conversion hooks on program objects: {prem.noWorldHooks}",
    "    P4 evaluation completes (no uncaught exception, no hang)",
    "    P5 no other chunk runs during evaluation except through callbacks this chunk gave the world",
    s!"    vendor: {r.used.size} imports assumed to only allocate{if r.used.isEmpty then "" else ": " ++ ", ".intercalate r.used.toList}"]

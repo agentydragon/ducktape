@@ -8,7 +8,8 @@ and Thrive share a private image but run as separate processes. Every provider h
 its own TLS identity, internal bearers, PVC, and metrics scrape. The Go gateway does
 not expose gateway-wide Prometheus metrics.
 
-The provider PVCs use `seaweedfs-ovh-ssd` and stay unbound until a pod consumes them.
+Each provider's state PVC uses `piraeus-ssd-2-autodiskful` and its capture PVC
+`piraeus-hdd-local`; both stay unbound until a pod consumes them.
 The remote Kustomization does not wait for resource health, so its readiness only
 means the manifests were applied. The PVCs are protected from Flux pruning, and the
 Kustomization uses `deletionPolicy: Orphan`. Providers run in zone `hil-ovh`.

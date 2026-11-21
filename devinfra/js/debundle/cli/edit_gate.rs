@@ -494,10 +494,8 @@ pub enum LocalBindingResolution {
 /// How a member's binding claim reached the source unit projection.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProjectedBindingKind {
-    /// A direct local-name pin, retaining its optional source kind.
-    LocalName {
-        source_kind: Option<BindingSourceKind>,
-    },
+    /// A direct local-name pin.
+    LocalName,
     /// A direct import claim. Imports are handled as re-exports and do not
     /// claim a local declaration source unit.
     ImportSpecifier,
@@ -521,7 +519,6 @@ pub struct UnresolvedLocalBindingClaim {
     pub module_path: PathBuf,
     pub claim_name: String,
     pub binding_name: String,
-    pub source_kind: Option<BindingSourceKind>,
     pub resolution: LocalBindingResolution,
 }
 
@@ -704,14 +701,11 @@ pub fn project_source_unit_claims(
                         &module.path,
                         claim_name,
                         &binding.name,
-                        binding.kind,
                         resolution.clone(),
                     );
                     module_projection.members.push(ProjectedMemberClaim {
                         binding_name: binding.name.clone(),
-                        kind: ProjectedBindingKind::LocalName {
-                            source_kind: binding.kind,
-                        },
+                        kind: ProjectedBindingKind::LocalName,
                         resolution: Some(resolution),
                     });
                 }
@@ -730,7 +724,6 @@ pub fn project_source_unit_claims(
                         &module.path,
                         claim_name,
                         binding_name,
-                        None,
                         resolution.clone(),
                     );
                     module_projection.members.push(ProjectedMemberClaim {
@@ -752,7 +745,6 @@ pub fn project_source_unit_claims(
                 &module.path,
                 "source-backed claim",
                 binding_name,
-                None,
                 resolution,
             );
         }
@@ -804,7 +796,6 @@ fn record_local_binding_claim(
     module_path: &Path,
     claim_name: &str,
     binding_name: &str,
-    source_kind: Option<BindingSourceKind>,
     resolution: LocalBindingResolution,
 ) {
     match &resolution {
@@ -820,7 +811,6 @@ fn record_local_binding_claim(
                     module_path: module_path.to_path_buf(),
                     claim_name: claim_name.to_string(),
                     binding_name: binding_name.to_string(),
-                    source_kind,
                     resolution: resolution.clone(),
                 });
         }

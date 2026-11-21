@@ -18,6 +18,16 @@ const (
 	CheckRunCompleted  CheckRunStatus = "completed"
 )
 
+// IsCheckConclusion reports whether value is a conclusion GitHub gives a completed check run or workflow run.
+func IsCheckConclusion(value string) bool {
+	switch value {
+	case "success", "failure", "neutral", "cancelled", "timed_out", "action_required", "stale", "skipped", "startup_failure":
+		return true
+	default:
+		return false
+	}
+}
+
 // CheckRun is one native check-run fact, whether first found by a webhook or by subscription repair.
 type CheckRun struct {
 	RepositoryID int64          `json:"repositoryId"`

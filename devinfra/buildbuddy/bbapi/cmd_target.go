@@ -115,11 +115,7 @@ func targetHistorySubCmd() *cobra.Command {
 				for _, s := range th.GetTargetStatus() {
 					started := s.GetTiming().GetStartTime().AsTime().Format("2006-01-02 15:04")
 					dur := fmtDurationUsec(s.GetTiming().GetDuration().AsDuration().Microseconds())
-					sha := s.GetCommitSha()
-					if len(sha) > 8 {
-						sha = sha[:8]
-					}
-					t.row(s.GetStatus().String(), dur, started, sha, s.GetInvocationId())
+					t.row(s.GetStatus().String(), dur, started, shortSHA(s.GetCommitSha()), s.GetInvocationId())
 				}
 				t.flush()
 			}

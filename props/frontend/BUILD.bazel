@@ -290,13 +290,11 @@ js_run_binary(
     args = ["tests/harness/dist"],
     chdir = package_name(),
     tool = ":build_harness",
-    visibility = ["//props/frontend/src:__subpackages__"],
 )
 
 filegroup(
     name = "harness_js",
     srcs = ["tests/harness/dist/harness.js"],
-    visibility = ["//props/frontend/src:__subpackages__"],
 )
 
 # Visual regression tests.
@@ -306,7 +304,6 @@ filegroup(
 filegroup(
     name = "visual_test_assets",
     srcs = ["tests/harness/index.html"],
-    visibility = ["//props/frontend/src:__subpackages__"],
 )
 
 # small: a shard renders 3 scenarios. The 12 per-scenario targets this replaces were 6.0-9.4s

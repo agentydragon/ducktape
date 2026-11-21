@@ -441,7 +441,7 @@ py_test(
     ],
 )
 
-# Codex exec-server and commands share a memory cgroup, so tool OOM can also kill the server.
+# Exercise a shared command-slice OOM without losing the native executor.
 py_test(
     name = "test_vm_oom",
     size = "enormous",
@@ -482,6 +482,7 @@ py_test(
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/deployment:pytest_plugin",
         "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:native_platform",
         "//agentplane/system_tests/driver:offered_models",
         "//agentplane/system_tests/driver:scenario",
         "//agentplane/system_tests/driver:scripted_upstream",
@@ -533,6 +534,7 @@ py_test(
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/deployment:pytest_plugin",
         "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:native_platform",
         "//agentplane/system_tests/driver:offered_models",
         "//agentplane/system_tests/driver:scenario",
         "//agentplane/system_tests/driver:scripted_upstream",

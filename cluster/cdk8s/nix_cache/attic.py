@@ -400,36 +400,19 @@ def _local_server(scope: Construct) -> None:
 def _rotation(scope: Construct) -> None:
     # Flux owns the Secret's identity; only the rotator owns its data. Omitting
     # data and using Merge preserve rotator-owned fields on Flux reconciles.
-    k8s.KubeSecret(
-        scope,
-        "ci-writer-token",
-        metadata=k8s.ObjectMeta(
-            name=ci_token.WRITER.name,
-            namespace=ci_token.WRITER.namespace,
-            annotations={"kustomize.toolkit.fluxcd.io/ssa": "Merge"},
-        ),
-        type="Opaque",
-    )
-    k8s.KubeSecret(
-        scope,
-        "ci-reader-token",
-        metadata=k8s.ObjectMeta(
-            name=ci_token.READER.name,
-            namespace=ci_token.READER.namespace,
-            annotations={"kustomize.toolkit.fluxcd.io/ssa": "Merge"},
-        ),
-        type="Opaque",
-    )
-    k8s.KubeSecret(
-        scope,
-        "gaffer-ci-writer-token",
-        metadata=k8s.ObjectMeta(
-            name=ci_token.GAFFER_WRITER.name,
-            namespace=ci_token.GAFFER_WRITER.namespace,
-            annotations={"kustomize.toolkit.fluxcd.io/ssa": "Merge"},
-        ),
-        type="Opaque",
-    )
+    for construct_id, token in (
+        ("ci-writer-token", ci_token.WRITER),
+        ("ci-reader-token", ci_token.READER),
+        ("gaffer-ci-writer-token", ci_token.GAFFER_WRITER),
+    ):
+        k8s.KubeSecret(
+            scope,
+            construct_id,
+            metadata=k8s.ObjectMeta(
+                name=token.name, namespace=token.namespace, annotations={"kustomize.toolkit.fluxcd.io/ssa": "Merge"}
+            ),
+            type="Opaque",
+        )
     notification_role = ClusterRole(
         scope,
         "ci-token-notification",

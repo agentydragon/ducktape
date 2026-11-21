@@ -497,7 +497,6 @@ fn classify_mode(command: &[String], arguments: &[ResolvedArgument]) -> Invocati
         [coverage] if coverage == "coverage" => InvocationMode::ReadOnlyAnalysis,
         [graph_summary] if graph_summary == "graph-summary" => InvocationMode::ReadOnlyAnalysis,
         [describe] if describe == "describe" => InvocationMode::ReadOnlyAnalysis,
-        [inspect] if inspect == "inspect-source" => InvocationMode::ReadOnlyAnalysis,
         [scc] if scc == "scc" => InvocationMode::ReadOnlyAnalysis,
         [cluster] if cluster == "cluster" => InvocationMode::ReadOnlyAnalysis,
         [bindings, list] if bindings == "bindings" && list == "list" => {
@@ -510,9 +509,6 @@ fn classify_mode(command: &[String], arguments: &[ResolvedArgument]) -> Invocati
             if spec == "spec"
                 && ["stats", "selector-debt", "match-selector"].contains(&verb.as_str()) =>
         {
-            InvocationMode::ReadOnlyAnalysis
-        }
-        [gate, verb] if gate == "gate" && ["list", "describe", "cut"].contains(&verb.as_str()) => {
             InvocationMode::ReadOnlyAnalysis
         }
         _ => InvocationMode::Unclassified,

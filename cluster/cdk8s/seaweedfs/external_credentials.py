@@ -41,10 +41,9 @@ def chart(app: App) -> Chart:
 def seaweedfs_external_credentials(
     chart: Chart, directory: RenderedDirectory, seaweedfs_operator: Kustomization
 ) -> Kustomization:
-    name = "seaweedfs-external-credentials"
     return flux_kustomization(
         chart,
-        name,
+        "seaweedfs-external-credentials",
         directory,
         depends_on=flux_kustomization_depends_on_many(seaweedfs_operator),
         timeout="5m",

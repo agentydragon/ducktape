@@ -11,7 +11,6 @@ if __name__ == "__main__":
     deps = BackendDeps(
         config=PropsConfig(backend_url="http://localhost:0", agent_env={}),
         registry_proxy_config=RegistryProxyConfig(host="localhost", port=0),
-        backend_url="http://localhost:0",
     )
     app = create_app(deps=deps, static_dir=None)
     schema = app.openapi()

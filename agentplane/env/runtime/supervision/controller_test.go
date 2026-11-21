@@ -243,6 +243,19 @@ func waitProcessStatus(t *testing.T, f *processControllerTestRuntime, id, want s
 	return Status{}
 }
 
+func waitClosed(t *testing.T, signal <-chan struct{}, failure string) {
+	t.Helper()
+	for range 20 {
+		synctest.Wait()
+		select {
+		case <-signal:
+			return
+		default:
+		}
+	}
+	t.Fatal(failure)
+}
+
 func TestProcessControllerStartsOnceAndRetainsTerminalStatus(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		f := newProcessControllerTestRuntime(t)
@@ -314,13 +327,13 @@ func TestProcessControllerRetainsSystemdObservationsAcrossFence(t *testing.T) {
 		releaseStop := make(chan struct{})
 		var release sync.Once
 		t.Cleanup(func() { release.Do(func() { close(releaseStop) }) })
-		observers := make(chan func(SystemdObservation), 1)
+		observers := make(chan func(systemdops.Observation), 1)
 		var starts atomic.Int32
 		f.request(t, id, func(context.Context) (*Instance, error) {
 			starts.Add(1)
-			observe := func(observation SystemdObservation) { f.host.observeSystemd(id, observation) }
+			observe := func(observation systemdops.Observation) { f.host.observeSystemd(id, observation) }
 			observers <- observe
-			observe(SystemdObservation{Revision: 1, Unit: "old.service", Snapshot: systemdops.UnitSnapshot{InvocationID: "old", ActiveState: "active"}})
+			observe(systemdops.Observation{Revision: 1, Unit: "old.service", Snapshot: systemdops.UnitSnapshot{InvocationID: "old", ActiveState: "active"}})
 			return &Instance{
 				Done: done, PID: 123,
 				Stop: func(context.Context) error {
@@ -337,8 +350,8 @@ func TestProcessControllerRetainsSystemdObservationsAcrossFence(t *testing.T) {
 			t.Fatalf("initial observation = %+v", initial.Systemd)
 		}
 		observe := <-observers
-		observe(SystemdObservation{Revision: 3, Unit: "old.service", Snapshot: systemdops.UnitSnapshot{InvocationID: "old", ActiveState: "failed"}, Error: "manager disconnected"})
-		observe(SystemdObservation{Revision: 2, Unit: "old.service", Snapshot: systemdops.UnitSnapshot{InvocationID: "old", ActiveState: "active"}})
+		observe(systemdops.Observation{Revision: 3, Unit: "old.service", Snapshot: systemdops.UnitSnapshot{InvocationID: "old", ActiveState: "failed"}, Error: "manager disconnected"})
+		observe(systemdops.Observation{Revision: 2, Unit: "old.service", Snapshot: systemdops.UnitSnapshot{InvocationID: "old", ActiveState: "active"}})
 		facts, found, err := readResource[observationSpec](f.ctx, f.state, processTestNamespace, id)
 		if err != nil || !found || facts.Systemd.Revision != 3 || facts.Systemd.Snapshot.ActiveState != "failed" {
 			t.Fatalf("process observations lost newest systemd observation: facts=%+v found=%t err=%v", facts, found, err)
@@ -349,9 +362,9 @@ func TestProcessControllerRetainsSystemdObservationsAcrossFence(t *testing.T) {
 		if current.Systemd.Error != "manager disconnected" || current.Systemd.Snapshot.ActiveState != "failed" {
 			t.Fatalf("newest observation = %+v", current.Systemd)
 		}
-		observe(SystemdObservation{Revision: 4, Unit: "old.service", ExitState: SystemdExitObserved, ExitCode: 23})
+		observe(systemdops.Observation{Revision: 4, Unit: "old.service", ExitState: systemdops.ExitObserved, ExitCode: 23})
 		waitProcessStatus(t, f, id, "exit observation before cleanup", func(status Status) bool {
-			return status.Systemd.ExitState == SystemdExitObserved && status.Systemd.ExitCode == 23
+			return status.Systemd.ExitState == systemdops.ExitObserved && status.Systemd.ExitCode == 23
 		})
 		done <- nil
 		close(done)
@@ -373,7 +386,7 @@ func TestProcessControllerRetainsSystemdObservationsAcrossFence(t *testing.T) {
 			t.Fatal(err)
 		}
 		synctest.Wait()
-		observe(SystemdObservation{Revision: 5, Unit: "stale.service"})
+		observe(systemdops.Observation{Revision: 5, Unit: "stale.service"})
 		synctest.Wait()
 		if _, found := f.status(t, id); found {
 			t.Fatal("stale observation recreated retired process status")
@@ -394,7 +407,7 @@ func TestProcessControllerPublishesSystemdEvidenceWhileStartIsBlocked(t *testing
 		var starts atomic.Int32
 		f.request(t, id, func(context.Context) (*Instance, error) {
 			starts.Add(1)
-			f.host.observeSystemd(id, SystemdObservation{Revision: 1, Unit: "uncertain.service", Error: "manager disconnected"})
+			f.host.observeSystemd(id, systemdops.Observation{Revision: 1, Unit: "uncertain.service", Error: "manager disconnected"})
 			<-release
 			return nil, errors.New("fenced start failure")
 		})
@@ -510,16 +523,7 @@ func TestProcessTeardownWaitsForLateStartAndStopBarrier(t *testing.T) {
 			}}, nil
 		})
 
-		for range 20 {
-			synctest.Wait()
-			select {
-			case <-startEntered:
-				goto startEnteredLoop
-			default:
-			}
-		}
-		t.Fatal("process launch callback did not start")
-	startEnteredLoop:
+		waitClosed(t, startEntered, "process launch callback did not start")
 		stopDone := f.stop(id)
 		synctest.Wait()
 		select {
@@ -537,16 +541,7 @@ func TestProcessTeardownWaitsForLateStartAndStopBarrier(t *testing.T) {
 		}
 
 		releaseStartOnce.Do(func() { close(releaseStart) })
-		for range 20 {
-			synctest.Wait()
-			select {
-			case <-stopEntered:
-				goto stopEnteredLoop
-			default:
-			}
-		}
-		t.Fatal("late process instance did not enter its stop barrier")
-	stopEnteredLoop:
+		waitClosed(t, stopEntered, "late process instance did not enter its stop barrier")
 		stopping := waitProcessStatus(t, f, id, "stopping", func(current Status) bool {
 			return current.Phase == Stopping && current.PID == 456
 		})
@@ -662,16 +657,7 @@ func TestProcessNaturalExitFencesBeforeTerminalAndIsolatesSuccessor(t *testing.T
 		waitProcessStatus(t, f, "old", "running", func(current Status) bool { return current.Phase == Running })
 		oldDone <- errors.New("unexpected process exit")
 		close(oldDone)
-		for range 20 {
-			synctest.Wait()
-			select {
-			case <-oldStopEntered:
-				goto oldStopLoop
-			default:
-			}
-		}
-		t.Fatal("natural exit did not enter cleanup")
-	oldStopLoop:
+		waitClosed(t, oldStopEntered, "natural exit did not enter cleanup")
 		oldStopping := waitProcessStatus(t, f, "old", "fencing", func(current Status) bool {
 			return current.Phase == Stopping
 		})

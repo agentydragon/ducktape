@@ -888,11 +888,30 @@ spec:
       newTag: v8.6.0
   interval: 10m
   patches:
-    - patch: |-
-        - op: add
-          path: /spec/template/spec/nodeSelector
-          value:
-            topology.kubernetes.io/zone: hil-ovh
+    - patch: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: snapshot-controller
+          namespace: kube-system
+          annotations:
+            goldilocks.fairwinds.com/vpa-update-mode: auto
+        spec:
+          strategy:
+            rollingUpdate:
+              maxSurge: 1
+              maxUnavailable: 0
+          template:
+            spec:
+              nodeSelector:
+                topology.kubernetes.io/zone: hil-ovh
+              affinity:
+                podAntiAffinity:
+                  requiredDuringSchedulingIgnoredDuringExecution:
+                    - topologyKey: kubernetes.io/hostname
+                      labelSelector:
+                        matchLabels:
+                          app.kubernetes.io/name: snapshot-controller
       target:
         kind: Deployment
         name: snapshot-controller
@@ -975,6 +994,48 @@ spec:
     name: vpa
     namespace: ducktape-flux
   timeout: 5m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: kubevirt-cdi-vpa
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: vpa
+      namespace: ducktape-flux
+    - name: kubevirt
+      namespace: ducktape-flux
+    - name: cdi
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/kubevirt/vpa
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: kubevirt-cdi-vpa
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: flux-system-vpa
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: vpa
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/flux-system-vpa
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: flux-system-vpa
+    namespace: ducktape-flux
   wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1

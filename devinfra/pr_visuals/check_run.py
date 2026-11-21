@@ -4,35 +4,16 @@ from __future__ import annotations
 
 import argparse
 import os
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 
 from github import Auth, Github
 from github.CheckRun import CheckRun
-from pydantic import BaseModel
 
 CheckConclusion = Literal[
     "action_required", "cancelled", "failure", "neutral", "skipped", "stale", "startup_failure", "success", "timed_out"
 ]
 CheckStatus = Literal["completed", "in_progress"]
-CHECK_CONCLUSIONS = (
-    "action_required",
-    "cancelled",
-    "failure",
-    "neutral",
-    "skipped",
-    "stale",
-    "startup_failure",
-    "success",
-    "timed_out",
-)
-
-
-class CheckRunOutput(BaseModel):
-    title: str
-    summary: str
-
-    def api_payload(self) -> dict[str, str | list[dict[str, str | int]]]:
-        return {"title": self.title, "summary": self.summary}
+CHECK_CONCLUSIONS = get_args(CheckConclusion)
 
 
 def upsert_check_run(
@@ -63,7 +44,7 @@ def upsert_check_run(
     if status == "in_progress" and existing and existing[0].status == "completed":
         return
 
-    output = CheckRunOutput(title=name, summary=summary[:65000]).api_payload()
+    output: dict[str, str | list[dict[str, str | int]]] = {"title": name, "summary": summary[:65000]}
     optional: dict[str, Any] = {
         **({"conclusion": conclusion} if conclusion is not None else {}),
         **({"details_url": details_url} if details_url is not None else {}),

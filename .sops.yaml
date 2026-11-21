@@ -790,17 +790,6 @@ creation_rules:
           - *rugged-agentydragon
           - *atlas-agentydragon
           - *iguana-agentydragon
-  # codex-pod Forgejo tea token (auto-rotated by forgejo-token-rotation). The pod
-  # consumes the cluster/k8s Secret manifest; this bare SOPS file is the rotator's
-  # encrypted stamp/raw-token output and operator break-glass copy.
-  - path_regex: secrets/codex-pod-forgejo-tea-token\.yaml$
-    key_groups:
-      - age:
-          - *admin
-          - *wyrm2-agentydragon
-          - *rugged-agentydragon
-          - *atlas-agentydragon
-          - *iguana-agentydragon
   # Tana's parked client key is retained for recovery; its Crossplane resource and
   # route are intentionally absent until Tana is re-enabled with a reviewed allowlist.
   - path_regex: secrets/litellm-tana-clients-key\.yaml$

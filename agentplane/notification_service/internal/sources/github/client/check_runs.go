@@ -10,8 +10,6 @@ import (
 	"github.com/google/go-github/v88/github"
 )
 
-const checkRunsPageSize = 100
-
 // CheckRuns reads the latest check runs for an immutable commit SHA.
 func (c *Client) CheckRuns(ctx context.Context, repository, sha string, installationID int64) ([]githubmodel.CheckRun, error) {
 	owner, name, err := splitRepository(repository)
@@ -28,7 +26,7 @@ func (c *Client) CheckRuns(ctx context.Context, repository, sha string, installa
 			value, response, err := client.Checks.ListCheckRunsForRef(ctx, owner, name, sha, &github.ListCheckRunsOptions{
 				Filter: github.Ptr("latest"),
 				ListOptions: github.ListOptions{
-					PerPage: checkRunsPageSize,
+					PerPage: pageSize,
 					Page:    page,
 				},
 			})
@@ -79,7 +77,7 @@ func CheckRunObservation(checkRun *github.CheckRun, sha string) (githubmodel.Che
 	if !ok {
 		return githubmodel.CheckRun{}, &InvalidResponseError{Reason: "check run status is invalid"}
 	}
-	if checkRun.Conclusion != nil && !validCheckConclusion(*checkRun.Conclusion) {
+	if checkRun.Conclusion != nil && !githubmodel.IsCheckConclusion(*checkRun.Conclusion) {
 		return githubmodel.CheckRun{}, &InvalidResponseError{Reason: "check run conclusion is invalid"}
 	}
 	if status == githubmodel.CheckRunCompleted && checkRun.Conclusion == nil {
@@ -115,14 +113,5 @@ func checkRunStatus(status string) (githubmodel.CheckRunStatus, bool) {
 		return githubmodel.CheckRunStatus(status), true
 	default:
 		return "", false
-	}
-}
-
-func validCheckConclusion(conclusion string) bool {
-	switch conclusion {
-	case "success", "failure", "neutral", "cancelled", "timed_out", "action_required", "stale", "skipped", "startup_failure":
-		return true
-	default:
-		return false
 	}
 }

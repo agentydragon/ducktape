@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync/atomic"
 
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
@@ -47,7 +46,7 @@ func (value SystemdScopeStatus) DeepCopy() SystemdScopeStatus { return value }
 // Ready is a one-way latch. Reconciliation after readiness must never inventory
 // again: the same namespace now also contains this owner's live processes.
 type systemdScopeEntry struct {
-	ready     *atomic.Bool
+	ready     chan struct{}
 	reconcile func(context.Context, SystemdScopeDesired) error
 }
 
@@ -62,7 +61,8 @@ func (h *Host) DeclareSystemdScope(ctx context.Context, launcher *SystemdLaunche
 	if err := configured.configureScope(stateDir, sandboxUID, owner); err != nil {
 		return nil, err
 	}
-	configured.launchReady = &atomic.Bool{}
+	ready := make(chan struct{})
+	configured.launchReady = ready
 	desired := SystemdScopeDesired{
 		StateDir: stateDir, SandboxUID: sandboxUID, Owner: owner, Slice: configured.Slice,
 		AgentUID: configured.AgentUID, AgentGID: configured.AgentGID,
@@ -73,7 +73,7 @@ func (h *Host) DeclareSystemdScope(ctx context.Context, launcher *SystemdLaunche
 	if _, exists := h.systemdScopes[owner.ScopeID]; exists {
 		return nil, fmt.Errorf("systemd scope %q already declared", owner.ScopeID)
 	}
-	h.systemdScopes[owner.ScopeID] = &systemdScopeEntry{ready: configured.launchReady, reconcile: reconcileSystemdScope}
+	h.systemdScopes[owner.ScopeID] = &systemdScopeEntry{ready: ready, reconcile: reconcileSystemdScope}
 	if err := h.state.Create(ctx, resourceFor(h.namespace, string(owner.ScopeID), desired), state.WithCreateOwner(hostOwner)); err != nil {
 		delete(h.systemdScopes, owner.ScopeID)
 		return nil, err
@@ -123,7 +123,7 @@ func (c *systemdScopeController) Reconcile(ctx context.Context, _ *zap.Logger, r
 	if entry == nil {
 		return errors.New("systemd scope has no registered configuration")
 	}
-	if entry.ready.Load() {
+	if scopeReady(entry.ready) {
 		return writeResource(ctx, r, c.host.namespace, ptr.ID(), SystemdScopeStatus{Ready: true})
 	}
 	if err := entry.reconcile(ctx, desired); err != nil {
@@ -132,8 +132,17 @@ func (c *systemdScopeController) Reconcile(ctx context.Context, _ *zap.Logger, r
 		}
 		return err
 	}
-	entry.ready.Store(true)
+	close(entry.ready)
 	return writeResource(ctx, r, c.host.namespace, ptr.ID(), SystemdScopeStatus{Ready: true})
+}
+
+func scopeReady(ready <-chan struct{}) bool {
+	select {
+	case <-ready:
+		return true
+	default:
+		return false
+	}
 }
 
 func reconcileSystemdScope(ctx context.Context, desired SystemdScopeDesired) error {

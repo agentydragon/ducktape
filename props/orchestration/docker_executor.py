@@ -1,7 +1,6 @@
 """Docker container executor — runs agent containers via the Docker daemon.
 
-Implements ContainerExecutor using aiodocker. Extracted from AgentRegistry
-to allow plugging in alternative runtimes (e.g., Kubernetes).
+Implements ContainerExecutor using aiodocker.
 """
 
 from __future__ import annotations

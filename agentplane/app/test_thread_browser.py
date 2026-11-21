@@ -723,7 +723,6 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
     db_url: str,
     store: ThreadHTTP,
     event_logs: SessionHistory,
-    content: SessionHistory,
     history: History,
     history_service: GoHistoryService,
     electric: ElectricService,
@@ -900,12 +899,7 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
         await page.context.set_offline(True)
         await ingress.drop_connections()
         source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text=" after reconnect")))
-        async with asyncio.timeout(10):
-            while True:
-                scope = await content.session_summary(thread)
-                if scope is not None and scope.folded_through >= source.entries[-1].cursor:
-                    break
-                await asyncio.sleep(0.01)
+        await history_service.folded(thread, source.entries[-1].cursor)
         # Whether or not the delta beat the drop, nothing shown is withdrawn.
         await expect(page.get_by_text("Projected browser prefix and streamed suffix", exact=False)).to_have_count(1)
         await page.context.set_offline(False)
@@ -1075,6 +1069,27 @@ async def test_browser_replays_streams_and_reloads_one_exact_thread(thread_brows
     await expect(page.get_by_role("button", name="Interrupt", exact=True)).to_be_disabled()
     (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
     assert await thread_browser.event_logs.events(thread.id, limit=100) == source.entries
+
+
+async def test_history_updates_do_not_reload_thread_metadata(thread_browser: ThreadBrowser) -> None:
+    page, source = thread_browser.page, thread_browser.source
+    await thread_browser.start_replay()
+    await expect(page.locator("nav.agentplane-sidebar").get_by_text("Browser thread", exact=True)).to_be_visible()
+    reads: list[str] = []
+
+    def observe(request: Request) -> None:
+        path = urlsplit(request.url).path
+        if path in ("/upstream/app/v1/threads", "/upstream/history/v1/sessions:batchGetSummaries"):
+            reads.append(path)
+
+    page.on("request", observe)
+    text = "Test retained prefix"
+    for suffix in (" first", " second", " third"):
+        source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-browser-item", text=suffix)))
+        text += suffix
+        await expect(page.get_by_text(text, exact=True)).to_be_visible()
+    assert reads == []
+    page.remove_listener("request", observe)
 
 
 async def test_sidebar_receives_rename_and_archive_from_another_app_replica(thread_browser: ThreadBrowser) -> None:

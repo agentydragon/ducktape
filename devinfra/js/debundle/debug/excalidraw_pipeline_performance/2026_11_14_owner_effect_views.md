@@ -79,5 +79,6 @@ The aggregate results above remain here when scratch is cleaned.
 passed 364 core analysis tests. All three Excalidraw test results were cached
 after pipeline reconstruction. A separate
 [focused CLI run](https://app.buildbuddy.io/invocation/10438cdf-8615-4133-a7b7-b312dda4c65f)
-passed `callback_future_availability_test` and `commuting_statements_gate_test`.
+passed `callbacks/availability/future_availability.rs` and
+`commuting_statements_gate_test`.
 The PR checks validate its final head.

@@ -238,19 +238,11 @@ pub fn parse_js_module(
     source_name: &str,
     source: &str,
 ) -> std::result::Result<ParsedJsModule, JsParseError> {
-    let cm: Lrc<SourceMap> = Default::default();
-    let fm = source_file(&cm, source_name, source);
-    let (module, unresolved_mark, top_level_mark) = parse_and_resolve(source_name, &fm)?;
-    Ok(ParsedJsModule {
-        cm,
-        module,
-        unresolved_mark,
-        top_level_mark,
-    })
+    parse_js_module_consuming(source_name, source.to_string())
 }
 
 /// Like `parse_js_module` but takes ownership of the source string, avoiding
-/// the clone inside `source_file`. The source text is retrievable via
+/// its clone. The source text is retrievable via
 /// `ParsedJsModule::source_text()`.
 pub fn parse_js_module_consuming(
     source_name: &str,
@@ -275,21 +267,7 @@ pub fn parse_js_module_ast(
     source_name: &str,
     source: &str,
 ) -> std::result::Result<Module, JsParseError> {
-    let cm: Lrc<SourceMap> = Default::default();
-    let fm = source_file(&cm, source_name, source);
-    let (module, _, _) = parse_and_resolve(source_name, &fm)?;
-    Ok(module)
-}
-
-fn source_file(
-    cm: &Lrc<SourceMap>,
-    source_name: &str,
-    source: &str,
-) -> Lrc<swc_common::SourceFile> {
-    cm.new_source_file(
-        FileName::Custom(source_name.to_string()).into(),
-        source.to_string(),
-    )
+    parse_js_module(source_name, source).map(|parsed| parsed.module)
 }
 
 /// Parse a source file and run SWC's `resolver` pass to assign
@@ -729,26 +707,16 @@ fn attach_binding_comments(
 /// `// <text>`. The output is a `Vec<String>`, one entry per emitted
 /// line, ready to be joined by `\n` callers.
 pub fn format_comment_block_lines(text: &str) -> Vec<String> {
-    text.split('\n')
-        .map(|line| {
-            let trimmed = line.trim_end();
-            if trimmed.is_empty() {
-                "//".to_string()
-            } else {
-                format!("// {trimmed}")
-            }
-        })
+    format_member_comment_line_texts(text)
+        .into_iter()
+        .map(|body| format!("//{body}"))
         .collect()
 }
 
 /// Format spec comment text into the per-line texts SWC's `Line`-kind
 /// Comment expects (the prefix `//` is added by the emitter, so each
 /// entry is the *body* of one line comment, including any leading
-/// space).
-///
-/// Mirrors [`format_comment_block_lines`] but returns the bare body
-/// for each line (`" foo"` vs `"// foo"`), since SWC emits the `//`
-/// itself.
+/// space): `""` for an empty line, `" <text>"` otherwise.
 fn format_member_comment_line_texts(text: &str) -> Vec<String> {
     text.split('\n')
         .map(|line| {

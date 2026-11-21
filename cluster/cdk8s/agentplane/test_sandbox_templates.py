@@ -14,7 +14,7 @@ from more_itertools import one
 
 from agentplane.crd_group import GROUP
 from agentplane.egress.platform_routes import PLATFORM_ROUTES_PORT
-from agentplane.env.config import CONFIG_FILE, LAUNCH_FILE, CodexReadiness, Configuration
+from agentplane.env.config import CONFIG_FILE, LAUNCH_FILE, CodexReadiness, EnvironmentVariables
 from agentplane.net.peertls.config import LLM_INGRESS_URI
 from cluster.cdk8s.agentplane import llm_ingress, platform_routes, sandbox_pod, staging
 from cluster.cdk8s.agentplane.environment_sandbox import EnvironmentSandboxTemplate
@@ -61,8 +61,8 @@ def test_sandbox_harnesses_inherit_runtime_timezone(staging_manifests: list[dict
         pod = template["spec"]["pod"]["spec"]
         workload = one(container for container in pod["containers"] if container["name"] == "environment-runtime")
         workload_environment = {item["name"] for item in workload["env"]}
-        config = Configuration.model_validate(_runner_configuration(staging_manifests, pod))
-        inherited_environment = set(config.harness_environment.inherit)
+        config = _runner_configuration(staging_manifests, pod)
+        inherited_environment = set(EnvironmentVariables.model_validate(config["harness_environment"]).inherit)
 
         assert "TZ" in workload_environment & inherited_environment
         assert "TZDIR" in inherited_environment
@@ -84,13 +84,14 @@ def test_runner_pod_gives_codex_a_private_executor_with_shared_paths(staging_man
     assert runner["command"] == ["/run/agentplane/environment/bin/agentplane-environment-runtime"]
     assert runner["args"] == ["--config", CONFIG_FILE, "--launch-file", LAUNCH_FILE]
     config = _runner_configuration(staging_manifests, pod)
-    assert config["environment"]["kind"] == "pod"
     assert config["environment"]["supervision"] == "pid1"
     assert config["environment"]["executor"]["implementation"] == "native"
+    assert config["environment"]["executor"]["placement"] == "direct"
+    assert config["environment"]["executor"]["owner"]["kind"] == "companion"
     assert executor["command"] == ["/run/agentplane/environment/bin/agentplane-execution-service"]
     args = executor["args"]
     assert args[0] == "companion"
-    assert args[args.index("--socket") + 1] == config["environment"]["executor"]["socket"]
+    assert args[args.index("--socket") + 1] == config["environment"]["executor"]["owner"]["socket"]
     assert args[args.index("--listen") + 1] == config["environment"]["executor"]["url"]
     assert args[args.index("--binary") + 1] == "/run/agentplane/environment/bin/agentplane-execution-service"
     health_port = int(args[args.index("--health-listen") + 1].removeprefix(":"))
@@ -261,9 +262,9 @@ def test_pod_template_projects_the_buildbuddy_key_to_runner_and_executor(
 ) -> None:
     """The canonical key reaches the runner container and its isolated executor, and by name the harness
     children the runner spawns (agentplane/docs/buildbuddy_remote_auth.md). The egress sidecar, which
-    holds a Session's bearers, gets neither. Every launch preset names this one template."""
+    holds a Session's bearers, gets neither. The existing coding and assistant presets launch here."""
     presets = config_map_yaml(staging_manifests, "app-config", "config.yaml")["sandbox_presets"]
-    assert {preset["template"] for preset in presets.values()} == {staging.POD_TEMPLATE}
+    assert {preset["template"] for name, preset in presets.items() if name != "firecracker"} == {staging.POD_TEMPLATE}
     key_copies = [
         doc
         for doc in staging_manifests

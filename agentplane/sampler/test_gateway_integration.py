@@ -23,7 +23,7 @@ from PIL import Image
 from agentplane.env import config as configuration
 from agentplane.env.e2e.testing import launches
 from agentplane.env.e2e.testing.gateway import serve_gateway
-from agentplane.env.e2e.testing.history_tunnel import history_tunnel
+from agentplane.env.e2e.testing.history_ingress import history_ingress
 from agentplane.env.e2e.testing.process import RunningRunner
 from agentplane.env.runtime.execution import executor_pb2, executor_pb2_grpc
 from agentplane.env.runtime.execution.testing.codex_exec_server_container import (
@@ -31,13 +31,13 @@ from agentplane.env.runtime.execution.testing.codex_exec_server_container import
     inspect_codex_exec_server_container,
 )
 from agentplane.grpc.calls import dial
-from agentplane.harness_host import harness_host_pb2, harness_host_pb2_grpc
+from agentplane.harness_host import harness_host_pb2
 from agentplane.history_service.testing.go_service import go_history_service, migrate_history_database
 from agentplane.native.codex.testing.responses_sse import CustomToolCall, Message, response_stream
 from agentplane.net.peertls.config import CENTRAL_SAMPLER_URI, MTLS, SANDBOX_CONTROLLER_URI
 from agentplane.proto import event_pb2, session_pb2
-from agentplane.sampler.api import sampler_admin_pb2, sampler_admin_pb2_grpc
-from agentplane.sampler.testing import Endpoint, SamplerTestClient, create_request, go_sampler, settings, turn_completed
+from agentplane.sampler.api import sampler_admin_pb2
+from agentplane.sampler.testing import Endpoint, create_request, go_sampler, settings, turn_completed
 from agentplane.sampler.testing_store import Store
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster, sandbox_cluster
 from agentplane.session_dispatcher.testing.gateway_process import run_gateway
@@ -145,17 +145,12 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                 ),
             )
             async with (
-                history_tunnel(history.ingress_target) as history_proxy,
+                history_ingress(history.ingress_target) as ingress,
                 RunningRunner(
                     config,
                     runner_gateway,
                     history=history.reader,
-                    ingress_endpoint=configuration.Endpoint(
-                        target=history.ingress_target,
-                        svid=configuration.SVIDEndpoint(
-                            server_uri="spiffe://agentplane/history-ingress", proxy_address=history_proxy
-                        ),
-                    ),
+                    ingress_endpoint=ingress,
                     control_endpoint=control,
                     observe_control=False,
                     controller_credentials=gateway.environment_service.channel_credentials(SANDBOX_CONTROLLER_URI),
@@ -174,7 +169,6 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                     undeclared_outputs_dir(),
                     gateway_target=gateway.environment_service.target,
                     gateway_tls=gateway.environment_service.tls_for(CENTRAL_SAMPLER_URI),
-                    gateway_token_file=None,
                     history_target=history.ingress_target,
                     history_tls=history.history_tls,
                 )
@@ -191,13 +185,9 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                 )
                 session_id = request.session_id
                 async with (
-                    go_sampler(sampler_settings, undeclared_outputs_dir()) as sampler_endpoint,
+                    go_sampler(sampler_settings, undeclared_outputs_dir()) as stub,
                     capture_sampler_failure(store, session_id),
                 ):
-                    stub = SamplerTestClient(
-                        harness_host_pb2_grpc.HarnessHostStub(sampler_endpoint.channel),
-                        sampler_admin_pb2_grpc.SamplerAdminStub(sampler_endpoint.channel),
-                    )
                     with pytest.raises(grpc.aio.AioRpcError) as bearer_rejected:
                         await stub.admin.GetSession(
                             sampler_admin_pb2.GetSessionRequest(session_id=session_id),

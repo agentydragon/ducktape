@@ -108,8 +108,8 @@ def _choose_most_recent(paths: Sequence[Path], harness: str) -> Path:
     return max(candidates, key=lambda path: path.stat().st_mtime)
 
 
-def _recent_files(root: Path, pattern: str, now: float) -> list[Path]:
-    cutoff = now - 120 * 60
+def _recent_files(root: Path, pattern: str) -> list[Path]:
+    cutoff = time.time() - 120 * 60
     return [
         path
         for path in root.rglob(pattern)
@@ -117,27 +117,16 @@ def _recent_files(root: Path, pattern: str, now: float) -> list[Path]:
     ]
 
 
-def find_current_session(
-    harness: str | None = None,
-    *,
-    home: Path | None = None,
-    cwd: Path | None = None,
-    environ: Mapping[str, str] | None = None,
-    now: float | None = None,
-) -> Path:
+def find_current_session(harness: str | None = None) -> Path:
     """Find the current transcript using the same harness rules as the skill docs."""
 
-    env = environ or os.environ
+    env = os.environ
     selected_harness = harness or ("codex" if env.get("CODEX_THREAD_ID") or env.get("CODEX_SESSION_ID") else "claude")
     if selected_harness not in HARNESS_NAMES:
         raise SessionLogsError(f"unknown harness: {selected_harness}")
 
-    root_home = home or Path.home()
-    current_directory = cwd or Path.cwd()
-    current_time = time.time() if now is None else now
-
     if selected_harness == "claude":
-        projects_root = root_home / ".claude" / "projects"
+        projects_root = Path.home() / ".claude" / "projects"
         if not projects_root.is_dir():
             raise SessionLogsError(f"Claude transcript directory not found: {projects_root}")
 
@@ -147,15 +136,15 @@ def find_current_session(
             if matches:
                 return matches[0]
 
-        project_root = projects_root / str(current_directory).replace("/", "-")
+        project_root = projects_root / str(Path.cwd()).replace("/", "-")
         candidates = (
             [path for path in project_root.glob("*.jsonl") if _without_subagents(path)] if project_root.is_dir() else []
         )
         if not candidates:
-            candidates = _recent_files(projects_root, "*.jsonl", current_time)
+            candidates = _recent_files(projects_root, "*.jsonl")
         return _choose_most_recent(candidates, selected_harness)
 
-    sessions_root = root_home / ".codex" / "sessions"
+    sessions_root = Path.home() / ".codex" / "sessions"
     if not sessions_root.is_dir():
         raise SessionLogsError(f"Codex transcript directory not found: {sessions_root}")
 
@@ -167,7 +156,7 @@ def find_current_session(
             # larger file is the canonical parent conversation.
             return max(matches, key=lambda path: path.stat().st_size)
 
-    candidates = _recent_files(sessions_root, "rollout-*.jsonl", current_time)
+    candidates = _recent_files(sessions_root, "rollout-*.jsonl")
     return _choose_most_recent(candidates, selected_harness)
 
 

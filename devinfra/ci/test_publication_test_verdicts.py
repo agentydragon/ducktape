@@ -31,7 +31,6 @@ def push_sweep(summaries: list[TestSummary], *, finished: bool = True) -> Invoca
     """bazel-ci's own `//...` test invocation of SOURCE, as the planners read it back."""
     return Invocation(
         outputs=[],
-        test_status={s.label: s.status for s in summaries},
         test_summaries=summaries,
         finished=finished,
         successful=all(s.status == "PASSED" for s in summaries),
@@ -168,7 +167,6 @@ def test_loading_keeps_exact_test_evidence_separate_from_merged_outputs(monkeypa
     )
     assert calls == [TEST_INVOCATION_ID, "unreadable", "build"]
     assert evidence.outputs is not None
-    assert evidence.outputs.test_status["//a:test"] == "PASSED"
     assert evidence.tests.already_failed("//a:test")[0]
     assert not evidence.tests.is_covered("//a:test")[0]
 
@@ -178,11 +176,9 @@ def test_build_outputs_and_race_test_verdicts_are_loaded_separately(monkeypatch:
     monkeypatch.setenv("GITHUB_RUN_ID", RUN_ID)
     monkeypatch.setenv("GITHUB_RUN_ATTEMPT", ATTEMPT)
     monkeypatch.setenv("GITHUB_EVENT_NAME", "push")
-    normal = Output(
-        label="//app:binary", path="bin/app", uri="normal-uri", digest="normal", size=10, output_group="default"
-    )
+    normal = Output(label="//app:binary", path="bin/app", uri="normal-uri", digest="normal", output_group="default")
     instrumented = dataclasses.replace(normal, uri="race-uri", digest="race")
-    build = Invocation(outputs=[normal], test_status={})
+    build = Invocation(outputs=[normal])
     tests = dataclasses.replace(push_sweep([summary("//a:test", "PASSED")]), outputs=[instrumented])
     calls = []
 
@@ -233,12 +229,11 @@ def retry_run() -> dict[str, Invocation]:
         "retry": retry,
         "runner": Invocation(
             outputs=[],
-            test_status={},
             invocation_id="runner",
             finished=True,
             child_invocation_ids=("query", TEST_INVOCATION_ID, "retry", "build"),
         ),
-        "build": Invocation(outputs=[], test_status={}, command="build", invocation_id="build"),
+        "build": Invocation(outputs=[], command="build", invocation_id="build"),
     }
 
 

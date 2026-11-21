@@ -34,6 +34,7 @@ from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
 from cluster.cdk8s import pod_policy
 from cluster.cdk8s.cert_manager import cluster_ca
 from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import (
     ConfigMapArgs,
@@ -43,7 +44,7 @@ from cluster.cdk8s.flux import (
     flux_kustomization_depends_on_many,
 )
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
-from cluster.cdk8s.namespaces import initial_memory_request_annotations
+from cluster.cdk8s.namespaces import initial_request_annotations
 from cluster.cdk8s.platform_sessions import config
 from cluster.cdk8s.providers.flux.image_policy import ImagePolicy
 from cluster.cdk8s.volume_claim import volume_claim
@@ -189,10 +190,7 @@ def _container_security() -> k8s.SecurityContext:
 
 
 def _resources(*, memory_request: str = "128Mi", memory_limit: str = "1Gi") -> k8s.ResourceRequirements:
-    return k8s.ResourceRequirements(
-        requests={"cpu": k8s.Quantity.from_string(_CPU_REQUEST), "memory": k8s.Quantity.from_string(memory_request)},
-        limits={"cpu": k8s.Quantity.from_string("1"), "memory": k8s.Quantity.from_string(memory_limit)},
-    )
+    return container_resources(cpu=_CPU_REQUEST, memory=memory_request, cpu_limit="1", memory_limit=memory_limit)
 
 
 def _deployment(
@@ -212,7 +210,7 @@ def _deployment(
         metadata=k8s.ObjectMeta(
             name=name,
             namespace=NAMESPACE,
-            annotations=initial_memory_request_annotations(vpa_policy) if vpa_policy is not None else None,
+            annotations=initial_request_annotations(vpa_policy) if vpa_policy is not None else None,
         ),
         spec=k8s.DeploymentSpec(
             replicas=1,
@@ -424,22 +422,16 @@ def _provider_workload(chart: Chart, instance: str, *, provider_type: str, recor
         if record_upstream_traffic
         else []
     )
-    # Reserve the sampled working-set peaks in the providers that fit at their ceilings.
+    # Retain the memory reservations for providers with sampled working-set peaks near those requests.
     # Recorder and other init-container resources are outside these policies.
     vpa_policy: ContainerPolicy | None
     match instance:
         case "anthropic" | "chatgpt" | "openai":
-            vpa_policy = ContainerPolicy.memory_requests_only(
-                "provider", cpu_request=_CPU_REQUEST, memory_floor="128Mi", memory_limit="192Mi"
-            )
+            vpa_policy = ContainerPolicy.cpu_and_memory_requests_only("provider", memory_floor="128Mi")
         case "blueshield":
-            vpa_policy = ContainerPolicy.memory_requests_only(
-                "provider", cpu_request=_CPU_REQUEST, memory_floor="416Mi", memory_limit="512Mi"
-            )
+            vpa_policy = ContainerPolicy.cpu_and_memory_requests_only("provider", memory_floor="416Mi")
         case "quest-scheduler":
-            vpa_policy = ContainerPolicy.memory_requests_only(
-                "provider", cpu_request=_CPU_REQUEST, memory_floor="576Mi", memory_limit="704Mi"
-            )
+            vpa_policy = ContainerPolicy.cpu_and_memory_requests_only("provider", memory_floor="576Mi")
         case _:
             vpa_policy = None
     _deployment(
@@ -638,9 +630,7 @@ def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
             ),
         ],
         selector_name=GATEWAY,
-        vpa_policy=ContainerPolicy.memory_requests_only(
-            "gateway", cpu_request=_CPU_REQUEST, memory_floor="64Mi", memory_limit="96Mi"
-        ),
+        vpa_policy=ContainerPolicy.cpu_and_memory_requests_only("gateway"),
     )
     _service(
         chart,

@@ -359,13 +359,13 @@ def translate (bundleJ outJ certJ : Json) : Except String Result := do
           let some x := nameOf[(si, z)]? | throw s!"{src}:{z} stands for no bundle name"
           names := names ++ [x]
         imps := imps ++ [(src, names)]
-    let mut exps : List EsmSplit.Name := []
+    let mut exps : List (EsmSplit.Name × EsmSplit.Name) := []
     for e in arr (fld mj "exports") do
       let z := str (fld e "local")
       -- the entry may re-export what it imports; that is checked against the bundle's exports above
       unless mi == entryIdx && !(infos[mi]!.decls.contains z) do
         let some x := nameOf[(mi, z)]? | throw s!"{infos[mi]!.path} exports `{z}`, which stands for no bundle name"
-        exps := exps ++ [x]
+        exps := exps ++ [(x, x)]
     planMods := planMods.push { name := infos[mi]!.path, stmts := stmts.toList, imports := imps, exports := exps }
   return { plan := { entry := str (fld outJ "entry"), mods := planMods.toList }
            names := entity.size
@@ -450,6 +450,7 @@ def main (args : List String) : IO UInt32 := do
     let rs := [← timedCheck "UniqueDefs" fun _ => decide (UniqueDefs B),
                ← timedCheck "ReadsClosed" fun _ => decide (ReadsClosed B),
                ← timedCheck "Linkable" fun _ => decide (Linkable B P),
+               ← timedCheck "ExportsUnique" fun _ => decide (ExportsUnique B P),
                ← timedCheck "Hygienic" fun _ => decide (Hygienic B P),
                ← timedCheck "AssignsHome" fun _ => decide (AssignsHome B P),
                ← timedCheck "Permutes" fun _ => decide (Permutes B P)]

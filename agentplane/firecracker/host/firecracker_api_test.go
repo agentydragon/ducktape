@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/agentydragon/ducktape/agentplane/testing/eventually"
 )
 
 func TestAPIRequestUsesUnixSocketAndIgnoresSuccessfulResponseBody(t *testing.T) {
@@ -194,22 +196,10 @@ func shellQuote(value string) string {
 
 func waitForFile(t *testing.T, path string) {
 	t.Helper()
-	timeout := time.NewTimer(3 * time.Second)
-	defer timeout.Stop()
-	ticker := time.NewTicker(5 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		if data, err := os.ReadFile(path); err == nil && len(data) > 0 {
-			return
-		} else if err != nil && !errors.Is(err, os.ErrNotExist) {
-			t.Fatal(err)
-		}
-		select {
-		case <-ticker.C:
-		case <-timeout.C:
-			t.Fatalf("timed out waiting for %s", path)
-		}
-	}
+	eventually.Within(t, 3*time.Second, func() (bool, string) {
+		data, err := os.ReadFile(path)
+		return err == nil && len(data) > 0, fmt.Sprintf("timed out waiting for %s: %d bytes, error %v", path, len(data), err)
+	})
 }
 
 func readFile(t *testing.T, path string) string {

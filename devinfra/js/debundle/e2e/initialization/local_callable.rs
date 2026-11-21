@@ -34,6 +34,25 @@ fn expect_dynamic_and_later_conflict(source: &str) {
     );
 }
 
+fn assert_dynamic_and_later_split(
+    fixture: &Fixture,
+    dynamic_exports: &[&str],
+    later_exports: &[&str],
+) {
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/values/dynamic.js",
+        dynamic_exports,
+        &["later"],
+    );
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/values/later.js",
+        later_exports,
+        &["dynamic"],
+    );
+}
+
 #[test]
 fn unpublished_constructor_result_with_enum_array_stays_deferred() {
     let fixture = run_fixture(FixtureOpts::new(
@@ -70,18 +89,7 @@ console.log(command.run(), command.weight, command.record.constraints.length);
         ],
     ));
 
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/values/dynamic.js",
-        &["command"],
-        &["later"],
-    );
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/values/later.js",
-        &["later"],
-        &["dynamic"],
-    );
+    assert_dynamic_and_later_split(&fixture, &["command"], &["later"]);
     assert_module_source(
         &fixture.out_root,
         "static/app/modules/values/dynamic.js",
@@ -216,18 +224,7 @@ console.log(later);
         ],
     ));
 
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/values/dynamic.js",
-        &["dynamic"],
-        &["later"],
-    );
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/values/later.js",
-        &["later"],
-        &["dynamic"],
-    );
+    assert_dynamic_and_later_split(&fixture, &["dynamic"], &["later"]);
     assert_module_source(
         &fixture.out_root,
         "static/app/modules/values/later.js",
@@ -269,18 +266,7 @@ console.log(command.run(), command.weight);
         ],
     ));
 
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/values/dynamic.js",
-        &["command"],
-        &["later"],
-    );
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/values/later.js",
-        &["later"],
-        &["dynamic"],
-    );
+    assert_dynamic_and_later_split(&fixture, &["command"], &["later"]);
     assert_module_source(
         &fixture.out_root,
         "static/app/modules/values/dynamic.js",
@@ -432,18 +418,7 @@ console.log(holder.read());
         ],
     ));
 
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/values/dynamic.js",
-        &["dynamic"],
-        &["later"],
-    );
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/values/later.js",
-        &["later", "holder"],
-        &["dynamic"],
-    );
+    assert_dynamic_and_later_split(&fixture, &["dynamic"], &["later", "holder"]);
     assert_module_source(
         &fixture.out_root,
         "static/app/modules/values/later.js",
@@ -634,18 +609,7 @@ console.log(wrapped());
             .build()]),
     );
 
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/values/dynamic.js",
-        &["dynamic"],
-        &["later"],
-    );
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/values/later.js",
-        &["later", "wrapped"],
-        &["dynamic"],
-    );
+    assert_dynamic_and_later_split(&fixture, &["dynamic"], &["later", "wrapped"]);
     assert_preserved_entry_output(&fixture, "1\n1\n");
 }
 

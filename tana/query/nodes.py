@@ -19,29 +19,14 @@ def get_tuple_value(node: BaseNode, key: NodeId | str, store: TanaGraph) -> Base
     - node is a container: search its child tuple nodes for one where
       tuple.children[0] == key, then return the second child
     """
-    key_str = str(key)
-
-    children = list(node.children)
-
     # Case 1: node itself is a tuple — check its key
-    if children:
-        first = children[0]
-        if str(first) == key_str and len(children) >= 2:
-            return store.get(children[1])
+    if len(node.children) >= MIN_TUPLE_CHILDREN and node.children[0] == key:
+        return store.get(node.children[1])
 
     # Case 2: search child tuples under this node
-    for cid in children:
-        try:
-            t = store[cid]
-        except KeyError:
-            continue
-        t_children = list(t.children)
-        if not t_children:
-            continue
-        if str(t_children[0]) != key_str:
-            continue
-        if len(t_children) >= 2:
-            return store.get(t_children[1])
+    for child in store.child_nodes(node):
+        if len(child.children) >= MIN_TUPLE_CHILDREN and child.children[0] == key:
+            return store.get(child.children[1])
     return None
 
 
@@ -80,31 +65,19 @@ def is_in_deleted_nodes(node: BaseNode, store: TanaGraph) -> bool:
     return False
 
 
+def _metadata_value(node: BaseNode, key: NodeId, store: TanaGraph) -> str | None:
+    """Name of the first value keyed by `key` in the node's metanode."""
+    if node.props.meta_node_id and (metanode := store.get(node.props.meta_node_id)):
+        val_node = get_tuple_value(metanode, key, store)
+        return val_node.name if val_node else None
+    return None
+
+
 def get_image_url(node: BaseNode, store: TanaGraph) -> str | None:
     """Extract image URL from a visual node's metadata."""
-    if not node.props.meta_node_id:
-        return None
-
-    metanode = store.get(node.props.meta_node_id)
-    if not metanode:
-        return None
-
-    val_node = get_tuple_value(metanode, MEDIA_KEY_ID, store)
-    if isinstance(val_node, BaseNode):
-        return val_node.name
-    return None
+    return _metadata_value(node, MEDIA_KEY_ID, store)
 
 
 def get_mime_type(node: BaseNode, store: TanaGraph) -> str | None:
     """Extract MIME type from a node's metadata (e.g. "image/png")."""
-    if not node.props.meta_node_id:
-        return None
-
-    metanode = store.get(node.props.meta_node_id)
-    if not metanode:
-        return None
-
-    val_node = get_tuple_value(metanode, MIME_TYPE_KEY_ID, store)
-    if isinstance(val_node, BaseNode):
-        return val_node.name
-    return None
+    return _metadata_value(node, MIME_TYPE_KEY_ID, store)

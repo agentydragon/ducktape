@@ -26,22 +26,19 @@ writeFileSync(
 );
 const run = (bin, args) => spawnSync(bin, args, { encoding: "utf8" });
 const lowered = lowerDump(code, acorn, eslintScope).statements;
-// Scope annotations must preserve original statements, including multiple
-// declarators, imports, exports, and their exact source slices.
+// A declarator list becomes one statement per declarator; imports and exports stay. The statements are the
+// ESTree of their own source text: the dump is the parse of a rewritten source.
 const syntax = 'import {x as y} from "./dep.js"; const a = y, b = 1; export {a};';
-const syntaxTree = acorn.parse(syntax, { sourceType: "module", ecmaVersion: "latest", ranges: true });
 const syntaxStatements = lowerDump(syntax, acorn, eslintScope).statements;
 assert.deepEqual(
-  syntaxStatements.map((s) => s.ast.type),
-  ["ImportDeclaration", "VariableDeclaration", "ExportNamedDeclaration"]
-);
-assert.equal(syntaxStatements[1].ast.declarations.length, 2);
-assert.deepEqual(
   syntaxStatements.map((s) => s.src),
-  syntaxTree.body.map((s) => syntax.slice(s.start, s.end))
+  ['import {x as y} from "./dep.js";', "const a = y;", "const b = 1;", "export {a};"]
 );
 assert.equal(syntaxStatements[1].ast.declarations[0].init.k, "V");
-assert.deepEqual(syntaxStatements[1].oracle.eager, ["y"]);
+assert.deepEqual(
+  syntaxStatements.map((s) => s.oracle.eager),
+  [[], ["y"], [], ["a"]]
+);
 // Removing just the new metadata gives the exact legacy structural JSON.
 const legacy = (value) =>
   JSON.parse(
@@ -61,7 +58,9 @@ const unannotate = (value) =>
   );
 assert.deepEqual(
   syntaxStatements.map((s) => unannotate(s.ast)),
-  syntaxTree.body.map(legacy)
+  acorn
+    .parse(syntaxStatements.map((s) => s.src).join("\n"), { sourceType: "module", ecmaVersion: "latest" })
+    .body.map(legacy)
 );
 writeFileSync(ast, JSON.stringify({ statements: lowered }));
 const leanCertificate = path.join(temp, "generated.lean");

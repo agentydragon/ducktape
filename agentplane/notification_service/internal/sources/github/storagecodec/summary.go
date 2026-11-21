@@ -29,11 +29,8 @@ func SummaryConclusion(event model.EventName, fields map[string]json.RawMessage)
 	if err := json.Unmarshal(data, &lifecycle); err != nil || lifecycle.Conclusion == nil {
 		return nil
 	}
-	switch *lifecycle.Conclusion {
-	case "action_required", "cancelled", "failure", "neutral", "skipped", "stale", "success", "timed_out", "startup_failure":
-		conclusion := *lifecycle.Conclusion
-		return &conclusion
-	default:
+	if !model.IsCheckConclusion(*lifecycle.Conclusion) {
 		return nil
 	}
+	return lifecycle.Conclusion
 }

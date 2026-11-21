@@ -50,6 +50,26 @@ struct Case {
     expected: bool,
 }
 
+impl Case {
+    fn exact(selector: &'static str, subject: &'static str, expected: bool) -> Self {
+        Self {
+            selector,
+            subject,
+            alpha: false,
+            expected,
+        }
+    }
+
+    fn alpha(selector: &'static str, subject: &'static str, expected: bool) -> Self {
+        Self {
+            selector,
+            subject,
+            alpha: true,
+            expected,
+        }
+    }
+}
+
 fn assert_cases(cases: impl IntoIterator<Item = Case>) {
     for case in cases {
         let mode = if case.alpha {
@@ -76,269 +96,182 @@ fn assert_cases(cases: impl IntoIterator<Item = Case>) {
 fn fact_matcher_verdicts_on_faithful_subset() {
     js_ast::with_swc_globals(|| {
         let cases = [
-            Case {
-                selector: "const a = foo.bar(\"x\");",
-                subject: "const a = foo.bar(\"x\");",
-                alpha: false,
-                expected: true,
-            },
+            Case::exact(
+                "const a = foo.bar(\"x\");",
+                "const a = foo.bar(\"x\");",
+                true,
+            ),
             // expression-position single-node hole matches any one subtree
-            Case {
-                selector: "const a = foo.bar(EXPR);",
-                subject: "const a = foo.bar(\"x\");",
-                alpha: false,
-                expected: true,
-            },
-            Case {
-                selector: "const a = foo.bar(\"x\");",
-                subject: "const a = foo.bar(\"y\");",
-                alpha: false,
-                expected: false,
-            },
-            Case {
-                selector: "const a = foo.baz(\"x\");",
-                subject: "const a = foo.bar(\"x\");",
-                alpha: false,
-                expected: false,
-            },
-            Case {
-                selector: "const a = b + c;",
-                subject: "const a = b + c;",
-                alpha: false,
-                expected: true,
-            },
-            Case {
-                selector: "const a = b + c;",
-                subject: "const a = b - c;",
-                alpha: false,
-                expected: false,
-            },
+            Case::exact(
+                "const a = foo.bar(EXPR);",
+                "const a = foo.bar(\"x\");",
+                true,
+            ),
+            Case::exact(
+                "const a = foo.bar(\"x\");",
+                "const a = foo.bar(\"y\");",
+                false,
+            ),
+            Case::exact(
+                "const a = foo.baz(\"x\");",
+                "const a = foo.bar(\"x\");",
+                false,
+            ),
+            Case::exact("const a = b + c;", "const a = b + c;", true),
+            Case::exact("const a = b + c;", "const a = b - c;", false),
             // exact mode: a different binding name does not match
-            Case {
-                selector: "const a = foo(EXPR);",
-                subject: "const z = foo(1);",
-                alpha: false,
-                expected: false,
-            },
-            Case {
-                selector: "function f(a) { return a; }",
-                subject: "function g(x) { return x; }",
-                alpha: true,
-                expected: true,
-            },
+            Case::exact("const a = foo(EXPR);", "const z = foo(1);", false),
+            Case::alpha(
+                "function f(a) { return a; }",
+                "function g(x) { return x; }",
+                true,
+            ),
             // the returned identifier must be the same binding as the param
-            Case {
-                selector: "function f(a) { return a; }",
-                subject: "function g(x) { return y; }",
-                alpha: true,
-                expected: false,
-            },
-            Case {
-                selector: "const a = b;",
-                subject: "const x = y;",
-                alpha: true,
-                expected: true,
-            },
+            Case::alpha(
+                "function f(a) { return a; }",
+                "function g(x) { return y; }",
+                false,
+            ),
+            Case::alpha("const a = b;", "const x = y;", true),
             // injectivity: distinct needle idents cannot both bind to `x`
-            Case {
-                selector: "const a = b;",
-                subject: "const x = x;",
-                alpha: true,
-                expected: false,
-            },
+            Case::alpha("const a = b;", "const x = x;", false),
             // prop names are not identifiers — exact even in alpha mode
-            Case {
-                selector: "const a = o.bar;",
-                subject: "const z = q.bar;",
-                alpha: true,
-                expected: true,
-            },
-            Case {
-                selector: "const a = o.bar;",
-                subject: "const z = q.baz;",
-                alpha: true,
-                expected: false,
-            },
+            Case::alpha("const a = o.bar;", "const z = q.bar;", true),
+            Case::alpha("const a = o.bar;", "const z = q.baz;", false),
             // ARGS absorbs the whole argument run (including an empty one).
-            Case {
-                selector: "const a = foo.bar(ARGS);",
-                subject: "const a = foo.bar(1, 2);",
-                alpha: false,
-                expected: true,
-            },
-            Case {
-                selector: "const a = foo.bar(ARGS);",
-                subject: "const a = foo.bar();",
-                alpha: false,
-                expected: true,
-            },
+            Case::exact("const a = foo.bar(ARGS);", "const a = foo.bar(1, 2);", true),
+            Case::exact("const a = foo.bar(ARGS);", "const a = foo.bar();", true),
             // anchored-left fixed segment before the hole: first arg must match.
-            Case {
-                selector: "const a = foo(x, ARGS);",
-                subject: "const a = foo(x, 1, 2);",
-                alpha: false,
-                expected: true,
-            },
-            Case {
-                selector: "const a = foo(x, ARGS);",
-                subject: "const a = foo(y, 1);",
-                alpha: false,
-                expected: false,
-            },
+            Case::exact("const a = foo(x, ARGS);", "const a = foo(x, 1, 2);", true),
+            Case::exact("const a = foo(x, ARGS);", "const a = foo(y, 1);", false),
             // anchored-right fixed segment after the hole: last arg must match.
-            Case {
-                selector: "const a = foo(ARGS, z);",
-                subject: "const a = foo(1, 2, z);",
-                alpha: false,
-                expected: true,
-            },
+            Case::exact("const a = foo(ARGS, z);", "const a = foo(1, 2, z);", true),
             // STMT_LIST absorbs leading statements; the trailing segment is anchored.
-            Case {
-                selector: "function f() { STMT_LIST; return 1; }",
-                subject: "function f() { a(); b(); return 1; }",
-                alpha: false,
-                expected: true,
-            },
-            Case {
-                selector: "function f() { STMT_LIST; return 1; }",
-                subject: "function f() { return 2; }",
-                alpha: false,
-                expected: false,
-            },
+            Case::exact(
+                "function f() { STMT_LIST; return 1; }",
+                "function f() { a(); b(); return 1; }",
+                true,
+            ),
+            Case::exact(
+                "function f() { STMT_LIST; return 1; }",
+                "function f() { return 2; }",
+                false,
+            ),
             // ANYTHING absorbs the surrounding properties; a two-hole list
             // with an interior fixed segment (the `{…, k, …}` shape).
-            Case {
-                selector: "const o = { a: 1, ANYTHING };",
-                subject: "const o = { a: 1, b: 2 };",
-                alpha: false,
-                expected: true,
-            },
-            Case {
-                selector: "const o = { ANYTHING, k: 1, ANYTHING };",
-                subject: "const o = { x: 0, k: 1, y: 2 };",
-                alpha: false,
-                expected: true,
-            },
+            Case::exact(
+                "const o = { a: 1, ANYTHING };",
+                "const o = { a: 1, b: 2 };",
+                true,
+            ),
+            Case::exact(
+                "const o = { ANYTHING, k: 1, ANYTHING };",
+                "const o = { x: 0, k: 1, y: 2 };",
+                true,
+            ),
             // run hole under alpha mode: the binding still flows through the
             // fixed segment (`a`↔`x`) while STMT_LIST absorbs the rest.
-            Case {
-                selector: "function f(a) { STMT_LIST; return a; }",
-                subject: "function g(x) { y(); return x; }",
-                alpha: true,
-                expected: true,
-            },
+            Case::alpha(
+                "function f(a) { STMT_LIST; return a; }",
+                "function g(x) { y(); return x; }",
+                true,
+            ),
             // ANYTHING in parameter (pattern) position matches any param and
             // never binds: two ANYTHING params are independent (they would
             // collide if treated as one alpha binding).
-            Case {
-                selector: "function f(ANYTHING, ANYTHING) { return 1; }",
-                subject: "function f(a, b) { return 1; }",
-                alpha: false,
-                expected: true,
-            },
-            Case {
-                selector: "function f(ANYTHING, ANYTHING) { return ANYTHING; }",
-                subject: "function g(a, b) { return c; }",
-                alpha: true,
-                expected: true,
-            },
+            Case::exact(
+                "function f(ANYTHING, ANYTHING) { return 1; }",
+                "function f(a, b) { return 1; }",
+                true,
+            ),
+            Case::alpha(
+                "function f(ANYTHING, ANYTHING) { return ANYTHING; }",
+                "function g(a, b) { return c; }",
+                true,
+            ),
             // STMT in statement position matches exactly one statement (not a run).
-            Case {
-                selector: "function f() { STMT; return 1; }",
-                subject: "function f() { a(); return 1; }",
-                alpha: false,
-                expected: true,
-            },
-            Case {
-                selector: "function f() { STMT; return 1; }",
-                subject: "function f() { a(); b(); return 1; }",
-                alpha: false,
-                expected: false,
-            },
+            Case::exact(
+                "function f() { STMT; return 1; }",
+                "function f() { a(); return 1; }",
+                true,
+            ),
+            Case::exact(
+                "function f() { STMT; return 1; }",
+                "function f() { a(); b(); return 1; }",
+                false,
+            ),
             // ANYTHING in statement position matches any statement kind, not only
             // an expression statement (here, an `if`).
-            Case {
-                selector: "function f() { ANYTHING; return 1; }",
-                subject: "function f() { if (x) y(); return 1; }",
-                alpha: false,
-                expected: true,
-            },
+            Case::exact(
+                "function f() { ANYTHING; return 1; }",
+                "function f() { if (x) y(); return 1; }",
+                true,
+            ),
             // async / generator are part of a function's identity: an async-fn
             // needle must not match a non-async fn (and vice versa).
-            Case {
-                selector: "async function f(a) { STMT_LIST; return a; }",
-                subject: "async function g(x) { y(); return x; }",
-                alpha: true,
-                expected: true,
-            },
-            Case {
-                selector: "async function f(a) { STMT_LIST; return a; }",
-                subject: "function g(x) { y(); return x; }",
-                alpha: true,
-                expected: false,
-            },
-            Case {
-                selector: "function f(a) { STMT_LIST; return a; }",
-                subject: "async function g(x) { y(); return x; }",
-                alpha: true,
-                expected: false,
-            },
-            Case {
-                selector: "function* f() { STMT_LIST; }",
-                subject: "function* g() { y(); }",
-                alpha: true,
-                expected: true,
-            },
-            Case {
-                selector: "function* f() { STMT_LIST; }",
-                subject: "function g() { y(); }",
-                alpha: true,
-                expected: false,
-            },
+            Case::alpha(
+                "async function f(a) { STMT_LIST; return a; }",
+                "async function g(x) { y(); return x; }",
+                true,
+            ),
+            Case::alpha(
+                "async function f(a) { STMT_LIST; return a; }",
+                "function g(x) { y(); return x; }",
+                false,
+            ),
+            Case::alpha(
+                "function f(a) { STMT_LIST; return a; }",
+                "async function g(x) { y(); return x; }",
+                false,
+            ),
+            Case::alpha(
+                "function* f() { STMT_LIST; }",
+                "function* g() { y(); }",
+                true,
+            ),
+            Case::alpha(
+                "function* f() { STMT_LIST; }",
+                "function g() { y(); }",
+                false,
+            ),
             // A class's superclass (`extends`) is part of its identity: present in
             // both (alpha-matched), or absent in both. A no-`extends` needle must
             // NOT match an `extends`-bearing class, and vice versa; otherwise
             // `extends X { ANYTHING; }` class lists over-match.
-            Case {
-                selector: "class A extends B { ANYTHING; }",
-                subject: "class C extends D { m() {} }",
-                alpha: true,
-                expected: true,
-            },
-            Case {
-                selector: "class A extends B { ANYTHING; }",
-                subject: "class C { m() {} }",
-                alpha: true,
-                expected: false,
-            },
-            Case {
-                selector: "class A { ANYTHING; }",
-                subject: "class C extends D { m() {} }",
-                alpha: true,
-                expected: false,
-            },
+            Case::alpha(
+                "class A extends B { ANYTHING; }",
+                "class C extends D { m() {} }",
+                true,
+            ),
+            Case::alpha(
+                "class A extends B { ANYTHING; }",
+                "class C { m() {} }",
+                false,
+            ),
+            Case::alpha(
+                "class A { ANYTHING; }",
+                "class C extends D { m() {} }",
+                false,
+            ),
             // STR_LITERAL_MATCHING_RE matches a string literal whose value matches
             // the pattern — by regex, not by structure.
-            Case {
-                selector: "const a = STR_LITERAL_MATCHING_RE(\"^x\");",
-                subject: "const a = \"xyz\";",
-                alpha: false,
-                expected: true,
-            },
-            Case {
-                selector: "const a = STR_LITERAL_MATCHING_RE(\"^x\");",
-                subject: "const a = \"abc\";",
-                alpha: false,
-                expected: false,
-            },
+            Case::exact(
+                "const a = STR_LITERAL_MATCHING_RE(\"^x\");",
+                "const a = \"xyz\";",
+                true,
+            ),
+            Case::exact(
+                "const a = STR_LITERAL_MATCHING_RE(\"^x\");",
+                "const a = \"abc\";",
+                false,
+            ),
             // the predicate only matches a string literal — a non-string subject
             // (here a number) never matches.
-            Case {
-                selector: "const a = STR_LITERAL_MATCHING_RE(\"foo\");",
-                subject: "const a = 5;",
-                alpha: false,
-                expected: false,
-            },
+            Case::exact(
+                "const a = STR_LITERAL_MATCHING_RE(\"foo\");",
+                "const a = 5;",
+                false,
+            ),
         ];
         assert_cases(cases);
     });
@@ -709,51 +642,45 @@ fn arrow_returning_object_literal_matches_on_its_object_anchors() {
     js_ast::with_swc_globals(|| {
         let cases = [
             // exact: the returned object's stable key + literal anchor it.
-            Case {
-                selector: "const makeWidget = (props) => ({ kind: \"widget\" });",
-                subject: "const makeWidget = (props) => ({ kind: \"widget\" });",
-                alpha: false,
-                expected: true,
-            },
+            Case::exact(
+                "const makeWidget = (props) => ({ kind: \"widget\" });",
+                "const makeWidget = (props) => ({ kind: \"widget\" });",
+                true,
+            ),
             // alpha: the function and param names are renamable; the object's
             // `kind: "widget"` anchor and the param→body identifier flow hold.
-            Case {
-                selector: "const X = (props) => ({ kind: \"widget\", render: () => props.label });",
-                subject: "const Y = (a) => ({ kind: \"widget\", render: () => a.label });",
-                alpha: true,
-                expected: true,
-            },
+            Case::alpha(
+                "const X = (props) => ({ kind: \"widget\", render: () => props.label });",
+                "const Y = (a) => ({ kind: \"widget\", render: () => a.label });",
+                true,
+            ),
             // a distinct stable key in the returned object is a real mismatch.
-            Case {
-                selector: "const X = (props) => ({ kind: \"widget\" });",
-                subject: "const Y = (a) => ({ shape: \"widget\" });",
-                alpha: true,
-                expected: false,
-            },
+            Case::alpha(
+                "const X = (props) => ({ kind: \"widget\" });",
+                "const Y = (a) => ({ shape: \"widget\" });",
+                false,
+            ),
             // the param identifier must be the same binding the object body reads.
-            Case {
-                selector: "const X = (props) => ({ value: props });",
-                subject: "const Y = (a) => ({ value: other });",
-                alpha: true,
-                expected: false,
-            },
+            Case::alpha(
+                "const X = (props) => ({ value: props });",
+                "const Y = (a) => ({ value: other });",
+                false,
+            ),
             // an object-returning arrow must NOT match a block-bodied arrow that
             // returns the same object — `=> ({…})` and `=> { return {…} }` are
             // distinct shapes (the gap was reading the body `{` as a block).
-            Case {
-                selector: "const X = (props) => ({ kind: \"widget\" });",
-                subject: "const Y = (a) => { return { kind: \"widget\" }; };",
-                alpha: true,
-                expected: false,
-            },
+            Case::alpha(
+                "const X = (props) => ({ kind: \"widget\" });",
+                "const Y = (a) => { return { kind: \"widget\" }; };",
+                false,
+            ),
             // The object run hole inside the returned object absorbs the noisy generated
             // members, leaving the one stable key pinned.
-            Case {
-                selector: "const X = (props) => ({ kind: \"widget\", ANYTHING });",
-                subject: "const Y = (a) => ({ kind: \"widget\", render: () => a.label, dispose() {} });",
-                alpha: true,
-                expected: true,
-            },
+            Case::alpha(
+                "const X = (props) => ({ kind: \"widget\", ANYTHING });",
+                "const Y = (a) => ({ kind: \"widget\", render: () => a.label, dispose() {} });",
+                true,
+            ),
         ];
         assert_cases(cases);
     });
@@ -774,51 +701,45 @@ fn parenthesized_sequence_body_matches_on_its_inner_assignment() {
         let cases = [
             // memoized singleton: the `instance || (instance = build())` lazy init
             // followed by the returned `instance` is the whole distinctive body.
-            Case {
-                selector: "function getSingleton() { return (instance || (instance = build()), instance); }",
-                subject: "function getSingleton() { return (instance || (instance = build()), instance); }",
-                alpha: false,
-                expected: true,
-            },
+            Case::exact(
+                "function getSingleton() { return (instance || (instance = build()), instance); }",
+                "function getSingleton() { return (instance || (instance = build()), instance); }",
+                true,
+            ),
             // alpha: the accessor + the cached binding are renamable; the
             // `|| (x = build())`-then-`x` sequence structure holds.
-            Case {
-                selector: "function getSingleton() { return (instance || (instance = build()), instance); }",
-                subject: "function h() { return (cached || (cached = build()), cached); }",
-                alpha: true,
-                expected: true,
-            },
+            Case::alpha(
+                "function getSingleton() { return (instance || (instance = build()), instance); }",
+                "function h() { return (cached || (cached = build()), cached); }",
+                true,
+            ),
             // near-miss: the lazy-init assignment is gone (`(instance, instance)`),
             // so the structurally-distinctive part is absent — must not match.
-            Case {
-                selector: "function getSingleton() { return (instance || (instance = build()), instance); }",
-                subject: "function getSingleton() { return (instance, instance); }",
-                alpha: false,
-                expected: false,
-            },
+            Case::exact(
+                "function getSingleton() { return (instance || (instance = build()), instance); }",
+                "function getSingleton() { return (instance, instance); }",
+                false,
+            ),
             // esbuild decorate-helper: `(applyDecorators(target, decorators), target)`.
-            Case {
-                selector: "function decorate(target, decorators) { return (applyDecorators(target, decorators), target); }",
-                subject: "function decorate(target, decorators) { return (applyDecorators(target, decorators), target); }",
-                alpha: false,
-                expected: true,
-            },
+            Case::exact(
+                "function decorate(target, decorators) { return (applyDecorators(target, decorators), target); }",
+                "function decorate(target, decorators) { return (applyDecorators(target, decorators), target); }",
+                true,
+            ),
             // a single-node EXPR hole as the sequence's first element, anchoring on
             // the returned identifier — the run-effect statement is noise.
-            Case {
-                selector: "function f() { return (EXPR, value); }",
-                subject: "function f() { return (sideEffect(), value); }",
-                alpha: false,
-                expected: true,
-            },
+            Case::exact(
+                "function f() { return (EXPR, value); }",
+                "function f() { return (sideEffect(), value); }",
+                true,
+            ),
             // sequence arity is significant: a two-element sequence is not a
             // three-element one.
-            Case {
-                selector: "function f() { return (a, b); }",
-                subject: "function f() { return (a, b, c); }",
-                alpha: false,
-                expected: false,
-            },
+            Case::exact(
+                "function f() { return (a, b); }",
+                "function f() { return (a, b, c); }",
+                false,
+            ),
         ];
         assert_cases(cases);
     });
@@ -838,34 +759,26 @@ fn array_elements_run_hole_anchors_a_few_stable_elements() {
     js_ast::with_swc_globals(|| {
         let cases = [
             // anchor-first then the run absorbs the rest (any length).
-            Case {
-                selector: "const c = [\"keep\", ARRAY_ELEMENTS];",
-                subject: "const c = [\"keep\", 1, 2, 3];",
-                alpha: false,
-                expected: true,
-            },
+            Case::exact(
+                "const c = [\"keep\", ARRAY_ELEMENTS];",
+                "const c = [\"keep\", 1, 2, 3];",
+                true,
+            ),
             // the `[...spread, EXTRA]` shape: the run absorbs the spread, the
             // trailing element is pinned.
-            Case {
-                selector: "const c = [ARRAY_ELEMENTS, EXTRA];",
-                subject: "const c = [...base, EXTRA];",
-                alpha: false,
-                expected: true,
-            },
+            Case::exact(
+                "const c = [ARRAY_ELEMENTS, EXTRA];",
+                "const c = [...base, EXTRA];",
+                true,
+            ),
             // an all-holes array pins nothing — matches any array.
-            Case {
-                selector: "const c = [ARRAY_ELEMENTS];",
-                subject: "const c = [1, 2, 3];",
-                alpha: false,
-                expected: true,
-            },
+            Case::exact("const c = [ARRAY_ELEMENTS];", "const c = [1, 2, 3];", true),
             // alpha: a fixed-element identifier still alpha-binds across the run.
-            Case {
-                selector: "const c = [first, ARRAY_ELEMENTS];",
-                subject: "const d = [renamed, 9, 8];",
-                alpha: true,
-                expected: true,
-            },
+            Case::alpha(
+                "const c = [first, ARRAY_ELEMENTS];",
+                "const d = [renamed, 9, 8];",
+                true,
+            ),
         ];
         assert_cases(cases);
     });
@@ -886,65 +799,57 @@ fn seq_exprs_run_hole_absorbs_a_comma_sequence_run() {
     js_ast::with_swc_globals(|| {
         let cases = [
             // anchor first; the run absorbs the rest of the tail, any length.
-            Case {
-                selector: "function f() { return (first, SEQ_EXPRS); }",
-                subject: "function f() { return (first, 1, 2, 3); }",
-                alpha: false,
-                expected: true,
-            },
+            Case::exact(
+                "function f() { return (first, SEQ_EXPRS); }",
+                "function f() { return (first, 1, 2, 3); }",
+                true,
+            ),
             // an anchored element with no run beside it: the subject has to be a
             // sequence at all — the hole never matches a non-sequence.
-            Case {
-                selector: "function f() { return (first, SEQ_EXPRS); }",
-                subject: "function f() { return (first); }",
-                alpha: false,
-                expected: false,
-            },
+            Case::exact(
+                "function f() { return (first, SEQ_EXPRS); }",
+                "function f() { return (first); }",
+                false,
+            ),
             // a sequence needs two syntactic elements, so this is the shortest
             // candidate for a hole absorbing nothing between two anchors.
-            Case {
-                selector: "function f() { return (a, SEQ_EXPRS, b); }",
-                subject: "function f() { return (a, b); }",
-                alpha: false,
-                expected: true,
-            },
+            Case::exact(
+                "function f() { return (a, SEQ_EXPRS, b); }",
+                "function f() { return (a, b); }",
+                true,
+            ),
             // alpha: a pinned identifier still binds one subject name across the
             // run, so two pins of the same name reject a candidate that renames
             // one of them.
-            Case {
-                selector: "function f() { return (a, SEQ_EXPRS, a); }",
-                subject: "function f() { return (c, 1, 2, c); }",
-                alpha: true,
-                expected: true,
-            },
-            Case {
-                selector: "function f() { return (a, SEQ_EXPRS, a); }",
-                subject: "function f() { return (c, 1, b); }",
-                alpha: true,
-                expected: false,
-            },
+            Case::alpha(
+                "function f() { return (a, SEQ_EXPRS, a); }",
+                "function f() { return (c, 1, 2, c); }",
+                true,
+            ),
+            Case::alpha(
+                "function f() { return (a, SEQ_EXPRS, a); }",
+                "function f() { return (c, 1, b); }",
+                false,
+            ),
             // A parenthesized inner sequence is one element, not a flattened
             // continuation of the outer run: the hole absorbs later elements of
             // the sequence it sits in.
-            Case {
-                selector: "function f() { return (a, SEQ_EXPRS); }",
-                subject: "function f() { return (a, (b, c)); }",
-                alpha: false,
-                expected: true,
-            },
-            Case {
-                selector: "function f() { return (a, SEQ_EXPRS); }",
-                subject: "function f() { return ((a, b), c); }",
-                alpha: false,
-                expected: false,
-            },
+            Case::exact(
+                "function f() { return (a, SEQ_EXPRS); }",
+                "function f() { return (a, (b, c)); }",
+                true,
+            ),
+            Case::exact(
+                "function f() { return (a, SEQ_EXPRS); }",
+                "function f() { return ((a, b), c); }",
+                false,
+            ),
             // `EXPR` in a sequence element stays the arity-exact one-element hole.
-            Case {
-                selector: "function f() { return (EXPR, last); }",
-                subject: "function f() { return (a, b, last); }",
-                alpha: false,
-                expected: false,
-            },
+            Case::exact(
+                "function f() { return (EXPR, last); }",
+                "function f() { return (a, b, last); }",
+                false,
+            ),
         ];
         assert_cases(cases);
     });

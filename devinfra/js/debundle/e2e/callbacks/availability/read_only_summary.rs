@@ -1,6 +1,7 @@
 //! Opaque hosts may skip, repeat and reorder a pool. Read-only lexical
 //! observers need no execution replay, including above invocation limits.
 
+use super::{assert_unmoved_output, expect_single_binding_rejection};
 use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::saved_analysis::{assert_same_invocation_trees, path, staged};
 use debundle_e2e_support::*;
@@ -131,22 +132,8 @@ fn a_later_callable_return_forfeits_the_primitive_summary() {
         "static/peer",
         "export function host(callback) { try { const value = callback(); return typeof value === 'function' ? value() : value; } catch (error) { return error.name; } }\n",
     )];
-    let fixture = run_fixture(
-        FixtureOpts::new(source, vec![])
-            .with_extra_chunks(&peer)
-            .with_unassigned_mode(unassigned_mode_inline()),
-    );
-    assert_preserved_entry_output(&fixture, "7 ReferenceError\n");
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            source,
-            vec![logical_module("later", &[Member::new("later")])],
-        )
-        .with_extra_chunks(&peer)
-        .with_unassigned_mode(unassigned_mode_inline()),
-        &["later"],
-        &[],
-    );
+    assert_unmoved_output(source, &peer, "7 ReferenceError\n");
+    expect_single_binding_rejection(source, &peer, "later", "later");
 }
 
 #[test]
@@ -167,16 +154,7 @@ fn wide_read_only_pool_keeps_future_lexical_observations() {
         &format!("{}\n", vec!["ReferenceError"; 65].join(",")),
     );
     assert_no_replay_exhaustion(&fixture);
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            &source,
-            vec![logical_module("state", &[Member::new("state")])],
-        )
-        .with_extra_chunks(&HOST)
-        .with_unassigned_mode(unassigned_mode_inline()),
-        &["state"],
-        &[],
-    );
+    expect_single_binding_rejection(&source, &HOST, "state", "state");
 }
 
 #[test]
@@ -195,21 +173,7 @@ fn returned_callable_and_accessor_neighbors_keep_their_tdz_constraints() {
             "static/peer",
             "export function host(...callbacks) { for (const callback of callbacks) { try { const value = callback(); if (typeof value === 'function') value(); } catch (error) { console.log(error.name); } } }\n",
         )];
-        let fixture = run_fixture(
-            FixtureOpts::new(&source, vec![])
-                .with_extra_chunks(&peer)
-                .with_unassigned_mode(unassigned_mode_inline()),
-        );
-        assert_preserved_entry_output(&fixture, &"ReferenceError\n".repeat(65));
-        expect_atomic_conflict_rejection(
-            FixtureOpts::new(
-                &source,
-                vec![logical_module("later", &[Member::new("later")])],
-            )
-            .with_extra_chunks(&peer)
-            .with_unassigned_mode(unassigned_mode_inline()),
-            &["later"],
-            &[],
-        );
+        assert_unmoved_output(&source, &peer, &"ReferenceError\n".repeat(65));
+        expect_single_binding_rejection(&source, &peer, "later", "later");
     }
 }

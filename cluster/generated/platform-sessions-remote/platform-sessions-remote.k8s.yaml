@@ -200,7 +200,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "provider", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "50m", "memory": "128Mi"}, "maxAllowed": {"cpu": "50m", "memory": "192Mi"}, "controlledResources": ["memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
+    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "provider", "controlledValues": "RequestsOnly", "minAllowed": {"memory": "128Mi"}, "controlledResources": ["cpu", "memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
     goldilocks.fairwinds.com/vpa-update-mode: initial
   name: openai
   namespace: platform-sessions
@@ -617,7 +617,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "provider", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "50m", "memory": "128Mi"}, "maxAllowed": {"cpu": "50m", "memory": "192Mi"}, "controlledResources": ["memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
+    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "provider", "controlledValues": "RequestsOnly", "minAllowed": {"memory": "128Mi"}, "controlledResources": ["cpu", "memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
     goldilocks.fairwinds.com/vpa-update-mode: initial
   name: anthropic
   namespace: platform-sessions
@@ -1034,7 +1034,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "provider", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "50m", "memory": "128Mi"}, "maxAllowed": {"cpu": "50m", "memory": "192Mi"}, "controlledResources": ["memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
+    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "provider", "controlledValues": "RequestsOnly", "minAllowed": {"memory": "128Mi"}, "controlledResources": ["cpu", "memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
     goldilocks.fairwinds.com/vpa-update-mode: initial
   name: chatgpt
   namespace: platform-sessions
@@ -1451,7 +1451,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "provider", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "50m", "memory": "416Mi"}, "maxAllowed": {"cpu": "50m", "memory": "512Mi"}, "controlledResources": ["memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
+    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "provider", "controlledValues": "RequestsOnly", "minAllowed": {"memory": "416Mi"}, "controlledResources": ["cpu", "memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
     goldilocks.fairwinds.com/vpa-update-mode: initial
   name: blueshield
   namespace: platform-sessions
@@ -1866,7 +1866,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "provider", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "50m", "memory": "576Mi"}, "maxAllowed": {"cpu": "50m", "memory": "704Mi"}, "controlledResources": ["memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
+    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "provider", "controlledValues": "RequestsOnly", "minAllowed": {"memory": "576Mi"}, "controlledResources": ["cpu", "memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
     goldilocks.fairwinds.com/vpa-update-mode: initial
   name: quest-scheduler
   namespace: platform-sessions
@@ -3324,7 +3324,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "gateway", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "50m", "memory": "64Mi"}, "maxAllowed": {"cpu": "50m", "memory": "96Mi"}, "controlledResources": ["memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
+    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "gateway", "controlledValues": "RequestsOnly", "controlledResources": ["cpu", "memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
     goldilocks.fairwinds.com/vpa-update-mode: initial
   name: gateway
   namespace: platform-sessions

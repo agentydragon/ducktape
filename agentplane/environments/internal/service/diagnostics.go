@@ -22,7 +22,7 @@ type RuntimeDiagnostics interface {
 	RuntimeStatus(context.Context, *identitypb.EnvironmentTarget, string) (*sessionpb.EnvironmentRuntimeStatus, error)
 }
 
-// GetRuntimeDiagnostics reads live process, Session and lifecycle evidence without waking or
+// GetRuntimeDiagnostics reads live process and lifecycle evidence without waking or
 // mutating the environment. The App checks operator authority at its browser boundary.
 func (s *Service) GetRuntimeDiagnostics(ctx context.Context, request *environmentpb.GetRuntimeDiagnosticsRequest) (*environmentpb.GetRuntimeDiagnosticsResponse, error) {
 	admission, err := auth.Admitted(ctx)

@@ -1,5 +1,5 @@
 {
-  "checksum": "e7c6a46c9e1aed033f6632856035342603156ca0133c3a5201bc8bbe1688d1b3",
+  "checksum": "6872e245f161d68a4509c830eed24eb94effbf4420c3f6fa0b702f2ab6072a3b",
   "conditions": {
     "aarch64-apple-darwin": [
       "aarch64-apple-darwin"
@@ -12032,10 +12032,6 @@
           {
             "id": "tokio-vsock 0.7.2",
             "target": "tokio_vsock"
-          },
-          {
-            "id": "tower 0.5.3",
-            "target": "tower"
           },
           {
             "id": "tree-sitter 0.27.0",
@@ -48867,7 +48863,6 @@
     "tokio 1.53.1",
     "tokio-tungstenite 0.30.0",
     "tokio-vsock 0.7.2",
-    "tower 0.5.3",
     "tree-sitter 0.27.0",
     "tree-sitter-bash 0.25.1",
     "ts-rs 12.0.1",

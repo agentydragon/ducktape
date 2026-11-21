@@ -42,7 +42,7 @@ type observationSpec struct {
 	// Revision wakes reconciliation for host-owned start, exit, and stop slots.
 	Revision uint64
 	// Systemd is an observed fact, not evidence that the process domain is fenced.
-	Systemd SystemdObservation
+	Systemd systemdops.Observation
 }
 
 type Phase uint8
@@ -65,71 +65,7 @@ type Status struct {
 	StopError  string
 	// Systemd is the latest observation of this attempt's VM unit. It is absent
 	// for Pod and container-backed processes and is not process-domain proof.
-	Systemd SystemdObservation
-}
-
-// SystemdObservation is durable controller evidence for one process attempt.
-// The private handle owns updates; this resource type keeps the public status
-// contract in the supervision package.
-type SystemdObservation struct {
-	Revision             uint64
-	Unit                 string
-	StartState           SystemdStartState
-	StartError           string
-	ExpectedInvocationID string
-	CapturedControlGroup string
-	Snapshot             systemdops.UnitSnapshot
-	Error                string
-	ExitState            SystemdExitState
-	ExitCode             int
-	ExitError            string
-}
-
-type SystemdExitState uint8
-
-const (
-	SystemdExitPending SystemdExitState = iota
-	SystemdExitObserved
-	SystemdExitUnknown
-)
-
-func (state SystemdExitState) String() string {
-	switch state {
-	case SystemdExitPending:
-		return "pending"
-	case SystemdExitObserved:
-		return "observed"
-	case SystemdExitUnknown:
-		return "unknown"
-	default:
-		return "invalid"
-	}
-}
-
-// SystemdStartState distinguishes accepted launches from requests whose reply
-// was lost. An unconfirmed request cannot be retried until its unit is fenced.
-type SystemdStartState uint8
-
-const (
-	SystemdPreparing SystemdStartState = iota
-	SystemdStartSubmitted
-	SystemdStartAccepted
-	SystemdStartUnconfirmed
-)
-
-func (state SystemdStartState) String() string {
-	switch state {
-	case SystemdPreparing:
-		return "preparing"
-	case SystemdStartSubmitted:
-		return "submitted"
-	case SystemdStartAccepted:
-		return "accepted"
-	case SystemdStartUnconfirmed:
-		return "unconfirmed"
-	default:
-		return "invalid"
-	}
+	Systemd systemdops.Observation
 }
 
 func (DesiredState) resourceType() resource.Type { return DesiredStateType }

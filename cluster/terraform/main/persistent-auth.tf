@@ -146,18 +146,12 @@ resource "kubernetes_namespace" "flux_system" {
   ]
 }
 
-# Flux resolves spec.decryption.secretRef in the Kustomization's own namespace.
-# Reflect the existing Terraform-owned cluster age identity into ducktape-flux
-# while public Kustomizations move there. The destination Secret is owned by
-# Reflector, so do not declare a competing Terraform resource for it.
-#
-# 1. Apply this annotation-only change and confirm the reflected Secret exists
-#    without reading or logging either Secret's contents.
-# 2. Move and verify a single low-impact SOPS controller.
-# 3. Migrate remaining SOPS controllers in service-family batches.
-# 4. Complete the flux-system bootstrap-controller cutover.
-# 5. In a separate state-safe handoff, adopt the reflected destination into
-#    Terraform before removing this source Secret and its reflector annotations.
+# Flux resolves spec.decryption.secretRef in the Kustomization's own namespace. The
+# flux-system bootstrap Kustomization (k8s/flux/flux-system/gotk-sync.yaml) reads this Secret
+# directly, and Reflector mirrors it into ducktape-flux for the Kustomizations that run there.
+# Reflector owns the destination Secret, so do not declare a competing Terraform resource
+# for it. Before removing this source Secret and its reflector annotations, adopt the
+# reflected destination into Terraform in a separate, state-safe handoff.
 resource "kubernetes_secret" "sops_age_cluster_secrets" {
   metadata {
     name      = "sops-age-cluster-secrets"

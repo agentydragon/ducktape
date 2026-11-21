@@ -51,7 +51,6 @@ type Session struct {
 	activeTurn                                             string
 	setup                                                  sessionpb.SetupState
 	launch                                                 sessionpb.LaunchOutcome
-	failure                                                *uint64
 	harnessFailure                                         *uint64
 	setupJob, stopping                                     *oneoff.Operation
 	connection                                             *nativeConnection

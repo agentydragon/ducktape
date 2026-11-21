@@ -32,7 +32,7 @@ func TestSystemdExecutionRequiresReconciledRuntimeScope(t *testing.T) {
 	config := Config{
 		Namespace: "test-namespace", SandboxName: "test-sandbox", SandboxUID: "test-sandbox-uid",
 		IncarnationUID: "test-incarnation", StateDir: "/state/execution",
-		Binary: "/bin/codex", WorkingDirectory: "/state", ExecutorURL: "ws://127.0.0.1:4501", Backend: "systemd",
+		Binary: "/bin/codex", WorkingDirectory: "/state", ExecutorURL: "ws://127.0.0.1:4501", Owner: codexexecserver.OwnerSystemd, Placement: codexexecserver.PlacementDirect,
 	}
 	if err := RunEmbedded(t.Context(), config, func(executorpb.ExecutorServer, context.Context) { t.Error("unowned execution became ready") }); err == nil {
 		t.Fatal("systemd execution accepted without Runtime scope and host")
@@ -43,7 +43,7 @@ func TestExecutionConfigResolvesCompatibleReadinessDefaultsAndRejectsInvalidWind
 	config := Config{
 		Namespace: "test-namespace", SandboxName: "test-sandbox", SandboxUID: "test-sandbox-uid",
 		IncarnationUID: "test-incarnation", StateDir: "/state/execution",
-		ContainerSocket: "/run/executor.sock", ExecutorURL: "ws://127.0.0.1:4501", Backend: "companion",
+		ContainerSocket: "/run/executor.sock", ExecutorURL: "ws://127.0.0.1:4501", Owner: codexexecserver.OwnerCompanion, Placement: codexexecserver.PlacementDirect,
 	}
 	resolved, err := config.Resolve()
 	if err != nil {
@@ -89,7 +89,7 @@ func TestRunReturnsFencedBackendLossOnlyAfterCleanupFence(t *testing.T) {
 			config := Config{
 				Namespace: "test-namespace", SandboxName: "test-sandbox", SandboxUID: "test-sandbox-uid",
 				IncarnationUID: "test-incarnation", StateDir: stateDir,
-				ContainerSocket: filepath.Join(t.TempDir(), "companion.sock"), ExecutorURL: endpoint, Backend: "companion",
+				ContainerSocket: filepath.Join(t.TempDir(), "companion.sock"), ExecutorURL: endpoint, Owner: codexexecserver.OwnerCompanion, Placement: codexexecserver.PlacementDirect,
 			}
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
@@ -148,7 +148,7 @@ func TestEmbeddedServicePublishesDirectAdapter(t *testing.T) {
 	config := Config{
 		Namespace: "test-namespace", SandboxName: "test-sandbox", SandboxUID: "test-sandbox-uid",
 		IncarnationUID: "test-incarnation", StateDir: t.TempDir(),
-		ExecutorURL: endpoint, Backend: "companion", ContainerSocket: filepath.Join(t.TempDir(), "companion.sock"),
+		ExecutorURL: endpoint, Owner: codexexecserver.OwnerCompanion, Placement: codexexecserver.PlacementDirect, ContainerSocket: filepath.Join(t.TempDir(), "companion.sock"),
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
