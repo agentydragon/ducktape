@@ -17,11 +17,10 @@
   # The runner image takes it from the runner disk instead (//agentplane/env/images:disk_image).
   agentplaneCli ? null,
   name ? "agentplane-sandbox",
-  # What an image built on this one adds: packages linked into /bin beside the tools, directories
-  # appended to PATH, and image config such as an entrypoint.
+  # What an image built on this one adds: packages linked into /bin beside the tools, and
+  # directories appended to PATH.
   extraPaths ? [ ],
   extraPathEntries ? [ ],
-  extraConfig ? { },
 }:
 let
   substrate = import ../../../nix/lib/nix-ld-image.nix { inherit pkgs; };
@@ -98,6 +97,5 @@ pkgs.dockerTools.buildLayeredImage {
     ]
     ++ substrate.env;
     Labels."org.opencontainers.image.source" = "https://github.com/agentydragon/ducktape";
-  }
-  // extraConfig;
+  };
 }

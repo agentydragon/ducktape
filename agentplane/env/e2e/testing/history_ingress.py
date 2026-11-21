@@ -1,4 +1,4 @@
-"""A local CONNECT passthrough for Runtime's end-to-end History SVID connection."""
+"""Runtime's end-to-end History ingress endpoint, reached through a local CONNECT passthrough."""
 
 from __future__ import annotations
 
@@ -6,10 +6,17 @@ import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 
+from agentplane.env.config import Endpoint, SVIDEndpoint
+from agentplane.net.peertls.config import HISTORY_SERVICE_URI
+
 
 @asynccontextmanager
-async def history_tunnel(target: str) -> AsyncIterator[str]:
-    """Forward one exact CONNECT authority to History while leaving TLS end to end."""
+async def history_ingress(target: str) -> AsyncIterator[Endpoint]:
+    """The Runtime `Endpoint` of the History ingress at `target`.
+
+    Its SVID connection goes through a local proxy that forwards one exact CONNECT authority to
+    History and leaves TLS end to end.
+    """
     tasks: set[asyncio.Task[None]] = set()
     host, port = target.rsplit(":", 1)
 
@@ -54,7 +61,8 @@ async def history_tunnel(target: str) -> AsyncIterator[str]:
 
     server = await asyncio.start_server(accept, "127.0.0.1", 0)
     try:
-        yield f"127.0.0.1:{server.sockets[0].getsockname()[1]}"
+        proxy_address = f"127.0.0.1:{server.sockets[0].getsockname()[1]}"
+        yield Endpoint(target=target, svid=SVIDEndpoint(server_uri=HISTORY_SERVICE_URI, proxy_address=proxy_address))
     finally:
         server.close()
         await server.wait_closed()

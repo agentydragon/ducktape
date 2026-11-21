@@ -266,7 +266,7 @@ func (s *sidecar) proxyHandler() http.Handler {
 		}
 		if absolute {
 			if route := s.workloadRoutes[authority]; route != nil {
-				s.exchangeWorkloadRoute(writer, request, route)
+				route.handler.ServeHTTP(writer, request)
 				return
 			}
 		}
@@ -284,7 +284,7 @@ func (s *sidecar) handleConnect(writer http.ResponseWriter, request *http.Reques
 		return
 	}
 	if route := s.workloadRoutes[authority]; route != nil {
-		s.exchangeWorkloadConnectRoute(writer, request, route)
+		s.exchangeWorkloadConnectRoute(writer, route)
 		return
 	}
 	upstream, err := s.proxyHop.transport.dial(request.Context(), s.proxyHop.address)

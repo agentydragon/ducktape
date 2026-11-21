@@ -3,8 +3,10 @@
 This package exercises complete Sandbox environment topologies with real pinned Linux harnesses,
 container process boundaries, and VM supervision. Production contracts live with their owners:
 [Environment Runtime](../runtime/SPEC.md) and
-[Execution Service](../runtime/execution/SPEC.md). Test helpers live in [`testing/`](testing/), and this
-package defaults to test-only in Bazel.
+[Execution Service](../runtime/execution/SPEC.md); protocol references are
+[Runtime control](../runtime/docs/control.md), [Session protocol](../runtime/docs/session_protocol.md)
+and [Codex executor integration](../runtime/execution/docs/codex_executor.md). Test helpers live in
+[`testing/`](testing/), and this package defaults to test-only in Bazel.
 
 ## Tests
 
