@@ -484,10 +484,6 @@ ts_library(
     srcs = ["transcript-rows.ts"],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
-    visibility = [
-        "//agentplane:__subpackages__",
-        "//ai_session_archive/frontend:__pkg__",
-    ],
     deps = [
         ":claude_transcript",
         ":codex_record",
@@ -502,10 +498,6 @@ ts_library(
     srcs = ["transcript.tsx"],
     isolated_typecheck = True,
     tsconfig = ":tsconfig",
-    visibility = [
-        "//agentplane:__subpackages__",
-        "//ai_session_archive/frontend:__pkg__",
-    ],
     deps = [
         ":event_content",
         ":history_recorder",
