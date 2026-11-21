@@ -11,7 +11,7 @@ from python.runfiles import Runfiles
 from cluster.cdk8s.home_lan import HOME_LAN
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
-from ssh_mcp_server.server import SshSettings, TargetConfig
+from ssh_mcp_server.settings import SshSettings, TargetConfig
 
 NAME = "ssh-mcp"
 NAMESPACE = NAME
