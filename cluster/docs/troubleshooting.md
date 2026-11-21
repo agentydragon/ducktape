@@ -119,6 +119,32 @@ control-plane health (`kubectl logs ... | grep "etcdserver: request timed out"`)
 assume the historical HDD issue is present. See the “Compounding Factor” in
 <lessons_learned/2026_07_03_tofu_controller_runner_rpc_hang.md>.
 
+## Goldilocks VPA Stays Stale After a Deployment Annotation Change
+
+Flux can apply a Deployment's `metadata.annotations` change while its Goldilocks-managed
+Vertical Pod Autoscaler (VPA) keeps the old update mode or resource policy. Goldilocks
+v4.16.1 watches Pod and Namespace events. A Deployment metadata-only edit leaves the Pod
+template unchanged and does not itself enqueue reconciliation.
+[Controller watches](https://github.com/FairwindsOps/goldilocks/blob/v4.16.1/pkg/controller/controller.go#L116-L169)
+
+After confirming the intended annotations are live on the Deployment, change the
+`ducktape.org/goldilocks-reconcile` annotation on its Namespace to trigger reconciliation.
+Set `namespace` and `deployment` to the affected names, then check the VPA's
+`spec.targetRef`, `spec.updatePolicy`, and `spec.resourcePolicy` against the intended policy.
+
+```bash
+kubectl annotate namespace "$namespace" \
+  ducktape.org/goldilocks-reconcile="$(date -u +%Y-%m-%dT%H:%M:%SZ)" --overwrite
+kubectl -n "$namespace" get vpa "goldilocks-$deployment" -o yaml
+```
+
+The annotation's value only needs to change. The Namespace event re-evaluates all
+Goldilocks-managed workloads in that namespace. Applying an eviction-capable mode such as
+`Recreate` can then lead to VPA-driven Pod evictions. This recovered `goldilocks-kubeapi-proxy`
+in `default` from `Initial` to `Recreate` after the Deployment annotation shipped.
+[Namespace handler](https://github.com/FairwindsOps/goldilocks/blob/v4.16.1/pkg/handler/namespace.go#L35-L43),
+[kubeapi-proxy change](https://github.com/agentydragon/ducktape/pull/18382).
+
 ## tofu-controller Issues
 
 ### TLS Secret Cache Desync (Startup GC Bug)
