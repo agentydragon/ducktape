@@ -121,6 +121,12 @@ directory: the generated `kustomization.yaml` lists it as a sibling resource
 that directory's object in the central Flux chart carries the `decryption:` block when any
 such file is listed; `flux_kustomization` derives it from the `RenderedDirectory`.
 `ExternalSecret` objects are generated outright; they carry only a pointer at a store key.
+Whole-tree validation checks referenced ESO stores and their namespace conditions and,
+for Kubernetes-provider referent authentication, the consuming namespace's
+ServiceAccount. It skips ExternalSecrets without an explicit rendered namespace and
+evaluates ClusterExternalSecret selectors against rendered Namespace labels only.
+Namespaces and labels created outside the render, Go regexes Python cannot parse, and
+live store, ServiceAccount, or secret readiness remain outside its proof.
 
 Fleet rules run on every App `generation.write_app` writes, over all its charts together;
 strategic-merge patch files are not checked. Their

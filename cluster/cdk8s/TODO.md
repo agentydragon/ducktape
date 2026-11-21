@@ -5,22 +5,6 @@ overlays and application payloads: [remainder backlog](../docs/cdk8s_remainder.m
 Remove entries when their acceptance conditions land; this is not a history of the
 conversion.
 
-## ESO store/consumer agreement
-
-`cluster/validation/checks.py` sees generated and hand-written resources together.
-Resolve each ExternalSecret's store, including ClusterExternalSecret target namespaces;
-check store namespace conditions and the ServiceAccount required by Kubernetes-provider
-referent authentication. Existing checks cover external credential ownership and the
-Forgejo image distribution convention, not this general relationship.
-
-The missing agreement has already caused denied Airlock/Forgejo-image consumers and a
-missing `external-creds-reader` ServiceAccount. Handle namespace selectors as well as
-literal lists where used. Derive paired fields from an explicitly approved grant when
-they have one owner; never grant access just because an ExternalSecret requests it.
-
-Done: synthetic cases catch denied namespaces and absent referent identities, while
-valid generated and hand-written consumers pass. No duplicate consumer/provider roster.
-
 ## Fleet rule waivers
 
 The active Agentplane egress proxy (`agentplane/generation.py`) is exempt by design:

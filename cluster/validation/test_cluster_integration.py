@@ -21,6 +21,7 @@ import yaml
 from cluster.validation.checks import (
     check_cilium_policy_rules_nonempty,
     check_external_credential_ownership,
+    check_external_secret_store_wiring,
     check_forgejo_image_namespace_reflection,
     check_goldilocks_namespace_labels,
     check_sops_decryption_blocks,
@@ -151,6 +152,11 @@ def test_controller_resources_have_health_checks(cluster: ParsedCluster, repo_ro
 def test_external_credential_ownership(cluster: ParsedCluster, repo_root: Path) -> None:
     """Only the shared store reads external-creds."""
     errors = check_external_credential_ownership(cluster, repo_root)
+    assert not errors, "\n".join(errors)
+
+
+def test_external_secret_store_wiring(cluster: ParsedCluster) -> None:
+    errors = check_external_secret_store_wiring(cluster)
     assert not errors, "\n".join(errors)
 
 
