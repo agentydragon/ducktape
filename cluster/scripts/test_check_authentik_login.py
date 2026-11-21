@@ -9,8 +9,17 @@ import pytest_bazel
 from cluster.scripts import check_authentik_login
 
 
-@pytest.mark.parametrize("direct_url", [False, True])
-def test_password_login_cli(monkeypatch: pytest.MonkeyPatch, direct_url: bool) -> None:
+@pytest.mark.parametrize(
+    ("direct_url", "mfa_required"),
+    [
+        pytest.param(False, False, id="default"),
+        pytest.param(True, False, id="overrides"),
+        pytest.param(False, True, id="mfa-required"),
+    ],
+)
+def test_password_login_cli(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], direct_url: bool, mfa_required: bool
+) -> None:
     if direct_url:
         base, flow, user = "https://auth.example.test", "custom-flow", "admin"
         secret_ns, secret_name, secret_key = "test", "admin-auth", "TEST_PASSWORD"
@@ -39,14 +48,25 @@ def test_password_login_cli(monkeypatch: pytest.MonkeyPatch, direct_url: bool) -
     forward = Mock()
     monkeypatch.setattr(check_authentik_login, "start_port_forward", forward)
     opener = Mock()
+    final_component = "ak-stage-authenticator-validate" if mfa_required else "xak-flow-redirect"
     opener.open.side_effect = [
         BytesIO(json.dumps({"component": component}).encode())
-        for component in ("ak-stage-identification", "ak-stage-password", "xak-flow-redirect")
+        for component in ("ak-stage-identification", "ak-stage-password", final_component)
     ]
-    monkeypatch.setattr(check_authentik_login.urllib.request, "build_opener", Mock(return_value=opener))
+    build_opener = Mock(return_value=opener)
+    monkeypatch.setattr(check_authentik_login.urllib.request, "build_opener", build_opener)
 
-    check_authentik_login.main()
+    if mfa_required:
+        with pytest.raises(SystemExit) as exited:
+            check_authentik_login.main()
+        assert exited.value.code == 1
+        output = capsys.readouterr().out
+        assert f"Expected xak-flow-redirect, got {final_component}" in output
+        assert "test-password" not in output
+    else:
+        check_authentik_login.main()
 
+    build_opener.assert_called_once()
     assert kubectl.call_args.args[0] == [
         "kubectl",
         "get",
