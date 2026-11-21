@@ -1490,6 +1490,84 @@ export { read };
   assert.equal(cli("validate", numerical, numericalSpec, numericalOut).result, "unknown");
 }
 
+if (shard === 6) {
+  const source = join(root, "local-var.mjs");
+  const spec = join(root, "local-var.json");
+  const out = join(root, "local-var-out");
+  await writeFile(
+    source,
+    `function calculate(x) { var a = x; var b = a + 1; a += 2; return a + b; }
+export { calculate };
+`
+  );
+  await writeFile(
+    spec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "functions.mjs": { imports: [], statements: [0] },
+        "entry.mjs": { imports: ["functions.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", source, spec, out).result, "generated");
+  const proof = cli("validate", source, spec, out);
+  assert.equal(proof.result, "proved under assumptions", JSON.stringify(proof));
+  const calls = [{ name: "calculate", args: [3] }];
+  assert.deepEqual(execute(source, calls).results, [{ value: 9 }]);
+  assert.deepEqual(execute(source, calls), execute(join(out, "entry.mjs"), calls));
+  const emitted = join(out, "functions.mjs");
+  await writeFile(emitted, (await readFile(emitted, "utf8")).replace("a += 2", "a += 3"));
+  const unsafe = cli("validate", source, spec, out);
+  assert.equal(unsafe.result, "unsafe", JSON.stringify(unsafe));
+  assert.notDeepEqual(execute(source, unsafe.calls), execute(join(out, "entry.mjs"), unsafe.calls));
+  for (const [index, body] of [
+    "if (x) return a; var a = 1; return a;",
+    "var a = a; return a;",
+    "var a = b; var b = 1; return a;",
+    "var a = b; let b = 1; return a;",
+    "if (x) { var a = 1; } return a;",
+    "var x = 1; return x;",
+    "var a = 1; var a = 2; return a;",
+    "var a = 1; function a() { return 2; } return a;",
+  ].entries()) {
+    const invalid = join(root, `local-var-invalid-${index}.mjs`);
+    const invalidOut = join(root, `local-var-invalid-${index}-out`);
+    await writeFile(invalid, `function calculate(x) { ${body} } export { calculate };`);
+    const generated = cli("generate", invalid, spec, invalidOut);
+    if (generated.result === "generated") assert.equal(cli("validate", invalid, spec, invalidOut).result, "unknown");
+    else assert.equal(generated.result, "unknown");
+  }
+  const shadow = join(root, "local-var-shadow.mjs");
+  const shadowSpec = join(root, "local-var-shadow.json");
+  const shadowOut = join(root, "local-var-shadow-out");
+  await writeFile(
+    shadow,
+    `let a = 9;
+function calculate(x) { if (x) return a; var a = 1; return a; }
+export { calculate };
+`
+  );
+  await writeFile(
+    shadowSpec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0] },
+        "functions.mjs": { imports: ["state.mjs"], statements: [1] },
+        "entry.mjs": { imports: ["functions.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.deepEqual(execute(shadow, [{ name: "calculate", args: [1] }]).results, [{ undefined: true }]);
+  const shadowGenerated = cli("generate", shadow, shadowSpec, shadowOut);
+  if (shadowGenerated.result === "generated")
+    assert.equal(cli("validate", shadow, shadowSpec, shadowOut).result, "unknown");
+  else assert.equal(shadowGenerated.result, "unknown");
+}
+
 if (shard === 14) {
   const logicalSource = join(root, "logical-values.mjs");
   const logicalSpec = join(root, "logical-values.json");

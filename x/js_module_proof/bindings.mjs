@@ -256,12 +256,51 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
   const name = identifier(node.id);
   check(!stack.includes(name), "recursive calls are unsupported");
   const parameters = node.params.map(identifier);
+  // A prefix of initialized function-scoped vars behaves like nested numeric
+  // locals once self/forward references and redeclarations are excluded.
+  const prefixVars = [];
+  let afterVarPrefix = false;
+  for (const statement of node.body.body) {
+    if (statement.type === "VariableDeclaration" && statement.kind === "var") {
+      check(!afterVarPrefix && statement.declarations.length === 1, "local var must be an initialized prefix");
+      prefixVars.push(statement);
+    } else afterVarPrefix = true;
+  }
+  const varNames = prefixVars.map((statement) => identifier(statement.declarations[0].id));
+  check(
+    new Set(varNames).size === varNames.length && varNames.every((item) => !parameters.includes(item)),
+    "ambiguous local var"
+  );
+  const mentions = (item, names) => {
+    if (!item || typeof item !== "object") return false;
+    if (item.type === "Identifier" && names.has(item.name)) return true;
+    return Object.values(item).some((child) =>
+      Array.isArray(child) ? child.some((value) => mentions(value, names)) : mentions(child, names)
+    );
+  };
+  for (const [index, statement] of prefixVars.entries())
+    check(
+      statement.declarations[0].init && !mentions(statement.declarations[0].init, new Set(varNames.slice(index))),
+      "local var initializer reads a hoisted binding before initialization"
+    );
+  const containsNestedVar = (item) => {
+    if (!item || typeof item !== "object") return false;
+    if (["FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression"].includes(item.type)) return false;
+    if (item.type === "VariableDeclaration" && item.kind === "var") return !prefixVars.includes(item);
+    return Object.values(item).some((child) =>
+      Array.isArray(child) ? child.some(containsNestedVar) : containsNestedVar(child)
+    );
+  };
+  check(!node.body.body.some(containsNestedVar), "nested local var is unsupported");
   const localFunctions = new Map();
   for (const statement of node.body.body)
     if (statement.type === "FunctionDeclaration") {
       const localName = identifier(statement.id);
       check(
-        !localFunctions.has(localName) && !parameters.includes(localName) && !functions?.has(localName),
+        !localFunctions.has(localName) &&
+          !parameters.includes(localName) &&
+          !varNames.includes(localName) &&
+          !functions?.has(localName),
         "ambiguous local function binding"
       );
       localFunctions.set(localName, statement);
@@ -554,7 +593,9 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
     }
     if (first.type === "VariableDeclaration") {
       check(
-        (first.kind === "let" || first.kind === "const") && first.declarations.length === 1 && rest.length > 0,
+        (first.kind === "let" || first.kind === "const" || (first.kind === "var" && prefixVars.includes(first))) &&
+          first.declarations.length === 1 &&
+          rest.length > 0,
         "unsupported local declaration"
       );
       const declaration = first.declarations[0];
@@ -563,7 +604,7 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
       return {
         kind: "local",
         name,
-        mutable: first.kind === "let",
+        mutable: first.kind !== "const",
         initial: expression(declaration.init),
         body: sequence(rest),
       };

@@ -338,6 +338,9 @@ if (shards === 4 && shard === 2) {
   assert.equal(checkedAlias.varGeneratedCases, 1);
   assert.equal(checkedAlias.varComparedCases, 1);
   assert.equal(checkedAlias.varProvedCases, 1);
+  assert.equal(checkedAlias.localVarCases, 1);
+  assert.equal(checkedAlias.localVarComparedCases, 1);
+  assert.equal(checkedAlias.localVarProvedCases, 1);
   assert.equal(checkedAlias.earlyVarCases, 1);
   assert.equal(checkedAlias.earlyVarComparedCases, 1);
   assert.equal(checkedAlias.earlyVarProvedCases, 1);
@@ -443,6 +446,7 @@ assert.ok(composedPrograms.some((item) => item.source.includes(" as public_calcu
 assert.ok(composedPrograms.some((item) => item.source.includes(" as second_calculate")));
 assert.ok(composedPrograms.some((item) => item.spec.modules["logic.mjs"].aliasImports));
 assert.ok(composedPrograms.some((item) => item.source.includes("var global")));
+assert.ok(composedPrograms.some((item) => item.source.includes("var initialVar")));
 assert.ok(composedPrograms.some((item) => item.source.includes("const box =")));
 assert.ok(composedPrograms.some((item) => item.source.includes("function nested(")));
 assert.ok(composedPrograms.some((item) => item.source.includes("catch {")));

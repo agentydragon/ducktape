@@ -903,6 +903,7 @@ export function independentSplit(input, seed, index) {
 export function makeComposedCase(seed, index) {
   const rand = random(seed ^ 0xc04f053, index);
   const globals = Array.from({ length: 1 + rand(4) }, (_, i) => (i ? `global${i}` : "global"));
+  let hasLocalVar = false;
   const makeFunction = (name) => {
     const scope = new Scope();
     scope.declare("parameter");
@@ -948,6 +949,13 @@ export function makeComposedCase(seed, index) {
       scope.declare("datum");
     }
     const localPrefix = [];
+    if (dataPrefix.length === 0 && index % 5 === 0) {
+      const initial = declaration("initialVar", literal(rand(4)));
+      initial.kind = "var";
+      localPrefix.push(initial);
+      scope.declare("initialVar");
+      hasLocalVar = true;
+    }
     const useLocalFunction = dataPrefix.length === 0 && rand(2) === 0;
     if (useLocalFunction) {
       localPrefix.push(
@@ -1164,6 +1172,7 @@ export function makeComposedCase(seed, index) {
     source: print(ast),
     grammar: "composed",
     earlyVar,
+    hasLocalVar,
     expectThrow: true,
     unsupported: false,
     cyclic: false,
@@ -1564,6 +1573,9 @@ export async function runFuzz({
     varGeneratedCases: 0,
     varComparedCases: 0,
     varProvedCases: 0,
+    localVarCases: 0,
+    localVarComparedCases: 0,
+    localVarProvedCases: 0,
     earlyVarCases: 0,
     plannedEarlyVarReorderCases: 0,
     earlyVarComparedCases: 0,
@@ -1670,6 +1682,7 @@ export async function runFuzz({
       };
       visit(input.ast);
       if (hasVar) summary.varCases++;
+      if (input.hasLocalVar) summary.localVarCases++;
       if (input.earlyVar) summary.earlyVarCases++;
       if (input.plannedEarlyVarReorder) summary.plannedEarlyVarReorderCases++;
       for (const type of nodeTypes) summary.astNodeCases[type] = (summary.astNodeCases[type] ?? 0) + 1;
@@ -1860,6 +1873,7 @@ export async function runFuzz({
       await writeFile(join(root, "node.json"), JSON.stringify({ before, after }, null, 2) + "\n");
       summary.compared++;
       if (hasVar) summary.varComparedCases++;
+      if (input.hasLocalVar) summary.localVarComparedCases++;
       if (input.earlyVar) {
         summary.earlyVarComparedCases++;
         if (!equal) summary.earlyVarDifferentCases++;
@@ -1939,6 +1953,7 @@ export async function runFuzz({
         if (verdict.result === "proved under assumptions") {
           summary.proved++;
           if (hasVar) summary.varProvedCases++;
+          if (input.hasLocalVar) summary.localVarProvedCases++;
           if (input.earlyVar) summary.earlyVarProvedCases++;
           if (hasGeneratedImportAlias) summary.importAliasProvedCases++;
           if (input.grammar === "object") summary.objectProved++;
