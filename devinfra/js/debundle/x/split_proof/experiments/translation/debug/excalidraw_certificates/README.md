@@ -106,3 +106,28 @@ For main/editor, module identity is an independent workstream: determine whether
 a split preserves the relevant URL/environment observation or whether the model
 and emitter need an explicit source-module-identity treatment. Do not erase
 `import.meta` or silently assume its value is irrelevant.
+
+## Plain-class implementation result
+
+The first integrated run with plain-class creation and opaque bodies is
+[071626dd-6cc2-4e93-9b2b-0e41123c4dcb](https://app.buildbuddy.io/invocation/071626dd-6cc2-4e93-9b2b-0e41123c4dcb).
+The census and axiom audit passed. The exact roughjs alternating placement still
+passes every structural check. Missing pair proofs decrease from **21 to 7** out
+of the same 630 inverted pairs. All remaining pairs cross derived class unit 9:
+`(10,9)`, `(12,9)`, `(16,9)`, `(26,9)`, `(66,9)`, `(68,9)`, `(70,9)`.
+The complete reordered split therefore remains uncertified; no derived-class
+permission was introduced to make it pass.
+
+| Chunk              | Allocation-only statements before | After | Whole opaque statements before | After |
+| ------------------ | --------------------------------: | ----: | -----------------------------: | ----: |
+| Main               |                               785 |   799 |                          1,053 | 1,039 |
+| Editor             |                             1,305 | 1,322 |                            662 |   649 |
+| Roughjs            |                                31 |    39 |                             35 |    27 |
+| Small shared chunk |                                 3 |     3 |                              8 |     8 |
+
+These categories overlap with inert statements; they are not a partition.
+A modeled top-level class can still contain opaque bodies, which `chunks.json`
+now records separately as `opaqueBodies`. Main/editor's module-identity guard and
+the rejected structural plans remain unchanged. The next roughjs obstruction is
+inheritance, which needs its own treatment of superclass evaluation and prototype
+access; it is not covered by the plain-class allocation proof.

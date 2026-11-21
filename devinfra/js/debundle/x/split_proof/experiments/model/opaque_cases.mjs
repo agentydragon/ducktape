@@ -23,6 +23,177 @@ const afterReinsert = Object.getOwnPropertyNames(keyBoundaryObject);
 
 export const opaqueCases = [
   {
+    name: "opaque class methods capture distinct enclosing function invocations",
+    source: `
+      function make(value) {
+        class Box { read() { const [unused] = []; return value; } }
+        return Box;
+      }
+      const First = make(7);
+      const Second = make(9);
+      console.log(new First().read(), new Second().read());
+    `,
+    scripts: {
+      "0/2": [
+        ["readVar", 0],
+        ["done", r(2)],
+      ],
+    },
+    bodyParts: ["0/2"],
+  },
+  {
+    name: "opaque class bodies do not run during moved class creation",
+    source: `
+      class Box {
+        constructor() { const [unused] = []; calls++; throw "eager constructor"; }
+        static unused() { const [unused] = []; calls++; throw "eager method"; }
+      }
+      const independent = 3;
+      let calls = 0;
+      console.log(calls, independent, Box.name, Box.length);
+    `,
+    scripts: {},
+    bodyParts: ["0/1", "0/2"],
+    move: true,
+  },
+  {
+    name: "opaque class constructor and methods receive receivers and original arguments",
+    source: `
+      class Box {
+        constructor(value, extra) { const [v] = [value]; this.value = v; this.extra = extra; }
+        read() { const [v] = [this.value]; return v; }
+        static read(value) { const [v] = [value]; return v; }
+        receiver() { const [unused] = []; return this; }
+      }
+      const box = new Box(7, 9);
+      const receiver = box.receiver;
+      console.log(box.read(), box.extra, Box.read(11), box.constructor === Box, receiver() === undefined);
+    `,
+    scripts: {
+      "0/1": [
+        ["set", r(1), ["s", "value"], r(2)],
+        ["set", r(1), ["s", "extra"], r(3)],
+      ],
+      "0/2": [
+        ["get", r(1), ["s", "value"]],
+        ["done", r(2)],
+      ],
+      "0/3": [["done", r(2)]],
+      "0/4": [["done", r(1)]],
+    },
+    bodyParts: ["0/1", "0/2", "0/3", "0/4"],
+  },
+  {
+    name: "opaque named class methods retain the immutable inner class name",
+    source: `
+      let Alias = class Inner { self() { const [unused] = []; return Inner; } };
+      const Original = Alias;
+      Alias = 0;
+      console.log(new Original().self() === Original, Original.name);
+    `,
+    scripts: {
+      "0/1": [
+        ["readVar", 0],
+        ["done", r(2)],
+      ],
+    },
+    bodyParts: ["0/1"],
+  },
+  {
+    name: "opaque constructors keep fields on primitive return, replace on object return, and propagate throw",
+    source: `
+      class Keeps { field = 5; constructor() { const [unused] = []; this.seen = this.field; return 3; } }
+      class Replaces { constructor(value) { const [v] = [value]; return v; } }
+      class Fails { constructor(value) { const [v] = [value]; throw v; } }
+      const replacement = { value: 8 };
+      console.log(new Keeps().seen, new Replaces(replacement) === replacement);
+      try { new Fails(13); } catch (e) { console.log("constructor caught", e); }
+    `,
+    scripts: {
+      "0/1": [
+        ["get", r(1), ["s", "field"]],
+        ["set", r(1), ["s", "seen"], r(2)],
+        ["done", num(3)],
+      ],
+      "1/1": [["done", r(2)]],
+      "2/1": [["throw", r(2)]],
+    },
+    bodyParts: ["0/1", "1/1", "2/1"],
+  },
+  {
+    name: "opaque class constructors are not callable and methods are not constructible",
+    source: `
+      class Box {
+        constructor() { const [unused] = []; throw "body must not run"; }
+        method() { const [unused] = []; throw "body must not run"; }
+        static method() { const [unused] = []; throw "body must not run"; }
+      }
+      try { Box(); } catch (e) { console.log("class call caught"); }
+      try { new Box.prototype.method(); } catch (e) { console.log("instance method construction caught"); }
+      try { new Box.method(); } catch (e) { console.log("static method construction caught"); }
+    `,
+    scripts: {},
+    bodyParts: ["0/1", "0/2", "0/3"],
+  },
+  {
+    name: "opaque class accessors read live captures and receive the instance",
+    source: `
+      class Box {
+        get value() { const [unused] = []; return captured; }
+        set value(value) { const [v] = [value]; this.stored = v; }
+      }
+      let captured = 4;
+      const box = new Box();
+      captured = 9;
+      box.value = 6;
+      console.log(box.value, box.stored);
+    `,
+    scripts: {
+      "0/1": [
+        ["readVar", 0],
+        ["done", r(2)],
+      ],
+      "0/2": [["set", r(1), ["s", "stored"], r(2)]],
+    },
+    bodyParts: ["0/1", "0/2"],
+  },
+  {
+    name: "opaque method parts count modeled and nested functions in lexical source order",
+    source: `
+      class Box {
+        modeled() { return 1; }
+        opaque() { const helper = () => 2; const [v] = [helper()]; return v; }
+        later() { const [v] = [3]; return v; }
+      }
+      const box = new Box();
+      console.log(box.modeled(), box.opaque(), box.later());
+    `,
+    scripts: { "0/2": [["done", num(2)]], "0/4": [["done", num(3)]] },
+    bodyParts: ["0/2", "0/4"],
+  },
+  {
+    name: "opaque class bodies preserve eager static initializers and computed field keys",
+    source: `
+      let order = "";
+      function record(text) { order += text; }
+      class Box {
+        [(order += "key ", "field")] = (order += "field ", 4);
+        static value = (order += "static ", 7);
+        constructor() { const [unused] = []; record("body "); }
+      }
+      console.log(order, Box.value);
+      const box = new Box();
+      console.log(order, box.field);
+    `,
+    scripts: {
+      "2/1": [
+        ["readVar", 0],
+        ["call", r(2), ["u"], ["s", "body "]],
+      ],
+    },
+    bodyParts: ["2/1"],
+  },
+  {
     name: "own key array-index boundaries and string reinsertion follow Node",
     source: `
       const box = { tail: 1, 10: 10, 2: 2, "01": 1, "-0": 0, 4294967295: 5, 4294967294: 4, 0: 0 };

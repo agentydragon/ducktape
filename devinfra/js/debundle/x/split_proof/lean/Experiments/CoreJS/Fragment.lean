@@ -10,12 +10,28 @@ statements of a bundle may run in either order (`moves_preserve`).
 
 namespace CoreJS
 
+/-- Plain class creation stores method bodies without running them. Fields and computed keys are excluded. -/
+def plainClassMembers : List ClassMember → Bool
+  | [] => true
+  | .method _ (.str _) _ :: ms | .getter _ (.str _) _ :: ms | .setter _ (.str _) _ :: ms => plainClassMembers ms
+  | _ :: _ => false
+
+theorem plainClassMembers_fieldInits {ms : List ClassMember} (h : plainClassMembers ms = true) :
+    fieldInits ms = [] := by
+  induction ms with
+  | nil => rfl
+  | cons m ms ih =>
+    cases m <;> rename_i static k f <;> cases k <;>
+      simp only [plainClassMembers, Bool.false_eq_true] at h
+    all_goals simpa only [fieldInits] using ih h
+
 mutual
-/-- An expression that only allocates: a literal, a name, a function, an object literal of named data properties or an array literal of such expressions. -/
+/-- An expression that only allocates: a literal, a name, a function, an object literal of named data properties, an array literal of such expressions, or a plain class. -/
 def Expr.allocOnly : Expr → Bool
   | .undef | .null | .bool _ | .num _ | .str _ | .var _ | .host _ | .this | .func _ => true
   | .obj props => allocOnlyProps props
   | .arr elems => allocOnlyAll elems
+  | .cls _ _ _ members => plainClassMembers members
   | _ => false
 
 def allocOnlyAll : List Expr → Bool
@@ -28,8 +44,25 @@ def allocOnlyProps : List PropDef → Bool
   | _ :: _ => false
 end
 
+/-- Opaque method bodies stay deferred during plain class creation. -/
+theorem allocOnly_plainClass_opaqueMethod :
+    (Expr.cls "Plain" true (.opaque "Plain" .classCtor false 0 0 0 [])
+      [.method false (.str "method") (.opaque "method" .method false 0 0 1 ["later"])]).allocOnly = true := rfl
+
+theorem allocOnly_class_staticField_rejected :
+    (Expr.cls "Plain" false (.opaque "Plain" .classCtor false 0 0 0 [])
+      [.field true (.str "field") .undef]).allocOnly = false := rfl
+
+theorem allocOnly_class_instanceField_rejected :
+    (Expr.cls "Plain" false (.opaque "Plain" .classCtor false 0 0 0 [])
+      [.field false (.str "field") .undef]).allocOnly = false := rfl
+
+theorem allocOnly_class_nonliteralKey_rejected :
+    (Expr.cls "Plain" false (.opaque "Plain" .classCtor false 0 0 0 [])
+      [.method false (.var "key") (.opaque "method" .method false 0 0 1 [])]).allocOnly = false := rfl
+
 mutual
-/-- The names an expression that only allocates reads when it runs. A function reads none: it keeps bindings, not values. -/
+/-- The names an expression that only allocates reads when it runs. Functions and admitted plain classes read none: they keep bindings, not values. -/
 def Expr.readsNow : Expr → List Name
   | .var x => [x]
   | .obj props => readsNowProps props

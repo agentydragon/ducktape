@@ -68,3 +68,31 @@ propagates request errors; it cannot catch one and continue its own script. An e
 world `unknown` exit and invalid handles need kernel-level examples, not a faithful
 Node execution. This is a bounded coverage inventory, not full JavaScript coverage or
 a proof of interpreter conformance.
+
+## Plain class creation with opaque bodies
+
+In opaque mode the frontend retains a plain class's creation structure when a
+constructor, method, or accessor body is outside the executable fragment. Each
+such function captures its lexical free cells; only an invocation enters the
+world conversation, with the original callee, receiver, and arguments. Its code
+identity is the preserved source-unit ID and its part is the one-based lexical
+function index within that unit (including modeled and nested functions).
+
+Class constructors still reject ordinary calls; methods and accessors still
+reject construction. Instance fields execute before the constructor body, and
+modeled eager keys/static initializers remain explicit. New body fallback does
+not handle `super`, async/generator functions, direct eval, or relocation-sensitive
+imports. A refused body cannot silently erase those restrictions.
+
+The allocation proof admits only fixed-string method/accessor keys and no fields.
+It captures method bodies without executing them, writes only fresh objects and
+the class's own binding, and composes with the existing allocation move theorem.
+Inheritance and broader class shapes gain no new proof permission. This is the
+syntax-based `moves` slice, not the binding-certificate slice.
+
+Handwritten cases cover deferred execution, receivers/arguments, class self names,
+nested lexical captures, constructor returns/throws, invocation restrictions,
+accessors, stable part identities, and eager static/field behavior. Each generated
+seed also moves a class across an independent declaration, then constructs it and
+calls an opaque method. Every such split must use a proved move and agree in all
+four executions and in the final model-state hash.

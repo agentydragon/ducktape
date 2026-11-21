@@ -126,6 +126,10 @@ def token (tag : String) (args : List Json) : D Unit := do
     let body ← popMany popStmt (← nat size)
     let params ← (← liftM (m := Except String) params.getArr?).toList.mapM str
     push (.func (.mk (← str name) (← funcKind (← str kind)) (← bool self) params body))
+  | "opaqueFunc", [name, kind, self, length, code, part, free] => do
+    let free ← (← liftM (m := Except String) free.getArr?).toList.mapM str
+    push (.func (.opaque (← str name) (← funcKind (← str kind)) (← bool self)
+      (← nat length) (← nat code) (← nat part) free))
   | "funcExpr", [] => do push (.expr (.func (← popFunc)))
   | "obj", [size] => do push (.expr (.obj (← popMany popProp (← nat size))))
   | "init", [] => do

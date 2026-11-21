@@ -5,7 +5,7 @@ import Experiments.CoreJS.Fragment
 # CoreJS: an expression that only allocates changes nothing that existed
 
 The first footprint rule proved against the model. `Expr.allocOnly` ([`Fragment.lean`](Fragment.lean)) is the shape:
-literals, names, functions, object literals with named data properties, array literals. `allocOnly_extends`: however such an expression ends, every
+literals, names, functions, object literals with named data properties, array literals, and plain classes. `allocOnly_extends`: however such an expression ends, every
 object and every binding that existed before is unchanged, and nothing is printed. What it made is new.
 -/
 
@@ -330,6 +330,36 @@ theorem defineOwn_keeps (a : Addr) (k : String) (d : Desc) {base s : State W} (h
     · exact modifyObj_keeps a _ hb2 ha
     · exact (inert_throwErr _ _).keeps hb2
 
+/-- Literal class keys cannot observe the surrounding state. -/
+theorem evalExpr_str_inert (n : Nat) (env : Env) (key : String) :
+    Inert (evalExpr n env (.str key) : M W Val) := by
+  cases n <;> intro s
+  · trivial
+  · rfl
+
+theorem evalMembers_plain_keeps (n : Nat) (env : Env) (proto c : Addr) (ms : List ClassMember)
+    (h : plainClassMembers ms = true) {base s : State W} (hb : Extends base s)
+    (hp : base.objAt proto = none) (hc : base.objAt c = none) :
+    (evalMembers n env proto c ms s).Keeps base := by
+  induction n generalizing ms s with
+  | zero => unfold evalMembers; trivial
+  | succ n ih =>
+    cases ms with
+    | nil => exact (inert_pure _).keeps hb
+    | cons m ms =>
+      cases m <;> rename_i static k f <;> cases k <;>
+        simp only [plainClassMembers, Bool.false_eq_true] at h
+      all_goals
+        unfold evalMembers
+        refine keeps_bind ((evalExpr_str_inert n env _).keeps hb) fun key s1 _ hb1 => ?_
+        refine keeps_bind ((inert_lift _).keeps hb1) fun name s2 _ hb2 => ?_
+        refine keeps_bind (makeFunc_keeps env f hb2) fun value s3 _ hb3 => ?_
+        refine keeps_bind (defineOwn_keeps _ name _ hb3 ?_) fun _ s4 _ hb4 => ?_
+        · cases static <;> assumption
+        · refine keeps_bind ((inert_pure _).keeps hb4) fun field s5 _ hb5 => ?_
+          exact keeps_bind (ih ms h hb5) fun _ s6 _ hb6 => (inert_pure _).keeps hb6
+
+
 /-! ## The shape, and the theorem -/
 
 
@@ -355,6 +385,23 @@ theorem allocOnly_keeps (n : Nat) :
         refine keeps_bind (alloc_keeps _ hb) fun a s1 h1 hb1 => ?_
         refine keeps_bind (ihP env a props base s1 he hb1 (hb.fresh (alloc_ok h1).1)) fun _ s2 _ hb2 => ?_
         exact (inert_pure _).keeps hb2
+      case cls name self ctor members =>
+        refine keeps_bind (selfScope_keeps env self name hb) fun env1 s1 h1 hb1 => ?_
+        refine keeps_bind (alloc_keeps _ hb1) fun proto s2 h2 hb2 => ?_
+        have hp : base.objAt proto = none := hb1.fresh (alloc_ok h2).1
+        refine keeps_bind (alloc_keeps _ hb2) fun c s3 h3 hb3 => ?_
+        have hc : base.objAt c = none := hb2.fresh (alloc_ok h3).1
+        refine keeps_bind (modifyObj_keeps proto _ hb3 hp) fun _ s4 _ hb4 => ?_
+        refine keeps_bind (evalMembers_plain_keeps n env1 proto c members he hb4 hp hc) fun keys s5 _ hb5 => ?_
+        refine keeps_bind (modifyObj_keeps c _ hb5 hc) fun _ s6 _ hb6 => ?_
+        refine keeps_bind (initSelf_keeps _ h1 hb hb6) fun _ s7 _ hb7 => ?_
+        rw [plainClassMembers_fieldInits he]
+        have hz : keys.zip ([] : List Expr) = [] := by cases keys <;> rfl
+        rw [hz]
+        simp only [List.filterMap_nil]
+        cases n with
+        | zero => unfold evalFields; trivial
+        | succ n => exact keeps_bind ((inert_pure _).keeps hb7) fun _ s8 _ hb8 => (inert_pure _).keeps hb8
       case arr elems =>
         refine keeps_bind (ihA env elems base s he hb) fun vs s1 _ hb1 => ?_
         refine keeps_bind (alloc_keeps _ hb1) fun a s2 _ hb2 => ?_

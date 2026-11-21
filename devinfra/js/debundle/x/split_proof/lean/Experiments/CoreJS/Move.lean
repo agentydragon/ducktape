@@ -364,6 +364,32 @@ theorem local_makeFunc (env : Env) (f : Func) : Local r R (makeFunc env f : M W 
       exact local_initVar (fun c' hc' => by rw [hc] at hc'; cases hc'; exact hcr.trans hr1) _
     · exact local_pure _
 
+theorem local_evalExpr_str (n : Nat) (env : Env) (key : String) :
+    Local r R (evalExpr n env (.str key) : M W Val) := by
+  cases n with
+  | zero => exact local_outOfFuel
+  | succ n => exact local_pure _
+
+theorem local_evalMembers_plain (n : Nat) (env : Env) (proto c : Addr) (ms : List ClassMember)
+    (h : plainClassMembers ms = true) (hp : proto.region = r) (hc : c.region = r) :
+    Local r R (evalMembers n env proto c ms : M W (List (Bool × String))) := by
+  induction n generalizing ms with
+  | zero => exact local_outOfFuel
+  | succ n ih =>
+    cases ms with
+    | nil => exact local_pure _
+    | cons m ms =>
+      cases m <;> rename_i static k f <;> cases k <;>
+        simp only [plainClassMembers, Bool.false_eq_true] at h
+      all_goals
+        unfold evalMembers
+        refine (local_evalExpr_str n env _).bind' fun key => ?_
+        refine (local_lift _).bind' fun name => ?_
+        refine (local_makeFunc env f).bind' fun value => ?_
+        refine (local_defineOwn ?_ name _).bind' fun _ => ?_
+        · cases static <;> assumption
+        · exact (local_pure _).bind' fun field => (ih ms h).bind' fun _ => local_pure _
+
 end local_
 
 /-! ## An expression that only allocates is local -/
@@ -395,6 +421,30 @@ theorem allocOnly_local (r : Nat) (R : Addr → Prop) (n : Nat) :
         refine (local_alloc _).bind fun a ⟨s, s', hr, h⟩ => ?_
         exact (ihP env a props he (by simpa [Expr.readsNow] using hw) ((alloc_region h).trans hr)).bind' fun _ =>
           local_pure _
+      case cls name self ctor members =>
+        refine (local_selfScope env self name).bind fun env1 ⟨s1, s1', hr1, h1⟩ => ?_
+        refine (local_alloc _).bind fun proto ⟨s2, s2', hr2, h2⟩ => ?_
+        have hp : proto.region = r := (alloc_region h2).trans hr2
+        refine (local_alloc _).bind fun c ⟨s3, s3', hr3, h3⟩ => ?_
+        have hc : c.region = r := (alloc_region h3).trans hr3
+        refine (local_modifyObj hp _).bind' fun _ => ?_
+        refine (local_evalMembers_plain n env1 proto c members he hp hc).bind' fun keys => ?_
+        refine (local_modifyObj hc _).bind' fun _ => ?_
+        refine Local.bind' ?_ fun _ => ?_
+        · unfold initSelf
+          split
+          · rename_i hself
+            rw [hself] at h1
+            obtain ⟨cell, hl, hr⟩ := selfScope_lookup h1
+            exact local_initVar (fun cell' hl' => by rw [hl] at hl'; cases hl'; exact hr.trans hr1) _
+          · exact local_pure _
+        · rw [plainClassMembers_fieldInits he]
+          have hz : keys.zip ([] : List Expr) = [] := by cases keys <;> rfl
+          rw [hz]
+          simp only [List.filterMap_nil]
+          cases n with
+          | zero => exact local_outOfFuel.bind' fun _ => local_pure _
+          | succ n => exact (local_pure _).bind' fun _ => local_pure _
       case arr elems =>
         exact (ihA env elems he (by simpa [Expr.readsNow] using hw)).bind' fun _ =>
           (local_alloc _).bind' fun _ => local_pure _

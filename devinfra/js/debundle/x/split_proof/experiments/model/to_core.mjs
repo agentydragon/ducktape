@@ -164,6 +164,9 @@ export function toCore(
   const ast = parse(source, { ecmaVersion: "latest", sourceType: "module", ranges: opaque !== null });
   const scopeManager = opaque && opaque.analyze(ast, { ecmaVersion: 2022, sourceType: "module" });
   const opaqueUnits = [];
+  const opaqueBodies = [];
+  let activeUnit = null;
+  let functionParts = new Map();
   const refused = [];
   const out = [];
   const emit = (...token) => out.push(token);
@@ -201,7 +204,41 @@ export function toCore(
       node.type === "ClassExpression") &&
     !node.id;
 
-  function func(node, name, kind) {
+  function func(node, name, kind, allowOpaqueBody = false) {
+    const start = out.length;
+    const bodyStart = opaqueBodies.length;
+    try {
+      return modeledFunc(node, name, kind);
+    } catch (e) {
+      if (!(e instanceof Refused) || !scopeManager || !allowOpaqueBody || node.async || node.generator) throw e;
+      // These assumptions concern correspondence, even though the body is deferred.
+      checkOpaque(node);
+      const visit = (n) => {
+        if (!n || typeof n !== "object") return;
+        if (n.type === "Super") refuse(n, "super needs a method home object");
+        for (const value of Object.values(n)) {
+          if (Array.isArray(value)) value.forEach(visit);
+          else if (value && typeof value === "object") visit(value);
+        }
+      };
+      visit(node);
+      const scope = scopeManager.acquire(node, true);
+      if (!scope || activeUnit === null || !functionParts.has(node)) throw e;
+      const free = [
+        ...new Set(
+          [...scope.through].sort((a, b) => a.identifier.start - b.identifier.start).map((ref) => ref.identifier.name)
+        ),
+      ];
+      out.length = start;
+      opaqueBodies.length = bodyStart;
+      const part = functionParts.get(node);
+      const self = node.type === "FunctionExpression" && kind === "normal" && node.id !== null;
+      emit("opaqueFunc", name, kind, self, paramLength(node.params), activeUnit, part, free);
+      opaqueBodies.push({ id: activeUnit, part, why: e.message });
+    }
+  }
+
+  function modeledFunc(node, name, kind) {
     if (node.async || node.generator) refuse(node, "an async function or a generator");
     const params = node.params.map((p) =>
       p.type === "Identifier" ? p.name : refuse(p, "a parameter that is not a name")
@@ -225,7 +262,7 @@ export function toCore(
     const self = node.id !== null;
     within(self ? [node.id.name] : [], () => {
       const ctor = node.body.body.find((m) => m.type === "MethodDefinition" && m.kind === "constructor");
-      if (ctor) func(ctor.value, name, "classCtor");
+      if (ctor) func(ctor.value, name, "classCtor", true);
       else emit("func", name, "classCtor", false, [], 0);
       let count = 0;
       for (const member of node.body.body) {
@@ -245,10 +282,10 @@ export function toCore(
           const k = staticKey(member.key);
           key(member.key, false);
           if (member.kind === "method") {
-            func(member.value, k, "method");
+            func(member.value, k, "method", true);
             emit("method", member.static);
           } else {
-            func(member.value, `${member.kind} ${k}`, "method");
+            func(member.value, `${member.kind} ${k}`, "method", true);
             emit(member.kind === "get" ? "classGetter" : "classSetter", member.static);
           }
         }
@@ -605,6 +642,20 @@ export function toCore(
   function unit(node, emitStatement) {
     const id = ids === null ? idBase + numbered : ids[numbered];
     numbered++;
+    activeUnit = id;
+    // Assign every lexical function a part before lowering. Fallback and statement reordering cannot renumber it.
+    const functions = [];
+    const visit = (n) => {
+      if (!n || typeof n !== "object") return;
+      if (["FunctionExpression", "FunctionDeclaration", "ArrowFunctionExpression"].includes(n.type)) functions.push(n);
+      for (const value of Object.values(n)) {
+        if (Array.isArray(value)) value.forEach(visit);
+        else if (value && typeof value === "object") visit(value);
+      }
+    };
+    visit(node);
+    functionParts = new Map(functions.sort((a, b) => a.start - b.start).map((f, i) => [f, i + 1]));
+    const bodyStart = opaqueBodies.length;
     const start = out.length;
     let count;
     try {
@@ -612,6 +663,7 @@ export function toCore(
     } catch (e) {
       if (!(e instanceof Refused) || !scopeManager) throw e;
       out.length = start;
+      opaqueBodies.length = bodyStart;
       try {
         checkOpaque(node);
       } catch (r) {
@@ -798,6 +850,7 @@ export function toCore(
     exports,
     numbered,
     opaque: opaqueUnits,
+    opaqueBodies,
     refused,
   };
 }

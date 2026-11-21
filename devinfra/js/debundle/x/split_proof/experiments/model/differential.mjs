@@ -57,7 +57,13 @@ import { kindOf } from "../translation/gen/core.mjs";
 import { generateProgram, renderProgram } from "../translation/gen/index.mjs";
 import { coreOf, coreProgramOf, dumpOf } from "../translation/split_dump.mjs";
 import { cases, splitCases, bindingSplitCases } from "./cases.mjs";
-import { generatedCases, generatedModuleCases, generatedOpaqueCase, generatedBindingCases } from "./generate.mjs";
+import {
+  generatedCases,
+  generatedModuleCases,
+  generatedOpaqueCase,
+  generatedOpaqueClassCase,
+  generatedBindingCases,
+} from "./generate.mjs";
 import { moduleCases } from "./module_cases.mjs";
 import { opaqueCases, scriptsOf } from "./opaque_cases.mjs";
 import { bits, HOST_GLOBALS, Refused, toCore, toCoreProgram } from "./to_core.mjs";
@@ -348,12 +354,49 @@ for (const c of bindingOnly ? [] : [...moduleCases, ...linked]) {
     linked: linked.includes(c),
   });
 }
+// Body fallback must not hide eager class work or unsupported invocation/home-object semantics.
+if (!bindingOnly) {
+  for (const source of [
+    "class Box extends Base { method() { const [x] = []; } }",
+    "class Box { [name]() { const [x] = []; } }",
+    "class Box { static { sideEffect(); } method() { const [x] = []; } }",
+    "class Box { method() { return super.value; } }",
+    "class Box { async method() { await value; } }",
+    "class Box { *method() { yield value; } }",
+  ]) {
+    const translated = coreOf(source);
+    assert.equal(translated.opaqueBodies.length, 0, `unsupported class gained body-only fallback: ${source}`);
+    assert.equal(translated.opaque.length, 1, `unsupported class must stay opaque: ${source}`);
+  }
+  for (const source of [
+    'class Box { method() { eval("value"); } }',
+    'class Box { method() { return import("./module.mjs"); } }',
+    "class Box { method() { return import.meta.url; } }",
+  ])
+    assert.throws(() => coreOf(source), Refused, `module-identity restriction disappeared: ${source}`);
+}
+
 const allOpaqueCases = bindingOnly
   ? []
-  : [...opaqueCases, ...Array.from({ length: count }, (_, i) => generatedOpaqueCase(firstSeed + i))];
+  : [
+      ...opaqueCases,
+      ...Array.from({ length: count }, (_, i) => generatedOpaqueCase(firstSeed + i)),
+      ...Array.from({ length: count }, (_, i) => generatedOpaqueClassCase(firstSeed + i)),
+    ];
 for (const c of allOpaqueCases) {
   const translated = coreOf(c.source);
-  assert(translated.opaque.length > 0, `opaque case ${c.name}: no statement is opaque`);
+  const bodies = translated.opaqueBodies ?? [];
+  assert(translated.opaque.length > 0 || bodies.length > 0, `opaque case ${c.name}: no statement or body is opaque`);
+  if (c.bodyParts) {
+    assert.equal(translated.opaque.length, 0, `opaque class case ${c.name}: class creation became an opaque statement`);
+    assert.deepEqual(
+      bodies.map(({ id, part }) => `${id}/${part}`).sort(),
+      [...c.bodyParts].sort(),
+      `opaque class case ${c.name}: deferred bodies must retain their lexical part identities`
+    );
+  } else {
+    assert(translated.opaque.length > 0, `opaque statement case ${c.name}: no statement is opaque`);
+  }
   jobs.push({
     label: `opaque: ${c.name}`,
     source: c.source,
@@ -860,7 +903,14 @@ assert.equal(
   allOpaqueCases.filter((c) => c.move).length,
   "every opaque closure move must be accepted and executed"
 );
-console.log(`opaque closure moves: ${opaqueMoved.length}, four runs and final state compared`);
+const generatedClassJobs = jobs.filter((j) => j.opaqueCase?.generatedClass);
+assert.equal(generatedClassJobs.length, bindingOnly ? 0 : count, "every seed must generate an opaque class case");
+assert.equal(
+  opaqueMoved.filter((j) => j.of.opaqueCase?.generatedClass).length,
+  generatedClassJobs.length,
+  "every generated opaque class must execute in an accepted reordered split"
+);
+console.log(`opaque closure and class moves: ${opaqueMoved.length}, four runs and final state compared`);
 console.log(
   `generated units: ${total("units")}; accepted alone: ${total("unitsAccepted")}; in the programs that ran: ` +
     `${total("unitsRun")} (${((100 * total("unitsRun")) / total("units")).toFixed(1)}%); ` +
