@@ -13,26 +13,16 @@ Docker Hub bases (`node:*`, `python:*`), which Tier 1 already routes through
 mostly by Bazel `rules_oci` in `.github/workflows/push-images.yml`; `haku-ui` itself is
 being ported that way too. Until a post-port workload proves it still needs frequent
 direct ghcr/quay pulls from haku-ci, keep those registry hosts on the proxy allowlist and
-do not spend migration effort here.
-
-## State: mirror ready, client side not worth migrating yet
-
-**The mirror already serves ghcr/quay.** Verified 2026-07-04 from a curl pod:
-
-```text
-GET http://oci-cache.oci-cache.svc/v2/ghcr/project-zot/zot-minimal-linux-amd64/manifests/v2.1.11
--> HTTP 200
-```
-
-So `oci-cache` needs no changes for this future work — the `/ghcr` and `/quay`
-prefixes work. The remaining problem is purely the **client**: classic Docker's pull
-path inside haku-ci does not naturally send ghcr/quay pulls to the mirror. Given the
-rules_oci port, that client migration is probably unnecessary unless future evidence
-shows haku-ci still pulls ghcr/quay often enough to matter.
+do not spend migration effort here. The mirror's setup (upstream prefixes, plain-HTTP
+endpoint, the backend-port egress rule) is in `cluster/k8s/oci-cache/README.md`; the egress
+rule's writeup is `cluster/docs/cilium_network_policy.md`.
 
 ## The blocker: classic dockerd only mirrors Docker Hub
 
-haku-ci runs `docker:27-dind-rootless` (`cluster/cdk8s/haku_ci/runner.py`).
+The mirror side needs no change: on 2026-07-04 a curl pod got HTTP 200 from
+`GET http://oci-cache.oci-cache.svc/v2/ghcr/project-zot/zot-minimal-linux-amd64/manifests/v2.1.11`.
+The open problem is the **client**. haku-ci runs a `docker:*-dind-rootless` image
+(`cluster/cdk8s/haku_ci/runner.py` pins the tag).
 Tier 1 works because Docker's `--registry-mirror` handles Docker Hub — but it is
 **Hub-only** and takes **no path**, which is also why `oci-cache` serves Docker Hub
 at its root (a 6th Zot sync entry, destination `/`). There is **no `--registry-mirror`
@@ -55,9 +45,6 @@ If this ever becomes important again, per-registry (ghcr/quay) mirroring needs o
 
 ## Why this was not finished
 
-- **Lower priority after the rules_oci port.** The only haku-ci Dockerfile path left to
-  worry about uses Docker Hub bases, and Docker Hub is already mirrored. Most other Haku
-  images are Bazel `oci_image` outputs or Nix-built outside haku-ci.
 - **No access to haku-ci.** It's operator-only with **no Haku RBAC** (by design —
   see `cluster/cdk8s/haku_ci/README.md`), so an agent authenticating as `haku-k8s`
   cannot create/exec pods there.
@@ -74,9 +61,9 @@ haku-sandbox to `privileged`/`baseline`-warn, or use another ns), or run the tes
 
 ## The empirical test to run if revived
 
-Stand up a `docker:27-dind-rootless` pod (privileged) with the containerd image
-store + `hosts.toml`, and **no `HTTP_PROXY`** so the only route to ghcr is the mirror
-— a successful ghcr pull then proves `hosts.toml` routing works.
+Stand up a pod of haku-ci's dind image (privileged; tag in `runner.py`) with the
+containerd image store + `hosts.toml`, and **no `HTTP_PROXY`** so the only route to
+ghcr is the mirror — a successful ghcr pull then proves `hosts.toml` routing works.
 
 `daemon.json`:
 
@@ -106,24 +93,3 @@ pull through the mirror **before** removing ghcr/pkg-containers from the allowli
 Tier 1 briefly broke Docker Hub because the allowlist change landed (via the
 since-retired `haku-egress-proxy` kustomization) while the dind change was still blocked (haku-ci
 depends on `forgejo`, which re-reconciles on every commit).
-
-## oci-cache reference (for whoever picks this up)
-
-- Service is plain HTTP on `:80` (Service) → `:5000` (pod). Clients need
-  `insecure-registry` / an `http://` endpoint.
-- **Cilium gotcha:** a port-restricted egress policy must allow the **backend port
-  5000**, not the Service `:80` — Cilium's socket-LB enforces on the translated
-  targetPort. haku-ci's `ccnp-force-proxy-egress.yaml` already allows 5000. Full
-  writeup: `cluster/docs/cilium_network_policy.md`.
-- Zot `sync` mapping: `content.prefix` matches the **upstream** repo (use `"**"`),
-  `destination` is the local namespace (`/ghcr`, `/quay`, …). Docker Hub is served at
-  both `/docker-hub` and root (catch-all, listed last).
-
-## Recommendation
-
-**Hold unless post-rules_oci haku-ci still has frequent/painful ghcr or quay pulls.**
-The reward is two stable GitHub hosts; the Docker path is
-unverified-and-probably-unsupported, and the reliable path is a buildkit/runner
-migration. The Docker Hub win (rate limits + the CloudFlare/CloudFront CDN sprawl) is
-already captured by Tier 1, and the current haku-ui Dockerfile only needs that. The
-mirror stands ready whenever a real client-side need reappears.

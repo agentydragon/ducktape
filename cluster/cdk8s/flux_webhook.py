@@ -209,7 +209,7 @@ def chart(app: App) -> Chart:
             namespace=NAMESPACE,
             annotations={
                 "description": "Flux failure notifications delivered through the self-hosted ntfy instance",
-                "ntfy.ducktape.io/auth-generation": "1",
+                **ntfy.AUTH_GENERATION_ANNOTATION,
             },
         ),
         refresh_policy=ExternalSecretSpecRefreshPolicy.ON_CHANGE,
