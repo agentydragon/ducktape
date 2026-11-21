@@ -353,8 +353,16 @@ def generate_manifests(root: Path) -> None:
         wait=None,
         timeout="2m",
     )
+    kube_api_proxy_app = App()
+    kube_api_proxy_chart = kube_api_proxy.chart(kube_api_proxy_app)
     kube_api_proxy_artifact = artifact("kube-api-proxy", kube_api_proxy.OUTPUT_DIR)
-    kube_api_proxy.kube_api_proxy(flux_chart, write_directory(root, kube_api_proxy_artifact, kube_api_proxy.chart))
+    flux.flux_kustomization(
+        flux_chart,
+        kube_api_proxy.NAME,
+        write_directory(root, kube_api_proxy_artifact, app=kube_api_proxy_app),
+        wait=None,
+        health_checks=flux.health_checks(kube_api_proxy_chart, ["Deployment", "HTTPRoute"]),
+    )
     kubevirt_cdi_operator_artifact = artifact("kubevirt-cdi-operator", kubevirt_operators.CDI_OPERATOR_DIR)
     cdi_operator_kustomization = flux.flux_kustomization(
         flux_chart,
@@ -449,8 +457,16 @@ def generate_manifests(root: Path) -> None:
         wait=None,
         timeout="10m",
     )
+    valkey_app = App()
+    valkey_chart = valkey.chart(valkey_app)
     valkey_artifact = artifact("valkey", valkey.OUTPUT_DIR)
-    valkey_kustomization = valkey.valkey(flux_chart, write_directory(root, valkey_artifact, valkey.chart))
+    valkey_kustomization = flux.flux_kustomization(
+        flux_chart,
+        valkey.NAME,
+        write_directory(root, valkey_artifact, app=valkey_app),
+        wait=None,
+        health_checks=flux.health_checks(valkey_chart, ["HelmRelease"]),
+    )
     gaffer_private_source_artifact = artifact("gaffer-private-source", gaffer_private_source.OUTPUT_DIR)
     gaffer_private_source.gaffer_private_source(
         flux_chart,

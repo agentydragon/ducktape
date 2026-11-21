@@ -162,7 +162,7 @@ node or pass its timing fields and predecessors.
   differs from ours). The same _fact_ twice becomes one local; the same _value_
   everywhere (SOPS `decryption`) may become a module constant.
 - **A retained component function lives with its directory's generator once fully generated**
-  (`kube_api_proxy.kube_api_proxy`, `valkey.valkey`); until then in
+  (`monitoring/loki.py`'s `loki`, `monitoring/mimir.py`'s `mimir`); until then in
   `<area>/flux_kustomizations.py`, moving as part of the conversion. No interim flattening
   of those packages.
 - **Output routing is by `spec.path`**; Kustomizations whose `path` isn't their own
