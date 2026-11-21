@@ -34,6 +34,14 @@ if __name__ == "__main__":
 _NOW = datetime(2026, 1, 15, 12, 0, 0, tzinfo=UTC)
 
 
+def _provider(name: str, result: FetchSuccess | FetchError) -> ProviderQuota:
+    return ProviderQuota(provider=name, last_output=ProviderFetch(fetched_at=_NOW, result=result))
+
+
+def _quotas(*providers: ProviderQuota) -> AllQuotas:
+    return AllQuotas(fetched_at=_NOW, providers=list(providers))
+
+
 def test_old_grant_payload_keeps_original_string_visible() -> None:
     grant = GrantView.model_validate({"label": "Grant", "remaining": "$5", "original": "$5.00", "expires_at": None})
     assert grant.original == "$5.00"
@@ -57,15 +65,7 @@ def test_credit_display_ignores_subcent_artifacts_without_changing_source_values
             )
         ],
     )
-    quota = AllQuotas(
-        fetched_at=_NOW,
-        providers=[
-            ProviderQuota(
-                provider="openai_platform",
-                last_output=ProviderFetch(fetched_at=_NOW, result=FetchSuccess(openai_platform_credits=credits)),
-            )
-        ],
-    )
+    quota = _quotas(_provider("openai_platform", FetchSuccess(openai_platform_credits=credits)))
     view = to_view(quota, _NOW).providers[0]
     assert view.balances[0].value == "$100"
     assert view.balances[0].exact_value is None
@@ -93,15 +93,7 @@ def test_non_usd_credit_display_keeps_provider_minor_unit_precision() -> None:
             )
         ]
     )
-    quota = AllQuotas(
-        fetched_at=_NOW,
-        providers=[
-            ProviderQuota(
-                provider="anthropic_platform",
-                last_output=ProviderFetch(fetched_at=_NOW, result=FetchSuccess(anthropic_platform_credits=credits)),
-            )
-        ],
-    )
+    quota = _quotas(_provider("anthropic_platform", FetchSuccess(anthropic_platform_credits=credits)))
     view = to_view(quota, _NOW).providers[0]
     assert view.balances[0].value == "10 KWD"
     assert view.balances[0].exact_value == "10.002 KWD"
@@ -121,10 +113,7 @@ def test_claude_reset_rows_group_counts_keep_scope_and_hide_expired() -> None:
             ClaudeResetGrant(label="Fable resets", remaining=1, original=1, expires_at=_NOW - timedelta(seconds=1)),
         ]
     )
-    quotas = AllQuotas(
-        fetched_at=_NOW,
-        providers=[ProviderQuota(provider="claude", last_output=ProviderFetch(fetched_at=_NOW, result=result))],
-    )
+    quotas = _quotas(_provider("claude", result))
     view = to_view(quotas, _NOW).providers[0]
     assert [(grant.label, grant.remaining, grant.original, grant.status) for grant in view.grants] == [
         ("Fable resets", "2", "2", None),
@@ -170,39 +159,36 @@ def test_short_window_exhausted_with_feature_on_is_over_plan() -> None:
 
 
 def test_extra_status_transitions() -> None:
-    quotas = AllQuotas(
-        providers=[
-            # over plan
-            ProviderQuota(
-                provider="claude",
-                last_output=_fetch(
-                    long_window=QuotaWindow(used_percent=100, reset_seconds=86400, window_seconds=604800),
-                    extra_spend=ExtraSpend(is_enabled=True, monthly_limit_usd=100, used_usd=50, utilization=50),
-                ),
+    quotas = _quotas(
+        # over plan
+        ProviderQuota(
+            provider="claude",
+            last_output=_fetch(
+                long_window=QuotaWindow(used_percent=100, reset_seconds=86400, window_seconds=604800),
+                extra_spend=ExtraSpend(is_enabled=True, monthly_limit_usd=100, used_usd=50, utilization=50),
             ),
-            # informational: feature on, money spent this month, but prepaid has room
-            ProviderQuota(
-                provider="codex",
-                last_output=_fetch(
-                    long_window=QuotaWindow(used_percent=5, reset_seconds=86400, window_seconds=604800),
-                    extra_spend=ExtraSpend(is_enabled=True, monthly_limit_usd=100, used_usd=10, utilization=10),
-                ),
+        ),
+        # informational: feature on, money spent this month, but prepaid has room
+        ProviderQuota(
+            provider="codex",
+            last_output=_fetch(
+                long_window=QuotaWindow(used_percent=5, reset_seconds=86400, window_seconds=604800),
+                extra_spend=ExtraSpend(is_enabled=True, monthly_limit_usd=100, used_usd=10, utilization=10),
             ),
-            # none: no extra spend at all
-            ProviderQuota(
-                provider="zai",
-                last_output=_fetch(long_window=QuotaWindow(used_percent=5, reset_seconds=86400, window_seconds=604800)),
+        ),
+        # none: no extra spend at all
+        ProviderQuota(
+            provider="zai",
+            last_output=_fetch(long_window=QuotaWindow(used_percent=5, reset_seconds=86400, window_seconds=604800)),
+        ),
+        # none: feature on but nothing spent yet this month
+        ProviderQuota(
+            provider="opus",
+            last_output=_fetch(
+                long_window=QuotaWindow(used_percent=5, reset_seconds=86400, window_seconds=604800),
+                extra_spend=ExtraSpend(is_enabled=True, monthly_limit_usd=100, used_usd=0, utilization=0),
             ),
-            # none: feature on but nothing spent yet this month
-            ProviderQuota(
-                provider="opus",
-                last_output=_fetch(
-                    long_window=QuotaWindow(used_percent=5, reset_seconds=86400, window_seconds=604800),
-                    extra_spend=ExtraSpend(is_enabled=True, monthly_limit_usd=100, used_usd=0, utilization=0),
-                ),
-            ),
-        ],
-        fetched_at=_NOW,
+        ),
     )
     statuses = {pv.provider: pv.extra_status for pv in to_view(quotas, _NOW).providers}
     assert statuses == {"claude": "active", "codex": "informational", "zai": "none", "opus": "none"}
@@ -215,37 +201,31 @@ def test_paid_credits_active_only_with_balance_and_exhausted_window() -> None:
         for name, balance in (("positive", "12.5"), ("empty", "0"))
     ]
     providers.append(ProviderQuota(provider="no_credits", last_output=_fetch(short_window=window)))
-    statuses = {
-        view.provider: view.paid_credits_active
-        for view in to_view(AllQuotas(providers=providers, fetched_at=_NOW), _NOW).providers
-    }
+    statuses = {view.provider: view.paid_credits_active for view in to_view(_quotas(*providers), _NOW).providers}
     assert statuses == {"positive": True, "empty": False, "no_credits": False}
 
 
 def test_status_keeps_only_distinct_current_extra_enablement() -> None:
     exhausted = QuotaWindow(used_percent=100, reset_seconds=1200, window_seconds=18000)
-    quotas = AllQuotas(
-        fetched_at=_NOW,
-        providers=[
-            ProviderQuota(
-                provider="extra",
-                last_output=_fetch(
-                    short_window=exhausted,
-                    extra_spend=ExtraSpend(is_enabled=True, monthly_limit_usd=100, used_usd=25, utilization=25),
-                ),
+    quotas = _quotas(
+        ProviderQuota(
+            provider="extra",
+            last_output=_fetch(
+                short_window=exhausted,
+                extra_spend=ExtraSpend(is_enabled=True, monthly_limit_usd=100, used_usd=25, utilization=25),
             ),
-            ProviderQuota(
-                provider="extra_without_spend_row",
-                last_output=_fetch(
-                    short_window=exhausted,
-                    extra_spend=ExtraSpend(is_enabled=True, monthly_limit_usd=100, used_usd=0, utilization=0),
-                ),
+        ),
+        ProviderQuota(
+            provider="extra_without_spend_row",
+            last_output=_fetch(
+                short_window=exhausted,
+                extra_spend=ExtraSpend(is_enabled=True, monthly_limit_usd=100, used_usd=0, utilization=0),
             ),
-            ProviderQuota(
-                provider="paid", last_output=_fetch(short_window=exhausted, paid_credits=PaidCredits(balance="500"))
-            ),
-            ProviderQuota(provider="plain", last_output=_fetch(short_window=exhausted)),
-        ],
+        ),
+        ProviderQuota(
+            provider="paid", last_output=_fetch(short_window=exhausted, paid_credits=PaidCredits(balance="500"))
+        ),
+        ProviderQuota(provider="plain", last_output=_fetch(short_window=exhausted)),
     )
 
     views = {view.provider: view for view in to_view(quotas, _NOW).providers}
@@ -263,9 +243,7 @@ def test_window_presentation_updates_from_one_snapshot() -> None:
     window = QuotaWindow(
         used_percent=60, reset_seconds=9000, window_seconds=18000, reset_at=_NOW + timedelta(hours=2, minutes=30)
     )
-    quota = AllQuotas(
-        fetched_at=_NOW, providers=[ProviderQuota(provider="claude", last_output=_fetch(short_window=window))]
-    )
+    quota = _quotas(ProviderQuota(provider="claude", last_output=_fetch(short_window=window)))
     first = to_view(quota, _NOW).providers[0]
     later = to_view(quota, _NOW + timedelta(minutes=5)).providers[0]
     assert (first.display_windows[0].pace, first.summary_tint, first.summary_index) == ("+10 pp", "warn", 0)
@@ -297,12 +275,7 @@ def test_openai_platform_grants_filter_tracks_time_and_preserves_snapshot() -> N
         ],
     )
     success = FetchSuccess(openai_platform_credits=credits)
-    quota = AllQuotas(
-        fetched_at=_NOW,
-        providers=[
-            ProviderQuota(provider="openai_platform", last_output=ProviderFetch(fetched_at=_NOW, result=success))
-        ],
-    )
+    quota = _quotas(_provider("openai_platform", success))
     first = to_view(quota, _NOW).providers[0]
     assert first.display_openai_platform_credits is not None
     assert first.display_openai_platform_credits.grants == [credits.grants[i] for i in (0, 3, 4)]
@@ -333,7 +306,7 @@ def test_display_selection_preserves_latest_check_and_snapshot_provenance() -> N
         pq = ProviderQuota(
             provider="codex", last_output=ProviderFetch(fetched_at=_NOW, result=result), last_success=prior
         )
-        view = to_view(AllQuotas(providers=[pq], fetched_at=_NOW), _NOW).providers[0]
+        view = to_view(_quotas(pq), _NOW).providers[0]
         assert (view.display.source, view.display.observed_at) == (expected_source, expected_time)
         assert view.last_output == pq.last_output
         assert view.display.result == (result if expected_source == "current" else old_result if prior else None)
@@ -342,8 +315,7 @@ def test_display_selection_preserves_latest_check_and_snapshot_provenance() -> N
 def test_display_selection_handles_hidden_windows_and_credit_metadata() -> None:
     hidden = QuotaWindow(used_percent=25, reset_seconds=60, window_seconds=3600, display=False)
     result = FetchSuccess(windows=[hidden], available_reset_credits=0, reset_credit_expiry_lookup_failed=True)
-    pq = ProviderQuota(provider="codex", last_output=ProviderFetch(fetched_at=_NOW, result=result))
-    view = to_view(AllQuotas(providers=[pq], fetched_at=_NOW), _NOW).providers[0]
+    view = to_view(_quotas(_provider("codex", result)), _NOW).providers[0]
     assert view.display.source == "current"
     assert view.display.result == result
     assert view.display_windows == []
@@ -360,7 +332,7 @@ def test_display_selection_retains_prepaid_balance_with_its_own_timestamp() -> N
     pq = ProviderQuota(
         provider="claude", last_output=ProviderFetch(fetched_at=_NOW, result=current), last_success=prior
     )
-    view = to_view(AllQuotas(providers=[pq], fetched_at=_NOW), _NOW).providers[0]
+    view = to_view(_quotas(pq), _NOW).providers[0]
     assert view.display.source == "current"
     assert view.display.prepaid_balance == balance
     assert view.display.prepaid_stale_since == older
@@ -399,13 +371,7 @@ def test_anthropic_platform_expiries_filter_without_losing_provider_response() -
             )
         ]
     )
-    success = FetchSuccess(anthropic_platform_credits=credits)
-    quota = AllQuotas(
-        fetched_at=_NOW,
-        providers=[
-            ProviderQuota(provider="anthropic_platform", last_output=ProviderFetch(fetched_at=_NOW, result=success))
-        ],
-    )
+    quota = _quotas(_provider("anthropic_platform", FetchSuccess(anthropic_platform_credits=credits)))
 
     first = to_view(quota, _NOW).providers[0]
 
@@ -421,9 +387,7 @@ def test_anthropic_platform_expiries_filter_without_losing_provider_response() -
 
 def test_reset_boundary_keeps_last_usage_without_predicting_renewal() -> None:
     window = QuotaWindow(used_percent=100, reset_seconds=60, window_seconds=18000, reset_at=_NOW + timedelta(minutes=1))
-    quotas = AllQuotas(
-        fetched_at=_NOW, providers=[ProviderQuota(provider="codex", last_output=_fetch(short_window=window))]
-    )
+    quotas = _quotas(ProviderQuota(provider="codex", last_output=_fetch(short_window=window)))
     refreshed = refresh_view(to_view(quotas, _NOW), _NOW + timedelta(minutes=2)).providers[0]
     shown = refreshed.display_windows[0]
     assert refreshed.summary_index == 0
@@ -436,9 +400,7 @@ def test_reset_boundary_keeps_last_usage_without_predicting_renewal() -> None:
 
 def test_old_success_and_offline_views_suppress_forecasts_without_reselecting() -> None:
     window = QuotaWindow(used_percent=45, reset_seconds=7200, window_seconds=18000)
-    quotas = AllQuotas(
-        fetched_at=_NOW, providers=[ProviderQuota(provider="claude", last_output=_fetch(short_window=window))]
-    )
+    quotas = _quotas(ProviderQuota(provider="claude", last_output=_fetch(short_window=window)))
     original = to_view(quotas, _NOW)
     old = refresh_view(original, _NOW + timedelta(minutes=11)).providers[0]
     assert old.display.source == "current"
@@ -475,8 +437,7 @@ def test_normalized_credit_rows_keep_pools_organizations_and_restrictions_separa
         paid_credits=PaidCredits(balance="2745.759713"),
         anthropic_platform_credits=AnthropicPlatformCredits(organizations=[organization]),
     )
-    provider = ProviderQuota(provider="claude", last_output=ProviderFetch(fetched_at=_NOW, result=result))
-    view = to_view(AllQuotas(providers=[provider], fetched_at=_NOW), _NOW).providers[0]
+    view = to_view(_quotas(_provider("claude", result)), _NOW).providers[0]
     assert [(row.label, row.value, row.group) for row in view.balances] == [
         ("Available balance", "$26", None),
         ("Paid credits", "2,746 credits", None),
@@ -503,8 +464,7 @@ def test_normalized_prepaid_balances_preserve_exact_minor_units_and_currency() -
         result = FetchSuccess(
             prepaid_balance=PrepaidBalanceAvailable(amount_minor=minor, exponent=exponent, currency=currency)
         )
-        provider = ProviderQuota(provider="claude", last_output=ProviderFetch(fetched_at=_NOW, result=result))
-        row = to_view(AllQuotas(providers=[provider], fetched_at=_NOW), _NOW).providers[0].balances[0]
+        row = to_view(_quotas(_provider("claude", result)), _NOW).providers[0].balances[0]
         assert row.value == expected
         assert row.exact_value == exact
 
@@ -530,12 +490,7 @@ def test_broad_api_promo_scope_is_detail_while_model_and_product_restrictions_re
             ]
         )
     )
-    quotas = AllQuotas(
-        fetched_at=_NOW,
-        providers=[
-            ProviderQuota(provider="anthropic_platform", last_output=ProviderFetch(fetched_at=_NOW, result=result))
-        ],
-    )
+    quotas = _quotas(_provider("anthropic_platform", result))
     broad = to_view(quotas, _NOW).providers[0].grants[0]
     assert broad.scope is None
     assert broad.scope_detail is not None
@@ -560,7 +515,7 @@ def test_unexhausted_usage_never_rounds_up_to_an_exhausted_display() -> None:
             paid_credits=PaidCredits(balance="20"),
         ),
     )
-    view = to_view(AllQuotas(providers=[provider], fetched_at=_NOW), _NOW).providers[0]
+    view = to_view(_quotas(provider), _NOW).providers[0]
     assert view.display_windows[0].used == 99
     assert not view.display_windows[0].exhausted
     assert not view.paid_credits_active
@@ -572,26 +527,20 @@ def test_error_summaries_keep_authentication_and_transport_failures_distinct() -
         ("HTTP 401 invalid_token", "Authentication failed"),
         ("HTTP 503 upstream unavailable", "Refresh failed"),
     ):
-        provider = ProviderQuota(
-            provider="claude", last_output=ProviderFetch(fetched_at=_NOW, result=FetchError(error=error))
-        )
-        view = to_view(AllQuotas(providers=[provider], fetched_at=_NOW), _NOW).providers[0]
+        view = to_view(_quotas(_provider("claude", FetchError(error=error))), _NOW).providers[0]
         assert (view.error_summary, view.error_detail) == (summary, error)
 
 
 def test_current_paid_signals_expire_without_losing_monthly_spend() -> None:
-    quotas = AllQuotas(
-        fetched_at=_NOW,
-        providers=[
-            ProviderQuota(
-                provider="claude",
-                last_output=_fetch(
-                    short_window=QuotaWindow(used_percent=100, reset_seconds=7200, window_seconds=18000),
-                    extra_spend=ExtraSpend(is_enabled=True, monthly_limit_usd=100, used_usd=25.5, utilization=25.5),
-                    paid_credits=PaidCredits(balance="500"),
-                ),
-            )
-        ],
+    quotas = _quotas(
+        ProviderQuota(
+            provider="claude",
+            last_output=_fetch(
+                short_window=QuotaWindow(used_percent=100, reset_seconds=7200, window_seconds=18000),
+                extra_spend=ExtraSpend(is_enabled=True, monthly_limit_usd=100, used_usd=25.5, utilization=25.5),
+                paid_credits=PaidCredits(balance="500"),
+            ),
+        )
     )
     original = to_view(quotas, _NOW)
     fresh = original.providers[0]

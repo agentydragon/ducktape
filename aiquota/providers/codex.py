@@ -1,7 +1,8 @@
 """Codex (OpenAI/ChatGPT) usage provider.
 
-Fetches 5-hour and 7-day utilization from the Codex wham usage API, plus the
-two history endpoints backing the Codex CLI's own `/usage` view.
+Fetches rate-limit window utilization from the Codex wham usage API (each window's
+length is the response's `limit_window_seconds`), plus the two history endpoints
+backing the Codex CLI's own `/usage` view.
 Auth via ~/.codex/auth.json (file-based; Secret Service not available from CLI).
 """
 
