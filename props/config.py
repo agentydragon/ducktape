@@ -30,7 +30,7 @@ from __future__ import annotations
 import os
 import tomllib
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Discriminator, Field, model_validator
 
@@ -134,29 +134,19 @@ class PropsConfig(LLMProxyConfig):
     dev_mode: bool = False
 
 
-def load_config(path: Path) -> PropsConfig:
-    """Load props configuration from a TOML file."""
-    data = tomllib.loads(path.read_text())
-    return PropsConfig.model_validate(data)
+def _read_config_file() -> dict[str, Any]:
+    """Parse the TOML file at the path in PROPS_CONFIG_FILE env var."""
+    path_str = os.environ.get(ENV_CONFIG_FILE)
+    if not path_str:
+        raise ValueError(f"{ENV_CONFIG_FILE} environment variable not set")
+    return tomllib.loads(Path(path_str).read_text())
 
 
 def load_config_from_env() -> PropsConfig:
     """Load props configuration from the path in PROPS_CONFIG_FILE env var."""
-    path_str = os.environ.get(ENV_CONFIG_FILE)
-    if not path_str:
-        raise ValueError(f"{ENV_CONFIG_FILE} environment variable not set")
-    return load_config(Path(path_str))
-
-
-def load_proxy_config(path: Path) -> LLMProxyConfig:
-    """Load just the LLM-proxy slice (`upstreams`) from a TOML file; the API-only
-    fields in the same file are ignored."""
-    return LLMProxyConfig.model_validate(tomllib.loads(path.read_text()))
+    return PropsConfig.model_validate(_read_config_file())
 
 
 def load_proxy_config_from_env() -> LLMProxyConfig:
-    """Load the LLM-proxy config from the path in PROPS_CONFIG_FILE env var."""
-    path_str = os.environ.get(ENV_CONFIG_FILE)
-    if not path_str:
-        raise ValueError(f"{ENV_CONFIG_FILE} environment variable not set")
-    return load_proxy_config(Path(path_str))
+    """Load just the LLM-proxy slice (`upstreams`) of the PROPS_CONFIG_FILE config; API-only fields are ignored."""
+    return LLMProxyConfig.model_validate(_read_config_file())
