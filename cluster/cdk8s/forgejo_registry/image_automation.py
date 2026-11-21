@@ -59,7 +59,6 @@ IMAGES = (
     "agentplane-sandbox-build",
     "agentplane-sessions",
     "ai-session-archive-importer",
-    "ai-session-archive-migrator",
     "ai-session-archive-web",
     "aiquota-api",
     "airlock",

@@ -30,14 +30,10 @@ class FakeVMApi:
         self.delete_errors = list(delete_errors or [])
         self.delete_calls: list[dict[str, Any]] = []
 
-    async def get_namespaced_custom_object(
-        self, group: str, version: str, namespace: str, plural: str, name: str
-    ) -> dict[str, Any]:
-        if plural == "virtualmachines":
-            return self.vm
-        if self.vmi is None:
-            raise ApiException(status=404, reason="not found")
-        return self.vmi
+    def caches(self) -> dict[str, dict[str, dict[str, Any]]]:
+        """The informer caches `reconcile` reads: the VM, and the VMI while one exists."""
+        name = _SETTINGS.target_vm_name
+        return {"vm_cache": {name: self.vm}, "vmi_cache": {} if self.vmi is None else {name: self.vmi}}
 
     async def delete_namespaced_custom_object(
         self, group: str, version: str, namespace: str, plural: str, name: str, body: client.V1DeleteOptions
@@ -147,7 +143,7 @@ async def test_initial_restart_persists_attempt_and_gracefully_deletes_vmi() -> 
     vm_api = FakeVMApi(_vm(), _vmi(uid="old-vmi", image=_OLD_IMAGE))
     core = FakeCoreApi()
 
-    await controller.reconcile(vm_api, core, _SETTINGS)
+    await controller.reconcile(vm_api, core, _SETTINGS, **vm_api.caches())
 
     assert len(vm_api.delete_calls) == 1
     assert vm_api.delete_calls[0]["namespace"] == _SETTINGS.target_namespace
@@ -164,7 +160,7 @@ async def test_replacement_is_ready_only_after_new_vmi_is_ready_on_desired_image
     vm_api = FakeVMApi(_vm(observed_generation=2, restart_required=False), _vmi(uid="new-vmi", image=_NEW_IMAGE))
     core = FakeCoreApi(_state())
 
-    await controller.reconcile(vm_api, core, _SETTINGS)
+    await controller.reconcile(vm_api, core, _SETTINGS, **vm_api.caches())
 
     assert _stored_state(core).phase == "Ready"
     assert _event_reasons(core) == ["VMImageRestartReady"]
@@ -178,7 +174,7 @@ async def test_new_generation_resets_attempts_and_waits_for_terminating_vmi() ->
     )
     core = FakeCoreApi(_state(attempts=2))
 
-    await controller.reconcile(vm_api, core, _SETTINGS)
+    await controller.reconcile(vm_api, core, _SETTINGS, **vm_api.caches())
 
     state = _stored_state(core)
     assert state.generation == 3
@@ -195,17 +191,17 @@ async def test_restart_api_failures_are_backed_off_and_bounded(monkeypatch: pyte
     vm_api = FakeVMApi(_vm(), _vmi(uid="old-vmi", image=_OLD_IMAGE), delete_errors=[error, error, error])
     core = FakeCoreApi()
 
-    await controller.reconcile(vm_api, core, _SETTINGS)
+    await controller.reconcile(vm_api, core, _SETTINGS, **vm_api.caches())
     assert len(vm_api.delete_calls) == 1
     assert _stored_state(core).attempts == 1
 
     # The persisted backoff prevents another delete at the same time.
-    await controller.reconcile(vm_api, core, _SETTINGS)
+    await controller.reconcile(vm_api, core, _SETTINGS, **vm_api.caches())
     assert len(vm_api.delete_calls) == 1
 
     while _stored_state(core).phase != "Failed":
         clock[0] = _stored_state(core).next_attempt_at + timedelta(seconds=1)
-        await controller.reconcile(vm_api, core, _SETTINGS)
+        await controller.reconcile(vm_api, core, _SETTINGS, **vm_api.caches())
 
     state = _stored_state(core)
     assert len(vm_api.delete_calls) == controller.MAX_RESTART_ATTEMPTS
@@ -219,7 +215,7 @@ async def test_rollout_timeout_marks_state_failed_without_an_extra_delete() -> N
     vm_api = FakeVMApi(_vm(), _vmi(uid="old-vmi", image=_OLD_IMAGE))
     core = FakeCoreApi(old)
 
-    await controller.reconcile(vm_api, core, _SETTINGS)
+    await controller.reconcile(vm_api, core, _SETTINGS, **vm_api.caches())
 
     assert _stored_state(core).phase == "Failed"
     assert _event_reasons(core) == ["VMImageRestartTimedOut"]
@@ -237,7 +233,7 @@ async def test_failed_rollout_records_later_kubevirt_recovery() -> None:
     vm_api = FakeVMApi(_vm(observed_generation=2, restart_required=False), _vmi(uid="recovered-vmi", image=_NEW_IMAGE))
     core = FakeCoreApi(failed)
 
-    await controller.reconcile(vm_api, core, _SETTINGS)
+    await controller.reconcile(vm_api, core, _SETTINGS, **vm_api.caches())
 
     assert _stored_state(core).phase == "Ready"
     assert _event_reasons(core) == ["VMImageRestartRecovered"]
