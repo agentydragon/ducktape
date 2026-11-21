@@ -211,6 +211,7 @@ if (shards === 4 && shard === 0) {
     corpus.unknown
   );
   assert.ok(corpus.generationRefused > 0);
+  assert.ok(Object.keys(corpus.unknownReasons).some((reason) => reason.includes("ExpressionStatement (Literal)")));
   assert.equal(
     corpus.entries.find(
       (entry) => entry.path.endsWith("example/bindings/original.mjs") && entry.assignment === "baseline"

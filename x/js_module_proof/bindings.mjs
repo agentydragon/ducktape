@@ -1080,7 +1080,10 @@ function statement(node) {
     return { kind: "function", name, target: identifier(expr.left), source: identifier(expr.right) };
   }
   const expr = node.type === "ExpressionStatement" && node.expression;
-  check(expr?.type === "CallExpression" && !expr.optional, "expected a supported statement");
+  check(
+    expr?.type === "CallExpression" && !expr.optional,
+    `unsupported statement: ${node.type}${expr?.type ? ` (${expr.type})` : ""}`
+  );
   if (expr.callee.type === "Identifier") {
     check(expr.arguments.length === 0, "function calls must have no arguments");
     return { kind: "call", name: identifier(expr.callee) };
