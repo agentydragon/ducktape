@@ -789,11 +789,17 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
               ["+", "*"].includes(node.operator) &&
               numericThrow(node.left) &&
               numericThrow(node.right));
+          const parts = statement.block.body;
+          const last = parts.at(-1);
+          const numericUpdate = (item) =>
+            item.type === "ExpressionStatement" &&
+            item.expression.type === "AssignmentExpression" &&
+            ["=", "+=", "*="].includes(item.expression.operator) &&
+            item.expression.left.type === "Identifier" &&
+            numericThrow(item.expression.right);
           check(
-            statement.block.body.length === 1 &&
-              statement.block.body[0].type === "ThrowStatement" &&
-              numericThrow(statement.block.body[0].argument),
-            "used catch bindings require a single numeric throw"
+            last?.type === "ThrowStatement" && numericThrow(last.argument) && parts.slice(0, -1).every(numericUpdate),
+            "used catch bindings require numeric updates followed by a numeric throw"
           );
           caught = candidate;
         }

@@ -1073,7 +1073,7 @@ export function makeLocalAliasCase(seed, index) {
                 block: {
                   type: "BlockStatement",
                   body: [
-                    ...(withCatchBinding
+                    ...(withCatchBinding && index < 1621
                       ? []
                       : [
                           expr({

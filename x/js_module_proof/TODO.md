@@ -88,8 +88,9 @@ cover only part of the grammar and split space described below.
       addition updates, and numeric functions with parameters, `let` or `const` locals, local
       assignments, conditional updates, bounded loops, `try`/`catch`/`finally` with numeric throws and restricted catch bindings,
       and short-circuit values.
-      A used catch binding currently requires a single identifier, numeric
-      literal, or bounded addition/multiplication throw; extend this conservatively.
+      A used catch binding currently requires numeric local updates followed by
+      an identifier, numeric literal, or bounded addition/multiplication throw;
+      extend this conservatively.
       The generator and an axiom-free acceptance certificate cover these cases,
       including relayed imports; the AST fuzzer also redirects reader imports to
       check unsafe witnesses.

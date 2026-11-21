@@ -511,6 +511,30 @@ if (shards === 4 && shard === 3) {
   assert.equal(unchangedCatchWrite.equal, 1);
 }
 if (shards === 4 && shard === 3) {
+  const changedPriorUpdate = await runFuzz({
+    seed: 773,
+    start: 1621,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "alias",
+    validateEvery: 1,
+  });
+  assert.match(makeLocalAliasCase(773, 1621).source, /offset \+= numericLeft; throw/);
+  assert.equal(changedPriorUpdate.mutatedDifferent, 1);
+  assert.equal(changedPriorUpdate.mutatedVerdicts.unsafe, 1);
+  const unchangedPriorUpdate = await runFuzz({
+    seed: 773,
+    start: 1621,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "alias",
+    mutationMode: "disabled",
+    validateEvery: 1,
+  });
+  assert.equal(unchangedPriorUpdate.localImportAliasProvedCases, 1);
+  assert.equal(unchangedPriorUpdate.equal, 1);
+}
+if (shards === 4 && shard === 3) {
   const changedTerminal = await runFuzz({
     seed: 773,
     start: 685,
