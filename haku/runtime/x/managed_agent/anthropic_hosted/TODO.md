@@ -1,12 +1,12 @@
 # Managed Agents — Anthropic-hosted cloud TODO
 
 Status: **PARKED (2026-07-04)** — the cloud control-plane objects were deleted at
-Anthropic by the operator, and `cluster/parked/cloud-agent-tf` is suspended. See
-<README.md> § Resuming for the reason and the resume decision. The items below
+Anthropic by the operator, and the Terraform root was retired. See
+<README.md> § Resuming for how to resume. The items below
 describe the pre-parking v0 state and are **moot until resumed**:
 
 - **Tighten cloud egress.** The environment had `networking.type: unrestricted`
-  (TODO in main.tf). Narrow to `type: limited` + an explicit `allowed_hosts` if/when
+  (v0, see <README.md> § What the deleted root provisioned). Narrow to `type: limited` + an explicit `allowed_hosts` if/when
   recreated. (The static_bearer MCP credential is already scoped — only presented to
   the `kubectl-machine-mcp` URL — so this was hardening, not a leak fix.)
 - **Build the run loop.** Ephemeral-pod compute, the cloud run procedure, and a
