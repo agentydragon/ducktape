@@ -54,6 +54,7 @@ from finance.augur.product.holdings import opening_holdings
 from finance.augur.product.scenarios import (
     PRIMARY_ACCOUNT_ID,
     Home,
+    PropertyCashflow,
     Situation,
     build_situation,
     locations_by_id,
@@ -200,6 +201,14 @@ def _home(situation: Situation) -> Home:
     return situation.home
 
 
+def _cashflows(home: Home, schedule: type[Once | Recurring], cause_id: str) -> list[PropertyCashflow]:
+    return [
+        transfer
+        for transfer in home.cashflows
+        if isinstance(transfer.schedule, schedule) and transfer.cause_id == cause_id
+    ]
+
+
 def _with_fixed_cash(config: Config, cash: Decimal | int | str) -> Config:
     fixed = config.portfolio_sources.fixed
     snapshot = fixed.snapshot or FinanceSnapshot(as_of_date="1970-01-01")
@@ -215,6 +224,12 @@ def _with_fixed_cash(config: Config, cash: Decimal | int | str) -> Config:
 # The ordinary product-test scenario: a test passes only the fields it varies.
 _scenario_key = partial(
     ScenarioKey, model_id="current_model", horizon_months=3, monthly_spend=Decimal(1_000), spend_index=SpendIndex.NONE
+)
+
+
+# The owner-occupied cash purchase of location A's property; a test passes only the fields it varies.
+_cash_purchase = partial(
+    PropertyPurchase, property_id=LOCATION_A_PROPERTY, financing=CashFinancing(), is_primary_residence=True
 )
 
 
@@ -964,14 +979,11 @@ def test_product_lowers_primary_residence_assignments_to_housing(
     primary_agent_id = resolve_primary_agent_id(augur_config)
     scenario = _scenario_key(
         horizon_months=36,
-        property_purchase=PropertyPurchase(
-            property_id=LOCATION_A_PROPERTY,
-            financing=CashFinancing(),
-            is_primary_residence=True,
+        property_purchase=_cash_purchase(
             lifecycle_events=(
                 SetPrimaryResidenceEventWire(month=12, is_primary_residence=False),
                 SetPrimaryResidenceEventWire(month=24, is_primary_residence=True),
-            ),
+            )
         ),
     )
 
@@ -991,10 +1003,7 @@ def test_product_full_property_rent_scales_by_fraction_vacancy_and_rent_denomina
 ) -> None:
     scenario = _scenario_key(
         horizon_months=12,
-        property_purchase=PropertyPurchase(
-            property_id=LOCATION_A_PROPERTY,
-            financing=CashFinancing(),
-            is_primary_residence=True,
+        property_purchase=_cash_purchase(
             initial_rental=RentalIncomePlan(
                 full_property_monthly_rent=Decimal(6_000), fraction_rented=0.5, vacancy_pct=0.10
             ),
@@ -1004,30 +1013,18 @@ def test_product_full_property_rent_scales_by_fraction_vacancy_and_rent_denomina
 
     home = _home(_situation(scenario, augur_config, catalog))
 
-    rent_transfer = one(
-        transfer
-        for transfer in home.cashflows
-        if isinstance(transfer.schedule, Recurring) and transfer.cause_id == "rental_income:location_a_property"
-    )
+    rent_transfer = one(_cashflows(home, Recurring, "rental_income:location_a_property"))
     assert rent_transfer.property_id == "location_a_property"
     assert isinstance(rent_transfer.amount, IndexedAmount)
     assert rent_transfer.amount.base_amount == _quanta_int(_usd_quanta(6_000.0 * 0.5 * 0.90))
     assert rent_transfer.amount.series_id == RentKey(location_id=LOCATION_A).wire_id
 
-    management_fee = one(
-        transfer
-        for transfer in home.cashflows
-        if isinstance(transfer.schedule, Recurring) and transfer.cause_id == "management_fee:location_a_property"
-    )
+    management_fee = one(_cashflows(home, Recurring, "management_fee:location_a_property"))
     assert management_fee.property_id == "location_a_property"
     assert isinstance(management_fee.amount, IndexedAmount)
     assert management_fee.amount.base_amount == _quanta_int(_usd_quanta(6_000.0 * 0.5 * 0.90 * 0.08))
 
-    leasing_fee = one(
-        transfer
-        for transfer in home.cashflows
-        if isinstance(transfer.schedule, Once) and transfer.cause_id == "leasing_fee:location_a_property:m0"
-    )
+    leasing_fee = one(_cashflows(home, Once, "leasing_fee:location_a_property:m0"))
     assert leasing_fee.property_id == "location_a_property"
     assert isinstance(leasing_fee.amount, IndexedAmount)
     assert leasing_fee.amount.base_amount == _quanta_int(_usd_quanta(6_000.0 * 0.5))
@@ -1038,10 +1035,7 @@ def test_product_rental_lifecycle_resizes_tenant_rent_and_management_fees(
 ) -> None:
     scenario = _scenario_key(
         horizon_months=12,
-        property_purchase=PropertyPurchase(
-            property_id=LOCATION_A_PROPERTY,
-            financing=CashFinancing(),
-            is_primary_residence=True,
+        property_purchase=_cash_purchase(
             initial_rental=RentalIncomePlan(
                 full_property_monthly_rent=Decimal(6_000), fraction_rented=0.25, vacancy_pct=0.10
             ),
@@ -1056,11 +1050,7 @@ def test_product_rental_lifecycle_resizes_tenant_rent_and_management_fees(
 
     home = _home(_situation(scenario, augur_config, catalog))
 
-    rent_transfers = [
-        transfer
-        for transfer in home.cashflows
-        if isinstance(transfer.schedule, Recurring) and transfer.cause_id == "rental_income:location_a_property"
-    ]
+    rent_transfers = _cashflows(home, Recurring, "rental_income:location_a_property")
     assert {transfer.property_id for transfer in rent_transfers} == {"location_a_property"}
     assert [transfer.schedule for transfer in rent_transfers] == [
         Recurring(start_month=start, end_month=end) for start, end in ((0, 2), (3, 5), (8, 11))
@@ -1075,11 +1065,7 @@ def test_product_rental_lifecycle_resizes_tenant_rent_and_management_fees(
         for amount in (6_000.0 * 0.25 * 0.90, 6_000.0 * 0.75 * 0.90, 6_000.0 * 0.5 * 0.90)
     ]
 
-    management_fees = [
-        transfer
-        for transfer in home.cashflows
-        if isinstance(transfer.schedule, Recurring) and transfer.cause_id == "management_fee:location_a_property"
-    ]
+    management_fees = _cashflows(home, Recurring, "management_fee:location_a_property")
     assert {transfer.property_id for transfer in management_fees} == {"location_a_property"}
     assert [transfer.schedule for transfer in management_fees] == [
         Recurring(start_month=start, end_month=end) for start, end in ((0, 2), (3, 5), (8, 11))
@@ -1121,21 +1107,12 @@ def test_future_rental_lifecycle_uses_property_rent_estimate_without_initial_ren
 ) -> None:
     scenario = _scenario_key(
         horizon_months=6,
-        property_purchase=PropertyPurchase(
-            property_id=LOCATION_A_PROPERTY,
-            financing=CashFinancing(),
-            is_primary_residence=True,
-            lifecycle_events=(SetRentedFractionEventWire(month=3, rented_fraction=0.5),),
-        ),
+        property_purchase=_cash_purchase(lifecycle_events=(SetRentedFractionEventWire(month=3, rented_fraction=0.5),)),
     )
 
     home = _home(_situation(scenario, augur_config, catalog))
 
-    rent_transfer = one(
-        transfer
-        for transfer in home.cashflows
-        if isinstance(transfer.schedule, Recurring) and transfer.cause_id == "rental_income:location_a_property"
-    )
+    rent_transfer = one(_cashflows(home, Recurring, "rental_income:location_a_property"))
     assert rent_transfer.property_id == "location_a_property"
     assert rent_transfer.schedule == Recurring(start_month=3, end_month=5)
     assert isinstance(rent_transfer.amount, IndexedAmount)
@@ -1150,12 +1127,7 @@ def test_future_rental_lifecycle_requires_rent_series_at_product_api(
     product = make_product_service(counting_model, config=config)
     scenario = _scenario_key(
         horizon_months=6,
-        property_purchase=PropertyPurchase(
-            property_id=LOCATION_A_PROPERTY,
-            financing=CashFinancing(),
-            is_primary_residence=True,
-            lifecycle_events=(SetRentedFractionEventWire(month=3, rented_fraction=0.5),),
-        ),
+        property_purchase=_cash_purchase(lifecycle_events=(SetRentedFractionEventWire(month=3, rented_fraction=0.5),)),
     )
 
     detail = product.rollout(_rollout_request(scenario))
@@ -1170,11 +1142,8 @@ def test_primary_residence_event_emits_rollout_marker(
     config = _with_fixed_cash(augur_config, 1_200_000)
     product = make_product_service(counting_model, config=config)
     scenario = _scenario_key(
-        property_purchase=PropertyPurchase(
-            property_id=LOCATION_A_PROPERTY,
-            financing=CashFinancing(),
-            is_primary_residence=True,
-            lifecycle_events=(SetPrimaryResidenceEventWire(month=1, is_primary_residence=False),),
+        property_purchase=_cash_purchase(
+            lifecycle_events=(SetPrimaryResidenceEventWire(month=1, is_primary_residence=False),)
         )
     )
 
@@ -1224,12 +1193,7 @@ def test_cash_property_purchase_omits_mortgage_payments(
 ) -> None:
     config = _with_fixed_cash(augur_config, 1_200_000)
     product = make_product_service(counting_model, config=config)
-    scenario = _scenario_key(
-        horizon_months=2,
-        property_purchase=PropertyPurchase(
-            property_id=LOCATION_A_PROPERTY, financing=CashFinancing(), is_primary_residence=True
-        ),
-    )
+    scenario = _scenario_key(horizon_months=2, property_purchase=_cash_purchase())
 
     detail = product.rollout(_rollout_request(scenario))
 
