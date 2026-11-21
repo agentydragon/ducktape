@@ -45,8 +45,9 @@ carry it. Soundness along only the original source-order execution is insufficie
 ## Initial certificate fragment
 
 The first new fragment is literals, variable reads, direct variable assignments,
-declaration initialization, and expression sequencing. It excludes property
-operations, calls, callbacks, and block-local allocation. Values copied between
+declaration initialization, expression sequencing, binary operations, heap-free unary
+operations, short-circuiting, and conditional expressions. It excludes property
+operations, `typeof`, calls, callbacks, compound assignment/update forms, and block-local allocation. Values copied between
 bindings may be references; the fragment does not inspect their heap contents.
 
 Its semantic footprint must account for complete binding records, including TDZ
@@ -54,6 +55,13 @@ and mutability checks on assignment targets. It must bound reads and writes,
 preserve the heap and world on successful execution, compose through sequencing,
 and justify commutation when writes are disjoint from the other operation's reads
 and writes. Linking must connect distinct names to distinct concrete binding cells.
+
+Binary operations and unary operations other than `typeof` use state-free value
+operations. Coercions that CoreJS does not model still return `unknown`; certifying
+a footprint does not extend the modeled JavaScript subset. `typeof` can inspect an
+object's heap record to determine callability and therefore needs a stronger read
+contract. Short-circuit and conditional summaries conservatively include every
+branch, including branches not taken in a particular execution.
 
 The executable certificate must check required reads against `B.reads i`, required
 writes against `(B.stmt i).defs ++ (B.stmt i).writes`, and reject incorrect hoisted
@@ -78,13 +86,13 @@ to reject it. Unsupported code gains no permission from the new certificate.
 
 ## Current proof inventory
 
-| Rule family                                           | Existing proof                                               | Remaining footprint obligation                                                   |
-| ----------------------------------------------------- | ------------------------------------------------------------ | -------------------------------------------------------------------------------- |
-| Inert statements and allocation-only declarations     | CoreJS locality and syntax-based commutation                 | Certifying the corresponding Effects output                                      |
-| Binding reads, initialization, assignment, sequencing | `BindingFootprint`, `BindingMoves`, checked actual summaries | Producer completeness; abrupt-execution equivalence                              |
-| Opaque binding and own-key requests                   | Reachability envelope and request framing                    | Analyzer-state correspondence, other requests, and whole-conversation invariants |
-| Objects, closures, control flow, classes              | CoreJS semantics and selected locality results               | Soundness of the corresponding Effects summaries                                 |
-| Intrinsics and unknown-code fallback                  | Handwritten and generated regression coverage                | Per-rule semantic contracts and conservative fallback proofs                     |
+| Rule family                                                                                         | Existing proof                                               | Remaining footprint obligation                                                   |
+| --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | -------------------------------------------------------------------------------- |
+| Inert statements and allocation-only declarations                                                   | CoreJS locality and syntax-based commutation                 | Certifying the corresponding Effects output                                      |
+| Binding reads, initialization, assignment, sequencing, value operations and conditional expressions | `BindingFootprint`, `BindingMoves`, checked actual summaries | Producer completeness; abrupt-execution equivalence                              |
+| Opaque binding and own-key requests                                                                 | Reachability envelope and request framing                    | Analyzer-state correspondence, other requests, and whole-conversation invariants |
+| Objects, closures, control flow, classes                                                            | CoreJS semantics and selected locality results               | Soundness of the corresponding Effects summaries                                 |
+| Intrinsics and unknown-code fallback                                                                | Handwritten and generated regression coverage                | Per-rule semantic contracts and conservative fallback proofs                     |
 
 The [`model` coverage matrix](../experiments/model/README.md) and
 [`effects` tests](../experiments/effects/README.md) describe executable evidence.

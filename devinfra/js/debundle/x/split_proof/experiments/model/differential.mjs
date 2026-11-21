@@ -56,7 +56,7 @@ import { format } from "node:util";
 import { kindOf } from "../translation/gen/core.mjs";
 import { generateProgram, renderProgram } from "../translation/gen/index.mjs";
 import { coreOf, coreProgramOf, dumpOf } from "../translation/split_dump.mjs";
-import { cases, splitCases } from "./cases.mjs";
+import { cases, splitCases, bindingSplitCases } from "./cases.mjs";
 import { generatedCases, generatedModuleCases, generatedOpaqueCase, generatedBindingCases } from "./generate.mjs";
 import { moduleCases } from "./module_cases.mjs";
 import { opaqueCases, scriptsOf } from "./opaque_cases.mjs";
@@ -66,6 +66,7 @@ const option = (name, fallback) => {
   const i = process.argv.lastIndexOf(`--${name}`);
   return i < 0 ? fallback : Number(process.argv[i + 1]);
 };
+const bindingOnly = process.argv.includes("--bindings-only");
 const count = option("count", 40);
 const firstSeed = option("seed", 1);
 const splitPrograms = option("splits", 60);
@@ -79,14 +80,16 @@ const evalorder = process.env.EVALORDER ?? built("evalorder");
 const work = mkdtempSync(path.join(process.env.TEST_TMPDIR ?? os.tmpdir(), "corejs_differential_"));
 
 // The sets of `gen_validity_test.mjs`: each family with the ones before it.
-const SETS = [
-  ["expressions", "statements"],
-  ["expressions", "statements", "functions"],
-  ["expressions", "statements", "functions", "classes"],
-  ["expressions", "statements", "functions", "classes", "patterns"],
-  ["expressions", "statements", "functions", "classes", "patterns", "protocols"],
-  ["expressions", "statements", "functions", "classes", "patterns", "protocols", "modules", "unmodeled"],
-];
+const SETS = bindingOnly
+  ? []
+  : [
+      ["expressions", "statements"],
+      ["expressions", "statements", "functions"],
+      ["expressions", "statements", "functions", "classes"],
+      ["expressions", "statements", "functions", "classes", "patterns"],
+      ["expressions", "statements", "functions", "classes", "patterns", "protocols"],
+      ["expressions", "statements", "functions", "classes", "patterns", "protocols", "modules", "unmodeled"],
+    ];
 // How often a generated program is tried again without the unit in which the model reached unknown code.
 const ROUNDS = 8;
 
@@ -292,7 +295,7 @@ function slice(program, banned) {
 
 // { label, source, entry, program, node, result, expectEnd, set }: `program` is what `corejs` reads
 const jobs = [];
-for (const c of cases) {
+for (const c of bindingOnly ? [] : cases) {
   const translated = accepted(c.source, { allowHost: c.allowHost ?? false });
   assert(translated !== null, `case ${c.name}: the front end refuses it`);
   jobs.push({
@@ -303,8 +306,10 @@ for (const c of cases) {
     set: null,
   });
 }
-const bindingCases = Array.from({ length: count }, (_, i) => generatedBindingCases(firstSeed + i)).flat();
-for (const c of [...splitCases, ...bindingCases]) {
+const bindingCases = bindingOnly
+  ? Array.from({ length: count }, (_, i) => generatedBindingCases(firstSeed + i)).flat()
+  : [];
+for (const c of bindingOnly ? [...bindingSplitCases, ...bindingCases] : splitCases) {
   const translated = accepted(c.source);
   assert(translated !== null, `split case ${c.name}: the front end refuses the bundle`);
   jobs.push({
@@ -316,7 +321,7 @@ for (const c of [...splitCases, ...bindingCases]) {
     splitCase: c,
   });
 }
-const focused = Array.from({ length: count }, (_, i) => generatedCases(firstSeed + i)).flat();
+const focused = bindingOnly ? [] : Array.from({ length: count }, (_, i) => generatedCases(firstSeed + i)).flat();
 for (const c of focused) {
   const translated = toCore(c.source);
   jobs.push({
@@ -328,8 +333,8 @@ for (const c of focused) {
     focused: c,
   });
 }
-const linked = Array.from({ length: count }, (_, i) => generatedModuleCases(firstSeed + i)).flat();
-for (const c of [...moduleCases, ...linked]) {
+const linked = bindingOnly ? [] : Array.from({ length: count }, (_, i) => generatedModuleCases(firstSeed + i)).flat();
+for (const c of bindingOnly ? [] : [...moduleCases, ...linked]) {
   const entry = path.join(writeFiles(c.files), "main.mjs");
   jobs.push({
     label: `modules: ${c.name}`,
@@ -343,7 +348,9 @@ for (const c of [...moduleCases, ...linked]) {
     linked: linked.includes(c),
   });
 }
-const allOpaqueCases = [...opaqueCases, ...Array.from({ length: count }, (_, i) => generatedOpaqueCase(firstSeed + i))];
+const allOpaqueCases = bindingOnly
+  ? []
+  : [...opaqueCases, ...Array.from({ length: count }, (_, i) => generatedOpaqueCase(firstSeed + i))];
 for (const c of allOpaqueCases) {
   const translated = coreOf(c.source);
   assert(translated.opaque.length > 0, `opaque case ${c.name}: no statement is opaque`);
@@ -590,6 +597,10 @@ function split(job, bundle, dump, kind, spec, named) {
     assert(!orderKept, `${label}: the binding certificate regression must reorder statements`);
     assert(slice?.startsWith("moves (certified bindings)"), `${label}: missing certified binding slice: ${slice}`);
   }
+  if (named?.uncertified) {
+    assert(!orderKept, `${label}: the uncertified control must reorder statements`);
+    assert.match(slice, /^none\./, `${label}: unsupported syntax must gain no permission`);
+  }
   if (named?.poisonWrite !== undefined) {
     const analysis = spawnSync(lower, [path.join(dir, "ast.json")], { encoding: "utf8" });
     assert.equal(analysis.status, 0, `${label}: cannot obtain actual Effects summaries\n${analysis.stderr}`);
@@ -782,7 +793,7 @@ for (const [owner, listed] of Object.entries(host.prototypes)) {
 
 rmSync(work, { recursive: true, force: true });
 console.log(
-  `cases: ${cases.length}; module cases: ${moduleCases.length} (${orders} orders compared with Plan.evalOrder); ` +
+  `mode: ${bindingOnly ? "binding certificates" : "CoreJS interpreter"}; cases: ${bindingOnly ? 0 : cases.length}; module cases: ${bindingOnly ? 0 : moduleCases.length} (${orders} orders compared with Plan.evalOrder); ` +
     `generated: ${count} programs for each set from seed ${firstSeed}`
 );
 console.table(summary);
@@ -806,18 +817,27 @@ for (const job of jobs.filter((j) => j.focused)) {
   if (splitJobs.some((s) => s.of === job && !s.orderKept && sameRun(s.result, job.result) && sameRun(s.node, job.node)))
     covered.reordered++;
 }
-const certifiedGenerated = splitJobs.filter((j) => j.named?.generatedBinding);
-assert.equal(certifiedGenerated.length, count, "every generated binding case must be split");
-assert(
-  certifiedGenerated.every((j) => j.moves && sameRun(j.result, j.of.result) && sameRun(j.node, j.of.node)),
-  "every generated binding case must execute equivalently through the certified moves slice"
-);
-console.log(`certified binding moves: ${certifiedGenerated.length}, four runs and final state compared`);
+if (bindingOnly) {
+  const certifiedGenerated = splitJobs.filter((j) => j.named?.generatedBinding);
+  assert.equal(certifiedGenerated.length, 4 * count, "every generated binding case must be split");
+  for (const family of ["literal", "binary", "unary", "branch"]) {
+    assert.equal(
+      certifiedGenerated.filter((j) => j.named.bindingFamily === family).length,
+      count,
+      `every seed must execute the ${family} binding-certificate family`
+    );
+  }
+  assert(
+    certifiedGenerated.every((j) => j.moves && sameRun(j.result, j.of.result) && sameRun(j.node, j.of.node)),
+    "every generated binding case must execute equivalently through the certified moves slice"
+  );
+  console.log(`certified binding moves: ${certifiedGenerated.length}, four runs and final state compared`);
+}
 console.log("whole CoreJS generator (no filtering):");
 console.table(focusedCoverage);
 assert.deepEqual(
   Object.keys(focusedCoverage).sort(),
-  ["arrays", "classes", "closures", "control", "exceptions", "expressions", "host", "objects"],
+  bindingOnly ? [] : ["arrays", "classes", "closures", "control", "exceptions", "expressions", "host", "objects"],
   "the whole-program generator must execute each promised family"
 );
 assert(
@@ -830,7 +850,7 @@ assert(
 );
 assert.equal(
   jobs.filter((j) => j.linked).length,
-  count * 3,
+  bindingOnly ? 0 : count * 3,
   "each seed must run the diamond, cycle and abrupt module graphs"
 );
 console.log(`generated linked programs: ${linked.length}, compared with Node and Plan.evalOrder`);

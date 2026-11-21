@@ -5,7 +5,7 @@ import EsmSplit.Bundle
 # CoreJS: typed binding certificates for a small syntax fragment
 
 This checker compares the read and write summary of a CoreJS statement with the actual footprint stored in an
-`EsmSplit.Bundle`. It deliberately accepts only primitive values, variable reads, variable assignments, sequencing,
+`EsmSplit.Bundle`. It deliberately accepts only primitive values, variable reads, variable assignments, binary operations, heap-free unary operations, sequencing,
 expression statements, and declarations. Unsupported syntax has no summary and cannot receive a certificate.
 
 The target of a variable assignment contributes a write. A later semantic contract may account for the binding record
@@ -29,13 +29,20 @@ def BindingSummary.seq (first second : BindingSummary) : BindingSummary where
 def Expr.bindingSummary : Expr → Option BindingSummary
   | .undef | .null | .bool _ | .num _ | .str _ => some {}
   | .var x => some { reads := [x] }
+  | .unary .typeof _ => none
+  | .unary _ operand => operand.bindingSummary
   | .assign (.var x) rhs => do
       let summary ← rhs.bindingSummary
       pure (summary.seq { writes := [x] })
-  | .seq first second => do
+  | .seq first second | .binary _ first second | .logical _ first second => do
       let firstSummary ← first.bindingSummary
       let secondSummary ← second.bindingSummary
       pure (firstSummary.seq secondSummary)
+  | .cond condition yes no => do
+      let conditionSummary ← condition.bindingSummary
+      let yesSummary ← yes.bindingSummary
+      let noSummary ← no.bindingSummary
+      pure (conditionSummary.seq (yesSummary.seq noSummary))
   | _ => none
 
 /-- A summary for a supported top-level expression or declaration. Declarations always write their binding. -/
@@ -151,6 +158,27 @@ theorem rejects_out_of_bounds_statement :
 theorem rejects_out_of_bounds_footprint :
     bindingCertificate [.decl .const "value" .null] [] 0 = false := by
   decide
+
+theorem rejects_missing_binary_operand_read :
+    bindingCertificate [.expr (.binary .add (.var "left") (.var "right"))]
+      [{ src := "left + right;", eager := ["left"] }] 0 = false := by decide
+
+theorem rejects_missing_binary_operand_write :
+    bindingCertificate [.expr (.binary .add (.assign (.var "left") .null) (.assign (.var "right") .null))]
+      [{ src := "(left = null) + (right = null);", writes := ["left"] }] 0 = false := by decide
+
+/-- `typeof` of an object consults the heap to determine whether it is callable. -/
+theorem rejects_heap_inspecting_typeof :
+    bindingCertificate [.expr (.unary .typeof (.var "value"))]
+      [{ src := "typeof value;", eager := ["value"] }] 0 = false := by decide
+
+theorem rejects_missing_conditional_branch_read :
+    bindingCertificate [.expr (.cond (.bool true) .null (.var "hidden"))]
+      [{ src := "true ? null : hidden;" }] 0 = false := by decide
+
+theorem rejects_missing_short_circuit_write :
+    bindingCertificate [.expr (.logical .or (.bool true) (.assign (.var "hidden") .null))]
+      [{ src := "true || (hidden = null);" }] 0 = false := by decide
 
 end BindingCertificateExamples
 

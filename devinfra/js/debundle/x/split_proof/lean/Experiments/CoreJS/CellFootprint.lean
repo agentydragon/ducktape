@@ -195,6 +195,16 @@ theorem cellFootprint_throwErr (kind : ErrorKind) (msg : String) :
   intro s a s' h
   cases h
 
+/-- A fixed state-free operation either returns its value or has no successful execution. -/
+theorem cellFootprint_lift (result : Except Abort α) :
+    CellFootprint (fun _ => False) (fun _ => False) (lift result : M W α) := by
+  cases result with
+  | ok a => exact cellFootprint_pure a
+  | error why =>
+    cases why with
+    | error kind msg => exact cellFootprint_throwErr kind msg
+    | unknown why => exact cellFootprint_unknown why
+
 /-- A branch selected from one complete binding record adds that cell to the read footprint. -/
 theorem cellFootprint_inspect (a : Addr) {rd wr : Addr → Prop} (f : Option Binding → M W α)
     (hf : ∀ b, CellFootprint rd wr (f b)) :

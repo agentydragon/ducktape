@@ -170,11 +170,51 @@ export function generatedBindingCases(seed) {
   const value = 1 + ((seed >>> 0) % 17);
   const literals = ["undefined", "null", "false", "true", String(value), JSON.stringify(`value-${value}`)];
   const literal = literals[(seed >>> 0) % literals.length];
+  const assigned = `(x = ${value})`;
+  const unaryExpressions = [
+    `-${assigned}`,
+    `+${assigned}`,
+    `!${assigned}`,
+    `~${assigned}`,
+    `void ${assigned}`,
+    "`value=${" + assigned + "}`",
+  ];
+  const unary = unaryExpressions[(seed >>> 0) % unaryExpressions.length];
   const spec = { entry: "entry.mjs", modules: { "m0.mjs": ["#1", "#3"], "entry.mjs": ["#0", "#2", "#4"] } };
   return [
     {
       name: `certified binding assignments seed ${seed}`,
+      bindingFamily: "literal",
       source: `let x = 0; let y = 0; (x = ${literal}, x); (y = ${value}, y); console.log(x, y);`,
+      spec,
+      certified: true,
+      generatedBinding: true,
+    },
+    {
+      name: `certified binary operands seed ${seed}`,
+      bindingFamily: "binary",
+      source: `let x = 0; let y = 0;
+        (x = (x = ${value}) ${["+", "*", "<", "===", "^", "<<"][(seed >>> 0) % 6]} (x = ${value + 1}), x);
+        (y = (y = ${value + 2}) + (y = ${value + 3}), y); console.log(x, y);`,
+      spec,
+      certified: true,
+      generatedBinding: true,
+    },
+    {
+      name: `certified unary operand seed ${seed}`,
+      bindingFamily: "unary",
+      source: `let x = 0; let y = 0; (x = ${unary}, x); (y = ${value}, y); console.log(x, y);`,
+      spec,
+      certified: true,
+      generatedBinding: true,
+    },
+    {
+      name: `certified conditional and short circuit seed ${seed}`,
+      bindingFamily: "branch",
+      source: `let x = 0; let y = 0;
+        (x = ((x = ${seed % 2 === 0}) ? (x = ${value}) : (x = ${value + 1})), x);
+        (y = ((y = ${seed % 2 === 0 ? "null" : "7"}) ${["&&", "||", "??"][(seed >>> 0) % 3]} (y = ${value})), y);
+        console.log(x, y);`,
       spec,
       certified: true,
       generatedBinding: true,

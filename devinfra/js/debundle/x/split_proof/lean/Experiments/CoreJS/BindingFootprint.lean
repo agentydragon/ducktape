@@ -104,6 +104,23 @@ private theorem pure_then_normal {W : World} (env : Env) :
   exact (cellFootprint_pure (W := W) Flow.normal).mono
     (by intro a h; exact False.elim h) (by intro a h; exact False.elim h)
 
+/-- All unary operators except `typeof` depend only on their operand value. -/
+private theorem cellFootprint_unop {W : World} (op : UnOp) (v : Val) (h : op ≠ .typeof) :
+    CellFootprint (fun _ => False) (fun _ => False)
+      (getState >>= fun s => lift (unop s op v) : M W Val) := by
+  have he : (getState >>= fun s => lift (unop s op v) : M W Val) =
+      lift (unop (initialState W 0) op v) := by
+    funext s
+    cases op <;> first | exact False.elim (h rfl) | rfl
+  rw [he]
+  exact cellFootprint_lift _
+
+private theorem evalExpr_unaryNoTypeof {W : World} (fuel : Nat) (env : Env) (op : UnOp) (a : Expr)
+    (h : op ≠ .typeof) :
+    evalExpr (W := W) (fuel + 1) env (.unary op a) =
+      (evalExpr fuel env a >>= fun v => getState >>= fun s => lift (unop s op v)) := by
+  cases op <;> first | exact False.elim (h rfl) | rfl
+
 private theorem evalExpr_assignVar {W : World} (fuel : Nat) (env : Env) (x : Name) (rhs : Expr) :
     evalExpr (W := W) (fuel + 1) env (.assign (.var x) rhs) =
       evalExpr fuel env rhs >>= fun v => writeVar env x v >>= fun _ => pure v := by
@@ -195,6 +212,103 @@ private theorem exprBindingFootprintAt {W : World} (fuel : Nat) :
                     BindingSummary.writeCells] using hc
           | frozen _ => simp [Expr.bindingSummary] at hs
           | member _ _ => simp [Expr.bindingSummary] at hs
+      | unary op operand =>
+          by_cases ht : op = .typeof
+          · subst op; simp [Expr.bindingSummary] at hs
+          · have hoperand : operand.bindingSummary = some summary := by
+              cases op <;> simp_all [Expr.bindingSummary]
+            have hf := ih operand hoperand env
+            have hc := (hf.bind fun v => cellFootprint_unop op v ht).mono
+              (fun _ h => h.elim id False.elim) (fun _ h => h.elim id False.elim)
+            rw [evalExpr_unaryNoTypeof fuel env op operand ht]
+            exact hc
+      | binary op first second =>
+          cases hfirst : first.bindingSummary with
+          | none => simp [Expr.bindingSummary, hfirst] at hs
+          | some firstSummary =>
+              cases hsecond : second.bindingSummary with
+              | none => simp [Expr.bindingSummary, hfirst, hsecond] at hs
+              | some secondSummary =>
+                  have hsummary : firstSummary.seq secondSummary = summary := by
+                    simpa [Expr.bindingSummary, hfirst, hsecond] using hs
+                  subst summary
+                  have hf := ih first hfirst env
+                  have hs' := ih second hsecond env
+                  have hsecondFootprint : ∀ x, CellFootprint (secondSummary.readCells env)
+                      (secondSummary.writeCells env)
+                      (evalExpr fuel env second >>= fun y => lift (binop op x y) : M W Val) := by
+                    intro x
+                    exact (hs'.bind fun y => cellFootprint_lift (binop op x y)).mono
+                      (fun _ h => h.elim id False.elim) (fun _ h => h.elim id False.elim)
+                  have hc := bindBindingFootprints env firstSummary.reads firstSummary.writes
+                    secondSummary.reads secondSummary.writes hf hsecondFootprint
+                  simpa only [evalExpr, BindingSummary.seq, BindingSummary.readCells,
+                    BindingSummary.writeCells] using hc
+      | logical op first second =>
+          cases hfirst : first.bindingSummary with
+          | none => simp [Expr.bindingSummary, hfirst] at hs
+          | some firstSummary =>
+              cases hsecond : second.bindingSummary with
+              | none => simp [Expr.bindingSummary, hfirst, hsecond] at hs
+              | some secondSummary =>
+                  have hsummary : firstSummary.seq secondSummary = summary := by
+                    simpa [Expr.bindingSummary, hfirst, hsecond] using hs
+                  subst summary
+                  have hf := ih first hfirst env
+                  have hr := ih second hsecond env
+                  have hb : ∀ x, CellFootprint (secondSummary.readCells env) (secondSummary.writeCells env)
+                      (lift (shortCircuits op x) >>= fun done =>
+                        if done then pure x else evalExpr fuel env second : M W Val) := by
+                    intro x
+                    have hbranch : ∀ done : Bool, CellFootprint (secondSummary.readCells env)
+                        (secondSummary.writeCells env) (if done then pure x else evalExpr fuel env second : M W Val) := by
+                      intro done; cases done
+                      · exact hr
+                      · exact cellFootprint_pure_mono x
+                    exact ((cellFootprint_lift (shortCircuits op x)).bind hbranch).mono
+                      (fun _ h => h.elim False.elim id) (fun _ h => h.elim False.elim id)
+                  have hc := bindBindingFootprints env firstSummary.reads firstSummary.writes
+                    secondSummary.reads secondSummary.writes hf hb
+                  simpa only [evalExpr, BindingSummary.seq, BindingSummary.readCells,
+                    BindingSummary.writeCells] using hc
+      | cond condition yes no =>
+          cases hc : condition.bindingSummary with
+          | none => simp [Expr.bindingSummary, hc] at hs
+          | some cs =>
+            cases ht : yes.bindingSummary with
+            | none => simp [Expr.bindingSummary, hc, ht] at hs
+            | some ts =>
+              cases he : no.bindingSummary with
+              | none => simp [Expr.bindingSummary, hc, ht, he] at hs
+              | some es =>
+                have hsummary : cs.seq (ts.seq es) = summary := by
+                  simpa [Expr.bindingSummary, hc, ht, he] using hs
+                subst summary
+                have hcf := ih condition hc env
+                have htf := ih yes ht env
+                have hef := ih no he env
+                have hbranch : ∀ test : Bool, CellFootprint
+                    (bindingAddresses env (ts.reads ++ es.reads))
+                    (bindingAddresses env (ts.writes ++ es.writes))
+                    (if test then evalExpr fuel env yes else evalExpr fuel env no : M W Val) := by
+                  intro test; cases test
+                  · exact hef.mono
+                      (fun a h => (bindingAddresses_append_iff env _ _ a).2 (Or.inr h))
+                      (fun a h => (bindingAddresses_append_iff env _ _ a).2 (Or.inr h))
+                  · exact htf.mono
+                      (fun a h => (bindingAddresses_append_iff env _ _ a).2 (Or.inl h))
+                      (fun a h => (bindingAddresses_append_iff env _ _ a).2 (Or.inl h))
+                have hb : ∀ x, CellFootprint (bindingAddresses env (ts.reads ++ es.reads))
+                    (bindingAddresses env (ts.writes ++ es.writes))
+                    (lift (toBoolean x) >>= fun test =>
+                      if test then evalExpr fuel env yes else evalExpr fuel env no : M W Val) := by
+                  intro x
+                  exact ((cellFootprint_lift (toBoolean x)).bind hbranch).mono
+                    (fun _ h => h.elim False.elim id) (fun _ h => h.elim False.elim id)
+                have hresult := bindBindingFootprints env cs.reads cs.writes
+                  (ts.reads ++ es.reads) (ts.writes ++ es.writes) hcf hb
+                simpa only [evalExpr, BindingSummary.seq, BindingSummary.readCells,
+                  BindingSummary.writeCells] using hresult
       | seq first second =>
           cases hfirst : first.bindingSummary with
           | none => simp [Expr.bindingSummary, hfirst] at hs
