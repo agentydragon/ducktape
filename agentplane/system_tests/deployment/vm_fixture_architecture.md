@@ -26,9 +26,9 @@ The first worker PR records that Docker's default AppArmor profile denied the mo
 The K3s follow-up used guest ext4 and made the action's private network sysctls and cgroup subtree
 writable so the nested kubelet, kube-proxy and container runtime could start. Inner `virt-handler`
 also needs shared mount propagation for its kubelet Pod mounts. These are worker-node requirements
-from bundling the API and agent in the same K3s process. A bare API server in a Pod does not itself
-need to boot VMs, run a kubelet or expose KVM. The distinction was tested early: a non-root KVM
-device probe succeeded before the full nested K3s action could start.
+from bundling the API and agent in the same K3s process. With a bare API server in a Pod, the
+kubelet and KVM access belong on the worker. A non-root KVM device probe had already succeeded
+before the full nested K3s action could start.
 [Initial KVM issue](https://github.com/agentydragon/ducktape/issues/14034) ·
 [Static worker PR](https://github.com/agentydragon/ducktape/pull/14072) ·
 [Nested K3s PR](https://github.com/agentydragon/ducktape/pull/14094) ·
@@ -55,7 +55,7 @@ Three lifetimes affect the cost:
   worker-wide mount another action can reset. BuildBuddy chooses whether it can reuse a runner.
   The fixture checks the clean marker, fingerprint, server identity and health. It rebuilds
   when compatibility or health fails and requests disposal on action failure. Manual
-  `x/vm_kvm:test_vm_kvm` instead stops its server and creates a new API and controllers each
+  `x/vm_kvm:test_vm_kvm` stops its server and creates a new API and controllers each
   action. It can keep the worker-wide image store after a clean stop. The store must match
   the K3s binary and have sufficient free space. Image reuse also checks the exact manifest,
   containerd content and unpack state, and CRI pin.
@@ -83,8 +83,11 @@ clock. The import envelope overlaps infrastructure work inside setup.
 | Warm worker caches, fresh K3s |          0.3 / 92.1 / 344.9 |         0.6 / 209.8 / 672.5 | All 25 imports skipped on each arm.                       |
 
 The 25 OCI layouts include **2.43 GiB** of stored layers deduplicated by digest, including layers
-already stored as uncompressed tar. That number measures image inputs. The approximately 16.4 GiB
-of accumulated QEMU work-disk writes in the cold HDD observation cover boot, input staging and
+already stored as uncompressed tar. Deduplicating the measured manifests by digest within each
+group leaves 1.14 GiB across the 11 PKI, KubeVirt and Kyverno images, and 1.30 GiB across fixture
+and guest images, with 971 bytes shared between those groups. Sharing operators could avoid
+staging their inputs into each new worker. Fixture and guest images still need delivery. The
+approximately 16.4 GiB of accumulated QEMU work-disk writes in the cold HDD observation cover boot, input staging and
 fixture activity. The warm HDD run shows a remaining storage penalty even when every import is
 skipped. Keep the production worker disks on SSD while the required retained suite's media
 sensitivity and fleet tail remain unmeasured.
@@ -123,8 +126,8 @@ inputs.
 Agentless K3s can host the API without kubelet, containerd or CNI. Upstream marks that
 mode experimental and documents the need for an egress selector when connecting to workload
 webhooks. A separate agent still has to run the real Pods, KubeVirt device plugin and guests.
-This variant could move the API off the executor's critical path if reused. It does not on
-its own move the executor's image store or reduce unpacking.
+Reusing this API could move its startup off the critical path. Image storage and unpacking still
+belong to the worker running the Pods.
 [K3s agentless server documentation](https://docs.k3s.io/advanced#running-agentless-servers-experimental)
 
 vCluster's shared-node design runs the virtual control plane in a Pod and synchronizes selected
@@ -159,9 +162,12 @@ shared fixture still needs these gates:
   launcher policies, plus a fixed collector namespace. Shared operators need preinstalled,
   trusted policy and per-run issuer and trust wiring. Test controllers need their own scoped
   identities. Tests of cluster RBAC, CRDs, operator upgrades or admission changes need the
-  isolated API. Keep production credentials, workload identity and registry-write authority
+  isolated API. Both VM cases read a fixture Secret to check its metadata and public certificate.
+  Preserve those assertions through trusted observation of the run's public certificate and
+  ownership metadata. Keep production credentials, private keys and registry-write authority
   outside the driver.
   [Fixture chart](fixture_chart.py) · [Fixture lifecycle](stack.py) ·
+  [Runner certificate assertions](../scenarios/runner_credentials.py) ·
   [Kubernetes RBAC guidance](https://kubernetes.io/docs/concepts/security/rbac-good-practices/)
 - **Runtime admission.** Enforce approved Pods, VM and VMI shapes and images, including
   independently submitted VMIs. Apply Pod Security and trusted policy that restrict host
@@ -169,7 +175,8 @@ shared fixture still needs these gates:
   and arbitrary service-account token or Secret access. Permit only the required launcher
   behavior and verify its controller and owner chain when injecting the relay. Lock tenant
   scheduling and deny traffic to other runs, production and node services through the actual
-  cluster network policy. Namespace names are insufficient for these controls.
+  cluster network policy. Give each run narrowly scoped paths to its scripted model endpoint
+  and trace collector so it can retain the existing turn and trace assertions.
   [Launcher policy](../../../cluster/cdk8s/agentplane/launcher_relay.py) ·
   [Kubernetes multi-tenancy](https://kubernetes.io/docs/concepts/security/multi-tenancy/)
 - **State and failure isolation.** Use provider-managed per-run filesystem and raw-block PVCs
