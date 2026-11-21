@@ -213,16 +213,8 @@ func TestMixedVersionWakeWritersShareBudgetAndFenceReplacementUID(t *testing.T) 
 	if _, err := lockTx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", lockKey); err != nil {
 		t.Fatal("take old-writer advisory lock:", err)
 	}
-	var oldWriterPID, newWriterPID int
-	if err := lockTx.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&oldWriterPID); err != nil {
-		t.Fatal(err)
-	}
-	newWriterDB := postgres.Open(t, databaseURL)
-	newWriterDB.SetMaxOpenConns(1)
-	if err := newWriterDB.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&newWriterPID); err != nil {
-		t.Fatal(err)
-	}
-	newWriter := NewStore(newWriterDB, 3)
+	oldWriterPID := postgres.BackendPID(t, ctx, lockTx)
+	newWriter, newWriterPID := connectStore(t, ctx, databaseURL)
 	newWriterDone := make(chan error, 1)
 	go func() {
 		_, err := newWriter.ReserveWakeAttempt(ctx, wakeKey(lockCaller), lockSandboxUID, 1)
@@ -407,21 +399,9 @@ func TestSandboxCleanupWaitsForInFlightSession(t *testing.T) {
 	if err := sessionLock(ctx, gate, sessionID); err != nil {
 		t.Fatal(err)
 	}
-	var gatePID int
-	if err := gate.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&gatePID); err != nil {
-		t.Fatal(err)
-	}
-	connect := func() (*Store, int) {
-		db := postgres.Open(t, databaseURL)
-		db.SetMaxOpenConns(1)
-		var pid int
-		if err := db.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&pid); err != nil {
-			t.Fatal(err)
-		}
-		return NewStore(db, 3), pid
-	}
-	openingStore, openingPID := connect()
-	cleanupStore, cleanupPID := connect()
+	gatePID := postgres.BackendPID(t, ctx, gate)
+	openingStore, openingPID := connectStore(t, ctx, databaseURL)
+	cleanupStore, cleanupPID := connectStore(t, ctx, databaseURL)
 	opened := make(chan error, 1)
 	go func() {
 		_, err := createSession(openingStore, ctx, sessionID, "sandbox-race", uid, &sessionpb.SessionSpec{}, nil, nil)
@@ -477,21 +457,9 @@ func TestSessionRejectionSerializesWithAdmissionAndFencesSessionLeases(t *testin
 			if _, err := gate.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", "command:"+commandID); err != nil {
 				t.Fatal(err)
 			}
-			var gatePID int
-			if err := gate.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&gatePID); err != nil {
-				t.Fatal(err)
-			}
-			connect := func() (*Store, int) {
-				db := postgres.Open(t, databaseURL)
-				db.SetMaxOpenConns(1)
-				var pid int
-				if err := db.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&pid); err != nil {
-					t.Fatal(err)
-				}
-				return NewStore(db, 3), pid
-			}
-			admitter, admitterPID := connect()
-			rejecter, rejecterPID := connect()
+			gatePID := postgres.BackendPID(t, ctx, gate)
+			admitter, admitterPID := connectStore(t, ctx, databaseURL)
+			rejecter, rejecterPID := connectStore(t, ctx, databaseURL)
 			admitted := make(chan error, 1)
 			go func() {
 				_, err := enqueueWithSession(t, admitter, ctx, sessionID, "test-rejection-race", uid, input(commandID, "concurrent command"), nil)
@@ -541,17 +509,8 @@ func TestDeliveryAttemptAndDeletionFenceOrderings(t *testing.T) {
 			if _, err := store.Settle(ctx, head.CommandID, deliveryOwner, []string{QueueState}, DeliveringState, "", nil); err != nil {
 				t.Fatal(err)
 			}
-			connect := func() (*Store, int) {
-				db := postgres.Open(t, databaseURL)
-				db.SetMaxOpenConns(1)
-				var pid int
-				if err := db.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&pid); err != nil {
-					t.Fatal(err)
-				}
-				return NewStore(db, 3), pid
-			}
-			marker, markerPID := connect()
-			deleter, deleterPID := connect()
+			marker, markerPID := connectStore(t, ctx, databaseURL)
+			deleter, deleterPID := connectStore(t, ctx, databaseURL)
 			gate, err := store.DB.BeginTx(ctx, nil)
 			if err != nil {
 				t.Fatal(err)

@@ -313,6 +313,20 @@ func Count(t testing.TB, db *sql.DB, query string, args ...any) int {
 	return count
 }
 
+// BackendPID returns the PID of the PostgreSQL backend that serves q, for WaitForBlocker. q must use
+// one connection: a transaction, a *sql.Conn, or a *sql.DB with SetMaxOpenConns(1).
+func BackendPID(t testing.TB, ctx context.Context, q interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+},
+) int {
+	t.Helper()
+	var pid int
+	if err := q.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&pid); err != nil {
+		t.Fatal(err)
+	}
+	return pid
+}
+
 // WaitForBlocker waits until PostgreSQL identifies blockerPID as blocking blockedPID.
 func WaitForBlocker(t testing.TB, ctx context.Context, db *sql.DB, blockedPID, blockerPID int) {
 	t.Helper()

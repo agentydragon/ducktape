@@ -17,6 +17,7 @@ import (
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -82,10 +83,7 @@ func acquireSandboxAdvisoryLock(t *testing.T, queueStore *store.Store, sandboxUI
 
 func waitForCreateSessionBlockedBySandboxLock(t *testing.T, queueStore *store.Store, gate *sql.Conn) {
 	t.Helper()
-	var gatePID int
-	if err := gate.QueryRowContext(t.Context(), "SELECT pg_backend_pid()").Scan(&gatePID); err != nil {
-		t.Fatal(err)
-	}
+	gatePID := postgres.BackendPID(t, t.Context(), gate)
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		var blocked bool

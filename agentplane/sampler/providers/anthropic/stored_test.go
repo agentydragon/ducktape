@@ -1,43 +1,12 @@
 package anthropic
 
 import (
-	"bytes"
 	"encoding/json"
-	"fmt"
 	"reflect"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/sampler/internal/content"
+	"github.com/agentydragon/ducktape/agentplane/sampler/testing/providerfixture"
 )
-
-type memoryContentStore struct {
-	contents map[content.ContentID]content.StoredContent
-}
-
-func newMemoryContentStore() *memoryContentStore {
-	return &memoryContentStore{contents: make(map[content.ContentID]content.StoredContent)}
-}
-
-func (store *memoryContentStore) PutContent(kind content.ContentKind, payload json.RawMessage) (content.ContentID, error) {
-	stored, err := content.CanonicalContent(kind, payload)
-	if err != nil {
-		return "", err
-	}
-	if previous, ok := store.contents[stored.ID]; ok && !bytes.Equal(previous.Payload, stored.Payload) {
-		return "", fmt.Errorf("hash collision for %s", stored.ID)
-	}
-	store.contents[stored.ID] = stored
-	return stored.ID, nil
-}
-
-func (store *memoryContentStore) GetContent(id content.ContentID) (content.StoredContent, error) {
-	stored, ok := store.contents[id]
-	if !ok {
-		return content.StoredContent{}, fmt.Errorf("missing content %s", id)
-	}
-	stored.Payload = append(json.RawMessage(nil), stored.Payload...)
-	return stored, nil
-}
 
 func TestStoreRecordSharesCompleteAnthropicBlocksAndPreservesProviderFields(t *testing.T) {
 	record := json.RawMessage(`{
@@ -58,7 +27,7 @@ func TestStoreRecordSharesCompleteAnthropicBlocksAndPreservesProviderFields(t *t
 		"usage":{"input_tokens":900719925474099312345,"output_tokens":7,"unknown_usage":{"count":900719925474099312345}},
 		"unknown_envelope":{"keep":"metadata"}
 	}`)
-	store := newMemoryContentStore()
+	store := providerfixture.MemoryContent{}
 	id, err := StoreRecord(store, record)
 	if err != nil {
 		t.Fatal(err)
@@ -86,9 +55,9 @@ func TestStoreRecordSharesCompleteAnthropicBlocksAndPreservesProviderFields(t *t
 		if err != nil {
 			t.Fatal(err)
 		}
-		assertAnthropicJSONEqual(t, native.Content[index], block.Payload)
+		providerfixture.AssertJSONEqual(t, native.Content[index], block.Payload)
 	}
-	if got := len(store.contents); got != 1+len(native.Content) {
+	if got := len(store); got != 1+len(native.Content) {
 		t.Fatalf("stored %d rows, want one message and %d complete blocks", got, len(native.Content))
 	}
 	// The provider response and its request projection have different message envelopes
@@ -101,24 +70,24 @@ func TestStoreRecordSharesCompleteAnthropicBlocksAndPreservesProviderFields(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if projectedID == id || len(store.contents) != 2+len(native.Content) {
-		t.Fatalf("request projection did not share complete blocks: rows=%d", len(store.contents))
+	if projectedID == id || len(store) != 2+len(native.Content) {
+		t.Fatalf("request projection did not share complete blocks: rows=%d", len(store))
 	}
 	projectedRecord, err := RestoreRecord(store, projectedID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertAnthropicJSONEqual(t, projected, projectedRecord)
+	providerfixture.AssertJSONEqual(t, projected, projectedRecord)
 
 	restored, err := RestoreRecord(store, id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertAnthropicJSONEqual(t, record, restored)
+	providerfixture.AssertJSONEqual(t, record, restored)
 }
 
 func TestStoreRequestSeparatesReusableProfileAndOrderedMessages(t *testing.T) {
-	store := newMemoryContentStore()
+	store := providerfixture.MemoryContent{}
 	messageA := json.RawMessage(`{"role":"user","content":[{"type":"text","text":"first"}]}`)
 	messageB := json.RawMessage(`{"role":"assistant","content":[{"type":"thinking","thinking":"signed prefix","signature":"opaque-sig"},{"type":"text","text":"answer"}]}`)
 	var tool Tool
@@ -189,11 +158,11 @@ func TestStoreRequestSeparatesReusableProfileAndOrderedMessages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertAnthropicJSONEqual(t, wantRequestA, restored)
+	providerfixture.AssertJSONEqual(t, wantRequestA, restored)
 }
 
 func TestRestoreRecordChecksReferencedContent(t *testing.T) {
-	store := newMemoryContentStore()
+	store := providerfixture.MemoryContent{}
 	messageID, err := StoreRecord(store, json.RawMessage(`{"role":"assistant","content":[{"type":"text","text":"payload"}]}`))
 	if err != nil {
 		t.Fatal(err)
@@ -211,34 +180,15 @@ func TestRestoreRecordChecksReferencedContent(t *testing.T) {
 		t.Fatal(err)
 	}
 	blockID := content.Blocks[0]
-	delete(store.contents, blockID)
+	delete(store, blockID)
 	if _, err := RestoreRecord(store, messageID); err == nil {
 		t.Fatal("RestoreRecord accepted a missing block")
 	}
-	store.contents[blockID] = block
+	store[blockID] = block
 	block.Payload = json.RawMessage(`{"type":"text","text":"tampered"}`)
-	store.contents[blockID] = block
+	store[blockID] = block
 	if _, err := RestoreRecord(store, messageID); err == nil {
 		t.Fatal("RestoreRecord accepted a block hash mismatch")
-	}
-}
-
-func assertAnthropicJSONEqual(t *testing.T, want, got []byte) {
-	t.Helper()
-	var wantValue any
-	decoder := json.NewDecoder(bytes.NewReader(want))
-	decoder.UseNumber()
-	if err := decoder.Decode(&wantValue); err != nil {
-		t.Fatalf("decode expected JSON: %v", err)
-	}
-	var gotValue any
-	decoder = json.NewDecoder(bytes.NewReader(got))
-	decoder.UseNumber()
-	if err := decoder.Decode(&gotValue); err != nil {
-		t.Fatalf("decode actual JSON: %v", err)
-	}
-	if !reflect.DeepEqual(wantValue, gotValue) {
-		t.Fatalf("JSON differs:\n got: %s\nwant: %s", got, want)
 	}
 }
 
