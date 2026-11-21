@@ -1,9 +1,10 @@
 """Bearer-authenticated HTTP API for the aiquota provider adapters.
 
-The API deliberately keeps provider responses in process memory only.  It is
-safe to use beside a credential-refresh owner (for example CLIProxyAPI): its
-provider settings disable refreshes, so this process never mutates credential
-files or persists quota snapshots.
+Provider responses are cached in process memory; the optional ClickHouse sink
+appends each snapshot to analytics storage. With `cli_proxy_api.url` set (the
+deployed configuration) the Claude and Codex adapters reach their providers
+through CLIProxyAPI, which owns credential refresh, so this process never reads
+or writes credential files.
 """
 
 from __future__ import annotations
