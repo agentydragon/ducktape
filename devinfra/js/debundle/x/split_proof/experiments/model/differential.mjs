@@ -514,6 +514,7 @@ const tally = {
   agree: 0,
   orderKept: 0,
   sliceNamed: 0,
+  movesNamed: 0,
   sameState: 0,
   otherCalls: 0,
 };
@@ -564,6 +565,7 @@ function split(job, bundle, dump, kind, spec, named) {
       `${label}: the plan ${orderKept ? "keeps" : "does not keep"} the order, and the verdict says ${slice}`
     );
   else if (orderKept) tally.sliceNamed++;
+  else if (slice?.startsWith("moves")) tally.movesNamed++;
   try {
     const scripts = job.program.scripts;
     const program = scripts
@@ -694,7 +696,7 @@ console.log(`model endings: ${JSON.stringify(ends)}; corejs took ${modelSeconds.
 const verdicts = (kind) => `${kind}: ${tally[kind][0]} accepted, ${tally[kind][1]} rejected`;
 console.log(
   `opaque cases: ${tally.opaqueCases} of ${opaqueCases.length} agree with Node; splits: ${tally.named[0]} named accepted, ${tally.named[1]} named rejected; ${tally.programs} programs; ${["cut", "ordered", "free", "opaque"].map(verdicts).join("; ")}; ` +
-    `${tally.unsupported} unsupported; ${tally.sliceNamed} accepted splits whose verdict names the order-kept slice; ${tally.agree} accepted splits where the four runs agree, ` +
+    `${tally.unsupported} unsupported; ${tally.sliceNamed} accepted splits whose verdict names the order-kept slice, ${tally.movesNamed} the moves slice; ${tally.agree} accepted splits where the four runs agree, ` +
     `${tally.orderKept} of them with the statements in the bundle's order, ${tally.sameState} of those ending in ` +
     `the bundle's state; ${apart.splits} accepted splits move code ` +
     `of a bundle that does not end normally and are not compared with it (premise P4), ${apart.differ} of them ` +

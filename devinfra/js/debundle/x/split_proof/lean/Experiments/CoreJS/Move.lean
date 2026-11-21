@@ -958,4 +958,13 @@ theorem moves_preserve {W : World} {ss : List Stmt} {B : EsmSplit.Bundle} {S : E
 
 #print axioms moves_preserve
 
+/-- `moves_preserve` with its last hypothesis decided by `movesOk`, as `lowersplit` decides it. -/
+theorem moves_preserve_of_movesOk {W : World} {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}
+    {P : EsmSplit.Plan} (hvalid : EsmSplit.Valid B S P) (hfp : FootprintsOfSyntax ss B)
+    (hmove : movesOk ss.toArray P.execOrder = true) (s : State W) :
+    Ends W (Program.single ss) (.ok () s) ↔ Ends W (splitProgram ss B P) (.ok () s) :=
+  moves_preserve hvalid hfp ((movesOk_iff ss _).1 hmove) s
+
+#print axioms moves_preserve_of_movesOk
+
 end CoreJS

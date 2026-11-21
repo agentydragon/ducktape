@@ -2,6 +2,7 @@ import EsmSplit.Cli
 import Experiments.Effects
 import Experiments.CoreJS.Decode
 import Experiments.CoreJS.Split
+import Experiments.CoreJS.Move
 import Std.Data.HashMap
 import Std.Data.HashSet
 
@@ -18,7 +19,7 @@ The bundle may import from outside modules; those are loaded first, in their ord
 `--plan` writes the plan beside the modules, as JSON: `{"order": […], "modules": {name: [statement, …]}}` has the order
 in which the modules run (`Plan.evalOrder`) and the statements of each module, by their numbers in the bundle.
 `--corejs` reads the bundle in the CoreJS model (`experiments/translation/core_program.mjs`), so that the verdict can
-name the proved slice that covers the split (`sliceLines`).
+name the proved slice that covers the split (`sliceLines`): order kept, or moves.
 `--replicate K` is for timing: K renamed copies of the bundle (the spec must cover K times as many statements).
 -/
 
@@ -268,13 +269,43 @@ def footprintProblem (B : Bundle) (kept : Array Nat) (ss : List CoreJS.Stmt) : O
       | [] => none
       | missing => some s!"statement {i} mentions {missing.eraseDups}, which its footprint does not list"
 
-/-- **Which proved slice of the end-to-end theorem covers the split**, and what it rests on; or what it lacks. One
-slice is proved: `CoreJS.valid_order_kept_preserves`, for a plan that keeps the bundle's order. Its hypotheses are
-`Valid`, `OrderKept` and `FootprintsOfSyntax`, each decided here as the theorem states it, of the bundle without its
-outside `import`s (`WithoutImports`). -/
+/-- The pairs that `order` runs out of the bundle's order and `MayMove` does not let move: how many, and the first.
+For the verdict only; `movesOk` decides the hypothesis. -/
+def movesFailures (ss : Array CoreJS.Stmt) (order : Array Nat) : Nat × Nat × Option (Nat × Nat) := Id.run do
+  let mut inverted := 0
+  let mut failed := 0
+  let mut first := none
+  for h : x in [0:order.size] do
+    let a := order[x]
+    for h' : y in [x+1:order.size] do
+      let b := order[y]
+      if b < a then
+        inverted := inverted + 1
+        unless CoreJS.MayMoveAt ss a b do
+          failed := failed + 1
+          if first.isNone then first := some (a, b)
+  return (inverted, failed, first)
+
+/-- `FootprintsOfSyntax`, decided once. Inlined into the verdict, a stack sample on the large bundle found it re-run
+inside the counts below, and the verdict did not finish in 10 minutes. -/
+@[noinline] def footprintsOk (ss : List CoreJS.Stmt) (B : Bundle) : Bool := decide (CoreJS.FootprintsOfSyntax ss B)
+
+/-- How many statements are opaque, inert, and only allocate without being inert. -/
+@[noinline] def modelCounts (ss : List CoreJS.Stmt) : Nat × Nat × Nat :=
+  (ss.countP fun | .opaque .. => true | _ => false, ss.countP (·.inert), ss.countP fun s => !s.inert && s.allocs.isSome)
+
+/-- **Which proved slice of the end-to-end theorem covers the split**, and what it rests on; or what it lacks. Two
+slices are proved, and both are decided here as their theorems state them, of the bundle without its outside `import`s
+(`WithoutImports`), after `Valid` and `FootprintsOfSyntax`:
+
+- `CoreJS.valid_order_kept_preserves`, for a plan that keeps the bundle's order (`OrderKept`): every way the bundle
+  ends, the split ends the same way.
+- `CoreJS.moves_preserve`, for a plan whose every pair out of the bundle's order passes `MayMove` (`movesOk`, which
+  `movesOk_iff` proves equal to that hypothesis): the bundle ends normally in a state exactly when the split does. -/
 def sliceLines (asts : Array Json) (B : Bundle) (S : Spec) (P : Plan) (checked : Bool) (replicated : Bool)
     (model? : Option (String × Except String CoreJS.Program)) : List String :=
-  let name := "order kept (`CoreJS.valid_order_kept_preserves`)"
+  let kept := "order kept (`CoreJS.valid_order_kept_preserves`)"
+  let moves := "moves (`CoreJS.moves_preserve`)"
   let dynamicImport := asts.any (anyNode (Lower.typ · == "ImportExpression"))
   let metaUrl := asts.any (anyNode (Lower.typ · == "MetaProperty"))
   let covered : Except String (List String) := do
@@ -291,29 +322,39 @@ def sliceLines (asts : Array Json) (B : Bundle) (S : Spec) (P : Plan) (checked :
       if let some what := importsMatter P w then
         throw s!"the outside `import`s to change nothing else when left out, and they change {what}"
       unless decide (Valid w.B w.S w.P) do throw "the split without the outside `import`s to pass the checks"
-    unless decide (w.P.execOrder = List.range w.B.length) do
-      let first := (w.P.execOrder.zip (List.range w.B.length)).find? fun (a, b) => a != b
-      throw s!"the plan to keep the order (OrderKept){match first with
-        | some (a, b) => s!": statement {w.kept.getD a a} runs where statement {w.kept.getD b b} does" | none => ""}"
     let some (path, prog) := model? | throw "the bundle in the model, to check FootprintsOfSyntax: `--corejs <program.json>`"
     let (ss, nothing) ← match prog >>= modelBundle asts w.rank with
       | .ok r => pure r
       | .error e => throw s!"the bundle in the model, and {path} is not: {e}"
-    unless decide (CoreJS.OrderKept ss w.P) do throw "the plan to keep the order (OrderKept)"
-    unless decide (CoreJS.FootprintsOfSyntax ss w.B) do
+    unless footprintsOk ss w.B do
       throw s!"FootprintsOfSyntax: {(footprintProblem w.B w.kept ss).getD "it fails"}"
-    let nOpaque := ss.countP fun | .opaque .. => true | _ => false
-    pure ([s!"  proved slice: {name}: in the model, the split ends as the bundle does, for every world"]
+    let (nOpaque, inertN, allocN) := modelCounts ss
+    let orderKept := decide (CoreJS.OrderKept ss w.P)
+    let arr := ss.toArray
+    unless orderKept || CoreJS.movesOk arr w.P.execOrder do
+      let firstOut := (w.P.execOrder.zip (List.range w.B.length)).find? fun (a, b) => a != b
+      let (inverted, failed, first) := movesFailures arr w.P.execOrder.toArray
+      let orig (k : Nat) := w.kept.getD k k
+      throw s!"the plan to keep the order (OrderKept){match firstOut with
+        | some (a, b) => s!": statement {orig a} runs where statement {orig b} does" | none => ""}; {moves} needs every pair run out of order to pass MayMove, and {failed} of the {inverted} do not{match first with
+        | some (a, b) => s!", the first statement {orig a} before statement {orig b}" | none => ""}"
+    let name := if orderKept then kept else moves
+    let (inverted, _, _) := if orderKept then (0, 0, none) else movesFailures arr w.P.execOrder.toArray
+    pure ([if orderKept then s!"  proved slice: {name}: in the model, the split ends as the bundle does, for every world"
+        else s!"  proved slice: {name}: in the model, the split ends normally in a state exactly when the bundle does, for every world"]
       ++ (if imports == 0 then [] else
         [s!"    of the bundle without its `import`s of outside modules ({imports}), which bind before any statement runs; the split without them is the same otherwise"])
-      ++ [s!"    Valid: the nine checks{if imports == 0 then " above" else ", again"}",
-      s!"    OrderKept: the modules run the {ss.length} statements in the bundle's order",
-      s!"    FootprintsOfSyntax: against {path}: {ss.length - nOpaque - nothing} statements in the model's syntax, {nOpaque} opaque, {nothing} that do nothing (an `export` list, `;`, `debugger`)",
-      s!"    trusted: the model; the front end's reading of the scope; outside modules are part of the world{if dynamicImport then "; `import()` is opaque, faithful since every module is in one directory" else ""}{if metaUrl then "; `new URL(\"/absolute\", import.meta.url)` resolves against the origin" else ""}",
-      "    not among its hypotheses: the footprint analysis and its premises"])
+      ++ [s!"    Valid: the nine checks{if imports == 0 then " above" else ", again"}"]
+      ++ (if orderKept then [s!"    OrderKept: the modules run the {ss.length} statements in the bundle's order"]
+        else [s!"    MayMove: the modules run {inverted} pairs of the {ss.length} statements out of the bundle's order, and each passes ({inertN} statements are inert, {allocN} more only allocate)"])
+      ++ [s!"    FootprintsOfSyntax: against {path}: {ss.length - nOpaque - nothing} statements in the model's syntax, {nOpaque} opaque, {nothing} that do nothing (an `export` list, `;`, `debugger`)",
+      s!"    trusted: the model; the front end's reading of the scope; outside modules are part of the world{if dynamicImport then "; `import()` is opaque, faithful since every module is in one directory" else ""}{if metaUrl then "; `new URL(\"/absolute\", import.meta.url)` resolves against the origin" else ""}"]
+      ++ (if orderKept then [] else ["    not covered: a run that throws, runs out of fuel or does not end (premise P4); the split may end otherwise then"])
+      ++ ["    not among its hypotheses: the footprint analysis and its premises"])
   match covered with
   | .ok lines => lines
-  | .error why => [s!"  proved slice: none. {name} needs {why}"]
+  | .error why => [if why.startsWith "the plan to keep the order" then s!"  proved slice: none. {kept} needs {why}"
+      else s!"  proved slice: none. {kept} and {moves} need {why}"]
 
 def main (args : List String) : IO UInt32 := do
   let (replicate?, args) := Effects.takeFlag "--replicate" args
