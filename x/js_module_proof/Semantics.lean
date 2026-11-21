@@ -431,6 +431,60 @@ def runExecution {α : Type} : ExecutionState α → List Operation → Option (
     let next ← executeStep state operation
     runExecution next operations
 
+theorem executeCaptured_success {α : Type} (state : ExecutionState α)
+    (captures : List (String × String)) (parameters : List String) (arguments : List Nat)
+    (body : NumericExpr) (result : ExpressionResult Nat)
+    (stored : { store : List (String × Nat) // loadCaptures store captures = some (result.locals.drop parameters.length) })
+    (noError : state.error = none) (noThrow : state.thrown = none)
+    (evaluated : evaluateCapturedFrame state.bindings state.captured captures parameters arguments body = some result)
+    (written : storeCapturedFrame state.captured captures (result.locals.drop parameters.length) = some stored) :
+    executeStep state (.invokeCaptured captures parameters arguments body) =
+      some (finishCapturedCall state stored.val result.completion) := by
+  unfold executeStep
+  rw [noError, noThrow]
+  change (do
+    let frame ← evaluateCapturedFrame state.bindings state.captured captures parameters arguments body
+    let heap ← storeCapturedFrame state.captured captures (frame.locals.drop parameters.length)
+    pure (finishCapturedCall state heap.val frame.completion)) = _
+  rw [evaluated]
+  change (do
+    let heap ← storeCapturedFrame state.captured captures (result.locals.drop parameters.length)
+    pure (finishCapturedCall state heap.val result.completion)) = _
+  rw [written]
+  rfl
+
+theorem captured_paired_step_preserved {α : Type}
+    (leftState rightState : ExecutionState α) (leftCapture rightCapture : List (String × String))
+    (parameters : List String) (arguments : List Nat) (body : NumericExpr) (result : ExpressionResult Nat)
+    (left : { store : List (String × Nat) // loadCaptures store leftCapture = some (result.locals.drop parameters.length) })
+    (right : { store : List (String × Nat) // loadCaptures store rightCapture = some (result.locals.drop parameters.length) })
+    (sameBindings : leftState.bindings = rightState.bindings)
+    (sameEvents : leftState.events = rightState.events)
+    (sameReplies : leftState.replies = rightState.replies)
+    (sameError : leftState.error = rightState.error)
+    (sameReturns : leftState.returns = rightState.returns)
+    (sameThrown : leftState.thrown = rightState.thrown)
+    (related : relatedCapturedEnvironments leftState.captured rightState.captured leftCapture rightCapture)
+    (noError : leftState.error = none) (noThrow : leftState.thrown = none)
+    (evaluated : evaluateCapturedFrame leftState.bindings leftState.captured leftCapture parameters arguments body = some result)
+    (leftWritten : storeCapturedFrame leftState.captured leftCapture (result.locals.drop parameters.length) = some left)
+    (rightWritten : storeCapturedFrame rightState.captured rightCapture (result.locals.drop parameters.length) = some right) :
+    executeStep leftState (.invokeCaptured leftCapture parameters arguments body) =
+        some (finishCapturedCall leftState left.val result.completion) ∧
+      executeStep rightState (.invokeCaptured rightCapture parameters arguments body) =
+        some (finishCapturedCall rightState right.val result.completion) ∧
+      let leftNext := finishCapturedCall leftState left.val result.completion
+      let rightNext := finishCapturedCall rightState right.val result.completion
+      leftNext.bindings = rightNext.bindings ∧ leftNext.events = rightNext.events ∧
+        leftNext.replies = rightNext.replies ∧ leftNext.error = rightNext.error ∧
+        leftNext.returns = rightNext.returns ∧ leftNext.thrown = rightNext.thrown ∧
+        relatedCapturedEnvironments leftNext.captured rightNext.captured leftCapture rightCapture := by
+  have step := captured_machine_step_preserved leftState rightState leftCapture rightCapture parameters arguments body result
+    sameBindings sameEvents sameReplies sameError sameReturns sameThrown related evaluated left right
+  refine ⟨executeCaptured_success leftState leftCapture parameters arguments body result left noError noThrow evaluated leftWritten, ?_, step.2⟩
+  exact executeCaptured_success rightState rightCapture parameters arguments body result right
+    (sameError.symm.trans noError) (sameThrown.symm.trans noThrow) step.1 rightWritten
+
 inductive RelatedOperations (relation : Operation → Operation → Prop) : List Operation → List Operation → Prop where
   | nil : RelatedOperations relation [] []
   | cons {left right leftTail rightTail} : relation left right → RelatedOperations relation leftTail rightTail →
