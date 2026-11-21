@@ -4,18 +4,14 @@ import (
 	"errors"
 	"strings"
 	"testing"
-	"time"
 
-	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 )
 
 func TestHostSessionsTracksAdmissionAndSetup(t *testing.T) {
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")
-	if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{CommandId: "input", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "hello"}}}, "fixture-account", nil); err != nil {
-		t.Fatal(err)
-	}
+	admitInput(t, store, session.ID, "input", "hello")
 	sessions, err := store.HostSessions(t.Context(), "fixture-account")
 	if err != nil || len(sessions) != 1 {
 		t.Fatalf("sessions=%v err=%v", sessions, err)
@@ -27,10 +23,7 @@ func TestHostSessionsTracksAdmissionAndSetup(t *testing.T) {
 	if err != nil || len(hidden) != 0 {
 		t.Fatalf("other owner's sessions=%v err=%v", hidden, err)
 	}
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	owner := claim(t, store, session)
 	if _, err := store.NextCommand(t.Context(), owner, session.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -39,10 +32,7 @@ func TestHostSessionsTracksAdmissionAndSetup(t *testing.T) {
 		t.Fatalf("active sessions=%v err=%v", sessions, err)
 	}
 	setup := openSessionForStore(t, store, "echo setup")
-	setupOwner, err := store.Claim(t.Context(), setup.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	setupOwner := claim(t, store, setup)
 	if _, err := store.StartSetup(t.Context(), setupOwner, setup.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -63,12 +53,7 @@ func TestHostSessionsTracksAdmissionAndSetup(t *testing.T) {
 func TestHostSessionsUsesRecoveryCausePrecedence(t *testing.T) {
 	for _, scenario := range []string{"pending", "intent", "cell", "process", "effects"} {
 		t.Run(scenario, func(t *testing.T) {
-			store := newTestStore(t)
-			session := openSessionForStore(t, store, "")
-			owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-			if err != nil {
-				t.Fatal(err)
-			}
+			store, session, owner := claimedSession(t)
 			// Seed all lower-priority blockers too, so the assertion verifies precedence.
 			if scenario != "effects" {
 				if _, err := store.DB().ExecContext(t.Context(), `INSERT INTO sampler_process(id,conversation_id,generation,status,tty) VALUES('process',$1,$2,'running',false)`, session.ConversationID, owner.Generation); err != nil {

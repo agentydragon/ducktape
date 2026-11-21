@@ -34,7 +34,7 @@ func TruncateExecOutput(output []byte, omittedBytes int, originalTokenCount int,
 			return text
 		}
 		return fmt.Sprintf("Warning: truncated output (original token count: %d)\nTotal output lines: %d\n\n%s",
-			approxTokenCount(text), countLines(text), TruncateTextWithTokenBudget(text, maxTokens))
+			ApproxTokenCountBytes(len(text)), countLines(text), TruncateTextWithTokenBudget(text, maxTokens))
 	}
 	marker := outputbuffer.OmissionMarker(omittedBytes)
 	if len(text) <= budget {
@@ -51,7 +51,9 @@ func TruncateExecOutput(output []byte, omittedBytes int, originalTokenCount int,
 	return fmt.Sprintf("Warning: truncated output (original token count: %d)\n%s\n%s", originalTokenCount, notice, truncated)
 }
 
-// ApproxTokenCountBytes estimates tokens from a byte count using Codex's four-byte heuristic.
+// ApproxTokenCountBytes estimates tokens from a byte count using Codex's four-byte heuristic
+// (rust-v0.162.1 utils/string/src/truncate.rs approx_tokens_from_byte_count; approx_token_count is
+// this over len(text)).
 func ApproxTokenCountBytes(byteCount int) int {
 	return (byteCount + approxBytesPerToken - 1) / approxBytesPerToken
 }
