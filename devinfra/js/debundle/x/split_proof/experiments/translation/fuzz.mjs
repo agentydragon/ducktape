@@ -1227,7 +1227,6 @@ async function main() {
   // `--full-corpus`: programs of `gen/` (every family, or `--families a,b`), which reach any part of the language
   const fullCorpus = args.includes("--full-corpus");
   const families = option("families", undefined)?.split(",");
-  const avoid = option("avoid", undefined)?.split(",");
   if ([callbackCorpus, astCorpus, fullCorpus].filter(Boolean).length > 1)
     throw new Error("choose one structured corpus");
   const astTypes = {};
@@ -1254,7 +1253,7 @@ async function main() {
       : callbackCorpus
         ? callbackBundle(r, round, seed)
         : fullCorpus
-          ? generateProgram(seed * 100003 + round, { ...(families ? { families } : {}), avoid })
+          ? generateProgram(seed * 100003 + round, families ? { families } : {})
           : generate(r, leaks);
     if (astCorpus) {
       const stats = astStatistics(bundle);

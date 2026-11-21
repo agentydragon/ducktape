@@ -102,7 +102,7 @@ export const GENERATORS = [
   {
     id: "full",
     title: "`fuzz.mjs --full-corpus`: `gen/`, the generator of the whole language",
-    produce: fuzzBundles(["--full-corpus", ...(process.env.GEN_AVOID ? ["--avoid", process.env.GEN_AVOID] : [])]),
+    produce: fuzzBundles(["--full-corpus"]),
   },
   {
     id: "shift",

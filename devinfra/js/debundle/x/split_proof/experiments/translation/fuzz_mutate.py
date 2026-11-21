@@ -153,7 +153,7 @@ MUTANTS = {
     ),
     "iteration yields nothing": (
         EFFECTS,
-        "        else r := r.join (← contentsOf (AV.ofObj (c - 1)))\n",
+        "        else r := r.join (← yieldOf (AV.ofObj (c - 1)))\n",
         "        else pure ()\n",
         "an object reached by spreading an array",
     ),
@@ -189,8 +189,8 @@ MUTANTS = {
     ),
     "escaped objects hold what the world put": (
         EFFECTS,
-        "    if ob.escaped then\n      r := r.join AV.top\n      worldMayHaveAccessors",
-        "    if ob.escaped then\n      worldMayHaveAccessors",
+        "      r := r.join AV.top\n      worldMayHaveAccessors (seen.getLast?.getD o)\n    -- a member of a vendor",
+        "      worldMayHaveAccessors (seen.getLast?.getD o)\n    -- a member of a vendor",
         "an object the world holds, read",
     ),
     "unknown keys see no properties": (
@@ -371,12 +371,6 @@ MUTANTS = {
         "calls := [1] }",
         "an executor that resolves a thenable",
     ),
-    "JSON.parse calls no reviver": (
-        "Experiments/Intrinsics.lean",
-        '("JSON.parse", { ret := fresh, calls := [2], returnsCalls := true })',
-        '("JSON.parse", { ret := fresh })',
-        "a reviver that writes an object",
-    ),
     "join does not convert its elements": (
         "Experiments/Intrinsics.lean",
         '("Array.prototype.join", { convertsContents := [0] })',
@@ -477,7 +471,7 @@ MUTANTS = {
     "the depth cutoffs find nothing": (
         EFFECTS,
         (
-            "  if seen.length > 10 then return AV.top\n",
+            '  if seen.length > 10 then return ← runAccessors (seen.getLast?.getD o) AV.top [] "get"\n',
             "  if seen.length > 10 then return (true, AV.top)\n",
             "  if seen.length > 10 then return true\n",
         ),
@@ -490,7 +484,7 @@ MUTANTS = {
     ),
     "callbacks get only their own arguments": (
         EFFECTS,
-        "    let given : AV := AV.join (AV.join (← contentsOf others) others) AV.prim\n",
+        "    let given : AV := AV.join (AV.join (← yieldOf others) others) AV.prim\n",
         "    let given : AV := AV.prim\n",
         "the element of `reduce` is its second parameter",
     ),
@@ -514,8 +508,8 @@ MUTANTS = {
     ),
     "Array.from keeps no mapFn result": (
         EFFECTS,
-        "    | .freshOf p => mkArr ((← contentsOf (pos p)).join (if s.returnsCalls then calledRet else #[]))\n",
-        "    | .freshOf p => mkArr (← contentsOf (pos p))\n",
+        "      mkArr (held.join (if s.returnsCalls then calledRet else #[]))\n",
+        "      mkArr held\n",
         "`Array.from(xs, f)` holds what `f` returns",
     ),
     "defineProperties reads no descriptors": (
@@ -616,15 +610,9 @@ MUTANTS = {
     ),
     "next returns no value": (
         EFFECTS,
-        '      joinProp o "value" (← contentsOf (pos p))\n      joinProp o "done" AV.prim',
+        '      joinProp o "value" (← yieldOf (pos p))\n      joinProp o "done" AV.prim',
         '      joinProp o "done" AV.prim',
         "`it.next().value` is an element",
-    ),
-    "iterator helpers touch nothing": (
-        INTRINSICS,
-        "{ world := true, retains := [1, 2] })",
-        "{ muts := [] })",
-        "an iterator helper runs its callback when consumed",
     ),
     "a map copy holds no keys and values": (
         EFFECTS,
@@ -640,7 +628,7 @@ MUTANTS = {
     ),
     "instanceof calls no hasInstance": (
         EFFECTS,
-        '    if op == "instanceof" then runProtocol b "@@hasInstance" [a] fr (shallow j)\n',
+        '      runProtocol b "@@hasInstance" [a] fr (shallow j)\n',
         "",
         "a class with a static `Symbol.hasInstance`",
     ),
@@ -891,6 +879,93 @@ MUTANTS = {
         "        if more == every then break\n        every := more\n      mkArr every",
         "        every := more\n        break\n      mkArr every",
         "`flat(Infinity)` of arrays nested seven deep",
+    ),
+    "a property of a world value is a plain read": (
+        EFFECTS,
+        '  if o == 0 then\n    worldValue "a property of"\n    return AV.top',
+        "  if o == 0 then\n    return AV.top",
+        "a read of a field of a `Proxy` runs the `get` trap",
+    ),
+    "a conversion of a world value runs nothing": (
+        EFFECTS,
+        '      if c == 1 then worldValue "a conversion of"',
+        "      if c == 1 then pure ()",
+        "`Object.keys(proxy)`, a template literal of an object that came back from the world",
+    ),
+    "the contents of a world value are read plainly": (
+        EFFECTS,
+        '      worldValue "the contents of"\n',
+        "",
+        "`{ ...proxy }`",
+    ),
+    "a world value is no hook": (
+        EFFECTS,
+        "    if d == 1 then r := r.join AV.top\n",
+        "    if d == 1 then pure ()\n",
+        "a function of the program that came back from the world, stored as `toString`",
+    ),
+    "the then of a world value is not read": (
+        EFFECTS,
+        '    if c == 1 then worldValue "the then of"\n    else if c ≥ 2 then',
+        "    if c ≥ 2 then",
+        "`await proxy`",
+    ),
+    "a world prototype has no setter": (
+        EFFECTS,
+        "    if p == 1 then\n      found := true\n      fns := fns.join AV.top\n    else if p ≥ 2 then",
+        "    if p ≥ 2 then",
+        "a store into `Object.create(proxy)`",
+    ),
+    "a world prototype has no hook": (
+        EFFECTS,
+        "    if p == 1 || (p ≥ 2 && (← chainHasHook (p - 1) (o :: seen))) then return true",
+        "    if p ≥ 2 && (← chainHasHook (p - 1) (o :: seen)) then return true",
+        "a conversion of `Object.create(proxy)`",
+    ),
+    "a world prototype has no iterator": (
+        EFFECTS,
+        (
+            "    if p == 1 || (p ≥ 2 && (← mayHaveComputedKey (p - 1) (o :: seen))) then return true",
+            "      if c == 1 then modObj o ({ · with hook := true })\n      else if c ≥ 2 then",
+        ),
+        ("    if p ≥ 2 && (← mayHaveComputedKey (p - 1) (o :: seen)) then return true", "      if c ≥ 2 then"),
+        "`Array.from(Object.create(proxy))`, a spread of an array whose prototype is a proxy",
+    ),
+    "queries do not reach a world prototype": (
+        EFFECTS,
+        "    if c == 1 then return true\n    if c ≥ 2 && !seen.contains (c - 1) then",
+        "    if c ≥ 2 && !seen.contains (c - 1) then",
+        "`for (k in proxy)`, and `in` and `instanceof` on `Object.create(proxy)`",
+    ),
+    "a generator function keeps its prototype": (
+        EFFECTS,
+        '    if flag code "generator" then escapeObj (c - 1)\n',
+        "",
+        "a `toString` on `gen.prototype` runs when the generator object is converted",
+    ),
+    "a standard function called on a world value is plain": (
+        EFFECTS,
+        '    if thisV.contains 1 then worldValue "a standard function called on"\n',
+        "",
+        "`Object.prototype.hasOwnProperty.call(proxy, key)`",
+    ),
+    "catch binds only what the program threw": (
+        EFFECTS,
+        "      let foreign : AV := if (← get).unk then AV.top else #[]",
+        "      let foreign : AV := #[]",
+        "an object of the program that code the world ran threw",
+    ),
+    "the prototype of an escaped class is the world's": (
+        EFFECTS,
+        '    if ob.escaped && !(key == some "prototype" && ob.kind matches .klass ..) then',
+        "    if ob.escaped then",
+        "precision: an instance of an exported class does not inherit from the world",
+    ),
+    "a conversion of an escaped object is plain without P3": (
+        EFFECTS,
+        "        if ob.escaped then worldMayHaveAccessors (c - 1)\n        match ob.kind with",
+        "        match ob.kind with",
+        "premise P3 off: the world may have added a `toString`",
     ),
     "nested hooks are unbounded": (
         EFFECTS,

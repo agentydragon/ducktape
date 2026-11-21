@@ -78,6 +78,8 @@ writeFileSync(
     "export const lib = { settings: { debug: false } };",
     // a descriptor whose getter calls back a function the program left in a global
     "export const mk = () => ({ get() { return globalThis.__cb && globalThis.__cb(); }, configurable: true });",
+    // a function that gives its argument a conversion hook, which calls back the same function
+    'export const hook = (o) => { o.toString = () => { globalThis.__cb && globalThis.__cb(); return ""; }; };',
     "",
   ].join("\n")
 );

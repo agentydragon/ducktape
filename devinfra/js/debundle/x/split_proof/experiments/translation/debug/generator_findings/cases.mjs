@@ -5,7 +5,7 @@
 // A `FAIL … WRONG ACCEPT` is a finding that stands. A line that passes means the author fixed it: move the case to
 // `experiments/effects/cases_general.mjs`. See README.md for the table of causes.
 //
-// Premise P3 is on: it is the setting of the fuzzers and of the large bundle. F6 was found by `gen/`.
+// Premise P3 is on: it is the setting of the fuzzers and of the large bundle, and what F7 is about.
 export const premises = { noWorldHooks: true };
 
 const finding = (name, source, order) => ({
@@ -15,102 +15,69 @@ const finding = (name, source, order) => ({
 });
 
 export const cases = [
-  // F6: a Proxy is an object the world returned, and with premise P3 on a read of a property of such an object is pure; the traps are
-  // the program's own code, which the read runs. `set`, `deleteProperty`, `defineProperty`, `apply` and a method call through the
-  // proxy are refused. With P3 off every program here is refused.
+  // F7: code of the program that is not run here (a callback the world runs, a generator body) or a standard function without a
+  // row defines a getter or a conversion hook on an object of the program. With premise P3 a read of that object is plain
   finding(
-    "F6 get trap: a log of a field of the proxy",
+    "F7 a callback the world runs defines a getter on an object of the program",
     `
-const hits = { n: 0 };
-const t = { f: 1 };
-const px = new Proxy(t, { get(target, key, receiver) { hits.n += 1; return Reflect.get(target, key, receiver); } });
-console.log(px.f);
-const seen = hits.n;
+const o = { n: 0 };
+const obj = {};
+const install = () => { Object.defineProperty(obj, "g", { get() { o.n++; return 1; } }); };
+[1].values().forEach(install);
+obj.g;
+const seen = o.n;
 console.log(seen);
 `,
-    [0, 1, 2, 4, 3, 5]
+    [0, 1, 2, 3, 5, 4, 6]
   ),
   finding(
-    "F6 get trap: a pure read of a field of the proxy",
+    "F7 a callback the world runs stores a toString into an object of the program",
     `
-const hits = { n: 0 };
-const t = { f: 1 };
-const px = new Proxy(t, { get(target, key, receiver) { hits.n += 1; return Reflect.get(target, key, receiver); } });
-const x = px.f;
-const seen = hits.n;
-console.log(seen, x);
+const o = { n: 0 };
+const obj = {};
+const install = () => { obj.toString = () => { o.n++; return "s"; }; };
+[1].values().forEach(install);
+\`\${obj}\`;
+const seen = o.n;
+console.log(seen);
 `,
-    [0, 1, 2, 4, 3, 5]
+    [0, 1, 2, 3, 5, 4, 6]
   ),
   finding(
-    "F6 has trap: key in proxy",
+    "F7 a callback the world runs gives an object of the program a prototype with a getter",
     `
-const hits = { n: 0 };
-const t = { f: 1 };
-const px = new Proxy(t, { has(target, key) { hits.n += 3; return Reflect.has(target, key); } });
-const x = "f" in px;
-const seen = hits.n;
-console.log(seen, x);
+const o = { n: 0 };
+const obj = {};
+const install = () => { Object.setPrototypeOf(obj, { get g() { o.n++; return 1; } }); };
+[1].values().forEach(install);
+obj.g;
+const seen = o.n;
+console.log(seen);
 `,
-    [0, 1, 2, 4, 3, 5]
+    [0, 1, 2, 3, 5, 4, 6]
   ),
   finding(
-    "F6 ownKeys trap: Object.keys of the proxy",
+    "F7 a generator body defines a getter on an object of the program",
     `
-const hits = { n: 0 };
-const t = { f: 1 };
-const px = new Proxy(t, { ownKeys(target) { hits.n += 5; return Reflect.ownKeys(target); } });
-const x = Object.keys(px).length;
-const seen = hits.n;
-console.log(seen, x);
+const o = { n: 0 };
+const obj = {};
+function* install() { Object.defineProperty(obj, "g", { get() { o.n++; return 1; } }); }
+install().next();
+obj.g;
+const seen = o.n;
+console.log(seen);
 `,
-    [0, 1, 2, 4, 3, 5]
+    [0, 1, 2, 3, 5, 4, 6]
   ),
   finding(
-    "F6 getOwnPropertyDescriptor trap",
+    "F7 Reflect.apply of Object.defineProperty defines a getter",
     `
-const hits = { n: 0 };
-const t = { f: 1 };
-const px = new Proxy(t, { getOwnPropertyDescriptor(target, key) { hits.n += 6; return Reflect.getOwnPropertyDescriptor(target, key); } });
-const x = Object.getOwnPropertyDescriptor(px, "f").value;
-const seen = hits.n;
-console.log(seen, x);
-`,
-    [0, 1, 2, 4, 3, 5]
-  ),
-  finding(
-    "F6 getPrototypeOf trap: instanceof",
-    `
-const hits = { n: 0 };
-const t = { f: 1 };
-const px = new Proxy(t, { getPrototypeOf(target) { hits.n += 8; return Reflect.getPrototypeOf(target); } });
-const x = px instanceof Object;
-const seen = hits.n;
-console.log(seen, x);
-`,
-    [0, 1, 2, 4, 3, 5]
-  ),
-  finding(
-    "F6 get trap: a template literal of a field of the proxy",
-    `
-const hits = { n: 0 };
-const t = { f: 1 };
-const px = new Proxy(t, { get(target, key, receiver) { hits.n += 1; return Reflect.get(target, key, receiver); } });
-const x = \`\${px.f}\`;
-const seen = hits.n;
-console.log(seen, x);
-`,
-    [0, 1, 2, 4, 3, 5]
-  ),
-  finding(
-    "F6 get trap: spread of the proxy",
-    `
-const hits = { n: 0 };
-const t = { f: 1 };
-const px = new Proxy(t, { get(target, key, receiver) { hits.n += 1; return Reflect.get(target, key, receiver); } });
-const x = { ...px }.f;
-const seen = hits.n;
-console.log(seen, x);
+const o = { n: 0 };
+const obj = {};
+Reflect.apply(Object.defineProperty, null, [obj, "g", { get() { o.n++; return 1; } }]);
+obj.g;
+const seen = o.n;
+console.log(seen);
 `,
     [0, 1, 2, 4, 3, 5]
   ),

@@ -25,11 +25,12 @@ patch by another script loaded before or during the bundle, one through a value 
 engine keeps (`RegExp.$1`). `experiments/effects/debug/p1_known_gaps` has a program for each.
 
 **Premise P3: the world defines no hooks.** The world (the environment and every module outside the bundle) adds no
-accessor and no conversion hook (`valueOf`, `toString`, `Symbol.toPrimitive`) to an object the program made, and
-converting a value the world made runs no program code. So a property of an object the world holds is read and
-assigned like any other. `Premises.noWorldHooks` switches this premise; off, reading or assigning a property of an
-object the world holds, and converting a value the world made or holds, are calls into the world. Accessors and hooks
-the *program* defined are found and run like any call.
+accessor and no conversion hook (`valueOf`, `toString`, `Symbol.toPrimitive`) to an object the program made. So a
+property of an object the world holds is read and assigned like any other. `Premises.noWorldHooks` switches this
+premise; off, reading, assigning or converting an object the world holds is a call into the world. Accessors and hooks
+the *program* defined are found and run like any call. The premise is about objects the analysis follows. A value the
+world *made* is not one: it may be a `Proxy` with a handler of the program, or an object of the program that came
+back, so every operation on it is unknown code (`Effects.worldValue`).
 
 Every call of a row also converts the receiver and the arguments to primitives, as the standard functions do for
 numbers, strings and keys (`Math.floor(x)`, `String(x)`, `o.hasOwnProperty(k)`): a `valueOf` or `toString` the program

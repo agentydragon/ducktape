@@ -10,6 +10,8 @@ export const premises = {};
 const c = (name, source, order) => ({ name, source: source.trim() + "\n", reorders: [{ order, behavior: "differs" }] });
 const p3 = (name, source, order) => ({ ...c(name, source, order), premises: { noWorldHooks: true } });
 const chain = (n) => Array.from({ length: n }, (_, i) => `const p${i + 1} = Object.create(p${i});`).join("\n");
+const getTrap = "get(target, key, receiver) { hits.n += 1; return Reflect.get(target, key, receiver); }";
+const proxy = (traps) => `const px = new Proxy(t, { ${traps} });`;
 
 export const cases = [
   // callbacks of standard functions: which parameter holds what, and `thisArg`
@@ -1431,4 +1433,442 @@ L1: { for (a0[0] of [7 & 10, a0.reduce((l46, l47) => l47, 0)]) { class L48 { con
 `,
     [1, 0]
   ),
+  // a value the world made: a `Proxy` with a handler of the program, an object of the program that came back, an instance
+  // the world made of a class of the program. A read, a conversion and a query of one run code of the program
+  p3(
+    "get trap: a log of a field of the proxy",
+    `
+const hits = { n: 0 };
+const t = { f: 1 };
+const px = new Proxy(t, { get(target, key, receiver) { hits.n += 1; return Reflect.get(target, key, receiver); } });
+console.log(px.f);
+const seen = hits.n;
+console.log(seen);
+`,
+    [0, 1, 2, 4, 3, 5]
+  ),
+  p3(
+    "get trap: a pure read of a field of the proxy",
+    `
+const hits = { n: 0 };
+const t = { f: 1 };
+const px = new Proxy(t, { get(target, key, receiver) { hits.n += 1; return Reflect.get(target, key, receiver); } });
+const x = px.f;
+const seen = hits.n;
+console.log(seen, x);
+`,
+    [0, 1, 2, 4, 3, 5]
+  ),
+  p3(
+    "has trap: key in proxy",
+    `
+const hits = { n: 0 };
+const t = { f: 1 };
+const px = new Proxy(t, { has(target, key) { hits.n += 3; return Reflect.has(target, key); } });
+const x = "f" in px;
+const seen = hits.n;
+console.log(seen, x);
+`,
+    [0, 1, 2, 4, 3, 5]
+  ),
+  p3(
+    "ownKeys trap: Object.keys of the proxy",
+    `
+const hits = { n: 0 };
+const t = { f: 1 };
+const px = new Proxy(t, { ownKeys(target) { hits.n += 5; return Reflect.ownKeys(target); } });
+const x = Object.keys(px).length;
+const seen = hits.n;
+console.log(seen, x);
+`,
+    [0, 1, 2, 4, 3, 5]
+  ),
+  p3(
+    "getOwnPropertyDescriptor trap",
+    `
+const hits = { n: 0 };
+const t = { f: 1 };
+const px = new Proxy(t, { getOwnPropertyDescriptor(target, key) { hits.n += 6; return Reflect.getOwnPropertyDescriptor(target, key); } });
+const x = Object.getOwnPropertyDescriptor(px, "f").value;
+const seen = hits.n;
+console.log(seen, x);
+`,
+    [0, 1, 2, 4, 3, 5]
+  ),
+  p3(
+    "getPrototypeOf trap: instanceof",
+    `
+const hits = { n: 0 };
+const t = { f: 1 };
+const px = new Proxy(t, { getPrototypeOf(target) { hits.n += 8; return Reflect.getPrototypeOf(target); } });
+const x = px instanceof Object;
+const seen = hits.n;
+console.log(seen, x);
+`,
+    [0, 1, 2, 4, 3, 5]
+  ),
+  p3(
+    "get trap: a template literal of a field of the proxy",
+    `
+const hits = { n: 0 };
+const t = { f: 1 };
+const px = new Proxy(t, { get(target, key, receiver) { hits.n += 1; return Reflect.get(target, key, receiver); } });
+const x = \`\${px.f}\`;
+const seen = hits.n;
+console.log(seen, x);
+`,
+    [0, 1, 2, 4, 3, 5]
+  ),
+  p3(
+    "get trap: spread of the proxy",
+    `
+const hits = { n: 0 };
+const t = { f: 1 };
+const px = new Proxy(t, { get(target, key, receiver) { hits.n += 1; return Reflect.get(target, key, receiver); } });
+const x = { ...px }.f;
+const seen = hits.n;
+console.log(seen, x);
+`,
+    [0, 1, 2, 4, 3, 5]
+  ),
+  // a proxy made in other ways
+  p3(
+    "Proxy.revocable: a read runs the get trap",
+    `
+const hits = { n: 0 };
+const t = { f: 1 };
+const { proxy: px } = Proxy.revocable(t, { ${getTrap} });
+const x = px.f;
+const seen = hits.n;
+console.log(seen, x);
+`,
+    [0, 1, 2, 4, 3, 5]
+  ),
+  p3(
+    "Reflect.construct(Proxy): a read runs the get trap",
+    `
+const hits = { n: 0 };
+const t = { f: 1 };
+const px = Reflect.construct(Proxy, [t, { ${getTrap} }]);
+const x = px.f;
+const seen = hits.n;
+console.log(seen, x);
+`,
+    [0, 1, 2, 4, 3, 5]
+  ),
+  p3(
+    "globalThis.Proxy: a read runs the get trap",
+    `
+const hits = { n: 0 };
+const t = { f: 1 };
+const px = new globalThis.Proxy(t, { ${getTrap} });
+const x = px.f;
+const seen = hits.n;
+console.log(seen, x);
+`,
+    [0, 1, 2, 4, 3, 5]
+  ),
+  p3(
+    "a proxy made in a generator body, which is not run here",
+    `
+const hits = { n: 0 };
+const t = { f: 1 };
+const px = (function* () { yield new Proxy(t, { ${getTrap} }); })().next().value;
+const x = px.f;
+const seen = hits.n;
+console.log(seen, x);
+`,
+    [0, 1, 2, 4, 3, 5]
+  ),
+  // the trap writes a variable: wrong also without premise P3
+  {
+    ...c(
+      "the get trap assigns a variable (premise P3 off)",
+      `
+let count = 0;
+const t = { f: 1 };
+const px = new Proxy(t, { get(target, key) { count += 1; return target[key]; } });
+const x = px.f;
+const seen = count;
+console.log(seen, x);
+`,
+      [0, 1, 2, 4, 3, 5]
+    ),
+    premises: {},
+  },
+  // other operations on a proxy
+  p3(
+    "for-in over a proxy runs the ownKeys trap",
+    `
+const hits = { n: 0 };
+const t = { f: 1 };
+${proxy("ownKeys(target) { hits.n += 5; return Reflect.ownKeys(target); }")}
+for (const k in px) {}
+const seen = hits.n;
+console.log(seen);
+`,
+    [0, 1, 2, 4, 3, 5]
+  ),
+  p3(
+    "hasOwnProperty.call on a proxy runs the getOwnPropertyDescriptor trap",
+    `
+const hits = { n: 0 };
+const t = { f: 1 };
+${proxy("getOwnPropertyDescriptor(target, key) { hits.n += 6; return Reflect.getOwnPropertyDescriptor(target, key); }")}
+const x = Object.prototype.hasOwnProperty.call(px, "f");
+const seen = hits.n;
+console.log(seen, x);
+`,
+    [0, 1, 2, 4, 3, 5]
+  ),
+  p3(
+    "Object.getPrototypeOf of a proxy runs the getPrototypeOf trap",
+    `
+const hits = { n: 0 };
+const t = { f: 1 };
+${proxy("getPrototypeOf(target) { hits.n += 8; return Reflect.getPrototypeOf(target); }")}
+const x = Object.getPrototypeOf(px) === Object.prototype;
+const seen = hits.n;
+console.log(seen, x);
+`,
+    [0, 1, 2, 4, 3, 5]
+  ),
+  p3(
+    "Object.isExtensible of a proxy runs the isExtensible trap",
+    `
+const hits = { n: 0 };
+const t = { f: 1 };
+${proxy("isExtensible(target) { hits.n += 2; return Reflect.isExtensible(target); }")}
+const x = Object.isExtensible(px);
+const seen = hits.n;
+console.log(seen, x);
+`,
+    [0, 1, 2, 4, 3, 5]
+  ),
+  p3(
+    "await of a proxy reads then through the get trap",
+    `
+const hits = { n: 0 };
+const t = { f: 1 };
+${proxy(getTrap)}
+(async () => { await px; })();
+const seen = hits.n;
+console.log(seen);
+`,
+    [0, 1, 2, 4, 3, 5]
+  ),
+  p3(
+    "a proxy read through an object that holds it",
+    `
+const hits = { n: 0 };
+const t = { f: 1 };
+const box = { px: new Proxy(t, { ${getTrap} }) };
+const x = box.px.f;
+const seen = hits.n;
+console.log(seen, x);
+`,
+    [0, 1, 2, 4, 3, 5]
+  ),
+  // an object the program made, with an accessor or a hook, comes back from the world
+  p3(
+    "an object with a getter comes back from the world",
+    `
+const o = { n: 0 };
+const obj = { get g() { o.n++; return 1; } };
+const same = [obj].values().next().value;
+same.g;
+const seen = o.n;
+console.log(seen);
+`,
+    [0, 1, 2, 4, 3, 5]
+  ),
+  p3(
+    "an object with a toString comes back from the world",
+    `
+const o = { n: 0 };
+const obj = { toString() { o.n++; return "s"; } };
+const same = [obj].values().next().value;
+\`\${same}\`;
+const seen = o.n;
+console.log(seen);
+`,
+    [0, 1, 2, 4, 3, 5]
+  ),
+  p3(
+    "Reflect.construct of a class with a getter",
+    `
+const o = { n: 0 };
+class C { get g() { o.n++; return 1; } }
+const made = Reflect.construct(C, []);
+made.g;
+const seen = o.n;
+console.log(seen);
+`,
+    [0, 1, 2, 4, 3, 5]
+  ),
+  p3(
+    "a generator object inherits a toString from the prototype of its function",
+    `
+const o = { n: 0 };
+function* gen() { yield 1; }
+gen.prototype.toString = function () { o.n++; return "s"; };
+const it = gen();
+\`\${it}\`;
+const seen = o.n;
+console.log(seen);
+`,
+    [0, 1, 2, 3, 5, 4, 6]
+  ),
+  p3(
+    "a function of the program comes back from the world and is a toString",
+    `
+const o = { n: 0 };
+function bump() { o.n++; return "s"; }
+const same = [bump].values().next().value;
+const obj = { toString: same };
+\`\${obj}\`;
+const seen = o.n;
+console.log(seen);
+`,
+    [0, 1, 2, 3, 5, 4, 6]
+  ),
+  p3(
+    "in on a value from the world that is an object with a has trap",
+    `
+const hits = { n: 0 };
+const t = { f: 1 };
+const box = [new Proxy(t, { has(target, key) { hits.n += 3; return Reflect.has(target, key); } })];
+const x = "f" in box[0];
+const seen = hits.n;
+console.log(seen, x);
+`,
+    [0, 1, 2, 4, 3, 5]
+  ),
+  // an object that inherits from a proxy
+  p3(
+    "a store into an object that inherits from a proxy runs the set trap",
+    `
+const hits = { n: 0 };
+const base = new Proxy({}, { set(target, key, value, receiver) { hits.n += 1; return Reflect.set(target, key, value, receiver); } });
+const obj = Object.create(base);
+obj.x = 1;
+const seen = hits.n;
+console.log(seen);
+`,
+    [0, 1, 2, 4, 3, 5]
+  ),
+  p3(
+    "in on an object that inherits from a proxy runs the has trap",
+    `
+const hits = { n: 0 };
+const base = new Proxy({}, { has(target, key) { hits.n += 3; return Reflect.has(target, key); } });
+const obj = Object.create(base);
+const x = "f" in obj;
+const seen = hits.n;
+console.log(seen, x);
+`,
+    [0, 1, 2, 4, 3, 5]
+  ),
+  p3(
+    "for-in over an object that inherits from a proxy runs the ownKeys trap",
+    `
+const hits = { n: 0 };
+const base = new Proxy({}, { ownKeys(target) { hits.n += 5; return Reflect.ownKeys(target); } });
+const obj = Object.create(base);
+for (const k in obj) {}
+const seen = hits.n;
+console.log(seen);
+`,
+    [0, 1, 2, 4, 3, 5]
+  ),
+  p3(
+    "instanceof on an object that inherits from a proxy runs the getPrototypeOf trap",
+    `
+const hits = { n: 0 };
+const base = new Proxy({}, { getPrototypeOf(target) { hits.n += 8; return Reflect.getPrototypeOf(target); } });
+const obj = Object.create(base);
+const x = obj instanceof Array;
+const seen = hits.n;
+console.log(seen, x);
+`,
+    [0, 1, 2, 4, 3, 5]
+  ),
+  p3(
+    "a conversion of an object that inherits from a proxy runs the get trap",
+    `
+const hits = { n: 0 };
+const base = new Proxy({}, { get(target, key) { hits.n += 1; return key === Symbol.toPrimitive ? () => "s" : undefined; } });
+const obj = Object.create(base);
+\`\${obj}\`;
+const seen = hits.n;
+console.log(seen);
+`,
+    [0, 1, 2, 4, 3, 5]
+  ),
+  p3(
+    "a spread of an array whose prototype is a proxy runs the get trap",
+    `
+const hits = { n: 0 };
+const base = new Proxy(Array.prototype, { get(target, key, receiver) { hits.n += 1; return Reflect.get(target, key, receiver); } });
+const arr = Object.setPrototypeOf([1], base);
+[...arr];
+const seen = hits.n;
+console.log(seen);
+`,
+    [0, 1, 2, 4, 3, 5]
+  ),
+  // what a catch binds
+  p3(
+    "an exception the world passes on is an object of the program with a getter",
+    `
+const o = { n: 0 };
+const obj = { get g() { o.n++; return 1; } };
+let saved; try { [1].values().forEach(() => { throw obj; }); } catch (e) { saved = e; }
+saved.g;
+const seen = o.n;
+console.log(seen);
+`,
+    [0, 1, 2, 4, 3, 5]
+  ),
+  p3(
+    "Array.from of an object that inherits from a proxy reads Symbol.iterator through the get trap",
+    `
+const hits = { n: 0 };
+const base = new Proxy({}, { get(target, key) { hits.n += 1; return undefined; } });
+const obj = Object.create(base);
+Array.from(obj);
+const seen = hits.n;
+console.log(seen);
+`,
+    [0, 1, 2, 4, 3, 5]
+  ),
+  // premise P3 off: the world may add a conversion hook to an object it holds
+  {
+    ...c(
+      "a conversion of an object the world holds runs a hook the world added (premise P3 off)",
+      `
+import { hook } from "%VENDOR%";
+let count = 0;
+const obj = {};
+globalThis.__cb = () => { count += 1; };
+hook(obj);
+\`\${obj}\`;
+const seen = count;
+console.log(seen);
+`,
+      [0, 1, 2, 3, 4, 6, 5, 7]
+    ),
+    premises: {},
+  },
+  {
+    // precision: the `prototype` of a class is not writable, so an instance of an exported class does not inherit from the world
+    name: "an instance of an exported class is made without unknown code",
+    source: `
+export class Point { constructor() { this.x = 1; } }
+const made = new Point();
+const kind = typeof Point;
+console.log(made.x, kind);
+`.trimStart(),
+    reorders: [{ order: [0, 2, 1, 3], behavior: "same", accepted: true }],
+  },
 ];

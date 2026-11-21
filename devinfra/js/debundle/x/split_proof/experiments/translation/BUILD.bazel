@@ -532,9 +532,7 @@ js_test(
     entry_point = "gen_validity_test.mjs",
 )
 
-# The end-to-end oracle on programs of `gen/`: a tree the checker accepts must print what the bundle prints. The constructs of
-# the finding that stands (`debug/generator_findings`: F6 a read through a `Proxy` whose traps write) is left out, so that
-# this fails on a new one.
+# The end-to-end oracle on programs of `gen/`: a tree the checker accepts must print what the bundle prints.
 js_test(
     name = "full_fuzz_test",
     size = "medium",
@@ -549,8 +547,6 @@ js_test(
         "--jobs",
         "4",
         "--require-accepted",
-        "--avoid",
-        "proxy",
     ],
     data = _CHECKER_RUNFILES + _FUZZ_SOURCES,
     entry_point = "fuzz.mjs",

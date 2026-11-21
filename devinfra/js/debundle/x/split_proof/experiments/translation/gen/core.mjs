@@ -46,7 +46,6 @@ export class Gen {
     this.imports = []; // import declarations: the program's first lines, and the first lines of every module it is split into
     this.notes = new Set(); // what the program contains that a family wants to count
     this.late = false; // something runs after the program (a continuation): one more observer waits for it
-    this.avoid = new Set();
   }
 
   // ---- randomness
@@ -237,9 +236,8 @@ export class Gen {
 }
 
 /** Build one program with the families `installers` (functions that take the `Gen` and add productions). */
-export function build(seed, installers, { units, avoid = [] } = {}) {
+export function build(seed, installers, { units } = {}) {
   const g = new Gen(seed);
-  g.avoid = new Set(avoid); // constructs not to generate, so that a known finding does not hide the next one
   for (const install of installers) install(g);
   const target = units ?? 12 + g.int(14);
   for (let tries = 0; g.units.length < target && tries < 500; tries++) {
