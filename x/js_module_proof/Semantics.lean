@@ -77,6 +77,48 @@ def updateBinding : List (String × Nat) → String → Nat → Option (List (St
     if key == name then some ((key, value) :: rest)
     else (updateBinding rest name value).map (fun tail => (key, old) :: tail)
 
+theorem lookup_update_other (store updated : List (String × Nat)) (target other : String) (value : Nat)
+    (different : target ≠ other) (updatedStore : updateBinding store target value = some updated) :
+    lookupBinding updated other = lookupBinding store other := by
+  induction store generalizing updated with
+  | nil =>
+    cases updatedStore
+  | cons entry rest inductionHypothesis =>
+    cases entry with
+    | mk key old =>
+      change (if key == target then some ((key, value) :: rest)
+        else (updateBinding rest target value).map (fun tail => (key, old) :: tail)) = some updated at updatedStore
+      cases keyIsTarget : key == target with
+      | true =>
+        rw [keyIsTarget] at updatedStore
+        cases updatedStore
+        have keyEqualsTarget : key = target := beq_iff_eq.mp keyIsTarget
+        have keyDiffers : key ≠ other := fun equal => different (keyEqualsTarget.symm.trans equal)
+        have keyIsNotOther : (key == other) = false := by
+          cases keyIsOther : key == other with
+          | false => rfl
+          | true => exact False.elim (keyDiffers (beq_iff_eq.mp keyIsOther))
+        change (if key == other then some value else lookupBinding rest other) =
+          (if key == other then some old else lookupBinding rest other)
+        rw [keyIsNotOther]
+        rfl
+      | false =>
+        rw [keyIsTarget] at updatedStore
+        cases tailUpdate : updateBinding rest target value with
+        | none =>
+          rw [tailUpdate] at updatedStore
+          cases updatedStore
+        | some tail =>
+          rw [tailUpdate] at updatedStore
+          change some ((key, old) :: tail) = some updated at updatedStore
+          cases updatedStore
+          change (if key == other then some old else lookupBinding tail other) =
+            (if key == other then some old else lookupBinding rest other)
+          cases keyIsOther : key == other with
+          | true => rfl
+          | false =>
+            exact inductionHypothesis tail tailUpdate
+
 /- `Except.error` is a JavaScript throw, while `none` means the model could
    not evaluate an unsupported or uninitialized operation. The local frame is
    returned so captured cells can be observed after a call. -/
@@ -254,6 +296,80 @@ def storeCaptures (bindings : List (String × Nat)) : List (String × String) �
   | [], _ :: _ => none
   | _ :: _, [] => none
 
+theorem lookup_store_other (captures : List (String × String)) (values : List (String × Nat))
+    (store updated : List (String × Nat)) (other : String)
+    (different : ∀ name key, (name, key) ∈ captures → key ≠ other)
+    (stored : storeCaptures store captures values = some updated) :
+    lookupBinding updated other = lookupBinding store other := by
+  induction captures generalizing values store updated with
+  | nil =>
+    cases values with
+    | nil =>
+      change some store = some updated at stored
+      cases stored
+      rfl
+    | cons value rest => cases stored
+  | cons capture rest inductionHypothesis =>
+    cases capture with
+    | mk name key =>
+      cases values with
+      | nil => cases stored
+      | cons entry entries =>
+        cases entry with
+        | mk actual value =>
+          have headDifferent : key ≠ other := different name key (List.Mem.head rest)
+          have tailDifferent : ∀ name key, (name, key) ∈ rest → key ≠ other := by
+            intro tailName tailKey member
+            exact different tailName tailKey (List.Mem.tail _ member)
+          change (if name != actual then none else do
+            let next ← updateBinding store key value
+            storeCaptures next rest entries) = some updated at stored
+          cases namesDiffer : name != actual with
+          | true =>
+            rw [namesDiffer] at stored
+            cases stored
+          | false =>
+            rw [namesDiffer] at stored
+            change (updateBinding store key value).bind (fun next => storeCaptures next rest entries) = some updated at stored
+            cases update : updateBinding store key value with
+            | none =>
+              rw [update] at stored
+              cases stored
+            | some next =>
+              rw [update] at stored
+              change storeCaptures next rest entries = some updated at stored
+              exact (inductionHypothesis entries next updated tailDifferent stored).trans
+                (lookup_update_other store next key other value headDifferent update)
+
+theorem load_store_disjoint (captures watched : List (String × String)) (values : List (String × Nat))
+    (store updated : List (String × Nat))
+    (different : ∀ name key, (name, key) ∈ captures →
+      ∀ watchedName watchedKey, (watchedName, watchedKey) ∈ watched → key ≠ watchedKey)
+    (stored : storeCaptures store captures values = some updated) :
+    loadCaptures updated watched = loadCaptures store watched := by
+  induction watched with
+  | nil => rfl
+  | cons watch rest inductionHypothesis =>
+    cases watch with
+    | mk watchedName watchedKey =>
+      have headDifferent : ∀ name key, (name, key) ∈ captures → key ≠ watchedKey := by
+        intro name key member
+        exact different name key member watchedName watchedKey (List.Mem.head rest)
+      have tailDifferent : ∀ name key, (name, key) ∈ captures →
+          ∀ tailName tailKey, (tailName, tailKey) ∈ rest → key ≠ tailKey := by
+        intro name key member tailName tailKey tailMember
+        exact different name key member tailName tailKey (List.Mem.tail _ tailMember)
+      have headEqual := lookup_store_other captures values store updated watchedKey headDifferent stored
+      have tailEqual := inductionHypothesis tailDifferent
+      change (do
+        let value ← lookupBinding updated watchedKey
+        let tail ← loadCaptures updated rest
+        pure ((watchedName, value) :: tail)) = (do
+        let value ← lookupBinding store watchedKey
+        let tail ← loadCaptures store rest
+        pure ((watchedName, value) :: tail))
+      rw [headEqual, tailEqual]
+
 /- Writeback returns a store only when reading its captured cells again yields
    exactly the updated lexical frame. This rejects conflicting aliases instead
    of silently losing a write. -/
@@ -261,6 +377,24 @@ def storeCapturedFrame (store : List (String × Nat)) (captures : List (String �
     (values : List (String × Nat)) : Option { result : List (String × Nat) // loadCaptures result captures = some values } := do
   let result ← storeCaptures store captures values
   if valid : loadCaptures result captures = some values then some ⟨result, valid⟩ else none
+
+theorem storeCapturedFrame_origin (store : List (String × Nat)) (captures : List (String × String))
+    (values : List (String × Nat))
+    (result : { result : List (String × Nat) // loadCaptures result captures = some values })
+    (written : storeCapturedFrame store captures values = some result) :
+    storeCaptures store captures values = some result.val := by
+  unfold storeCapturedFrame at written
+  cases stored : storeCaptures store captures values with
+  | none =>
+    rw [stored] at written
+    cases written
+  | some next =>
+    rw [stored] at written
+    change (if valid : loadCaptures next captures = some values then some ⟨next, valid⟩ else none) = some result at written
+    split at written
+    · cases written
+      rfl
+    · cases written
 
 theorem captured_frame_writeback_preserved
     (leftCapture rightCapture : List (String × String)) (values : List (String × Nat))
@@ -487,6 +621,59 @@ theorem executeCaptured_decompose {α : Type} (state next : ExecutionState α)
       cases stepped
       exact ⟨result, stored, rfl, written, rfl⟩
 
+theorem captured_step_preserves_disjoint {α : Type}
+    (state next : ExecutionState α) (captures watched : List (String × String))
+    (parameters : List String) (arguments : List Nat) (body : NumericExpr)
+    (different : ∀ name key, (name, key) ∈ captures →
+      ∀ watchedName watchedKey, (watchedName, watchedKey) ∈ watched → key ≠ watchedKey)
+    (noError : state.error = none) (noThrow : state.thrown = none)
+    (stepped : executeStep state (.invokeCaptured captures parameters arguments body) = some next) :
+    loadCaptures next.captured watched = loadCaptures state.captured watched := by
+  obtain ⟨result, stored, evaluated, written, finished⟩ :=
+    executeCaptured_decompose state next captures parameters arguments body noError noThrow stepped
+  have origin := storeCapturedFrame_origin state.captured captures (result.locals.drop parameters.length) stored written
+  have unchanged := load_store_disjoint captures watched (result.locals.drop parameters.length)
+    state.captured stored.val different origin
+  rw [finished]
+  cases result.completion with
+  | error value => exact unchanged
+  | ok value => exact unchanged
+
+def capturesDisjoint (left right : List (String × String)) : Prop :=
+  ∀ name key, (name, key) ∈ left → ∀ otherName otherKey, (otherName, otherKey) ∈ right → key ≠ otherKey
+
+theorem captures_disjoint_symmetric (left right : List (String × String))
+    (disjoint : capturesDisjoint left right) : capturesDisjoint right left := by
+  intro name key member otherName otherKey otherMember
+  exact (disjoint otherName otherKey otherMember name key member).symm
+
+theorem captured_step_preserves_watched {α : Type}
+    (state next : ExecutionState α) (captures watched : List (String × String))
+    (parameters : List String) (arguments : List Nat) (body : NumericExpr)
+    (disjoint : capturesDisjoint captures watched)
+    (stepped : executeStep state (.invokeCaptured captures parameters arguments body) = some next) :
+    loadCaptures next.captured watched = loadCaptures state.captured watched := by
+  cases error : state.error with
+  | some value =>
+    have blocked : executeStep state (.invokeCaptured captures parameters arguments body) = some state := by
+      unfold executeStep
+      rw [error]
+    rw [blocked] at stepped
+    cases stepped
+    rfl
+  | none =>
+    cases thrown : state.thrown with
+    | some value =>
+      have blocked : executeStep state (.invokeCaptured captures parameters arguments body) = some state := by
+        unfold executeStep
+        rw [error, thrown]
+        rfl
+      rw [blocked] at stepped
+      cases stepped
+      rfl
+    | none =>
+      exact captured_step_preserves_disjoint state next captures watched parameters arguments body disjoint error thrown stepped
+
 theorem captured_paired_step_preserved {α : Type}
     (leftState rightState : ExecutionState α) (leftCapture rightCapture : List (String × String))
     (parameters : List String) (arguments : List Nat) (body : NumericExpr) (result : ExpressionResult Nat)
@@ -661,3 +848,71 @@ theorem captured_call_sequence_related {α : Type}
   | call parameters arguments body =>
     exact captured_step_related leftCapture rightCapture parameters arguments body leftState rightState leftStateNext
       rightStateNext related leftStep rightStep
+
+theorem captured_step_preserves_pair {α : Type}
+    (leftCapture rightCapture leftWatched rightWatched : List (String × String))
+    (parameters : List String) (arguments : List Nat) (body : NumericExpr)
+    (left right leftNext rightNext : ExecutionState α)
+    (active : capturedStatesRelated leftCapture rightCapture left right)
+    (watched : relatedCapturedEnvironments left.captured right.captured leftWatched rightWatched)
+    (leftDisjoint : capturesDisjoint leftCapture leftWatched)
+    (rightDisjoint : capturesDisjoint rightCapture rightWatched)
+    (leftStep : executeStep left (.invokeCaptured leftCapture parameters arguments body) = some leftNext)
+    (rightStep : executeStep right (.invokeCaptured rightCapture parameters arguments body) = some rightNext) :
+    capturedStatesRelated leftCapture rightCapture leftNext rightNext ∧
+      relatedCapturedEnvironments leftNext.captured rightNext.captured leftWatched rightWatched := by
+  constructor
+  · exact captured_step_related leftCapture rightCapture parameters arguments body left right leftNext rightNext
+      active leftStep rightStep
+  · obtain ⟨frame, leftFrame, rightFrame⟩ := watched
+    have leftUnchanged := captured_step_preserves_watched left leftNext leftCapture leftWatched
+      parameters arguments body leftDisjoint leftStep
+    have rightUnchanged := captured_step_preserves_watched right rightNext rightCapture rightWatched
+      parameters arguments body rightDisjoint rightStep
+    exact ⟨frame, leftUnchanged.trans leftFrame, rightUnchanged.trans rightFrame⟩
+
+theorem capturedStates_related_with_environment {α : Type}
+    (leftCapture rightCapture leftOther rightOther : List (String × String)) (left right : ExecutionState α)
+    (related : capturedStatesRelated leftCapture rightCapture left right)
+    (other : relatedCapturedEnvironments left.captured right.captured leftOther rightOther) :
+    capturedStatesRelated leftOther rightOther left right := by
+  obtain ⟨bindings, events, replies, error, returns, thrown, captures⟩ := related
+  exact ⟨bindings, events, replies, error, returns, thrown, other⟩
+
+def twoCapturedStatesRelated {α : Type} (leftFirst rightFirst leftSecond rightSecond : List (String × String))
+    (left right : ExecutionState α) : Prop :=
+  capturedStatesRelated leftFirst rightFirst left right ∧ capturedStatesRelated leftSecond rightSecond left right
+
+inductive PairedTwoCapturedOperation
+    (leftFirst rightFirst leftSecond rightSecond : List (String × String)) : Operation → Operation → Prop where
+  | first (parameters : List String) (arguments : List Nat) (body : NumericExpr) :
+      PairedTwoCapturedOperation leftFirst rightFirst leftSecond rightSecond
+        (.invokeCaptured leftFirst parameters arguments body) (.invokeCaptured rightFirst parameters arguments body)
+  | second (parameters : List String) (arguments : List Nat) (body : NumericExpr) :
+      PairedTwoCapturedOperation leftFirst rightFirst leftSecond rightSecond
+        (.invokeCaptured leftSecond parameters arguments body) (.invokeCaptured rightSecond parameters arguments body)
+
+theorem two_captured_call_sequence_related {α : Type}
+    (leftFirst rightFirst leftSecond rightSecond : List (String × String))
+    (leftDisjoint : capturesDisjoint leftFirst leftSecond) (rightDisjoint : capturesDisjoint rightFirst rightSecond)
+    (leftOps rightOps : List Operation)
+    (operations : RelatedOperations (PairedTwoCapturedOperation leftFirst rightFirst leftSecond rightSecond) leftOps rightOps)
+    (left right leftFinal rightFinal : ExecutionState α)
+    (initial : twoCapturedStatesRelated leftFirst rightFirst leftSecond rightSecond left right)
+    (leftRun : runExecution left leftOps = some leftFinal) (rightRun : runExecution right rightOps = some rightFinal) :
+    twoCapturedStatesRelated leftFirst rightFirst leftSecond rightSecond leftFinal rightFinal := by
+  apply runExecution_relation_preserved (twoCapturedStatesRelated leftFirst rightFirst leftSecond rightSecond)
+    (PairedTwoCapturedOperation leftFirst rightFirst leftSecond rightSecond) ?_ leftOps rightOps operations
+    left right leftFinal rightFinal initial leftRun rightRun
+  intro leftState rightState leftOp rightOp leftNext rightNext related operation leftStep rightStep
+  cases operation with
+  | first parameters arguments body =>
+    have pair := captured_step_preserves_pair leftFirst rightFirst leftSecond rightSecond parameters arguments body
+      leftState rightState leftNext rightNext related.1 related.2.2.2.2.2.2.2 leftDisjoint rightDisjoint leftStep rightStep
+    exact ⟨pair.1, capturedStates_related_with_environment leftFirst rightFirst leftSecond rightSecond leftNext rightNext pair.1 pair.2⟩
+  | second parameters arguments body =>
+    have pair := captured_step_preserves_pair leftSecond rightSecond leftFirst rightFirst parameters arguments body
+      leftState rightState leftNext rightNext related.2 related.1.2.2.2.2.2.2
+      (captures_disjoint_symmetric leftFirst leftSecond leftDisjoint)
+      (captures_disjoint_symmetric rightFirst rightSecond rightDisjoint) leftStep rightStep
+    exact ⟨capturedStates_related_with_environment leftSecond rightSecond leftFirst rightFirst leftNext rightNext pair.1 pair.2, pair.1⟩

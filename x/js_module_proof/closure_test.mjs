@@ -31,7 +31,7 @@ if (shard === 0) {
     encoding: "utf8",
     input:
       models +
-      "\n#print axioms runExecution_relation_preserved\n#print axioms executeCaptured_success\n#print axioms captured_paired_step_preserved\n#print axioms executeCaptured_decompose\n#print axioms captured_unblocked_step_related\n#print axioms captured_call_sequence_related\n",
+      "\n#print axioms runExecution_relation_preserved\n#print axioms executeCaptured_success\n#print axioms captured_paired_step_preserved\n#print axioms executeCaptured_decompose\n#print axioms captured_unblocked_step_related\n#print axioms captured_call_sequence_related\n#print axioms lookup_update_other\n#print axioms lookup_store_other\n#print axioms load_store_disjoint\n#print axioms storeCapturedFrame_origin\n#print axioms captured_step_preserves_disjoint\n#print axioms captured_step_preserves_watched\n#print axioms two_captured_call_sequence_related\n",
   });
   assert.equal(modelCheck.status, 0, modelCheck.stdout + modelCheck.stderr);
   assert.match(modelCheck.stdout, /'runExecution_relation_preserved' does not depend on any axioms/);
@@ -40,6 +40,13 @@ if (shard === 0) {
   assert.match(modelCheck.stdout, /'executeCaptured_decompose' does not depend on any axioms/);
   assert.match(modelCheck.stdout, /'captured_unblocked_step_related' does not depend on any axioms/);
   assert.match(modelCheck.stdout, /'captured_call_sequence_related' does not depend on any axioms/);
+  assert.match(modelCheck.stdout, /'lookup_update_other' does not depend on any axioms/);
+  assert.match(modelCheck.stdout, /'lookup_store_other' does not depend on any axioms/);
+  assert.match(modelCheck.stdout, /'load_store_disjoint' does not depend on any axioms/);
+  assert.match(modelCheck.stdout, /'storeCapturedFrame_origin' does not depend on any axioms/);
+  assert.match(modelCheck.stdout, /'captured_step_preserves_disjoint' does not depend on any axioms/);
+  assert.match(modelCheck.stdout, /'captured_step_preserves_watched' does not depend on any axioms/);
+  assert.match(modelCheck.stdout, /'two_captured_call_sequence_related' does not depend on any axioms/);
 }
 if (shard < 2) {
   await writeFile(
@@ -801,6 +808,48 @@ example : capturedStatesRelated [("value", "left-cell")] [("value", "right-cell"
   · exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, ⟨[("value", 3)], rfl, rfl⟩⟩
   · decide
   · decide
+def twoFrameBody : NumericExpr := .assign "value" (.add (.name "value") (.name "delta")) (.name "value")
+def twoFrameLeft : ExecutionState Unit := ⟨[], [], [], none, [], none, [("left-first", 1), ("left-second", 10)]⟩
+def twoFrameRight : ExecutionState Unit := ⟨[], [], [], none, [], none, [("right-first", 1), ("right-second", 10)]⟩
+def twoFrameLeftFinal : ExecutionState Unit :=
+  ⟨[], [], [], none, [some 3, some 13, some 7, some 14], none, [("left-first", 7), ("left-second", 14)]⟩
+def twoFrameRightFinal : ExecutionState Unit :=
+  ⟨[], [], [], none, [some 3, some 13, some 7, some 14], none, [("right-first", 7), ("right-second", 14)]⟩
+theorem twoFrameExample : twoCapturedStatesRelated [("value", "left-first")] [("value", "right-first")]
+    [("value", "left-second")] [("value", "right-second")] twoFrameLeftFinal twoFrameRightFinal := by
+  refine two_captured_call_sequence_related [("value", "left-first")] [("value", "right-first")]
+    [("value", "left-second")] [("value", "right-second")] ?_ ?_
+    [.invokeCaptured [("value", "left-first")] ["delta"] [2] twoFrameBody,
+     .invokeCaptured [("value", "left-second")] ["delta"] [3] twoFrameBody,
+     .invokeCaptured [("value", "left-first")] ["delta"] [4] twoFrameBody,
+     .invokeCaptured [("value", "left-second")] ["delta"] [1] twoFrameBody]
+    [.invokeCaptured [("value", "right-first")] ["delta"] [2] twoFrameBody,
+     .invokeCaptured [("value", "right-second")] ["delta"] [3] twoFrameBody,
+     .invokeCaptured [("value", "right-first")] ["delta"] [4] twoFrameBody,
+     .invokeCaptured [("value", "right-second")] ["delta"] [1] twoFrameBody]
+    ?_ twoFrameLeft twoFrameRight twoFrameLeftFinal twoFrameRightFinal ?_ ?_ ?_
+  · intro name key member otherName otherKey otherMember
+    cases member with
+    | head =>
+      cases otherMember with
+      | head => decide
+      | tail _ impossible => cases impossible
+    | tail _ impossible => cases impossible
+  · intro name key member otherName otherKey otherMember
+    cases member with
+    | head =>
+      cases otherMember with
+      | head => decide
+      | tail _ impossible => cases impossible
+    | tail _ impossible => cases impossible
+  · exact .cons (.first ["delta"] [2] twoFrameBody)
+      (.cons (.second ["delta"] [3] twoFrameBody)
+        (.cons (.first ["delta"] [4] twoFrameBody) (.cons (.second ["delta"] [1] twoFrameBody) .nil)))
+  · exact ⟨⟨rfl, rfl, rfl, rfl, rfl, rfl, ⟨[("value", 1)], rfl, rfl⟩⟩,
+      ⟨rfl, rfl, rfl, rfl, rfl, rfl, ⟨[("value", 10)], rfl, rfl⟩⟩⟩
+  · decide
+  · decide
+#print axioms twoFrameExample
 `,
   });
   assert.equal(replay.status, 0, replay.stdout + replay.stderr);
@@ -808,6 +857,7 @@ example : capturedStatesRelated [("value", "left-cell")] [("value", "right-cell"
   assert.match(replay.stdout, /'captured_frame_evaluation_preserved' does not depend on any axioms/);
   assert.match(replay.stdout, /'captured_frame_writeback_preserved' does not depend on any axioms/);
   assert.match(replay.stdout, /'captured_call_frame_preserved' does not depend on any axioms/);
+  assert.match(replay.stdout, /'twoFrameExample' does not depend on any axioms/);
   assert.match(replay.stdout, /'captured_completion_preserved' does not depend on any axioms/);
   assert.match(replay.stdout, /'captured_machine_step_preserved' does not depend on any axioms/);
   assert.match(replay.stdout, /'runExecution_relation_preserved' does not depend on any axioms/);
