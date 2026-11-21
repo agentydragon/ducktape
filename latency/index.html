@@ -63,7 +63,7 @@
       import { BarChart, LineChart } from "@mantine/charts";
       import { html, mount } from "../report.js?v=ebc2503d323c1b76";
       const response = await fetch(
-        "./evidence.json?v=e047d35c58dab766894df1a0a8c3de28ed60f66d601657001564bab137f494de",
+        "./evidence.json?v=22b798b2794e95d0068e2e222d637d0b6280a067aee07eb1d76fa729e134811f",
       );
       if (!response.ok) throw new Error(`Evidence HTTP ${response.status}`);
       const evidence = await response.json();
@@ -80,6 +80,7 @@
         staggered: "Staggered",
       };
       const cacheTrial = evidence.kvm_shared_cache_trial;
+      const kvmPlacement = evidence.kvm_worker_placement;
       const gh = "https://github.com/agentydragon/ducktape";
       const source = evidence.source_devel_commit;
       const post = "after shadow retired";
@@ -154,7 +155,7 @@
               ${link("../", "Ducktape reports")}
               <${Title} order=${1} mt="md" mb="xs">PR time to green<//>
               <${Text} size="lg">Across 13–19 November, 247 of 350 sampled heads reached green. Median ${time(evidence.weekly_feedback.pooled.median_s)} · p90 ${time(evidence.weekly_feedback.pooled.p90_s)} among those heads, including five successful reruns.<//>
-              <${Text} c="dimmed" size="sm" mt="sm">Seven complete UTC days · Firecracker scheduling updated 21 November<//>
+              <${Text} c="dimmed" size="sm" mt="sm">Seven complete UTC days · KVM worker placement updated 21 November<//>
               <${Group} gap="md" mt="xs">${link("./evidence.json", "Evidence")}${link("./manifest.json", "Manifest")}<//>
               <${Text} mt="sm">In the ${hhmm(census.window_utc[0])}–${hhmm(census.window_utc[1])} UTC refresh on 21 November, ${census.overall.outcomes.green ?? 0} of ${census.eligible_prs} current exact PR heads reached required green. Median ${time(census.overall.median_s)} · p90 ${time(census.overall.p90_s)} among the green heads. At collection ${census.eligible_prs - (census.overall.outcomes.green ?? 0)} heads had yet to reach green.<//>
               <${Text} c="dimmed" size="sm">The refresh reviewed ${census.workflow_runs} workflow runs. It excludes superseded and unmatched heads. The weekly chart retains its original population.<//>
@@ -241,6 +242,30 @@
               <${Text} mt="sm">After retirement, the median was 9m31s on 12 one-attempt heads and 21m06s on five rerun heads. Different source changes, cache states and failures across the windows prevent a routing-effect estimate. On 12 successful first attempts with physical test records, the latest physical test was Pod on three, Firecracker on three, VM on two, and another test on four.<//>
               <${Text} mt="sm">Keep measuring for seven days through 27 November, or until 50 fresh required VM executions if that takes longer. Count VM failures and VM-last heads on verified cutover ancestry, report warm and cold separately, and retain managed Pod and Firecracker competitors on the same heads. A PR and a devel run both hit the namespace guard when a recycled fixture needed a rebuild. Keep tracking fresh exposure after the rebuild path is repaired.<//>
               <${Text} size="sm" mt="sm">${pr(18046)} routing · ${pr(18079)} shadow retirement · ${link("../vm-pairs.json", "Paired data")} · ${link(`${prior}/index.html#vm-shadow`, "Previous review")}<//>
+            </section>
+            <section id="kvm-placement">
+              <${Title} order=${2}>KVM workers can now run on wyrm2<//>
+              <${Text} my="sm">On 21 November the BuildBuddy KVM pool opened placement beyond OVH. The change lets workers use wyrm2, whose Piraeus SSD zvol was expanded to 600 GiB. ${pr(kvmPlacement.placement.pr)} placement · ${pr(kvmPlacement.storage.pr)} storage<//>
+              <${Text} mb="sm">Two host-pinned pairs used the same manual VM TestRunner action and cold fixtures on warm executor caches. These are TestRunner process times. Queueing, input staging and upload are outside the clock.<//>
+              ${table(
+                ["Cold run", "OVH control plane", "wyrm2"],
+                kvmPlacement.pairs.map((pair) => [
+                  pair.label,
+                  build(
+                    pair.cp.invocation,
+                    `${seconds(pair.cp.process_seconds)} · pass`,
+                  ),
+                  build(
+                    pair.wyrm2.invocation,
+                    `${seconds(pair.wyrm2.process_seconds)} · ${pair.wyrm2.exit_code ? "teardown failed" : "pass"}`,
+                  ),
+                ]),
+                350,
+              )}
+              <${Text} mt="sm">Another wyrm2 worker was booting during the first pair. In the second pair both wyrm2 scenarios passed, then teardown lacked shutdown-completion evidence for one launcher. A separate profiled wyrm2 repeat passed in ${seconds(kvmPlacement.profiled_repeat.process_seconds)}. ${build(kvmPlacement.profiled_repeat.invocation, "Profiled repeat")}<//>
+              <${Text} mt="sm">The OVH control plane uses an Intel bare-metal host. Wyrm2 uses AMD hardware with an extra Proxmox layer. CPU, storage paths and load also differ, so these runs leave the cause of the gap unresolved. Warm recycled VM performance and placement effects on required-check feedback remain unmeasured.<//>
+              <${Text} mt="sm">Keep wyrm2 eligible and revisit placement if shutdown failures recur. Compare an HDD-backed worker next.<//>
+              <${Text} size="sm" c="dimmed" mt="sm">21 November UTC · <code>${kvmPlacement.target}</code> · ${link(`${gh}/tree/${kvmPlacement.source_commit}/agentplane/system_tests/x/vm_kvm`, "Test source")}<//>
             </section>
             <section id="managed-pod">
               <${Title} order=${2}>Two PR heads had over a minute of Pod queue headroom<//>

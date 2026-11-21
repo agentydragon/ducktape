@@ -2,11 +2,11 @@
   "source_devel_commit": "a1bef327a08b51a34c26825a49d6a9620b8f3ac6",
   "window_start_utc": "2026-11-13T00:00:00Z",
   "window_end_utc": "2026-11-21T04:14:24.964816+00:00",
-  "published_at_utc": "2026-11-21T04:14:24.964854+00:00",
+  "published_at_utc": "2026-11-21T12:13:17.901005+00:00",
   "attribution": "not collected",
-  "report_sha256": "2f654d54aad1632dd0a73e6a006164e3764c8a3965bc9bc5ae2f0b9f50c2ca9d",
-  "evidence_sha256": "e047d35c58dab766894df1a0a8c3de28ed60f66d601657001564bab137f494de",
-  "previous_report_commit": "1eaa2987f8fb65f4f55171162fbad6aa8ba813ff",
+  "report_sha256": "92cc9cb2005e09b713958b3e306acd88416ff5b125db714d60d6778f5e7a6d78",
+  "evidence_sha256": "22b798b2794e95d0068e2e222d637d0b6280a067aee07eb1d76fa729e134811f",
+  "previous_report_commit": "bf6bf065bc9c58180d6371bbecfdd86ccad8bce5",
   "feedback_clock": "Earliest observed PR CI workflow creation on the exact SHA to all three required check contexts accepted",
   "visual_validation": "visual-validation.json",
   "weekly_feedback_window_utc": [
@@ -38,5 +38,15 @@
     "pr_census_window_utc": ["2026-11-21T01:54:27Z", "2026-11-21T03:53:13Z"],
     "browser_invocation": "136ac02e-4470-43ca-a0c0-501092d7e76e"
   },
-  "visual_validation_sha256": "3e3647498dbf0702d4ad415113e54616f0123fe7b950d2a1f2d35c8abf5ca18e"
+  "visual_validation_sha256": "a3ac3988e1845305e8e1ad759fe5bb59ceb1aad26aea037e530b5fc654489ffc",
+  "kvm_worker_placement": {
+    "evidence_key": "kvm_worker_placement",
+    "source_commit": "0d1f154903b9e9c58b1c7fb5f4484651b800caf2",
+    "execution_window_utc": [
+      "2026-11-21T11:32:03.284308Z",
+      "2026-11-21T12:02:31.594911Z"
+    ],
+    "placement_pr": 18615,
+    "browser_invocation": "ba930dd9-a7f0-4308-a7e4-9c1a24be84f1"
+  }
 }

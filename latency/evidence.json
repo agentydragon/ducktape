@@ -26120,5 +26120,80 @@
       "scheduler_evidence": "The nested node advertised four CPUs and one KVM slot. Each launcher requested 2.01 CPUs including its sidecar and one KVM slot. The scheduler reported Insufficient cpu and Insufficient devices.kubevirt.io/kvm for the waiting pod. This establishes the scheduler’s placement constraint in the tested fixture.",
       "action": "Keep required CI serial on the current fixture. If overlap is revisited, first measure a fixture with enough CPU and KVM capacity for both launchers and include full setup and teardown."
     }
+  },
+  "kvm_worker_placement": {
+    "source_commit": "0d1f154903b9e9c58b1c7fb5f4484651b800caf2",
+    "target": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+    "placement": {
+      "pr": 18615,
+      "merged_commit": "9da3bbcfe0e6cfc6e41e850e5281d42d7b5e513f",
+      "merged_utc": "2026-11-21T11:00:56Z",
+      "effect": "Removed the OVH-only node selector, allowing KVM workers on wyrm2."
+    },
+    "storage": {
+      "pr": 18613,
+      "merged_commit": "2b4ad256c3c5fe74584fdb44c96afa3ff48408f6",
+      "merged_utc": "2026-11-21T10:49:10Z",
+      "effect": "Recorded expansion of the wyrm2 Piraeus SSD zvol to 600 GiB."
+    },
+    "clock": "BuildBuddy TestRunner execution start to completion; excludes queue, input staging and result upload.",
+    "fixture": "Cold VM fixtures on registered, pinned workers with warm executor caches.",
+    "hosts": {
+      "cp": "Intel bare metal → KubeVirt worker → test guest",
+      "wyrm2": "AMD bare metal → Proxmox wyrm2 VM → KubeVirt worker → test guest"
+    },
+    "matched_action_digest": "355c96558fe65bc4b0254db33dc70dbe99d9ddaced682bf5ff94ede9cbeafe54",
+    "pairs": [
+      {
+        "label": "First pair",
+        "cp": {
+          "invocation": "ea50b356-e020-4547-a60d-c135ceffc497",
+          "process_seconds": 207.97,
+          "exit_code": 0,
+          "start_utc": "2026-11-21T11:32:03.284308Z",
+          "end_utc": "2026-11-21T11:35:31.253847Z"
+        },
+        "wyrm2": {
+          "invocation": "2cb2fa36-535d-4b57-9ccc-7e0ee1f754e2",
+          "process_seconds": 369.01,
+          "exit_code": 0,
+          "start_utc": "2026-11-21T11:32:04.034381Z",
+          "end_utc": "2026-11-21T11:38:13.046475Z"
+        },
+        "another_wyrm2_worker_booting": true
+      },
+      {
+        "label": "Repeat pair",
+        "cp": {
+          "invocation": "7b2be7f7-3949-4d55-aa2c-bad8ac3dc917",
+          "process_seconds": 207.7,
+          "exit_code": 0,
+          "start_utc": "2026-11-21T11:39:43.997311Z",
+          "end_utc": "2026-11-21T11:43:11.701937Z"
+        },
+        "wyrm2": {
+          "invocation": "e03dc565-cb69-42df-a7fc-cbc10be52e05",
+          "process_seconds": 355.85,
+          "exit_code": 1,
+          "start_utc": "2026-11-21T11:39:42.510670Z",
+          "end_utc": "2026-11-21T11:45:38.357528Z",
+          "failure": "Both scenarios passed. Teardown could not find guest-shutdown completion in one launcher's console logs."
+        },
+        "another_wyrm2_worker_booting": false
+      }
+    ],
+    "profiled_repeat": {
+      "invocation": "3f17c33a-f4f6-42e9-889e-8a40a400463f",
+      "process_seconds": 336.52,
+      "start_utc": "2026-11-21T11:56:55.077348Z",
+      "end_utc": "2026-11-21T12:02:31.594911Z",
+      "exit_code": 0
+    },
+    "limits": [
+      "Two cold pairs on two hosts and one profiled diagnostic repeat.",
+      "CPU, virtualization depth, storage paths and ambient load differ between the hosts.",
+      "The manual test does not quantify warm recycled required VM execution, pool admission delays or time to required green."
+    ],
+    "next": "Keep wyrm2 eligible while tracking teardown outcomes on fresh runs. Revisit placement if shutdown failures recur. Compare an HDD-backed worker next."
   }
 }
