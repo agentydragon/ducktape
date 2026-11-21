@@ -12,10 +12,8 @@ spec:
           - memory
         controlledValues: RequestsOnly
         maxAllowed:
-          cpu: 75m
           memory: 160Mi
         minAllowed:
-          cpu: 50m
           memory: 128Mi
       - containerName: "*"
         mode: "Off"
@@ -40,10 +38,8 @@ spec:
           - memory
         controlledValues: RequestsOnly
         maxAllowed:
-          cpu: 350m
           memory: 160Mi
         minAllowed:
-          cpu: 50m
           memory: 128Mi
       - containerName: "*"
         mode: "Off"
@@ -93,10 +89,8 @@ spec:
           - memory
         controlledValues: RequestsOnly
         maxAllowed:
-          cpu: 50m
           memory: 112Mi
         minAllowed:
-          cpu: 10m
           memory: 64Mi
       - containerName: "*"
         mode: "Off"
@@ -146,10 +140,8 @@ spec:
           - memory
         controlledValues: RequestsOnly
         maxAllowed:
-          cpu: 1025m
           memory: 256Mi
         minAllowed:
-          cpu: 20m
           memory: 128Mi
       - containerName: "*"
         mode: "Off"
@@ -174,10 +166,8 @@ spec:
           - memory
         controlledValues: RequestsOnly
         maxAllowed:
-          cpu: 75m
           memory: 160Mi
         minAllowed:
-          cpu: 50m
           memory: 128Mi
       - containerName: "*"
         mode: "Off"
@@ -202,10 +192,8 @@ spec:
           - memory
         controlledValues: RequestsOnly
         maxAllowed:
-          cpu: 75m
           memory: 160Mi
         minAllowed:
-          cpu: 50m
           memory: 128Mi
       - containerName: "*"
         mode: "Off"
@@ -230,10 +218,8 @@ spec:
           - memory
         controlledValues: RequestsOnly
         maxAllowed:
-          cpu: 600m
           memory: 160Mi
         minAllowed:
-          cpu: 50m
           memory: 128Mi
       - containerName: "*"
         mode: "Off"
@@ -258,10 +244,8 @@ spec:
           - memory
         controlledValues: RequestsOnly
         maxAllowed:
-          cpu: 25m
           memory: 112Mi
         minAllowed:
-          cpu: 10m
           memory: 64Mi
       - containerName: "*"
         mode: "Off"
@@ -286,10 +270,8 @@ spec:
           - memory
         controlledValues: RequestsOnly
         maxAllowed:
-          cpu: 150m
           memory: 320Mi
         minAllowed:
-          cpu: 100m
           memory: 256Mi
       - containerName: "*"
         mode: "Off"

@@ -8,7 +8,7 @@ from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL, Vpa, initial_memory_request_annotations
+from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL, Vpa, initial_request_annotations
 from cluster.cdk8s.vpa_policy import ContainerPolicy
 
 NAME = "kyverno"
@@ -38,7 +38,7 @@ def _values() -> dict[str, object]:
             # Deployment metadata keeps the Pod template unchanged. Peak 30-day
             # working set was 206Mi, including 158Mi in the first 10 minutes.
             "annotations": {
-                **initial_memory_request_annotations(
+                **initial_request_annotations(
                     ContainerPolicy.memory_requests_only(
                         "kyverno",
                         cpu_request=_ADMISSION_CPU_REQUEST,
@@ -128,7 +128,7 @@ def _values() -> dict[str, object]:
             "replicas": 1,
             "priorityClassName": "system-cluster-critical",
             # Peak 30-day working set was 191Mi during startup.
-            "annotations": initial_memory_request_annotations(
+            "annotations": initial_request_annotations(
                 ContainerPolicy.memory_requests_only(
                     "controller",
                     cpu_request=_BACKGROUND_CPU_REQUEST,
@@ -165,7 +165,7 @@ def _values() -> dict[str, object]:
             ],
             "priorityClassName": "system-cluster-critical",
             # Peak 30-day working set was 123Mi, close to the existing 128Mi limit.
-            "annotations": initial_memory_request_annotations(
+            "annotations": initial_request_annotations(
                 ContainerPolicy.memory_requests_only(
                     "controller",
                     cpu_request=_CLEANUP_CPU_REQUEST,
@@ -183,7 +183,7 @@ def _values() -> dict[str, object]:
             "replicas": 1,
             "priorityClassName": "system-cluster-critical",
             # Preserve the existing 256Mi reservation. Peak 30-day working set was 204Mi.
-            "annotations": initial_memory_request_annotations(
+            "annotations": initial_request_annotations(
                 ContainerPolicy.memory_requests_only(
                     "controller",
                     cpu_request=_REPORTS_CPU_REQUEST,
