@@ -1419,7 +1419,75 @@ export { read };
   );
   assert.equal(cli("generate", early, earlySpec, earlyOut).result, "generated");
   assert.deepEqual(execute(early, []).events, [{ undefined: true }]);
-  assert.equal(cli("validate", early, earlySpec, earlyOut).result, "unknown");
+  const earlyProof = cli("validate", early, earlySpec, earlyOut);
+  assert.equal(earlyProof.result, "proved under assumptions", JSON.stringify(earlyProof));
+  const earlyReplay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
+    encoding: "utf8",
+    input:
+      models +
+      earlyProof.certificate +
+      `
+theorem early_var_observation :
+  (sourceBindingState bindingSource).map (fun state => state.events) = some [.undefined] := by decide
+#print axioms early_var_observation
+`,
+  });
+  assert.equal(earlyReplay.status, 0, earlyReplay.stdout + earlyReplay.stderr);
+  assert.match(earlyReplay.stdout, /'early_var_observation' does not depend on any axioms/);
+  assert.deepEqual(execute(early, []), execute(join(earlyOut, "entry.mjs"), []));
+  const earlySplitSpec = join(root, "var-early-split.json");
+  const earlySplitOut = join(root, "var-early-split-out");
+  await writeFile(
+    earlySplitSpec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [1, 2] },
+        "effect.mjs": { imports: ["state.mjs"], statements: [0] },
+        "entry.mjs": { imports: ["effect.mjs", "state.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", early, earlySplitSpec, earlySplitOut).result, "generated");
+  const splitUnsafe = cli("validate", early, earlySplitSpec, earlySplitOut);
+  assert.equal(splitUnsafe.result, "unsafe", JSON.stringify(splitUnsafe));
+  assert.notDeepEqual(execute(early, []), execute(join(earlySplitOut, "entry.mjs"), []));
+  const earlyEntry = join(earlyOut, "entry.mjs");
+  const originalEntry = await readFile(earlyEntry, "utf8");
+  const reordered = originalEntry.replace(
+    "globalThis.record(value);\nvar value = 3;",
+    "var value = 3;\nglobalThis.record(value);"
+  );
+  assert.notEqual(reordered, originalEntry);
+  await writeFile(earlyEntry, reordered);
+  const earlyUnsafe = cli("validate", early, earlySpec, earlyOut);
+  assert.equal(earlyUnsafe.result, "unsafe", JSON.stringify(earlyUnsafe));
+  assert.notDeepEqual(execute(early, []), execute(earlyEntry, []));
+  const numerical = join(root, "var-early-number.mjs");
+  const numericalSpec = join(root, "var-early-number.json");
+  const numericalOut = join(root, "var-early-number-out");
+  await writeFile(
+    numerical,
+    `function early() { return value; }
+globalThis.record(early());
+var value = 3;
+function read() { return value; }
+export { read };
+`
+  );
+  await writeFile(
+    numericalSpec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "entry.mjs": { imports: [], statements: [0, 1, 2, 3] },
+      },
+    })
+  );
+  assert.equal(cli("generate", numerical, numericalSpec, numericalOut).result, "generated");
+  assert.equal(cli("validate", numerical, numericalSpec, numericalOut).result, "unknown");
 }
 
 if (shard === 14) {

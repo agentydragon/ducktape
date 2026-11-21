@@ -168,6 +168,7 @@ def counterOperation (state : State) (operation : Operation) : State × Option N
         | [] => match event with
           | .number n => some n
           | .text _ => none
+          | .undefined => none
     (next, value)
 
 /- Check the projection for all cell values, including the snapshot case.

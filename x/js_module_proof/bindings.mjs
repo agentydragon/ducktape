@@ -1440,7 +1440,7 @@ export async function generateBindings(sourcePath, specPath, out) {
 }
 
 function execute(path, calls = []) {
-  const script = `const events=[];globalThis.record=v=>events.push(v);import(${str(pathToFileURL(resolve(path)).href)}).then(m=>{const exports=Object.keys(m);const results=${str(calls)}.map(call=>typeof call==='string'?m[call]():m[call.name](...call.args));console.log(JSON.stringify(${calls.length ? "{events,exports,results}" : "{events,exports}"}));});`;
+  const script = `const events=[];globalThis.record=v=>events.push(v===undefined?{undefined:true}:v);import(${str(pathToFileURL(resolve(path)).href)}).then(m=>{const exports=Object.keys(m);const results=${str(calls)}.map(call=>typeof call==='string'?m[call]():m[call.name](...call.args));console.log(JSON.stringify(${calls.length ? "{events,exports,results}" : "{events,exports}"}));});`;
   const child = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" });
   if (child.error || child.status !== 0) throw new Error(child.stderr || String(child.error));
   return JSON.parse(child.stdout);
@@ -1769,7 +1769,12 @@ theorem binding_aliased_future_calls (calls : ${aliasCallType}) :
       assumptions: [
         "The Acorn-to-Lean conversion, including local object and array scalarization when used, faithfully represents the actual source and output files",
         "The modeled module loading, linking and execution match ECMAScript for the supported syntax",
-        "All binding values, arguments and intermediate arithmetic results remain nonnegative safe integers other than negative zero; remainder and division divisors are nonzero, division results are integers, and bitwise results are nonnegative",
+        "All initialized numeric binding values, arguments and intermediate arithmetic results remain nonnegative safe integers other than negative zero; remainder and division divisors are nonzero, division results are integers, and bitwise results are nonnegative",
+        ...(source.statements.some((item) => item.ast.kind === "hoistedVariable")
+          ? [
+              "Before a var initializer, the model supports only direct globalThis.record observations of its undefined value",
+            ]
+          : []),
         ...(hasExpressions
           ? [
               "Expression functions and captured closures receive exactly their declared number of numeric arguments; other exports are called without arguments",
@@ -1803,8 +1808,11 @@ theorem binding_export_difference :
   let witnessFailure = proof.stdout || proof.stderr;
   const witnessed = (original, output, calls) => {
     const events = (trace) => {
-      if (!trace.events.every((value) => Number.isSafeInteger(value) && value >= 0)) return null;
-      return list(trace.events.map((value) => `.number ${value}`));
+      const undefinedValue = (value) =>
+        value && typeof value === "object" && value.undefined === true && Object.keys(value).length === 1;
+      if (!trace.events.every((value) => undefinedValue(value) || (Number.isSafeInteger(value) && value >= 0)))
+        return null;
+      return list(trace.events.map((value) => (undefinedValue(value) ? ".undefined" : `.number ${value}`)));
     };
     const returns = (trace) => {
       if (!trace.results.every((value) => value === null || (Number.isSafeInteger(value) && value >= 0))) return null;

@@ -2,6 +2,7 @@
 inductive Observation where
   | text (value : String)
   | number (value : Nat)
+  | undefined
   deriving DecidableEq, Repr
 
 inductive ThrownValue where
@@ -67,6 +68,7 @@ inductive Operation where
   | incrementBinding (name : String)
   | addBinding (target source : String)
   | observeBinding (name : String)
+  | observeHoisted (name : String)
   | readBinding (name : String)
   | returnBinding (name : String)
   | returnUndefined
@@ -1024,6 +1026,10 @@ def executeStep {α : Type} (state : ExecutionState α) (operation : Operation) 
     | .observeBinding name => do
       let value ← lookupBinding state.bindings name
       pure (recordObservation state (.number value))
+    | .observeHoisted name =>
+      match lookupBinding state.bindings name with
+      | some value => some (recordObservation state (.number value))
+      | none => some (recordObservation state .undefined)
     | .readBinding name => do
       let _ ← lookupBinding state.bindings name
       pure state

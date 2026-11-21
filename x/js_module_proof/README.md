@@ -172,8 +172,8 @@ for some synchronous nested functions, parameters, blocks and branches after
 checking their lexical free references and rejecting imported writes. The
 validator returns `unknown` for those candidates; generation is not a proof.
 Top-level `var` declarations with one nonnegative numeric initializer are
-supported when modeled execution never reads the binding before that initializer;
-the earlier `undefined` phase remains outside the model.
+supported. Direct calls to `globalThis.record` observe `undefined` before the
+initializer; numeric uses before initialization remain outside the model.
 Public exports must be functions. The entry module may rename an exported
 function, including under multiple public names and captured closures. A module assignment may set `aliasImports: true` to import dependencies through
 generated public aliases while retaining their original local names. Renamed
@@ -305,7 +305,10 @@ the actual generation refusal messages, separate from requested split categories
 Use `--splits independent` to repartition generated statements independently of
 their grammar and sample acyclic graphs, cycles, and deliberately duplicated
 statement assignments, some ordered partitions with imports of every earlier
-module, and independent choices of import aliases. The summary records requested categories, ordered partitions, and refusals;
+module, and independent choices of import aliases. Some labeled cases deliberately
+place an early `var` observation after its initializer, so the fuzzer checks a
+real unsafe ordering. The summary records requested categories, ordered
+partitions, and refusals;
 an acyclic graph can still have missing dependencies or other invalid links.
 Use `--grammar composed` to generate bounded expression trees and nested
 returning branches and catch clauses from visible lexical names, with

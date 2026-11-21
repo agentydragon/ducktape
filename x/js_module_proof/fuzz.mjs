@@ -861,7 +861,8 @@ export function independentSplit(input, seed, index) {
   // Include ordered partitions with complete earlier-module imports as well as
   // unconstrained random graphs. This samples plausible splits without deriving
   // dependencies from the split checker being tested.
-  const ordered = index % 8 === 2;
+  const plannedEarlyVarReorder = input.earlyVar && index % 28 === 14;
+  const ordered = index % 8 === 2 && !plannedEarlyVarReorder;
   let rank = 0;
   statements.forEach((_, i) => {
     if (ordered) rank += rand(owners.length - rank);
@@ -874,10 +875,23 @@ export function independentSplit(input, seed, index) {
   const invalidAssignment = index % 8 === 0 && statements.length > 0;
   if (cyclic) modules[names[0]].imports.push(entry);
   if (invalidAssignment) modules[entry].statements.push(0);
+  if (plannedEarlyVarReorder) {
+    for (const module of Object.values(modules)) {
+      module.imports = [];
+      module.statements = [];
+    }
+    const state = names[0];
+    const effect = names[1] ?? entry;
+    modules[state].statements = statements.slice(1).map((_, index) => index + 1);
+    modules[effect].statements = [0];
+    modules[effect].imports = [state];
+    if (effect !== entry) modules[entry].imports = [effect, state];
+  }
   return {
     ...input,
     spec: { kind: "bindings", entry, modules },
     independentSplit: true,
+    plannedEarlyVarReorder,
     ordered,
     cyclic,
     invalidAssignment,
@@ -1122,10 +1136,13 @@ export function makeComposedCase(seed, index) {
   const functions = functionNames.map(makeFunction);
   const publicFunctionNames = functionNames.map((name, i) => (index % 3 === 0 && i === 0 ? `public_${name}` : name));
   const extraAlias = index % 6 === 0 ? "second_calculate" : null;
+  const earlyVar = index % 14 === 0;
+  const prefix = earlyVar ? [record(globals[0])] : [];
   const ast = {
     type: "Program",
     sourceType: "module",
     body: [
+      ...prefix,
       ...globals.map((name, i) => variable(name, rand(4), (index + i) % 7 === 0 ? "var" : "let")),
       ...functions,
       {
@@ -1146,6 +1163,7 @@ export function makeComposedCase(seed, index) {
     ast,
     source: print(ast),
     grammar: "composed",
+    earlyVar,
     expectThrow: true,
     unsupported: false,
     cyclic: false,
@@ -1154,11 +1172,14 @@ export function makeComposedCase(seed, index) {
       kind: "bindings",
       entry: "entry.mjs",
       modules: {
-        "state.mjs": { imports: [], statements: globals.map((_, index) => index) },
+        "state.mjs": {
+          imports: [],
+          statements: Array.from({ length: prefix.length + globals.length }, (_, index) => index),
+        },
         "logic.mjs": {
           imports: ["state.mjs"],
           aliasImports: index % 4 === 0,
-          statements: functionNames.map((_, index) => globals.length + index),
+          statements: functionNames.map((_, index) => prefix.length + globals.length + index),
         },
         "entry.mjs": { imports: ["logic.mjs"], statements: [] },
       },
@@ -1543,6 +1564,12 @@ export async function runFuzz({
     varGeneratedCases: 0,
     varComparedCases: 0,
     varProvedCases: 0,
+    earlyVarCases: 0,
+    plannedEarlyVarReorderCases: 0,
+    earlyVarComparedCases: 0,
+    earlyVarDifferentCases: 0,
+    earlyVarProvedCases: 0,
+    earlyVarUnsafeCases: 0,
     constantCases: 0,
     objectCases: 0,
     objectSourceExecuted: 0,
@@ -1643,6 +1670,8 @@ export async function runFuzz({
       };
       visit(input.ast);
       if (hasVar) summary.varCases++;
+      if (input.earlyVar) summary.earlyVarCases++;
+      if (input.plannedEarlyVarReorder) summary.plannedEarlyVarReorderCases++;
       for (const type of nodeTypes) summary.astNodeCases[type] = (summary.astNodeCases[type] ?? 0) + 1;
       const exports = input.ast.body.flatMap((node) =>
         node.type === "ExportNamedDeclaration" ? (node.specifiers ?? []) : []
@@ -1825,10 +1854,16 @@ export async function runFuzz({
         });
         continue;
       }
+      if (input.earlyVar && JSON.stringify(before.events[0]) !== JSON.stringify({ undefined: true }))
+        throw new Error("generated early var did not record undefined");
       const equal = JSON.stringify(before) === JSON.stringify(after);
       await writeFile(join(root, "node.json"), JSON.stringify({ before, after }, null, 2) + "\n");
       summary.compared++;
       if (hasVar) summary.varComparedCases++;
+      if (input.earlyVar) {
+        summary.earlyVarComparedCases++;
+        if (!equal) summary.earlyVarDifferentCases++;
+      }
       if (hasGeneratedImportAlias) summary.importAliasComparedCases++;
       if (input.grammar === "parameter") {
         summary.parameterCompared++;
@@ -1904,6 +1939,7 @@ export async function runFuzz({
         if (verdict.result === "proved under assumptions") {
           summary.proved++;
           if (hasVar) summary.varProvedCases++;
+          if (input.earlyVar) summary.earlyVarProvedCases++;
           if (hasGeneratedImportAlias) summary.importAliasProvedCases++;
           if (input.grammar === "object") summary.objectProved++;
           if (input.grammar === "captured") summary.capturedProved++;
@@ -1914,6 +1950,7 @@ export async function runFuzz({
           }
         } else if (verdict.result === "unsafe") {
           summary.unsafe++;
+          if (input.earlyVar) summary.earlyVarUnsafeCases++;
           const witnessCalls = verdict.calls ?? [];
           const witnessBefore = witnessCalls.length ? execute(source, witnessCalls) : before;
           const witnessAfter = witnessCalls.length ? execute(join(out, input.spec.entry), witnessCalls) : after;

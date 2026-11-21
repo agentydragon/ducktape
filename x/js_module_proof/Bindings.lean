@@ -7,8 +7,8 @@ structure CapturedLocal where
 
 inductive BindingStmt where
   | variable (name : String) (initial : Nat)
-  /- Its pre-initializer `undefined` phase is intentionally unmodeled; a read
-     before this declaration makes modeled initialization unavailable. -/
+  /- Direct observations before the initializer produce `undefined`;
+     numeric uses before initialization remain outside the model. -/
   | hoistedVariable (name : String) (initial : Nat)
   | constant (name : String) (initial : Nat)
   | function (name target source : String)
@@ -909,6 +909,25 @@ def capturedInitializers (prior : List (String × String)) : List CapturedLocal 
   | [], _ :: _ => none
   | _ :: _, [] => none
 
+def isHoistedName (source : List BindingStmt) (name : String) : Bool :=
+  source.any (fun statement => match statement with
+    | .variable _ _ => false
+    | .hoistedVariable candidate _ => candidate == name
+    | .constant _ _ => false
+    | .function _ _ _ => false
+    | .reader _ _ => false
+    | .thrower _ _ => false
+    | .expressionFunction _ _ _ => false
+    | .capturedFactory _ _ _ _ _ => false
+    | .capturedClosure _ _ _ _ => false
+    | .capturedAlias _ _ => false
+    | .factory _ _ _ => false
+    | .closure _ _ => false
+    | .wrapper _ _ => false
+    | .recordCall _ => false
+    | .call _ => false
+    | .record _ => false)
+
 def bindingOperations (source : List BindingStmt) (statement : BindingStmt) : Option (List Operation) :=
   match statement with
   | .variable name initial => some [.declareBinding name initial]
@@ -970,7 +989,8 @@ def bindingOperations (source : List BindingStmt) (statement : BindingStmt) : Op
       | .call _ => none
       | .record _ => none
     some (ops ++ [.observeBinding (closureCell target)])
-  | .record name => some [.observeBinding name]
+  | .record name =>
+    if isHoistedName source name then some [.observeHoisted name] else some [.observeBinding name]
   | .call name => functionOperations source name false
 
 def runBindingStatements (source statements : List BindingStmt) : Option (ExecutionState Unit) := do

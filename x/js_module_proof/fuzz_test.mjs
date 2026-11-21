@@ -338,6 +338,24 @@ if (shards === 4 && shard === 2) {
   assert.equal(checkedAlias.varGeneratedCases, 1);
   assert.equal(checkedAlias.varComparedCases, 1);
   assert.equal(checkedAlias.varProvedCases, 1);
+  assert.equal(checkedAlias.earlyVarCases, 1);
+  assert.equal(checkedAlias.earlyVarComparedCases, 1);
+  assert.equal(checkedAlias.earlyVarProvedCases, 1);
+  assert.equal(checkedAlias.earlyVarDifferentCases, 0);
+  assert.equal(checkedAlias.earlyVarUnsafeCases, 0);
+  const reorderedVar = await runFuzz({
+    seed: 51981,
+    start: 14,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "composed",
+    splitMode: "independent",
+    validateEvery: 1,
+  });
+  assert.equal(reorderedVar.plannedEarlyVarReorderCases, 1);
+  assert.equal(reorderedVar.earlyVarComparedCases, 1);
+  assert.equal(reorderedVar.earlyVarDifferentCases, 1);
+  assert.equal(reorderedVar.earlyVarUnsafeCases, 1);
   const asyncCampaign = await runFuzz({ seed: 37, cases: 8, outputDir: process.env.TEST_TMPDIR, grammarMode: "async" });
   assert.equal(asyncCampaign.asyncSourceExecuted, 8);
   assert.equal(asyncCampaign.inconclusive, 0);
