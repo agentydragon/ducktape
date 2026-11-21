@@ -179,11 +179,9 @@ def force_drop_database_sync(admin_url: str, db_name: str) -> None:
 
 
 @contextmanager
-def create_temporary_database(
-    admin_url: str, db_name: str, *, extensions: Sequence[str] = (), template: str | None = None
-) -> Iterator[str]:
+def create_temporary_database(admin_url: str, db_name: str, *, template: str | None = None) -> Iterator[str]:
     """Create a database for a context and force-drop it when the context exits."""
-    url = create_database_sync(admin_url, db_name, extensions=extensions, template=template)
+    url = create_database_sync(admin_url, db_name, template=template)
     try:
         yield url
     finally:
