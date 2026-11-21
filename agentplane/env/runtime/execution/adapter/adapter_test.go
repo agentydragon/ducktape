@@ -172,6 +172,13 @@ func fixture(t *testing.T, p *peer) (*Adapter, executorpb.ExecutorClient) {
 	return adapter, executorpb.NewExecutorClient(conn)
 }
 
+// active reports whether an execution connection is open or opening.
+func active(a *Adapter) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.opening > 0 || len(a.sessions) > 0
+}
+
 func testScope() *executorpb.ExecutionScope {
 	return &executorpb.ExecutionScope{Destination: &identitypb.SandboxDestination{Target: &identitypb.EnvironmentTarget{Namespace: "agents", Name: "sandbox", Uid: "sandbox-uid"}, Owner: &identitypb.ServiceAccount{Namespace: "agents", Name: "sampler"}}, ExpectedIncarnationUid: "incarnation", SessionId: "sampler-session"}
 }
@@ -611,7 +618,7 @@ func TestResumeIdentityAndStreamLifetime(t *testing.T) {
 	}
 	stop()
 	deadline := time.Now().Add(5 * time.Second)
-	for adapter.Active() && time.Now().Before(deadline) {
+	for active(adapter) && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
 	p.sessionID = func(nativeRequest) string { return "substituted-session" }
@@ -708,95 +715,76 @@ func TestExecutorAdmissionRefusalIsKnownRejection(t *testing.T) {
 	if response.Status.GetOutcome() != executorpb.ExecutionStatus_OUTCOME_REJECTED || !strings.Contains(response.Status.GetMessage(), "no configured Codex executor") {
 		t.Fatalf("executor refusal outcome=%v", response.Status)
 	}
-	if response.ExecutionSessionId != "" || len(response.NativeFrames) != 0 || adapter.Active() {
+	if response.ExecutionSessionId != "" || len(response.NativeFrames) != 0 || active(adapter) {
 		t.Fatalf("executor refusal created local session evidence: %v", response)
 	}
 }
 
-func TestDrainAndCloseReturnWhenOpenSessionSendStalls(t *testing.T) {
-	for _, closeAdapter := range []bool{false, true} {
-		name := "drain"
-		if closeAdapter {
-			name = "close"
+func TestCloseReturnsWhenOpenSessionSendStalls(t *testing.T) {
+	peer := &peer{}
+	server := httptest.NewServer(http.HandlerFunc(peer.serve))
+	defer server.Close()
+	adapter, err := New(Config{
+		Context: context.Background(),
+		Admit: func(ctx context.Context, _ *executorpb.ExecutionScope, _ bool, accept func(context.Context) error) error {
+			return accept(ctx)
+		},
+		Acquire: func(context.Context) (string, error) { return "ws" + strings.TrimPrefix(server.URL, "http"), nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	streamCtx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	stream := &blockingOpenSessionStream{ctx: streamCtx, started: make(chan struct{}), release: make(chan struct{})}
+	openDone := make(chan error, 1)
+	go func() {
+		openDone <- adapter.OpenSession(&executorpb.OpenSessionRequest{Scope: testScope(), RequestId: "open"}, stream)
+	}()
+	select {
+	case <-stream.started:
+	case <-time.After(5 * time.Second):
+		close(stream.release)
+		_ = adapter.Close()
+		t.Fatal("OpenSession did not reach its first response send")
+	}
+	closeDone := make(chan error, 1)
+	go func() { closeDone <- adapter.Close() }()
+	select {
+	case err := <-closeDone:
+		if err != nil {
+			t.Fatalf("close: %v", err)
 		}
-		t.Run(name, func(t *testing.T) {
-			peer := &peer{}
-			server := httptest.NewServer(http.HandlerFunc(peer.serve))
-			defer server.Close()
-			adapter, err := New(Config{
-				Context: context.Background(),
-				Admit: func(ctx context.Context, _ *executorpb.ExecutionScope, _ bool, accept func(context.Context) error) error {
-					return accept(ctx)
-				},
-				Acquire: func(context.Context) (string, error) { return "ws" + strings.TrimPrefix(server.URL, "http"), nil },
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			streamCtx, cancel := context.WithCancel(t.Context())
-			defer cancel()
-			stream := &blockingOpenSessionStream{ctx: streamCtx, started: make(chan struct{}), release: make(chan struct{})}
-			openDone := make(chan error, 1)
-			go func() {
-				openDone <- adapter.OpenSession(&executorpb.OpenSessionRequest{Scope: testScope(), RequestId: "open"}, stream)
-			}()
-			select {
-			case <-stream.started:
-			case <-time.After(5 * time.Second):
-				close(stream.release)
-				_ = adapter.Close()
-				t.Fatal("OpenSession did not reach its first response send")
-			}
-			operationDone := make(chan error, 1)
-			if closeAdapter {
-				go func() { operationDone <- adapter.Close() }()
-			} else {
-				drainCtx, drainCancel := context.WithTimeout(t.Context(), 2*time.Second)
-				defer drainCancel()
-				go func() { operationDone <- adapter.Drain(drainCtx) }()
-			}
-			select {
-			case err := <-operationDone:
-				if err != nil {
-					t.Fatalf("lifecycle operation: %v", err)
-				}
-			case <-time.After(3 * time.Second):
-				close(stream.release)
-				t.Fatal("lifecycle operation wedged on gRPC stream Send")
-			}
-			close(stream.release)
-			select {
-			case <-openDone:
-			case <-time.After(2 * time.Second):
-				t.Fatal("OpenSession handler did not return after lifecycle cancellation")
-			}
-			if !closeAdapter {
-				if err := adapter.Close(); err != nil {
-					t.Fatal(err)
-				}
-			}
-		})
+	case <-time.After(3 * time.Second):
+		close(stream.release)
+		t.Fatal("close wedged on gRPC stream Send")
+	}
+	close(stream.release)
+	select {
+	case <-openDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("OpenSession handler did not return after close")
 	}
 }
 
-func TestDrainIsReversibleAndClosesHeldExecutorConnection(t *testing.T) {
+func TestCloseEndsHeldExecutorConnectionAndRefusesNewSessions(t *testing.T) {
 	adapter, client := fixture(t, &peer{})
 	scope := testScope()
-	opened, _ := open(t, client, scope, nil)
-	if !adapter.Active() {
+	open(t, client, scope, nil)
+	if !active(adapter) {
 		t.Fatal("open execution session is not active")
 	}
-	drainCtx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-	defer cancel()
-	if err := adapter.Drain(drainCtx); err != nil {
+	if err := adapter.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if adapter.Active() {
-		t.Fatal("drained execution session still active")
+	if active(adapter) {
+		t.Fatal("closed adapter still has an active execution session")
 	}
-	resumed, stop := open(t, client, scope, &opened.ExecutionSessionId)
-	if resumed.Status.GetOutcome() != executorpb.ExecutionStatus_OUTCOME_COMPLETED || resumed.ExecutionSessionId != opened.ExecutionSessionId {
-		t.Fatalf("reopened execution session=%v", resumed)
+	stream, err := client.OpenSession(t.Context(), &executorpb.OpenSessionRequest{Scope: scope, RequestId: "open-after-close"})
+	if err != nil {
+		t.Fatal(err)
 	}
-	stop()
+	if _, err := stream.Recv(); status.Code(err) != codes.Unavailable {
+		t.Fatalf("open after close = %v, want Unavailable", err)
+	}
 }
