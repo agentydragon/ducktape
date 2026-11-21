@@ -52,6 +52,8 @@ dependencies = [
     # the cluster itself runs Kubernetes 1.35.1
     # (cluster/terraform/main/variables.tf's kubernetes_version).
     "cdk8s-plus-34>=2.0,<3",
+    # Code generation only, for the CRD wire types prototype.
+    "datamodel-code-generator==0.99.0",
     "aiohttp>=3.14.3",
     "requests>=2.32.5",
 

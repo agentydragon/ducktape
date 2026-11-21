@@ -7,6 +7,7 @@
 manifest:
   modules_mapping:
     08ae81f72d5a2b5fa9e0__mypyc: mypy
+    85cae5375ceb5d1ca6c6__mypyc: black
     FreeCADTemplates: freecad_stubs
     OpenSSL: pyopenssl
     PIL: pillow
@@ -35,6 +36,7 @@ manifest:
     anyio: anyio
     apiclient: google_api_python_client
     apscheduler: apscheduler
+    argcomplete: argcomplete
     argon2: argon2_cffi
     asgiref: asgiref
     ast_serialize: ast_serialize
@@ -48,6 +50,9 @@ manifest:
     bcrypt: bcrypt
     beancount: beancount
     beartype: beartype
+    black: black
+    blackd: black
+    blib2to3: black
     blinker: blinker
     boto3: boto3
     botocore: botocore
@@ -71,6 +76,7 @@ manifest:
     cryptography: cryptography
     cycler: cycler
     cyclopts: cyclopts
+    datamodel_code_generator: datamodel_code_generator
     dateutil: python_dateutil
     dbus_fast: dbus_fast
     debugpy: debugpy
@@ -88,6 +94,7 @@ manifest:
     farama_notifications: farama_notifications
     fastapi: fastapi
     fastmcp: fastmcp_slim
+    fd7dcdb10166ebd4db98__mypyc: pytokens
     filelock: filelock
     flask: flask
     flexcache: flexcache
@@ -97,6 +104,7 @@ manifest:
     frozenlist: frozenlist
     fsspec: fsspec
     genai_prices: genai_prices
+    genson: genson
     github: pygithub
     glide: valkey_glide
     glide_shared: valkey_glide
@@ -198,11 +206,13 @@ manifest:
     hypothesis: hypothesis
     idna: idna
     ijson: ijson
+    inflect: inflect
     iniconfig: iniconfig
     inspect_ai: inspect_ai
     interface_meta: interface_meta
     inventree: inventree
     invoke: invoke
+    isort: isort
     itsdangerous: itsdangerous
     jaraco.classes: jaraco.classes
     jaraco.context: jaraco_context
@@ -351,6 +361,7 @@ manifest:
     pytest_httpx2: pytest_httpx2
     pytest_timeout: pytest_timeout
     python_multipart: python_multipart
+    pytokens: pytokens
     pytz: pytz
     qrcode: qrcode
     qtpy: QtPy
@@ -431,4 +442,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 39866ae4285d41d19c64019f100106c4028dee1ca1d05c8fabffaf4265bbcf9d
+integrity: 7bf4040f86618f13338e9b57c9c276bae04a51063e8e32054958c2b58f64f14e
