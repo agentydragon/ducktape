@@ -122,8 +122,8 @@ OPERATOR_CRDS: dict[str, set[str]] = {
     "clickhouse-operator": {"ClickHouseInstallation", "ClickHouseKeeperInstallation"},
     "volsync": {"ReplicationDestination", "ReplicationSource"},
     "snapshot-controller-crds": {"VolumeSnapshotClass"},
-    # TODO: if non-GHCR image automations are added, add a separate entry here
-    # (e.g. "flux-image-automation-dockerhub": {"ImageRepository", ...}).
+    # Flux bootstrap installs these CRDs; this Kustomization owns the shared
+    # ImageUpdateAutomation, and the Forgejo image resources depend on it.
     "flux-image-automation-ghcr": {"ImageRepository", "ImagePolicy", "ImageUpdateAutomation"},
 }
 

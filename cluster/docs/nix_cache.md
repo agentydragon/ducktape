@@ -64,25 +64,26 @@ subcommand — the previous shell-script implementation this doc used to
 describe is gone):
 
 1. `GET /_api/v1/cache-config/<name>` — exists?
-2. If 200: log "exists", skip (existing caches are never reconfigured — flipping
+2. If successful: log the public key and skip creation (existing caches are never reconfigured — flipping
    `is_public`, or swapping in a different signing key, on one needs a direct
    API call, not this command).
-3. If 4xx: `POST /_api/v1/cache-config/<name>` with a body carrying the cache's
+3. If 404: `POST /_api/v1/cache-config/<name>` with a body carrying the cache's
    key from `--keypair-dir` (mounted `attic-cache-keys` Secret) when present:
    `{"keypair":{"Keypair":"<name>:<base64>"},"is_public":<bool>,"store_dir":"/nix/store","priority":41,"upstream_cache_key_names":[]}`
    — or `{"keypair":"Generate",...}` for a cache with no file under
    `--keypair-dir`. `is_public` is `true` only for `--public-cache` args
-   (currently just `public`).
+   (currently just `public`). Other GET failures stop the Job.
 
 ### Adding a new cache
 
 1. Generate a keypair: `nix key generate-secret --key-name <cache>`.
 2. Add it to `cluster/k8s/nix-cache/cache-keys.sops.yaml` (`sops <file>` to edit
    in place; an operator's age key is required — this repo's machine-level keys
-   are encryption-only for cluster secrets, see AGENTS.md § SOPS) and add
-   `--cache=<cache>` / `--public-cache=<cache>` to `job.yaml`'s args.
+   are encryption-only for cluster secrets, see AGENTS.md § SOPS). Add
+   `--cache=<cache>` / `--public-cache=<cache>` to the bootstrap Job's args in
+   `cluster/cdk8s/nix_cache/attic.py`, then run `bb run //cluster/cdk8s:generate_manifests`.
 3. Regenerate `nix/attic-pubkeys.json` from the same file:
-   `bazel run //cluster/rotators/attic_jwt_rotation:sync_pubkeys_bin -- sync`
+   `bb run //cluster/rotators/attic_jwt_rotation:sync_pubkeys_bin -- sync`
    (also needs that operator decrypt access — deliberately not something the
    in-cluster bootstrap Job or its container image can do, see
    `rotate.py`'s module docstring). Until this runs, Nix refuses anything

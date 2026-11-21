@@ -8,7 +8,7 @@ itself. Flux applies a changed Workspace spec, and provider-opentofu reconciles 
 There is no need for an artifact-URL bridge, XRD, Composition, or function for this case.
 
 Every Crossplane OpenTofu Workspace is Inline. `gitops_workspace` in
-<cluster/cdk8s/opentofu.py> renders each from a `tf/gitops/<root>` directory through
+<../cdk8s/opentofu.py> renders each from a `tf/gitops/<root>` directory through
 cdk8s. A root's `inline_source` filegroup packages its `.tf` files as Bazel runfiles, so
 source edits are inputs to manifest synthesis and its parity check. LiteLLM keys are
 native Crossplane LiteLLM resources, not OpenTofu Workspaces.
