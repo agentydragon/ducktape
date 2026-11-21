@@ -147,7 +147,11 @@ lean_binary(
 # The CoreJS model. `experiments/model/differential.mjs` runs it against Node.
 lean_binary(
     name = "corejs",
-    srcs = glob(["Experiments/CoreJS/*.lean"]) + ["Experiments/CoreJSMain.lean"],
+    srcs = glob(
+        ["Experiments/CoreJS/*.lean"],
+        # the proof about the model; `corejs_axioms_test` checks it
+        exclude = ["Experiments/CoreJS/Frame.lean"],
+    ) + ["Experiments/CoreJSMain.lean"],
     entry = "Experiments/CoreJSMain.lean",
     visibility = ["//devinfra/js/debundle/x/split_proof/experiments/translation:__pkg__"],
 )
