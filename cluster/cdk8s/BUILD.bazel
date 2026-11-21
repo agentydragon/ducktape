@@ -1243,6 +1243,7 @@ py_library(
     deps = [
         ":manifest_roots",
         ":namespaces",
+        ":vpa_policy",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
