@@ -154,6 +154,17 @@ def _values() -> dict[str, object]:
         "gitlab-runner": {"install": False},
         "registry": {
             "storage": {"secret": f"{REGISTRY_BUCKET}-connection", "key": "config"},
+            # Spread each ReplicaSet across eligible hosts while allowing the HPA to scale beyond the host count.
+            "topologySpreadConstraints": [
+                {
+                    "maxSkew": 1,
+                    "topologyKey": "kubernetes.io/hostname",
+                    "whenUnsatisfiable": "DoNotSchedule",
+                    "nodeTaintsPolicy": "Honor",
+                    "labelSelector": {"matchLabels": REGISTRY.pods.selector},
+                    "matchLabelKeys": ["pod-template-hash"],
+                }
+            ],
             "deployment": {
                 "annotations": _vpa_annotations(
                     # Registry's HPA uses CPU utilization, which depends on the request.
