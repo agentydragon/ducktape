@@ -5,6 +5,7 @@
 import json
 import os
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import pytest
@@ -73,13 +74,23 @@ async def origin(runfiles: Runfiles) -> AsyncIterator[str]:
         yield served
 
 
-async def test_help_dialog_opens_and_closes(playwright_driver: Playwright, origin: str) -> None:
+@asynccontextmanager
+async def harness_page(playwright_driver: Playwright, origin: str) -> AsyncIterator[Page]:
+    """A page of a fresh desktop-size browser context, with the app loaded.
+
+    A test that must configure the context or page before navigation opens its own context.
+    """
     async with deterministic_browser_context(
         playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
     ) as context:
         page = await context.new_page()
         await page.goto(origin)
         await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        yield page
+
+
+async def test_help_dialog_opens_and_closes(playwright_driver: Playwright, origin: str) -> None:
+    async with harness_page(playwright_driver, origin) as page:
         await page.locator("button.help-icon").click()
         dialog = page.locator(".HelpDialog")
         await expect(dialog).to_be_visible()
@@ -176,12 +187,7 @@ async def test_app_loads_and_draws(playwright_driver: Playwright, origin: str) -
 
 
 async def test_layer_ui_memo_ignores_scroll_but_tracks_selection(playwright_driver: Playwright, origin: str) -> None:
-    async with deterministic_browser_context(
-        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
-    ) as context:
-        page = await context.new_page()
-        await page.goto(origin)
-        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+    async with harness_page(playwright_driver, origin) as page:
         result = await page.evaluate(
             """async () => {
                 const { areEqual } = await import('./main/packages/excalidraw/components/LayerUI.js');
@@ -199,13 +205,7 @@ async def test_layer_ui_memo_ignores_scroll_but_tracks_selection(playwright_driv
 
 
 async def test_stats_drag_input_updates_selected_rectangle(playwright_driver: Playwright, origin: str) -> None:
-    async with deterministic_browser_context(
-        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
-    ) as context:
-        page = await context.new_page()
-        await page.goto(origin)
-        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
-
+    async with harness_page(playwright_driver, origin) as page:
         rectangle = page.get_by_test_id("toolbar-rectangle")
         await page.locator("label", has=rectangle).click()
         canvas = page.locator("canvas.excalidraw__canvas.interactive")
@@ -226,13 +226,7 @@ async def test_stats_drag_input_updates_selected_rectangle(playwright_driver: Pl
 
 
 async def test_hyperlink_popup_saves_selected_rectangle_link(playwright_driver: Playwright, origin: str) -> None:
-    async with deterministic_browser_context(
-        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
-    ) as context:
-        page = await context.new_page()
-        await page.goto(origin)
-        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
-
+    async with harness_page(playwright_driver, origin) as page:
         rectangle = page.get_by_test_id("toolbar-rectangle")
         await page.locator("label", has=rectangle).click()
         canvas = page.locator("canvas.excalidraw__canvas.interactive")
@@ -253,12 +247,7 @@ async def test_hyperlink_popup_saves_selected_rectangle_link(playwright_driver: 
 
 
 async def test_resize_and_crop_geometry(playwright_driver: Playwright, origin: str) -> None:
-    async with deterministic_browser_context(
-        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
-    ) as context:
-        page = await context.new_page()
-        await page.goto(origin)
-        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+    async with harness_page(playwright_driver, origin) as page:
         geometry = await page.evaluate(
             """async () => {
                 const [resize, crop] = await Promise.all([
@@ -318,12 +307,7 @@ async def test_resize_and_crop_geometry(playwright_driver: Playwright, origin: s
 
 
 async def test_element_collision_geometry(playwright_driver: Playwright, origin: str) -> None:
-    async with deterministic_browser_context(
-        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
-    ) as context:
-        page = await context.new_page()
-        await page.goto(origin)
-        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+    async with harness_page(playwright_driver, origin) as page:
         geometry = await page.evaluate(
             """async () => {
                 const collision = await import('./editor/packages/excalidraw/element/collision.js');
@@ -345,12 +329,7 @@ async def test_element_collision_geometry(playwright_driver: Playwright, origin:
 
 
 async def test_element_type_checks(playwright_driver: Playwright, origin: str) -> None:
-    async with deterministic_browser_context(
-        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
-    ) as context:
-        page = await context.new_page()
-        await page.goto(origin)
-        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+    async with harness_page(playwright_driver, origin) as page:
         result = await page.evaluate(
             """async () => {
                 const checks = await import('./editor/packages/excalidraw/element/typeChecks.js');
@@ -401,12 +380,7 @@ async def test_element_type_checks(playwright_driver: Playwright, origin: str) -
 
 
 async def test_group_selection_and_membership(playwright_driver: Playwright, origin: str) -> None:
-    async with deterministic_browser_context(
-        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
-    ) as context:
-        page = await context.new_page()
-        await page.goto(origin)
-        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+    async with harness_page(playwright_driver, origin) as page:
         result = await page.evaluate(
             """async () => {
                 const groups = await import('./editor/packages/excalidraw/groups.js');
@@ -444,12 +418,7 @@ async def test_group_selection_and_membership(playwright_driver: Playwright, ori
 
 
 async def test_blob_and_file_helpers(playwright_driver: Playwright, origin: str) -> None:
-    async with deterministic_browser_context(
-        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
-    ) as context:
-        page = await context.new_page()
-        await page.goto(origin)
-        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+    async with harness_page(playwright_driver, origin) as page:
         result = await page.evaluate(
             """async () => {
                 const files = await import('./editor/packages/excalidraw/data/blob.js');
@@ -490,12 +459,7 @@ async def test_blob_and_file_helpers(playwright_driver: Playwright, origin: str)
 
 
 async def test_data_decoding(playwright_driver: Playwright, origin: str) -> None:
-    async with deterministic_browser_context(
-        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
-    ) as context:
-        page = await context.new_page()
-        await page.goto(origin)
-        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+    async with harness_page(playwright_driver, origin) as page:
         result = await page.evaluate(
             """async () => {
                 const { base64ToString, decode } = await import('./editor/packages/excalidraw/data/encode.js');
@@ -526,12 +490,7 @@ async def test_data_decoding(playwright_driver: Playwright, origin: str) -> None
 
 
 async def test_scene_and_library_json(playwright_driver: Playwright, origin: str) -> None:
-    async with deterministic_browser_context(
-        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
-    ) as context:
-        page = await context.new_page()
-        await page.goto(origin)
-        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+    async with harness_page(playwright_driver, origin) as page:
         result = await page.evaluate(
             """async () => {
                 const json = await import('./editor/packages/excalidraw/data/json.js');
@@ -563,12 +522,7 @@ async def test_scene_and_library_json(playwright_driver: Playwright, origin: str
 
 
 async def test_library_class(playwright_driver: Playwright, origin: str) -> None:
-    async with deterministic_browser_context(
-        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
-    ) as context:
-        page = await context.new_page()
-        await page.goto(origin)
-        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+    async with harness_page(playwright_driver, origin) as page:
         result = await page.evaluate(
             """async () => {
                 const { Library } = await import('./main/packages/excalidraw/data/library.js');
@@ -597,12 +551,7 @@ async def test_library_class(playwright_driver: Playwright, origin: str) -> None
 
 
 async def test_library_algorithms(playwright_driver: Playwright, origin: str) -> None:
-    async with deterministic_browser_context(
-        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
-    ) as context:
-        page = await context.new_page()
-        await page.goto(origin)
-        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+    async with harness_page(playwright_driver, origin) as page:
         result = await page.evaluate(
             """async () => {
                 const { Library, distributeLibraryItemsOnSquareGrid } =
@@ -638,12 +587,7 @@ async def test_library_algorithms(playwright_driver: Playwright, origin: str) ->
 
 
 async def test_scene_class(playwright_driver: Playwright, origin: str) -> None:
-    async with deterministic_browser_context(
-        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
-    ) as context:
-        page = await context.new_page()
-        await page.goto(origin)
-        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+    async with harness_page(playwright_driver, origin) as page:
         result = await page.evaluate(
             """async () => {
                 const [comparisons, normalize, scroll] = await Promise.all([
@@ -728,12 +672,7 @@ async def test_scene_class(playwright_driver: Playwright, origin: str) -> None:
 
 
 async def test_store_and_changes(playwright_driver: Playwright, origin: str) -> None:
-    async with deterministic_browser_context(
-        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
-    ) as context:
-        page = await context.new_page()
-        await page.goto(origin)
-        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+    async with harness_page(playwright_driver, origin) as page:
         result = await page.evaluate(
             """async () => {
                 const { Store, getObservedAppState } = await import('./editor/packages/excalidraw/store.js');
@@ -799,12 +738,7 @@ async def test_store_and_changes(playwright_driver: Playwright, origin: str) -> 
 
 
 async def test_linear_element_editor(playwright_driver: Playwright, origin: str) -> None:
-    async with deterministic_browser_context(
-        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
-    ) as context:
-        page = await context.new_page()
-        await page.goto(origin)
-        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+    async with harness_page(playwright_driver, origin) as page:
         result = await page.evaluate(
             """async () => {
                 const { LinearElementEditor } = await import('./editor/packages/excalidraw/element/linearElementEditor.js');
@@ -840,12 +774,7 @@ async def test_linear_element_editor(playwright_driver: Playwright, origin: str)
 
 
 async def test_action_manager(playwright_driver: Playwright, origin: str) -> None:
-    async with deterministic_browser_context(
-        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
-    ) as context:
-        page = await context.new_page()
-        await page.goto(origin)
-        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+    async with harness_page(playwright_driver, origin) as page:
         result = await page.evaluate(
             """async () => {
                 const { ActionManager } = await import('./main/packages/excalidraw/actions/manager.js');
@@ -889,12 +818,7 @@ async def test_action_manager(playwright_driver: Playwright, origin: str) -> Non
 
 
 async def test_fonts_class(playwright_driver: Playwright, origin: str) -> None:
-    async with deterministic_browser_context(
-        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
-    ) as context:
-        page = await context.new_page()
-        await page.goto(origin)
-        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+    async with harness_page(playwright_driver, origin) as page:
         result = await page.evaluate(
             """async () => {
                 const { Fonts } = await import('./editor/packages/excalidraw/fonts/Fonts.js');
@@ -921,12 +845,7 @@ async def test_fonts_class(playwright_driver: Playwright, origin: str) -> None:
 
 
 async def test_font_face_class(playwright_driver: Playwright, origin: str) -> None:
-    async with deterministic_browser_context(
-        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
-    ) as context:
-        page = await context.new_page()
-        await page.goto(origin)
-        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+    async with harness_page(playwright_driver, origin) as page:
         result = await page.evaluate(
             """async () => {
                 const { ExcalidrawFontFace: Face } = await import(
@@ -972,12 +891,7 @@ async def test_font_face_class(playwright_driver: Playwright, origin: str) -> No
 
 
 async def test_static_scene_renders_grid(playwright_driver: Playwright, origin: str) -> None:
-    async with deterministic_browser_context(
-        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
-    ) as context:
-        page = await context.new_page()
-        await page.goto(origin)
-        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+    async with harness_page(playwright_driver, origin) as page:
         result = await page.evaluate(
             """async () => {
                 const { renderStaticScene } = await import(
@@ -1007,12 +921,7 @@ async def test_static_scene_renders_grid(playwright_driver: Playwright, origin: 
 
 
 async def test_renderer_filters_and_memoizes_elements(playwright_driver: Playwright, origin: str) -> None:
-    async with deterministic_browser_context(
-        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
-    ) as context:
-        page = await context.new_page()
-        await page.goto(origin)
-        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+    async with harness_page(playwright_driver, origin) as page:
         result = await page.evaluate(
             """async () => {
                 const { Renderer } = await import('./main/packages/excalidraw/scene/Renderer.js');
@@ -1057,12 +966,7 @@ async def test_renderer_filters_and_memoizes_elements(playwright_driver: Playwri
 
 
 async def test_element_construction(playwright_driver: Playwright, origin: str) -> None:
-    async with deterministic_browser_context(
-        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
-    ) as context:
-        page = await context.new_page()
-        await page.goto(origin)
-        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+    async with harness_page(playwright_driver, origin) as page:
         result = await page.evaluate(
             r"""async () => {
                 const create = await import('./editor/packages/excalidraw/element/newElement.js');
@@ -1108,12 +1012,7 @@ async def test_element_construction(playwright_driver: Playwright, origin: str) 
 
 
 async def test_element_copying_and_specialized_construction(playwright_driver: Playwright, origin: str) -> None:
-    async with deterministic_browser_context(
-        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
-    ) as context:
-        page = await context.new_page()
-        await page.goto(origin)
-        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+    async with harness_page(playwright_driver, origin) as page:
         result = await page.evaluate(
             """async () => {
                 const create = await import('./editor/packages/excalidraw/element/newElement.js');
@@ -1182,12 +1081,7 @@ async def test_element_copying_and_specialized_construction(playwright_driver: P
 
 
 async def test_scene_restoration(playwright_driver: Playwright, origin: str) -> None:
-    async with deterministic_browser_context(
-        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
-    ) as context:
-        page = await context.new_page()
-        await page.goto(origin)
-        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+    async with harness_page(playwright_driver, origin) as page:
         result = await page.evaluate(
             """async () => {
                 const restore = await import('./editor/packages/excalidraw/data/restore.js');
@@ -1237,12 +1131,7 @@ async def test_scene_restoration(playwright_driver: Playwright, origin: str) -> 
 
 
 async def test_resize_handle_devices(playwright_driver: Playwright, origin: str) -> None:
-    async with deterministic_browser_context(
-        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
-    ) as context:
-        page = await context.new_page()
-        await page.goto(origin)
-        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+    async with harness_page(playwright_driver, origin) as page:
         result = await page.evaluate(
             """async () => {
                 const handles = await import('./editor/packages/excalidraw/element/transformHandles.js');
@@ -1298,12 +1187,7 @@ async def test_library_and_icon_picker(playwright_driver: Playwright, origin: st
 
 
 async def test_paste_spreadsheet_shows_chart_dialog(playwright_driver: Playwright, origin: str) -> None:
-    async with deterministic_browser_context(
-        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
-    ) as context:
-        page = await context.new_page()
-        await page.goto(origin)
-        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+    async with harness_page(playwright_driver, origin) as page:
         await page.mouse.click(600, 400)
         await page.evaluate(
             """() => {
@@ -1370,12 +1254,7 @@ async def test_clipboard_parsing_and_system_round_trip(playwright_driver: Playwr
 
 
 async def test_snapping_reference_geometry_and_pointer_offsets(playwright_driver: Playwright, origin: str) -> None:
-    async with deterministic_browser_context(
-        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
-    ) as context:
-        page = await context.new_page()
-        await page.goto(origin)
-        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+    async with harness_page(playwright_driver, origin) as page:
         result = await page.evaluate(
             """async () => {
                 const snap = await import('./editor/packages/excalidraw/snapping.js');
@@ -1418,12 +1297,7 @@ async def test_snapping_reference_geometry_and_pointer_offsets(playwright_driver
 
 
 async def test_shape_deconstruction_preserves_edges_and_curves(playwright_driver: Playwright, origin: str) -> None:
-    async with deterministic_browser_context(
-        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
-    ) as context:
-        page = await context.new_page()
-        await page.goto(origin)
-        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+    async with harness_page(playwright_driver, origin) as page:
         result = await page.evaluate(
             """async () => {
                 const shape = await import('./editor/packages/excalidraw/element/utils.js');
@@ -1464,12 +1338,7 @@ async def test_shape_deconstruction_preserves_edges_and_curves(playwright_driver
 
 
 async def test_text_measurements(playwright_driver: Playwright, origin: str) -> None:
-    async with deterministic_browser_context(
-        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
-    ) as context:
-        page = await context.new_page()
-        await page.goto(origin)
-        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+    async with harness_page(playwright_driver, origin) as page:
         measurements = await page.evaluate(
             """async () => {
                 const text = await import('./editor/packages/excalidraw/element/textMeasurements.js');
@@ -1498,12 +1367,7 @@ async def test_text_measurements(playwright_driver: Playwright, origin: str) -> 
 
 
 async def test_element_render_helpers(playwright_driver: Playwright, origin: str) -> None:
-    async with deterministic_browser_context(
-        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
-    ) as context:
-        page = await context.new_page()
-        await page.goto(origin)
-        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+    async with harness_page(playwright_driver, origin) as page:
         result = await page.evaluate(
             """async () => {
                 const renderer = await import('./editor/packages/excalidraw/renderer/renderElement.js');
@@ -1536,12 +1400,7 @@ async def test_element_render_helpers(playwright_driver: Playwright, origin: str
 
 
 async def test_interactive_scene_helpers(playwright_driver: Playwright, origin: str) -> None:
-    async with deterministic_browser_context(
-        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
-    ) as context:
-        page = await context.new_page()
-        await page.goto(origin)
-        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+    async with harness_page(playwright_driver, origin) as page:
         result = await page.evaluate(
             """async () => {
                 const scene = await import('./main/packages/excalidraw/renderer/interactiveScene.js');
@@ -1563,12 +1422,7 @@ async def test_interactive_scene_helpers(playwright_driver: Playwright, origin: 
 
 
 async def test_search_menu_preview(playwright_driver: Playwright, origin: str) -> None:
-    async with deterministic_browser_context(
-        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
-    ) as context:
-        page = await context.new_page()
-        await page.goto(origin)
-        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+    async with harness_page(playwright_driver, origin) as page:
         preview = await page.evaluate(
             """async () => {
                 const search = await import('./main/packages/excalidraw/components/SearchMenu.js');
@@ -1584,12 +1438,7 @@ async def test_search_menu_preview(playwright_driver: Playwright, origin: str) -
 
 
 async def test_excalidraw_logo(playwright_driver: Playwright, origin: str) -> None:
-    async with deterministic_browser_context(
-        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
-    ) as context:
-        page = await context.new_page()
-        await page.goto(origin)
-        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+    async with harness_page(playwright_driver, origin) as page:
         logo = await page.evaluate(
             """async () => {
                 const {ExcalidrawLogo} = await import('./main/packages/excalidraw/components/ExcalidrawLogo.js');
@@ -1612,12 +1461,7 @@ async def test_excalidraw_logo(playwright_driver: Playwright, origin: str) -> No
 
 
 async def test_create_text_element(playwright_driver: Playwright, origin: str) -> None:
-    async with deterministic_browser_context(
-        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
-    ) as context:
-        page = await context.new_page()
-        await page.goto(origin)
-        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+    async with harness_page(playwright_driver, origin) as page:
         await expect(page.locator(".App-toolbar")).to_be_visible()
         text_tool = page.get_by_test_id("toolbar-text")
         await page.locator("label", has=text_tool).click()
