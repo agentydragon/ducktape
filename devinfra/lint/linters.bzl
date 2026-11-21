@@ -18,13 +18,6 @@ ruff = lint_ruff_aspect(
 # Mypy aspect, enabled by default on Bazel builds
 # Uses root mypy.ini for configuration
 # Uses an upstream-produced mypy_cli under Python 3.14 (needed to parse homeassistant's 3.14 syntax)
-#
-# Type checking behavior:
-# - Packages with py.typed (rich, structlog, aiohttp, aiodocker) are fully
-#   type-checked - API misuse will be caught
-# - Packages without py.typed (colorama, Pygments) need type stubs for full
-#   checking. Pre-commit has these but Bazel needs a separate pip hub.
-#   For now these packages get ignore_missing_imports treatment.
 mypy_aspect = mypy(
     mypy_cli = Label("//devinfra/lint:mypy_cli"),
     mypy_ini = Label("//:mypy.ini"),
