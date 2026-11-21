@@ -88,8 +88,8 @@ function ActionsPage(): JSX.Element {
       <Text c="dimmed" size="sm">
         Review requests awaiting a decision, then browse their decision and execution history.
       </Text>
-      <ActionRequests embedded />
-      <ActionHistory embedded />
+      <ActionRequests />
+      <ActionHistory />
     </Stack>
   );
 }

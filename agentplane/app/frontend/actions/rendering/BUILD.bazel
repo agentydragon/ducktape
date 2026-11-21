@@ -1,5 +1,6 @@
 load("//agentplane/app/frontend:vitest.bzl", "agentplane_vitest_test")
 load("//devinfra/js:ts_library.bzl", "ts_library")
+load("//devinfra/js:vitest.bzl", "check_vitest_specs")
 
 package(default_visibility = ["//agentplane/app:__subpackages__"])
 
@@ -44,7 +45,6 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/action_service/api/contracts:action_service_pb",
-        "//agentplane/app/frontend/actions:action_client",
         "//agentplane/app/frontend/actions:call_tool_result",
         "//agentplane/app/frontend/ui:text_block",
     ],
@@ -390,8 +390,22 @@ ts_library(
         "//agentplane/app/frontend/ui:argv_text",
         "//agentplane/app/frontend/ui:shell_command_view",
         "//agentplane/app/frontend/ui:text_block",
-        "//util/frontend:clamped_block",
         "//util/frontend:disclosure",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "pods_exec_test",
+    srcs = ["kubernetes_admin/pods_exec.test.tsx"],
+    deps = [
+        ":index",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/vitest",
+        "//agentplane/action_service/api/contracts:action_service_pb",
+        "//agentplane/app/frontend/actions:call_tool_result",
+        "//agentplane/app/frontend/actions/testing:harness",
     ],
 )
 
@@ -499,7 +513,6 @@ agentplane_vitest_test(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/vitest",
-        "//agentplane/app/frontend/actions:ssh_action_schemas",
         "//agentplane/app/frontend/actions/testing:harness",
         "//ssh_mcp_server:exec_payload_fixture_js",
     ],
@@ -580,7 +593,8 @@ agentplane_vitest_test(
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/vitest",
         "//agentplane/action_service/api/contracts:action_service_pb",
-        "//agentplane/app/frontend/actions:call_tool_result",
         "//agentplane/app/frontend/actions/testing:harness",
     ],
 )
+
+check_vitest_specs()
