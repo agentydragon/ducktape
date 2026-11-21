@@ -1086,6 +1086,27 @@ export function makeLocalAliasCase(seed, index) {
               },
             ]
           : []),
+        ...(index >= 781 && index % 96 === 13
+          ? [
+              {
+                type: "ForStatement",
+                init: declaration("loopIndex", literal(0)),
+                test: { type: "BinaryExpression", operator: "<", left: id("loopIndex"), right: literal(2) },
+                update: { type: "UpdateExpression", operator: "++", argument: id("loopIndex"), prefix: false },
+                body: {
+                  type: "BlockStatement",
+                  body: [
+                    expr({
+                      type: "AssignmentExpression",
+                      operator: "+=",
+                      left: id("offset"),
+                      right: id("numericLeft"),
+                    }),
+                  ],
+                },
+              },
+            ]
+          : []),
         ...(index >= 589 && index < 685 && index % 96 === 13
           ? [
               {

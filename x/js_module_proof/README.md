@@ -370,7 +370,7 @@ completion in Node. Pending promises and timeouts are inconclusive. Async
 execution is not yet part of the Lean proof-supported subset.
 Use `--grammar alias` to generate simple readers, initialization observations,
 local updates, and numeric functions with `let` or `const` locals, local assignments,
-conditional updates, and short-circuit values, using renamed local imports,
+conditional updates, bounded loops, and short-circuit values, using renamed local imports,
 varying reexport chains and partitions. Some cases redirect an import and are
 checked as Node-reproduced unsafe witnesses, during initialization and later
 calls; replay with `--mutations disabled` to check the corresponding unchanged split.

@@ -1452,6 +1452,14 @@ function generateFiles(source, spec, names) {
               terminal.alternate &&
               returnBranch(terminal.consequent) &&
               returnBranch(terminal.alternate);
+            const isLoop = (statement) =>
+              statement.type === "ForStatement" &&
+              statement.init?.type === "VariableDeclaration" &&
+              statement.init.kind === "let" &&
+              statement.init.declarations.length === 1 &&
+              statement.init.declarations[0].id.type === "Identifier" &&
+              statement.body.type === "BlockStatement" &&
+              statement.body.body.every(isWrite);
             const isBranch = (statement) =>
               statement.type === "IfStatement" &&
               ((statement.alternate === null && returnBranch(statement.consequent)) ||
@@ -1470,7 +1478,11 @@ function generateFiles(source, spec, names) {
                     declaration.declarations[0].init
                 ) &&
                 prefix.every(
-                  (statement) => statement.type === "VariableDeclaration" || isWrite(statement) || isBranch(statement)
+                  (statement) =>
+                    statement.type === "VariableDeclaration" ||
+                    isWrite(statement) ||
+                    isBranch(statement) ||
+                    isLoop(statement)
                 ),
               "local import renaming supports only local declarations and assignments"
             );
@@ -1519,7 +1531,11 @@ function generateFiles(source, spec, names) {
             };
             for (const item of prefix) {
               if (item.type === "VariableDeclaration") visit(item.declarations[0].init);
-              else if (item.type === "IfStatement") {
+              else if (item.type === "ForStatement") {
+                const loopName = item.init.declarations[0].id.name;
+                check(!localNames.has(loopName) && !renamed.includes(loopName), "ambiguous loop binding");
+                item.body.body.forEach(visitWrite);
+              } else if (item.type === "IfStatement") {
                 visit(item.test);
                 const earlyReturn = returnBranch(item.consequent);
                 if (earlyReturn) visit(earlyReturn.argument);

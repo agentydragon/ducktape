@@ -891,3 +891,51 @@ if (runSection(3)) {
   assert.deepEqual(execute(terminalSource, branchCalls), { events: [], results: [3, 4] });
   assert.deepEqual(execute(join(terminalOut, "entry.mjs"), branchCalls), { events: [], results: [3, 4] });
 }
+
+if (runSection(1)) {
+  const loopSource = join(root, "loop-alias-source.mjs");
+  const loopSpec = join(root, "loop-alias-spec.json");
+  const loopOut = join(root, "loop-alias-out");
+  await writeFile(
+    loopSource,
+    `let value = 3;\nlet other = 5;\nfunction compute(p) { let local = p; for (let i = 0; i < 2; i++) { local += value; } return local; }\nexport { compute };\n`
+  );
+  await writeFile(
+    loopSpec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0, 1] },
+        "logic.mjs": { imports: ["state.mjs"], statements: [2], renameLocalImports: true },
+        "entry.mjs": { imports: ["logic.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", loopSource, loopSpec, loopOut).value.result, "generated");
+  const loopState = join(loopOut, "state.mjs");
+  await writeFile(loopState, (await readFile(loopState, "utf8")) + "export { other };\n");
+  const loopLogic = join(loopOut, "logic.mjs");
+  const loopText = await readFile(loopLogic, "utf8");
+  const loopResult = cli("validate", loopSource, loopSpec, loopOut).value;
+  assert.equal(loopResult.result, "proved under assumptions", JSON.stringify(loopResult));
+  const calls = [
+    { name: "compute", args: [0] },
+    { name: "compute", args: [4] },
+  ];
+  assert.deepEqual(execute(loopSource, calls), { events: [], results: [6, 10] });
+  assert.deepEqual(execute(join(loopOut, "entry.mjs"), calls), { events: [], results: [6, 10] });
+  assert.match(loopText, /value as __split_local_0/);
+  await writeFile(loopLogic, loopText.replace("value as __split_local_0", "other as __split_local_0"));
+  const redirected = cli("validate", loopSource, loopSpec, loopOut).value;
+  assert.equal(redirected.result, "unsafe", JSON.stringify(redirected));
+  assert.deepEqual(execute(loopSource, redirected.calls), { events: [], results: [6] });
+  assert.deepEqual(execute(join(loopOut, "entry.mjs"), redirected.calls), { events: [], results: [10] });
+  await writeFile(
+    loopSource,
+    `let i = 3;\nlet other = 5;\nfunction compute(p) { let local = p; for (let i = 0; i < 2; i++) { local += i; } return local + i; }\nexport { compute };\n`
+  );
+  const ambiguous = cli("generate", loopSource, loopSpec, join(root, "ambiguous-loop-alias-out")).value;
+  assert.equal(ambiguous.result, "unknown");
+  assert.match(ambiguous.reason, /ambiguous loop binding/);
+}
