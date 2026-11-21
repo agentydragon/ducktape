@@ -1,16 +1,12 @@
-"""Pydantic schemas for casino audit event reads.
+"""Pydantic schemas for casino game-event reads.
 
 Both `client_reported` (pre-2026-05-07 cutover) and `server_resolved` rows live
-in `game_events`; the corresponding `legacy_client_sync` and `server_action`
-rows in `ledger_events` are likewise historical. The source vocabularies
-(defined in models.py next to the columns that carry them) preserve those
-values so old rows still deserialize cleanly.
+in `game_events`. The source vocabularies (defined in models.py next to the
+columns that carry them) preserve those values so old rows still deserialize
+cleanly.
 """
 
 from __future__ import annotations
-
-import json
-from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -20,8 +16,6 @@ from study_casino.models import (
     GameEventRow,
     GameEventSource,
     GameEventType,
-    LedgerEventRow,
-    LedgerEventSource,
     RouletteBetType,
     SlotsPayoutKind,
 )
@@ -154,40 +148,4 @@ def game_event_from_row(row: GameEventRow) -> GameEventRead:
         rules_version=row.rules_version,
         rng_version=row.rng_version,
         outcome=outcome,
-    )
-
-
-class LedgerEventRead(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    id: int
-    client_action_id: str
-    server_at_ms: int
-    action_type: str
-    source: LedgerEventSource
-    rules_version: str
-    rng_version: str | None = None
-    credits_before_millis: int
-    credits_after_millis: int
-    tokens_before: int
-    tokens_after: int
-    details: dict[str, Any]
-    result: dict[str, Any]
-
-
-def ledger_event_from_row(row: LedgerEventRow) -> LedgerEventRead:
-    return LedgerEventRead(
-        id=row.id,
-        client_action_id=row.client_action_id,
-        server_at_ms=row.server_at_ms,
-        action_type=row.action_type,
-        source=row.source,
-        rules_version=row.rules_version,
-        rng_version=row.rng_version,
-        credits_before_millis=row.credits_before,
-        credits_after_millis=row.credits_after,
-        tokens_before=row.tokens_before,
-        tokens_after=row.tokens_after,
-        details=json.loads(row.details_json),
-        result=json.loads(row.result_json),
     )

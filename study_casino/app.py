@@ -309,12 +309,7 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
             raise HTTPException(status_code=409, detail={"rule": e.rule, "message": e.message}) from e
 
         await ws_manager.push(username, {"type": "state_changed"})
-        return ActionResponse(
-            client_action_id=body.client_action_id,
-            event=result.event,
-            result=result.result,
-            game_event=result.game_event,
-        )
+        return ActionResponse(client_action_id=body.client_action_id, result=result)
 
     @app.get("/healthz")
     def healthz() -> HealthResponse:
