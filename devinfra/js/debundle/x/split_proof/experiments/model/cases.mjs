@@ -424,7 +424,7 @@ export const cases = [
 
 // Splits for `differential.mjs`: what `lowersplit` must say of `spec` for the bundle `source`. `refused`: it rejects
 // the split. Otherwise it accepts it, and with `differs` the split does not behave like the bundle.
-export const splitCases = [
+export const bindingSplitCases = [
   {
     name: "certified independent assignments retain their declaration homes",
     poisonWrite: 2,
@@ -447,11 +447,34 @@ export const splitCases = [
     certified: true,
   },
   {
+    name: "certified binary equality copies object identities without reading the heap",
+    source: `const object = {}; let x = false; let y = 0;
+      x = object === object; y = 3 + 4; console.log(x, y);`,
+    spec: {
+      entry: "entry.mjs",
+      modules: {
+        "object.mjs": ["#0"],
+        "m0.mjs": ["#2", "#4"],
+        "entry.mjs": ["#1", "#3", "#5"],
+      },
+    },
+    certified: true,
+  },
+  {
+    name: "typeof remains outside the binding footprint certificate",
+    source: `let x = 0; let y = 0; x = typeof x; y = 1; console.log(x, y);`,
+    spec: { entry: "entry.mjs", modules: { "m0.mjs": ["#1", "#3"], "entry.mjs": ["#0", "#2", "#4"] } },
+    uncertified: true,
+  },
+  {
     name: "a binding dependency prevents reordering assignments",
     source: `let x = 0; let y = 0; x = 1; y = x; console.log(x, y);`,
     spec: { entry: "entry.mjs", modules: { "m0.mjs": ["#1", "#3"], "entry.mjs": ["#0", "#2", "#4"] } },
     refused: true,
   },
+];
+
+export const splitCases = [
   {
     // A `throw` that the analysis reaches is unknown code, so it keeps its place after the `console.log`.
     name: "a throw does not move before an effect",

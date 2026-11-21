@@ -591,6 +591,27 @@ js_test(
 # the model's fragment: both must print the same and end the same way.
 _MODEL = "//devinfra/js/debundle/x/split_proof/experiments/model"
 
+_COREJS_DIFFERENTIAL_DATA = glob(["gen/*.mjs"]) + [
+    "scope_metadata.mjs",
+    "split_dump.mjs",
+    ":node_modules/acorn",
+    ":node_modules/eslint-scope",
+    _MODEL + ":sources",
+    "//:node_modules/acorn",
+    "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
+    "//devinfra/js/debundle/x/split_proof/lean:corejs",
+    "//devinfra/js/debundle/x/split_proof/lean:evalorder",
+    "//devinfra/js/debundle/x/split_proof/lean:lower",
+    "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+]
+
+_COREJS_DIFFERENTIAL_ENV = {
+    "COREJS": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:corejs)",
+    "EVALORDER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:evalorder)",
+    "LOWER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lower)",
+    "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
+}
+
 js_test(
     name = "corejs_differential_test",
     size = "medium",
@@ -602,24 +623,24 @@ js_test(
         "--splits",
         "24",
     ],
-    data = glob(["gen/*.mjs"]) + [
-        "scope_metadata.mjs",
-        "split_dump.mjs",
-        ":node_modules/acorn",
-        ":node_modules/eslint-scope",
-        _MODEL + ":sources",
-        "//:node_modules/acorn",
-        "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
-        "//devinfra/js/debundle/x/split_proof/lean:corejs",
-        "//devinfra/js/debundle/x/split_proof/lean:evalorder",
-        "//devinfra/js/debundle/x/split_proof/lean:lower",
-        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
-    ],
+    data = _COREJS_DIFFERENTIAL_DATA,
     entry_point = _MODEL + ":differential",
-    env = {
-        "COREJS": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:corejs)",
-        "EVALORDER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:evalorder)",
-        "LOWER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lower)",
-        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
-    },
+    env = _COREJS_DIFFERENTIAL_ENV,
+)
+
+js_test(
+    name = "corejs_binding_differential_test",
+    size = "medium",
+    args = [
+        "--bindings-only",
+        "--count",
+        "12",
+        "--seed",
+        "1",
+        "--splits",
+        "0",
+    ],
+    data = _COREJS_DIFFERENTIAL_DATA,
+    entry_point = _MODEL + ":differential",
+    env = _COREJS_DIFFERENTIAL_ENV,
 )
