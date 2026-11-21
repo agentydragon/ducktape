@@ -465,17 +465,17 @@ function Report() {
       <${Title} order=${2} mt="xl">Remaining work<//>
       <${Stack} gap="md" mt="md">
         <${Paper} withBorder p="md" radius="md">
-          <${Title} order=${3} size="h4">GitLab registry rollout blocked<//>
+          <${Title} order=${3} size="h4">GitLab registry VPA<//>
           <${Text} component="p" mb=${0}
-            >The ${" "}<${Anchor} href=${github + "pull/18458"}
-              >registry spread change<//
-            >${" "}has created one replacement: at 04:06 UTC on 21 November,
-            that Pod was crashing because its startup S3 marker write received
-            AccessDenied. The two existing Pods remained Ready. Keep the VPA in
-            Initial while the startup failure is resolved and two replacement
-            Pods pass spread, admission, and endpoint checks; the
+            >After the ${" "}<${Anchor} href=${github + "pull/18477"}
+              >S3 ACL fix<//
+            >, both registry replacements were Ready on separate hosts at 04:35
+            UTC on 21 November. Each had a 50m CPU and 100 MiB memory request
+            and returned the expected authenticated image manifest. The PDB
+            allowed one disruption and the CPU HPA had a valid metric. The
             ${" "}<${Anchor} href=${github + "pull/18465"}>Recreate follow-up<//
-            >${" "}is draft until those checks pass.<//
+            >${" "}is ready for review; image push and failure recovery have not
+            been tested here.<//
           >
         <//>
         <${Paper} withBorder p="md" radius="md"
