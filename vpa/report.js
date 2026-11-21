@@ -311,7 +311,7 @@ function Report() {
     setSelection((previous) => ({ group, revision: previous.revision + 1 }));
 
   useEffect(() => {
-    fetch("./inventory.json?v=20261121051641")
+    fetch("./inventory.json?v=20261121055101")
       .then((response) => {
         if (!response.ok)
           throw new Error(`Inventory request returned HTTP ${response.status}`);
@@ -478,6 +478,19 @@ function Report() {
           node reservations and Pending Pods. On natural replacements, verify
           admitted CPU and memory requests and limits.
         <//>
+      <//>
+
+      <${Text} id="flux-request-wave" mt="md">
+        <strong>Flux controllers.</strong> Seven singleton Deployments have CPU
+        and memory request policies in Initial and were 1/1 Ready. The policy
+        Kustomization was Ready and Healthy at 05:51:01 UTC. At collection, 0 of
+        7 had CPU and memory targets. The next recommender cycle was expected
+        around 06:00 UTC. Once targets appear, check owner-matched admission and
+        ordinary replacements. The policy change records the operator recovery
+        steps if a Flux Pod cannot schedule. ${" "}<${Anchor}
+          href=${github + "pull/18494"}
+          >Flux policy and recovery<//
+        >.
       <//>
     </section>
 
