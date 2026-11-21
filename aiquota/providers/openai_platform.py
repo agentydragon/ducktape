@@ -3,20 +3,14 @@
 import os
 from datetime import UTC, datetime
 from decimal import Decimal
-from pathlib import Path
 
 import httpx
 from pydantic import BaseModel
 
+from aiquota.config import OpenAIPlatformSettings
 from aiquota.models import FetchError, FetchSuccess, OpenAIPlatformCreditGrant, OpenAIPlatformCredits, ProviderFetch
 from aiquota.providers.base import Provider
 from aiquota.providers.client import ProviderClientFactory
-
-
-class OpenAIPlatformSettings(BaseModel):
-    enabled: bool = False
-    url: str | None = None
-    token_path: Path | None = None
 
 
 class _Grant(BaseModel):

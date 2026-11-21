@@ -8,11 +8,11 @@ Auth via API key from a configurable file path, falling back to $ZAI_API_KEY
 import logging
 import os
 from datetime import UTC, datetime
-from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
+from aiquota.config import ZaiSettings
 from aiquota.models import FetchError, FetchSuccess, ProviderFetch, QuotaWindow
 from aiquota.providers.base import Provider
 from aiquota.providers.client import ProviderClientFactory
@@ -23,12 +23,6 @@ QUOTA_URL = "https://api.z.ai/api/monitor/usage/quota/limit"
 API_TIMEOUT_SECS = 5.0
 SHORT_WINDOW_SECS = 5 * 3600
 LONG_WINDOW_SECS = 7 * 86400
-
-
-class ZaiSettings(BaseModel):
-    enabled: bool = True
-    # No sensible default — user must point this at a file containing the key.
-    api_key_path: Path | None = None
 
 
 # z.ai monitor API uses camelCase (nextResetTime, ...).

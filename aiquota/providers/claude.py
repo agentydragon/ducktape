@@ -13,9 +13,10 @@ from pathlib import Path
 from uuid import UUID
 
 import httpx
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, SecretStr, ValidationError
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError
 from pydantic.alias_generators import to_camel
 
+from aiquota.config import ClaudeSettings
 from aiquota.models import (
     ClaudeResetGrant,
     ExtraSpend,
@@ -46,16 +47,6 @@ LONG_WINDOW_SECS = 7 * 86400
 _OAUTH_HEADERS = {"Authorization": "Bearer $TOKEN$", "anthropic-beta": "oauth-2025-04-20"}
 # Anthropic gates reset inventory on both this option and the Claude Code surface.
 _USAGE_HEADERS = {**_OAUTH_HEADERS, "User-Agent": "claude-cli/2.1.292 (external, cli) aiquota/1.0"}
-
-
-class ClaudeSettings(BaseModel):
-    enabled: bool = True
-    credentials_path: Path = Path.home() / ".claude" / ".credentials.json"
-    # An explicit token selects an externally owned, static credential source.
-    # A trusted credential-substitution proxy can replace a non-secret sentinel
-    # on the exact upstream Authorization header. This source is never
-    # refreshed or written by aiquota.
-    access_token: SecretStr | None = None
 
 
 # Preserve unknown fields (e.g. mcpOAuth) on the round-trip so that
