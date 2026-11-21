@@ -1557,6 +1557,7 @@ py_library(
     srcs = ["static_application_vpa.py"],
     deps = [
         ":manifest_roots",
+        "//cluster/cdk8s/providers/vpa:policy",
         "//cluster/cdk8s/providers/vpa:verticalpodautoscaler",
         "@pypi//cdk8s",
     ],

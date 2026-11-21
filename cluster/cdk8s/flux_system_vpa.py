@@ -4,7 +4,7 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from vpa_crds.io.k8s.autoscaling import VerticalPodAutoscaler, VerticalPodAutoscalerSpecTargetRef
 
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.providers.vpa.policy import initial_requests_spec
+from cluster.cdk8s.providers.vpa.policy import requests_only_spec
 
 NAME = "flux-system-vpa"
 OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}"
@@ -27,7 +27,7 @@ def chart(app: App) -> Chart:
             chart,
             deployment,
             metadata=ApiObjectMetadata(name=deployment, namespace="flux-system"),
-            spec=initial_requests_spec(
+            spec=requests_only_spec(
                 VerticalPodAutoscalerSpecTargetRef(api_version="apps/v1", kind="Deployment", name=deployment),
                 container_name="manager",
             ),
