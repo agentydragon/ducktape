@@ -53,10 +53,7 @@ def test_parse_invalid_raises(raw: str) -> None:
         (BazelLabel(repo="", package=Path("foo/bar"), name="baz.py"), Path("foo/bar/baz.py")),
         (BazelLabel(repo="", package=Path("foo/bar"), name="sub/qux.go"), Path("foo/bar/sub/qux.go")),
         (BazelLabel(repo="", package=Path(), name="root.txt"), Path("root.txt")),
-        (
-            BazelLabel(repo="", package=Path("cluster/scripts"), name="get-passwords"),
-            Path("cluster/scripts/get-passwords"),
-        ),
+        (BazelLabel(repo="", package=Path("foo/bar"), name="tool"), Path("foo/bar/tool")),
         # external → None
         (BazelLabel(repo="repo", package=Path("foo"), name="bar.py"), None),
     ],
