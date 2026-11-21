@@ -1,7 +1,7 @@
 // Fuzzer for the translation checker: does `translate` ever accept a tree that behaves differently from its bundle?
 //
 //   node fuzz.mjs [--count N] [--seed S] [--trees T] [--jobs J] [--leaks] [--callback-corpus] [--ast-corpus] [--out DIR] [--keep] [--require-accepted]
-//   node fuzz.mjs [--count N] [--seed S] [--leaks] [--callback-corpus] [--ast-corpus] --emit DIR
+//   node fuzz.mjs [--count N] [--seed S] [--leaks] [--callback-corpus] [--ast-corpus] [--full-corpus] --emit DIR
 //
 // `--emit DIR` writes the generated bundles as `DIR/bundle_<round>.mjs` and stops: no tree, no checker, no Node run (the
 // coverage audit samples the generators this way).
@@ -24,6 +24,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { frontBundle, frontTree } from "./frontend.mjs";
 import { generateAstBundle, astStatistics, printAst } from "./ast_generator.mjs";
+import { generateProgram } from "./gen/index.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const translate = process.env.TRANSLATE ?? path.join(here, "../../lean/.lake/build/bin/translate");
@@ -1223,7 +1224,12 @@ async function main() {
   const leaks = args.includes("--leaks");
   const callbackCorpus = args.includes("--callback-corpus");
   const astCorpus = args.includes("--ast-corpus");
-  if (callbackCorpus && astCorpus) throw new Error("choose one structured corpus");
+  // `--full-corpus`: programs of `gen/` (every family, or `--families a,b`), which reach any part of the language
+  const fullCorpus = args.includes("--full-corpus");
+  const families = option("families", undefined)?.split(",");
+  const avoid = option("avoid", undefined)?.split(",");
+  if ([callbackCorpus, astCorpus, fullCorpus].filter(Boolean).length > 1)
+    throw new Error("choose one structured corpus");
   const astTypes = {};
   const astFeatures = {};
   const planTypes = {};
@@ -1246,7 +1252,9 @@ async function main() {
       ? generateAstBundle(seed, round)
       : callbackCorpus
         ? callbackBundle(r, round, seed)
-        : generate(r, leaks);
+        : fullCorpus
+          ? generateProgram(seed * 100003 + round, { ...(families ? { families } : {}), avoid })
+          : generate(r, leaks);
     if (astCorpus) {
       const stats = astStatistics(bundle);
       astDepth = Math.max(astDepth, stats.maxDepth);
@@ -1359,7 +1367,7 @@ async function main() {
       bump(`${verdict}/${same ? "same" : "differs"}`);
       const record = {
         seed,
-        mode: astCorpus ? "ast" : callbackCorpus ? "callback" : "templates",
+        mode: astCorpus ? "ast" : callbackCorpus ? "callback" : fullCorpus ? "full" : "templates",
         round,
         tree: t,
         verdict,
@@ -1412,6 +1420,8 @@ async function main() {
   else rmSync(work, { recursive: true, force: true });
 
   if (astCorpus && invalidBundles) throw new Error(`AST generator produced ${invalidBundles} invalid bundles`);
+  if (fullCorpus && invalidBundles)
+    throw new Error(`the generator of gen/ produced ${invalidBundles} bundles that fail in Node`);
   if (astCorpus)
     console.log(
       "AST corpus:",

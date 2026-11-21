@@ -191,7 +191,13 @@ export async function observe(source, { runs = 2, timeoutMs = 60000, dir } = {})
   dir ??= mkdtempSync(path.join(process.env.TEST_TMPDIR ?? process.env.TMPDIR ?? os.tmpdir(), "footprint_oracle_"));
   mkdirSync(dir, { recursive: true });
   try {
-    const { text, units, names } = instrument(source);
+    let instrumented;
+    try {
+      instrumented = instrument(source);
+    } catch (error) {
+      return { invalid: `the program cannot be run unit by unit: ${error.message.split("\n")[0]}` };
+    }
+    const { text, units, names } = instrumented;
     const reports = [];
     for (let k = 0; k < runs; k++) {
       const r = await runOnce(text, dir, k, timeoutMs);
