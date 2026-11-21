@@ -136,11 +136,7 @@ def _values(storage: s3.PrivateBucket) -> dict[str, object]:
             # each; if a worker is gone the second can still schedule elsewhere (the off-CP
             # rule above is only a soft preference), so this never blocks the second
             # replica — it only forbids co-location.
-            "podAntiAffinity": {
-                "requiredDuringSchedulingIgnoredDuringExecution": [
-                    {"labelSelector": {"matchLabels": _RELEASE_LABELS}, "topologyKey": "kubernetes.io/hostname"}
-                ]
-            },
+            **node_scheduling.one_per_host(_RELEASE_LABELS),
         },
         # Forgejo configuration (chart retains the legacy `gitea:` values key)
         "gitea": {

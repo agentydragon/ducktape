@@ -1330,6 +1330,7 @@ py_library(
         ":helm",
         ":manifest_roots",
         ":namespaces",
+        ":node_scheduling",
         "@pypi//cdk8s",
     ],
 )
@@ -1557,6 +1558,7 @@ py_library(
     deps = [
         ":helm",
         ":manifest_roots",
+        ":node_scheduling",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "@pypi//cdk8s",
     ],
