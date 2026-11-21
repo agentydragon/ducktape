@@ -3,8 +3,8 @@
   "audited_at_utc": "2026-11-21 05:53:34 UTC",
   "snapshot_utc": "2026-11-21T05:53:34Z",
   "scope": "Current Kubernetes VPA policies, workload owners, metrics samples and rollout review cohorts. Earlier evidence retains its original observation window.",
-  "report_html_sha256": "ca39121278215bc819999269dca70d185ae78a5e33ad1fe6bb903bcf88044fd9",
-  "report_script_sha256": "acb8bb9db7557b5cde5fbaa1c24e7aeb86c483b8d19c34a1cd07eb1ce0349669",
+  "report_html_sha256": "19f769d333b023bb51e1116c7eb5561d4b540d08e8bebeddcff3c940b2855bfa",
+  "report_script_sha256": "19046e4e93842452d19ecd91aeb3850ec61bd8d9048d689055197ce09e0ef7f4",
   "evidence_sha256": "c69cc4092a6f9640579e2dce32e0f2f37af78498b947522c2320f49698a86a28",
   "architecture_source_devel_commit": "d81bd68165097b089cace9ae168b6e8f202f1b7e",
   "architecture_reviewed_at_utc": "2026-11-20T03:36:52Z",
@@ -158,5 +158,13 @@
     "observed_after_inventory_utc": "2026-11-21T05:55:21Z",
     "initial_cpu_and_memory_policies": 3,
     "cpu_targets_observed": 0
+  },
+  "platform_request_wave": {
+    "pr": 18492,
+    "source_devel_commit": "0c02d15d47571b11610119b16d691bc492bf3ca6",
+    "observed_after_inventory_utc": "2026-11-21T05:58:49Z",
+    "initial_cpu_and_memory_policies": 10,
+    "cpu_targets_observed": 0,
+    "staging_cpu_bounds_removed": 9
   }
 }

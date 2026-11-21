@@ -545,6 +545,15 @@ function Report() {
           >NFD policy change<//
         >.
       <//>
+      <${Text} id="platform-request-wave" mt="md">
+        <strong>Platform Sessions and MCP.</strong> At 05:58:49 UTC, ten
+        post-census VPAs used Initial for CPU and memory requests. Their first
+        CPU targets were pending. All nine staging services in the earlier wave
+        had also dropped their explicit CPU bounds. Check both cohorts on
+        natural replacements. ${" "}<${Anchor} href=${github + "pull/18492"}
+          >Platform and staging policy change<//
+        >.
+      <//>
       <${Title} order=${3} mt="lg">Apply these gates across the wave<//>
       <${Stack} gap="sm" mt="sm">
         <${Text}>
