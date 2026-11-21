@@ -1,6 +1,10 @@
 // Fuzzer for the translation checker: does `translate` ever accept a tree that behaves differently from its bundle?
 //
 //   node fuzz.mjs [--count N] [--seed S] [--trees T] [--jobs J] [--leaks] [--callback-corpus] [--ast-corpus] [--out DIR] [--keep] [--require-accepted]
+//   node fuzz.mjs [--count N] [--seed S] [--leaks] [--callback-corpus] [--ast-corpus] --emit DIR
+//
+// `--emit DIR` writes the generated bundles as `DIR/bundle_<round>.mjs` and stops: no tree, no checker, no Node run (the
+// coverage audit samples the generators this way).
 //
 // Each round generates a small random bundle from a catalog of unit templates (values, functions, classes, mutable
 // counters, getters, iterators, globals, `var` hoisting, ...), then T random trees of ES modules for it: a random placement
@@ -1225,6 +1229,8 @@ async function main() {
   const planTypes = {};
   let astDepth = 0;
   const outDir = option("out", process.env.TEST_UNDECLARED_OUTPUTS_DIR);
+  const emitDir = option("emit", undefined);
+  if (emitDir) mkdirSync(emitDir, { recursive: true });
   const work = mkdtempSync(path.join(process.env.TEST_TMPDIR ?? os.tmpdir(), "translation_fuzz_"));
   const tally = {};
   const wrongAccepts = [];
@@ -1246,6 +1252,10 @@ async function main() {
       astDepth = Math.max(astDepth, stats.maxDepth);
       for (const [type, n] of Object.entries(stats.types)) astTypes[type] = (astTypes[type] ?? 0) + n;
       for (const [feature, n] of Object.entries(stats.features)) astFeatures[feature] = (astFeatures[feature] ?? 0) + n;
+    }
+    if (emitDir) {
+      writeFileSync(path.join(emitDir, `bundle_${round}.mjs`), astCorpus ? bundle.source : renderBundle(bundle));
+      return;
     }
     const dir = path.join(work, `b${round}`);
     mkdirSync(dir, { recursive: true });
@@ -1392,6 +1402,11 @@ async function main() {
       while (next < count) await oneBundle(next++);
     })
   );
+  if (emitDir) {
+    rmSync(work, { recursive: true, force: true });
+    console.log(`${count} bundles written to ${emitDir}`);
+    return;
+  }
   if (args.includes("--keep") || (!outDir && (wrongAccepts.length > 0 || (astCorpus && invalidBundles > 0))))
     console.log(`kept ${work}`);
   else rmSync(work, { recursive: true, force: true });
