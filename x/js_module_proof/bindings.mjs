@@ -773,7 +773,7 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
         argument?.type === "Literal" &&
         (argument.value === null || typeof argument.value === "boolean" || typeof argument.value === "string")
       ) {
-        check(typeof argument.value !== "string" || /^[\x20-\x7e]*$/.test(argument.value), "unsupported thrown string");
+        check(typeof argument.value !== "string" || supportedText(argument.value), "unsupported thrown string");
         return { kind: "raisePrimitive", value: argument.value };
       }
       if (
@@ -1539,7 +1539,7 @@ function leanExpression(expression) {
             ? ".null"
             : typeof value === "boolean"
               ? `.boolean ${value}`
-              : `.text ${str(value)}`;
+              : `.text ${leanText(value)}`;
       return `.raisePrimitive (${primitive})`;
     }
     case "raiseBigInteger":
@@ -1978,7 +1978,7 @@ theorem binding_aliased_future_calls (calls : ${aliasCallType}) :
           : []),
         "globalThis.record is a stable synchronous host function which returns normally without reentry or asynchronous effects",
         "Only initialization calls, their record observations, and calls through the entry exports after successful initialization are observed; loading, reflection, source text and identity are excluded",
-        "Supported thrown values are nonnegative safe integers other than negative zero, BigInt literals, booleans, null, undefined or ASCII strings; a throw ends the observed call sequence",
+        "Supported thrown values are nonnegative safe integers other than negative zero, BigInt literals, booleans, null, undefined or well-formed Unicode strings; a throw ends the observed call sequence",
       ],
     };
   }
@@ -2065,8 +2065,7 @@ theorem binding_export_difference :
       if (value.kind === "undefined") return "some (.undefined : ThrownValue)";
       if (value.kind === "null") return "some (.null : ThrownValue)";
       if (value.kind === "boolean" && typeof value.value === "boolean") return `some (.boolean ${value.value})`;
-      if (value.kind === "string" && typeof value.value === "string" && !/[^\x20-\x7e]/.test(value.value))
-        return `some (.text ${str(value.value)})`;
+      if (value.kind === "string" && supportedText(value.value)) return `some (.text ${leanText(value.value)})`;
       if (value.kind === "number" && Number.isSafeInteger(value.value) && value.value >= 0)
         return `some (.number ${value.value})`;
       if (

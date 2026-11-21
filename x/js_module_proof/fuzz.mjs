@@ -8,6 +8,7 @@ import { generateBindings, validateBindings } from "./bindings.mjs";
 // Adding grammar productions does not require changing the splitter's parser.
 const id = (name) => ({ type: "Identifier", name });
 const literal = (value) => ({ type: "Literal", value });
+const unicodeThrow = "café 🙂\n\t\0";
 const expr = (expression) => ({ type: "ExpressionStatement", expression });
 const call = (callee, args = []) => ({ type: "CallExpression", callee, arguments: args });
 const variable = (name, value, kind = "let") => ({
@@ -1183,12 +1184,12 @@ export function makeComposedCase(seed, index) {
   };
   const functionNames = Array.from({ length: 1 + rand(3) }, (_, i) => (i ? `calculate${i}` : "calculate"));
   const functions = functionNames.map(makeFunction);
-  const throwVariant = ["string", "bigint", "null"][Math.floor(index / 64) % 3];
+  const throwVariant = ["string", "bigint", "null", "unicode"][Math.floor(index / 64) % 4];
   if (index % 64 === 23) {
     const thrown =
       throwVariant === "bigint"
         ? { type: "Literal", value: null, bigint: "12345678901234567890" }
-        : literal(throwVariant === "null" ? null : "generated-left");
+        : literal(throwVariant === "null" ? null : throwVariant === "unicode" ? unicodeThrow : "generated-left");
     functionNames.push("fuzzThrower");
     functions.push(
       functionNode(
@@ -1576,7 +1577,9 @@ async function mutateOutput(out, input, kind) {
             ? body.replace("throw 12345678901234567890n", "throw 12345678901234567891n")
             : input.throwVariant === "null"
               ? body.replace("throw null", "throw void 0")
-              : body.replace('throw "generated-left"', 'throw "generated-right"');
+              : input.throwVariant === "unicode"
+                ? body.replace(`throw ${JSON.stringify(unicodeThrow)}`, `throw ${JSON.stringify(`${unicodeThrow}!`)}`)
+                : body.replace('throw "generated-left"', 'throw "generated-right"');
         changed = prefix + mutated;
       }
     } else if (kind === "composedEffect") {

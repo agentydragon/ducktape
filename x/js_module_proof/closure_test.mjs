@@ -691,6 +691,7 @@ if (shard === 3) {
   const primitiveSource = join(root, "primitive-source.mjs");
   const primitiveSpec = join(root, "primitive-spec.json");
   const primitiveOut = join(root, "primitive-out");
+  const unicodeThrown = "café 🙂\n\t\0";
   await writeFile(
     primitiveSource,
     `let seed = 4;
@@ -700,7 +701,8 @@ function boolean(flag) { if (flag) { throw false; } else { return seed; } }
 function nil(flag) { if (flag) { throw null; } else { return seed; } }
 function undef(flag) { if (flag) { throw void 0; } else { return seed; } }
 function big(flag) { if (flag) { throw -0n; } else { return seed; } }
-export { maybe, text, boolean, nil, undef, big };
+function unicode(flag) { if (flag) { throw ${JSON.stringify(unicodeThrown)}; } else { return seed; } }
+export { maybe, text, boolean, nil, undef, big, unicode };
 `
   );
   await writeFile(
@@ -710,7 +712,7 @@ export { maybe, text, boolean, nil, undef, big };
       entry: "entry.mjs",
       modules: {
         "state.mjs": { imports: [], statements: [0] },
-        "logic.mjs": { imports: ["state.mjs"], statements: [1, 2, 3, 4, 5, 6] },
+        "logic.mjs": { imports: ["state.mjs"], statements: [1, 2, 3, 4, 5, 6, 7] },
         "entry.mjs": { imports: ["logic.mjs"], statements: [] },
       },
     })
@@ -733,6 +735,7 @@ export { maybe, text, boolean, nil, undef, big };
     ["nil", { kind: "null" }],
     ["undef", { kind: "undefined" }],
     ["big", { kind: "bigint", value: "0" }],
+    ["unicode", { kind: "string", value: unicodeThrown }],
   ]) {
     const primitiveCalls = [
       { name, args: [0] },

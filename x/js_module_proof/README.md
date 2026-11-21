@@ -117,7 +117,7 @@ results are supported only as conditions, not as returned boolean values.
 Guards conservatively reject references to lexical declarations later in the same
 block, including behind subsequent guards. Supported thrown
 values are nonnegative safe integers, BigInt literals, booleans, `null`, `undefined` (written as
-`void 0`), and ASCII strings. A throw stops the observed call sequence
+`void 0`), and well-formed Unicode strings. A throw stops the observed call sequence
 while preserving its preceding trace. The checker conservatively rejects local
 temporal-dead-zone reads.
 Functions may declare and call nonescaping local functions that capture and
