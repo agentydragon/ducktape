@@ -41,7 +41,7 @@ def parse_square(email: Email) -> SquareReceipt:
     text = email.get_text()
 
     # Extract structured data using regex
-    # Pattern: "You paid $27.78 with your Visa ending in 6915 to Bean Scene Cafe on Mar 16 2023 at 10:26 AM."
+    # Pattern: "You paid $27.78 with your Visa ending in 0000 to Test Merchant on Mar 16 2023 at 10:26 AM."
     # Captures datetime up to period or end of string
     amount_decimal = None
     card_type = None

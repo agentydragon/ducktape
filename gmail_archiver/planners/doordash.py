@@ -57,9 +57,9 @@ def parse_doordash_subject(subject: str) -> DoorDashEmail:
     """Parse restaurant name and email type from DoorDash email subject.
 
     Patterns:
-    - "Order Confirmation for Michael from Sardine Can"
+    - "Order Confirmation for Customer from Sardine Can"
     - "Details of your no-contact delivery from Sardine Can"
-    - "Final receipt for Michael from Target"
+    - "Final receipt for Customer from Target"
     """
     if m := re.search(r"Order Confirmation for \w+ from (.+)$", subject):
         return DoorDashEmail(restaurant=m.group(1), email_type=DoorDashEmailType.CONFIRMATION)
