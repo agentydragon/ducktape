@@ -204,26 +204,26 @@ data:
           mode: embedding
           max_input_tokens: 40960
           max_tokens: 40960
-      - model_name: chatgpt-sub/ant-messages/gpt-6-astra
+      - model_name: chatgpt-sub/ant-messages/gpt-6.2-astra
         litellm_params:
-          model: anthropic/gpt-6-astra
+          model: anthropic/gpt-6.2-astra
           api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
           api_key: os.environ/CLIPROXY_CLIENT_KEY
         model_info:
           mode: chat
           supports_function_calling: true
-          max_input_tokens: 872000
+          max_input_tokens: 272000
           max_output_tokens: 128000
           max_tokens: 128000
-      - model_name: chatgpt-sub/ant-messages/gpt-6-sol
+      - model_name: chatgpt-sub/ant-messages/gpt-6.2-sol
         litellm_params:
-          model: anthropic/gpt-6-sol
+          model: anthropic/gpt-6.2-sol
           api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
           api_key: os.environ/CLIPROXY_CLIENT_KEY
         model_info:
           mode: chat
           supports_function_calling: true
-          max_input_tokens: 372000
+          max_input_tokens: 500000
           max_output_tokens: 128000
           max_tokens: 128000
       - model_name: chatgpt-sub/ant-messages/gpt-6-luna
@@ -237,26 +237,37 @@ data:
           max_input_tokens: 372000
           max_output_tokens: 128000
           max_tokens: 128000
-      - model_name: chatgpt-sub/oai-responses/gpt-6-astra
+      - model_name: chatgpt-sub/ant-messages/gpt-6.1-terra
         litellm_params:
-          model: openai/gpt-6-astra
-          api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317/v1
+          model: anthropic/gpt-6.1-terra
+          api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
           api_key: os.environ/CLIPROXY_CLIENT_KEY
         model_info:
-          mode: responses
+          mode: chat
           supports_function_calling: true
-          max_input_tokens: 872000
+          max_input_tokens: 500000
           max_output_tokens: 128000
           max_tokens: 128000
-      - model_name: chatgpt-sub/oai-responses/gpt-6-sol
+      - model_name: chatgpt-sub/oai-responses/gpt-6.2-astra
         litellm_params:
-          model: openai/gpt-6-sol
+          model: openai/gpt-6.2-astra
           api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317/v1
           api_key: os.environ/CLIPROXY_CLIENT_KEY
         model_info:
           mode: responses
           supports_function_calling: true
-          max_input_tokens: 372000
+          max_input_tokens: 272000
+          max_output_tokens: 128000
+          max_tokens: 128000
+      - model_name: chatgpt-sub/oai-responses/gpt-6.2-sol
+        litellm_params:
+          model: openai/gpt-6.2-sol
+          api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317/v1
+          api_key: os.environ/CLIPROXY_CLIENT_KEY
+        model_info:
+          mode: responses
+          supports_function_calling: true
+          max_input_tokens: 500000
           max_output_tokens: 128000
           max_tokens: 128000
       - model_name: chatgpt-sub/oai-responses/gpt-6-luna
@@ -270,15 +281,15 @@ data:
           max_input_tokens: 372000
           max_output_tokens: 128000
           max_tokens: 128000
-      - model_name: chatgpt-sub/oai-responses/gpt-6.1-sol
+      - model_name: chatgpt-sub/oai-responses/gpt-6.1-terra
         litellm_params:
-          model: openai/gpt-6.1-sol
+          model: openai/gpt-6.1-terra
           api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317/v1
           api_key: os.environ/CLIPROXY_CLIENT_KEY
         model_info:
           mode: responses
           supports_function_calling: true
-          max_input_tokens: 272000
+          max_input_tokens: 500000
           max_output_tokens: 128000
           max_tokens: 128000
       - model_name: anthropic-max20/ant-messages/claude-opus-5-5
@@ -303,9 +314,9 @@ data:
           max_input_tokens: 1000000
           max_output_tokens: 128000
           max_tokens: 128000
-      - model_name: anthropic-max20/ant-messages/claude-fable-5-1
+      - model_name: anthropic-max20/ant-messages/claude-fable-5-2
         litellm_params:
-          model: anthropic/claude-fable-5-1
+          model: anthropic/claude-fable-5-2
           api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
           api_key: os.environ/CLIPROXY_CLIENT_KEY
         model_info:
@@ -325,46 +336,6 @@ data:
           max_input_tokens: 1000000
           max_output_tokens: 128000
           max_tokens: 128000
-      - model_name: anthropic-api/ant-messages/claude-opus-5
-        litellm_params:
-          model: anthropic/claude-opus-5
-          api_key: os.environ/ANTHROPIC_API_KEY
-        model_info:
-          mode: chat
-          supports_function_calling: true
-          max_input_tokens: 1000000
-          max_output_tokens: 128000
-          max_tokens: 128000
-      - model_name: anthropic-api/ant-messages/claude-sonnet-5
-        litellm_params:
-          model: anthropic/claude-sonnet-5
-          api_key: os.environ/ANTHROPIC_API_KEY
-        model_info:
-          mode: chat
-          supports_function_calling: true
-          max_input_tokens: 1000000
-          max_output_tokens: 128000
-          max_tokens: 128000
-      - model_name: anthropic-api/ant-messages/claude-fable-5
-        litellm_params:
-          model: anthropic/claude-fable-5
-          api_key: os.environ/ANTHROPIC_API_KEY
-        model_info:
-          mode: chat
-          supports_function_calling: true
-          max_input_tokens: 1000000
-          max_output_tokens: 128000
-          max_tokens: 128000
-      - model_name: anthropic-api/ant-messages/claude-haiku-4-5-20251001
-        litellm_params:
-          model: anthropic/claude-haiku-4-5-20251001
-          api_key: os.environ/ANTHROPIC_API_KEY
-        model_info:
-          mode: chat
-          supports_function_calling: true
-          max_input_tokens: 200000
-          max_output_tokens: 64000
-          max_tokens: 64000
       - model_name: anthropic-api/ant-messages/claude-opus-5-5
         litellm_params:
           model: anthropic/claude-opus-5-5
@@ -386,9 +357,9 @@ data:
         model_info:
           mode: chat
           supports_function_calling: true
-      - model_name: anthropic-api/ant-messages/claude-fable-5-1
+      - model_name: anthropic-api/ant-messages/claude-fable-5-2
         litellm_params:
-          model: anthropic/claude-fable-5-1
+          model: anthropic/claude-fable-5-2
           api_key: os.environ/ANTHROPIC_API_KEY
         model_info:
           mode: chat
@@ -820,8 +791,8 @@ data:
           - spend_logs_metadata.agentplane.session_id
     router_settings:
       model_group_alias:
-        gpt-6-astra:
-          model: chatgpt-sub/oai-responses/gpt-6-astra
+        gpt-6.2-astra:
+          model: chatgpt-sub/oai-responses/gpt-6.2-astra
           hidden: true
     general_settings:
       forward_client_headers_to_llm_api: true

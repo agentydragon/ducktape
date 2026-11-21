@@ -155,7 +155,7 @@ from cluster.cdk8s.cert_manager.cluster_ca import add_workload_ca
 from cluster.cdk8s.providers.agentplane.policy_set import Rule
 from cluster.cdk8s.providers.cert_manager.certificate import CertificatePrivateKey
 from cluster.cdk8s.service_ref import Pods, ServiceRef
-from model_catalog.catalog import GPT6_LUNA_RESPONSES, HAIKU_API, Route
+from model_catalog.catalog import GPT6_LUNA_RESPONSES, HAIKU_5_5_API, Route
 
 
 @dataclass(frozen=True)
@@ -218,7 +218,7 @@ LOCAL_MODEL_ROUTES = HarnessRoutes(
 )
 # What the app offers when LLM ingress forwards to the public LiteLLM: models the BuildBuddy live-test key's
 # lane admits (`cheap_experiments_models`), neither waiting on the shared GPU.
-PUBLIC_LITELLM_ROUTES = HarnessRoutes(claude=(HAIKU_API,), codex=(GPT6_LUNA_RESPONSES,))
+PUBLIC_LITELLM_ROUTES = HarnessRoutes(claude=(HAIKU_5_5_API,), codex=(GPT6_LUNA_RESPONSES,))
 _ONE_REPLICA = ReplicaProfile(count=1, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None)
 _EGRESS_CA = "systest-egress-ca"
 _LITELLM_KEY_SECRET = "litellm-key-cheap-experiments"

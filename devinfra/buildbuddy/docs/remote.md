@@ -457,7 +457,7 @@ an entire executable runfiles tree. On 2026-11-21, `--run_remotely=false` built
 with `ModuleNotFoundError: No module named 'encodings'`; the remote script below
 completed both generators and returned a patch that applied locally.
 
-From the checkout, with the generator edits already present:
+From the checkout, with the generator edits already present and generated files clean:
 
 ```bash
 scratch="${TMPDIR:-/tmp}/agents/2026_11_21/model-rosters"
@@ -487,7 +487,7 @@ curl -fsSL -H 'x-buildbuddy-api-key: agentplane-credential-buildbuddy' \
   -o "$scratch/invocation.json"
 jq -e '.invocation[0] | .success == true and .invocationStatus == "COMPLETE_INVOCATION_STATUS"' \
   "$scratch/invocation.json"
-artifact_uri=$(jq -er '[.invocation[].targetGroups[].targets[].files[] |
+artifact_uri=$(jq -er '[.invocation[].targetGroups[]?.targets[]?.files[]? |
   select(.name == "model-manifests.patch")] |
   if length == 1 then .[0].uri else error("expected one patch") end' "$scratch/invocation.json")
 curl -fsSL -G -H 'x-buildbuddy-api-key: agentplane-credential-buildbuddy' \

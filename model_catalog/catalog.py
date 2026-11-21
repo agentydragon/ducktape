@@ -40,7 +40,7 @@ their known outbound shape. The bare `gemini-embedding-2` compatibility alias st
 public-coder-agent's durable memory index is deliberately rebuilt under the prefixed name.
 """
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from enum import StrEnum
 
 from model_catalog import ollama
@@ -255,26 +255,32 @@ _ANTIGRAVITY_GEMINI_EFFORTS = ("minimal", "low", "medium", "high")
 # GPT-5.6 input probing on 2026-07-29 accepted 370,629 tokens and rejected 372,194;
 # it established neither an exact input maximum nor the 128K output ceiling. GPT-6
 # Sol/Luna inherited this declaration, not independent serving-path measurements.
-# Astra's 872K came from Codex 0.153.4's configurable client window, not an input
-# capacity measurement. The 2026-10-10 source audit found no justified replacement
-# pair; preserve these provisional proxy values without using them as client budgets.
 # Luna subsequently accepted 900,419 input tokens in one approved probe; its legacy
-# 372K publication is not a serving ceiling. See model_catalog/client_budgets.md for
-# the failed larger probe and evidence limits; no client-budget change follows.
+# 372K publication is not a serving ceiling. See model_catalog/client_budgets.md.
 _CHATGPT_LIMITS = TokenLimits(max_input_tokens=372_000, max_output_tokens=128_000)
-_ASTRA_LIMITS = TokenLimits(max_input_tokens=872_000, max_output_tokens=128_000)
-
-
-GPT_6_ASTRA = Model(id="gpt-6-astra", display_name="GPT-6 Astra", limits=_ASTRA_LIMITS, reasoning=True)
 GPT_6_LUNA = Model(id="gpt-6-luna", display_name="GPT-6 Luna", limits=_CHATGPT_LIMITS, reasoning=True)
-GPT_6_SOL = Model(id="gpt-6-sol", display_name="GPT-6 Sol", limits=_CHATGPT_LIMITS, reasoning=True)
 
-# CLIProxyAPI model-registry snapshot (2026-10-25):
-# https://raw.githubusercontent.com/router-for-me/models/63c1ae7e1d6dfb0224b0f8fb9e3e072f458589ce/models.json
-# declares context_length=272000 and max_completion_tokens=128000. These are
-# gateway declarations, not measured serving capacity or a Codex client context budget.
-_GPT_6_1_SOL_LIMITS = TokenLimits(max_input_tokens=272_000, max_output_tokens=128_000)
-GPT_6_1_SOL = Model(id="gpt-6.1-sol", display_name="GPT-6.1 Sol", limits=_GPT_6_1_SOL_LIMITS, reasoning=True)
+# CLIProxyAPI Codex registry, checked 2026-11-21:
+# https://github.com/router-for-me/models/blob/40d4d41e5ac3d6adb789be16bd0b380294e8805e/models.json
+# Gateway declarations, not measured serving capacity or Codex client budgets.
+GPT_6_2_ASTRA = Model(
+    id="gpt-6.2-astra",
+    display_name="GPT-6.2 Astra",
+    limits=TokenLimits(max_input_tokens=272_000, max_output_tokens=128_000),
+    reasoning=True,
+)
+GPT_6_2_SOL = Model(
+    id="gpt-6.2-sol",
+    display_name="GPT-6.2 Sol",
+    limits=TokenLimits(max_input_tokens=500_000, max_output_tokens=128_000),
+    reasoning=True,
+)
+GPT_6_1_TERRA = Model(
+    id="gpt-6.1-terra",
+    display_name="GPT-6.1 Terra",
+    limits=TokenLimits(max_input_tokens=500_000, max_output_tokens=128_000),
+    reasoning=True,
+)
 
 # Tana-UI models served by the main LiteLLM proxy's in-process Tana provider. Tana
 # encodes reasoning effort in the
@@ -289,20 +295,13 @@ TANA_SONNET = Route(
 TANA_OPUS = Route(Model("claude-opus-4-6", "Claude Opus 4.6"), TANA_CHAT, upstream_model="tana/claude-opus-4-6/high")
 TANA_HAIKU = Route(Model("claude-haiku-4-5", "Haiku 4.5"), TANA_CHAT, upstream_model="tana/claude-haiku-4-5-20251001")
 
-# Direct-API identities retain their separately sourced declarations below. Do not
-# upgrade them or copy subscription gateway limits merely because vendor names match.
-_OPUS = Model("claude-opus-5", "Opus 5")
-_SONNET = Model("claude-sonnet-5", "Sonnet 5")
-_FABLE = Model("claude-fable-5", "Fable 5")
-_HAIKU = Model("claude-haiku-4-5-20251001", "Haiku 4.5")
-
-# Latest Claude-subscription family entries in the gateway catalogue (2026-10-09):
-# https://github.com/router-for-me/models/blob/e63af9856bda19828dfe93a6fa0559a5ab32965c/models.json
+# Latest Claude-subscription entries in the gateway catalogue (2026-11-21):
+# https://github.com/router-for-me/models/blob/40d4d41e5ac3d6adb789be16bd0b380294e8805e/models.json
 # CLIProxyAPI publishes context_length as max_input_tokens and max_completion_tokens
 # as max_tokens. These are gateway declarations, not Max20 account measurements.
-# Registration/configuration/pricing presence verified 2026-10-09; see litellm_metadata.md.
-# TODO(#9574): account request success, beta-dependent input boundaries and joint
-# input/output capacity remain untested. No request caps or client budgets are inferred.
+# All four slugs completed small requests through the deployed proxy on 2026-11-21.
+# TODO(#9574): beta-dependent input boundaries and joint input/output capacity remain
+# untested. No request caps or client budgets are inferred.
 _SUBSCRIPTION_OPUS = Model(
     "claude-opus-5-5", "Opus 5.5", TokenLimits(max_input_tokens=1_000_000, max_output_tokens=128_000)
 )
@@ -310,7 +309,7 @@ _SUBSCRIPTION_SONNET = Model(
     "claude-sonnet-5-5", "Sonnet 5.5", TokenLimits(max_input_tokens=1_000_000, max_output_tokens=128_000)
 )
 _SUBSCRIPTION_FABLE = Model(
-    "claude-fable-5-1", "Fable 5.1", TokenLimits(max_input_tokens=1_000_000, max_output_tokens=128_000)
+    "claude-fable-5-2", "Fable 5.2", TokenLimits(max_input_tokens=1_000_000, max_output_tokens=128_000)
 )
 _SUBSCRIPTION_HAIKU = Model(
     "claude-haiku-5-5", "Haiku 5.5", TokenLimits(max_input_tokens=1_000_000, max_output_tokens=128_000)
@@ -596,17 +595,18 @@ OLLAMA_EMBEDDING_ROUTE = Route(
 TANA_ROUTES = (TANA_SONNET, TANA_OPUS, TANA_HAIKU)
 CHATGPT_MESSAGES = Upstream(Provider.CHATGPT, "anthropic", "messages", supports_function_calling=True)
 CHATGPT_RESPONSES = Upstream(Provider.CHATGPT, "openai", "responses", supports_function_calling=True)
-GPT6_ASTRA_MESSAGES = Route(GPT_6_ASTRA, CHATGPT_MESSAGES, publish_limits=True)
+GPT6_2_ASTRA_MESSAGES = Route(GPT_6_2_ASTRA, CHATGPT_MESSAGES, publish_limits=True)
 GPT6_LUNA_MESSAGES = Route(GPT_6_LUNA, CHATGPT_MESSAGES, publish_limits=True)
-GPT6_SOL_MESSAGES = Route(GPT_6_SOL, CHATGPT_MESSAGES, publish_limits=True)
-GPT6_MESSAGES_ROUTES = (GPT6_ASTRA_MESSAGES, GPT6_LUNA_MESSAGES, GPT6_SOL_MESSAGES)
-CHATGPT_MESSAGES_ROUTES = (GPT6_ASTRA_MESSAGES, GPT6_SOL_MESSAGES, GPT6_LUNA_MESSAGES)
-GPT6_ASTRA_RESPONSES = Route(GPT_6_ASTRA, CHATGPT_RESPONSES, publish_limits=True, reasoning_efforts=_CODEX_EFFORTS)
+GPT6_2_SOL_MESSAGES = Route(GPT_6_2_SOL, CHATGPT_MESSAGES, publish_limits=True)
+GPT6_1_TERRA_MESSAGES = Route(GPT_6_1_TERRA, CHATGPT_MESSAGES, publish_limits=True)
+GPT6_MESSAGES_ROUTES = (GPT6_2_ASTRA_MESSAGES, GPT6_LUNA_MESSAGES, GPT6_2_SOL_MESSAGES, GPT6_1_TERRA_MESSAGES)
+CHATGPT_MESSAGES_ROUTES = (GPT6_2_ASTRA_MESSAGES, GPT6_2_SOL_MESSAGES, GPT6_LUNA_MESSAGES, GPT6_1_TERRA_MESSAGES)
+GPT6_2_ASTRA_RESPONSES = Route(GPT_6_2_ASTRA, CHATGPT_RESPONSES, publish_limits=True, reasoning_efforts=_CODEX_EFFORTS)
 GPT6_LUNA_RESPONSES = Route(GPT_6_LUNA, CHATGPT_RESPONSES, publish_limits=True, reasoning_efforts=_CODEX_EFFORTS)
-GPT6_SOL_RESPONSES = Route(GPT_6_SOL, CHATGPT_RESPONSES, publish_limits=True, reasoning_efforts=_CODEX_EFFORTS)
-GPT6_1_SOL_RESPONSES = Route(GPT_6_1_SOL, CHATGPT_RESPONSES, publish_limits=True, reasoning_efforts=_CODEX_EFFORTS)
-GPT6_RESPONSES_ROUTES = (GPT6_ASTRA_RESPONSES, GPT6_LUNA_RESPONSES, GPT6_SOL_RESPONSES, GPT6_1_SOL_RESPONSES)
-CHATGPT_RESPONSES_ROUTES = (GPT6_ASTRA_RESPONSES, GPT6_SOL_RESPONSES, GPT6_LUNA_RESPONSES, GPT6_1_SOL_RESPONSES)
+GPT6_2_SOL_RESPONSES = Route(GPT_6_2_SOL, CHATGPT_RESPONSES, publish_limits=True, reasoning_efforts=_CODEX_EFFORTS)
+GPT6_1_TERRA_RESPONSES = Route(GPT_6_1_TERRA, CHATGPT_RESPONSES, publish_limits=True, reasoning_efforts=_CODEX_EFFORTS)
+GPT6_RESPONSES_ROUTES = (GPT6_2_ASTRA_RESPONSES, GPT6_LUNA_RESPONSES, GPT6_2_SOL_RESPONSES, GPT6_1_TERRA_RESPONSES)
+CHATGPT_RESPONSES_ROUTES = (GPT6_2_ASTRA_RESPONSES, GPT6_2_SOL_RESPONSES, GPT6_LUNA_RESPONSES, GPT6_1_TERRA_RESPONSES)
 ANTHROPIC_SUBSCRIPTION = Upstream(Provider.ANTHROPIC_MAX20, "anthropic", "messages", supports_function_calling=True)
 OPUS_SUBSCRIPTION = Route(
     _SUBSCRIPTION_OPUS, ANTHROPIC_SUBSCRIPTION, publish_limits=True, reasoning_efforts=_ANTHROPIC_EFFORTS
@@ -621,63 +621,40 @@ HAIKU_SUBSCRIPTION = Route(
     _SUBSCRIPTION_HAIKU, ANTHROPIC_SUBSCRIPTION, publish_limits=True, reasoning_efforts=_ANTHROPIC_EFFORTS
 )
 ANTHROPIC_SUBSCRIPTION_ROUTES = (OPUS_SUBSCRIPTION, SONNET_SUBSCRIPTION, FABLE_SUBSCRIPTION, HAIKU_SUBSCRIPTION)
-# Direct-API limits copied from the exact unprefixed Claude model IDs in:
-# https://github.com/BerriAI/litellm/blob/02f61c9c420b9aa9de10ff673098ad7132b78f5b/model_prices_and_context_window.json
-# Copy the input/output fields, not a combined window. These model values are
-# separate from the newer, independently sourced subscription models above.
 ANTHROPIC_API = Upstream(Provider.ANTHROPIC_API, "anthropic", "messages", supports_function_calling=True)
-OPUS_API = Route(
-    replace(_OPUS, limits=TokenLimits(max_input_tokens=1_000_000, max_output_tokens=128_000)),
-    ANTHROPIC_API,
-    publish_limits=True,
-)
-SONNET_API = Route(
-    replace(_SONNET, limits=TokenLimits(max_input_tokens=1_000_000, max_output_tokens=128_000)),
-    ANTHROPIC_API,
-    publish_limits=True,
-)
-FABLE_API = Route(
-    replace(_FABLE, limits=TokenLimits(max_input_tokens=1_000_000, max_output_tokens=128_000)),
-    ANTHROPIC_API,
-    publish_limits=True,
-)
-HAIKU_API = Route(
-    replace(_HAIKU, limits=TokenLimits(max_input_tokens=200_000, max_output_tokens=64_000)),
-    ANTHROPIC_API,
-    publish_limits=True,
-)
 # Current public Anthropic API models, checked against Anthropic's model overview and
 # per-model API documentation on 2026-10-30. These use fixed unversioned API IDs, adaptive
 # thinking, all five effort levels, and explicit model-level function calling. Context and
 # output limits are Anthropic's published limits, not measured account capacity.
 # Sources: https://platform.claude.com/docs/en/models/overview and the model-specific pages.
-_ANTHROPIC_API_5_5_LIMITS = TokenLimits(max_input_tokens=1_000_000, max_output_tokens=128_000)
+_ANTHROPIC_API_LIMITS = TokenLimits(max_input_tokens=1_000_000, max_output_tokens=128_000)
 OPUS_5_5_API = Route(
-    Model("claude-opus-5-5", "Opus 5.5", _ANTHROPIC_API_5_5_LIMITS),
+    Model("claude-opus-5-5", "Opus 5.5", _ANTHROPIC_API_LIMITS),
     ANTHROPIC_API,
     reasoning_efforts=_ANTHROPIC_5_EFFORTS,
     supports_function_calling=True,
 )
 SONNET_5_5_API = Route(
-    Model("claude-sonnet-5-5", "Sonnet 5.5", _ANTHROPIC_API_5_5_LIMITS),
+    Model("claude-sonnet-5-5", "Sonnet 5.5", _ANTHROPIC_API_LIMITS),
     ANTHROPIC_API,
     reasoning_efforts=_ANTHROPIC_5_EFFORTS,
     supports_function_calling=True,
 )
 HAIKU_5_5_API = Route(
-    Model("claude-haiku-5-5", "Haiku 5.5", _ANTHROPIC_API_5_5_LIMITS),
+    Model("claude-haiku-5-5", "Haiku 5.5", _ANTHROPIC_API_LIMITS),
     ANTHROPIC_API,
     reasoning_efforts=_ANTHROPIC_5_EFFORTS,
     supports_function_calling=True,
 )
-FABLE_5_1_API = Route(
-    Model("claude-fable-5-1", "Fable 5.1", _ANTHROPIC_API_5_5_LIMITS),
+# Fable 5.2 direct-API metadata, checked 2026-11-21:
+# https://github.com/BerriAI/litellm/blob/1aec17a7a05b6cd36538801b03eae5d8edb33f9c/model_prices_and_context_window.json
+FABLE_5_2_API = Route(
+    Model("claude-fable-5-2", "Fable 5.2", _ANTHROPIC_API_LIMITS),
     ANTHROPIC_API,
     reasoning_efforts=_ANTHROPIC_5_EFFORTS,
     supports_function_calling=True,
 )
-ANTHROPIC_API_LATEST_ROUTES = (OPUS_5_5_API, SONNET_5_5_API, HAIKU_5_5_API, FABLE_5_1_API)
-ANTHROPIC_API_ROUTES = (OPUS_API, SONNET_API, FABLE_API, HAIKU_API, *ANTHROPIC_API_LATEST_ROUTES)
+ANTHROPIC_API_ROUTES = (OPUS_5_5_API, SONNET_5_5_API, HAIKU_5_5_API, FABLE_5_2_API)
 ANTIGRAVITY_MESSAGES = Upstream(Provider.ANTIGRAVITY, "anthropic", "messages", supports_function_calling=True)
 ANTIGRAVITY_OPUS = Route(
     _ANTIGRAVITY_OPUS, ANTIGRAVITY_MESSAGES, publish_limits=True, reasoning_efforts=_ANTHROPIC_EFFORTS
@@ -799,4 +776,4 @@ SERVED_ROUTES: tuple[Route | RouteAlias, ...] = (
     GEMINI_EMBEDDING_001,
     *MISTRAL_ROUTES,
 )
-HIDDEN_ALIASES = (RouteAlias(GPT6_ASTRA_RESPONSES.model.id, GPT6_ASTRA_RESPONSES),)
+HIDDEN_ALIASES = (RouteAlias(GPT6_2_ASTRA_RESPONSES.model.id, GPT6_2_ASTRA_RESPONSES),)
