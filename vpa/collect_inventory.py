@@ -98,14 +98,18 @@ hpas = objs("horizontalpodautoscalers")
 namespaces = objs("namespaces")
 metrics = get("get", "--raw", "/apis/metrics.k8s.io/v1beta1/pods")["items"]
 query = 'max by (namespace,pod,container) (max_over_time(container_memory_working_set_bytes{container!="",container!="POD",pod!=""}[7d]))'
+history_end = now()
 path = (
     "/api/v1/namespaces/monitoring/services/http:mimir-query-frontend:8080/proxy/prometheus/api/v1/query?"
-    + urllib.parse.urlencode({"query": query})
+    + urllib.parse.urlencode({"query": query, "time": history_end})
 )
 history = get("get", "--raw", path)
 if history.get("status") != "success":
     raise RuntimeError("Mimir history query failed")
-finished = now()
+flux_source = get("get", "gitrepository", "flux-system", "-n", "flux-system", "-o", "json")
+flux_revision = flux_source["status"]["artifact"]["revision"]
+flux_observed = now()
+finished = flux_observed
 
 # An intermediate owner is trusted only when its UID matches the owner reference.
 objects_by_uid = {o["metadata"]["uid"]: o for o in controllers + replicasets}
@@ -209,7 +213,30 @@ for h in hpas:
             h["metadata"]["namespace"],
             t["name"],
         )
-    ].append({"name": h["metadata"]["name"]})
+    ].append(
+        {
+            "name": h["metadata"]["name"],
+            "metrics": [
+                {
+                    "type": metric["type"],
+                    **(
+                        {"resource": metric["resource"]["name"]}
+                        if metric["type"] == "Resource"
+                        else {}
+                    ),
+                    **(
+                        {
+                            "resource": metric["containerResource"]["name"],
+                            "container": metric["containerResource"]["container"],
+                        }
+                        if metric["type"] == "ContainerResource"
+                        else {}
+                    ),
+                }
+                for metric in h["spec"].get("metrics", [])
+            ],
+        }
+    )
 nsmap = {o["metadata"]["name"]: o["metadata"].get("labels", {}) for o in namespaces}
 metricmap = {
     (o["metadata"]["namespace"], o["metadata"]["name"]): {
@@ -251,6 +278,7 @@ for owner in sorted(set(known) | set(by_owner)):
         template_container = template_containers.get(cname)
         admitted = []
         samples = []
+        cpu_samples = []
         peak_samples = []
         for pod in matched:
             podname = pod["metadata"]["name"]
@@ -258,7 +286,10 @@ for owner in sorted(set(known) | set(by_owner)):
                 if c["name"] != cname:
                     continue
                 m = metricmap.get((ns, podname), {}).get(cname, {})
+                cpu = quantity(m.get("cpu"))
                 usage = quantity(m.get("memory"))
+                if cpu is not None:
+                    cpu_samples.append(cpu)
                 peak = peaks.get((ns, podname, cname))
                 if usage is not None:
                     samples.append(usage)
@@ -283,6 +314,10 @@ for owner in sorted(set(known) | set(by_owner)):
                 if samples
                 else None,
                 "sampledPods": len(samples),
+                "currentCpuMaxMillicores": round(max(cpu_samples) * 1000, 1)
+                if cpu_samples
+                else None,
+                "cpuSampledPods": len(cpu_samples),
                 "peak7dCurrentPodMiB": round(max(peak_samples) / 2**20, 1)
                 if peak_samples
                 else None,
@@ -316,6 +351,17 @@ for owner in sorted(set(known) | set(by_owner)):
             "desiredReplicas": desired,
             "readyReplicas": ready,
             "activePods": len(matched),
+            "readyPodNodes": sorted(
+                {
+                    pod["spec"]["nodeName"]
+                    for pod in matched
+                    if pod["spec"].get("nodeName")
+                    and any(
+                        condition["type"] == "Ready" and condition["status"] == "True"
+                        for condition in pod.get("status", {}).get("conditions", [])
+                    )
+                }
+            ),
             "containers": containers,
             "vpas": vmap.get(owner, []),
             "hpas": hmap.get(owner, []),
@@ -358,7 +404,9 @@ print(
         {
             "collection_started_utc": started,
             "collection_finished_utc": finished,
-            "history_end_utc": finished,
+            "history_end_utc": history_end,
+            "flux_source_revision": flux_revision,
+            "flux_source_observed_utc": flux_observed,
             "history_query": query,
             "counts": counts,
             "workloads": rows,
