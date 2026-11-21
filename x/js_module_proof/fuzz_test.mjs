@@ -192,71 +192,6 @@ if (shards === 4 && shard === 0) {
     ).result,
     "proved under assumptions"
   );
-  const original = makeCase(123, 2);
-  const independent = independentSplit(original, 123, 2);
-  assert.deepEqual(independent, independentSplit(original, 123, 2));
-  assert.equal(independent.source, original.source);
-  assert.deepEqual(
-    Object.values(independent.spec.modules)
-      .flatMap((module) => module.statements)
-      .sort((a, b) => a - b),
-    original.ast.body.filter((node) => node.type !== "ExportNamedDeclaration").map((_, i) => i)
-  );
-  const campaign = await runFuzz({
-    seed: 123,
-    cases: 32,
-    outputDir: process.env.TEST_TMPDIR,
-    splitMode: "independent",
-    validateEvery: 16,
-  });
-  assert.equal(campaign.generated + campaign.independentRefused, campaign.cases);
-  assert.ok(campaign.refused > 0);
-  assert.equal(
-    Object.values(campaign.refusalReasons).reduce((sum, count) => sum + count, 0),
-    campaign.refused
-  );
-  assert.equal(campaign.splitMode, "independent");
-  assert.ok(campaign.importAliasRequestedCases > 0);
-  assert.ok(campaign.importAliasGeneratedCases > 0);
-  assert.deepEqual(campaign.independentRequested, { acyclic: 24, cyclic: 4, invalidAssignment: 4 });
-  assert.equal(campaign.independentOrdered, 4);
-  assert.ok(campaign.independentOrderedRefused <= campaign.independentOrdered);
-  assert.deepEqual(makeComposedCase(1, 2), makeComposedCase(1, 2));
-  const composed = await runFuzz({
-    seed: 7,
-    cases: 16,
-    outputDir: process.env.TEST_TMPDIR,
-    grammarMode: "composed",
-    validateEvery: 4,
-  });
-  assert.equal(composed.compared, 16);
-  assert.equal(composed.equal, 16);
-  assert.equal(
-    Object.values(composed.refusalReasons).reduce((sum, count) => sum + count, 0),
-    composed.refused
-  );
-  assert.ok(composed.proved > 0);
-  assert.ok(composed.renamedExportCases > 0);
-  assert.ok(composed.multiplePublicNameCases > 0);
-  assert.equal(composed.importAliasRequestedCases, 4);
-  assert.ok(composed.importAliasGeneratedCases > 0);
-  assert.equal(composed.importAliasComparedCases, composed.importAliasGeneratedCases);
-  assert.ok(composed.astNodeCases.IfStatement > 0);
-  const checkedAlias = await runFuzz({
-    seed: 51981,
-    start: 0,
-    cases: 1,
-    outputDir: process.env.TEST_TMPDIR,
-    grammarMode: "composed",
-    validateEvery: 1,
-  });
-  assert.equal(checkedAlias.importAliasRequestedCases, 1);
-  assert.equal(checkedAlias.importAliasGeneratedCases, 1);
-  assert.equal(checkedAlias.importAliasComparedCases, 1);
-  assert.equal(checkedAlias.importAliasProvedCases, 1);
-  const asyncCampaign = await runFuzz({ seed: 37, cases: 8, outputDir: process.env.TEST_TMPDIR, grammarMode: "async" });
-  assert.equal(asyncCampaign.asyncSourceExecuted, 8);
-  assert.equal(asyncCampaign.inconclusive, 0);
   const generatedExpressions = Array.from({ length: 128 }, (_, i) => makeCase(123, 12 + 32 * i));
   assert.deepEqual(new Set(generatedExpressions.map((item) => item.expressionDepth)), new Set([0, 1, 2]));
   assert.deepEqual(
@@ -335,6 +270,73 @@ if (shards === 4 && shard === 0) {
   const capturedUnsafe = await runFuzz({ seed: 123, start: 92, cases: 1, outputDir: process.env.TEST_TMPDIR });
   assert.equal(capturedUnsafe.capturedCompared, 1);
   assert.equal(capturedUnsafe.capturedUnsafe, 1);
+}
+if (shards === 4 && shard === 2) {
+  const original = makeCase(123, 2);
+  const independent = independentSplit(original, 123, 2);
+  assert.deepEqual(independent, independentSplit(original, 123, 2));
+  assert.equal(independent.source, original.source);
+  assert.deepEqual(
+    Object.values(independent.spec.modules)
+      .flatMap((module) => module.statements)
+      .sort((a, b) => a - b),
+    original.ast.body.filter((node) => node.type !== "ExportNamedDeclaration").map((_, i) => i)
+  );
+  const campaign = await runFuzz({
+    seed: 123,
+    cases: 32,
+    outputDir: process.env.TEST_TMPDIR,
+    splitMode: "independent",
+    validateEvery: 16,
+  });
+  assert.equal(campaign.generated + campaign.independentRefused, campaign.cases);
+  assert.ok(campaign.refused > 0);
+  assert.equal(
+    Object.values(campaign.refusalReasons).reduce((sum, count) => sum + count, 0),
+    campaign.refused
+  );
+  assert.equal(campaign.splitMode, "independent");
+  assert.ok(campaign.importAliasRequestedCases > 0);
+  assert.ok(campaign.importAliasGeneratedCases > 0);
+  assert.deepEqual(campaign.independentRequested, { acyclic: 24, cyclic: 4, invalidAssignment: 4 });
+  assert.equal(campaign.independentOrdered, 4);
+  assert.ok(campaign.independentOrderedRefused <= campaign.independentOrdered);
+  assert.deepEqual(makeComposedCase(1, 2), makeComposedCase(1, 2));
+  const composed = await runFuzz({
+    seed: 7,
+    cases: 16,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "composed",
+    validateEvery: 4,
+  });
+  assert.equal(composed.compared, 16);
+  assert.equal(composed.equal, 16);
+  assert.equal(
+    Object.values(composed.refusalReasons).reduce((sum, count) => sum + count, 0),
+    composed.refused
+  );
+  assert.ok(composed.proved > 0);
+  assert.ok(composed.renamedExportCases > 0);
+  assert.ok(composed.multiplePublicNameCases > 0);
+  assert.equal(composed.importAliasRequestedCases, 4);
+  assert.ok(composed.importAliasGeneratedCases > 0);
+  assert.equal(composed.importAliasComparedCases, composed.importAliasGeneratedCases);
+  assert.ok(composed.astNodeCases.IfStatement > 0);
+  const checkedAlias = await runFuzz({
+    seed: 51981,
+    start: 0,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "composed",
+    validateEvery: 1,
+  });
+  assert.equal(checkedAlias.importAliasRequestedCases, 1);
+  assert.equal(checkedAlias.importAliasGeneratedCases, 1);
+  assert.equal(checkedAlias.importAliasComparedCases, 1);
+  assert.equal(checkedAlias.importAliasProvedCases, 1);
+  const asyncCampaign = await runFuzz({ seed: 37, cases: 8, outputDir: process.env.TEST_TMPDIR, grammarMode: "async" });
+  assert.equal(asyncCampaign.asyncSourceExecuted, 8);
+  assert.equal(asyncCampaign.inconclusive, 0);
 }
 if (shards === 4 && shard === 1) assert.equal(result.unsafe, result.cases);
 if (shards === 4 && shard === 3) {
