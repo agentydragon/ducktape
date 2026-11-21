@@ -130,8 +130,11 @@ node or pass its timing fields and predecessors.
   and passes `generation.write_directory(root, artifact, *chart_builders, siblings=[...])`
   as the node's argument, which synthesizes the directory's one generated file
   (<../docs/cdk8s.md> § Shapes of a directory) plus a `kustomization.yaml` listing it and
-  hand-written siblings. Every artifact goes to `write_artifact_generators` last; parked
-  nodes' artifacts are left out. A directory with a hand-written `kustomization.yaml` is
+  hand-written siblings. Every artifact a Kustomization reads as its `sourceRef` goes to
+  `write_artifact_generators` last; parked nodes' artifacts are left out, and so is a
+  node's own artifact when its Kustomization reads a subdirectory of a shared parent
+  artifact (`opentofu.workspace_kustomization`'s `source`). A directory with a
+  hand-written `kustomization.yaml` is
   written by its module's `write_manifests` at the top of `generate_manifests()`, and its
   node takes the artifact instead of a directory (as do nodes not yet on
   `write_directory`). A node sourcing a `GitRepository` directly passes that `sourceRef`
