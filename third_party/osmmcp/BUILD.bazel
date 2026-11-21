@@ -3,7 +3,7 @@
 An OpenStreetMap MCP server: geocoding via Nominatim, routing via OSRM, place
 lookup via Overpass. Public, anonymous, read-only upstream APIs — no secret,
 no per-operator identity. Speaks Streamable HTTP natively (no stdio-bridge
-sidecar needed, unlike third_party/manifold_mcp_server).
+sidecar needed).
 
 Load for local testing:
   bazel run //third_party/osmmcp:load

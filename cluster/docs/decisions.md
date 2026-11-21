@@ -414,8 +414,9 @@ applications").
 - **sdr**: `cluster/parked/sdr/` — suspended pending the radio re-set-up
   post-relocation (not unblocked by atlas/wyrm2 returning).
 - **manifold-mcp**: `cluster/parked/manifold-mcp/` — decommissioned; third-party npm
-  MCP server (`bmorphism/manifold-mcp-server`), ducktape's OCI build wrapper
-  (`third_party/manifold_mcp_server/`) stays live and unparked. Its Flux Kustomization
+  MCP server (`bmorphism/manifold-mcp-server`). Its OCI build wrapper
+  (`third_party/manifold_mcp_server/`, a nested Bazel module) was deleted; a revival
+  restores it from `f1f1ed6e1b`. Its Flux Kustomization
   is removed from the active bundle; manifests remain for manual revival. Its API-key
   Secret had been Reflector-mirrored into an `augur` namespace defined in the separate
   `gaffer-private` repo. That namespace is now absent, so no current in-cluster consumer
