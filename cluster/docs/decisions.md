@@ -414,7 +414,10 @@ applications").
   deleted.
 - **gecko**: `cluster/parked/gecko/` — same legacy-VM retirement hold as agent-box.
 - **sdr**: `cluster/parked/sdr/` — suspended pending the radio re-set-up
-  post-relocation (not unblocked by atlas/wyrm2 returning).
+  post-relocation (not unblocked by atlas/wyrm2 returning). Its `rtl-tcp` image
+  (`x/rtl_tcp/Dockerfile`) is no longer built by CI or tracked by Flux image automation;
+  a revival restores the `rtl-tcp-image` job of `.github/workflows/container-images.yml`
+  and the `rtl-tcp` entry of `cluster/cdk8s/forgejo_registry/image_automation.py` from `ca1ec04d75`.
 - **manifold-mcp**: `cluster/parked/manifold-mcp/` — decommissioned; third-party npm
   MCP server (`bmorphism/manifold-mcp-server`). Its OCI build wrapper
   (`third_party/manifold_mcp_server/`, a nested Bazel module) was deleted; a revival

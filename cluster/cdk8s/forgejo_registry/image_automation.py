@@ -94,7 +94,6 @@ IMAGES = (
     "props-registry-proxy",
     "public-coder-agent",
     "roaming-node-controller",
-    "rtl-tcp",
     "ssh-mcp",
     "stalwart",
     "study-casino",

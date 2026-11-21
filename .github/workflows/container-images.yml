@@ -1,10 +1,8 @@
 # Build and push standalone container images in parallel, then pin digests atomically.
-# Most images still target GHCR; RTL-TCP targets the private Forgejo registry.
+# The images target GHCR.
 #
 # Images:
 #   freecad-test  — FreeCAD test runner (skills/freecad/Dockerfile.test)
-#   rtl-tcp       — RTL-SDR Blog V4 rtl_tcp server (x/rtl_tcp/Dockerfile); Flux ImagePolicy,
-#                   no digest pin needed. Uses rtl-sdr-blog fork for V4 R828D support.
 #   loom-gym-sandbox — forecasting-eval agent environment (x/loom/gym/sandbox); GHCR, devel only.
 #
 # (cpap-sync is built via Bazel — see //cpap:image and the
@@ -23,7 +21,6 @@ on:
       - ".github/workflows/container-images.yml"
       - "skills/freecad/Dockerfile.test"
       - "x/loom/gym/sandbox/**"
-      - "x/rtl_tcp/Dockerfile"
       # keep-sorted end
   workflow_dispatch:
 
@@ -58,39 +55,6 @@ jobs:
           file: skills/freecad/Dockerfile.test
           cache_from: type=registry,ref=${{ env.FREECAD_IMAGE }}:buildcache
           cache_to: type=registry,ref=${{ env.FREECAD_IMAGE }}:buildcache,mode=max
-
-  rtl-tcp-image:
-    name: RTL-TCP
-    # Only push from devel — Flux ImagePolicy filters on devel-* tags.
-    if: github.ref_name == 'devel'
-    permissions:
-      contents: read
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ github.ref_name }}
-
-      - name: Login to Forgejo registry
-        env:
-          FORGEJO_IMAGES_USERNAME: ${{ secrets.FORGEJO_IMAGES_USERNAME }}
-          FORGEJO_IMAGES_PASSWORD: ${{ secrets.FORGEJO_IMAGES_PASSWORD }}
-        run: echo "$FORGEJO_IMAGES_PASSWORD" | docker login git.allegedly.works -u "$FORGEJO_IMAGES_USERNAME" --password-stdin
-
-      - name: Build and push
-        env:
-          IMAGE: git.allegedly.works/ducktape-ci/rtl-tcp
-        run: |
-          set -euo pipefail
-          ts="$(date -u +%Y%m%d%H%M%S)"
-          pin_tag="${GITHUB_REF_NAME}-${ts}-${GITHUB_SHA:0:7}"
-          docker buildx build \
-            --push \
-            --tag "$IMAGE:$GITHUB_SHA" \
-            --tag "$IMAGE:$pin_tag" \
-            --tag "$IMAGE:latest" \
-            x/rtl_tcp
 
   loom-gym-sandbox:
     name: Loom Gym Sandbox
