@@ -318,21 +318,6 @@ creation_rules:
           - *admin
           - *cluster-secrets
 
-  # Shared Plaid Spend display settings: Flux applies them, and the user's
-  # workstations can decrypt them to edit the card selection and limits.
-  - path_regex: cluster/k8s/agents/plaid-mcp/cards\.sops\.yaml$
-    encrypted_regex: ^(data|stringData)$
-    key_groups:
-      - age:
-          - *admin
-          - *cluster-secrets
-          - *ci
-          - *wyrm2-agentydragon
-          - *rugged-agentydragon
-          - *atlas-agentydragon
-          - *iguana-agentydragon
-          - *gecko-agentydragon
-
   # Crossplane's laptop client tokens are applied in-cluster and consumed from
   # the same SOPS files by home-manager. Keep each token readable
   # by Flux and the machines that run its client; Codex also serves agent-box.
@@ -608,16 +593,6 @@ creation_rules:
       - age:
           - *admin
           - *rugged-agentydragon
-  - path_regex: secrets/home/atlas/.*\.yaml$
-    key_groups:
-      - age:
-          - *admin
-          - *atlas-agentydragon
-  - path_regex: secrets/home/gecko/.*\.yaml$
-    key_groups:
-      - age:
-          - *admin
-          - *gecko-agentydragon
 
   # --- Plaid API credentials (admin + all user keys) ---
   - path_regex: secrets/plaid\.sops\.yaml$
