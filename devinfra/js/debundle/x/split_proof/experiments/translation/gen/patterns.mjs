@@ -250,8 +250,13 @@ export function install(g) {
       return `for (${pick(["const", "let"])} ${p.pattern} of [${rows}]) ${g.block(sc)}`;
     },
   });
+  // an object whose own properties are all numbers: no method (an object literal with methods, an instance with arrow fields)
   const allNum = (b) =>
-    kindOf(b.type) === "obj" && !b.type.opaque && Object.values(b.type.fields).every((t) => t === "num");
+    kindOf(b.type) === "obj" &&
+    !b.type.opaque &&
+    !b.type.methods &&
+    !b.type.cls &&
+    Object.values(b.type.fields).every((t) => t === "num");
   st.push({
     w: 2,
     ok: (g, s) => s.nest > 0 && mayIterate(s) && g.refs(s, allNum).length > 0,
