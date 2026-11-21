@@ -52,25 +52,28 @@ control socket returns HTTP 503. The endpoint exposes no ownership or execution 
 `status.containerStatuses[].lastState.terminated` and `restartCount`; an ownership disconnect alone
 does not establish that the container was OOM-killed.
 
-The common environment configuration selects this mode with `environment.kind: "pod"` and
-`environment.executor.url` and `environment.executor.socket`. The endpoint
-is loopback-only. The health listener accepts kubelet HTTP probes on the Pod address; it has no
+The environment configuration selects this mode with
+`environment.executor.owner: {"kind": "companion", "socket": "/absolute/path"}`.
+The companion is PID 1 in the executor container, and Environment Runtime is PID 1 in its
+own container. The command placement is `direct`, and the executor endpoint is loopback-only. The health listener accepts kubelet HTTP probes on the Pod address; it has no
 Service or inbound network grant. Runtime needs no Kubernetes credentials or cgroup privileges.
 The template owns the endpoint and socket paths used on both sides.
 
 ## VMs
 
-The template's `vm_resources` value supplies `environment.resources` under `environment.kind: "vm"`.
-Its optional executor budget and `environment.executor` endpoint must be configured together.
-Execution Service applies that budget to `agentplane-executors.slice`; Runtime uses the sibling
+The template's `vm_resources` value supplies `environment.resources` under `environment.supervision: "systemd"`.
+An executor with `owner: {"kind": "systemd"}` requires `resources.executor`. Execution Service
+applies that budget to `agentplane-executors.slice`, and Runtime uses the sibling
 `agentplane-workloads.slice`. Runtime and the native slices live under the capped `agentplane.slice`.
 Runtime fences previous owned services before admitting an incarnation.
 The harness aggregate and executor aggregate have independent limits; their configured memory caps
 must fit together below the service's memory high watermark. The service's maximum leaves the
 configured OS reserve below guest RAM. Aggregate groups and native leaves disable swap and set
-`memory.oom.group=0`, allowing the kernel to kill individual processes under memory pressure. A tool
-can be killed while the execution service survives, but the kernel can also select the server itself.
-Native leader exit still fences the entire leaf; OOM policy does not weaken that cleanup.
+`memory.oom.group=0`, allowing the kernel to kill individual processes under memory pressure.
+With `placement: "direct"`, the executor and its commands share the executor service cgroup.
+With `placement: "systemd"`, each native command runs in a transient unit under
+`agentplane-commands.slice`, using the distinct `resources.executor_workload` budget.
+Native leader exit still fences the entire leaf.
 
 Runtime starts `agentplane-execution-service serve` or `codex exec-server` as a systemd transient
 service with `Restart=no`, bound to the Runtime service unit. Runtime fences prior native scopes before admitting an incarnation. During

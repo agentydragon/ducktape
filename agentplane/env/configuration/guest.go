@@ -88,7 +88,7 @@ func guestResourceSystemdPropertiesWithProcRoot(configPath, procRoot string) ([]
 	if err != nil {
 		return nil, err
 	}
-	_, _, vm, _, _, err := file.resolveEnvironment()
+	_, _, vm, _, err := file.resolveEnvironment()
 	if err != nil {
 		return nil, fmt.Errorf("invalid VM environment: %w", err)
 	}

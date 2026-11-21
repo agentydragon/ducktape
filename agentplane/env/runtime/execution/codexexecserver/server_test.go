@@ -40,7 +40,7 @@ func TestNativeStartUsesManagedProcessAdmission(t *testing.T) {
 			wantErr := errors.New("managed admission refused")
 			var observed supervision.ProcessConfig
 			start := NativeStart(NativeConfig{
-				Config: Config{URL: "ws://127.0.0.1:4501", Implementation: test.implementation, LimitsJSON: test.limits},
+				Config: Config{Owner: OwnerSystemd, Placement: PlacementDirect, URL: "ws://127.0.0.1:4501", Implementation: test.implementation, LimitsJSON: test.limits},
 				Binary: test.binary, StateDir: "/state",
 				Environment: map[string]string{"PATH": "/bin", "OPENAI_API_KEY": "secret"},
 				LaunchProcess: func(_ context.Context, config supervision.ProcessConfig) (*supervision.ManagedProcess, error) {
@@ -93,7 +93,7 @@ func TestNativeStartIsOwnedAndFencedByProcessController(t *testing.T) {
 		t.Fatal(err)
 	}
 	start := NativeStart(NativeConfig{
-		Config: Config{URL: "ws://127.0.0.1:4501"}, Binary: binary, StateDir: t.TempDir(),
+		Config: Config{Owner: OwnerSystemd, Placement: PlacementDirect, URL: "ws://127.0.0.1:4501"}, Binary: binary, StateDir: t.TempDir(),
 		LaunchProcess: func(ctx context.Context, config supervision.ProcessConfig) (*supervision.ManagedProcess, error) {
 			return host.Launch(ctx, "execution-service", 42, supervisor, config)
 		},
@@ -288,30 +288,30 @@ func TestClaimHandshakeContextDoesNotEndEstablishedLease(t *testing.T) {
 
 func TestConfigurationRejectsPartialOrOverlappingLaunchers(t *testing.T) {
 	for _, endpoint := range []string{"", "ws://0.0.0.0:4501", "ws://127.0.0.1:0", "wss://127.0.0.1:4501", "ws://127.0.0.1:4501/path", "ws://user@127.0.0.1:4501"} {
-		if err := (Config{URL: endpoint}).Validate(nil); err == nil {
+		if err := (Config{URL: endpoint, Owner: OwnerCompanion, Placement: PlacementDirect, ContainerSocket: "/run/test-executor.sock"}).Validate(nil); err == nil {
 			t.Fatalf("accepted %q", endpoint)
 		}
 	}
 	const endpoint = "ws://127.0.0.1:4501"
-	if err := (Config{URL: endpoint, ContainerSocket: "/run/test-executor.sock"}).Validate(nil); err != nil {
+	if err := (Config{URL: endpoint, Owner: OwnerCompanion, Placement: PlacementDirect, ContainerSocket: "/run/test-executor.sock"}).Validate(nil); err != nil {
 		t.Fatal(err)
 	}
 	limits := supervision.ResourceLimits{CPUQuotaMicros: 100000, MemoryMaxBytes: 64 * 1024 * 1024, PidsMax: 32, ReadBPS: 1, WriteBPS: 1, ReadIOPS: 1, WriteIOPS: 1}
 	harnessLauncher := &supervision.SystemdLauncher{Slice: supervision.WorkloadSlice, AggregateLimits: limits, ProcessLimits: limits}
 	executorLauncher := *harnessLauncher
 	executorLauncher.Slice = supervision.ExecutorSlice
-	if err := (Config{URL: endpoint, Launcher: &executorLauncher}).Validate(harnessLauncher); err != nil {
+	if err := (Config{URL: endpoint, Owner: OwnerSystemd, Placement: PlacementDirect, Launcher: &executorLauncher}).Validate(harnessLauncher); err != nil {
 		t.Fatal(err)
 	}
 	invalidLauncher := executorLauncher
 	invalidLauncher.ProcessLimits.MemoryMaxBytes++
 	for _, config := range []Config{
 		{URL: endpoint},
-		{URL: endpoint, ContainerSocket: "relative"},
-		{URL: endpoint, ContainerSocket: "/run/test.sock", Launcher: harnessLauncher},
-		{URL: endpoint, Launcher: harnessLauncher},
-		{URL: endpoint, Launcher: &supervision.SystemdLauncher{Slice: "invalid.slice"}},
-		{URL: endpoint, Launcher: &invalidLauncher},
+		{URL: endpoint, Owner: OwnerCompanion, Placement: PlacementDirect, ContainerSocket: "relative"},
+		{URL: endpoint, Owner: OwnerCompanion, Placement: PlacementDirect, ContainerSocket: "/run/test.sock", Launcher: harnessLauncher},
+		{URL: endpoint, Owner: OwnerSystemd, Placement: PlacementDirect, Launcher: harnessLauncher},
+		{URL: endpoint, Owner: OwnerSystemd, Placement: PlacementDirect, Launcher: &supervision.SystemdLauncher{Slice: "invalid.slice"}},
+		{URL: endpoint, Owner: OwnerSystemd, Placement: PlacementDirect, Launcher: &invalidLauncher},
 	} {
 		if err := config.Validate(harnessLauncher); err == nil {
 			t.Fatalf("accepted %+v", config)

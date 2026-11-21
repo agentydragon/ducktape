@@ -187,61 +187,35 @@ func (h *HarnessConfiguration) resolve(environ map[string]string) (*harness.Laun
 	return &harness.LaunchConfig{Binary: h.Binary, BaseURL: strings.TrimRight(h.BaseURL, "/"), Token: token}, nil
 }
 
-type executorPlacement string
-
-func (p *executorPlacement) UnmarshalJSON(raw []byte) error {
-	var value string
-	if err := json.Unmarshal(raw, &value); err != nil {
-		return fmt.Errorf("executor placement: %w", err)
-	}
-	if value != codexexecserver.PlacementDirect && value != codexexecserver.PlacementSystemd {
-		return fmt.Errorf("executor placement must explicitly select direct or systemd, got %s", raw)
-	}
-	*p = executorPlacement(value)
-	return nil
+type ExecutorConfiguration struct {
+	URL            string                     `json:"url"`
+	Owner          executorOwnerConfiguration `json:"owner"`
+	Implementation string                     `json:"implementation"`
+	Placement      string                     `json:"placement"`
+	Limits         json.RawMessage            `json:"limits"`
 }
 
-func (p executorPlacement) resolve() string {
-	// CLEANUP(added 2026-11-20): Remove omission support after all templates emit
-	// placement and Sandbox incarnations with older Runtime configuration are retired.
-	if p == "" {
-		return codexexecserver.PlacementDirect
-	}
-	return string(p)
+type executorOwnerConfiguration struct {
+	Kind   codexexecserver.Owner `json:"kind"`
+	Socket json.RawMessage       `json:"socket"`
 }
 
-type ContainerExecutorConfiguration struct {
-	URL            string            `json:"url"`
-	Socket         string            `json:"socket"`
-	Implementation string            `json:"implementation"`
-	Placement      executorPlacement `json:"placement"`
-	Limits         json.RawMessage   `json:"limits"`
+type PID1EnvironmentConfiguration struct {
+	Supervision string                 `json:"supervision"`
+	Executor    *ExecutorConfiguration `json:"executor"`
 }
 
-type PodEnvironmentConfiguration struct {
-	Kind        string                          `json:"kind"`
-	Supervision string                          `json:"supervision"`
-	Executor    *ContainerExecutorConfiguration `json:"executor"`
+type SystemdEnvironmentConfiguration struct {
+	Supervision      string                 `json:"supervision"`
+	Resources        guestResources         `json:"resources"`
+	ConsoleAutologin bool                   `json:"console_autologin"`
+	AgentUID         uint32                 `json:"agent_uid"`
+	AgentGID         uint32                 `json:"agent_gid"`
+	BlockDevices     []string               `json:"block_devices"`
+	Executor         *ExecutorConfiguration `json:"executor"`
 }
 
-type VMExecutorConfiguration struct {
-	URL            string            `json:"url"`
-	Implementation string            `json:"implementation"`
-	Placement      executorPlacement `json:"placement"`
-	Limits         json.RawMessage   `json:"limits"`
-}
-
-type VMEnvironmentConfiguration struct {
-	Kind             string                   `json:"kind"`
-	Resources        guestResources           `json:"resources"`
-	ConsoleAutologin bool                     `json:"console_autologin"`
-	AgentUID         uint32                   `json:"agent_uid"`
-	AgentGID         uint32                   `json:"agent_gid"`
-	BlockDevices     []string                 `json:"block_devices"`
-	Executor         *VMExecutorConfiguration `json:"executor"`
-}
-
-func (v VMEnvironmentConfiguration) launcher(slice string, aggregate, process supervision.ResourceLimits) *supervision.SystemdLauncher {
+func (v SystemdEnvironmentConfiguration) launcher(slice string, aggregate, process supervision.ResourceLimits) *supervision.SystemdLauncher {
 	return &supervision.SystemdLauncher{Slice: slice, AgentUID: v.AgentUID, AgentGID: v.AgentGID, BlockDevices: v.BlockDevices, AggregateLimits: aggregate, ProcessLimits: process}
 }
 
@@ -259,92 +233,107 @@ func configureExecutionLimits(executor *codexexecserver.Config, raw json.RawMess
 	return nil
 }
 
-// The environment selects resource ownership and executor transport together.
-func (f Configuration) resolveEnvironment() (*supervision.SystemdLauncher, *codexexecserver.Config, *VMEnvironmentConfiguration, bool, string, error) {
+func (config *ExecutorConfiguration) resolve(vm *SystemdEnvironmentConfiguration) (*codexexecserver.Config, error) {
+	if config == nil {
+		return nil, nil
+	}
+	out := &codexexecserver.Config{
+		URL: config.URL, Owner: config.Owner.Kind, Implementation: config.Implementation, Placement: config.Placement,
+	}
+	switch out.Owner {
+	case codexexecserver.OwnerCompanion:
+		if vm != nil {
+			return nil, errors.New("systemd environment supervision requires a systemd executor owner")
+		}
+		if err := json.Unmarshal(config.Owner.Socket, &out.ContainerSocket); err != nil || !filepath.IsAbs(out.ContainerSocket) {
+			return nil, errors.New("companion executor owner requires an absolute ownership socket")
+		}
+	case codexexecserver.OwnerSystemd:
+		if vm == nil {
+			return nil, errors.New("PID 1 environment supervision requires a companion executor owner")
+		}
+		if len(config.Owner.Socket) != 0 {
+			return nil, errors.New("a systemd executor owner cannot specify a companion socket")
+		}
+		out.Launcher = vm.launcher(supervision.ExecutorSlice, *vm.Resources.Executor, *vm.Resources.Executor)
+	default:
+		return nil, errors.New("executor owner must explicitly select companion or systemd")
+	}
+	switch out.Placement {
+	case codexexecserver.PlacementDirect:
+	case codexexecserver.PlacementSystemd:
+		if out.Owner != codexexecserver.OwnerSystemd || out.Implementation == codexexecserver.ImplementationCodex {
+			return nil, errors.New("systemd executor placement requires a native executor with a systemd owner")
+		}
+		out.WorkloadLauncher = vm.launcher(supervision.CommandSlice, *vm.Resources.ExecutorWorkload, supervision.ResourceLimits{})
+	default:
+		return nil, errors.New("executor placement must explicitly select direct or systemd")
+	}
+	if err := configureExecutionLimits(out, config.Limits); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// The environment selects supervision and supplies the resources an executor owner can use.
+func (f Configuration) resolveEnvironment() (*supervision.SystemdLauncher, *codexexecserver.Config, *SystemdEnvironmentConfiguration, string, error) {
 	var tag struct {
-		Kind string `json:"kind"`
+		Supervision string `json:"supervision"`
 	}
 	if err := json.Unmarshal(f.Environment, &tag); err != nil {
-		return nil, nil, nil, false, "", fmt.Errorf("environment is required: %w", err)
+		return nil, nil, nil, "", fmt.Errorf("environment is required: %w", err)
 	}
 	var launcher *supervision.SystemdLauncher
-	var executor *codexexecserver.Config
-	var vm *VMEnvironmentConfiguration
-	var podPID1 bool
-	var supervisionMode string
-	switch tag.Kind {
-	case "pod":
-		var pod PodEnvironmentConfiguration
+	var executorConfig *ExecutorConfiguration
+	var vm *SystemdEnvironmentConfiguration
+	switch tag.Supervision {
+	case "pid1":
+		var pod PID1EnvironmentConfiguration
 		if err := decodeStrict(f.Environment, &pod); err != nil {
-			return nil, nil, nil, false, "", err
+			return nil, nil, nil, "", err
 		}
-		if pod.Supervision != "pid1" {
-			return nil, nil, nil, false, "", errors.New("Pod supervision must explicitly select pid1")
-		}
-		podPID1 = pod.Supervision == "pid1"
-		supervisionMode = pod.Supervision
-		if pod.Executor != nil {
-			placement := pod.Executor.Placement.resolve()
-			if placement != codexexecserver.PlacementDirect {
-				return nil, nil, nil, false, "", errors.New("Pod executor placement must explicitly select direct")
-			}
-			executor = &codexexecserver.Config{URL: pod.Executor.URL, ContainerSocket: pod.Executor.Socket, Implementation: pod.Executor.Implementation, Placement: placement}
-			if err := configureExecutionLimits(executor, pod.Executor.Limits); err != nil {
-				return nil, nil, nil, false, "", err
-			}
-			if !filepath.IsAbs(pod.Executor.Socket) {
-				return nil, nil, nil, false, "", errors.New("container executor socket must be absolute")
-			}
-		}
-	case "vm":
-		supervisionMode = "systemd"
-		vm = &VMEnvironmentConfiguration{}
+		executorConfig = pod.Executor
+	case "systemd":
+		vm = &SystemdEnvironmentConfiguration{}
 		if err := decodeStrict(f.Environment, vm); err != nil {
-			return nil, nil, nil, false, "", err
+			return nil, nil, nil, "", err
 		}
 		if err := vm.Resources.Validate(); err != nil {
-			return nil, nil, nil, false, "", err
+			return nil, nil, nil, "", err
 		}
 		if vm.AgentUID == 0 || vm.AgentGID == 0 || len(vm.BlockDevices) == 0 {
-			return nil, nil, nil, false, "", errors.New("VM supervision requires non-root UID/GID and block devices")
+			return nil, nil, nil, "", errors.New("systemd supervision requires non-root UID/GID and block devices")
 		}
 		for _, path := range vm.BlockDevices {
 			if !filepath.IsAbs(path) {
-				return nil, nil, nil, false, "", errors.New("block device path must be absolute")
+				return nil, nil, nil, "", errors.New("block device path must be absolute")
 			}
 		}
 		launcher = vm.launcher(supervision.WorkloadSlice, vm.Resources.Aggregate, vm.Resources.Process)
 		if (vm.Executor == nil) != (vm.Resources.Executor == nil) {
-			return nil, nil, nil, false, "", errors.New("executor endpoint and resource budget must be supplied together")
+			return nil, nil, nil, "", errors.New("executor endpoint and resource budget must be supplied together")
 		}
 		systemdPlacement := vm.Executor != nil && vm.Executor.Placement == codexexecserver.PlacementSystemd
 		if systemdPlacement != (vm.Resources.ExecutorWorkload != nil) {
-			return nil, nil, nil, false, "", errors.New("systemd executor placement and executor workload budget must be supplied together")
+			return nil, nil, nil, "", errors.New("systemd executor placement and executor workload budget must be supplied together")
 		}
-		if vm.Executor != nil {
-			executor = &codexexecserver.Config{
-				URL: vm.Executor.URL, Implementation: vm.Executor.Implementation, Placement: vm.Executor.Placement.resolve(),
-				Launcher: vm.launcher(supervision.ExecutorSlice, *vm.Resources.Executor, *vm.Resources.Executor),
-			}
-			if systemdPlacement {
-				executor.WorkloadLauncher = vm.launcher(supervision.CommandSlice, *vm.Resources.ExecutorWorkload, supervision.ResourceLimits{})
-			}
-			if err := configureExecutionLimits(executor, vm.Executor.Limits); err != nil {
-				return nil, nil, nil, false, "", err
-			}
-		}
+		executorConfig = vm.Executor
 	default:
-		return nil, nil, nil, false, "", fmt.Errorf("unknown environment kind %q", tag.Kind)
+		return nil, nil, nil, "", fmt.Errorf("environment supervision must explicitly select pid1 or systemd, got %q", tag.Supervision)
+	}
+	executor, err := executorConfig.resolve(vm)
+	if err != nil {
+		return nil, nil, nil, "", err
 	}
 	if executor != nil {
 		if f.Codex == nil {
-			return nil, nil, nil, false, "", errors.New("executor requires Codex")
+			return nil, nil, nil, "", errors.New("executor requires Codex")
 		}
 		if err := executor.Validate(launcher); err != nil {
-			return nil, nil, nil, false, "", err
+			return nil, nil, nil, "", err
 		}
 	}
-	return launcher, executor, vm, podPID1, supervisionMode, nil
+	return launcher, executor, vm, tag.Supervision, nil
 }
 
 func readConfiguration(path string) (Configuration, error) {
@@ -356,8 +345,8 @@ func readConfiguration(path string) (Configuration, error) {
 	if err := decodeStrict(data, &file); err != nil {
 		return Configuration{}, fmt.Errorf("invalid Environment Runtime configuration: %w", err)
 	}
-	if file.Version != 2 {
-		return Configuration{}, errors.New("Environment Runtime configuration version must be 2")
+	if file.Version != 3 {
+		return Configuration{}, errors.New("Environment Runtime configuration version must be 3")
 	}
 	return file, nil
 }
@@ -489,7 +478,7 @@ func (f Configuration) compose(launchPath string) (Resolved, map[string]string, 
 		}
 		turnDiffNotifications = f.Codex.TurnDiffNotifications
 	}
-	launcher, executor, _, podPID1, supervisionMode, err := f.resolveEnvironment()
+	launcher, executor, _, supervisionMode, err := f.resolveEnvironment()
 	if err != nil {
 		return Resolved{}, nil, err
 	}
@@ -524,8 +513,7 @@ func (f Configuration) compose(launchPath string) (Resolved, map[string]string, 
 		Claude:                      claude,
 		Codex:                       codex,
 		CodexTurnDiffNotifications:  turnDiffNotifications,
-		VMProcessLauncher:           launcher,
-		PodPID1:                     podPID1,
+		SystemdLauncher:             launcher,
 		Supervision:                 supervisionMode,
 		CodexExecServer:             executor,
 		CodexAppServerReadiness:     appReadiness,

@@ -28,7 +28,7 @@ type Config struct {
 	CommandSupervisor *supervision.Supervisor
 	LimitsJSON        string
 	Environment       map[string]string
-	Backend           string
+	Owner             codexexecserver.Owner
 	Readiness         codexexecserver.Readiness
 	// ProcessHost binds native systemd work to Runtime's process finalizers.
 	ProcessHost       *supervision.Host
@@ -60,12 +60,12 @@ func (c Config) Validate() error {
 }
 
 func (c Config) validate() error {
-	if c.Placement != "" && c.Placement != codexexecserver.PlacementDirect && c.Placement != codexexecserver.PlacementSystemd {
+	if c.Placement != codexexecserver.PlacementDirect && c.Placement != codexexecserver.PlacementSystemd {
 		return errors.New("unknown command placement")
 	}
 	if c.Placement == codexexecserver.PlacementSystemd {
-		if c.Backend != "systemd" || c.Implementation != codexexecserver.ImplementationNative || c.CommandSupervisor == nil {
-			return errors.New("systemd command placement requires native VM execution and command supervisor")
+		if c.Owner != codexexecserver.OwnerSystemd || c.Implementation != codexexecserver.ImplementationNative || c.CommandSupervisor == nil {
+			return errors.New("systemd command placement requires a native executor with a systemd owner and command supervisor")
 		}
 	} else if c.CommandSupervisor != nil {
 		return errors.New("command supervisor requires systemd command placement")
@@ -82,22 +82,20 @@ func (c Config) validate() error {
 	if err := codexexecserver.ValidateURL(c.ExecutorURL); err != nil {
 		return err
 	}
-	if c.Backend != "companion" {
-		if !filepath.IsAbs(c.binary()) || !filepath.IsAbs(c.WorkingDirectory) || c.ContainerSocket != "" {
-			return errors.New("direct execution requires absolute binary and working directory and no companion socket")
-		}
-	}
-	switch c.Backend {
-	case "companion":
+	switch c.Owner {
+	case codexexecserver.OwnerCompanion:
 		if !filepath.IsAbs(c.ContainerSocket) || c.Supervisor != nil || c.Binary != "" || c.CodexBinary != "" || c.WorkingDirectory != "" {
 			return errors.New("companion execution requires an absolute ownership socket; its process configuration belongs to the companion")
 		}
-	case "systemd":
+	case codexexecserver.OwnerSystemd:
+		if !filepath.IsAbs(c.binary()) || !filepath.IsAbs(c.WorkingDirectory) || c.ContainerSocket != "" {
+			return errors.New("systemd executor requires an absolute binary and working directory and no companion socket")
+		}
 		if c.Supervisor == nil || c.ProcessHost == nil {
 			return errors.New("systemd execution requires Runtime's reconciled scope and process host")
 		}
 	default:
-		return fmt.Errorf("unknown execution backend %q", c.Backend)
+		return fmt.Errorf("unknown executor owner %q", c.Owner)
 	}
 	return nil
 }

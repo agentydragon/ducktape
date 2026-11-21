@@ -63,8 +63,7 @@ type Resolved struct {
 	Launch                           SandboxLaunch
 	HarnessEnvironment               map[string]string
 	Claude, Codex                    *harness.LaunchConfig
-	VMProcessLauncher                *supervision.SystemdLauncher
-	PodPID1                          bool
+	SystemdLauncher                  *supervision.SystemdLauncher
 	Supervision                      string
 	CodexExecServer                  *codexexecserver.Config
 	CodexAppServerReadiness          codexappserver.Readiness

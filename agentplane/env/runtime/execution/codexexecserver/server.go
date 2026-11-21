@@ -85,8 +85,16 @@ const (
 	PlacementSystemd = "systemd"
 )
 
-// Config selects local systemd supervision or ownership of the Pod executor container.
+type Owner string
+
+const (
+	OwnerCompanion Owner = "companion"
+	OwnerSystemd   Owner = "systemd"
+)
+
+// Config describes the executor's process owner separately from command placement.
 type Config struct {
+	Owner            Owner
 	URL              string
 	Implementation   string
 	Placement        string
@@ -98,12 +106,12 @@ type Config struct {
 }
 
 func (c Config) Validate(harnessLauncher *supervision.SystemdLauncher) error {
-	if c.Placement != "" && c.Placement != PlacementDirect && c.Placement != PlacementSystemd {
+	if c.Placement != PlacementDirect && c.Placement != PlacementSystemd {
 		return errors.New("unknown command placement")
 	}
 	if c.Placement == PlacementSystemd {
-		if c.Implementation == ImplementationCodex || c.ContainerSocket != "" || c.WorkloadLauncher == nil {
-			return errors.New("systemd command placement requires native VM execution and workload limits")
+		if c.Implementation == ImplementationCodex || c.Owner != OwnerSystemd || c.WorkloadLauncher == nil {
+			return errors.New("systemd command placement requires a native executor with a systemd owner and workload limits")
 		}
 	} else if c.WorkloadLauncher != nil {
 		return errors.New("workload launcher requires systemd command placement")
@@ -117,11 +125,18 @@ func (c Config) Validate(harnessLauncher *supervision.SystemdLauncher) error {
 	if _, err := c.Readiness.Resolve(); err != nil {
 		return err
 	}
-	if c.ContainerSocket != "" {
+	switch c.Owner {
+	case OwnerCompanion:
 		if !filepath.IsAbs(c.ContainerSocket) || c.Launcher != nil || harnessLauncher != nil {
-			return errors.New("container executor requires an absolute control socket and container-owned limits")
+			return errors.New("companion executor requires an absolute ownership socket and separate process supervision")
 		}
 		return nil
+	case OwnerSystemd:
+		if c.ContainerSocket != "" {
+			return errors.New("systemd executor cannot use a companion socket")
+		}
+	default:
+		return errors.New("executor requires an explicit owner")
 	}
 	if harnessLauncher == nil || c.Launcher == nil {
 		return errors.New("supervised executor requires distinct workload and executor launchers with explicit leaf limits")
@@ -202,8 +217,12 @@ func NativeStart(config NativeConfig) Start {
 		for _, name := range []string{"OPENAI_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_BASE_URL", "CODEX_HOME"} {
 			delete(env, name)
 		}
-		if config.Config.ContainerSocket != "" {
+		switch config.Config.Owner {
+		case OwnerCompanion:
 			return claimContainer(ctx, config.Config.ContainerSocket, env, config.Config.Implementation, config.Config.LimitsJSON)
+		case OwnerSystemd:
+		default:
+			return nil, errors.New("execution backend requires an explicit owner")
 		}
 		if config.Supervisor == nil && config.LaunchProcess == nil {
 			return nil, errors.New("execution backend supervisor is not configured")
