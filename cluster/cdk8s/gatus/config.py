@@ -76,8 +76,7 @@ _GROCY_LABELS = {"sf": "SF", "vallejo": "Vallejo"}
 
 
 def _endpoints() -> list[Endpoint]:
-    (litellm,) = litellm_proxy.proxy_specs()
-    litellm_url = _in_cluster(litellm_proxy.service(litellm))
+    litellm_url = _in_cluster(litellm_proxy.SERVICE)
     return [
         Endpoint(
             name="Website", group=Group.CORE, url=f"https://{website.HOSTNAME}", interval="60s", conditions=[_STATUS_OK]

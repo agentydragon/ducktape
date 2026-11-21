@@ -611,11 +611,10 @@ class Egress(Construct):
             ports=[self.admin.port.service_port()],
         )
         _egress_credentials(self, namespace=env.namespace)
-        (litellm_spec,) = litellm_proxy.proxy_specs()
         _egress_policies(
             self,
             namespace=env.namespace,
-            litellm_host=litellm_host or litellm_proxy.service(litellm_spec).fqdn,
+            litellm_host=litellm_host or litellm_proxy.SERVICE.fqdn,
             litellm_cluster_internal=litellm_cluster_internal,
         )
 
@@ -837,7 +836,6 @@ class Egress(Construct):
 
     def _add_network_policy(self, runners: Pods) -> None:
         namespace = self.env.namespace
-        (litellm_spec,) = litellm_proxy.proxy_specs()
         NetworkPolicy(
             self,
             "networkpolicy",
@@ -863,7 +861,7 @@ class Egress(Construct):
                 notifications.service(namespace).egress(),
                 forgejo.HTTP.egress(),
                 ollama.AUTH_PROXY.egress(),
-                litellm_proxy.service(litellm_spec).egress(),
+                litellm_proxy.SERVICE.egress(),
                 # hostNetwork: Cilium sees the node, not an endpoint.
                 EgressRule.to_entities(Entity.REMOTE_NODE, Entity.HOST, ports=[home_assistant.SERVICE.port.number]),
                 # Local Gateway requests also need backend identity/target-port grants: keep those
