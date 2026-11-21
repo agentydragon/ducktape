@@ -74,4 +74,25 @@ def MayMove (ss : List Stmt) (i j : Nat) : Bool :=
   | some a, some b => mayMove a b
   | _, _ => false
 
+/-- `MayMove` on an array of the statements, which a tool can index in constant time. -/
+def MayMoveAt (ss : Array Stmt) (i j : Nat) : Bool :=
+  match ss[i]?, ss[j]? with
+  | some a, some b => mayMove a b
+  | _, _ => false
+
+theorem mayMoveAt_toArray (ss : List Stmt) (i j : Nat) : MayMoveAt ss.toArray i j = MayMove ss i j := by
+  simp [MayMoveAt, MayMove]
+
+/-- Every pair that `order` runs out of the bundle's order passes `MayMove`: the last hypothesis of `moves_preserve`,
+decided in time quadratic in the length of `order` (`movesOk_iff`). -/
+def movesOk (ss : Array Stmt) : List Nat → Bool
+  | [] => true
+  | a :: l => l.all (fun b => decide (a < b) || MayMoveAt ss a b) && movesOk ss l
+
+theorem movesOk_iff (ss : List Stmt) (order : List Nat) :
+    movesOk ss.toArray order = true ↔ order.Pairwise fun a b => a < b ∨ MayMove ss a b = true := by
+  induction order with
+  | nil => simp [movesOk]
+  | cons a l ih => simp [movesOk, List.pairwise_cons, ih, mayMoveAt_toArray]
+
 end CoreJS

@@ -135,12 +135,13 @@ lean_binary(
         "EsmSplit/Render.lean",
         "EsmSplit/Semantics.lean",
         "EsmSplit/Split.lean",
-        # the verdict decides the hypotheses of `valid_order_kept_preserves`
+        # the verdict decides the hypotheses of `valid_order_kept_preserves` and `moves_preserve`
         "Experiments/CoreJS/Decode.lean",
         "Experiments/CoreJS/Eval.lean",
         "Experiments/CoreJS/Fragment.lean",
         "Experiments/CoreJS/Frame.lean",
         "Experiments/CoreJS/Fuel.lean",
+        "Experiments/CoreJS/Move.lean",
         "Experiments/CoreJS/Number.lean",
         "Experiments/CoreJS/Scope.lean",
         "Experiments/CoreJS/Split.lean",
@@ -226,6 +227,8 @@ lean_axiom_test(
         "CoreJS.local_units_commute",
         "CoreJS.moves_preserve_run",
         "CoreJS.moves_preserve",
+        "CoreJS.movesOk_iff",
+        "CoreJS.moves_preserve_of_movesOk",
     ],
 )
 
