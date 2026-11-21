@@ -645,35 +645,10 @@ impl ChunkPlanBuilder {
     }
 
     /// Claims what `resolution` resolved of `selectors`, and records every
-    /// other outcome.
-    #[allow(clippy::too_many_arguments)]
-    pub(super) fn claim_resolution(
-        &mut self,
-        explicit_requests: &[LogicalRequest],
-        resolution: Resolution,
-        resolved_members: Vec<Vec<usize>>,
-        member_claims: &MemberClaimProjection,
-        chunk_top_level_mark: swc_common::Mark,
-        chunk_id: &str,
-        body: &[ModuleItem],
-        declaration_by_name: &HashMap<Id, Vec<StatementId>>,
-    ) -> Result<()> {
-        self.claim_resolution_at_offset(
-            0,
-            explicit_requests,
-            resolution,
-            resolved_members,
-            member_claims,
-            chunk_top_level_mark,
-            chunk_id,
-            body,
-            declaration_by_name,
-        )
-    }
-
-    /// Apply another independently resolved ownership layer to the existing
-    /// plans. Resolution indices and frontend claim indices stay local to that
-    /// layer; only concrete output-plan destinations receive the offset.
+    /// other outcome. A later, independently resolved ownership layer applies to
+    /// the existing plans: resolution indices and frontend claim indices stay
+    /// local to that layer; only concrete output-plan destinations receive
+    /// `module_offset`.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn claim_resolution_at_offset(
         &mut self,
