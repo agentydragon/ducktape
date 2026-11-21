@@ -1438,7 +1438,7 @@ function generateFiles(source, spec, names) {
               }
               if (
                 expression?.type === "BinaryExpression" ||
-                (expression?.type === "LogicalExpression" && expression.operator === "&&")
+                (expression?.type === "LogicalExpression" && ["&&", "||"].includes(expression.operator))
               ) {
                 visit(expression.left);
                 visit(expression.right);

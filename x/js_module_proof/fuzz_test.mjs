@@ -122,6 +122,34 @@ if (shards === 4 && (shard === 2 || shard === 3)) {
   if (start === 13) assert.equal(unchangedNumeric.parameterizedAliasProvedCases, 1);
 }
 if (shards === 4 && shard === 1) {
+  const changed = await runFuzz({
+    seed: 773,
+    start: 37,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "alias",
+    validateEvery: 1,
+  });
+  assert.match(makeLocalAliasCase(773, 37).source, /numericLeft \|\| numericRight/);
+  assert.equal(changed.multipleParameterAliasCases, 1);
+  assert.equal(changed.multipleParameterAliasComparedCases, 1);
+  assert.equal(changed.mutatedDifferent, 1);
+  assert.equal(changed.mutatedVerdicts.unsafe, 1);
+  assert.equal(changed.certifiedWitnesses[0].calls[0].args.length, 2);
+  const unchanged = await runFuzz({
+    seed: 773,
+    start: 37,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "alias",
+    mutationMode: "disabled",
+    validateEvery: 1,
+  });
+  assert.equal(unchanged.multipleParameterAliasComparedCases, 1);
+  assert.equal(unchanged.multipleParameterAliasProvedCases, 1);
+  assert.equal(unchanged.equal, 1);
+}
+if (shards === 4 && shard === 1) {
   const relay = await runFuzz({
     seed: 51981,
     start: 3,

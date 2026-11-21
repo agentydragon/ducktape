@@ -570,6 +570,24 @@ if (runSection(2)) {
     events: [],
     results: [5],
   });
+
+  const logicalSource = join(root, "logical-alias-source.mjs");
+  const logicalSpec = join(root, "logical-alias-spec.json");
+  const logicalOut = join(root, "logical-alias-out");
+  await writeFile(
+    logicalSource,
+    `let value = 3;\nfunction compute(p) { return (value || p) ? value + p : 0; }\nexport { compute };\n`
+  );
+  await writeFile(logicalSpec, JSON.stringify(generatedSpec));
+  assert.equal(cli("generate", logicalSource, logicalSpec, logicalOut).value.result, "generated");
+  const logical = cli("validate", logicalSource, logicalSpec, logicalOut).value;
+  assert.equal(logical.result, "proved under assumptions", JSON.stringify(logical));
+  const logicalCalls = [
+    { name: "compute", args: [0] },
+    { name: "compute", args: [2] },
+  ];
+  assert.deepEqual(execute(logicalSource, logicalCalls), { events: [], results: [3, 5] });
+  assert.deepEqual(execute(join(logicalOut, "entry.mjs"), logicalCalls), { events: [], results: [3, 5] });
 }
 
 if (runSection(0)) {

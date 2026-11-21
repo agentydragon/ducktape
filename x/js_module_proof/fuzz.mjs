@@ -1017,12 +1017,19 @@ export function makeLocalAliasCase(seed, index) {
       consequent: { type: "BinaryExpression", operator: "+", left: id("numericLeft"), right: literal(1) },
       alternate: id("numericRight"),
     },
-  ][Math.floor(index / 12) % 3];
-  const numericParameters = index % 8 === 5 ? [index % 16 === 13 ? "numericOther" : "argument"] : [];
-  const numericArguments = numericParameters.length ? [1] : [];
-  const numericBody = numericParameters.length
-    ? { type: "BinaryExpression", operator: "+", left: numericExpression, right: id(numericParameters[0]) }
-    : numericExpression;
+    {
+      type: "ConditionalExpression",
+      test: { type: "LogicalExpression", operator: "||", left: id("numericLeft"), right: id("numericRight") },
+      consequent: { type: "BinaryExpression", operator: "+", left: id("numericLeft"), right: literal(1) },
+      alternate: id("numericRight"),
+    },
+  ][Math.floor(index / 12) % 4];
+  const numericParameters = index % 8 !== 5 ? [] : index % 16 === 13 ? ["numericOther"] : ["argument", "otherArgument"];
+  const numericArguments = numericParameters.map((_, index) => index + 1);
+  const numericBody = numericParameters.reduce(
+    (body, parameter) => ({ type: "BinaryExpression", operator: "+", left: body, right: id(parameter) }),
+    numericExpression
+  );
   const numeric = numericBindings.length ? [functionNode("compute", numericParameters, [returnNode(numericBody)])] : [];
   const readerStart = state.length + observation.length + localState.length;
   const updateStart = readerStart + readers.length;
@@ -2136,6 +2143,9 @@ export async function runFuzz({
     localImportAliasComparedCases: 0,
     localImportAliasProvedCases: 0,
     parameterizedAliasCases: 0,
+    multipleParameterAliasCases: 0,
+    multipleParameterAliasComparedCases: 0,
+    multipleParameterAliasProvedCases: 0,
     parameterizedAliasComparedCases: 0,
     parameterizedAliasWithLocalImportComparedCases: 0,
     parameterizedAliasFunctionImportComparedCases: 0,
@@ -2360,6 +2370,7 @@ export async function runFuzz({
       if (modules.some((module) => module.aliasImports)) summary.importAliasRequestedCases++;
       if (modules.some((module) => module.renameLocalImports)) summary.localImportAliasRequestedCases++;
       if (input.grammar === "alias" && input.numericArguments.length) summary.parameterizedAliasCases++;
+      if (input.grammar === "alias" && input.numericArguments.length > 1) summary.multipleParameterAliasCases++;
       if (modules.some((module) => module.renameReexports)) summary.renamedReexportRequestedCases++;
       const importCount = modules.reduce((count, module) => count + module.imports.length, 0);
       summary.moduleCountCases[modules.length] = (summary.moduleCountCases[modules.length] ?? 0) + 1;
@@ -2571,6 +2582,7 @@ export async function runFuzz({
       if (hasGeneratedLocalImportAlias) summary.localImportAliasComparedCases++;
       if (input.grammar === "alias" && input.numericArguments.length) {
         summary.parameterizedAliasComparedCases++;
+        if (input.numericArguments.length > 1) summary.multipleParameterAliasComparedCases++;
         if (hasGeneratedLocalImportAlias) summary.parameterizedAliasWithLocalImportComparedCases++;
         if (hasGeneratedParameterizedAliasUse) summary.parameterizedAliasFunctionImportComparedCases++;
       }
@@ -2663,6 +2675,8 @@ export async function runFuzz({
           if (hasGeneratedImportAlias) summary.importAliasProvedCases++;
           if (hasGeneratedLocalImportAlias) summary.localImportAliasProvedCases++;
           if (input.grammar === "alias" && input.numericArguments.length) summary.parameterizedAliasProvedCases++;
+          if (input.grammar === "alias" && input.numericArguments.length > 1)
+            summary.multipleParameterAliasProvedCases++;
           if (hasGeneratedRenamedReexport) summary.renamedReexportProvedCases++;
           if (input.grammar === "object") summary.objectProved++;
           if (input.grammar === "captured") summary.capturedProved++;
