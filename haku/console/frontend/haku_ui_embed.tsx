@@ -1,11 +1,6 @@
 import { type JSX, useEffect, useEffectEvent, useRef, useState } from "react";
 
-import {
-  geolocationApprovalQueueId,
-  screenshotApprovalQueueId,
-  type GeolocationApproval,
-  type ScreenshotApproval,
-} from "./approval_state";
+import { screenshotApprovalQueueId, type GeolocationApproval, type ScreenshotApproval } from "./approval_state";
 import { type GeolocationOptions, type Outbound } from "@haku/console-bridge/protocol";
 
 import { isRoutePath, parseInbound, vetOpenLink } from "./bridge";
@@ -390,21 +385,15 @@ export function HakuUiEmbed({
   }
 
   function approveGeolocationApproval(approval: GeolocationApproval) {
-    const approvalId = geolocationApprovalQueueId(approval.id);
-    setCapabilityRequestDeciding(approvalId, true);
     setGeolocationGrant(true);
     setGeoGranted(true);
     if (approval.mode === "geolocationWatch") startWatch(approval.id, approval.options);
     else geolocateAndReply(approval.id, approval.options);
-    setCapabilityRequestDeciding(approvalId, false);
     removeGeolocationApproval(approval.id);
   }
 
   function denyGeolocationApproval(approval: GeolocationApproval) {
-    const approvalId = geolocationApprovalQueueId(approval.id);
-    setCapabilityRequestDeciding(approvalId, true);
     reply({ type: "geolocationResult", id: approval.id, ok: false, code: GEO_PERMISSION_DENIED, reason: "declined" });
-    setCapabilityRequestDeciding(approvalId, false);
     removeGeolocationApproval(approval.id);
   }
 
@@ -428,10 +417,7 @@ export function HakuUiEmbed({
   }
 
   function denyScreenshotApproval(approval: ScreenshotApproval) {
-    const approvalId = screenshotApprovalQueueId(approval.id);
-    setCapabilityRequestDeciding(approvalId, true);
     reply({ type: "screenshotResult", id: approval.id, ok: false, reason: "declined" });
-    setCapabilityRequestDeciding(approvalId, false);
     removeScreenshotApproval(approval.id);
   }
 
