@@ -17,6 +17,7 @@ py_test(
     deps = [
         ":analyze",
         "//:conftest",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

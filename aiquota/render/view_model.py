@@ -89,6 +89,10 @@ class GrantView(BaseModel):
 
 class ProviderView(BaseModel):
     provider: str
+    account_id: str | None = None
+    account_label: str | None = None
+    plan_type: str | None = None
+    account_tier: str | None = None
     label: str = ""
     balances: list[BalanceView] = Field(default_factory=list)
     grants: list[GrantView] = Field(default_factory=list)
@@ -143,7 +147,15 @@ def refresh_view(
         connection_error=connection_error,
         providers=[
             _provider_view(
-                ProviderQuota(provider=pv.provider, last_output=pv.last_output, last_success=pv.last_success),
+                ProviderQuota(
+                    provider=pv.provider,
+                    account_id=pv.account_id,
+                    account_label=pv.account_label,
+                    plan_type=pv.plan_type,
+                    account_tier=pv.account_tier,
+                    last_output=pv.last_output,
+                    last_success=pv.last_success,
+                ),
                 moment,
                 selection=pv.display,
                 offline=connection_error is not None,
@@ -281,9 +293,18 @@ def _provider_view(
     error = pq.last_output.result.error if not isinstance(pq.last_output.result, FetchSuccess) else None
     return ProviderView(
         provider=pq.provider,
+        account_id=pq.account_id,
+        account_label=pq.account_label,
+        plan_type=pq.plan_type,
+        account_tier=pq.account_tier,
         error_summary=_error_summary(error),
         error_detail=error,
-        label=_PROVIDER_LABELS.get(pq.provider, pq.provider),
+        label=" · ".join(
+            filter(
+                None,
+                [_PROVIDER_LABELS.get(pq.provider, pq.provider), pq.account_label, pq.account_tier or pq.plan_type],
+            )
+        ),
         balances=balances,
         grants=grants,
         stale_since=stale_since,

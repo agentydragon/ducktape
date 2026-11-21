@@ -82,7 +82,7 @@ function ProviderGroup({
       </h2>
       <div className="aiquota-provider-grid">
         {providers.map((provider) => (
-          <ProviderCard key={provider.provider} provider={provider} now={now} />
+          <ProviderCard key={`${provider.provider}:${provider.account_id ?? ""}`} provider={provider} now={now} />
         ))}
       </div>
     </section>

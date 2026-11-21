@@ -363,6 +363,10 @@ async def _read_view(lines: AsyncIterator[str]) -> AllQuotasView:
 async def test_events_send_current_view_and_broadcast_on_demand_refresh(monkeypatch: pytest.MonkeyPatch) -> None:
     class CountingProvider:
         name = "claude"
+        account_id = None
+        account_label = None
+        plan_type = None
+        account_tier = None
 
         def __init__(self) -> None:
             self.fetches = 0
@@ -381,7 +385,11 @@ async def test_events_send_current_view_and_broadcast_on_demand_refresh(monkeypa
             )
 
     provider = CountingProvider()
-    monkeypatch.setattr(api, "_instantiate", lambda _config, **_kwargs: [provider])
+
+    async def instantiate_accounts(*_args: object, **_kwargs: object) -> list[CountingProvider]:
+        return [provider]
+
+    monkeypatch.setattr(api, "_instantiate_accounts", instantiate_accounts)
     service = QuotaAPIService(Config())
     app = create_app(bearer_token="test-bearer", fetcher=service)
     feed: SnapshotFeed = app.state.snapshot_feed
@@ -657,3 +665,46 @@ async def test_event_stream_updates_without_polling_and_disconnect_cleans_up(mon
         assert fetcher.calls == 1  # Presentation updates do not poll providers per client.
     async with asyncio.timeout(1):
         await feed.wait_for_subscribers(0)
+
+
+async def test_multiple_accounts_keep_separate_last_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    class Account:
+        name = "codex"
+        account_label = None
+        plan_type = None
+        account_tier = None
+
+        def __init__(self, account_id: str, used: float) -> None:
+            self.account_id = account_id
+            self.used = used
+            self.fail = False
+
+        async def fetch(self) -> ProviderFetch:
+            result = (
+                FetchError(error="unavailable")
+                if self.fail
+                else FetchSuccess(
+                    windows=[QuotaWindow(used_percent=self.used, reset_seconds=300, window_seconds=18000)]
+                )
+            )
+            return ProviderFetch(fetched_at=datetime.now(UTC), result=result)
+
+    a, b = Account("account-a", 10), Account("account-b", 80)
+    accounts = [a, b]
+
+    async def instantiate_accounts(*_args: object, **_kwargs: object) -> list[Account]:
+        return accounts
+
+    monkeypatch.setattr(api, "_instantiate_accounts", instantiate_accounts)
+    service = QuotaAPIService(Config())
+    await service.fetch(force_refresh=True)
+    a.fail = True
+    b.used = 90
+    accounts.reverse()
+    snapshot = await service.fetch(force_refresh=True)
+    by_id = {q.account_id: q for q in snapshot.quotas.providers}
+    assert isinstance(by_id["account-a"].last_output.result, FetchError)
+    assert by_id["account-a"].last_success is not None
+    assert by_id["account-a"].last_success.result.windows[0].used_percent == 10
+    assert by_id["account-b"].last_success is not None
+    assert by_id["account-b"].last_success.result.windows[0].used_percent == 90

@@ -85,6 +85,7 @@ class _ClaudeOrganization(BaseModel):
 
 class _ClaudeProfileResponse(BaseModel):
     organization: _ClaudeOrganization
+    account: _ClaudeOrganization | None = None
 
     model_config = ConfigDict(hide_input_in_errors=True)
 

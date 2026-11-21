@@ -20,6 +20,7 @@ py_library(
     visibility = ["//aiquota:__subpackages__"],
     deps = [
         ":client",
+        "//aiquota:models",
         "@pypi//httpx",
     ],
 )

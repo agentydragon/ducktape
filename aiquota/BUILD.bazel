@@ -270,10 +270,15 @@ py_test(
     srcs = ["test_cache.py"],
     deps = [
         ":cache",
+        ":config",
         ":models",
         "//:conftest",
         "//aiquota/providers:base",
+        "//aiquota/providers:cli_proxy_lib",
+        "//aiquota/providers:client",
+        "//aiquota/providers:codex_lib",
         "//aiquota/render:view_model_lib",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

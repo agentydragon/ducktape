@@ -1,8 +1,9 @@
 from datetime import UTC, datetime, timedelta
 
+import pytest
 import pytest_bazel
 
-from x.ai_sub_value.analyze import ObservedRate, Poll, UnavailableRate, measure_hour
+from x.ai_sub_value.analyze import ObservedRate, Poll, UnavailableRate, measure_hour, require_single_quota_account
 
 START = datetime(2026, 10, 30, tzinfo=UTC)
 RESET = START + timedelta(days=3)
@@ -42,3 +43,12 @@ def test_discontinued_series_is_unavailable() -> None:
 
 if __name__ == "__main__":
     pytest_bazel.main()
+
+
+def test_mixed_quota_accounts_are_rejected() -> None:
+    with pytest.raises(ValueError, match="Multiple or unknown quota accounts"):
+        require_single_quota_account(
+            [{"provider": "codex", "account_id": "a"}, {"provider": "codex", "account_id": "b"}]
+        )
+    with pytest.raises(ValueError, match="Multiple or unknown quota accounts"):
+        require_single_quota_account([{"provider": "codex"}, {"provider": "codex", "account_id": "a"}])

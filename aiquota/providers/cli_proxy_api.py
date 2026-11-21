@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 import httpx
 
+from aiquota.models import account_capture_key
 from aiquota.providers.client import ProviderClientFactory
 
 MANAGEMENT_AUTH_FILES_PATH = "/auth-files"
@@ -42,6 +43,7 @@ async def _fetch_usage_via_management(
     usage_url: str,
     usage_headers: dict[str, str],
     client: httpx.AsyncClient,
+    auth_index: str | None = None,
 ) -> str:
     """Ask CLIProxyAPI to call a provider usage endpoint with its auth file.
 
@@ -50,15 +52,16 @@ async def _fetch_usage_via_management(
     """
 
     base_url = cli_proxy_api_url.rstrip("/")
-    auth_files_response = await client.get(
-        f"{base_url}{MANAGEMENT_AUTH_FILES_PATH}", headers=_management_headers(cli_proxy_api_key)
-    )
-    auth_files_response.raise_for_status()
-    try:
-        auth_files_payload = auth_files_response.json()
-    except ValueError as error:
-        raise ValueError("invalid CLIProxyAPI /auth-files response") from error
-    auth_index = _select_auth_index(auth_files_payload, provider)
+    if auth_index is None:
+        auth_files_response = await client.get(
+            f"{base_url}{MANAGEMENT_AUTH_FILES_PATH}", headers=_management_headers(cli_proxy_api_key)
+        )
+        auth_files_response.raise_for_status()
+        try:
+            auth_files_payload = auth_files_response.json()
+        except ValueError as error:
+            raise ValueError("invalid CLIProxyAPI /auth-files response") from error
+        auth_index = _select_auth_index(auth_files_payload, provider)
 
     api_call_response = await client.post(
         f"{base_url}{MANAGEMENT_API_CALL_PATH}",
@@ -87,6 +90,21 @@ class CLIProxyAPIManagementClient:
     key: str | None
     client_factory: ProviderClientFactory
     timeout: float = 5.0
+    auth_index: str | None = None
+    account_id: str | None = None
+
+    async def list_auth_files(self) -> list[dict[str, object]]:
+        if not self.key:
+            raise ValueError("CLIProxyAPI key is not configured")
+        async with self.client_factory("auth_files", set(), self.timeout) as client:
+            response = await client.get(
+                f"{self.url.rstrip('/')}{MANAGEMENT_AUTH_FILES_PATH}", headers=_management_headers(self.key)
+            )
+            response.raise_for_status()
+            payload = response.json()
+        if not isinstance(payload, dict) or not isinstance(payload.get("files"), list):
+            raise ValueError("invalid CLIProxyAPI /auth-files response")
+        return [entry for entry in payload["files"] if isinstance(entry, dict)]
 
     async def fetch_usage(
         self,
@@ -107,7 +125,13 @@ class CLIProxyAPIManagementClient:
 
         if not self.key:
             raise ValueError("CLIProxyAPI key is not configured")
+        if provider == "codex" and self.account_id is not None:
+            usage_headers = {**usage_headers, "ChatGPT-Account-Id": self.account_id}
         api_call_url = f"{self.url.rstrip('/')}{MANAGEMENT_API_CALL_PATH}"
         response_urls = {api_call_url} if capture_response else set()
-        async with self.client_factory(capture_key, response_urls, self.timeout) as client:
-            return await _fetch_usage_via_management(self.url, self.key, provider, usage_url, usage_headers, client)
+        async with self.client_factory(
+            account_capture_key(capture_key, self.account_id), response_urls, self.timeout
+        ) as client:
+            return await _fetch_usage_via_management(
+                self.url, self.key, provider, usage_url, usage_headers, client, self.auth_index
+            )
