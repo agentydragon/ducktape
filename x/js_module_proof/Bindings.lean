@@ -1332,6 +1332,37 @@ def witnessedUnloweredClosure : BindingStmt → Bool
   | .discardedLiteral => false
   | .recordPrimitive _ => false
 
+/- Imported bindings are read-only. A normalized write must still originate
+   from a declaration in this module and refer to a mutable source binding. -/
+def simpleAliasWriteValid (source : List BindingStmt) (module : BindingModule) : BindingStmt → Bool
+  | .function _ target _ => localDefinition module target && isVariable source target
+  | .variable _ _ => true
+  | .hoistedVariable _ _ => true
+  | .constant _ _ => true
+  | .reader _ _ => true
+  | .thrower _ _ => true
+  | .expressionFunction _ _ _ => true
+  | .capturedFactory _ _ _ _ _ => true
+  | .capturedClosure _ _ _ _ => true
+  | .capturedAlias _ _ => true
+  | .factory _ _ _ => true
+  | .closure _ _ => true
+  | .wrapper _ _ => true
+  | .recordCall _ _ => true
+  | .call _ => true
+  | .record _ => true
+  | .discardedLiteral => true
+  | .recordPrimitive _ => true
+
+example : simpleAliasWriteValid [.variable "total" 1, .variable "step" 2]
+    { imports := [], exports := [], statements := [.variable "total" 1], assignment := [0] }
+    (.function "bump" "total" "step") = true := by decide
+
+example : simpleAliasWriteValid [.variable "total" 1, .variable "step" 2]
+    { imports := [{ dependency := 0, locals := ["total"], reexports := [] }],
+      exports := [], statements := [], assignment := [] }
+    (.function "bump" "total" "step") = false := by decide
+
 def witnessedOutputDefinitions (modules : List BindingModule) : Option (List BindingStmt) := do
   let names := modules.flatMap fun module => module.statements.filterMap declaredName
   if !names.all (fun name => names.count name == 1) ||
@@ -1384,8 +1415,8 @@ def witnessedOutputState (source : List BindingStmt) (modules : List BindingModu
 
 /- A small acceptance slice for local import aliases. Every extracted output
    statement is resolved through the actual graph before comparison with its
-   source statement. Writes, escaping closures, and numeric expressions remain
-   outside this slice. -/
+   source statement. Writes must target local mutable bindings; escaping
+   closures and general numeric expressions remain outside this slice. -/
 def simpleAliasStatement : BindingStmt → Bool
   | .variable _ _ => true
   | .hoistedVariable _ _ => true
@@ -1395,7 +1426,7 @@ def simpleAliasStatement : BindingStmt → Bool
   | .record _ => true
   | .discardedLiteral => true
   | .recordPrimitive _ => true
-  | .function _ _ _ => false
+  | .function _ _ _ => true
   | .thrower _ _ => false
   | .expressionFunction _ _ _ => false
   | .capturedFactory _ _ _ _ _ => false
@@ -1406,10 +1437,33 @@ def simpleAliasStatement : BindingStmt → Bool
   | .wrapper _ _ => false
   | .recordCall _ _ => false
 
+/- A table that merely fails on both sides is not evidence that a supported
+   call behaves correctly. Require every modeled read and write to name the
+   corresponding kind of source declaration. -/
+def simpleAliasSourceValid (source : List BindingStmt) : BindingStmt → Bool
+  | .function _ target value => isVariable source target && isReadableBinding source value
+  | .reader _ value => isReadableBinding source value
+  | .record value => isReadableBinding source value
+  | .call name => isFunction source name
+  | .variable _ _ => true
+  | .hoistedVariable _ _ => true
+  | .constant _ _ => true
+  | .thrower _ _ => false
+  | .expressionFunction _ _ _ => false
+  | .capturedFactory _ _ _ _ _ => false
+  | .capturedClosure _ _ _ _ => false
+  | .capturedAlias _ _ => false
+  | .factory _ _ _ => false
+  | .closure _ _ => false
+  | .wrapper _ _ => false
+  | .recordCall _ _ => false
+  | .discardedLiteral => true
+  | .recordPrimitive _ => true
+
 def simpleAliasGraphValid (source : List BindingStmt) (modules : List BindingModule) (entry : Nat) : Bool :=
   let assigned := modules.flatMap BindingModule.assignment
   let order := machineTrace (asEffectModules modules) entry
-  source.all simpleAliasStatement &&
+  source.all simpleAliasStatement && source.all (simpleAliasSourceValid source) &&
     assigned.all (fun index => index < source.length) &&
     (List.range source.length).all (fun index => assigned.count index == 1) &&
     (match order with
@@ -1433,7 +1487,7 @@ def simpleAliasGraphValid (source : List BindingStmt) (modules : List BindingMod
             (reexportMappings imported).all (fun link =>
               (resolveActualExportFuel modules (modules.length + 1) imported.dependency link.1).isSome)) &&
           (module.assignment.zip module.statements).all (fun pair =>
-            simpleAliasStatement pair.2 &&
+            simpleAliasStatement pair.2 && simpleAliasWriteValid source module pair.2 &&
               decide (witnessedOutputStatement modules index pair.2 = elementAt source pair.1)))
 
 /- Captured allocation keys are model-internal identities. Give the output

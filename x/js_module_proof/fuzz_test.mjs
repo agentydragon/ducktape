@@ -56,6 +56,38 @@ if (shards === 4) {
     assert.equal(aliases.equal, 1);
   }
 }
+if (shards === 4 && shard === 0) {
+  const changedUpdate = await runFuzz({
+    seed: 773,
+    start: 4,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "alias",
+    validateEvery: 1,
+  });
+  assert.equal(changedUpdate.mutationKinds.localAliasUpdateRedirect, 1);
+  assert.equal(changedUpdate.mutatedDifferent, 1);
+  assert.equal(changedUpdate.mutatedVerdicts.unsafe, 1);
+  const witness = JSON.parse(
+    await readFile(
+      join(process.env.TEST_TMPDIR, changedUpdate.certifiedWitnesses[0].artifactPath, "node-witness.json"),
+      "utf8"
+    )
+  );
+  assert.ok(witness.calls.includes("bump"));
+  assert.notDeepEqual(witness.before.results, witness.after.results);
+  const unchangedUpdate = await runFuzz({
+    seed: 773,
+    start: 4,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "alias",
+    mutationMode: "disabled",
+    validateEvery: 1,
+  });
+  assert.equal(unchangedUpdate.localImportAliasProvedCases, 1);
+  assert.equal(unchangedUpdate.equal, 1);
+}
 if (shards === 4 && shard === 1) {
   const relay = await runFuzz({
     seed: 51981,

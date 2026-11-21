@@ -976,12 +976,27 @@ export function makeLocalAliasCase(seed, index) {
   const bindings = Array.from({ length: 2 + rand(2) }, (_, i) => `value${i}`);
   const readerNames = Array.from({ length: bindings.length + rand(2) }, (_, i) => `read${i}`);
   const initial = rand(6);
+  const updateBindings = index % 4 === 0 ? ["increment", "otherIncrement"] : [];
   const state = [
     ...bindings.map((name, i) => variable(name, initial + i)),
+    ...updateBindings.map((name, i) => variable(name, initial + i + 1)),
     ...(index % 2 ? [record(bindings[0])] : []),
   ];
   const observation = index % 4 === 3 ? [record(bindings[0])] : [];
+  const localState = index % 4 === 0 ? [variable("total", rand(5))] : [];
   const readers = readerNames.map((name, i) => functionNode(name, [], [returnNode(id(bindings[i % bindings.length]))]));
+  const updates = localState.length
+    ? [
+        functionNode(
+          "bump",
+          [],
+          [expr({ type: "AssignmentExpression", operator: "+=", left: id("total"), right: id("increment") })]
+        ),
+        functionNode("current", [], [returnNode(id("total"))]),
+      ]
+    : [];
+  const readerStart = state.length + observation.length + localState.length;
+  const updateStart = readerStart + readers.length;
   const relay = index % 3 === 1;
   const splitReaders = index % 3 === 2;
   const provider = relay ? "relay.mjs" : "state.mjs";
@@ -992,7 +1007,7 @@ export function makeLocalAliasCase(seed, index) {
           "relay.mjs": {
             imports: ["state.mjs"],
             statements: [],
-            reexports: { "state.mjs": bindings },
+            reexports: { "state.mjs": [...bindings, ...updateBindings] },
             renameReexports: index % 4 === 1,
           },
         }
@@ -1001,7 +1016,9 @@ export function makeLocalAliasCase(seed, index) {
       imports: [provider],
       statements: [
         ...observation.map((_, i) => state.length + i),
-        ...readers.flatMap((_, i) => (!splitReaders || i % 2 === 0 ? [state.length + observation.length + i] : [])),
+        ...localState.map((_, i) => state.length + observation.length + i),
+        ...readers.flatMap((_, i) => (!splitReaders || i % 2 === 0 ? [readerStart + i] : [])),
+        ...updates.map((_, i) => updateStart + i),
       ],
       renameLocalImports: true,
       aliasImports: index % 4 === 3,
@@ -1010,7 +1027,7 @@ export function makeLocalAliasCase(seed, index) {
       ? {
           "other-logic.mjs": {
             imports: [provider],
-            statements: readers.flatMap((_, i) => (i % 2 ? [state.length + observation.length + i] : [])),
+            statements: readers.flatMap((_, i) => (i % 2 ? [readerStart + i] : [])),
             renameLocalImports: true,
           },
         }
@@ -1023,10 +1040,16 @@ export function makeLocalAliasCase(seed, index) {
     body: [
       ...state,
       ...observation,
+      ...localState,
       ...readers,
+      ...updates,
       {
         type: "ExportNamedDeclaration",
-        specifiers: readerNames.map((name) => ({ type: "ExportSpecifier", local: id(name), exported: id(name) })),
+        specifiers: [...readerNames, ...(updates.length ? ["bump", "current"] : [])].map((name) => ({
+          type: "ExportSpecifier",
+          local: id(name),
+          exported: id(name),
+        })),
       },
     ],
   };
@@ -1043,7 +1066,10 @@ export function makeLocalAliasCase(seed, index) {
       entry: "entry.mjs",
       modules,
     },
-    calls: readerNames.map((name) => ({ name, args: [] })),
+    calls: [...readerNames, ...(updates.length ? ["current", "bump", "current"] : [])].map((name) => ({
+      name,
+      args: [],
+    })),
   };
 }
 
@@ -1806,7 +1832,7 @@ export async function minimizeCase(input, fails) {
 
 async function mutateOutput(out, input, kind) {
   const modules = Object.keys(input.spec.modules);
-  const files = ["localAliasRedirect", "localAliasInitRedirect"].includes(kind)
+  const files = ["localAliasRedirect", "localAliasInitRedirect", "localAliasUpdateRedirect"].includes(kind)
     ? ["logic.mjs"]
     : kind === "renamedReexport"
       ? ["relay.mjs"]
@@ -1826,6 +1852,8 @@ async function mutateOutput(out, input, kind) {
     if (kind === "binding") changed = original.replace(/let cell0 = (\d+);/, (_, n) => `let cell0 = ${Number(n) + 1};`);
     else if (kind === "localAliasRedirect")
       changed = original.replace(/\bvalue0 as (__split_local_+\d+)/, "value1 as $1");
+    else if (kind === "localAliasUpdateRedirect")
+      changed = original.replace(/\bincrement as (__split_local_+\d+)/, "otherIncrement as $1");
     else if (kind === "localAliasInitRedirect")
       changed = original.replace(
         /(__split_alias_+)0 as (__split_local_+0)\b/,
@@ -2156,6 +2184,7 @@ export async function runFuzz({
       renamedReexport: 0,
       localAliasRedirect: 0,
       localAliasInitRedirect: 0,
+      localAliasUpdateRedirect: 0,
     },
     splitCompared: 0,
     splitDifferent: 0,
@@ -2198,27 +2227,31 @@ export async function runFuzz({
       const plannedMutation =
         input.grammar === "alias" && !input.independentSplit && index % 12 === 3
           ? "localAliasInitRedirect"
-          : input.grammar === "alias" && !input.independentSplit && index % 6 === 2
-            ? "localAliasRedirect"
-            : input.grammar === "composed" && !input.independentSplit && index % 64 === 59
-              ? "renamedReexport"
-              : input.grammar === "composed" && !input.independentSplit && index % 64 === 23
-                ? "throwValue"
-                : input.grammar === "composed" &&
-                    !input.independentSplit &&
-                    input.hasDiscardedLiteral &&
-                    index % 52 === 16
-                  ? "composedEffect"
-                  : !["composed", "async", "alias"].includes(input.grammar) &&
+          : input.grammar === "alias" && !input.independentSplit && index % 12 === 4
+            ? "localAliasUpdateRedirect"
+            : input.grammar === "alias" && !input.independentSplit && index % 6 === 2
+              ? "localAliasRedirect"
+              : input.grammar === "composed" && !input.independentSplit && index % 64 === 59
+                ? "renamedReexport"
+                : input.grammar === "composed" && !input.independentSplit && index % 64 === 23
+                  ? "throwValue"
+                  : input.grammar === "composed" &&
                       !input.independentSplit &&
-                      index % 8 === 2
-                    ? ["binding", "effect", "function", "export", "import"][Math.floor(index / 8) % 5]
-                    : null;
+                      input.hasDiscardedLiteral &&
+                      index % 52 === 16
+                    ? "composedEffect"
+                    : !["composed", "async", "alias"].includes(input.grammar) &&
+                        !input.independentSplit &&
+                        index % 8 === 2
+                      ? ["binding", "effect", "function", "export", "import"][Math.floor(index / 8) % 5]
+                      : null;
       const mutation = mutationMode === "disabled" ? null : plannedMutation;
       if (plannedMutation === "composedEffect") input.calls = [];
       if (plannedMutation === "throwValue") input.calls = [{ name: "fuzzThrower", args: [1] }];
       if (plannedMutation === "localAliasRedirect") input.calls = [{ name: "read0", args: [] }];
       if (plannedMutation === "localAliasInitRedirect") input.calls = [];
+      if (plannedMutation === "localAliasUpdateRedirect")
+        input.calls = ["current", "bump", "current"].map((name) => ({ name, args: [] }));
       if (plannedMutation === "renamedReexport")
         input.calls =
           !input.redirectedCallee && (index % 256 === 187 || index % 256 === 251 || index % 512 === 315)

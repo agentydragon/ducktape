@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -365,7 +365,10 @@ if (runSection(0)) {
   await writeFile(expressionSpec, JSON.stringify(generatedSpec));
   const unsupported = cli("generate", expressionSource, expressionSpec, join(root, "unsupported-renamed-local-out"));
   assert.equal(unsupported.value.result, "unknown");
-  assert.match(unsupported.value.reason, /local import renaming supports simple readers, records, and calls only/);
+  assert.match(
+    unsupported.value.reason,
+    /local import renaming supports simple readers, records, calls, and local updates only/
+  );
 
   const observedSource = join(root, "observed-renamed-local-source.mjs");
   const observedSpec = join(root, "observed-renamed-local-spec.json");
@@ -416,6 +419,69 @@ if (runSection(0)) {
   const called = cli("validate", calledSource, calledSpec, calledOut).value;
   assert.equal(called.result, "proved under assumptions", JSON.stringify(called));
   assert.deepEqual(execute(calledSource, ["read"]), execute(join(calledOut, "entry.mjs"), ["read"]));
+
+  const updateSource = join(root, "update-renamed-local-source.mjs");
+  const updateSpec = join(root, "update-renamed-local-spec.json");
+  const updateOut = join(root, "update-renamed-local-out");
+  await writeFile(
+    updateSource,
+    `let step = 2;\nlet total = 1;\nfunction bump() { total += step; }\nfunction read() { return total; }\nexport { bump, read };\n`
+  );
+  generatedSpec.modules["state.mjs"].statements = [0];
+  generatedSpec.modules["logic.mjs"].statements = [1, 2, 3];
+  await writeFile(updateSpec, JSON.stringify(generatedSpec));
+  assert.equal(cli("generate", updateSource, updateSpec, updateOut).value.result, "generated");
+  const update = cli("validate", updateSource, updateSpec, updateOut).value;
+  assert.equal(update.result, "proved under assumptions", JSON.stringify(update));
+  const updateCalls = ["read", "bump", "read", "bump", "read"];
+  assert.deepEqual(execute(updateSource, updateCalls), { events: [], results: [1, null, 3, null, 5] });
+  assert.deepEqual(execute(join(updateOut, "entry.mjs"), updateCalls), execute(updateSource, updateCalls));
+
+  const importedWriteSpec = join(root, "imported-write-alias-spec.json");
+  const importedWriteOut = join(root, "imported-write-alias-out");
+  generatedSpec.modules["state.mjs"].statements = [0, 1];
+  generatedSpec.modules["logic.mjs"].statements = [2, 3];
+  await writeFile(importedWriteSpec, JSON.stringify(generatedSpec));
+  await mkdir(importedWriteOut);
+  await writeFile(join(importedWriteOut, "state.mjs"), `export let step = 2;\nexport let total = 1;\n`);
+  await writeFile(
+    join(importedWriteOut, "logic.mjs"),
+    `import { step as localStep, total } from "./state.mjs";\nexport function bump() { total += localStep; }\nexport function read() { return total; }\n`
+  );
+  await writeFile(
+    join(importedWriteOut, "entry.mjs"),
+    `import "./logic.mjs";\nexport { bump, read } from "./logic.mjs";\n`
+  );
+  assert.notEqual(
+    cli("validate", updateSource, importedWriteSpec, importedWriteOut).value.result,
+    "proved under assumptions"
+  );
+  const importedWriteScript = `const m = await import(${JSON.stringify(pathToFileURL(join(importedWriteOut, "entry.mjs")).href)}); try { m.bump(); } catch (e) { console.log(e.name); }`;
+  const importedWrite = spawnSync(process.execPath, ["--input-type=module", "-e", importedWriteScript], {
+    encoding: "utf8",
+  });
+  assert.equal(importedWrite.status, 0, importedWrite.stderr);
+  assert.equal(importedWrite.stdout.trim(), "TypeError");
+
+  const nonnumericSource = join(root, "nonnumeric-alias-source.mjs");
+  const nonnumericSpec = join(root, "nonnumeric-alias-spec.json");
+  const nonnumericOut = join(root, "nonnumeric-alias-out");
+  await writeFile(
+    nonnumericSource,
+    `let value = 3;\nfunction other() { return value; }\nfunction read() { return other; }\nexport { read };\n`
+  );
+  generatedSpec.modules["state.mjs"].statements = [0, 1];
+  generatedSpec.modules["logic.mjs"].statements = [2];
+  await writeFile(nonnumericSpec, JSON.stringify(generatedSpec));
+  assert.equal(cli("generate", nonnumericSource, nonnumericSpec, nonnumericOut).value.result, "generated");
+  assert.notEqual(
+    cli("validate", nonnumericSource, nonnumericSpec, nonnumericOut).value.result,
+    "proved under assumptions"
+  );
+  const nonnumericScript = `const m = await import(${JSON.stringify(pathToFileURL(join(nonnumericOut, "entry.mjs")).href)}); console.log(typeof m.read());`;
+  const nonnumeric = spawnSync(process.execPath, ["--input-type=module", "-e", nonnumericScript], { encoding: "utf8" });
+  assert.equal(nonnumeric.status, 0, nonnumeric.stderr);
+  assert.equal(nonnumeric.stdout.trim(), "function");
 }
 
 if (runSection(0)) {

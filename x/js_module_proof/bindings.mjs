@@ -1411,16 +1411,18 @@ function generateFiles(source, spec, names) {
         const renamed = references(item.ast).filter((reference) => providers[name].has(reference));
         if (renamed.length) {
           check(
-            ["reader", "record", "call"].includes(item.ast.kind) && renamed.length === 1,
-            "local import renaming supports simple readers, records, and calls only"
+            ["reader", "record", "call", "function"].includes(item.ast.kind) && renamed.length === 1,
+            "local import renaming supports simple readers, records, calls, and local updates only"
           );
           const node = parseModule(statement)[0];
           const reference =
             item.ast.kind === "reader"
               ? node.body.body[0].argument
-              : item.ast.kind === "record"
-                ? node.expression.arguments[0]
-                : node.expression.callee;
+              : item.ast.kind === "function"
+                ? node.body.body[0].expression.right
+                : item.ast.kind === "record"
+                  ? node.expression.arguments[0]
+                  : node.expression.callee;
           check(reference.type === "Identifier" && reference.name === renamed[0], "unexpected imported reference");
           statement =
             statement.slice(0, reference.start) + localAliases.get(renamed[0]) + statement.slice(reference.end);

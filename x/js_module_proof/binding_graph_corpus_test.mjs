@@ -147,9 +147,11 @@ for (let i = 0; i < 36; i++) {
   }
   for (const [name, contents] of Object.entries(files)) await writeFile(join(output, name), contents);
   const result = cli("validate", sourcePath, specPath, output);
-  if (mode === "safe") assert.equal(result.result, "proved under assumptions", JSON.stringify(result));
+  if (mode === "safe" || mode === "alias")
+    assert.equal(result.result, "proved under assumptions", JSON.stringify(result));
   else if (mode === "unsafe") assert.equal(result.result, "unsafe", JSON.stringify(result));
   else assert.notEqual(result.result, "proved under assumptions", `${mode}: ${JSON.stringify(result)}`);
+  if (mode === "alias") assert.match(result.certificate, /binding_simple_future_calls/);
   if (result.result === "unsafe") {
     const calls = result.calls ?? [];
     assert.notDeepEqual(execute(sourcePath, calls), execute(join(output, "entry.mjs"), calls), mode);
@@ -191,7 +193,7 @@ for (let i = 0; i < 36; i++) {
     assert.match(proof.stdout, /'node_source_trace' does not depend on any axioms/);
     assert.match(proof.stdout, /'node_output_trace' does not depend on any axioms/);
   }
-  if (mode === "safe") assert.deepEqual(after, before, `Node mismatch in proved case ${i}`);
+  if (mode === "safe" || mode === "alias") assert.deepEqual(after, before, `Node mismatch in proved case ${i}`);
   if (mode === "unsafe") {
     assert.notDeepEqual(after.events, before.events);
     assert.deepEqual(result.original.events, before.events);
