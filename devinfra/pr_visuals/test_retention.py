@@ -19,15 +19,7 @@ SHA_D = "d" * 40
 DIGEST_CANDIDATE = "1" * 64
 DIGEST_BASELINE = "2" * 64
 DIGEST_DIFF = "3" * 64
-
-
-class ObjectStore:
-    def __init__(self, objects: list[StoredObject], bodies: dict[str, bytes]):
-        self.objects = objects
-        self.bodies = bodies
-
-    def fetch(self, key: str) -> bytes | None:
-        return self.bodies.get(key)
+BUNDLE_ROOT = "reviews-test-outputs"
 
 
 def _asset(digests: tuple[str | None, str | None, str | None] = (None, None, None)) -> dict[str, Any]:
@@ -66,45 +58,50 @@ def _metadata(
     }
 
 
-def _add_bundle(
-    objects: list[StoredObject],
-    bodies: dict[str, bytes],
-    root: str,
-    sha: str,
-    modified: datetime,
-    **metadata_fields: Any,
-) -> None:
-    prefix = f"{root}/{sha}/"
-    metadata = _metadata(sha, **metadata_fields)
-    slug = metadata["tests"][0]["slug"]
-    root_key = f"{prefix}metadata.json"
-    target_key = f"{prefix}tests/{slug}/metadata.json"
-    objects.extend(StoredObject(key, 10, modified) for key in (root_key, target_key, f"{prefix}index.html"))
-    bodies[root_key] = json.dumps(metadata).encode()
-    bodies[target_key] = json.dumps(metadata["tests"][0]).encode()
+class ObjectStore:
+    def __init__(self) -> None:
+        self.objects: list[StoredObject] = []
+        self.bodies: dict[str, bytes] = {}
 
+    def add_bundle(self, sha: str, modified: datetime, **metadata_fields: Any) -> None:
+        prefix = f"{BUNDLE_ROOT}/{sha}/"
+        metadata = _metadata(sha, **metadata_fields)
+        slug = metadata["tests"][0]["slug"]
+        root_key = f"{prefix}metadata.json"
+        target_key = f"{prefix}tests/{slug}/metadata.json"
+        self.objects.extend(StoredObject(key, 10, modified) for key in (root_key, target_key, f"{prefix}index.html"))
+        self.bodies[root_key] = json.dumps(metadata).encode()
+        self.bodies[target_key] = json.dumps(metadata["tests"][0]).encode()
 
-def _report(store: ObjectStore, roots: dict[str, set[str]] | None = None) -> dict[str, Any]:
-    return build_retention_report(
-        store.objects, fetch_object=store.fetch, github_roots=roots or {}, observed_at=OBSERVED, cutoff=CUTOFF
-    )
+    def add_pointer(self, slug: str, sha: str, modified: datetime, *, size: int = 5) -> None:
+        key = f"baselines/{BUNDLE_ROOT}/{slug}.json"
+        self.objects.append(StoredObject(key, size, modified))
+        self.bodies[key] = json.dumps({"commit_sha": sha}).encode()
+
+    def add_asset(self, digest: str, modified: datetime, *, size: int = 20) -> None:
+        self.objects.append(StoredObject(f"assets/{digest}.png", size, modified))
+
+    def remove(self, *keys: str) -> None:
+        self.objects = [obj for obj in self.objects if obj.key not in keys]
+        for key in keys:
+            del self.bodies[key]
+
+    def report(self, roots: dict[str, set[str]] | None = None) -> dict[str, Any]:
+        return build_retention_report(
+            self.objects, fetch_object=self.bodies.get, github_roots=roots or {}, observed_at=OBSERVED, cutoff=CUTOFF
+        )
 
 
 def test_preserves_baseline_pointers_and_reports_exact_old_bundle_keys() -> None:
-    objects: list[StoredObject] = []
-    bodies: dict[str, bytes] = {}
+    store = ObjectStore()
     old = OBSERVED - timedelta(days=10)
-    _add_bundle(objects, bodies, "reviews-test-outputs", SHA_A, old, slug="legacy")
-    _add_bundle(objects, bodies, "reviews-test-outputs", SHA_B, old, slug="current")
-    _add_bundle(objects, bodies, "reviews-test-outputs", SHA_C, old)
-    for key, sha in (
-        ("baselines/reviews-test-outputs/legacy.json", SHA_A),
-        ("baselines/reviews-test-outputs/current.json", SHA_B),
-    ):
-        objects.append(StoredObject(key, 5, old))
-        bodies[key] = json.dumps({"commit_sha": sha}).encode()
+    store.add_bundle(SHA_A, old, slug="legacy")
+    store.add_bundle(SHA_B, old, slug="current")
+    store.add_bundle(SHA_C, old)
+    store.add_pointer("legacy", SHA_A, old)
+    store.add_pointer("current", SHA_B, old)
 
-    report = _report(ObjectStore(objects, bodies))
+    report = store.report()
 
     assert report["plan_status"] == "candidate_plan"
     assert report["preserved_baseline_pointers"] == [
@@ -120,23 +117,20 @@ def test_preserves_baseline_pointers_and_reports_exact_old_bundle_keys() -> None
 
 
 def test_preserves_structured_output_baseline_and_its_shared_image() -> None:
-    objects: list[StoredObject] = []
-    bodies: dict[str, bytes] = {}
+    store = ObjectStore()
     old = OBSERVED - timedelta(days=10)
-    _add_bundle(objects, bodies, "reviews-test-outputs", SHA_A, old, digests=(DIGEST_CANDIDATE, None, None))
+    store.add_bundle(SHA_A, old, digests=(DIGEST_CANDIDATE, None, None))
     metadata_key = f"reviews-test-outputs/{SHA_A}/metadata.json"
-    metadata = json.loads(bodies[metadata_key])
+    metadata = json.loads(store.bodies[metadata_key])
     metadata["tests"][0]["assets"][0]["variants"] = [{"sha256": DIGEST_DIFF, "results": []}]
     # Older bundles included a second copy of the preview asset.
     metadata["tests"][0]["preview"] = metadata["tests"][0]["assets"][0]
-    bodies[metadata_key] = json.dumps(metadata).encode()
-    pointer = "baselines/reviews-test-outputs/example.json"
-    objects.append(StoredObject(pointer, 5, old))
-    bodies[pointer] = json.dumps({"commit_sha": SHA_A}).encode()
-    objects.append(StoredObject(f"assets/{DIGEST_CANDIDATE}.png", 20, old))
-    objects.append(StoredObject(f"assets/{DIGEST_DIFF}.png", 20, old))
+    store.bodies[metadata_key] = json.dumps(metadata).encode()
+    store.add_pointer("example", SHA_A, old)
+    store.add_asset(DIGEST_CANDIDATE, old)
+    store.add_asset(DIGEST_DIFF, old)
 
-    report = _report(ObjectStore(objects, bodies))
+    report = store.report()
 
     assert report["plan_status"] == "candidate_plan"
     assert {row["prefix"] for row in report["bundles"]["retained"]} == {f"reviews-test-outputs/{SHA_A}/"}
@@ -144,66 +138,54 @@ def test_preserves_structured_output_baseline_and_its_shared_image() -> None:
 
 
 def test_old_namespace_blocks_the_plan_until_cutover_cleanup() -> None:
-    old = OBSERVED - timedelta(days=10)
-    objects = [StoredObject(f"reviews/{SHA_A}/metadata.json", 10, old)]
-    report = _report(ObjectStore(objects, {}))
+    store = ObjectStore()
+    store.objects.append(StoredObject(f"reviews/{SHA_A}/metadata.json", 10, OBSERVED - timedelta(days=10)))
+    report = store.report()
     assert report["plan_status"] == "blocked"
     assert report["bundles"]["candidate_count"] == 0
 
 
 def test_invalid_structured_variant_blocks_retention_plan() -> None:
-    objects: list[StoredObject] = []
-    bodies: dict[str, bytes] = {}
-    _add_bundle(objects, bodies, "reviews-test-outputs", SHA_A, OBSERVED - timedelta(hours=1))
+    store = ObjectStore()
+    store.add_bundle(SHA_A, OBSERVED - timedelta(hours=1))
     key = f"reviews-test-outputs/{SHA_A}/metadata.json"
-    metadata = json.loads(bodies[key])
+    metadata = json.loads(store.bodies[key])
     metadata["tests"][0]["assets"][0]["variants"] = [{"sha256": "invalid", "results": []}]
-    bodies[key] = json.dumps(metadata).encode()
+    store.bodies[key] = json.dumps(metadata).encode()
 
-    report = _report(ObjectStore(objects, bodies))
+    report = store.report()
 
     assert report["plan_status"] == "blocked"
     assert not report["shared_assets"]["candidates"]
 
 
 def test_cutoff_boundary_uses_newest_object_and_retains_exact_boundary() -> None:
-    objects: list[StoredObject] = []
-    bodies: dict[str, bytes] = {}
-    _add_bundle(objects, bodies, "reviews-test-outputs", SHA_A, CUTOFF)
-    _add_bundle(objects, bodies, "reviews-test-outputs", SHA_B, CUTOFF - timedelta(microseconds=1))
+    store = ObjectStore()
+    store.add_bundle(SHA_A, CUTOFF)
+    store.add_bundle(SHA_B, CUTOFF - timedelta(microseconds=1))
 
-    report = _report(ObjectStore(objects, bodies))
+    report = store.report()
 
     assert [row["prefix"] for row in report["bundles"]["retained"]] == [f"reviews-test-outputs/{SHA_A}/"]
     assert [row["prefix"] for row in report["bundles"]["candidates"]] == [f"reviews-test-outputs/{SHA_B}/"]
 
 
 def test_open_pr_roots_walk_transitive_bundle_dependencies_and_keep_all_image_roles() -> None:
-    objects: list[StoredObject] = []
-    bodies: dict[str, bytes] = {}
+    store = ObjectStore()
     old = OBSERVED - timedelta(days=12)
     recent = OBSERVED - timedelta(days=1)
-    _add_bundle(
-        objects,
-        bodies,
-        "reviews-test-outputs",
-        SHA_A,
-        recent,
-        base_sha=SHA_B,
-        merge_base_sha=SHA_C,
-        digests=(DIGEST_CANDIDATE, DIGEST_BASELINE, DIGEST_DIFF),
+    store.add_bundle(
+        SHA_A, recent, base_sha=SHA_B, merge_base_sha=SHA_C, digests=(DIGEST_CANDIDATE, DIGEST_BASELINE, DIGEST_DIFF)
     )
-    _add_bundle(objects, bodies, "reviews-test-outputs", SHA_B, old, base_sha=SHA_D)
-    _add_bundle(objects, bodies, "reviews-test-outputs", SHA_C, old)
-    _add_bundle(objects, bodies, "reviews-test-outputs", SHA_D, old)
-    _add_bundle(objects, bodies, "reviews-test-outputs", "e" * 40, old)
-    objects.extend(
-        StoredObject(f"assets/{digest}.png", 20, old)
-        for digest in (DIGEST_CANDIDATE, DIGEST_BASELINE, DIGEST_DIFF, "4" * 64)
-    )
-    objects.append(StoredObject(f"assets/{'5' * 64}.png", 20, recent))
+    store.add_bundle(SHA_B, old, base_sha=SHA_D)
+    store.add_bundle(SHA_C, old)
+    store.add_bundle(SHA_D, old)
+    store.add_bundle("e" * 40, old)
+    for digest in (DIGEST_CANDIDATE, DIGEST_BASELINE, DIGEST_DIFF, "4" * 64):
+        store.add_asset(digest, old)
+    store.add_asset("5" * 64, recent)
 
-    report = _report(ObjectStore(objects, bodies), {SHA_A: {"open_pr_head:17"}})
+    report = store.report({SHA_A: {"open_pr_head:17"}})
 
     assert {row["prefix"] for row in report["bundles"]["retained"]} == {
         f"reviews-test-outputs/{SHA_A}/",
@@ -261,27 +243,21 @@ def test_github_roots_use_actual_merge_base_recent_closures_and_active_action_pr
 
 @pytest.mark.parametrize("metadata_mode", ["missing", "malformed_aggregate", "malformed_target"])
 def test_retained_metadata_failures_block_all_candidates(metadata_mode: str) -> None:
-    objects: list[StoredObject] = []
-    bodies: dict[str, bytes] = {}
+    store = ObjectStore()
     recent = OBSERVED - timedelta(hours=2)
-    _add_bundle(objects, bodies, "reviews-test-outputs", SHA_A, recent)
-    _add_bundle(objects, bodies, "reviews-test-outputs", SHA_B, OBSERVED - timedelta(days=14))
+    store.add_bundle(SHA_A, recent)
+    store.add_bundle(SHA_B, OBSERVED - timedelta(days=14))
     if metadata_mode == "missing":
-        bodies.pop(f"reviews-test-outputs/{SHA_A}/metadata.json")
-        bodies.pop(f"reviews-test-outputs/{SHA_A}/tests/example/metadata.json")
-        objects = [
-            obj
-            for obj in objects
-            if not obj.key.startswith(f"reviews-test-outputs/{SHA_A}/metadata.json")
-            and not obj.key.startswith(f"reviews-test-outputs/{SHA_A}/tests/example/metadata.json")
-        ]
+        store.remove(
+            f"reviews-test-outputs/{SHA_A}/metadata.json", f"reviews-test-outputs/{SHA_A}/tests/example/metadata.json"
+        )
     elif metadata_mode == "malformed_aggregate":
-        bodies[f"reviews-test-outputs/{SHA_A}/metadata.json"] = b"{"
+        store.bodies[f"reviews-test-outputs/{SHA_A}/metadata.json"] = b"{"
     else:
-        bodies[f"reviews-test-outputs/{SHA_A}/tests/example/metadata.json"] = b"{}"
-    objects.append(StoredObject(f"assets/{'9' * 64}.png", 20, OBSERVED - timedelta(days=20)))
+        store.bodies[f"reviews-test-outputs/{SHA_A}/tests/example/metadata.json"] = b"{}"
+    store.add_asset("9" * 64, OBSERVED - timedelta(days=20))
 
-    report = _report(ObjectStore(objects, bodies))
+    report = store.report()
 
     assert report["plan_status"] == "blocked"
     assert report["bundles"]["candidate_count"] == 0
@@ -291,13 +267,12 @@ def test_retained_metadata_failures_block_all_candidates(metadata_mode: str) -> 
 
 
 def test_unknown_root_keys_are_retained_and_reported_without_guessing() -> None:
-    objects: list[StoredObject] = []
-    bodies: dict[str, bytes] = {}
-    _add_bundle(objects, bodies, "reviews-test-outputs", SHA_A, OBSERVED - timedelta(days=9))
-    objects.append(StoredObject("root-note.txt", 7, OBSERVED - timedelta(days=90)))
-    objects.append(StoredObject(f"assets/{'x' * 64}.png", 8, OBSERVED - timedelta(days=90)))
+    store = ObjectStore()
+    store.add_bundle(SHA_A, OBSERVED - timedelta(days=9))
+    store.objects.append(StoredObject("root-note.txt", 7, OBSERVED - timedelta(days=90)))
+    store.objects.append(StoredObject(f"assets/{'x' * 64}.png", 8, OBSERVED - timedelta(days=90)))
 
-    report = _report(ObjectStore(objects, bodies))
+    report = store.report()
 
     assert report["plan_status"] == "candidate_plan"
     assert report["retained_unknown_keys"] == ["assets/" + "x" * 64 + ".png", "root-note.txt"]
@@ -306,15 +281,12 @@ def test_unknown_root_keys_are_retained_and_reported_without_guessing() -> None:
 
 
 def test_unrecognized_bundle_roots_and_missing_pointer_targets_fail_closed() -> None:
-    objects: list[StoredObject] = []
-    bodies: dict[str, bytes] = {}
-    _add_bundle(objects, bodies, "reviews-test-outputs", SHA_A, OBSERVED - timedelta(days=9))
-    objects.append(StoredObject("commits/not-a-sha/index.html", 3, OBSERVED - timedelta(days=90)))
-    missing_pointer = "baselines/reviews-test-outputs/missing.json"
-    objects.append(StoredObject(missing_pointer, 1, OBSERVED - timedelta(days=90)))
-    bodies[missing_pointer] = json.dumps({"commit_sha": SHA_D}).encode()
+    store = ObjectStore()
+    store.add_bundle(SHA_A, OBSERVED - timedelta(days=9))
+    store.objects.append(StoredObject("commits/not-a-sha/index.html", 3, OBSERVED - timedelta(days=90)))
+    store.add_pointer("missing", SHA_D, OBSERVED - timedelta(days=90), size=1)
 
-    report = _report(ObjectStore(objects, bodies))
+    report = store.report()
 
     assert report["plan_status"] == "blocked"
     assert report["bundles"]["candidate_count"] == 0
@@ -324,19 +296,14 @@ def test_unrecognized_bundle_roots_and_missing_pointer_targets_fail_closed() -> 
 
 
 def test_pointer_needs_actual_target_metadata_even_when_aggregate_lists_the_slug() -> None:
-    objects: list[StoredObject] = []
-    bodies: dict[str, bytes] = {}
+    store = ObjectStore()
     old = OBSERVED - timedelta(days=14)
-    _add_bundle(objects, bodies, "reviews-test-outputs", SHA_A, old, slug="pointed-target")
-    target_key = f"reviews-test-outputs/{SHA_A}/tests/pointed-target/metadata.json"
-    objects = [obj for obj in objects if obj.key != target_key]
-    bodies.pop(target_key)
-    pointer_key = "baselines/reviews-test-outputs/pointed-target.json"
-    objects.append(StoredObject(pointer_key, 1, old))
-    bodies[pointer_key] = json.dumps({"commit_sha": SHA_A}).encode()
-    _add_bundle(objects, bodies, "reviews-test-outputs", SHA_B, old)
+    store.add_bundle(SHA_A, old, slug="pointed-target")
+    store.remove(f"reviews-test-outputs/{SHA_A}/tests/pointed-target/metadata.json")
+    store.add_pointer("pointed-target", SHA_A, old, size=1)
+    store.add_bundle(SHA_B, old)
 
-    report = _report(ObjectStore(objects, bodies))
+    report = store.report()
 
     assert report["plan_status"] == "blocked"
     assert report["bundles"]["candidate_count"] == 0
@@ -344,12 +311,10 @@ def test_pointer_needs_actual_target_metadata_even_when_aggregate_lists_the_slug
 
 
 def test_old_asset_candidates_are_explicitly_unsafe_during_concurrent_publisher_reuse() -> None:
-    objects: list[StoredObject] = []
-    bodies: dict[str, bytes] = {}
-    digest = "8" * 64
-    objects.append(StoredObject(f"assets/{digest}.png", 100, OBSERVED - timedelta(days=20)))
+    store = ObjectStore()
+    store.add_asset("8" * 64, OBSERVED - timedelta(days=20), size=100)
 
-    report = _report(ObjectStore(objects, bodies))
+    report = store.report()
 
     assert report["shared_assets"]["candidate_count"] == 1
     assert report["shared_assets"]["safe_to_delete_now"] is False
@@ -359,20 +324,11 @@ def test_old_asset_candidates_are_explicitly_unsafe_during_concurrent_publisher_
 
 
 def test_absent_provenance_only_merge_base_does_not_block_a_plan() -> None:
-    objects: list[StoredObject] = []
-    bodies: dict[str, bytes] = {}
-    _add_bundle(
-        objects,
-        bodies,
-        "reviews-test-outputs",
-        SHA_A,
-        OBSERVED - timedelta(hours=1),
-        base_sha=SHA_B,
-        merge_base_sha=SHA_C,
-    )
-    _add_bundle(objects, bodies, "reviews-test-outputs", SHA_D, OBSERVED - timedelta(days=12))
+    store = ObjectStore()
+    store.add_bundle(SHA_A, OBSERVED - timedelta(hours=1), base_sha=SHA_B, merge_base_sha=SHA_C)
+    store.add_bundle(SHA_D, OBSERVED - timedelta(days=12))
 
-    report = _report(ObjectStore(objects, bodies), {SHA_A: {"open_pr_head:17"}})
+    report = store.report({SHA_A: {"open_pr_head:17"}})
 
     assert report["plan_status"] == "candidate_plan"
     assert report["unpublished_metadata_dependencies"] == [SHA_B, SHA_C]
