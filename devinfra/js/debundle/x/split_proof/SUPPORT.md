@@ -66,6 +66,8 @@ Code from strings, interception, reflection, hooks that the language calls on it
 | `Symbol.dispose` or `Symbol.asyncDispose`                                              |   132 |    46 |                     31 |    15 |
 | **evaluation order**                                                                   |       |       |                        |       |
 | top-level `await`                                                                      |     0 |     0 |                      0 |     0 |
+| `throw` statement                                                                      | 23657 |   800 |                     12 |     6 |
+| `throw` outside every function and every `try` block that has a `catch`                |    12 |     6 |                     12 |     6 |
 | **nondeterminism**                                                                     |       |       |                        |       |
 | `WeakRef` or `FinalizationRegistry`                                                    |    55 |    35 |                      5 |     5 |
 | `Atomics` or `SharedArrayBuffer`                                                       |    44 |    11 |                      3 |     2 |
@@ -99,6 +101,12 @@ A site at the top level is outside every function body: it runs when the module 
 | `.stack`, `Function.prototype.toString`, `Error.captureStackTrace`, `arguments.callee` | Not preserved: a stated assumption                                                          | Renaming and moving code changes stack traces and function source text. 971 sites.                                                                                                                                                                                                                                                           |
 | `with`                                                                                 | Not supported                                                                               | It cannot occur in a module.                                                                                                                                                                                                                                                                                                                 |
 | `debugger`                                                                             | Kept as it is                                                                               | 14 sites, none at the top level.                                                                                                                                                                                                                                                                                                             |
+
+**An exception that ends evaluation: proposed, not adopted.** The analysis assumes that evaluation completes (premise P4), so it does not count a `throw` as an effect. A guard on a local value, `if (!root) throw new Error(…)`, can then move across a `console.log`: `lowersplit` accepts such a split, and where the bundle prints and then throws, the split throws first. The 12 top-level `throw` statements of the inputs are all guards of this kind, each behind a check of the environment: a missing root element, a library that is absent or has the wrong version, the wrong runtime, and one that throws a caught error again. None is unconditional, and on the large bundle no `throw` ran during module evaluation ([`docs/lessons_learned.md`](docs/lessons_learned.md)). Proposal:
+
+- A split that moves code preserves behaviour for a bundle whose evaluation completes. P4 stays a premise, and it can be checked by loading the bundle.
+- A split that keeps the bundle's order preserves every ending, a throw included.
+- A unit with a `throw` outside every function counts as an effect, so the 12 guards keep their place among the effects. This is cheap, and it does not cover a function that throws when start-up calls it.
 
 ## Not supported
 
