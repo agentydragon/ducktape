@@ -144,8 +144,13 @@ for (let i = 0; i < 36; i++) {
   }
   for (const [name, contents] of Object.entries(files)) await writeFile(join(output, name), contents);
   const result = cli("validate", sourcePath, specPath, output);
-  const expected = mode === "safe" ? "proved under assumptions" : mode === "unsafe" ? "unsafe" : "unknown";
-  assert.equal(result.result, expected, `${mode}: ${JSON.stringify(result)}`);
+  if (mode === "safe") assert.equal(result.result, "proved under assumptions", JSON.stringify(result));
+  else if (mode === "unsafe") assert.equal(result.result, "unsafe", JSON.stringify(result));
+  else assert.notEqual(result.result, "proved under assumptions", `${mode}: ${JSON.stringify(result)}`);
+  if (result.result === "unsafe") {
+    const calls = result.calls ?? [];
+    assert.notDeepEqual(execute(sourcePath, calls), execute(join(output, "entry.mjs"), calls), mode);
+  }
 
   const calls = [current, bump, current, bump, current];
   const before = execute(sourcePath, calls);

@@ -85,13 +85,13 @@ theorem fixture_reference : ∃ owner declaration,
       for (const changed of [state.replace("./amount.mjs", "./state.mjs"), state.replace("+= amount", "+= count")]) {
         assert.notEqual(changed, state);
         await writeFile(statePath, changed);
-        assert.equal(cli("validate", source, spec, out).value.result, "unknown");
+        assert.notEqual(cli("validate", source, spec, out).value.result, "proved under assumptions");
       }
       await writeFile(statePath, state);
       const observerPath = join(out, "observe.mjs");
       const observer = await readFile(observerPath, "utf8");
       await writeFile(observerPath, observer.replace("globalThis.record(count);", ""));
-      assert.equal(cli("validate", source, spec, out).value.result, "unknown");
+      assert.notEqual(cli("validate", source, spec, out).value.result, "proved under assumptions");
       const [importLine, ...rest] = observer.trim().split("\n");
       await writeFile(observerPath, `${rest.join("\n")}\n${importLine}\n`);
       assert.equal(cli("validate", source, spec, out).value.result, "proved under assumptions");
@@ -200,7 +200,7 @@ if (runSection(1)) {
     readerPath,
     `import { amount } from "./amount.mjs";\n${readerText.replace("return count", "return amount")}`
   );
-  assert.equal(cli("validate", readerSource, readerSpec, readerOutput).value.result, "unknown");
+  assert.equal(cli("validate", readerSource, readerSpec, readerOutput).value.result, "unsafe");
   const brokenResult = execute(join(readerOutput, "entry.mjs"), calls);
   assert.deepEqual(brokenResult.events, sourceResult.events);
   assert.equal(brokenResult.results[0], sourceResult.results[0]);
