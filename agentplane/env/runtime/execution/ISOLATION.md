@@ -1,5 +1,8 @@
 # Execution isolation and shared resources
 
+For proposed command placement and configurable resource boundaries, see the
+[execution placement design](docs/execution_placement_design.md).
+
 ## Protection goals
 
 - The primary goal is to keep a resident agent harness alive when a command exhausts its memory

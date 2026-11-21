@@ -10,6 +10,15 @@ operations, error data, reconnect and HTTP edge cases; current tests cover selec
 protocol parity. Discovery V2 and environment configuration reads are not implemented. Separate
 the backend's memory budget from its commands so a tool OOM does not kill the execution owner.
 
+## Reconsider embedding the native executor in Environment Runtime
+
+After the command resource boundary is in place, compare embedding the native execution owner in
+Environment Runtime with retaining the separately supervised executor process. Account for
+filesystem operations under Runtime's more privileged VM identity, shared memory and crash domains,
+independent executor replacement, Pod supervision, and both typed and Codex protocol surfaces.
+Do not assume either architecture preserves the existing isolation or recovery guarantees without
+proof. See the [execution placement design](runtime/execution/docs/execution_placement_design.md).
+
 ## Resolve legacy Codex inputs without a client message ID
 
 Some retained Codex inputs predate `clientUserMessageId`. A matching historical text item does
