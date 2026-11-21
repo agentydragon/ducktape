@@ -102,12 +102,10 @@ directories by the check named; recheck the others before relying on them.
   cross-root file needs that flag too, while a Component directory builds with the
   default `LoadRestrictionsRootOnly` (_rechecked_: `kustomize build` of the grocy
   directories in `//cluster/validation:test_cluster_integration`).
-- Artifacts preserve repo paths, so a relative cross-root reference resolves the same in
-  the checkout and in the artifact (_rechecked_: `cluster/cdk8s/x/render_diff.py` renders
-  the moved grocy artifacts to identical objects). The helper's `directory/**` copy is suitable. A
-  general `*.sops.yaml` glob retains its full path in source-watcher, while
-  `cluster/cdk8s/x/render_diff.py:apply_copy` strips the non-glob prefix for all globs.
-  Repair/test that mismatch before relying on such globs.
+- These artifacts preserve repo paths, so a relative cross-root reference resolves the
+  same in the checkout and in the artifact. Source-watcher's `directory/**` copy strips the
+  directory prefix; other globs, such as `*.sops.yaml`, retain their full source path.
+  Check copy destinations before relying on a new glob.
 - Copies are ordered; a later one can overwrite an earlier file. A missing required
   file/glob can fail the entire ArtifactGenerator reconciliation, affecting unrelated
   artifacts. Validate inputs before introducing cross-root composition.

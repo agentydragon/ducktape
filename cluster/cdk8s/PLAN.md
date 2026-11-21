@@ -112,8 +112,8 @@ or change resource ownership merely to make a directory qualify as generated.
 ## Gates and completion
 
 App-payload conversions also need semantic checks at their format/runtime boundary.
-A changed payload string or ConfigMap hash is an expected resource diff to review, not
-an empty render diff to claim. Ownership moves require the live protection/adoption
+A changed payload string or ConfigMap hash is an expected resource diff to review.
+Ownership moves require the live protection/adoption
 procedure in AGENTS.md, including storage identities and traffic checks.
 
 Keep generated output committed while it gives reviewers useful diffs. An OCI delivery

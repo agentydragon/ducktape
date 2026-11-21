@@ -5,6 +5,14 @@ overlays and application payloads: [remainder backlog](../docs/cdk8s_remainder.m
 Remove entries when their acceptance conditions land; this is not a history of the
 conversion.
 
+## CI render diffs if manifests move to a separate branch
+
+Generated manifests are committed alongside cdk8s changes today, so review their PR diff.
+If cdk8s source and Flux manifests move to separate branches, consider rendering both
+revisions in PR CI and publishing a reviewable resource diff. Prefer the real Flux tools
+and controller behavior over a separate approximation; state what the comparison can and
+cannot establish about substitutions, secrets, external sources and live readiness.
+
 ## ESO store/consumer agreement
 
 The [rendered-tree check](../docs/cdk8s.md#sops-secrets-in-a-converted-directory) includes
