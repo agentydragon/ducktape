@@ -31,6 +31,7 @@ if (shard === 0) {
     encoding: "utf8",
     input:
       models +
+      "\n#print axioms capture_matching_transfer\n#print axioms distinct_writeback_transfer\n#print axioms distinct_writebacks_agree\n#print axioms two_distinct_captured_call_sequence_simulates\n#print axioms decideCaptureKeysUnique\n" +
       "\n#print axioms runExecution_relation_preserved\n#print axioms executeCaptured_success\n#print axioms captured_paired_step_preserved\n#print axioms executeCaptured_decompose\n#print axioms captured_unblocked_step_related\n#print axioms captured_call_sequence_related\n#print axioms lookup_update_other\n#print axioms lookup_store_other\n#print axioms load_store_disjoint\n#print axioms storeCapturedFrame_origin\n#print axioms captured_step_preserves_disjoint\n#print axioms captured_step_preserves_watched\n#print axioms two_captured_call_sequence_related\n#print axioms successful_store_captures_matches\n#print axioms distinct_related_writebacks_exist\n#print axioms distinct_captured_writeback_exists\n#print axioms store_captures_roundtrip\n#print axioms load_captures_update_other\n#print axioms update_existing_cell\n#print axioms two_captured_call_sequence_simulates\n#print axioms runExecution_simulates\n#print axioms captured_step_simulates\n#print axioms paired_captured_table_call\n#print axioms two_captured_argument_calls_related\n#print axioms related_argument_call_operations\n#print axioms decideRelatedCapturedEnvironments\n#print axioms decideCapturesDisjoint\n" +
       'example : relatedCapturedEnvironments [("a", 3)] [("b", 3)] [("x", "a")] [("x", "b")] := by decide\n' +
       'example : ¬ relatedCapturedEnvironments [("a", 3)] [("b", 4)] [("x", "a")] [("x", "b")] := by decide\n' +
@@ -42,6 +43,14 @@ if (shard === 0) {
       "  · decide\n#print axioms single_capture_writeback_example\n" +
       'example : capturesDisjoint [("x", "a"), ("y", "b")] [("z", "c")] := by decide\n' +
       'example : ¬ capturesDisjoint [("x", "a"), ("y", "b")] [("z", "b")] := by decide\n' +
+      'example : CaptureKeysUnique [("x", "a"), ("y", "b")] := by decide\n' +
+      'example : ¬ CaptureKeysUnique [("x", "a"), ("y", "a")] := by decide\n' +
+      'example : capturedWritebacksAgree [("a", 0), ("b", 1)] [("c", 0), ("d", 1)] [("x", "a"), ("y", "b")] [("x", "c"), ("y", "d")] := by apply distinct_writebacks_agree <;> decide\n' +
+      "theorem renamed_capture_observations (calls : List (String × List Nat)) :\n" +
+      '  (runArgumentCalls [("f", .captured [("x", "a")] [] (.name "x")), ("g", .captured [("y", "b")] [] (.name "y"))] (⟨[], [], [], none, [], none, [("a", 1), ("b", 2)]⟩ : ExecutionState Unit) calls).map capturedCallObservation =\n' +
+      '  (runArgumentCalls [("f", .captured [("x", "c")] [] (.name "x")), ("g", .captured [("y", "d")] [] (.name "y"))] (⟨[], [], [], none, [], none, [("c", 1), ("d", 2)]⟩ : ExecutionState Unit) calls).map capturedCallObservation := by\n' +
+      '  apply two_distinct_captured_argument_calls_observations [("x", "a")] [("x", "c")] [("y", "b")] [("y", "d")] <;> try decide\n' +
+      '  exact .cons "f" (.first _ _) (.cons "g" (.second _ _) .nil)\n#print axioms renamed_capture_observations\n' +
       'example : relatedCapturedEnvironments [("a", 0)] [("b", 0), ("c", 0)] [("x", "a"), ("y", "a")] [("x", "b"), ("y", "c")] := by decide\n' +
       'example : capturedStatesRelated [("x", "a"), ("y", "a")] [("x", "b"), ("y", "c")] (⟨[], [], [], none, [], none, [("a", 0)]⟩ : ExecutionState Unit) (⟨[], [], [], none, [], none, [("b", 0), ("c", 0)]⟩ : ExecutionState Unit) := by decide\n' +
       'example : (storeCapturedFrame [("a", 0)] [("x", "a"), ("y", "a")] [("x", 1), ("y", 0)]).isSome = false := by decide\n' +
@@ -55,6 +64,15 @@ if (shard === 0) {
       'example : PairedCapturedTables [("x", "a")] [("x", "b")] [("x", "c")] [("x", "d")] [("f", .captured [("x", "a")] ["n"] (.name "n")), ("g", .captured [("x", "c")] [] (.name "x"))] [("f", .captured [("x", "b")] ["n"] (.name "n")), ("g", .captured [("x", "d")] [] (.name "x"))] := by exact .cons "f" (.first _ _) (.cons "g" (.second _ _) .nil)\n',
   });
   assert.equal(modelCheck.status, 0, modelCheck.stdout + modelCheck.stderr);
+  assert.match(modelCheck.stdout, /'renamed_capture_observations' does not depend on any axioms/);
+  for (const theorem of [
+    "capture_matching_transfer",
+    "distinct_writeback_transfer",
+    "distinct_writebacks_agree",
+    "two_distinct_captured_call_sequence_simulates",
+    "decideCaptureKeysUnique",
+  ])
+    assert.match(modelCheck.stdout, new RegExp(`'${theorem}' does not depend on any axioms`));
   assert.match(modelCheck.stdout, /'runExecution_relation_preserved' does not depend on any axioms/);
   assert.match(modelCheck.stdout, /'executeCaptured_success' does not depend on any axioms/);
   assert.match(modelCheck.stdout, /'captured_paired_step_preserved' does not depend on any axioms/);
@@ -766,7 +784,19 @@ export { first, second };
   assert.match(independentReplay.stdout, /'binding_future_calls' does not depend on any axioms/);
   assert.match(independentReplay.stdout, /'binding_two_captured_calls' does not depend on any axioms/);
   assert.match(independentReplay.stdout, /'binding_two_captured_calls_simulate' does not depend on any axioms/);
+  assert.match(
+    independentReplay.stdout,
+    /'binding_two_captured_calls_complete_together' does not depend on any axioms/
+  );
+  assert.doesNotMatch(
+    independentProof.certificate.match(
+      /theorem binding_two_captured_calls_simulate[\s\S]*?#print axioms binding_two_captured_calls_simulate/
+    )[0],
+    /\(writebacks\s*:/
+  );
   assert.match(independentReplay.stdout, /'binding_exported_captured_calls' does not depend on any axioms/);
+  assert.match(independentReplay.stdout, /'binding_exported_captured_calls_simulate' does not depend on any axioms/);
+  assert.match(independentReplay.stdout, /'binding_captured_observations' does not depend on any axioms/);
   await writeFile(
     source,
     `let seed = 1;
@@ -1207,7 +1237,11 @@ function short(x) { if (x === 0 || maybe(x) >= maybe(0)) return 3; return 4; }
 function invert(x) { if (!x) return 8; return 2; }
 function conjunction(x) { if (x && maybe(1)) return 1; return 2; }
 function difference(x, y) { let value = x + 5; value -= y; value--; return value - 1; }
-export { select, short, invert, conjunction, difference };
+function greater(x, y) { if (x > y) return 7; return 6; }
+function atMost(x, y) { if (x <= y) return 5; return 4; }
+function other(value) { if (value) throw 8; return value; }
+function order(x) { if (maybe(x) > other(x)) return 1; return 0; }
+export { select, short, invert, conjunction, difference, greater, atMost, order };
 `
   );
   await writeFile(
@@ -1217,7 +1251,7 @@ export { select, short, invert, conjunction, difference };
       entry: "entry.mjs",
       modules: {
         "state.mjs": { imports: [], statements: [0] },
-        "logic.mjs": { imports: ["state.mjs"], statements: [1, 2, 3, 4, 5] },
+        "logic.mjs": { imports: ["state.mjs"], statements: [1, 2, 3, 4, 5, 6, 7, 8, 9] },
         "entry.mjs": { imports: ["logic.mjs"], statements: [] },
       },
     })
@@ -1234,6 +1268,10 @@ export { select, short, invert, conjunction, difference };
     { name: "difference", args: [4, 3] },
     { name: "invert", args: [0] },
     { name: "invert", args: [2] },
+    { name: "greater", args: [3, 2] },
+    { name: "greater", args: [2, 2] },
+    { name: "atMost", args: [2, 2] },
+    { name: "atMost", args: [3, 2] },
     { name: "short", args: [0] },
     { name: "short", args: [1] },
   ];
@@ -1247,9 +1285,13 @@ export { select, short, invert, conjunction, difference };
     { value: 4 },
     { value: 8 },
     { value: 2 },
+    { value: 7 },
+    { value: 6 },
+    { value: 5 },
+    { value: 4 },
     { value: 3 },
   ]);
-  assert.deepEqual(trace.error, { name: null, phase: "call", index: 9, thrown: { kind: "number", value: 7 } });
+  assert.deepEqual(trace.error, { name: null, phase: "call", index: 13, thrown: { kind: "number", value: 7 } });
   assert.deepEqual(execute(join(out, "entry.mjs"), calls), trace);
   const conjunctionCalls = [
     { name: "conjunction", args: [0] },
@@ -1264,6 +1306,10 @@ export { select, short, invert, conjunction, difference };
     thrown: { kind: "number", value: 7 },
   });
   assert.deepEqual(execute(join(out, "entry.mjs"), conjunctionCalls), conjunctionTrace);
+  const orderCalls = [{ name: "order", args: [1] }];
+  const orderTrace = execute(source, orderCalls);
+  assert.deepEqual(orderTrace.error, { name: null, phase: "call", index: 0, thrown: { kind: "number", value: 7 } });
+  assert.deepEqual(execute(join(out, "entry.mjs"), orderCalls), orderTrace);
   const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
     encoding: "utf8",
     input:

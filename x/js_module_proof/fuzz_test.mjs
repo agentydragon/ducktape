@@ -7,7 +7,7 @@ if (process.env.ACORN_RLOCATION)
   process.env.JS_MODULE_PROOF_ACORN = resolve(process.env.TEST_SRCDIR, process.env.ACORN_RLOCATION);
 process.env.JS_MODULE_PROOF_LEAN = resolve(process.env.TEST_SRCDIR, process.env.LEAN_RLOCATION);
 if (process.env.TEST_SHARD_STATUS_FILE) await writeFile(process.env.TEST_SHARD_STATUS_FILE, "");
-const { execute, makeCase, minimizeCase, runFuzz } = await import("./fuzz.mjs");
+const { execute, independentSplit, makeCase, makeComposedCase, minimizeCase, runFuzz } = await import("./fuzz.mjs");
 const shard = Number(process.env.TEST_SHARD_INDEX ?? 0);
 const shards = Number(process.env.TEST_TOTAL_SHARDS ?? 1);
 assert.deepEqual(makeCase(123, 42), makeCase(123, 42));
@@ -94,7 +94,48 @@ assert.deepEqual(execute(timeout, [], { timeoutMs: 250 }), { inconclusive: "time
 const result = await runFuzz({ seed: 123, cases: 16, outputDir: process.env.TEST_TMPDIR, shard, shards });
 console.log(JSON.stringify(result));
 assert.equal(result.cases, 16 / shards);
+assert.equal(result.astNodeCases.Program, result.cases);
+assert.equal(
+  Object.values(result.moduleCountCases).reduce((a, b) => a + b, 0),
+  result.cases
+);
+assert.equal(
+  Object.values(result.importCountCases).reduce((a, b) => a + b, 0),
+  result.cases
+);
 if (shards === 4 && shard === 0) {
+  const original = makeCase(123, 2);
+  const independent = independentSplit(original, 123, 2);
+  assert.deepEqual(independent, independentSplit(original, 123, 2));
+  assert.equal(independent.source, original.source);
+  assert.deepEqual(
+    Object.values(independent.spec.modules)
+      .flatMap((module) => module.statements)
+      .sort((a, b) => a - b),
+    original.ast.body.filter((node) => node.type !== "ExportNamedDeclaration").map((_, i) => i)
+  );
+  const campaign = await runFuzz({
+    seed: 123,
+    cases: 32,
+    outputDir: process.env.TEST_TMPDIR,
+    splitMode: "independent",
+    validateEvery: 16,
+  });
+  assert.equal(campaign.generated + campaign.independentRefused, campaign.cases);
+  assert.equal(campaign.splitMode, "independent");
+  assert.deepEqual(campaign.independentRequested, { acyclic: 24, cyclic: 4, invalidAssignment: 4 });
+  assert.deepEqual(makeComposedCase(1, 2), makeComposedCase(1, 2));
+  const composed = await runFuzz({
+    seed: 7,
+    cases: 16,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "composed",
+    validateEvery: 4,
+  });
+  assert.equal(composed.compared, 16);
+  assert.equal(composed.equal, 16);
+  assert.ok(composed.proved > 0);
+  assert.ok(composed.astNodeCases.IfStatement > 0);
   const generatedExpressions = Array.from({ length: 128 }, (_, i) => makeCase(123, 12 + 32 * i));
   assert.deepEqual(new Set(generatedExpressions.map((item) => item.expressionDepth)), new Set([0, 1, 2]));
   assert.deepEqual(
@@ -131,6 +172,11 @@ if (shards === 4 && shard === 0) {
   const greaterEqual = await runFuzz({ seed: 123, start: 172, cases: 1, outputDir: process.env.TEST_TMPDIR });
   assert.equal(greaterEqual.parameterCompared, 1);
   assert.equal(greaterEqual.parameterProved, 1);
+  for (const index of [236, 300]) {
+    const comparison = await runFuzz({ seed: 123, start: index, cases: 1, outputDir: process.env.TEST_TMPDIR });
+    assert.equal(comparison.parameterCompared, 1);
+    assert.equal(comparison.parameterProved, 1);
+  }
   const captured = await runFuzz({ seed: 123, start: 28, cases: 1, outputDir: process.env.TEST_TMPDIR });
   assert.equal(captured.capturedCompared, 1);
   assert.equal(captured.capturedProved, 1);
@@ -195,6 +241,8 @@ const bulk = await runFuzz({
   validateEvery: bulkValidateEvery,
 });
 assert.equal(bulk.cases, bulkCases / shards);
+assert.equal(bulk.astNodeCases.Program, bulk.cases);
+assert.ok(bulk.astNodeCases.FunctionDeclaration > 0);
 assert.equal(bulk.generated, bulk.compared + bulk.inconclusive);
 assert.equal(bulk.refused, bulk.unsupportedCaseRefused + bulk.invalidAssignmentCaseRefused);
 if (shards === 4 && shard === 0) {
@@ -225,6 +273,21 @@ console.log(JSON.stringify(bulk));
 
 // Run structural sampling after the Lean-backed cases to limit peak memory.
 const parse = createRequire(import.meta.url)(process.env.JS_MODULE_PROOF_ACORN ?? "acorn").parse;
+const composedPrograms = Array.from({ length: 128 }, (_, i) => makeComposedCase(917, i));
+assert.ok(new Set(composedPrograms.map((item) => item.source)).size > 120);
+for (const item of composedPrograms) {
+  assert.deepEqual(
+    parse(item.source, { ecmaVersion: "latest", sourceType: "module" }).body.map((node) => node.type),
+    item.ast.body.map((node) => node.type)
+  );
+}
+for (const [index, item] of composedPrograms.slice(0, 16).entries()) {
+  const path = join(process.env.TEST_TMPDIR, `composed-${shard}-${index}.mjs`);
+  await writeFile(path, item.source);
+  const observed = execute(path, item.calls);
+  assert.equal(observed.error, null, item.source);
+  assert.ok(observed.results.every((result) => Number.isSafeInteger(result.value)));
+}
 const closures = Array.from({ length: 128 }, (_, i) => makeCase(917, 4 * i + 3)).filter((c) => c.grammar === "closure");
 assert.deepEqual(makeCase(917, 15), makeCase(917, 15));
 assert.equal(new Set(closures.map((c) => c.depth)).size, 4);

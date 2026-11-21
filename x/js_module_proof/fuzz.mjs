@@ -477,11 +477,15 @@ function parameterCase(seed, index) {
                 type: "LogicalExpression",
                 operator: "&&",
                 left:
-                  Math.floor(index / 64) % 3 === 0
+                  Math.floor(index / 64) % 5 === 0
                     ? { type: "BinaryExpression", operator: "<", left: literal(0), right: id("y") }
-                    : Math.floor(index / 64) % 3 === 1
+                    : Math.floor(index / 64) % 5 === 1
                       ? { type: "BinaryExpression", operator: "!==", left: id("y"), right: literal(0) }
-                      : { type: "BinaryExpression", operator: ">=", left: id("y"), right: literal(1) },
+                      : Math.floor(index / 64) % 5 === 2
+                        ? { type: "BinaryExpression", operator: ">=", left: id("y"), right: literal(1) }
+                        : Math.floor(index / 64) % 5 === 3
+                          ? { type: "BinaryExpression", operator: ">", left: id("y"), right: literal(0) }
+                          : { type: "BinaryExpression", operator: "<=", left: literal(1), right: id("y") },
                 right: literal(true),
               }
             : id("y"),
@@ -806,6 +810,115 @@ export function makeCase(seed, index) {
   };
 }
 
+// Assign an already-generated program independently of its grammar or its
+// original placement. Imports are chosen separately, so both valid and invalid
+// linking arrangements are useful inputs to the real splitter.
+export function independentSplit(input, seed, index) {
+  const rand = random(seed ^ 0x51f17, index);
+  const count = 1 + rand(4);
+  const names = Array.from({ length: count }, (_, i) => `independent${i}.mjs`);
+  const entry = "entry.mjs";
+  const modules = Object.fromEntries([...names, entry].map((name) => [name, { imports: [], statements: [] }]));
+  const owners = [...names, entry];
+  const statements = input.ast.body.filter((node) => node.type !== "ExportNamedDeclaration");
+  statements.forEach((_, i) => modules[owners[rand(owners.length)]].statements.push(i));
+  modules[entry].imports = shuffle(names, rand);
+  for (let i = 1; i < names.length; i++)
+    for (let j = 0; j < i; j++) if (rand(2)) modules[names[i]].imports.push(names[j]);
+  const cyclic = index % 8 === 1;
+  const invalidAssignment = index % 8 === 0 && statements.length > 0;
+  if (cyclic) modules[names[0]].imports.push(entry);
+  if (invalidAssignment) modules[entry].statements.push(0);
+  return { ...input, spec: { kind: "bindings", entry, modules }, independentSplit: true, cyclic, invalidAssignment };
+}
+
+// Composes bounded expressions and statement sequences using names visible at
+// each point. The program is generated before any optional repartitioning.
+export function makeComposedCase(seed, index) {
+  const rand = random(seed ^ 0xc04f053, index);
+  const scope = new Scope();
+  scope.declare("parameter");
+  scope.declare("global");
+  let nextLocal = 0;
+  const expression = (visible, depth, forbidden = null) => {
+    if (depth === 0 || rand(3) === 0) {
+      const names = visible.visible().filter((name) => name !== forbidden);
+      if (!names.length) return literal(rand(4));
+      return rand(3) ? id(names[rand(names.length)]) : literal(rand(4));
+    }
+    return {
+      type: "BinaryExpression",
+      operator: "+",
+      left: expression(visible, depth - 1, forbidden),
+      right: expression(visible, depth - 1, forbidden),
+    };
+  };
+  const sequence = (visible, depth) => {
+    const body = [];
+    const count = 1 + rand(3);
+    for (let i = 0; i < count; i++) {
+      const candidates = visible.parent?.visible().filter((name) => !visible.names.has(name)) ?? [];
+      const name =
+        i === 0 && candidates.length && rand(4) === 0 ? candidates[rand(candidates.length)] : `local${nextLocal++}`;
+      // A shadowing declaration's own binding is in the TDZ during its initializer.
+      const decl = declaration(name, expression(visible, 2, name));
+      const mutable = rand(2) === 0;
+      decl.kind = mutable ? "let" : "const";
+      body.push(decl);
+      visible.declare(name);
+      if (mutable && rand(2))
+        body.push(
+          expr({ type: "AssignmentExpression", operator: "+=", left: id(name), right: expression(visible, 1) })
+        );
+    }
+    if (depth && rand(2)) {
+      const operators = ["<", "<=", ">", ">=", "===", "!=="];
+      body.push({
+        type: "IfStatement",
+        test: {
+          type: "BinaryExpression",
+          operator: operators[rand(operators.length)],
+          left: expression(visible, 1),
+          right: expression(visible, 1),
+        },
+        consequent: { type: "BlockStatement", body: sequence(new Scope(visible), depth - 1) },
+        alternate: { type: "BlockStatement", body: sequence(new Scope(visible), depth - 1) },
+      });
+    } else body.push(returnNode(expression(visible, 2)));
+    return body;
+  };
+  const ast = {
+    type: "Program",
+    sourceType: "module",
+    body: [
+      variable("global", rand(4)),
+      functionNode("calculate", ["parameter"], sequence(scope, 2)),
+      {
+        type: "ExportNamedDeclaration",
+        specifiers: [{ type: "ExportSpecifier", local: id("calculate"), exported: id("calculate") }],
+      },
+    ],
+  };
+  return {
+    ast,
+    source: print(ast),
+    grammar: "composed",
+    unsupported: false,
+    cyclic: false,
+    invalidAssignment: false,
+    spec: {
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0] },
+        "logic.mjs": { imports: ["state.mjs"], statements: [1] },
+        "entry.mjs": { imports: ["logic.mjs"], statements: [] },
+      },
+    },
+    calls: Array.from({ length: 1 + rand(4) }, () => ({ name: "calculate", args: [rand(5)] })),
+  };
+}
+
 export function execute(path, calls, { timeoutMs = 10000 } = {}) {
   const code = `
 const events=[];
@@ -992,7 +1105,19 @@ async function minimizeProvedDifference(input, root) {
 
 // Every generated case is reproducible independently from seed and index.
 // Results and all emitted modules are retained on an invariant failure.
-export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery = 1, shard = 0, shards = 1 }) {
+export async function runFuzz({
+  seed,
+  start = 0,
+  cases,
+  outputDir,
+  validateEvery = 1,
+  shard = 0,
+  shards = 1,
+  splitMode = "pattern",
+  grammarMode = "pattern",
+}) {
+  if (!["pattern", "independent"].includes(splitMode)) throw new Error("unknown split mode");
+  if (!["pattern", "composed"].includes(grammarMode)) throw new Error("unknown grammar mode");
   if (!Number.isSafeInteger(shards) || shards < 1 || !Number.isSafeInteger(shard) || shard < 0 || shard >= shards)
     throw new Error("shard must be an integer between 0 and shards - 1");
   await mkdir(outputDir, { recursive: true });
@@ -1002,6 +1127,16 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
     shard,
     shards,
     cases: 0,
+    splitMode,
+    grammarMode,
+    independentRefused: 0,
+    independentRequested: { acyclic: 0, cyclic: 0, invalidAssignment: 0 },
+    independentRefusedByCategory: { acyclic: 0, cyclic: 0, invalidAssignment: 0 },
+    // Count cases containing each construct, rather than occurrences: a deeply
+    // nested case should not hide a grammar production that rarely appears.
+    astNodeCases: {},
+    moduleCountCases: {},
+    importCountCases: {},
     constantCases: 0,
     objectCases: 0,
     objectSourceExecuted: 0,
@@ -1069,7 +1204,25 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
     let keep = true;
     let phase = "generate-ast";
     try {
-      const input = makeCase(seed, index);
+      const generated = grammarMode === "composed" ? makeComposedCase(seed, index) : makeCase(seed, index);
+      const input = splitMode === "independent" ? independentSplit(generated, seed, index) : generated;
+      const independentCategory = input.invalidAssignment ? "invalidAssignment" : input.cyclic ? "cyclic" : "acyclic";
+      if (input.independentSplit) summary.independentRequested[independentCategory]++;
+      const nodeTypes = new Set();
+      const visit = (value) => {
+        if (!value || typeof value !== "object") return;
+        if (typeof value.type === "string") nodeTypes.add(value.type);
+        for (const child of Object.values(value)) {
+          if (Array.isArray(child)) child.forEach(visit);
+          else visit(child);
+        }
+      };
+      visit(input.ast);
+      for (const type of nodeTypes) summary.astNodeCases[type] = (summary.astNodeCases[type] ?? 0) + 1;
+      const modules = Object.values(input.spec.modules);
+      const importCount = modules.reduce((count, module) => count + module.imports.length, 0);
+      summary.moduleCountCases[modules.length] = (summary.moduleCountCases[modules.length] ?? 0) + 1;
+      summary.importCountCases[importCount] = (summary.importCountCases[importCount] ?? 0) + 1;
       phase = "write-input";
       await writeFile(source, input.source);
       await writeFile(spec, JSON.stringify(input.spec, null, 2) + "\n");
@@ -1084,7 +1237,10 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
             unsupported: input.unsupported,
             invalidAssignment: input.invalidAssignment,
             cyclic: input.cyclic,
-            plannedMutation: index % 8 === 2,
+            plannedMutation: input.grammar !== "composed" && !input.independentSplit && index % 8 === 2,
+            splitMode,
+            grammarMode,
+            ...(input.independentSplit ? { splitCategory: independentCategory } : {}),
             nodeVersion: process.version,
           },
           null,
@@ -1166,11 +1322,14 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
       } catch (error) {
         if (!String(error).includes("unknown:")) throw error;
         summary.refused++;
-        if (input.invalidAssignment) summary.invalidAssignmentCaseRefused++;
+        if (input.independentSplit) {
+          summary.independentRefused++;
+          summary.independentRefusedByCategory[independentCategory]++;
+        } else if (input.invalidAssignment) summary.invalidAssignmentCaseRefused++;
         else if (input.unsupported) summary.unsupportedCaseRefused++;
         if (input.grammar === "closure") summary.closureRefused++;
         if (input.grammar === "object") summary.objectRefused++;
-        if (!input.unsupported && !input.invalidAssignment)
+        if (!input.independentSplit && !input.unsupported && !input.invalidAssignment)
           throw new Error(`supported generated case was refused: ${error}`);
         keep = false;
         continue;
@@ -1178,7 +1337,7 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
       if (input.invalidAssignment) throw new Error("invalid assignment unexpectedly accepted");
       summary.generated++;
       if (input.grammar === "closure") summary.closureGenerated++;
-      const mutated = index % 8 === 2;
+      const mutated = input.grammar !== "composed" && !input.independentSplit && index % 8 === 2;
       if (mutated) {
         phase = "output-mutation";
         const file = join(out, input.cell0Owner);
@@ -1222,7 +1381,8 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
       if (input.grammar === "object") summary.objectCompared++;
       if (input.grammar === "captured") {
         summary.capturedCompared++;
-        if (equal === input.expectUnsafe) throw new Error("captured split differed from intended Node behavior");
+        if (!input.independentSplit && equal === input.expectUnsafe)
+          throw new Error("captured split differed from intended Node behavior");
       }
       if (input.grammar === "closure") summary.closureCompared++;
       if (input.grammar === "modeledClosure") {
@@ -1230,7 +1390,10 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
         if (before.results[0]?.value !== 1 || !(before.results[1]?.value > 1))
           throw new Error("generated closure branch did not execute both outcomes");
         summary.modeledClosureBranches++;
-        if (equal === input.expectUnsafe || (!input.expectThrow && (before.error || after.error)))
+        if (
+          !input.independentSplit &&
+          (equal === input.expectUnsafe || (!input.expectThrow && (before.error || after.error)))
+        )
           throw new Error("closure split differed from its intended Node behavior");
         if (input.expectThrow) {
           if (
@@ -1256,13 +1419,13 @@ export async function runFuzz({ seed, start = 0, cases, outputDir, validateEvery
         const verdicts = mutated ? summary.mutatedVerdicts : summary.unmodifiedVerdicts;
         if (Object.hasOwn(verdicts, verdictKey)) verdicts[verdictKey]++;
         await writeFile(join(root, "verdict.json"), JSON.stringify(verdict, null, 2) + "\n");
-        if (input.grammar === "captured") {
+        if (input.grammar === "captured" && !input.independentSplit) {
           const expected = input.expectUnsafe ? "unsafe" : "proved under assumptions";
           if (verdict.result !== expected)
             throw new Error(`captured validation expected ${expected}, got ${verdict.result}: ${verdict.reason ?? ""}`);
           if (input.expectUnsafe) summary.capturedUnsafe++;
         }
-        if (input.grammar === "modeledClosure") {
+        if (input.grammar === "modeledClosure" && !input.independentSplit) {
           const expected = input.expectUnsafe ? "unsafe" : "proved under assumptions";
           if (verdict.result !== expected)
             throw new Error(`closure validation expected ${expected}, got ${verdict.result}: ${verdict.reason ?? ""}`);
@@ -1333,7 +1496,17 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.
     if (
       Object.keys(opts).some(
         (key) =>
-          !["--seed", "--start", "--cases", "--output-dir", "--validate-every", "--shard", "--shards"].includes(key)
+          ![
+            "--seed",
+            "--start",
+            "--cases",
+            "--output-dir",
+            "--validate-every",
+            "--shard",
+            "--shards",
+            "--splits",
+            "--grammar",
+          ].includes(key)
       )
     )
       throw new Error("unknown option");
@@ -1356,11 +1529,21 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.
       !opts["--output-dir"]
     )
       throw new Error(
-        "usage: fuzz.mjs --output-dir DIR [--seed UINT32] [--start N] [--cases N] [--validate-every N] [--shard N --shards N]"
+        "usage: fuzz.mjs --output-dir DIR [--seed UINT32] [--start N] [--cases N] [--validate-every N] [--shard N --shards N] [--splits pattern|independent] [--grammar pattern|composed]"
       );
     console.log(
       JSON.stringify(
-        await runFuzz({ seed, start, cases, validateEvery, shard, shards, outputDir: resolve(opts["--output-dir"]) }),
+        await runFuzz({
+          seed,
+          start,
+          cases,
+          validateEvery,
+          shard,
+          shards,
+          splitMode: opts["--splits"] ?? "pattern",
+          grammarMode: opts["--grammar"] ?? "pattern",
+          outputDir: resolve(opts["--output-dir"]),
+        }),
         null,
         2
       )

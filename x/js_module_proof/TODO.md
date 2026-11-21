@@ -17,6 +17,10 @@ varies inputs and module assignments for these cases.
 The generator also runs object, array, property-access and alias-mutation
 cases in Node and reports when splitting is refused. The following broader
 generator and syntax work remains open.
+An opt-in compositional generator now builds numeric expressions, nested
+branches, declarations and local mutations from visible scopes; independent
+split mode also samples acyclic graphs, cycles and invalid assignments. These
+cover only part of the grammar and split space described below.
 
 - [ ] Replace the fixed collection of supported statement shapes and injected
       unsupported nodes with a compositional, scope-aware ESTree generator. Track

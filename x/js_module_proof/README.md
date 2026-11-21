@@ -108,7 +108,7 @@ recursive calls remain unsupported. Function bodies may introduce initialized lo
 or `const` bindings, mutate local `let` bindings and parameters using `=`, `+=`,
 `-=`, `*=`, `++` or `--`, and use `if`/`else` when both branches end in a supported return
 or throw. A no-`else` `if` may return or throw early before the remaining
-statements. Conditions may use numeric `===`, `!==`, `<` and `>=`, boolean literals, `!`,
+statements. Conditions may use numeric `===`, `!==`, `<`, `<=`, `>` and `>=`, boolean literals, `!`,
 `&&`, and `||`, including short-circuiting calls. Comparison and logical
 results are supported only as conditions, not as returned boolean values.
 Guards conservatively reject references to lexical declarations later in the same
@@ -180,12 +180,15 @@ run from one successful run if writebacks agree for every related state. Equal
 loaded values alone do not establish that condition: different alias patterns
 can make checked writeback succeed on only one side. An axiom-free writeback
 lemma now proves that, for related loaded environments with distinct captured
-keys, a matching lexical frame can be written back on both sides. The certificate still assumes general
-writeback agreement; proving the necessary conditions for all reachable frames
-is future work. The acceptance proof still requires
-equal initialized states and callable tables,
-uses the factory-specific representation, and does not yet prove preservation
-under arbitrary allocation renaming. A safe
+keys, successful writeback on either side implies successful writeback on the
+other. The generated two-closure simulation certificate checks distinct keys
+and derives writeback agreement for all related states without assuming it.
+For two direct captured exports, the validator can use the relation itself for
+acceptance: it checks the callable tables, distinct and disjoint cells, and
+related initialized states, then proves equal observations for any finite call
+sequence. Other cases still require equal initialized states and callable tables.
+The frontend uses a factory-specific representation; arbitrary closures and
+alias patterns are not yet covered by the relational acceptance proof. A safe
 result proves equal modeled initialization and matching return values and
 state for any finite sequence of subsequent calls. Function return values are
 modeled separately from host-recorded events; ignored top-level call results
@@ -238,6 +241,15 @@ separates refusals of cases designated with invalid assignments from refusals on
 broader-syntax cases, and records validator verdicts for mutated and unmodified
 output independently. A broader-syntax case can also have an invalid split, so
 its refusal does not by itself identify the cause.
+The summary counts cases containing each ESTree node type and groups cases by
+module and import counts, including cases that are later refused.
+Use `--splits independent` to repartition generated statements independently of
+their grammar and sample acyclic graphs, cycles, and deliberately duplicated
+statement assignments. The summary records requested categories and refusals;
+an acyclic graph can still have missing dependencies or other invalid links.
+Use `--grammar composed` to generate bounded expression trees and nested
+returning branches from visible lexical names. It can be combined with either
+split mode; it currently covers only a subset of the planned grammar.
 
 ```sh
 nix develop .#js-module-proof

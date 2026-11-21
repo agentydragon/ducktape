@@ -193,17 +193,17 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
     check(--budget.remaining >= 0, "expression expansion limit exceeded");
     if (node?.type === "Literal" && typeof node.value === "boolean")
       return { kind: "literal", value: node.value ? 1 : 0 };
-    if (node?.type === "BinaryExpression" && ["===", "<"].includes(node.operator))
+    if (node?.type === "BinaryExpression" && ["===", "<", ">"].includes(node.operator))
       return {
-        kind: node.operator === "===" ? "equal" : "less",
+        kind: node.operator === "===" ? "equal" : node.operator === "<" ? "less" : "greater",
         left: expression(node.left),
         right: expression(node.right),
       };
-    if (node?.type === "BinaryExpression" && ["!==", ">="].includes(node.operator))
+    if (node?.type === "BinaryExpression" && ["!==", ">=", "<="].includes(node.operator))
       return {
         kind: "conditional",
         test: {
-          kind: node.operator === "!==" ? "equal" : "less",
+          kind: node.operator === "!==" ? "equal" : node.operator === ">=" ? "less" : "greater",
           left: expression(node.left),
           right: expression(node.right),
         },
@@ -322,6 +322,7 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
       case "subtract":
       case "equal":
       case "less":
+      case "greater":
         return [...free(item.left, bound), ...free(item.right, bound)];
       case "conditional":
       case "guard":
@@ -823,6 +824,7 @@ function leanExpression(expression) {
     case "subtract":
     case "equal":
     case "less":
+    case "greater":
       return `.${expression.kind} (${leanExpression(expression.left)}) (${leanExpression(expression.right)})`;
     case "conditional":
     case "guard":
@@ -974,6 +976,9 @@ def binding_source_state := (sourceBindingState bindingSource).getD (⟨[], [], 
 def binding_output_state := (outputBindingState bindingSource bindingModules bindingEntry).getD (⟨[], [], [], none, [], none, []⟩ : ExecutionState Unit)
 def binding_source_table := (publicCallableTable bindingSource bindingExports).getD []
 def binding_output_table := (publicCallableTable (outputDefinitions bindingModules) bindingExports).getD []
+theorem binding_captured_tables_present :
+    (publicCallableTable bindingSource bindingExports).isSome = true ∧
+    (publicCallableTable (outputDefinitions bindingModules) bindingExports).isSome = true := by decide
 theorem binding_captured_environments_present :
     (publicCapturedEnvironment bindingSource ${str(directCapturedExports[0])}).isSome = true ∧
     (publicCapturedEnvironment bindingSource ${str(directCapturedExports[1])}).isSome = true ∧
@@ -981,6 +986,10 @@ theorem binding_captured_environments_present :
     (publicCapturedEnvironment (outputDefinitions bindingModules) ${str(directCapturedExports[1])}).isSome = true := by decide
 theorem binding_source_captures_disjoint : capturesDisjoint binding_source_first binding_source_second := by decide
 theorem binding_output_captures_disjoint : capturesDisjoint binding_output_first binding_output_second := by decide
+theorem binding_source_first_unique : CaptureKeysUnique binding_source_first := by decide
+theorem binding_source_second_unique : CaptureKeysUnique binding_source_second := by decide
+theorem binding_output_first_unique : CaptureKeysUnique binding_output_first := by decide
+theorem binding_output_second_unique : CaptureKeysUnique binding_output_second := by decide
 theorem binding_captured_initial_related : twoCapturedStatesRelated binding_source_first binding_output_first
     binding_source_second binding_output_second binding_source_state binding_output_state := by decide
 theorem binding_two_captured_calls (leftOps rightOps : List Operation)
@@ -997,19 +1006,25 @@ theorem binding_two_captured_calls (leftOps rightOps : List Operation)
 theorem binding_two_captured_calls_simulate (leftOps rightOps : List Operation)
     (operations : RelatedOperations (PairedTwoCapturedOperation binding_source_first binding_output_first
       binding_source_second binding_output_second) leftOps rightOps)
-    (writebacks : ∀ left right : ExecutionState Unit,
-      twoCapturedStatesRelated binding_source_first binding_output_first binding_source_second binding_output_second left right →
-      capturedWritebacksAgree left.captured right.captured binding_source_first binding_output_first ∧
-      capturedWritebacksAgree left.captured right.captured binding_source_second binding_output_second)
     (leftFinal : ExecutionState Unit)
     (leftRun : runExecution binding_source_state leftOps = some leftFinal) :
     ∃ rightFinal, runExecution binding_output_state rightOps = some rightFinal ∧
       twoCapturedStatesRelated binding_source_first binding_output_first binding_source_second binding_output_second
         leftFinal rightFinal := by
-  exact two_captured_call_sequence_simulates binding_source_first binding_output_first binding_source_second binding_output_second
-    binding_source_captures_disjoint binding_output_captures_disjoint writebacks leftOps rightOps operations
+  exact two_distinct_captured_call_sequence_simulates binding_source_first binding_output_first binding_source_second binding_output_second
+    binding_source_captures_disjoint binding_output_captures_disjoint binding_source_first_unique binding_output_first_unique
+    binding_source_second_unique binding_output_second_unique leftOps rightOps operations
     binding_source_state binding_output_state leftFinal binding_captured_initial_related leftRun
 #print axioms binding_two_captured_calls_simulate
+theorem binding_two_captured_calls_complete_together (leftOps rightOps : List Operation)
+    (operations : RelatedOperations (PairedTwoCapturedOperation binding_source_first binding_output_first
+      binding_source_second binding_output_second) leftOps rightOps) :
+    (runExecution binding_source_state leftOps).isSome = (runExecution binding_output_state rightOps).isSome := by
+  exact two_distinct_captured_runs_complete_together binding_source_first binding_output_first
+    binding_source_second binding_output_second binding_source_captures_disjoint binding_output_captures_disjoint
+    binding_source_first_unique binding_output_first_unique binding_source_second_unique binding_output_second_unique
+    leftOps rightOps operations binding_source_state binding_output_state binding_captured_initial_related
+#print axioms binding_two_captured_calls_complete_together
 theorem binding_captured_tables_paired : PairedCapturedTables binding_source_first binding_output_first
     binding_source_second binding_output_second binding_source_table binding_output_table := by
   apply PairedCapturedTables.cons
@@ -1028,8 +1043,30 @@ theorem binding_exported_captured_calls (calls : List (String × List Nat))
     (paired_captured_table_call binding_source_first binding_output_first binding_source_second binding_output_second
       binding_source_table binding_output_table binding_captured_tables_paired) calls
     binding_source_state binding_output_state leftFinal rightFinal binding_captured_initial_related leftRun rightRun
+theorem binding_exported_captured_calls_simulate (calls : List (String × List Nat))
+    (leftFinal : ExecutionState Unit)
+    (leftRun : runArgumentCalls binding_source_table binding_source_state calls = some leftFinal) :
+    ∃ rightFinal, runArgumentCalls binding_output_table binding_output_state calls = some rightFinal ∧
+      twoCapturedStatesRelated binding_source_first binding_output_first binding_source_second binding_output_second
+        leftFinal rightFinal := by
+  exact two_distinct_captured_argument_calls_simulate binding_source_first binding_output_first
+    binding_source_second binding_output_second binding_source_captures_disjoint binding_output_captures_disjoint
+    binding_source_first_unique binding_output_first_unique binding_source_second_unique binding_output_second_unique
+    binding_source_table binding_output_table binding_captured_tables_paired calls
+    binding_source_state binding_output_state leftFinal binding_captured_initial_related leftRun
+theorem binding_captured_observations (calls : List (String × List Nat)) :
+    (runArgumentCalls binding_source_table binding_source_state calls).map capturedCallObservation =
+    (runArgumentCalls binding_output_table binding_output_state calls).map capturedCallObservation := by
+  exact two_distinct_captured_argument_calls_observations binding_source_first binding_output_first
+    binding_source_second binding_output_second binding_source_captures_disjoint binding_output_captures_disjoint
+    binding_source_first_unique binding_output_first_unique binding_source_second_unique binding_output_second_unique
+    binding_source_table binding_output_table binding_captured_tables_paired calls
+    binding_source_state binding_output_state binding_captured_initial_related
 #print axioms binding_captured_tables_paired
+#print axioms binding_captured_tables_present
+#print axioms binding_captured_observations
 #print axioms binding_exported_captured_calls
+#print axioms binding_exported_captured_calls_simulate
 #print axioms binding_captured_environments_present
 #print axioms binding_source_captures_disjoint
 #print axioms binding_output_captures_disjoint
@@ -1074,7 +1111,7 @@ theorem binding_exported_captured_calls (calls : List (String × List Nat))
       reason: "Lean could not validate the extracted bindings, statements or module graph",
       detail: proof.stdout || proof.stderr,
     };
-  if (
+  const legacyValid =
     proof.status === 0 &&
     [
       "binding_initialization",
@@ -1083,24 +1120,28 @@ theorem binding_exported_captured_calls (calls : List (String × List Nat))
       "binding_future_calls",
       "binding_return_values",
       "binding_throw_values",
-    ].every((name) => has(proof, name))
-  ) {
-    const relationProof = twoCaptured ? runLean(prefix + same + capturedRelation) : null;
-    const relationValid =
-      relationProof?.status === 0 &&
-      [
-        "binding_captured_environments_present",
-        "binding_source_captures_disjoint",
-        "binding_output_captures_disjoint",
-        "binding_captured_initial_related",
-        "binding_two_captured_calls",
-        "binding_two_captured_calls_simulate",
-        "binding_exported_captured_calls",
-        "binding_captured_tables_paired",
-      ].every((name) => has(relationProof, name));
+    ].every((name) => has(proof, name));
+  const relationProof = twoCaptured ? runLean(prefix + capturedRelation) : null;
+  const relationValid =
+    relationProof?.status === 0 &&
+    [
+      "binding_captured_tables_present",
+      "binding_captured_observations",
+      "binding_captured_environments_present",
+      "binding_source_captures_disjoint",
+      "binding_output_captures_disjoint",
+      "binding_captured_initial_related",
+      "binding_two_captured_calls",
+      "binding_two_captured_calls_simulate",
+      "binding_two_captured_calls_complete_together",
+      "binding_exported_captured_calls",
+      "binding_exported_captured_calls_simulate",
+      "binding_captured_tables_paired",
+    ].every((name) => has(relationProof, name));
+  if (legacyValid || relationValid) {
     return {
       result: "proved under assumptions",
-      certificate: prefix + same + (relationValid ? capturedRelation : ""),
+      certificate: prefix + (legacyValid ? same : "") + (relationValid ? capturedRelation : ""),
       assumptions: [
         "The Acorn-to-Lean AST conversion faithfully represents the actual source and output files",
         "The modeled module loading, linking and execution match ECMAScript for the supported syntax",
@@ -1217,7 +1258,7 @@ theorem binding_exported_captured_calls (calls : List (String × List Nat))
     if (expression.kind === "name") return bound;
     if (expression.kind === "add")
       return expressionBound(expression.left, bound) + expressionBound(expression.right, bound);
-    if (expression.kind === "equal" || expression.kind === "less") {
+    if (expression.kind === "equal" || expression.kind === "less" || expression.kind === "greater") {
       const left = expressionBound(expression.left, bound);
       const right = expressionBound(expression.right, bound);
       return [1n, left, right].reduce((a, b) => (a > b ? a : b));

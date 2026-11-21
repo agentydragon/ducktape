@@ -23,6 +23,7 @@ inductive NumericExpr where
   | subtract (left right : NumericExpr)
   | equal (left right : NumericExpr)
   | less (left right : NumericExpr)
+  | greater (left right : NumericExpr)
   | conditional (test consequent alternative : NumericExpr)
   | guard (test consequent continuation : NumericExpr)
   | local (name : String) (mutable : Bool) (initial body : NumericExpr)
@@ -190,6 +191,15 @@ def evaluateExpression (locals globals : List (String × Nat)) : NumericExpr →
       match rightResult.completion with
       | .error value => pure ⟨rightResult.locals, .error value⟩
       | .ok rightValue => pure ⟨rightResult.locals, .ok (if leftValue < rightValue then 1 else 0)⟩
+  | .greater left right => do
+    let leftResult ← evaluateExpression locals globals left
+    match leftResult.completion with
+    | .error value => pure ⟨leftResult.locals, .error value⟩
+    | .ok leftValue =>
+      let rightResult ← evaluateExpression leftResult.locals globals right
+      match rightResult.completion with
+      | .error value => pure ⟨rightResult.locals, .error value⟩
+      | .ok rightValue => pure ⟨rightResult.locals, .ok (if leftValue > rightValue then 1 else 0)⟩
   | .multiply left right => do
     let leftResult ← evaluateExpression locals globals left
     match leftResult.completion with
@@ -275,6 +285,7 @@ def evaluateArguments (locals globals : List (String × Nat)) : NumericExpr → 
   | .subtract _ _ => none
   | .equal _ _ => none
   | .less _ _ => none
+  | .greater _ _ => none
   | .conditional _ _ _ => none
   | .guard _ _ _ => none
   | .local _ _ _ _ => none
@@ -426,6 +437,40 @@ inductive CaptureKeysUnique : List (String × String) → Prop where
   | cons (name key : String) (rest : List (String × String))
       (fresh : ∀ otherName otherKey, (otherName, otherKey) ∈ rest → key ≠ otherKey)
       (tail : CaptureKeysUnique rest) : CaptureKeysUnique ((name, key) :: rest)
+
+def decideCaptureKeysUnique (captures : List (String × String)) : Decidable (CaptureKeysUnique captures) := by
+  cases captures with
+  | nil => exact isTrue .nil
+  | cons head rest =>
+    cases head with
+    | mk name key =>
+      let fresh : Prop := ∀ pair ∈ rest, key ≠ pair.2
+      have freshDecidable : Decidable fresh := inferInstance
+      cases freshDecidable with
+      | isFalse absent =>
+        apply isFalse
+        intro unique
+        cases unique with
+        | cons _ _ _ distinct _ =>
+          apply absent
+          intro pair member
+          exact distinct pair.1 pair.2 member
+      | isTrue present =>
+        cases decideCaptureKeysUnique rest with
+        | isFalse absent =>
+          apply isFalse
+          intro unique
+          cases unique with
+          | cons _ _ _ _ tail => exact absent tail
+        | isTrue tail =>
+          apply isTrue
+          apply CaptureKeysUnique.cons name key rest
+          · intro otherName otherKey member
+            exact present (otherName, otherKey) member
+          · exact tail
+
+instance (captures : List (String × String)) : Decidable (CaptureKeysUnique captures) :=
+  decideCaptureKeysUnique captures
 
 /- The values written back must have exactly the lexical names in the capture
    environment, in the same order. -/
@@ -603,6 +648,80 @@ theorem storeCapturedFrame_origin (store : List (String × Nat)) (captures : Lis
     · cases written
       rfl
     · cases written
+
+/- Loading the same frame fixes the ordered lexical names, regardless of the
+   private allocation keys. A writeback shape on one side therefore applies to
+   the other side as well. -/
+theorem capture_matching_transfer (leftCapture : List (String × String)) (values : List (String × Nat))
+    (matching : CaptureValuesMatch leftCapture values) :
+    ∀ (rightCapture : List (String × String)) (leftStore rightStore : List (String × Nat))
+      (original : List (String × Nat)),
+      loadCaptures leftStore leftCapture = some original →
+      loadCaptures rightStore rightCapture = some original → CaptureValuesMatch rightCapture values := by
+  induction matching with
+  | nil =>
+    intro rightCapture leftStore rightStore original leftLoaded rightLoaded
+    change some [] = some original at leftLoaded
+    cases leftLoaded
+    cases rightCapture with
+    | nil => exact .nil
+    | cons head tail =>
+      cases head with
+      | mk name key =>
+        change (do let value ← lookupBinding rightStore key
+                   let rest ← loadCaptures rightStore tail
+                   pure ((name, value) :: rest)) = some [] at rightLoaded
+        cases h : lookupBinding rightStore key with
+        | none => rw [h] at rightLoaded; cases rightLoaded
+        | some v =>
+          rw [h] at rightLoaded
+          cases t : loadCaptures rightStore tail with
+          | none => rw [t] at rightLoaded; cases rightLoaded
+          | some vs => rw [t] at rightLoaded; cases rightLoaded
+  | cons name key value sameName tail ih =>
+    intro rightCapture leftStore rightStore original leftLoaded rightLoaded
+    cases rightCapture with
+    | nil =>
+      change some [] = some original at rightLoaded
+      cases rightLoaded
+      change (do let v ← lookupBinding leftStore key
+                 let rest ← loadCaptures leftStore _
+                 pure ((name, v) :: rest)) = some [] at leftLoaded
+      cases h : lookupBinding leftStore key with
+      | none => rw [h] at leftLoaded; cases leftLoaded
+      | some v =>
+        rw [h] at leftLoaded
+        cases t : loadCaptures leftStore _ with
+        | none => rw [t] at leftLoaded; cases leftLoaded
+        | some vs => rw [t] at leftLoaded; cases leftLoaded
+    | cons head rest =>
+      cases head with
+      | mk other otherKey =>
+        change (do let v ← lookupBinding leftStore key
+                   let rest ← loadCaptures leftStore _
+                   pure ((name, v) :: rest)) = some original at leftLoaded
+        change (do let v ← lookupBinding rightStore otherKey
+                   let tail ← loadCaptures rightStore rest
+                   pure ((other, v) :: tail)) = some original at rightLoaded
+        cases lv : lookupBinding leftStore key with
+        | none => rw [lv] at leftLoaded; cases leftLoaded
+        | some lvalue =>
+          rw [lv] at leftLoaded
+          cases lt : loadCaptures leftStore _ with
+          | none => rw [lt] at leftLoaded; cases leftLoaded
+          | some ltail =>
+            rw [lt] at leftLoaded
+            cases leftLoaded
+            cases rv : lookupBinding rightStore otherKey with
+            | none => rw [rv] at rightLoaded; cases rightLoaded
+            | some rvalue =>
+              rw [rv] at rightLoaded
+              cases rt : loadCaptures rightStore rest with
+              | none => rw [rt] at rightLoaded; cases rightLoaded
+              | some rtail =>
+                rw [rt] at rightLoaded
+                cases rightLoaded
+                exact .cons name otherKey value sameName (ih rest leftStore rightStore ltail lt rt)
 
 theorem captured_frame_writeback_preserved
     (leftCapture rightCapture : List (String × String)) (values : List (String × Nat))
@@ -1053,6 +1172,43 @@ def capturedWritebacksAgree (leftStore rightStore : List (String × Nat))
   ∀ values, (storeCapturedFrame leftStore leftCapture values).isSome =
     (storeCapturedFrame rightStore rightCapture values).isSome
 
+theorem distinct_writeback_transfer
+    (leftStore rightStore : List (String × Nat)) (leftCapture rightCapture : List (String × String))
+    (values : List (String × Nat))
+    (related : relatedCapturedEnvironments leftStore rightStore leftCapture rightCapture)
+    (rightUnique : CaptureKeysUnique rightCapture)
+    (leftResult : { result : List (String × Nat) // loadCaptures result leftCapture = some values })
+    (leftWritten : storeCapturedFrame leftStore leftCapture values = some leftResult) :
+    ∃ rightResult, storeCapturedFrame rightStore rightCapture values = some rightResult := by
+  obtain ⟨original, leftLoaded, rightLoaded⟩ := related
+  have raw := storeCapturedFrame_origin leftStore leftCapture values leftResult leftWritten
+  have matching := successful_store_captures_matches leftCapture values leftStore leftResult.val raw
+  have rightMatching := capture_matching_transfer leftCapture values matching rightCapture leftStore rightStore original
+    leftLoaded rightLoaded
+  exact distinct_captured_writeback_exists rightCapture values original rightStore rightUnique rightMatching rightLoaded
+
+theorem distinct_writebacks_agree
+    (leftStore rightStore : List (String × Nat)) (leftCapture rightCapture : List (String × String))
+    (related : relatedCapturedEnvironments leftStore rightStore leftCapture rightCapture)
+    (leftUnique : CaptureKeysUnique leftCapture) (rightUnique : CaptureKeysUnique rightCapture) :
+    capturedWritebacksAgree leftStore rightStore leftCapture rightCapture := by
+  intro values
+  cases leftWritten : storeCapturedFrame leftStore leftCapture values with
+  | none =>
+    cases rightWritten : storeCapturedFrame rightStore rightCapture values with
+    | none => rfl
+    | some rightResult =>
+      obtain ⟨original, leftLoaded, rightLoaded⟩ := related
+      obtain ⟨result, written⟩ := distinct_writeback_transfer rightStore leftStore rightCapture leftCapture values
+        ⟨original, rightLoaded, leftLoaded⟩ leftUnique rightResult rightWritten
+      rw [leftWritten] at written
+      cases written
+  | some leftResult =>
+    obtain ⟨result, written⟩ := distinct_writeback_transfer leftStore rightStore leftCapture rightCapture values
+      related rightUnique leftResult leftWritten
+    rw [written]
+    rfl
+
 theorem captured_step_simulates {α : Type}
     (leftCapture rightCapture : List (String × String)) (parameters : List String) (arguments : List Nat)
     (body : NumericExpr) (left right leftNext : ExecutionState α)
@@ -1317,3 +1473,79 @@ theorem two_captured_call_sequence_simulates {α : Type}
       (captures_disjoint_symmetric rightFirst rightSecond rightDisjoint) leftStep rightStep
     exact ⟨rightNext, rightStep,
       capturedStates_related_with_environment leftSecond rightSecond leftFirst rightFirst leftNext rightNext pair.1 pair.2, pair.1⟩
+
+/- Distinct keys discharge the writeback premise for every reachable pair of
+   states; clients need only establish the static allocation invariant. -/
+theorem two_distinct_captured_call_sequence_simulates {α : Type}
+    (leftFirst rightFirst leftSecond rightSecond : List (String × String))
+    (leftDisjoint : capturesDisjoint leftFirst leftSecond) (rightDisjoint : capturesDisjoint rightFirst rightSecond)
+    (leftFirstUnique : CaptureKeysUnique leftFirst) (rightFirstUnique : CaptureKeysUnique rightFirst)
+    (leftSecondUnique : CaptureKeysUnique leftSecond) (rightSecondUnique : CaptureKeysUnique rightSecond)
+    (leftOps rightOps : List Operation)
+    (operations : RelatedOperations (PairedTwoCapturedOperation leftFirst rightFirst leftSecond rightSecond) leftOps rightOps)
+    (left right leftFinal : ExecutionState α)
+    (initial : twoCapturedStatesRelated leftFirst rightFirst leftSecond rightSecond left right)
+    (leftRun : runExecution left leftOps = some leftFinal) :
+    ∃ rightFinal, runExecution right rightOps = some rightFinal ∧
+      twoCapturedStatesRelated leftFirst rightFirst leftSecond rightSecond leftFinal rightFinal := by
+  apply two_captured_call_sequence_simulates leftFirst rightFirst leftSecond rightSecond leftDisjoint rightDisjoint
+    ?_ leftOps rightOps operations left right leftFinal initial leftRun
+  intro l r related
+  exact ⟨distinct_writebacks_agree l.captured r.captured leftFirst rightFirst related.1.2.2.2.2.2.2
+      leftFirstUnique rightFirstUnique,
+    distinct_writebacks_agree l.captured r.captured leftSecond rightSecond related.2.2.2.2.2.2.2
+      leftSecondUnique rightSecondUnique⟩
+
+theorem captured_states_related_symmetric {α : Type} (leftCapture rightCapture : List (String × String))
+    (left right : ExecutionState α) (related : capturedStatesRelated leftCapture rightCapture left right) :
+    capturedStatesRelated rightCapture leftCapture right left := by
+  obtain ⟨bindings, events, replies, error, returns, thrown, frame, leftLoaded, rightLoaded⟩ := related
+  exact ⟨bindings.symm, events.symm, replies.symm, error.symm, returns.symm, thrown.symm,
+    frame, rightLoaded, leftLoaded⟩
+
+theorem paired_two_operations_symmetric
+    (leftFirst rightFirst leftSecond rightSecond : List (String × String)) (leftOps rightOps : List Operation)
+    (operations : RelatedOperations (PairedTwoCapturedOperation leftFirst rightFirst leftSecond rightSecond)
+      leftOps rightOps) :
+    RelatedOperations (PairedTwoCapturedOperation rightFirst leftFirst rightSecond leftSecond) rightOps leftOps := by
+  induction operations with
+  | nil => exact .nil
+  | cons operation tail ih =>
+    cases operation with
+    | first parameters arguments body => exact .cons (.first parameters arguments body) ih
+    | second parameters arguments body => exact .cons (.second parameters arguments body) ih
+
+/- Successful completion on either side implies successful completion on the
+   other, including the model's failure cases. -/
+theorem two_distinct_captured_runs_complete_together {α : Type}
+    (leftFirst rightFirst leftSecond rightSecond : List (String × String))
+    (leftDisjoint : capturesDisjoint leftFirst leftSecond) (rightDisjoint : capturesDisjoint rightFirst rightSecond)
+    (leftFirstUnique : CaptureKeysUnique leftFirst) (rightFirstUnique : CaptureKeysUnique rightFirst)
+    (leftSecondUnique : CaptureKeysUnique leftSecond) (rightSecondUnique : CaptureKeysUnique rightSecond)
+    (leftOps rightOps : List Operation)
+    (operations : RelatedOperations (PairedTwoCapturedOperation leftFirst rightFirst leftSecond rightSecond) leftOps rightOps)
+    (left right : ExecutionState α)
+    (initial : twoCapturedStatesRelated leftFirst rightFirst leftSecond rightSecond left right) :
+    (runExecution left leftOps).isSome = (runExecution right rightOps).isSome := by
+  cases leftRun : runExecution left leftOps with
+  | none =>
+    cases rightRun : runExecution right rightOps with
+    | none => rfl
+    | some rightFinal =>
+      have reversed : twoCapturedStatesRelated rightFirst leftFirst rightSecond leftSecond right left :=
+        ⟨captured_states_related_symmetric leftFirst rightFirst left right initial.1,
+         captured_states_related_symmetric leftSecond rightSecond left right initial.2⟩
+      obtain ⟨leftFinal, resulting, _⟩ :=
+        two_distinct_captured_call_sequence_simulates rightFirst leftFirst rightSecond leftSecond
+          rightDisjoint leftDisjoint rightFirstUnique leftFirstUnique rightSecondUnique leftSecondUnique
+          rightOps leftOps (paired_two_operations_symmetric leftFirst rightFirst leftSecond rightSecond leftOps rightOps operations)
+          right left rightFinal reversed rightRun
+      rw [leftRun] at resulting
+      cases resulting
+  | some leftFinal =>
+    obtain ⟨rightFinal, resulting, _⟩ :=
+      two_distinct_captured_call_sequence_simulates leftFirst rightFirst leftSecond rightSecond
+        leftDisjoint rightDisjoint leftFirstUnique rightFirstUnique leftSecondUnique rightSecondUnique
+        leftOps rightOps operations left right leftFinal initial leftRun
+    rw [resulting]
+    rfl

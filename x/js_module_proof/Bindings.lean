@@ -241,6 +241,7 @@ def expressionNames : NumericExpr → List String
   | .add left right => expressionNames left ++ expressionNames right
   | .equal left right => expressionNames left ++ expressionNames right
   | .less left right => expressionNames left ++ expressionNames right
+  | .greater left right => expressionNames left ++ expressionNames right
   | .multiply left right => expressionNames left ++ expressionNames right
   | .subtract left right => expressionNames left ++ expressionNames right
   | .conditional test consequent alternative => expressionNames test ++ expressionNames consequent ++ expressionNames alternative
@@ -261,6 +262,7 @@ def laterExpressionNames : NumericExpr → List String
   | .add _ _ => []
   | .equal _ _ => []
   | .less _ _ => []
+  | .greater _ _ => []
   | .multiply _ _ => []
   | .subtract _ _ => []
   | .conditional _ _ _ => []
@@ -282,6 +284,7 @@ def argumentCount : NumericExpr → Option Nat
   | .add _ _ => none
   | .equal _ _ => none
   | .less _ _ => none
+  | .greater _ _ => none
   | .multiply _ _ => none
   | .subtract _ _ => none
   | .conditional _ _ _ => none
@@ -299,6 +302,7 @@ def validNumericExpression : NumericExpr → Bool
   | .add left right => validNumericExpression left && validNumericExpression right
   | .equal left right => validNumericExpression left && validNumericExpression right
   | .less left right => validNumericExpression left && validNumericExpression right
+  | .greater left right => validNumericExpression left && validNumericExpression right
   | .multiply left right => validNumericExpression left && validNumericExpression right
   | .subtract left right => validNumericExpression left && validNumericExpression right
   | .conditional test consequent alternative => validNumericExpression test && validNumericExpression consequent && validNumericExpression alternative
@@ -326,6 +330,7 @@ def validNumericArguments : NumericExpr → Bool
   | .add _ _ => false
   | .equal _ _ => false
   | .less _ _ => false
+  | .greater _ _ => false
   | .multiply _ _ => false
   | .subtract _ _ => false
   | .conditional _ _ _ => false
@@ -343,6 +348,7 @@ def expressionFreeNames (bound : List String) : NumericExpr → List String
   | .add left right => expressionFreeNames bound left ++ expressionFreeNames bound right
   | .equal left right => expressionFreeNames bound left ++ expressionFreeNames bound right
   | .less left right => expressionFreeNames bound left ++ expressionFreeNames bound right
+  | .greater left right => expressionFreeNames bound left ++ expressionFreeNames bound right
   | .multiply left right => expressionFreeNames bound left ++ expressionFreeNames bound right
   | .subtract left right => expressionFreeNames bound left ++ expressionFreeNames bound right
   | .conditional test consequent alternative => expressionFreeNames bound test ++ expressionFreeNames bound consequent ++ expressionFreeNames bound alternative
@@ -366,6 +372,7 @@ def validLocalWrites (bound : List (String × Bool)) : NumericExpr → Bool
   | .add left right => validLocalWrites bound left && validLocalWrites bound right
   | .equal left right => validLocalWrites bound left && validLocalWrites bound right
   | .less left right => validLocalWrites bound left && validLocalWrites bound right
+  | .greater left right => validLocalWrites bound left && validLocalWrites bound right
   | .multiply left right => validLocalWrites bound left && validLocalWrites bound right
   | .subtract left right => validLocalWrites bound left && validLocalWrites bound right
   | .conditional test consequent alternative => validLocalWrites bound test && validLocalWrites bound consequent && validLocalWrites bound alternative
@@ -412,6 +419,7 @@ def expressionCalls : NumericExpr → List String
   | .add left right => expressionCalls left ++ expressionCalls right
   | .equal left right => expressionCalls left ++ expressionCalls right
   | .less left right => expressionCalls left ++ expressionCalls right
+  | .greater left right => expressionCalls left ++ expressionCalls right
   | .multiply left right => expressionCalls left ++ expressionCalls right
   | .subtract left right => expressionCalls left ++ expressionCalls right
   | .conditional test consequent alternative => expressionCalls test ++ expressionCalls consequent ++ expressionCalls alternative
@@ -430,6 +438,7 @@ def matchingInvocations (source : List BindingStmt) : NumericExpr → Bool
   | .add left right => matchingInvocations source left && matchingInvocations source right
   | .equal left right => matchingInvocations source left && matchingInvocations source right
   | .less left right => matchingInvocations source left && matchingInvocations source right
+  | .greater left right => matchingInvocations source left && matchingInvocations source right
   | .multiply left right => matchingInvocations source left && matchingInvocations source right
   | .subtract left right => matchingInvocations source left && matchingInvocations source right
   | .conditional test consequent alternative => matchingInvocations source test && matchingInvocations source consequent && matchingInvocations source alternative
@@ -1106,3 +1115,167 @@ theorem paired_captured_table_call
     | true =>
       rw [nameMatches] at leftCall rightCall
       exact paired_captured_callable_operations leftFirst rightFirst leftSecond rightSecond _ _ callable call.2 leftOps rightOps leftCall rightCall
+
+/- A paired table resolves exactly the same public calls, including failures
+   due to a missing name or incorrect argument count. -/
+theorem paired_captured_table_call_exists
+    (leftFirst rightFirst leftSecond rightSecond : List (String × String)) (leftTable rightTable : List (String × PublicCallable))
+    (paired : PairedCapturedTables leftFirst rightFirst leftSecond rightSecond leftTable rightTable)
+    (call : String × List Nat) (leftOps : List Operation)
+    (leftCall : argumentCallOperations leftTable call = some leftOps) :
+    ∃ rightOps, argumentCallOperations rightTable call = some rightOps := by
+  induction paired with
+  | nil => cases leftCall
+  | cons name callable tail ih =>
+    simp only [argumentCallOperations, List.find?_cons] at leftCall ⊢
+    cases nameMatches : (name == call.1) with
+    | false =>
+      rw [nameMatches] at leftCall
+      exact ih leftCall
+    | true =>
+      rw [nameMatches] at leftCall
+      cases callable with
+      | first parameters body =>
+        change (if parameters.length == call.2.length then some [.invokeCaptured leftFirst parameters call.2 body] else none) = some leftOps at leftCall
+        change ∃ rightOps, (if parameters.length == call.2.length then some [Operation.invokeCaptured rightFirst parameters call.2 body] else none) = some rightOps
+        cases enough : parameters.length == call.2.length with
+        | false => rw [enough] at leftCall; cases leftCall
+        | true => exact ⟨_, rfl⟩
+      | second parameters body =>
+        change (if parameters.length == call.2.length then some [.invokeCaptured leftSecond parameters call.2 body] else none) = some leftOps at leftCall
+        change ∃ rightOps, (if parameters.length == call.2.length then some [Operation.invokeCaptured rightSecond parameters call.2 body] else none) = some rightOps
+        cases enough : parameters.length == call.2.length with
+        | false => rw [enough] at leftCall; cases leftCall
+        | true => exact ⟨_, rfl⟩
+
+theorem paired_captured_call_lists_exist
+    (leftFirst rightFirst leftSecond rightSecond : List (String × String)) (leftTable rightTable : List (String × PublicCallable))
+    (paired : PairedCapturedTables leftFirst rightFirst leftSecond rightSecond leftTable rightTable)
+    (calls : List (String × List Nat)) (leftLists : List (List Operation))
+    (leftCalls : argumentCallOperationLists leftTable calls = some leftLists) :
+    ∃ rightLists, argumentCallOperationLists rightTable calls = some rightLists := by
+  induction calls generalizing leftLists with
+  | nil => exact ⟨[], rfl⟩
+  | cons call rest ih =>
+    change (argumentCallOperations leftTable call).bind (fun ops =>
+      (argumentCallOperationLists leftTable rest).bind (fun tail => some (ops :: tail))) = some leftLists at leftCalls
+    cases head : argumentCallOperations leftTable call with
+    | none => rw [head] at leftCalls; cases leftCalls
+    | some leftOps =>
+      cases tail : argumentCallOperationLists leftTable rest with
+      | none => rw [head, tail] at leftCalls; cases leftCalls
+      | some leftRest =>
+        obtain ⟨rightOps, rightHead⟩ := paired_captured_table_call_exists leftFirst rightFirst leftSecond rightSecond
+          leftTable rightTable paired call leftOps head
+        obtain ⟨rightRest, rightTail⟩ := ih leftRest tail
+        refine ⟨rightOps :: rightRest, ?_⟩
+        change (argumentCallOperations rightTable call).bind (fun ops =>
+          (argumentCallOperationLists rightTable rest).bind (fun rest => some (ops :: rest))) = _
+        rw [rightHead, rightTail]
+        rfl
+
+theorem two_distinct_captured_argument_calls_simulate
+    (leftFirst rightFirst leftSecond rightSecond : List (String × String))
+    (leftDisjoint : capturesDisjoint leftFirst leftSecond) (rightDisjoint : capturesDisjoint rightFirst rightSecond)
+    (leftFirstUnique : CaptureKeysUnique leftFirst) (rightFirstUnique : CaptureKeysUnique rightFirst)
+    (leftSecondUnique : CaptureKeysUnique leftSecond) (rightSecondUnique : CaptureKeysUnique rightSecond)
+    (leftTable rightTable : List (String × PublicCallable))
+    (paired : PairedCapturedTables leftFirst rightFirst leftSecond rightSecond leftTable rightTable)
+    (calls : List (String × List Nat)) (left right leftFinal : ExecutionState Unit)
+    (initial : twoCapturedStatesRelated leftFirst rightFirst leftSecond rightSecond left right)
+    (leftRun : runArgumentCalls leftTable left calls = some leftFinal) :
+    ∃ rightFinal, runArgumentCalls rightTable right calls = some rightFinal ∧
+      twoCapturedStatesRelated leftFirst rightFirst leftSecond rightSecond leftFinal rightFinal := by
+  change (argumentCallOperationLists leftTable calls).bind (fun ops => runExecution left ops.flatten) = some leftFinal at leftRun
+  cases leftCalls : argumentCallOperationLists leftTable calls with
+  | none => rw [leftCalls] at leftRun; cases leftRun
+  | some leftOps =>
+    rw [leftCalls] at leftRun
+    obtain ⟨rightOps, rightCalls⟩ := paired_captured_call_lists_exist leftFirst rightFirst leftSecond rightSecond
+      leftTable rightTable paired calls leftOps leftCalls
+    have operations := related_argument_call_operations _ leftTable rightTable
+      (paired_captured_table_call leftFirst rightFirst leftSecond rightSecond leftTable rightTable paired)
+      calls leftOps rightOps leftCalls rightCalls
+    obtain ⟨rightFinal, rightRun, related⟩ := two_distinct_captured_call_sequence_simulates
+      leftFirst rightFirst leftSecond rightSecond leftDisjoint rightDisjoint leftFirstUnique rightFirstUnique
+      leftSecondUnique rightSecondUnique leftOps.flatten rightOps.flatten operations left right leftFinal initial leftRun
+    refine ⟨rightFinal, ?_, related⟩
+    change (argumentCallOperationLists rightTable calls).bind (fun ops => runExecution right ops.flatten) = some rightFinal
+    rw [rightCalls]
+    exact rightRun
+
+theorem paired_captured_tables_symmetric
+    (leftFirst rightFirst leftSecond rightSecond : List (String × String)) (leftTable rightTable : List (String × PublicCallable))
+    (paired : PairedCapturedTables leftFirst rightFirst leftSecond rightSecond leftTable rightTable) :
+    PairedCapturedTables rightFirst leftFirst rightSecond leftSecond rightTable leftTable := by
+  induction paired with
+  | nil => exact .nil
+  | cons name callable tail ih =>
+    cases callable with
+    | first parameters body => exact .cons name (.first parameters body) ih
+    | second parameters body => exact .cons name (.second parameters body) ih
+
+theorem two_distinct_captured_argument_calls_complete_together
+    (leftFirst rightFirst leftSecond rightSecond : List (String × String))
+    (leftDisjoint : capturesDisjoint leftFirst leftSecond) (rightDisjoint : capturesDisjoint rightFirst rightSecond)
+    (leftFirstUnique : CaptureKeysUnique leftFirst) (rightFirstUnique : CaptureKeysUnique rightFirst)
+    (leftSecondUnique : CaptureKeysUnique leftSecond) (rightSecondUnique : CaptureKeysUnique rightSecond)
+    (leftTable rightTable : List (String × PublicCallable))
+    (paired : PairedCapturedTables leftFirst rightFirst leftSecond rightSecond leftTable rightTable)
+    (calls : List (String × List Nat)) (left right : ExecutionState Unit)
+    (initial : twoCapturedStatesRelated leftFirst rightFirst leftSecond rightSecond left right) :
+    (runArgumentCalls leftTable left calls).isSome = (runArgumentCalls rightTable right calls).isSome := by
+  cases leftRun : runArgumentCalls leftTable left calls with
+  | none =>
+    cases rightRun : runArgumentCalls rightTable right calls with
+    | none => rfl
+    | some rightFinal =>
+      have reversed : twoCapturedStatesRelated rightFirst leftFirst rightSecond leftSecond right left :=
+        ⟨captured_states_related_symmetric leftFirst rightFirst left right initial.1,
+         captured_states_related_symmetric leftSecond rightSecond left right initial.2⟩
+      obtain ⟨leftFinal, resulting, _⟩ := two_distinct_captured_argument_calls_simulate
+        rightFirst leftFirst rightSecond leftSecond rightDisjoint leftDisjoint rightFirstUnique leftFirstUnique
+        rightSecondUnique leftSecondUnique rightTable leftTable
+        (paired_captured_tables_symmetric leftFirst rightFirst leftSecond rightSecond leftTable rightTable paired)
+        calls right left rightFinal reversed rightRun
+      rw [leftRun] at resulting
+      cases resulting
+  | some leftFinal =>
+    obtain ⟨rightFinal, resulting, _⟩ := two_distinct_captured_argument_calls_simulate
+      leftFirst rightFirst leftSecond rightSecond leftDisjoint rightDisjoint leftFirstUnique rightFirstUnique
+      leftSecondUnique rightSecondUnique leftTable rightTable paired calls left right leftFinal initial leftRun
+    rw [resulting]
+    rfl
+
+/- Private capture keys are intentionally excluded from this observation. -/
+def capturedCallObservation (state : ExecutionState Unit) :=
+  (state.bindings, state.events, state.replies, state.error, state.returns, state.thrown)
+
+theorem two_distinct_captured_argument_calls_observations
+    (leftFirst rightFirst leftSecond rightSecond : List (String × String))
+    (leftDisjoint : capturesDisjoint leftFirst leftSecond) (rightDisjoint : capturesDisjoint rightFirst rightSecond)
+    (leftFirstUnique : CaptureKeysUnique leftFirst) (rightFirstUnique : CaptureKeysUnique rightFirst)
+    (leftSecondUnique : CaptureKeysUnique leftSecond) (rightSecondUnique : CaptureKeysUnique rightSecond)
+    (leftTable rightTable : List (String × PublicCallable))
+    (paired : PairedCapturedTables leftFirst rightFirst leftSecond rightSecond leftTable rightTable)
+    (calls : List (String × List Nat)) (left right : ExecutionState Unit)
+    (initial : twoCapturedStatesRelated leftFirst rightFirst leftSecond rightSecond left right) :
+    (runArgumentCalls leftTable left calls).map capturedCallObservation =
+      (runArgumentCalls rightTable right calls).map capturedCallObservation := by
+  have complete := two_distinct_captured_argument_calls_complete_together
+    leftFirst rightFirst leftSecond rightSecond leftDisjoint rightDisjoint leftFirstUnique rightFirstUnique
+    leftSecondUnique rightSecondUnique leftTable rightTable paired calls left right initial
+  cases leftRun : runArgumentCalls leftTable left calls with
+  | none =>
+    cases rightRun : runArgumentCalls rightTable right calls with
+    | none => rfl
+    | some rightFinal => rw [leftRun, rightRun] at complete; cases complete
+  | some leftFinal =>
+    obtain ⟨rightFinal, rightRun, related⟩ := two_distinct_captured_argument_calls_simulate
+      leftFirst rightFirst leftSecond rightSecond leftDisjoint rightDisjoint leftFirstUnique rightFirstUnique
+      leftSecondUnique rightSecondUnique leftTable rightTable paired calls left right leftFinal initial leftRun
+    rw [rightRun]
+    change some (capturedCallObservation leftFinal) = some (capturedCallObservation rightFinal)
+    unfold capturedCallObservation
+    rw [related.1.1, related.1.2.1, related.1.2.2.1, related.1.2.2.2.1,
+      related.1.2.2.2.2.1, related.1.2.2.2.2.2.1]
