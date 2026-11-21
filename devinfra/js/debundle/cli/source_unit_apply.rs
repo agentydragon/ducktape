@@ -344,13 +344,7 @@ pub fn run_source_unit_apply(
                         .get_mut(source_unit_id)
                         .and_then(|selectors| selectors.remove(&runtime))
                     {
-                        provided_selectors.push((
-                            source.clone(),
-                            destination.clone(),
-                            runtime,
-                            readable,
-                            selector,
-                        ));
+                        provided_selectors.push((destination.clone(), runtime, readable, selector));
                     } else {
                         anyhow::ensure!(
                             fresh_bindings
@@ -464,7 +458,7 @@ pub fn run_source_unit_apply(
                 .extend(statements);
         }
     }
-    for (source, destination, runtime, readable, selector) in provided_selectors {
+    for (destination, runtime, readable, selector) in provided_selectors {
         let doc = ensure_source_unit_destination(&mut docs, modules_root, &destination);
         match selector {
             SelectorOverride::SourceMatch(claim) => {
@@ -480,7 +474,6 @@ pub fn run_source_unit_apply(
                     binding.local() != runtime || readable == runtime,
                     "source_match override for {runtime:?} retains its capture local; use a neutral selector-local name"
                 );
-                let _ = source;
                 doc.source_matches.push(claim);
             }
             SelectorOverride::Relational(selector) => {
@@ -491,7 +484,6 @@ pub fn run_source_unit_apply(
                     name: Some(readable),
                     selector: *selector,
                 });
-                let _ = source;
             }
         }
     }
