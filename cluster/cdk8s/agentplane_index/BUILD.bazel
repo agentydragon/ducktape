@@ -4,6 +4,7 @@ load("//devinfra/python:defs.bzl", "py_library")
 py_library(
     name = "workers",
     srcs = ["workers.py"],
+    tags = ["manual"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//agentplane/x/indexing:settings",

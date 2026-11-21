@@ -7,12 +7,14 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 py_binary(
     name = "main_bin",
     main_module = "devinfra.x.github_proxy.central.main",
+    tags = ["manual"],
     deps = [":main"],
 )
 
 aspect_py_binary(
     name = "main_image_bin",
     main = "main.py",
+    tags = ["manual"],
     deps = [":main"],
 )
 
@@ -21,6 +23,7 @@ py_image_layer(
     binary = ":main_image_bin",
     group = "1000",
     owner = "1000",
+    tags = ["manual"],
 )
 
 oci_image(
@@ -29,6 +32,7 @@ oci_image(
     entrypoint = py_image_entrypoint("main_image_bin"),
     env = py_image_env(binary_name = "main_image_bin"),
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tags = ["manual"],
     tars = [
         ":layers",
         "//third_party/debian_slim:cacerts",
@@ -40,11 +44,13 @@ oci_load(
     name = "load",
     image = ":image",
     repo_tags = ["github-api-proxy:test"],
+    tags = ["manual"],
 )
 
 oci_layout_py(
     name = "github_api_proxy_image",
     image = ":image",
+    tags = ["manual"],
 )
 
 py_test(
@@ -55,6 +61,7 @@ py_test(
         "@crane",
     ],
     requires_docker = True,
+    tags = ["manual"],
     deps = [
         "//:conftest",
         "//devinfra/oci",
@@ -68,6 +75,7 @@ py_test(
 
 test_suite(
     name = "tests",
+    tags = ["manual"],
     tests = [
         ":test_capture",
         ":test_config",
@@ -75,12 +83,15 @@ test_suite(
         ":test_image",
         ":test_metrics",
         ":test_runtime",
+        ":test_session_ws_metadata",
+        ":test_session_ws_metadata_integration",
     ],
 )
 
 py_library(
     name = "auth",
     srcs = ["auth.py"],
+    tags = ["manual"],
     deps = [
         ":metrics",
         "@pypi//aiohttp",
@@ -92,6 +103,7 @@ py_library(
 py_library(
     name = "capture",
     srcs = ["capture.py"],
+    tags = ["manual"],
     deps = [
         ":auth",
         ":metrics",
@@ -103,6 +115,7 @@ py_library(
 py_library(
     name = "session_ws_metadata",
     srcs = ["session_ws_metadata.py"],
+    tags = ["manual"],
     visibility = ["//devinfra/x/github_proxy/central:__pkg__"],
     deps = ["@pypi//mitmproxy"],
 )
@@ -110,12 +123,14 @@ py_library(
 py_library(
     name = "config",
     srcs = ["config.py"],
+    tags = ["manual"],
     deps = ["@pypi//pydantic"],
 )
 
 py_library(
     name = "main",
     srcs = ["main.py"],
+    tags = ["manual"],
     deps = [
         ":config",
         ":destinations",
@@ -128,6 +143,7 @@ py_library(
 py_library(
     name = "metrics",
     srcs = ["metrics.py"],
+    tags = ["manual"],
     deps = [
         "@pypi//aiohttp",
         "@pypi//mitmproxy",
@@ -138,6 +154,7 @@ py_library(
 py_library(
     name = "runtime",
     srcs = ["runtime.py"],
+    tags = ["manual"],
     deps = [
         ":auth",
         ":capture",
@@ -153,6 +170,7 @@ py_library(
 py_test(
     name = "test_capture",
     srcs = ["test_capture.py"],
+    tags = ["manual"],
     deps = [
         ":capture",
         ":metrics",
@@ -166,6 +184,7 @@ py_test(
 py_test(
     name = "test_config",
     srcs = ["test_config.py"],
+    tags = ["manual"],
     deps = [
         ":config",
         "//:conftest",
@@ -178,6 +197,7 @@ py_test(
 py_test(
     name = "test_metrics",
     srcs = ["test_metrics.py"],
+    tags = ["manual"],
     deps = [
         ":metrics",
         "//:conftest",
@@ -191,6 +211,7 @@ py_test(
 py_test(
     name = "test_runtime",
     srcs = ["test_runtime.py"],
+    tags = ["manual"],
     deps = [
         ":config",
         ":destinations",
@@ -209,6 +230,7 @@ py_test(
 py_library(
     name = "tls",
     srcs = ["tls.py"],
+    tags = ["manual"],
     deps = [
         "@pypi//cryptography",
         "@pypi//mitmproxy",
@@ -218,12 +240,14 @@ py_library(
 py_library(
     name = "destinations",
     srcs = ["destinations.py"],
+    tags = ["manual"],
     deps = ["@pypi//mitmproxy"],
 )
 
 py_test(
     name = "test_destinations",
     srcs = ["test_destinations.py"],
+    tags = ["manual"],
     deps = [
         ":destinations",
         "//:conftest",
@@ -235,6 +259,7 @@ py_test(
 py_test(
     name = "test_session_ws_metadata",
     srcs = ["test_session_ws_metadata.py"],
+    tags = ["manual"],
     deps = [
         ":session_ws_metadata",
         "//:conftest",
@@ -247,6 +272,7 @@ py_test(
 py_test(
     name = "test_session_ws_metadata_integration",
     srcs = ["test_session_ws_metadata_integration.py"],
+    tags = ["manual"],
     deps = [
         ":session_ws_metadata",
         "//:conftest",

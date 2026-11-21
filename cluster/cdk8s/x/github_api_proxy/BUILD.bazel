@@ -9,6 +9,7 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 py_library(
     name = "flux_kustomizations",
     srcs = ["flux_kustomizations.py"],
+    tags = ["manual"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s:flux",
@@ -22,6 +23,7 @@ py_library(
 py_library(
     name = "proxy",
     srcs = ["proxy.py"],
+    tags = ["manual"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s:cilium",
@@ -61,6 +63,7 @@ py_test(
         "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
         "PROMTOOL_RLOCATION": "$(rlocationpath @multitool//tools/promtool)",
     },
+    tags = ["manual"],
     deps = [
         ":proxy",
         "//:conftest",

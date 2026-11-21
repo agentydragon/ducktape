@@ -11,10 +11,10 @@ zero chunks, so a text-to-binary change removes the old searchable version. Ther
 extension-based filter or encoding detection/conversion; `IGNORE` patterns are the only
 way to leave a path out of a snapshot.
 
-The container target remains buildable, but the parked service has no automatic image
-publication. Build `//agentplane/x/indexing:image`, run its tests, and publish a deliberate
-tag to `git.allegedly.works/ducktape-ci/agentplane-index` before deploying. The Bazel binary is
-`//agentplane/x/indexing:main_bin`; the container target is `:image`.
+The parked service builds and tests on request. Build `//agentplane/x/indexing:image`,
+run its test suite, and publish a deliberate tag to
+`git.allegedly.works/ducktape-ci/agentplane-index` before deploying. The standalone binary is
+`//agentplane/x/indexing:main_bin`.
 
 ## Configuration
 
@@ -116,7 +116,7 @@ dimension; adding either needs no re-embedding.
 ## Verification
 
 ```sh
-bbr test //agentplane/x/indexing:all
+bbr test //agentplane/x/indexing:tests
 ```
 
 The store/API tests use PostgreSQL with pgvector on RBE. They cover publication and provider
