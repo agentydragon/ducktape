@@ -176,3 +176,20 @@ node coverage_audit.mjs --samples 150 --seed 1 --out COVERAGE.md && prettier --w
 ```
 
 [`syntax_inventory.mjs`](syntax_inventory.mjs) lists the node types and forms (each with a witness snippet that `coverage_audit_test` parses), [`analysis_inventory.mjs`](analysis_inventory.mjs) reads the analysis's inventory from the Lean sources, and [`intrinsics_probe.mjs`](intrinsics_probe.mjs) counts the standard functions a program calls from its own code (`node --import`). `node fuzz.mjs --emit DIR` writes the bundles of a corpus mode without running them.
+
+## The footprint oracle
+
+The reorder oracle above sees a wrong footprint only when a reorder happens to change what Node prints. [`footprint_oracle.mjs`](footprint_oracle.mjs) checks the footprints themselves: it runs a program unit by unit in Node, and after every unit compares what each top-level binding reaches with the unit's footprint from [`lower`](../effects/README.md).
+
+```sh
+LOWER=../../lean/.lake/build/bin/lower node footprint_oracle.mjs program.mjs [--premises p.json] [--runs 2] [--strict]
+node footprint_oracle_sweep.mjs [--only templates,ast,shift,…] [--samples 50] [--seed 1] [--keep DIR]    # the generators of the audit
+```
+
+A binding whose digest changed during unit `i` must be declared by the unit or be in its `writes`. A unit that changed a binding it does not bind is `unwritten` (a wrong footprint: a reader of the binding can cross it) or, when the unit is an effect, `unlisted` (its `writes` need not name the binding to be ordered against other effects, but a pure reader still crosses it; exit code 1 only with `--strict`). Also checked: a unit that printed or added a global is an effect, and a binding a unit initializes is one it declares. Exit codes: 0 no finding, 1 a finding, 2 not a valid input (premise P4: the program throws, does not finish, or its changes differ between two runs).
+
+The digest of a binding covers everything it reaches: prototypes, own properties with their attributes, getters and setters by identity (never called), `Map`, `Set`, typed arrays, buffers, dates, regular expressions, boxed primitives, cycles. Objects are numbered by first sight, so a binding given a new object that looks the same changes. The standard objects, and everything the global object reaches, are opaque leaves; the ECMAScript ones are compared at the start and the end, and a difference is listed as a patched intrinsic (premise P1; the program is still checked).
+
+What it cannot see: reads; closure-private state (a variable a function captured, a private class member, a generator's or iterator's cursor, the state of a promise, the contents of a `WeakMap`); what a `Proxy` does inside; a change that leaves the digest alone; and changes made by continuations after the last unit (listed apart as `tail`). A top-level `await` is refused. The reorder oracle covers what the digest cannot.
+
+`footprint_oracle_test` covers the snapshot, the refusals, the comparison, and that an erased `writes` is found. The findings are in [`debug/generator_findings`](debug/generator_findings/README.md).

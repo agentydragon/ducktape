@@ -1,0 +1,37 @@
+# Wrong footprints found by the footprint oracle and the generators
+
+[`cases.mjs`](cases.mjs): minimal programs in the format of [`effects/cases.mjs`](../../../effects/cases.mjs), each a reorder that `translate` accepts and Node runs differently. From `experiments/effects`:
+
+```bash
+CASES=../translation/debug/generator_findings/cases.mjs node run.mjs
+```
+
+Each `FAIL … WRONG ACCEPT` is a finding that stands. A line that passes means it is fixed: move the case to [`cases_general.mjs`](../../../effects/cases_general.mjs). Premise P3 is on (`noWorldHooks`), as in the fuzzers.
+
+| Program                                                                                                                           | What the analysis gets wrong                                                                                                                 | Suspected cause                                                                                                                                                                                                                                                                                                                           | Found by                                                                                                              |
+| --------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| F1 `mapped = map.values().map(f)`, then `mapped.toArray()`, `mapped.next()`, `[...mapped]` or `for (x of mapped)`; `f` writes `o` | The consuming unit is pure and writes only what it declares, though it runs `f` and changes `o`. A pure reader of `o` crosses it.            | The rows of `iteratorHelperRows` (`Intrinsics.lean`) return `.prim`: the iterator helper object is a primitive for the analysis, so consuming it calls nothing. The call of `map` retains `f` and `f` escapes, but nothing runs it. With P3 off the read of `o` is a call into the world, which orders it, so `cases_general.mjs` passes. | `footprint_oracle.mjs` on `effects/cases_general.mjs` with P3 on: `unit 3 unwritten o: const arr = mapped.toArray();` |
+| F2 `p11.g` where the getter `g` is on `p0`, 11 prototypes up, and writes `o`                                                      | The read is pure and writes nothing, though it runs the getter. Chains of 11 or more are missed, 10 or fewer are right (probed for 8 to 14). | `getVal` returns `AV.top` once `seen.length > 10` without running or flagging the accessors it did not look at. `accessorsOn`, for stores, returns `(true, AV.top)`, which runs unknown code. With P3 off the value `top` orders the unit, so the golden case "getter 11 prototypes up" passes.                                           | `footprint_oracle.mjs` on `effects/cases_general.mjs` with P3 on: `unit 13 unwritten o: p11.g;`                       |
+
+Both are variants of golden cases that pass today. F1 adds a pure reader (`const seen = o.n`) after the consumer and turns P3 on, so the unit that ordered the reader (a read of an escaped object is a call into the world with P3 off) is not an effect. F2 turns P3 on. The oracle sees them without a reorder: after the consuming unit the digest of `o` differs, and `o` is not in the unit's `writes`. With P3 off it also reports F1 (`unit 3 unwritten o`): the footprint is wrong there too, and a reader that is not an effect would cross it.
+
+## What did not turn up
+
+Over these programs the oracle found no unit that changed a binding its footprint does not name (premise P3 on for the three corpora of `fuzz.mjs` and for the libraries, off for Shift's programs; `--runs 2` for the generated ones):
+
+| Programs                                                                          |                                                       Valid inputs | Units | Bindings changed (unit, binding) |
+| --------------------------------------------------------------------------------- | -----------------------------------------------------------------: | ----: | -------------------------------: |
+| `fuzz.mjs` unit templates, seed 1 (61 of them patch a standard object on purpose) |                                                         150 of 150 | 2,381 |                              417 |
+| `fuzz.mjs --callback-corpus`                                                      |                                                           16 of 16 |   112 |                               16 |
+| `fuzz.mjs --ast-corpus`                                                           |                                                         150 of 150 | 2,611 |                              303 |
+| Shift module grammar, 400 seeds, those the test keeps                             |                                                           57 of 72 |   207 |                                0 |
+| Shift script grammar                                                              |                                                          82 of 131 |   330 |                                2 |
+| Shift script grammar with modern expressions                                      |                                                          82 of 131 |   412 |                               84 |
+| `lodash` (plain and minified)                                                     |                                                        1 of 1 each |   669 |                              495 |
+| `acorn` (plain and minified)                                                      |                                                        1 of 1 each |   446 |                            1,911 |
+| `semver` (plain and minified)                                                     |                                                        1 of 1 each |    58 |                               58 |
+| `zod`, plain (92 s)                                                               |                                                             1 of 1 | 1,071 |                              518 |
+| the 110 cases of `effects/cases.mjs` with their own premises                      | 102 of 110 (8 read `window`, `globalThis.notify` or a vendor file) |       |                                  |
+| the 91 cases of `effects/cases_general.mjs`                                       |                                                           91 of 91 |       |   F1 (P3 off and on), F2 (P3 on) |
+
+Shift's programs hardly change a binding after it exists: the oracle has little to see there. The 5 programs of `effects/debug/p1_known_gaps` are valid and give no finding: a patch of a standard object is not a change of a binding (the oracle lists them as patched intrinsics). The oracle re-finds the 5 programs of [`effects/debug/general_known_gaps`](../../../effects/debug/general_known_gaps/README.md): four `unwritten`, and one `unlisted` (Node's `util.inspect.custom`).
