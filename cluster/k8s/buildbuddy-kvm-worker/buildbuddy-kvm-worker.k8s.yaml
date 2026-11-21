@@ -193,8 +193,6 @@ spec:
           networks:
             - name: default
               pod: {}
-          nodeSelector:
-            topology.kubernetes.io/region: hil
           readinessProbe:
             failureThreshold: 3
             httpGet:
