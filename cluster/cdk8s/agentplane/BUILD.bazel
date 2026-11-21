@@ -979,7 +979,11 @@ py_test(
     deps = [
         ":conftest",
         ":egress",
+        ":runner_gateway",
+        ":sandbox_pod",
+        ":staging",
         "//:conftest",
+        "//agentplane/egress:sidecar_config",
         "//agentplane/net/peertls:config",
         "//cluster/cdk8s:conftest",
         "//cluster/cdk8s/cert_manager:cluster_ca",
