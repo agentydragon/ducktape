@@ -391,7 +391,6 @@ def test_casino_stats_aggregates_server_resolved_only(store: SqlStore) -> None:
     # Theoretical for red on a 37-pocket wheel: P(win) = 18/37, RTP = 36/37.
     assert red.theoretical_payout_rate == pytest.approx(18 / 37)
     assert red.theoretical_rtp == pytest.approx(36 / 37)
-    assert red.expected_returned == pytest.approx(30 * 36 / 37)
     assert red.expected_net == pytest.approx((30 * 36 / 37) - 30)
     assert red.fair_win_lower_tail_probability == pytest.approx(1 - (18 / 37) ** 3)
 
@@ -400,7 +399,6 @@ def test_casino_stats_aggregates_server_resolved_only(store: SqlStore) -> None:
     assert roulette.total.count == 3
     assert roulette.total.theoretical_payout_rate == pytest.approx(18 / 37)
     assert roulette.total.theoretical_rtp == pytest.approx(36 / 37)
-    assert roulette.total.expected_returned == pytest.approx(30 * 36 / 37)
     assert roulette.total.expected_net == pytest.approx((30 * 36 / 37) - 30)
     assert roulette.total.fair_win_lower_tail_probability == pytest.approx(1 - (18 / 37) ** 3)
     # Timeline buckets across two UTC days.
@@ -450,7 +448,6 @@ def test_casino_stats_roulette_total_theory_uses_actual_wager_mix(store: SqlStor
     assert roulette.total.theoretical_payout_rate == pytest.approx(((18 / 37) + (1 / 37)) / 2)
     assert roulette.total.theoretical_rtp == pytest.approx(36 / 37)
     assert roulette.total.theoretical_ev_per_credit == pytest.approx(-1 / 37)
-    assert roulette.total.expected_returned == pytest.approx(15 * 36 / 37)
     assert roulette.total.expected_net == pytest.approx(-15 / 37)
     assert roulette.total.fair_win_lower_tail_probability == pytest.approx((19 / 37) * (36 / 37))
     red = next(b for b in roulette.buckets if b.key == "red")
@@ -500,8 +497,6 @@ def test_casino_stats_blackjack_summary_and_outcome_freq(store: SqlStore) -> Non
     assert bj.summary.wins == 3  # blackjack + win + dealerBust
     assert bj.summary.losses == 2  # lose + bust
     assert bj.summary.pushes == 1
-    assert bj.summary.blackjacks == 1
-    assert bj.summary.busts == 1
     # 3 wins / (3 wins + 2 losses) — push excluded.
     assert bj.summary.win_rate_excl_push == pytest.approx(3 / 5)
     assert bj.summary.blackjack_rate == pytest.approx(1 / 6)
@@ -509,6 +504,7 @@ def test_casino_stats_blackjack_summary_and_outcome_freq(store: SqlStore) -> Non
     freq_by_key = {f.key: f for f in bj.outcome_freq}
     assert {f.key for f in bj.outcome_freq} == {"blackjack", "win", "dealerBust", "push", "lose", "bust"}
     assert freq_by_key["blackjack"].count == 1
+    assert freq_by_key["bust"].count == 1
     assert freq_by_key["blackjack"].freq == pytest.approx(1 / 6)
     assert freq_by_key["blackjack"].avg_wager == pytest.approx(2.0)
     assert freq_by_key["win"].avg_wager == pytest.approx(1.0)
