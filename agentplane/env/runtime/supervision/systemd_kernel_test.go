@@ -1044,11 +1044,14 @@ func TestCommandReleaseClient(t *testing.T) {
 		Path: "/bin/bash", Dir: dir,
 		Environment: []string{"PATH=/usr/bin:/bin", "COMMAND_PROOF=handoff"},
 		Argv: []string{"argv0-proof", "-c", `
-/bin/sleep 30 </dev/null >/dev/null 2>&1 &
+/usr/bin/busybox sleep 30 </dev/null >/dev/null 2>&1 &
 group=$!
-setsid /bin/sleep 30 </dev/null >/dev/null 2>&1 &
+/usr/bin/setsid /usr/bin/busybox sleep 30 </dev/null >/dev/null 2>&1 &
 detached=$!
-while ! { IFS=' ' read -r pid comm state ppid pgid sid rest < "/proc/$detached/stat" && [ "$sid" = "$detached" ]; }; do sleep 0.01; done
+while ! { IFS=' ' read -r pid comm state ppid pgid sid rest < "/proc/$detached/stat" && [ "$sid" = "$detached" ]; }; do
+    kill -0 "$detached" || exit 1
+    /usr/bin/busybox sleep 1
+done
 printf '%s %s %d %d\n' "$0" "$COMMAND_PROOF" "$group" "$detached"
 exit 23
 `},
