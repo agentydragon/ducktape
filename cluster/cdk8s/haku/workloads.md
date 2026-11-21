@@ -14,11 +14,15 @@ haku-state's `k8s/`); this pipe reconciles them.
 
 **Containment.** The apply runs as `haku-state-reconciler` (`serviceAccountName` on the
 Kustomization), so it can only do what its Role allows: Deployments/StatefulSets/
-DaemonSets/ReplicaSets, Services/ConfigMaps/PVCs, Jobs/CronJobs — **no Secrets, no
-Gateway-API routes** (Kyverno denies routes in `haku-sandbox` too). `targetNamespace:
-haku-sandbox` forces everything into the one namespace regardless of what the manifests
-declare. So Haku gets a GitOps workload path that can never widen its own perimeter — it
-applies a strict subset of what Haku itself already could.
+DaemonSets/ReplicaSets, Services/ConfigMaps/PVCs, Jobs/CronJobs, and Haku's own Flux image
+automation (`ImageRepository`/`ImagePolicy`/`ImageUpdateAutomation`/`GitRepository`; those
+controllers only touch Haku's own images and `haku-state`) — **no Secrets, no Gateway-API
+routes** (Kyverno denies routes in `haku-sandbox` too), **no notification `Receiver`s** (a
+cross-namespace force-reconcile primitive; the image pipeline's stays operator-owned, see
+[`ui_image_webhook.md`](ui_image_webhook.md)). `targetNamespace: haku-sandbox` forces
+everything into the one namespace regardless of what the manifests declare. So Haku gets a
+GitOps workload path that can never widen its own perimeter — it applies a strict subset of
+what Haku itself already could.
 
 **Trust posture (flagged for review).** This points cluster Flux at a repo Haku can
 write. The kustomize-controller will build agent-authored kustomize; the impersonation
