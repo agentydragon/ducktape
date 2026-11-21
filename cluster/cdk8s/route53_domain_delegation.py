@@ -7,7 +7,6 @@ from opentofu_workspace_crds.io.upbound.opentofu import WorkspaceSpecForProvider
 from pydantic import BaseModel, ConfigDict
 
 from cluster.cdk8s import opentofu, terraform
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.route53 import HOSTED_ZONES
 from cluster.cdk8s.secret_ref import SecretRef
@@ -49,24 +48,3 @@ def chart(app: App) -> Chart:
         ],
     )
     return chart
-
-
-def resources(
-    flux_chart: Chart,
-    directory: RenderedDirectory,
-    opentofu_provider: Kustomization,
-    tofu_state_db: Kustomization,
-    dns_automation: Kustomization,
-) -> Kustomization:
-    """Apply the Workspace after its provider, state DB, and credentials are ready."""
-    return flux_kustomization(
-        flux_chart,
-        NAME,
-        directory,
-        timeout="10m",
-        depends_on=flux_kustomization_depends_on_many(opentofu_provider, tofu_state_db, dns_automation),
-        health_check_exprs=[opentofu.WORKSPACE_HEALTH_CHECK_EXPR],
-        description=(
-            "Manage Route 53 domain registration and nameserver delegation using the existing dns_records state."
-        ),
-    )
