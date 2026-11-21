@@ -76,7 +76,7 @@ theorem initFunctions_same {us us' : List (Nat × Stmt × Env)} (h : SameUnits u
       exact congrArg (inRegion id) (M.bind_congr
         (makeFunc_agree (hagree.mono fun x hx => by simp [Stmt.free, hx])) fun v =>
           initVar_agree (hagree.vars f.name (by simp [Stmt.free])) v)
-    | «opaque» code decls funs free =>
+    | «opaque» code decls funs free _ =>
       unfold initFunction
       dsimp only
       rw [opaqueCells_agree hagree]
