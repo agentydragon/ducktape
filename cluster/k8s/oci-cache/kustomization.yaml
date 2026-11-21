@@ -13,5 +13,5 @@ configMapGenerator:
     files:
       - public-auth-proxy.conf
 generatorOptions:
-  # Stable names; the Deployment's reloader annotation restarts Zot on config change.
+  # Stable names; Reloader (`autoReloadAll`, cluster/cdk8s/reloader.py) restarts Zot on config change.
   disableNameSuffixHash: true
