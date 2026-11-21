@@ -895,20 +895,14 @@ const QuotaIndicator = GObject.registerClass(
       bar.fill.add_style_class_name(`quota-${tint}`);
     }
 
-    _clearQuotaBar(bar) {
-      this._setQuotaBar(bar, null, null, "unknown");
-    }
-
     _mapWindow(w) {
       if (!w) return null;
       const resetAtMs = w.reset_at ? new Date(w.reset_at).getTime() : null;
       return {
         name: w.name ?? null,
-        display: w.display !== false,
         usedPercent: w.used_percent ?? null,
         resetAtMs,
         resetSeconds: w.reset_seconds ?? null,
-        windowSeconds: w.window_seconds ?? null,
         label: w.label,
         used: w.used,
         reset: w.reset,
@@ -923,12 +917,7 @@ const QuotaIndicator = GObject.registerClass(
 
     _mapExtraSpend(extra) {
       if (!extra) return null;
-      return {
-        is_enabled: extra.is_enabled,
-        utilization: extra.utilization,
-        used_usd: extra.used_usd,
-        monthly_limit_usd: extra.monthly_limit_usd,
-      };
+      return { used_usd: extra.used_usd, monthly_limit_usd: extra.monthly_limit_usd };
     }
 
     _loadViewData(data) {

@@ -5,7 +5,7 @@ import pytest_bazel
 from python.runfiles import Runfiles
 
 from aiquota.models import AllQuotas, FetchError, FetchSuccess, PaidCredits, ProviderFetch, ProviderQuota, QuotaWindow
-from aiquota.render.tmux import _AI_GLYPH, render, render_provider, render_view
+from aiquota.render.tmux import _AI_GLYPH, render_view
 from aiquota.render.view_model import to_view
 from aiquota.testing.quota_fixtures import load_quota_fixture
 
@@ -18,6 +18,10 @@ _NOW = datetime(2026, 1, 15, 12, 0, 0, tzinfo=UTC)
 
 def _provider(provider: str, result: FetchSuccess | FetchError, fetched_at: datetime = _NOW) -> ProviderQuota:
     return ProviderQuota(provider=provider, last_output=ProviderFetch(fetched_at=fetched_at, result=result))
+
+
+def _render(*providers: ProviderQuota) -> str:
+    return render_view(to_view(AllQuotas(providers=list(providers), fetched_at=_NOW), now=_NOW).providers)
 
 
 def test_render_provider_uses_shared_summary_window() -> None:
@@ -137,12 +141,12 @@ def test_render_multiple_and_empty() -> None:
     assert rendered.count(_AI_GLYPH) == 1
     assert "A:50%" in rendered
     assert "O:90%" in rendered
-    assert render([]) == ""
-    assert render([_provider("openai_platform", FetchSuccess())]) == ""
+    assert _render() == ""
+    assert _render(_provider("openai_platform", FetchSuccess())) == ""
 
 
 def test_render_provider_error_only() -> None:
-    rendered = render_provider(_provider("codex", FetchError(error="no auth")))
+    rendered = _render(_provider("codex", FetchError(error="no auth")))
 
     assert "O:!" in rendered
     assert "red" in rendered

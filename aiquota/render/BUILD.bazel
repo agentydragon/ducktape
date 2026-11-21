@@ -40,10 +40,7 @@ py_library(
     name = "tmux_lib",
     srcs = ["tmux.py"],
     visibility = ["//aiquota:__pkg__"],
-    deps = [
-        ":view_model_lib",
-        "//aiquota:models",
-    ],
+    deps = [":view_model_lib"],
 )
 
 py_test(
