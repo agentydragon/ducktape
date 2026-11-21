@@ -14,11 +14,8 @@ import pytest_bazel
 from cluster.provisioners.matrix_user_provisioner.provision_matrix_users import (
     ADMIN_DEVICE_ID,
     ADMIN_USERNAME,
-    PUBLIC_CODER_AGENT_BOT_DISPLAYNAME,
-    PUBLIC_CODER_AGENT_BOT_USERNAME,
     SERVER_NAME,
     SYNAPSE_URL,
-    _bot_exists,
     admin_login,
     register_admin,
     upsert_bot,
@@ -51,7 +48,6 @@ def test_register_admin_computes_hmac_and_posts_registration():
         register_body = json.loads(registration.content)
         assert registration.method == "POST"
         assert str(registration.url) == f"{SYNAPSE_URL}/_synapse/admin/v1/register"
-        assert register_body is not None
         expected_mac = hmac.new(
             b"shared-secret", f"{NONCE}\0{ADMIN_USERNAME}\0adminpw\0admin".encode(), hashlib.sha1
         ).hexdigest()
@@ -86,57 +82,37 @@ def test_register_admin_raises_on_unexpected_error():
         register_admin(client, "shared-secret", "adminpw")
 
 
-def test_bot_exists_false_on_404():
-    with _client(httpx.Response(404, json={"errcode": "M_NOT_FOUND"})) as (client, _):
-        assert _bot_exists(client, "token", "encoded-mxid") is False
+@pytest.mark.parametrize(
+    ("status", "lookup", "password"),
+    [
+        pytest.param(404, {"errcode": "M_NOT_FOUND"}, {"password": "botpw"}, id="missing"),
+        pytest.param(200, {}, {"password": "botpw"}, id="missing-name"),
+        pytest.param(200, {"name": "@test-bot:example.test"}, {}, id="existing-user-keeps-sessions"),
+    ],
+)
+def test_upsert_bot_sets_password_only_when_creating(
+    status: int, lookup: dict[str, str], password: dict[str, str]
+) -> None:
+    with _client(httpx.Response(status, json=lookup), httpx.Response(200, json={})) as (client, calls):
+        upsert_bot(client, "admin-token", "botpw", bot_username="test-bot", bot_displayname="Test Bot")
+
+    get, put = calls
+    assert (get.method, put.method) == ("GET", "PUT")
+    assert get.url == put.url
+    assert put.url.raw_path == f"/_synapse/admin/v2/users/%40test-bot%3A{SERVER_NAME}".encode()
+    assert all(call.headers["Authorization"] == "Bearer admin-token" for call in calls)
+    assert json.loads(put.content) == {"displayname": "Test Bot", "admin": False, **password}
 
 
-def test_bot_exists_reraises_non_404_errors():
+def test_upsert_bot_does_not_write_after_lookup_error() -> None:
     with (
-        _client(httpx.Response(500, json={"errcode": "M_UNKNOWN"})) as (client, _),
+        _client(httpx.Response(500, json={"errcode": "M_UNKNOWN"})) as (client, calls),
         pytest.raises(httpx.HTTPStatusError),
     ):
-        _bot_exists(client, "token", "encoded-mxid")
+        upsert_bot(client, "admin-token", "botpw", bot_username="test-bot", bot_displayname="Test Bot")
 
-
-def test_upsert_bot_creates_with_password_when_absent():
-    with _client(
-        httpx.Response(200, json={}), httpx.Response(200, json={"displayname": PUBLIC_CODER_AGENT_BOT_DISPLAYNAME})
-    ) as (client, calls):
-        upsert_bot(
-            client,
-            "admin-token",
-            "botpw",
-            bot_username=PUBLIC_CODER_AGENT_BOT_USERNAME,
-            bot_displayname=PUBLIC_CODER_AGENT_BOT_DISPLAYNAME,
-        )
-
-        [put] = [call for call in calls if call.method == "PUT"]
-        put_body = json.loads(put.content)
-        assert str(put.url).endswith(f"%40{PUBLIC_CODER_AGENT_BOT_USERNAME}%3A{SERVER_NAME}")
-        assert all(call.headers["Authorization"] == "Bearer admin-token" for call in calls)
-        assert put_body == {"password": "botpw", "displayname": PUBLIC_CODER_AGENT_BOT_DISPLAYNAME, "admin": False}
-
-
-def test_upsert_bot_updates_without_password_when_present():
-    """Re-running must not resend the password: Synapse purges every device and
-    access token on a password set, even to an identical value."""
-    with _client(
-        httpx.Response(200, json={"name": f"@{PUBLIC_CODER_AGENT_BOT_USERNAME}:{SERVER_NAME}"}),
-        httpx.Response(200, json={"displayname": PUBLIC_CODER_AGENT_BOT_DISPLAYNAME}),
-    ) as (client, calls):
-        upsert_bot(
-            client,
-            "admin-token",
-            "botpw",
-            bot_username=PUBLIC_CODER_AGENT_BOT_USERNAME,
-            bot_displayname=PUBLIC_CODER_AGENT_BOT_DISPLAYNAME,
-        )
-
-        [put] = [call for call in calls if call.method == "PUT"]
-        put_body = json.loads(put.content)
-        assert all(call.headers["Authorization"] == "Bearer admin-token" for call in calls)
-        assert put_body == {"displayname": PUBLIC_CODER_AGENT_BOT_DISPLAYNAME, "admin": False}
+    [get] = calls
+    assert get.method == "GET"
 
 
 def test_admin_login_pins_the_device_id():
