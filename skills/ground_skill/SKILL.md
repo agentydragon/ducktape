@@ -171,4 +171,5 @@ targets. To ship the skill, add an entry to `skills/skills_registry.json`.
 
 See `//skills/freecad` for the canonical example of a fully grounded skill:
 scaffold-free recipes in `examples/`, shared helpers in `freecad_helpers.py`, tests with
-visual and structural golden outputs, and `conftest.py` for container fixtures.
+visual and structural golden outputs, and `conftest.py` for the conda env, Xvfb and
+FreeCAD runner fixtures.
