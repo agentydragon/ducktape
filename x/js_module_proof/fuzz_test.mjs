@@ -172,6 +172,7 @@ if (shards === 4 && shard === 0) {
     validateEvery: 1,
   });
   assert.match(makeLocalAliasCase(773, 397).source, /if \(\(numericLeft < numericRight\)\)/);
+  assert.equal(changedBranch.aliasBranchComparedCases, 1);
   assert.equal(changedBranch.mutatedDifferent, 1);
   assert.equal(changedBranch.mutatedVerdicts.unsafe, 1);
   const unchangedBranch = await runFuzz({
@@ -183,6 +184,7 @@ if (shards === 4 && shard === 0) {
     mutationMode: "disabled",
     validateEvery: 1,
   });
+  assert.equal(unchangedBranch.aliasBranchProvedCases, 1);
   assert.equal(unchangedBranch.localImportAliasProvedCases, 1);
   assert.equal(unchangedBranch.equal, 1);
 }
@@ -244,6 +246,7 @@ if (shards === 4 && shard === 1) {
     validateEvery: 1,
   });
   assert.match(makeLocalAliasCase(773, 781).source, /for \(let loopIndex/);
+  assert.equal(changedLoop.aliasLoopComparedCases, 1);
   assert.equal(changedLoop.mutatedDifferent, 1);
   assert.equal(changedLoop.mutatedVerdicts.unsafe, 1);
   const unchangedLoop = await runFuzz({
@@ -255,6 +258,7 @@ if (shards === 4 && shard === 1) {
     mutationMode: "disabled",
     validateEvery: 1,
   });
+  assert.equal(unchangedLoop.aliasLoopProvedCases, 1);
   assert.equal(unchangedLoop.localImportAliasProvedCases, 1);
   assert.equal(unchangedLoop.equal, 1);
 }
@@ -269,6 +273,7 @@ if (shards === 4 && shard === 2) {
     validateEvery: 1,
   });
   assert.match(makeLocalAliasCase(773, 877).source, /for \(let numericLeft/);
+  assert.equal(shadowLoop.aliasLoopComparedCases, 1);
   assert.equal(shadowLoop.loopShadowCases, 1);
   assert.equal(shadowLoop.loopShadowComparedCases, 1);
   assert.equal(shadowLoop.equal, 1);
