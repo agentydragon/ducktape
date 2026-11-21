@@ -53,3 +53,9 @@ own decoding, grouping, fetching, loading/error UI and any provisional tail.
 The viewport exposes `data-scroll-mode` and `data-layout-settled` for browser
 checks. A settled layout has measured the mounted rows, reconciled the reader's
 position and finished loading their marked (`aria-busy`) content.
+
+**Gotcha:** settled does not wait for lines a `CodeBlock` has not drawn yet.
+CodeMirror measures only the lines it draws, near the visible part, and its
+estimate for the rest is off for wrapped text, so an expanded block keeps
+changing height as scrolling draws them. A browser check that scrolls must
+first draw the block end to end: scroll its last line into view and wait for it.
