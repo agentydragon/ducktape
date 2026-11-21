@@ -25,8 +25,6 @@ import (
 	"github.com/cosi-project/runtime/pkg/controller"
 	cosiruntime "github.com/cosi-project/runtime/pkg/controller/runtime"
 	"github.com/cosi-project/runtime/pkg/resource"
-	"github.com/cosi-project/runtime/pkg/resource/typed"
-	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
@@ -54,13 +52,7 @@ func TestCodexDelayedTurnStartNotificationDoesNotFailJournal(t *testing.T) {
 				s.mu.Lock()
 				s.record.NativeSessionId = &threadID
 				s.mu.Unlock()
-				ptr := lifecycle.ResourceFor(s.id, LifecycleStatus{}).Metadata()
-				if _, err := safe.StateUpdateWithConflicts(ctx, s.deps.state, ptr, func(value *typed.Resource[LifecycleStatus, lifecycle.Extension[LifecycleStatus]]) error {
-					value.TypedSpec().Resuming = true
-					return nil
-				}, state.WithUpdateOwner(ControllerName)); err != nil {
-					t.Fatal(err)
-				}
+				updateLifecycleStatus(t, s, func(status *LifecycleStatus) { status.Resuming = true })
 			})
 			if err := s.Emit(ctx, harness.Observation(&eventpb.TurnStarted{TurnId: "known-turn"}), nil); err != nil {
 				t.Fatal(err)
@@ -113,13 +105,7 @@ func TestStaleNativeCodexCompletionRetainsFrameAndSuccessor(t *testing.T) {
 		s.mu.Lock()
 		s.record.NativeSessionId = &threadID
 		s.mu.Unlock()
-		ptr := lifecycle.ResourceFor(s.id, LifecycleStatus{}).Metadata()
-		if _, err := safe.StateUpdateWithConflicts(ctx, s.deps.state, ptr, func(value *typed.Resource[LifecycleStatus, lifecycle.Extension[LifecycleStatus]]) error {
-			value.TypedSpec().Resuming = true
-			return nil
-		}, state.WithUpdateOwner(ControllerName)); err != nil {
-			t.Fatal(err)
-		}
+		updateLifecycleStatus(t, s, func(status *LifecycleStatus) { status.Resuming = true })
 		adapter = codexadapter.New(s)
 	})
 	if err := s.Emit(ctx, harness.Observation(&eventpb.TurnStarted{TurnId: "finished-turn"}), nil); err != nil {
@@ -496,8 +482,7 @@ func TestNativeReplyWaitsForTranslationCommit(t *testing.T) {
 			return ctx.Err()
 		}
 	}}
-	s.connection.readers.Add(1)
-	go s.connection.readStdout(p, func(ctx context.Context, line []byte) error { return s.receive(ctx, line, adapter) })
+	s.connection.startStdout(p, func(ctx context.Context, line []byte) error { return s.receive(ctx, line, adapter) })
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	done := make(chan nativeResult, 1)
@@ -620,8 +605,7 @@ func TestNativeHandshakeWaitCancellationLeavesLateResponseJournaled(t *testing.T
 		close(lateReplyReceived)
 		return nil
 	}}
-	s.connection.readers.Add(1)
-	go s.connection.readStdout(p, func(ctx context.Context, line []byte) error { return s.receive(ctx, line, adapter) })
+	s.connection.startStdout(p, func(ctx context.Context, line []byte) error { return s.receive(ctx, line, adapter) })
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
@@ -673,8 +657,7 @@ while IFS= read -r line; do
 done`
 	s, p, _ := frameTestSession(t, []string{"/bin/sh", "-c", script, stdin})
 	adapter := codexadapter.New(s)
-	s.connection.readers.Add(1)
-	go s.connection.readStdout(p, func(ctx context.Context, line []byte) error { return s.receive(ctx, line, adapter) })
+	s.connection.startStdout(p, func(ctx context.Context, line []byte) error { return s.receive(ctx, line, adapter) })
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := adapter.Interrupt(ctx, "turn-1"); err != nil {
@@ -710,8 +693,7 @@ done`
 func TestStdoutRetainsFinalFrameWithoutNewline(t *testing.T) {
 	s, p, _ := frameTestSession(t, []string{"/bin/sh", "-c", `printf '{"final":true}\r'`})
 	adapter := frameTestAdapter{onFrame: func(context.Context, json.RawMessage, uint64) error { return nil }}
-	s.connection.readers.Add(1)
-	go s.connection.readStdout(p, func(ctx context.Context, line []byte) error { return s.receive(ctx, line, adapter) })
+	s.connection.startStdout(p, func(ctx context.Context, line []byte) error { return s.receive(ctx, line, adapter) })
 	s.connection.readers.Wait()
 	entries, err := s.journal.Since(context.Background(), 0, 128)
 	if err != nil {
@@ -824,9 +806,8 @@ func TestCompletedTurnSchedulesInputRecoveryOutsideReader(t *testing.T) {
 		s.adapter = adapter
 		s.mu.Unlock()
 	})
-	s.connection.readers.Add(1)
 	reader := frameTestAdapter{onFrame: func(context.Context, json.RawMessage, uint64) error { return nil }}
-	go s.connection.readStdout(process, func(ctx context.Context, line []byte) error { return s.receive(ctx, line, reader) })
+	s.connection.startStdout(process, func(ctx context.Context, line []byte) error { return s.receive(ctx, line, reader) })
 	ctx := context.Background()
 	if err := s.Emit(ctx, harness.Observation(&eventpb.TurnStarted{TurnId: "turn"}), nil); err != nil {
 		t.Fatal(err)
@@ -878,8 +859,7 @@ func TestInterruptedReconciliationLeavesStdoutFreeForHistoryRPC(t *testing.T) {
 	if err := s.Emit(context.Background(), harness.Observation(&eventpb.TurnStarted{TurnId: "turn"}), nil); err != nil {
 		t.Fatal(err)
 	}
-	s.connection.readers.Add(1)
-	go s.connection.readStdout(p, func(ctx context.Context, line []byte) error { return s.receive(ctx, line, adapter) })
+	s.connection.startStdout(p, func(ctx context.Context, line []byte) error { return s.receive(ctx, line, adapter) })
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := s.SendNative(ctx, json.RawMessage(`{"interrupt":true}`)); err != nil {
@@ -921,29 +901,14 @@ func openTestJournal(t *testing.T) *journal.Journal {
 // live Session controller must pause it for the fixture mutation.
 func setLifecycleStatusReady(t *testing.T, m *Manager, s *Session) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	ptr := lifecycle.ResourceFor(s.id, LifecycleStatus{}).Metadata()
 	if m == nil {
+		ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
+		defer cancel()
 		if err := s.deps.state.Create(ctx, lifecycle.ResourceFor(s.id, LifecycleStatus{Phase: Ready, ProcessID: s.processID}), state.WithCreateOwner(ControllerName)); err != nil {
 			t.Fatal(err)
 		}
-		s.mu.Lock()
-		s.processState = sessionpb.ProcessState_PROCESS_STATE_RUNNING
-		s.mu.Unlock()
-		return
-	}
-	_, err := safe.StateWatchFor[*typed.Resource[LifecycleStatus, lifecycle.Extension[LifecycleStatus]]](ctx, s.deps.state, ptr, state.WithEventTypes(state.Created, state.Updated))
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = safe.StateUpdateWithConflicts(ctx, s.deps.state, ptr, func(value *typed.Resource[LifecycleStatus, lifecycle.Extension[LifecycleStatus]]) error {
-		value.TypedSpec().Phase = Ready
-		value.TypedSpec().ProcessID = s.processID
-		return nil
-	}, state.WithUpdateOwner(ControllerName))
-	if err != nil {
-		t.Fatal(err)
+	} else {
+		setSessionPhase(t, s, Ready)
 	}
 	s.mu.Lock()
 	s.processState = sessionpb.ProcessState_PROCESS_STATE_RUNNING
