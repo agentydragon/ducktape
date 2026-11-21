@@ -35,7 +35,7 @@ from cluster.cdk8s.agentplane import (
     staging,
     workload_tls,
 )
-from cluster.cdk8s.testing.manifests import find_resource
+from cluster.cdk8s.testing.manifests import config_map_yaml, find_resource
 
 
 def _controller_settings(staging_manifests: list[dict[str, Any]]) -> Settings:
@@ -181,9 +181,7 @@ def test_environment_receiver_owns_authority_and_uses_controller_certificate(
 def test_actions_environment_peer_matches_receiver_and_separates_dispatcher(
     staging_manifests: list[dict[str, Any]],
 ) -> None:
-    settings = ActionSettings.model_validate(
-        yaml.safe_load(find_resource(staging_manifests, "ConfigMap", "actions-settings")["data"]["settings.yaml"])
-    )
+    settings = ActionSettings.model_validate(config_map_yaml(staging_manifests, "actions-settings", "settings.yaml"))
     peer = settings.environment_service
     assert peer is not None
     assert peer.target == _environments_grpc_target(staging_manifests)
@@ -231,9 +229,7 @@ def test_actions_service_launcher_requires_its_existing_namespaced_launcher_gran
 def test_app_environment_peer_matches_receiver_and_mounted_service_identity(
     staging_manifests: list[dict[str, Any]],
 ) -> None:
-    settings = AppSettings.model_validate(
-        yaml.safe_load(find_resource(staging_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])
-    )
+    settings = AppSettings.model_validate(config_map_yaml(staging_manifests, "app-config", "config.yaml"))
     peer = settings.environment_service
     assert peer is not None
     assert peer.target == _environments_grpc_target(staging_manifests)

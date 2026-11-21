@@ -9,7 +9,6 @@ from pathlib import PurePosixPath
 from typing import Any
 
 import pytest_bazel
-import yaml
 from cdk8s import App, Testing as Cdk8sTesting  # alias avoids pytest collecting Testing as a test class
 from more_itertools import one
 
@@ -31,7 +30,7 @@ from cluster.cdk8s.agentplane import (
     staging,
     workload_tls,
 )
-from cluster.cdk8s.testing.manifests import find_resource
+from cluster.cdk8s.testing.manifests import config_map_yaml, find_resource
 
 
 def _admits(policy: dict[str, Any], *, source: str, port: int) -> bool:
@@ -168,9 +167,7 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
         for mount in container["volumeMounts"]
     )
 
-    gateway = yaml.safe_load(
-        find_resource(staging_manifests, "ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"]
-    )
+    gateway = config_map_yaml(staging_manifests, f"{runner_gateway.NAME}-settings", "settings.yaml")
     target = gateway["central_sampler"]
     assert target["target"] == central_sampler.target(namespace)
     assert "token_file" not in target
@@ -178,21 +175,17 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     assert target["tls"]["client_uri"] == GATEWAY_SESSIONS_URI
     for field in ("cert_file", "key_file", "ca_file"):
         assert target["tls"][field] == gateway["gateway_tls"][field]
-    controller = yaml.safe_load(
-        find_resource(staging_manifests, "ConfigMap", f"{sandbox_controller.NAME}-settings")["data"]["config.yaml"]
-    )
+    controller = config_map_yaml(staging_manifests, f"{sandbox_controller.NAME}-settings", "config.yaml")
     assert controller["environment_service"]["runtime_proxy"]["executor_callers"] == serving_certificate["spec"]["uris"]
 
-    app_config = yaml.safe_load(find_resource(staging_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])
+    app_config = config_map_yaml(staging_manifests, "app-config", "config.yaml")
     assert app_config["policy_service_target"] == policy_controller.tls_target(namespace)
     assert app_config["policy_service_tls"]["server_uri"] == POLICY_CONTROLLER_URI
 
-    history = yaml.safe_load(
-        find_resource(staging_manifests, "ConfigMap", f"{history_service.NAME}-config")["data"]["config.yaml"]
-    )
+    history = config_map_yaml(staging_manifests, f"{history_service.NAME}-config", "config.yaml")
     assert history["policy_namespace"] == namespace
     assert serving_certificate["spec"]["uris"] == [history["ingress"]["sampler_service_actor"]]
-    llm = yaml.safe_load(find_resource(staging_manifests, "ConfigMap", "llm-ingress-settings")["data"]["settings.yaml"])
+    llm = config_map_yaml(staging_manifests, "llm-ingress-settings", "settings.yaml")
     assert llm["policy_namespace"] == namespace
     assert llm["central_sampler_services"] == [serving_certificate["spec"]["uris"][0]]
     assert llm["central_sampler_identity_callers"] is True

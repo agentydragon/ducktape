@@ -5,9 +5,11 @@ checks still run. `kyverno apply` has no operation flag, so an UPDATE is validat
 `request.operation` check read with the operation replaced."""
 
 import json
+from collections.abc import Sequence
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import pytest
 import pytest_bazel
@@ -113,10 +115,10 @@ def test_tls_injection_can_read_only_the_sandbox_and_its_credential_in_its_names
 
 def reads(
     *,
-    vm_uid: str,
-    vm_owner_kind: str,
-    vmi_volumes: list[dict] | None,
-    vmi_filesystems: list[dict] | None,
+    vm_uid: str = "vm-uid",
+    vm_owner_kind: str = "Sandbox",
+    vmi_volumes: Sequence[dict] | None = (),
+    vmi_filesystems: Sequence[dict] | None = (),
     credential_kind: str = "VM",
     record_credential_id: str = RUNNER_CREDENTIAL_ID,
     record_owner_uid: str = "sb-uid",
@@ -130,9 +132,9 @@ def reads(
 ) -> dict[str, dict]:
     vmi_spec: dict = {"domain": {"devices": {}}}
     if vmi_volumes is not None:
-        vmi_spec["volumes"] = vmi_volumes
+        vmi_spec["volumes"] = list(vmi_volumes)
     if vmi_filesystems is not None:
-        vmi_spec["domain"]["devices"]["filesystems"] = vmi_filesystems
+        vmi_spec["domain"]["devices"]["filesystems"] = list(vmi_filesystems)
     return {
         "vmi": {
             "metadata": {
@@ -237,38 +239,11 @@ def apply(
     operation: str = "CREATE",
     mutation: dict | None = None,
     validation: dict | None = None,
-    vm_uid: str = "vm-uid",
-    vm_owner_kind: str = "Sandbox",
-    vmi_volumes: tuple[dict, ...] | None = (),
-    vmi_filesystems: tuple[dict, ...] | None = (),
-    credential_kind: str = "VM",
-    record_credential_id: str = RUNNER_CREDENTIAL_ID,
-    record_owner_uid: str = "sb-uid",
-    binding_vmi_uid: str = "vmi-uid",
-    accepted_vmi_uid: str = "vmi-uid",
-    last_vmi_uid: str = "vmi-uid",
-    vm_credential_id: str = RUNNER_CREDENTIAL_ID,
-    vm_vmi_uid: str = "vmi-uid",
-    vmi_credential_id: str = RUNNER_CREDENTIAL_ID,
-    sandbox_uid: str = "sb-uid",
+    **reads_overrides: Any,
 ) -> Admission:
-    """Mutation rules match only launcher creates, so an UPDATE is validated as it stands."""
-    supplied = reads(
-        vm_uid=vm_uid,
-        vm_owner_kind=vm_owner_kind,
-        vmi_volumes=list(vmi_volumes) if vmi_volumes is not None else None,
-        vmi_filesystems=list(vmi_filesystems) if vmi_filesystems is not None else None,
-        credential_kind=credential_kind,
-        record_credential_id=record_credential_id,
-        record_owner_uid=record_owner_uid,
-        binding_vmi_uid=binding_vmi_uid,
-        accepted_vmi_uid=accepted_vmi_uid,
-        last_vmi_uid=last_vmi_uid,
-        vm_credential_id=vm_credential_id,
-        vm_vmi_uid=vm_vmi_uid,
-        vmi_credential_id=vmi_credential_id,
-        sandbox_uid=sandbox_uid,
-    )
+    """Mutation rules match only launcher creates, so an UPDATE is validated as it stands. `reads_overrides`
+    are the arguments of `reads`, which holds their defaults."""
+    supplied = reads(**reads_overrides)
     pod = tmp_path / "pod.yaml"
     pod.write_text(yaml.safe_dump(resource))
     mutated: KyvernoApplyResult | None = None
@@ -336,7 +311,7 @@ def test_injects_relay_idempotently(tmp_path: Path, policy: Policies) -> None:
 def test_rejects_a_missing_credential_during_mutation_even_if_validation_reads_it_later(
     tmp_path: Path, policy: Policies
 ) -> None:
-    supplied = reads(vm_uid="vm-uid", vm_owner_kind="Sandbox", vmi_volumes=[], vmi_filesystems=[])
+    supplied = reads()
     supplied["credential"] = {"metadata": {"name": "sandbox-a"}, "spec": {}, "status": {}}
     # The mutation and validation webhooks read independently. A later issued
     # record must not admit a Pod mutated with a nonexistent Secret name.
@@ -486,11 +461,7 @@ def test_fails_closed_for_eligible_daemon(tmp_path: Path, policy: Policies, defe
     # With just the new guard removed, the other real Kyverno rules admit this
     # launcher's unchanged daemon layout; the guard is what closes this gap.
     without_guard = validation_policy(
-        policy,
-        "CREATE",
-        **reads(
-            vm_uid="vm-uid", vm_owner_kind="Sandbox", vmi_volumes=[_STATE_VOLUME], vmi_filesystems=[_STATE_FILESYSTEM]
-        ),
+        policy, "CREATE", **reads(vmi_volumes=[_STATE_VOLUME], vmi_filesystems=[_STATE_FILESYSTEM])
     )
     without_guard["spec"]["validations"] = [
         check for check in without_guard["spec"]["validations"] if "eligibleVirtiofs" not in check["expression"]

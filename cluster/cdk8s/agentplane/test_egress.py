@@ -55,7 +55,7 @@ from cluster.cdk8s.agentplane.model_selections import QWEN_CHAT_CANARY_ID, QWEN_
 from cluster.cdk8s.agentplane.namespaces import kubernetes_accounts_namespace
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.secret_ref import SecretRef
-from cluster.cdk8s.testing.manifests import find_resource
+from cluster.cdk8s.testing.manifests import config_map_yaml, find_resource
 from model_catalog.catalog import Provider
 
 
@@ -121,9 +121,7 @@ def test_staging_requires_the_tls_hop_and_rules_boundary(catalog_manifests: list
     ports = {port["containerPort"] for port in proxy["ports"]}
     assert PROXY_PORT in ports
     assert admin(staging.ENV.namespace).pod_port in ports
-    settings = yaml.safe_load(
-        find_resource(catalog_manifests, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"]
-    )
+    settings = config_map_yaml(catalog_manifests, "egress-go-settings", "settings.yaml")
     assert settings["rules_namespace"] == staging.ENV.namespace
     assert "AGENTPLANE_EGRESS_RULES_NAMESPACE" not in {variable["name"] for variable in proxy["env"]}
     assert settings["forward"]["listen_address"] == f"0.0.0.0:{PROXY_PORT}"
@@ -144,9 +142,7 @@ def test_tls_hop_and_rules_add_only_bound_sandbox_readers_and_tls_ports(
     mtls_ports = [port for port in service["spec"]["ports"] if port["port"] == PROXY_PORT]
     assert len(mtls_ports) == 1
 
-    settings = yaml.safe_load(
-        find_resource(svid_egress_manifests, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"]
-    )
+    settings = config_map_yaml(svid_egress_manifests, "egress-go-settings", "settings.yaml")
     assert settings["forward"]["listen_address"] == f"0.0.0.0:{PROXY_PORT}"
     assert settings["forward"]["auth"][0]["ca_file"] == "/etc/agentplane-egress/svid-ca/ca-certificates.crt"
 
@@ -259,14 +255,10 @@ def test_notifications_verify_svids_behind_an_opaque_tunnel(catalog_manifests: l
         item["kind"] == "EgressCredential" and item["metadata"]["name"] == "agentplane-notifications-workload"
         for item in catalog_manifests
     )
-    proxy_settings = yaml.safe_load(
-        find_resource(catalog_manifests, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"]
-    )
+    proxy_settings = config_map_yaml(catalog_manifests, "egress-go-settings", "settings.yaml")
     endpoint = notifications.service(staging.ENV.namespace)
     assert f"{endpoint.fqdn}:{endpoint.pod_port}" in proxy_settings["tls_passthrough_targets"]
-    notification_settings = yaml.safe_load(
-        find_resource(catalog_manifests, "ConfigMap", f"{notifications.NAME}-settings")["data"]["settings.yaml"]
-    )
+    notification_settings = config_map_yaml(catalog_manifests, f"{notifications.NAME}-settings", "settings.yaml")
     assert notification_settings["rpc"]["listen_address"] == f"0.0.0.0:{endpoint.pod_port}"
     assert notification_settings["rpc"]["tls"]["cert_file"].endswith("/tls.crt")
 
@@ -275,15 +267,11 @@ def test_llm_runner_traffic_uses_its_svid_listener(catalog_manifests: list[dict[
     llm_service = find_resource(catalog_manifests, "Service", "llm-ingress")
     assert {port["port"] for port in llm_service["spec"]["ports"]} == {8080}
 
-    settings = yaml.safe_load(
-        find_resource(catalog_manifests, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"]
-    )
+    settings = config_map_yaml(catalog_manifests, "egress-go-settings", "settings.yaml")
     workload = llm_ingress.service(staging.ENV.namespace)
     assert f"{workload.fqdn}:{workload.pod_port}" in settings["tls_passthrough_targets"]
 
-    llm_settings = yaml.safe_load(
-        find_resource(catalog_manifests, "ConfigMap", "llm-ingress-settings")["data"]["settings.yaml"]
-    )
+    llm_settings = config_map_yaml(catalog_manifests, "llm-ingress-settings", "settings.yaml")
     assert llm_settings["rpc"]["listen_address"] == "0.0.0.0:8080"
     assert llm_settings["rpc"]["tls"]["cert_file"].endswith("/tls.crt")
     assert llm_settings["rpc"]["tls"]["key_file"].endswith("/tls.key")
@@ -330,9 +318,7 @@ def test_managed_cli_service_origins_use_svid_routes(catalog_manifests: list[dic
     environments_route = platform_routes.environments_grpc(namespace)
     basic = find_resource(catalog_manifests, "PolicySet", BASIC_POLICY)
     assert all(sessions.fqdn not in rule.get("hosts", []) for rule in basic["spec"]["rules"])
-    proxy_settings = yaml.safe_load(
-        find_resource(catalog_manifests, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"]
-    )
+    proxy_settings = config_map_yaml(catalog_manifests, "egress-go-settings", "settings.yaml")
     assert {
         sessions_authority,
         f"{history.fqdn}:{history.pod_port}",
@@ -428,7 +414,7 @@ def test_github_policy_admits_the_write_verbs_a_pr_lifecycle_needs(catalog_manif
 
 
 def test_claude_picker_offers_environment_models_and_keeps_ingress(catalog_manifests: list[dict[str, Any]]) -> None:
-    config = yaml.safe_load(find_resource(catalog_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])
+    config = config_map_yaml(catalog_manifests, "app-config", "config.yaml")
     assert config["models"]["harnesses"]["HARNESS_CLAUDE"] == [route.id for route in STAGING_APP_MODELS.claude]
     assert all(
         route.id in config["models"]["harnesses"]["HARNESS_CENTRAL_SAMPLER"] for route in STAGING_APP_MODELS.claude
@@ -438,7 +424,7 @@ def test_claude_picker_offers_environment_models_and_keeps_ingress(catalog_manif
 
 
 def test_shared_coding_models_preserve_provider_protocols(catalog_manifests: list[dict[str, Any]]) -> None:
-    config = yaml.safe_load(find_resource(catalog_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])
+    config = config_map_yaml(catalog_manifests, "app-config", "config.yaml")
     catalog = config["models"]
     assert catalog["harnesses"]["HARNESS_CODEX"] == [route.id for route in STAGING_APP_MODELS.codex]
     abliterated_id = "tabbyapi/oai-chat/qwen3.8-flash-next-abliterated"
@@ -492,14 +478,14 @@ def test_haku_launches_on_an_available_central_sampler_route(catalog_manifests: 
 
     Sandbox and Action launches use the same preset, so both must resolve to that harness and model.
     """
-    config = yaml.safe_load(find_resource(catalog_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])
+    config = config_map_yaml(catalog_manifests, "app-config", "config.yaml")
     preset = config["thread_presets"]["haku-codex"]
     assert preset["harness"] == "HARNESS_CENTRAL_SAMPLER"
     assert preset["model"] in config["models"]["harnesses"]["HARNESS_CENTRAL_SAMPLER"]
     option = one(model for model in config["models"]["models"] if model["model"] == preset["model"])
     assert preset["reasoning_effort"] in option["reasoning_efforts"]
     assert config["sandbox_presets"]["haku"]["thread_preset"] == "haku-codex"
-    actions = yaml.safe_load(find_resource(catalog_manifests, "ConfigMap", "actions-settings")["data"]["settings.yaml"])
+    actions = config_map_yaml(catalog_manifests, "actions-settings", "settings.yaml")
     action_spec = actions["action_groups"]["orchestration_v1"]["executor"]["presets"]["haku"]["create_session"]["spec"]
     assert action_spec["harness"] == preset["harness"]
     assert action_spec["model"] == preset["model"]
@@ -510,7 +496,7 @@ def test_staging_launch_presets_bind_identity_compatible_rules_and_keep_account_
     staging_manifests: list[dict[str, Any]],
 ) -> None:
     """New Sandbox Identities use account egress, while their existing account grants retain preset RBAC."""
-    config = yaml.safe_load(find_resource(staging_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])
+    config = config_map_yaml(staging_manifests, "app-config", "config.yaml")
     policies = {
         doc["metadata"]["name"]: doc["spec"]["rules"] for doc in staging_manifests if doc["kind"] == "PolicySet"
     }
@@ -571,7 +557,7 @@ def test_staging_launch_presets_bind_identity_compatible_rules_and_keep_account_
 def test_public_diagnostics_select_cluster_reader_and_share_haku_reads(
     preset: str, staging_manifests: list[dict[str, Any]]
 ) -> None:
-    config = yaml.safe_load(find_resource(staging_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])
+    config = config_map_yaml(staging_manifests, "app-config", "config.yaml")
     assert "kubernetes_grants" not in config
     grant_models = staging_grants.catalog(staging.ENV.namespace)
     catalog = {name: grant.model_dump(mode="json") for name, grant in grant_models.items()}
@@ -782,9 +768,7 @@ def test_the_proxy_impersonates_only_serviceaccounts_in_the_accounts_namespace(
 
 
 def test_the_local_api_server_bearer_is_the_proxys_mounted_token(svid_egress_manifests: list[dict[str, Any]]) -> None:
-    settings = yaml.safe_load(
-        find_resource(svid_egress_manifests, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"]
-    )
+    settings = config_map_yaml(svid_egress_manifests, "egress-go-settings", "settings.yaml")
     server = settings["local_api_server"]
     assert (server["host"], server["port"]) == (KUBERNETES_HOST, 443)
     pod = find_resource(svid_egress_manifests, "Deployment", "egress")["spec"]["template"]["spec"]
@@ -794,7 +778,7 @@ def test_the_local_api_server_bearer_is_the_proxys_mounted_token(svid_egress_man
 
 
 def test_aiquota_read_is_read_only_and_not_public(catalog_manifests: list[dict[str, Any]]) -> None:
-    config = yaml.safe_load(find_resource(catalog_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])
+    config = config_map_yaml(catalog_manifests, "app-config", "config.yaml")
     for name in ("finance-agent", "haku"):
         assert AIQUOTA_READ_POLICY in config["sandbox_presets"][name]["policy_sets"]
     assert AIQUOTA_READ_POLICY not in config["sandbox_presets"]["public-coder"]["policy_sets"]
