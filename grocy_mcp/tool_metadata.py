@@ -25,18 +25,14 @@ class ToolOverride:
     enabled: bool = True
 
 
-_enabled = ToolOverride
-
-
 def _disabled(name: str) -> ToolOverride:
     return ToolOverride(name, enabled=False)
 
 
 TOOL_OVERRIDES: dict[tuple[str, str], ToolOverride] = {
-    # GET /objects/{entity}, POST /objects/{entity}, GET /objects/{entity}/{objectId}
-    # and GET /stock are stripped from the OpenAPI spec by fix_openapi_spec.py;
-    # they are replaced by batch tools in batch_tools.py.
-    ("PUT", "/objects/{entity}/{objectId}"): _enabled(
+    # Routes in `_REPLACED_ROUTES` (fix_openapi_spec.py) are stripped from the OpenAPI spec and
+    # replaced by the batch tools in batch_tools.py, so they have no entry here.
+    ("PUT", "/objects/{entity}/{objectId}"): ToolOverride(
         "entity_update",
         "Partial update: send only the writable columns you want to change. Omitted fields are "
         "preserved. To null a nullable field, include it explicitly with value null. "
@@ -48,28 +44,19 @@ TOOL_OVERRIDES: dict[tuple[str, str], ToolOverride] = {
         "`should_not_be_frozen`, `qu_id_consume` on products). Never set `best_before_date` to "
         "null on stock entries — use `2999-12-31` for never-expires.",
     ),
-    ("DELETE", "/objects/{entity}/{objectId}"): _enabled("entity_delete"),
-    ("GET", "/stock/volatile"): _enabled(
+    ("DELETE", "/objects/{entity}/{objectId}"): ToolOverride("entity_delete"),
+    ("GET", "/stock/volatile"): ToolOverride(
         "list_volatile_stock",
         "Returns products that are due soon, overdue, expired, or below min stock — the same data "
         "the typed `get_expiring_stock` / `get_expired_stock` / `get_below_minimum_stock` tools slice.",
     ),
-    # Replaced by custom tools in batch_tools.py (stock_entries_list, stock_entry_edit).
-    # Stripped from the OpenAPI spec by fix_openapi_spec.py.
-    ("GET", "/stock/entry/{entryId}"): _disabled("get_stock_entry"),
-    ("PUT", "/stock/entry/{entryId}"): _disabled("stock_entry_edit"),
     ("GET", "/stock/entry/{entryId}/printlabel"): _disabled("print_stock_entry_label"),
-    ("GET", "/stock/products/{productId}"): _enabled(
+    ("GET", "/stock/products/{productId}"): ToolOverride(
         "get_product_stock",
         "The returned `amount` is total on-hand and already includes `amount_opened`; "
         "the opened amount is a subset, not an additional bucket.",
     ),
-    # POST /stock/products/{productId}/add, /consume, /inventory stripped from
-    # OpenAPI spec; replaced by batch stock_add, stock_consume, stock_set.
-    # Replaced by custom stock_transfer in batch_tools.py.
-    # Stripped from the OpenAPI spec by fix_openapi_spec.py.
-    ("POST", "/stock/products/{productId}/transfer"): _disabled("transfer_product_stock"),
-    ("POST", "/stock/products/{productId}/open"): _enabled(
+    ("POST", "/stock/products/{productId}/open"): ToolOverride(
         "open_product_stock",
         "Marks stock as opened without consuming it. Opened units remain included in the product's "
         "total `amount`; `amount_opened` reports that subset. `stock_consume` and downward `stock_set` "
@@ -90,22 +77,17 @@ TOOL_OVERRIDES: dict[tuple[str, str], ToolOverride] = {
     ("POST", "/stock/products/by-barcode/{barcode}/transfer"): _disabled("transfer_stock_by_barcode"),
     ("POST", "/stock/products/by-barcode/{barcode}/inventory"): _disabled("inventory_by_barcode"),
     ("POST", "/stock/products/by-barcode/{barcode}/open"): _disabled("open_stock_by_barcode"),
-    ("POST", "/stock/products/{productIdToKeep}/merge/{productIdToRemove}"): _enabled("products_merge"),
+    ("POST", "/stock/products/{productIdToKeep}/merge/{productIdToRemove}"): ToolOverride("products_merge"),
     # `list_location_stock` disabled: same `query[]` issue as above.
     ("GET", "/stock/locations/{locationId}/entries"): _disabled("list_location_stock"),
     # Shopping list bulk helpers — disabled for now (low usage, custom tools cover the core).
     ("POST", "/stock/shoppinglist/add-missing-products"): _disabled("shopping_list_add_missing"),
     ("POST", "/stock/shoppinglist/add-overdue-products"): _disabled("shopping_list_add_overdue"),
     ("POST", "/stock/shoppinglist/add-expired-products"): _disabled("shopping_list_add_expired"),
-    # Replaced by custom tools in batch_tools.py.
-    # Stripped from the OpenAPI spec by fix_openapi_spec.py.
-    ("POST", "/stock/shoppinglist/clear"): _disabled("shopping_list_clear"),
-    ("POST", "/stock/shoppinglist/add-product"): _disabled("shopping_list_add_product"),
-    ("POST", "/stock/shoppinglist/remove-product"): _disabled("shopping_list_remove_product"),
     ("GET", "/stock/bookings/{bookingId}"): _disabled("get_booking"),
     ("POST", "/stock/bookings/{bookingId}/undo"): _disabled("undo_booking"),
     ("GET", "/stock/transactions/{transactionId}"): _disabled("get_transaction_bookings"),
-    ("POST", "/stock/transactions/{transactionId}/undo"): _enabled("transaction_undo"),
+    ("POST", "/stock/transactions/{transactionId}/undo"): ToolOverride("transaction_undo"),
     ("GET", "/stock/barcodes/external-lookup/{barcode}"): _disabled("barcode_lookup"),
     ("GET", "/batteries"): _disabled("list_batteries"),
     ("GET", "/batteries/{batteryId}"): _disabled("get_battery"),
@@ -132,8 +114,8 @@ TOOL_OVERRIDES: dict[tuple[str, str], ToolOverride] = {
     ("GET", "/recipes/{recipeId}/printlabel"): _disabled("print_recipe_label"),
     ("GET", "/calendar/ical"): _disabled("get_calendar_ical"),
     ("GET", "/calendar/ical/sharing-link"): _disabled("get_calendar_sharing_link"),
-    ("GET", "/files/{group}/{fileName}"): _enabled("file_get"),
-    ("PUT", "/files/{group}/{fileName}"): _enabled("file_upload"),
+    ("GET", "/files/{group}/{fileName}"): ToolOverride("file_get"),
+    ("PUT", "/files/{group}/{fileName}"): ToolOverride("file_upload"),
     ("DELETE", "/files/{group}/{fileName}"): _disabled("delete_file"),
     # `list_users` disabled: same `query[]` issue as above.
     ("GET", "/users"): _disabled("list_users"),
@@ -143,18 +125,18 @@ TOOL_OVERRIDES: dict[tuple[str, str], ToolOverride] = {
     ("GET", "/users/{userId}/permissions"): _disabled("get_user_permissions"),
     ("POST", "/users/{userId}/permissions"): _disabled("add_user_permission"),
     ("PUT", "/users/{userId}/permissions"): _disabled("set_user_permissions"),
-    ("GET", "/user"): _enabled("get_current_user"),
+    ("GET", "/user"): ToolOverride("get_current_user"),
     ("GET", "/user/settings"): _disabled("get_user_settings"),
     ("GET", "/user/settings/{settingKey}"): _disabled("get_user_setting"),
     ("PUT", "/user/settings/{settingKey}"): _disabled("set_user_setting"),
     ("DELETE", "/user/settings/{settingKey}"): _disabled("delete_user_setting"),
     ("GET", "/userfields/{entity}/{objectId}"): _disabled("get_userfields"),
     ("PUT", "/userfields/{entity}/{objectId}"): _disabled("set_userfields"),
-    ("GET", "/system/info"): _enabled(
+    ("GET", "/system/info"): ToolOverride(
         "get_system_info"
     ),  # tool, not resource: claude.ai doesn't expose MCP resources to the AI
     ("GET", "/system/time"): _disabled("get_system_time"),
-    ("GET", "/system/db-changed-time"): _enabled("get_db_changed_time"),
+    ("GET", "/system/db-changed-time"): ToolOverride("get_db_changed_time"),
     ("GET", "/system/config"): _disabled("get_system_config"),
     ("GET", "/system/localization-strings"): _disabled("get_localization_strings"),
     ("POST", "/system/log-missing-localization"): _disabled("log_missing_localization"),

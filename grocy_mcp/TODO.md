@@ -24,10 +24,9 @@ remainder needs a bit more care:
   resources; dropping the verb (`system_info`, `db_changed_time`,
   `current_user`) reads more naturally as MCP resources than as tools.
 - **Product stock helpers** (OpenAPI) — `get_product_stock`,
-  `open_product_stock`, `transfer_product_stock` (already disabled). The
-  `<entity>_<verb>` rename is mechanical (`product_stock_get`,
-  `product_stock_open`) but the `product_stock` name implies it's a
-  standalone entity, which it isn't — it's a derived view over
+  `open_product_stock`. The `<entity>_<verb>` rename is mechanical
+  (`product_stock_get`, `product_stock_open`) but the `product_stock` name
+  implies it's a standalone entity, which it isn't — it's a derived view over
   `stock_entries` filtered by product. Worth thinking about whether to
   promote to a batch tool that groups with `stock_*`.
 

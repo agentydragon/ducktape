@@ -23,7 +23,7 @@ import logging
 import traceback
 from collections.abc import Awaitable, Callable
 from datetime import UTC, date, datetime, timedelta
-from typing import Annotated, Any, TypeVar
+from typing import Annotated, Any
 
 import httpx2
 from fastmcp import FastMCP
@@ -81,9 +81,6 @@ from grocy_mcp.mcp_types import (
 from grocy_mcp.request_scoped_openapi import HTTPClientProvider
 
 logger = logging.getLogger(__name__)
-
-T = TypeVar("T")
-R = TypeVar("R")
 
 
 def _parse_date(value: str | None) -> date | None:
