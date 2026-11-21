@@ -3752,25 +3752,6 @@ the database and role in place (`ALTER DATABASE`/`ALTER ROLE ... RENAME`) and ha
 the log. Verify the History Service and Electric reconnect with no data movement. Update the
 `history_service/internal/migrations/migrations.go` and `cluster/cdk8s/agentplane/history_service.py` docstrings.
 
-## 16. Standard idioms over hand-rolled mechanisms
-
-From the 2026-10-30 idiom audit; `SAMPLER_JOURNAL_DIET` awaits the operator's view.
-
-```mermaid
-flowchart LR
-    SAMPLER_JOURNAL_DIET[Decision: what the sampler journals]
-```
-
-### `SAMPLER_JOURNAL_DIET` — what the sampler journals
-
-**Decision; operator to weigh in.** At the 2026-10-30 audit (re-check before starting), every
-sampling intent stored the full Responses request body (`sessionstore` `Store.Begin`) and nothing
-read it beyond its kind, with no deletion, so storage grows
-with turns × context. Every streamed provider event was journaled as a `BoundaryRecord` in its own
-locking transaction, then again inside the intent's result and again in failure evidence. Options:
-store kind plus a conversation reference and journal raw events once (recommended); batch per-event
-writes or keep only item-done and terminal events; or keep everything and add retention.
-
 ## 17. Two binaries and the Go layout
 
 The [two binaries](../docs/adr_two_binaries.md), Sessions and Environments, serve under their
