@@ -28,7 +28,6 @@ def _settings(tmp_path: Path, *, identity: bool = True) -> SshSettings:
     )
 
 
-@pytest.mark.anyio
 async def test_list_targets_keeps_missing_identity_unavailable(tmp_path: Path) -> None:
     settings = _settings(tmp_path, identity=False)
     async with Client(build_mcp(settings)) as client:
@@ -43,7 +42,6 @@ async def test_list_targets_keeps_missing_identity_unavailable(tmp_path: Path) -
     ]
 
 
-@pytest.mark.anyio
 async def test_exec_returns_bounded_result(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     settings = _settings(tmp_path)
     monkeypatch.setattr(
@@ -62,7 +60,6 @@ async def test_exec_returns_bounded_result(tmp_path: Path, monkeypatch: pytest.M
     }
 
 
-@pytest.mark.anyio
 async def test_exec_rejects_unknown_target_and_timeout_above_max(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
     async with Client(build_mcp(settings)) as client:
@@ -72,7 +69,6 @@ async def test_exec_rejects_unknown_target_and_timeout_above_max(tmp_path: Path)
             await client.call_tool("exec", {"host": "host", "user": "coder", "command": "true", "timeout_seconds": 4})
 
 
-@pytest.mark.anyio
 async def test_exec_timeout_is_unknown(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     settings = _settings(tmp_path)
 
@@ -106,7 +102,6 @@ def test_config_loads_and_rejects_duplicate_target(tmp_path: Path) -> None:
         )
 
 
-@pytest.mark.anyio
 async def test_create_app_has_public_health_and_protected_mcp(tmp_path: Path) -> None:
     app = create_app(_settings(tmp_path), "token")
     async with (
