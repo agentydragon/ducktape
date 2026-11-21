@@ -11,6 +11,7 @@ import pytest
 import pytest_bazel
 
 from agentplane.system_tests.vm import host_qemu
+from agentplane.system_tests.vm.shutdown_diagnostic import SHUTDOWN_COMPLETE, SHUTDOWN_REQUESTED
 
 
 def test_shutdown_markers_are_exact_and_namespace_scoped(tmp_path: Path) -> None:
@@ -22,11 +23,11 @@ def test_shutdown_markers_are_exact_and_namespace_scoped(tmp_path: Path) -> None
         (
             stalled,
             b"prefix AGENTPLANE_GUEST_SHUTDOWN_REQUESTED\n"
-            + host_qemu.SHUTDOWN_REQUESTED
+            + SHUTDOWN_REQUESTED
             + b"\r\nAGENTPLANE_GUEST_SHUTDOWN_COMPLETE_EXTRA\n",
         ),
-        (complete, host_qemu.SHUTDOWN_REQUESTED + b"\n" + host_qemu.SHUTDOWN_COMPLETE + b"\n"),
-        (foreign, host_qemu.SHUTDOWN_REQUESTED + b"\n"),
+        (complete, SHUTDOWN_REQUESTED + b"\n" + SHUTDOWN_COMPLETE + b"\n"),
+        (foreign, SHUTDOWN_REQUESTED + b"\n"),
     ):
         path.parent.mkdir(parents=True)
         path.write_bytes(contents)
@@ -319,7 +320,7 @@ def test_virtiofs_timeline_requires_complete_absence_and_stops_after_proof(
     assert host_qemu.record_virtiofsd_ready_baseline(artifacts, "systest", "virt-launcher-agentplane-vm-123", uid)
     launcher = artifacts / "serial" / f"systest_virt-launcher-agentplane-vm-123_{uid}" / "vmi"
     launcher.mkdir(parents=True)
-    (launcher / "serial.log").write_bytes(host_qemu.SHUTDOWN_REQUESTED + b"\n" + host_qemu.SHUTDOWN_COMPLETE + b"\n")
+    (launcher / "serial.log").write_bytes(SHUTDOWN_REQUESTED + b"\n" + SHUTDOWN_COMPLETE + b"\n")
     monkeypatch.setattr(host_qemu, "VIRTIOFSD_TIMELINE_INTERVAL_SECONDS", 0.001)
     monkeypatch.setattr(host_qemu, "VIRTIOFSD_TIMELINE_MAX_SECONDS", 0.1)
     samples = iter(((2, True), (0, True), (0, True)))
@@ -348,7 +349,7 @@ def test_virtiofs_timeline_does_not_claim_absence_from_incomplete_scan(
     launcher_dir = artifacts / "serial" / f"systest_virt-launcher-agentplane-vm-123_{uid}"
     serial = launcher_dir / "vmi" / "serial.log"
     serial.parent.mkdir(parents=True)
-    serial.write_bytes(host_qemu.SHUTDOWN_REQUESTED + b"\n" + host_qemu.SHUTDOWN_COMPLETE + b"\n")
+    serial.write_bytes(SHUTDOWN_REQUESTED + b"\n" + SHUTDOWN_COMPLETE + b"\n")
     monkeypatch.setattr(host_qemu, "VIRTIOFSD_TIMELINE_MAX_SAMPLES", 2)
     monkeypatch.setattr(host_qemu, "_take_virtiofsd_timeline_sample", lambda *_args, **_kwargs: (0, False))
 
@@ -367,7 +368,7 @@ def test_virtiofs_timeline_labels_capture_teardown_separately(tmp_path: Path, mo
     launcher_dir = artifacts / "serial" / f"systest_virt-launcher-agentplane-vm-123_{uid}"
     serial = launcher_dir / "vmi" / "serial.log"
     serial.parent.mkdir(parents=True)
-    serial.write_bytes(host_qemu.SHUTDOWN_REQUESTED + b"\n")
+    serial.write_bytes(SHUTDOWN_REQUESTED + b"\n")
     stop = threading.Event()
 
     def take(*_args: Any, **_kwargs: Any) -> tuple[int, bool]:
@@ -454,7 +455,7 @@ def test_virtiofs_snapshot_reserves_existing_qemu_and_qmp_budget(monkeypatch: py
 def _shutdown_artifacts(root: Path) -> Path:
     launcher = root / "serial" / "systest_virt-launcher-vm-pod_aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" / "vmi"
     launcher.mkdir(parents=True)
-    (launcher / "serial.log").write_bytes(host_qemu.SHUTDOWN_REQUESTED + b"\n")
+    (launcher / "serial.log").write_bytes(SHUTDOWN_REQUESTED + b"\n")
     return launcher.parents[1]
 
 
@@ -568,7 +569,7 @@ def test_one_launcher_read_failure_does_not_stop_other_launcher_capture(
     good = artifacts / "serial" / "systest_virt-launcher-good_ffffffff-1111-2222-3333-444444444444" / "vmi"
     for launcher in (bad, good):
         launcher.mkdir(parents=True)
-        (launcher / "serial.log").write_bytes(host_qemu.SHUTDOWN_REQUESTED + b"\n")
+        (launcher / "serial.log").write_bytes(SHUTDOWN_REQUESTED + b"\n")
 
     read_markers = host_qemu._launcher_markers
 
@@ -610,7 +611,7 @@ def test_report_captures_unrequested_guest_without_touching_completed_or_foreign
     foreign = tmp_path / "serial" / "other_virt-launcher-pending_uid-foreign"
     for launcher, contents in (
         (pending, b"runtime started\n"),
-        (complete, host_qemu.SHUTDOWN_COMPLETE + b"\n"),
+        (complete, SHUTDOWN_COMPLETE + b"\n"),
         (foreign, b"runtime started\n"),
     ):
         serial = launcher / "vmi" / "serial.log"
@@ -626,7 +627,7 @@ def test_report_captures_unrequested_guest_without_touching_completed_or_foreign
     assert files[0].parent.name == pending.name
     evidence = files[0].read_text()
     assert "phase=report" in evidence
-    assert host_qemu.SHUTDOWN_REQUESTED.decode() not in evidence
+    assert SHUTDOWN_REQUESTED.decode() not in evidence
     assert k3s.calls
     assert all(args[3] == "virt-launcher-pending" for args, _ in k3s.calls)
     if fail_list:

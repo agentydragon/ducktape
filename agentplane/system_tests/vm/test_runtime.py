@@ -83,7 +83,6 @@ def test_vm_runtime_skips_qmp_report_probe_for_opted_in_passive_timeline(
 ) -> None:
     calls: list[str] = []
     monkeypatch.setenv(host_qemu.VIRTIOFSD_TIMELINE_ENV, "1")
-    monkeypatch.setattr(vm_infrastructure, "releases", list)
     monkeypatch.setattr(host_qemu, "snapshot_pending", lambda *_args: calls.append("qmp"))
     monkeypatch.setattr(vm_sandboxes, "report", lambda *_args: "report")
 
@@ -132,7 +131,6 @@ def test_boot_rcu_observer_is_off_by_default_for_all_full_suite_templates(
     monkeypatch.delenv("AGENTPLANE_VM_LIBVIRT_MONITOR_DEBUG", raising=False)
     monkeypatch.delenv("AGENTPLANE_VM_NATIVE_PROFILE", raising=False)
     monkeypatch.setenv("AGENTPLANE_VM_SHUTDOWN_SYSRQ", "0")
-    monkeypatch.setattr(vm_infrastructure, "releases", list)
     objects = [_vm_template("base"), _vm_template("oom"), {"kind": "ConfigMap", "metadata": {"name": "other"}}]
 
     runtime = VmRuntime()
@@ -151,7 +149,6 @@ def test_boot_rcu_observer_opt_in_mutates_each_vm_template_once(
     monkeypatch.delenv("AGENTPLANE_VM_BOOT_EVIDENCE", raising=False)
     monkeypatch.delenv("AGENTPLANE_VM_LIBVIRT_MONITOR_DEBUG", raising=False)
     monkeypatch.delenv("AGENTPLANE_VM_NATIVE_PROFILE", raising=False)
-    monkeypatch.setattr(vm_infrastructure, "releases", list)
     objects = [_vm_template("base"), _vm_template("oom")]
     runtime = VmRuntime()
 
@@ -167,7 +164,6 @@ def test_boot_rcu_observer_opt_in_mutates_each_vm_template_once(
 
 def test_boot_rcu_observer_rejects_malformed_opt_in(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AGENTPLANE_VM_BOOT_RCU_OBSERVER", "true")
-    monkeypatch.setattr(vm_infrastructure, "releases", list)
     runtime = VmRuntime()
 
     with pytest.raises(ValueError, match="AGENTPLANE_VM_BOOT_RCU_OBSERVER"):
@@ -176,7 +172,6 @@ def test_boot_rcu_observer_rejects_malformed_opt_in(tmp_path: Path, monkeypatch:
 
 def test_shutdown_sysrq_is_on_by_default_and_can_be_disabled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("AGENTPLANE_VM_SHUTDOWN_SYSRQ", raising=False)
-    monkeypatch.setattr(vm_infrastructure, "releases", list)
     objects = [_vm_template("base"), _vm_template("oom"), {"kind": "ConfigMap", "metadata": {"name": "other"}}]
     runtime = VmRuntime()
     runtime.configure(objects)
@@ -205,7 +200,6 @@ def test_boot_rcu_capture_lifecycle_is_opt_in_and_wraps_host_capture(
     events: list[str] = []
     monkeypatch.setenv("AGENTPLANE_VM_BOOT_RCU_OBSERVER", "1" if enabled else "0")
     monkeypatch.delenv(host_qemu.VIRTIOFSD_TIMELINE_ENV, raising=False)
-    monkeypatch.setattr(vm_infrastructure, "releases", list)
     monkeypatch.setattr("agentplane.system_tests.vm.runtime.undeclared_outputs_dir", lambda: tmp_path)
 
     @contextlib.contextmanager
@@ -254,7 +248,6 @@ def test_boot_rcu_summary_failure_does_not_mask_test_failure(
 ) -> None:
     monkeypatch.setenv("AGENTPLANE_VM_BOOT_RCU_OBSERVER", "1")
     monkeypatch.delenv(host_qemu.VIRTIOFSD_TIMELINE_ENV, raising=False)
-    monkeypatch.setattr(vm_infrastructure, "releases", list)
     monkeypatch.setattr("agentplane.system_tests.vm.runtime.undeclared_outputs_dir", lambda: tmp_path)
     monkeypatch.setattr(
         "agentplane.system_tests.vm.runtime.guest_logs.capture", lambda **_kwargs: contextlib.nullcontext()

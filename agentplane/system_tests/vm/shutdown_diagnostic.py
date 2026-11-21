@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 from typing import Any, Literal, NotRequired, TypedDict
 
-ACPI_REQUESTED = b"AGENTPLANE_GUEST_SHUTDOWN_REQUESTED"
+SHUTDOWN_REQUESTED = b"AGENTPLANE_GUEST_SHUTDOWN_REQUESTED"
 SHUTDOWN_COMPLETE = b"AGENTPLANE_GUEST_SHUTDOWN_COMPLETE"
 DOMAIN_POWERDOWN = b"reboot: Power down"
 PROGRESS_FILENAME = "vm-shutdown-diagnostic-progress.json"
@@ -127,18 +127,18 @@ def _ordered_shutdown_proof(serial_files: list[Path]) -> bool:
             lines = path.read_bytes().splitlines(keepends=True)
         except FileNotFoundError:
             continue
-        positions: dict[bytes, list[int]] = {ACPI_REQUESTED: [], SHUTDOWN_COMPLETE: [], DOMAIN_POWERDOWN: []}
+        positions: dict[bytes, list[int]] = {SHUTDOWN_REQUESTED: [], SHUTDOWN_COMPLETE: [], DOMAIN_POWERDOWN: []}
         for index, line in enumerate(lines):
             if not line.endswith(b"\n"):
                 continue
             clean = line.rstrip(b"\r\n")
-            if clean in (ACPI_REQUESTED, SHUTDOWN_COMPLETE):
+            if clean in (SHUTDOWN_REQUESTED, SHUTDOWN_COMPLETE):
                 positions[clean].append(index)
             elif clean.endswith(DOMAIN_POWERDOWN):
                 positions[DOMAIN_POWERDOWN].append(index)
         if any(
             acpi < complete < powerdown
-            for acpi in positions[ACPI_REQUESTED]
+            for acpi in positions[SHUTDOWN_REQUESTED]
             for complete in positions[SHUTDOWN_COMPLETE]
             for powerdown in positions[DOMAIN_POWERDOWN]
         ):
@@ -226,7 +226,9 @@ def record(artifact_root: Path, output_dir: Path, namespace: str) -> ShutdownDia
                 "launcher": launcher.name,
                 "vmi_uid": vmi_uid,
                 "serial_artifacts": [path.relative_to(artifact_root).as_posix() for path in serial_files],
-                "acpi_request_lines": [line for path in serial_files for line in _exact_lines(path, ACPI_REQUESTED)],
+                "acpi_request_lines": [
+                    line for path in serial_files for line in _exact_lines(path, SHUTDOWN_REQUESTED)
+                ],
                 "shutdown_complete_lines": [
                     line for path in serial_files for line in _exact_lines(path, SHUTDOWN_COMPLETE)
                 ],

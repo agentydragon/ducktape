@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import os
 import subprocess
-import tarfile
 from pathlib import Path
 
 import pytest_bazel
 from python.runfiles import Runfiles
+
+from agentplane.system_tests.vm import guest_busybox
 
 
 def _runfile(environment_name: str) -> Path:
@@ -18,15 +19,7 @@ def _runfile(environment_name: str) -> Path:
 
 
 def _busybox(tmp_path: Path) -> Path:
-    archive_path = _runfile("DELEGATED_CGROUP_STRESS_BUSYBOX_RLOCATION")
-    binary = tmp_path / "busybox"
-    with tarfile.open(archive_path) as archive:
-        member = next(member for member in archive if member.name.endswith("bin/busybox"))
-        content = archive.extractfile(member)
-        assert content is not None
-        binary.write_bytes(content.read())
-    binary.chmod(0o755)
-    return binary
+    return guest_busybox.extract(_runfile("DELEGATED_CGROUP_STRESS_BUSYBOX_RLOCATION"), tmp_path)
 
 
 def test_probe_has_valid_guest_busybox_shell_syntax(tmp_path: Path) -> None:
