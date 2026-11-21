@@ -390,9 +390,8 @@ fn duplicate_top_level_decl_claims_are_rejected() {
     // or pick one module to own the declaration. Two modules
     // re-exporting the same source binding under different readable
     // names is not a supported pattern for top-level decls.
-    // (Multi-re-export of an `import_specifier` binding via
-    // `re_exported_by` remains supported — see
-    // `imported_binding_re_exported_under_two_different_names`.)
+    // (`import_specifier` bindings follow the same rule — see
+    // `duplicate_import_specifier_claims_are_rejected`.)
     //
     // Different selector forms targeting the same declaration
     // (`{name: ho}` vs `{name: ho, kind: class_declaration}`) all
@@ -837,8 +836,9 @@ fn moved_body_re_imports_specifier_re_exported_by_another_plan() {
     // making it `BindingKind::Imported` in `AssignmentAnalysis.bindings`.
     // mod_b moves a body that references the same local `a`.
     // The source-chunk re-import filter must NOT skip `a` just
-    // because it's in `AssignmentAnalysis.bindings` — `cross_module_imports_for_body`
-    // can't satisfy it (Imported bindings have `owner_of() == None`),
+    // because it's in `AssignmentAnalysis.bindings` — the owner-based
+    // cross-module imports of `plan_module_reference_needs` can't satisfy it
+    // (Imported bindings have `owner_of() == None`),
     // so without the source-chunk re-import mod_b has a free
     // variable and `ReferenceError: a is not defined` at runtime.
     //

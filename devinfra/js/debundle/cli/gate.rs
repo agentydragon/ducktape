@@ -26,6 +26,7 @@
 //! many.
 
 use analysis_model::DepKind;
+use command_output::infallible;
 use graph_provenance::CurrentRoots;
 use source_identity::{SourceUnitId, SourceUnitOrdinal};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -445,11 +446,8 @@ fn run_diagnose(
         traces: returned,
     };
     let format = peel::OutputFormat::resolve(args.format);
-    command_output::write_report(&report, format, output, |report, out| {
-        render_diagnose_text(report, out);
-        Ok(())
-    })
-    .context("writing gate diagnose output")
+    command_output::write_report(&report, format, output, infallible(render_diagnose_text))
+        .context("writing gate diagnose output")
 }
 
 fn diagnose_binding(
@@ -903,11 +901,8 @@ fn run_list(args: GateListArgs, output: &mut dyn std::io::Write) -> Result<()> {
     if command_output::write_ndjson_list(&report.blocking_sccs, format, output)? {
         return Ok(());
     }
-    command_output::write_report(&report, format, output, |report, out| {
-        render_list_text(report, out);
-        Ok(())
-    })
-    .context("writing gate list output")
+    command_output::write_report(&report, format, output, infallible(render_list_text))
+        .context("writing gate list output")
 }
 
 fn render_list_text(report: &GateListReport, out: &mut String) {
@@ -989,11 +984,8 @@ fn run_describe(
         sequenced_source_inspections,
     };
     let format = peel::OutputFormat::resolve(args.format);
-    command_output::write_report(&report, format, output, |report, out| {
-        render_describe_text(report, out);
-        Ok(())
-    })
-    .context("writing gate describe output")
+    command_output::write_report(&report, format, output, infallible(render_describe_text))
+        .context("writing gate describe output")
 }
 
 fn render_describe_text(report: &GateDescribeReport, out: &mut String) {
@@ -1067,11 +1059,8 @@ fn run_cut(args: GateCutArgs, output: &mut dyn std::io::Write) -> Result<()> {
     if command_output::write_ndjson_list(&report.cut, format, output)? {
         return Ok(());
     }
-    command_output::write_report(&report, format, output, |report, out| {
-        render_cut_text(report, out);
-        Ok(())
-    })
-    .context("writing gate cut output")
+    command_output::write_report(&report, format, output, infallible(render_cut_text))
+        .context("writing gate cut output")
 }
 
 fn render_cut_text(report: &GateCutReport, out: &mut String) {
