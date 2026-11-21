@@ -3,7 +3,7 @@ import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { Badge, Button, Group, Loader, Paper, Popover, Stack, Text } from "@mantine/core";
 import { Link } from "react-router";
 
-import type { SessionBrowserApi } from "./api";
+import { errorMessage, uniqueById, type SessionBrowserApi } from "./api";
 import type { SessionSummary } from "./openapi_schema";
 import { formatDateTime } from "./session-viewer-formatting";
 
@@ -47,11 +47,7 @@ export function RelatedSessionsPanel({
     getNextPageParam: (page) => page.next_cursor ?? undefined,
   });
   const childPages = childQuery.data?.pages ?? [];
-  const childSessions = useMemo(() => {
-    const byId = new Map<string, SessionSummary>();
-    for (const page of childPages) for (const child of page.data) byId.set(child.id, child);
-    return [...byId.values()];
-  }, [childPages]);
+  const childSessions = useMemo(() => uniqueById(childPages.flatMap((page) => page.data)), [childPages]);
   const fetchedParentSession = parentQuery.data;
   const parent = {
     session:
@@ -274,8 +270,4 @@ function RelatedSessionsIcon(): JSX.Element {
       <circle cx="18" cy="5" r="2" stroke="currentColor" strokeWidth="1.8" />
     </svg>
   );
-}
-
-function errorMessage(reason: unknown): string {
-  return reason instanceof Error ? reason.message : "Could not load local sessions.";
 }

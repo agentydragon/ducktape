@@ -18,7 +18,7 @@ import {
 import { Link, useLocation } from "react-router";
 import IconCheck from "@tabler/icons-react/dist/esm/icons/IconCheck.mjs";
 
-import { httpApi, type SessionBrowserApi } from "./api";
+import { errorMessage, httpApi, type SessionBrowserApi } from "./api";
 import type { MachineImportProgress, SnapshotImportState } from "./openapi_schema";
 import { formatDateTime } from "./session-viewer-formatting";
 
@@ -436,10 +436,6 @@ function snapshotStateColor(state: SnapshotImportState): "red" | "yellow" | "gre
     return "yellow";
   }
   return "green";
-}
-
-function errorMessage(reason: unknown, fallback: string): string {
-  return reason instanceof Error ? reason.message : fallback;
 }
 
 function returnPath(state: unknown): string {
