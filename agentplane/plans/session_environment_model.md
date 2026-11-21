@@ -402,11 +402,12 @@ Equality is an _admission rule_, not a complete authorization design or an isola
 
 ### Where a Session's identity comes from
 
-Today `SessionSpec` has no identity: `CreateSession` derives the execution principal from the placed
-Sandbox's own ServiceAccount and pins its UID. That per-Sandbox account exists so `PolicyBinding`s
-can attach permission sets to one agent. In the goal the permission handle is
-the Identity: `CreateSession` names it (`SERVICES_IDENTITY_PRINCIPAL`), Dispatcher holds the
-Session-to-Identity binding, and the reference is neither a credential nor authority to act as it.
+Today `SessionSpec` names no identity: `CreateSession` records the Identity the placed Sandbox names in
+`spec.identity`, read live with its UID, as the Session's immutable principal
+([Dispatcher SPEC](../session_dispatcher/dispatcher/SPEC.md#session-binding)). In the goal the permission
+handle is the Identity: `CreateSession` names it
+([`SESSION_IDENTITY_CONTRACT`](task_dag.md#session_identity_contract--session-identity-and-shared-environment-admission)),
+Dispatcher holds the Session-to-Identity binding, and the reference is neither a credential nor authority to act as it.
 A central Session keeps its Identity with zero Environments; the sampler acts for it as a delegating
 actor ([`CENTRAL_SESSION_ACTING_DESIGN`](task_dag.md#central_session_acting_design--a-central-session-acting-as-its-identity)),
 never by holding the agent's key, and its own ServiceAccount never becomes the agent's.
@@ -645,7 +646,7 @@ states. Materialization is placement-owner progress, not harness readiness, a mo
 projection.
 
 **Open: unconfirmed native openings.** An unconfirmed native owner admission holds dependent queued
-commands as `session_opening_unconfirmed`
+commands as `session_unconfirmed`
 ([outcome contract](../session_dispatcher/dispatcher/SPEC.md#opening-outcomes-and-dependent-commands));
 nothing resolves that hold automatically. Whether an authorized caller or operator can resolve it
 from durable owner evidence remains open in

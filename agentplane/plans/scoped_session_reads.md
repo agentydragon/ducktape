@@ -58,9 +58,11 @@ held with the other read decisions.
   or agent type. Tag writes follow the
   [agreed administration boundary](multiagent_communication.md#target-collections-and-launch-enrollment).
   Grants remain additive and are checked on every list/read/follow.
-- Authenticate workload bearers through TokenReview, retaining verified SA/Pod incarnation evidence.
-  Define grant carryover on same-name SA replacement in the chosen policy representation; do not
-  assume a caller-supplied name proves an incarnation or trust a forwarded principal header.
+- Authenticate workloads by SVID, resolved through live `WorkloadCredential` and Identity records
+  ([workload authentication](../docs/workload_authentication.md)), retaining verified incarnation
+  evidence; no receiver calls TokenReview. Define grant carryover on same-name replacement in the
+  chosen policy representation; do not assume a caller-supplied name proves an incarnation or trust a
+  forwarded principal header.
 - Operator authentication may remain separate for v1; app-auth simplification is optional follow-up
   work. Ingestion/projecting service privileges must not become
   a reusable all-history grant for a hosted agent.

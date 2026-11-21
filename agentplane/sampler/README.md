@@ -176,14 +176,14 @@ client API until their separate retirement.
 
 - Gateway `central_sampler.tls` presents the Sessions role SVID and verifies the sampler server.
   The sampler's `gateway_tls` presents its own SVID and verifies the Gateway server for Executor calls.
-  The Gateway's `executor_service_callers` allowlist authorizes access to the same `Executor` API the Runner
-  serves inside the Sandbox. Default empty settings preserve native operation and do not enable the
-  new transport.
+  The Environments Runtime proxy's `environment_service.runtime_proxy.executor_callers` allowlist authorizes
+  access to the same `Executor` API the Runner serves inside the Sandbox. Default empty settings preserve
+  native operation and do not enable the new transport.
 - The sampler exports to History with either its rotating caller token or `history_tls` configured
   with the History server URI, trust bundle, and central sampler client SVID. History explicitly
   grants the sampler service in its ingress policy; it retains the distinct executor
   Sandbox identity. With
-  `ingress.sampler_identity_callers`, History also admits the sampler pushing a Session's journal
+  `ingress.sampler_service_actor`, History also admits the sampler pushing a Session's journal
   as a delegating actor for the Identity the Session executes as ([SPEC.md](SPEC.md#identity-and-admission)).
 - The app's `HARNESS_CENTRAL_SAMPLER` offer maps to the `central_sampler_v1` placement and offers
   **Central sampler** alongside Codex and Claude. App and Actions callers do not supply service names

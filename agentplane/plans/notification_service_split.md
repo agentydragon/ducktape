@@ -87,9 +87,10 @@ revoked, the service stops appending and reports the subscription as access deni
     `spiffe://agentplane/notifications` is in `wake_service_callers`.
 13. X reads the entry with `ReadInbox` and acknowledges it with `AcknowledgeInbox`.
 
-Today steps 4 to 9 run in one process. `IngestGitHub` marks every inbox following the App as due.
-Each due subscription is then processed separately: `Provider.Process` and `GitHubDeliveries` find
-its deliveries, and `RecordGitHub` appends them and advances the cursor in one transaction.
+Today steps 4 to 9 run in one process. `fanout.Coordinator.Ingest` marks every inbox following the App
+as due. Each due subscription is then processed separately: `Provider.Process` and
+`Coordinator.Deliveries` find its deliveries, and `Coordinator.Record` appends them and advances the
+cursor in one transaction.
 
 ## Alternatives considered
 
