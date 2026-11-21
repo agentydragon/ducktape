@@ -27,7 +27,8 @@ engine keeps (`RegExp.$1`). `experiments/effects/debug/p1_known_gaps` has a prog
 **Premise P3: the world defines no hooks.** The world (the environment and every module outside the bundle) adds no
 accessor and no conversion hook (`valueOf`, `toString`, `Symbol.toPrimitive`) to an object the program made. So a
 property of an object the world holds is read and assigned like any other. `Premises.noWorldHooks` switches this
-premise; off, reading, assigning or converting an object the world holds is a call into the world. Accessors and hooks
+premise; off, reading, assigning or converting an object the world holds is a call into the world. Code of the
+program that the world runs can break it (finding F7), so it is off for real inputs. Accessors and hooks
 the *program* defined are found and run like any call. The premise is about objects the analysis follows. A value the
 world *made* is not one: it may be a `Proxy` with a handler of the program, or an object of the program that came
 back, so every operation on it is unknown code (`Effects.worldValue`).
