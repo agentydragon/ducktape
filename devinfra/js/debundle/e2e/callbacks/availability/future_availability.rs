@@ -1,6 +1,7 @@
 //! A callback that reads an unavailable future binding must stop at its TDZ
 //! error. It must not inherit deferred reads from the binding's initializer.
 
+use super::{assert_unmoved_output, expect_single_binding_rejection};
 use debundle_e2e_support::saved_analysis::{assert_same_invocation_trees, path, staged};
 use debundle_e2e_support::*;
 use std::fmt::Write as _;
@@ -113,12 +114,7 @@ fn later_hoisted_function_keeps_its_real_style_tdz_dependency() {
          const styles = { value: 'ready' };\n\
          console.log(observations[0], future());\n",
     );
-    let colocated = run_fixture(
-        FixtureOpts::new(&input, Vec::new())
-            .with_extra_chunks(&PEER)
-            .with_unassigned_mode(unassigned_mode_inline()),
-    );
-    assert_preserved_entry_output(&colocated, "ReferenceError ready\n");
+    assert_unmoved_output(&input, &PEER, "ReferenceError ready\n");
 
     assert_availability_parity(
         &input,
@@ -137,23 +133,8 @@ fn callback_created_before_host_keeps_its_real_style_tdz_dependency() {
         "const styles = { value: 'ready' };\n\
          console.log(observations[0], readStyles());\n",
     );
-    let colocated = run_fixture(
-        FixtureOpts::new(&input, Vec::new())
-            .with_extra_chunks(&PEER)
-            .with_unassigned_mode(unassigned_mode_inline()),
-    );
-    assert_preserved_entry_output(&colocated, "ReferenceError ready\n");
-
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            &input,
-            vec![logical_module("values/styles", &[Member::new("styles")])],
-        )
-        .with_extra_chunks(&PEER)
-        .with_unassigned_mode(unassigned_mode_inline()),
-        &["values/styles"],
-        &[],
-    );
+    assert_unmoved_output(&input, &PEER, "ReferenceError ready\n");
+    expect_single_binding_rejection(&input, &PEER, "values/styles", "styles");
 }
 
 #[test]
@@ -164,12 +145,7 @@ fn future_binding_tdz_remains_when_future_itself_is_moved() {
         "const future = function () { return 'ready'; };\n\
          console.log(observations[0]);\n",
     );
-    let colocated = run_fixture(
-        FixtureOpts::new(&input, Vec::new())
-            .with_extra_chunks(&PEER)
-            .with_unassigned_mode(unassigned_mode_inline()),
-    );
-    assert_preserved_entry_output(&colocated, "ReferenceError\n");
+    assert_unmoved_output(&input, &PEER, "ReferenceError\n");
 
     assert_availability_parity(&input, "future", 3, "ReferenceError\n", "ready\n");
 }
@@ -185,23 +161,8 @@ fn fallback_revisits_future_callback_after_its_binding_initializes() {
          const styles = { value: 'ready' };\n\
          console.log(observations[0], laterObservations[0], future());\n",
     );
-    let colocated = run_fixture(
-        FixtureOpts::new(&input, Vec::new())
-            .with_extra_chunks(&PEER)
-            .with_unassigned_mode(unassigned_mode_inline()),
-    );
-    assert_preserved_entry_output(&colocated, "ReferenceError ReferenceError ready\n");
-
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            &input,
-            vec![logical_module("values/styles", &[Member::new("styles")])],
-        )
-        .with_extra_chunks(&PEER)
-        .with_unassigned_mode(unassigned_mode_inline()),
-        &["values/styles"],
-        &[],
-    );
+    assert_unmoved_output(&input, &PEER, "ReferenceError ReferenceError ready\n");
+    expect_single_binding_rejection(&input, &PEER, "values/styles", "styles");
 }
 
 #[test]
@@ -212,21 +173,6 @@ fn callback_created_in_current_initializer_keeps_its_style_tdz_dependency() {
         "const styles = { value: 'ready' };\n\
          console.log(observations[0], styles.value);\n",
     );
-    let colocated = run_fixture(
-        FixtureOpts::new(&input, Vec::new())
-            .with_extra_chunks(&PEER)
-            .with_unassigned_mode(unassigned_mode_inline()),
-    );
-    assert_preserved_entry_output(&colocated, "ReferenceError ready\n");
-
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            &input,
-            vec![logical_module("values/styles", &[Member::new("styles")])],
-        )
-        .with_extra_chunks(&PEER)
-        .with_unassigned_mode(unassigned_mode_inline()),
-        &["values/styles"],
-        &[],
-    );
+    assert_unmoved_output(&input, &PEER, "ReferenceError ready\n");
+    expect_single_binding_rejection(&input, &PEER, "values/styles", "styles");
 }
