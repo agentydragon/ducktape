@@ -38,6 +38,7 @@ import (
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -152,23 +153,10 @@ func startConfigured(t *testing.T, kubeConfig *rest.Config, groups *catalog.Cata
 			}
 		}
 	}
-	connection, err := grpc.NewClient(rpcListener.Addr().String(), grpc.WithTransportCredentials(clientCredentials))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { connection.Close() })
+	connection := dialService(t, rpcListener.Addr().String(), clientCredentials)
 	var reader action_servicepb.ActionServiceClient
 	if c.RPC.TLS.CertFile == serving.CertFile {
-		readerCredentials, err := ca.Issue(t, peertls.NotificationsURI).ClientCredentials(peertls.ActionsURI)
-		if err != nil {
-			t.Fatal(err)
-		}
-		readerConnection, err := grpc.NewClient(rpcListener.Addr().String(), grpc.WithTransportCredentials(readerCredentials))
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { readerConnection.Close() })
-		reader = action_servicepb.NewActionServiceClient(readerConnection)
+		reader = action_servicepb.NewActionServiceClient(dialServiceAs(t, rpcListener.Addr().String(), ca, peertls.NotificationsURI))
 	}
 	return running{
 		ca: ca, reader: reader, health: healthpb.NewHealthClient(connection), actions: action_servicepb.NewActionServiceClient(connection),
@@ -176,6 +164,27 @@ func startConfigured(t *testing.T, kubeConfig *rest.Config, groups *catalog.Cata
 		linkages:  linkage_servicepb.NewLinkageServiceClient(connection),
 		address:   rpcListener.Addr().String(), store: store.New(db), updates: updates, stop: stop,
 	}
+}
+
+// dialService connects to the service at address with creds until the test ends.
+func dialService(t *testing.T, address string, creds credentials.TransportCredentials) *grpc.ClientConn {
+	t.Helper()
+	connection, err := grpc.NewClient(address, grpc.WithNoProxy(), grpc.WithTransportCredentials(creds))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = connection.Close() })
+	return connection
+}
+
+// dialServiceAs connects to the service at address with a certificate ca issues for the SPIFFE ID actor.
+func dialServiceAs(t *testing.T, address string, ca *transporttesting.CA, actor string) *grpc.ClientConn {
+	t.Helper()
+	creds, err := ca.Issue(t, actor).ClientCredentials(peertls.ActionsURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dialService(t, address, creds)
 }
 
 func checkHealth(t *testing.T, client healthpb.HealthClient, service string) (healthpb.HealthCheckResponse_ServingStatus, error) {
