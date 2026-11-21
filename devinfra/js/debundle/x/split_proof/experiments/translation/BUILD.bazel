@@ -458,3 +458,26 @@ js_test(
     ],
     entry_point = "modern_syntax_test.mjs",
 )
+
+# The coverage audit: which constructs each generator produces. `COVERAGE.md` is its output, written by hand with
+# `node coverage_audit.mjs`; the Lean sources it reads are not runfiles, so this test covers the parts.
+js_test(
+    name = "coverage_audit_test",
+    data = [
+        "analysis_inventory.mjs",
+        "ast_generator.mjs",
+        "coverage_audit.mjs",
+        "frontend.mjs",
+        "fuzz.mjs",
+        "intrinsics_probe.mjs",
+        "modern_syntax.mjs",
+        "scope_metadata.mjs",
+        "syntax_inventory.mjs",
+        ":node_modules/acorn",
+        ":node_modules/eslint-scope",
+        ":node_modules/shift-codegen",
+        ":node_modules/shift-fuzzer",
+        ":node_modules/shift-parser",
+    ],
+    entry_point = "coverage_audit_test.mjs",
+)
