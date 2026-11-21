@@ -178,9 +178,11 @@ the actual callable tables pair exported names, parameter lists and bodies,
 while allowing different capture keys. A further theorem constructs a matching
 run from one successful run if writebacks agree for every related state. Equal
 loaded values alone do not establish that condition: different alias patterns
-can make checked writeback succeed on only one side. The certificate still
-assumes writeback agreement; deriving it from allocation invariants is future
-work. The acceptance proof still requires
+can make checked writeback succeed on only one side. An axiom-free writeback
+lemma now proves that, for related loaded environments with distinct captured
+keys, a matching lexical frame can be written back on both sides. The certificate still assumes general
+writeback agreement; proving the necessary conditions for all reachable frames
+is future work. The acceptance proof still requires
 equal initialized states and callable tables,
 uses the factory-specific representation, and does not yet prove preservation
 under arbitrary allocation renaming. A safe

@@ -420,6 +420,86 @@ theorem load_store_disjoint (captures watched : List (String × String)) (values
         pure ((watchedName, value) :: tail))
       rw [headEqual, tailEqual]
 
+/- Captures in one lexical environment must allocate distinct cells. -/
+inductive CaptureKeysUnique : List (String × String) → Prop where
+  | nil : CaptureKeysUnique []
+  | cons (name key : String) (rest : List (String × String))
+      (fresh : ∀ otherName otherKey, (otherName, otherKey) ∈ rest → key ≠ otherKey)
+      (tail : CaptureKeysUnique rest) : CaptureKeysUnique ((name, key) :: rest)
+
+/- The values written back must have exactly the lexical names in the capture
+   environment, in the same order. -/
+inductive CaptureValuesMatch : List (String × String) → List (String × Nat) → Prop where
+  | nil : CaptureValuesMatch [] []
+  | cons (name key : String) (value : Nat) {captures values} :
+      (name != name) = false → CaptureValuesMatch captures values →
+      CaptureValuesMatch ((name, key) :: captures) ((name, value) :: values)
+
+theorem load_captures_update_other (captures : List (String × String)) (store updated : List (String × Nat))
+    (key : String) (value : Nat)
+    (different : ∀ name other, (name, other) ∈ captures → key ≠ other)
+    (updatedStore : updateBinding store key value = some updated) :
+    loadCaptures updated captures = loadCaptures store captures := by
+  induction captures with
+  | nil => rfl
+  | cons entry rest ih =>
+    cases entry with
+    | mk name other =>
+      have headDifferent := different name other (List.Mem.head rest)
+      have tailDifferent : ∀ tailName tailKey, (tailName, tailKey) ∈ rest → key ≠ tailKey := by
+        intro tailName tailKey member
+        exact different tailName tailKey (List.Mem.tail _ member)
+      have headEqual := lookup_update_other store updated key other value headDifferent updatedStore
+      have tailEqual := ih tailDifferent
+      change (do
+        let head ← lookupBinding updated other
+        let tail ← loadCaptures updated rest
+        pure ((name, head) :: tail)) = (do
+        let head ← lookupBinding store other
+        let tail ← loadCaptures store rest
+        pure ((name, head) :: tail))
+      rw [headEqual, tailEqual]
+
+/- With distinct cells and matching lexical names, any successfully loaded
+   capture frame can be written back and read back exactly. -/
+theorem store_captures_roundtrip (captures : List (String × String)) (values original : List (String × Nat))
+    (store : List (String × Nat)) (unique : CaptureKeysUnique captures)
+    (matching : CaptureValuesMatch captures values) (loaded : loadCaptures store captures = some original) :
+    ∃ updated, storeCaptures store captures values = some updated ∧ loadCaptures updated captures = some values := by
+  induction matching generalizing store original with
+  | nil =>
+    exact ⟨store, rfl, rfl⟩
+  | @cons name key value captures values sameName matching ih =>
+    cases unique with
+    | cons _ _ _ fresh tailUnique =>
+      change (lookupBinding store key).bind (fun head =>
+        (loadCaptures store captures).bind (fun tail => some ((name, head) :: tail))) = some original at loaded
+      cases headFound : lookupBinding store key with
+      | none => rw [headFound] at loaded; cases loaded
+      | some old =>
+        cases tailFound : loadCaptures store captures with
+        | none => rw [headFound, tailFound] at loaded; cases loaded
+        | some oldTail =>
+          obtain ⟨intermediate, updatedHead, readHead⟩ := update_existing_cell store key old value headFound
+          have tailUnchanged := load_captures_update_other captures store intermediate key value fresh updatedHead
+          have loadedTail : loadCaptures intermediate captures = some oldTail := tailUnchanged.trans tailFound
+          obtain ⟨final, updatedTail, readTail⟩ := ih oldTail intermediate tailUnique loadedTail
+          have headUnchanged := lookup_store_other captures values intermediate final key
+            (by intro n k member; exact (fresh n k member).symm) updatedTail
+          refine ⟨final, ?_, ?_⟩
+          · change (if name != name then none else do
+              let next ← updateBinding store key value
+              storeCaptures next captures values) = some final
+            rw [sameName, updatedHead]
+            change storeCaptures intermediate captures values = some final
+            exact updatedTail
+          · change (do
+              let head ← lookupBinding final key
+              let tail ← loadCaptures final captures
+              some ((name, head) :: tail)) = some ((name, value) :: values)
+            rw [headUnchanged, readHead, readTail]
+            rfl
+
 /- Writeback returns a store only when reading its captured cells again yields
    exactly the updated lexical frame. This rejects conflicting aliases instead
    of silently losing a write. -/
@@ -427,6 +507,41 @@ def storeCapturedFrame (store : List (String × Nat)) (captures : List (String �
     (values : List (String × Nat)) : Option { result : List (String × Nat) // loadCaptures result captures = some values } := do
   let result ← storeCaptures store captures values
   if valid : loadCaptures result captures = some values then some ⟨result, valid⟩ else none
+
+/- The machine's checked writeback cannot reject a well-shaped frame when all
+   capture keys are distinct and the starting frame is present. -/
+theorem distinct_captured_writeback_exists (captures : List (String × String)) (values original : List (String × Nat))
+    (store : List (String × Nat)) (unique : CaptureKeysUnique captures)
+    (matching : CaptureValuesMatch captures values) (loaded : loadCaptures store captures = some original) :
+    ∃ result, storeCapturedFrame store captures values = some result := by
+  obtain ⟨updated, written, readback⟩ := store_captures_roundtrip captures values original store unique matching loaded
+  refine ⟨⟨updated, readback⟩, ?_⟩
+  unfold storeCapturedFrame
+  rw [written]
+  change (if valid : loadCaptures updated captures = some values then
+    some (⟨updated, valid⟩ : { result : List (String × Nat) // loadCaptures result captures = some values })
+    else none) = some ⟨updated, readback⟩
+  split
+  · rfl
+  · contradiction
+
+/- Distinct corresponding environments can both write the same well-shaped
+   lexical frame, even when their private allocation keys differ. -/
+theorem distinct_related_writebacks_exist
+    (leftStore rightStore : List (String × Nat)) (leftCapture rightCapture : List (String × String))
+    (values : List (String × Nat))
+    (related : relatedCapturedEnvironments leftStore rightStore leftCapture rightCapture)
+    (leftUnique : CaptureKeysUnique leftCapture) (rightUnique : CaptureKeysUnique rightCapture)
+    (leftMatching : CaptureValuesMatch leftCapture values) (rightMatching : CaptureValuesMatch rightCapture values) :
+    (storeCapturedFrame leftStore leftCapture values).isSome = true ∧
+      (storeCapturedFrame rightStore rightCapture values).isSome = true := by
+  obtain ⟨original, leftLoaded, rightLoaded⟩ := related
+  obtain ⟨leftResult, leftWritten⟩ :=
+    distinct_captured_writeback_exists leftCapture values original leftStore leftUnique leftMatching leftLoaded
+  obtain ⟨rightResult, rightWritten⟩ :=
+    distinct_captured_writeback_exists rightCapture values original rightStore rightUnique rightMatching rightLoaded
+  rw [leftWritten, rightWritten]
+  exact ⟨rfl, rfl⟩
 
 theorem storeCapturedFrame_origin (store : List (String × Nat)) (captures : List (String × String))
     (values : List (String × Nat))
