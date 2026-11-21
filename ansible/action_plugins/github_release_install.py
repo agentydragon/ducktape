@@ -197,19 +197,9 @@ class ActionModule(ActionBase):
             return _fail(result, "Missing required parameter: release_spec")
         release_data = ReleaseSpec(**args["release_spec"]).resolve()
         if release_data.get("failed"):
-            # For version acknowledgment failures, return a clean result
-            if "acknowledged_version" in release_data:
-                return {
-                    "failed": True,
-                    "msg": release_data["msg"],
-                    "latest_version": release_data.get("latest_version"),
-                    "acknowledged_version": release_data.get("acknowledged_version"),
-                    "repo": release_data.get("repo"),
-                }
-            return _fail(result, release_data["msg"])
-        result["release_data"] = release_data
-        if not (asset_url := release_data.get("asset_url")):
-            return _fail(result, "No asset URL in release info")
+            # resolve() reports its own failure: `msg`, plus the version details of an unacknowledged release.
+            return result | release_data
+        asset_url = release_data["asset_url"]
 
         # Install the release
         try:
@@ -226,7 +216,7 @@ class ActionModule(ActionBase):
                 module_args=installer.install_module_args(asset_url),
                 task_vars=task_vars,
                 tmp=tmp,
-            ) | installer.get_additional_info(asset_url)
+            )
 
         result["install_result"] = install_result
 
