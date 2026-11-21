@@ -51,7 +51,7 @@ and lazy imports belong in `deps`.
 Import validation is on; every escape is explicit and local:
 
 - `# gazelle:ignore <mod>` in the `.py` file for imports the environment provides
-  (`FreeCAD`, `gi`, `PySide6`, `pivy`, `_bazel_site_init`) or that resolve to a
+  (`FreeCAD`, `gi`, `PySide6`, `pivy`) or that resolve to a
   Bazel-generated `__init__` stub with no target of its own.
 - `# gazelle:include_dep <label>` in the `.py` file for runtime-only deps the import
   scan cannot see, placed in the module that triggers the hidden import: SQLAlchemy

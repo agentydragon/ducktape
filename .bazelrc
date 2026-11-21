@@ -107,9 +107,6 @@ build --workspace_status_command=devinfra/stamp.sh
 # Python differs from the hermetic toolchain, and stdlib shadowing when
 # files like `types.py` exist in the package directory.  The script bootstrap
 # invokes the hermetic interpreter directly, avoiding both issues.
-#
-# `devinfra.bazel.subprocess.python_env()` propagates Nix site packages outside
-# Bazel and omits the bootstrap `PYTHONPATH` for child Bazel venvs.
 common --@rules_python//python/config_settings:bootstrap_impl=script
 
 # Don't generate empty __init__.py stubs in runfiles. Fixes protobuf namespace

@@ -3,6 +3,7 @@
 import os
 import shutil
 import subprocess
+import sys
 from collections.abc import Generator
 from pathlib import Path
 
@@ -10,7 +11,6 @@ import pytest
 from opentelemetry import trace
 from python.runfiles import Runfiles
 
-from devinfra.bazel.subprocess import _merge_pythonpath
 from testing.otel_tracing import configure_tracing
 
 _CONDA_ENV_REPO = "rules_conda++conda+freecad_conda"
@@ -122,10 +122,9 @@ def _freecad_run(
     # Inject this repository's runfiles paths so FreeCAD scripts can import from it.
     # Bazel's Python site-packages conflict with FreeCAD's bundled Python.
     repo_root = Path(__file__).absolute().parents[2]
-    base_pythonpath = _merge_pythonpath()
     inject_paths = [
         p
-        for p in base_pythonpath.split(os.pathsep)
+        for p in dict.fromkeys([*sys.path, *os.environ.get("PYTHONPATH", "").split(os.pathsep)])
         if p and Path(p).is_relative_to(repo_root) and "site-packages" not in Path(p).parts
     ]
     wrapper = outdir / "_freecad_wrapper.py"

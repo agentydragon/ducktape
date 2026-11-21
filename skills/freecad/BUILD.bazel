@@ -70,7 +70,6 @@ py_library(
     ],
     visibility = ["//skills/freecad:__subpackages__"],
     deps = [
-        "//devinfra/bazel:subprocess",
         "//testing:otel_tracing",
         "@pypi//opentelemetry_api",
         "@pypi//pytest",
