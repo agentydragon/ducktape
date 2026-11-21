@@ -902,11 +902,11 @@ def _gateway_process_start_cell(
     )
 
 
-def _gateway_process_read_cell(*, process_handle: str, wait_ms: int) -> str:
+def _gateway_process_read_cell(*, process_handle: str) -> str:
     """Build the code-mode cell that reads the retained process handle."""
     return (
         f"const handle = load({json.dumps(process_handle)});\n"
-        f"const result = await tools.write_stdin({{session_id: handle, yield_time_ms: {wait_ms}}});\n"
+        "const result = await tools.write_stdin({session_id: handle, yield_time_ms: 30000});\n"
         "text(JSON.stringify({handle, result}));"
     )
 
@@ -943,7 +943,7 @@ async def gateway_roll_keeps_live_central_read_and_turn(
         await _send_single_exec_cell(
             request,
             call_id="read-live-process",
-            source=_gateway_process_read_cell(process_handle="gateway-roll-handle", wait_ms=30000),
+            source=_gateway_process_read_cell(process_handle="gateway-roll-handle"),
         )
         read_intent = await _wait_for_executor_dispatch_after(deployed, session_id, cursor, process_id)
         (
@@ -1146,7 +1146,7 @@ async def gateway_crash_settles_live_central_read_and_accepts_next_input(
         await _send_single_exec_cell(
             request,
             call_id="read-crash-process",
-            source=_gateway_process_read_cell(process_handle="gateway-crash-handle", wait_ms=30000),
+            source=_gateway_process_read_cell(process_handle="gateway-crash-handle"),
         )
         await _wait_for_executor_dispatch_after(deployed, session_id, cursor, process_id, "read-crash-process")
         _, _, _, killed_native, read_failure = await _roll_runtime_proxy_for_central_session(
@@ -1217,7 +1217,7 @@ async def gateway_retry_exhaustion_reports_unknown_and_accepts_next_input(
         await _send_single_exec_cell(
             request,
             call_id="read-budget-process",
-            source=_gateway_process_read_cell(process_handle="gateway-budget-handle", wait_ms=30000),
+            source=_gateway_process_read_cell(process_handle="gateway-budget-handle"),
         )
         await _wait_for_executor_dispatch_after(deployed, session_id, cursor, process_id, "read-budget-process")
         _, _, _, killed_native, read_failure = await _roll_runtime_proxy_for_central_session(
@@ -1315,7 +1315,7 @@ async def gateway_outage_restarts_exec_server_then_notifies_model(
         await _send_single_exec_cell(
             request,
             call_id="read-expiring-process",
-            source=_gateway_process_read_cell(process_handle="gateway-loss-handle", wait_ms=30000),
+            source=_gateway_process_read_cell(process_handle="gateway-loss-handle"),
         )
         read_intent = await _wait_for_executor_dispatch_after(
             deployed, session_id, cursor, process_id, "read-expiring-process"
