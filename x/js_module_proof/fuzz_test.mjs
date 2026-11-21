@@ -1289,6 +1289,31 @@ if (shards === 4 && shard === 2) {
   assert.equal(changedRecord.mutatedDifferent, 1);
   assert.equal(changedRecord.mutatedVerdicts.unsafe, 1);
   assert.deepEqual(changedRecord.certifiedWitnesses[0].calls, []);
+  const changedNoopFunction = await runFuzz({
+    seed: 157,
+    start: 1733,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "alias",
+    splitMode: "independent",
+    validateEvery: 1,
+  });
+  assert.equal(changedNoopFunction.mutationKinds.independentRemovedNoopChangedFunction, 1);
+  assert.equal(changedNoopFunction.mutatedDifferent, 1);
+  assert.equal(changedNoopFunction.mutatedVerdicts.unsafe, 1);
+  assert.ok(changedNoopFunction.certifiedWitnesses[0].calls.length > 0);
+  const unchangedNoopFunction = await runFuzz({
+    seed: 157,
+    start: 1733,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "alias",
+    splitMode: "independent",
+    mutationMode: "disabled",
+    validateEvery: 1,
+  });
+  assert.equal(unchangedNoopFunction.proved, 1);
+  assert.equal(unchangedNoopFunction.equal, 1);
   assert.deepEqual(makeComposedCase(1, 2), makeComposedCase(1, 2));
   const composed = await runFuzz({
     seed: 7,

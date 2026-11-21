@@ -984,10 +984,12 @@ export function makeLocalAliasCase(seed, index) {
   const initial = rand(6);
   const updateBindings = index % 4 === 0 ? ["increment", "otherIncrement"] : [];
   const numericBindings = index % 4 === 1 ? ["numericLeft", "numericOther", "numericRight"] : [];
+  const withTopNoop = numericBindings.length > 0 && index >= 1733 && index % 96 === 5;
   const state = [
     ...bindings.map((name, i) => variable(name, initial + i)),
     ...updateBindings.map((name, i) => variable(name, initial + i + 1)),
     ...numericBindings.map((name, i) => variable(name, initial + i + 1)),
+    ...(withTopNoop ? [expr(literal(0))] : []),
     ...(index % 2 ? [record(bindings[0])] : []),
   ];
   const observation = index % 4 === 3 ? [record(bindings[0])] : [];
@@ -1336,6 +1338,7 @@ export function makeLocalAliasCase(seed, index) {
     grammar: "alias",
     numericLeftIndex: bindings.length + updateBindings.length,
     numericArguments,
+    withTopNoop,
     composedAliasExpression,
     withTry,
     withThrow,
@@ -2122,6 +2125,32 @@ export async function minimizeCase(input, fails) {
 
 async function mutateOutput(out, input, kind) {
   const modules = Object.keys(input.spec.modules);
+  if (kind === "independentRemovedNoopChangedFunction") {
+    const changedFiles = [];
+    let removed = false;
+    let changedFunction = false;
+    for (const name of modules) {
+      const file = join(out, name);
+      const original = await readFile(file, "utf8");
+      let changed = original;
+      if (!removed) {
+        changed = changed.replace(/^0;\s*$/m, () => {
+          removed = true;
+          return "";
+        });
+      }
+      if (!changedFunction) {
+        changed = changed.replace(/(function compute\([^)]*\)\s*\{\s*return )([^;]+);/, (_, prefix, expression) => {
+          changedFunction = true;
+          return `${prefix}(${expression}) + 1;`;
+        });
+      }
+      if (changed !== original) changedFiles.push([file, changed]);
+    }
+    if (!removed || !changedFunction) throw new Error(`mutation failed: ${kind}`);
+    for (const [file, changed] of changedFiles) await writeFile(file, changed);
+    return;
+  }
   const files = [
     "localAliasRedirect",
     "localAliasInitRedirect",
@@ -2525,6 +2554,7 @@ export async function runFuzz({
       independentExtraEffect: 0,
       independentRecordValue: 0,
       independentRemoveEffect: 0,
+      independentRemovedNoopChangedFunction: 0,
     },
     splitCompared: 0,
     splitDifferent: 0,
@@ -2566,36 +2596,38 @@ export async function runFuzz({
               : makeCase(seed, index);
       const input = splitMode === "independent" ? independentSplit(generated, seed, index) : generated;
       const plannedMutation =
-        input.grammar === "alias" && input.independentSplit && index % 96 === 13
-          ? "independentRemoveEffect"
-          : input.grammar === "alias" && input.independentSplit && index % 96 === 85
-            ? "independentRecordValue"
-            : input.grammar === "alias" && input.independentSplit && index % 48 === 37
-              ? "independentExtraEffect"
-              : input.grammar === "alias" && input.independentSplit && (index % 12 === 1 || index % 24 === 5)
-                ? "independentNumericInitializer"
-                : input.grammar === "alias" && !input.independentSplit && index % 12 === 1
-                  ? "localAliasNumericRedirect"
-                  : input.grammar === "alias" && !input.independentSplit && index % 12 === 3
-                    ? "localAliasInitRedirect"
-                    : input.grammar === "alias" && !input.independentSplit && index % 12 === 4
-                      ? "localAliasUpdateRedirect"
-                      : input.grammar === "alias" && !input.independentSplit && index % 6 === 2
-                        ? "localAliasRedirect"
-                        : input.grammar === "composed" && !input.independentSplit && index % 64 === 59
-                          ? "renamedReexport"
-                          : input.grammar === "composed" && !input.independentSplit && index % 64 === 23
-                            ? "throwValue"
-                            : input.grammar === "composed" &&
-                                !input.independentSplit &&
-                                input.hasDiscardedLiteral &&
-                                index % 52 === 16
-                              ? "composedEffect"
-                              : !["composed", "async", "alias"].includes(input.grammar) &&
+        input.grammar === "alias" && input.independentSplit && input.withTopNoop
+          ? "independentRemovedNoopChangedFunction"
+          : input.grammar === "alias" && input.independentSplit && index % 96 === 13
+            ? "independentRemoveEffect"
+            : input.grammar === "alias" && input.independentSplit && index % 96 === 85
+              ? "independentRecordValue"
+              : input.grammar === "alias" && input.independentSplit && index % 48 === 37
+                ? "independentExtraEffect"
+                : input.grammar === "alias" && input.independentSplit && (index % 12 === 1 || index % 24 === 5)
+                  ? "independentNumericInitializer"
+                  : input.grammar === "alias" && !input.independentSplit && index % 12 === 1
+                    ? "localAliasNumericRedirect"
+                    : input.grammar === "alias" && !input.independentSplit && index % 12 === 3
+                      ? "localAliasInitRedirect"
+                      : input.grammar === "alias" && !input.independentSplit && index % 12 === 4
+                        ? "localAliasUpdateRedirect"
+                        : input.grammar === "alias" && !input.independentSplit && index % 6 === 2
+                          ? "localAliasRedirect"
+                          : input.grammar === "composed" && !input.independentSplit && index % 64 === 59
+                            ? "renamedReexport"
+                            : input.grammar === "composed" && !input.independentSplit && index % 64 === 23
+                              ? "throwValue"
+                              : input.grammar === "composed" &&
                                   !input.independentSplit &&
-                                  index % 8 === 2
-                                ? ["binding", "effect", "function", "export", "import"][Math.floor(index / 8) % 5]
-                                : null;
+                                  input.hasDiscardedLiteral &&
+                                  index % 52 === 16
+                                ? "composedEffect"
+                                : !["composed", "async", "alias"].includes(input.grammar) &&
+                                    !input.independentSplit &&
+                                    index % 8 === 2
+                                  ? ["binding", "effect", "function", "export", "import"][Math.floor(index / 8) % 5]
+                                  : null;
       const mutation = mutationMode === "disabled" ? null : plannedMutation;
       if (plannedMutation === "composedEffect") input.calls = [];
       if (plannedMutation === "throwValue") input.calls = [{ name: "fuzzThrower", args: [1] }];
