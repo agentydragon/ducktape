@@ -331,3 +331,17 @@ export const cases = [
     end: "unknown",
   },
 ];
+
+// Splits for `differential.mjs`: `lowersplit` must accept `spec` for the bundle `source`.
+export const splitCases = [
+  {
+    // Premise P4 of `../effects/README.md`: the tool's verdict is for a bundle whose evaluation completes. A `throw` is
+    // not an effect to it, so the `throw` may move into a module that runs before the `console.log`. The split is
+    // accepted and prints nothing. `differs`: the test expects exactly that, and that the model agrees with Node on
+    // both programs.
+    name: "a throw moves before an effect",
+    source: `console.log("printed");\nthrow 1.5;\n`,
+    spec: { entry: "entry.mjs", modules: { "entry.mjs": ["#0"], "m0.mjs": ["#1"] }, sequential: true },
+    differs: true,
+  },
+];

@@ -16,11 +16,20 @@ The design is "untrusted search, trusted check". The footprint analysis is the o
 theorem fuel_mono : run n P = r → r ≠ .fuel → n ≤ m → run m P = r
 -- "P ends with r": some amount of fuel is enough. By `fuel_mono` there is at most one such r.
 def Ends (P) (r) := ∃ n, run n P = r ∧ r ≠ .fuel
-theorem split_preserves : InFragment P → split P spec = some P' →
+-- A split that runs the statements in the bundle's order: every ending.
+theorem order_kept_preserves : … →
     (∀ r, Ends P r → ∃ r', Ends P' r' ∧ r ≈ r') ∧ (∀ r', Ends P' r' → ∃ r, Ends P r ∧ r ≈ r')
+-- A split that moves code: the runs that end normally.
+theorem split_preserves : InFragment P → split P spec = some P' →
+    (∀ s, Ends P (.ok () s) → ∃ s', Ends P' (.ok () s') ∧ s ≈ s') ∧
+    (∀ s', Ends P' (.ok () s') → ∃ s, Ends P (.ok () s) ∧ s ≈ s')
 ```
 
-The two directions together say that one program runs forever exactly when the other does. A program that prints and then runs forever is not compared: the model keeps no output of an unfinished run. `≈` is "the same to an observer": the same interaction with the world and final states that later code cannot tell apart. For a reorder inside one program that is equality. For modules it is a relation, and it is part of what a reader has to trust.
+- **A split that keeps the order** runs the same statements in the same order, so it is compared for every ending: a value, a throw, unknown code. The two directions together say that one program runs forever exactly when the other does.
+- **A split that moves code is compared only for runs that end normally.** That is premise P4 of the analysis ("evaluation completes", [`experiments/effects/README.md`](experiments/effects/README.md)) as a hypothesis of the theorem. Without it the statement is false, and the tool shows it: `console.log("printed"); throw 1.5;` may be split so that the `throw` runs first, and then nothing is printed ([`experiments/README.md`](experiments/README.md) § 14). A `throw` is not an effect to the analysis, and a statement that might throw is ordered against nothing for that reason.
+- **The converse needs the same hypothesis, on the split.** If the split ends with a throw, the bundle may end with another throw after other output, or not end at all: the statement that throws may sit after a loop that never ends, and the split may run it first. What is expected to hold, and is not proved: one ends normally exactly when the other does. The argument is that how a statement ends depends only on what it reads, and the checks keep every pair in order where one writes what the other reads; so the same statements throw in both, and a run ends normally exactly when none does. `Meaning` in [`Semantics.lean`](lean/EsmSplit/Semantics.lean) has no notion of a statement that does not finish, so this argument has no home in the proved part yet.
+- A program that prints and then runs forever is not compared: the model keeps no output of an unfinished run.
+- `≈` is "the same to an observer": the same interaction with the world and final states that later code cannot tell apart. For a reorder inside one program that is equality. For modules it is a relation, and it is part of what a reader has to trust.
 
 `run` is the model, `CoreJS`. `InFragment` is a check on the program's text; it may be "the tool derives a footprint other than unknown code for these units". What the tool calls footprints, `Valid` and the conflict rule are then inside the proof, and a reader has to trust only the model, `≈` and this statement.
 

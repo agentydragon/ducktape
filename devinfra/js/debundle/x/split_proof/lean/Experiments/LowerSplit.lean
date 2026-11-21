@@ -5,13 +5,15 @@ import Std.Data.HashSet
 /-!
 # AST + spec in; modules, verdict and a kernel certificate out.
 
-    lowersplit <bundle.json> <spec.json> <outdir> [--lean <Generated.lean>] [--replicate <K>] [--premises <file> | --footprints <file>] [--force]
+    lowersplit <bundle.json> <spec.json> <outdir> [--lean <Generated.lean>] [--replicate <K>] [--premises <file> | --footprints <file>] [--plan <file>] [--force]
 
 `bundle.json` is acorn's ESTree with trusted scope/literal metadata (`experiments/lowering/dump.mjs`). Lean computes the footprints
 (`Effects.lean`, under the premises in the file, if any), plans the split, runs the checks, writes the modules, and with `--lean` writes a
 Lean file whose `by decide +kernel` makes the kernel certify the same facts.
 The bundle may import from outside modules; those are loaded first, in their order, as in the bundle.
 `--force` writes the modules even when a check rejects the split, to see what Node does with them.
+`--plan` writes the plan beside the modules, as JSON: `{"order": […], "modules": {name: [statement, …]}}` has the order
+in which the modules run (`Plan.evalOrder`) and the statements of each module, by their numbers in the bundle.
 `--replicate K` is for timing: K renamed copies of the bundle (the spec must cover K times as many statements).
 -/
 
@@ -181,6 +183,7 @@ def main (args : List String) : IO UInt32 := do
   let (replicate?, args) := Effects.takeFlag "--replicate" args
   let (premPath?, args) := Effects.takeFlag "--premises" args
   let (fpPath?, args) := Effects.takeFlag "--footprints" args
+  let (planPath?, args) := Effects.takeFlag "--plan" args
   if premPath?.isSome && fpPath?.isSome then
     throw (IO.userError "--footprints and --premises: the footprints rest on the premises `lower` ran under")
   let prem ← Effects.loadPremises premPath?
@@ -189,7 +192,7 @@ def main (args : List String) : IO UInt32 := do
   let (bundlePath, specPath, out, leanOut?) ← match args with
     | [b, s, o] => pure (b, s, o, none)
     | [b, s, o, "--lean", l] => pure (b, s, o, some l)
-    | _ => do IO.eprintln "usage: lowersplit <bundle.json> <spec.json> <outdir> [--lean <file>] [--replicate <K>] [--premises <file> | --footprints <file>] [--force]"; throw (IO.userError "usage")
+    | _ => do IO.eprintln "usage: lowersplit <bundle.json> <spec.json> <outdir> [--lean <file>] [--replicate <K>] [--premises <file> | --footprints <file>] [--plan <file>] [--force]"; throw (IO.userError "usage")
   let tStart ← IO.monoMsNow
   let lap (what : String) (t0 : Nat) : IO Nat := do
     let t ← IO.monoMsNow
@@ -250,6 +253,10 @@ def main (args : List String) : IO UInt32 := do
     let imports := asts.toList.zipIdx.filterMap fun (s, i) =>
       if Lower.typ s == "ImportDeclaration" then some (i, s) else none
     writeModules B P out (renderModule asts imports B P)
+    if let some planPath := planPath? then
+      IO.FS.writeFile planPath (Json.mkObj [
+        ("order", Json.arr (P.evalOrder.toArray.map Json.str)),
+        ("modules", Json.mkObj (P.mods.map fun m => (m.name, toJson m.stmts)))]).compress
     let _ ← lap "render + write" t5
     IO.println s!"  [time] total: {(← IO.monoMsNow) - tStart} ms"
   if ok && !bad then return 0
