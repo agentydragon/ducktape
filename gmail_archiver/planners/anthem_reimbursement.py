@@ -17,7 +17,7 @@ class AnthemReimbursementPlanner:
             planner=self,
             query="label:insurance/anthem/reimbursement label:INBOX",
             days_threshold=self.DAYS_THRESHOLD,
-            date_of=lambda email: email.date and email.date.replace(tzinfo=None),
+            date_of=lambda email: email.date,
             missing_date_reason="No email date found",
             archive_item_plural="reimbursements",
         )
