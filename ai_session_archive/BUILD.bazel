@@ -312,11 +312,10 @@ py_test(
         ":usage_observations",
         ":version_queries",
         ":web",
-        ":web_settings",
+        ":web_testing",
         "//:conftest",
         "//testing:postgres_fixtures",
         "@pypi//fastapi",
-        "@pypi//itsdangerous",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
@@ -568,16 +567,25 @@ oci_image(
     visibility = ["//visibility:public"],
 )
 
+py_library(
+    name = "web_testing",
+    testonly = True,
+    srcs = ["web_testing.py"],
+    deps = [
+        ":web_settings",
+        "@pypi//itsdangerous",
+    ],
+)
+
 py_test(
     name = "test_web",
     srcs = ["test_web.py"],
     deps = [
         ":database",
         ":web",
-        ":web_settings",
+        ":web_testing",
         "//:conftest",
         "@pypi//fastapi",
-        "@pypi//itsdangerous",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
@@ -592,6 +600,7 @@ py_test(
         ":web",
         ":web_main",
         ":web_settings",
+        ":web_testing",
         "//:conftest",
         "//devinfra/testing:output_writer",
         "//devinfra/testing:undeclared_outputs",
@@ -600,7 +609,6 @@ py_test(
         "//testing/frontend_visual:context",
         "//testing/frontend_visual:fixtures",
         "@pypi//httpx",
-        "@pypi//itsdangerous",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

@@ -1,13 +1,9 @@
 # gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep :testing
-import base64
-import json
-import time
 from pathlib import Path
 
 import pytest_bazel
 from fastapi.testclient import TestClient
-from itsdangerous import TimestampSigner
 from sqlalchemy import inspect, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
@@ -21,7 +17,7 @@ from ai_session_archive.testing import backup, new_ingestor, new_repository
 from ai_session_archive.usage_observations import UsageCounterKind
 from ai_session_archive.version_queries import list_events, list_versions
 from ai_session_archive.web import create_app
-from ai_session_archive.web_settings import WebSettings
+from ai_session_archive.web_testing import fake_web_settings, owner_session_cookie
 
 pytest_plugins = ["testing.postgres_fixtures", "ai_session_archive.testing"]
 
@@ -110,26 +106,9 @@ def test_ingest_and_http_round_trip_json_nul_and_parse_issue(tmp_path: Path, pos
     assert payload_column_types["parse_error"] == "text"
     assert payload_column_types["kind"] == "text"
 
-    settings = WebSettings(
-        database_url="postgresql+psycopg://archive_user:archive_password@db.invalid/archive",
-        public_base_url="http://testserver",
-        oidc_issuer="https://idp.example.invalid",
-        oidc_client_id="fake-client",
-        oidc_client_secret="fake-client-secret",
-        oidc_session_secret="fake-session-secret",
-        oidc_allowed_subject="fake-owner",
-    )
+    settings = fake_web_settings()
     client = TestClient(create_app(engine=postgres_engine, settings=settings))
-    signed_in = {
-        "user": {
-            "issuer": settings.oidc_issuer,
-            "subject": settings.oidc_allowed_subject,
-            "username": "fake-user",
-            "expires_at": time.time() + 600,
-        }
-    }
-    cookie_payload = base64.b64encode(json.dumps(signed_in).encode())
-    client.cookies.set("ai-session-archive", TimestampSigner("fake-session-secret").sign(cookie_payload).decode())
+    client.cookies.set("ai-session-archive", owner_session_cookie(settings))
     response = client.get(f"/api/sessions/{session.id}/versions/{version.id}/events")
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"
