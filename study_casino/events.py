@@ -1,24 +1,11 @@
-"""Pydantic schemas for casino game-event reads.
-
-Both `client_reported` (pre-2026-05-07 cutover) and `server_resolved` rows live
-in `game_events`. The source vocabularies (defined in models.py next to the
-columns that carry them) preserve those values so old rows still deserialize
-cleanly.
-"""
+"""Pydantic schemas for casino game events: the outcome payloads shared with action results, the
+mutator-side `GameEventMutation`, and the stored-row read the stats use."""
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
-from study_casino.models import (
-    BlackjackOutcomeKind,
-    Game,
-    GameEventRow,
-    GameEventSource,
-    GameEventType,
-    RouletteBetType,
-    SlotsPayoutKind,
-)
+from study_casino.models import BlackjackOutcomeKind, Game, GameEventRow, RouletteBetType, SlotsPayoutKind
 
 
 class Card(BaseModel):
@@ -95,57 +82,17 @@ class GameEventMutation(BaseModel):
     outcome: GameOutcome
 
 
-class GameEventRead(BaseModel):
-    """Balance snapshots (`*_millis`) are integer millicredits;
-    `wager_credits` is the wager in whole credits."""
+class GameEventRead(GameEventMutation):
+    """A stored `game_events` row, reduced to the fields the casino stats read."""
 
-    model_config = ConfigDict(extra="forbid")
-
-    id: int
-    client_event_id: str
-    server_at_ms: int
     occurred_at_ms: int
-    game: Game
-    event_type: GameEventType
-    source: GameEventSource
-    wager_credits: int
-    payout_tokens: int
-    credits_before_millis: int
-    credits_after_millis: int
-    tokens_before: int
-    tokens_after: int
-    server_credits_millis: int = Field(
-        description="Server-authoritative credit balance after the event. Equals `credits_after_millis` for "
-        "server_resolved rows; kept separate because legacy client_reported rows carried client-claimed "
-        "before/after balances that could disagree with the server's."
-    )
-    server_tokens: int = Field(
-        description="Server-authoritative token balance after the event (see `server_credits_millis`)."
-    )
-    rules_version: str | None = None
-    rng_version: str | None = None
-    outcome: GameOutcome
 
 
 def game_event_from_row(row: GameEventRow) -> GameEventRead:
-    outcome = _OUTCOME_BY_GAME[row.game].model_validate_json(row.outcome_json)
     return GameEventRead(
-        id=row.id,
-        client_event_id=row.client_event_id,
-        server_at_ms=row.server_at_ms,
-        occurred_at_ms=row.occurred_at_ms,
         game=row.game,
-        event_type=row.event_type,
-        source=row.source,
+        occurred_at_ms=row.occurred_at_ms,
         wager_credits=row.wager_credits,
         payout_tokens=row.payout_tokens,
-        credits_before_millis=row.credits_before,
-        credits_after_millis=row.credits_after,
-        tokens_before=row.tokens_before,
-        tokens_after=row.tokens_after,
-        server_credits_millis=row.server_credits,
-        server_tokens=row.server_tokens,
-        rules_version=row.rules_version,
-        rng_version=row.rng_version,
-        outcome=outcome,
+        outcome=_OUTCOME_BY_GAME[row.game].model_validate_json(row.outcome_json),
     )
