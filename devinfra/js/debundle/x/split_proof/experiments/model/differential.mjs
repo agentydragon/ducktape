@@ -78,8 +78,15 @@ const inheritanceOnly = process.argv.includes("--inheritance-only");
 assert(!(bindingOnly && inheritanceOnly), "select one differential suite");
 const broad = !bindingOnly && !inheritanceOnly;
 const selectedCases = bindingOnly ? [] : inheritanceOnly ? inheritanceCases : cases;
-const count = option("count", 40);
-const firstSeed = option("seed", 1);
+const requestedCount = option("count", 40);
+const shards = Number(process.env.TEST_TOTAL_SHARDS ?? 1);
+const shard = Number(process.env.TEST_SHARD_INDEX ?? 0);
+assert(Number.isInteger(shards) && shards > 0 && Number.isInteger(shard) && shard >= 0 && shard < shards);
+assert(Number.isInteger(requestedCount) && requestedCount >= shards, "each shard needs at least one seed");
+const seedOffset = Math.floor((requestedCount * shard) / shards);
+const count = Math.floor((requestedCount * (shard + 1)) / shards) - seedOffset;
+const firstSeed = option("seed", 1) + seedOffset;
+if (process.env.TEST_SHARD_STATUS_FILE) writeFileSync(process.env.TEST_SHARD_STATUS_FILE, "");
 const splitPrograms = option("splits", 60);
 const show = process.argv.includes("--show");
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -504,7 +511,9 @@ function planOrder(program) {
   };
   const file = path.join(work, "graph.json");
   writeFileSync(file, JSON.stringify(graph));
+  checkpoint(`module order: ${program.entry}`);
   const run = spawnSync(evalorder, [file], { encoding: "utf8" });
+  checkpoint(`module order returned: ${run.status}`);
   assert.equal(run.status, 0, `evalorder failed: ${run.stderr}`);
   return run.stdout.trimEnd().split("\n");
 }
@@ -618,6 +627,7 @@ const splitJobs = [];
 
 /** Split the bundle of `job` by `spec`. An accepted split becomes a job; `named` is its entry of `splitCases`. */
 function split(job, bundle, dump, kind, spec, named) {
+  checkpoint(`split: ${job.label}, ${kind}`);
   const dir = writeFiles({
     "ast.json": JSON.stringify(dump),
     "spec.json": JSON.stringify(spec),
@@ -638,6 +648,7 @@ function split(job, bundle, dump, kind, spec, named) {
     ],
     { encoding: "utf8" }
   );
+  checkpoint(`split returned: ${run.status}`);
   const label = `${job.label}, split ${kind} ${JSON.stringify(spec)}`;
   if (named?.refused) {
     assert.equal(run.status, 1, `${label}: lowersplit does not reject it\n${run.stdout}\n${run.stderr}`);

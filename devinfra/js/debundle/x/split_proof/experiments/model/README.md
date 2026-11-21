@@ -9,7 +9,9 @@ bbr test //devinfra/js/debundle/x/split_proof/experiments/translation:corejs_dif
   //devinfra/js/debundle/x/split_proof/experiments/translation:corejs_inheritance_differential_test
 ```
 
-The fixed sample uses seeds 1–12. Appended `--test_arg=--count --test_arg=N`,
+The fixed sample uses seeds 1–12. The broad suite partitions those seeds across
+two Bazel shards; each shard also runs the handwritten cases and retains the
+configured random-plan budget. Appended `--test_arg=--count --test_arg=N`,
 `--test_arg=--seed --test_arg=S` and `--test_arg=--splits --test_arg=K` override its arguments.
 
 | Landed model feature                                              | Hand-written oracle                                                                                                                                    | Generated execution                                                                                                                                  |
@@ -127,6 +129,6 @@ reads. Reading an existing superclass/prototype requires an additional heap-read
 stability proof; adding only the superclass binding to `readsNow` is insufficient.
 
 The harness writes `progress.log` to Bazel's undeclared outputs, recording Node
-case labels and CoreJS batch boundaries for timeout diagnosis. The inheritance
+case labels, CoreJS batch boundaries, and module-order/split subprocess boundaries for timeout diagnosis. The inheritance
 suite has its own test budget; the original broad suite retains its seeds and
 split-plan budget.
