@@ -103,9 +103,8 @@ by `tf/gitops/sso-providers/provider_cli_proxy_api_admin.tf`. The provider uses
 Authentik ID. Its strict callback is
 `https://cli-proxy-api-admin.allegedly.works/v8/management/auth/oidc/callback`.
 
-Sessions last at most one hour or the ID token's remaining lifetime. Restarting the
-single replica revokes them. Logout clears the local session; it does not log the
-browser out of Authentik. Expired sessions offer login again.
+Sessions are process-local, so restarting the single replica revokes them. Lifetime and
+logout behavior: <../../../third_party/cli_proxy_api/README.md> § "OIDC configuration".
 
 `MANAGEMENT_PASSWORD` remains enabled for AIQuota's direct management-key access.
 The existing client key protects model requests, including direct LiteLLM traffic.
@@ -113,14 +112,9 @@ The `cli-proxy-api.allegedly.works` hostname only routes `/v1` model requests.
 
 ## Patched image
 
-`@ducktape_cli_proxy_api//:image` builds the backend and bundled management UI;
-`//third_party/cli_proxy_api_tests:tests` runs upstream authentication tests and boots
-the packaged container. The backend and UI use OIDC fork branches, as described in
-<../../../third_party/cli_proxy_api/README.md>;
-other patches add build glue, an
-immutable panel, and request timing. CI publishes `git.allegedly.works/ducktape-ci/cli-proxy-api`; Flux tracks
-its `devel-*` tags. The bundled UI is immutable and cannot be replaced by the
-upstream panel updater.
+`@ducktape_cli_proxy_api//:image` is built from `third_party/cli_proxy_api`; its OIDC forks,
+patches, tests and settings are in <../../../third_party/cli_proxy_api/README.md>. CI
+publishes `git.allegedly.works/ducktape-ci/cli-proxy-api`; Flux tracks its `devel-*` tags.
 
 The namespace's `forgejo-images-creds` pull Secret belongs to the aiquota chart
 (`cluster/cdk8s/aiquota.py`). A Forgejo outage prevents uncached replacement
