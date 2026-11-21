@@ -3,6 +3,12 @@
 from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import ConfigMap, k8s
 from constructs import Construct
+from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
+    PodMonitor,
+    PodMonitorSpec,
+    PodMonitorSpecPodMetricsEndpoints,
+    PodMonitorSpecSelector,
+)
 from python.runfiles import Runfiles
 
 from cluster.cdk8s.ollama.tabby_endpoint import MODEL_NAME, NAME, NAMESPACE, PORT, SWITCHING_SERVICE
@@ -189,6 +195,15 @@ def add_tabbyapi(scope: Construct) -> None:
         _local_claim(scope, f"/games/llm-models/{name}", claim, capacity)
     _local_claim(scope, "/games/tabbyapi-prefix-cache", _PREFIX_CACHE, "16Gi")
     _deploy(scope, config)
+    PodMonitor(
+        scope,
+        "tabbyapi-monitor",
+        metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
+        spec=PodMonitorSpec(
+            selector=PodMonitorSpecSelector(match_labels=_PODS.selector),
+            pod_metrics_endpoints=[PodMonitorSpecPodMetricsEndpoints(port=SERVICE.port.name, path="/metrics")],
+        ),
+    )
     k8s.KubeService(
         scope,
         "tabbyapi-service",

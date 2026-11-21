@@ -808,6 +808,7 @@ data:
       host: 0.0.0.0
       port: 5000
       disable_auth: true
+      enable_metrics: true
       allowed_origins: []
       send_tracebacks: false
 
@@ -1169,6 +1170,19 @@ spec:
             medium: Memory
             sizeLimit: 8Gi
           name: shm
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: tabbyapi
+  namespace: ollama
+spec:
+  podMetricsEndpoints:
+    - path: /metrics
+      port: http
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: tabbyapi
 ---
 apiVersion: v1
 kind: Service

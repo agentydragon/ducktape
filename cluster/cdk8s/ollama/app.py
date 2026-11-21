@@ -421,7 +421,11 @@ def chart(app: App) -> Chart:
 
 
 def ollama(
-    chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization, kyverno: Kustomization
+    chart: Chart,
+    directory: RenderedDirectory,
+    external_secrets_operator: Kustomization,
+    kyverno: Kustomization,
+    monitoring_crds: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -446,5 +450,7 @@ def ollama(
             external_secrets_operator,
             # Kyverno's failurePolicy: Fail webhooks admit the Deployment, HTTPRoute and Namespace.
             kyverno,
+            # TabbyAPI's PodMonitor.
+            monitoring_crds,
         ),
     )
