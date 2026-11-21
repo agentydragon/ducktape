@@ -265,14 +265,11 @@ sources themselves poll every 30m, only as the net for a lost delivery.
 
 ## InvenTree API Token Provisioning
 
-Via the `inventree-token-provisioner` image
-(`cluster/archive/inventree_token_provisioner/`), run as a Job plus a weekly
-renewal CronJob: admin credentials -> InvenTree REST API -> get-or-create the
-`sandbox-agent` user, issue a named API token, write the `inventree-api-token`
-Secret in the `inventree` namespace; an ESO `ClusterExternalSecret` mirrors it
-into `claude-sandbox`. Renews when fewer than 30 days remain. Decommissioned
-together with InvenTree; the provisioner source remains available if the app is
-revived, but its CI image target is archived rather than published automatically.
+The parked `inventree-token-provisioner` Job creates the `sandbox-agent` user through the
+InvenTree API and writes its named token to the `inventree-api-token` Secret. A weekly
+CronJob renews tokens with fewer than 30 days left. ESO mirrors the Secret into
+`claude-sandbox`. See the [InvenTree revival checklist](../parked/inventree/TODO.md)
+for the source revision and image wiring.
 
 ## CPU limits policy (VPA)
 
