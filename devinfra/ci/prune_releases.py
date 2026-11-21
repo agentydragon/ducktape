@@ -4,11 +4,10 @@
 # ///
 """Delete GitHub Releases past the retention window, once per day for the whole repo.
 
-This used to run inside every release-matrix job. `gh release list` is the only
-GraphQL call in the release path, it pages the entire release list, and it ran in
-~66 concurrent jobs that each threw away every package but their own -- which
-exhausted the 5,000/hour GraphQL quota and failed the release lane wholesale.
-One pass, once a day, over REST costs a few hundredths of that.
+Do not move this into the per-package release jobs. Each would page the whole release
+list, and over GraphQL (`gh release list`) that many concurrent scans exhaust the
+5,000/hour quota and fail the release lane. One pass a day over REST costs a few
+hundredths of that.
 
 Expects: GH_TOKEN env var.
 """
@@ -58,7 +57,7 @@ def releases_to_delete(releases: list[Release], *, pinned: set[str], cutoff: dat
     - **The newest release of each package**, because a package whose content has not
       changed publishes nothing new -- the release-artifact skip check sees its tag
       already exists -- so its live release ages past the cutoff while still being the
-      current one. This is what the old per-job prune's `KEEP_TAG` protected.
+      current one.
     """
     newest: dict[str, Release] = {}
     for release in releases:

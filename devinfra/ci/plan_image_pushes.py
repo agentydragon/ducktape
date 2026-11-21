@@ -1,9 +1,5 @@
 """Decide which container images actually need publishing, before any job fans out.
 
-`.github/workflows/push-images.yml` used to give every image its own matrix job,
-repeating checkout, devshell setup, tests, and a digest build even when nothing
-needed publishing.
-
 This planner reads `bazel-ci`'s build event stream instead of building digest
 targets to decide what changed. For each digest the stream reports, it finds the
 file by target label and fetches its contents. An image whose digest target is
