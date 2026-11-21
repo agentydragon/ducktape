@@ -311,7 +311,7 @@ function Report() {
     setSelection((previous) => ({ group, revision: previous.revision + 1 }));
 
   useEffect(() => {
-    fetch("./inventory.json?v=20261121093302")
+    fetch("./inventory.json?v=20261121161629")
       .then((response) => {
         if (!response.ok)
           throw new Error(`Inventory request returned HTTP ${response.status}`);
@@ -390,8 +390,8 @@ function Report() {
     <${Anchor} href="../">← All reports<//>
     <${Title} order=${1} mt="md">Cluster VPA rollout<//>
     <${Text} size="lg" mt="sm"
-      >Admission checks passed for both Initial waves. Follow natural Pod
-      replacements and review the Recreate and agent-sandbox rollout gates.<//
+      >The latest wave has deployed with current recommendations. Follow
+      ordinary replacements and address the remaining capacity gates.<//
     >
     <${Text} size="sm" c="dimmed" mt="xs">
       ${`Kubernetes snapshot ${inventory.collection_started_utc} to ${inventory.collection_finished_utc}.`}
@@ -462,26 +462,42 @@ function Report() {
 
     <section id="rollout-status">
       <${Title} order=${2} mt="xl">Recent rollouts<//>
-      <${Text} mt="sm" id="application-opt-in">
-        <strong>MyQuest, Thrive and Plaid web.</strong> ${" "} At 2026-11-21
-        09:19:27 UTC, Flux had applied the annotations, Goldilocks had set all
-        three VPAs to Initial, and the recommender had observed each current
-        policy. Owner-matched server dry runs admitted MyQuest at 175m CPU and 1
-        GiB, Thrive at 50m and 768 MiB, and Plaid web at 50m and 384 MiB. Limits
-        and Thrive recorder and init resources stayed the same. Follow natural
-        replacements to verify admitted requests in running Pods.
-        ${" "}<${Anchor} href=${github + "pull/18591"}>Policy PR<//>
-        ${" · "}<${Anchor} href="./manifest.json">Flux and VPA observations<//>.
+      <${Text} mt="sm">
+        <strong>Infrastructure CPU requests.</strong> All nine Recreate VPAs
+        have current CPU and memory recommendations. At 16:16 UTC on November
+        21, owner-matched server dry runs applied both requests and preserved
+        limits. VPA subsequently replaced cert-manager and API proxy Pods; all
+        nine Deployments were Ready at 16:18 UTC. Certificate, ExternalSecret
+        and Kyverno admission probes and the KEDA metric succeeded afterward.
+        Continue watching evictions, endpoint health and placement.
+        ${" "}<${Anchor} href=${github + "pull/18593"}>Rollout PR<//>.
       <//>
-      <${Text} mt="sm" id="initial-cpu-rollout">
-        <strong>CPU sizing for seven Initial VPAs.</strong> ${" "} At 09:30:31
-        UTC on November 21, all seven had current CPU and memory targets.
-        Owner-matched server dry runs admitted both requests and preserved
-        limits. All 16 Deployment Pods and their serving endpoint identities
-        were still in place at 09:31:07 UTC. Follow natural replacements and
-        watch Kyverno cleanup, whose 128 MiB target reaches its existing memory
-        limit. ${" "}<${Anchor} href=${github + "pull/18592"}>Policy PR<//>
-        ${" · "}<${Anchor} href="./manifest.json">Admission evidence<//>.
+      <${Text} mt="sm">
+        <strong>Admission-only wave.</strong> Sandbox, CDI operator,
+        virt-handler, Central Sampler and tofu-controller have Initial CPU and
+        memory recommendations. Owner-matched dry runs confirmed admission.
+        Sandbox rolled out at 15m/128 MiB. Tofu recommends 1.37 GiB memory,
+        capped at its existing 1 GiB limit on admission; its checkpoint predates
+        the upstream controller upgrade. Follow normal replacements and measure
+        demand at the next natural apply. ${" "}<${Anchor}
+          href=${github + "pull/18590"}
+          >Sandbox<//
+        >
+        ${" · "}<${Anchor} href=${github + "pull/18528"}
+          >CDI and virt-handler<//
+        >
+        ${" · "}<${Anchor} href=${github + "pull/18553"}>Sampler<//>
+        ${" · "}<${Anchor} href=${github + "pull/18498"}>Tofu<//>.
+      <//>
+      <${Text} mt="sm">
+        <strong>Loki read automatic updates.</strong> The merged policy is now
+        Recreate after a namespace refresh. VPA replaced two readers, and all
+        three were Ready with three service endpoints at 16:18 UTC. The earlier
+        rehearsal showed a five-second tail reconnect; delivery across that gap
+        and the 1011 error path remain unverified. Monitor query recovery and
+        node memory pressure. ${" "}<${Anchor} href=${github + "pull/18542"}
+          >Loki PR<//
+        >.
       <//>
     </section>
 
@@ -489,61 +505,24 @@ function Report() {
       <span id="batches"></span><span id="adoption-progress"></span>
       <${Title} order=${2} mt="xl">Next waves<//>
       <${Stack} id="open-rollout-decisions" gap="sm" mt="sm">
-        <${Text}>
-          <strong>Recreate CPU sizing for nine controllers.</strong> Replay
-          stale and missing CPU recommendations with VPA 1.7.1. Check
-          replacement capacity after a host loss, with one simultaneous
-          disruption per workload, and verify admission endpoints and leader
-          handoffs. Track recommendations and node headroom for kubeapi-proxy
-          and Kyverno admission, which have no policy CPU ceiling.
-          ${" "}<${Anchor} href=${github + "pull/18593"}>Recreate draft<//>.
-        <//>
-        <${Text}>
-          <strong>Agent-sandbox controller.</strong> Explain the singleton's
-          lease-renewal timeout and verify leader handoff before changing
-          bootstrap requests and enabling Initial. The template change will roll
-          the Deployment. ${" "}<${Anchor} href=${github + "pull/18590"}
-            >Sandbox draft<//
+        <${Text} id="worker-loss-placement">
+          <strong>GitLab Rails and Sidekiq capacity.</strong> At current VPA
+          targets, both surges fit with all three OVH workers healthy. After a
+          worker loss, simultaneous surges do not fit; with Rails at its upper
+          estimate, a surge does not fit even with all workers healthy. Refresh
+          capacity and choose a capacity or rollout strategy before enabling
+          Rails admission sizing. ${" "}<${Anchor}
+            href=${github + "pull/18555"}
+          >
+            Rails draft<//
           >.
         <//>
         <${Text}>
-          <strong>Collect representative evidence.</strong> Central Sampler
-          needs active-work recommendations and placement. CDI operator needs
-          its recurring lease failures understood; virt-handler needs per-node
-          replacement evidence under VM demand. Tofu needs a representative
-          apply on the upstream controller. ${" "}<${Anchor}
-            href=${github + "pull/18553"}
-            >Sampler<//
-          >
-          ${" · "}<${Anchor} href=${github + "pull/18528"}
-            >CDI and virt-handler<//
-          >
-          ${" · "}<${Anchor} href=${github + "pull/18498"}>Tofu<//>.
-        <//>
-        <${Text}>
-          <strong>Protect capacity and recovery.</strong> Rails and Sidekiq
-          still lack a fit for concurrent surges after a worker loss. Loki read
-          needs representative restart-memory evidence. Cilium's operator
-          strategy must wait until the existing agent and Envoy toleration drift
-          is rolled out and verified. ${" "}<${Anchor}
-            href=${github + "pull/18555"}
-            >Rails<//
-          >
-          ${" · "}<${Anchor} href=${github + "pull/18542"}>Loki read<//>
-          ${" · "}<${Anchor} href=${github + "pull/18520"}>Cilium operator<//>.
-        <//>
-        <${Text} id="worker-loss-placement">
-          <strong>Schedule overlapping surges with a placement check.</strong>
-          ${" "} The 07:53 UTC Rails model fit both surges in two healthy
-          placements, but none after one OVH worker loss. Earlier controller and
-          application models had similarly tight alternatives. Reservations and
-          placement have since changed; recheck actual requests and eligible
-          hosts before simultaneous rollouts. ${" "}<${Anchor}
-            href=${github + "pull/18555"}
-            >Rails capacity<//
-          >
-          ${" · "}<${Anchor} href=${github + "pull/18518"}
-            >Controller placement<//
+          <strong>Cilium operator.</strong> Wait for the network owner to apply
+          and verify existing Cilium and Envoy toleration drift before changing
+          the operator rollout strategy. ${" "}<${Anchor}
+            href=${github + "pull/18520"}
+            >Cilium draft<//
           >.
         <//>
       <//>
