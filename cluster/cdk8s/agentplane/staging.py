@@ -65,6 +65,7 @@ from cluster.cdk8s.agentplane import (
     command_sandbox,
     electric,
     environment_vm,
+    firecracker_admission,
     kubernetes_account_ref,
     llm_ingress,
     mcp_edge,
@@ -776,6 +777,12 @@ def chart(app: App, env: Environment = ENV) -> Chart:
         environment_template_name=POD_TEMPLATE,
         environment_tools_image=_ENVIRONMENT_TOOLS_IMAGE,
         environment_runtime_key_files=(_BUILDBUDDY_KEY,),
+    )
+    firecracker_admission.add_firecracker_admission(
+        chart,
+        ServiceAccountRef(namespace=env.namespace, name=sandbox_controller.NAME),
+        actions=ServiceAccountRef(namespace=env.namespace, name=actions.NAME),
+        command_container=command_sandbox.CONTAINER,
     )
     # Cluster-scoped and covering every Agentplane namespace; staging is the only environment.
     workload_certificate_admission.add_workload_certificate_admission(

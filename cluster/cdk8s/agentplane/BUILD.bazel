@@ -838,6 +838,7 @@ py_library(
         ":environment",
         ":environment_sandbox",
         ":environment_vm",
+        ":firecracker_admission",
         ":generation",
         ":kubernetes_account_ref",
         ":kubernetes_accounts",
@@ -1818,4 +1819,39 @@ py_library(
     name = "environment_service",
     srcs = ["environment_service.py"],
     deps = ["//cluster/cdk8s:service_ref"],
+)
+
+py_library(
+    name = "firecracker_admission",
+    srcs = ["firecracker_admission.py"],
+    deps = [
+        ":environment_firecracker",
+        ":environment_vm",
+        "//agentplane:crd_group",
+        "//agentplane:subjects",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_test(
+    name = "test_firecracker_admission",
+    size = "medium",
+    srcs = ["test_firecracker_admission.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":firecracker_admission",
+        "//:conftest",
+        "//agentplane:crd_group",
+        "//agentplane:subjects",
+        "//agentplane/testing:kubernetes_apiserver",
+        "//cluster/cdk8s:conftest",
+        "//cluster/cdk8s/testing:manifests",
+        "@pypi//cdk8s",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )

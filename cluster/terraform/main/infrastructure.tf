@@ -141,6 +141,28 @@ locals {
   # Shared kube-apiserver config for all control plane nodes.
   api_server_config = {
     certSANs = ["api.${var.cluster_domain}"]
+    # Install and test the staging controller's fail-closed Pod Security and Firecracker admission
+    # policies before applying this exception. All other requesters still use Talos's defaults.
+    admissionControl = [{
+      name = "PodSecurity"
+      configuration = {
+        apiVersion = "pod-security.admission.config.k8s.io/v1"
+        kind       = "PodSecurityConfiguration"
+        defaults = {
+          enforce         = "baseline"
+          enforce-version = "latest"
+          audit           = "restricted"
+          audit-version   = "latest"
+          warn            = "restricted"
+          warn-version    = "latest"
+        }
+        exemptions = {
+          namespaces     = ["kube-system"]
+          runtimeClasses = []
+          usernames      = ["system:serviceaccount:agentplane-staging:environments"]
+        }
+      }
+    }]
     extraArgs = {
       # Structured auth replaces the old --oidc-* flags; supports multiple issuers.
       "authentication-config" = "/etc/kubernetes/auth/auth-config.yaml"

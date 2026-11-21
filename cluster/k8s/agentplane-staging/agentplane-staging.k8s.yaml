@@ -9278,6 +9278,191 @@ spec:
             - port: "8080"
               protocol: TCP
 ---
+apiVersion: kyverno.io/v1
+kind: Policy
+metadata:
+  annotations:
+    pod-policies.kyverno.io/autogen-controllers: none
+  name: firecracker-controller-baseline
+  namespace: agentplane-staging
+spec:
+  background: false
+  webhookConfiguration:
+    failurePolicy: Fail
+    matchConditions:
+      - name: staging-controller
+        expression: request.namespace == 'agentplane-staging' && request.userInfo.username == 'system:serviceaccount:agentplane-staging:environments'
+  rules:
+    - name: staging-controller-baseline
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              selector:
+                matchLabels:
+                  agentplane.allegedly.works/environment-backend: firecracker
+      validate:
+        failureAction: Enforce
+        podSecurity:
+          level: baseline
+          version: latest
+    - name: firecracker-launcher-baseline
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              selector:
+                matchLabels:
+                  agentplane.allegedly.works/environment-backend: firecracker
+      validate:
+        failureAction: Enforce
+        podSecurity:
+          level: baseline
+          version: latest
+          exclude:
+            - controlName: Privileged Containers
+              images:
+                - git.allegedly.works/ducktape-ci/agentplane-firecracker-launcher:devel-*
+            - controlName: HostPath Volumes
+              restrictedField: spec.volumes[*].hostPath
+              values:
+                - /dev/net/tun
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: agentplane-staging-firecracker-launcher
+spec:
+  failurePolicy: Fail
+  matchConditions:
+    - expression: request.namespace == 'agentplane-staging'
+      name: staging
+    - expression: object.?metadata.?labels[?'agentplane.allegedly.works/environment-backend'].orValue('') == 'firecracker' || (oldObject != null && oldObject.?metadata.?labels[?'agentplane.allegedly.works/environment-backend'].orValue('') == 'firecracker')
+      name: firecracker
+  matchConstraints:
+    resourceRules:
+      - apiGroups:
+          - ""
+        apiVersions:
+          - v1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - pods
+          - pods/ephemeralcontainers
+  validations:
+    - expression: request.userInfo.username == 'system:serviceaccount:agentplane-staging:environments' && request.subResource == '' && size(variables.owners) == 1 && variables.owners.all(o, o.apiVersion == 'agentplane.allegedly.works/v1alpha1' && o.kind == 'Sandbox' && o.name == object.metadata.name && o.?controller.orValue(false) && o.uid != '') && variables.labels[?'agentplane.allegedly.works/environment-backend'].orValue('') == 'firecracker' && variables.labels[?'agentplane.allegedly.works/sandbox'].orValue('') == object.metadata.name
+      message: The staging Environments controller alone writes Sandbox-owned Firecracker launcher Pods.
+    - expression: "!variables.pod.?hostNetwork.orValue(false) && !variables.pod.?hostPID.orValue(false) && !variables.pod.?hostIPC.orValue(false) && !variables.pod.?shareProcessNamespace.orValue(false) && !variables.pod.?automountServiceAccountToken.orValue(true) && variables.pod.serviceAccountName == 'default' && variables.pod.restartPolicy == 'Never' && variables.pod.?ephemeralContainers.orValue([]).size() == 0"
+      message: A Firecracker launcher uses Pod namespaces and runs without a service token or ephemeral containers.
+    - expression: "size(variables.pod.containers) == 1 && variables.launcher.name == 'environment-runtime' && (variables.launcher.image.startsWith('git.allegedly.works/ducktape-ci/agentplane-firecracker-launcher:') && variables.launcher.image.matches(':devel-[0-9]{14}-[0-9a-f]{7}$')) && variables.launcher.?command.orValue([]).size() == 0 && variables.launcher.args == ['--config', '/run/agentplane/firecracker/config.json'] && variables.launcher.?securityContext.?privileged.orValue(false) && !has(variables.launcher.lifecycle) && !has(variables.launcher.startupProbe) && !has(variables.launcher.livenessProbe) && !variables.launcher.?readinessProbe.?exec.hasValue() && variables.launcher.?envFrom.orValue([]).size() == 0 && variables.launcher.?volumeDevices.orValue([]).size() == 0 && variables.launcher.?env.orValue([]).all(e, (e.name == 'FIRECRACKER_CONFIG_FILE' && e.?value.orValue('') == '/run/agentplane/firecracker/config.json') || (e.name == 'POD_UID' && e.?valueFrom.?fieldRef.?fieldPath.orValue('') == 'metadata.uid') || (e.name == 'SANDBOX_UID' && e.?value.orValue('') == variables.owners[0].uid) || (e.name in ['FIRECRACKER_VCPU_COUNT', 'FIRECRACKER_MEMORY_MIB'] && e.?value.orValue('').matches('^[0-9]+$')) || (e.name == 'FIRECRACKER_BOOT_IMAGE' && (e.value.startsWith('git.allegedly.works/ducktape-ci/agentplane-environment-firecracker:') && e.value.matches(':devel-[0-9]{14}-[0-9a-f]{7}$'))) || (e.name == 'FIRECRACKER_RUNNER_IMAGE' && (e.value.startsWith('git.allegedly.works/ducktape-ci/agentplane-runner-disk:') && e.value.matches(':devel-[0-9]{14}-[0-9a-f]{7}$'))) || (e.name == 'WORKSPACE_KIND' && e.?value.orValue('') == 'RawDiskImage')) && (variables.launcher.?volumeMounts.orValue([]).all(m, m.name in {'firecracker-settings': '/run/agentplane/firecracker', 'guest-config': '/run/agentplane/config', 'guest-trust': '/run/agentplane/trust', 'tun': '/dev/net/tun', 'agentplane-launch': '/run/agentplane/sandbox', 'agentplane-environment-runtime-tls': '/run/agentplane/environment-runtime-tls', 'agentplane-firecracker-intent': '/run/agentplane/firecracker-intent', 'agentplane-firecracker-boot': '/images/boot', 'agentplane-firecracker-runner': '/images/runner', 'state': '/var/lib/agentplane/state', 'workspace': '/var/lib/agentplane/workspace'} && m.mountPath == {'firecracker-settings': '/run/agentplane/firecracker', 'guest-config': '/run/agentplane/config', 'guest-trust': '/run/agentplane/trust', 'tun': '/dev/net/tun', 'agentplane-launch': '/run/agentplane/sandbox', 'agentplane-environment-runtime-tls': '/run/agentplane/environment-runtime-tls', 'agentplane-firecracker-intent': '/run/agentplane/firecracker-intent', 'agentplane-firecracker-boot': '/images/boot', 'agentplane-firecracker-runner': '/images/runner', 'state': '/var/lib/agentplane/state', 'workspace': '/var/lib/agentplane/workspace'}[m.name] && m.?mountPropagation.orValue('None') == 'None' && !has(m.subPath) && !has(m.subPathExpr)))"
+      message: The privileged container uses the published Firecracker supervisor, its entrypoint and reviewed inputs.
+    - expression: "size(variables.pod.?initContainers.orValue([])) == 1 && variables.relay.name == 'egress-sidecar' && (variables.relay.image.startsWith('git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:') && variables.relay.image.matches(':devel-[0-9]{14}-[0-9a-f]{7}$')) && variables.relay.?restartPolicy.orValue('') == 'Always' && !variables.relay.?securityContext.?privileged.orValue(false) && variables.relay.?securityContext.?runAsNonRoot.orValue(false) && !variables.relay.?securityContext.?allowPrivilegeEscalation.orValue(true) && variables.relay.?command.orValue([]).size() == 0 && variables.relay.?args.orValue([]).size() == 0 && !has(variables.relay.lifecycle) && !has(variables.relay.startupProbe) && !has(variables.relay.livenessProbe) && !variables.relay.?readinessProbe.?exec.hasValue() && variables.relay.?envFrom.orValue([]).size() == 0 && variables.relay.?env.orValue([]).all(e, e.name == 'AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE' && e.?value.orValue('') == '/etc/agentplane-egress-sidecar/settings.yaml') && (variables.relay.?volumeMounts.orValue([]).all(m, m.name in {'egress-sidecar-settings': '/etc/agentplane-egress-sidecar', 'agentplane-environment-runtime-tls': '/run/agentplane/environment-runtime-tls'} && m.mountPath == {'egress-sidecar-settings': '/etc/agentplane-egress-sidecar', 'agentplane-environment-runtime-tls': '/run/agentplane/environment-runtime-tls'}[m.name] && m.?mountPropagation.orValue('None') == 'None' && !has(m.subPath) && !has(m.subPathExpr)))"
+      message: The Firecracker egress sidecar uses the published image, its fixed settings path and no privileges.
+    - expression: "variables.pod.?volumes.orValue([]).all(v, (v.name in {'egress-ca': 'agentplane-egress-ca', 'tool-config': 'sandbox-tool-config', 'egress-sidecar-settings': 'environment-firecracker-relay', 'firecracker-settings': 'environment-firecracker-launcher', 'guest-config': 'environment-firecracker-config', 'guest-trust': 'agentplane-egress-ca'} && v.?configMap.?name.orValue('') == {'egress-ca': 'agentplane-egress-ca', 'tool-config': 'sandbox-tool-config', 'egress-sidecar-settings': 'environment-firecracker-relay', 'firecracker-settings': 'environment-firecracker-launcher', 'guest-config': 'environment-firecracker-config', 'guest-trust': 'agentplane-egress-ca'}[v.name]) || (v.name == 'tun' && v.?hostPath.?path.orValue('') == '/dev/net/tun' && v.?hostPath.?type.orValue('') == 'CharDevice') || (v.name == 'agentplane-launch' && v.?configMap.?name.orValue('') == object.metadata.name + '-launch') || (v.name in ['state', 'workspace'] && v.?persistentVolumeClaim.?claimName.orValue('') == object.metadata.name + '-' + v.name) || (v.name == 'agentplane-firecracker-intent' && has(v.downwardAPI)) || (v.name == 'agentplane-firecracker-boot' && has(v.image) && (v.image.reference.startsWith('git.allegedly.works/ducktape-ci/agentplane-environment-firecracker:') && v.image.reference.matches(':devel-[0-9]{14}-[0-9a-f]{7}$'))) || (v.name == 'agentplane-firecracker-runner' && has(v.image) && (v.image.reference.startsWith('git.allegedly.works/ducktape-ci/agentplane-runner-disk:') && v.image.reference.matches(':devel-[0-9]{14}-[0-9a-f]{7}$'))) || (v.name == 'agentplane-environment-runtime-tls' && has(v.projected) && v.projected.sources.all(p, p.?configMap.?name.orValue('') in ['cluster-internal-ca-bundle', 'agentplane-workload-ca-bundle'] || p.?secret.?name.orValue('').matches('^svid-[a-z0-9.-]+-[0-9a-f]{32}$'))))"
+      message: Firecracker volumes are limited to the tun device, reviewed inputs and Sandbox-owned state.
+  variables:
+    - expression: object.spec
+      name: pod
+    - expression: variables.pod.containers[0]
+      name: launcher
+    - expression: variables.pod.initContainers[0]
+      name: relay
+    - expression: object.metadata.?ownerReferences.orValue([])
+      name: owners
+    - expression: object.metadata.?labels.orValue({})
+      name: labels
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: agentplane-staging-firecracker-launcher
+spec:
+  policyName: agentplane-staging-firecracker-launcher
+  validationActions:
+    - Deny
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: agentplane-staging-firecracker-config
+spec:
+  failurePolicy: Fail
+  matchConditions:
+    - expression: request.namespace == 'agentplane-staging'
+      name: staging
+    - expression: request.userInfo.username == 'system:serviceaccount:agentplane-staging:environments'
+      name: environments
+    - expression: object.metadata.name in ['environment-firecracker-launcher', 'environment-firecracker-relay', 'environment-firecracker-config']
+      name: launcher-config
+  matchConstraints:
+    resourceRules:
+      - apiGroups:
+          - ""
+        apiVersions:
+          - v1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - configmaps
+  validations:
+    - expression: "false"
+      message: Firecracker launcher configuration is deployment-owned.
+  variables: []
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: agentplane-staging-firecracker-config
+spec:
+  policyName: agentplane-staging-firecracker-config
+  validationActions:
+    - Deny
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: agentplane-staging-actions-command-exec
+spec:
+  failurePolicy: Fail
+  matchConditions:
+    - expression: request.namespace == 'agentplane-staging'
+      name: staging
+    - expression: request.userInfo.username == 'system:serviceaccount:agentplane-staging:actions'
+      name: actions
+  matchConstraints:
+    resourceRules:
+      - apiGroups:
+          - ""
+        apiVersions:
+          - v1
+        operations:
+          - CONNECT
+        resources:
+          - pods/exec
+  validations:
+    - expression: object.?container.orValue('') == 'sandbox'
+      message: Actions must explicitly select the command box container in pods/exec requests.
+  variables: []
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: agentplane-staging-actions-command-exec
+spec:
+  policyName: agentplane-staging-actions-command-exec
+  validationActions:
+    - Deny
+---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
