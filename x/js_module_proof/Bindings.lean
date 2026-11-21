@@ -760,7 +760,7 @@ def bindingOperations (source : List BindingStmt) (statement : BindingStmt) : Op
     let (parameters, locals, _, _) := data
     if parameters.length != arguments.length || keys.length != parameters.length + locals.length then none else
       let parameterKeys := parameters.zip (keys.take parameters.length)
-      let parameterOperations := (parameterKeys.zip arguments).map (fun pair => .declareBinding pair.1.2 pair.2)
+      let parameterOperations := (parameterKeys.zip arguments).map (fun pair => .initializeCapture pair.1.2 (.literal pair.2) [] [])
       let localOperations ← capturedInitializers parameterKeys locals (keys.drop parameters.length)
       pure (parameterOperations ++ localOperations ++ [.declareBinding name 0])
   | .capturedAlias name target => some [.copyBinding name target]
@@ -809,7 +809,7 @@ def bindingOperations (source : List BindingStmt) (statement : BindingStmt) : Op
 
 def runBindingStatements (source statements : List BindingStmt) : Option (ExecutionState Unit) := do
   let operations ← statements.mapM (bindingOperations source)
-  runExecution ⟨[], [], [], none, [], none⟩ operations.flatten
+  runExecution ⟨[], [], [], none, [], none, []⟩ operations.flatten
 
 /- Binding allocation order is not observable in this subset. Compare cells
    in source declaration order, so independent module ordering is permitted. -/
@@ -822,7 +822,7 @@ def canonicalBindingState (source : List BindingStmt) (state : ExecutionState Un
     | .thrower _ _ => []
     | .expressionFunction _ _ _ => []
     | .capturedFactory _ _ _ _ _ => []
-    | .capturedClosure name _ _ keys => keys ++ [name]
+    | .capturedClosure name _ _ _ => [name]
     | .capturedAlias name _ => [name]
     | .factory _ _ _ => []
     | .closure name _ => [closureCell name]
@@ -831,7 +831,8 @@ def canonicalBindingState (source : List BindingStmt) (state : ExecutionState Un
     | .call _ => []
     | .record _ => [])
   let bindings ← names.mapM (fun name => (lookupBinding state.bindings name).map (fun value => (name, value)))
-  pure { state with bindings }
+  let captured ← (capturedKeys source).mapM (fun key => (lookupBinding state.captured key).map (fun value => (key, value)))
+  pure { state with bindings, captured }
 
 def sourceBindingState (source : List BindingStmt) : Option (ExecutionState Unit) :=
   (runBindingStatements source source).bind (canonicalBindingState source)

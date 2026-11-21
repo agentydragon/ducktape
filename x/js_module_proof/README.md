@@ -156,15 +156,18 @@ declaration equals the source-side declaration. The axiom-free general theorem
 `accepted_reference_owner` proves that this holds for every reference in any
 accepted graph. This is a checked sufficient condition on the restricted AST,
 not a proof of the Acorn conversion or ECMAScript's linking rules. The module
-scheduler and the shared named-cell
-execution state then model initialization and future exported calls. Each
+scheduler and the shared execution state then model initialization and future
+exported calls. Module bindings and captured cells occupy separate stores in
+that state, so private cell keys do not become global bindings. Each
 recognized closure instance has private modeled cells initialized when its
 factory is called; closure identity, arbitrary allocation and escaping beyond
 the accepted calls are excluded. The shared captured-frame evaluator has an
 axiom-free lemma relating equal captured values under different cell keys when
 the globals are the same. Captured-frame writeback checks that reading the cells
 reconstructs the updated frame, and an axiom-free lemma relates successful
-writebacks of the same frame under different cell keys. The overall split certificate still uses the existing
+writebacks of the same frame under different cell keys. A further one-call
+lemma connects evaluation and writeback to the machine's return and throw
+observations, assuming both writebacks succeed. The overall split certificate still uses the existing
 factory-specific representation and does not yet prove preservation under
 arbitrary allocation renaming. A safe
 result proves equal modeled initialization and matching return values and

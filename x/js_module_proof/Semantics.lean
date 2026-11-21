@@ -64,6 +64,7 @@ structure ExecutionState (α : Type) where
   error : Option α
   returns : List (Option Nat)
   thrown : Option ThrownValue
+  captured : List (String × Nat)
   deriving DecidableEq, Repr
 
 def lookupBinding : List (String × Nat) → String → Option Nat
@@ -212,9 +213,8 @@ def evaluateArguments (locals globals : List (String × Nat)) : NumericExpr → 
   | .invoke _ _ _ _ => none
 end
 
-/- Closure cells have keys that cannot be JavaScript identifiers. Keeping them
-   in the shared binding store makes closure creation and calls participate in
-   the same execution state and observations as every other operation. -/
+/- Captured cells belong to the same execution state as module bindings, but
+   have their own store. An environment maps lexical names to cell identities. -/
 def loadCaptures (bindings : List (String × Nat)) : List (String × String) → Option (List (String × Nat))
   | [] => some []
   | (name, key) :: rest => do
@@ -295,13 +295,78 @@ def recordObservation {α : Type} (state : ExecutionState α) (event : Observati
   | reply :: rest => { state with events := state.events ++ [event], replies := rest, error := reply }
 
 def declare {α : Type} (state : ExecutionState α) (name : String) (value : Nat) : Option (ExecutionState α) :=
-  if (lookupBinding state.bindings name).isSome then none
+  if (lookupBinding state.bindings name).isSome || (lookupBinding state.captured name).isSome then none
   else some { state with bindings := state.bindings ++ [(name, value)] }
+
+def declareCapture {α : Type} (state : ExecutionState α) (key : String) (value : Nat) : Option (ExecutionState α) :=
+  if (lookupBinding state.captured key).isSome || (lookupBinding state.bindings key).isSome then none
+  else some { state with captured := state.captured ++ [(key, value)] }
 
 def incrementBy {α : Type} (state : ExecutionState α) (target : String) (value : Nat) : Option (ExecutionState α) := do
   let old ← lookupBinding state.bindings target
   let bindings ← updateBinding state.bindings target (old + value)
   pure { state with bindings }
+
+def finishCapturedCall {α : Type} (state : ExecutionState α) (captured : List (String × Nat))
+    (completion : Except ThrownValue Nat) : ExecutionState α :=
+  match completion with
+  | .error value => { state with captured, thrown := some value }
+  | .ok value => { state with captured, returns := state.returns ++ [some value] }
+
+/- Once both executions have written the same resulting frame, the actual
+   machine transition preserves observations and the capture relation. -/
+theorem captured_completion_preserved {α : Type}
+    (leftState rightState : ExecutionState α) (leftCapture rightCapture : List (String × String))
+    (values : List (String × Nat)) (completion : Except ThrownValue Nat)
+    (left : { store : List (String × Nat) // loadCaptures store leftCapture = some values })
+    (right : { store : List (String × Nat) // loadCaptures store rightCapture = some values })
+    (sameBindings : leftState.bindings = rightState.bindings)
+    (sameEvents : leftState.events = rightState.events)
+    (sameReplies : leftState.replies = rightState.replies)
+    (sameError : leftState.error = rightState.error)
+    (sameReturns : leftState.returns = rightState.returns)
+    (sameThrown : leftState.thrown = rightState.thrown) :
+    let leftNext := finishCapturedCall leftState left.val completion
+    let rightNext := finishCapturedCall rightState right.val completion
+    leftNext.bindings = rightNext.bindings ∧ leftNext.events = rightNext.events ∧
+      leftNext.replies = rightNext.replies ∧ leftNext.error = rightNext.error ∧
+      leftNext.returns = rightNext.returns ∧ leftNext.thrown = rightNext.thrown ∧
+      relatedCapturedEnvironments leftNext.captured rightNext.captured leftCapture rightCapture := by
+  cases completion with
+  | error value =>
+    exact ⟨sameBindings, sameEvents, sameReplies, sameError, sameReturns, rfl,
+      captured_frame_writeback_preserved leftCapture rightCapture values left right⟩
+  | ok value =>
+    exact ⟨sameBindings, sameEvents, sameReplies, sameError,
+      congrArg (fun returns => returns ++ [some value]) sameReturns, sameThrown,
+      captured_frame_writeback_preserved leftCapture rightCapture values left right⟩
+
+theorem captured_machine_step_preserved {α : Type}
+    (leftState rightState : ExecutionState α) (leftCapture rightCapture : List (String × String))
+    (parameters : List String) (arguments : List Nat) (body : NumericExpr) (result : ExpressionResult Nat)
+    (sameBindings : leftState.bindings = rightState.bindings)
+    (sameEvents : leftState.events = rightState.events)
+    (sameReplies : leftState.replies = rightState.replies)
+    (sameError : leftState.error = rightState.error)
+    (sameReturns : leftState.returns = rightState.returns)
+    (sameThrown : leftState.thrown = rightState.thrown)
+    (related : relatedCapturedEnvironments leftState.captured rightState.captured leftCapture rightCapture)
+    (evaluated : evaluateCapturedFrame leftState.bindings leftState.captured leftCapture parameters arguments body = some result)
+    (left : { store : List (String × Nat) // loadCaptures store leftCapture = some (result.locals.drop parameters.length) })
+    (right : { store : List (String × Nat) // loadCaptures store rightCapture = some (result.locals.drop parameters.length) }) :
+    evaluateCapturedFrame rightState.bindings rightState.captured rightCapture parameters arguments body = some result ∧
+      let leftNext := finishCapturedCall leftState left.val result.completion
+      let rightNext := finishCapturedCall rightState right.val result.completion
+      leftNext.bindings = rightNext.bindings ∧ leftNext.events = rightNext.events ∧
+        leftNext.replies = rightNext.replies ∧ leftNext.error = rightNext.error ∧
+        leftNext.returns = rightNext.returns ∧ leftNext.thrown = rightNext.thrown ∧
+        relatedCapturedEnvironments leftNext.captured rightNext.captured leftCapture rightCapture := by
+  constructor
+  · rw [← sameBindings]
+    rw [← captured_frame_evaluation_preserved leftState.bindings leftState.captured rightState.captured leftCapture rightCapture parameters arguments body related]
+    exact evaluated
+  · exact captured_completion_preserved leftState rightState leftCapture rightCapture _ result.completion left right
+      sameBindings sameEvents sameReplies sameError sameReturns sameThrown
 
 def executeStep {α : Type} (state : ExecutionState α) (operation : Operation) : Option (ExecutionState α) :=
   match state.error with
@@ -350,18 +415,15 @@ def executeStep {α : Type} (state : ExecutionState α) (operation : Operation) 
       | .error value => pure { state with thrown := some value }
       | .ok value => pure { state with returns := state.returns ++ [some value] }
     | .initializeCapture key expression parameters prior => do
-      let captures ← loadCaptures state.bindings prior
+      let captures ← loadCaptures state.captured prior
       let result ← evaluateExpression (parameters ++ captures) state.bindings expression
       match result.completion with
       | .error _ => none
-      | .ok value => declare state key value
+      | .ok value => declareCapture state key value
     | .invokeCaptured captures parameters arguments body => do
-      let result ← evaluateCapturedFrame state.bindings state.bindings captures parameters arguments body
-      let stored ← storeCapturedFrame state.bindings captures (result.locals.drop parameters.length)
-      let bindings := stored.val
-      match result.completion with
-      | .error value => pure { state with bindings, thrown := some value }
-      | .ok value => pure { state with bindings, returns := state.returns ++ [some value] }
+      let result ← evaluateCapturedFrame state.bindings state.captured captures parameters arguments body
+      let stored ← storeCapturedFrame state.captured captures (result.locals.drop parameters.length)
+      pure (finishCapturedCall state stored.val result.completion)
 
 def runExecution {α : Type} : ExecutionState α → List Operation → Option (ExecutionState α)
   | state, [] => some state

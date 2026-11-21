@@ -755,6 +755,18 @@ example : (storeCapturedFrame [("cell", 3)] [("first", "cell"), ("second", "cell
 #print axioms captured_frame_evaluation_preserved
 #print axioms captured_frame_writeback_preserved
 #print axioms captured_call_frame_preserved
+#print axioms captured_completion_preserved
+#print axioms captured_machine_step_preserved
+def frameExampleBody : NumericExpr :=
+  .assign "value" (.add (.name "value") (.add (.name "delta") (.name "seed"))) (.name "value")
+def frameExampleLeft : ExecutionState Unit := ⟨[("seed", 4)], [], [], none, [], none, [("left-cell", 3)]⟩
+def frameExampleRight : ExecutionState Unit := ⟨[("seed", 4)], [], [], none, [], none, [("right-cell", 3)]⟩
+example : (executeStep frameExampleLeft (.invokeCaptured [("value", "left-cell")] ["delta"] [2] frameExampleBody)).map
+    (fun state => (state.bindings, loadCaptures state.captured [("value", "left-cell")], state.returns)) =
+    some ([("seed", 4)], some [("value", 9)], [some 9]) := by decide
+example : (executeStep frameExampleRight (.invokeCaptured [("value", "right-cell")] ["delta"] [2] frameExampleBody)).map
+    (fun state => (state.bindings, loadCaptures state.captured [("value", "right-cell")], state.returns)) =
+    some ([("seed", 4)], some [("value", 9)], [some 9]) := by decide
 `,
   });
   assert.equal(replay.status, 0, replay.stdout + replay.stderr);
@@ -762,6 +774,8 @@ example : (storeCapturedFrame [("cell", 3)] [("first", "cell"), ("second", "cell
   assert.match(replay.stdout, /'captured_frame_evaluation_preserved' does not depend on any axioms/);
   assert.match(replay.stdout, /'captured_frame_writeback_preserved' does not depend on any axioms/);
   assert.match(replay.stdout, /'captured_call_frame_preserved' does not depend on any axioms/);
+  assert.match(replay.stdout, /'captured_completion_preserved' does not depend on any axioms/);
+  assert.match(replay.stdout, /'captured_machine_step_preserved' does not depend on any axioms/);
   const emitted = join(out, "alias.mjs");
   await writeFile(emitted, (await readFile(emitted, "utf8")).replaceAll("first", "second"));
   assert.equal(cli("validate", source, spec, out).result, "unknown");
