@@ -1002,7 +1002,7 @@ export function makeComposedCase(seed, index) {
           block: { type: "BlockStatement", body: [terminal] },
           handler: {
             type: "CatchClause",
-            param: null,
+            param: rand(2) ? id("caught") : null,
             body: { type: "BlockStatement", body: [returnNode(expression(visible, 1))] },
           },
           finalizer: null,

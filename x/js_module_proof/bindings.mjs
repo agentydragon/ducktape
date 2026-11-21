@@ -553,7 +553,15 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
   };
   const returning = (statement) => {
     if (statement?.type === "TryStatement") {
-      check(!statement.handler || statement.handler.param === null, "catch bindings are unsupported");
+      if (statement.handler?.param) {
+        const caught = identifier(statement.handler.param);
+        const mentions = (node) => {
+          if (!node || typeof node !== "object") return false;
+          if (node.type === "Identifier" && node.name === caught) return true;
+          return Object.values(node).some((value) => (Array.isArray(value) ? value.some(mentions) : mentions(value)));
+        };
+        check(!mentions(statement.handler.body), "used catch bindings are unsupported");
+      }
       let body = sequence(statement.block.body);
       if (statement.handler) body = { kind: "catchError", body, handler: sequence(statement.handler.body.body) };
       if (!statement.finalizer) return body;

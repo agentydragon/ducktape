@@ -852,9 +852,15 @@ export { counter };
   });
   assert.equal(witnessReplay.status, 0, witnessReplay.stdout + witnessReplay.stderr);
   assert.match(witnessReplay.stdout, /'binding_witness_difference' does not depend on any axioms/);
-  const unsupported = join(root, "catch-binding.mjs");
-  await writeFile(unsupported, (await readFile(source, "utf8")).replace("catch {", "catch (e) {"));
-  assert.equal(cli("generate", unsupported, spec, join(root, "catch-binding-out")).result, "unknown");
+  const bound = join(root, "catch-binding.mjs");
+  const boundOut = join(root, "catch-binding-out");
+  await writeFile(bound, (await readFile(source, "utf8")).replace("catch {", "catch (e) {"));
+  assert.equal(cli("generate", bound, spec, boundOut).result, "generated");
+  assert.equal(cli("validate", bound, spec, boundOut).result, "proved under assumptions");
+  assert.deepEqual(execute(bound, calls), execute(join(boundOut, "entry.mjs"), calls));
+  const used = join(root, "catch-binding-used.mjs");
+  await writeFile(used, (await readFile(bound, "utf8")).replace("value += 2", "value += e"));
+  assert.equal(cli("generate", used, spec, join(root, "catch-binding-used-out")).result, "unknown");
 }
 
 if (shard === 15) {
