@@ -1,11 +1,13 @@
 // The generator of programs that can reach any part of the language: the families and `generateProgram`.
+import * as classes from "./classes.mjs";
 import { build, renderProgram } from "./core.mjs";
 import * as expressions from "./expressions.mjs";
 import * as functions from "./functions.mjs";
+import * as patterns from "./patterns.mjs";
 import * as statements from "./statements.mjs";
 
 /** The families in the order they are installed; each installs productions of expressions and statements and makers of units. */
-export const FAMILIES = { expressions, statements, functions };
+export const FAMILIES = { expressions, statements, functions, classes, patterns };
 
 /**
  * One program for `seed`: `{ units: [{ tmpl, src, defs, uses }], exports }`, the shape the fuzzer's splitter takes.

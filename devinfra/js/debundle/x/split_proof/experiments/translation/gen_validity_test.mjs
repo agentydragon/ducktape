@@ -44,12 +44,29 @@ const MUST_HAVE = {
     "function:async", "function:async-arrow", "param:default", "param:rest", "arguments", "yield", "yield:delegate", "await",
     "for-await", "call:iife", "object:method", "tagged-template", "tagged-template:expressions",
   ], // prettier-ignore
+  classes: [
+    "class:declaration", "class:expression", "class:named-expression", "class:extends", "class:extends-expression",
+    "class:extends-null", "class:constructor", "method", "method:static", "method:getter", "method:setter",
+    "method:static-getter", "method:static-setter", "method:computed", "method:generator", "method:async",
+    "method:async-generator", "method:private", "method:private-accessor", "method:static-private", "field",
+    "field:no-initializer", "field:static", "field:computed", "field:private", "field:static-private",
+    "field:arrow-initializer", "static-block", "new.target", "private-in", "member:private", "member:super", "call:super",
+    "new:no-arguments", "new:spread", "new:member",
+  ], // prettier-ignore
+  patterns: [
+    "pattern:default", "pattern:rest-object", "pattern:rest-array", "pattern:nested", "pattern:computed-key", "pattern:hole",
+    "pattern:default-array", "pattern:object-assign", "pattern:member-target", "param:destructured", "for-of:destructured",
+    "for-of:target", "for-in:target", "for-in:var", "declaration:several", "optional:call", "optional:chain-continues",
+    "optional:method-call", "optional:delete", "block:function", "call:spread",
+  ], // prettier-ignore
 };
 // The families are tried cumulatively, each with the ones before it: the expressions make no unit by themselves. A set must
 // produce the forms of the families in it.
 const SETS = [
   ["expressions", "statements"],
   ["expressions", "statements", "functions"],
+  ["expressions", "statements", "functions", "classes"],
+  ["expressions", "statements", "functions", "classes", "patterns"],
 ];
 assert.deepEqual([...new Set(SETS.flat())].sort(), Object.keys(FAMILIES).sort(), "a family is not tried");
 
@@ -108,8 +125,14 @@ for (const families of SETS) {
     for (const f of r.features.forms.keys()) found.add(f);
     for (const t of r.features.types.keys()) types.add(t);
   }
-  const missing = families.flatMap((family) => MUST_HAVE[family]).filter((f) => !found.has(f));
-  assert.deepEqual(missing, [], `families ${families}: ${samples} programs have no ${missing.join(", ")}`);
+  // a form that is rare in the programs that were run is looked for in more, which are only generated and parsed
+  let missing = families.flatMap((family) => MUST_HAVE[family]).filter((f) => !found.has(f));
+  const more = firstSeed + samples + 400;
+  for (let seed = firstSeed + samples; missing.length > 0 && seed < more; seed++) {
+    const forms = featuresOf(parseModule(renderProgram(generateProgram(seed, { families })))).forms;
+    missing = missing.filter((f) => !forms.has(f));
+  }
+  assert.deepEqual(missing, [], `families ${families}: ${more - firstSeed} programs have no ${missing.join(", ")}`);
   summary[families.join("+")] = { programs: samples, units, nodeTypes: types.size, forms: found.size };
 }
 console.log("generator validity:", JSON.stringify(summary));
