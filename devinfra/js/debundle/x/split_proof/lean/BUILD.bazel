@@ -149,8 +149,11 @@ lean_binary(
     name = "corejs",
     srcs = glob(
         ["Experiments/CoreJS/*.lean"],
-        # the proof about the model; `corejs_axioms_test` checks it
-        exclude = ["Experiments/CoreJS/Frame.lean"],
+        # the proofs about the model; `corejs_axioms_test` checks them
+        exclude = [
+            "Experiments/CoreJS/Frame.lean",
+            "Experiments/CoreJS/Fuel.lean",
+        ],
     ) + ["Experiments/CoreJSMain.lean"],
     entry = "Experiments/CoreJSMain.lean",
     visibility = ["//devinfra/js/debundle/x/split_proof/experiments/translation:__pkg__"],
@@ -161,14 +164,20 @@ lean_axiom_test(
     srcs = [
         "Experiments/CoreJS/Eval.lean",
         "Experiments/CoreJS/Frame.lean",
+        "Experiments/CoreJS/Fuel.lean",
         "Experiments/CoreJS/Number.lean",
         "Experiments/CoreJS/Syntax.lean",
         "Experiments/CoreJS/Value.lean",
     ],
-    imports = ["Experiments.CoreJS.Frame"],
+    imports = [
+        "Experiments.CoreJS.Frame",
+        "Experiments.CoreJS.Fuel",
+    ],
     theorems = [
         "CoreJS.allocOnly_extends",
         "CoreJS.decl_allocOnly",
+        "CoreJS.fuel_mono",
+        "CoreJS.Ends.unique",
     ],
 )
 
