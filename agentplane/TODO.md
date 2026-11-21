@@ -1,5 +1,10 @@
 # Agentplane TODOs
 
+- [ ] Consider an auto-approval rule allowing public-coder agents to add `parsimony` to their
+      own PRs in `agentydragon/ducktape`. Verify PR authorship against the caller’s GitHub
+      identity; allow only adding that label, preserving existing labels and forbidding other
+      issue edits. The bot currently needs operator approval for this step (PR #18714).
+
 - [ ] Extend the Agentplane platform agent instructions once the interfaces are ready: explain
       subagent operation and safe lookup of past conversations without putting task-specific procedures
       in the shared prompt.
