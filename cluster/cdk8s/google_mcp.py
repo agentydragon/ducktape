@@ -44,6 +44,8 @@ from constructs import Construct
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
 from cluster.cdk8s import cilium, namespaces, pod_policy
+from cluster.cdk8s.agentplane import actions
+from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.forgejo_registry.pull_credentials import (
     forgejo_images_creds_external_secret,
@@ -52,7 +54,7 @@ from cluster.cdk8s.forgejo_registry.pull_credentials import (
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.probes import http_probe
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.vpa_policy import ContainerPolicy
@@ -174,11 +176,7 @@ class GoogleMcpApp(Construct):
             "network-policy",
             metadata=ApiObjectMetadata(name=NAME, namespace=NAME),
             endpoint_selector=SERVICE.pods.selector,
-            ingress=[
-                IngressRule.from_endpoints(
-                    cilium.endpoint_labels("agentplane-staging", "actions"), ports=[SERVICE.pod_port]
-                )
-            ],
+            ingress=[actions.service(STAGING_NAMESPACE).pods.admit(SERVICE.pod_port)],
             egress=[
                 cilium.dns_egress(resolves=["*"]),
                 EgressRule.to_fqdns("gmail.googleapis.com", "www.googleapis.com"),

@@ -54,9 +54,11 @@ from cluster.cdk8s import (
     agent_access_profiles,
     cilium,
     external_creds,
+    google_mcp,
     ha_mcp,
     kubectl_passthrough_mcp,
     node_scheduling,
+    tana_mcp,
 )
 from cluster.cdk8s.agentplane import (
     actions,
@@ -135,7 +137,7 @@ from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRul
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.public_coder import egress as public_coder_egress
 from cluster.cdk8s.secret_ref import SecretRef
-from cluster.cdk8s.ssh_mcp.config import BEARER_SECRET_KEY, BEARER_SECRET_NAME, MCP_URL
+from cluster.cdk8s.ssh_mcp import config as ssh_mcp
 from model_catalog.catalog import TABBYAPI_QWEN_ABLITERATED, TABBYAPI_QWEN_STOCK, Provider
 
 _HOSTNAME = "agentplane-staging.allegedly.works"
@@ -152,6 +154,7 @@ _KUBERNETES_MCP_URL = "https://kubectl-passthrough-mcp.allegedly.works/mcp"
 # request in four answered 503 after 5s. Linking keeps the public URL, the resource its token is for.
 _KUBERNETES_MCP_SERVICE_URL = f"{kubectl_passthrough_mcp.SERVICE.url}/mcp"
 _GROCY_SF_MCP_URL = "https://grocy-mcp-sf.allegedly.works/mcp"
+_GOOGLE_MCP_ORIGIN = f"http://{google_mcp.SERVICE.fqdn}:{google_mcp.SERVICE.port.number}"
 _MCP_CLIENT_METADATA_URL = f"https://{_ACTIONS_HOSTNAME}/oauth/client-metadata.json"
 # Action-attributed Dispatcher sends use the Actions service's independent broker grant. The
 # Environments service keeps its own wake allowlist from sandbox_controller.WAKE_SERVICE_CALLERS.
@@ -223,20 +226,6 @@ STAGING_VM_RESOURCES = GuestResources(
         write_iops=500,
     ),
 )
-_HOME_ASSISTANT_MCP_URL = f"{ha_mcp.FACADE.url}/mcp"
-_TANA_MCP_URL = "http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp"
-# One google-mcp pod (cluster/cdk8s/google_mcp.py) serves both tool sets at
-# distinct paths -- see that module's docstring for its Google credential.
-_GMAIL_MCP_URL = "http://google-mcp.google-mcp.svc.cluster.local:8080/gmail/mcp"
-_CALENDAR_MCP_URL = "http://google-mcp.google-mcp.svc.cluster.local:8080/calendar/mcp"
-# ssh-mcp, ha-mcp and google-mcp each mint their bearer in their own namespace
-# (cluster/cdk8s/ssh_mcp/backend.py, ha_mcp.py, google_mcp.py), and this namespace copies it
-# through a store that can read that one Secret; the Tana PAT is an external-creds copy approved
-# for this namespace (cluster/cdk8s/external_creds.py).
-_SSH_MCP_BEARER_SECRET = "ssh-mcp-client-bearer"
-_HA_MCP_BEARER_SECRET = "ha-mcp-client-bearer"
-_TANA_MCP_BEARER_SECRET = "tana-agentydragon-gmail-com-account-pat"
-_GOOGLE_MCP_BEARER_SECRET = "google-mcp-bearer"
 _WEB_PUSH_SECRET = "agentplane-staging-web-push-vapid"
 _WEB_PUSH_SECRET_FILE = "web-push-vapid.sops.yaml"
 _GITHUB_MCP_CLIENT_SECRET = "haku-console-github-mcp-client-credentials"
@@ -300,17 +289,22 @@ _MCP_SERVERS = {
 }
 # One mount per static-bearer MCP backend: the Action Service mounts the Secret in `mount_dir`, and its
 # group's `bearer_file` names `path` there.
-_SSH_MCP_MOUNT = BearerMcpMount(name="ssh-mcp", secret_name=_SSH_MCP_BEARER_SECRET, secret_key=BEARER_SECRET_KEY)
-_HA_MCP_MOUNT = BearerMcpMount(name="ha-mcp", secret_name=_HA_MCP_BEARER_SECRET, secret_key="bearer-token")
+_SSH_MCP_MOUNT = BearerMcpMount(name="ssh-mcp", secret_name="ssh-mcp-client-bearer", secret_key=ssh_mcp.BEARER.key)
+_HA_MCP_MOUNT = BearerMcpMount(name="ha-mcp", secret_name="ha-mcp-client-bearer", secret_key=ha_mcp.BEARER.key)
 # The Secret's own key is `token` (it's a Tana personal access token, not a
 # bearer minted for this purpose); renamed at mount time to the same
 # `bearer-token` file name every other static-bearer group uses.
 _TANA_MCP_MOUNT = BearerMcpMount(
-    name="tana-mcp", secret_name=_TANA_MCP_BEARER_SECRET, secret_key="token", optional=True
+    name="tana-mcp",
+    secret_name=external_creds.TANA_PAT.secret.name,
+    secret_key=external_creds.TANA_PAT.key,
+    optional=True,
 )
 # One mount, shared by both the gmail and google_calendar ActionGroups -- one pod,
 # one caller-facing bearer.
-_GOOGLE_MCP_MOUNT = BearerMcpMount(name="google-mcp", secret_name=_GOOGLE_MCP_BEARER_SECRET, secret_key="bearer-token")
+_GOOGLE_MCP_MOUNT = BearerMcpMount(
+    name="google-mcp", secret_name=google_mcp.BEARER.secret.name, secret_key=google_mcp.BEARER.key
+)
 
 
 def _static_bearer_group(
@@ -395,35 +389,35 @@ _ACTION_GROUPS = {
         title="SSH",
         description="SSH commands on configured targets; every Action remains subject to operator approval.",
         executor_description="SSH MCP backend (ssh-mcp); Agentplane retains approval and execution authority.",
-        url=MCP_URL,
+        url=ssh_mcp.MCP_URL,
     ),
     "home_assistant": _static_bearer_group(
         _HA_MCP_MOUNT,
         title="Home Assistant MCP",
         description="Home Assistant tools; every Action remains subject to operator approval.",
         executor_description="Home Assistant MCP backend (ha-mcp).",
-        url=_HOME_ASSISTANT_MCP_URL,
+        url=f"{ha_mcp.FACADE.url}/mcp",
     ),
     "tana": _static_bearer_group(
         _TANA_MCP_MOUNT,
         title="Tana MCP",
         description="Tana read/write tools; every Action remains subject to operator approval.",
         executor_description="Tana MCP backend (tana-mcp).",
-        url=_TANA_MCP_URL,
+        url=f"http://{tana_mcp.MCP_PROXY.fqdn}:{tana_mcp.MCP_PROXY.port.number}/mcp",
     ),
     "gmail": _static_bearer_group(
         _GOOGLE_MCP_MOUNT,
         title="Gmail",
         description="Gmail read/write tools; every Action remains subject to operator approval.",
         executor_description="Gmail MCP backend (google-mcp), on a write-scoped Google credential.",
-        url=_GMAIL_MCP_URL,
+        url=f"{_GOOGLE_MCP_ORIGIN}/gmail/mcp",
     ),
     "google_calendar": _static_bearer_group(
         _GOOGLE_MCP_MOUNT,
         title="Google Calendar",
         description="Google Calendar read/write tools; every Action remains subject to operator approval.",
         executor_description="Google Calendar MCP backend (google-mcp), on a write-scoped Google credential.",
-        url=_CALENDAR_MCP_URL,
+        url=f"{_GOOGLE_MCP_ORIGIN}/calendar/mcp",
     ),
 }
 
@@ -637,10 +631,10 @@ ENV = Environment(
         bearer_mcp_mounts=[_SSH_MCP_MOUNT, _HA_MCP_MOUNT, _TANA_MCP_MOUNT, _GOOGLE_MCP_MOUNT],
         extra_egress=[
             EgressRule.to_fqdns(*_WEB_PUSH_ALLOWED_HOSTS),
-            EgressRule.to_endpoints(cilium.endpoint_labels("ssh-mcp", "ssh-mcp"), 8080),
+            ssh_mcp.SERVICE.egress(),
             ha_mcp.FACADE.egress(),
-            EgressRule.to_endpoints(cilium.endpoint_labels("tana-mcp", "tana-mcp"), 8263),
-            EgressRule.to_endpoints(cilium.endpoint_labels("google-mcp", "google-mcp"), 8080),
+            tana_mcp.MCP_PROXY.egress(),
+            google_mcp.SERVICE.egress(),
             # Same public-origin Gateway path as the BFF: only Authentik SNI on node:443. The
             # resolver fetches /application/o/agentplane-staging-actions/jwks/ over HTTPS.
             cilium.egress_via_gateway("auth.allegedly.works"),
@@ -938,33 +932,34 @@ def chart(app: App, env: Environment = ENV) -> Chart:
         chart,
         "tana-pat-external-secret",
         metadata=ApiObjectMetadata(
-            name=_TANA_MCP_BEARER_SECRET,
+            name=_TANA_MCP_MOUNT.secret_name,
             namespace=STAGING_NAMESPACE,
             annotations={"description": "ESO copy of the canonical Tana PAT from external-creds."},
         ),
         refresh_interval="1h",
         secret_store_ref=external_creds.STORE,
-        data=[remote_data(_TANA_MCP_BEARER_SECRET, "token")],
+        data=[remote_data(external_creds.TANA_PAT.secret.name, external_creds.TANA_PAT.key)],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
     )
-    for backend, target, source in (
-        ("ssh-mcp", _SSH_MCP_BEARER_SECRET, BEARER_SECRET_NAME),
-        ("google-mcp", _GOOGLE_MCP_BEARER_SECRET, _GOOGLE_MCP_BEARER_SECRET),
-        ("ha-mcp", _HA_MCP_BEARER_SECRET, "ha-mcp-bearer"),
+    # Each store grants access to just the backend's minted bearer in its source namespace.
+    for mount, source in (
+        (_SSH_MCP_MOUNT, ssh_mcp.BEARER),
+        (_GOOGLE_MCP_MOUNT, google_mcp.BEARER),
+        (_HA_MCP_MOUNT, ha_mcp.BEARER),
     ):
         credential_external_secret(
             chart,
             namespace=STAGING_NAMESPACE,
-            target=target,
-            source=source,
-            key="bearer-token",
+            target=mount.secret_name,
+            source=source.secret.name,
+            key=source.key,
             store=single_secret_store(
                 chart,
-                f"agentplane-staging-{backend}-bearer",
+                f"agentplane-staging-{mount.name}-bearer",
                 reader=reader,
-                source_namespace=backend,
-                source_secret=source,
+                source_namespace=source.secret.namespace,
+                source_secret=source.secret.name,
                 consumer_namespace=STAGING_NAMESPACE,
             ),
         )

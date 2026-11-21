@@ -54,7 +54,7 @@ _RESIGNER_CONFIG = "tana-firebase-resigner-config"
 # The Secret the resigner rewrites: its Role and its config both read this one reference.
 _REFRESH_TOKEN = SecretRef(namespace=_NAMESPACE, name="tana-firebase-refresh-token").key("refresh_token")
 # The ESO copy of the external-creds Secret of the same name.
-_PAT = SecretRef(namespace=_NAMESPACE, name="tana-agentydragon-gmail-com-account-pat").key("token")
+_PAT = SecretRef(namespace=_NAMESPACE, name=external_creds.TANA_PAT.secret.name).key(external_creds.TANA_PAT.key)
 _FACADE_OIDC = SecretRef(namespace=_NAMESPACE, name="tana-mcp-facade-oidc")
 # Tana Desktop's own MCP server; it answers only on loopback inside the container.
 _TANA = Port(name="mcp", number=8262)
@@ -442,7 +442,7 @@ def chart(app: App) -> Chart:
         ),
         refresh_interval="1h",
         secret_store_ref=external_creds.STORE,
-        data=[remote_data(_PAT.secret.name, _PAT.key)],
+        data=[remote_data(external_creds.TANA_PAT.secret.name, external_creds.TANA_PAT.key)],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
     )
