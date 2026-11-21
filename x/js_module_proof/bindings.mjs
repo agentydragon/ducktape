@@ -311,11 +311,20 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
       check(!localFunctions.has(value), "local function identity escapes");
       return { kind: "name", name: value };
     }
-    if (node?.type === "BinaryExpression" && ["+", "*", "-", "%"].includes(node.operator)) {
+    if (node?.type === "BinaryExpression" && ["+", "*", "-", "%", "/"].includes(node.operator)) {
       check(
-        node.operator !== "%" || node.right?.type !== "Literal" || node.right.value !== 0,
-        "zero remainder divisor"
+        !["%", "/"].includes(node.operator) || node.right?.type !== "Literal" || node.right.value !== 0,
+        "zero divisor"
       );
+      if (
+        node.operator === "/" &&
+        node.left?.type === "Literal" &&
+        node.right?.type === "Literal" &&
+        Number.isSafeInteger(node.left.value) &&
+        Number.isSafeInteger(node.right.value) &&
+        node.right.value !== 0
+      )
+        check(node.left.value % node.right.value === 0, "non-integral division");
       return {
         kind:
           node.operator === "+"
@@ -324,7 +333,9 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
               ? "multiply"
               : node.operator === "-"
                 ? "subtract"
-                : "remainder",
+                : node.operator === "%"
+                  ? "remainder"
+                  : "divide",
         left: expression(node.left),
         right: expression(node.right),
       };
@@ -512,11 +523,16 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
     if (first.type === "ExpressionStatement" && rest.length > 0) {
       const assignment = first.expression;
       let name, value;
-      if (assignment?.type === "AssignmentExpression" && ["=", "+=", "*=", "-=", "%="].includes(assignment.operator)) {
+      if (
+        assignment?.type === "AssignmentExpression" &&
+        ["=", "+=", "*=", "-=", "%=", "/="].includes(assignment.operator)
+      ) {
         name = identifier(assignment.left);
         check(
-          assignment.operator !== "%=" || assignment.right?.type !== "Literal" || assignment.right.value !== 0,
-          "zero remainder divisor"
+          !["%=", "/="].includes(assignment.operator) ||
+            assignment.right?.type !== "Literal" ||
+            assignment.right.value !== 0,
+          "zero divisor"
         );
         value = expression(assignment.right);
         if (assignment.operator !== "=")
@@ -528,7 +544,9 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
                   ? "multiply"
                   : assignment.operator === "-="
                     ? "subtract"
-                    : "remainder",
+                    : assignment.operator === "%="
+                      ? "remainder"
+                      : "divide",
             left: { kind: "name", name },
             right: value,
           };
@@ -686,6 +704,7 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
       case "multiply":
       case "subtract":
       case "remainder":
+      case "divide":
       case "equal":
       case "less":
       case "greater":
@@ -1210,6 +1229,7 @@ function leanExpression(expression) {
     case "multiply":
     case "subtract":
     case "remainder":
+    case "divide":
     case "equal":
     case "less":
     case "greater":
@@ -1633,7 +1653,7 @@ theorem binding_captured_observations (calls : List (String × List Nat)) :
       assumptions: [
         "The Acorn-to-Lean conversion, including local object and array scalarization when used, faithfully represents the actual source and output files",
         "The modeled module loading, linking and execution match ECMAScript for the supported syntax",
-        "All binding values, arguments and intermediate arithmetic results remain nonnegative safe integers other than negative zero; remainder divisors are nonzero",
+        "All binding values, arguments and intermediate arithmetic results remain nonnegative safe integers other than negative zero; remainder and division divisors are nonzero, and division results are integers",
         ...(hasExpressions
           ? [
               "Expression functions and captured closures receive exactly their declared number of numeric arguments; other exports are called without arguments",
@@ -1759,7 +1779,7 @@ theorem binding_captured_observations (calls : List (String × List Nat)) :
       const right = expressionBound(expression.right, bound);
       return [left, right, left * right].reduce((a, b) => (a > b ? a : b));
     }
-    if (expression.kind === "remainder") {
+    if (expression.kind === "remainder" || expression.kind === "divide") {
       const left = expressionBound(expression.left, bound);
       const right = expressionBound(expression.right, bound);
       return left > right ? left : right;

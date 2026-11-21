@@ -937,6 +937,20 @@ export function makeComposedCase(seed, index) {
         if (!names.length) return literal(rand(4));
         return rand(3) ? id(names[rand(names.length)]) : literal(rand(4));
       }
+      if (rand(6) === 0) {
+        const divisor = 1 + rand(4);
+        return {
+          type: "BinaryExpression",
+          operator: "/",
+          left: {
+            type: "BinaryExpression",
+            operator: "*",
+            left: expression(visible, depth - 1, forbidden),
+            right: literal(divisor),
+          },
+          right: literal(divisor),
+        };
+      }
       const modulo = rand(5) === 0;
       return {
         type: "BinaryExpression",
@@ -973,6 +987,11 @@ export function makeComposedCase(seed, index) {
               right: modulo ? literal(1 + rand(4)) : expression(visible, 1),
             })
           );
+        }
+        if (mutable && rand(5) === 0) {
+          const divisor = 1 + rand(4);
+          for (const operator of ["*=", "/="])
+            body.push(expr({ type: "AssignmentExpression", operator, left: id(name), right: literal(divisor) }));
         }
       }
       if (mutableNames.length && rand(3) === 0) {

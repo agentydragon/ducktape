@@ -879,7 +879,9 @@ function recover(x) { let total = 1; try { total += maybe(x); } catch (error) { 
 function direct(x) { let total = x; try { total += 1; throw 5; } catch { total += 2; } return total; }
 function remainder(x) { return x % 3; }
 function remainderAssign(x) { let value = x; value %= 3; return value; }
-export { sum, zero, interrupted, inclusive, reversed, recover, direct, remainder, remainderAssign };
+function divide(x) { return x / 2; }
+function divideAssign(x) { let value = x; value /= 2; return value; }
+export { sum, zero, interrupted, inclusive, reversed, recover, direct, remainder, remainderAssign, divide, divideAssign };
 `
   );
   await writeFile(
@@ -889,7 +891,7 @@ export { sum, zero, interrupted, inclusive, reversed, recover, direct, remainder
       entry: "entry.mjs",
       modules: {
         "helpers.mjs": { imports: [], statements: [0] },
-        "functions.mjs": { imports: ["helpers.mjs"], statements: [1, 2, 3, 4, 5, 6, 7, 8, 9] },
+        "functions.mjs": { imports: ["helpers.mjs"], statements: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] },
         "entry.mjs": { imports: ["functions.mjs"], statements: [] },
       },
     })
@@ -898,7 +900,8 @@ export { sum, zero, interrupted, inclusive, reversed, recover, direct, remainder
   const proof = cli("validate", loopSource, loopSpec, loopOut);
   assert.equal(proof.result, "proved under assumptions", JSON.stringify(proof));
   assert.ok(proof.assumptions.some((assumption) => assumption.includes("negative zero")));
-  assert.ok(proof.assumptions.some((assumption) => assumption.includes("remainder divisors are nonzero")));
+  assert.ok(proof.assumptions.some((assumption) => assumption.includes("remainder and division divisors are nonzero")));
+  assert.ok(proof.assumptions.some((assumption) => assumption.includes("division results are integers")));
   const calls = [
     { name: "sum", args: [2] },
     { name: "zero", args: [4] },
@@ -909,6 +912,8 @@ export { sum, zero, interrupted, inclusive, reversed, recover, direct, remainder
     { name: "direct", args: [4] },
     { name: "remainder", args: [8] },
     { name: "remainderAssign", args: [7] },
+    { name: "divide", args: [8] },
+    { name: "divideAssign", args: [6] },
     { name: "interrupted", args: [1] },
   ];
   const trace = execute(loopSource, calls);
@@ -922,8 +927,10 @@ export { sum, zero, interrupted, inclusive, reversed, recover, direct, remainder
     { value: 7 },
     { value: 2 },
     { value: 1 },
+    { value: 4 },
+    { value: 3 },
   ]);
-  assert.deepEqual(trace.error, { name: null, phase: "call", index: 9, thrown: { kind: "number", value: 9 } });
+  assert.deepEqual(trace.error, { name: null, phase: "call", index: 11, thrown: { kind: "number", value: 9 } });
   assert.deepEqual(execute(join(loopOut, "entry.mjs"), calls), trace);
   const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
     encoding: "utf8",
@@ -934,14 +941,24 @@ export { sum, zero, interrupted, inclusive, reversed, recover, direct, remainder
 theorem loop_modeled_observation :
   ((sourceBindingState bindingSource).bind (fun state =>
     (publicCallableTable bindingSource bindingExports).bind (fun table =>
-      runArgumentCalls table state [("sum", [2]), ("zero", [4]), ("inclusive", [1]), ("reversed", [6]), ("recover", [0]), ("recover", [2]), ("direct", [4]), ("remainder", [8]), ("remainderAssign", [7]), ("interrupted", [1])]))).map
-    (fun state => (state.returns, state.thrown)) = some ([some 10, some 4, some 10, some 6, some 3, some 8, some 7, some 2, some 1], some (.number 9)) := by decide
+      runArgumentCalls table state [("sum", [2]), ("zero", [4]), ("inclusive", [1]), ("reversed", [6]), ("recover", [0]), ("recover", [2]), ("direct", [4]), ("remainder", [8]), ("remainderAssign", [7]), ("divide", [8]), ("divideAssign", [6]), ("interrupted", [1])]))).map
+    (fun state => (state.returns, state.thrown)) = some ([some 10, some 4, some 10, some 6, some 3, some 8, some 7, some 2, some 1, some 4, some 3], some (.number 9)) := by decide
 #print axioms loop_modeled_observation
 example : evaluateExpression [] [] (.remainder (.literal 4) (.literal 0)) = none := by decide
+example : evaluateExpression [] [] (.divide (.literal 4) (.literal 0)) = none := by decide
+example : evaluateExpression [] [] (.divide (.literal 5) (.literal 2)) = none := by decide
 `,
   });
   assert.equal(replay.status, 0, replay.stdout + replay.stderr);
   assert.match(replay.stdout, /'loop_modeled_observation' does not depend on any axioms/);
+  const emitted = join(loopOut, "functions.mjs");
+  const originalOutput = await readFile(emitted, "utf8");
+  assert.ok(originalOutput.includes("x / 2"));
+  await writeFile(emitted, originalOutput.replace("x / 2", "x / 1"));
+  const changed = cli("validate", loopSource, loopSpec, loopOut);
+  assert.equal(changed.result, "unsafe", JSON.stringify(changed));
+  assert.notDeepEqual(execute(loopSource, changed.calls), execute(join(loopOut, "entry.mjs"), changed.calls));
+  await writeFile(emitted, originalOutput);
   const unsupported = join(root, "dynamic-loop.mjs");
   await writeFile(unsupported, (await readFile(loopSource, "utf8")).replace("i < 3", "i < x"));
   assert.equal(cli("generate", unsupported, loopSpec, join(root, "dynamic-loop-out")).result, "unknown");
@@ -951,6 +968,9 @@ example : evaluateExpression [] [] (.remainder (.literal 4) (.literal 0)) = none
   for (const [name, from, to] of [
     ["remainder-zero", "x % 3", "x % 0"],
     ["remainder-assign-zero", "value %= 3", "value %= 0"],
+    ["divide-zero", "x / 2", "x / 0"],
+    ["divide-fraction", "x / 2", "5 / 2"],
+    ["divide-assign-zero", "value /= 2", "value /= 0"],
   ]) {
     const invalid = join(root, `${name}.mjs`);
     const invalidOut = join(root, `${name}-out`);

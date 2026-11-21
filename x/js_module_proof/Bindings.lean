@@ -245,6 +245,7 @@ def expressionNames : NumericExpr → List String
   | .multiply left right => expressionNames left ++ expressionNames right
   | .subtract left right => expressionNames left ++ expressionNames right
   | .remainder left right => expressionNames left ++ expressionNames right
+  | .divide left right => expressionNames left ++ expressionNames right
   | .conditional test consequent alternative => expressionNames test ++ expressionNames consequent ++ expressionNames alternative
   | .guard test consequent alternative => expressionNames test ++ expressionNames consequent ++ expressionNames alternative
   | .finally body finalizer => expressionNames body ++ expressionNames finalizer
@@ -271,6 +272,7 @@ def laterExpressionNames : NumericExpr → List String
   | .multiply _ _ => []
   | .subtract _ _ => []
   | .remainder _ _ => []
+  | .divide _ _ => []
   | .conditional _ _ _ => []
   | .guard _ _ continuation => laterExpressionNames continuation
   | .finally _ _ => []
@@ -298,6 +300,7 @@ def argumentCount : NumericExpr → Option Nat
   | .multiply _ _ => none
   | .subtract _ _ => none
   | .remainder _ _ => none
+  | .divide _ _ => none
   | .conditional _ _ _ => none
   | .guard _ _ _ => none
   | .finally _ _ => none
@@ -321,6 +324,7 @@ def validNumericExpression : NumericExpr → Bool
   | .multiply left right => validNumericExpression left && validNumericExpression right
   | .subtract left right => validNumericExpression left && validNumericExpression right
   | .remainder left right => validNumericExpression left && validNumericExpression right
+  | .divide left right => validNumericExpression left && validNumericExpression right
   | .conditional test consequent alternative => validNumericExpression test && validNumericExpression consequent && validNumericExpression alternative
   | .guard test consequent continuation =>
     !(expressionNames test ++ expressionNames consequent).any (fun name => (laterExpressionNames continuation).contains name) &&
@@ -357,6 +361,7 @@ def validNumericArguments : NumericExpr → Bool
   | .multiply _ _ => false
   | .subtract _ _ => false
   | .remainder _ _ => false
+  | .divide _ _ => false
   | .conditional _ _ _ => false
   | .guard _ _ _ => false
   | .finally _ _ => false
@@ -380,6 +385,7 @@ def expressionFreeNames (bound : List String) : NumericExpr → List String
   | .multiply left right => expressionFreeNames bound left ++ expressionFreeNames bound right
   | .subtract left right => expressionFreeNames bound left ++ expressionFreeNames bound right
   | .remainder left right => expressionFreeNames bound left ++ expressionFreeNames bound right
+  | .divide left right => expressionFreeNames bound left ++ expressionFreeNames bound right
   | .conditional test consequent alternative => expressionFreeNames bound test ++ expressionFreeNames bound consequent ++ expressionFreeNames bound alternative
   | .guard test consequent alternative => expressionFreeNames bound test ++ expressionFreeNames bound consequent ++ expressionFreeNames bound alternative
   | .finally body finalizer => expressionFreeNames bound body ++ expressionFreeNames bound finalizer
@@ -410,6 +416,7 @@ def validLocalWrites (bound : List (String × Bool)) : NumericExpr → Bool
   | .multiply left right => validLocalWrites bound left && validLocalWrites bound right
   | .subtract left right => validLocalWrites bound left && validLocalWrites bound right
   | .remainder left right => validLocalWrites bound left && validLocalWrites bound right
+  | .divide left right => validLocalWrites bound left && validLocalWrites bound right
   | .conditional test consequent alternative => validLocalWrites bound test && validLocalWrites bound consequent && validLocalWrites bound alternative
   | .guard test consequent alternative => validLocalWrites bound test && validLocalWrites bound consequent && validLocalWrites bound alternative
   | .finally body finalizer => validLocalWrites bound body && validLocalWrites bound finalizer
@@ -463,6 +470,7 @@ def expressionCalls : NumericExpr → List String
   | .multiply left right => expressionCalls left ++ expressionCalls right
   | .subtract left right => expressionCalls left ++ expressionCalls right
   | .remainder left right => expressionCalls left ++ expressionCalls right
+  | .divide left right => expressionCalls left ++ expressionCalls right
   | .conditional test consequent alternative => expressionCalls test ++ expressionCalls consequent ++ expressionCalls alternative
   | .guard test consequent alternative => expressionCalls test ++ expressionCalls consequent ++ expressionCalls alternative
   | .finally body finalizer => expressionCalls body ++ expressionCalls finalizer
@@ -487,6 +495,7 @@ def matchingInvocations (source : List BindingStmt) : NumericExpr → Bool
   | .multiply left right => matchingInvocations source left && matchingInvocations source right
   | .subtract left right => matchingInvocations source left && matchingInvocations source right
   | .remainder left right => matchingInvocations source left && matchingInvocations source right
+  | .divide left right => matchingInvocations source left && matchingInvocations source right
   | .conditional test consequent alternative => matchingInvocations source test && matchingInvocations source consequent && matchingInvocations source alternative
   | .guard test consequent alternative => matchingInvocations source test && matchingInvocations source consequent && matchingInvocations source alternative
   | .finally body finalizer => matchingInvocations source body && matchingInvocations source finalizer

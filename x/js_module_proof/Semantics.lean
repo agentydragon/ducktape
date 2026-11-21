@@ -15,7 +15,8 @@ inductive ThrownValue where
 /- Expressions are evaluated by the same transition system as the original
    operations. Parameters shadow module bindings; arithmetic is restricted by
    the reported JavaScript safe-integer assumption, excluding negative zero.
-   Remainder by zero is outside the modeled numeric subset. -/
+   Remainder by zero and non-integral or zero-divisor division are outside
+   the modeled numeric subset. -/
 inductive NumericExpr where
   | literal (value : Nat)
   | name (name : String)
@@ -23,6 +24,7 @@ inductive NumericExpr where
   | multiply (left right : NumericExpr)
   | subtract (left right : NumericExpr)
   | remainder (left right : NumericExpr)
+  | divide (left right : NumericExpr)
   | equal (left right : NumericExpr)
   | less (left right : NumericExpr)
   | greater (left right : NumericExpr)
@@ -215,6 +217,17 @@ def evaluateExpression (locals globals : List (String × Nat)) : NumericExpr →
       match rightResult.completion with
       | .error value => pure ⟨rightResult.locals, .error value⟩
       | .ok rightValue => pure ⟨rightResult.locals, .ok (leftValue * rightValue)⟩
+  | .divide left right => do
+    let leftResult ← evaluateExpression locals globals left
+    match leftResult.completion with
+    | .error value => pure ⟨leftResult.locals, .error value⟩
+    | .ok leftValue =>
+      let rightResult ← evaluateExpression leftResult.locals globals right
+      match rightResult.completion with
+      | .error value => pure ⟨rightResult.locals, .error value⟩
+      | .ok rightValue =>
+        if rightValue == 0 || leftValue % rightValue != 0 then none
+        else pure ⟨rightResult.locals, .ok (leftValue / rightValue)⟩
   | .remainder left right => do
     let leftResult ← evaluateExpression locals globals left
     match leftResult.completion with
@@ -326,6 +339,7 @@ def evaluateArguments (locals globals : List (String × Nat)) : NumericExpr → 
   | .multiply _ _ => none
   | .subtract _ _ => none
   | .remainder _ _ => none
+  | .divide _ _ => none
   | .equal _ _ => none
   | .less _ _ => none
   | .greater _ _ => none
