@@ -8,7 +8,7 @@ from typing import Any
 from more_itertools import one
 from python.runfiles import Runfiles
 
-# The pinned Codex's own catalog (`codex debug models --bundled`), which LLM ingress serves ChatGPT routes from.
+# The native-test pin's own catalog (`codex debug models --bundled`), independent of deployment metadata.
 _BUNDLED = "ducktape/cluster/cdk8s/agentplane/codex_upstream_models.json"
 
 
