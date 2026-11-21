@@ -202,6 +202,8 @@ lean_axiom_test(
         "CoreJS.runUnit_agree",
         "CoreJS.capture_faithful",
         "CoreJS.order_kept_preserves",
+        "CoreJS.split_holds_statements",
+        "CoreJS.split_scopes_agree",
         "CoreJS.valid_order_kept_preserves",
     ],
 )
