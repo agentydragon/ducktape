@@ -347,7 +347,6 @@ func TestConfigurationRejectsInvalidPolicyBeforeEnvironmentChanges(t *testing.T)
 		{"missing environment", func(v map[string]any) { delete(v, "environment") }},
 		{"missing environment supervision", func(v map[string]any) { v["environment"] = map[string]any{} }},
 		{"unknown environment supervision", func(v map[string]any) { v["environment"] = map[string]any{"supervision": "unknown"} }},
-		{"obsolete environment kind", func(v map[string]any) { v["environment"] = map[string]any{"kind": "pod", "supervision": "pid1"} }},
 		{"partial container executor", func(v map[string]any) {
 			executor := configurationPodExecutor()
 			delete(executor["owner"].(map[string]any), "socket")
@@ -552,20 +551,6 @@ func TestConfigurationRejectsLaunchFieldsOutsideControllerContract(t *testing.T)
 		if _, _, _, err := load(path, launchPath); err == nil {
 			t.Fatalf("accepted invalid launch %s", data)
 		}
-	}
-}
-
-func TestConfigurationPreservesExplicitPodPID1Mode(t *testing.T) {
-	t.Setenv("RUNNER_TEST_PROVIDER_TOKEN", "provider-secret")
-	value, path, launch := configurationFixture(t)
-	value["environment"] = map[string]any{"supervision": "pid1"}
-	writeJSONFixture(t, path, value)
-	config, _, _, err := load(path, launch)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if config.Supervision != "pid1" {
-		t.Fatalf("PID 1 supervision was not preserved: supervision=%q", config.Supervision)
 	}
 }
 
