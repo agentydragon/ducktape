@@ -211,6 +211,17 @@ spec:
       storage:
         key: config
         secret: gitlab-spike-registry-connection
+      topologySpreadConstraints:
+        - labelSelector:
+            matchLabels:
+              app: registry
+              release: gitlab-spike
+          matchLabelKeys:
+            - pod-template-hash
+          maxSkew: 1
+          nodeTaintsPolicy: Honor
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
