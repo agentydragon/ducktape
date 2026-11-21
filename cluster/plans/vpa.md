@@ -37,12 +37,14 @@ in [the VPA audit](../k8s/TODO.md#vpa-memory-audit--are-these-limits-really-need
 shows why limit ownership matters. Do not infer safety from an absent policy:
 the upstream VPA default controls both requests and limits.
 
-CPU and memory are independent decisions. Keep an HPA's utilization resource
-out of VPA control: a CPU-utilization HPA needs a stable CPU request, while VPA
-can manage memory. Apply the symmetric rule to a memory-utilization HPA. Review
-custom/external HPA metrics separately. A recommendation is not proof that a
-startup burst, rare task, or peak is covered; retain explicit template floors
-for first admission, unavailable recommendations, and owner-cache misses.
+CPU and memory are independent decisions. Keep an HPA's CPU or memory resource
+metric out of VPA control; VPA can manage the other resource. In particular, a
+CPU-utilization HPA needs a stable CPU request because it is the denominator.
+An HPA using CPU `AverageValue` avoids that denominator but still shares a
+resource feedback loop; assess any exception rather than assuming it is safe.
+Review custom/external HPA metrics separately. A recommendation is not proof
+that a startup burst, rare task, or peak is covered; retain explicit template
+floors for first admission, unavailable recommendations, and owner-cache misses.
 
 ## Execute broad waves
 
