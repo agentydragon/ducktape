@@ -964,6 +964,12 @@ function capturedClosure(node, functions) {
 }
 
 function candidateStatement(node, functions) {
+  if (
+    node.type === "ExpressionStatement" &&
+    node.expression.type === "Literal" &&
+    node.expression.value === "use strict"
+  )
+    return { kind: "strictDirective" };
   try {
     const recognized = statement(node);
     if (recognized.kind === "closure" && functions?.has(recognized.factory)) {
@@ -1467,6 +1473,8 @@ function leanExpression(expression) {
 }
 function leanStatement(item) {
   switch (item.kind) {
+    case "strictDirective":
+      return ".strictDirective";
     case "variable":
     case "hoistedVariable":
       return `.${item.kind} ${str(item.name)} ${item.value}`;

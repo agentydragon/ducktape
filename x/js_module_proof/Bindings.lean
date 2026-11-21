@@ -24,6 +24,7 @@ inductive BindingStmt where
   | recordCall (name : String)
   | call (name : String)
   | record (name : String)
+  | strictDirective
   deriving DecidableEq, Repr
 
 structure BindingImport where
@@ -58,6 +59,7 @@ def declaredName : BindingStmt → Option String
   | .recordCall _ => none
   | .call _ => none
   | .record _ => none
+  | .strictDirective => none
 
 def definitions (source : List BindingStmt) : List String := source.filterMap declaredName
 
@@ -84,6 +86,7 @@ def isVariable (source : List BindingStmt) (name : String) : Bool :=
     | .recordCall _ => false
     | .call _ => false
     | .record _ => false
+    | .strictDirective => false
 
 def isReadableBinding (source : List BindingStmt) (name : String) : Bool :=
   match findDefinition source name with
@@ -105,6 +108,7 @@ def isReadableBinding (source : List BindingStmt) (name : String) : Bool :=
     | .recordCall _ => false
     | .call _ => false
     | .record _ => false
+    | .strictDirective => false
 
 def isFunction (source : List BindingStmt) (name : String) : Bool :=
   match findDefinition source name with
@@ -126,6 +130,7 @@ def isFunction (source : List BindingStmt) (name : String) : Bool :=
     | .recordCall _ => false
     | .call _ => false
     | .record _ => false
+    | .strictDirective => false
 
 def isThrower (source : List BindingStmt) (name : String) : Bool :=
   match findDefinition source name with
@@ -147,6 +152,7 @@ def isThrower (source : List BindingStmt) (name : String) : Bool :=
     | .recordCall _ => false
     | .call _ => false
     | .record _ => false
+    | .strictDirective => false
 
 def isFactory (source : List BindingStmt) (name : String) : Bool :=
   match findDefinition source name with
@@ -168,6 +174,7 @@ def isFactory (source : List BindingStmt) (name : String) : Bool :=
     | .recordCall _ => false
     | .call _ => false
     | .record _ => false
+    | .strictDirective => false
 
 def isClosure (source : List BindingStmt) (name : String) : Bool :=
   match findDefinition source name with
@@ -189,6 +196,7 @@ def isClosure (source : List BindingStmt) (name : String) : Bool :=
     | .recordCall _ => false
     | .call _ => false
     | .record _ => false
+    | .strictDirective => false
 
 /- A closure declaration owns this name, and source declarations are unique.
    Closure bindings occupy no separate numeric slot, so the same key denotes
@@ -541,6 +549,7 @@ def callableSyntax (source : List BindingStmt) (name : String) : Option (List St
     | .recordCall _ => none
     | .call _ => none
     | .record _ => none
+    | .strictDirective => none
 
 def expressionCalls : NumericExpr → List String
   | .literal _ => []
@@ -633,6 +642,7 @@ def capturedFactoryData (source : List BindingStmt) (name : String) : Option (Li
     | .recordCall _ => none
     | .call _ => none
     | .record _ => none
+    | .strictDirective => none
 
 def capturedClosureDataFuel (source : List BindingStmt) : Nat → String → Option (String × List Nat × List String)
   | 0, _ => none
@@ -655,6 +665,7 @@ def capturedClosureDataFuel (source : List BindingStmt) : Nat → String → Opt
       | .recordCall _ => none
       | .call _ => none
       | .record _ => none
+      | .strictDirective => none
 
 def capturedClosureData (source : List BindingStmt) (name : String) : Option (String × List Nat × List String) :=
   capturedClosureDataFuel source (source.length + 1) name
@@ -715,6 +726,7 @@ def validRefs (source : List BindingStmt) (modules : List BindingModule) (index 
   | .recordCall name => isFunction source name && visible modules index name
   | .call name => isFunction source name && !(isThrower source name) && visible modules index name
   | .record name => isReadableBinding source name && visible modules index name
+  | .strictDirective => true
 
 def moduleValid (source : List BindingStmt) (modules : List BindingModule) (index : Nat) (module : BindingModule) : Bool :=
   let imported := module.imports.flatMap (fun i => i.locals)
@@ -773,6 +785,7 @@ def referenceNames : BindingStmt → List String
   | .recordCall name => [name]
   | .call name => [name]
   | .record name => [name]
+  | .strictDirective => []
 
 def referenceMatches (source : List BindingStmt) (modules : List BindingModule) (index : Nat) (name : String) : Bool :=
   let resolved := resolveReference modules index name
@@ -802,7 +815,8 @@ def capturedKeys (source : List BindingStmt) : List String :=
     | .wrapper _ _ => []
     | .recordCall _ => []
     | .call _ => []
-    | .record _ => [])
+    | .record _ => []
+    | .strictDirective => [])
 
 def modulesValid (source : List BindingStmt) (sourceExports : List String)
     (modules : List BindingModule) (entry : Nat) : Bool :=
@@ -911,6 +925,7 @@ def functionOperations (source : List BindingStmt) (name : String) (observeRetur
     | .constant _ _ => none
     | .call _ => none
     | .record _ => none
+    | .strictDirective => none
 
 def capturedInitializers (prior : List (String × String)) : List CapturedLocal → List String → Option (List Operation)
   | [], [] => some []
@@ -937,7 +952,8 @@ def isHoistedName (source : List BindingStmt) (name : String) : Bool :=
     | .wrapper _ _ => false
     | .recordCall _ => false
     | .call _ => false
-    | .record _ => false)
+    | .record _ => false
+    | .strictDirective => false)
 
 def bindingOperations (source : List BindingStmt) (statement : BindingStmt) : Option (List Operation) :=
   match statement with
@@ -978,6 +994,7 @@ def bindingOperations (source : List BindingStmt) (statement : BindingStmt) : Op
     | .recordCall _ => none
     | .call _ => none
     | .record _ => none
+    | .strictDirective => none
   | .wrapper _ _ => some []
   | .recordCall name => do
     let ops ← functionOperations source name false
@@ -999,10 +1016,12 @@ def bindingOperations (source : List BindingStmt) (statement : BindingStmt) : Op
       | .recordCall _ => none
       | .call _ => none
       | .record _ => none
+      | .strictDirective => none
     some (ops ++ [.observeBinding (closureCell target)])
   | .record name =>
     if isHoistedName source name then some [.observeHoisted name] else some [.observeBinding name]
   | .call name => functionOperations source name false
+  | .strictDirective => some []
 
 def runBindingStatements (source statements : List BindingStmt) : Option (ExecutionState Unit) := do
   let operations ← statements.mapM (bindingOperations source)
@@ -1027,7 +1046,8 @@ def canonicalBindingState (source : List BindingStmt) (state : ExecutionState Un
     | .wrapper _ _ => []
     | .recordCall _ => []
     | .call _ => []
-    | .record _ => [])
+    | .record _ => []
+    | .strictDirective => [])
   let bindings ← names.mapM (fun name => (lookupBinding state.bindings name).map (fun value => (name, value)))
   let captured ← (capturedKeys source).mapM (fun key => (lookupBinding state.captured key).map (fun value => (key, value)))
   pure { state with bindings, captured }
@@ -1072,6 +1092,7 @@ def outputCaptureNamespace (renames : List (String × String)) : BindingStmt →
   | .recordCall name => .recordCall name
   | .call name => .call name
   | .record name => .record name
+  | .strictDirective => .strictDirective
 
 def namespacedOutputDefinitions (renames : List (String × String)) (modules : List BindingModule) : List BindingStmt :=
   (outputDefinitions modules).map (outputCaptureNamespace renames)
@@ -1134,6 +1155,7 @@ def publicCallable (statements : List BindingStmt) (name : String) : Option Publ
     | .recordCall _ => none
     | .call _ => none
     | .record _ => none
+    | .strictDirective => none
     | .function _ target source => some (.fixed [.addBinding target source, .returnUndefined])
     | .reader _ source => some (.fixed [.returnBinding source])
     | .thrower _ value => some (.fixed [.throwNumber value])
@@ -1166,6 +1188,7 @@ def publicCapturedEnvironment (statements : List BindingStmt) (name : String) : 
     | .recordCall _ => none
     | .call _ => none
     | .record _ => none
+    | .strictDirective => none
 
 def callableOperations (callable : PublicCallable) (arguments : List Nat) : Option (List Operation) :=
   match callable with

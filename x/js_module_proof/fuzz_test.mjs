@@ -24,6 +24,9 @@ if (shards === 4 && shard === 1) {
   assert.equal(relay.reexportRelayGeneratedCases, 1);
   assert.equal(relay.reexportRelayComparedCases, 1);
   assert.equal(relay.reexportRelayProvedCases, 1);
+  assert.equal(relay.strictDirectiveCases, 1);
+  assert.equal(relay.strictDirectiveComparedCases, 1);
+  assert.equal(relay.strictDirectiveProvedCases, 1);
 }
 assert.deepEqual(makeCase(123, 42), makeCase(123, 42));
 assert.notDeepEqual(makeCase(123, 42), makeCase(124, 42));
@@ -211,7 +214,6 @@ if (shards === 4 && shard === 0) {
     corpus.unknown
   );
   assert.ok(corpus.generationRefused > 0);
-  assert.ok(Object.keys(corpus.unknownReasons).some((reason) => reason.includes("ExpressionStatement (Literal)")));
   assert.equal(
     corpus.entries.find(
       (entry) => entry.path.endsWith("example/bindings/original.mjs") && entry.assignment === "baseline"

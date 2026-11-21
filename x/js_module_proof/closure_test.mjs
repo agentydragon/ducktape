@@ -26,6 +26,36 @@ function cli(...args) {
 const models = (
   await Promise.all(["Semantics.lean", "Effects.lean", "Bindings.lean"].map((n) => readFile(join(here, n), "utf8")))
 ).join("\n");
+if (shard === 6) {
+  const directiveRoot = await mkdtemp(join(process.env.TEST_TMPDIR, "directive-proof-"));
+  const directiveSource = join(directiveRoot, "source.mjs");
+  const directiveSpec = join(directiveRoot, "spec.json");
+  const directiveOut = join(directiveRoot, "out");
+  await writeFile(
+    directiveSource,
+    '"use strict";\nlet value = 4;\nfunction read() { return value; }\nexport { read };\n'
+  );
+  await writeFile(
+    directiveSpec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [1] },
+        "function.mjs": { imports: ["state.mjs"], statements: [0, 2] },
+        "entry.mjs": { imports: ["function.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", directiveSource, directiveSpec, directiveOut).result, "generated");
+  const proof = cli("validate", directiveSource, directiveSpec, directiveOut);
+  assert.equal(proof.result, "proved under assumptions", JSON.stringify(proof));
+  assert.match(proof.certificate, /\.strictDirective/);
+  assert.deepEqual(execute(join(directiveOut, "entry.mjs"), ["read"]), execute(directiveSource, ["read"]));
+  const file = join(directiveOut, "function.mjs");
+  await writeFile(file, (await readFile(file, "utf8")).replace('"use strict"', '"use asm"'));
+  assert.equal(cli("validate", directiveSource, directiveSpec, directiveOut).result, "unknown");
+}
 if (shard === 7) {
   const root = await mkdtemp(join(process.env.TEST_TMPDIR, "reexport-proof-"));
   const source = join(root, "source.mjs");

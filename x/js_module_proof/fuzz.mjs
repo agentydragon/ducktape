@@ -1145,7 +1145,8 @@ export function makeComposedCase(seed, index) {
   const publicFunctionNames = functionNames.map((name, i) => (index % 3 === 0 && i === 0 ? `public_${name}` : name));
   const extraAlias = index % 6 === 0 ? "second_calculate" : null;
   const earlyVar = index % 14 === 0;
-  const prefix = earlyVar ? [record(globals[0])] : [];
+  const hasStrictDirective = index % 13 === 3 && !earlyVar;
+  const prefix = earlyVar ? [record(globals[0])] : hasStrictDirective ? [expr(literal("use strict"))] : [];
   const ast = {
     type: "Program",
     sourceType: "module",
@@ -1171,6 +1172,7 @@ export function makeComposedCase(seed, index) {
     ast,
     source: print(ast),
     grammar: "composed",
+    hasStrictDirective,
     hasReexportRelay: index % 8 === 3,
     earlyVar,
     hasLocalVar,
@@ -1601,6 +1603,9 @@ export async function runFuzz({
     reexportRelayGeneratedCases: 0,
     reexportRelayComparedCases: 0,
     reexportRelayProvedCases: 0,
+    strictDirectiveCases: 0,
+    strictDirectiveComparedCases: 0,
+    strictDirectiveProvedCases: 0,
     varCases: 0,
     varGeneratedCases: 0,
     varComparedCases: 0,
@@ -1714,6 +1719,7 @@ export async function runFuzz({
       };
       visit(input.ast);
       if (hasVar) summary.varCases++;
+      if (input.hasStrictDirective) summary.strictDirectiveCases++;
       if (input.hasReexportRelay && !input.independentSplit) summary.reexportRelayCases++;
       if (input.hasLocalVar) summary.localVarCases++;
       if (input.earlyVar) summary.earlyVarCases++;
@@ -1906,6 +1912,7 @@ export async function runFuzz({
       const equal = JSON.stringify(before) === JSON.stringify(after);
       await writeFile(join(root, "node.json"), JSON.stringify({ before, after }, null, 2) + "\n");
       summary.compared++;
+      if (input.hasStrictDirective) summary.strictDirectiveComparedCases++;
       if (input.hasReexportRelay && !input.independentSplit) summary.reexportRelayComparedCases++;
       if (hasVar) summary.varComparedCases++;
       if (input.hasLocalVar) summary.localVarComparedCases++;
@@ -1987,6 +1994,7 @@ export async function runFuzz({
         }
         if (verdict.result === "proved under assumptions") {
           summary.proved++;
+          if (input.hasStrictDirective) summary.strictDirectiveProvedCases++;
           if (input.hasReexportRelay && !input.independentSplit) summary.reexportRelayProvedCases++;
           if (hasVar) summary.varProvedCases++;
           if (input.hasLocalVar) summary.localVarProvedCases++;
