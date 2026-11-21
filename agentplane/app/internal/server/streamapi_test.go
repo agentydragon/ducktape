@@ -102,7 +102,8 @@ func TestHistoryFacadeRequiresAnAuthenticatedCaller(t *testing.T) {
 
 type typedHistoryServer struct {
 	historypb.UnimplementedHistoryServiceServer
-	requests chan *historypb.ReadThreadEntitiesRequest
+	requests     chan *historypb.ReadThreadEntitiesRequest
+	holdSelected bool
 }
 
 func (s *typedHistoryServer) ReadThreadEntities(_ context.Context, request *historypb.ReadThreadEntitiesRequest) (*historypb.ReadThreadEntitiesResponse, error) {
@@ -377,5 +378,56 @@ func TestEnvironmentGetCancelsUpstreamWithRequest(t *testing.T) {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("EnvironmentService Get did not finish after request cancellation")
+	}
+}
+
+func (s *typedHistoryServer) WatchSelectedSessionSummaries(req *historypb.WatchSelectedSessionSummariesRequest, stream grpc.ServerStreamingServer[historypb.WatchSelectedSessionSummariesResponse]) error {
+	if err := stream.Send(&historypb.WatchSelectedSessionSummariesResponse{Observation: &historypb.WatchSelectedSessionSummariesResponse_Snapshot{Snapshot: &historypb.BatchGetSessionSummariesResponse{Summaries: []*historypb.SessionSummary{{SessionId: req.GetSessionIds()[0]}}}}}); err != nil {
+		return err
+	}
+	if s.holdSelected {
+		<-stream.Context().Done()
+	}
+	return nil
+}
+
+func TestHistorySelectedSummariesGeneratedFacade(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	grpcServer := grpc.NewServer()
+	historypb.RegisterHistoryServiceServer(grpcServer, &typedHistoryServer{holdSelected: true})
+	go func() { _ = grpcServer.Serve(listener) }()
+	t.Cleanup(grpcServer.Stop)
+	generated, err := facade.NewHandler(t.Context(), listener.Addr().String(), time.Second, historypb.RegisterHistoryServiceHandlerFromEndpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authentication := newStreamTestAuth(t)
+	app := newHTTPServer(authentication.Auth)
+	streamhttp.RegisterRoutes(app, app.DrainDone(), streamhttp.Dependencies{HistoryHTTP: upstreamproxy.NewHandlerUpstream(generated, "")})
+	httpServer := httptest.NewServer(app.Handler(authentication.Auth))
+	defer httpServer.Close()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, httpServer.URL+"/upstream/history/v1/session-summaries:watchSelected?session_ids=11111111-1111-1111-1111-111111111111", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Accept", "application/x-ndjson")
+	authentication.Authorize(request)
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	data := make([]byte, 1024)
+	n, err := response.Body.Read(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK || !strings.Contains(string(data[:n]), "11111111-1111-1111-1111-111111111111") {
+		t.Fatalf("selected summary facade: %d %s", response.StatusCode, data[:n])
 	}
 }
