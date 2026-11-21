@@ -83,21 +83,9 @@ def _values(webhook_issuer: str) -> dict[str, object]:
             "replicaCount": 2,
             "podDisruptionBudget": {"enabled": True, "minAvailable": 1},
             "deploymentAnnotations": {namespaces.VPA_UPDATE_MODE_LABEL: Vpa.AUTO},
-            "affinity": {
-                "podAntiAffinity": {
-                    "requiredDuringSchedulingIgnoredDuringExecution": [
-                        {
-                            "labelSelector": {
-                                "matchLabels": {
-                                    "app.kubernetes.io/instance": NAME,
-                                    "app.kubernetes.io/name": f"{NAME}-webhook",
-                                }
-                            },
-                            "topologyKey": "kubernetes.io/hostname",
-                        }
-                    ]
-                }
-            },
+            "affinity": node_scheduling.one_per_host(
+                {"app.kubernetes.io/instance": NAME, "app.kubernetes.io/name": f"{NAME}-webhook"}
+            ),
             "port": 9443,
             "priorityClassName": "system-cluster-critical",
             "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],

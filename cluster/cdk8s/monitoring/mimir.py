@@ -159,20 +159,13 @@ def _values() -> dict[str, object]:
             "zoneAwareReplication": {"enabled": False},
             "affinity": {
                 "nodeAffinity": node_scheduling.PREFER_WORKERS.node_affinity,
-                "podAntiAffinity": {
-                    "requiredDuringSchedulingIgnoredDuringExecution": [
-                        {
-                            "labelSelector": {
-                                "matchLabels": {
-                                    "app.kubernetes.io/component": "ingester",
-                                    "app.kubernetes.io/name": NAME,
-                                    "app.kubernetes.io/instance": NAME,
-                                }
-                            },
-                            "topologyKey": "kubernetes.io/hostname",
-                        }
-                    ]
-                },
+                **node_scheduling.one_per_host(
+                    {
+                        "app.kubernetes.io/component": "ingester",
+                        "app.kubernetes.io/name": NAME,
+                        "app.kubernetes.io/instance": NAME,
+                    }
+                ),
             },
         },
         "querier": _component(1, "50m", "128Mi"),

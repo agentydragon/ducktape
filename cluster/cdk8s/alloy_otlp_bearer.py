@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
 
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import (
     ClusterExternalSecret,
@@ -35,20 +34,3 @@ def chart(app: App) -> Chart:
         data=[cluster_remote_data(NAME, "token")],
     )
     return chart
-
-
-def alloy_otlp_bearer(
-    chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization
-) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        NAME,
-        directory,
-        retry_interval=None,
-        wait=None,
-        depends_on=flux_kustomization_depends_on_many(
-            # ExternalSecret CRD and ESO's failurePolicy: Fail webhook
-            external_secrets_operator
-        ),
-        timeout="2m",
-    )

@@ -189,17 +189,7 @@ def _service(scope: Construct, id: str, *, service: ServiceRef, description: str
             namespace=service.pods.namespace,
             annotations={"description": description} if description else None,
         ),
-        spec=k8s.ServiceSpec(
-            selector=service.pods.selector,
-            ports=[
-                k8s.ServicePort(
-                    name=service.port.name,
-                    port=service.port.number,
-                    target_port=k8s.IntOrString.from_number(service.pod_port),
-                    protocol="TCP",
-                )
-            ],
-        ),
+        spec=k8s.ServiceSpec(selector=service.pods.selector, ports=[service.k8s_service_port()]),
     )
 
 
