@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 import pytest_bazel
 
-from cluster.validation.cluster import FluxBuild, ParsedCluster
+from cluster.validation.cluster import ParsedCluster
 from cluster.validation.dependencies import validate_operator_dependencies
 from cluster.validation.flux import DependsOn, FluxKustomizationSpec
 from cluster.validation.k8s import K8sResource
@@ -36,14 +34,11 @@ def test_app_helmrelease_can_share_operator_instances(
             "test-prerequisites": FluxKustomizationSpec(depends_on=[DependsOn(name=provider)]),
             provider: FluxKustomizationSpec(),
         },
-        build_results={
-            "test-app": FluxBuild(
-                kustomization_path=Path("test-app/kustomization.yaml"),
-                resources=[
-                    K8sResource(kind="HelmRelease", apiVersion="helm.toolkit.fluxcd.io/v2"),
-                    K8sResource(kind=kind, apiVersion=api_version),
-                ],
-            )
+        rendered_resources={
+            "test-app": [
+                K8sResource(kind="HelmRelease", apiVersion="helm.toolkit.fluxcd.io/v2"),
+                K8sResource(kind=kind, apiVersion=api_version),
+            ]
         },
     )
     assert validate_operator_dependencies(cluster) == []
@@ -59,15 +54,12 @@ def test_app_helmrelease_can_share_operator_instances(
 def test_operator_cannot_satisfy_its_own_helm_install_dependency() -> None:
     cluster = ParsedCluster(
         flux_kustomizations={"test-operator": FluxKustomizationSpec()},
-        build_results={
-            "test-operator": FluxBuild(
-                kustomization_path=Path("test-operator/kustomization.yaml"),
-                resources=[
-                    K8sResource(kind="HelmRelease", apiVersion="helm.toolkit.fluxcd.io/v2"),
-                    K8sResource(kind="TestInstance", apiVersion="test.example/v1"),
-                    K8sResource(kind="TestInstance", apiVersion="test.example/v1"),
-                ],
-            )
+        rendered_resources={
+            "test-operator": [
+                K8sResource(kind="HelmRelease", apiVersion="helm.toolkit.fluxcd.io/v2"),
+                K8sResource(kind="TestInstance", apiVersion="test.example/v1"),
+                K8sResource(kind="TestInstance", apiVersion="test.example/v1"),
+            ]
         },
     )
     errors = validate_operator_dependencies(cluster, {"TestInstance": "test-operator"})
@@ -79,18 +71,15 @@ def test_operator_cannot_satisfy_its_own_helm_install_dependency() -> None:
 def test_custom_kind_without_provider_fails() -> None:
     cluster = ParsedCluster(
         flux_kustomizations={"test-app": FluxKustomizationSpec()},
-        build_results={
-            "test-app": FluxBuild(
-                kustomization_path=Path("test-app/kustomization.yaml"),
-                resources=[
-                    K8sResource(kind="ConfigMap", apiVersion="v1"),
-                    K8sResource(kind="Deployment", apiVersion="apps/v1"),
-                    K8sResource(kind="HelmRelease", apiVersion="helm.toolkit.fluxcd.io/v2"),
-                    K8sResource(kind="CiliumNetworkPolicy", apiVersion="cilium.io/v2"),
-                    K8sResource(kind="TestInstance", apiVersion="test.example/v1"),
-                    K8sResource(kind="TestInstance", apiVersion="test.example/v1"),
-                ],
-            )
+        rendered_resources={
+            "test-app": [
+                K8sResource(kind="ConfigMap", apiVersion="v1"),
+                K8sResource(kind="Deployment", apiVersion="apps/v1"),
+                K8sResource(kind="HelmRelease", apiVersion="helm.toolkit.fluxcd.io/v2"),
+                K8sResource(kind="CiliumNetworkPolicy", apiVersion="cilium.io/v2"),
+                K8sResource(kind="TestInstance", apiVersion="test.example/v1"),
+                K8sResource(kind="TestInstance", apiVersion="test.example/v1"),
+            ]
         },
     )
     errors = validate_operator_dependencies(cluster, {})

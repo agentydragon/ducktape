@@ -4,7 +4,7 @@ Every `ImageRepository` must be listed in some `Receiver`, so a registry webhook
 it immediately — otherwise a new tag is only picked up on the 5-minute `ImageRepository`
 poll. Also checks that no Receiver references one that no longer exists.
 
-Reads the typed resources from `ParsedCluster.build_results` — the kustomize/flux build
+Reads the typed resources from `ParsedCluster.rendered_resources` — the kustomize/flux build
 output the validator already produces — and isinstance-dispatches on the parsed variants, so
 it sees exactly what Flux applies and never re-walks source YAML (which would choke on the
 Authentik blueprints' custom `!Find`/`!Env` tags).
@@ -41,8 +41,8 @@ def check_image_automation_webhook(cluster: ParsedCluster) -> list[str]:
     image_repos: set[str] = set()
     webhook_repos: set[str] = set()
 
-    for result in cluster.build_results.values():
-        for resource in result.resources:
+    for resources in cluster.rendered_resources.values():
+        for resource in resources:
             if isinstance(resource, ImageRepositoryResource):
                 image_repos.add(resource.name)
             elif isinstance(resource, ReceiverResource):
@@ -78,8 +78,8 @@ def check_image_policy_markers(cluster: ParsedCluster, k8s_dir: Path) -> list[st
     """
     policies = {
         f"{resource.namespace}:{resource.name}"
-        for result in cluster.build_results.values()
-        for resource in result.resources
+        for resources in cluster.rendered_resources.values()
+        for resource in resources
         if isinstance(resource, ImagePolicyResource)
     }
 

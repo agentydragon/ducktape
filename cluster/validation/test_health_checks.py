@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 import pytest_bazel
 
-from cluster.validation.cluster import FluxBuild, ParsedCluster
+from cluster.validation.cluster import ParsedCluster
 from cluster.validation.flux import FluxKustomizationSpec, HealthCheck
 from cluster.validation.health_checks import check_controller_health_checks, check_retry_policy
 from cluster.validation.k8s import K8sResource
@@ -30,11 +28,7 @@ def _make_cluster(
                 wait=wait,
             )
         },
-        build_results={
-            "test-app": FluxBuild(
-                Path("kustomization.yaml"), [K8sResource(kind=resource_kind, apiVersion=resource_api_version)]
-            )
-        },
+        rendered_resources={"test-app": [K8sResource(kind=resource_kind, apiVersion=resource_api_version)]},
     )
 
 

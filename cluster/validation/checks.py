@@ -146,7 +146,7 @@ def check_external_secret_store_wiring(cluster: ParsedCluster) -> list[str]:
     ClusterExternalSecret selectors are evaluated for namespaces visible in the render.
     This cannot establish the labels of namespaces created or modified outside GitOps.
     """
-    resources = _rendered_resources(cluster)
+    resources = _rendered_resources_with_origin(cluster)
     namespaces = {
         resource.name: {**resource.metadata.labels, "kubernetes.io/metadata.name": resource.name}
         for _, resource in resources
@@ -160,7 +160,7 @@ def check_external_secret_store_wiring(cluster: ParsedCluster) -> list[str]:
     service_accounts = {
         (resource.namespace, resource.name) for _, resource in resources if resource.kind == "ServiceAccount"
     }
-    consumers: list[tuple[Path, K8sResource, str, dict[str, Any]]] = []
+    consumers: list[tuple[str, K8sResource, str, dict[str, Any]]] = []
     for origin, resource in resources:
         if isinstance(resource, ExternalSecretResource) and resource.namespace:
             consumers.append((origin, resource, resource.namespace, resource.spec))
@@ -206,7 +206,7 @@ def check_goldilocks_namespace_labels(cluster: ParsedCluster) -> list[str]:
     """A namespace with a Goldilocks update mode is not opted out of Goldilocks, which would ignore
     the mode. Goldilocks runs on by default, so the mode needs no `enabled: "true"` beside it."""
     errors = []
-    for origin, resource in _rendered_resources(cluster):
+    for origin, resource in _rendered_resources_with_origin(cluster):
         if resource.kind != "Namespace":
             continue
         labels = resource.metadata.labels
@@ -222,15 +222,17 @@ _GOLDILOCKS_ENABLED_LABEL = "goldilocks.fairwinds.com/enabled"
 _VPA_UPDATE_MODE_LABEL = "goldilocks.fairwinds.com/vpa-update-mode"
 
 
-def _rendered_resources(cluster: ParsedCluster) -> list[tuple[Path, K8sResource]]:
+def _rendered_resources_with_origin(cluster: ParsedCluster) -> list[tuple[str, K8sResource]]:
     return [
-        (build.kustomization_path, resource) for build in cluster.build_results.values() for resource in build.resources
+        (f"{owner} ({cluster.flux_kustomizations[owner].path})", resource)
+        for owner, resources in cluster.rendered_resources.items()
+        for resource in resources
     ]
 
 
 def check_forgejo_image_namespace_reflection(cluster: ParsedCluster) -> list[str]:
     """Every rendered Forgejo image workload namespace has its own forgejo-images-creds ExternalSecret."""
-    resources = _rendered_resources(cluster)
+    resources = _rendered_resources_with_origin(cluster)
     namespaces_with_credential = {
         resource.namespace
         for _, resource in resources
@@ -263,7 +265,7 @@ def check_sops_decryption_blocks(cluster: ParsedCluster) -> list[str]:
     for name, resources in cluster.flux_kust_resources().items():
         if not any(isinstance(r, SecretResource) and r.sops is not None for r in resources):
             continue
-        spec = cluster.active_flux_kustomizations[name]
+        spec = cluster.flux_kustomizations[name]
         dec = spec.decryption
         if dec is None or dec.provider != "sops":
             errors.append(
@@ -285,7 +287,7 @@ def check_cilium_policy_rules_nonempty(cluster: ParsedCluster) -> list[str]:
     """No Cilium policy rule `enforces_nothing`. The fleet rules refuse a generated one at
     synth; this holds hand-written policies and anything a kustomize patch changes after synth."""
     errors = []
-    for origin, resource in _rendered_resources(cluster):
+    for origin, resource in _rendered_resources_with_origin(cluster):
         if not isinstance(resource, CiliumPolicyResource):
             continue
         for index, rule in enumerate(resource.rules):

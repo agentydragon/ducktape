@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 import pytest_bazel
 
 from cluster.validation.checks import check_sops_decryption_blocks
-from cluster.validation.cluster import FluxBuild, ParsedCluster
+from cluster.validation.cluster import ParsedCluster
 from cluster.validation.flux import Decryption, FluxKustomizationSpec
 from cluster.validation.k8s import SecretRef, parse_k8s_resources
 
@@ -36,8 +34,7 @@ def _plain_secret() -> dict:
 
 def _cluster(secret_doc: dict, spec: FluxKustomizationSpec) -> ParsedCluster:
     return ParsedCluster(
-        flux_kustomizations={_NAME: spec},
-        build_results={_NAME: FluxBuild(Path("kustomization.yaml"), parse_k8s_resources([secret_doc]))},
+        flux_kustomizations={_NAME: spec}, rendered_resources={_NAME: parse_k8s_resources([secret_doc])}
     )
 
 
@@ -71,8 +68,7 @@ def test_plain_secret_without_decryption_is_ok() -> None:
 
 
 def test_suspended_kustomization_with_sops_is_skipped() -> None:
-    spec = FluxKustomizationSpec(suspend=True)
-    cluster = _cluster(_sops_secret(), spec)
+    cluster = _cluster(_sops_secret(), FluxKustomizationSpec(suspend=True))
 
     assert check_sops_decryption_blocks(cluster) == []
 

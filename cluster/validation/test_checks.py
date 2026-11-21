@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -15,26 +14,27 @@ from cluster.validation.checks import (
     check_forgejo_image_namespace_reflection,
     check_goldilocks_namespace_labels,
 )
-from cluster.validation.cluster import FluxBuild, ParsedCluster
+from cluster.validation.cluster import ParsedCluster
 from cluster.validation.flux import FluxKustomizationSpec
 from cluster.validation.k8s import parse_k8s_resources
 
 
 def _cluster_with(*docs: dict) -> ParsedCluster:
     return ParsedCluster(
-        flux_kustomizations={"fixture": FluxKustomizationSpec()},
-        build_results={"fixture": FluxBuild(Path("kustomization.yaml"), parse_k8s_resources(docs))},
+        flux_kustomizations={"test-app": FluxKustomizationSpec(path="./cluster/k8s/test-app")},
+        rendered_resources={"test-app": parse_k8s_resources(docs)},
     )
 
 
 def _external_creds_cluster(*consumer_docs: dict) -> ParsedCluster:
     return ParsedCluster(
-        flux_kustomizations={"external-secrets-config": FluxKustomizationSpec(), "consumer": FluxKustomizationSpec()},
-        build_results={
-            "external-secrets-config": FluxBuild(
-                Path("external-secrets/kustomization.yaml"), parse_k8s_resources([_central_store()])
-            ),
-            "consumer": FluxBuild(Path("consumer/kustomization.yaml"), parse_k8s_resources(consumer_docs)),
+        flux_kustomizations={
+            "external-secrets-config": FluxKustomizationSpec(path="./cluster/k8s/external-secrets/config"),
+            "consumer": FluxKustomizationSpec(path="./cluster/k8s/consumer"),
+        },
+        rendered_resources={
+            "external-secrets-config": parse_k8s_resources([_central_store()]),
+            "consumer": parse_k8s_resources(consumer_docs),
         },
     )
 
@@ -192,12 +192,8 @@ def test_sandbox_template_images_require_namespace_credentials(
     for name in image_names:
         assert f"git.allegedly.works/ducktape-ci/{name}:tag" in error
 
-    assert (
-        check_forgejo_image_namespace_reflection(
-            _cluster_with(template, _forgejo_creds_eso("other"), _forgejo_creds_eso("worker"))
-        )
-        == []
-    )
+    cluster = _cluster_with(template, _forgejo_creds_eso("other"), _forgejo_creds_eso("worker"))
+    assert check_forgejo_image_namespace_reflection(cluster) == []
 
 
 def test_external_credential_central_store_passes() -> None:

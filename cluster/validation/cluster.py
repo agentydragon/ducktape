@@ -55,12 +55,6 @@ def _manifest_ignored(repo: pygit2.Repository | None, path: Path) -> bool:
     return repo.get_attr(str(rel), _MANIFEST_IGNORED_ATTR) in (True, "true")
 
 
-@dataclass(frozen=True)
-class FluxBuild:
-    kustomization_path: Path
-    resources: list[K8sResource]
-
-
 @dataclass
 class ParsedCluster:
     """All parsed data from the cluster directory - parsed once, used everywhere."""
@@ -74,7 +68,8 @@ class ParsedCluster:
     # flux-system/, and the ExternalArtifacts ArtifactGenerators declare. Used by
     # sourceRef validation — see dependencies.check_source_references.
     flux_sources: set[tuple[str, str, str]] = field(default_factory=set)
-    build_results: dict[str, FluxBuild] = field(default_factory=dict)
+    # Each Flux owner can render a shared directory differently (e.g. targetNamespace).
+    rendered_resources: dict[str, list[K8sResource]] = field(default_factory=dict)
 
     # Directed graph of Flux kustomization dependencies.
     # Edge A->B means kustomization A depends on B (A must start after B is ready).
@@ -96,9 +91,9 @@ class ParsedCluster:
     def flux_kust_resources(self, *, include_suspended: bool = False) -> dict[str, list[K8sResource]]:
         """Map Flux owners to built resources; suspension retains deployed authorization objects."""
         return {
-            name: self.build_results[name].resources
-            for name, spec in self.flux_kustomizations.items()
-            if name in self.build_results and not spec.parked and (include_suspended or not spec.suspend)
+            name: resources
+            for name, resources in self.rendered_resources.items()
+            if not (spec := self.flux_kustomizations[name]).parked and (include_suspended or not spec.suspend)
         }
 
 

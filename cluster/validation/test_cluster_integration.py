@@ -29,7 +29,7 @@ from cluster.validation.checks import (
     check_sops_decryption_blocks,
     find_orphaned_files,
 )
-from cluster.validation.cluster import FluxBuild, ParsedCluster, parse_cluster
+from cluster.validation.cluster import ParsedCluster, parse_cluster
 from cluster.validation.dependencies import validate_dependencies
 from cluster.validation.flux import EXTERNAL_ARTIFACT_KIND, FluxKustomizationSpec
 from cluster.validation.flux_bootstrap_auth import check_flux_bootstrap_auth
@@ -47,11 +47,6 @@ from cluster.validation.kustomize import (
     run_kustomize_build,
     stage_artifact_copies,
 )
-
-
-def _local_flux_kust_names(parsed: ParsedCluster, repo_root: Path) -> set[str]:
-    """Active flux kustomization names whose spec.path points into a local manifest root."""
-    return {name for name, spec in parsed.active_flux_kustomizations.items() if spec.local_dir(repo_root)}
 
 
 async def _build_namespace_override(
@@ -128,11 +123,13 @@ def _build_cluster(repo_root: Path) -> ParsedCluster:
                 raise ValueError(f"failed to stage ExternalArtifact {key}: {error}") from error
             staged_artifacts[key] = staging_root
 
-        async def _build_all() -> dict[str, FluxBuild]:
+        async def _build_all() -> dict[str, list[K8sResource]]:
             # At most one additional copy of a manifest tree, even when several owners share it.
             namespace_build = asyncio.Semaphore(1)
 
-            async def _build(owner: str, spec: FluxKustomizationSpec, kust: KustomizeFile) -> tuple[str, FluxBuild]:
+            async def _build(
+                owner: str, spec: FluxKustomizationSpec, kust: KustomizeFile
+            ) -> tuple[str, list[K8sResource]]:
                 source_root = repo_root
                 build_file = kust
                 source_ref = spec.source_ref
@@ -153,18 +150,18 @@ def _build_cluster(repo_root: Path) -> ParsedCluster:
                         resources = await _build_namespace_override(owner, spec, build_file.path.parent, source_root)
                 else:
                     resources = await run_kustomize_build(build_file)
-                return owner, FluxBuild(kustomization_path=kust.path, resources=resources)
+                return owner, resources
 
-            builds = await asyncio.gather(
+            rendered = await asyncio.gather(
                 *(
                     _build(owner, spec, kusts_by_dir[directory])
                     for owner, spec in parsed.flux_kustomizations.items()
                     if (directory := spec.local_dir(repo_root)) is not None and directory in kusts_by_dir
                 )
             )
-            return dict(builds)
+            return dict(rendered)
 
-        parsed.build_results = asyncio.run(_build_all())
+        parsed.rendered_resources = asyncio.run(_build_all())
     return parsed
 
 
@@ -176,9 +173,8 @@ def cluster(repo_root: Path) -> ParsedCluster:
 
 def test_all_local_flux_kustomizations_have_build_results(cluster: ParsedCluster, repo_root: Path) -> None:
     """Every flux kustomization pointing to a local path must have a build result."""
-    covered = set(cluster.flux_kust_resources())
-    expected = _local_flux_kust_names(cluster, repo_root)
-    missing = sorted(expected - covered)
+    expected = {name for name, spec in cluster.active_flux_kustomizations.items() if spec.local_dir(repo_root)}
+    missing = sorted(expected - cluster.flux_kust_resources().keys())
     assert not missing, "Flux kustomizations with no build result:\n" + "\n".join(f"  {m}" for m in missing)
 
 
@@ -293,9 +289,13 @@ def test_external_secret_store_wiring_uses_each_flux_owners_target_namespace(tmp
     errors = check_external_secret_store_wiring(parsed)
     assert len(errors) == 2
     for secret in ("implicit", "explicit"):
-        assert any(
-            f"ExternalSecret '{secret}' in namespace 'denied' is denied by ClusterSecretStore" in e for e in errors
-        )
+        [error] = [
+            error
+            for error in errors
+            if f"ExternalSecret '{secret}' in namespace 'denied' is denied by ClusterSecretStore" in error
+        ]
+        assert "second" in error
+        assert "./cluster/generated/secrets" in error
 
 
 def test_forgejo_image_namespaces_are_reflected(cluster: ParsedCluster) -> None:

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest_bazel
 
-from cluster.validation.cluster import FluxBuild, ParsedCluster
+from cluster.validation.cluster import ParsedCluster
 from cluster.validation.flux import FluxKustomizationSpec
 from cluster.validation.k8s import K8sMetadata, K8sResource
 
@@ -25,16 +25,13 @@ def test_authorization_inventory_can_retain_suspended_owners_without_parked_work
         }
     )
     for name in cluster.flux_kustomizations:
-        cluster.build_results[name] = FluxBuild(
-            kustomization_path=Path(name) / "kustomization.yaml",
-            resources=[
-                K8sResource(
-                    kind="Role",
-                    api_version="rbac.authorization.k8s.io/v1",
-                    metadata=K8sMetadata(name="reader", namespace=name),
-                )
-            ],
-        )
+        cluster.rendered_resources[name] = [
+            K8sResource(
+                kind="Role",
+                api_version="rbac.authorization.k8s.io/v1",
+                metadata=K8sMetadata(name="reader", namespace=name),
+            )
+        ]
     assert set(cluster.flux_kust_resources()) == {"running"}
     retained = cluster.flux_kust_resources(include_suspended=True)
     assert {resource.namespace for resources in retained.values() for resource in resources} == {"running", "held"}
