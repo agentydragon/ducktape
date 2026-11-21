@@ -119,9 +119,6 @@ func validateConfig(c *config) error {
 	if len(c.CentralSamplerServices) > 0 && !c.CentralSamplerIdentityCallers {
 		return errors.New("central_sampler_services requires central_sampler_identity_callers")
 	}
-	if len(c.ModelConfigServiceCallers)+len(c.CentralSamplerServices) > 0 && !c.RPC.Has(listener.SPIFFE) {
-		return errors.New("service callers require rpc spiffe client trust")
-	}
 	if len(c.AllowedServiceAccountNamespaces) == 0 {
 		return errors.New("allowed_service_account_namespaces must be non-empty")
 	}
@@ -152,9 +149,6 @@ func validateConfig(c *config) error {
 	}
 	if err := c.RPC.Validate(); err != nil {
 		return err
-	}
-	if c.RPC.TLS == nil {
-		return errors.New("rpc.tls is required for the shared HTTP/2 listener")
 	}
 	for _, model := range c.Models {
 		if model.Model == "" || model.TotalContextBudgetTokens <= 0 {
