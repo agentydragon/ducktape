@@ -119,7 +119,10 @@ No native MCP-as-hook-callback support. `http` type is the closest workaround
 | `/resume` / `--resume` | No — restores old via `switchSession()` | Yes                 | `'resume'`  |
 | `--continue`           | No — restores old                       | No (skipped)        | —           |
 
-- **Only `/clear` generates a new session ID.** Old ID saved as `parentSessionId`.
+- **Only `/clear` generates a new session ID.** Old ID saved as `parentSessionId`. The hook daemon keys its
+  per-session directory and the Bazel `--output_base` on this ID (`home_session_dir` and `write_session_bazelrc`
+  in `claude_hook/main.rs`), so `/clear` starts a fresh output base and a cold Bazel server; compaction and resume
+  keep both.
 - **Compaction** keeps the same session ID and transcript file. The `'compact'`
   source is informational. Our daemon observed Setup vs SessionStart having
   mismatched IDs during compaction — this is a Claude Code bug, not design.
