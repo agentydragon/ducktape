@@ -248,10 +248,7 @@ func (c *Coordinator) Record(ctx context.Context, claim inboxstore.Claim, record
 			return err
 		}
 		// Ingress that committed since the subscription was read must not be overwritten by an idle schedule.
-		var next *time.Time
-		if recording.RetryAt != nil {
-			next = recording.RetryAt
-		}
+		next := recording.RetryAt
 		if recording.More || mergeabilityMore || commitMore || prStateMore || generation != recording.Generation {
 			due := now()
 			next = &due
