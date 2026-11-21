@@ -136,7 +136,6 @@ py_library(
     srcs = ["filer_db.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
-        "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s/cnpg:cluster",
         "//cluster/cdk8s/providers/cnpg:cluster",

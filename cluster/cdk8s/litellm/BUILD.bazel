@@ -68,7 +68,6 @@ py_library(
         "//model_catalog:policies",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
-        "@pypi//constructs",
     ],
 )
 
@@ -148,7 +147,6 @@ py_library(
     deps = [
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s/cnpg:backup",
         "//cluster/cdk8s/cnpg:cluster",
         "@pypi//cdk8s",
