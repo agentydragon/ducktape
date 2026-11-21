@@ -29,6 +29,7 @@ from cluster.cdk8s.agentplane.actions_staging_policies import (
     SANDBOX_SELF_SET,
     SSH_READS_SET,
     coinbase_egress_rules,
+    ovh_billing_egress_rules,
 )
 from cluster.cdk8s.agentplane.app_settings import DUCKTAPE_PR_INSTRUCTIONS, settings
 from cluster.cdk8s.agentplane.egress import (
@@ -86,6 +87,7 @@ def assignable_set_egress_rules() -> dict[str, list[PolicySetSpecRules]]:
     catalog these are the sets that stay `PolicySet`s; the rest are only `KubernetesRoleSet`s."""
     return {
         agent_access_profiles.COINBASE_POLICY: coinbase_egress_rules(),
+        agent_access_profiles.OVH_BILLING_POLICY: ovh_billing_egress_rules(),
         agent_access_profiles.PLAID_DIAGNOSTICS_POLICY: agent_access_profiles.plaid_pgweb_egress_rules(
             credential=PLAID_PGWEB_CREDENTIAL
         ),

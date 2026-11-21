@@ -526,6 +526,7 @@ def test_staging_launch_presets_bind_identity_compatible_rules_and_keep_account_
         "finance-agent": public_role_sets
         | {
             agent_access_profiles.COINBASE_POLICY,
+            agent_access_profiles.OVH_BILLING_POLICY,
             "spend-policy-config",
             agent_access_profiles.PLAID_DIAGNOSTICS_POLICY,
         },
@@ -534,6 +535,7 @@ def test_staging_launch_presets_bind_identity_compatible_rules_and_keep_account_
             "haku-sandbox-write",
             "cluster-diagnostics",
             agent_access_profiles.COINBASE_POLICY,
+            agent_access_profiles.OVH_BILLING_POLICY,
             agent_access_profiles.PLAID_DIAGNOSTICS_POLICY,
         },
     }
@@ -545,13 +547,49 @@ def test_staging_launch_presets_bind_identity_compatible_rules_and_keep_account_
     for preset in ("finance-agent", "haku"):
         launch_policies = config["sandbox_presets"][preset]["policy_sets"]
         assert f"{agent_access_profiles.COINBASE_POLICY}-identity" in launch_policies
+        assert f"{agent_access_profiles.OVH_BILLING_POLICY}-identity" in launch_policies
         assert f"{agent_access_profiles.PLAID_DIAGNOSTICS_POLICY}-identity" in launch_policies
-    for name in (agent_access_profiles.COINBASE_POLICY, agent_access_profiles.PLAID_DIAGNOSTICS_POLICY):
+    for name in (
+        agent_access_profiles.COINBASE_POLICY,
+        agent_access_profiles.OVH_BILLING_POLICY,
+        agent_access_profiles.PLAID_DIAGNOSTICS_POLICY,
+    ):
         assert any(rule["type"].startswith("kubernetes_") for rule in policies[name])
         identity_rules = policies[f"{name}-identity"]
         assert identity_rules
         assert all(not rule["type"].startswith("kubernetes_") for rule in identity_rules)
         assert identity_rules == [rule for rule in policies[name] if rule["type"] == "egress"]
+
+
+def test_ovh_billing_is_a_named_read_only_credential_with_scoped_egress(
+    staging_manifests: list[dict[str, Any]],
+) -> None:
+    secret = find_resource(staging_manifests, "ExternalSecret", "ovh-billing-credentials")
+    assert {item["secretKey"] for item in secret["spec"]["data"]} == {
+        "application_key",
+        "application_secret",
+        "consumer_key",
+    }
+    role = find_resource(staging_manifests, "Role", "ovh-billing-reader")
+    assert role["rules"] == [
+        {"apiGroups": [""], "resources": ["secrets"], "resourceNames": ["ovh-billing-credentials"], "verbs": ["get"]}
+    ]
+    policy = find_resource(staging_manifests, "PolicySet", agent_access_profiles.OVH_BILLING_POLICY)
+    egress = one(rule for rule in policy["spec"]["rules"] if rule["type"] == "egress")
+    assert egress["hosts"] == ["api.us.ovhcloud.com"]
+    assert egress["methods"] == ["GET"]
+    assert set(egress["paths"]) == {
+        "/1.0/auth/time",
+        "/1.0/me/bill",
+        "/1.0/me/bill/**",
+        "/1.0/service",
+        "/1.0/service/**",
+    }
+    assert "credentialRef" not in egress
+    presets = _sandbox_preset_policy_sets(staging_manifests)
+    assert f"{agent_access_profiles.OVH_BILLING_POLICY}-identity" in presets["finance-agent"]
+    assert f"{agent_access_profiles.OVH_BILLING_POLICY}-identity" in presets["haku"]
+    assert f"{agent_access_profiles.OVH_BILLING_POLICY}-identity" not in presets["public-coder"]
 
 
 @pytest.mark.parametrize("preset", ["public-coder", "finance-agent"])
@@ -577,7 +615,12 @@ def test_public_diagnostics_select_cluster_reader_and_share_haku_reads(
         for grant in agent_access_profiles.POLICY_SETS.get(role_set, ())
     }
     credential_grants = (
-        {"coinbase-credentials", "spend-policy-config", agent_access_profiles.PLAID_DIAGNOSTICS_POLICY}
+        {
+            "coinbase-credentials",
+            "ovh-billing-credentials",
+            "spend-policy-config",
+            agent_access_profiles.PLAID_DIAGNOSTICS_POLICY,
+        }
         if preset == "finance-agent"
         else set()
     )
@@ -624,7 +667,12 @@ def test_public_diagnostics_select_cluster_reader_and_share_haku_reads(
     )
     assert (
         set(haku) - set(selected)
-        == {"haku-sandbox-write", "coinbase-credentials", agent_access_profiles.PLAID_DIAGNOSTICS_POLICY}
+        == {
+            "haku-sandbox-write",
+            "coinbase-credentials",
+            "ovh-billing-credentials",
+            agent_access_profiles.PLAID_DIAGNOSTICS_POLICY,
+        }
         - credential_grants
     )
     assert set(selected) - set(haku) == {"public-coder-node-read", "public-coder-cluster-metadata-read"} | (
@@ -673,6 +721,7 @@ def test_public_diagnostics_select_cluster_reader_and_share_haku_reads(
     } | (
         {
             ("agentplane-staging", "claude-ai-coinbase-reader"),
+            ("agentplane-staging", "ovh-billing-reader"),
             ("plaid-mcp", "plaid-spend-finance-config-reader"),
             ("plaid-mcp", "plaid-finance-diagnostics-reader"),
         }

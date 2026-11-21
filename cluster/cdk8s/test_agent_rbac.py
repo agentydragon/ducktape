@@ -163,6 +163,7 @@ def test_agent_permission_superset_and_finance_parity(rendering: Rendering) -> N
     assert not uncovered(public, finance)
     assert uncovered(finance, public) == {
         Permission(_NAMESPACE, "", "secrets", "get", "coinbase-api-credentials"),
+        Permission(_NAMESPACE, "", "secrets", "get", "ovh-billing-credentials"),
         Permission("plaid-mcp", "", "secrets", "get", "plaid-spend-policy"),
     }
 
@@ -260,6 +261,10 @@ def test_agent_permission_denials(rendering: Rendering) -> None:
     denied.add(Permission(None, "", "nodes/proxy", "get"))
     for name, permissions in profiles.items():
         assert bool(uncovered({coinbase}, permissions)) == (name == "public-coder"), name
+        ovh_billing = Permission(_NAMESPACE, "", "secrets", "get", "ovh-billing-credentials")
+        assert bool(uncovered({ovh_billing}, permissions)) == (name in {"public-coder", "claude-ai", "haku-agent"}), (
+            name
+        )
         assert uncovered(denied, permissions) == denied, name
         if name == "claude-ai":
             sandbox_writes = {
