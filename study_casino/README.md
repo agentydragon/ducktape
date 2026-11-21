@@ -59,7 +59,7 @@ are whole integers.
 after each successful action and on each `/ws` `{"type":"state_changed"}` broadcast (sent to all
 of the user's tabs). Mutations are `POST /actions/*` (sessions, convert, prizes, changelog ack,
 import/reset) and `POST /casino/{slots,roulette,blackjack}/*`; reads include `/casino/stats`,
-`/admin/casino/stats?user=`, `/game-events`, `/ledger-events`, `/me`, `/healthz`.
+`/admin/casino/stats?user=`, `/me`, `/healthz`.
 
 - Active timers live in client `localStorage`; completion and backfill actions create session rows,
   and `/actions/import` can also restore them.

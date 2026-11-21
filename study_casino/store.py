@@ -111,7 +111,7 @@ class ActionMutation:
     `result` is the typed payload that surfaces as `ActionResponse.result`
     on the wire. `game_event` is the typed payload that gets persisted to
     `game_events.outcome_json` and re-read as `GameEventRead` by the
-    casino-stats and audit-log endpoints. `rng_audit` is the deterministic
+    casino-stats endpoints. `rng_audit` is the deterministic
     RNG trace, committed atomically with the ledger/game rows. `details`
     stays loosely typed — it's audit metadata persisted to
     `ledger_events.details_json` and not part of the frontend's read surface.
@@ -194,18 +194,6 @@ class SqlStore:
         """Whether `username` already has a balance row (i.e. has been seeded)."""
         with self._Session() as s:
             return s.get(BalanceRow, username) is not None
-
-    def list_game_events(self, username: str, limit: int = 100) -> list[GameEventRead]:
-        with self._Session() as s:
-            rows = list(
-                s.scalars(
-                    select(GameEventRow)
-                    .where(GameEventRow.user_id == username)
-                    .order_by(GameEventRow.id.desc())
-                    .limit(limit)
-                ).all()
-            )
-            return [game_event_from_row(row) for row in rows]
 
     def list_ledger_events(self, username: str, limit: int = 100) -> list[LedgerEventRead]:
         with self._Session() as s:
