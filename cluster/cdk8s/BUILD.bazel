@@ -1786,6 +1786,7 @@ py_library(
         "//cluster/cdk8s/kubevirt:app",
         "//cluster/cdk8s/kubevirt:cdi",
         "//cluster/cdk8s/kubevirt:operators",
+        "//cluster/cdk8s/kubevirt:vpa",
         "//cluster/cdk8s/kyverno:app",
         "//cluster/cdk8s/kyverno:policies",
         "//cluster/cdk8s/litellm:buildbuddy_crossplane",
