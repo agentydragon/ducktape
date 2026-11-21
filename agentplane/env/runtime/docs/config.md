@@ -17,7 +17,7 @@ composes it into the runtime configuration. The [protocol contract](../SPEC.md) 
 
 1. The template writes `environment-runtime.json`: endpoints, paths, providers, environment declarations,
    platform instructions and isolation policy. `environment_sandbox.py` writes Pod configuration;
-   `environment_vm.py` writes VM configuration using the same schema.
+   `environment_guest.py` writes VM configuration using the same schema.
 2. The image supplies only explicitly inherited environment names. Provider `token_env` fields
    name Environment Runtime variables containing credential placeholders; tokens are not serialized in the file.
 3. The Sandbox Controller supplies `launch.json`: namespace, name, UID and optional bootstrap source.
@@ -120,7 +120,7 @@ so a Sandbox dials History through the sidecar over TLS with no bearer.
 
 The control listener serves the standard gRPC health API and reports `SERVING` once local Environment Runtime
 startup completes, before a state watch connects. The Controller starts observe-only
-`Environment Runtime.WatchState` with the Sandbox UID and current workload Pod UID.
+`EnvironmentRuntime.WatchState` with the Sandbox UID and current workload Pod UID.
 The Environment Runtime adopts that incarnation before sending facts, then sends changed state and a ten-second
 heartbeat. Environments proxy replicas watch the accepted binding without replacing it; the retired
 Gateway SVID has no Runtime admission. Unary calls and executor streams carry the Sandbox UID, incarnation UID and Environment Runtime boot ID.

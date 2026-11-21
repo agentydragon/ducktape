@@ -24,6 +24,7 @@ from cluster.cdk8s.agentplane import egress, telemetry
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.kubernetes_grants import RoleBindingGrant, RoleRef
 from cluster.cdk8s.config_format import yaml_config
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME
 from cluster.cdk8s.settings_file import PodWiring, SettingsFile
 
@@ -261,11 +262,7 @@ def pod_spec(
     sidecar = _egress_sidecar(
         env,
         settings,
-        sidecar_resources
-        or k8s.ResourceRequirements(
-            requests={"cpu": k8s.Quantity.from_string("10m"), "memory": k8s.Quantity.from_string("32Mi")},
-            limits={"cpu": k8s.Quantity.from_string("100m"), "memory": k8s.Quantity.from_string("128Mi")},
-        ),
+        sidecar_resources or container_resources(cpu="10m", memory="32Mi", cpu_limit="100m", memory_limit="128Mi"),
         telemetry_enabled=enable_telemetry,
         restart_policy="Always" if keep_sidecar_until_workload_exit else None,
         volume_mounts=sidecar_mounts,

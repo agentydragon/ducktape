@@ -87,7 +87,7 @@ retire and rebuild the source standbys serially afterward.
    [CNPG conventions](../cnpg_conventions.md#current-compliance)), work serially:
    finish and verify one before starting the next. Record its desired count,
    each Pod/PVC UID, size, StorageClass and primary. New claims use
-   `piraeus-ssd-local`, sized for measured PGDATA plus headroom.
+   `piraeus-ssd-local`, sized for measured PGDATA plus headroom (Study Casino stays **1Gi**).
    Measure actual PGDATA, including WAL. Stop before requesting a replacement that cannot hold the
    current data and agreed reserve.
 2. Put a brief, resource-specific Flux hold on that Cluster, then temporarily
@@ -105,9 +105,8 @@ retire and rebuild the source standbys serially afterward.
    healthy members remain outside the outage set.
 5. Restore the Cluster's desired count before removing its Flux hold. Verify
    Flux and CNPG agree, then proceed to the next cluster.
-6. Three-member clusters (Attic, Study Casino) need no temporary member: move a
-   target primary first and retain two healthy off-target members. Study Casino
-   stays **1Gi**.
+6. A Cluster whose `spec.instances` is already 3 needs no temporary member: move a
+   target primary first and retain two healthy off-target members.
 
 Use a brief, resource-specific Flux hold for each temporary member change. A
 parent can undo suspension of a child Kustomization; hold the managed resource

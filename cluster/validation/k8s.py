@@ -171,7 +171,6 @@ class RbacRule(BaseModel):
 
 class RoleResource(K8sResource):
     rules: list[RbacRule] = Field(default_factory=list)
-    aggregation_rule: dict | None = Field(default=None, alias="aggregationRule")
 
 
 class RbacRoleRef(BaseModel):
@@ -182,17 +181,8 @@ class RbacRoleRef(BaseModel):
     name: str
 
 
-class RoleBindingSubject(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    kind: str = ""
-    name: str = ""
-    namespace: str = ""
-
-
 class RoleBindingResource(K8sResource):
     role_ref: RbacRoleRef | None = Field(default=None, alias="roleRef")
-    subjects: list[RoleBindingSubject] = Field(default_factory=list)
 
 
 class SecretStoreKubernetesProvider(BaseModel):

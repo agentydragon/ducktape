@@ -8,8 +8,8 @@ import {
   ActionState,
   type ActionIdentity,
 } from "../../../../action_service/api/contracts/action_service_pb";
-import { CallToolResultView, type CallToolResult, parseCallToolResult } from "../call_tool_result";
-import { answerApi, button, mount, SSH_EXEC_ARGUMENTS, sshExec } from "../testing/harness";
+import { CallToolResultView, type CallToolResult } from "../call_tool_result";
+import { answerApi, button, mount, SSH_EXEC_ARGUMENTS, sshExec, toolResult } from "../testing/harness";
 import { ACTION_NOTIFICATION_FORMATTERS } from "../notifications";
 import { executionResult } from "../presentation";
 import {
@@ -40,9 +40,7 @@ async function drawDetailsResult(action: ActionIdentity, result: CallToolResult)
 
 /** The CallToolResult stored for an ssh `exec` call whose `ExecResult` has `returned`'s fields. */
 function stored(returned: Record<string, unknown> = {}): CallToolResult {
-  const result = parseCallToolResult(executionResult(sshExec(ActionState.SUCCEEDED, returned).execution));
-  if (result === null) throw new Error("the fixture is not a CallToolResult");
-  return result;
+  return toolResult(executionResult(sshExec(ActionState.SUCCEEDED, returned).execution));
 }
 
 describe("Action presentation slots", () => {
@@ -243,8 +241,7 @@ describe("Action presentation slots", () => {
     expect(details.textContent).toContain("Please review it.");
     expect(details.textContent).toContain("Release notes");
 
-    const result = parseCallToolResult({ content: [], structuredContent: { id: "draft-123" }, isError: false });
-    if (result === null) throw new Error("the fixture is not a CallToolResult");
+    const result = toolResult({ content: [], structuredContent: { id: "draft-123" }, isError: false });
     const renderedResult = await mount(renderDetailsResult(action, result));
     expect(renderedResult.textContent).toContain("Saved as an unsent draft");
     expect(
@@ -271,7 +268,7 @@ describe("Action presentation slots", () => {
     expect(pendingView.textContent).toContain("Please review it.");
     expect(pendingView.querySelector('a[href="https://mail.google.com/mail/u/0/#all/thread-123"]')).not.toBeNull();
 
-    const result = parseCallToolResult({
+    const result = toolResult({
       content: [],
       structuredContent: {
         id: "draft-123",
@@ -279,7 +276,6 @@ describe("Action presentation slots", () => {
       },
       isError: false,
     });
-    if (result === null) throw new Error("the fixture is not a CallToolResult");
     const completed = renderActionCall(action, args, result);
     expect(completed?.includesResult).toBe(true);
     const completedView = await mount(completed?.content ?? null);
@@ -293,12 +289,11 @@ describe("Action presentation slots", () => {
     ).not.toBeNull();
     expect(renderActionCall(action, { ...args, unexpected: true })).toBeUndefined();
 
-    const unexpectedResult = parseCallToolResult({
+    const unexpectedResult = toolResult({
       content: [],
       structuredContent: { id: 123 },
       isError: false,
     });
-    if (unexpectedResult === null) throw new Error("the fixture is not a CallToolResult");
     expect(renderActionCall(action, args, unexpectedResult)).toBeUndefined();
   });
 
@@ -328,7 +323,7 @@ describe("Action presentation slots", () => {
     expect(continuationPage.textContent).toContain("Continues a previous search");
     expect(continuationPage.textContent).not.toContain("secret-token");
 
-    const result = parseCallToolResult({
+    const result = toolResult({
       content: [],
       structuredContent: {
         threads: [{ id: "thread-1", snippet: "Your build completed." }],
@@ -336,7 +331,6 @@ describe("Action presentation slots", () => {
       },
       isError: false,
     });
-    if (result === null) throw new Error("the fixture is not a CallToolResult");
     const renderedResult = await mount(renderDetailsResult(action, result));
     expect(renderedResult.textContent).toContain("Your build completed.");
     expect(renderedResult.textContent).toContain("1 thread returned");
@@ -440,11 +434,10 @@ describe("Action presentation slots", () => {
 
   it("shows the provider's partial relabel failure without an applied receipt", async () => {
     const action = identity("gmail", "threads_modify_labels");
-    const failure = parseCallToolResult({
+    const failure = toolResult({
       content: [{ type: "text", text: "failed to modify 1/2 thread(s) (1 sub-exception)" }],
       isError: true,
     });
-    if (!failure) throw new Error("the fixture is not a CallToolResult");
     const receipt = await drawDetailsResult(action, failure);
     expect(receipt.textContent).toContain("failed to modify 1/2 thread(s)");
     expect(receipt.textContent).not.toContain("Updated labels");
@@ -610,12 +603,11 @@ describe("Action presentation slots", () => {
 
   it("preserves recorded data for a newly discovered Action", async () => {
     const excluded = [["new_provider", "new_tool"]] as const;
-    const result = parseCallToolResult({
+    const result = toolResult({
       content: [],
       structuredContent: { lookup_dependent_value: "preserve raw response" },
       isError: false,
     });
-    if (result === null) throw new Error("the fixture is not a CallToolResult");
 
     for (const [group, name] of excluded) {
       const action = identity(group, name);
@@ -827,8 +819,7 @@ describe("details result rendering", () => {
 
   it("draws an error result as the tool answered", async () => {
     const failure = { kind: "target_not_configured", message: "SSH host/user target is not configured" };
-    const result = parseCallToolResult({ content: [{ type: "text", text: JSON.stringify(failure) }], isError: true });
-    if (result === null) throw new Error("the fixture is not a CallToolResult");
+    const result = toolResult({ content: [{ type: "text", text: JSON.stringify(failure) }], isError: true });
     const container = await drawDetailsResult(SSH_EXEC, result);
     expect(container.textContent).toContain("Tool error");
     expect(container.textContent).toContain('"kind": "target_not_configured"');
@@ -848,7 +839,7 @@ describe("details result rendering", () => {
       metadata: { name: "settings", namespace: "apps" },
       data: { mode: "safe" },
     };
-    const result = parseCallToolResult({
+    const result = toolResult({
       content: [
         {
           type: "text",
@@ -858,7 +849,6 @@ describe("details result rendering", () => {
       structuredContent: resource,
       isError: false,
     });
-    if (result === null) throw new Error("the fixture is not a CallToolResult");
 
     const container = await mount(renderDetailsResult(action, result));
     expect(container.textContent).toContain("ConfigMap apps/settings");
@@ -938,7 +928,7 @@ describe("details result rendering", () => {
 
   it("renders a returned YAML sequence as separate Kubernetes resources", async () => {
     const action = identity("kubernetes_admin", "resources_create_or_update");
-    const result = parseCallToolResult({
+    const result = toolResult({
       content: [
         {
           type: "text",
@@ -958,7 +948,6 @@ describe("details result rendering", () => {
       ],
       isError: false,
     });
-    if (result === null) throw new Error("the fixture is not a CallToolResult");
 
     const container = await mount(renderDetailsResult(action, result));
     expect(container.textContent).toContain("ConfigMap apps/settings");
@@ -970,7 +959,7 @@ describe("details result rendering", () => {
 
   it("renders the real resource-table envelope and keeps the extra provider columns readable", async () => {
     const action = identity("kubernetes_admin", "resources_list");
-    const result = parseCallToolResult({
+    const result = toolResult({
       structuredContent: {
         items: [{ Name: "web-0", Namespace: "apps", Ready: "1/2", Status: "Running", Restarts: "1 (2m ago)" }],
       },
@@ -981,7 +970,6 @@ describe("details result rendering", () => {
         },
       ],
     });
-    if (result === null) throw new Error("invalid resource list result");
     const view = await mount(renderDetailsResult(action, result));
     expect(view.textContent).toContain("apps/web-0");
     expect(view.textContent).toContain("1/2 ready");
@@ -1036,11 +1024,10 @@ describe("details result rendering", () => {
       namespace: "apps",
       gracePeriodSeconds: 0,
     };
-    const success = parseCallToolResult({
+    const success = toolResult({
       content: [{ type: "text", text: "Resource deleted successfully" }],
       isError: false,
     });
-    if (success === null) throw new Error("the fixture is not a CallToolResult");
 
     expect(renderDetailsResult(action, success)).toBeNull();
     const call = renderActionCall(action, args, success);
@@ -1051,11 +1038,10 @@ describe("details result rendering", () => {
     expect(argumentsView.textContent).toContain("Use API version v1");
     expect(argumentsView.textContent).toContain("request a 0s grace period");
 
-    const warning = parseCallToolResult({
+    const warning = toolResult({
       content: [{ type: "text", text: "Resource deleted successfully, but finalizers are still running" }],
       isError: false,
     });
-    if (warning === null) throw new Error("the fixture is not a CallToolResult");
     expect(renderDetailsResult(action, warning)).toBeUndefined();
     expect(renderActionOutcome(action, warning)).toBeUndefined();
     const warningView = await drawDetailsResult(action, warning);
@@ -1065,30 +1051,28 @@ describe("details result rendering", () => {
 
   it("shows an exact pod-delete success as accepted and preserves non-success envelopes", async () => {
     const action = identity("kubernetes_admin", "pods_delete");
-    const success = parseCallToolResult({
+    const success = toolResult({
       content: [{ type: "text", text: "Pod deleted successfully" }],
       isError: false,
     });
-    if (success === null) throw new Error("the fixture is not a CallToolResult");
 
     expect(renderDetailsResult(action, success)).toBeNull();
     expect(renderActionOutcome(action, success)).toEqual({ label: "Deletion accepted", failed: false });
 
-    const warning = parseCallToolResult({
+    const warning = toolResult({
       content: [
         { type: "text", text: "Pod deleted successfully" },
         { type: "text", text: "Warning: cleanup is still running" },
       ],
       isError: false,
     });
-    if (warning === null) throw new Error("the fixture is not a CallToolResult");
     expect(renderDetailsResult(action, warning)).toBeUndefined();
     expect(renderActionOutcome(action, warning)).toBeUndefined();
     const warningView = await drawDetailsResult(action, warning);
     expect(warningView.textContent).toContain("Pod deleted successfully");
     expect(warningView.textContent).toContain("Warning: cleanup is still running");
 
-    const additionalContent = parseCallToolResult({
+    const additionalContent = toolResult({
       content: [
         { type: "text", text: "Pod deleted successfully" },
         { type: "future", payload: "keep this content" },
@@ -1096,27 +1080,24 @@ describe("details result rendering", () => {
       structuredContent: "Pod deleted successfully",
       isError: false,
     });
-    if (additionalContent === null) throw new Error("the fixture is not a CallToolResult");
     expect(renderDetailsResult(action, additionalContent)).toBeUndefined();
     expect(renderActionOutcome(action, additionalContent)).toEqual({ label: "Deletion accepted", failed: false });
     const additionalContentView = await drawDetailsResult(action, additionalContent);
     expect(additionalContentView.textContent).toContain("Pod deleted successfully");
     expect(additionalContentView.textContent).toContain("keep this content");
 
-    const mismatch = parseCallToolResult({
+    const mismatch = toolResult({
       content: [{ type: "text", text: "Pod not found" }],
       isError: false,
     });
-    if (mismatch === null) throw new Error("the fixture is not a CallToolResult");
     expect(renderDetailsResult(action, mismatch)).toBeUndefined();
     expect(renderActionOutcome(action, mismatch)).toBeUndefined();
     expect((await drawDetailsResult(action, mismatch)).textContent).toContain("Pod not found");
 
-    const error = parseCallToolResult({
+    const error = toolResult({
       content: [{ type: "text", text: "Pod deleted successfully" }],
       isError: true,
     });
-    if (error === null) throw new Error("the fixture is not a CallToolResult");
     expect(renderDetailsResult(action, error)).toBeUndefined();
     expect(renderActionOutcome(action, error)).toBeUndefined();
     const errorView = await drawDetailsResult(action, error);

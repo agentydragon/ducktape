@@ -113,7 +113,7 @@ async def test_subscription_filter_shows_cancelled_only_on_request(view: VisualP
     await expect(
         page.get_by_text("Action d49b85b5-849f-4e7d-a644-d4a8b8c16127 · no current source error")
     ).to_be_visible()
-    cancelled = page.get_by_text("agentydragon/ducktape · pull request 42 · cancelled")
+    cancelled = page.get_by_text("test-owner/test-repository · pull request 42 · cancelled")
     await expect(cancelled).to_have_count(0)
 
     await page.get_by_role("combobox", name="Show subscriptions").click()

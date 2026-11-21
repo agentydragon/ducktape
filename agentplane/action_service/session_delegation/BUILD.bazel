@@ -51,7 +51,6 @@ go_test(
     embed = [":session_delegation"],
     deps = [
         "//agentplane/action_service/api/contracts:action_service_go_proto",
-        "//agentplane/action_service/internal/admission/catalog",
         "//agentplane/action_service/internal/store",
         "//agentplane/action_service/internal/worker",
         "//agentplane/environments/v1:environment_service_go_proto",
@@ -90,7 +89,6 @@ go_test(
     tags = ["requires_docker"],
     deps = [
         "//agentplane/action_service/api/contracts:action_service_go_proto",
-        "//agentplane/action_service/internal/admission/catalog",
         "//agentplane/action_service/internal/store",
         "//agentplane/action_service/session_delegation/contract",
         "//agentplane/environments/access",

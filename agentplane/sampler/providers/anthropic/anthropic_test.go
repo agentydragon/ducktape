@@ -10,13 +10,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/providerio"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
+	"github.com/agentydragon/ducktape/agentplane/sampler/testing/providerfixture"
 	"github.com/agentydragon/ducktape/agentplane/sampler/testing/wirefixture"
 )
 
@@ -492,36 +492,24 @@ func TestAnthropicRetryableHTTPStatusesCarryRetryAfter(t *testing.T) {
 }
 
 func TestAnthropicSemanticProgressResetsIdleBudget(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("content-type", "text/event-stream")
-		flusher := w.(http.Flusher)
-		write := func(payload string) {
-			_, _ = io.WriteString(w, "data: "+payload+"\n\n")
-			flusher.Flush()
-		}
-		write(`{"type":"message_start","message":{"id":"msg_progress","role":"assistant","content":[],"usage":{"input_tokens":1}}}`)
-		write(`{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`)
+	server := providerfixture.SSEServer(t, func(stream providerfixture.SSEStream, r *http.Request) {
+		stream.Data(`{"type":"message_start","message":{"id":"msg_progress","role":"assistant","content":[],"usage":{"input_tokens":1}}}`)
+		stream.Data(`{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`)
 		for range 5 {
 			select {
 			case <-r.Context().Done():
 				return
 			case <-time.After(20 * time.Millisecond):
 			}
-			write(`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"piece"}}`)
+			stream.Data(`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"piece"}}`)
 		}
-		write(`{"type":"content_block_stop","index":0}`)
-		write(`{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}`)
-		write(`{"type":"message_stop"}`)
-	}))
-	defer server.Close()
-
-	var progress atomic.Int32
-	ctx, hooks, stop := providerio.WithProviderIdleTimeout(t.Context(), 70*time.Millisecond, func(context.Context) error {
-		progress.Add(1)
-		return nil
+		stream.Data(`{"type":"content_block_stop","index":0}`)
+		stream.Data(`{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}`)
+		stream.Data(`{"type":"message_stop"}`)
 	})
-	defer stop()
-	recorder := &anthropicEvidenceRecorder{}
+
+	ctx, hooks, progress := providerfixture.IdleBudget(t, 70*time.Millisecond)
+	recorder := &providerfixture.EvidenceRecorder{}
 	response, err := Sample(ctx, providerio.WithProviderResponseHeaderTimeout(server.Client(), 250*time.Millisecond), server.URL, "fixture-key", testConfig(), []byte(`{}`), recorder, false, hooks)
 	if err != nil {
 		t.Fatal(err)
@@ -529,21 +517,15 @@ func TestAnthropicSemanticProgressResetsIdleBudget(t *testing.T) {
 	if response == nil || progress.Load() < 5 {
 		t.Fatalf("response=%v, durable semantic progress=%d", response, progress.Load())
 	}
-	if !recorder.headRecorded {
+	if !recorder.HeadRecorded {
 		t.Fatal("response head was not persisted before streaming")
 	}
 }
 
 func TestAnthropicPingsAndEmptyDeltasDoNotResetIdleBudget(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("content-type", "text/event-stream")
-		flusher := w.(http.Flusher)
-		write := func(payload string) {
-			_, _ = io.WriteString(w, "data: "+payload+"\n\n")
-			flusher.Flush()
-		}
-		write(`{"type":"message_start","message":{"id":"msg_idle","role":"assistant","content":[],"usage":{"input_tokens":1}}}`)
-		write(`{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`)
+	server := providerfixture.SSEServer(t, func(stream providerfixture.SSEStream, r *http.Request) {
+		stream.Data(`{"type":"message_start","message":{"id":"msg_idle","role":"assistant","content":[],"usage":{"input_tokens":1}}}`)
+		stream.Data(`{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`)
 		for index := 0; ; index++ {
 			select {
 			case <-r.Context().Done():
@@ -551,21 +533,15 @@ func TestAnthropicPingsAndEmptyDeltasDoNotResetIdleBudget(t *testing.T) {
 			case <-time.After(8 * time.Millisecond):
 			}
 			if index%2 == 0 {
-				write(`{"type":"ping"}`)
+				stream.Data(`{"type":"ping"}`)
 			} else {
-				write(`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":""}}`)
+				stream.Data(`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":""}}`)
 			}
 		}
-	}))
-	defer server.Close()
-
-	var progress atomic.Int32
-	ctx, hooks, stop := providerio.WithProviderIdleTimeout(t.Context(), 45*time.Millisecond, func(context.Context) error {
-		progress.Add(1)
-		return nil
 	})
-	defer stop()
-	recorder := &anthropicEvidenceRecorder{}
+
+	ctx, hooks, progress := providerfixture.IdleBudget(t, 45*time.Millisecond)
+	recorder := &providerfixture.EvidenceRecorder{}
 	_, err := Sample(ctx, providerio.WithProviderResponseHeaderTimeout(server.Client(), time.Second), server.URL, "fixture-key", testConfig(), []byte(`{}`), recorder, false, hooks)
 	var timeout *protocol.ProviderPhaseTimeoutError
 	if !errors.As(err, &timeout) || timeout.Phase != protocol.ProviderTimeoutSemanticIdle {
@@ -574,50 +550,30 @@ func TestAnthropicPingsAndEmptyDeltasDoNotResetIdleBudget(t *testing.T) {
 	if progress.Load() != 2 {
 		t.Fatalf("ping/empty-delta stream reported %d semantic progress events, want only message and block start", progress.Load())
 	}
-	if !recorder.headRecorded || !strings.Contains(string(recorder.wire), `"type":"ping"`) {
-		t.Fatalf("timeout lost raw response evidence: head=%t bytes=%q", recorder.headRecorded, recorder.wire)
+	if !recorder.HeadRecorded || !strings.Contains(string(recorder.Wire), `"type":"ping"`) {
+		t.Fatalf("timeout lost raw response evidence: head=%t bytes=%q", recorder.HeadRecorded, recorder.Wire)
 	}
 }
 
 func TestAnthropicCompactionUsesProviderPhaseHooks(t *testing.T) {
-	stream := wirefixture.SSEEventStream(
-		`{"type":"message_start","message":{"id":"msg_compact","role":"assistant","content":[],"usage":{"input_tokens":1}}}`,
-		`{"type":"content_block_start","index":0,"content_block":{"type":"compaction","content":"summary","signature":"sig_fixture"}}`,
-		`{"type":"content_block_stop","index":0}`,
-		`{"type":"message_delta","delta":{"stop_reason":"compaction"},"usage":{"output_tokens":1}}`,
-		`{"type":"message_stop"}`,
-	)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("content-type", "text/event-stream")
-		_, _ = io.WriteString(w, stream)
-	}))
-	defer server.Close()
+	server := providerfixture.SSEServer(t, func(stream providerfixture.SSEStream, _ *http.Request) {
+		stream.Data(`{"type":"message_start","message":{"id":"msg_compact","role":"assistant","content":[],"usage":{"input_tokens":1}}}`)
+		stream.Data(`{"type":"content_block_start","index":0,"content_block":{"type":"compaction","content":"summary","signature":"sig_fixture"}}`)
+		stream.Data(`{"type":"content_block_stop","index":0}`)
+		stream.Data(`{"type":"message_delta","delta":{"stop_reason":"compaction"},"usage":{"output_tokens":1}}`)
+		stream.Data(`{"type":"message_stop"}`)
+	})
 
 	ctx, hooks, stop := providerio.WithProviderIdleTimeout(t.Context(), 120*time.Millisecond, nil)
 	defer stop()
-	recorder := &anthropicEvidenceRecorder{}
+	recorder := &providerfixture.EvidenceRecorder{}
 	response, err := Sample(ctx, providerio.WithProviderResponseHeaderTimeout(server.Client(), time.Second), server.URL, "fixture-key", testConfig(), []byte(`{}`), recorder, true, hooks)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if response == nil || !recorder.headRecorded {
-		t.Fatalf("compaction response=%v, durable response head=%t", response, recorder.headRecorded)
+	if response == nil || !recorder.HeadRecorded {
+		t.Fatalf("compaction response=%v, durable response head=%t", response, recorder.HeadRecorded)
 	}
-}
-
-type anthropicEvidenceRecorder struct {
-	headRecorded bool
-	wire         []byte
-}
-
-func (r *anthropicEvidenceRecorder) Record(_ context.Context, evidence protocol.ProviderEvidence, _ ...*eventpb.Event) error {
-	switch value := evidence.(type) {
-	case protocol.HTTPResponseHead:
-		r.headRecorded = true
-	case protocol.WireBytes:
-		r.wire = append(r.wire, value.Bytes...)
-	}
-	return nil
 }
 
 func TestAnthropicRejectsUnsupportedOutputBlocks(t *testing.T) {

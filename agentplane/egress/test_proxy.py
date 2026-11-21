@@ -46,6 +46,7 @@ from agentplane.egress.sidecar_config import Proxy, SpiffeProxyAuth, TLSProxyTra
 from agentplane.egress.testing.go_replica import GoReplica, go_replica
 from agentplane.egress.testing.sidecar_process import SidecarProcess
 from agentplane.identity.auth import listener
+from agentplane.net.peertls.config import EGRESS_PROXY_URI
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.kubernetes import CustomObjectsClient
@@ -73,7 +74,6 @@ RUNNER_CREDENTIAL_ID = "a" * 32
 WORKLOAD_CREDENTIALS_PLURAL = "workloadcredentials"
 ROTATED_RUNNER_CREDENTIAL_ID = "b" * 32
 BINDING_B = f"{SANDBOX_B}-private-policy"
-EGRESS_PROXY_URI = "spiffe://agentplane/egress-proxy"
 # Workload Identities have distinct names from the Pod ServiceAccounts they run beside.
 SUBJECT_A = f"{SANDBOX_A}-identity"
 SUBJECT_B = f"{SANDBOX_B}-identity"

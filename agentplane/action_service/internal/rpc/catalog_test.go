@@ -130,8 +130,8 @@ func TestTheCatalogReadsTheSameForEveryPrincipalButForHealthDetail(t *testing.T)
 			t.Errorf("%s reads %v, %v\nwant %v", name, got, err, read.want)
 		}
 	}
-	_, err := s.client.ListActionGroups(as(t, unlabeledToken), &action_servicepb.ListActionGroupsRequest{})
-	wantCode(t, "an unlabeled account's read", err, codes.Unauthenticated)
+	_, err := s.client.ListActionGroups(as(t, validKubernetesToken), &action_servicepb.ListActionGroupsRequest{})
+	wantCode(t, "a Kubernetes bearer's read", err, codes.Unauthenticated)
 }
 
 func TestGetActionAnswersEveryPrincipalAndRefusesWhatTheCatalogDoesNotOffer(t *testing.T) {
@@ -154,8 +154,8 @@ func TestGetActionAnswersEveryPrincipalAndRefusesWhatTheCatalogDoesNotOffer(t *t
 		_, err := s.client.GetAction(as(t, callerCertificate), &action_servicepb.GetActionRequest{GroupKey: refused.group, ActionKey: refused.action})
 		wantCode(t, name, err, refused.code)
 	}
-	_, err := s.client.GetAction(as(t, unlabeledToken), &action_servicepb.GetActionRequest{GroupKey: "test-mcp", ActionKey: "test-read"})
-	wantCode(t, "an unlabeled account's read", err, codes.Unauthenticated)
+	_, err := s.client.GetAction(as(t, validKubernetesToken), &action_servicepb.GetActionRequest{GroupKey: "test-mcp", ActionKey: "test-read"})
+	wantCode(t, "a Kubernetes bearer's read", err, codes.Unauthenticated)
 }
 
 func TestTheHTTPFacadeServesTheCatalogReads(t *testing.T) {

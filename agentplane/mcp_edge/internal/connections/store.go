@@ -393,9 +393,7 @@ func (s *Store) rebind(ctx context.Context, id uuid.UUID, expectedVersion int64,
 		if err := requireVersion(c, expectedVersion); err != nil {
 			return false, err
 		}
-		active := slices.ContainsFunc(c.grants, func(g grant) bool { return g.status == grantActive })
-		switch {
-		case !active:
+		if !slices.ContainsFunc(c.grants, func(g grant) bool { return g.status == grantActive }) {
 			return false, status.Error(codes.FailedPrecondition, "the Connection has no active grant")
 		}
 		live, err := s.selectableIdentity(ctx, identity)

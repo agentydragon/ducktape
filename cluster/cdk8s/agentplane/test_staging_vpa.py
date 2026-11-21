@@ -38,14 +38,18 @@ def test_vpas_target_only_static_deployments(scratch_app: App, staging_manifests
         container = one(deployment["spec"]["template"]["spec"]["containers"])
         selected, wildcard = spec["resourcePolicy"]["containerPolicies"]
         assert selected["containerName"] == container["name"]
-        resources = set(selected["controlledResources"])
-        assert resources in ({"memory"}, {"cpu", "memory"})
-        assert set(selected["minAllowed"]) == set(selected["maxAllowed"]) == {"memory"}
+        assert set(selected["controlledResources"]) == {"cpu", "memory"}
         assert selected["controlledValues"] == "RequestsOnly"
-        assert _mib(selected["minAllowed"]["memory"]) >= _mib(container["resources"]["requests"]["memory"])
-        assert _mib(selected["maxAllowed"]["memory"]) <= _mib(container["resources"]["limits"]["memory"])
-        if "cpu" in resources:
-            assert spec["updatePolicy"]["updateMode"] == "Initial"
+        if target["name"] == "frontend":
+            assert "minAllowed" not in selected
+        else:
+            assert set(selected["minAllowed"]) == {"memory"}
+            assert _mib(selected["minAllowed"]["memory"]) >= _mib(container["resources"]["requests"]["memory"])
+        if target["name"] in {"electric", "frontend"}:
+            assert "maxAllowed" not in selected
+        else:
+            assert set(selected["maxAllowed"]) == {"memory"}
+            assert _mib(selected["maxAllowed"]["memory"]) <= _mib(container["resources"]["limits"]["memory"])
         assert wildcard == {"containerName": "*", "mode": "Off"}
 
 

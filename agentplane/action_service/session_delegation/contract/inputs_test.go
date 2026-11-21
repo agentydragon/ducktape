@@ -44,21 +44,6 @@ func TestInputsUseApprovedActionNamesAndSchemas(t *testing.T) {
 		[]string{"command_id", "session_id", "target", "turn_id"}, []string{"command_id", "session_id", "target", "turn_id"})
 }
 
-func TestCreateSessionInstructionDescriptionKeepsSessionSeparateFromInput(t *testing.T) {
-	inputs, err := NewInputs()
-	if err != nil {
-		t.Fatal(err)
-	}
-	var open map[string]any
-	if err := json.Unmarshal(inputs.CreateSession.Definition().InputSchema, &open); err != nil {
-		t.Fatal(err)
-	}
-	description := open["properties"].(map[string]any)["additional_instructions"].(map[string]any)["description"].(string)
-	if description != "Standing instructions added to the Session. This field does not submit input or start a model turn. After creation, call sessions__submit_input with the task to start work." {
-		t.Fatalf("additional_instructions description = %q", description)
-	}
-}
-
 func TestInputDecoderRejectsUnknownFieldsAndInvalidEnums(t *testing.T) {
 	inputs, err := NewInputs()
 	if err != nil {

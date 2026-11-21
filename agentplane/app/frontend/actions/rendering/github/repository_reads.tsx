@@ -11,6 +11,7 @@ import {
   githubPresentation,
   GitHubItem,
   pageInput,
+  RepoSlug,
   RepoTarget,
   repoInput,
   ResultRows,
@@ -231,11 +232,7 @@ export const repositoryRenderers: ReadonlyMap<string, ActionPresentation> = new 
       label: "Fork GitHub repository",
       schema: forkArgs,
       outcome: forkOutcome,
-      compact: ({ args }) => (
-        <Text size="sm">
-          {args.owner}/{args.repo}
-        </Text>
-      ),
+      compact: RepoSlug,
       request: ({ args }) => (
         <Stack gap={4}>
           <RepoTarget repo={args} />
@@ -323,11 +320,7 @@ export const repositoryRenderers: ReadonlyMap<string, ActionPresentation> = new 
     githubPresentation({
       label: "List GitHub commits",
       schema: commitList,
-      compact: ({ args }) => (
-        <Text size="sm">
-          {args.owner}/{args.repo}
-        </Text>
-      ),
+      compact: RepoSlug,
       request: ({ args }) => (
         <Stack gap={4}>
           <RepoTarget repo={args} />
@@ -353,11 +346,7 @@ export const repositoryRenderers: ReadonlyMap<string, ActionPresentation> = new 
     githubPresentation({
       label: "List GitHub branches",
       schema: pagedRepo,
-      compact: ({ args }) => (
-        <Text size="sm">
-          {args.owner}/{args.repo}
-        </Text>
-      ),
+      compact: RepoSlug,
       request: ({ args }) => (
         <Stack gap={4}>
           <RepoTarget repo={args} path="/branches" />
@@ -386,11 +375,7 @@ export const repositoryRenderers: ReadonlyMap<string, ActionPresentation> = new 
     githubPresentation({
       label: "List GitHub tags",
       schema: pagedRepo,
-      compact: ({ args }) => (
-        <Text size="sm">
-          {args.owner}/{args.repo}
-        </Text>
-      ),
+      compact: RepoSlug,
       request: ({ args }) => (
         <Stack gap={4}>
           <RepoTarget repo={args} path="/tags" />
@@ -446,11 +431,7 @@ export const repositoryRenderers: ReadonlyMap<string, ActionPresentation> = new 
     githubPresentation({
       label: "List GitHub releases",
       schema: releaseList,
-      compact: ({ args }) => (
-        <Text size="sm">
-          {args.owner}/{args.repo}
-        </Text>
-      ),
+      compact: RepoSlug,
       request: ({ args }) => (
         <Stack gap={4}>
           <RepoTarget repo={args} path="/releases" />
@@ -471,11 +452,7 @@ export const repositoryRenderers: ReadonlyMap<string, ActionPresentation> = new 
     githubPresentation({
       label: "Read latest GitHub release",
       schema: repoInput,
-      compact: ({ args }) => (
-        <Text size="sm">
-          {args.owner}/{args.repo}
-        </Text>
-      ),
+      compact: RepoSlug,
       request: ({ args }) => <RepoTarget repo={args} path="/releases/latest" />,
       result: defineResultPreview(release, ReleaseView),
     }),

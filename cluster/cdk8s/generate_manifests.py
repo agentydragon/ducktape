@@ -89,7 +89,6 @@ from cluster.cdk8s.agentplane import (
     staging,
     staging_vpa,
 )
-from cluster.cdk8s.agents import flux_kustomizations as agents_flux_kustomizations
 from cluster.cdk8s.artifact_generators import (
     artifact,
     artifact_generators as artifact_generators_factory,
@@ -190,7 +189,12 @@ from cluster.cdk8s.home_assistant import (
     namespace as home_assistant_namespace,
 )
 from cluster.cdk8s.infra_drift import drift_watch
-from cluster.cdk8s.kubevirt import app as kubevirt_app, cdi as kubevirt_cdi, operators as kubevirt_operators
+from cluster.cdk8s.kubevirt import (
+    app as kubevirt_app,
+    cdi as kubevirt_cdi,
+    operators as kubevirt_operators,
+    vpa as kubevirt_vpa,
+)
 from cluster.cdk8s.kyverno import app as kyverno_app, policies as kyverno_policies
 from cluster.cdk8s.litellm import (
     buildbuddy_crossplane as litellm_buildbuddy_crossplane,
@@ -509,7 +513,9 @@ def generate_manifests(root: Path) -> None:
         timeout="5m",
         depends_on=[flux.flux_kustomization_depends_on(kyverno_kustomization)],
     )
-    kubevirt_cdi.cdi(flux_chart, write_directory(root, cdi_artifact, kubevirt_cdi.chart), cdi_operator_kustomization)
+    cdi_kustomization = kubevirt_cdi.cdi(
+        flux_chart, write_directory(root, cdi_artifact, kubevirt_cdi.chart), cdi_operator_kustomization
+    )
     clickhouse_operator_artifact = artifact("clickhouse-operator", clickhouse_operator.OUTPUT_DIR)
     clickhouse_operator_kustomization = clickhouse_operator.clickhouse_operator(
         flux_chart,
@@ -654,6 +660,15 @@ def generate_manifests(root: Path) -> None:
         write_directory(root, vpa_artifact, vpa.chart),
         timeout="5m",
         depends_on=flux.flux_kustomization_depends_on_many(kyverno_kustomization),
+    )
+    kubevirt_vpa_artifact = artifact(kubevirt_vpa.NAME, kubevirt_vpa.OUTPUT_DIR)
+    flux.flux_kustomization(
+        flux_chart,
+        kubevirt_vpa.NAME,
+        write_directory(root, kubevirt_vpa_artifact, kubevirt_vpa.chart),
+        depends_on=flux.flux_kustomization_depends_on_many(
+            vpa_kustomization, kubevirt_kustomization, cdi_kustomization
+        ),
     )
     flux_system_vpa_artifact = artifact(flux_system_vpa.NAME, flux_system_vpa.OUTPUT_DIR)
     flux.flux_kustomization(
@@ -1723,7 +1738,7 @@ def generate_manifests(root: Path) -> None:
         depends_on=flux.flux_kustomization_depends_on_many(external_secrets_operator_kustomization),
         description="Marks roaming laptop nodes out of service while their kubelet is silent, so offline laptops stop blocking DaemonSet rollouts, Helm waits and pod alerts.",
     )
-    agents_flux_kustomizations.plaid_spend_policy(flux_chart)
+    ducktape_flux.plaid_spend_policy(flux_chart)
     plaid_mcp_artifact = artifact("plaid-mcp", plaid_mcp_component.OUTPUT_DIR)
     plaid_mcp_directory = plaid_mcp_component.write_directory(root, plaid_mcp_artifact)
     plaid_mcp_kustomization = plaid_mcp_component.plaid_mcp(
@@ -2504,6 +2519,7 @@ def generate_manifests(root: Path) -> None:
             kube_system_artifact,
             kubevirt_cdi_operator_artifact,
             kubevirt_operator_artifact,
+            kubevirt_vpa_artifact,
             langfuse_artifact,
             matrix_app_artifact,
             matrix_user_provisioner_artifact,

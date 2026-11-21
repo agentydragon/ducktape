@@ -36,7 +36,6 @@ import (
 // Actions' projected audience credentials plus that explicit, per-call delegation envelope.
 type Executor struct {
 	group       string
-	binding     catalog.SessionDelegationBinding
 	environment environmentpb.EnvironmentServiceClient
 	dispatcher  dispatcherpb.SessionDispatcherClient
 	history     historypb.HistoryServiceClient
@@ -45,7 +44,6 @@ type Executor struct {
 
 func NewExecutor(
 	group string,
-	binding catalog.SessionDelegationBinding,
 	environment environmentpb.EnvironmentServiceClient,
 	dispatcher dispatcherpb.SessionDispatcherClient,
 	history historypb.HistoryServiceClient,
@@ -54,7 +52,7 @@ func NewExecutor(
 	if err != nil {
 		return nil, err
 	}
-	return &Executor{group: group, binding: binding, environment: environment, dispatcher: dispatcher, history: history, inputs: inputs}, nil
+	return &Executor{group: group, environment: environment, dispatcher: dispatcher, history: history, inputs: inputs}, nil
 }
 
 // Actions are only the implemented, reviewed operations belonging to this ActionGroup.

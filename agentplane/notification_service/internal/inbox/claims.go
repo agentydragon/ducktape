@@ -197,26 +197,23 @@ func nullTime(t *time.Time) sql.NullTime {
 // the lease on it, whichever is later. Nil when no inbox has work scheduled. It is a deadline, not an interval
 // for polling the queue.
 func (s *Store) NextWorkAt(ctx context.Context) (*time.Time, error) {
-	var deadline sql.NullTime
-	if err := s.db.QueryRowContext(ctx,
-		`SELECT min(greatest(next_attempt, claim_until)) FROM inbox WHERE NOT retired AND next_attempt IS NOT NULL`).
-		Scan(&deadline); err != nil {
-		return nil, err
-	}
-	if !deadline.Valid {
-		return nil, nil
-	}
-	return utc(deadline.Time), nil
+	return s.nextDeadline(ctx,
+		`SELECT min(greatest(next_attempt, claim_until)) FROM inbox WHERE NOT retired AND next_attempt IS NOT NULL`)
 }
 
 // NextSourceWorkAt is the earliest durable source deadline after an inbox lease expires. Nil when no live
 // subscription has source work scheduled.
 func (s *Store) NextSourceWorkAt(ctx context.Context) (*time.Time, error) {
-	var deadline sql.NullTime
-	if err := s.db.QueryRowContext(ctx, `
+	return s.nextDeadline(ctx, `
 		SELECT min(greatest(s.next_attempt, i.claim_until))
 		FROM subscription s JOIN inbox i ON i.id = s.inbox_id
-		WHERE NOT i.retired AND NOT s.cancelled AND s.expires_at > now() AND s.next_attempt IS NOT NULL`).Scan(&deadline); err != nil {
+		WHERE NOT i.retired AND NOT s.cancelled AND s.expires_at > now() AND s.next_attempt IS NOT NULL`)
+}
+
+// nextDeadline reads the one deadline query selects, nil when it selects none.
+func (s *Store) nextDeadline(ctx context.Context, query string) (*time.Time, error) {
+	var deadline sql.NullTime
+	if err := s.db.QueryRowContext(ctx, query).Scan(&deadline); err != nil {
 		return nil, err
 	}
 	if !deadline.Valid {

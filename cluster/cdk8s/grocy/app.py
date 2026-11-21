@@ -36,6 +36,7 @@ from volsync_replicationsource_crds.backube.volsync import (
 
 from cluster.cdk8s import cilium, namespaces, node_scheduling
 from cluster.cdk8s.authentik import app as authentik  # `app` is the cdk8s App parameter here
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -131,15 +132,8 @@ def _server(chart: Chart, namespace: str) -> None:
                                     )
                                 )
                             ),
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("50m"),
-                                    "memory": k8s.Quantity.from_string("128Mi"),
-                                },
-                                limits={
-                                    "cpu": k8s.Quantity.from_string("500m"),
-                                    "memory": k8s.Quantity.from_string("512Mi"),
-                                },
+                            resources=container_resources(
+                                cpu="50m", memory="128Mi", cpu_limit="500m", memory_limit="512Mi"
                             ),
                             liveness_probe=k8s.Probe(http_get=login_probe, initial_delay_seconds=30, period_seconds=10),
                             readiness_probe=k8s.Probe(http_get=login_probe, initial_delay_seconds=10, period_seconds=5),
@@ -276,13 +270,7 @@ def household_chart(app: App, *, household: str) -> Chart:
                                 ' $db->query("PRAGMA integrity_check")->fetchColumn(), "\\n";\' | grep -Fx ok\n'
                             ],
                             # php-cli opening one small SQLite database.
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("10m"),
-                                    "memory": k8s.Quantity.from_string("64Mi"),
-                                },
-                                limits={"memory": k8s.Quantity.from_string("256Mi")},
-                            ),
+                            resources=container_resources(cpu="10m", memory="64Mi", memory_limit="256Mi"),
                             volume_mounts=[k8s.VolumeMount(name="config", mount_path="/config")],
                         )
                     ],

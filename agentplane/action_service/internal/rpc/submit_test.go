@@ -298,10 +298,9 @@ func TestOnlyAnAdmittedWorkloadIdentitySubmits(t *testing.T) {
 		token string
 		code  codes.Code
 	}{
-		"an operator":                            {s.operatorToken, codes.PermissionDenied},
-		"a service reader":                       {readerCertificate, codes.PermissionDenied},
-		"an account without the caller label":    {unlabeledToken, codes.Unauthenticated},
-		"a labeled account outside the callers'": {outsiderToken, codes.Unauthenticated},
+		"an operator":         {s.operatorToken, codes.PermissionDenied},
+		"a service reader":    {readerCertificate, codes.PermissionDenied},
+		"a Kubernetes bearer": {validKubernetesToken, codes.Unauthenticated},
 	} {
 		_, err := s.submitAs(t, tc.token, request)
 		wantCode(t, name, err, tc.code)
@@ -401,7 +400,7 @@ func TestTheHTTPFacadeSubmits(t *testing.T) {
 		"the key again":                   {callerCertificate, body("test-http", `"test-target"`), http.StatusConflict},
 		"arguments the schema refuses":    {callerCertificate, body("test-http-invalid", `5`), http.StatusBadRequest},
 		"an operator":                     {s.operatorToken, body("test-http-operator", `"test-target"`), http.StatusForbidden},
-		"an account without the label":    {unlabeledToken, body("test-http-unlabeled", `"test-target"`), http.StatusUnauthorized},
+		"a Kubernetes bearer":             {validKubernetesToken, body("test-http-kubernetes", `"test-target"`), http.StatusUnauthorized},
 		"a body that is not a submission": {callerCertificate, `[]`, http.StatusBadRequest},
 	} {
 		if code, answer := s.post(t, "/v1/action-requests", tc.token, tc.body); code != tc.code {

@@ -1749,6 +1749,9 @@ flowchart TD
     ENVIRONMENT_READINESS_WAIT[Unscheduled: bounded CLI and Action/MCP readiness waits]
     AGENT_EXECUTOR_LOSS_NOTICE[Unscheduled: tell agents when executor restarts or kills lose their processes]
     CENTRAL_EXECUTOR_LIFECYCLE_DESIGN[Decision: central Session execution and Sandbox lifecycle]
+    SANDBOX_QUIESCENCE_DESIGN[Decision: Sandbox stop, Session settlement and unused-Sandbox deletion]
+    CENTRAL_EXECUTOR_LIFECYCLE_DESIGN -. related execution lifetime .-> SANDBOX_QUIESCENCE_DESIGN
+    VM_RAM_SUSPEND -. related suspend semantics .-> SANDBOX_QUIESCENCE_DESIGN
     RUNNER_BUSY_TRACKING -. related .-> CENTRAL_EXECUTOR_LIFECYCLE_DESIGN
     AGENT_RESUME_NOTICE -. related .-> CENTRAL_EXECUTOR_LIFECYCLE_DESIGN
     RUNNER_BUSY_TRACKING -. related .-> AGENT_RESUME_NOTICE
@@ -2070,6 +2073,42 @@ resume/lifecycle controls, or a combination; no approach is selected. Map existi
 authorization ownership before choosing. The selected design must honor wake policy and Sandbox UID
 and incarnation fences, preserve uncertain outcomes without replay, and cover suspended requests,
 long-running processes, disconnect/recovery and eventual idleness.
+
+### `SANDBOX_QUIESCENCE_DESIGN` — redesign Sandbox stopping and Session settlement
+
+**Decision; unscheduled.** Redesign the ownership and protocol for suspend, resume and deletion
+across the Sandbox Controller, Session Dispatcher, Gateway, Environment Runtime, Execution Service
+and History. Separate deciding the fate of Sessions and queued commands from stopping processes,
+sealing Runtime journals, delivering their final History cursors, and removing workloads and
+volumes. Consider whether Dispatcher should coordinate the Sessions that might belong to a Sandbox;
+do not assume it owns all Runtime work or select a particular protocol yet. Coordinate with
+`SESSION_DELETION_FENCE`, `CENTRAL_EXECUTOR_LIFECYCLE_DESIGN` and the suspend-mode decision without
+making this redesign a prerequisite for their existing work.
+
+**Desired outcome:** ideally, deletion of a Sandbox that has never received commands or Session
+commands should not need to start or quiesce an Environment Runtime. Establish what durable,
+exact-Sandbox and incarnation evidence would prove that is safe, including whether a Runtime ran
+but admitted no work; do not restrict the goal to a Pod that was never scheduled. Account for
+bootstrap and setup, direct Execution calls, Session creation and retained journals, and any
+other work outside the Dispatcher. Fence new admission and concurrent forwarding before making a
+no-work decision; distinguish known-unsent work from possibly forwarded or admitted work and
+preserve unknown outcomes without replay. A Dispatcher acknowledgment proves journal admission,
+not completed effects or History delivery, and an absent or disconnected Runtime is not proof it
+never ran. Preserve existing journal, History, process-fencing and authored-data guarantees when
+the evidence is uncertain, including after controller takeover or an incarnation replacement.
+
+Compare Pod, KubeVirt and Firecracker lifecycles. Firecracker RAM suspension retains processes and
+needs its admission barrier and checkpoint semantics; a launcher reporting `suspended` can mean
+either a cold, never-booted guest or a completed checkpoint. Cover the scheduler bind versus stop
+race, lost acknowledgments, startup and bootstrap races, prior unsealed incarnations, crash and
+reconnect, queued but unsent commands, and deletion of a genuinely unused Sandbox. The observed
+unscheduled staging VM that remained in quiescence is a concrete motivating case;
+[#18530](https://github.com/agentydragon/ducktape/pull/18530) is a narrower VM fix, not the
+redesign's exit criterion.
+
+**Exit:** a reviewed ownership and race contract identifying each durable proof and service
+boundary, the unused-Sandbox deletion behavior, and a testable migration from current guarantees.
+Select implementation separately after that decision.
 
 ### `SESSION_ACTIVITY_STREAM` — the notification service delivers on a Session's idle time
 

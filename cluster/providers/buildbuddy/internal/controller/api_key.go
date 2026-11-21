@@ -148,9 +148,6 @@ func (e *apiKeyExternal) Create(ctx context.Context, cr *v1alpha1.APIKey) (manag
 	if cr.UID == "" {
 		return managed.ExternalCreation{}, errors.New("APIKey UID is required before creating a BuildBuddy key")
 	}
-	if err := validateAPIKeyConnectionSecret(cr, "", ""); err != nil {
-		return managed.ExternalCreation{}, err
-	}
 	if err := e.outputSecretReadyForCreate(ctx, cr); err != nil {
 		return managed.ExternalCreation{}, err
 	}

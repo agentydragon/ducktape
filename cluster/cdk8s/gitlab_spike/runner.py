@@ -62,9 +62,7 @@ def chart(app: App) -> Chart:
             "checkInterval": 5,
             # Opt in the runner manager Deployment. Peak startup working set was 142Mi.
             "deploymentAnnotations": initial_request_annotations(
-                ContainerPolicy.memory_requests_only(
-                    f"{NAME}-gitlab-runner", cpu_request=_CPU_REQUEST, memory_floor="160Mi", memory_limit=_MEMORY_LIMIT
-                )
+                ContainerPolicy.cpu_and_memory_requests_only(f"{NAME}-gitlab-runner", memory_floor="160Mi")
             ),
             "rbac": {"create": True, "clusterWideAccess": False},
             "serviceAccount": {"create": True, "name": NAME},

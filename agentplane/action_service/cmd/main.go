@@ -1,8 +1,8 @@
 // Command actions is the Go Action Service, over the Action Service's PostgreSQL database. It serves Action,
 // operator, linkage, Web Push and health APIs over gRPC. It runs the dispatch worker, which
-// runs the Actions of the sandbox, orchestration_v1 and MCP groups, refreshes linked OAuth tokens, pushes requests
-// awaiting a Decision to operators' browsers when Web Push is configured, and keeps its policy index equal to the API
-// server's.
+// runs the Actions of the sandbox, orchestration_v1, session_delegation and MCP groups, refreshes linked OAuth tokens,
+// pushes requests awaiting a Decision to operators' browsers when Web Push is configured, and keeps its policy index
+// equal to the API server's.
 package main
 
 import (
@@ -268,11 +268,10 @@ func sessionDelegationExecutors(
 ) (map[string]worker.Executor, error) {
 	byGroup := map[string]worker.Executor{}
 	for key, group := range groups.Groups() {
-		binding, isSessionDelegation := group.Executor.(catalog.SessionDelegationBinding)
-		if !isSessionDelegation {
+		if _, isSessionDelegation := group.Executor.(catalog.SessionDelegationBinding); !isSessionDelegation {
 			continue
 		}
-		executor, err := sessiondelegation.NewExecutor(key, binding, environment, dispatcher, history)
+		executor, err := sessiondelegation.NewExecutor(key, environment, dispatcher, history)
 		if err != nil {
 			return nil, fmt.Errorf("ActionGroup %s: %w", key, err)
 		}

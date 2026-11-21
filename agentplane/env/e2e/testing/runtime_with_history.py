@@ -5,14 +5,14 @@ from contextlib import asynccontextmanager
 from dataclasses import replace
 from pathlib import Path
 
-from agentplane.env.config import Endpoint, EnvironmentRuntimeControl, SVIDEndpoint
+from agentplane.env.config import EnvironmentRuntimeControl
 from agentplane.env.e2e.testing.config import RunnerTestConfig
 from agentplane.env.e2e.testing.gateway import Gateway
-from agentplane.env.e2e.testing.history_tunnel import history_tunnel
+from agentplane.env.e2e.testing.history_ingress import history_ingress
 from agentplane.env.e2e.testing.process import RunningRunner
 from agentplane.environments.testing.process import EnvironmentServiceProcess
 from agentplane.history_service.testing.go_service import GoHistoryService, go_history_service
-from agentplane.net.peertls.config import HISTORY_SERVICE_URI, MTLS, SANDBOX_CONTROLLER_URI
+from agentplane.net.peertls.config import MTLS, SANDBOX_CONTROLLER_URI
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
 from agentplane.session_dispatcher.client import SandboxControlClient
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
@@ -52,16 +52,13 @@ async def run_runtime_with_history(
             svid_ca=environment_service.ca,
             policy_namespace=sandbox.namespace,
         ) as ingress_service,
-        history_tunnel(ingress_service.ingress_target) as proxy,
+        history_ingress(ingress_service.ingress_target) as ingress,
         RunningRunner(
             launched,
             runner_gateway,
             history=history_service.reader,
             control_endpoint=control,
-            ingress_endpoint=Endpoint(
-                target=ingress_service.ingress_target,
-                svid=SVIDEndpoint(server_uri=HISTORY_SERVICE_URI, proxy_address=proxy),
-            ),
+            ingress_endpoint=ingress,
             observe_control=False,
             controller_credentials=environment_service.channel_credentials(SANDBOX_CONTROLLER_URI),
             incarnation_uid=sandbox.pod_uid,

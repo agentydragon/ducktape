@@ -390,9 +390,8 @@ func TestLoadConfigRequiresOneStrictYAMLFile(t *testing.T) {
 			t.Fatalf("unused Runner Gateway timeouts took defaults: request=%v lifecycle=%v",
 				c.RunnerGatewayRequestTimeoutSeconds, c.RunnerGatewayLifecycleTimeoutSecs)
 		}
-		views := c.PresetViews()
-		if len(views) != 2 || views[0].Name != "Work Space" || views[1].Name != "Alpha" || views[0].SessionDefaults.CWD != "/state/workspaces/{session_id}" {
-			t.Fatalf("unexpected browser preset views: %+v", views)
+		if names := c.SandboxPresetNames(); len(names) != 2 || names[0] != "Work Space" || names[1] != "Alpha" || c.ThreadPresets["DefaultThread"].CWD != "/state/workspaces/{session_id}" {
+			t.Fatalf("unexpected Sandbox preset order %v or Thread preset defaults %+v", names, c.ThreadPresets)
 		}
 		if c.ActionFederation.LoginTokenProfile != "authentik" || c.ActionFederation.Target.TokenProfile != "authentik" {
 			t.Fatalf("unexpected federation profile defaults: %+v", c.ActionFederation)

@@ -423,3 +423,56 @@ Evidence, none of it a proof:
 | P3 and 40 imports assumed to only allocate (unreviewed) |          730 |     344,781 |    132 s |     219 s |
 
 The obligations are effect-effect pairs the tree runs in the opposite order from the bundle: 1,583 effect units make 1.25 million pairs, and 1,527 of the units run unknown code (`EFFECTS_WHY=1 lower …` lists the first reason for each). One vendor import is called, directly or through a local wrapper, by 511 units; 451 read or assign a property of a value the world returned, which may run a getter or setter the world made (premise P3 does not cover those); 527 units apply a decorator helper to a class or a prototype (`f([decorators], C.prototype, "member", …)`); a few dozen other imports account for most of the rest. What would clear them is a reviewed table of vendor functions that only allocate, keyed by package and export, and an audited claim that decorators on different prototypes commute ([`translation/PLAN.md`](translation/PLAN.md)). The table in the last row is keyed by minified names and was written to see what a table could do: it is an illustration, not a result.
+
+## 14. An executable model of a core of JavaScript
+
+[`CoreJS`](../lean/Experiments/CoreJS/) is the model that footprint rules are to be proved against ([`PLAN.md`](../PLAN.md) § Direction). It is an interpreter: total functions by recursion on a fuel bound, no `partial`, no `sorry`. A program has one right answer, so the model is tested against Node.
+
+| File                                                    | Holds                                                                                           | Lines |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | ----: |
+| [`Syntax.lean`](../lean/Experiments/CoreJS/Syntax.lean) | the typed syntax tree, and which names a scope declares                                         |   165 |
+| [`Number.lean`](../lean/Experiments/CoreJS/Number.lean) | `Number::toString`, `StringToNumber`, `%`, `ToInt32`, exactly, on the bits of a `Float`         |   170 |
+| [`Value.lean`](../lean/Experiments/CoreJS/Value.lean)   | values, the heap, bindings, conversions, operators, property operations, the standard functions |   591 |
+| [`Eval.lean`](../lean/Experiments/CoreJS/Eval.lean)     | the interpreter: eleven mutually recursive functions, and how a program runs its units          |   405 |
+| [`Frame.lean`](../lean/Experiments/CoreJS/Frame.lean)   | the proof below                                                                                 |   539 |
+| [`Decode.lean`](../lean/Experiments/CoreJS/Decode.lean) | reads a program; [`Run.lean`](../lean/Experiments/CoreJS/Run.lean) is the `corejs` executable   |   306 |
+| [`model/to_core.mjs`](model/to_core.mjs)                | the front end: acorn's tree to the model's syntax, or a refusal with the node type              |   550 |
+| [`model/differential.mjs`](model/differential.mjs)      | the test against Node, with [`model/cases.mjs`](model/cases.mjs)                                |   597 |
+
+**What it covers.** Strict-mode module code. Numbers, strings, booleans, `undefined`, `null`. `var`, `let`, `const` with hoisting and the temporal dead zone. Functions, arrows and methods as closures; calls with `this`, method calls, `new`. Object literals with data properties, getters, setters and `__proto__`; array literals (read only). Classes without `extends`: methods, accessors, instance and static fields. Property read, write, `delete` and `in` along the prototype chain, with getters and setters run on the receiver. `Object.defineProperty` with the specification's validation, `Object.create`, `Object.getPrototypeOf`, `Object.setPrototypeOf`. `throw`, `try`, `catch`, `finally`; `if`, `for`, `while`, `break`, `continue`, `return`. The operators except `**` and `instanceof`; `typeof`; template literals; `console.log` of primitives.
+
+**Unknown code is an outcome, not a guess.** A run ends with a value, a thrown value, out of fuel, or `unknown`: it reached code the model does not define. A global of the host (`Math`) is an opaque value; storing it is fine, and calling it, reading its properties or converting it ends the run as `unknown`. So do the methods of `Object.prototype`, `Function.prototype` and `Array.prototype` (which exist in the model's heap, as host values under their real names), a property of a string other than `length` and an index, a write to an array, the conversion of an object to a primitive (`valueOf` and `toString` are not run), and `console.log` of an object. What unknown code may change is not modelled yet.
+
+**What the front end refuses**, each with the node type: destructuring, spread, default and rest parameters, `arguments`, generators, `async`, `class … extends`, private names, static blocks, labels, `switch`, `do`, `for`-`in`, `for`-`of`, optional chains, tagged templates, regular expressions, BigInt, `import`, `**`, `instanceof`, a string outside the Basic Multilingual Plane (the model counts code points, JavaScript code units), a function under a computed key (its `name` would be computed at run time), and any name the program does not declare and the host defines.
+
+**Addresses.** An object or a binding lives at `(region, index)`. Each top-level statement allocates in a region of its own. JavaScript cannot observe an address, so any choice of unused ones is faithful, and this one makes what a statement allocates independent of what ran before it. Two statements that only allocate then end in equal states in either order, with no renaming of addresses.
+
+**Checked against Node** by `./run.sh --model`, and in CI by `corejs_differential_test` (72 generated programs, about 16 s). Both sides must print the same lines and end the same way (a thrown primitive by value, an error by its kind).
+
+- 31 hand-written cases for what the generator rarely writes: a getter three prototypes up, a setter that throws, `finally` overriding `return`, `delete` of a missing and of a fixed property, a method with another `this`, closures over a loop variable, `var` hoisting, the dead zone, descriptor validation, a getter put on `Object.prototype`, class fields, number printing. Seven of them must end `unknown`.
+- Programs of [`translation/gen`](translation/gen/). The generator leans on the standard library, so the front end accepts no whole program. A program is cut down to the units the front end accepts alone and whose names are still declared; a unit where the model then reaches unknown code is dropped and the program is run again. Of 2,040 programs (340 for each of the six sets of families, seeds 1000 to 1339): 52,652 units, 21,931 accepted alone (42%), 4,665 left in the programs that ran (9%). 387 programs had no unit left. The other 1,653 agree with Node, all of them.
+- The members the model gives the three prototypes are compared with Node's own.
+
+The low share is the finding of [`SUPPORT.md`](../SUPPORT.md) again: no small fragment covers what programs use. The model is for proving rules about a core, not for running the inputs.
+
+One disagreement was found on the way: `x ** 2` differed from Node in the last bit for one operand. The specification leaves `**` to the implementation, and the C library's `pow` is not V8's. `**` is refused now.
+
+**What is proved** ([`Frame.lean`](../lean/Experiments/CoreJS/Frame.lean), on Lean's three standard axioms). The shape `Expr.allocOnly`: a literal, a name, a function, an object literal of named data properties, an array literal, nested.
+
+```lean
+theorem allocOnly_extends (h : e.allocOnly = true) (fuel : Nat) (env : Env) (s : State) :
+    (evalExpr fuel env e s).Keeps s
+theorem decl_allocOnly (h : e.allocOnly = true) (fuel : Nat) (env : Env) (kind : DeclKind) (x : Name) (s : State) :
+    (execStmt fuel env (.decl kind x e) s).KeepsBut (env.vars.lookup x) s
+```
+
+However the expression ends, every object and binding that existed is unchanged and nothing is printed; what it made is new. A declaration with such an initializer changes no binding but its own. This is the footprint "binds its name, no effect", proved for that shape.
+
+Not proved: the same for classes (the model runs them; the proof does not cover them yet), that such an expression never ends `unknown`, and that two such declarations commute. The last is written down as `AllocOnlyUnitsCommute`. It needs one more lemma, that the value depends only on the bindings the expression reads.
+
+**What the proof showed about the model's shape.**
+
+- Stating every lemma against a fixed earlier state (`Extends base s`) made a change to a new object free: an address that is unused in `s` was unused in `base`.
+- The property operations take "what a call does" as a parameter, so they are outside the recursion and their lemmas need no induction.
+- Lean's `do` notation copies the rest of a block into both branches of an `if` in the middle of it. Rules written that way did not match the sequencing lemma, and three helpers (`selfScope`, `initSelf`, `addPrototype`) were split out. New rules should keep each `if` inside a helper.
+- `Float` has no equations in Lean. That costs nothing here, since a frame fact never looks at a number.

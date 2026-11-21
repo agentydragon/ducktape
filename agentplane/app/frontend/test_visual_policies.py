@@ -1238,7 +1238,7 @@ async def test_action_history_filter(view: VisualPage, app: AgentplaneFixture) -
     page = view.page
     filtered = page.get_by_role("radio", name="Not auto-allowed", exact=True)
     all_actions = page.get_by_role("radio", name="All actions", exact=True)
-    auto_allowed = page.get_by_text("search ducktape for auto_allow", exact=True)
+    auto_allowed = page.get_by_text("search test-repository for auto_allow", exact=True)
     await expect(filtered).to_be_checked()
     await expect(page.get_by_text("list the test backup archive", exact=True)).to_be_visible()
     await expect(auto_allowed).to_have_count(0)

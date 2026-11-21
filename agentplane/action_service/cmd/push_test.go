@@ -21,7 +21,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -97,15 +96,7 @@ func TestTheServiceDeliversWebPushAndGatesWebPushService(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
 	defer cancel()
-	security, err := service.ca.Issue(t, peertls.NotificationsURI).ClientCredentials(peertls.ActionsURI)
-	if err != nil {
-		t.Fatal(err)
-	}
-	connection, err := grpc.NewClient(service.address, grpc.WithTransportCredentials(security))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { connection.Close() })
+	connection := dialServiceAs(t, service.address, service.ca, peertls.NotificationsURI)
 	_, err = web_push_servicepb.NewWebPushServiceClient(connection).GetPushConfig(
 		metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+readerToken), &web_push_servicepb.GetPushConfigRequest{},
 	)

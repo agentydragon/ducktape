@@ -3,6 +3,7 @@ package inbox
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -111,7 +112,7 @@ const entryContentSummaryReadColumns = `action_state, action_at,
 	mergeability_previous, mergeability_current, mergeability_observed_at, mergeability_observed_at_submicro_nanos,
 	merge_commit_sha, merge_commit_base_sha, merge_commit_head_sha, NULL::text, NULL::text`
 
-// InboxStatus is one inbox of a Sandbox, with what holds its next notice.
+// InboxStatus is one Session's inbox, with what holds its next notice.
 type InboxStatus struct {
 	Inbox         Inbox
 	Notice        *Notice
@@ -134,21 +135,26 @@ func (s *Store) SessionStatus(ctx context.Context, sessionID string, owner *Owne
 	observed := now()
 	var result *InboxStatus
 	err := s.transaction(ctx, func(tx transaction.Tx) error {
-		clause := `WHERE session_id = $1`
+		query := `SELECT ` + inboxColumns + `, next_attempt FROM inbox WHERE session_id = $1`
 		args := []any{sessionID}
 		if owner != nil {
 			predicate, ownerArgs := ownerPredicate(*owner, "", 2)
-			clause += ` AND ` + predicate
+			query += ` AND ` + predicate
 			args = append(args, ownerArgs...)
 		}
-		inboxes, nextWork, err := inboxesOf(ctx, tx, clause, args...)
-		if err != nil || len(inboxes) == 0 {
+		var next sql.NullTime
+		inbox, err := scanInbox(tx.QueryRowContext(ctx, query, args...), &next)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
 			return err
 		}
-		if len(inboxes) != 1 {
-			return fmt.Errorf("multiple inboxes for Session")
+		var nextWork *time.Time
+		if next.Valid {
+			nextWork = utc(next.Time)
 		}
-		value, err := readInboxStatus(ctx, tx, inboxes[0], nextWork[0], observed, debounce, entries, subscriptions)
+		value, err := readInboxStatus(ctx, tx, inbox, nextWork, observed, debounce, entries, subscriptions)
 		if err != nil {
 			return err
 		}
@@ -187,58 +193,13 @@ func readInboxStatus(ctx context.Context, tx transaction.Tx, inbox Inbox, nextWo
 	return result, nil
 }
 
-// inboxesOf reads the inboxes a WHERE and ORDER BY clause selects, with each one's next_attempt.
-func inboxesOf(ctx context.Context, tx transaction.Tx, clause string, args ...any) ([]Inbox, []*time.Time, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT `+inboxColumns+`, next_attempt FROM inbox `+clause, args...)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer rows.Close()
-	var inboxes []Inbox
-	var nextWork []*time.Time
-	for rows.Next() {
-		var next sql.NullTime
-		inbox, err := scanInbox(rows, &next)
-		if err != nil {
-			return nil, nil, err
-		}
-		inboxes = append(inboxes, inbox)
-		nextWork = append(nextWork, nil)
-		if next.Valid {
-			nextWork[len(nextWork)-1] = utc(next.Time)
-		}
-	}
-	return inboxes, nextWork, rows.Err()
-}
-
 func subscriptionStatuses(ctx context.Context, tx transaction.Tx, inboxID uuid.UUID, observed time.Time) ([]Subscription, error) {
 	rows, err := tx.QueryContext(ctx,
 		`SELECT `+subscriptionColumns+` FROM subscription s WHERE s.inbox_id = $1 ORDER BY s.id`, inboxID)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var statuses []Subscription
-	for rows.Next() {
-		subscription, err := scanSubscription(rows, observed)
-		if err != nil {
-			return nil, err
-		}
-		statuses = append(statuses, subscription)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	for i := range statuses {
-		statuses[i].SourceStatus, err = sourceadapter.LoadSubscriptionStatus(ctx, tx, statuses[i].ID, statuses[i].Source)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return statuses, nil
+	return readSubscriptions(ctx, tx, rows, observed)
 }
 
 func pendingEntrySummaries(ctx context.Context, tx transaction.Tx, inboxID uuid.UUID, after int64) ([]sourceadapter.EntrySummary, error) {

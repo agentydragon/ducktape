@@ -228,13 +228,6 @@ func githubCommitParent(ctx context.Context, q Querier, key CommitRefreshKey) (i
 	return generation, headSHA.String, nil
 }
 
-func invalidateGitHubCommitForInstallation(ctx context.Context, tx transaction.Tx, appID, installationID int64) error {
-	_, err := tx.ExecContext(ctx, `UPDATE github_commit_refresh SET generation = generation + 1, last_success_at = NULL,
-		next_attempt = CASE WHEN error IS NOT NULL THEN next_attempt END, claim = NULL, claim_until = NULL
-		WHERE app_id = $1 AND installation_id = $2`, appID, installationID)
-	return err
-}
-
 func invalidateGitHubCommitForPullRequest(ctx context.Context, tx transaction.Tx, repositoryID int64, subjectKey string, appID *int64) error {
 	query := `UPDATE github_commit_refresh SET generation = generation + 1, last_success_at = NULL,
 		next_attempt = CASE WHEN error IS NOT NULL THEN next_attempt END, claim = NULL, claim_until = NULL

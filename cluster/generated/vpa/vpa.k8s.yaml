@@ -62,8 +62,8 @@ spec:
               topologyKey: kubernetes.io/hostname
       enabled: true
       podDisruptionBudget:
-        minAvailable: 1
-      replicaCount: 2
+        minAvailable: 2
+      replicaCount: 3
       resources:
         limits:
           cpu: 200m

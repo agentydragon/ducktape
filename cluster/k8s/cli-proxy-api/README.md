@@ -25,10 +25,10 @@ LiteLLM pod (ESO-mirrored into `litellm`).
 Reasoning effort is driven by Claude Code's `effortLevel` setting and forwarded to Codex
 `reasoning.effort` (not a model-slug suffix).
 
-The deployed CLIProxyAPI v7.2.135 discovered `gpt-6-astra` and completed live
+On 2026-09-05, CLIProxyAPI v7.2.135 discovered `gpt-6-astra` and completed live
 tool-call probes on both `/v1/responses` (`function_call`) and `/v1/messages`
-(`tool_use`) on 2026-09-05. Its remote model catalog makes Astra usable even
-though that binary predates the model's release.
+(`tool_use`): its remote model catalog made Astra usable although that binary
+predated the model's release.
 
 ## One-time setup: Codex OAuth login
 

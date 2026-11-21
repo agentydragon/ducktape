@@ -52,44 +52,18 @@ only sees the copied user identity in the persistent home directory.
 
 ## Live Result
 
-Verified on 2026-06-29:
+Verified on 2026-06-29 with `/nix` as disk-backed `emptyDir` (the pod requests `20Gi` and
+limits `80Gi` of ephemeral storage):
 
-- main container runs as `uid=1000(codex) gid=1000(codex)`;
-- `/nix` was mounted from `local-path-ovh`;
-- `/home/codex` and `/workspace` are mounted from `seaweedfs-ovh-ssd`;
-- `direnv` + `nix-direnv` + `use flake` realized and ran GNU Hello;
-- after deleting/recreating the pod, `nix shell nixpkgs#hello -c hello --version`
-  reused the persistent `/nix` store and ran without refetching.
-
-Then converted to disk-backed `emptyDir` on 2026-06-29:
-
-- `/nix` is now pod-lifetime state, not PVC state;
-- the `codex-nix-store` PVC is no longer in the manifest;
-- the pod requests `20Gi` and limits `80Gi` of ephemeral storage.
-- observed cold start was about 77 seconds end-to-end; init seed copied `/nix`
-  in about 36 seconds;
-- `direnv` + `nix-direnv` + `use flake` still realized and ran GNU Hello on the
-  `emptyDir` store.
-
-Then added the SOPS-backed bootstrap identity and SSH-over-`kubectl exec` path:
-
-- `codex-bootstrap-identity.sops.yaml` stores the existing
-  `agent-box-codex-user` identity as a cluster-decrypted Kubernetes Secret;
-- the init container copies that identity into
-  `/home/codex/.ssh/id_ed25519`;
-- verified copied identity mode/owner: `1000:1000 600`;
-- verified copied identity public key matches
-  `ssh_keys/agent-box-codex-user.pub`;
-- historically verified second-stage SOPS decryption from inside the pod
-  using the Forgejo key that this change retires; that credential is no longer
-  present or available to new deployments;
-- verified private SSH transport:
-  `ssh codex-pod.allegedly.works` via Home Manager's `ProxyCommand`
-  reaches in-pod `sshd` over `kubectl exec`;
-- verified remote SSH sessions have `nix` on `PATH`.
-
-As of the final live check, the pod was `Running`, `Ready`, and had `0`
-container restarts.
+- the main container runs as `uid=1000(codex) gid=1000(codex)`; `/home/codex` and
+  `/workspace` are on `seaweedfs-ovh-ssd`;
+- cold start took about 77 seconds end to end (the init seed copy of `/nix` about 36);
+  `direnv` + `nix-direnv` + `use flake` realized and ran GNU Hello;
+- the init container copies the `agent-box-codex-user` identity from
+  `codex-bootstrap-identity.sops.yaml` to `/home/codex/.ssh/id_ed25519` as `1000:1000 600`,
+  and its public key matches `ssh_keys/agent-box-codex-user.pub`;
+- `ssh codex-pod.allegedly.works` (Home Manager's `ProxyCommand`) reaches in-pod `sshd` over
+  `kubectl exec`, and remote SSH sessions have `nix` on `PATH`.
 
 ## Apply
 

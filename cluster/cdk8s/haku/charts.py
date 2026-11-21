@@ -1,9 +1,8 @@
 """The console resource chart -- database, schema migration, and the console itself --
 shared by manifest generation and tests (synthesized in memory via `cdk8s.Testing`).
 
-The database and migration used to be Kustomizations of their own, ordered ahead of the
-console by `dependsOn`. One Kustomization has no such ordering, so the migration Job retries
-until its preconditions hold rather than relying on the layer beneath it already being Ready.
+One Kustomization applies all three with no ordering between them, so the migration Job
+retries until its preconditions hold (migration.py).
 """
 
 from __future__ import annotations
