@@ -360,6 +360,27 @@ function Report() {
             generation 3 and both replicas remained Ready. The webhook fails
             closed; no eviction was induced.<//
           >
+          <${Text} component="p"
+            >At 03:45 UTC on 21 November, the ${" "}<${Anchor}
+              href=${github + "pull/18382"}
+              >kubeapi-proxy<//
+            >${" "}VPA used Recreate after a namespace reconciliation trigger.
+            Both replicas were Ready on separate hosts and its PDB allowed one
+            disruption. Memory requests are bounded to 16–24 MiB; the VPA's
+            uncapped recommendation was 100 MiB, while the sampled seven-day
+            peak for the current Pods was 12.4 MiB. That peak excludes replaced
+            Pods and does not establish a safe bound under all traffic. No
+            eviction or authenticated endpoint check was performed here.<//
+          >
+          <${Text} component="p"
+            >At 03:47 UTC on 21 November, both metrics-server replicas returned
+            metrics for all nine Ready nodes and all 463 Ready Running Pods at
+            least two minutes old when queried individually. Three eligible
+            nodes without a replica each had at least 2.2 CPU and 3.4 GiB of
+            scheduler-request headroom, versus a 15m CPU and approximately 121
+            MiB memory request per replacement. This is a point-in-time capacity
+            and endpoint check, not a failover test.<//
+          >
           <${Text} component="p" mb=${0}
             >Website and Haku use revision-scoped hostname spread with
             minDomains 2: a second replica stays Pending when only one host is
