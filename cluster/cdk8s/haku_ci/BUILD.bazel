@@ -13,7 +13,6 @@ py_library(
         "//agentplane/egress:sidecar_config",
         "//cluster/cdk8s:config_format",
         "//cluster/cdk8s:container_resources",
-        "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s:settings_file",

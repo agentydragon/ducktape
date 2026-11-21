@@ -684,11 +684,6 @@ spec:
       name: haku-ci
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/generated/haku-ci-egress-vpa/**"
-          to: "@artifact/cluster/generated/haku-ci-egress-vpa/"
-      name: haku-ci-egress-vpa
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/generated/headlamp/**"
           to: "@artifact/cluster/generated/headlamp/"
       name: headlamp-app

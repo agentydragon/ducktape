@@ -321,3 +321,25 @@ spec:
     name: sessions
   updatePolicy:
     updateMode: Initial
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: haku-ci-egress
+  namespace: haku-ci
+spec:
+  resourcePolicy:
+    containerPolicies:
+      - containerName: egress-sidecar
+        controlledResources:
+          - cpu
+          - memory
+        controlledValues: RequestsOnly
+      - containerName: "*"
+        mode: "Off"
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: haku-ci-egress
+  updatePolicy:
+    updateMode: Initial

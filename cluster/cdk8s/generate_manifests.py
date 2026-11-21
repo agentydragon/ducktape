@@ -2328,19 +2328,14 @@ def generate_manifests(root: Path) -> None:
     flux.flux_kustomization(
         flux_chart,
         staging_vpa.NAME,
-        write_directory(root, agentplane_staging_vpa_artifact, staging_vpa.chart),
-        depends_on=flux.flux_kustomization_depends_on_many(vpa_kustomization, agentplane_staging_kustomization),
-    )
-    haku_ci_egress_vpa_artifact = artifact(haku_ci_egress.VPA_NAME, haku_ci_egress.VPA_OUTPUT_DIR)
-    flux.flux_kustomization(
-        flux_chart,
-        haku_ci_egress.VPA_NAME,
+        # Staging also owns and health-checks the Haku relay Deployment.
         write_directory(
-            root, haku_ci_egress_vpa_artifact, lambda app: haku_ci_egress.vpa_chart(app, haku_ci_runner.NAMESPACE)
+            root,
+            agentplane_staging_vpa_artifact,
+            staging_vpa.chart,
+            lambda app: haku_ci_egress.vpa_chart(app, haku_ci_runner.NAMESPACE),
         ),
-        depends_on=flux.flux_kustomization_depends_on_many(
-            vpa_kustomization, agentplane_staging_kustomization, haku_ci_kustomization
-        ),
+        depends_on=flux.flux_kustomization_depends_on_many(vpa_kustomization, agentplane_staging_kustomization),
     )
     agentplane_staging_delivery_artifact = artifact(
         "agentplane-staging-delivery", staging.LAYOUT.delivery_output_dir, staging.LAYOUT.image_pins
@@ -2543,7 +2538,6 @@ def generate_manifests(root: Path) -> None:
             haku_workspaces_app_artifact,
             host_firewall_artifact,
             haku_ci_artifact,
-            haku_ci_egress_vpa_artifact,
             headlamp_app_artifact,
             infra_drift_artifact,
             keda_artifact,
