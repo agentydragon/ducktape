@@ -15,7 +15,11 @@ import (
 	"github.com/google/uuid"
 )
 
-const commandFenceTimeout = 90 * time.Second
+const (
+	commandFenceTimeout = 90 * time.Second
+	// PID 1 needs time to consume SIGCHLD before leaving its OOM stop state.
+	commandStopGrace = 2 * time.Second
+)
 
 var errCommandFence = errors.New("command unit fence failed")
 
@@ -99,7 +103,7 @@ func (s *Supervisor) StartCommand(ctx context.Context, helperPath string, config
 		_ = listener.Close()
 	}()
 	backend := systemdops.NewBackend(systemdops.BackendConfig{
-		Command: []string{helperPath, "command-helper", helperSocket}, Dir: config.Dir, RetainUntilStop: true,
+		Command: []string{helperPath, "command-helper", helperSocket}, Dir: config.Dir, StopGrace: commandStopGrace, RetainUntilStop: true,
 		Scope: launcher.scope, Slice: launcher.Slice, LifetimeMarker: launcher.lifetimeMarker, ParentUnit: launcher.parentUnit(),
 		LaunchReady: func() bool { return scopeReady(launcher.launchReady) },
 		Properties:  func() ([]systemd.Property, error) { return nil, nil },

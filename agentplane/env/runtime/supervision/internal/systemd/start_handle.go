@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 
 	goSystemd "github.com/coreos/go-systemd/v22/dbus"
@@ -688,11 +689,15 @@ func (h *StartHandle) reap() {
 			break
 		}
 		code, statusObserved, observationErr = nativeExitStatus(props, h.invocationID)
+		commandOOM := h.backend.config.RetainUntilStop && props.Result == "oom-kill"
+		if commandOOM && !statusObserved && observationErr == nil {
+			code, statusObserved, observationErr = commandOOMExitStatus(props, h.group, GroupEmpty)
+		}
 		if statusObserved || observationErr != nil {
 			oomKilled = props.Result == "oom-kill"
 			break
 		}
-		if props.ExecMainPID == 0 {
+		if props.ExecMainPID == 0 && !commandOOM {
 			observationErr = errors.New("native systemd invocation lost its process exit status")
 			break
 		}
@@ -766,6 +771,22 @@ func nativeExitStatus(unit UnitSnapshot, invocationID string) (int, bool, error)
 		code += 128
 	}
 	return code, true, nil
+}
+
+// PID 1 can finish an OOM stop before consuming the leader's SIGCHLD.
+// The caller must first verify the invocation and check for a raw exit code.
+func commandOOMExitStatus(unit UnitSnapshot, group string, groupEmpty func(string) (bool, error)) (int, bool, error) {
+	if unit.Result != "oom-kill" || !unit.Stopped() || unit.JobID != 0 {
+		return -1, false, nil
+	}
+	empty, err := groupEmpty(group)
+	if err != nil {
+		return -1, false, fmt.Errorf("inspect systemd command OOM domain: %w", err)
+	}
+	if !empty {
+		return -1, false, nil
+	}
+	return 128 + int(syscall.SIGKILL), true, nil
 }
 
 func (h *StartHandle) waitChangeOn(conn *goSystemd.Conn) bool {
