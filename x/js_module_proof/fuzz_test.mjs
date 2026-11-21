@@ -50,6 +50,10 @@ assert.deepEqual(
 );
 assert.ok(Object.keys(shrunk.spec.modules).length <= 2);
 const relayShrinkInput = makeComposedCase(51981, 3);
+const doubleRelay = makeComposedCase(51981, 11);
+assert.deepEqual(doubleRelay.spec.modules["relay2.mjs"].reexports, {
+  "relay.mjs": doubleRelay.spec.modules["relay.mjs"].reexports["state.mjs"],
+});
 relayShrinkInput.spec.modules["relay.mjs"].reexports["state.mjs"].push("unused");
 const relayShrunk = await minimizeCase(relayShrinkInput, async (candidate) => {
   const relay = candidate.spec.modules["relay.mjs"];

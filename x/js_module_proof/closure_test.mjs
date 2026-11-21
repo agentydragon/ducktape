@@ -70,6 +70,8 @@ if (shard === 7) {
   await writeFile(entry, entryText);
   await writeFile(first, text.replace('export { value } from "./state.mjs";', ""));
   assert.notEqual(cli("validate", source, spec, out).result, "proved under assumptions");
+  await writeFile(first, text.replace('export { value } from "./state.mjs";', 'export { value } from "./second.mjs";'));
+  assert.notEqual(cli("validate", source, spec, out).result, "proved under assumptions");
   await writeFile(first, text);
   await writeFile(
     join(out, "state.mjs"),
