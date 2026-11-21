@@ -5990,7 +5990,7 @@ spec:
               requests:
                 cpu: 1
                 devices.kubevirt.io/kvm: 1
-                memory: 17716740096
+                memory: 9126805504
             securityContext:
               allowPrivilegeEscalation: true
               privileged: true

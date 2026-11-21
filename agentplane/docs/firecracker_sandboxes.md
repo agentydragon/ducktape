@@ -46,12 +46,13 @@ runner disk and full memory/disk checkpoints. Size this PVC for the actual guest
 workspace contents, including both old and new checkpoints during capture. Snapshots contain
 private keys and workload memory and need the same storage access controls as retained state.
 
-The launcher requests enough container memory for guest RAM, a second guest-sized
-allowance for a full buffered snapshot, and 512 MiB for the VMM and supervisor.
-A restored VM maps the previous snapshot file and can charge its resident pages
-while writing the next one. Include both charges when sizing the launcher. A launcher
-whose memory limit is breached loses its same-Pod continuation and cannot finish
-normal Sandbox deletion.
+The launcher requests guest RAM plus 512 MiB for the VMM and supervisor. Its container
+limit adds another guest-sized allowance because a full checkpoint writes a new buffered
+file while the old snapshot still backs the restored guest. For staging's 8 GiB guest,
+the launcher requests 8.5 GiB and has a 16.5 GiB limit. The Pod is Burstable. Concurrent
+checkpoints compete for node memory above their requests, so node pressure can still
+evict a Sandbox. A launcher OOM or eviction loses same-Pod continuation and can leave
+normal Sandbox deletion waiting.
 
 ## Control and RAM suspension
 
@@ -188,7 +189,7 @@ pool has no KVM. The CI
 [`test_firecracker`](../system_tests/firecracker/README.md) suite runs its
 disposable k3s stack on the existing `wyrm2-kvm-vm` BuildBuddy executor. It uses a small Bazel-built Debian guest with the production launcher and runner disk,
 creates its Sandbox through the app, and checks a
-scripted Codex tool turn followed by one RAM-preserving suspend/resume. It asserts unchanged Pod,
+scripted Codex tool turn followed by two RAM-preserving suspend/resume cycles. It asserts unchanged Pod,
 guest and Runtime boot identities, native process identity, and a progressing child with a
 random memory-resident marker. The suite reissues credentials while running and while suspended,
 then verifies Runtime serves the new leaf through a fresh authenticated TLS handshake. Acceptance

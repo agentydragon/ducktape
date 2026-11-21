@@ -155,6 +155,11 @@ def test_staging_exposes_firecracker_in_both_launch_paths(staging_manifests: lis
     assert pod["securityContext"]["seccompProfile"] == {"type": "RuntimeDefault"}
     launcher = one(container for container in pod["containers"] if container["name"] == "environment-runtime")
     assert launcher["resources"]["limits"]["devices.kubevirt.io/kvm"] == 1
+    guest_memory = template["spec"]["firecracker"]["memoryMiB"] * 1024**2
+    memory_request = launcher["resources"]["requests"]["memory"]
+    memory_limit = launcher["resources"]["limits"]["memory"]
+    assert memory_request == guest_memory + 512 * 1024**2
+    assert memory_limit - memory_request == guest_memory
     assert template["spec"]["stateVolume"]["claim"]["resources"]["requests"]["storage"] == "100Gi"
     for volume in ("stateVolume", "workspaceVolume"):
         assert template["spec"][volume]["claim"]["storageClassName"] == staging.ENV.vm_storage_class

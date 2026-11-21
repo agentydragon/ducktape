@@ -94,9 +94,9 @@ class EnvironmentFirecrackerTemplate(Construct):
             ),
         )
         wiring = launcher_settings.pod_wiring(volume_name="firecracker-settings", env="FIRECRACKER_CONFIG_FILE")
-        # Full snapshots write a new buffered file while guest RAM is resident.
-        # Leave room for a guest-sized snapshot and the launcher/VMM overhead.
-        memory = 2 * resources.guest_memory_bytes + 512 * 1024 * 1024
+        memory_request = resources.guest_memory_bytes + 512 * 1024 * 1024
+        # A full checkpoint writes a guest-sized buffered file while guest RAM is resident.
+        memory_limit = memory_request + resources.guest_memory_bytes
         launcher = k8s.Container(
             name="environment-runtime",
             image=LAUNCHER_IMAGE,
@@ -108,12 +108,12 @@ class EnvironmentFirecrackerTemplate(Construct):
             resources=k8s.ResourceRequirements(
                 requests={
                     "cpu": k8s.Quantity.from_number(resources.guest_vcpu_count),
-                    "memory": k8s.Quantity.from_number(memory),
+                    "memory": k8s.Quantity.from_number(memory_request),
                     "devices.kubevirt.io/kvm": k8s.Quantity.from_number(1),
                 },
                 limits={
                     "cpu": k8s.Quantity.from_number(resources.guest_vcpu_count),
-                    "memory": k8s.Quantity.from_number(memory),
+                    "memory": k8s.Quantity.from_number(memory_limit),
                     "devices.kubevirt.io/kvm": k8s.Quantity.from_number(1),
                 },
             ),
