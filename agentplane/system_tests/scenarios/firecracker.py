@@ -263,6 +263,7 @@ async def preserves_live_guest(
                 "get", "--raw", f"/api/v1/namespaces/{cluster.namespace}/pods/{pod.name}:9092/proxy/state"
             )
         )
+        assert isinstance(status, dict), status
         assert status["phase"] == "suspended", status
         return status
 
