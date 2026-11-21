@@ -1,0 +1,49 @@
+# Build the NixOS guest qcow2 and publish it as a KubeVirt containerDisk.
+name: BuildBuddy KVM worker image
+
+on:
+  push:
+    branches: [devel]
+    paths:
+      # keep-sorted start
+      - ".github/actions/setup-nix-attic/action.yml"
+      - ".github/workflows/buildbuddy-kvm-worker-image.yml"
+      - ".github/workflows/nix-containerdisk-publish.yml"
+      - "devinfra/buildbuddy/images/kvm_worker/**"
+      - "flake.lock"
+      - "flake.nix"
+      - "nix/flake/packages.nix"
+      - "nix/nixos/modules/base.nix"
+      - "nix/nixos/modules/vm-hardware.nix"
+      # keep-sorted end
+  # Fork pull requests do not receive the registry or Attic secrets used by this build.
+  pull_request:
+    paths:
+      # keep-sorted start
+      - ".github/actions/setup-nix-attic/action.yml"
+      - ".github/workflows/buildbuddy-kvm-worker-image.yml"
+      - ".github/workflows/nix-containerdisk-publish.yml"
+      - "devinfra/buildbuddy/images/kvm_worker/**"
+      - "flake.lock"
+      - "flake.nix"
+      - "nix/flake/packages.nix"
+      - "nix/nixos/modules/base.nix"
+      - "nix/nixos/modules/vm-hardware.nix"
+      # keep-sorted end
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-push:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    uses: ./.github/workflows/nix-containerdisk-publish.yml
+    with:
+      flake_output: buildbuddy-kvm-worker-container-disk
+      image_name: buildbuddy-kvm-worker
+      image: git.allegedly.works/ducktape-ci/buildbuddy-kvm-worker
+    secrets:
+      FORGEJO_IMAGES_USERNAME: ${{ secrets.FORGEJO_IMAGES_USERNAME }}
+      FORGEJO_IMAGES_PASSWORD: ${{ secrets.FORGEJO_IMAGES_PASSWORD }}
+      ATTIC_READ_TOKEN: ${{ secrets.ATTIC_READ_TOKEN }}
