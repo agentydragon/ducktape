@@ -14,10 +14,10 @@ from pathlib import PurePosixPath
 from typing import Annotated, Any
 
 import aiodocker
-import mcp.types as mcp_types
 from fastmcp.dependencies import Depends
 from fastmcp.server import FastMCP
 from fastmcp.server.context import Context
+from mcp.types import ImageContent
 from pydantic import Field, WithJsonSchema
 
 from mcp_infra.exec.docker.container_session import (
@@ -118,14 +118,12 @@ class ContainerExecServer(FastMCP):
         cwd_policy = config.cwd_policy
         allow_user_field = config.allow_user_field
         allow_env_field = config.allow_env_field
-        # Define container.info resource URI (before super().__init__ so it can be used in instructions)
-        container_info_uri = "resource://container.info"
 
         super().__init__(
             "Docker Exec MCP Server",
             instructions=(
                 f"Provides access to a Docker container.\n\n"
-                f"Image history is available by reading the resource {container_info_uri}.\n\n"
+                f"Image history is available by reading the resource {self.CONTAINER_INFO_URI}.\n\n"
                 f"/tmp is writable and can be used as a scratchpad for notes, intermediate results, "
                 f"or organizing your thoughts."
             ),
@@ -157,7 +155,7 @@ class ContainerExecServer(FastMCP):
         # FastMCP treats this as a static resource rather than a template.
         container_info_json.__annotations__["ctx"] = Context
         self.resource(
-            container_info_uri,
+            self.CONTAINER_INFO_URI,
             mime_type="application/json",
             name="container.info",
             title="Container session metadata",
@@ -283,7 +281,7 @@ class ContainerExecServer(FastMCP):
         )(read_container_file)
 
         # Register read_image tool for reading images from container
-        async def read_image(path: str, ctx: Context) -> list[mcp_types.ImageContent]:
+        async def read_image(path: str, ctx: Context) -> list[ImageContent]:
             """Read an image file from the container and return it for the model to see. Supported formats: JPEG, PNG, GIF, WebP."""
             container = _get_running_container(ctx)
             # Pull file from container via Docker API
