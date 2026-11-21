@@ -35,7 +35,7 @@ export function install(g) {
   };
   const callable = (s, pred = () => true) =>
     g.refs(s, (b) => kindOf(b.type) === "fn" && pred(b.type) && ![...b.type.writes].some((n) => s.frozen.has(n)));
-  const plain = (t) => t.ret === "num" && !t.async && !t.thisField && !t.tag;
+  const plain = (t) => t.ret === "num" && !t.async && !t.gen && !t.thisField && !t.tag; // a generator returns an iterator, not a number
   const call = (s, d, f) => {
     for (const n of f.type.writes) s.writes.add(n); // what the callee changes, the caller changes
     const count = f.type.n + g.int(3) - 1;
