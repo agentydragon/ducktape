@@ -79,6 +79,15 @@ cluster/k8s/home-assistant/app/kustomization.yaml linguist-generated=true
 cluster/k8s/haku/forgejo-tea/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/shared-secrets/kustomization.yaml linguist-generated=true
 cluster/k8s/nix-cache/kustomization.yaml linguist-generated=true
+cluster/k8s/host-firewall/kustomization.yaml linguist-generated=true
+cluster/k8s/session-backup/kustomization.yaml linguist-generated=true
+cluster/k8s/forgejo-images/crossplane-forgejo-images/kustomization.yaml linguist-generated=true
+cluster/k8s/litellm/crossplane-keys/kustomization.yaml linguist-generated=true
+cluster/k8s/agents/airlock/kustomization.yaml linguist-generated=true
+cluster/k8s/agents/plaid-mcp/kustomization.yaml linguist-generated=true
+cluster/k8s/buildbuddy-kvm-worker/kustomization.yaml linguist-generated=true
+# Written by the cluster generator beside the Agentplane CRD files.
+agentplane/crds/manifests/kustomization.yaml linguist-generated=true
 # kubeconform schemas of the Agentplane CRDs — `bb run //agentplane/crds:generate_bin`
 # output, pinned by //agentplane/crds:test_generate.
 cluster/schemas/**/*.json linguist-generated=true
