@@ -167,8 +167,8 @@ the harness environment. Lifecycle, recovery and scope are documented in
 Version 3 replaces `environment.kind` with explicit `environment.supervision`, moves
 the companion socket under `executor.owner`, and requires `owner` and `placement` for
 every configured executor. Version 2 and version 3 readers reject the other wire version.
-Deploy the matching runner disk, VM root image, and ConfigMaps in one cutover.
-The VM root consumes `environment.supervision` in its boot settings and supplies
+Deploy the matching runner disk, KubeVirt root, Firecracker boot image, and ConfigMaps in one cutover.
+The guest roots consume `environment.supervision` in their boot settings and supply
 `agentplane-commands.slice`.
 
 ## Shared layout

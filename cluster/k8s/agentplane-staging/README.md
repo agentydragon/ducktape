@@ -51,7 +51,8 @@ execution flows after rollback. In-flight handles from the old backend cannot be
 
 ## Runtime configuration v3 and systemd placement
 
-Roll out the v3 Runtime ConfigMaps, runner disk, and NixOS VM root together. Match
+Roll out the v3 Runtime ConfigMaps, runner disk, KubeVirt root, and Firecracker
+boot image together. Match
 the published source revisions to the live image references. The new loader
 rejects v2, and the old loader rejects v3. New or restarting Sandboxes can fail
 while the image pins and ConfigMaps reconcile. The VM root supplies
@@ -61,13 +62,15 @@ Use a fresh disposable Pod to check direct execution. In a fresh disposable VM,
 check ordinary command output and verify that the executor and commands occupy
 separate slices. An OOM within the command budget should produce a failed command
 and allow a subsequent command in the same execution session to succeed. Check
-suspend and resume as well. Preserve existing Sandboxes, PVCs, and authored data
-during the cutover.
+suspend and resume as well. Exercise checkpoint and restore twice in a disposable
+Firecracker Sandbox. Preserve existing Sandboxes, PVCs, and authored data during
+the cutover. A Firecracker checkpoint stays with its original launcher Pod and
+retains that incarnation's boot image, runner disk, and Runtime configuration.
 
 To revert only placement, select `direct`, remove the guest's `executor_workload`
 budget, and restore the previous combined executor budget. To revert the wire
-version, restore the v2 ConfigMaps and matching runner disk and VM root pins
-together. Verify fresh Sandboxes after Flux applies either rollback.
+version, restore the v2 ConfigMaps and matching runner disk, KubeVirt root, and
+Firecracker boot image pins together. Verify fresh Sandboxes after Flux applies either rollback.
 
 ## Sessions and Environments rollout checks
 
