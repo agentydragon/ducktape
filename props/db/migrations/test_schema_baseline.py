@@ -18,6 +18,8 @@ from testing.postgres import DatabaseNames, create_temporary_database
 # gazelle:include_dep //props/testing/fixtures:db
 pytest_plugins = ("testing.postgres_fixtures", "props.testing.fixtures.db")
 
+_PUBLIC_OBJECTS = text("SELECT oid, relname FROM pg_class WHERE relnamespace = 'public'::regnamespace ORDER BY oid")
+
 
 def _schema(container: PostgresContainer, database: str) -> str:
     result = container.get_wrapped_container().exec_run(
@@ -40,10 +42,7 @@ def test_schema_baseline(
             before = _schema(postgres_container, database)
             (undeclared_outputs_dir() / "props_schema.sql").write_text(before)
             with engine.connect() as conn:
-                objects = conn.execute(
-                    text("SELECT oid, relname FROM pg_class WHERE relnamespace = 'public'::regnamespace ORDER BY oid")
-                ).all()
-            with engine.connect() as conn:
+                objects = conn.execute(_PUBLIC_OBJECTS).all()
                 salt = conn.scalar(text("SELECT salt FROM agent_role_salt WHERE id = 1"))
                 assert salt is not None
                 assert len(salt) == 32
@@ -54,15 +53,7 @@ def test_schema_baseline(
             assert _schema(postgres_container, database) == before
             with engine.connect() as conn:
                 assert conn.scalar(text("SELECT salt FROM agent_role_salt WHERE id = 1")) == salt
-            with engine.connect() as conn:
-                assert (
-                    conn.execute(
-                        text(
-                            "SELECT oid, relname FROM pg_class WHERE relnamespace = 'public'::regnamespace ORDER BY oid"
-                        )
-                    ).all()
-                    == objects
-                )
+                assert conn.execute(_PUBLIC_OBJECTS).all() == objects
         finally:
             engine.dispose()
 
