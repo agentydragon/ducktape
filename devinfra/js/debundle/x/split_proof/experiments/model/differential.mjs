@@ -57,7 +57,7 @@ import { kindOf } from "../translation/gen/core.mjs";
 import { generateProgram, renderProgram } from "../translation/gen/index.mjs";
 import { coreOf, coreProgramOf, dumpOf } from "../translation/split_dump.mjs";
 import { cases, splitCases } from "./cases.mjs";
-import { generatedCases, generatedModuleCases, generatedOpaqueCase } from "./generate.mjs";
+import { generatedCases, generatedModuleCases, generatedOpaqueCase, generatedBindingCases } from "./generate.mjs";
 import { moduleCases } from "./module_cases.mjs";
 import { opaqueCases, scriptsOf } from "./opaque_cases.mjs";
 import { bits, HOST_GLOBALS, Refused, toCore, toCoreProgram } from "./to_core.mjs";
@@ -74,6 +74,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const built = (name) => path.join(here, "../../lean/.lake/build/bin", name);
 const corejs = process.env.COREJS ?? built("corejs");
 const lowersplit = process.env.LOWERSPLIT ?? built("lowersplit");
+const lower = process.env.LOWER ?? built("lower");
 const evalorder = process.env.EVALORDER ?? built("evalorder");
 const work = mkdtempSync(path.join(process.env.TEST_TMPDIR ?? os.tmpdir(), "corejs_differential_"));
 
@@ -302,7 +303,8 @@ for (const c of cases) {
     set: null,
   });
 }
-for (const c of splitCases) {
+const bindingCases = Array.from({ length: count }, (_, i) => generatedBindingCases(firstSeed + i)).flat();
+for (const c of [...splitCases, ...bindingCases]) {
   const translated = accepted(c.source);
   assert(translated !== null, `split case ${c.name}: the front end refuses the bundle`);
   jobs.push({
@@ -584,6 +586,47 @@ function split(job, bundle, dump, kind, spec, named) {
     );
   else if (orderKept) tally.sliceNamed++;
   else if (slice?.startsWith("moves")) tally.movesNamed++;
+  if (named?.certified) {
+    assert(!orderKept, `${label}: the binding certificate regression must reorder statements`);
+    assert(slice?.startsWith("moves (certified bindings)"), `${label}: missing certified binding slice: ${slice}`);
+  }
+  if (named?.poisonWrite !== undefined) {
+    const analysis = spawnSync(lower, [path.join(dir, "ast.json")], { encoding: "utf8" });
+    assert.equal(analysis.status, 0, `${label}: cannot obtain actual Effects summaries\n${analysis.stderr}`);
+    const footprints = analysis.stdout
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    const footprintPath = path.join(dir, "footprints.jsonl");
+    const replay = () => {
+      writeFileSync(footprintPath, footprints.map((fp) => JSON.stringify(fp)).join("\n") + "\n");
+      return spawnSync(
+        lowersplit,
+        [
+          path.join(dir, "ast.json"),
+          path.join(dir, "spec.json"),
+          path.join(dir, "replay"),
+          "--corejs",
+          path.join(dir, "program.json"),
+          "--footprints",
+          footprintPath,
+        ],
+        { encoding: "utf8" }
+      );
+    };
+    const pristine = replay();
+    assert.equal(pristine.status, 0, `${label}: actual summaries must reload\n${pristine.stderr}`);
+    assert.match(
+      pristine.stdout,
+      /proved slice: moves \(certified bindings\)/,
+      `${label}: actual serialized summaries must certify`
+    );
+    assert(footprints[named.poisonWrite].writes.length > 0, `${label}: mutation must remove a real write`);
+    footprints[named.poisonWrite].writes = [];
+    const poisoned = replay();
+    assert.equal(poisoned.status, 0, `${label}: missing-write control must reach the semantic certificate check`);
+    assert.match(poisoned.stdout, /proved slice: none\./, `${label}: missing write must not certify`);
+  }
   if ((job.focused || job.opaqueCase?.move) && kind === "named") {
     assert(!orderKept, `${label}: the required move kept the order`);
     assert(slice?.startsWith("moves"), `${label}: the required move is outside the proved moves slice: ${slice}`);
@@ -763,6 +806,13 @@ for (const job of jobs.filter((j) => j.focused)) {
   if (splitJobs.some((s) => s.of === job && !s.orderKept && sameRun(s.result, job.result) && sameRun(s.node, job.node)))
     covered.reordered++;
 }
+const certifiedGenerated = splitJobs.filter((j) => j.named?.generatedBinding);
+assert.equal(certifiedGenerated.length, count, "every generated binding case must be split");
+assert(
+  certifiedGenerated.every((j) => j.moves && sameRun(j.result, j.of.result) && sameRun(j.node, j.of.node)),
+  "every generated binding case must execute equivalently through the certified moves slice"
+);
+console.log(`certified binding moves: ${certifiedGenerated.length}, four runs and final state compared`);
 console.log("whole CoreJS generator (no filtering):");
 console.table(focusedCoverage);
 assert.deepEqual(

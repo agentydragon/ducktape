@@ -163,3 +163,28 @@ export function generatedOpaqueCase(seed) {
     move: true,
   };
 }
+
+// Each generated plan crosses two real writes, with each assignment kept beside its own declaration.
+// Successful certification is mandatory; these cases do not rely on random split selection.
+export function generatedBindingCases(seed) {
+  const value = 1 + ((seed >>> 0) % 17);
+  const literals = ["undefined", "null", "false", "true", String(value), JSON.stringify(`value-${value}`)];
+  const literal = literals[(seed >>> 0) % literals.length];
+  const spec = { entry: "entry.mjs", modules: { "m0.mjs": ["#1", "#3"], "entry.mjs": ["#0", "#2", "#4"] } };
+  return [
+    {
+      name: `certified binding assignments seed ${seed}`,
+      source: `let x = 0; let y = 0; (x = ${literal}, x); (y = ${value}, y); console.log(x, y);`,
+      spec,
+      certified: true,
+      generatedBinding: true,
+    },
+    {
+      name: `dependent binding assignments seed ${seed}`,
+      source: `let x = 0; let y = 0; (x = ${literal}, x); (y = x, y); console.log(x, y);`,
+      spec,
+      refused: true,
+      generatedBinding: true,
+    },
+  ];
+}
