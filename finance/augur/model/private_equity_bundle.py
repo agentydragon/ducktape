@@ -88,16 +88,9 @@ PRIVATE_EQUITY_BUNDLE_SCHEMA = pl.Schema(
 PRIVATE_EQUITY_BUNDLE_FRAME = FrameSpec("private_equity_bundle", PRIVATE_EQUITY_BUNDLE_SCHEMA)
 
 # Columns exposed for per-issuer matrix views.
-_FLOAT_COLUMNS = {
-    "mark_usd_per_unit",
-    "sale_capacity_fraction",
-    "eligible_fraction",
-    "forced_sale_fraction",
-    "forced_recovery_cashout_usd",
-    "company_valuation_usd",
-}
-_INT_COLUMNS = {"regime_code", "event_kind_code"}
-_BOOL_COLUMNS = {"sale_opportunity_active", "liquidity_blocked"}
+_FLOAT_COLUMNS = frozenset(PrivateEquityFloatChannel)
+_INT_COLUMNS = frozenset(PrivateEquityIntChannel)
+_BOOL_COLUMNS = frozenset(PrivateEquityBoolChannel)
 
 type FloatMatrix = npt.NDArray[np.float64]
 type IntMatrix = npt.NDArray[np.int64]

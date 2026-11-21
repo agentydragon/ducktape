@@ -6,13 +6,12 @@ so the same generic code serves any deployment's agents."""
 
 from __future__ import annotations
 
-from collections import Counter
-
 import yaml
 from more_itertools import one
 from pydantic import TypeAdapter
 
 from finance.augur.api.config import CalibrationCatalogConfig, Config, LocationConfig, PropertyAssetConfig
+from finance.augur.api.schemas import duplicates
 from finance.augur.api.wire import ActorRole, CalibrationInfo, CatalogResponse, Location, Property, SettingsResponse
 from finance.augur.calibration.catalog import MarketCatalog
 from finance.augur.model.series import LocationId
@@ -26,8 +25,7 @@ def _location_from_config(config: LocationConfig) -> Location:
 
 def _locations_for_config(config: Config) -> tuple[Location, ...]:
     locations = tuple(_location_from_config(location) for location in config.locations)
-    location_id_counts = Counter(location.id for location in locations)
-    duplicate_ids = sorted(location_id for location_id, count in location_id_counts.items() if count > 1)
+    duplicate_ids = duplicates(location.id for location in locations)
     if duplicate_ids:
         raise ValueError(f"Augur location catalog has duplicate location ids: {duplicate_ids}")
     return locations
@@ -76,8 +74,7 @@ def _load_properties(config: Config, *, location_by_id: dict[LocationId, Locatio
     properties = PROPERTY_ROWS_ADAPTER.validate_python(yaml.safe_load(path.read_text(encoding="utf-8")))
     for property_ in properties:
         _validate_property_location(property_, location_by_id=location_by_id)
-    property_id_counts = Counter(property_.id for property_ in properties)
-    duplicate_ids = sorted(property_id for property_id, count in property_id_counts.items() if count > 1)
+    duplicate_ids = duplicates(property_.id for property_ in properties)
     if duplicate_ids:
         raise ValueError(f"{path} has duplicate property ids: {duplicate_ids}")
     return _apply_property_assets(config, properties)

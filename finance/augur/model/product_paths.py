@@ -7,10 +7,10 @@ These current approximations are not correctness or compatibility constraints;
 independently justified financial corrections can change them separately.
 """
 
-from collections import Counter
 from collections.abc import Sequence
 
 import numpy as np
+from more_itertools import duplicates_everseen
 
 from finance.augur.model.bond_fund import (
     MINIMUM_ANNUAL_YIELD,
@@ -30,7 +30,7 @@ def validate_product_symbols(*, equity: EquitySpec | None, instruments: Sequence
     symbols = [spec.symbol for spec in instruments]
     if equity is not None:
         symbols.append(equity.symbol)
-    duplicates = sorted(symbol for symbol, count in Counter(symbols).items() if count > 1)
+    duplicates = sorted(set(duplicates_everseen(symbols)))
     if duplicates:
         raise ValueError(f"construction prices a symbol more than once: {duplicates}")
 
