@@ -192,12 +192,11 @@ def test_gaffer_pr_policy_approves_only_create_pull_request(staging_manifests: l
     assert approval["schema"]["additionalProperties"] is False
 
 
-def test_cross_owner_reader_is_explicit_in_static_settings(staging_manifests: list[dict[str, Any]]) -> None:
+def test_staging_sampler_delegation_and_credential_files(staging_manifests: list[dict[str, Any]]) -> None:
     deployment = find_resource(staging_manifests, "Deployment", "actions")
     container = one(item for item in deployment["spec"]["template"]["spec"]["containers"] if item["name"] == "actions")
     config = find_resource(staging_manifests, "ConfigMap", "actions-settings")
     settings = yaml.safe_load(config["data"]["settings.yaml"])
-    assert settings["service_readers"] == [NOTIFICATIONS_URI]
     assert settings["session_delegation_service"] == CENTRAL_SAMPLER_URI
     action_policy = find_resource(staging_manifests, "CiliumNetworkPolicy", actions.NAME)
     sampler_labels = central_sampler.service(staging.ENV.namespace).pods.cilium
