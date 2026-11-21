@@ -28,6 +28,19 @@ if (shards === 4 && shard === 1) {
   assert.equal(relay.discardedLiteralComparedCases, 1);
   assert.equal(relay.discardedLiteralProvedCases, 1);
 }
+if (shards === 4 && shard === 3) {
+  const mutated = await runFuzz({
+    seed: 51981,
+    start: 16,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "composed",
+    validateEvery: 1,
+  });
+  assert.equal(mutated.mutationKinds.composedEffect, 1);
+  assert.equal(mutated.mutatedDifferent, 1);
+  assert.equal(mutated.mutatedVerdicts.unsafe, 1);
+}
 assert.deepEqual(makeCase(123, 42), makeCase(123, 42));
 assert.notDeepEqual(makeCase(123, 42), makeCase(124, 42));
 const scopedCandidate = makeCase(123, 11);
@@ -451,7 +464,8 @@ if (shards === 4 && shard === 0) {
   assert.equal(bulk.objectRefused + bulk.objectCompared, bulk.objectCases);
 }
 if (shards === 4 && shard === 1) assert.equal(bulk.different, bulk.cases);
-if (shards === 4 && shard === 2) for (const count of Object.values(bulk.mutationKinds)) assert.ok(count > 0);
+if (shards === 4 && shard === 2)
+  for (const [kind, count] of Object.entries(bulk.mutationKinds)) if (kind !== "composedEffect") assert.ok(count > 0);
 if (shards === 4 && shard === 3) {
   assert.equal(bulk.closureSourceExecuted, bulk.closureCases);
   assert.ok(bulk.finallyCases > 0);

@@ -1466,13 +1466,29 @@ export async function minimizeCase(input, fails) {
 async function mutateOutput(out, input, kind) {
   const modules = Object.keys(input.spec.modules);
   const files =
-    kind === "binding" || kind === "effect" ? [input.cell0Owner] : kind === "function" ? modules : [input.spec.entry];
+    kind === "composedEffect"
+      ? ["state.mjs"]
+      : kind === "binding" || kind === "effect"
+        ? [input.cell0Owner]
+        : kind === "function"
+          ? modules
+          : [input.spec.entry];
   for (const name of files) {
     const file = join(out, name);
     const original = await readFile(file, "utf8");
     let changed = original;
     if (kind === "binding") changed = original.replace(/let cell0 = (\d+);/, (_, n) => `let cell0 = ${Number(n) + 1};`);
-    else if (kind === "effect")
+    else if (kind === "composedEffect") {
+      const discarded = print(input.ast.body[0]);
+      if (original.includes(discarded)) {
+        const moved = original.replace(discarded, "");
+        changed = moved.replace(
+          /(?:let|var|const) global = \d+;/,
+          (declaration) => `${declaration}\nglobalThis.record(global);`
+        );
+        if (changed === moved) changed = original;
+      }
+    } else if (kind === "effect")
       changed = original.replace(/let cell0 = (\d+);/, (declaration) => `${declaration}\nglobalThis.record(cell0);`);
     else if (kind === "function")
       changed = original.replace(/return (cell\d+);/, (_, binding) => `return ${binding} + 1;`);
@@ -1677,7 +1693,7 @@ export async function runFuzz({
     equal: 0,
     different: 0,
     mutated: 0,
-    mutationKinds: { binding: 0, effect: 0, function: 0, export: 0, import: 0 },
+    mutationKinds: { binding: 0, effect: 0, function: 0, export: 0, import: 0, composedEffect: 0 },
     splitCompared: 0,
     splitDifferent: 0,
     mutatedDifferent: 0,
@@ -1712,9 +1728,12 @@ export async function runFuzz({
             : makeCase(seed, index);
       const input = splitMode === "independent" ? independentSplit(generated, seed, index) : generated;
       const mutation =
-        !["composed", "async"].includes(input.grammar) && !input.independentSplit && index % 8 === 2
-          ? ["binding", "effect", "function", "export", "import"][Math.floor(index / 8) % 5]
-          : null;
+        input.grammar === "composed" && !input.independentSplit && input.hasDiscardedLiteral && index % 52 === 16
+          ? "composedEffect"
+          : !["composed", "async"].includes(input.grammar) && !input.independentSplit && index % 8 === 2
+            ? ["binding", "effect", "function", "export", "import"][Math.floor(index / 8) % 5]
+            : null;
+      if (mutation === "composedEffect") input.calls = [];
       const independentCategory = input.invalidAssignment ? "invalidAssignment" : input.cyclic ? "cyclic" : "acyclic";
       if (input.independentSplit) {
         summary.independentRequested[independentCategory]++;
