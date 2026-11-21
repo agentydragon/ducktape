@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from textwrap import dedent
-
 from cdk8s import App, Chart
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
@@ -19,6 +17,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 )
 
 from cluster.cdk8s import namespaces, node_scheduling
+from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.haku_ci import runner
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -27,6 +26,7 @@ from cluster.cdk8s.vpa_policy import ContainerPolicy, ControlledValues
 
 NAME = "keda"
 NAMESPACE = "keda"
+_OPERATOR_NAME = "keda-operator"
 METRICS_SERVER_NAME = "keda-operator-metrics-apiserver"
 OUTPUT_DIR = f"{GENERATED_ROOT}/keda"
 
@@ -50,18 +50,15 @@ def _memory_policy(container_name: str, resources: dict[str, dict[str, str]]) ->
     )
 
 
-def _auto_vpa_patch(name: str) -> HelmReleaseSpecPostRenderersKustomizePatches:
-    # The chart lacks per-Deployment annotations; inherit the namespace's VPA policy.
+def _deployment_annotations_patch(
+    name: str, annotations: dict[str, str]
+) -> HelmReleaseSpecPostRenderersKustomizePatches:
+    # The chart's annotation settings apply to all Deployments or to Pod templates.
     return HelmReleaseSpecPostRenderersKustomizePatches(
         target=HelmReleaseSpecPostRenderersKustomizePatchesTarget(kind="Deployment", name=name),
-        patch=dedent(f"""\
-            apiVersion: apps/v1
-            kind: Deployment
-            metadata:
-              name: {name}
-              annotations:
-                {namespaces.VPA_UPDATE_MODE_LABEL}: {Vpa.AUTO}
-            """),
+        patch=yaml_config(
+            {"apiVersion": "apps/v1", "kind": "Deployment", "metadata": {"name": name, "annotations": annotations}}
+        ),
     )
 
 
@@ -79,7 +76,7 @@ def chart(app: App) -> Chart:
             (
                 # Keep CPU reservations for these scaling and admission services. The memory floors
                 # preserve the startup reservations even when the recommender has sparse samples.
-                _memory_policy("keda-operator", operator_resources),
+                _memory_policy(_OPERATOR_NAME, operator_resources),
                 _memory_policy(METRICS_SERVER_NAME, metrics_resources),
                 _memory_policy("keda-admission-webhooks", webhook_resources),
                 ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
@@ -106,7 +103,25 @@ def chart(app: App) -> Chart:
         post_renderers=[
             HelmReleaseSpecPostRenderers(
                 kustomize=HelmReleaseSpecPostRenderersKustomize(
-                    patches=[_auto_vpa_patch("keda-admission-webhooks"), _auto_vpa_patch(METRICS_SERVER_NAME)]
+                    patches=[
+                        _deployment_annotations_patch(
+                            "keda-admission-webhooks", {namespaces.VPA_UPDATE_MODE_LABEL: Vpa.AUTO}
+                        ),
+                        _deployment_annotations_patch(
+                            METRICS_SERVER_NAME, {namespaces.VPA_UPDATE_MODE_LABEL: Vpa.AUTO}
+                        ),
+                        _deployment_annotations_patch(
+                            _OPERATOR_NAME,
+                            namespaces.initial_request_annotations(
+                                ContainerPolicy.cpu_and_memory_requests_only(
+                                    _OPERATOR_NAME,
+                                    cpu_floor=operator_resources["requests"]["cpu"],
+                                    memory_floor=operator_resources["requests"]["memory"],
+                                    memory_ceiling=operator_resources["limits"]["memory"],
+                                )
+                            ),
+                        ),
+                    ]
                 )
             )
         ],

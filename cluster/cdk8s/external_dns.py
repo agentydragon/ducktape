@@ -35,13 +35,8 @@ def chart(app: App) -> Chart:
         vpa=VpaProfile(
             Vpa.INITIAL,
             (
-                ContainerPolicy(
-                    container_name=NAME,
-                    controlled_values=ControlledValues.REQUESTS_ONLY,
-                    controlled_resources=("memory",),
-                    # VPA admission can briefly use stale CPU recommendations after this policy changes.
-                    min_allowed={"cpu": _CPU_REQUEST, "memory": _MEMORY_REQUEST},
-                    max_allowed={"cpu": _CPU_REQUEST},
+                ContainerPolicy.cpu_and_memory_requests_only(
+                    NAME, cpu_floor=_CPU_REQUEST, memory_floor=_MEMORY_REQUEST
                 ),
                 ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
             ),

@@ -31,9 +31,14 @@ class ContainerPolicy(BaseModel):
 
     @classmethod
     def cpu_and_memory_requests_only(
-        cls, container_name: str, *, cpu_floor: str | None = None, memory_floor: str | None = None
+        cls,
+        container_name: str,
+        *,
+        cpu_floor: str | None = None,
+        memory_floor: str | None = None,
+        memory_ceiling: str | None = None,
     ) -> Self:
-        """Size both requests, with floors where the workload needs a reservation."""
+        """Size both requests with optional reservation floors and a memory request ceiling."""
         floors = {
             resource: floor for resource, floor in (("cpu", cpu_floor), ("memory", memory_floor)) if floor is not None
         }
@@ -42,6 +47,7 @@ class ContainerPolicy(BaseModel):
             controlled_values=ControlledValues.REQUESTS_ONLY,
             controlled_resources=("cpu", "memory"),
             min_allowed=floors or None,
+            max_allowed={"memory": memory_ceiling} if memory_ceiling is not None else None,
         )
 
     @classmethod
