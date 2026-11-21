@@ -46,11 +46,9 @@ Options to explore:
 
 ## Per-turn eval logging
 
-`agent.run()` is a black box — no per-turn callbacks in
-agent_framework. Replace with a manual conversation loop (like
-`skills/info_gathering/evals/function_learning/function_learning.py`)
-to log timestamps, token counts, and tool call names on every LLM
-turn. This would let us see which tool calls are slow and where time
+The eval's `agent.run()` logs nothing per turn. Add a `ChatMiddleware` (like `_TokenUsageTracker` in
+`skills/info_gathering/evals/function_learning/function_learning.py`) to log timestamps, token counts,
+and tool call names on every LLM turn. This would let us see which tool calls are slow and where time
 is spent during eval runs.
 
 ## File upstream Grocy bug for AddProduct freezer-branch default_best_before_days
