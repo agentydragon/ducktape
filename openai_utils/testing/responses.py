@@ -30,7 +30,6 @@ from openai_utils.model import (
     ResponsesRequest,
     ResponsesResult,
     ResponseUsage,
-    WireRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -145,9 +144,8 @@ class GeneratorMock(ItemFactory, Model):
     def play(self) -> PlayGen:
         """Override in subclass to provide the generator."""
 
-    async def sample(self, req: WireRequest) -> ResponsesResult:
+    async def sample(self, req: ResponsesRequest) -> ResponsesResult:
         """Send request to generator, return wrapped response."""
-        assert isinstance(req, ResponsesRequest)
         try:
             result = self._gen.send(req)
         except StopIteration:
