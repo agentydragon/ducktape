@@ -107,7 +107,7 @@ func (p *ElectricProxy) entities(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	p.forward(w, r, threadID, "thread_entity", entityColumns, entityWhere,
+	p.forward(w, r, "thread_entity", entityColumns, entityWhere,
 		map[string]string{"1": threadID, "2": epoch}, subset)
 }
 
@@ -129,7 +129,7 @@ func (p *ElectricProxy) chunks(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	p.forward(w, r, threadID, "thread_payload_chunk", chunkColumns, chunkWhere,
+	p.forward(w, r, "thread_payload_chunk", chunkColumns, chunkWhere,
 		map[string]string{"1": threadID, "2": epoch, "3": field}, subset)
 }
 
@@ -171,7 +171,7 @@ func (p *ElectricProxy) prepareShape(w http.ResponseWriter, r *http.Request) (st
 func (p *ElectricProxy) forward(
 	w http.ResponseWriter,
 	r *http.Request,
-	threadID, table, columns, where string,
+	table, columns, where string,
 	pinnedParams map[string]string,
 	subset *SubsetRequest,
 ) {

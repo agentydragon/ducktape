@@ -174,7 +174,7 @@ func (r *streamingRoutes) dispatcher(w http.ResponseWriter, request *http.Reques
 
 func (r *streamingRoutes) forwardDispatcher(w http.ResponseWriter, request *http.Request, ctx context.Context) {
 	if err := r.deps.DispatcherHTTP.ForwardHTTP(w, request, ctx, request.PathValue("path"), ""); err != nil {
-		writeUpstreamOpenError(w, request.Method, request, err)
+		writeUpstreamOpenError(w, request, err)
 	}
 }
 
@@ -263,7 +263,7 @@ func (r *streamingRoutes) operatorFacade(w http.ResponseWriter, request *http.Re
 
 func (r *streamingRoutes) forwardFacade(w http.ResponseWriter, request *http.Request, ctx context.Context, upstream Upstream, path, bearer string) {
 	if err := upstream.ForwardHTTP(w, request, ctx, path, bearer); err != nil {
-		writeUpstreamOpenError(w, request.Method, request, err)
+		writeUpstreamOpenError(w, request, err)
 	}
 }
 
@@ -276,13 +276,13 @@ func writeFederationError(w http.ResponseWriter, err error) {
 	httpresponse.WriteJSON(w, http.StatusBadGateway, map[string]any{"detail": map[string]any{"method": http.MethodPost, "url": "", "upstream_status": nil, "error_type": fmt.Sprintf("%T", err)}})
 }
 
-func writeUpstreamOpenError(w http.ResponseWriter, method string, request *http.Request, err error) {
+func writeUpstreamOpenError(w http.ResponseWriter, request *http.Request, err error) {
 	code := http.StatusServiceUnavailable
 	if errors.Is(err, context.DeadlineExceeded) {
 		code = http.StatusGatewayTimeout
 	}
 	path := request.URL.Path
-	detail := map[string]any{"method": method, "url": path, "upstream_status": nil, "error_type": fmt.Sprintf("%T", err)}
+	detail := map[string]any{"method": request.Method, "url": path, "upstream_status": nil, "error_type": fmt.Sprintf("%T", err)}
 	httpresponse.WriteJSON(w, code, map[string]any{"detail": detail})
 }
 
@@ -309,16 +309,14 @@ func (r *streamingRoutes) console(w http.ResponseWriter, request *http.Request) 
 	target := &identitypb.EnvironmentTarget{Namespace: r.deps.SandboxNamespace, Name: request.PathValue("name"), Uid: uid}
 	sandbox, err := r.deps.Sandboxes.GetEnvironment(ctx, &environmentpb.GetEnvironmentRequest{Target: target})
 	if err != nil {
-		_ = sandboxHTTPErrorToRaw(w, err)
+		sandboxHTTPErrorToRaw(w, err)
 		return
 	}
 	if sandbox == nil || !proto.Equal(sandbox.GetTarget(), target) {
 		httpresponse.WriteDetailError(w, http.StatusServiceUnavailable, "Environment identity is incomplete or mismatched")
 		return
 	}
-	if err := startSSE(w); err != nil {
-		return
-	}
+	startSSE(w)
 	console, err := r.deps.Console.Open(ctx, target.GetNamespace(), target.GetName())
 	if err != nil {
 		var unavailable *sandboxes.ConsoleUnavailableError
@@ -369,17 +367,16 @@ func (r *streamingRoutes) relayConsole(w http.ResponseWriter, ctx context.Contex
 	}
 }
 
-func sandboxHTTPErrorToRaw(w http.ResponseWriter, err error) error {
+func sandboxHTTPErrorToRaw(w http.ResponseWriter, err error) {
 	switch {
 	case status.Code(err) == codes.NotFound:
 		httpresponse.WriteDetailError(w, http.StatusNotFound, err.Error())
 	default:
 		httpresponse.WriteDetailError(w, http.StatusServiceUnavailable, "Sandbox inventory is unavailable")
 	}
-	return err
 }
 
-func startSSE(w http.ResponseWriter) error {
+func startSSE(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Accel-Buffering", "no")
@@ -387,7 +384,6 @@ func startSSE(w http.ResponseWriter) error {
 	if flusher, ok := w.(http.Flusher); ok {
 		flusher.Flush()
 	}
-	return nil
 }
 
 func writeSSE(w http.ResponseWriter, event string, value any) error {

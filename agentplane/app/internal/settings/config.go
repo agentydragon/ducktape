@@ -122,7 +122,7 @@ type SandboxPreset struct {
 // NewSandboxDefaults are the operator-configured starting lifecycle policies for the create form.
 type NewSandboxDefaults struct {
 	WakeOnSend              bool   `mapstructure:"wake_on_send" json:"wake_on_send"`
-	IdleSuspendAfterSeconds *int64 `mapstructure:"idle_suspend_after_seconds" json:"idle_suspend_after_seconds" nullable:"true" minimum:"60"`
+	IdleSuspendAfterSeconds *int64 `mapstructure:"idle_suspend_after_seconds" json:"idle_suspend_after_seconds"`
 }
 
 type ActionFederationConfig struct {
@@ -142,28 +142,8 @@ type OperatorOIDCConfig struct {
 	TokenProfile string `mapstructure:"token_profile" json:"token_profile"`
 }
 
-type SessionDefaultsView struct {
-	Harness         string  `json:"harness"`
-	Model           string  `json:"model"`
-	CWD             string  `json:"cwd"`
-	ReasoningEffort *string `json:"reasoning_effort"`
-	Instructions    string  `json:"instructions"`
-	SetupScript     string  `json:"setup_script"`
-}
-
-type SandboxPresetView struct {
-	Name            string              `json:"name"`
-	Title           string              `json:"title"`
-	Template        string              `json:"template"`
-	PolicySets      []string            `json:"policy_sets" nullable:"false"`
-	InboxTags       []string            `json:"inbox_tags" nullable:"false"`
-	SessionDefaults SessionDefaultsView `json:"session_defaults"`
-	Bootstrap       string              `json:"bootstrap"`
-}
-
-// PresetViews returns the browser-visible Sandbox presets with the ThreadPreset resolved into the
-// same complete SessionDefaults object used when a thread is opened.
-func (c Config) PresetViews() []SandboxPresetView {
+// SandboxPresetNames lists the Sandbox presets in settings-file order, then any others by name.
+func (c Config) SandboxPresetNames() []string {
 	names := make([]string, 0, len(c.SandboxPresets))
 	seen := make(map[string]struct{}, len(c.SandboxPresets))
 	for _, name := range c.sandboxPresetOrder {
@@ -183,29 +163,7 @@ func (c Config) PresetViews() []SandboxPresetView {
 		}
 	}
 	sort.Strings(remaining)
-	names = append(names, remaining...)
-	views := make([]SandboxPresetView, 0, len(names))
-	for _, name := range names {
-		preset := c.SandboxPresets[name]
-		thread := c.ThreadPresets[preset.ThreadPreset]
-		views = append(views, SandboxPresetView{
-			Name: name, Title: preset.Title, Template: preset.Template,
-			PolicySets: nonNilStrings(preset.PolicySets), InboxTags: nonNilStrings(preset.InboxTags),
-			SessionDefaults: SessionDefaultsView{
-				Harness: thread.Harness, Model: thread.Model, CWD: thread.CWD,
-				ReasoningEffort: thread.ReasoningEffort, Instructions: thread.Instructions, SetupScript: thread.SetupScript,
-			},
-			Bootstrap: preset.Bootstrap,
-		})
-	}
-	return views
-}
-
-func nonNilStrings(values []string) []string {
-	if values == nil {
-		return []string{}
-	}
-	return values
+	return append(names, remaining...)
 }
 
 func defaultConfig() Config {
@@ -340,19 +298,6 @@ func (c *Config) applyDefaults(raw map[string]any) {
 			langfuse.SessionMetadataKey = "attributes.litellm.metadata.spend_logs_metadata.agentplane.session_id"
 		}
 	}
-	if c.Models.Models == nil {
-		c.Models.Models = []runtimeconfig.ModelOption{}
-	}
-	for i := range c.Models.Models {
-		if c.Models.Models[i].ReasoningEfforts == nil {
-			c.Models.Models[i].ReasoningEfforts = []string{}
-		}
-	}
-	for harness, models := range c.Models.Harnesses {
-		if models == nil {
-			c.Models.Harnesses[harness] = []string{}
-		}
-	}
 	threadPresets, _ := rawSection(raw, "thread_presets")
 	for name, preset := range c.ThreadPresets {
 		fields := rawMap(threadPresets)[name]
@@ -366,15 +311,6 @@ func (c *Config) applyDefaults(raw map[string]any) {
 			preset.SetupScript = ""
 		}
 		c.ThreadPresets[name] = preset
-	}
-	for name, preset := range c.SandboxPresets {
-		if preset.PolicySets == nil {
-			preset.PolicySets = []string{}
-		}
-		if preset.InboxTags == nil {
-			preset.InboxTags = []string{}
-		}
-		c.SandboxPresets[name] = preset
 	}
 }
 

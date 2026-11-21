@@ -34,7 +34,6 @@ type testProvider struct {
 	jwksMu          sync.RWMutex
 	loginJWKS       []jose.JSONWebKey
 	refreshedTokens int
-	exchangeStatus  int
 	exchangeSubject string
 	refreshRefused  bool
 	lastForm        url.Values
@@ -92,11 +91,6 @@ func (p *testProvider) serveHTTP(w http.ResponseWriter, r *http.Request) {
 				"refresh_token": "rotated-refresh-token",
 			})
 		case "client_credentials":
-			if p.exchangeStatus != 0 {
-				w.WriteHeader(p.exchangeStatus)
-				_, _ = w.Write([]byte("provider response must not escape"))
-				return
-			}
 			access := p.sign(p.target, "target-kid", claims(p.issuer, "action-audience", p.exchangeSubject, true, time.Now().Add(5*time.Minute)))
 			_ = json.NewEncoder(w).Encode(map[string]any{"access_token": access, "token_type": "Bearer"})
 		default:
