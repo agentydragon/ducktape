@@ -2,7 +2,7 @@ apiVersion: v1
 kind: Namespace
 metadata:
   annotations:
-    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "gc", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "10m", "memory": "128Mi"}, "maxAllowed": {"cpu": "25m", "memory": "256Mi"}, "controlledResources": ["cpu", "memory"]}, {"containerName": "master", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "100m", "memory": "128Mi"}, "maxAllowed": {"cpu": "150m", "memory": "256Mi"}, "controlledResources": ["cpu", "memory"]}, {"containerName": "worker", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "5m", "memory": "96Mi"}, "maxAllowed": {"cpu": "100m", "memory": "128Mi"}, "controlledResources": ["cpu", "memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
+    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "gc", "controlledValues": "RequestsOnly", "controlledResources": ["cpu", "memory"]}, {"containerName": "master", "controlledValues": "RequestsOnly", "controlledResources": ["cpu", "memory"]}, {"containerName": "worker", "controlledValues": "RequestsOnly", "controlledResources": ["cpu", "memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
   labels:
     goldilocks.fairwinds.com/vpa-update-mode: initial
     pod-security.kubernetes.io/enforce: privileged
