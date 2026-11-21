@@ -3103,6 +3103,20 @@ as implemented for the current UID-pinned destination. Revisit sustained collect
 evidence warrants it. App archive remains separate. Explicit Session deletion is not implemented; whether it deletes
 inbox contents or History remains deferred, and inbox/subscription behavior after deletion needs
 design.
+
+**Operator follow-up, 2026-11-21: resolve stranded notifications.** A retained native Session whose
+required Sandbox is deleted can keep an active inbox and subscriptions while notice delivery retries
+indefinitely; [#18323](https://github.com/agentydragon/ducktape/pull/18323) explains the failure in
+the app but does not resolve it. Reconsider the selected retention and collection policy above:
+investigate whether Notification should consult SessionDispatcher and stop notice attempts, cancel
+subscriptions, or take another action when the Session is gone or cannot run its harness. Distinguish
+confirmed deletion or permanent placement loss from temporary unavailability, and define authority,
+recovery, races and operator visibility before changing behavior. Preserve unread entries and History;
+do not silently discard data or treat app archive as deletion. A central sampler Session can eventually
+run and receive notices with no Sandbox attached, so missing attachment alone must not disable its
+inbox or subscriptions. Coordinate the decision with `SESSION_LIFETIME_IMPLEMENTATION` and
+`CENTRAL_SESSION_NOTIFICATIONS`, and with the proposed lifetime contract in #15436.
+
 While a Session's recorded `Identity` is absent, the operator's direction is human-operator-only
 inspection and administration through an operator-authenticated entry point, such as the app, and
 explicitly privileged service credentials. Under the selected name-based principal model, an
