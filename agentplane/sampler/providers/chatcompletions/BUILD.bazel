@@ -9,7 +9,10 @@ go_library(
         "stream.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/sampler/providers/chatcompletions",
-    visibility = ["//agentplane/sampler:__subpackages__"],
+    visibility = [
+        "//agentplane/history_service/internal/ingress:__pkg__",
+        "//agentplane/sampler:__subpackages__",
+    ],
     deps = [
         "//agentplane/proto:event_go_proto",
         "//agentplane/sampler/internal/content",
@@ -23,6 +26,7 @@ go_test(
     srcs = ["chatcompletions_test.go"],
     embed = [":chatcompletions"],
     deps = [
+        "//agentplane/proto:event_go_proto",
         "//agentplane/sampler/protocol",
     ],
 )

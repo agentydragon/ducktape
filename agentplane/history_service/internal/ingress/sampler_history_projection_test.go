@@ -17,12 +17,72 @@ import (
 	samplerpb "github.com/agentydragon/ducktape/agentplane/sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/anthropic"
+	"github.com/agentydragon/ducktape/agentplane/sampler/providers/chatcompletions"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/responses"
 	"github.com/agentydragon/ducktape/agentplane/sampler/testing/exportfixture"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
+
+func TestChatCompletionsReasoningProjectsToHistory(t *testing.T) {
+	fixture := newSamplerExportFixture(t, newSamplerExportPlan(0, 0, false))
+	session := fixture.openSessionWithAPI(t, &identitypb.Identity{
+		Name: fixture.identity.Identity.Name, Uid: string(fixture.identity.Identity.UID),
+	}, protocol.APIStyleChatCompletions)
+	scenario, err := fixture.source.StartRecoveryScenario(t.Context(), session, "reasoning-turn")
+	if err != nil {
+		t.Fatal(err)
+	}
+	intent, evidence, err := scenario.BeginSampling(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "data: {\"id\":\"chat\",\"choices\":[{\"delta\":{\"reasoning_content\":\"thinking\"}}]}\n\n"+
+			"data: {\"id\":\"chat\",\"choices\":[{\"delta\":{\"content\":\"answer\"},\"finish_reason\":\"stop\"}]}\n\n"+
+			"data: [DONE]\n\n")
+	}))
+	defer server.Close()
+	result, err := chatcompletions.Sample(t.Context(), server.Client(), server.URL, "", []byte(`{}`), evidence, nil, false, protocol.ProviderHooks{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := scenario.FinishSampling(t.Context(), intent, result.Audit, []json.RawMessage{result.Record}, result.ContextTokens); err != nil {
+		t.Fatal(err)
+	}
+	cursor, err := fixture.source.Outbox().CurrentCursor(t.Context(), session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := scenario.Release(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	exportSamplerHistoryThrough(t, fixture, session, cursor)
+	projected := projectSamplerHistory(t, fixture, session, cursor)
+	for id, want := range map[string]struct {
+		kind eventpb.ItemKind
+		text string
+	}{"chat#reasoning": {eventpb.ItemKind_ITEM_KIND_REASONING, "thinking"}, "chat": {eventpb.ItemKind_ITEM_KIND_ASSISTANT_TEXT, "answer"}} {
+		item := projected.items[id]
+		if item == nil || item.GetKind() != want.kind || item.GetText() == nil || item.GetTextRef() == nil {
+			t.Fatalf("projected item %q: %v", id, item)
+		}
+		ref := item.GetTextRef()
+		var encoded []byte
+		if err := fixture.historyDB.QueryRowContext(t.Context(), `SELECT text FROM thread_payload_chunk
+			WHERE thread_id = $1 AND projection_epoch = $2 AND owner_cursor = $3 AND owner_id = $4
+			AND field = 'text' AND generation = $5 AND chunk_index = 0`,
+			uuid.MustParse(session), ref.GetProjectionEpoch(), ref.GetOwnerCursor(), ref.GetOwnerId(), ref.GetGeneration()).Scan(&encoded); err != nil {
+			t.Fatal(err)
+		}
+		var text string
+		if err := json.Unmarshal(encoded, &text); err != nil || text != want.text {
+			t.Fatalf("projected text for %q = %q, error %v", id, text, err)
+		}
+	}
+}
 
 func TestSamplerRecoveryProjectsRetainedPriorToolAndOnlyAbandonedItems(t *testing.T) {
 	apis := []protocol.APIStyle{protocol.APIStyleResponses, protocol.APIStyleAnthropicMessages}
