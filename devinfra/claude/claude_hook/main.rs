@@ -441,7 +441,7 @@ async fn run_daemon(sock: PathBuf, daemon_dir: PathBuf, ready_fd: Option<i32>) {
             "daemon: sourcing startup_env_script {}",
             script_path.display()
         );
-        let r = source_env_script(&script_path, &HashMap::new());
+        let r = source_env_script(&script_path);
         if let Some(code) = r.exit_code {
             if code != 0 {
                 eprintln!("startup_env_script exited {code}: {}", r.output);

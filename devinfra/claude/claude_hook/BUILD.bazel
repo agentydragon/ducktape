@@ -112,7 +112,6 @@ rust_binary(
         "@crates//:shlex",
         "@crates//:tempfile",
         "@crates//:tokio",
-        "@crates//:tower",
         "@crates//:url",
     ],
 )

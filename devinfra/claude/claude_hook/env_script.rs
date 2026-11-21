@@ -38,7 +38,7 @@ pub fn parse_env_null_delimited(raw: &[u8]) -> HashMap<String, String> {
     result
 }
 
-pub fn source_env_script(script_path: &Path, extra_env: &HashMap<String, String>) -> StartupResult {
+pub fn source_env_script(script_path: &Path) -> StartupResult {
     if !script_path.exists() {
         return StartupResult {
             exit_code: Some(1),
@@ -47,12 +47,9 @@ pub fn source_env_script(script_path: &Path, extra_env: &HashMap<String, String>
         };
     }
 
-    // Initial env = daemon's env + extra_env (profile-level flags). The overlay
-    // is what the script ADDED on top of this baseline.
-    let mut initial_env: HashMap<String, String> = std::env::vars().collect();
-    for (k, v) in extra_env {
-        initial_env.insert(k.clone(), v.clone());
-    }
+    // Initial env = daemon's env. The overlay is what the script ADDED on top
+    // of this baseline.
+    let initial_env: HashMap<String, String> = std::env::vars().collect();
 
     let mut cmd = Command::new("bash");
     cmd.arg("-c")
@@ -130,7 +127,7 @@ mod tests {
 
     #[test]
     fn source_script_missing_file() {
-        let r = source_env_script(Path::new("/tmp/does-not-exist-xyz"), &HashMap::new());
+        let r = source_env_script(Path::new("/tmp/does-not-exist-xyz"));
         assert_eq!(r.exit_code, Some(1));
         assert!(r.env_overlay.is_empty());
     }
@@ -143,27 +140,18 @@ mod tests {
         writeln!(tmp, "export PATH=\"/overridden:$PATH\"").unwrap();
         tmp.flush().unwrap();
 
-        let r = source_env_script(tmp.path(), &HashMap::new());
+        let r = source_env_script(tmp.path());
         assert_eq!(r.exit_code, Some(0));
         assert_eq!(r.env_overlay.get("MY_OVERLAY_VAR").unwrap(), "hello");
         // PATH was modified → should be in overlay.
         assert!(r.env_overlay.contains_key("PATH"));
-    }
-
-    #[test]
-    fn extra_env_not_in_overlay() {
-        use std::io::Write;
-        let mut tmp = tempfile::NamedTempFile::new().unwrap();
-        // Script doesn't touch FROM_PROFILE; it comes from extra_env so should
-        // NOT appear in the overlay.
-        writeln!(tmp, "export ADDED_BY_SCRIPT=yes").unwrap();
-        tmp.flush().unwrap();
-
-        let mut extra = HashMap::new();
-        extra.insert("FROM_PROFILE".to_string(), "1".to_string());
-        let r = source_env_script(tmp.path(), &extra);
-        assert_eq!(r.exit_code, Some(0));
-        assert!(r.env_overlay.contains_key("ADDED_BY_SCRIPT"));
-        assert!(!r.env_overlay.contains_key("FROM_PROFILE"));
+        // Only added or changed vars: inherited, unchanged ones stay out.
+        for (k, v) in &r.env_overlay {
+            assert_ne!(
+                std::env::var(k).ok().as_deref(),
+                Some(v.as_str()),
+                "{k} is unchanged"
+            );
+        }
     }
 }
