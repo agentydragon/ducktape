@@ -63,8 +63,9 @@ removed: every path through it reached its "could not read `tune2fs -l`" warning
 so it produced a warning line per session and nothing else. `git log` has it if
 device access ever returns.
 
-The Bazel cache (`~/.claude/session-env/<id>/bazel-cache`) lives on the ext4
-root disk. There are **no tmpfs mounts** for Bazel cache or container storage.
+The per-session Bazel output base (`~/.claude/session-env/<id>/bazel-output-base`)
+lives on the ext4 root disk. There are **no tmpfs mounts** for Bazel cache or
+container storage.
 
 ### Typical Disk Usage (observed 2026-04-01)
 
