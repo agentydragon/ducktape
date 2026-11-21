@@ -44,15 +44,14 @@ py_library(
 )
 
 # CLEANUP(added 2026-09-07): function_learning, run_all_evals, analyze and their tests/binaries
-#   are disabled -- agent_framework_core (latest release checked: 1.17.0) reads
-#   `initialize_result.protocolVersion` in its MCP span tracing (agent_framework/_mcp.py), which
+#   are disabled -- agent_framework_core 1.18.0 (pinned) through 1.22.0 read
+#   `initialize_result.protocolVersion` in their MCP span tracing (agent_framework/_mcp.py), which
 #   no longer exists under mcp-sdk >=2.0's snake_case InitializeResult (`protocol_version`); every
-#   MCP-backed agent_framework connection now raises AttributeError before completing. Tracked
-#   upstream: https://github.com/microsoft/agent-framework/issues (no fix as of the #5786
-#   mcp-sdk/fastmcp migration). functions/result_types/prompts/scoring and test_functions are
-#   unaffected (no agent_framework MCP path) and stay enabled. Restore once agent_framework_core
-#   ships a release compatible with mcp-sdk >=2.0's InitializeResult shape; source files are
-#   otherwise untouched.
+#   MCP-backed agent_framework connection now raises AttributeError before completing. 1.23.0 is
+#   the first release that reads `protocol_version`. functions/result_types/prompts/scoring and
+#   test_functions are unaffected (no agent_framework MCP path) and stay enabled. Restore once
+#   requirements_bazel.txt pins agent_framework_core >=1.23.0; source files are otherwise
+#   untouched.
 #
 # py_library(
 #     name = "function_learning",
