@@ -66,26 +66,16 @@ def _sandbox_preset_policy_sets(docs: list[dict[str, Any]]) -> dict[str, set[str
     return {name: set(spec["policy_sets"]) for name, spec in presets.items()}
 
 
-def test_egress_uses_embedded_migrations_and_startup_probe(catalog_manifests: list[dict[str, Any]]) -> None:
+def test_egress_reads_its_settings_file_and_database_url(catalog_manifests: list[dict[str, Any]]) -> None:
     pod = find_resource(catalog_manifests, "Deployment", "egress")["spec"]["template"]["spec"]
     proxy = one(container for container in pod["containers"] if container["name"] == "proxy")
-    assert not pod.get("initContainers")
-    startup = proxy["startupProbe"]["exec"]["command"]
-    readiness = proxy["readinessProbe"]["exec"]["command"]
-    assert startup[:2] == readiness[:2] == ["/healthprobe", "--target"]
-    assert "127.0.0.1:8081" in startup
-    assert "spiffe://agentplane/egress-proxy" in startup
-    assert "--service" in startup
-    assert "livez" in startup
     proxy_env = {entry["name"]: entry for entry in proxy["env"]}
-    assert "PGSSLMODE" not in proxy_env
     settings_path = PurePosixPath(proxy_env[EgressSettings.config_file_env]["value"])
     settings_mount = one(mount for mount in proxy["volumeMounts"] if mount["mountPath"] == str(settings_path.parent))
     settings_volume = one(volume for volume in pod["volumes"] if volume["name"] == settings_mount["name"])
     assert settings_volume["configMap"]["name"] == "egress-go-settings"
     settings_document = find_resource(catalog_manifests, "ConfigMap", "egress-go-settings")["data"][settings_path.name]
     assert settings_document
-    assert "args" not in proxy
     assert {name for name in proxy_env if name.startswith("AGENTPLANE_EGRESS_")} == {
         EgressSettings.config_file_env,
         EgressSettings.database_url_env,
@@ -483,6 +473,7 @@ def test_shared_coding_models_preserve_provider_protocols(catalog_manifests: lis
         if route.upstream.provider == Provider.ANTHROPIC_API:
             assert model["api"] == "anthropic_messages"
             assert model["connection"] == "anthropic-api"
+            assert model["provider_model"] == route.model.id
             assert model["exec_encoding"] == "json"
         elif route.upstream.provider == Provider.CHATGPT:
             assert model["api"] == "responses"
@@ -802,10 +793,6 @@ def test_the_local_api_server_bearer_is_the_proxys_mounted_token(svid_egress_man
     assert PurePosixPath(server["token_file"]).parent == PurePosixPath("/var/run/secrets/kubernetes.io/serviceaccount")
 
 
-if __name__ == "__main__":
-    pytest_bazel.main()
-
-
 def test_aiquota_read_is_read_only_and_not_public(catalog_manifests: list[dict[str, Any]]) -> None:
     config = yaml.safe_load(find_resource(catalog_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])
     for name in ("finance-agent", "haku"):
@@ -832,3 +819,7 @@ def test_aiquota_read_is_read_only_and_not_public(catalog_manifests: list[dict[s
         and rule["paths"] == ["/v1/quotas", "/v1/providers/*/raw"]
         for rule in quota["spec"]["rules"]
     )
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

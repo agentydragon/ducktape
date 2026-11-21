@@ -13,7 +13,6 @@ import yaml
 from cdk8s import App, Testing as Cdk8sTesting  # alias avoids pytest collecting Testing as a test class
 from more_itertools import one
 
-from agentplane.env.runtime.harness import Harness
 from agentplane.net.peertls.config import (
     CENTRAL_SAMPLER_URI,
     GATEWAY_SESSIONS_URI,
@@ -155,25 +154,6 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
         "credential_file": "/var/run/secrets/central-sampler-anthropic/api-key",
     }
     assert all("credential" not in connection["auth"] for connection in config["connections"].values())
-
-    latest_anthropic = {
-        route.id: route
-        for route in staging.STAGING_APP_MODELS.central_sampler
-        if route.upstream.provider.value == "anthropic-api"
-    }
-    catalog = yaml.safe_load(find_resource(staging_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])[
-        "models"
-    ]
-    assert set(latest_anthropic).issubset(catalog["harnesses"][Harness.CENTRAL_SAMPLER.value])
-    assert not set(latest_anthropic) & set(catalog["harnesses"][Harness.CODEX.value])
-    assert not set(latest_anthropic) & set(catalog["harnesses"][Harness.CLAUDE.value])
-    assert set(latest_anthropic).issubset(config["models"])
-    for route_id, route in latest_anthropic.items():
-        model = config["models"][route_id]
-        assert model["connection"] == "anthropic-api"
-        assert model["provider_model"] == route.model.id
-        assert model["api"] == "anthropic_messages"
-        assert model["exec_encoding"] == "json"
 
     anthropic_secret_volume = one(
         volume

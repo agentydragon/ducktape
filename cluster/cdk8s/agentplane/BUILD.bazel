@@ -1152,7 +1152,6 @@ py_test(
         ":runner_gateway",
         ":staging",
         ":workload_tls",
-        "//agentplane/env/runtime:harness",
         "//agentplane/net/peertls:config",
         "//cluster/cdk8s/testing:manifests",
         "@pypi//cdk8s",
