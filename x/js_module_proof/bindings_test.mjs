@@ -755,7 +755,7 @@ if (runSection(1)) {
   assert.match(checked.detail, /numeric bounds/);
 }
 
-if (runSection(1)) {
+if (runSection(3)) {
   const constSource = join(root, "const-alias-source.mjs");
   const constSpec = join(root, "const-alias-spec.json");
   const constOut = join(root, "const-alias-out");
@@ -828,4 +828,30 @@ if (runSection(1)) {
   const writeNode = spawnSync(process.execPath, ["--input-type=module", "-e", writeScript], { encoding: "utf8" });
   assert.equal(writeNode.status, 0, writeNode.stderr);
   assert.equal(writeNode.stdout.trim(), "TypeError");
+
+  const branchSource = join(root, "branch-alias-source.mjs");
+  const branchOut = join(root, "branch-alias-out");
+  await writeFile(
+    branchSource,
+    `let value = 3;\nlet other = 5;\nfunction compute(p) { let local = p; if (value > p) { local += value; } return local; }\nexport { compute };\n`
+  );
+  assert.equal(cli("generate", branchSource, constSpec, branchOut).value.result, "generated");
+  const branchState = join(branchOut, "state.mjs");
+  await writeFile(branchState, (await readFile(branchState, "utf8")) + "export { other };\n");
+  const branchLogic = join(branchOut, "logic.mjs");
+  const branchText = await readFile(branchLogic, "utf8");
+  const branchResult = cli("validate", branchSource, constSpec, branchOut).value;
+  assert.equal(branchResult.result, "proved under assumptions", JSON.stringify(branchResult));
+  const branchCalls = [
+    { name: "compute", args: [0] },
+    { name: "compute", args: [4] },
+  ];
+  assert.deepEqual(execute(branchSource, branchCalls), { events: [], results: [3, 4] });
+  assert.deepEqual(execute(join(branchOut, "entry.mjs"), branchCalls), { events: [], results: [3, 4] });
+  assert.match(branchText, /value as __split_local_0/);
+  await writeFile(branchLogic, branchText.replace("value as __split_local_0", "other as __split_local_0"));
+  const redirectedBranch = cli("validate", branchSource, constSpec, branchOut).value;
+  assert.equal(redirectedBranch.result, "unsafe", JSON.stringify(redirectedBranch));
+  assert.deepEqual(execute(branchSource, redirectedBranch.calls), { events: [], results: [3] });
+  assert.deepEqual(execute(join(branchOut, "entry.mjs"), redirectedBranch.calls), { events: [], results: [5] });
 }

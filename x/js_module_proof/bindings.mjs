@@ -1426,6 +1426,21 @@ function generateFiles(source, spec, names) {
             const statements = node.body.body;
             const prefix = statements.slice(0, -1);
             const declarations = prefix.filter((statement) => statement.type === "VariableDeclaration");
+            const isWrite = (statement) =>
+              statement.type === "ExpressionStatement" &&
+              ((statement.expression.type === "AssignmentExpression" &&
+                ["=", "+=", "*=", "-=", "%=", "/=", "&=", "|=", "^=", ">>>=", "<<=", ">>="].includes(
+                  statement.expression.operator
+                ) &&
+                statement.expression.left.type === "Identifier") ||
+                (statement.expression.type === "UpdateExpression" &&
+                  ["++", "--"].includes(statement.expression.operator) &&
+                  statement.expression.argument.type === "Identifier"));
+            const isBranch = (statement) =>
+              statement.type === "IfStatement" &&
+              statement.alternate === null &&
+              statement.consequent.type === "BlockStatement" &&
+              statement.consequent.body.every(isWrite);
             check(
               node.params.every((parameter) => parameter.type === "Identifier") &&
                 statements.at(-1)?.type === "ReturnStatement" &&
@@ -1437,17 +1452,7 @@ function generateFiles(source, spec, names) {
                     declaration.declarations[0].init
                 ) &&
                 prefix.every(
-                  (statement) =>
-                    statement.type === "VariableDeclaration" ||
-                    (statement.type === "ExpressionStatement" &&
-                      ((statement.expression.type === "AssignmentExpression" &&
-                        ["=", "+=", "*=", "-=", "%=", "/=", "&=", "|=", "^=", ">>>=", "<<=", ">>="].includes(
-                          statement.expression.operator
-                        ) &&
-                        statement.expression.left.type === "Identifier") ||
-                        (statement.expression.type === "UpdateExpression" &&
-                          ["++", "--"].includes(statement.expression.operator) &&
-                          statement.expression.argument.type === "Identifier")))
+                  (statement) => statement.type === "VariableDeclaration" || isWrite(statement) || isBranch(statement)
                 ),
               "local import renaming supports only local declarations and assignments"
             );
@@ -1488,14 +1493,18 @@ function generateFiles(source, spec, names) {
               }
               check(false, "local import renaming supports only pure returning expressions");
             };
+            const visitWrite = (item) => {
+              const target =
+                item.expression.type === "AssignmentExpression" ? item.expression.left : item.expression.argument;
+              check(mutableNames.has(target.name), "cannot write an imported or immutable binding");
+              if (item.expression.type === "AssignmentExpression") visit(item.expression.right);
+            };
             for (const item of prefix) {
               if (item.type === "VariableDeclaration") visit(item.declarations[0].init);
-              else {
-                const target =
-                  item.expression.type === "AssignmentExpression" ? item.expression.left : item.expression.argument;
-                check(mutableNames.has(target.name), "cannot write an imported or immutable binding");
-                if (item.expression.type === "AssignmentExpression") visit(item.expression.right);
-              }
+              else if (item.type === "IfStatement") {
+                visit(item.test);
+                item.consequent.body.forEach(visitWrite);
+              } else visitWrite(item);
             }
             visit(statements.at(-1).argument);
             check(

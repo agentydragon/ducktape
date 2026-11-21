@@ -1308,7 +1308,7 @@ def simpleAliasNumericExpr : NumericExpr → Bool
   | .guard test yes no => simpleAliasNumericExpr test && simpleAliasNumericExpr yes && simpleAliasNumericExpr no
   | .finally _ _ => false
   | .catchError _ _ => false
-  | .followedBy _ _ => false
+  | .followedBy first continuation => simpleAliasNumericExpr first && simpleAliasNumericExpr continuation
   | .local _ _ initial body =>
     simpleAliasNumericExpr initial && simpleAliasNumericExpr body
   | .assign _ value body => simpleAliasNumericExpr value && simpleAliasNumericExpr body

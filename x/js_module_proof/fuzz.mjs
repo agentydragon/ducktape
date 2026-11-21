@@ -1053,6 +1053,26 @@ export function makeLocalAliasCase(seed, index) {
                 : []),
             ]
           : []),
+        ...(index >= 397 && index % 96 === 13
+          ? [
+              {
+                type: "IfStatement",
+                test: { type: "BinaryExpression", operator: "<", left: id("numericLeft"), right: id("numericRight") },
+                consequent: {
+                  type: "BlockStatement",
+                  body: [
+                    expr({
+                      type: "AssignmentExpression",
+                      operator: "+=",
+                      left: id("offset"),
+                      right: id("numericLeft"),
+                    }),
+                  ],
+                },
+                alternate: null,
+              },
+            ]
+          : []),
         returnNode({ type: "BinaryExpression", operator: "+", left: id("offset"), right: numericBody }),
       ]
     : [returnNode(numericBody)];
