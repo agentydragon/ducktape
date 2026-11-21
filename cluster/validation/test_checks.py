@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -18,29 +17,25 @@ from cluster.validation.checks import (
 from cluster.validation.cluster import ParsedCluster
 from cluster.validation.flux import FluxKustomizationSpec
 from cluster.validation.k8s import parse_k8s_resources
-from cluster.validation.kustomize import KustomizeBuildResult
 
 
 def _cluster_with(*docs: dict) -> ParsedCluster:
-    return ParsedCluster(source_resources={Path("policy.yaml"): parse_k8s_resources(docs)})
+    return ParsedCluster(
+        flux_kustomizations={"test-app": FluxKustomizationSpec(path="./cluster/k8s/test-app")},
+        rendered_resources={"test-app": parse_k8s_resources(docs)},
+    )
 
 
-def _external_creds_cluster(repo_root: Path, consumer_docs: list[dict]) -> ParsedCluster:
+def _external_creds_cluster(consumer_docs: list[dict]) -> ParsedCluster:
     return ParsedCluster(
         flux_kustomizations={
             "external-secrets-config": FluxKustomizationSpec(path="./cluster/k8s/external-secrets/config"),
             "consumer": FluxKustomizationSpec(path="./cluster/k8s/consumer"),
         },
-        build_results=[
-            KustomizeBuildResult(
-                kustomization_path=repo_root / "cluster/k8s/external-secrets/config/kustomization.yaml",
-                resources=parse_k8s_resources([_central_store()]),
-            ),
-            KustomizeBuildResult(
-                kustomization_path=repo_root / "cluster/k8s/consumer/kustomization.yaml",
-                resources=parse_k8s_resources(consumer_docs),
-            ),
-        ],
+        rendered_resources={
+            "external-secrets-config": parse_k8s_resources([_central_store()]),
+            "consumer": parse_k8s_resources(consumer_docs),
+        },
     )
 
 
@@ -130,22 +125,12 @@ def test_specs_rules_checked() -> None:
 
 
 def test_forgejo_image_namespace_has_own_external_secret() -> None:
-    cluster = ParsedCluster(
-        source_resources={
-            Path("eso.yaml"): parse_k8s_resources([_forgejo_creds_eso("worker")]),
-            Path("deployment.yaml"): parse_k8s_resources([_forgejo_deployment("worker")]),
-        }
-    )
+    cluster = _cluster_with(_forgejo_creds_eso("worker"), _forgejo_deployment("worker"))
     assert check_forgejo_image_namespace_reflection(cluster) == []
 
 
 def test_forgejo_image_namespace_missing_external_secret_is_flagged() -> None:
-    cluster = ParsedCluster(
-        source_resources={
-            Path("eso.yaml"): parse_k8s_resources([_forgejo_creds_eso("other")]),
-            Path("deployment.yaml"): parse_k8s_resources([_forgejo_deployment("worker")]),
-        }
-    )
+    cluster = _cluster_with(_forgejo_creds_eso("other"), _forgejo_deployment("worker"))
     [error] = check_forgejo_image_namespace_reflection(cluster)
     assert "worker" in error
 
@@ -202,21 +187,18 @@ def test_sandbox_template_images_require_namespace_credentials(
         "metadata": {"namespace": "worker", "name": "sandbox"},
         "spec": spec,
     }
-    resources = parse_k8s_resources([template, _forgejo_creds_eso("other")])
-    cluster = ParsedCluster(source_resources={Path("sandbox.yaml"): resources})
-
-    [error] = check_forgejo_image_namespace_reflection(cluster)
+    [error] = check_forgejo_image_namespace_reflection(_cluster_with(template, _forgejo_creds_eso("other")))
     assert "SandboxTemplate 'worker/sandbox'" in error
     for name in image_names:
         assert f"git.allegedly.works/ducktape-ci/{name}:tag" in error
 
-    resources.extend(parse_k8s_resources([_forgejo_creds_eso("worker")]))
+    cluster = _cluster_with(template, _forgejo_creds_eso("other"), _forgejo_creds_eso("worker"))
     assert check_forgejo_image_namespace_reflection(cluster) == []
 
 
-def test_external_credential_central_store_passes(tmp_path: Path) -> None:
-    cluster = _external_creds_cluster(tmp_path, [_consumer_external_secret()])
-    assert check_external_credential_ownership(cluster, tmp_path) == []
+def test_external_credential_central_store_passes() -> None:
+    cluster = _external_creds_cluster([_consumer_external_secret()])
+    assert check_external_credential_ownership(cluster) == []
 
 
 def test_external_secret_store_conditions_and_referent_service_account() -> None:
@@ -354,9 +336,9 @@ def test_cluster_external_secret_literal_namespace_and_unknown_labels() -> None:
     assert "denied" in error
 
 
-def test_external_credential_namespace_store_is_rejected(tmp_path: Path) -> None:
-    cluster = _external_creds_cluster(tmp_path, [_consumer_store()])
-    errors = check_external_credential_ownership(cluster, tmp_path)
+def test_external_credential_namespace_store_is_rejected() -> None:
+    cluster = _external_creds_cluster([_consumer_store()])
+    errors = check_external_credential_ownership(cluster)
     assert any("use external-secrets-config's shared ClusterSecretStore" in error for error in errors)
 
 
