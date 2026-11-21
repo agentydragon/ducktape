@@ -481,7 +481,7 @@ function Report() {
         <//>
         <${Text} id="staging-frontend">
           <strong>Agentplane staging frontend.</strong> Both VPA-initiated
-          replacements came Ready in sequence by 06:46:31 UTC. Two Ready
+          replacements became Ready in sequence by 06:46:31 UTC. Two Ready
           endpoints on separate OVH workers had 15m CPU and 100 MiB memory
           requests. RequestsOnly preserved the 128 MiB limit. The PDB again
           allowed one disruption. ${" "}<${Anchor} href=${github + "pull/18523"}
@@ -587,7 +587,7 @@ function Report() {
         <//>
         <${Text} id="worker-loss-placement">
           <strong>Schedule overlapping surges with a placement check.</strong>
-          The KubeVirt/CDI model left 190m CPU in its tightest feasible
+          ${" "}The KubeVirt/CDI model left 190m CPU in its tightest feasible
           single-OVH-worker-loss case. Two cases failed when selected earlier
           CPU peaks coincided, with an 88m deficit in the tightest case. The
           later static-application model reached 62 MiB of memory headroom in
