@@ -1,10 +1,10 @@
 {
-  "source_devel_commit": "8f3225b90db943bf29025be653003696f547ae0f",
-  "audited_at_utc": "2026-11-21 05:51:01 UTC",
-  "snapshot_utc": "2026-11-21T05:51:01Z",
+  "source_devel_commit": "b454f6face9fc0a9d184ba1ce280a4935d28f7ce",
+  "audited_at_utc": "2026-11-21 05:53:34 UTC",
+  "snapshot_utc": "2026-11-21T05:53:34Z",
   "scope": "Current Kubernetes VPA policies, workload owners, metrics samples and rollout review cohorts. Earlier evidence retains its original observation window.",
-  "report_html_sha256": "0ba078dfbebc3df553ab41e39e084ddc9cd2c3ac6992d36e86815234d33f4405",
-  "report_script_sha256": "826ea1c01d5b1f4c68e181fb29aa7d95455150a6e14ecb40f0b111cc29bb4193",
+  "report_html_sha256": "10a2ca7780382f8c5d4f96593ad79380e9f1785867a16a72bde69242d25953a1",
+  "report_script_sha256": "a4e2536e2d4e1739956f6ff062e6ae8199bba1b5a0939a8b9e47e91bbde34a6f",
   "evidence_sha256": "c69cc4092a6f9640579e2dce32e0f2f37af78498b947522c2320f49698a86a28",
   "architecture_source_devel_commit": "d81bd68165097b089cace9ae168b6e8f202f1b7e",
   "architecture_reviewed_at_utc": "2026-11-20T03:36:52Z",
@@ -45,12 +45,12 @@
   "current_state_observed_at_utc": "2026-11-20T20:30:00Z",
   "current_state_source_devel_commit": "7514082e13cff17faa64056a67b285c7e259f3e2",
   "pod_resources_observed_at_utc": "2026-11-20T20:34:45Z",
-  "current_inventory_collection_started_utc": "2026-11-21T05:50:46Z",
-  "current_inventory_collection_finished_utc": "2026-11-21T05:51:01Z",
-  "flux_source_observed_at_utc": "2026-11-21T05:51:01Z",
-  "inventory_sha256": "c7af849e6cf41e45b34b67bd3cb0d02236221b5e2c99a845cfc9b6cf51d082a9",
+  "current_inventory_collection_started_utc": "2026-11-21T05:53:23Z",
+  "current_inventory_collection_finished_utc": "2026-11-21T05:53:34Z",
+  "flux_source_observed_at_utc": "2026-11-21T05:53:34Z",
+  "inventory_sha256": "ba3d3e3bc98dd34337e7faf5dd8f49e4423674510fe4565e3a97e8bf01802e4e",
   "inventory_collector_sha256": "2e9ddc1e228afc13ca9e434678431c9d45af626d5ffd814210ae33ebeeb222ce",
-  "current_inventory_flux_source_devel_commit": "8f3225b90db943bf29025be653003696f547ae0f",
+  "current_inventory_flux_source_devel_commit": "b454f6face9fc0a9d184ba1ce280a4935d28f7ce",
   "secret_store_hourly_scan_verified_at_utc": "2026-11-20T21:17:28Z",
   "study_casino_initial_verified_at_utc": "2026-11-20T21:20:49Z",
   "platform_sessions_provider_initial_verified_at_utc": "2026-11-20T21:31:31Z",
@@ -72,7 +72,7 @@
   "archived_evidence_snapshot_utc": "2026-11-20T02:58:40Z",
   "archived_evidence_source_devel_commit": "05a4c55db085311363fad8cce0ba4dfe3f4ecb0f",
   "archived_evidence_seven_day_queries_end_utc": "2026-11-20T03:03:48.752000+00:00",
-  "current_inventory_seven_day_queries_end_utc": "2026-11-21T05:50:51Z",
+  "current_inventory_seven_day_queries_end_utc": "2026-11-21T05:53:27Z",
   "staging_request_wave": {
     "policy_pr": 18487,
     "policy_source_devel_commit": "b3824f2237ec27bc377a0a9fa9639c644451ca5b",
@@ -106,7 +106,7 @@
     "policy_source_devel_commit": "8f3225b90db943bf29025be653003696f547ae0f",
     "flux_kustomization": "ducktape-flux/flux-system-vpa",
     "flux": {
-      "observed_utc": "2026-11-21T05:51:01Z",
+      "observed_utc": "2026-11-21T05:53:35Z",
       "generation": 1,
       "observed_generation": 1,
       "applied_revision": "latest@sha256:7e0aad43bf9c0fccb84aee089fc9b950f16464b57a5d18bc63a9bee761216851",
@@ -128,5 +128,27 @@
     "last_recommender_cycle_started_utc": "2026-11-21T05:45:16.997Z",
     "recommender_interval_seconds": 900,
     "next_cycle_expected_utc": "2026-11-21T06:00:17Z"
+  },
+  "ha_replica_wave": {
+    "pr": 18495,
+    "source_devel_commit": "090fe433cb9da4c453ea592c496335f48c288340",
+    "disruption_budgets": [
+      {
+        "observed_utc": "2026-11-21T05:53:35Z",
+        "namespace": "loki",
+        "name": "loki-read",
+        "allowed": 1,
+        "healthy": 3,
+        "required": 2
+      },
+      {
+        "observed_utc": "2026-11-21T05:53:35Z",
+        "namespace": "kyverno",
+        "name": "kyverno-cleanup-controller",
+        "allowed": 1,
+        "healthy": 3,
+        "required": 2
+      }
+    ]
   }
 }

@@ -311,7 +311,7 @@ function Report() {
     setSelection((previous) => ({ group, revision: previous.revision + 1 }));
 
   useEffect(() => {
-    fetch("./inventory.json?v=20261121055101")
+    fetch("./inventory.json?v=20261121055334")
       .then((response) => {
         if (!response.ok)
           throw new Error(`Inventory request returned HTTP ${response.status}`);
@@ -483,7 +483,7 @@ function Report() {
       <${Text} id="flux-request-wave" mt="md">
         <strong>Flux controllers.</strong> Seven singleton Deployments have CPU
         and memory request policies in Initial and were 1/1 Ready. The policy
-        Kustomization was Ready and Healthy at 05:51:01 UTC. At collection, 0 of
+        Kustomization was Ready and Healthy at 05:53:35 UTC. At collection, 0 of
         7 had CPU and memory targets. The next recommender cycle was expected
         around 06:00 UTC. Once targets appear, check owner-matched admission and
         ordinary replacements. The policy change records the operator recovery
@@ -526,6 +526,15 @@ function Report() {
                 >
               <//>`,
           )}
+      <//>
+      <${Text} id="ha-replica-wave" mt="md">
+        <strong>Loki read and Kyverno cleanup.</strong> Both reached 3/3 Ready
+        replicas on distinct hosts in Initial. Their PDBs each allowed one
+        disruption at 05:53:35 UTC. The rollout check observed three Ready
+        endpoints per service, successful reads on all three Loki Pods, and
+        completed Kyverno cleanup migration with a renewing lease. Evaluate
+        recovery through a replacement before promoting either to Recreate.
+        ${" "}<${Anchor} href=${github + "pull/18495"}>Replica rollout<//>.
       <//>
       <${Title} order=${3} mt="lg">Apply these gates across the wave<//>
       <${Stack} gap="sm" mt="sm">
