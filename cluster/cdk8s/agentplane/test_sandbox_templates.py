@@ -177,8 +177,8 @@ def test_environment_can_keep_codex_execution_inside_the_runner(scratch_app: App
     assert {"home", "tmp", "codex-executor"}.isdisjoint({volume["name"] for volume in pod["volumes"]})
 
 
-def test_runner_template_configures_session_reconcile_concurrency(scratch_app: App) -> None:
-    chart = Chart(scratch_app, "runner-concurrency-test")
+def test_runtime_overrides_reach_the_runner_container(scratch_app: App) -> None:
+    chart = Chart(scratch_app, "runner-runtime-overrides-test")
     EnvironmentSandboxTemplate(
         chart,
         "runner-template",
@@ -186,21 +186,6 @@ def test_runner_template_configures_session_reconcile_concurrency(scratch_app: A
         name="test-runner",
         image="example.invalid/runner",
         session_reconcile_concurrency=2048,
-    )
-    docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
-    template = one(doc for doc in docs if doc["kind"] == "SandboxTemplate")
-    config = _runner_configuration(docs, template["spec"]["pod"]["spec"])
-    assert config["session_reconcile_concurrency"] == 2048
-
-
-def test_runner_template_serializes_codex_readiness_overrides(scratch_app: App) -> None:
-    chart = Chart(scratch_app, "runner-codex-readiness-test")
-    EnvironmentSandboxTemplate(
-        chart,
-        "runner-template",
-        staging.ENV,
-        name="test-runner",
-        image="example.invalid/runner",
         codex_readiness=CodexReadiness(
             exec_server_ready_timeout_ms=60_000,
             exec_server_probe_timeout_ms=5_000,
@@ -211,6 +196,7 @@ def test_runner_template_serializes_codex_readiness_overrides(scratch_app: App) 
     template = one(doc for doc in docs if doc["kind"] == "SandboxTemplate")
     config = _runner_configuration(docs, template["spec"]["pod"]["spec"])
 
+    assert config["session_reconcile_concurrency"] == 2048
     assert config["codex_readiness"] == {
         "exec_server_ready_timeout_ms": 60_000,
         "exec_server_probe_timeout_ms": 5_000,
