@@ -122,10 +122,10 @@ while public peer traffic still fails.
 
 ```bash
 # Direct API readiness for each Kimsufi control-plane public IP
-# (ovh-ns104952, ovh-ns104963 — see nebula-mesh.json for the roster).
-kubectl --server=https://147.135.39.162:6443 --insecure-skip-tls-verify=true get --raw='/readyz?verbose'
+# (ovh-ns104952, ovh-ns104963, ovh-ns1001419 — see nebula-mesh.json for the roster).
 kubectl --server=https://147.135.104.5:6443 --insecure-skip-tls-verify=true get --raw='/readyz?verbose'
 kubectl --server=https://147.135.104.16:6443 --insecure-skip-tls-verify=true get --raw='/readyz?verbose'
+kubectl --server=https://51.81.245.180:6443 --insecure-skip-tls-verify=true get --raw='/readyz?verbose'
 
 # Cross-node Talos API/maintenance reachability from host-networked Kimsufi pods.
 # Use one Cilium pod per Kimsufi node as the source and test the other public IPs.

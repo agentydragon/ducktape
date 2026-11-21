@@ -74,5 +74,6 @@ the key does not inherit normal user permissions across the Forgejo account.
 A cleaner UX than `ssh://git@git.allegedly.works:2222/...` would be a dedicated
 port-22 TCP route or dedicated IP for Forgejo SSH. That is orthogonal to account
 credential type: user SSH keys, deploy keys, and SSH-backed service users all
-need the same TCP exposure. Port 22 is already used for the public `gecko` VM
-SSH listener, so Forgejo currently stays on 2222.
+need the same TCP exposure. Forgejo currently stays on 2222. Port 22 is the parked
+`gecko` VM's SSH listener (<../parked/gecko/app/ciliumenvoyconfig.yaml>), which a
+revival would restore; the GitLab spike's SSH listener is on 2223.
