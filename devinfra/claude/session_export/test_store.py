@@ -20,6 +20,7 @@ from devinfra.claude.session_export.conftest import (
 )
 from devinfra.claude.session_export.models import SESSION_STATUS_ARCHIVED, Event
 from devinfra.claude.session_export.store import Base, SessionStore, StoreCounts, dumps_jsonb, make_engine
+from testing.sqlalchemy_engines import managed_async_engine
 
 
 @pytest.mark.parametrize(
@@ -108,9 +109,8 @@ async def test_session_change_journal_is_idempotent_and_covers_events(store: Ses
 
 
 async def test_listener_on_another_engine_wakes_for_durable_changes(database_url: str, store: SessionStore) -> None:
-    replica_engine = make_engine(database_url)
-    replica = SessionStore(replica_engine)
-    try:
+    async with managed_async_engine(make_engine(database_url)) as replica_engine:
+        replica = SessionStore(replica_engine)
         before = await replica.current_change_revision()
         async with replica.listen_for_changes() as notified:
             session = make_session("session_replica0001")
@@ -119,8 +119,6 @@ async def test_listener_on_another_engine_wakes_for_durable_changes(database_url
 
         replay = await replica.changes_after(before)
         assert replay.changes[0].session_ids == (session.id,)
-    finally:
-        await replica_engine.dispose()
 
 
 async def test_change_journal_reports_when_a_resume_token_has_expired(
