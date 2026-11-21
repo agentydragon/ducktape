@@ -25,6 +25,7 @@ from cluster.cdk8s.agentplane import egress
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.cert_manager import cluster_ca
 from cluster.cdk8s.config_format import yaml_config
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.providers.agentplane.identity import Identity
 from cluster.cdk8s.providers.agentplane.workload_credential import WorkloadCredential
@@ -158,13 +159,7 @@ def add_gateway(scope: Construct, env: Environment, *, clients: Pods) -> Identit
                                 capabilities=k8s.Capabilities(drop=["ALL"]),
                             ),
                             # Streams CI downloads (Bazel toolchains, image layers) without buffering bodies.
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("50m"),
-                                    "memory": k8s.Quantity.from_string("64Mi"),
-                                },
-                                limits={"memory": k8s.Quantity.from_string("256Mi")},
-                            ),
+                            resources=container_resources(cpu="50m", memory="64Mi", memory_limit="256Mi"),
                             volume_mounts=[
                                 settings.mount,
                                 k8s.VolumeMount(name="svid", mount_path=str(_SVID_DIR), read_only=True),
