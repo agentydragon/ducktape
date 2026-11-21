@@ -275,6 +275,7 @@ Running `example/output/` in Node also found a bug in the first printer (no `exp
   All times and conditions: [`experiments/TIMINGS.md`](experiments/TIMINGS.md).
 - **Reassignment.** The JavaScript extractor `extract.mjs` rejects reassigned `let`/`var` top-level bindings. The Lean front end accepts them: writers are ordered as cells and must stay with the declaration (`AssignsHome`), because ES imports are read-only.
 - **A name declared twice in one list.** `var a = 1, a = 2` is outside the accepted subset. The dump writes one statement per declarator, so it becomes two statements that declare `a`, and `UniqueDefs` rejects the bundle. Accepting it is not planned: no input we expect has it. Several `var a` statements are another case ([`PLAN.md`](PLAN.md) step 2).
+- **Top-level `await`.** Outside the accepted subset, in the bundle and in the modules it imports. The translation checker refuses one in the bundle. One in an outside module is not detected, because `lowersplit` does not read outside modules: a peeled module that does not import that module could run before it finishes. A scan on 2026-11-21 of the 3,363 input files found no top-level `await` and no list that declares a name twice.
 - **Exceptions.** The model has none. Order is kept for effects, TDZ reads and reads of undeclared globals. Those are the only throws the front end allows an inert statement.
 
 ## Going further
