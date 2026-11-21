@@ -172,7 +172,9 @@ for some synchronous nested functions, parameters, blocks and branches after
 checking their lexical free references and rejecting imported writes. The
 validator returns `unknown` for those candidates; generation is not a proof.
 Public exports must be functions. The entry module may rename an exported
-function, including under multiple public names and captured closures. Imports and non-entry exports use unaliased names.
+function, including under multiple public names and captured closures. A module assignment may set `aliasImports: true` to import dependencies through
+generated public aliases while retaining their original local names. Renamed
+reexports outside the entry module remain unsupported.
 Source declarations have unique names, function
 writes must target a mutable local binding, and each module preserves its assigned
 statements' source order. Unsupported syntax, linking, cycles, or uninitialized

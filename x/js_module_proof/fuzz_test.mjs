@@ -387,6 +387,7 @@ const composedPrograms = Array.from({ length: 128 }, (_, i) => makeComposedCase(
 assert.ok(new Set(composedPrograms.map((item) => item.source)).size > 120);
 assert.ok(composedPrograms.some((item) => item.source.includes(" as public_calculate")));
 assert.ok(composedPrograms.some((item) => item.source.includes(" as second_calculate")));
+assert.ok(composedPrograms.some((item) => item.spec.modules["logic.mjs"].aliasImports));
 assert.ok(composedPrograms.some((item) => item.source.includes("const box =")));
 assert.ok(composedPrograms.some((item) => item.source.includes("function nested(")));
 assert.ok(composedPrograms.some((item) => item.source.includes("catch {")));

@@ -1152,7 +1152,11 @@ export function makeComposedCase(seed, index) {
       entry: "entry.mjs",
       modules: {
         "state.mjs": { imports: [], statements: globals.map((_, index) => index) },
-        "logic.mjs": { imports: ["state.mjs"], statements: functionNames.map((_, index) => globals.length + index) },
+        "logic.mjs": {
+          imports: ["state.mjs"],
+          aliasImports: index % 4 === 0,
+          statements: functionNames.map((_, index) => globals.length + index),
+        },
         "entry.mjs": { imports: ["logic.mjs"], statements: [] },
       },
     },

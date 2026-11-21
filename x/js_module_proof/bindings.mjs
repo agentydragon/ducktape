@@ -1131,6 +1131,7 @@ function readSpec(spec, count) {
         module.statements.every((i, n, a) => Number.isInteger(i) && i >= 0 && i < count && (!n || a[n - 1] < i)),
       "invalid imports or statement indices"
     );
+    check(module.aliasImports === undefined || typeof module.aliasImports === "boolean", "invalid import alias option");
     assigned.push(...module.statements);
   }
   check(assigned.length === count && new Set(assigned).size === count, "assign every statement once");
@@ -1207,13 +1208,27 @@ function generateFiles(source, spec, names) {
         neededExports.add(binding);
       }
     }
+  let aliasPrefix = "__split_alias_";
+  while ([...defs.keys()].some((binding) => binding.startsWith(aliasPrefix))) aliasPrefix += "_";
+  const generatedAliases = new Map([...defs.keys()].map((binding, index) => [binding, `${aliasPrefix}${index}`]));
+  const aliasExports = new Set();
+  for (const name of names)
+    if (spec.modules[name].aliasImports)
+      for (const binding of referencesByModule[name])
+        if (defs.get(binding) !== name) {
+          check(defs.get(binding) !== spec.entry, "cannot add internal exports to the entry module");
+          aliasExports.add(binding);
+        }
   const result = {};
   for (const name of names) {
     const module = spec.modules[name];
     const imports = module.imports.map((dep) => {
       const bindings = referencesByModule[name].filter((binding) => defs.get(binding) === dep);
+      const imported = bindings.map((binding) =>
+        module.aliasImports ? `${generatedAliases.get(binding)} as ${binding}` : binding
+      );
       return bindings.length
-        ? `import { ${bindings.join(", ")} } from ${str(`./${dep}`)};`
+        ? `import { ${imported.join(", ")} } from ${str(`./${dep}`)};`
         : `import ${str(`./${dep}`)};`;
     });
     const declarations = module.statements.map((index) => {
@@ -1238,7 +1253,10 @@ function generateFiles(source, spec, names) {
               return `export { ${local}${local === publicName ? "" : ` as ${publicName}`} }${suffix};`;
             })
         : [];
-    result[name] = [...imports, ...declarations, ...reexports].join("\n") + "\n";
+    const internalAliases = [...aliasExports]
+      .filter((binding) => defs.get(binding) === name)
+      .map((binding) => `export { ${binding} as ${generatedAliases.get(binding)} };`);
+    result[name] = [...imports, ...declarations, ...internalAliases, ...reexports].join("\n") + "\n";
   }
   return result;
 }
@@ -1247,6 +1265,8 @@ function outputAst(text, names, functions) {
   const imports = [];
   const exports = [];
   const mappings = [];
+  const directMappings = [];
+  let aliasedReexport = false;
   const statements = [];
   const dependency = (node) => {
     check(typeof node.source?.value === "string" && node.source.value.startsWith("./"), "unsupported module path");
@@ -1257,34 +1277,38 @@ function outputAst(text, names, functions) {
   for (const node of parseModule(text)) {
     if (node.type === "ImportDeclaration") {
       const dep = dependency(node);
-      const locals = node.specifiers.map((s) => {
-        check(
-          s.type === "ImportSpecifier" && identifier(s.imported) === identifier(s.local),
-          "import aliases are unsupported"
-        );
-        return identifier(s.local);
+      const links = node.specifiers.map((specifier) => {
+        check(specifier.type === "ImportSpecifier", "unsupported import specifier");
+        return { local: identifier(specifier.local), public: identifier(specifier.imported) };
       });
-      imports.push({ dep, locals, reexports: [] });
+      imports.push({ dep, locals: links.map((item) => item.local), links, reexports: [] });
     } else if (node.type === "ExportNamedDeclaration") {
       if (node.declaration) {
         const ast = candidateStatement(node.declaration, functions);
         check(declarationName(ast), "unsupported exported declaration");
         exports.push(declarationName(ast));
         mappings.push({ local: declarationName(ast), public: declarationName(ast) });
+        directMappings.push({ local: declarationName(ast), public: declarationName(ast) });
         statements.push(ast);
       } else {
         const mapped = exportMappings(node);
         mappings.push(...mapped);
-        if (node.source)
-          imports.push({ dep: dependency(node), locals: [], reexports: mapped.map((item) => item.local) });
-        else exports.push(...mapped.map((item) => item.local));
+        if (node.source) {
+          aliasedReexport ||= mapped.some((item) => item.local !== item.public);
+          imports.push({ dep: dependency(node), locals: [], links: [], reexports: mapped.map((item) => item.local) });
+        } else {
+          directMappings.push(...mapped);
+          exports.push(...mapped.map((item) => item.local));
+        }
       }
     } else statements.push(candidateStatement(node, functions));
   }
-  return { imports, exports, statements, mappings };
+  return { imports, exports, statements, mappings, directMappings, aliasedReexport };
 }
 
 const leanStrings = (values) => list(values.map(str));
+const leanMappings = (mappings) =>
+  list(mappings.map(({ local, public: publicName }) => `(${str(local)}, ${str(publicName)})`));
 function leanExpression(expression) {
   switch (expression.kind) {
     case "literal":
@@ -1389,9 +1413,9 @@ function leanStatement(item) {
 function leanModule(module, assignment) {
   const imports = module.imports.map(
     (i) =>
-      `({ dependency := ${i.dep}, locals := ${leanStrings(i.locals)}, reexports := ${leanStrings(i.reexports)} } : BindingImport)`
+      `({ dependency := ${i.dep}, locals := ${leanStrings(i.locals)}, links := ${leanMappings(i.links)}, reexports := ${leanStrings(i.reexports)} } : BindingImport)`
   );
-  return `({ imports := ${list(imports)}, exports := ${leanStrings(module.exports)}, statements := ${list(module.statements.map(leanStatement))}, assignment := ${list(assignment)} } : BindingModule)`;
+  return `({ imports := ${list(imports)}, exports := ${leanStrings(module.exports)}, exportMappings := ${leanMappings(module.directMappings)}, statements := ${list(module.statements.map(leanStatement))}, assignment := ${list(assignment)} } : BindingModule)`;
 }
 
 async function load(sourcePath, specPath) {
@@ -1425,11 +1449,9 @@ export async function validateBindings(sourcePath, specPath, out) {
   const actual = files.map((text) => outputAst(text, names, functions));
   if (actual.some((module) => module.statements.some((item) => item.kind === "scopedFunction")))
     return { result: "unknown", reason: "scoped output function execution is not modeled" };
-  if (actual.some((module, i) => names[i] !== spec.entry && module.mappings.some((item) => item.local !== item.public)))
-    return { result: "unknown", reason: "aliases outside the entry module are unsupported" };
+  if (actual.some((module, i) => names[i] !== spec.entry && module.aliasedReexport))
+    return { result: "unknown", reason: "renamed reexports outside the entry module are unsupported" };
   const terms = actual.map((module, i) => leanModule(module, spec.modules[names[i]].statements));
-  const leanMappings = (mappings) =>
-    list(mappings.map(({ local, public: publicName }) => `(${str(local)}, ${str(publicName)})`));
   const digest = (content) => createHash("sha256").update(content).digest("hex");
   const witnessPrefix = `\n-- Source SHA256: ${digest(text)}\n-- Output SHA256: ${names.map((name, i) => `${name}=${digest(files[i])}`).join(" ")}\ndef bindingSource : List BindingStmt := ${list(source.statements.map((item) => leanStatement(item.ast)))}\ndef bindingExports : List String := ${leanStrings(source.exports)}\ndef bindingPublicMappings : List (String × String) := ${leanMappings(source.mappings)}\ndef bindingOutputMappings : List (String × String) := ${leanMappings(actual[names.indexOf(spec.entry)].mappings)}\ndef bindingModules : List BindingModule := ${list(terms)}\ndef bindingEntry : Nat := ${names.indexOf(spec.entry)}\ntheorem binding_source_ready : (sourceBindingState bindingSource).isSome = true := by decide\ntheorem binding_output_ready : (outputBindingState bindingSource bindingModules bindingEntry).isSome = true := by decide\n#print axioms lexical_nearest_binding\n#print axioms accepted_reference_owner\n#print axioms binding_source_ready\n#print axioms binding_output_ready\n`;
   const prefix =

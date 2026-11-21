@@ -26,12 +26,14 @@ inductive BindingStmt where
 structure BindingImport where
   dependency : Nat
   locals : List String
+  links : List (String × String) := []
   reexports : List String
   deriving DecidableEq, BEq, Repr
 
 structure BindingModule where
   imports : List BindingImport
   exports : List String
+  exportMappings : List (String × String) := []
   statements : List BindingStmt
   assignment : List Nat
   deriving DecidableEq, Repr
@@ -186,16 +188,27 @@ def closureCell (name : String) : String := name
 def localDefinition (module : BindingModule) (name : String) : Bool :=
   module.statements.any (fun statement => declaredName statement == some name)
 
-def ownsExport (modules : List BindingModule) (index : Nat) (name : String) : Bool :=
+/- Mappings record the local declaration name and its exported name. Empty
+   mappings retain the identity-only representation used by existing examples. -/
+def directExportMappings (module : BindingModule) : List (String × String) :=
+  if module.exportMappings.isEmpty then module.exports.map (fun name => (name, name)) else module.exportMappings
+
+def importedMappings (imported : BindingImport) : List (String × String) :=
+  if imported.links.isEmpty then imported.locals.map (fun name => (name, name)) else imported.links
+
+def ownsAliasedExport (modules : List BindingModule) (index : Nat) (localName publicName : String) : Bool :=
   match elementAt modules index with
   | none => false
-  | some module => module.exports.contains name && localDefinition module name
+  | some module => (directExportMappings module).contains (localName, publicName) && localDefinition module localName
+
+def ownsExport (modules : List BindingModule) (index : Nat) (name : String) : Bool :=
+  ownsAliasedExport modules index name name
 
 def visible (modules : List BindingModule) (index : Nat) (name : String) : Bool :=
   match elementAt modules index with
   | none => false
-  | some module => localDefinition module name || module.imports.any (fun i =>
-      i.locals.contains name && ownsExport modules i.dependency name)
+  | some module => localDefinition module name || module.imports.any (fun imported =>
+      (importedMappings imported).any (fun link => link.1 == name && ownsAliasedExport modules imported.dependency link.1 link.2))
 
 /- Lexical scopes are ordered from innermost to outermost. A declaration's
    identity is independent of its spelling; an uninitialized nearest binding
@@ -677,10 +690,14 @@ def moduleValid (source : List BindingStmt) (modules : List BindingModule) (inde
   let imported := module.imports.flatMap (fun i => i.locals)
   let locals := module.statements.filterMap declaredName
   let names := imported ++ locals
+  let publicNames := (directExportMappings module).map Prod.snd
   decide (module.assignment.mapM (elementAt source) = some module.statements) &&
+    decide ((directExportMappings module).map Prod.fst = module.exports) &&
+    publicNames.all (fun name => publicNames.count name == 1) &&
     module.exports.all (localDefinition module) &&
     module.imports.all (fun i =>
-      i.locals.all (ownsExport modules i.dependency) &&
+      decide ((importedMappings i).map Prod.fst = i.locals) &&
+      (importedMappings i).all (fun link => ownsAliasedExport modules i.dependency link.1 link.2) &&
       i.reexports.all (ownsExport modules i.dependency)) &&
     names.all (fun name => names.count name == 1) &&
     module.statements.all (validRefs source modules index)
@@ -709,10 +726,10 @@ def resolveReference (modules : List BindingModule) (index : Nat) (name : String
   match localDeclaration module name with
   | some declaration => some (index, declaration)
   | none => module.imports.findSome? (fun imported => do
-      if !imported.locals.contains name then none else
-        let owner ← elementAt modules imported.dependency
-        if !owner.exports.contains name then none else
-          (localDeclaration owner name).map (fun declaration => (imported.dependency, declaration)))
+      let link ← (importedMappings imported).find? (fun link => link.1 == name)
+      let owner ← elementAt modules imported.dependency
+      if !(directExportMappings owner).contains link then none else
+        (localDeclaration owner name).map (fun declaration => (imported.dependency, declaration)))
 
 def referenceNames : BindingStmt → List String
   | .variable _ _ => []

@@ -970,7 +970,7 @@ example : evaluateExpression [] [] (.bitXor (.literal 2147483648) (.literal 0)) 
   assert.notDeepEqual(execute(source, shiftUnsafe.calls), execute(join(out, "entry.mjs"), shiftUnsafe.calls));
 }
 
-if (shard === 2) {
+if (shard === 11) {
   const source = join(root, "signed-shifts.mjs");
   const spec = join(root, "signed-shifts.json");
   const out = join(root, "signed-shifts-out");
@@ -1036,7 +1036,7 @@ example : evaluateExpression [] [] (.shiftRight (.literal 2147483648) (.literal 
   }
 }
 
-if (shard === 2) {
+if (shard === 12) {
   const source = join(root, "export-alias.mjs");
   const spec = join(root, "export-alias.json");
   const out = join(root, "export-alias-out");
@@ -1054,7 +1054,7 @@ export { calculate as compute };
       entry: "entry.mjs",
       modules: {
         "state.mjs": { imports: [], statements: [0] },
-        "functions.mjs": { imports: ["state.mjs"], statements: [1] },
+        "functions.mjs": { imports: ["state.mjs"], aliasImports: true, statements: [1] },
         "entry.mjs": { imports: ["functions.mjs"], statements: [] },
       },
     })
@@ -1062,6 +1062,8 @@ export { calculate as compute };
   assert.equal(cli("generate", source, spec, out).result, "generated");
   const proof = cli("validate", source, spec, out);
   assert.equal(proof.result, "proved under assumptions", JSON.stringify(proof));
+  assert.match(await readFile(join(out, "functions.mjs"), "utf8"), /__split_alias_\d+ as base/);
+  assert.match(await readFile(join(out, "state.mjs"), "utf8"), /base as __split_alias_\d+/);
   const calls = [{ name: "compute", args: [3] }];
   assert.deepEqual(execute(source, calls), execute(join(out, "entry.mjs"), calls));
   assert.deepEqual(execute(source, calls).results, [{ value: 7 }]);
@@ -1108,10 +1110,14 @@ theorem alias_observation :
         runArgumentCalls aliases state [("compute", [3])])))).map
     (fun state => state.returns) = some [some 7] := by decide
 #print axioms alias_observation
+theorem alias_import_owner :
+  (resolveReference bindingModules 1 "base").map (fun resolved => resolved.2.1) = some 0 := by decide
+#print axioms alias_import_owner
 `,
   });
   assert.equal(replay.status, 0, replay.stdout + replay.stderr);
   assert.match(replay.stdout, /'alias_observation' does not depend on any axioms/);
+  assert.match(replay.stdout, /'alias_import_owner' does not depend on any axioms/);
   const entry = join(out, "entry.mjs");
   await writeFile(entry, (await readFile(entry, "utf8")).replace("as compute", "as wrong"));
   const unsafe = cli("validate", source, spec, out);
@@ -1125,7 +1131,7 @@ theorem alias_observation :
   assert.notDeepEqual(execute(source, bodyUnsafe.calls), execute(entry, bodyUnsafe.calls));
 }
 
-if (shard === 2) {
+if (shard === 11) {
   const source = join(root, "alias-live-cell.mjs");
   const spec = join(root, "alias-live-cell.json");
   const out = join(root, "alias-live-cell-out");
@@ -1175,7 +1181,7 @@ theorem alias_live_cell :
   assert.match(replay.stdout, /'alias_live_cell' does not depend on any axioms/);
 }
 
-if (shard === 2) {
+if (shard === 12) {
   const source = join(root, "alias-wrong-owner.mjs");
   const spec = join(root, "alias-wrong-owner.json");
   const out = join(root, "alias-wrong-owner-out");
@@ -1207,7 +1213,7 @@ export { first as a, second as b };
   assert.notDeepEqual(execute(source, unsafe.calls), execute(entry, unsafe.calls));
 }
 
-if (shard === 2) {
+if (shard === 13) {
   const source = join(root, "alias-captured-cell.mjs");
   const spec = join(root, "alias-captured-cell.json");
   const out = join(root, "alias-captured-cell-out");
@@ -1260,6 +1266,44 @@ theorem alias_captured_cell :
   const unsafe = cli("validate", source, spec, out);
   assert.equal(unsafe.result, "unsafe", JSON.stringify(unsafe));
   assert.notDeepEqual(execute(source, unsafe.calls), execute(join(out, "entry.mjs"), unsafe.calls));
+}
+
+if (shard === 14) {
+  const source = join(root, "import-alias-owner.mjs");
+  const spec = join(root, "import-alias-owner.json");
+  const out = join(root, "import-alias-owner-out");
+  await writeFile(
+    source,
+    `let base = 4;
+let other = 9;
+function calculate(x) { return x + base; }
+export { calculate };
+`
+  );
+  await writeFile(
+    spec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0, 1] },
+        "functions.mjs": { imports: ["state.mjs"], aliasImports: true, statements: [2] },
+        "entry.mjs": { imports: ["functions.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", source, spec, out).result, "generated");
+  const proof = cli("validate", source, spec, out);
+  assert.equal(proof.result, "proved under assumptions", JSON.stringify(proof));
+  const calls = [{ name: "calculate", args: [1] }];
+  assert.deepEqual(execute(source, calls), execute(join(out, "entry.mjs"), calls));
+  const state = join(out, "state.mjs");
+  const contents = await readFile(state, "utf8");
+  const changed = contents.replace(/base as (__split_alias_\d+)/, "other as $1");
+  assert.notEqual(changed, contents);
+  await writeFile(state, changed);
+  assert.notDeepEqual(execute(source, calls), execute(join(out, "entry.mjs"), calls));
+  assert.notEqual(cli("validate", source, spec, out).result, "proved under assumptions");
 }
 
 if (shard === 14) {

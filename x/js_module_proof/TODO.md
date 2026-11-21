@@ -84,8 +84,8 @@ cover only part of the grammar and split space described below.
       semantics and frontend together, and test each slice end to end against Node
       on accepted, unsafe and unsupported examples. Avoid adding independent formal
       models for the fuzzer or for individual syntax features.
-- [ ] Extend the checked entry-export alias mappings to imports and non-entry
-      modules. Extend the generator and counterexample
+- [ ] Extend import aliases to renamed local references and extend reexport chains
+      through non-entry modules. Extend the generator and counterexample
       certificates instead of treating renamed exports as unrelated declarations.
 - [ ] State and test each slice's observation boundary and assumptions, including
       module loading, host behavior, numeric semantics and termination. Keep
