@@ -38,6 +38,9 @@ member deletes its claim and underlying volume; a template change may discard
 caches. Older volumes using `piraeus-ssd-local` keep their former reclaim
 policy and need separate cleanup if orphaned.
 
+The [placement record](../../../devinfra/buildbuddy/debug/kvm_pool_rollout/2026_11_21_kvm_worker_placement.md)
+captures the `wyrm2` SSD measurements and the proposed HDD work-disk trial.
+
 The qualified Ubuntu-to-NixOS transition retained the ext4 filesystem and work
 PVC. Docker changed from Ubuntu's containerd image store to `overlay2`, so its
 first action repulled the action image while the old store remained on disk.
