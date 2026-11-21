@@ -25,7 +25,6 @@ type RouteRegistrar interface {
 // RegisterRoutes mounts the public MCP OAuth callback on the supplied app mux.
 func RegisterRoutes(server RouteRegistrar, callback linkage_servicepb.LinkageServiceClient) {
 	routes := &operatorRoutes{callback: callback}
-	// The browser callback returns a redirect or plain-text failure, outside Huma's JSON machinery.
 	server.Handle("GET /mcp-linkage/callback", http.HandlerFunc(routes.completeMCPLinkage))
 }
 

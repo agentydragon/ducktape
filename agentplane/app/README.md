@@ -97,8 +97,7 @@ keep working. Browser History watches reconnect and refresh summaries when the s
 
 ## Implementation and testing
 
-- `internal/server/`: route registration, the HTTP server and service composition. The generated
-  frontend API comes from `//agentplane/app/cmd:export_schema_bin`.
+- `internal/server/`: route registration, the HTTP server and service composition.
 - `cmd/`: process signal handling, CLI selection and the `agentplane-app` executable.
 - `internal/threads/`: operator-owned Thread metadata. Generated Dispatcher HTTP routes own command submissions.
   History owns event storage, folding and evidence; `internal/historydata/` reads it through gRPC.

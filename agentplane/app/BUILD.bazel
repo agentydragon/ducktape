@@ -76,14 +76,6 @@ py_proto_library_with_mypy_stubs(
 # gazelle:resolve py agentplane.action_service.api.contracts.action_service_pb2 //agentplane/action_service/api/contracts:action_service_pb2
 # gazelle:resolve py agentplane.environments.v1.environment_service_pb2 //agentplane/environments/v1:environment_service_pb2
 
-genrule(
-    name = "openapi_schema",
-    outs = ["openapi.json"],
-    cmd = "$(location //agentplane/app/cmd:export_schema_bin) --export-openapi > $@",
-    tools = ["//agentplane/app/cmd:export_schema_bin"],
-    visibility = ["//agentplane/app/frontend:__pkg__"],
-)
-
 py_library(
     name = "presets",
     srcs = ["presets.py"],
