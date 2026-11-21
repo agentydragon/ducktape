@@ -3,8 +3,9 @@
 ## Destination
 
 VPA sizes **CPU and memory requests** for nearly all compatible workloads. Every
-active container has intentional scheduling requests, including workloads that
-cannot use VPA. The [VPA dashboard](https://agentydragon.github.io/ducktape/vpa/)
+active workload has intentional scheduling requests for its regular and init
+containers, including workloads that cannot use VPA; ephemeral containers follow
+Kubernetes' constraints. The [VPA dashboard](https://agentydragon.github.io/ducktape/vpa/)
 is the dated inventory and rollout evidence; this plan owns the target and the
 remaining work, not another copy of the inventory.
 
