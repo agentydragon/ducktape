@@ -348,7 +348,7 @@ Session summaries (`GetSessionSummary`, and `BatchGetSessionSummaries` for up to
 at once, leaving out any it has no history for) read that fold and report the committed cursor beside
 the folded one.
 
-`WatchSelectedSessionSummaries` follows up to 200 named Sessions in the caller's read scope. It
+`WatchSessionSummaries` in selected mode follows up to 200 named Sessions in the caller's read scope. It
 subscribes before reading and sends a full snapshot first, then changed summaries and removals.
 Notifications are wakeups, not data: after listener recovery the service rereads the selected rows.
 A reconnect starts with a new snapshot and fresh authorization.

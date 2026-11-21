@@ -12,7 +12,7 @@ import { useStreamStatus } from "../transport/stream_status";
 import { followWatch } from "../transport/watch_stream";
 import { WatchThreadMetadataResponseSchema } from "../../app_service_pb";
 import {
-  WatchSelectedSessionSummariesResponseSchema,
+  WatchSessionSummariesResponseSchema,
   type SessionSummary,
 } from "../../../history_service/api/history/history_service_pb";
 
@@ -191,9 +191,9 @@ export function useThreadsLive(listing: ThreadListing | null, openThreadId: stri
           const index = summaryConnections.length;
           summaryConnections.push({ phase: "connecting", since: Date.now() });
           const query = new URLSearchParams();
-          group.forEach((id) => query.append("session_ids", id));
+          group.forEach((id) => query.append("selected.session_ids", id));
           stopSummaries.push(
-            followWatch(`/upstream/history/v1/session-summaries:watchSelected?${query}`, {
+            followWatch(`/upstream/history/v1/session-summaries:watch?${query}`, {
               onOpen: () => {
                 if (current === generation) {
                   pending.add(index);
@@ -202,7 +202,7 @@ export function useThreadsLive(listing: ThreadListing | null, openThreadId: stri
               },
               onFrame: (value) => {
                 if (closed || current !== generation) return;
-                const frame = fromJson(WatchSelectedSessionSummariesResponseSchema, value);
+                const frame = fromJson(WatchSessionSummariesResponseSchema, value);
                 switch (frame.observation.case) {
                   case "snapshot":
                     group.forEach((id) => staged.delete(id));

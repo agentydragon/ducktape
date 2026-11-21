@@ -229,7 +229,7 @@ async function render(
       if (
         url.pathname === "/upstream/dispatcher/v1/sessions:watch" ||
         url.pathname === "/upstream/app/v1/threads:watch" ||
-        url.pathname === "/upstream/history/v1/session-summaries:watchSelected"
+        url.pathname === "/upstream/history/v1/session-summaries:watch"
       ) {
         const watch = new ServedWatch(String(input), init?.signal ?? undefined);
         threadServed.push(watch);
@@ -243,7 +243,7 @@ async function render(
           } else if (url.pathname === "/upstream/app/v1/threads:watch") {
             watch.send({ changed: {}, updatesConnected: true });
           } else {
-            const ids = url.searchParams.getAll("session_ids");
+            const ids = url.searchParams.getAll("selected.session_ids");
             watch.send({
               snapshot: {
                 summaries: listedThreads

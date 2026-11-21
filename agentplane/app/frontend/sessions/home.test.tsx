@@ -89,7 +89,7 @@ async function render(): Promise<string[]> {
       if (
         pathname !== "/upstream/dispatcher/v1/sessions:watch" &&
         pathname !== "/upstream/app/v1/threads:watch" &&
-        pathname !== "/upstream/history/v1/session-summaries:watchSelected"
+        pathname !== "/upstream/history/v1/session-summaries:watch"
       ) {
         throw new Error(`Unexpected Thread watch route: ${pathname}`);
       }
@@ -102,7 +102,7 @@ async function render(): Promise<string[]> {
       } else if (pathname === "/upstream/app/v1/threads:watch") {
         watch.send({ changed: {}, updatesConnected: true });
       } else {
-        const ids = watch.url.searchParams.getAll("session_ids");
+        const ids = watch.url.searchParams.getAll("selected.session_ids");
         watch.send({
           snapshot: {
             summaries: THREADS.filter((row) => ids.includes(row.metadata.threadId)).map((row) =>
@@ -185,9 +185,7 @@ it("shares one search with the sidebar while reusing the generated update watche
   await act(async () => vi.runAllTimers());
   expect(threadStreams.filter((path) => path === "/upstream/dispatcher/v1/sessions:watch")).toHaveLength(1);
   expect(threadStreams.filter((path) => path === "/upstream/app/v1/threads:watch")).toHaveLength(1);
-  expect(threadStreams.filter((path) => path === "/upstream/history/v1/session-summaries:watchSelected")).toHaveLength(
-    2
-  );
+  expect(threadStreams.filter((path) => path === "/upstream/history/v1/session-summaries:watch")).toHaveLength(2);
   expect(listThreadMetadata).toHaveBeenCalledTimes(1);
   for (const scope of [home(), sidebar()]) {
     expect(row(scope, "Beta thread")).toBeDefined();

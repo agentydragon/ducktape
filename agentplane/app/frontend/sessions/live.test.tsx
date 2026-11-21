@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { create, toJson } from "@bufbuild/protobuf";
-import { WatchSelectedSessionSummariesResponseSchema } from "../../../history_service/api/history/history_service_pb";
+import { WatchSessionSummariesResponseSchema } from "../../../history_service/api/history/history_service_pb";
 import { act, type JSX } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
@@ -81,12 +81,12 @@ it("updates watched summaries without fetching metadata again", async () => {
     inventory.onFrame(create(WatchSessionsResponseSchema, { frame: { case: "caughtUp", value: {} } }));
     watches.get("/upstream/app/v1/threads:watch")!.onFrame({ changed: {}, updatesConnected: true });
   });
-  const selected = [...watches.entries()].find(([key]) => key.includes("watchSelected"))![1];
+  const selected = [...watches.entries()].find(([key]) => key.includes("selected.session_ids="))![1];
   await act(async () =>
     selected.onFrame(
       toJson(
-        WatchSelectedSessionSummariesResponseSchema,
-        create(WatchSelectedSessionSummariesResponseSchema, {
+        WatchSessionSummariesResponseSchema,
+        create(WatchSessionSummariesResponseSchema, {
           observation: { case: "snapshot", value: { summaries: [value.summary] } },
         })
       )
@@ -96,8 +96,8 @@ it("updates watched summaries without fetching metadata again", async () => {
   await act(async () =>
     selected.onFrame(
       toJson(
-        WatchSelectedSessionSummariesResponseSchema,
-        create(WatchSelectedSessionSummariesResponseSchema, { observation: { case: "summary", value: updated } })
+        WatchSessionSummariesResponseSchema,
+        create(WatchSessionSummariesResponseSchema, { observation: { case: "summary", value: updated } })
       )
     )
   );
@@ -135,12 +135,12 @@ it("marks Dispatcher activity stale when the inventory watch reconnects", async 
     inventory.onFrame(create(WatchSessionsResponseSchema, { frame: { case: "caughtUp", value: {} } }));
     watches.get("/upstream/app/v1/threads:watch")!.onFrame({ changed: {}, updatesConnected: true });
   });
-  const selected = [...watches.entries()].find(([key]) => key.includes("watchSelected"))![1];
+  const selected = [...watches.entries()].find(([key]) => key.includes("selected.session_ids="))![1];
   await act(async () =>
     selected.onFrame(
       toJson(
-        WatchSelectedSessionSummariesResponseSchema,
-        create(WatchSelectedSessionSummariesResponseSchema, {
+        WatchSessionSummariesResponseSchema,
+        create(WatchSessionSummariesResponseSchema, {
           observation: { case: "snapshot", value: { summaries: [value.summary] } },
         })
       )

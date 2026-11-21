@@ -20,12 +20,18 @@ const recordingsPage = 500
 
 type watchStream = grpc.ServerStreamingServer[historypb.WatchSessionSummariesResponse]
 
-// WatchSessionSummaries sends `changed` on recording and after each change, each Session recorded since when the
+// In notification mode, WatchSessionSummaries sends `changed` on recording and after each change, each Session recorded since when the
 // request asks for them, and `reconnect_required` when the lease ends or the server drains while idle. If either
 // ends during a write, the handler returns without another send. A wakeup only prompts the caller to re-read: what
 // it follows is in the tables, so a notification lost on a replica or a dropped LISTEN connection costs at most a
 // spurious `changed`.
 func (s *Service) WatchSessionSummaries(request *historypb.WatchSessionSummariesRequest, stream watchStream) error {
+	if request.GetSelected() != nil {
+		if request.RecordedAfter != nil {
+			return status.Error(codes.InvalidArgument, "selected summaries cannot be combined with recorded_after")
+		}
+		return s.watchSelectedSummaries(request.GetSelected(), stream)
+	}
 	ctx := stream.Context()
 	reader, err := s.scopedReader(ctx)
 	if err != nil {
@@ -108,9 +114,9 @@ func sendWithin[Response any](ctx context.Context, stream interface{ Send(*Respo
 	return streaming.SendWithinStatus(ctx, timeout, stream.Send, response, "history stream write deadline expired")
 }
 
-// WatchSelectedSessionSummaries sends an initial snapshot and changed rows, rereading on each
+// watchSelectedSummaries sends an initial snapshot and changed rows, rereading on each
 // wakeup and after listener recovery. The subscription precedes the snapshot.
-func (s *Service) WatchSelectedSessionSummaries(request *historypb.WatchSelectedSessionSummariesRequest, stream grpc.ServerStreamingServer[historypb.WatchSelectedSessionSummariesResponse]) error {
+func (s *Service) watchSelectedSummaries(request *historypb.SelectedSessionSummaries, stream watchStream) error {
 	ctx := stream.Context()
 	reader, err := s.scopedReader(ctx)
 	if err != nil {
@@ -141,21 +147,21 @@ func (s *Service) WatchSelectedSessionSummaries(request *historypb.WatchSelected
 			next[row.GetSessionId()] = row
 		}
 		if initial {
-			if err := sendWithin(leased, stream, s.requestTimeout, &historypb.WatchSelectedSessionSummariesResponse{Observation: &historypb.WatchSelectedSessionSummariesResponse_Snapshot{Snapshot: result}}); err != nil {
+			if err := sendWithin(leased, stream, s.requestTimeout, &historypb.WatchSessionSummariesResponse{Observation: &historypb.WatchSessionSummariesResponse_Snapshot{Snapshot: result}}); err != nil {
 				return err
 			}
 			initial = false
 		} else {
 			for id, row := range next {
 				if !proto.Equal(row, previous[id]) {
-					if err := sendWithin(leased, stream, s.requestTimeout, &historypb.WatchSelectedSessionSummariesResponse{Observation: &historypb.WatchSelectedSessionSummariesResponse_Summary{Summary: row}}); err != nil {
+					if err := sendWithin(leased, stream, s.requestTimeout, &historypb.WatchSessionSummariesResponse{Observation: &historypb.WatchSessionSummariesResponse_Summary{Summary: row}}); err != nil {
 						return err
 					}
 				}
 			}
 			for id := range previous {
 				if next[id] == nil {
-					if err := sendWithin(leased, stream, s.requestTimeout, &historypb.WatchSelectedSessionSummariesResponse{Observation: &historypb.WatchSelectedSessionSummariesResponse_RemovedSessionId{RemovedSessionId: id}}); err != nil {
+					if err := sendWithin(leased, stream, s.requestTimeout, &historypb.WatchSessionSummariesResponse{Observation: &historypb.WatchSessionSummariesResponse_RemovedSessionId{RemovedSessionId: id}}); err != nil {
 						return err
 					}
 				}
@@ -168,7 +174,7 @@ func (s *Service) WatchSelectedSessionSummaries(request *historypb.WatchSelected
 			if ctx.Err() != nil {
 				return status.FromContextError(ctx.Err()).Err()
 			}
-			return sendWithin(ctx, stream, s.requestTimeout, &historypb.WatchSelectedSessionSummariesResponse{Observation: &historypb.WatchSelectedSessionSummariesResponse_ReconnectRequired{ReconnectRequired: &emptypb.Empty{}}})
+			return sendWithin(ctx, stream, s.requestTimeout, &historypb.WatchSessionSummariesResponse{Observation: &historypb.WatchSessionSummariesResponse_ReconnectRequired{ReconnectRequired: &emptypb.Empty{}}})
 		}
 	}
 }

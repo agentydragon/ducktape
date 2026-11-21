@@ -46,12 +46,7 @@ service HistoryService {
   rpc FindSessions(FindSessionsRequest) returns (FindSessionsResponse) {
     option (google.api.http) = {get: "/v1/sessions:find"};
   }
-  // Streams a bounded set of authorized summaries, beginning with an authoritative snapshot.
-  rpc WatchSelectedSessionSummaries(WatchSelectedSessionSummariesRequest) returns (stream WatchSelectedSessionSummariesResponse) {
-    option (google.api.http) = {get: "/v1/session-summaries:watchSelected"};
-  }
-  // Tells the caller when fold state it may hold changed, which names nothing: re-read what you hold.
-  // On request it also names each Session the History Service records.
+  // Watches either change notifications or a bounded set of selected summaries.
   rpc WatchSessionSummaries(WatchSessionSummariesRequest) returns (stream WatchSessionSummariesResponse) {
     option (google.api.http) = {get: "/v1/session-summaries:watch"};
   }
@@ -494,17 +489,26 @@ message WatchSessionSummariesRequest {
   // visible to its execution principal. Explicit backend-wide readers use the service-wide cursor.
   // 0 names every visible Session. Absent: it names none.
   optional uint64 recorded_after = 1;
+  // Instead of change notifications, watch these summaries. Cannot be combined with recorded_after.
+  SelectedSessionSummaries selected = 2;
 }
+
+// A fresh snapshot is sent on each connection. Session IDs are bounded as in BatchGetSessionSummaries.
+message SelectedSessionSummaries { repeated string session_ids = 1; }
 
 message WatchSessionSummariesResponse {
   oneof observation {
-    // Some Session's summary or entities changed. Every stream opens with one, for whatever
-    // changed while the caller was not watching.
+    // In notification mode, some Session's summary or entities changed. The stream opens with
+    // one for whatever changed while the caller was not watching.
     google.protobuf.Empty changed = 1;
     // Planned renewal: reconnect with fresh authorization.
     google.protobuf.Empty reconnect_required = 2;
     // Only for a request with `recorded_after`.
     SessionRecorded session_recorded = 3;
+    // For selected mode, an authoritative snapshot followed by changed summaries and removals.
+    BatchGetSessionSummariesResponse snapshot = 4;
+    SessionSummary summary = 5;
+    string removed_session_id = 6;
   }
   // A successful stream ends with reconnect_required; bare EOF is a failure.
 }
@@ -528,15 +532,4 @@ message ReadNativeFramesResponse {
   repeated NativeFrame frames = 1;
   // Absent on the last page.
   optional uint64 next_after_sequence = 2;
-}
-
-// A fresh snapshot is sent on each connection. Session IDs are bounded as in BatchGetSessionSummaries.
-message WatchSelectedSessionSummariesRequest { repeated string session_ids = 1; }
-message WatchSelectedSessionSummariesResponse {
-  oneof observation {
-    BatchGetSessionSummariesResponse snapshot = 1;
-    SessionSummary summary = 2;
-    string removed_session_id = 3;
-    google.protobuf.Empty reconnect_required = 4;
-  }
 }

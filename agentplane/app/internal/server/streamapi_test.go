@@ -381,8 +381,8 @@ func TestEnvironmentGetCancelsUpstreamWithRequest(t *testing.T) {
 	}
 }
 
-func (s *typedHistoryServer) WatchSelectedSessionSummaries(req *historypb.WatchSelectedSessionSummariesRequest, stream grpc.ServerStreamingServer[historypb.WatchSelectedSessionSummariesResponse]) error {
-	if err := stream.Send(&historypb.WatchSelectedSessionSummariesResponse{Observation: &historypb.WatchSelectedSessionSummariesResponse_Snapshot{Snapshot: &historypb.BatchGetSessionSummariesResponse{Summaries: []*historypb.SessionSummary{{SessionId: req.GetSessionIds()[0]}}}}}); err != nil {
+func (s *typedHistoryServer) WatchSessionSummaries(req *historypb.WatchSessionSummariesRequest, stream grpc.ServerStreamingServer[historypb.WatchSessionSummariesResponse]) error {
+	if err := stream.Send(&historypb.WatchSessionSummariesResponse{Observation: &historypb.WatchSessionSummariesResponse_Snapshot{Snapshot: &historypb.BatchGetSessionSummariesResponse{Summaries: []*historypb.SessionSummary{{SessionId: req.GetSelected().GetSessionIds()[0]}}}}}); err != nil {
 		return err
 	}
 	if s.holdSelected {
@@ -411,7 +411,7 @@ func TestHistorySelectedSummariesGeneratedFacade(t *testing.T) {
 	defer httpServer.Close()
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, httpServer.URL+"/upstream/history/v1/session-summaries:watchSelected?session_ids=11111111-1111-1111-1111-111111111111", nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, httpServer.URL+"/upstream/history/v1/session-summaries:watch?selected.session_ids=11111111-1111-1111-1111-111111111111", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

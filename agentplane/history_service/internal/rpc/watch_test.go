@@ -13,6 +13,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -182,7 +184,7 @@ func TestSelectedSummariesSnapshotAndUpdates(t *testing.T) {
 	server := newServer(t, time.Hour)
 	sessionID, _ := server.record(t)
 	missing := uuid.New()
-	stream, err := server.client.WatchSelectedSessionSummaries(callContext(t), &historypb.WatchSelectedSessionSummariesRequest{SessionIds: []string{sessionID.String(), missing.String()}})
+	stream, err := server.client.WatchSessionSummaries(callContext(t), &historypb.WatchSessionSummariesRequest{Selected: &historypb.SelectedSessionSummaries{SessionIds: []string{sessionID.String(), missing.String()}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -211,7 +213,7 @@ func TestSelectedSummariesRespectDelegatedReadScope(t *testing.T) {
 	server, connect := newServiceAccessServer(t, time.Minute, callDeadline, nil, []auth.ServiceDelegator{{SPIFFEID: peertls.ActionsURI}}, newLiveIdentities(owner, other))
 	ownID := server.recordAs(t, owner)
 	otherID := server.recordAs(t, other)
-	stream, err := connect(t, peertls.ActionsURI).WatchSelectedSessionSummaries(serviceDelegatedIdentity(t, owner), &historypb.WatchSelectedSessionSummariesRequest{SessionIds: []string{ownID.String(), otherID.String()}})
+	stream, err := connect(t, peertls.ActionsURI).WatchSessionSummaries(serviceDelegatedIdentity(t, owner), &historypb.WatchSessionSummariesRequest{Selected: &historypb.SelectedSessionSummaries{SessionIds: []string{ownID.String(), otherID.String()}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,5 +223,19 @@ func TestSelectedSummariesRespectDelegatedReadScope(t *testing.T) {
 	}
 	if got := first.GetSnapshot().GetSummaries(); len(got) != 1 || got[0].GetSessionId() != ownID.String() {
 		t.Fatalf("snapshot exposes wrong scope: %v", first)
+	}
+}
+
+func TestSelectedSummariesRejectRecordedAfter(t *testing.T) {
+	server := newServer(t, time.Hour)
+	stream, err := server.client.WatchSessionSummaries(callContext(t), &historypb.WatchSessionSummariesRequest{
+		RecordedAfter: proto.Uint64(0), Selected: &historypb.SelectedSessionSummaries{SessionIds: []string{uuid.NewString()}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = stream.Recv()
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("got %v, want InvalidArgument", err)
 	}
 }

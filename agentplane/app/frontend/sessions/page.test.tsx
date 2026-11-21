@@ -248,7 +248,7 @@ beforeEach(() => {
       if (
         url.pathname === "/upstream/dispatcher/v1/sessions:watch" ||
         url.pathname === "/upstream/app/v1/threads:watch" ||
-        url.pathname === "/upstream/history/v1/session-summaries:watchSelected"
+        url.pathname === "/upstream/history/v1/session-summaries:watch"
       ) {
         const stream = new ServedWatch(String(input), init?.signal ?? undefined);
         if (url.pathname === "/upstream/dispatcher/v1/sessions:watch") {
@@ -258,7 +258,7 @@ beforeEach(() => {
         } else if (url.pathname === "/upstream/app/v1/threads:watch") {
           stream.send({ changed: {}, updatesConnected: true });
         } else {
-          const ids = url.searchParams.getAll("session_ids");
+          const ids = url.searchParams.getAll("selected.session_ids");
           stream.send({
             snapshot: {
               summaries: (threadRows ?? [sharedThreadView()])
