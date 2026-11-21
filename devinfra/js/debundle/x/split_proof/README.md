@@ -22,6 +22,8 @@ bbr test //devinfra/js/debundle/x/split_proof/lean:axioms_test //devinfra/js/deb
 Bazel and Lake both read the Lean version from `lean/lean-toolchain`. The other experiments in
 `run.sh` are not yet Bazel targets.
 
+`lowersplit … --plan <file>` also writes the plan as JSON: the order in which the modules run and the statements of each module, by their numbers in the bundle. The test of the CoreJS model reads it ([`experiments/README.md`](experiments/README.md) § 14).
+
 ## The example
 
 Input, [`example/input/bundle.mjs`](example/input/bundle.mjs). It has 12 top-level statements, numbered 0–11:

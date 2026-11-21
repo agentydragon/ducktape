@@ -181,10 +181,6 @@
     "fc-vm-pod": {
       "target": "//devinfra/x/firecracker/vm_pod:image"
     },
-    "inventree": {
-      "target": "//inventree_utils/rai_plugin:image",
-      "registry": "forgejo"
-    },
     "stalwart": {
       "target": "//cluster/k8s/haku/mailbox/image:image",
       "registry": "forgejo"

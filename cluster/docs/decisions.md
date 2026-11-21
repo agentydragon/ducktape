@@ -406,6 +406,8 @@ applications").
   its configuration remains in Git.
 - **InvenTree**: `cluster/parked/inventree/` — decommissioned; its four Flux
   Kustomizations are removed from the active bundle, and the revival package remains in Git.
+  Its `rai_plugin` image (`//inventree_utils/rai_plugin:image`) left the publish roster
+  (`devinfra/ci/image_targets.json`, restore the `inventree` entry from `c995ec223a`).
 - **Authelia**: `cluster/parked/authelia/` — decommissioned SSO alternative
   experiment; its Flux Kustomization is removed from the active bundle and manifests
   remain for manual revival. Authentik is the active SSO provider.
