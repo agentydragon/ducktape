@@ -112,7 +112,7 @@
 //!   executor (sealed module-wide walk + `SealedScopeRenameApplier`) is
 //!   the only mutation of the real body; derivation runs on a scratch
 //!   clone of the un-renamed body (see "Derive clone").
-//! - **Per-plan import ledger** (`lower_single_plan`): cross-module +
+//! - **Per-plan import ledger** (`prepare_module_emission`): cross-module +
 //!   residual-entry import-local mints. Separate from the naturalize
 //!   ledger because of a cross-module phase cycle, not code shape:
 //!   collection needs this module's post-naturalize body facts AND
@@ -132,7 +132,7 @@
 //! the architecture rather than residual defense:
 //!
 //! - **`chunk_renames` over moved module bodies**
-//!   (`lower_single_plan`'s `cross_module_chunk_renames` pass): the
+//!   (`prepare_module_emission`'s `cross_module_chunk_renames` pass): the
 //!   entry-side seal validates against entry's post-split body only, so
 //!   a target can still be captured inside a moved body; that
 //!   application's capture check is the moved body's only occupancy

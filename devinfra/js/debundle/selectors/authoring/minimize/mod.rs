@@ -886,7 +886,7 @@ fn render_var_slots(
             continue;
         }
         if skipped_run {
-            decls.push(declarator_hole(DECLARATORS_HOLE_KEYWORD));
+            decls.push(declarator_hole());
             skipped_run = false;
         }
         let name = single_ident_pat_name(&declarator.name)
@@ -906,7 +906,7 @@ fn render_var_slots(
         decls.push(holed);
     }
     if skipped_run {
-        decls.push(declarator_hole(DECLARATORS_HOLE_KEYWORD));
+        decls.push(declarator_hole());
     }
     let mut holed_var = var.clone();
     holed_var.declare = false;

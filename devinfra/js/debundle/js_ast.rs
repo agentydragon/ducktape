@@ -554,7 +554,7 @@ pub fn source_unit_ordinal_for_statement(
 }
 
 /// Inverse of [`source_unit_ordinal_for_statement`]: the pre-split body index
-/// of the body item that produced post-split statement ordinal `stmt_ordinal`,
+/// of the body item that produced post-split statement ordinal `ordinal`,
 /// or `None` past the end of the body.
 pub fn statement_for_source_unit_ordinal(
     body: &[ModuleItem],

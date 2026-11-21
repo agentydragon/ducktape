@@ -11,7 +11,7 @@
   vectors for every module in the chunk.
 - `imports/`: reference planning, source resolution, directive construction, and vendor consultation.
 - `rename_ledger.rs`, `naturalize.rs`, `visitors.rs`: collect, seal, and apply rename decisions.
-- `body_facts.rs`, `chunk_ast.rs`, `scope_names.rs`: AST facts used by the planning and emission phases.
+- `body_facts.rs`, `scope_names.rs`, `../frontend_elaboration/chunk_ast.rs`: AST facts used by the planning and emission phases.
 
 Import internal helpers from their owning module rather than through a root prelude.
 The root is an orchestrator, not a namespace of every implementation dependency.

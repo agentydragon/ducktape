@@ -172,9 +172,10 @@ impl VendorImportRewrites {
     }
 }
 
-/// Replacement import decl shapes shared by the wave dispatchers and
-/// lowering's construction-time vendor imports; one single-specifier
-/// `ImportDecl` per value so both application sites emit identical AST.
+/// Replacement import decl shapes shared by the pass-through emission
+/// rewriter and lowering's construction-time vendor imports; one
+/// single-specifier `ImportDecl` per value so both application sites emit
+/// identical AST.
 pub enum DeferredImport {
     /// `import * as <local> from "<source>"`
     Namespace { source: String, local: String },

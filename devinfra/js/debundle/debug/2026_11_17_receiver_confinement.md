@@ -1,6 +1,6 @@
 # Receiver confinement prerequisite
 
-The PF5 fixture in `e2e/opaque_iteration_receiver_test.rs` remains a safe
+The PF5 fixture in `e2e/callbacks/iteration_receiver.rs` remains a safe
 refusal. Its desired split moves `later` into a module. The original sequence
 is:
 
@@ -75,7 +75,8 @@ performance result.
 
 ## Verified baseline
 
-On `08bfee9ff2c34c8dcbaa495b1dfe7460501d6851`:
+On `08bfee9ff2c34c8dcbaa495b1dfe7460501d6851`, where the fixture was still its
+own target (it is now part of `//devinfra/js/debundle/e2e:callbacks_test`):
 
 ```sh
 direnv exec . bbr test //devinfra/js/debundle/e2e:opaque_iteration_receiver_test

@@ -3,6 +3,9 @@ load("//devinfra/js/debundle/e2e:defs.bzl", "debundle_e2e_test")
 
 package(default_testonly = True)
 
+# Observed timeouts and budget misses of `cross_module_purity_bench_test` and
+# `propose_commutations_budget_test`: debug/2026_11_16_opt_in_benchmark_failures.md.
+
 debundle_e2e_test(
     name = "polymorphic_identity_bench_test",
     timeout = "moderate",

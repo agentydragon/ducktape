@@ -2,17 +2,9 @@ use crate::analysis_inputs::AnalysisAssumptions;
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::*;
+use crate::analysis_test_support::{analyze_facts, test_id};
 use crate::facts::{compute_shadowed_globals, top_level_item_views};
 use crate::*;
-use swc_common::SyntaxContext;
-
-fn test_id(name: &str) -> Id {
-    (name.into(), SyntaxContext::empty())
-}
-
-fn analyze_facts(module: &Module) -> Vec<StatementFacts> {
-    analyze_chunk(module, &AnalysisInputs::default(), None).facts
-}
 
 #[test]
 fn local_class_construction_before_declaration_is_not_pure() {
@@ -859,7 +851,7 @@ fn plain_data_member_read_on_param_shadowed_name_is_not_pure() {
 #[test]
 fn plain_data_object_keys_arg_on_param_shadowed_name_is_not_pure() {
     // Same soundness hole on the `Object.keys/values/entries(X)` arg path
-    // (`is_pure_plain_data_arg_for`): when `X` is a function param, the
+    // (`plain_data_operand`): when `X` is a function param, the
     // arg is the local value, not the plain-data const.
     let src = r#"
     const X = { a: 1 };
