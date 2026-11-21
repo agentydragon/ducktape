@@ -86,9 +86,10 @@ cover only part of the grammar and split space described below.
       models for the fuzzer or for individual syntax features.
 - [ ] Extend import aliases to renamed local references. Renamed reexports through
       non-entry modules now retain their declaration identities in Lean and can be
-      generated and checked. A redirected reexport read by a simple reader now
-      has a Node-reproduced Lean counterexample; extend actual-declaration witness
-      lowering to expression functions and other statement forms.
+      generated and checked. Redirected reexports used by readers and restricted
+      numeric expressions have Node-reproduced Lean counterexamples, including
+      local shadowing. Extend actual-declaration witness lowering to cross-module
+      inlined calls and other statement forms.
 - [ ] State and test each slice's observation boundary and assumptions, including
       module loading, host behavior, numeric semantics and termination. Keep
       `unknown` when the checker cannot justify its claim, and document that Node

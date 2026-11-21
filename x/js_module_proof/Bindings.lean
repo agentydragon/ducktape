@@ -1100,6 +1100,78 @@ def outputDefinitions (modules : List BindingModule) : List BindingStmt :=
 
 /- For a counterexample, resolve a simple reader's imported reference using the
    actual output graph. Other operations continue to use the shared executor. -/
+/- Inlined calls carry bodies from their own modules. Until witness lowering
+   follows that module context, keep those bodies only when every import still
+   resolves to its expected declaration. -/
+def witnessedImportsStable (modules : List BindingModule) : Bool :=
+  modules.all fun module => module.imports.all fun imported =>
+    (importedMappings imported).all fun link =>
+      match resolveActualExportFuel modules (modules.length + 1) imported.dependency link.2 with
+      | some resolved => declaredName resolved.2.2 == some link.1
+      | none => false
+
+/- Rewrite free names in a restricted expression using the actual module graph.
+   Local bindings and parameters shadow imports. Calls to another top-level
+   function are left unsupported here because its body belongs to another module. -/
+def witnessedName (modules : List BindingModule) (index : Nat) (bound : List String) (name : String) : Option String :=
+  if bound.contains name then some name else do
+    let resolved ← resolveActualReference modules index name
+    declaredName resolved.2.2
+
+def witnessedExpression (modules : List BindingModule) (index : Nat) (bound : List String) : NumericExpr → Option NumericExpr
+  | .literal value => some (.literal value)
+  | .name name => (witnessedName modules index bound name).map NumericExpr.name
+  | .add left right => do
+    some (.add (← witnessedExpression modules index bound left) (← witnessedExpression modules index bound right))
+  | .multiply left right => do
+    some (.multiply (← witnessedExpression modules index bound left) (← witnessedExpression modules index bound right))
+  | .subtract left right => do
+    some (.subtract (← witnessedExpression modules index bound left) (← witnessedExpression modules index bound right))
+  | .remainder left right => do
+    some (.remainder (← witnessedExpression modules index bound left) (← witnessedExpression modules index bound right))
+  | .divide left right => do
+    some (.divide (← witnessedExpression modules index bound left) (← witnessedExpression modules index bound right))
+  | .bitAnd left right => do
+    some (.bitAnd (← witnessedExpression modules index bound left) (← witnessedExpression modules index bound right))
+  | .bitOr left right => do
+    some (.bitOr (← witnessedExpression modules index bound left) (← witnessedExpression modules index bound right))
+  | .bitXor left right => do
+    some (.bitXor (← witnessedExpression modules index bound left) (← witnessedExpression modules index bound right))
+  | .unsignedShift left right => do
+    some (.unsignedShift (← witnessedExpression modules index bound left) (← witnessedExpression modules index bound right))
+  | .shiftLeft left right => do
+    some (.shiftLeft (← witnessedExpression modules index bound left) (← witnessedExpression modules index bound right))
+  | .shiftRight left right => do
+    some (.shiftRight (← witnessedExpression modules index bound left) (← witnessedExpression modules index bound right))
+  | .equal left right => do
+    some (.equal (← witnessedExpression modules index bound left) (← witnessedExpression modules index bound right))
+  | .less left right => do
+    some (.less (← witnessedExpression modules index bound left) (← witnessedExpression modules index bound right))
+  | .greater left right => do
+    some (.greater (← witnessedExpression modules index bound left) (← witnessedExpression modules index bound right))
+  | .finally left right => do
+    some (.finally (← witnessedExpression modules index bound left) (← witnessedExpression modules index bound right))
+  | .catchError left right => do
+    some (.catchError (← witnessedExpression modules index bound left) (← witnessedExpression modules index bound right))
+  | .followedBy left right => do
+    some (.followedBy (← witnessedExpression modules index bound left) (← witnessedExpression modules index bound right))
+  | .argumentsCons left right => do
+    some (.argumentsCons (← witnessedExpression modules index bound left) (← witnessedExpression modules index bound right))
+  | .conditional test consequent alternative => do
+    some (.conditional (← witnessedExpression modules index bound test) (← witnessedExpression modules index bound consequent) (← witnessedExpression modules index bound alternative))
+  | .guard test consequent alternative => do
+    some (.guard (← witnessedExpression modules index bound test) (← witnessedExpression modules index bound consequent) (← witnessedExpression modules index bound alternative))
+  | .local name mutable initial body => do
+    some (.local name mutable (← witnessedExpression modules index bound initial) (← witnessedExpression modules index (name :: bound) body))
+  | .assign name value body => do
+    some (.assign (← witnessedName modules index bound name) (← witnessedExpression modules index bound value) (← witnessedExpression modules index bound body))
+  | .raise value => (witnessedExpression modules index bound value).map NumericExpr.raise
+  | .raisePrimitive value => some (.raisePrimitive value)
+  | .argumentsNil => some .argumentsNil
+  | .invoke _ _ _ _ => none
+  | .invokeLocal name parameters arguments body => do
+    some (.invokeLocal name parameters (← witnessedExpression modules index bound arguments) (← witnessedExpression modules index (parameters ++ bound) body))
+
 /- The explicit cases avoid the axiom-using matcher generated for a catch-all
    that returns the original inductive value. -/
 def witnessedOutputStatement (modules : List BindingModule) (index : Nat) : BindingStmt → Option BindingStmt
@@ -1112,7 +1184,13 @@ def witnessedOutputStatement (modules : List BindingModule) (index : Nat) : Bind
   | .constant name value => some (.constant name value)
   | .function name target source => some (.function name target source)
   | .thrower name value => some (.thrower name value)
-  | .expressionFunction name parameters body => some (.expressionFunction name parameters body)
+  | .expressionFunction name parameters body =>
+    let references := freeExpressionNames parameters body ++ expressionCalls body
+    if !(expressionCalls body).isEmpty && !witnessedImportsStable modules then none
+    else if references.all (fun reference => (witnessedName modules index [] reference) == some reference) then
+      some (.expressionFunction name parameters body)
+    else do
+      some (.expressionFunction name parameters (← witnessedExpression modules index parameters body))
   | .capturedFactory name parameters locals closureParameters body => some (.capturedFactory name parameters locals closureParameters body)
   | .capturedClosure name factory arguments keys => some (.capturedClosure name factory arguments keys)
   | .capturedAlias name target => some (.capturedAlias name target)

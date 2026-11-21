@@ -134,17 +134,19 @@ if (shards === 4 && shard === 2) {
   assert.equal(renamedRelay.renamedReexportGeneratedCases, 1);
   assert.equal(renamedRelay.renamedReexportComparedCases, 1);
   assert.equal(renamedRelay.renamedReexportProvedCases, 1);
-  const redirectedRelay = await runFuzz({
-    seed: 51981,
-    start: 59,
-    cases: 1,
-    outputDir: process.env.TEST_TMPDIR,
-    grammarMode: "composed",
-    validateEvery: 1,
-  });
-  assert.equal(redirectedRelay.mutationKinds.renamedReexport, 1);
-  assert.equal(redirectedRelay.mutatedDifferent, 1);
-  assert.equal(redirectedRelay.mutatedVerdicts.unsafe, 1);
+  for (const start of [59, 123]) {
+    const redirectedRelay = await runFuzz({
+      seed: 51981,
+      start,
+      cases: 1,
+      outputDir: process.env.TEST_TMPDIR,
+      grammarMode: "composed",
+      validateEvery: 1,
+    });
+    assert.equal(redirectedRelay.mutationKinds.renamedReexport, 1);
+    assert.equal(redirectedRelay.mutatedDifferent, 1);
+    assert.equal(redirectedRelay.mutatedVerdicts.unsafe, 1);
+  }
 }
 if (shards === 4 && shard === 3) {
   // 848 includes isolated UTF-16 surrogates in the recorded trace.

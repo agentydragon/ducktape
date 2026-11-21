@@ -1250,7 +1250,19 @@ export function makeComposedCase(seed, index) {
   }
   if (index % 64 === 59) {
     functionNames.unshift("fuzzRelayRead");
-    functions.unshift(functionNode("fuzzRelayRead", [], [returnNode(id("global"))]));
+    const expressionReader = index % 128 === 123;
+    functions.unshift(
+      functionNode(
+        "fuzzRelayRead",
+        expressionReader ? ["parameter"] : [],
+        expressionReader
+          ? [
+              declaration("global1", id("parameter")),
+              returnNode({ type: "BinaryExpression", operator: "+", left: id("global"), right: id("global1") }),
+            ]
+          : [returnNode(id("global"))]
+      )
+    );
   }
   const publicFunctionNames = functionNames.map((name, i) =>
     index % 3 === 0 && i === 0 && name !== "fuzzRelayRead" ? `public_${name}` : name
@@ -1939,7 +1951,8 @@ export async function runFuzz({
                 : null;
       if (mutation === "composedEffect") input.calls = [];
       if (mutation === "throwValue") input.calls = [{ name: "fuzzThrower", args: [1] }];
-      if (mutation === "renamedReexport") input.calls = [{ name: "fuzzRelayRead", args: [] }];
+      if (mutation === "renamedReexport")
+        input.calls = [{ name: "fuzzRelayRead", args: index % 128 === 123 ? [1] : [] }];
       const independentCategory = input.invalidAssignment ? "invalidAssignment" : input.cyclic ? "cyclic" : "acyclic";
       if (input.independentSplit) {
         summary.independentRequested[independentCategory]++;
