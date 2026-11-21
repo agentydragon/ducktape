@@ -1323,7 +1323,6 @@ py_test(
     data = ["@nodejs_linux_amd64//:bin/node"],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
-        ":conftest",
         ":kubernetes_account_ref",
         ":kubernetes_accounts",
         ":managed_account_admission",
@@ -1583,11 +1582,11 @@ py_test(
     ],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
-        ":conftest",
         ":launcher_relay",
         ":sandbox_pod",
         "//:conftest",
         "//agentplane:crd_group",
+        "//cluster/cdk8s:conftest",
         "//cluster/cdk8s/kyverno:apply",
         "@pypi//cdk8s",
         "@pypi//more_itertools",

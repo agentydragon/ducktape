@@ -7,23 +7,20 @@ import pytest
 from python.runfiles import Runfiles
 
 
-@pytest.fixture(scope="session")
-def rendered_catalogs(runfiles: Runfiles) -> dict[str, list[dict[str, Any]]]:
-    return cast(
-        dict[str, list[dict[str, Any]]],
-        json.loads((runfiles.root() / "ducktape/cluster/cdk8s/agentplane/testing/catalogs.json").read_text()),
-    )
+def _read_catalog(runfiles: Runfiles, name: str) -> list[dict[str, Any]]:
+    catalogs = json.loads((runfiles.root() / "ducktape/cluster/cdk8s/agentplane/testing/catalogs.json").read_text())
+    return cast(list[dict[str, Any]], catalogs[name])
 
 
 @pytest.fixture(scope="session")
-def staging_manifests(rendered_catalogs: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
-    return rendered_catalogs["staging"]
+def staging_manifests(runfiles: Runfiles) -> list[dict[str, Any]]:
+    return _read_catalog(runfiles, "staging")
 
 
 @pytest.fixture(scope="session")
-def identity_catalog_manifests(rendered_catalogs: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
+def identity_catalog_manifests(runfiles: Runfiles) -> list[dict[str, Any]]:
     """Staging with its policy catalog in the identity shapes, which staging does not render yet."""
-    return rendered_catalogs["identity_catalog"]
+    return _read_catalog(runfiles, "identity_catalog")
 
 
 @pytest.fixture(scope="session", params=[False, True], ids=["serviceaccount-catalog", "identity-catalog"])
