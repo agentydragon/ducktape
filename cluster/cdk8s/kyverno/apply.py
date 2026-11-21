@@ -35,22 +35,11 @@ _SUMMARY_RE = re.compile(r"pass:\s*(\d+),\s*fail:\s*(\d+),\s*warn:\s*\d+,\s*erro
 
 
 def apply_policy(
-    policy_path: Path,
-    resource_path: Path,
-    set_vars: dict[str, str] | None = None,
-    *,
-    json_payload: bool = False,
-    userinfo_path: Path | None = None,
+    policy_path: Path, resource_path: Path, *, json_payload: bool = False, userinfo_path: Path | None = None
 ) -> KyvernoApplyResult:
     """Run `kyverno apply` against a resource, parse summary and mutated output.
 
-    `set_vars` feeds `--set name=value` pairs into the run. `kyverno apply` unconditionally
-    disables `context[].apiCall` loading outside `--cluster` mode (verified against this
-    pinned CLI: passing the apiCall's target as an extra `--resource` has no effect, and the
-    engine logs "disabled loading of APICall context entry" regardless) -- so a policy whose
-    precondition depends on an apiCall-populated variable can only be exercised offline by
-    supplying that variable's value directly, keyed by the same name the `context` entry
-    would have bound it to.
+    Offline `kyverno apply` never loads `context[].apiCall` entries, so a policy that needs one is not testable here.
 
     `json_payload` passes the file as `--json` instead of `--resource`: for a `policies.kyverno.io`
     policy in `evaluation.mode: JSON` (see `test_utils.policy(json_mode=True)`), the only way to
@@ -69,8 +58,6 @@ def apply_policy(
         ]
         if userinfo_path:
             args += ["--userinfo", str(userinfo_path)]
-        if set_vars:
-            args += ["--set", ",".join(f"{name}={value}" for name, value in set_vars.items())]
         result = subprocess.run(args, check=False, capture_output=True, text=True)
         stdout = result.stdout + result.stderr
         match = _SUMMARY_RE.search(stdout)

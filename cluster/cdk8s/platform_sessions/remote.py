@@ -392,6 +392,13 @@ def _provider_workload(chart: Chart, instance: str, *, provider_type: str, recor
         if record_upstream_traffic
         else []
     )
+    recorder_listening = k8s.ExecAction(
+        command=[
+            "python",
+            "-c",
+            f"import socket; socket.create_connection(('127.0.0.1', {_RECORD_PORT}), timeout=2).close()",
+        ]
+    )
     recorder_sidecars = (
         [
             k8s.Container(
@@ -402,28 +409,10 @@ def _provider_workload(chart: Chart, instance: str, *, provider_type: str, recor
                 command=[
                     "sh",
                     "-c",
-                    "umask 077; exec mitmdump -q --listen-host 127.0.0.1 --listen-port 18080 --set confdir=/config -w '+/captures/%Y-%m-%d.mitm'",
+                    f"umask 077; exec mitmdump -q --listen-host 127.0.0.1 --listen-port {_RECORD_PORT} --set confdir=/config -w '+/captures/%Y-%m-%d.mitm'",
                 ],
-                readiness_probe=k8s.Probe(
-                    exec=k8s.ExecAction(
-                        command=[
-                            "python",
-                            "-c",
-                            "import socket; socket.create_connection(('127.0.0.1', 18080), timeout=2).close()",
-                        ]
-                    )
-                ),
-                startup_probe=k8s.Probe(
-                    exec=k8s.ExecAction(
-                        command=[
-                            "python",
-                            "-c",
-                            "import socket; socket.create_connection(('127.0.0.1', 18080), timeout=2).close()",
-                        ]
-                    ),
-                    period_seconds=2,
-                    failure_threshold=30,
-                ),
+                readiness_probe=k8s.Probe(exec=recorder_listening),
+                startup_probe=k8s.Probe(exec=recorder_listening, period_seconds=2, failure_threshold=30),
                 volume_mounts=[
                     k8s.VolumeMount(name="recorder-config", mount_path="/config"),
                     k8s.VolumeMount(name="captures", mount_path="/captures"),

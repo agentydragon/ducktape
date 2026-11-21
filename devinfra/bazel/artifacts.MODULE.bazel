@@ -364,13 +364,6 @@ http_file(
     urls = ["https://raw.githubusercontent.com/TheCodingSheikh/provider-litellm/v2.1.0/package/crds/litellm.m.crossplane.io_providerconfigs.yaml"],
 )
 
-http_file(
-    name = "crossplane_litellm_organizations_crd",
-    downloaded_file_path = "litellm.m.crossplane.io_organizations.yaml",
-    sha256 = "3c5f13122312d6083c66ab306498678e6827c2de6a73b0a31d3d6ef1c5917f43",
-    urls = ["https://raw.githubusercontent.com/TheCodingSheikh/provider-litellm/v2.1.0/package/crds/litellm.m.crossplane.io_organizations.yaml"],
-)
-
 # Upbound's OpenTofu provider CRDs used by the Crossplane Tofu adoption spike.
 # Keep these pinned to the package version installed by cluster/cdk8s/crossplane.py.
 http_file(

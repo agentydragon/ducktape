@@ -63,13 +63,11 @@ py_library(
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
         "//cluster/cdk8s/providers/litellm:key",
-        "//cluster/cdk8s/providers/litellm:organization",
         "//cluster/cdk8s/providers/litellm:providerconfig",
         "//cluster/cdk8s/providers/litellm:team",
         "//model_catalog:policies",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
-        "@pypi//constructs",
     ],
 )
 
@@ -149,7 +147,6 @@ py_library(
     deps = [
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s/cnpg:backup",
         "//cluster/cdk8s/cnpg:cluster",
         "@pypi//cdk8s",
