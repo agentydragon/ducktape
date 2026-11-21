@@ -146,9 +146,24 @@ const moduleName = (node) => (node.type === "Identifier" ? node.name : refuse(no
  * statements of the file were numbered. The `k`-th numbered statement has the identity `ids[k]` when `ids` is given,
  * else `idBase + k`.
  * Throws `Refused` outside the fragment, and acorn's error on a syntax error.
+ *
+ * `opaque`, eslint-scope's module, turns a top-level statement outside the fragment into an opaque statement, which
+ * the model's world runs: it carries the names the statement declares and the other names of the module scope or of
+ * the host that it mentions, both from eslint-scope. Then `opaque` in the result lists each such statement with why,
+ * and a name the program does not declare is the host's in every statement. Refused all the same: a top-level `await`
+ * (the order of evaluation would change), a direct `eval` (its names are not known from the text), and what depends
+ * on the file the code is in: `import.meta`, `import()`. With `census`, such a statement does not end the translation:
+ * it is listed in `refused`, and the result is not a program to run. `external` takes the module's `import`s for the host's: the
+ * names they bind are not declared, and the result has no imports.
  */
-export function toCore(source, { allowHost = false, ids = null, idBase = 0 } = {}) {
-  const ast = parse(source, { ecmaVersion: "latest", sourceType: "module" });
+export function toCore(
+  source,
+  { allowHost = false, ids = null, idBase = 0, opaque = null, external = false, census = false } = {}
+) {
+  const ast = parse(source, { ecmaVersion: "latest", sourceType: "module", ranges: opaque !== null });
+  const scopeManager = opaque && opaque.analyze(ast, { ecmaVersion: 2022, sourceType: "module" });
+  const opaqueUnits = [];
+  const refused = [];
   const out = [];
   const emit = (...token) => out.push(token);
   const scopes = [];
@@ -251,7 +266,7 @@ export function toCore(source, { allowHost = false, ids = null, idBase = 0 } = {
 
   function target(node) {
     if (node.type === "Identifier") {
-      if (!declared(node.name) && node.name in globalThis)
+      if (!declared(node.name) && (scopeManager || node.name in globalThis))
         refuse(node, `an assignment to the host global ${node.name}`);
       emit(isImport(node.name) ? "targetFrozen" : "targetVar", node.name);
     } else if (node.type === "MemberExpression") {
@@ -312,6 +327,8 @@ export function toCore(source, { allowHost = false, ids = null, idBase = 0 } = {
         else if (node.name === "undefined") emit("undef");
         else if (node.name === "NaN" || node.name === "Infinity") emit("num", bits(globalThis[node.name]));
         else if (node.name === "arguments") refuse(node, "arguments");
+        else if (scopeManager && !HOST_GLOBALS.includes(node.name))
+          refuse(node, `the name ${node.name}, which the program does not declare`);
         else if (!(node.name in globalThis)) emit("var", node.name);
         else if (allowHost || HOST_GLOBALS.includes(node.name)) emit("host", node.name);
         else refuse(node, `the host global ${node.name}`);
@@ -569,6 +586,7 @@ export function toCore(source, { allowHost = false, ids = null, idBase = 0 } = {
   }
 
   function importDeclaration(node) {
+    if (external) return;
     if (node.attributes?.length) refuse(node, "an import attribute");
     if (!/^\.\.?\//.test(node.source.value)) refuse(node, "an import of a module that is not a relative path");
     const names = node.specifiers.map((specifier) => {
@@ -587,7 +605,22 @@ export function toCore(source, { allowHost = false, ids = null, idBase = 0 } = {
     const id = ids === null ? idBase + numbered : ids[numbered];
     numbered++;
     const start = out.length;
-    const count = emitStatement();
+    let count;
+    try {
+      count = emitStatement();
+    } catch (e) {
+      if (!(e instanceof Refused) || !scopeManager) throw e;
+      out.length = start;
+      try {
+        checkOpaque(node);
+      } catch (r) {
+        if (!(r instanceof Refused) || !census) throw r;
+        refused.push({ id, why: r.message });
+      }
+      opaqueStatement(node, id);
+      opaqueUnits.push({ id, why: e.message });
+      count = 1;
+    }
     if (count > 1) refuse(node, "a top-level statement that is several statements of the model");
     if (count === 1) {
       if (id === undefined) refuse(node, "a statement without an identity");
@@ -646,10 +679,110 @@ export function toCore(source, { allowHost = false, ids = null, idBase = 0 } = {
     }
   }
 
+  /** The module scope's declarations and the references to it or to the host, each sorted by position. */
+  const moduleScope = scopeManager?.scopes.find((scope) => scope.type === "module");
+  const defs = [];
+  const refs = [];
+  if (scopeManager) {
+    for (const v of moduleScope.variables)
+      for (const def of v.defs)
+        if (!(external && def.type === "ImportBinding")) defs.push({ at: def.name.start, v, def });
+    for (const scope of scopeManager.scopes)
+      for (const ref of scope.references) {
+        const where = ref.resolved?.scope.type;
+        if (where === undefined || where === "module" || where === "global")
+          refs.push({ at: ref.identifier.start, name: ref.identifier.name });
+      }
+    defs.sort((a, b) => a.at - b.at);
+    refs.sort((a, b) => a.at - b.at);
+  }
+  /** The entries of a sorted list that lie in `[start, end)`. */
+  const within_ = (list, { start, end }) => {
+    let lo = 0;
+    let hi = list.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (list[mid].at < start) lo = mid + 1;
+      else hi = mid;
+    }
+    const found = [];
+    for (let i = lo; i < list.length && list[i].at < end; i++) found.push(list[i]);
+    return found;
+  };
+  const paramLength = (params) => {
+    const k = params.findIndex((p) => p.type === "AssignmentPattern" || p.type === "RestElement");
+    return k < 0 ? params.length : k;
+  };
+  /** What the model cannot leave to the world: refused in an opaque statement as anywhere. */
+  function checkOpaque(root) {
+    const visit = (node, inFunction) => {
+      if (!node || typeof node.type !== "string") return;
+      if (node.type === "MetaProperty" && node.meta.name === "import") refuse(node, "import.meta");
+      if (node.type === "ImportExpression") refuse(node, "import(), which resolves against the file it is in");
+      if (!inFunction && (node.type === "AwaitExpression" || (node.type === "ForOfStatement" && node.await)))
+        refuse(node, "a top-level await");
+      if (!inFunction && node.type === "VariableDeclaration" && (node.kind === "using" || node.kind === "await using"))
+        refuse(node, "a top-level using");
+      if (node.type === "CallExpression" && node.callee.type === "Identifier" && node.callee.name === "eval")
+        refuse(node, "a direct eval");
+      const fn = inFunction || /Function/.test(node.type) || node.type === "StaticBlock";
+      for (const key of Object.keys(node)) {
+        const child = node[key];
+        if (Array.isArray(child)) for (const c of child) visit(c, fn);
+        else if (child && typeof child === "object") visit(child, fn);
+      }
+    };
+    visit(root, false);
+  }
+  /** The top-level statement or declarator `node` as an opaque statement with the identity `id`. */
+  function opaqueStatement(node, id) {
+    const decls = [];
+    const funs = [];
+    const seen = new Set();
+    for (const { v, def } of within_(defs, node)) {
+      if (seen.has(v.name)) continue;
+      seen.add(v.name);
+      if (def.type === "FunctionName")
+        funs.push([v.name, paramLength(def.node.params), !(def.node.async || def.node.generator)]);
+      else if (def.type === "ClassName") decls.push([v.name, "let"]);
+      else if (def.type === "Variable") decls.push([v.name, def.parent.kind === "let" ? "let" : def.parent.kind]);
+      else refuse(node, `a declaration of kind ${def.type}`);
+    }
+    if (node.type === "ExportDefaultDeclaration") {
+      const d = node.declaration;
+      if (d.type === "FunctionDeclaration" && !d.id)
+        funs.push(["default", paramLength(d.params), !(d.async || d.generator)]);
+      else if (d.type === "ClassDeclaration" && !d.id) decls.push(["*default*", "let"]);
+      else if (d.type !== "FunctionDeclaration" && d.type !== "ClassDeclaration") decls.push(["*default*", "const"]);
+      for (const [x] of [...decls, ...funs]) seen.add(x);
+    }
+    const free = [];
+    for (const { name } of within_(refs, node))
+      if (!seen.has(name)) {
+        seen.add(name);
+        free.push(name);
+      }
+    emit("opaque", id, decls, funs, free);
+  }
+
   for (const node of ast.body)
-    if (node.type === "ImportDeclaration") for (const s of node.specifiers) importedNames.add(s.local.name);
-  within([...varNames(ast.body), ...lexicalNames(ast.body), ...importedNames], () => ast.body.forEach(topLevel));
-  return { tokens: out, units: unitIds.length, ids: unitIds, spans, imports, exports, numbered };
+    if (node.type === "ImportDeclaration" && !external)
+      for (const s of node.specifiers) importedNames.add(s.local.name);
+  const moduleNames = scopeManager
+    ? defs.map(({ v }) => v.name)
+    : [...varNames(ast.body), ...lexicalNames(ast.body), ...importedNames];
+  within(moduleNames, () => ast.body.forEach(topLevel));
+  return {
+    tokens: out,
+    units: unitIds.length,
+    ids: unitIds,
+    spans,
+    imports,
+    exports,
+    numbered,
+    opaque: opaqueUnits,
+    refused,
+  };
 }
 
 /**
@@ -657,7 +790,7 @@ export function toCore(source, { allowHost = false, ids = null, idBase = 0 } = {
  * reads it. A module's name is its path from the directory of the entry. `ids[name]` gives the identities of the
  * statements of that module; without it the statements are numbered on through the modules, in the order they are read.
  */
-export function toCoreProgram(entry, { allowHost = false, ids = {} } = {}) {
+export function toCoreProgram(entry, { allowHost = false, ids = {}, opaque = null } = {}) {
   const root = path.dirname(entry);
   const modules = [];
   const seen = new Set();
@@ -666,7 +799,7 @@ export function toCoreProgram(entry, { allowHost = false, ids = {} } = {}) {
     if (seen.has(name)) return;
     seen.add(name);
     const source = readFileSync(path.join(root, name), "utf8");
-    const translated = toCore(source, { allowHost, ids: ids[name] ?? null, idBase });
+    const translated = toCore(source, { allowHost, ids: ids[name] ?? null, idBase, opaque });
     idBase += translated.numbered;
     const imports = translated.imports.map((i) => ({
       source: path.posix.join(path.posix.dirname(name), i.source),

@@ -47,6 +47,15 @@ theorem runUnits_same (n : Nat) {us us' : List (Nat × Stmt × Env)} (h : SameUn
     unfold runUnits
     rw [runUnit_agree hagree, ih]
 
+theorem initOpaque_agree (code : Nat) (cells : List (Option Addr)) {env env' : Env} :
+    ∀ (funs : List (Name × Nat × Bool)) (part : Nat), (∀ x ∈ funs.map (·.1), env.vars.lookup x = env'.vars.lookup x) →
+      (initOpaque code cells env funs part : M W Unit) = initOpaque code cells env' funs part
+  | [], _, _ => rfl
+  | (x, length, constructor) :: rest, part, h => by
+    unfold initOpaque
+    exact M.bind_congr rfl fun v => M.bind_congr (initVar_agree (h x (by simp)) v) fun _ =>
+      initOpaque_agree code cells rest (part + 1) fun y hy => h y (by simp [hy])
+
 theorem initFunctions_same {us us' : List (Nat × Stmt × Env)} (h : SameUnits us us') :
     (initFunctions us : M W Unit) = initFunctions us' := by
   induction h with
@@ -67,6 +76,12 @@ theorem initFunctions_same {us us' : List (Nat × Stmt × Env)} (h : SameUnits u
       exact congrArg (inRegion id) (M.bind_congr
         (makeFunc_agree (hagree.mono fun x hx => by simp [Stmt.free, hx])) fun v =>
           initVar_agree (hagree.vars f.name (by simp [Stmt.free])) v)
+    | «opaque» code decls funs free =>
+      unfold initFunction
+      dsimp only
+      rw [opaqueCells_agree hagree]
+      exact congrArg (inRegion id) (initOpaque_agree code _ funs 1 fun x hx =>
+        hagree.vars x (by simp only [Stmt.free, opaqueNames]; exact List.mem_append_right _ (List.mem_append_left _ hx)))
     | _ => rfl
 
 theorem sameUnit_ids {us us' : List (Nat × Stmt × Env)} (h : SameUnits us us') :

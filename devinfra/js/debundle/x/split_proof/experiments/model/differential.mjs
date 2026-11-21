@@ -53,9 +53,10 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { format } from "node:util";
 import { kindOf } from "../translation/gen/core.mjs";
 import { generateProgram, renderProgram } from "../translation/gen/index.mjs";
-import { dumpOf } from "../translation/split_dump.mjs";
+import { coreOf, coreProgramOf, dumpOf } from "../translation/split_dump.mjs";
 import { cases, splitCases } from "./cases.mjs";
 import { moduleCases } from "./module_cases.mjs";
+import { opaqueCases, scriptsOf } from "./opaque_cases.mjs";
 import { bits, HOST_GLOBALS, Refused, toCore, toCoreProgram } from "./to_core.mjs";
 
 const option = (name, fallback) => {
@@ -323,6 +324,18 @@ for (const c of moduleCases) {
     set: null,
   });
 }
+for (const c of opaqueCases) {
+  const translated = coreOf(c.source);
+  assert(translated.opaque.length > 0, `opaque case ${c.name}: no statement is opaque`);
+  jobs.push({
+    label: `opaque: ${c.name}`,
+    source: c.source,
+    program: { ...single(translated), scripts: scriptsOf(c) },
+    expectEnd: null,
+    set: null,
+    opaqueCase: c,
+  });
+}
 await runNode(jobs);
 runModel(jobs);
 
@@ -479,8 +492,10 @@ function specsFor(dump, next) {
 }
 
 /** `source` as a one-module program whose statements have the numbers `lowersplit` gives them. */
-function numbered(source) {
-  const t = toCore(source);
+function numbered(source, scripts) {
+  const t = scripts ? coreOf(source) : toCore(source);
+  if (scripts)
+    return { program: { entry: "main", modules: [{ name: "main", imports: [], ...t }], scripts }, units: unitsOf(t) };
   return { program: { entry: "main", modules: [{ name: "main", imports: [], ...t }] }, units: unitsOf(t) };
 }
 
@@ -493,6 +508,8 @@ const tally = {
   cut: [0, 0],
   ordered: [0, 0],
   free: [0, 0],
+  opaque: [0, 0],
+  opaqueCases: 0,
   unsupported: 0,
   agree: 0,
   orderKept: 0,
@@ -526,17 +543,45 @@ function split(job, bundle, dump, kind, spec, named) {
   const statements = order.flatMap((m) => modules[m]);
   const orderKept = statements.every((id, k) => k === 0 || statements[k - 1] < id);
   try {
-    const program = toCoreProgram(entry, { ids: modules });
+    const scripts = job.program.scripts;
+    const program = scripts
+      ? { ...coreProgramOf(entry, { ids: modules }), scripts }
+      : toCoreProgram(entry, { ids: modules });
     splitJobs.push({ label, source: job.source, entry, order, orderKept, of: job, bundle, program, named });
   } catch (e) {
     failures.push(`${label}: the front end takes the bundle and not the split: ${e.message}`);
   }
 }
 
+for (const job of jobs.filter((j) => j.opaqueCase))
+  if (!job.node || !sameRun(job.result, job.node))
+    failures.push(
+      `${job.label}: the model differs from Node: ${JSON.stringify(job.result)} ${JSON.stringify(job.node)}`
+    );
+  else tally.opaqueCases++;
 const candidates = jobs.filter((j) => !j.entry && j.node && j.result.end !== "unknown" && sameRun(j.result, j.node));
 for (const job of candidates.filter((j) => j.splitCase))
   split(job, numbered(job.source), dumpOf(job.source), "named", job.splitCase.spec, job.splitCase);
-for (const [index, job] of candidates.slice(0, splitPrograms).entries()) {
+// a program with opaque statements, in two consecutive pieces that run in order
+for (const job of candidates.filter((j) => j.opaqueCase)) {
+  const dump = dumpOf(job.source);
+  const n = dump.statements.length;
+  const cut = Math.floor(n / 2);
+  const modules = { "m0.mjs": [], "entry.mjs": [] };
+  dump.statements.forEach((_, i) => modules[i < cut ? "m0.mjs" : "entry.mjs"].push(`#${i}`));
+  split(
+    job,
+    numbered(job.source, job.program.scripts),
+    dump,
+    "opaque",
+    { entry: "entry.mjs", modules, sequential: true },
+    null
+  );
+}
+for (const [index, job] of candidates
+  .filter((j) => !j.opaqueCase)
+  .slice(0, splitPrograms)
+  .entries()) {
   const dump = dumpOf(job.source);
   if (dump.statements.length < 2) continue;
   tally.programs++;
@@ -626,7 +671,7 @@ console.log("unknown code that units of generated programs were left out for:", 
 console.log(`model endings: ${JSON.stringify(ends)}; corejs took ${modelSeconds.toFixed(1)} s`);
 const verdicts = (kind) => `${kind}: ${tally[kind][0]} accepted, ${tally[kind][1]} rejected`;
 console.log(
-  `splits: ${tally.named[0]} named accepted, ${tally.named[1]} named rejected; ${tally.programs} programs; ${["cut", "ordered", "free"].map(verdicts).join("; ")}; ` +
+  `opaque cases: ${tally.opaqueCases} of ${opaqueCases.length} agree with Node; splits: ${tally.named[0]} named accepted, ${tally.named[1]} named rejected; ${tally.programs} programs; ${["cut", "ordered", "free", "opaque"].map(verdicts).join("; ")}; ` +
     `${tally.unsupported} unsupported; ${tally.agree} accepted splits where the four runs agree, ` +
     `${tally.orderKept} of them with the statements in the bundle's order, ${tally.sameState} of those ending in ` +
     `the bundle's state; ${apart.splits} accepted splits move code ` +

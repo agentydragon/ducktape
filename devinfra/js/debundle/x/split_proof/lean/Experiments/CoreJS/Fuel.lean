@@ -107,6 +107,25 @@ theorem putRef_le {call call' : Call W} (h : Call.le call call') (env : Env) (r 
     putRef call env r v ⊑ putRef call' env r v := by
   cases r <;> first | exact M.le_refl _ | exact setProp_le h _ _ _
 
+theorem attempt_le {α : Type} {m m' : M W α} (h : m ⊑ m') : attempt m ⊑ attempt m' := by
+  intro s
+  unfold attempt
+  rcases h s with h | h
+  · rw [h]; exact .inl rfl
+  · rw [← h]; exact .inr rfl
+
+theorem perform_le {call call' : Call W} {cons cons' : Val → List Val → M W Val} (h : Call.le call call')
+    (hc : ∀ f args, cons f args ⊑ cons' f args) (code : Nat) (cells : List (Option Addr)) (req : Request) :
+    perform call cons code cells req ⊑ perform call' cons' code cells req := by
+  cases req <;> unfold perform <;> dsimp only <;> repeat' first
+    | exact getProp_le h _ _
+    | exact setProp_le h _ _ _
+    | exact prim_le h _ _
+    | exact (h _ _ _)
+    | exact (hc _ _)
+    | mono_step
+    | exact M.le_refl _
+
 /-- Every function of the interpreter with the bound `n`, against the same with the bound `m`. -/
 structure Mono (W : World) (n m : Nat) : Prop where
   expr : ∀ env e, (evalExpr n env e : M W _) ⊑ evalExpr m env e
@@ -120,6 +139,7 @@ structure Mono (W : World) (n m : Nat) : Prop where
   stmt : ∀ env s, (execStmt n env s : M W _) ⊑ execStmt m env s
   stmts : ∀ env ss, (execStmts n env ss : M W _) ⊑ execStmts m env ss
   loop : ∀ env fresh test update body, (loop n env fresh test update body : M W _) ⊑ loop m env fresh test update body
+  converse : ∀ code cells told, (converse n code cells told : M W _) ⊑ converse m code cells told
 
 theorem Mono.callLe {n m : Nat} (h : Mono W n m) : Call.le (callFn n : Call W) (callFn m) := h.call
 
@@ -138,6 +158,8 @@ macro_rules
     | with_reducible exact ($h).stmt _ _
     | with_reducible exact ($h).stmts _ _
     | with_reducible exact ($h).loop _ _ _ _ _
+    | with_reducible exact ($h).converse _ _ _
+    | with_reducible exact attempt_le (perform_le ($h).callLe ($h).construct _ _ _)
     | with_reducible exact getProp_le ($h).callLe _ _
     | with_reducible exact setProp_le ($h).callLe _ _ _
     | with_reducible exact getRef_le ($h).callLe _ _
@@ -226,6 +248,11 @@ theorem Mono.loop_succ (env : Env) (fresh : List Name) (test update : Expr) (bod
   unfold CoreJS.loop
   mono ih
 
+theorem Mono.converse_succ (code : Nat) (cells : List (Option Addr)) (told : Told) :
+    (CoreJS.converse (n + 1) code cells told : M W _) ⊑ CoreJS.converse (m + 1) code cells told := by
+  unfold CoreJS.converse
+  mono ih
+
 end step
 
 theorem mono : ∀ n m, n ≤ m → Mono W n m := by
@@ -236,7 +263,7 @@ theorem mono : ∀ n m, n ≤ m → Mono W n m := by
     exact ⟨fun _ _ => M.le_outOfFuel _, fun _ _ => M.le_outOfFuel _, fun _ _ => M.le_outOfFuel _,
       fun _ _ _ => M.le_outOfFuel _, fun _ _ _ _ => M.le_outOfFuel _, fun _ _ _ => M.le_outOfFuel _,
       fun _ _ _ => M.le_outOfFuel _, fun _ _ => M.le_outOfFuel _, fun _ _ => M.le_outOfFuel _,
-      fun _ _ => M.le_outOfFuel _, fun _ _ _ _ _ => M.le_outOfFuel _⟩
+      fun _ _ => M.le_outOfFuel _, fun _ _ _ _ _ => M.le_outOfFuel _, fun _ _ _ => M.le_outOfFuel _⟩
   | succ n ih =>
     intro m hm
     cases m with
@@ -244,7 +271,7 @@ theorem mono : ∀ n m, n ≤ m → Mono W n m := by
     | succ m =>
       have ih := ih m (by omega)
       exact ⟨ih.expr_succ, ih.args_succ, ih.target_succ, ih.props_succ, ih.members_succ, ih.fields_succ, ih.call_succ,
-        ih.construct_succ, ih.stmt_succ, ih.stmts_succ, ih.loop_succ⟩
+        ih.construct_succ, ih.stmt_succ, ih.stmts_succ, ih.loop_succ, ih.converse_succ⟩
 
 theorem runUnits_le {n m : Nat} (h : n ≤ m) (units : List (Nat × Stmt × Env)) :
     (runUnits n units : M W _) ⊑ runUnits m units := by
