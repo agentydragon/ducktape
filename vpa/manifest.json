@@ -3,8 +3,8 @@
   "audited_at_utc": "2026-11-21 05:53:34 UTC",
   "snapshot_utc": "2026-11-21T05:53:34Z",
   "scope": "Current Kubernetes VPA policies, workload owners, metrics samples and rollout review cohorts. Earlier evidence retains its original observation window.",
-  "report_html_sha256": "19f769d333b023bb51e1116c7eb5561d4b540d08e8bebeddcff3c940b2855bfa",
-  "report_script_sha256": "19046e4e93842452d19ecd91aeb3850ec61bd8d9048d689055197ce09e0ef7f4",
+  "report_html_sha256": "8433893dd8a14bd62b27f107afb38ea9c9039f80d62340300a978763499a6982",
+  "report_script_sha256": "cd220a0ac680f1c24fa82d3048d0f61501e578d60ab886595a0e3a3041718c25",
   "evidence_sha256": "c69cc4092a6f9640579e2dce32e0f2f37af78498b947522c2320f49698a86a28",
   "architecture_source_devel_commit": "d81bd68165097b089cace9ae168b6e8f202f1b7e",
   "architecture_reviewed_at_utc": "2026-11-20T03:36:52Z",
@@ -166,5 +166,495 @@
     "initial_cpu_and_memory_policies": 10,
     "cpu_targets_observed": 0,
     "staging_cpu_bounds_removed": 9
+  },
+  "recommender_followup": {
+    "target_data_observed_utc": "2026-11-21T06:01:59Z",
+    "flux": [
+      {
+        "name": "helm-controller",
+        "generation": 1,
+        "observed_generation": 1,
+        "targets": [
+          {
+            "name": "manager",
+            "target": {
+              "cpu": "49m",
+              "memory": "272061154"
+            },
+            "uncappedTarget": {
+              "cpu": "49m",
+              "memory": "272061154"
+            }
+          }
+        ]
+      },
+      {
+        "name": "image-automation-controller",
+        "generation": 1,
+        "observed_generation": 1,
+        "targets": [
+          {
+            "name": "manager",
+            "target": {
+              "cpu": "247m",
+              "memory": "671629701"
+            },
+            "uncappedTarget": {
+              "cpu": "247m",
+              "memory": "671629701"
+            }
+          }
+        ]
+      },
+      {
+        "name": "image-reflector-controller",
+        "generation": 1,
+        "observed_generation": 1,
+        "targets": [
+          {
+            "name": "manager",
+            "target": {
+              "cpu": "35m",
+              "memory": "225384266"
+            },
+            "uncappedTarget": {
+              "cpu": "35m",
+              "memory": "225384266"
+            }
+          }
+        ]
+      },
+      {
+        "name": "kustomize-controller",
+        "generation": 1,
+        "observed_generation": 1,
+        "targets": [
+          {
+            "name": "manager",
+            "target": {
+              "cpu": "977m",
+              "memory": "442809964"
+            },
+            "uncappedTarget": {
+              "cpu": "977m",
+              "memory": "442809964"
+            }
+          }
+        ]
+      },
+      {
+        "name": "notification-controller",
+        "generation": 1,
+        "observed_generation": 1,
+        "targets": [
+          {
+            "name": "manager",
+            "target": {
+              "cpu": "15m",
+              "memory": "100Mi"
+            },
+            "uncappedTarget": {
+              "cpu": "15m",
+              "memory": "100Mi"
+            }
+          }
+        ]
+      },
+      {
+        "name": "source-controller",
+        "generation": 1,
+        "observed_generation": 1,
+        "targets": [
+          {
+            "name": "manager",
+            "target": {
+              "cpu": "920m",
+              "memory": "716711186"
+            },
+            "uncappedTarget": {
+              "cpu": "920m",
+              "memory": "716711186"
+            }
+          }
+        ]
+      },
+      {
+        "name": "source-watcher",
+        "generation": 1,
+        "observed_generation": 1,
+        "targets": [
+          {
+            "name": "manager",
+            "target": {
+              "cpu": "35m",
+              "memory": "100Mi"
+            },
+            "uncappedTarget": {
+              "cpu": "35m",
+              "memory": "100Mi"
+            }
+          }
+        ]
+      }
+    ],
+    "nfd": [
+      {
+        "name": "goldilocks-node-feature-discovery-gc",
+        "generation": 3,
+        "observed_generation": 3,
+        "targets": [
+          {
+            "name": "gc",
+            "target": {
+              "cpu": "15m",
+              "memory": "100Mi"
+            },
+            "uncappedTarget": {
+              "cpu": "15m",
+              "memory": "100Mi"
+            }
+          }
+        ]
+      },
+      {
+        "name": "goldilocks-node-feature-discovery-master",
+        "generation": 3,
+        "observed_generation": 3,
+        "targets": [
+          {
+            "name": "master",
+            "target": {
+              "cpu": "15m",
+              "memory": "100Mi"
+            },
+            "uncappedTarget": {
+              "cpu": "15m",
+              "memory": "100Mi"
+            }
+          }
+        ]
+      },
+      {
+        "name": "goldilocks-node-feature-discovery-worker",
+        "generation": 3,
+        "observed_generation": 3,
+        "targets": [
+          {
+            "name": "worker",
+            "target": {
+              "cpu": "15m",
+              "memory": "100Mi"
+            },
+            "uncappedTarget": {
+              "cpu": "15m",
+              "memory": "100Mi"
+            }
+          }
+        ]
+      }
+    ],
+    "platform_and_mcp": {
+      "google-mcp/google-mcp": {
+        "mode": "Initial",
+        "resources": ["cpu", "memory"],
+        "values": "RequestsOnly",
+        "cpu_min": null,
+        "cpu_max": null,
+        "generation": 3,
+        "observed_generation": 3,
+        "cpu_target": "15m"
+      },
+      "ha-mcp/ha-mcp": {
+        "mode": "Initial",
+        "resources": ["cpu", "memory"],
+        "values": "RequestsOnly",
+        "cpu_min": null,
+        "cpu_max": null,
+        "generation": 3,
+        "observed_generation": 3,
+        "cpu_target": "15m"
+      },
+      "kubectl-passthrough-mcp/kubectl-passthrough-mcp": {
+        "mode": "Initial",
+        "resources": ["cpu", "memory"],
+        "values": "RequestsOnly",
+        "cpu_min": null,
+        "cpu_max": null,
+        "generation": 3,
+        "observed_generation": 3,
+        "cpu_target": "15m"
+      },
+      "platform-sessions/anthropic": {
+        "mode": "Initial",
+        "resources": ["cpu", "memory"],
+        "values": "RequestsOnly",
+        "cpu_min": null,
+        "cpu_max": null,
+        "generation": 3,
+        "observed_generation": 3,
+        "cpu_target": "15m"
+      },
+      "platform-sessions/blueshield": {
+        "mode": "Initial",
+        "resources": ["cpu", "memory"],
+        "values": "RequestsOnly",
+        "cpu_min": null,
+        "cpu_max": null,
+        "generation": 3,
+        "observed_generation": 3,
+        "cpu_target": "15m"
+      },
+      "platform-sessions/chatgpt": {
+        "mode": "Initial",
+        "resources": ["cpu", "memory"],
+        "values": "RequestsOnly",
+        "cpu_min": null,
+        "cpu_max": null,
+        "generation": 3,
+        "observed_generation": 3,
+        "cpu_target": "15m"
+      },
+      "platform-sessions/gateway": {
+        "mode": "Initial",
+        "resources": ["cpu", "memory"],
+        "values": "RequestsOnly",
+        "cpu_min": null,
+        "cpu_max": null,
+        "generation": 3,
+        "observed_generation": 3,
+        "cpu_target": "15m"
+      },
+      "platform-sessions/openai": {
+        "mode": "Initial",
+        "resources": ["cpu", "memory"],
+        "values": "RequestsOnly",
+        "cpu_min": null,
+        "cpu_max": null,
+        "generation": 3,
+        "observed_generation": 3,
+        "cpu_target": "15m"
+      },
+      "platform-sessions/quest-scheduler": {
+        "mode": "Initial",
+        "resources": ["cpu", "memory"],
+        "values": "RequestsOnly",
+        "cpu_min": null,
+        "cpu_max": null,
+        "generation": 3,
+        "observed_generation": 3,
+        "cpu_target": "63m"
+      },
+      "ssh-mcp/ssh-mcp": {
+        "mode": "Initial",
+        "resources": ["cpu", "memory"],
+        "values": "RequestsOnly",
+        "cpu_min": null,
+        "cpu_max": null,
+        "generation": 3,
+        "observed_generation": 3,
+        "cpu_target": "15m"
+      }
+    },
+    "agentplane_staging": {
+      "agentplane-staging/actions": {
+        "mode": "Initial",
+        "resources": ["cpu", "memory"],
+        "values": "RequestsOnly",
+        "cpu_min": null,
+        "cpu_max": null,
+        "generation": 3,
+        "observed_generation": 3,
+        "cpu_target": "23m"
+      },
+      "agentplane-staging/app": {
+        "mode": "Initial",
+        "resources": ["cpu", "memory"],
+        "values": "RequestsOnly",
+        "cpu_min": null,
+        "cpu_max": null,
+        "generation": 3,
+        "observed_generation": 3,
+        "cpu_target": "35m"
+      },
+      "agentplane-staging/environments": {
+        "mode": "Initial",
+        "resources": ["cpu", "memory"],
+        "values": "RequestsOnly",
+        "cpu_min": null,
+        "cpu_max": null,
+        "generation": 3,
+        "observed_generation": 3,
+        "cpu_target": "15m"
+      },
+      "agentplane-staging/history-service": {
+        "mode": "Initial",
+        "resources": ["cpu", "memory"],
+        "values": "RequestsOnly",
+        "cpu_min": null,
+        "cpu_max": null,
+        "generation": 3,
+        "observed_generation": 3,
+        "cpu_target": "78m"
+      },
+      "agentplane-staging/llm-ingress": {
+        "mode": "Initial",
+        "resources": ["cpu", "memory"],
+        "values": "RequestsOnly",
+        "cpu_min": null,
+        "cpu_max": null,
+        "generation": 3,
+        "observed_generation": 3,
+        "cpu_target": "23m"
+      },
+      "agentplane-staging/mcp-edge": {
+        "mode": "Initial",
+        "resources": ["cpu", "memory"],
+        "values": "RequestsOnly",
+        "cpu_min": null,
+        "cpu_max": null,
+        "generation": 3,
+        "observed_generation": 3,
+        "cpu_target": "15m"
+      },
+      "agentplane-staging/notifications": {
+        "mode": "Initial",
+        "resources": ["cpu", "memory"],
+        "values": "RequestsOnly",
+        "cpu_min": null,
+        "cpu_max": null,
+        "generation": 3,
+        "observed_generation": 3,
+        "cpu_target": "203m"
+      },
+      "agentplane-staging/policy-controller": {
+        "mode": "Initial",
+        "resources": ["cpu", "memory"],
+        "values": "RequestsOnly",
+        "cpu_min": null,
+        "cpu_max": null,
+        "generation": 3,
+        "observed_generation": 3,
+        "cpu_target": "15m"
+      },
+      "agentplane-staging/sessions": {
+        "mode": "Initial",
+        "resources": ["cpu", "memory"],
+        "values": "RequestsOnly",
+        "cpu_min": null,
+        "cpu_max": null,
+        "generation": 3,
+        "observed_generation": 3,
+        "cpu_target": "35m"
+      }
+    },
+    "flux_admission_dry_run": {
+      "observed_utc": "2026-11-21T06:00:29+00:00",
+      "owner_matched_cases": 7,
+      "unchanged_incumbents": 7,
+      "admitted_resources": {
+        "helm-controller": {
+          "limits": {
+            "cpu": "1",
+            "memory": "1Gi"
+          },
+          "requests": {
+            "cpu": "49m",
+            "memory": "272061154"
+          }
+        },
+        "image-automation-controller": {
+          "limits": {
+            "cpu": "1",
+            "memory": "1Gi"
+          },
+          "requests": {
+            "cpu": "247m",
+            "memory": "671629701"
+          }
+        },
+        "image-reflector-controller": {
+          "limits": {
+            "cpu": "1",
+            "memory": "1Gi"
+          },
+          "requests": {
+            "cpu": "35m",
+            "memory": "225384266"
+          }
+        },
+        "kustomize-controller": {
+          "limits": {
+            "cpu": "1",
+            "memory": "1Gi"
+          },
+          "requests": {
+            "cpu": "977m",
+            "memory": "442809964"
+          }
+        },
+        "notification-controller": {
+          "limits": {
+            "cpu": "1",
+            "memory": "1Gi"
+          },
+          "requests": {
+            "cpu": "15m",
+            "memory": "100Mi"
+          }
+        },
+        "source-controller": {
+          "limits": {
+            "cpu": "1",
+            "memory": "1Gi"
+          },
+          "requests": {
+            "cpu": "920m",
+            "memory": "716711186"
+          }
+        },
+        "source-watcher": {
+          "limits": {
+            "cpu": "1",
+            "memory": "1Gi"
+          },
+          "requests": {
+            "cpu": "35m",
+            "memory": "100Mi"
+          }
+        }
+      }
+    },
+    "flux_current_placement_estimate": {
+      "reservations_observed_utc": "2026-11-21T06:02:04Z",
+      "assumption": "Substitute dry-run requests on existing hosts with other reservations held fixed.",
+      "minimum_affected_node_cpu_headroom_millicores": 1167,
+      "minimum_affected_node_memory_headroom_mib": 2655.6,
+      "earlier_cpu_proxy_millicores": {
+        "kustomize-controller": 631,
+        "source-controller": 502
+      }
+    },
+    "sampled_memory_floors": {
+      "observed_utc": "2026-11-21T06:03:53Z",
+      "uncapped_and_target_mib": {
+        "platform-sessions/blueshield": [156, 416],
+        "kubectl-passthrough-mcp/kubectl-passthrough-mcp": [105, 192],
+        "agentplane-staging/sessions": [100, 256]
+      }
+    },
+    "single_ovh_worker_loss_estimate": {
+      "reservations_observed_utc": "2026-11-21T06:06:43Z",
+      "modeled_placements": 16,
+      "fitting_placements": 16,
+      "policies_used": 29,
+      "minimum_survivor_cpu_headroom_millicores": 319,
+      "minimum_survivor_memory_headroom_mib": 1942,
+      "selected_peak_cpu_headroom_millicores": 41,
+      "selected_peak_memory_headroom_mib": 1534,
+      "kustomize_surge_cpu_request_millicores": 977,
+      "scope": "Each case loses one ready OVH worker and varies eligible Flux source and two staging surge placements. Five rolling Flux surges use an eligible home node. Includes the third Loki and Kyverno replicas in the baseline and holds noncohort reservations fixed.",
+      "peak_sensitivity": "Substitute selected measured NFD, Flux source and Flux Kustomize CPU peaks and Loki working-set memory. CPU and memory minima are across cases and can occur on different hosts.",
+      "availability_limits": "A third Loki read replica requires a third eligible OVH worker. Platform providers with capture volumes local to the failed worker cannot relocate. Concurrent home-node loss is outside the model."
+    }
   }
 }
