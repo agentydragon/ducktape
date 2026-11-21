@@ -11,12 +11,14 @@ cp package.json.in package.json && npm ci --no-audit --no-fund
 node frontend.mjs bundle <bundle.js> --out bundle.json
 node frontend.mjs tree <outRoot> --entry entry.js --out output.json
 node pair.mjs bundle.json output.json --out cert.json
-../../lean/.lake/build/bin/translate bundle.json output.json cert.json [--premises premises.json] [--table table.json]
+../../lean/.lake/build/bin/translate bundle.json output.json cert.json [--premises premises.json] [--table table.json] [--obligations obligations.jsonl]
 ```
 
 Exit codes: `0` accepted. `1` rejected: the tree is not the bundle renamed and reshuffled. `4` the translation is faithful, but the output runs some effectful units in a different order, and nothing justifies it yet (a list of **obligations**).
 
 `--premises` names the assumptions the footprints rest on, and the checker prints the ones it used: see [Footprints](#footprints). `--table` writes the list of rewrites it accepted (below).
+
+`--obligations` writes every obligation as `[runs first in the output, runs first in the bundle, reasons]`, one per line. `reasons` is the sum of 1 both units touch the world, 2 the later one binds a name the earlier one reads, 4 the earlier binds a name the later reads, 8 both bind a name. [`obligations_report.py`](obligations_report.py) groups them by the directory of the output tree: units, effect units, obligations inside a directory and across its border, by reason, and the units in the most obligations. A directory with no obligation can be moved freely.
 
 ## Footprints
 
