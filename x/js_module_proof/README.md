@@ -103,12 +103,12 @@ Top-level calls to such functions remain unsupported. Exported functions may
 also take numeric parameters and return expressions composed of those
 parameters, readable module bindings, nonnegative integer literals, `+`, `-`,
 `*`, `%`, `/` when its result is an integer, and `&`, `|`, `^` when their
-signed results are nonnegative, numeric conditional expressions,
+signed results are nonnegative, `>>>`, numeric conditional expressions,
 and numeric `&&` and `||` expressions, and calls to modeled top-level functions with matching
 numeric arguments. The checker compares each called body with its declaration;
 recursive calls remain unsupported. Function bodies may introduce initialized local `let`
 or `const` bindings, mutate local `let` bindings and parameters using `=`, `+=`,
-`-=`, `*=`, `%=`, `/=`, `&=`, `|=`, `^=`, `++` or `--`, and use `if`/`else` when both branches end in a supported return
+`-=`, `*=`, `%=`, `/=`, `&=`, `|=`, `^=`, `>>>=`, `++` or `--`, and use `if`/`else` when both branches end in a supported return
 or throw. A no-`else` `if` may return or throw early before the remaining
 statements. Conditions may use numeric `===`, `!==`, `==`, `!=`, `<`, `<=`, `>` and `>=`, boolean literals, `!`,
 `&&`, and `||`, including short-circuiting calls. Comparison and logical
@@ -236,7 +236,7 @@ rewrites beyond this AST subset can return `unknown`.
 This result assumes correct Acorn conversion and correspondence between the
 model and ECMAScript. All values and intermediate arithmetic results must remain
 nonnegative safe integers excluding negative zero; remainder and division
-divisors must be nonzero, division results must be integers, and bitwise
+divisors must be nonzero, division results must be integers, and signed bitwise
 results must be nonnegative;
 `globalThis.record` must be stable and return normally without reentry or
 asynchronous effects, and module loading and linking must succeed.

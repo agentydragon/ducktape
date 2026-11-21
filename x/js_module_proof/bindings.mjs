@@ -308,6 +308,7 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
     "&": "bitAnd",
     "|": "bitOr",
     "^": "bitXor",
+    ">>>": "unsignedShift",
   };
   let logicalIndex = 0;
   const expression = (node) => {
@@ -570,7 +571,7 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
       let name, value;
       if (
         assignment?.type === "AssignmentExpression" &&
-        ["=", "+=", "*=", "-=", "%=", "/=", "&=", "|=", "^="].includes(assignment.operator)
+        ["=", "+=", "*=", "-=", "%=", "/=", "&=", "|=", "^=", ">>>="].includes(assignment.operator)
       ) {
         name = identifier(assignment.left);
         check(
@@ -744,6 +745,7 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
       case "bitAnd":
       case "bitOr":
       case "bitXor":
+      case "unsignedShift":
       case "equal":
       case "less":
       case "greater":
@@ -1272,6 +1274,7 @@ function leanExpression(expression) {
     case "bitAnd":
     case "bitOr":
     case "bitXor":
+    case "unsignedShift":
     case "equal":
     case "less":
     case "greater":
@@ -1820,6 +1823,11 @@ theorem binding_captured_observations (calls : List (String × List Nat)) :
       const left = expressionBound(expression.left, bound);
       const right = expressionBound(expression.right, bound);
       return [left, right, left * right].reduce((a, b) => (a > b ? a : b));
+    }
+    if (expression.kind === "unsignedShift") {
+      const left = expressionBound(expression.left, bound);
+      const right = expressionBound(expression.right, bound);
+      return [left, right, 4294967295n].reduce((a, b) => (a > b ? a : b));
     }
     if (expression.kind === "bitOr" || expression.kind === "bitXor") {
       const left = expressionBound(expression.left, bound);

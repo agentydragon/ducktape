@@ -32,6 +32,7 @@ inductive NumericExpr where
   | bitAnd (left right : NumericExpr)
   | bitOr (left right : NumericExpr)
   | bitXor (left right : NumericExpr)
+  | unsignedShift (left right : NumericExpr)
   | equal (left right : NumericExpr)
   | less (left right : NumericExpr)
   | greater (left right : NumericExpr)
@@ -274,6 +275,17 @@ def evaluateExpression (locals globals : List (String × Nat)) : NumericExpr →
       | .ok rightValue =>
         let bits := bitwiseFuel 32 .xor leftValue rightValue
         if bits < 2147483648 then pure ⟨rightResult.locals, .ok bits⟩ else none
+  | .unsignedShift left right => do
+    let leftResult ← evaluateExpression locals globals left
+    match leftResult.completion with
+    | .error value => pure ⟨leftResult.locals, .error value⟩
+    | .ok leftValue =>
+      let rightResult ← evaluateExpression leftResult.locals globals right
+      match rightResult.completion with
+      | .error value => pure ⟨rightResult.locals, .error value⟩
+      | .ok rightValue =>
+        let bits := (leftValue % 4294967296) / (2 ^ (rightValue % 32))
+        pure ⟨rightResult.locals, .ok bits⟩
   | .divide left right => do
     let leftResult ← evaluateExpression locals globals left
     match leftResult.completion with
@@ -400,6 +412,7 @@ def evaluateArguments (locals globals : List (String × Nat)) : NumericExpr → 
   | .bitAnd _ _ => none
   | .bitOr _ _ => none
   | .bitXor _ _ => none
+  | .unsignedShift _ _ => none
   | .equal _ _ => none
   | .less _ _ => none
   | .greater _ _ => none

@@ -249,6 +249,7 @@ def expressionNames : NumericExpr → List String
   | .bitAnd left right => expressionNames left ++ expressionNames right
   | .bitOr left right => expressionNames left ++ expressionNames right
   | .bitXor left right => expressionNames left ++ expressionNames right
+  | .unsignedShift left right => expressionNames left ++ expressionNames right
   | .conditional test consequent alternative => expressionNames test ++ expressionNames consequent ++ expressionNames alternative
   | .guard test consequent alternative => expressionNames test ++ expressionNames consequent ++ expressionNames alternative
   | .finally body finalizer => expressionNames body ++ expressionNames finalizer
@@ -279,6 +280,7 @@ def laterExpressionNames : NumericExpr → List String
   | .bitAnd _ _ => []
   | .bitOr _ _ => []
   | .bitXor _ _ => []
+  | .unsignedShift _ _ => []
   | .conditional _ _ _ => []
   | .guard _ _ continuation => laterExpressionNames continuation
   | .finally _ _ => []
@@ -310,6 +312,7 @@ def argumentCount : NumericExpr → Option Nat
   | .bitAnd _ _ => none
   | .bitOr _ _ => none
   | .bitXor _ _ => none
+  | .unsignedShift _ _ => none
   | .conditional _ _ _ => none
   | .guard _ _ _ => none
   | .finally _ _ => none
@@ -337,6 +340,7 @@ def validNumericExpression : NumericExpr → Bool
   | .bitAnd left right => validNumericExpression left && validNumericExpression right
   | .bitOr left right => validNumericExpression left && validNumericExpression right
   | .bitXor left right => validNumericExpression left && validNumericExpression right
+  | .unsignedShift left right => validNumericExpression left && validNumericExpression right
   | .conditional test consequent alternative => validNumericExpression test && validNumericExpression consequent && validNumericExpression alternative
   | .guard test consequent continuation =>
     !(expressionNames test ++ expressionNames consequent).any (fun name => (laterExpressionNames continuation).contains name) &&
@@ -377,6 +381,7 @@ def validNumericArguments : NumericExpr → Bool
   | .bitAnd _ _ => false
   | .bitOr _ _ => false
   | .bitXor _ _ => false
+  | .unsignedShift _ _ => false
   | .conditional _ _ _ => false
   | .guard _ _ _ => false
   | .finally _ _ => false
@@ -404,6 +409,7 @@ def expressionFreeNames (bound : List String) : NumericExpr → List String
   | .bitAnd left right => expressionFreeNames bound left ++ expressionFreeNames bound right
   | .bitOr left right => expressionFreeNames bound left ++ expressionFreeNames bound right
   | .bitXor left right => expressionFreeNames bound left ++ expressionFreeNames bound right
+  | .unsignedShift left right => expressionFreeNames bound left ++ expressionFreeNames bound right
   | .conditional test consequent alternative => expressionFreeNames bound test ++ expressionFreeNames bound consequent ++ expressionFreeNames bound alternative
   | .guard test consequent alternative => expressionFreeNames bound test ++ expressionFreeNames bound consequent ++ expressionFreeNames bound alternative
   | .finally body finalizer => expressionFreeNames bound body ++ expressionFreeNames bound finalizer
@@ -438,6 +444,7 @@ def validLocalWrites (bound : List (String × Bool)) : NumericExpr → Bool
   | .bitAnd left right => validLocalWrites bound left && validLocalWrites bound right
   | .bitOr left right => validLocalWrites bound left && validLocalWrites bound right
   | .bitXor left right => validLocalWrites bound left && validLocalWrites bound right
+  | .unsignedShift left right => validLocalWrites bound left && validLocalWrites bound right
   | .conditional test consequent alternative => validLocalWrites bound test && validLocalWrites bound consequent && validLocalWrites bound alternative
   | .guard test consequent alternative => validLocalWrites bound test && validLocalWrites bound consequent && validLocalWrites bound alternative
   | .finally body finalizer => validLocalWrites bound body && validLocalWrites bound finalizer
@@ -495,6 +502,7 @@ def expressionCalls : NumericExpr → List String
   | .bitAnd left right => expressionCalls left ++ expressionCalls right
   | .bitOr left right => expressionCalls left ++ expressionCalls right
   | .bitXor left right => expressionCalls left ++ expressionCalls right
+  | .unsignedShift left right => expressionCalls left ++ expressionCalls right
   | .conditional test consequent alternative => expressionCalls test ++ expressionCalls consequent ++ expressionCalls alternative
   | .guard test consequent alternative => expressionCalls test ++ expressionCalls consequent ++ expressionCalls alternative
   | .finally body finalizer => expressionCalls body ++ expressionCalls finalizer
@@ -523,6 +531,7 @@ def matchingInvocations (source : List BindingStmt) : NumericExpr → Bool
   | .bitAnd left right => matchingInvocations source left && matchingInvocations source right
   | .bitOr left right => matchingInvocations source left && matchingInvocations source right
   | .bitXor left right => matchingInvocations source left && matchingInvocations source right
+  | .unsignedShift left right => matchingInvocations source left && matchingInvocations source right
   | .conditional test consequent alternative => matchingInvocations source test && matchingInvocations source consequent && matchingInvocations source alternative
   | .guard test consequent alternative => matchingInvocations source test && matchingInvocations source consequent && matchingInvocations source alternative
   | .finally body finalizer => matchingInvocations source body && matchingInvocations source finalizer

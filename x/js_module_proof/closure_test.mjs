@@ -875,7 +875,9 @@ function combine(x) { return x | 3; }
 function toggle(x) { return x ^ 3; }
 function combineAssign(x) { let value = x; value |= 3; return value; }
 function toggleAssign(x) { let value = x; value ^= 3; return value; }
-export { mask, maskAssign, combine, toggle, combineAssign, toggleAssign };
+function shift(x, count) { return x >>> count; }
+function shiftAssign(x) { let value = x; value >>>= 33; return value; }
+export { mask, maskAssign, combine, toggle, combineAssign, toggleAssign, shift, shiftAssign };
 `
   );
   await writeFile(
@@ -884,7 +886,7 @@ export { mask, maskAssign, combine, toggle, combineAssign, toggleAssign };
       kind: "bindings",
       entry: "entry.mjs",
       modules: {
-        "functions.mjs": { imports: [], statements: [0, 1, 2, 3, 4, 5] },
+        "functions.mjs": { imports: [], statements: [0, 1, 2, 3, 4, 5, 6, 7] },
         "entry.mjs": { imports: ["functions.mjs"], statements: [] },
       },
     })
@@ -901,6 +903,10 @@ export { mask, maskAssign, combine, toggle, combineAssign, toggleAssign };
     { name: "toggle", args: [4294967297] },
     { name: "combineAssign", args: [4] },
     { name: "toggleAssign", args: [4] },
+    { name: "shift", args: [4294967295, 0] },
+    { name: "shift", args: [4294967295, 32] },
+    { name: "shift", args: [4294967295, 33] },
+    { name: "shiftAssign", args: [4294967295] },
   ];
   const trace = execute(source, calls);
   assert.deepEqual(trace.results, [
@@ -911,6 +917,10 @@ export { mask, maskAssign, combine, toggle, combineAssign, toggleAssign };
     { value: 2 },
     { value: 7 },
     { value: 7 },
+    { value: 4294967295 },
+    { value: 4294967295 },
+    { value: 2147483647 },
+    { value: 2147483647 },
   ]);
   assert.deepEqual(execute(join(out, "entry.mjs"), calls), trace);
   const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
@@ -922,8 +932,8 @@ export { mask, maskAssign, combine, toggle, combineAssign, toggleAssign };
 theorem bit_and_observation :
   ((sourceBindingState bindingSource).bind (fun state =>
     (publicCallableTable bindingSource bindingExports).bind (fun table =>
-      runArgumentCalls table state [("mask", [4294967297]), ("mask", [9007199254740991]), ("maskAssign", [4294967298]), ("combine", [4294967296]), ("toggle", [4294967297]), ("combineAssign", [4]), ("toggleAssign", [4])]))).map
-    (fun state => state.returns) = some [some 1, some 3, some 2, some 3, some 2, some 7, some 7] := by decide
+      runArgumentCalls table state [("mask", [4294967297]), ("mask", [9007199254740991]), ("maskAssign", [4294967298]), ("combine", [4294967296]), ("toggle", [4294967297]), ("combineAssign", [4]), ("toggleAssign", [4]), ("shift", [4294967295, 0]), ("shift", [4294967295, 32]), ("shift", [4294967295, 33]), ("shiftAssign", [4294967295])]))).map
+    (fun state => state.returns) = some [some 1, some 3, some 2, some 3, some 2, some 7, some 7, some 4294967295, some 4294967295, some 2147483647, some 2147483647] := by decide
 #print axioms bit_and_observation
 #print axioms bitwiseFuel
 example : evaluateExpression [] [] (.bitAnd (.literal 2147483648) (.literal 2147483648)) = none := by decide
@@ -954,6 +964,10 @@ example : evaluateExpression [] [] (.bitXor (.literal 2147483648) (.literal 0)) 
     if (generated.result === "generated") assert.equal(cli("validate", invalid, spec, invalidOut).result, "unknown");
     else assert.equal(generated.result, "unknown");
   }
+  await writeFile(emitted, original.replace("x >>> count", "x >>> 1"));
+  const shiftUnsafe = cli("validate", source, spec, out);
+  assert.equal(shiftUnsafe.result, "unsafe", JSON.stringify(shiftUnsafe));
+  assert.notDeepEqual(execute(source, shiftUnsafe.calls), execute(join(out, "entry.mjs"), shiftUnsafe.calls));
 }
 
 if (shard === 14) {

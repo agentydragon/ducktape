@@ -934,7 +934,12 @@ export function makeComposedCase(seed, index) {
     let nextLocal = 0;
     const masks = [0, 1, 15, 2147483648, 4294967295, 4294967297];
     const bitmask = (operator) => {
-      const choices = operator === "&" ? masks : [0, 1, 15, 4294967296, 4294967297];
+      const choices =
+        operator === "&"
+          ? masks
+          : operator === ">>>"
+            ? [0, 1, 31, 32, 33, 4294967297]
+            : [0, 1, 15, 4294967296, 4294967297];
       return choices[rand(choices.length)];
     };
     const expression = (visible, depth, forbidden = null) => {
@@ -945,7 +950,7 @@ export function makeComposedCase(seed, index) {
         return rand(3) ? id(names[rand(names.length)]) : literal(rand(4));
       }
       if (rand(7) === 0) {
-        const operator = ["&", "|", "^"][rand(3)];
+        const operator = ["&", "|", "^", ">>>"][rand(4)];
         return {
           type: "BinaryExpression",
           operator,
@@ -1009,7 +1014,7 @@ export function makeComposedCase(seed, index) {
         visible.declare(name);
         if (mutable && rand(2)) {
           const mode = rand(5);
-          const bitOperator = ["&", "|", "^"][rand(3)];
+          const bitOperator = ["&", "|", "^", ">>>"][rand(4)];
           body.push(
             expr({
               type: "AssignmentExpression",
