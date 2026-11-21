@@ -1,20 +1,31 @@
 # Kagent retirement
 
 Kagent was parked on 2026-05-08 and retired from the active cluster configuration on
-2026-07-21. This directory is a historical snapshot and is not reconciled by Flux.
+2026-07-21. The archived manifests, `devbot` desktop experiment, Terraform wiring and
+persistent-agent design were later deleted; Git still holds them, for example at
+`692c5d887c` (`git show 692c5d887c:cluster/archive/2026_07_kagent/<path>`). Nothing here
+is reconciled by Flux.
 
 ## Why it was retired
 
-Kagent did not enforce a client-side budget on tool results. A noisy MCP call such as
-`kubectl get events`, a full pod listing, or a large log response was stored verbatim in
-the session history. The next model request then exceeded the z.ai coding-plan prompt
-limit and failed with error `1261 - Prompt exceeds max length`, killing the session.
+Kagent neither truncated nor limited the size of MCP tool results, and it had no
+client-side token budget. A noisy MCP call such as `kubectl get events`, a full pod
+listing, or a large log response was stored verbatim in the session history. The next
+model request then exceeded the z.ai coding-plan prompt limit and failed with error
+`1261 - Prompt exceeds max length`, killing the session. GLM-5.1 takes 200K tokens, but
+the coding plan caps each prompt much lower (unpublished; empirically about 32-64K).
 
-The available compaction was interval-based and ran between user turns. It could not
-protect a single turn whose tool calls had already exceeded the prompt budget. The stock
-Kubernetes agents also began with large system prompts and tool schemas, leaving less
-room for results. Together, those properties made Kagent too fragile for the noisy
+The available compaction was interval-based and ran between user turns (v0.9.x:
+`Agent.spec.declarative.context.compaction.{compactionInterval,overlapSize,summarizer}`).
+It could not protect a single turn whose tool calls had already exceeded the prompt budget.
+The stock Kubernetes agents also began with large system prompts and tool schemas, leaving
+less room for results. Together, those properties made Kagent too fragile for the noisy
 cluster-operations workload it was intended to handle.
+
+Evidence in Git, all from the day it was parked: `ab196044bd` (first version of the
+findings note, then `cluster/k8s/agents/kagent/TODO.md`: "No client-side context budget"),
+`0935d4d173` (suspension: "single MCP calls exceed z.ai's per-prompt cap") and `db6a79d5b4`
+(`cluster/docs/plan.md`: "sessions die on large MCP outputs (z.ai error 1261)").
 
 ## Retirement state
 
@@ -26,15 +37,18 @@ cluster-operations workload it was intended to handle.
   removes the unused Terraform-owned Kagent OIDC application, provider, and reflected
   oauth2-proxy Secret.
 
-Do not restore these files directly into the active tree. Re-evaluate the current
-upstream release first. A revival should require token-budget-aware tool-output bounding
-that operates before results enter session history, plus an end-to-end noisy-MCP test.
+Do not restore the deleted manifests directly into the active tree. Re-evaluate the
+current upstream release first. A revival should require token-budget-aware tool-output
+bounding that operates before results enter session history, plus an end-to-end noisy-MCP
+test.
 
 ## Contents
 
-- `k8s/kagent/` — suspended Helm, Flux, database, namespace, and secret manifests
-- `k8s/devbot/` — unreconciled Kagent `Agent`/`ModelConfig` desktop experiment
-- `terraform/provider_kagent.tf` — retired Authentik OIDC and oauth2-proxy Secret wiring
-- `docs/operational_findings.md` — observed failure mode and possible revival criteria
 - `docs/kagent_sso.md` — final SSO topology and legacy-outpost retirement record
-- `docs/kagent_persistent_agents.md` — exploratory persistent-agent design
+
+Deleted, recoverable from that commit: `k8s/kagent/` (suspended Helm, Flux,
+database, namespace and secret manifests), `k8s/devbot/` (`Agent`/`ModelConfig` desktop
+experiment), `terraform/provider_kagent.tf` (Authentik OIDC and oauth2-proxy Secret
+wiring), `docs/operational_findings.md` (failure mode, revival criteria) and
+`docs/kagent_persistent_agents.md` (exploratory persistent-agent design with per-agent
+VNC desktop pods).
