@@ -247,28 +247,7 @@ def test_shared_decisions_preserve_allowance_consumption_and_statement_meaning(
 
 
 def test_statement_keeps_signed_reversal_legs_and_posting_date() -> None:
-    allowance = policy().model_copy(
-        update={
-            "reversal_pairs": [
-                ReversalPair(
-                    id="synthetic-return",
-                    description="Synthetic returned purchase",
-                    original=AllOf(
-                        conditions=[
-                            DateRange(start=date(2026, 1, 1), end=date(2026, 1, 1)),
-                            NamePrefix(field="name", prefix="SHOP original"),
-                        ]
-                    ),
-                    reversal=AllOf(
-                        conditions=[
-                            DateRange(start=date(2026, 3, 10), end=date(2026, 3, 10)),
-                            NamePrefix(field="name", prefix="SHOP return"),
-                        ]
-                    ),
-                )
-            ]
-        }
-    )
+    allowance = policy_with_reversal("Synthetic returned purchase")
     original = transaction("SHOP original", date=date(2026, 1, 1))
     reversal = transaction("SHOP return", "-10", authorized_date=date(2026, 3, 9))
     prepared = prepare_accounting([original, reversal], allowance=allowance, time_zone=_ZONE, today=_TODAY)
