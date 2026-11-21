@@ -1382,6 +1382,60 @@ def witnessedOutputState (source : List BindingStmt) (modules : List BindingModu
   let state ← runBindingStatements definitions statements
   canonicalBindingState source state
 
+/- A small acceptance slice for local import aliases. Every extracted output
+   statement is resolved through the actual graph before comparison with its
+   source statement. Writes, escaping closures, and numeric expressions remain
+   outside this slice. -/
+def simpleAliasStatement : BindingStmt → Bool
+  | .variable _ _ => true
+  | .hoistedVariable _ _ => true
+  | .constant _ _ => true
+  | .reader _ _ => true
+  | .call _ => true
+  | .record _ => true
+  | .discardedLiteral => true
+  | .recordPrimitive _ => true
+  | .function _ _ _ => false
+  | .thrower _ _ => false
+  | .expressionFunction _ _ _ => false
+  | .capturedFactory _ _ _ _ _ => false
+  | .capturedClosure _ _ _ _ => false
+  | .capturedAlias _ _ => false
+  | .factory _ _ _ => false
+  | .closure _ _ => false
+  | .wrapper _ _ => false
+  | .recordCall _ _ => false
+
+def simpleAliasGraphValid (source : List BindingStmt) (modules : List BindingModule) (entry : Nat) : Bool :=
+  let assigned := modules.flatMap BindingModule.assignment
+  let order := machineTrace (asEffectModules modules) entry
+  source.all simpleAliasStatement &&
+    assigned.all (fun index => index < source.length) &&
+    (List.range source.length).all (fun index => assigned.count index == 1) &&
+    (match order with
+      | none => false
+      | some labels => labels.length == source.length &&
+          (List.range source.length).all (fun index => labels.count (toString index) == 1)) &&
+    (List.range modules.length).all (fun index =>
+      match elementAt modules index with
+      | none => false
+      | some module =>
+        let names := (module.imports.flatMap BindingImport.locals) ++ module.statements.filterMap declaredName
+        let publics := (directExportMappings module).map Prod.snd ++
+          module.imports.flatMap (fun imported => (reexportMappings imported).map Prod.snd)
+        decide (module.assignment.length = module.statements.length) &&
+          names.all (fun name => names.count name == 1) &&
+          publics.all (fun name => publics.count name == 1) &&
+          module.exports.all (localDefinition module) &&
+          module.imports.all (fun imported =>
+            (importedMappings imported).all (fun link =>
+              (resolveActualExportFuel modules (modules.length + 1) imported.dependency link.2).isSome) &&
+            (reexportMappings imported).all (fun link =>
+              (resolveActualExportFuel modules (modules.length + 1) imported.dependency link.1).isSome)) &&
+          (module.assignment.zip module.statements).all (fun pair =>
+            simpleAliasStatement pair.2 &&
+              decide (witnessedOutputStatement modules index pair.2 = elementAt source pair.1)))
+
 /- Captured allocation keys are model-internal identities. Give the output
    execution its own namespace so correspondence cannot accidentally rely on
    the frontend choosing identical keys for the two executions. Graph checking

@@ -971,6 +971,82 @@ export function independentSplit(input, seed, index) {
 
 // Composes bounded expressions and statement sequences using names visible at
 // each point. The program is generated before any optional repartitioning.
+export function makeLocalAliasCase(seed, index) {
+  const rand = random(seed ^ 0x1a11a5, index);
+  const bindings = Array.from({ length: 2 + rand(2) }, (_, i) => `value${i}`);
+  const readerNames = Array.from({ length: bindings.length + rand(2) }, (_, i) => `read${i}`);
+  const initial = rand(6);
+  const state = [
+    ...bindings.map((name, i) => variable(name, initial + i)),
+    ...(index % 2 ? [record(bindings[0])] : []),
+  ];
+  const observation = index % 4 === 3 ? [record(bindings[0])] : [];
+  const readers = readerNames.map((name, i) => functionNode(name, [], [returnNode(id(bindings[i % bindings.length]))]));
+  const relay = index % 3 === 1;
+  const splitReaders = index % 3 === 2;
+  const provider = relay ? "relay.mjs" : "state.mjs";
+  const modules = {
+    "state.mjs": { imports: [], statements: state.map((_, i) => i) },
+    ...(relay
+      ? {
+          "relay.mjs": {
+            imports: ["state.mjs"],
+            statements: [],
+            reexports: { "state.mjs": bindings },
+            renameReexports: index % 4 === 1,
+          },
+        }
+      : {}),
+    "logic.mjs": {
+      imports: [provider],
+      statements: [
+        ...observation.map((_, i) => state.length + i),
+        ...readers.flatMap((_, i) => (!splitReaders || i % 2 === 0 ? [state.length + observation.length + i] : [])),
+      ],
+      renameLocalImports: true,
+      aliasImports: index % 4 === 3,
+    },
+    ...(splitReaders
+      ? {
+          "other-logic.mjs": {
+            imports: [provider],
+            statements: readers.flatMap((_, i) => (i % 2 ? [state.length + observation.length + i] : [])),
+            renameLocalImports: true,
+          },
+        }
+      : {}),
+    "entry.mjs": { imports: ["logic.mjs", ...(splitReaders ? ["other-logic.mjs"] : [])], statements: [] },
+  };
+  const ast = {
+    type: "Program",
+    sourceType: "module",
+    body: [
+      ...state,
+      ...observation,
+      ...readers,
+      {
+        type: "ExportNamedDeclaration",
+        specifiers: readerNames.map((name) => ({ type: "ExportSpecifier", local: id(name), exported: id(name) })),
+      },
+    ],
+  };
+  return {
+    ast,
+    source: print(ast),
+    grammar: "alias",
+    unsupported: false,
+    cyclic: false,
+    invalidAssignment: false,
+    expectThrow: false,
+    spec: {
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules,
+    },
+    calls: readerNames.map((name) => ({ name, args: [] })),
+  };
+}
+
 export function makeComposedCase(seed, index) {
   const rand = random(seed ^ 0xc04f053, index);
   const globalCount = 1 + rand(4);
@@ -1730,8 +1806,9 @@ export async function minimizeCase(input, fails) {
 
 async function mutateOutput(out, input, kind) {
   const modules = Object.keys(input.spec.modules);
-  const files =
-    kind === "renamedReexport"
+  const files = ["localAliasRedirect", "localAliasInitRedirect"].includes(kind)
+    ? ["logic.mjs"]
+    : kind === "renamedReexport"
       ? ["relay.mjs"]
       : kind === "throwValue"
         ? ["logic.mjs"]
@@ -1747,6 +1824,13 @@ async function mutateOutput(out, input, kind) {
     const original = await readFile(file, "utf8");
     let changed = original;
     if (kind === "binding") changed = original.replace(/let cell0 = (\d+);/, (_, n) => `let cell0 = ${Number(n) + 1};`);
+    else if (kind === "localAliasRedirect")
+      changed = original.replace(/\bvalue0 as (__split_local_+\d+)/, "value1 as $1");
+    else if (kind === "localAliasInitRedirect")
+      changed = original.replace(
+        /(__split_alias_+)0 as (__split_local_+0)\b/,
+        (_, prefix, local) => `${prefix}1 as ${local}`
+      );
     else if (kind === "renamedReexport")
       changed = input.redirectedCallee
         ? original.replace(
@@ -1927,7 +2011,7 @@ export async function runFuzz({
     throw new Error("unsafe shrink attempts must be a nonnegative integer");
   if (!["enabled", "disabled"].includes(mutationMode)) throw new Error("unknown mutation mode");
   if (!["pattern", "independent"].includes(splitMode)) throw new Error("unknown split mode");
-  if (!["pattern", "composed", "async"].includes(grammarMode)) throw new Error("unknown grammar mode");
+  if (!["pattern", "composed", "async", "alias"].includes(grammarMode)) throw new Error("unknown grammar mode");
   if (!Number.isSafeInteger(shards) || shards < 1 || !Number.isSafeInteger(shard) || shard < 0 || shard >= shards)
     throw new Error("shard must be an integer between 0 and shards - 1");
   await mkdir(outputDir, { recursive: true });
@@ -1967,6 +2051,10 @@ export async function runFuzz({
     importAliasGeneratedCases: 0,
     importAliasComparedCases: 0,
     importAliasProvedCases: 0,
+    localImportAliasRequestedCases: 0,
+    localImportAliasGeneratedCases: 0,
+    localImportAliasComparedCases: 0,
+    localImportAliasProvedCases: 0,
     reexportRelayCases: 0,
     reexportRelayGeneratedCases: 0,
     reexportRelayComparedCases: 0,
@@ -2066,6 +2154,8 @@ export async function runFuzz({
       composedEffect: 0,
       throwValue: 0,
       renamedReexport: 0,
+      localAliasRedirect: 0,
+      localAliasInitRedirect: 0,
     },
     splitCompared: 0,
     splitDifferent: 0,
@@ -2091,6 +2181,7 @@ export async function runFuzz({
     const out = join(root, "out");
     let keep = true;
     let hasGeneratedImportAlias = false;
+    let hasGeneratedLocalImportAlias = false;
     let hasGeneratedRenamedReexport = false;
     let hasVar = false;
     let phase = "generate-ast";
@@ -2100,21 +2191,34 @@ export async function runFuzz({
           ? makeComposedCase(seed, index)
           : grammarMode === "async"
             ? makeAsyncCase(seed, index)
-            : makeCase(seed, index);
+            : grammarMode === "alias"
+              ? makeLocalAliasCase(seed, index)
+              : makeCase(seed, index);
       const input = splitMode === "independent" ? independentSplit(generated, seed, index) : generated;
       const plannedMutation =
-        input.grammar === "composed" && !input.independentSplit && index % 64 === 59
-          ? "renamedReexport"
-          : input.grammar === "composed" && !input.independentSplit && index % 64 === 23
-            ? "throwValue"
-            : input.grammar === "composed" && !input.independentSplit && input.hasDiscardedLiteral && index % 52 === 16
-              ? "composedEffect"
-              : !["composed", "async"].includes(input.grammar) && !input.independentSplit && index % 8 === 2
-                ? ["binding", "effect", "function", "export", "import"][Math.floor(index / 8) % 5]
-                : null;
+        input.grammar === "alias" && !input.independentSplit && index % 12 === 3
+          ? "localAliasInitRedirect"
+          : input.grammar === "alias" && !input.independentSplit && index % 6 === 2
+            ? "localAliasRedirect"
+            : input.grammar === "composed" && !input.independentSplit && index % 64 === 59
+              ? "renamedReexport"
+              : input.grammar === "composed" && !input.independentSplit && index % 64 === 23
+                ? "throwValue"
+                : input.grammar === "composed" &&
+                    !input.independentSplit &&
+                    input.hasDiscardedLiteral &&
+                    index % 52 === 16
+                  ? "composedEffect"
+                  : !["composed", "async", "alias"].includes(input.grammar) &&
+                      !input.independentSplit &&
+                      index % 8 === 2
+                    ? ["binding", "effect", "function", "export", "import"][Math.floor(index / 8) % 5]
+                    : null;
       const mutation = mutationMode === "disabled" ? null : plannedMutation;
       if (plannedMutation === "composedEffect") input.calls = [];
       if (plannedMutation === "throwValue") input.calls = [{ name: "fuzzThrower", args: [1] }];
+      if (plannedMutation === "localAliasRedirect") input.calls = [{ name: "read0", args: [] }];
+      if (plannedMutation === "localAliasInitRedirect") input.calls = [];
       if (plannedMutation === "renamedReexport")
         input.calls =
           !input.redirectedCallee && (index % 256 === 187 || index % 256 === 251 || index % 512 === 315)
@@ -2158,6 +2262,7 @@ export async function runFuzz({
       if (new Set(exports.map((item) => item.local.name)).size < exports.length) summary.multiplePublicNameCases++;
       const modules = Object.values(input.spec.modules);
       if (modules.some((module) => module.aliasImports)) summary.importAliasRequestedCases++;
+      if (modules.some((module) => module.renameLocalImports)) summary.localImportAliasRequestedCases++;
       if (modules.some((module) => module.renameReexports)) summary.renamedReexportRequestedCases++;
       const importCount = modules.reduce((count, module) => count + module.imports.length, 0);
       summary.moduleCountCases[modules.length] = (summary.moduleCountCases[modules.length] ?? 0) + 1;
@@ -2303,12 +2408,14 @@ export async function runFuzz({
       summary.generated++;
       if (input.hasReexportRelay && !input.independentSplit) summary.reexportRelayGeneratedCases++;
       if (hasVar) summary.varGeneratedCases++;
-      if (modules.some((module) => module.aliasImports || module.renameReexports)) {
+      if (modules.some((module) => module.aliasImports || module.renameLocalImports || module.renameReexports)) {
         const emitted = await Promise.all(
           Object.keys(input.spec.modules).map((name) => readFile(join(out, name), "utf8"))
         );
         hasGeneratedImportAlias = emitted.some((text) => /__split_alias_+\d+ as [A-Za-z_$][\w$]*/.test(text));
         if (hasGeneratedImportAlias) summary.importAliasGeneratedCases++;
+        hasGeneratedLocalImportAlias = emitted.some((text) => /\bas __split_local_+\d+/.test(text));
+        if (hasGeneratedLocalImportAlias) summary.localImportAliasGeneratedCases++;
         hasGeneratedRenamedReexport = emitted.some((text) => /export \{ [^}]* as __split_reexport_+\d+_\d+/.test(text));
         if (hasGeneratedRenamedReexport) summary.renamedReexportGeneratedCases++;
       }
@@ -2360,6 +2467,7 @@ export async function runFuzz({
         if (!equal) summary.earlyVarDifferentCases++;
       }
       if (hasGeneratedImportAlias) summary.importAliasComparedCases++;
+      if (hasGeneratedLocalImportAlias) summary.localImportAliasComparedCases++;
       if (hasGeneratedRenamedReexport) summary.renamedReexportComparedCases++;
       if (input.grammar === "parameter") {
         summary.parameterCompared++;
@@ -2447,6 +2555,7 @@ export async function runFuzz({
           if (input.hasLocalVar) summary.localVarProvedCases++;
           if (input.earlyVar) summary.earlyVarProvedCases++;
           if (hasGeneratedImportAlias) summary.importAliasProvedCases++;
+          if (hasGeneratedLocalImportAlias) summary.localImportAliasProvedCases++;
           if (hasGeneratedRenamedReexport) summary.renamedReexportProvedCases++;
           if (input.grammar === "object") summary.objectProved++;
           if (input.grammar === "captured") summary.capturedProved++;
@@ -2560,7 +2669,7 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.
       !opts["--output-dir"]
     )
       throw new Error(
-        "usage: fuzz.mjs --output-dir DIR [--seed UINT32] [--start N] [--cases N] [--validate-every N] [--shard N --shards N] [--splits pattern|independent] [--grammar pattern|composed|async] [--mutations enabled|disabled] [--shrink-unsafe-attempts N]"
+        "usage: fuzz.mjs --output-dir DIR [--seed UINT32] [--start N] [--cases N] [--validate-every N] [--shard N --shards N] [--splits pattern|independent] [--grammar pattern|composed|async|alias] [--mutations enabled|disabled] [--shrink-unsafe-attempts N]"
       );
     console.log(
       JSON.stringify(

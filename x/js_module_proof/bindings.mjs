@@ -1238,6 +1238,10 @@ function readSpec(spec, count) {
     );
     check(module.aliasImports === undefined || typeof module.aliasImports === "boolean", "invalid import alias option");
     check(
+      module.renameLocalImports === undefined || typeof module.renameLocalImports === "boolean",
+      "invalid local import alias option"
+    );
+    check(
       module.renameReexports === undefined || typeof module.renameReexports === "boolean",
       "invalid reexport alias option"
     );
@@ -1369,6 +1373,9 @@ function generateFiles(source, spec, names) {
   let aliasPrefix = "__split_alias_";
   while ([...defs.keys()].some((binding) => binding.startsWith(aliasPrefix))) aliasPrefix += "_";
   const generatedAliases = new Map([...defs.keys()].map((binding, index) => [binding, `${aliasPrefix}${index}`]));
+  let localAliasPrefix = "__split_local_";
+  while ([...defs.keys()].some((binding) => binding.startsWith(localAliasPrefix))) localAliasPrefix += "_";
+  const localAliases = new Map([...defs.keys()].map((binding, index) => [binding, `${localAliasPrefix}${index}`]));
   const aliasExports = new Set();
   for (const name of names)
     if (spec.modules[name].aliasImports)
@@ -1384,7 +1391,8 @@ function generateFiles(source, spec, names) {
       const bindings = referencesByModule[name].filter((binding) => providers[name].get(binding) === dep);
       const imported = bindings.map((binding) => {
         const exported = module.aliasImports ? generatedAliases.get(binding) : provides(dep, binding);
-        return exported === binding ? binding : `${exported} as ${binding}`;
+        const local = module.renameLocalImports ? localAliases.get(binding) : binding;
+        return exported === local ? local : `${exported} as ${local}`;
       });
       return bindings.length
         ? `import { ${imported.join(", ")} } from ${str(`./${dep}`)};`
@@ -1398,7 +1406,27 @@ function generateFiles(source, spec, names) {
         neededExports.has(binding) &&
         (name !== spec.entry ||
           (source.mappings.every((item) => item.local === item.public) && source.exports.includes(binding)));
-      return `${shouldExport ? "export " : ""}${item.source}`;
+      let statement = item.source;
+      if (module.renameLocalImports) {
+        const renamed = references(item.ast).filter((reference) => providers[name].has(reference));
+        if (renamed.length) {
+          check(
+            ["reader", "record", "call"].includes(item.ast.kind) && renamed.length === 1,
+            "local import renaming supports simple readers, records, and calls only"
+          );
+          const node = parseModule(statement)[0];
+          const reference =
+            item.ast.kind === "reader"
+              ? node.body.body[0].argument
+              : item.ast.kind === "record"
+                ? node.expression.arguments[0]
+                : node.expression.callee;
+          check(reference.type === "Identifier" && reference.name === renamed[0], "unexpected imported reference");
+          statement =
+            statement.slice(0, reference.start) + localAliases.get(renamed[0]) + statement.slice(reference.end);
+        }
+      }
+      return `${shouldExport ? "export " : ""}${statement}`;
     });
     const reexports =
       name === spec.entry
@@ -1629,7 +1657,10 @@ export async function validateBindings(sourcePath, specPath, out) {
     return { result: "unknown", reason: "importing an entry module with renamed reexports is unsupported" };
   const terms = actual.map((module, i) => leanModule(module, spec.modules[names[i]].statements));
   const digest = (content) => createHash("sha256").update(content).digest("hex");
-  const witnessPrefix = `\n-- Source SHA256: ${digest(text)}\n-- Output SHA256: ${names.map((name, i) => `${name}=${digest(files[i])}`).join(" ")}\ndef bindingSource : List BindingStmt := ${list(source.statements.map((item) => leanStatement(item.ast)))}\ndef bindingExports : List String := ${leanStrings(source.exports)}\ndef bindingPublicMappings : List (String × String) := ${leanMappings(source.mappings)}\ndef bindingOutputMappings : List (String × String) := ${leanMappings(actual[names.indexOf(spec.entry)].mappings)}\ndef bindingModules : List BindingModule := ${list(terms)}\ndef bindingEntry : Nat := ${names.indexOf(spec.entry)}\ntheorem binding_source_ready : (sourceBindingState bindingSource).isSome = true := by decide\ntheorem binding_output_ready : (outputBindingState bindingSource bindingModules bindingEntry).isSome = true := by decide\n#print axioms lexical_nearest_binding\n#print axioms accepted_reference_owner\n#print axioms binding_source_ready\n#print axioms binding_output_ready\n`;
+  const definitionPrefix = `\n-- Source SHA256: ${digest(text)}\n-- Output SHA256: ${names.map((name, i) => `${name}=${digest(files[i])}`).join(" ")}\ndef bindingSource : List BindingStmt := ${list(source.statements.map((item) => leanStatement(item.ast)))}\ndef bindingExports : List String := ${leanStrings(source.exports)}\ndef bindingPublicMappings : List (String × String) := ${leanMappings(source.mappings)}\ndef bindingOutputMappings : List (String × String) := ${leanMappings(actual[names.indexOf(spec.entry)].mappings)}\ndef bindingModules : List BindingModule := ${list(terms)}\ndef bindingEntry : Nat := ${names.indexOf(spec.entry)}\ntheorem binding_source_ready : (sourceBindingState bindingSource).isSome = true := by decide\n#print axioms lexical_nearest_binding\n#print axioms accepted_reference_owner\n#print axioms binding_source_ready\n`;
+  const witnessPrefix =
+    definitionPrefix +
+    `theorem binding_output_ready : (outputBindingState bindingSource bindingModules bindingEntry).isSome = true := by decide\n#print axioms binding_output_ready\n`;
   const prefix =
     witnessPrefix +
     `theorem binding_graph_valid : modulesValid bindingSource bindingExports bindingModules bindingEntry = true := by decide\ntheorem binding_public_mappings : bindingPublicMappings.length = bindingOutputMappings.length ∧ bindingPublicMappings.all (fun mapping => bindingOutputMappings.contains mapping) = true := by decide\n#print axioms binding_graph_valid\n#print axioms binding_public_mappings\n`;
@@ -1883,9 +1914,7 @@ theorem binding_aliased_future_calls (calls : ${aliasCallType}) :
         : `Lean terminated by ${proof.signal ?? "unknown signal"}: ${(proof.stderr || proof.stdout || "").slice(-4000)}`,
     };
   if (
-    !["lexical_nearest_binding", "accepted_reference_owner", "binding_source_ready", "binding_output_ready"].every(
-      (name) => has(proof, name)
-    )
+    !["lexical_nearest_binding", "accepted_reference_owner", "binding_source_ready"].every((name) => has(proof, name))
   )
     return {
       result: "unknown",
@@ -1934,10 +1963,51 @@ theorem binding_aliased_future_calls (calls : ${aliasCallType}) :
           "binding_captured_tables_paired",
         ]
     ).every((name) => has(relationProof, name));
-  if (legacyValid || relationValid) {
+  const sourceNames = new Set(source.statements.map((item) => declarationName(item.ast)).filter(Boolean));
+  const renamedLocal = actual.some((module) =>
+    module.imports.some((imported) => imported.links.some((link) => !sourceNames.has(link.local)))
+  );
+  const simpleAliasCertificate = `
+def binding_simple_output_table := (witnessedOutputDefinitions bindingModules).bind (fun definitions => publicFunctionTable definitions bindingExports)
+theorem binding_simple_graph : simpleAliasGraphValid bindingSource bindingModules bindingEntry = true := by decide
+theorem binding_simple_public : witnessedPublicMappings bindingModules bindingEntry bindingOutputMappings = some bindingPublicMappings := by decide
+theorem binding_simple_initialization : sourceBindingState bindingSource = witnessedOutputState bindingSource bindingModules bindingEntry := by decide
+theorem binding_simple_output_ready : (witnessedOutputState bindingSource bindingModules bindingEntry).isSome = true := by decide
+theorem binding_simple_table : publicFunctionTable bindingSource bindingExports = binding_simple_output_table := by decide
+theorem binding_simple_table_ready : (publicFunctionTable bindingSource bindingExports).isSome = true := by decide
+theorem binding_simple_future_calls (calls : List String) :
+  (sourceBindingState bindingSource).bind (fun state => (publicFunctionTable bindingSource bindingExports).bind (fun table => (aliasPublicTable table bindingPublicMappings).bind (fun aliases => runExportedCalls aliases state calls))) =
+  (witnessedOutputState bindingSource bindingModules bindingEntry).bind (fun state => binding_simple_output_table.bind (fun table => (aliasPublicTable table bindingPublicMappings).bind (fun aliases => runExportedCalls aliases state calls))) := by
+  rw [binding_simple_initialization, binding_simple_table]
+#print axioms binding_simple_graph
+#print axioms binding_simple_public
+#print axioms binding_simple_initialization
+#print axioms binding_simple_output_ready
+#print axioms binding_simple_table
+#print axioms binding_simple_table_ready
+#print axioms binding_simple_future_calls
+`;
+  const simpleAliasProof =
+    !legacyValid && !relationValid && !hasExpressions && renamedLocal
+      ? runLean(definitionPrefix + simpleAliasCertificate)
+      : null;
+  const simpleAliasValid =
+    simpleAliasProof?.status === 0 &&
+    [
+      "binding_simple_graph",
+      "binding_simple_public",
+      "binding_simple_initialization",
+      "binding_simple_output_ready",
+      "binding_simple_table",
+      "binding_simple_table_ready",
+      "binding_simple_future_calls",
+    ].every((name) => has(simpleAliasProof, name));
+  if (legacyValid || relationValid || simpleAliasValid) {
     return {
       result: "proved under assumptions",
-      certificate: prefix + (legacyValid ? same : "") + (relationValid ? capturedRelation : ""),
+      certificate: simpleAliasValid
+        ? definitionPrefix + simpleAliasCertificate
+        : prefix + (legacyValid ? same : "") + (relationValid ? capturedRelation : ""),
       assumptions: [
         "The Acorn-to-Lean conversion, including local object and array scalarization when used, faithfully represents the actual source and output files",
         "The modeled module loading, linking and execution match ECMAScript for the supported syntax",
@@ -1958,6 +2028,17 @@ theorem binding_aliased_future_calls (calls : ${aliasCallType}) :
       ],
     };
   }
+  const rawOutputReady = has(proof, "binding_output_ready");
+  if (!rawOutputReady && !renamedLocal)
+    return {
+      result: "unknown",
+      reason: "Lean could not validate the extracted output initialization",
+      detail: proof.stdout || proof.stderr,
+    };
+  const unsafeWitnessPrefix = rawOutputReady
+    ? witnessPrefix
+    : definitionPrefix +
+      `theorem binding_witness_ready : (witnessedOutputState bindingSource bindingModules bindingEntry).isSome = true := by decide\n#print axioms binding_witness_ready\n`;
   const original = execute(sourcePath);
   const output = execute(resolve(out, spec.entry));
   const name = [...new Set([...original.exports, ...output.exports])].find(
@@ -1965,7 +2046,7 @@ theorem binding_aliased_future_calls (calls : ${aliasCallType}) :
   );
   if (name) {
     const certificate =
-      witnessPrefix +
+      unsafeWitnessPrefix +
       `
 theorem binding_export_difference :
   (bindingPublicMappings.map Prod.snd).contains ${str(name)} ≠
@@ -1973,7 +2054,11 @@ theorem binding_export_difference :
 #print axioms binding_export_difference
 `;
     const checked = runLean(certificate);
-    if (checked.status === 0 && has(checked, "binding_export_difference"))
+    if (
+      checked.status === 0 &&
+      has(checked, "binding_export_difference") &&
+      (rawOutputReady || has(checked, "binding_witness_ready"))
+    )
       return { result: "unsafe", original, output, certificate };
   }
   // Saturate bounds so a syntactically large expression cannot construct an
@@ -2120,7 +2205,7 @@ theorem binding_export_difference :
           return `#eval IO.println (match ${resolved} with | some result => s!"witness-edge:${index}:{result.1}:{result.2.1}" | none => "witness-edge:${index}:missing")`;
         })
         .join("\n");
-      const resolved = runLean(witnessPrefix + "\n" + program + "\n");
+      const resolved = runLean(unsafeWitnessPrefix + "\n" + program + "\n");
       if (resolved.error || resolved.status !== 0 || typeof resolved.stdout !== "string") return (witnessGraph = null);
       const lines = new Map();
       for (const match of resolved.stdout.matchAll(/^witness-edge:(\d+):(\d+):(\d+)$/gm))
@@ -2231,7 +2316,7 @@ theorem binding_export_difference :
     }
   };
   const different = `\ntheorem binding_difference : sourceBindingState bindingSource ≠ witnessedOutputState bindingSource bindingModules bindingEntry := by decide\n#print axioms binding_difference\n`;
-  let witnessFailure = proof.stdout || proof.stderr;
+  let witnessFailure = simpleAliasProof?.stdout || simpleAliasProof?.stderr || proof.stdout || proof.stderr;
   const witnessed = (original, output, calls) => {
     if (!witnessNumbersBounded(calls)) {
       witnessFailure = "numeric bounds could not establish safe-integer witness execution";
@@ -2350,11 +2435,12 @@ theorem binding_export_difference :
     // for example when an emitted function body has changed.
     const initializationDifference = calls.length === 0 ? different : "";
     const required = ["binding_witness_original", "binding_witness_output", "binding_witness_difference"];
+    if (!rawOutputReady) required.push("binding_witness_ready");
     if (initializationDifference) required.push("binding_difference");
     // A changed emitted body can make modulesValid false. The witness only
     // needs the extracted programs and a checked difference in observations;
     // it must not assume the equivalence-side graph validation theorem.
-    const certificate = witnessPrefix + initializationDifference + witness;
+    const certificate = unsafeWitnessPrefix + initializationDifference + witness;
     const checked = runLean(certificate);
     if (checked.status === 0 && required.every((name) => has(checked, name))) return certificate;
     witnessFailure =

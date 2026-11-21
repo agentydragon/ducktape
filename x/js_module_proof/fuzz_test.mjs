@@ -11,6 +11,51 @@ const { execute, independentSplit, makeCase, makeComposedCase, minimizeCase, run
 const { assessCorpus } = await import("./real_corpus.mjs");
 const shard = Number(process.env.TEST_SHARD_INDEX ?? 0);
 const shards = Number(process.env.TEST_TOTAL_SHARDS ?? 1);
+if (shards === 4) {
+  const aliases = await runFuzz({
+    seed: 773,
+    start: shard,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "alias",
+    validateEvery: 1,
+  });
+  assert.equal(aliases.localImportAliasRequestedCases, 1);
+  assert.equal(aliases.localImportAliasGeneratedCases, 1);
+  assert.equal(aliases.localImportAliasComparedCases, 1);
+  if (shard === 2 || shard === 3) {
+    assert.equal(aliases.mutationKinds[shard === 2 ? "localAliasRedirect" : "localAliasInitRedirect"], 1);
+    assert.equal(aliases.mutatedDifferent, 1);
+    assert.equal(aliases.mutatedVerdicts.unsafe, 1);
+    assert.equal(aliases.certifiedWitnesses.length, 1);
+    if (shard === 3) {
+      const witness = JSON.parse(
+        await readFile(
+          join(process.env.TEST_TMPDIR, aliases.certifiedWitnesses[0].artifactPath, "node-witness.json"),
+          "utf8"
+        )
+      );
+      assert.equal(witness.before.events.length, 2);
+      assert.equal(witness.after.events.length, 2);
+      assert.deepEqual(witness.before.events[0], witness.after.events[0]);
+      assert.notDeepEqual(witness.before.events[1], witness.after.events[1]);
+    }
+    const unchanged = await runFuzz({
+      seed: 773,
+      start: shard,
+      cases: 1,
+      outputDir: process.env.TEST_TMPDIR,
+      grammarMode: "alias",
+      mutationMode: "disabled",
+      validateEvery: 1,
+    });
+    assert.equal(unchanged.localImportAliasProvedCases, 1);
+    assert.equal(unchanged.equal, 1);
+  } else {
+    assert.equal(aliases.localImportAliasProvedCases, 1);
+    assert.equal(aliases.equal, 1);
+  }
+}
 if (shards === 4 && shard === 1) {
   const relay = await runFuzz({
     seed: 51981,
@@ -680,8 +725,7 @@ if (shards === 4 && shard === 0) {
 }
 if (shards === 4 && shard === 1) assert.equal(bulk.different, bulk.cases);
 if (shards === 4 && shard === 2)
-  for (const [kind, count] of Object.entries(bulk.mutationKinds))
-    if (!["composedEffect", "throwValue", "renamedReexport"].includes(kind)) assert.ok(count > 0);
+  for (const kind of ["binding", "effect", "function", "export", "import"]) assert.ok(bulk.mutationKinds[kind] > 0);
 if (shards === 4 && shard === 0) {
   for (const start of [279, 343, 407, 471, 535]) {
     const changedThrow = await runFuzz({

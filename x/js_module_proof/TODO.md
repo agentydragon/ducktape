@@ -84,7 +84,11 @@ cover only part of the grammar and split space described below.
       semantics and frontend together, and test each slice end to end against Node
       on accepted, unsafe and unsupported examples. Avoid adding independent formal
       models for the fuzzer or for individual syntax features.
-- [ ] Extend import aliases to renamed local references. Renamed reexports through
+- [ ] Extend renamed local imports beyond simple readers, records, and calls.
+      The generator and an axiom-free acceptance certificate cover these cases,
+      including relayed imports; the AST fuzzer also redirects reader imports to
+      check unsafe witnesses.
+      Renamed reexports through
       non-entry modules now retain their declaration identities in Lean and can be
       generated and checked. Redirected reexports used by readers and restricted
       numeric expressions have Node-reproduced Lean counterexamples, including

@@ -308,6 +308,117 @@ if (runSection(1)) {
 }
 
 if (runSection(0)) {
+  const aliasSource = join(root, "renamed-local-source.mjs");
+  const aliasSpec = join(root, "renamed-local-spec.json");
+  const aliasOut = join(root, "renamed-local-out");
+  await writeFile(aliasSource, `let value = 3;\nlet other = 8;\nfunction read() { return value; }\nexport { read };\n`);
+  await writeFile(
+    aliasSpec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0, 1] },
+        "logic.mjs": { imports: ["state.mjs"], statements: [2] },
+        "entry.mjs": { imports: ["logic.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", aliasSource, aliasSpec, aliasOut).value.result, "generated");
+  const aliasState = join(aliasOut, "state.mjs");
+  await writeFile(aliasState, (await readFile(aliasState, "utf8")) + "export { other };\n");
+  const aliasLogic = join(aliasOut, "logic.mjs");
+  const originalLogic = await readFile(aliasLogic, "utf8");
+  assert.match(originalLogic, /import \{ value \}/);
+  const aliasedLogic = originalLogic
+    .replace("import { value }", "import { value as localValue }")
+    .replace("return value", "return localValue");
+  await writeFile(aliasLogic, aliasedLogic);
+  const checked = cli("validate", aliasSource, aliasSpec, aliasOut).value;
+  assert.equal(checked.result, "proved under assumptions", JSON.stringify(checked));
+  assert.match(checked.certificate, /binding_simple_future_calls/);
+  assert.deepEqual(execute(aliasSource, ["read"]), execute(join(aliasOut, "entry.mjs"), ["read"]));
+  await writeFile(aliasLogic, aliasedLogic.replace("value as localValue", "other as localValue"));
+  const redirected = cli("validate", aliasSource, aliasSpec, aliasOut).value;
+  assert.equal(redirected.result, "unsafe", JSON.stringify(redirected));
+  assert.deepEqual(execute(aliasSource, redirected.calls), { events: [], results: [3] });
+  assert.deepEqual(execute(join(aliasOut, "entry.mjs"), redirected.calls), { events: [], results: [8] });
+
+  const generatedAliasSpec = join(root, "generated-renamed-local-spec.json");
+  const generatedAliasOut = join(root, "generated-renamed-local-out");
+  const generatedSpec = JSON.parse(await readFile(aliasSpec, "utf8"));
+  generatedSpec.modules["logic.mjs"].renameLocalImports = true;
+  await writeFile(generatedAliasSpec, JSON.stringify(generatedSpec));
+  assert.equal(cli("generate", aliasSource, generatedAliasSpec, generatedAliasOut).value.result, "generated");
+  const generatedLogic = await readFile(join(generatedAliasOut, "logic.mjs"), "utf8");
+  assert.match(generatedLogic, /import \{ value as __split_local_\d+ \}/);
+  assert.match(generatedLogic, /return __split_local_\d+/);
+  const generated = cli("validate", aliasSource, generatedAliasSpec, generatedAliasOut).value;
+  assert.equal(generated.result, "proved under assumptions", JSON.stringify(generated));
+  assert.deepEqual(execute(aliasSource, ["read"]), execute(join(generatedAliasOut, "entry.mjs"), ["read"]));
+
+  const expressionSource = join(root, "unsupported-renamed-local-source.mjs");
+  const expressionSpec = join(root, "unsupported-renamed-local-spec.json");
+  await writeFile(expressionSource, `let value = 3;\nfunction read(arg) { return value + arg; }\nexport { read };\n`);
+  generatedSpec.modules["state.mjs"].statements = [0];
+  generatedSpec.modules["logic.mjs"].statements = [1];
+  await writeFile(expressionSpec, JSON.stringify(generatedSpec));
+  const unsupported = cli("generate", expressionSource, expressionSpec, join(root, "unsupported-renamed-local-out"));
+  assert.equal(unsupported.value.result, "unknown");
+  assert.match(unsupported.value.reason, /local import renaming supports simple readers, records, and calls only/);
+
+  const observedSource = join(root, "observed-renamed-local-source.mjs");
+  const observedSpec = join(root, "observed-renamed-local-spec.json");
+  const observedOut = join(root, "observed-renamed-local-out");
+  await writeFile(
+    observedSource,
+    `let value = 3;\nglobalThis.record(value);\nfunction read() { return value; }\nexport { read };\n`
+  );
+  generatedSpec.modules["logic.mjs"].statements = [1, 2];
+  await writeFile(observedSpec, JSON.stringify(generatedSpec));
+  assert.equal(cli("generate", observedSource, observedSpec, observedOut).value.result, "generated");
+  const observed = cli("validate", observedSource, observedSpec, observedOut).value;
+  assert.equal(observed.result, "proved under assumptions", JSON.stringify(observed));
+  assert.deepEqual(execute(observedSource, ["read"]), { events: [3], results: [3] });
+  assert.deepEqual(execute(join(observedOut, "entry.mjs"), ["read"]), { events: [3], results: [3] });
+
+  const redirectedInitSource = join(root, "redirected-init-local-source.mjs");
+  const redirectedInitSpec = join(root, "redirected-init-local-spec.json");
+  const redirectedInitOut = join(root, "redirected-init-local-out");
+  await writeFile(
+    redirectedInitSource,
+    `let value = 3;\nlet other = 8;\nglobalThis.record(value);\nfunction read() { return value; }\nexport { read };\n`
+  );
+  generatedSpec.modules["state.mjs"].statements = [0, 1];
+  generatedSpec.modules["logic.mjs"].statements = [2, 3];
+  await writeFile(redirectedInitSpec, JSON.stringify(generatedSpec));
+  assert.equal(cli("generate", redirectedInitSource, redirectedInitSpec, redirectedInitOut).value.result, "generated");
+  const redirectedInitState = join(redirectedInitOut, "state.mjs");
+  await writeFile(redirectedInitState, (await readFile(redirectedInitState, "utf8")) + "export { other };\n");
+  const redirectedInitLogic = join(redirectedInitOut, "logic.mjs");
+  const initLogic = await readFile(redirectedInitLogic, "utf8");
+  assert.match(initLogic, /value as __split_local_\d+/);
+  await writeFile(redirectedInitLogic, initLogic.replace("value as __split_local_0", "other as __split_local_0"));
+  const initDifference = cli("validate", redirectedInitSource, redirectedInitSpec, redirectedInitOut).value;
+  assert.equal(initDifference.result, "unsafe", JSON.stringify(initDifference));
+  assert.match(initDifference.certificate, /binding_witness_ready/);
+  assert.deepEqual(execute(redirectedInitSource, []), { events: [3], results: [] });
+  assert.deepEqual(execute(join(redirectedInitOut, "entry.mjs"), []), { events: [8], results: [] });
+
+  const calledSource = join(root, "called-renamed-local-source.mjs");
+  const calledSpec = join(root, "called-renamed-local-spec.json");
+  const calledOut = join(root, "called-renamed-local-out");
+  await writeFile(calledSource, `let value = 3;\nfunction read() { return value; }\nread();\nexport { read };\n`);
+  generatedSpec.modules["state.mjs"].statements = [0, 1];
+  generatedSpec.modules["logic.mjs"].statements = [2];
+  await writeFile(calledSpec, JSON.stringify(generatedSpec));
+  assert.equal(cli("generate", calledSource, calledSpec, calledOut).value.result, "generated");
+  const called = cli("validate", calledSource, calledSpec, calledOut).value;
+  assert.equal(called.result, "proved under assumptions", JSON.stringify(called));
+  assert.deepEqual(execute(calledSource, ["read"]), execute(join(calledOut, "entry.mjs"), ["read"]));
+}
+
+if (runSection(0)) {
   const calleeSource = join(root, "redirected-callee-source.mjs");
   const calleeSpec = join(root, "redirected-callee-spec.json");
   const calleeOut = join(root, "redirected-callee-out");

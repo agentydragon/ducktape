@@ -207,6 +207,9 @@ declarations with a bounded search; missing owners and cycles are refused.
 Generated import aliases can travel through those reexport chains. A relay may
 set `renameReexports: true` to export generated names; later relays and imports
 follow those names back to their original declarations.
+A module may also set `renameLocalImports: true` to rename imported bindings
+used by simple readers, top-level records, and calls. Other renamed local uses
+currently return `unknown` from generation.
 Source declarations have unique names, function
 writes must target a mutable local binding, and each module preserves its assigned
 statements' source order. Unsupported syntax, linking, cycles, or uninitialized
@@ -218,9 +221,12 @@ that imports resolve to the correct exported declarations, and that the entry
 exports match the source, including their public-to-declaration name mappings.
 For every reference it also computes the actual
 output owner and its source statement index, and checks that the resolved
-declaration equals the source-side declaration. The axiom-free general theorem
-`accepted_reference_owner` proves that this holds for every reference in any
-accepted graph. This is a checked sufficient condition on the restricted AST,
+declaration equals the source-side declaration. For the original graph check,
+the axiom-free general theorem `accepted_reference_owner` proves this for every
+reference. For renamed local reader imports, a separate axiom-free certificate
+resolves each output statement to its source declaration, checks initialization
+and public mappings, and proves equal observations for all later reader calls.
+These are checked sufficient conditions on the restricted AST,
 not a proof of the Acorn conversion or ECMAScript's linking rules. The module
 scheduler and the shared execution state then model initialization and future
 exported calls. Module bindings and captured cells occupy separate stores in
@@ -360,6 +366,11 @@ independently generated function bodies. It can be combined with either split mo
 `--grammar async` generates promise-based functions and observes each call to
 completion in Node. Pending promises and timeouts are inconclusive. Async
 execution is not yet part of the Lean proof-supported subset.
+Use `--grammar alias` to generate simple readers and initialization observations
+with renamed local imports, varying reexport chains and partitions. Some cases
+redirect an import and are checked as Node-reproduced unsafe witnesses, both
+during initialization and later calls; replay with `--mutations disabled` to
+check the corresponding unchanged split.
 
 ```sh
 nix develop .#js-module-proof
