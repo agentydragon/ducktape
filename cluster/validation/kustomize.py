@@ -79,6 +79,7 @@ class KustomizeBuildResult(BaseModel):
     """Successful kustomize build output for a single kustomization directory."""
 
     kustomization_path: Path
+    flux_owner: str | None = None
     resources: list[K8sResource] = []
 
 

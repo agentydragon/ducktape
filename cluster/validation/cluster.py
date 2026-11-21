@@ -90,14 +90,17 @@ class ParsedCluster:
 
     def flux_kust_resources(self, repo_root: Path, *, include_suspended: bool = False) -> dict[str, list[K8sResource]]:
         """Map Flux owners to built resources; suspension retains deployed authorization objects."""
+        build_by_owner = {r.flux_owner: r.resources for r in self.build_results if r.flux_owner is not None}
         build_by_dir: dict[Path, list[K8sResource]] = {
-            r.kustomization_path.parent.resolve(): r.resources for r in self.build_results
+            r.kustomization_path.parent.resolve(): r.resources for r in self.build_results if r.flux_owner is None
         }
         result: dict[str, list[K8sResource]] = {}
         for name, spec in self.flux_kustomizations.items():
             if spec.parked or (spec.suspend and not include_suspended):
                 continue
-            if (kust_dir := spec.local_dir(repo_root)) and kust_dir in build_by_dir:
+            if name in build_by_owner:
+                result[name] = build_by_owner[name]
+            elif (kust_dir := spec.local_dir(repo_root)) and kust_dir in build_by_dir:
                 result[name] = build_by_dir[kust_dir]
         return result
 
