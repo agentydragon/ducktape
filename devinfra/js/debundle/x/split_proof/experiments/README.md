@@ -367,15 +367,15 @@ Run it with `./run.sh --debundle-cases` (about 10 s). Details, causes and the pl
 
 | Outcome                                                                                  | Entries |
 | ---------------------------------------------------------------------------------------- | ------- |
-| both accept, same stdout                                                                 | 68      |
+| both accept, same stdout                                                                 | 69      |
 | both reject (`atomic_conflict` 8, `cycle` 7)                                             | 15      |
-| I reject, debundle accepts (6 would run, 2 do not load)                                  | 8       |
+| I reject, debundle accepts (6 would run, 1 does not load)                                | 7       |
 | I accept and the output differs                                                          | 0       |
 | refusal tests (debundle's error text)                                                    | 13      |
 | not run: the adapter cannot translate the spec (selectors, chunks, imports, comma lists) | 103     |
 
-- **It found two soundness gaps in my front end,** both fixed or guarded: a `var` nested in a top-level block (4 entries accepted, then they fail with `ReferenceError` or `SyntaxError`), and an entry export name that collides with a glue export (1 entry accepted, then `SyntaxError`).
-- **14 of the 15 expected rejections fail `OrderOk`,** and 14 of the 15 break when written anyway. Where we disagree, debundle models more: purity (3), repeated `var` (3), export names (1), and an import for evaluation order (1).
+- **It found two soundness gaps in my front end,** both fixed: a `var` nested in a top-level block (4 entries accepted, then they fail with `ReferenceError` or `SyntaxError`), and an entry export name that collides with a glue export (1 entry accepted, then `SyntaxError`; the glue now exports under a fresh name, and `ExportsUnique` checks it).
+- **14 of the 15 expected rejections fail `OrderOk`,** and 14 of the 15 break when written anyway. Where we disagree, debundle models more: purity (3), repeated `var` (3), and an import for evaluation order (1).
 
 ## 12. Translation validation: is this tree the bundle, renamed and reshuffled?
 

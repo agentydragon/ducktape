@@ -154,15 +154,16 @@ It is not "the programs are equivalent". JavaScript is never formalized.
 
 `Valid` is a conjunction of decidable checks ([`Plan.lean`](lean/EsmSplit/Plan.lean)):
 
-| Check                       | Says                                                                                               |
-| --------------------------- | -------------------------------------------------------------------------------------------------- |
-| `Faithful`                  | each statement sits in exactly the module the spec names; no selector is dangling                  |
-| `Linkable`                  | each import names a real export of another module; no name is bound twice; each export is declared |
-| `Hygienic`                  | each name a statement mentions resolves, through imports, to the declaration it had in the bundle  |
-| `AssignsHome`               | code that assigns a name sits in the module that declares it (ES imports are read-only)            |
-| `Permutes`                  | the split runs every statement exactly once                                                        |
-| `OrderOk`                   | in the order the split runs them, conflicting statements keep their bundle order                   |
-| `UniqueDefs`, `ReadsClosed` | side conditions: one flat scope; read sets are closed under calls                                  |
+| Check                       | Says                                                                                                     |
+| --------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `Faithful`                  | each statement sits in exactly the module the spec names; no selector is dangling                        |
+| `Linkable`                  | each import names a binding another module exports; no name is bound twice; each glue export is declared |
+| `ExportsUnique`             | no module exports a name twice: its glue keeps clear of the names its own `export` statements publish    |
+| `Hygienic`                  | each name a statement mentions resolves, through imports, to the declaration it had in the bundle        |
+| `AssignsHome`               | code that assigns a name sits in the module that declares it (ES imports are read-only)                  |
+| `Permutes`                  | the split runs every statement exactly once                                                              |
+| `OrderOk`                   | in the order the split runs them, conflicting statements keep their bundle order                         |
+| `UniqueDefs`, `ReadsClosed` | side conditions: one flat scope; read sets are closed under calls                                        |
 
 A statement **binds** the names it declares and the names it may assign (`writes`: reassigned variables, objects whose contents it changes,
 including what the functions it calls change; unknown code lists them all). These named mutable things are _cells_.
@@ -208,13 +209,13 @@ The main development does not use `native_decide`, so the compiler is not truste
    "May read" is the closure of reads through function bodies (`Bundle.reads`). Running a statement binds the names it declares and the names in `writes` to its value; a statement must list every name it may assign.
 3. **The ES order model**, `Plan.visit`: 10 lines. It matches Node on 500 random import graphs, 262 of them with cycles ([`experiments/README.md`](experiments/README.md) § 10). That is a test, not a proof.
 4. **Hygiene gives one flat environment.** The semantic theorem uses one environment keyed by name. `Hygienic` is the check that makes that fair. The join is argued here, not mechanized.
-5. **The printer**, [`Render.lean`](lean/EsmSplit/Render.lean): imports, then statements, then exports.
-6. **Two rules of the lowering front end that Lean does not check.** `lowersplit` rejects a split that puts an `export` statement outside the entry module (the entry's exports are the program's interface),
-   and one where the entry's glue exports a name that the entry's own `export` statements already publish (`ExportNames`: a duplicate export, or one name for two bindings).
-   The first was missing until the split experiment (`experiments/README.md` § 7) and the second until debundle's corpus (§ 11). When one fails, `lowersplit --lean` writes no certificate.
-   A third rule, that code assigning a name stays with its declaration, used to live here. It is now `AssignsHome`, a conjunct of `Valid` and of `Sound`. It was missing from the translation checker until a probe showed Node throwing on an accepted split (`experiments/translation/fixtures/assign`).
-   Moving the first into `Valid` is a small known step: a field per statement, one more conjunct, one more equivalence proof. The second needs a model of export names ([`PLAN.md`](PLAN.md) step 4).
-   [`dump.mjs`](experiments/lowering/dump.mjs) also rewrites the source before the proof: a top-level `var`, `let` or `const` list of several declarators becomes one statement per declarator, also under `export`. This assumes the separate statements run as the list does.
+5. **The printer**, [`Render.lean`](lean/EsmSplit/Render.lean): imports, then statements, then exports. A binding that the glue exports under another name is imported back under its own.
+6. **The lowering front end around the model.** Lean checks none of this.
+   - **One statement per declarator.** [`dump.mjs`](experiments/lowering/dump.mjs) rewrites the source before the proof: a top-level `var`, `let` or `const` list of several declarators becomes one statement per declarator, also under `export`. This assumes the separate statements run as the list does.
+   - **Exports stay in the entry.** `lowersplit` rejects a split that puts an `export` statement outside the entry module: the entry's exports are the program's interface. When the rule fails, `lowersplit --lean` writes no certificate. Moving it into `Valid` is a small known step: a field per statement, one more conjunct, one more equivalence proof.
+   - **What an `export` statement publishes** (`Stmt.exports`) is read from its AST by the front end. `ExportsUnique` and `Linkable` rest on it. A glue export adds a name to the entry's interface (`m$1` when `m` is taken); nothing says the interface is otherwise unchanged ([`PLAN.md`](PLAN.md) step 4).
+
+   A rule that code assigning a name stays with its declaration used to live here. It is now `AssignsHome`, a conjunct of `Valid` and of `Sound`. It was missing from the translation checker until a probe showed Node throwing on an accepted split (`experiments/translation/fixtures/assign`).
 
 7. **The translation checker's front end.** [`experiments/translation/frontend.mjs`](experiments/translation/frontend.mjs) trusts `acorn` for the parse and `eslint-scope` for which variable each identifier names.
    Lean checks everything after that, but "renaming preserves meaning" is assumed, not proved, and it has an edge: a program that reads `fn.name`, calls `Function.prototype.toString` or prints a function sees the new spelling.

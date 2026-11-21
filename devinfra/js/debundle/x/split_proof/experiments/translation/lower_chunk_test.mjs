@@ -1,6 +1,6 @@
-// What a real chunk has and a hand-written bundle may not: declarator lists. Each case splits a small bundle with
-// `lowersplit` and compares what Node prints for the bundle and for the emitted entry: the output of evaluation, then
-// the values of the public names.
+// What a real chunk has and a hand-written bundle may not: `export` names that meet the glue's, and declarator
+// lists. Each case splits a small bundle with `lowersplit` and compares what Node
+// prints for the bundle and for the emitted entry: the output of evaluation, then the values of the public names.
 import { strict as assert } from "node:assert";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -52,6 +52,45 @@ function same(name, fixture, names) {
   assert.doesNotMatch(original, /Error/, `${name}: the bundle itself fails`);
   assert.equal(observe(result.dir, "entry.mjs", names), original, name);
   return result;
+}
+
+// A glue name meets a name the entry publishes for another binding: `peel.mjs` needs the entry's local `m`, and the
+// entry's own statement exports `X` as `m`. The glue exports the local under a new name.
+{
+  const { text } = same(
+    "export_alias",
+    {
+      code: `const X = "public";
+const m = "local";
+function show() { return m; }
+console.log(show());
+export { X as m };
+`,
+      modules: { "entry.mjs": ["X", "m", "#3", "#4"], "peel.mjs": ["show"] },
+    },
+    ["m"]
+  );
+  assert.match(text("entry.mjs"), /^export \{ X as m \};$/m);
+  assert.match(text("entry.mjs"), /^export \{ m as m\$1 \};$/m);
+  assert.match(text("peel.mjs"), /^import \{ m\$1 as m \} from "\.\/entry\.mjs";$/m);
+}
+
+// The entry already publishes the bindings `peel.mjs` needs under their own names: no second export.
+{
+  const code = `export const base = 2;
+function twice() { return base * 2; }
+const local = 3;
+function sum() { return base + local; }
+console.log(twice(), sum());
+export { local };
+`;
+  const { text } = same(
+    "export_reuse",
+    { code, modules: { "entry.mjs": ["base", "local", "#4", "#5"], "peel.mjs": ["twice", "sum"] } },
+    ["base", "local"]
+  );
+  assert.equal(text("entry.mjs").match(/^export /gm).length, 2);
+  assert.match(text("peel.mjs"), /^import \{ base, local \} from "\.\/entry\.mjs";$/m);
 }
 
 // One statement per declarator, also under `export`: the declarators of a list go to different modules. A

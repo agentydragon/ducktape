@@ -49,7 +49,7 @@ The design is "untrusted search, trusted check". The footprint analysis is the o
 
 ## More of debundle's cases through the Lean checker
 
-State: of 207 entries in `devinfra/js/debundle/e2e/cases`, 83 agree with debundle (68 accepts, 15 rejects), 8 disagree, 103 are not run.
+State: of 207 entries in `devinfra/js/debundle/e2e/cases`, 84 agree with debundle (69 accepts, 15 rejects), 7 disagree, 103 are not run.
 Causes: [`experiments/debundle_cases/README.md`](experiments/debundle_cases/README.md); numbers: [`results/summary.md`](experiments/debundle_cases/results/summary.md).
 
 Acceptance for every step, after `./run.sh --debundle-cases`:
@@ -87,12 +87,11 @@ The adapter resolves `binding` selectors and hole-free templates by exact AST sh
 
 Guard anything added with the corpus' rejections that must stay rejected (`proxy_constructor/effectful_proxy_keys`, `freeze_effectful_argument`, `freeze_proxy_receiver`), the fuzzer and the mutation test.
 
-### 4. Model verbatim `export` names (2 entries, and the `ExportNames` guard goes)
+### 4. The entry's public surface
 
-- `Stmt` gains `exports : List (Name × Name)` (public name, local name).
-- `mkPlan` reuses a verbatim export when the public name is the local name, and aliases the glue otherwise (`export { av as av$1 }`, `import { av$1 as av }`).
-- `Valid` gets an `ExportsUnique` conjunct, and `Linkable` resolves imports through the export map. `Correct` adds: the entry's public surface (name → binding) is unchanged.
-- Delete the `ExportNames` rule in `LowerSplit.lean`. The same step can also fold `Reassign` and `ExportOutsideEntry` into `Valid` (TODO.md).
+- `Valid` knows what each `export` statement publishes (`Stmt.exports`) and keeps a module's export names apart (`ExportsUnique`). It does not say that the entry still exports what the bundle exported: glue adds names to the entry (`av$1` beside `av`), and nothing checks that the old names keep their bindings.
+- `Correct` adds: the entry's public surface (name → binding) is the bundle's, plus glue names. `mkPlan` could reuse `export { X as av }` for an importer of `X` (`import { av as X }`) and add fewer names.
+- The same step can fold the entry-only rule for `export` statements into `Valid` (TODO.md).
 
 ### 5. Import-only edges for evaluation order (1 entry, likely more after step 1)
 

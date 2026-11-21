@@ -16,8 +16,21 @@ Lean file whose `by decide +kernel` makes the kernel certify the same facts.
 
 open Lean EsmSplit
 
-def toStmt (src : String) (f : Lower.Footprint) : Stmt :=
-  { src, defs := f.defs, writes := f.writes, assigns := f.assigns, deps := f.deps, eager := f.eager, lazy := f.lazy, hoisted := f.hoisted, effect := f.effect }
+/-- What a top-level `export` statement publishes: each public name, with the local binding it stands for, if any. -/
+def published (s : Json) : List (String × Option String) :=
+  match Lower.typ s with
+  | "ExportNamedDeclaration" =>
+    if !Lower.isNull (Lower.fld s "declaration") then
+      (Lower.topDefs (Lower.fld s "declaration")).map fun n => (n, some n)
+    else (Lower.items (Lower.fld s "specifiers")).toList.map fun sp =>
+      (Lower.specName (Lower.fld sp "exported"),
+        if Lower.isNull (Lower.fld s "source") then some (Lower.specName (Lower.fld sp "local")) else none)
+  | "ExportDefaultDeclaration" => [("default", none)]
+  | _ => []
+
+def toStmt (src : String) (ast : Json) (f : Lower.Footprint) : Stmt :=
+  { src, defs := f.defs, writes := f.writes, assigns := f.assigns, deps := f.deps, eager := f.eager, lazy := f.lazy,
+    exports := published ast, hoisted := f.hoisted, effect := f.effect }
 
 def q (s : String) : String := (Json.str s).compress
 def qs (xs : List String) : String := "[" ++ ", ".intercalate (xs.map q) ++ "]"
@@ -30,6 +43,8 @@ def stmtLean (s : Stmt) : String :=
     ++ (if s.deps.isEmpty then [] else [s!"deps := {qs s.deps}"])
     ++ (if s.eager.isEmpty then [] else [s!"eager := {qs s.eager}"])
     ++ (if s.lazy.isEmpty then [] else [s!"lazy := {qs s.lazy}"])
+    ++ (if s.exports.isEmpty then [] else
+          [s!"exports := [{", ".intercalate (s.exports.map fun (p, l) => s!"({q p}, {match l with | some l => s!"some {q l}" | none => "none"})")}]"])
     ++ (if s.hoisted then ["hoisted := true"] else [])
     ++ (if s.effect then ["effect := true"] else [])
   "  { " ++ ", ".intercalate fields ++ " }"
@@ -77,17 +92,8 @@ def replicateBundle (K : Nat) (B : Bundle) : Bundle :=
   let declared : Std.HashSet String := Std.HashSet.ofList (B.flatMap (·.defs))
   (List.range K).flatMap fun k =>
     let r (n : String) := if declared.contains n then s!"{n}${k}" else n
-    B.map fun s => { s with defs := s.defs.map r, eager := s.eager.map r, lazy := s.lazy.map r }
-
-/-- Names a top-level `export` statement publishes. -/
-def exportedNames (s : Json) : List String :=
-  match Lower.typ s with
-  | "ExportNamedDeclaration" =>
-    if Lower.isNull (Lower.fld s "declaration") then
-      (Lower.items (Lower.fld s "specifiers")).toList.map fun sp => Lower.str (Lower.fld (Lower.fld sp "exported") "name")
-    else Lower.topDefs (Lower.fld s "declaration")
-  | "ExportDefaultDeclaration" => ["default"]
-  | _ => []
+    B.map fun s => { s with defs := s.defs.map r, eager := s.eager.map r, lazy := s.lazy.map r,
+                            exports := s.exports.map fun (p, l) => (s!"{p}${k}", l.map r) }
 
 /-- Statement types the model does not cover. -/
 def unsupported (t : String) : Bool := t == "ImportDeclaration" || t == "ExportAllDeclaration"
@@ -143,14 +149,15 @@ def main (args : List String) : IO UInt32 := do
       for line in Effects.premiseLines prem analysis do IO.println line
       pure fps
   let t2 ← lap "footprints (Lean analysis)" t1
-  let B0 : Bundle := (stmts.zip fps).toList.map fun (s, f) => toStmt (Lower.str (Lower.fld s "src")) f
+  let B0 : Bundle := (stmts.zip fps).toList.map fun (s, f) =>
+    toStmt (Lower.str (Lower.fld s "src")) (Lower.fld s "ast") f
   let B := match replicate?.bind String.toNat? with
     | some K => replicateBundle K B0
     | none => B0
   let S ← loadSpec specPath
   let t3 ← lap "load spec" t2
   IO.println s!"{B.length} statements; footprints computed in Lean; {(fps.filter (·.effect)).size} touch the world; {(fps.filter (·.fallback ≠ [])).size} with fallback nodes"
-  -- Two rules Lean does not check. They talk about the original statements, so `--replicate` skips them.
+  -- A rule Lean does not check. It talks about the original statements, so `--replicate` skips it.
   let mut bad := false
   if replicate?.isNone then
     -- An `export` is the entry module's interface: it must stay in the entry module.
@@ -160,21 +167,12 @@ def main (args : List String) : IO UInt32 := do
         IO.println s!"  FAIL  statement {i} is an `{t}` outside the entry module"; bad := true
   let P ← IO.lazyPure fun _ => mkPlan B S
   let _ ← IO.lazyPure fun _ => P.mods.length + (P.mods.map (·.imports.length)).sum
-  if replicate?.isNone then
-    -- The entry's own `export` statements keep their names. A name they publish cannot also be a glue export:
-    -- that is a duplicate export, or the name of a different binding (`export { X as av }` next to a local `av`).
-    let published := (stmts.toList.zipIdx.filter fun (_, i) => S.moduleOf B i == some S.entry).flatMap
-      fun (st, _) => exportedNames (Lower.fld st "ast")
-    for n in ((P.mods.find? (·.name == S.entry)).map (·.exports)).getD [] do
-      if published.contains n then
-        IO.println s!"  FAIL  ExportNames  the entry module's `export` statements already publish `{n}`, which other modules import from it"
-        bad := true
   let t4 ← lap "mkPlan" t3
   let ok ← report B S P
-  let t5 ← lap "all seven checks" t4
+  let t5 ← lap "all checks" t4
   if let some l := leanOut? then
     if bad then
-      IO.println "  no kernel certificate: a front-end rule above failed, and Lean does not check those"
+      IO.println "  no kernel certificate: the front-end rule above failed, and Lean does not check it"
     else
       IO.FS.writeFile l (instanceLean B S)
       IO.println s!"  wrote kernel certificate source to {l}"

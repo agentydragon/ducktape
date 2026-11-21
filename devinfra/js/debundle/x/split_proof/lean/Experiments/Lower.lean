@@ -251,6 +251,10 @@ partial def topDefs (s : Json) : List String :=
   -- a `var` inside a block, loop or `try` at the top level still declares a module-scope binding
   | _ => varNames s
 
+/-- The name in an `import` or `export` specifier: an identifier, or a string literal (its `lit` is `s:` and the value). -/
+def specName (j : Json) : String :=
+  if typ j == "Literal" then ((str (fld j "lit")).drop 2).toString else str (fld j "name")
+
 /-- Local bindings an `export` statement exposes. Another module may observe them while this one evaluates (a cycle). -/
 def exportedBindings (s : Json) : List String :=
   match typ s with

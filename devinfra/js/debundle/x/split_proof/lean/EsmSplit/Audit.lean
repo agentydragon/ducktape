@@ -10,6 +10,9 @@ import EsmSplit.Controls
 #print axioms Example.control_claimed_twice_rejected
 #print axioms Example.missing_import_rejected
 #print axioms Example.dropped_module_rejected
+#print axioms Example.export_alias_valid
+#print axioms Example.export_alias_named
+#print axioms Example.export_collision_rejected
 #print axioms Example.variant_cycle_valid
 #print axioms Example.good_observes_same
 #print axioms Example.cycle_variant_observes_same
