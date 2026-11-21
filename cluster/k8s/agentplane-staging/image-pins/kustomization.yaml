@@ -2,7 +2,7 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
   - name: git.allegedly.works/ducktape-ci/agentplane-frontend
-    newTag: devel-20261121065907-78894b0 # {"$imagepolicy": "flux-system:agentplane-frontend:tag"}
+    newTag: devel-20261121070950-f32a59b # {"$imagepolicy": "flux-system:agentplane-frontend:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-policy-controller
     newTag: devel-20261121065900-78894b0 # {"$imagepolicy": "flux-system:agentplane-policy-controller:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-environments
@@ -24,7 +24,7 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox-build
     newTag: devel-20261121055014-f1e67d2 # {"$imagepolicy": "flux-system:agentplane-sandbox-build:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar
-    newTag: devel-20261121065846-78894b0 # {"$imagepolicy": "flux-system:agentplane-egress-sidecar:tag"}
+    newTag: devel-20261121071015-f32a59b # {"$imagepolicy": "flux-system:agentplane-egress-sidecar:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-mcp-edge
     newTag: devel-20261121065902-78894b0 # {"$imagepolicy": "flux-system:agentplane-mcp-edge:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-action-service
