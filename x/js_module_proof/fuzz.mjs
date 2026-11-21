@@ -1249,7 +1249,36 @@ export function makeComposedCase(seed, index) {
     );
   }
   const crossModuleReader = index % 512 === 379;
+  const missingArgument = index % 1024 === 571;
+  const redirectedCallee = index % 512 === 443 || index % 512 === 507 || missingArgument;
+  const ignoredExtraArgument = index % 512 === 507;
   if (index % 64 === 59) {
+    if (redirectedCallee) {
+      functionNames.unshift("fuzzRelayOther");
+      functions.unshift(
+        functionNode(
+          "fuzzRelayOther",
+          missingArgument ? ["parameter", "missing"] : ignoredExtraArgument ? [] : ["parameter"],
+          [
+            returnNode(
+              missingArgument
+                ? { type: "BinaryExpression", operator: "+", left: id("parameter"), right: id("missing") }
+                : ignoredExtraArgument
+                  ? literal(2)
+                  : { type: "BinaryExpression", operator: "+", left: id("parameter"), right: literal(2) }
+            ),
+          ]
+        )
+      );
+      functionNames.unshift("fuzzRelayHelper");
+      functions.unshift(
+        functionNode(
+          "fuzzRelayHelper",
+          ["parameter"],
+          [returnNode({ type: "BinaryExpression", operator: "+", left: id("parameter"), right: literal(1) })]
+        )
+      );
+    }
     if (crossModuleReader) {
       functionNames.unshift("fuzzRelayHelper");
       functions.unshift(
@@ -1265,17 +1294,18 @@ export function makeComposedCase(seed, index) {
     }
     functionNames.unshift("fuzzRelayRead");
     const initExpressionReader = index % 512 === 315;
-    const expressionReader = index % 128 === 123 && index % 256 !== 251;
-    const body = crossModuleReader
-      ? [returnNode(call(id("fuzzRelayHelper"), [id("parameter")]))]
-      : initExpressionReader
-        ? [returnNode({ type: "BinaryExpression", operator: "+", left: id("global"), right: literal(1) })]
-        : expressionReader
-          ? [
-              declaration("global1", id("parameter")),
-              returnNode({ type: "BinaryExpression", operator: "+", left: id("global"), right: id("global1") }),
-            ]
-          : [returnNode(id("global"))];
+    const expressionReader = (index % 128 === 123 && index % 256 !== 251) || redirectedCallee;
+    const body =
+      crossModuleReader || redirectedCallee
+        ? [returnNode(call(id("fuzzRelayHelper"), [id("parameter")]))]
+        : initExpressionReader
+          ? [returnNode({ type: "BinaryExpression", operator: "+", left: id("global"), right: literal(1) })]
+          : expressionReader
+            ? [
+                declaration("global1", id("parameter")),
+                returnNode({ type: "BinaryExpression", operator: "+", left: id("global"), right: id("global1") }),
+              ]
+            : [returnNode(id("global"))];
     functions.unshift(functionNode("fuzzRelayRead", expressionReader ? ["parameter"] : [], body));
   }
   const publicFunctionNames = functionNames.map((name, i) =>
@@ -1312,7 +1342,7 @@ export function makeComposedCase(seed, index) {
           recordBigInteger("123456789012345678901234567890", true),
         ]
       : [];
-  const observeRelayAtInit = index % 256 === 187 || index % 256 === 251 || index % 512 === 315;
+  const observeRelayAtInit = !redirectedCallee && (index % 256 === 187 || index % 256 === 251 || index % 512 === 315);
   const observeRelayViaCall = index % 256 === 251 || index % 512 === 315;
   const ast = {
     type: "Program",
@@ -1353,6 +1383,7 @@ export function makeComposedCase(seed, index) {
     ast,
     source: print(ast),
     grammar: "composed",
+    redirectedCallee,
     throwVariant,
     hasDiscardedLiteral,
     hasTextObservation: hasDiscardedLiteral,
@@ -1375,14 +1406,19 @@ export function makeComposedCase(seed, index) {
       modules: {
         "state.mjs": {
           imports: [],
-          statements: Array.from({ length: prefix.length + globals.length }, (_, index) => index),
+          statements: [
+            ...Array.from({ length: prefix.length + globals.length }, (_, index) => index),
+            ...(redirectedCallee ? [prefix.length + globals.length + 1, prefix.length + globals.length + 2] : []),
+          ],
         },
         ...(index % 8 === 3
           ? {
               "relay.mjs": {
                 imports: ["state.mjs"],
                 statements: [],
-                reexports: { "state.mjs": globals },
+                reexports: {
+                  "state.mjs": [...globals, ...(redirectedCallee ? ["fuzzRelayHelper", "fuzzRelayOther"] : [])],
+                },
                 renameReexports: index % 32 === 27,
               },
             }
@@ -1392,7 +1428,9 @@ export function makeComposedCase(seed, index) {
               "relay2.mjs": {
                 imports: ["relay.mjs"],
                 statements: [],
-                reexports: { "relay.mjs": globals },
+                reexports: {
+                  "relay.mjs": [...globals, ...(redirectedCallee ? ["fuzzRelayHelper", "fuzzRelayOther"] : [])],
+                },
                 renameReexports: index % 32 === 27,
               },
             }
@@ -1409,7 +1447,7 @@ export function makeComposedCase(seed, index) {
           statements: [
             ...(observeRelayAtInit ? [prefix.length + globals.length] : []),
             ...functionNames.flatMap((_, position) =>
-              crossModuleReader && position === 1
+              (crossModuleReader && position === 1) || (redirectedCallee && (position === 1 || position === 2))
                 ? []
                 : [prefix.length + globals.length + Number(observeRelayAtInit) + position]
             ),
@@ -1686,7 +1724,12 @@ async function mutateOutput(out, input, kind) {
     let changed = original;
     if (kind === "binding") changed = original.replace(/let cell0 = (\d+);/, (_, n) => `let cell0 = ${Number(n) + 1};`);
     else if (kind === "renamedReexport")
-      changed = original.replace(/export \{ global as (__split_reexport_+\d+_\d+) \}/, "export { global1 as $1 }");
+      changed = input.redirectedCallee
+        ? original.replace(
+            /export \{ fuzzRelayHelper as (__split_reexport_+\d+_\d+) \}/,
+            "export { fuzzRelayOther as $1 }"
+          )
+        : original.replace(/export \{ global as (__split_reexport_+\d+_\d+) \}/, "export { global1 as $1 }");
     else if (kind === "throwValue") {
       const start = original.indexOf("function fuzzThrower(");
       if (start >= 0) {
@@ -1984,30 +2027,24 @@ export async function runFuzz({
             ? makeAsyncCase(seed, index)
             : makeCase(seed, index);
       const input = splitMode === "independent" ? independentSplit(generated, seed, index) : generated;
-      const mutation =
-        mutationMode === "disabled"
-          ? null
-          : input.grammar === "composed" && !input.independentSplit && index % 64 === 59
-            ? "renamedReexport"
-            : input.grammar === "composed" && !input.independentSplit && index % 64 === 23
-              ? "throwValue"
-              : input.grammar === "composed" &&
-                  !input.independentSplit &&
-                  input.hasDiscardedLiteral &&
-                  index % 52 === 16
-                ? "composedEffect"
-                : !["composed", "async"].includes(input.grammar) && !input.independentSplit && index % 8 === 2
-                  ? ["binding", "effect", "function", "export", "import"][Math.floor(index / 8) % 5]
-                  : null;
-      if (mutationMode === "disabled" && index % 512 === 379 && input.grammar === "composed")
-        input.calls = [{ name: "fuzzRelayRead", args: [0] }];
-      if (mutation === "composedEffect") input.calls = [];
-      if (mutation === "throwValue") input.calls = [{ name: "fuzzThrower", args: [1] }];
-      if (mutation === "renamedReexport")
+      const plannedMutation =
+        input.grammar === "composed" && !input.independentSplit && index % 64 === 59
+          ? "renamedReexport"
+          : input.grammar === "composed" && !input.independentSplit && index % 64 === 23
+            ? "throwValue"
+            : input.grammar === "composed" && !input.independentSplit && input.hasDiscardedLiteral && index % 52 === 16
+              ? "composedEffect"
+              : !["composed", "async"].includes(input.grammar) && !input.independentSplit && index % 8 === 2
+                ? ["binding", "effect", "function", "export", "import"][Math.floor(index / 8) % 5]
+                : null;
+      const mutation = mutationMode === "disabled" ? null : plannedMutation;
+      if (plannedMutation === "composedEffect") input.calls = [];
+      if (plannedMutation === "throwValue") input.calls = [{ name: "fuzzThrower", args: [1] }];
+      if (plannedMutation === "renamedReexport")
         input.calls =
-          index % 256 === 187 || index % 256 === 251 || index % 512 === 315
+          !input.redirectedCallee && (index % 256 === 187 || index % 256 === 251 || index % 512 === 315)
             ? []
-            : [{ name: "fuzzRelayRead", args: index % 128 === 123 ? [1] : [] }];
+            : [{ name: "fuzzRelayRead", args: index % 128 === 123 || input.redirectedCallee ? [0] : [] }];
       const independentCategory = input.invalidAssignment ? "invalidAssignment" : input.cyclic ? "cyclic" : "acyclic";
       if (input.independentSplit) {
         summary.independentRequested[independentCategory]++;

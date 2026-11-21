@@ -134,19 +134,25 @@ if (shards === 4 && shard === 2) {
   assert.equal(renamedRelay.renamedReexportGeneratedCases, 1);
   assert.equal(renamedRelay.renamedReexportComparedCases, 1);
   assert.equal(renamedRelay.renamedReexportProvedCases, 1);
-  const unchangedCall = await runFuzz({
-    seed: 51981,
-    start: 379,
-    cases: 1,
-    outputDir: process.env.TEST_TMPDIR,
-    grammarMode: "composed",
-    mutationMode: "disabled",
-    validateEvery: 1,
-  });
-  assert.equal(unchangedCall.equal, 1);
-  assert.equal(unchangedCall.mutated, 0);
-  assert.equal(unchangedCall.unmodifiedVerdicts.proved, 1);
-  for (const start of [59, 123, 187, 251, 315, 379]) {
+}
+if (shards === 4 && shard >= 1) {
+  const safeCases = { 1: [], 2: [379, 443], 3: [507, 571] };
+  const redirectedCases = { 1: [59, 123, 187], 2: [251, 315, 379], 3: [443, 507, 571] };
+  for (const start of safeCases[shard]) {
+    const unchangedCall = await runFuzz({
+      seed: 51981,
+      start,
+      cases: 1,
+      outputDir: process.env.TEST_TMPDIR,
+      grammarMode: "composed",
+      mutationMode: "disabled",
+      validateEvery: 1,
+    });
+    assert.equal(unchangedCall.equal, 1);
+    assert.equal(unchangedCall.mutated, 0);
+    assert.equal(unchangedCall.unmodifiedVerdicts.proved, 1);
+  }
+  for (const start of redirectedCases[shard]) {
     const redirectedRelay = await runFuzz({
       seed: 51981,
       start,
@@ -157,8 +163,9 @@ if (shards === 4 && shard === 2) {
     });
     assert.equal(redirectedRelay.mutationKinds.renamedReexport, 1);
     assert.equal(redirectedRelay.mutatedDifferent, 1);
-    assert.equal(redirectedRelay.mutatedVerdicts.unsafe, 1);
-    if (start === 123 || start === 379) {
+    if (start === 571) assert.equal(redirectedRelay.mutatedVerdicts.unknown, 1);
+    else assert.equal(redirectedRelay.mutatedVerdicts.unsafe, 1);
+    if (start === 123 || start === 379 || start === 443 || start === 507) {
       assert.deepEqual(redirectedRelay.certifiedWitnesses[0].calls, [{ name: "fuzzRelayRead", args: [0] }]);
       await access(join(process.env.TEST_TMPDIR, redirectedRelay.certifiedWitnesses[0].artifactPath, "verdict.json"));
       const witness = JSON.parse(

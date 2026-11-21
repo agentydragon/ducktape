@@ -1112,8 +1112,8 @@ def witnessedImportsStable (modules : List BindingModule) : Bool :=
       | none => false
 
 /- Rewrite free names in a restricted expression using the actual module graph.
-   Local bindings and parameters shadow imports. Inlined calls are checked
-   against the actual callee declaration and lowered in that module's scope. -/
+   Local bindings and parameters shadow imports. Inlined calls resolve the actual callee declaration and are lowered in that
+   module's scope, subject to a finite expansion bound. -/
 /- Fresh internal local names contain `#`, which the frontend does not admit in
    JavaScript binding names. Preserve the nearest binding when scopes shadow. -/
 def witnessedFresh (depth : Nat) (_name : String) : String :=
@@ -1137,71 +1137,80 @@ def witnessedName (modules : List BindingModule) (index : Nat) (bound : List (St
     let target ← declaredName resolved.2.2
     if bound.any (fun binding => binding.2 == target) then none else some target
 
-def witnessedExpression (modules : List BindingModule) (index : Nat) (bound : List (String × String)) : NumericExpr → Option NumericExpr
-  | .literal value => some (.literal value)
-  | .name name => (witnessedName modules index bound name).map NumericExpr.name
-  | .add left right => do
-    some (.add (← witnessedExpression modules index bound left) (← witnessedExpression modules index bound right))
-  | .multiply left right => do
-    some (.multiply (← witnessedExpression modules index bound left) (← witnessedExpression modules index bound right))
-  | .subtract left right => do
-    some (.subtract (← witnessedExpression modules index bound left) (← witnessedExpression modules index bound right))
-  | .remainder left right => do
-    some (.remainder (← witnessedExpression modules index bound left) (← witnessedExpression modules index bound right))
-  | .divide left right => do
-    some (.divide (← witnessedExpression modules index bound left) (← witnessedExpression modules index bound right))
-  | .bitAnd left right => do
-    some (.bitAnd (← witnessedExpression modules index bound left) (← witnessedExpression modules index bound right))
-  | .bitOr left right => do
-    some (.bitOr (← witnessedExpression modules index bound left) (← witnessedExpression modules index bound right))
-  | .bitXor left right => do
-    some (.bitXor (← witnessedExpression modules index bound left) (← witnessedExpression modules index bound right))
-  | .unsignedShift left right => do
-    some (.unsignedShift (← witnessedExpression modules index bound left) (← witnessedExpression modules index bound right))
-  | .shiftLeft left right => do
-    some (.shiftLeft (← witnessedExpression modules index bound left) (← witnessedExpression modules index bound right))
-  | .shiftRight left right => do
-    some (.shiftRight (← witnessedExpression modules index bound left) (← witnessedExpression modules index bound right))
-  | .equal left right => do
-    some (.equal (← witnessedExpression modules index bound left) (← witnessedExpression modules index bound right))
-  | .less left right => do
-    some (.less (← witnessedExpression modules index bound left) (← witnessedExpression modules index bound right))
-  | .greater left right => do
-    some (.greater (← witnessedExpression modules index bound left) (← witnessedExpression modules index bound right))
-  | .finally left right => do
-    some (.finally (← witnessedExpression modules index bound left) (← witnessedExpression modules index bound right))
-  | .catchError left right => do
-    some (.catchError (← witnessedExpression modules index bound left) (← witnessedExpression modules index bound right))
-  | .followedBy left right => do
-    some (.followedBy (← witnessedExpression modules index bound left) (← witnessedExpression modules index bound right))
-  | .argumentsCons left right => do
-    some (.argumentsCons (← witnessedExpression modules index bound left) (← witnessedExpression modules index bound right))
-  | .conditional test consequent alternative => do
-    some (.conditional (← witnessedExpression modules index bound test) (← witnessedExpression modules index bound consequent) (← witnessedExpression modules index bound alternative))
-  | .guard test consequent alternative => do
-    some (.guard (← witnessedExpression modules index bound test) (← witnessedExpression modules index bound consequent) (← witnessedExpression modules index bound alternative))
-  | .local name mutable initial body => do
+/- Fuel bounds callee expansion; a recursive or excessively deep output is unknown. -/
+def witnessedExpressionFuel (modules : List BindingModule) : Nat → Nat → List (String × String) → NumericExpr → Option NumericExpr
+  | 0, _, _, _ => none
+  | _ + 1, _, _, .literal value => some (.literal value)
+  | _ + 1, index, bound, .name name => (witnessedName modules index bound name).map NumericExpr.name
+  | fuel + 1, index, bound, .add left right => do
+    some (.add (← witnessedExpressionFuel modules fuel index bound left) (← witnessedExpressionFuel modules fuel index bound right))
+  | fuel + 1, index, bound, .multiply left right => do
+    some (.multiply (← witnessedExpressionFuel modules fuel index bound left) (← witnessedExpressionFuel modules fuel index bound right))
+  | fuel + 1, index, bound, .subtract left right => do
+    some (.subtract (← witnessedExpressionFuel modules fuel index bound left) (← witnessedExpressionFuel modules fuel index bound right))
+  | fuel + 1, index, bound, .remainder left right => do
+    some (.remainder (← witnessedExpressionFuel modules fuel index bound left) (← witnessedExpressionFuel modules fuel index bound right))
+  | fuel + 1, index, bound, .divide left right => do
+    some (.divide (← witnessedExpressionFuel modules fuel index bound left) (← witnessedExpressionFuel modules fuel index bound right))
+  | fuel + 1, index, bound, .bitAnd left right => do
+    some (.bitAnd (← witnessedExpressionFuel modules fuel index bound left) (← witnessedExpressionFuel modules fuel index bound right))
+  | fuel + 1, index, bound, .bitOr left right => do
+    some (.bitOr (← witnessedExpressionFuel modules fuel index bound left) (← witnessedExpressionFuel modules fuel index bound right))
+  | fuel + 1, index, bound, .bitXor left right => do
+    some (.bitXor (← witnessedExpressionFuel modules fuel index bound left) (← witnessedExpressionFuel modules fuel index bound right))
+  | fuel + 1, index, bound, .unsignedShift left right => do
+    some (.unsignedShift (← witnessedExpressionFuel modules fuel index bound left) (← witnessedExpressionFuel modules fuel index bound right))
+  | fuel + 1, index, bound, .shiftLeft left right => do
+    some (.shiftLeft (← witnessedExpressionFuel modules fuel index bound left) (← witnessedExpressionFuel modules fuel index bound right))
+  | fuel + 1, index, bound, .shiftRight left right => do
+    some (.shiftRight (← witnessedExpressionFuel modules fuel index bound left) (← witnessedExpressionFuel modules fuel index bound right))
+  | fuel + 1, index, bound, .equal left right => do
+    some (.equal (← witnessedExpressionFuel modules fuel index bound left) (← witnessedExpressionFuel modules fuel index bound right))
+  | fuel + 1, index, bound, .less left right => do
+    some (.less (← witnessedExpressionFuel modules fuel index bound left) (← witnessedExpressionFuel modules fuel index bound right))
+  | fuel + 1, index, bound, .greater left right => do
+    some (.greater (← witnessedExpressionFuel modules fuel index bound left) (← witnessedExpressionFuel modules fuel index bound right))
+  | fuel + 1, index, bound, .finally left right => do
+    some (.finally (← witnessedExpressionFuel modules fuel index bound left) (← witnessedExpressionFuel modules fuel index bound right))
+  | fuel + 1, index, bound, .catchError left right => do
+    some (.catchError (← witnessedExpressionFuel modules fuel index bound left) (← witnessedExpressionFuel modules fuel index bound right))
+  | fuel + 1, index, bound, .followedBy left right => do
+    some (.followedBy (← witnessedExpressionFuel modules fuel index bound left) (← witnessedExpressionFuel modules fuel index bound right))
+  | fuel + 1, index, bound, .argumentsCons left right => do
+    some (.argumentsCons (← witnessedExpressionFuel modules fuel index bound left) (← witnessedExpressionFuel modules fuel index bound right))
+  | fuel + 1, index, bound, .conditional test consequent alternative => do
+    some (.conditional (← witnessedExpressionFuel modules fuel index bound test) (← witnessedExpressionFuel modules fuel index bound consequent) (← witnessedExpressionFuel modules fuel index bound alternative))
+  | fuel + 1, index, bound, .guard test consequent alternative => do
+    some (.guard (← witnessedExpressionFuel modules fuel index bound test) (← witnessedExpressionFuel modules fuel index bound consequent) (← witnessedExpressionFuel modules fuel index bound alternative))
+  | fuel + 1, index, bound, .local name mutable initial body => do
     let fresh := witnessedFresh bound.length name
     if !witnessedFreshAvailable modules fresh then none else
-      some (.local fresh mutable (← witnessedExpression modules index bound initial) (← witnessedExpression modules index ((name, fresh) :: bound) body))
-  | .assign name value body => do
-    some (.assign (← witnessedName modules index bound name) (← witnessedExpression modules index bound value) (← witnessedExpression modules index bound body))
-  | .raise value => (witnessedExpression modules index bound value).map NumericExpr.raise
-  | .raisePrimitive value => some (.raisePrimitive value)
-  | .argumentsNil => some .argumentsNil
-  | .invoke name parameters arguments body => do
+      some (.local fresh mutable (← witnessedExpressionFuel modules fuel index bound initial) (← witnessedExpressionFuel modules fuel index ((name, fresh) :: bound) body))
+  | fuel + 1, index, bound, .assign name value body => do
+    some (.assign (← witnessedName modules index bound name) (← witnessedExpressionFuel modules fuel index bound value) (← witnessedExpressionFuel modules fuel index bound body))
+  | fuel + 1, index, bound, .raise value => (witnessedExpressionFuel modules fuel index bound value).map NumericExpr.raise
+  | _ + 1, _, _, .raisePrimitive value => some (.raisePrimitive value)
+  | _ + 1, _, _, .argumentsNil => some .argumentsNil
+  | fuel + 1, index, bound, .invoke name parameters arguments _ => do
     let resolved ← resolveActualReference modules index name
     let target ← declaredName resolved.2.2
     let actual ← callableSyntax [resolved.2.2] target
-    if !decide (actual = (parameters, body)) then none else do
-      let renamed := witnessedParameters parameters []
+    /- JavaScript evaluates extra arguments even when the callee ignores them.
+       Fresh unused parameters preserve that evaluation. Missing parameters
+       require undefined semantics and remain outside this numeric subset. -/
+    if actual.1.length > parameters.length then none else do
+      let extended := actual.1 ++ List.replicate (parameters.length - actual.1.length) "#unused"
+      let renamed := witnessedParameters extended []
       if !renamed.all (fun binding => witnessedFreshAvailable modules binding.2) then none else
-        some (.invoke target (renamed.map Prod.snd) (← witnessedExpression modules index bound arguments)
-          (← witnessedExpression modules resolved.1 renamed.reverse body))
-  | .invokeLocal name parameters arguments body => do
+        some (.invoke target (renamed.map Prod.snd) (← witnessedExpressionFuel modules fuel index bound arguments)
+          (← witnessedExpressionFuel modules fuel resolved.1 renamed.reverse actual.2))
+  | fuel + 1, index, bound, .invokeLocal name parameters arguments body => do
     let renamed := witnessedParameters parameters bound
     if !renamed.all (fun binding => witnessedFreshAvailable modules binding.2) then none else
-      some (.invokeLocal name (renamed.map Prod.snd) (← witnessedExpression modules index bound arguments) (← witnessedExpression modules index (renamed.reverse ++ bound) body))
+      some (.invokeLocal name (renamed.map Prod.snd) (← witnessedExpressionFuel modules fuel index bound arguments) (← witnessedExpressionFuel modules fuel index (renamed.reverse ++ bound) body))
+
+def witnessedExpression (modules : List BindingModule) (index : Nat) (bound : List (String × String)) (expression : NumericExpr) : Option NumericExpr :=
+  witnessedExpressionFuel modules 1024 index bound expression
 
 /- The explicit cases avoid the axiom-using matcher generated for a catch-all
    that returns the original inductive value. -/
@@ -1240,9 +1249,39 @@ def witnessedOutputModule (modules : List BindingModule) (index : Nat) : Option 
   let module ← elementAt modules index
   module.statements.mapM (witnessedOutputStatement modules index)
 
+/- Captured and escaping closures still use the original declaration names.
+   Do not certify a redirected graph until those environments are lowered. -/
+def witnessedUnloweredClosure : BindingStmt → Bool
+  | .capturedFactory _ _ _ _ _ => true
+  | .capturedClosure _ _ _ _ => true
+  | .capturedAlias _ _ => true
+  | .factory _ _ _ => true
+  | .closure _ _ => true
+  | .wrapper _ _ => true
+  | .variable _ _ => false
+  | .hoistedVariable _ _ => false
+  | .constant _ _ => false
+  | .function _ _ _ => false
+  | .reader _ _ => false
+  | .thrower _ _ => false
+  | .expressionFunction _ _ _ => false
+  | .recordCall _ => false
+  | .call _ => false
+  | .record _ => false
+  | .discardedLiteral => false
+  | .recordPrimitive _ => false
+
 def witnessedOutputDefinitions (modules : List BindingModule) : Option (List BindingStmt) := do
-  let grouped ← (List.range modules.length).mapM (witnessedOutputModule modules)
-  pure grouped.flatten
+  let names := modules.flatMap fun module => module.statements.filterMap declaredName
+  if !names.all (fun name => names.count name == 1) ||
+      (!witnessedImportsStable modules && modules.any (fun module => module.statements.any witnessedUnloweredClosure)) then none else do
+    let grouped ← (List.range modules.length).mapM (witnessedOutputModule modules)
+    pure grouped.flatten
+
+example : witnessedOutputDefinitions [
+    { imports := [], exports := [], statements := [.variable "same" 1], assignment := [0] },
+    { imports := [], exports := [], statements := [.variable "same" 2], assignment := [1] }
+  ] = none := by decide
 
 def outputBindingState (source : List BindingStmt) (modules : List BindingModule) (entry : Nat) : Option (ExecutionState Unit) := do
   let order ← machineTrace (asEffectModules modules) entry
@@ -1250,6 +1289,21 @@ def outputBindingState (source : List BindingStmt) (modules : List BindingModule
   let statements ← indices.mapM (findAssignedStatement modules)
   let state ← runBindingStatements (outputDefinitions modules) statements
   canonicalBindingState source state
+
+/- Resolve public names all the way through the actual entry module graph. -/
+def witnessedPublicMappings (modules : List BindingModule) (entry : Nat)
+    (mappings : List (String × String)) : Option (List (String × String)) :=
+  mappings.mapM fun mapping => do
+    let resolved ← resolveActualExportFuel modules (modules.length + 1) entry mapping.2
+    let target ← declaredName resolved.2.2
+    some (target, mapping.2)
+
+/- A redirected captured environment remains outside witness lowering. -/
+example : witnessedOutputDefinitions [
+    { imports := [], exports := ["y"], statements := [.variable "y" 1], assignment := [0] },
+    { imports := [{ dependency := 0, locals := ["x"], links := [("x", "y")], reexports := [] }],
+      exports := [], statements := [.factory "make" "local" "x"], assignment := [1] }
+  ] = none := by decide
 
 /- Execute the actual output statements through the same transition system,
    resolving their module-local references before evaluating observations. -/

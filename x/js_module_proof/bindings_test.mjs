@@ -19,7 +19,7 @@ const cli = (...args) => {
   return { status: child.status, value: JSON.parse(child.stdout || child.stderr) };
 };
 function execute(path, calls) {
-  const code = `const events=[];globalThis.record=value=>events.push(value);import(${JSON.stringify(pathToFileURL(path).href)}).then(m=>console.log(JSON.stringify({events,results:${JSON.stringify(calls)}.map(name=>m[name]())})));`;
+  const code = `const events=[];globalThis.record=value=>events.push(value);import(${JSON.stringify(pathToFileURL(path).href)}).then(m=>console.log(JSON.stringify({events,results:${JSON.stringify(calls)}.map(call=>typeof call==='string'?m[call]():m[call.name](...call.args))})));`;
   const child = spawnSync(process.execPath, ["--input-type=module", "-e", code], { encoding: "utf8" });
   assert.equal(child.status, 0, child.stderr);
   return JSON.parse(child.stdout);
@@ -256,6 +256,17 @@ if (runSection(2)) {
   const wrongRelay = cli("validate", aliasSource, aliasSpec, aliasOut).value;
   assert.notEqual(wrongRelay.result, "proved under assumptions", JSON.stringify(wrongRelay));
   assert.notDeepEqual(execute(aliasSource, ["current"]), execute(join(aliasOut, "entry.mjs"), ["current"]));
+
+  await writeFile(relayPath, relay);
+  await writeFile(logicPath, logic);
+  const entryPath = join(aliasOut, "entry.mjs");
+  const entry = await readFile(entryPath, "utf8");
+  assert.match(entry, /export \{ current \}/);
+  await writeFile(entryPath, entry.replace("export { current }", "export { other as current }"));
+  const wrongPublic = cli("validate", aliasSource, aliasSpec, aliasOut).value;
+  assert.equal(wrongPublic.result, "unsafe", JSON.stringify(wrongPublic));
+  assert.deepEqual(execute(aliasSource, ["current"]), { events: [], results: [1] });
+  assert.deepEqual(execute(entryPath, ["current"]), { events: [], results: [2] });
 }
 
 if (runSection(1)) {
@@ -283,4 +294,38 @@ if (runSection(1)) {
   assert.equal(checkedExpression.result, "proved under assumptions", JSON.stringify(checkedExpression));
   assert.deepEqual(execute(expressionSource, ["compute"]), { events: [3], results: [3] });
   assert.deepEqual(execute(join(expressionOut, "entry.mjs"), ["compute"]), execute(expressionSource, ["compute"]));
+}
+
+if (runSection(0)) {
+  const calleeSource = join(root, "redirected-callee-source.mjs");
+  const calleeSpec = join(root, "redirected-callee-spec.json");
+  const calleeOut = join(root, "redirected-callee-out");
+  await writeFile(
+    calleeSource,
+    `function first(value) { return value + 1; }\nfunction second(value) { return value + 2; }\nfunction call(value) { return first(value); }\nexport { call };\n`
+  );
+  await writeFile(
+    calleeSpec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0, 1] },
+        "relay.mjs": { imports: ["state.mjs"], statements: [], reexports: { "state.mjs": ["first", "second"] } },
+        "logic.mjs": { imports: ["relay.mjs"], statements: [2] },
+        "entry.mjs": { imports: ["logic.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", calleeSource, calleeSpec, calleeOut).value.result, "generated");
+  assert.equal(cli("validate", calleeSource, calleeSpec, calleeOut).value.result, "proved under assumptions");
+  const relayPath = join(calleeOut, "relay.mjs");
+  const relayText = await readFile(relayPath, "utf8");
+  assert.match(relayText, /export \{ first \}/);
+  await writeFile(relayPath, relayText.replace("export { first }", "export { second as first }"));
+  const redirected = cli("validate", calleeSource, calleeSpec, calleeOut).value;
+  assert.equal(redirected.result, "unsafe", JSON.stringify(redirected));
+  assert.deepEqual(redirected.calls, [{ name: "call", args: [0] }]);
+  assert.deepEqual(execute(calleeSource, redirected.calls), { events: [], results: [1] });
+  assert.deepEqual(execute(join(calleeOut, "entry.mjs"), redirected.calls), { events: [], results: [2] });
 }

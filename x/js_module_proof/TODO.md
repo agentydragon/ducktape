@@ -90,8 +90,9 @@ cover only part of the grammar and split space described below.
       numeric expressions have Node-reproduced Lean counterexamples, including
       initialization observations. Witness lowering alpha-renames locals to
       preserve their identities when redirected module bindings share a spelling.
-      Witness lowering follows unchanged callee bodies in their own module scope;
-      extend it to changed callees and other statement forms.
+      Witness lowering follows actual callee bodies in their own module scope,
+      including changed callees that consume no more arguments than supplied;
+      extend it to missing arguments, captured closures and other statement forms.
 - [ ] State and test each slice's observation boundary and assumptions, including
       module loading, host behavior, numeric semantics and termination. Keep
       `unknown` when the checker cannot justify its claim, and document that Node

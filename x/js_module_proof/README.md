@@ -268,7 +268,11 @@ initialization or later calls, and a Node witness. When initialization traces
 match, the validator also searches up to 64 sequences of one or two exported
 calls, comparing return prefixes and supported primitive thrown values as well
 as recorded events, provided a conservative numeric bound keeps every intermediate safe. Semantically equivalent
-rewrites beyond this AST subset can return `unknown`.
+rewrites beyond this AST subset can return `unknown`. Counterexample lowering
+resolves actual imports and public exports, keeps local identities distinct, and
+follows calls with bounded expansion. It can return `unknown` for duplicate
+output declaration names, redirected captured environments, missing numeric
+arguments, and other forms it cannot lower faithfully.
 
 This result assumes correct Acorn conversion and correspondence between the
 model and ECMAScript. Numeric bindings, exported-function arguments and modeled
