@@ -277,10 +277,18 @@ unsafe def codeInfoImpl (j : Json) : M (Array String × Array String) := do
 
 @[implemented_by codeInfoImpl] opaque codeInfo (j : Json) : M (Array String × Array String)
 
+/-- The expression inside parentheses and inside an optional chain (`a?.b` is a `ChainExpression` around a member
+access): a `delete`, a call and a tag look at the member access itself. -/
+partial def unwrap (j : Json) : Json :=
+  match typ j with
+  | "ParenthesizedExpression" | "ChainExpression" => unwrap (fld j "expression")
+  | _ => j
+
 /-- The root and the member names of a chain `a.b.c` (`*` for a computed name), or `none` for anything else. -/
 partial def memberChain (j : Json) : Option (String × List String) :=
   match typ j with
   | "Identifier" => some (str (fld j "name"), [])
+  | "ParenthesizedExpression" | "ChainExpression" => memberChain (fld j "expression")
   | "MemberExpression" =>
     (memberChain (fld j "object")).map fun (r, ks) =>
       (r, ks ++ [if flag j "computed" then "*" else str (fld (fld j "property") "name")])
@@ -300,6 +308,7 @@ def patchByName (r : String) (ks : List String) (key : Option String) : Option (
 
 /-- The member an assignment, an update or a `delete` changes. -/
 def targetPatch (t : Json) : Option (String × Option String) :=
+  let t := unwrap t
   match typ t with
   | "Identifier" => if intrinsicGlobals.contains (str (fld t "name")) then some ("global", some (str (fld t "name"))) else none
   | "MemberExpression" =>
@@ -326,10 +335,10 @@ partial def textPatches (j : Json) : Array (String × Option String) :=
       | "UpdateExpression" => targetPatch (fld j "argument")
       | "UnaryExpression" => if str (fld j "operator") == "delete" then targetPatch (fld j "argument") else none
       | "CallExpression" =>
-        let c := fld j "callee"
+        let c := unwrap (fld j "callee")
         if typ c == "MemberExpression" && !flag c "computed" then
           let m := str (fld (fld c "property") "name")
-          if mutatorNames.contains m && ["Object", "Reflect"].contains (str (fld (fld c "object") "name")) then
+          if mutatorNames.contains m && ["Object", "Reflect"].contains (str (fld (unwrap (fld c "object")) "name")) then
             match ((items (fld j "arguments"))[0]?).bind memberChain with
             | some (r, ks) => patchByName r ks none
             | none => none
@@ -1520,11 +1529,7 @@ partial def eval (fr : Fr) (j : Json) : M AV := do
     convert vs fr (shallow j)
     return AV.prim
   | "TaggedTemplateExpression" =>
-    let tag := fld j "tag"
-    let (callee, thisV) ← if typ tag == "MemberExpression" then do
-        let o ← eval fr (fld tag "object")
-        pure (← getAV o (memberKey tag), o)
-      else pure (← eval fr tag, AV.prim)
+    let (callee, thisV) ← evalCallee fr (fld j "tag")
     let q := fld j "quasi"
     let vs ← (items (fld q "expressions")).toList.mapM (eval fr)
     let strs ← alloc .array (some (siteOf fr j))
@@ -1542,7 +1547,7 @@ partial def eval (fr : Fr) (j : Json) : M AV := do
   | "ClassExpression" => evalClass fr j
   | "UnaryExpression" =>
     let op := str (fld j "operator")
-    let arg := fld j "argument"
+    let arg := if op == "delete" then unwrap (fld j "argument") else fld j "argument"
     if op == "delete" && typ arg == "MemberExpression" then
       let o ← eval fr (fld arg "object")
       let k ← if flag arg "computed" then (do convert [← eval fr (fld arg "property")] fr (shallow arg); pure (memberKey arg)) else pure (memberKey arg)
@@ -1715,29 +1720,28 @@ partial def calleeLabel (fr : Fr) (j : Json) : M String := do
   | "ThisExpression" => return "this"
   | t => return t
 
+/-- The function a call or a tagged template calls, and its `this`: the object of a member access, also through
+parentheses and an optional chain (`(a?.b)()` calls with `a` as `this`, like `a.b()`). -/
+partial def evalCallee (fr : Fr) (calleeJ : Json) : M (AV × AV) := do
+  let m := unwrap calleeJ
+  if typ m == "MemberExpression" && typ (fld m "object") != "Super" then
+    let o ← eval fr (fld m "object")
+    if flag m "computed" then
+      convert [← eval fr (fld m "property")] fr (shallow m)
+    return (← getAV o (memberKey m), o)
+  else return (← eval fr calleeJ, AV.prim)
+
 partial def evalCall (fr : Fr) (j : Json) (isNew : Bool) : M AV := do
   let calleeJ := fld j "callee"
   let site := shallow j
   if typ calleeJ == "Super" then
     let args ← evalArgs fr (items (fld j "arguments"))
     return ← superCall fr args
-  if typ calleeJ == "Identifier" && str (fld calleeJ "name") == "eval" && !isNew then
+  if typ (unwrap calleeJ) == "Identifier" && str (fld (unwrap calleeJ) "name") == "eval" && !isNew then
     -- a direct eval reads any name in scope by its spelling: everything this unit can see escapes
     giveUp "direct eval" j
     return AV.top
-  let (callee, thisV) ←
-    if typ calleeJ == "MemberExpression" && typ (fld calleeJ "object") != "Super" then
-      let o ← eval fr (fld calleeJ "object")
-      if flag calleeJ "computed" then
-        let _ ← eval fr (fld calleeJ "property")
-      pure (← getAV o (memberKey calleeJ), o)
-    else if typ calleeJ == "ChainExpression" && typ (fld calleeJ "expression") == "MemberExpression" then
-      let m := fld calleeJ "expression"
-      let o ← eval fr (fld m "object")
-      if flag m "computed" then
-        let _ ← eval fr (fld m "property")
-      pure (← getAV o (memberKey m), o)
-    else pure (← eval fr calleeJ, AV.prim)
+  let (callee, thisV) ← evalCallee fr calleeJ
   let args ← evalArgs fr (items (fld j "arguments"))
   let label ← calleeLabel fr calleeJ
   modify fun s => { s with callLabel := label }

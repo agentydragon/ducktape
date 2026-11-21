@@ -6,7 +6,7 @@
 // `experiments/effects/cases_general.mjs`. See README.md for the table of causes.
 //
 // Premise P3 is on: it is the setting of the fuzzers and of the large bundle. F1 and F2 are the same as existing golden
-// cases (`cases_general.mjs`) with a pure reader added, or with P3 on instead of off. F3, F4 and F6 were found by `gen/`.
+// cases (`cases_general.mjs`) with a pure reader added, or with P3 on instead of off. F3 and F6 were found by `gen/`.
 export const premises = { noWorldHooks: true };
 
 const finding = (name, source, order) => ({
@@ -102,49 +102,6 @@ const o = { n: 0 };
 const a = Array(2).fill(o);
 a[0].n = 1;
 const seen = o.n;
-console.log(seen);
-`,
-    [0, 1, 3, 2, 4]
-  ),
-  // F4: `delete a?.b` is a read of `a?.b` for the analysis: `eval` of a `UnaryExpression` `delete` handles a `MemberExpression` argument only
-  finding(
-    "F4 delete n?.[b] deletes a property of n",
-    `
-let n = true ? { a: 1, b: "s" } : null;
-delete n?.["b"];
-const seen = n.b;
-console.log(seen);
-`,
-    [0, 2, 1, 3]
-  ),
-  finding(
-    "F4 delete n?.inner?.x deletes a property of n.inner",
-    `
-let n = true ? { inner: { x: 1 } } : null;
-delete n?.inner?.x;
-const seen = n.inner.x;
-console.log(seen);
-`,
-    [0, 2, 1, 3]
-  ),
-  finding(
-    "F4 delete n?.b inside a function that is called",
-    `
-const n = { b: "s" };
-function drop() { delete n?.b; }
-drop();
-const seen = n.b;
-console.log(seen);
-`,
-    [0, 1, 3, 2, 4]
-  ),
-  finding(
-    "F4 delete n?.b inside a static getter that is read",
-    `
-const n = { b: "s" };
-class C { static get g() { delete n?.b; return 1; } }
-const x = C.g;
-const seen = n.b;
 console.log(seen);
 `,
     [0, 1, 3, 2, 4]

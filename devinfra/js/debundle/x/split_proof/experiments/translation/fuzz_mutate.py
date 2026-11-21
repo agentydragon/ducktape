@@ -816,6 +816,34 @@ MUTANTS = {
         "      | .func .. | .klass .. | .bound .. => programs := programs.join (AV.ofObj (d - 1))",
         "`get: Array.prototype.pop`",
     ),
+    "delete through an optional chain is a read": (
+        EFFECTS,
+        'let arg := if op == "delete" then unwrap (fld j "argument") else fld j "argument"',
+        'let arg := fld j "argument"',
+        "`delete a?.b`",
+    ),
+    "a callee in an optional chain has no this": (
+        EFFECTS,
+        "  let m := unwrap calleeJ\n  if typ m ==",
+        "  let m := calleeJ\n  if typ m ==",
+        "`(a?.b)``` calls `b` with `a` as `this`",
+    ),
+    "the computed key of a callee is not converted": (
+        EFFECTS,
+        '      convert [← eval fr (fld m "property")] fr (shallow m)\n    return (← getAV o (memberKey m), o)',
+        '      let _ ← eval fr (fld m "property")\n    return (← getAV o (memberKey m), o)',
+        "`o[key]()` runs the `toString` of `key`",
+    ),
+    "patches read off code skip optional chains": (
+        EFFECTS,
+        (
+            "  let t := unwrap t\n  match typ t with",
+            '  | "ParenthesizedExpression" | "ChainExpression" => memberChain (fld j "expression")\n',
+            '        let c := unwrap (fld j "callee")',
+        ),
+        ("  match typ t with", "", '        let c := fld j "callee"'),
+        "`delete Math?.max` in a generator body",
+    ),
     "nested accessors are unbounded": (
         EFFECTS,
         "  if (← get).accessorDepth ≥ maxDepth then",

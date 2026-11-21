@@ -2,10 +2,13 @@
 // earlier version of the rules (found by a fresh agent that tried to break them); the programs that still are accepted
 // are in `debug/general_known_gaps/`. One unit per line; `order` lists the unit indexes of the reordered program, which
 // Node prints differently from the original and `translate` must not accept. Premises are `{}`: the world may add
-// accessors and conversion hooks to anything (P3 off).
+// accessors and conversion hooks to anything (P3 off). The cases made with `p3` set premise P3 (`noWorldHooks`), as the
+// fuzzers do: the generators of `../translation/gen` and the footprint oracle found them, and with P3 off a read of an
+// object the world holds is a call into the world, which hides some of them.
 export const premises = {};
 
 const c = (name, source, order) => ({ name, source: source.trim() + "\n", reorders: [{ order, behavior: "differs" }] });
+const p3 = (name, source, order) => ({ ...c(name, source, order), premises: { noWorldHooks: true } });
 const chain = (n) => Array.from({ length: n }, (_, i) => `const p${i + 1} = Object.create(p${i});`).join("\n");
 
 export const cases = [
@@ -968,5 +971,110 @@ t.x;
 console.log(t.length);
 `,
     [0, 1, 3, 2]
+  ),
+  // a member access inside an optional chain or parentheses: `delete`, a call, a tag and the patches read off code that is not run
+  p3(
+    "delete n?.[b] deletes a property of n",
+    `
+let n = true ? { a: 1, b: "s" } : null;
+delete n?.["b"];
+const seen = n.b;
+console.log(seen);
+`,
+    [0, 2, 1, 3]
+  ),
+  p3(
+    "delete n?.inner?.x deletes a property of n.inner",
+    `
+let n = true ? { inner: { x: 1 } } : null;
+delete n?.inner?.x;
+const seen = n.inner.x;
+console.log(seen);
+`,
+    [0, 2, 1, 3]
+  ),
+  p3(
+    "delete n?.b inside a function that is called",
+    `
+const n = { b: "s" };
+function drop() { delete n?.b; }
+drop();
+const seen = n.b;
+console.log(seen);
+`,
+    [0, 1, 3, 2, 4]
+  ),
+  p3(
+    "delete n?.b inside a static getter that is read",
+    `
+const n = { b: "s" };
+class C { static get g() { delete n?.b; return 1; } }
+const x = C.g;
+const seen = n.b;
+console.log(seen);
+`,
+    [0, 1, 3, 2, 4]
+  ),
+  p3(
+    "a tag through an optional chain is called with its object as this",
+    `
+const n = { c: 0, tag() { this.c = 1; } };
+(n?.tag)\`\`;
+const seen = n.c;
+console.log(seen);
+`,
+    [0, 2, 1, 3]
+  ),
+  p3(
+    "the computed key of a tag is evaluated",
+    `
+const o = { c: 0 };
+const n = { tag() {} };
+n[(o.c = 1, "tag")]\`\`;
+const seen = o.c;
+console.log(seen);
+`,
+    [0, 1, 3, 2, 4]
+  ),
+  p3(
+    "the computed key of a callee is converted to a key",
+    `
+const o = { c: 0 };
+const key = { toString() { o.c = 1; return "m"; } };
+const n = { m() {} };
+n[key]();
+const seen = o.c;
+console.log(seen);
+`,
+    [0, 1, 2, 4, 3, 5]
+  ),
+  p3(
+    "delete Math?.max patches an intrinsic",
+    `
+delete Math?.max;
+const kind = typeof Math.max;
+console.log(kind);
+`,
+    [1, 0, 2]
+  ),
+  p3(
+    "delete Math?.max in a generator body that is not run here",
+    `
+const it = (function* () { delete Math?.max; yield 1; })();
+it.next();
+const kind = typeof Math.max;
+console.log(kind);
+`,
+    [0, 2, 1, 3]
+  ),
+  p3(
+    "Reflect?.deleteProperty of an intrinsic in a generator body",
+    `
+const it = (function* () { (Reflect?.deleteProperty)(Math, "max"); yield 1; })();
+it.next();
+const kind = typeof Math.max;
+console.log(kind);
+`,
+    [0, 2, 1, 3]
   ),
 ];
