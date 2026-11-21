@@ -107,7 +107,6 @@ bazel_dep(name = "ducktape_iron_proxy", version = "0.1.0", dev_dependency = True
 
 bazel_dep(name = "ducktape_haku", version = "0.1.0")
 
-bazel_dep(name = "ducktape_manifold_mcp_server", version = "0.1.0", dev_dependency = True)
 bazel_dep(name = "ducktape_claude_web_env_environment_manager", version = "0.1.0", dev_dependency = True)
 
 bazel_dep(name = "rules_mypy", version = "0.41.0")
@@ -198,11 +197,6 @@ local_path_override(
 local_path_override(
     module_name = "ducktape_haku",
     path = "haku/shared",
-)
-
-local_path_override(
-    module_name = "ducktape_manifold_mcp_server",
-    path = "third_party/manifold_mcp_server",
 )
 
 local_path_override(
