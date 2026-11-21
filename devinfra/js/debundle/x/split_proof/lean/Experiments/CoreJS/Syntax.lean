@@ -127,8 +127,18 @@ inductive Stmt where
   | throw (e : Expr)
   | tryCatch (body : Stmt) (param : Option Name) (handler : Stmt)
   | tryFinally (body : Stmt) (finalizer : Stmt)
+  /-- A statement outside the model's syntax: the world runs it (`World.talk`). `code` tells the world which one.
+  It declares `decls`, and `funs` are its function declarations, each with its `length` and whether it can be
+  constructed: the `k`-th is part `k` of the code, and is made when the program is linked. `free` are the other names of the scope around it that it can mean. The front end writes it only at the top level
+  of a module, where linking makes its bindings; elsewhere only its `var` names would be bound. -/
+  | opaque (code : Nat) (decls : List (Name × DeclKind)) (funs : List (Name × Nat × Bool)) (free : List Name)
 
 end
+
+/-- The names an opaque statement can mean in the scope around it: the ones it declares, then the others. The world
+is handed their bindings in this order. -/
+def opaqueNames (decls : List (Name × DeclKind)) (funs : List (Name × Nat × Bool)) (free : List Name) : List Name :=
+  decls.map (·.1) ++ (funs.map (·.1) ++ free)
 
 def Func.name : Func → String | .mk n .. => n
 def Func.kind : Func → FuncKind | .mk _ k .. => k
@@ -174,6 +184,7 @@ def Stmt.varNames : Stmt → List Name
   | .loop init _ _ body => init.varNames ++ body.varNames
   | .tryCatch body _ handler => body.varNames ++ handler.varNames
   | .tryFinally body finalizer => body.varNames ++ finalizer.varNames
+  | .opaque _ decls _ _ => decls.filterMap fun (x, kind) => if kind == .var then some x else none
   | _ => []
 
 def varNamesOf : List Stmt → List Name
@@ -269,6 +280,7 @@ def Stmt.free : Stmt → List Name
   | .brk | .cont => []
   | .tryCatch body param handler => body.free ++ handler.free.filter fun x => !(param == some x)
   | .tryFinally body finalizer => body.free ++ finalizer.free
+  | .opaque _ decls funs free => opaqueNames decls funs free
 
 def freeExprs : List Expr → List Name
   | [] => []

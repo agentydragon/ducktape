@@ -268,6 +268,13 @@ theorem enterBlock_congr {N N' : List Name} {env env' : Env} (ss : List Stmt) {k
         initVar_agree (h1.vars _ (List.mem_append_right _ (funDecl_name_lex (funDecl_of_mem hf)))) v
     · exact hk _ _ (h1.mono fun x hx => List.mem_append_left _ hx)
 
+/-- An opaque statement is handed the same bindings in two scopes that agree on its names. -/
+theorem opaqueCells_agree {decls : List (Name × DeclKind)} {funs : List (Name × Nat × Bool)} {free : List Name}
+    {env env' : Env} (h : Agree (opaqueNames decls funs free) env env') :
+    opaqueCells env decls funs free = opaqueCells env' decls funs free := by
+  unfold opaqueCells
+  exact List.map_congr_left fun x hx => h.vars x hx
+
 /-! ## The interpreter, rule by rule -/
 
 /-- Every function of the interpreter that takes a scope gives the same computation in two scopes that agree on the
@@ -530,6 +537,10 @@ theorem Same.stmt_succ (env env' : Env) (s : Stmt) (hN : Agree s.free env env') 
     unfold execStmt
     dsimp only
     rw [ih.stmt env env' body (hN.mono (by free_mem)), ih.stmt env env' finalizer (hN.mono (by free_mem))]
+  | «opaque» code decls funs free =>
+    unfold execStmt
+    dsimp only
+    rw [hN.this, opaqueCells_agree hN]
   | _ => unfold execStmt; same ih hN
 
 theorem Same.loop_succ (env env' : Env) (fresh : List Name) (test update : Expr) (body : Stmt)

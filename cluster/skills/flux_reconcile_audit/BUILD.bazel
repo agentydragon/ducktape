@@ -1,19 +1,36 @@
 # gazelle:ignore
 
-load("//devinfra/python:defs.bzl", "py_binary")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//skills:defs.bzl", "skill_package")
 
 package(default_visibility = ["//visibility:public"])
 
 py_binary(
     name = "audit",
+    main_module = "cluster.skills.flux_reconcile_audit.audit",
+    deps = [":audit_lib"],
+)
+
+py_library(
+    name = "audit_lib",
     srcs = ["audit.py"],
-    main = "audit.py",
     deps = [
         "//cluster/validation:flux",
         "//cluster/validation:k8s",
         "@pypi//httpx",
         "@pypi//kubernetes_asyncio",
+    ],
+)
+
+py_test(
+    name = "test_audit",
+    srcs = ["test_audit.py"],
+    deps = [
+        ":audit_lib",
+        "//:conftest",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 

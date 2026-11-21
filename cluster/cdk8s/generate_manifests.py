@@ -1097,6 +1097,7 @@ def generate_manifests(root: Path) -> None:
         write_directory(root, ollama_app_artifact, ollama_app.chart),
         external_secrets_operator_kustomization,
         kyverno_kustomization,
+        monitoring_crds_kustomization,
     )
     seaweedfs_cluster_artifact = artifact("seaweedfs-cluster", seaweedfs_cluster.OUTPUT_DIR)
     flux.flux_kustomization(

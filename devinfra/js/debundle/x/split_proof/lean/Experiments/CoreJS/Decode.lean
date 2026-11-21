@@ -230,6 +230,19 @@ def token (tag : String) (args : List Json) : D Unit := do
   | "tryFinally", [] => do
     let finalizer ← popStmt
     push (.stmt (.tryFinally (← popStmt) finalizer))
+  | "opaque", [code, decls, funs, free] => do
+    let pairs (j : Json) : D (List (Json × Json)) := do
+      (← liftM (m := Except String) j.getArr?).toList.mapM fun p => do
+        match (← liftM (m := Except String) p.getArr?).toList with
+        | [a, b] => pure (a, b)
+        | _ => fail "a pair was expected"
+    let decls ← (← pairs decls).mapM fun (x, kind) => do pure (← str x, ← declKind (← str kind))
+    let funs ← (← liftM (m := Except String) funs.getArr?).toList.mapM fun f => do
+      match (← liftM (m := Except String) f.getArr?).toList with
+      | [x, length, constructor] => pure (← str x, ← nat length, ← bool constructor)
+      | _ => fail "a function of an opaque statement is [name, length, constructor]"
+    let free ← (← liftM (m := Except String) free.getArr?).toList.mapM str
+    push (.stmt (.opaque (← nat code) decls funs free))
   | _, _ => fail s!"unknown token {tag} with {args.length} operands"
 
 /-- The statements of a module, from its tokens. -/

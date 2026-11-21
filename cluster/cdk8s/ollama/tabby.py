@@ -3,6 +3,12 @@
 from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import ConfigMap, k8s
 from constructs import Construct
+from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
+    PodMonitor,
+    PodMonitorSpec,
+    PodMonitorSpecPodMetricsEndpoints,
+    PodMonitorSpecSelector,
+)
 from python.runfiles import Runfiles
 
 from cluster.cdk8s.ollama.tabby_endpoint import MODEL_NAME, NAME, NAMESPACE, PORT, SWITCHING_SERVICE
@@ -94,7 +100,6 @@ def _deploy(scope: Construct, config: ConfigMap) -> None:
                         k8s.Container(
                             name=NAME,
                             image=_IMAGE,
-                            args=["tabbyapi_serve.py", "--host", "0.0.0.0"],
                             ports=[SERVICE.port.k8s_container_port()],
                             security_context=k8s.SecurityContext(
                                 allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
@@ -124,12 +129,6 @@ def _deploy(scope: Construct, config: ConfigMap) -> None:
                                 ],
                                 k8s.VolumeMount(
                                     name="config", mount_path="/app/config.yml", sub_path="config.yml", read_only=True
-                                ),
-                                k8s.VolumeMount(
-                                    name="config",
-                                    mount_path="/app/tabbyapi_serve.py",
-                                    sub_path="tabbyapi_serve.py",
-                                    read_only=True,
                                 ),
                                 *[
                                     k8s.VolumeMount(
@@ -181,7 +180,6 @@ def add_tabbyapi(scope: Construct) -> None:
         metadata=ApiObjectMetadata(name=f"{NAME}-config", namespace=NAMESPACE),
         data={
             "config.yml": (sources / "tabbyapi-config.yml").read_text(),
-            "tabbyapi_serve.py": (sources / "tabbyapi_serve.py").read_text(),
             "chat_template.jinja": (sources / "tabbyapi-chat-template.jinja").read_text(),
         },
     )
@@ -189,6 +187,15 @@ def add_tabbyapi(scope: Construct) -> None:
         _local_claim(scope, f"/games/llm-models/{name}", claim, capacity)
     _local_claim(scope, "/games/tabbyapi-prefix-cache", _PREFIX_CACHE, "16Gi")
     _deploy(scope, config)
+    PodMonitor(
+        scope,
+        "tabbyapi-monitor",
+        metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
+        spec=PodMonitorSpec(
+            selector=PodMonitorSpecSelector(match_labels=_PODS.selector),
+            pod_metrics_endpoints=[PodMonitorSpecPodMetricsEndpoints(port=SERVICE.port.name, path="/metrics")],
+        ),
+    )
     k8s.KubeService(
         scope,
         "tabbyapi-service",

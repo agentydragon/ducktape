@@ -570,7 +570,6 @@ def test_opentofu_workspace_takes_over_forgejo_root_after_tofu_and_preserves_sta
     assert workspace["metadata"]["annotations"]["crossplane.io/external-name"] == "default"
     assert workspace["spec"]["providerConfigRef"] == {"name": "crossplane-forgejo-agentydragon"}
     assert workspace["spec"]["managementPolicies"] == ["Observe", "Create", "Update"]
-    assert "Delete" not in workspace["spec"]["managementPolicies"]
     assert workspace["spec"]["deletionPolicy"] == "Orphan"
     assert workspace["spec"]["forProvider"]["source"] == "Inline"
     assert "remotePullPolicy" not in workspace["spec"]["forProvider"]

@@ -56,6 +56,7 @@ from cluster.cdk8s.forgejo_registry.pull_credentials import (
 )
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.platform_sessions import app as platform_sessions
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
@@ -70,7 +71,6 @@ NAMESPACE = cli_proxy_api_app.NAMESPACE  # created by CLIProxyAPI's Kustomizatio
 BEARER_SECRET_NAME = "aiquota-api-bearer"  # the SOPS-managed Secret; every mirror below copies its one key
 # The API reads its config at the Settings default; nothing sets AIQUOTA_CONFIG.
 _CONFIG_PATH: Path = Settings.model_fields["config_path"].default
-_PLATFORM_SESSIONS_URL = "http://platform-sessions.platform-sessions.svc:8080"
 _PLATFORM_SESSIONS_READ_TOKEN = "platform-sessions-aiquota-bearer"
 # The CLIProxyAPI integration keeps the Claude and Codex OAuth credentials and performs
 # authenticated usage requests.
@@ -78,8 +78,8 @@ _CONFIG = Config(
     cli_proxy_api=CLIProxyAPISettings(url=f"{cli_proxy_api_app.SERVICE.url}/v0/management"),
     claude=ClaudeSettings(enabled=True),
     codex=CodexSettings(enabled=True),
-    openai_platform=OpenAIPlatformSettings(enabled=True, url=f"{_PLATFORM_SESSIONS_URL}/proxy/openai"),
-    anthropic_platform=AnthropicPlatformSettings(enabled=True, url=f"{_PLATFORM_SESSIONS_URL}/proxy/anthropic"),
+    openai_platform=OpenAIPlatformSettings(enabled=True, url=f"{platform_sessions.SERVICE.url}/proxy/openai"),
+    anthropic_platform=AnthropicPlatformSettings(enabled=True, url=f"{platform_sessions.SERVICE.url}/proxy/anthropic"),
     zai=ZaiSettings(enabled=False),
 )
 CONFIG_CONFIG_MAP = ConfigMapArgs(

@@ -2,6 +2,7 @@ network:
   host: 0.0.0.0
   port: 5000
   disable_auth: true
+  enable_metrics: true
   allowed_origins: []
   send_tracebacks: false
 

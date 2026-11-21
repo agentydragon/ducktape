@@ -68,6 +68,8 @@ def Env.capture (env : Env) (names : List Name) : Env where
 inductive Code where
   | closure (f : Func) (env : Env) (fields : List (String × Expr))
   | host (name : String)
+  /-- Part `part` of the opaque code `code`, which the world runs; `cells` are the bindings it was handed. -/
+  | opaque (code part : Nat) (cells : List (Option Addr))
 
 structure Obj where
   proto : Option Addr
@@ -104,6 +106,48 @@ def Val.primitive? : Val → Option Primitive
   | .str s => some (.str s)
   | .obj _ | .error .. | .host _ => none
 
+/-- What the world holds of a value: an object only as its position in the list of the objects it was handed
+(`Host.handed`), so the world can name no other object. -/
+inductive WVal where
+  | prim (p : Primitive)
+  | handle (k : Nat)
+  | error (kind : ErrorKind) (msg : String)
+  | host (name : String)
+
+/-- What the model tells the world: run part `part` of the opaque code `code` (part 0 is a statement, another part a
+function the world made or a statement declared), as a call of `callee` with `this` and `args`; or how the last
+request ended. -/
+inductive Told where
+  | run (code part : Nat) (callee this : WVal) (args : List WVal) (construct : Bool)
+  | value (v : WVal)
+  | threw (v : WVal)
+  | keys (ks : List String)
+
+/-- What the world asks of the model while it runs opaque code. `readVar`, `writeVar` and `initVar` name a binding by
+its position in the names of the code (`opaqueNames`); every other request names objects by handle. -/
+inductive Request where
+  /-- The code ends with this value, or throws it. -/
+  | done (v : WVal)
+  | throw (v : WVal)
+  /-- The world does not define what the code does. -/
+  | unknown (why : String)
+  | readVar (i : Nat)
+  | writeVar (i : Nat) (v : WVal)
+  | initVar (i : Nat) (v : WVal)
+  | get (o k : WVal)
+  | set (o k v : WVal)
+  | delete (o k : WVal)
+  | has (k o : WVal)
+  /-- The names of the own properties of an object, in order. -/
+  | keys (o : WVal)
+  | call (f this : WVal) (args : List WVal)
+  | construct (f : WVal) (args : List WVal)
+  /-- A new object whose prototype is `proto`, or `Object.prototype`. -/
+  | newObject (proto : Option WVal)
+  /-- A function whose body is part `part` of the code that runs; it keeps the bindings that code was handed. -/
+  | newFunction (part : Nat) (name : String) (length : Nat) (constructor : Bool)
+  | prim (p : Prim) (args : List WVal)
+
 /-- How a call of a host function ends: with a primitive, with a thrown primitive, or with a thrown error object. -/
 inductive HostResult where
   | ret (v : Primitive)
@@ -119,6 +163,14 @@ structure World where
   σ : Type
   init : σ
   step : (fn : String) → (this : Primitive) → (args : List Primitive) → σ → HostResult × σ
+  /-- **Stage two**: opaque code, a conversation. Told what to run, or how its last request ended, the world makes its
+  next request. It sees the program's objects only through what it was handed, and its own state. -/
+  talk : Told → σ → Request × σ
+
+/-- The world's side of the state: its own state, and the objects it was handed, in the order it got them. -/
+structure Host (W : World) where
+  state : W.σ
+  handed : Array Addr
 
 structure State (W : World) where
   heap : Array (Array Obj)
@@ -128,7 +180,7 @@ structure State (W : World) where
   /-- One entry for each `console.log`. -/
   out : Array String
   /-- The state of the world. -/
-  world : W.σ
+  world : Host W
 
 /-- How a computation ends. `unknown`: it reached code the model does not define. `fuel`: the bound ran out. -/
 inductive Res (W : World) (α : Type) where
@@ -341,8 +393,8 @@ def hostCall (name : String) (this : Val) (args : List Val) : M W Val :=
   match worldArgs name this args with
   | none => unknown s!"host function {name} is called"
   | some (this, args) => fun s =>
-    let (result, world) := W.step name this args s.world
-    fromWorld { s with world } result
+    let (result, state) := W.step name this args s.world.state
+    fromWorld { s with world := { s.world with state } } result
 
 /-! ## Conversions and operators -/
 
@@ -739,5 +791,76 @@ def prim (call : Call W) (p : Prim) (args : List Val) : M W Val := do
     let k ← toKey (arg 1)
     defineOwn a k (← toDesc call (arg 2))
     pure (arg 0)
+
+/-! ## The world, stage two: opaque code
+
+The world runs opaque code as a conversation (`converse` in `Eval.lean`): it makes a request, the model carries it out
+and tells it how it ended. The model keeps the list of objects the world was handed (`Host.handed`); the world names
+an object only by its position there, so it can reach only what it was handed and what it reads from that. A request
+that throws is told to the world as a throw, which it may catch.
+-/
+
+/-- The world's name for a value. An object the world has not been handed before goes on the end of its list. -/
+def toW (v : Val) : M W WVal :=
+  match v with
+  | .obj a => fun s =>
+    match s.world.handed.findIdx? (· == a) with
+    | some k => .ok (.handle k) s
+    | none => .ok (.handle s.world.handed.size) { s with world := { s.world with handed := s.world.handed.push a } }
+  | .error kind msg => pure (.error kind msg)
+  | .host name => pure (.host name)
+  | .undef => pure (.prim .undef)
+  | .null => pure (.prim .null)
+  | .bool b => pure (.prim (.bool b))
+  | .num n => pure (.prim (.num n))
+  | .str x => pure (.prim (.str x))
+
+/-- The value the world names. -/
+def fromW : WVal → M W Val
+  | .prim p => if p.inModel then pure p.val else unknown "the world gives a string outside the Basic Multilingual Plane"
+  | .handle k => fun s =>
+    match s.world.handed[k]? with
+    | some a => .ok (.obj a) s
+    | none => .unknown "the world names an object it was not handed" s
+  | .error kind msg => pure (.error kind msg)
+  | .host name => pure (.host name)
+
+/-- One step of the world. -/
+def talk (told : Told) : M W Request := fun s =>
+  let (req, state) := W.talk told s.world.state
+  .ok req { s with world := { s.world with state } }
+
+/-- Run `m` and give back whether it threw. -/
+def attempt {α : Type} (m : M W α) : M W (Except Val α) := fun s =>
+  match m s with
+  | .ok a s' => .ok (.ok a) s'
+  | .throw v s' => .ok (.error v) s'
+  | .unknown why s' => .unknown why s'
+  | .fuel => .fuel
+
+/-- The binding at position `i` of what the code was handed. A name that the program does not declare is the host's,
+and the world holds it itself. -/
+def opaqueCell (cells : List (Option Addr)) (i : Nat) : M W Addr :=
+  match cells[i]? with
+  | some (some a) => pure a
+  | some none => unknown "the world asks for the binding of a name the program does not declare"
+  | none => unknown "the world names a binding the code was not handed"
+
+def readCell (a : Addr) : M W Val := do
+  match (← getState).cellAt a with
+  | some { value := some v, .. } => pure v
+  | _ => throwErr .reference "cannot access a binding before initialization"
+
+def writeCell (a : Addr) (v : Val) : M W Unit := do
+  match (← getState).cellAt a with
+  | some { value := some _, mutable := true } => setCell a v
+  | some { value := some _, mutable := false } => throwErr .type "assignment to constant variable"
+  | _ => throwErr .reference "cannot access a binding before initialization"
+
+/-- The names of the own properties of an object, in the order the model keeps them. -/
+def ownKeys (v : Val) : M W (List String) :=
+  match v with
+  | .obj a => do pure ((← getObj a).props.map (·.1))
+  | _ => unknown "the own keys of a value that is not an object of the program"
 
 end CoreJS
