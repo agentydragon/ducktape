@@ -9,6 +9,7 @@ publish no YAML for the CRDs their operators create at runtime.
 from __future__ import annotations
 
 import argparse
+import json
 import re
 from pathlib import Path
 from typing import Any
@@ -67,6 +68,19 @@ def wrap_schema(schema_entry: dict[str, Any], *, name: str, kind: str, version: 
     }
 
 
+def openapi_schema(document: dict[str, Any]) -> dict[str, Any]:
+    """Read the selected CRD version's schema, deriving its wire discriminators."""
+    spec = document["spec"]
+    (version,) = spec["versions"]
+    schema = version["schema"]["openAPIV3Schema"]
+    if not isinstance(schema, dict):
+        raise ValueError("openAPIV3Schema must be an object")
+    properties = schema.setdefault("properties", {})
+    for field, value in (("apiVersion", f"{spec['group']}/{version['name']}"), ("kind", spec["names"]["kind"])):
+        properties.setdefault(field, {})["const"] = value
+    return schema
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--name", required=True, help="metadata.name of the CustomResourceDefinition to extract")
@@ -94,9 +108,12 @@ def main() -> None:
         default=[],
         help="Dotted YAML path to remove from the extracted document; numeric segments index arrays.",
     )
+    parser.add_argument("--openapi-schema", action="store_true", help="Write the selected version schema as JSON")
     parser.add_argument("bundle", type=Path)
     parser.add_argument("out", type=Path)
     args = parser.parse_args()
+    if args.openapi_schema and args.version is None:
+        parser.error("--openapi-schema requires --version")
     if args.wrap_kind is not None and (args.go_key is None or args.version is None):
         parser.error("--wrap-kind requires --go-key and --version")
 
@@ -120,7 +137,10 @@ def main() -> None:
                     _remove_path(doc, path)
                 except ValueError as exc:
                     raise SystemExit(str(exc)) from exc
-            args.out.write_text(yaml.dump(doc))
+            if args.openapi_schema:
+                args.out.write_text(json.dumps(openapi_schema(doc), indent=2) + "\n")
+            else:
+                args.out.write_text(yaml.dump(doc))
             return
     raise SystemExit(f"No CustomResourceDefinition named {args.name!r} found in {args.bundle}")
 

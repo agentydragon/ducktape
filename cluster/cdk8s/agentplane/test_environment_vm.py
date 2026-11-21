@@ -57,7 +57,7 @@ def _environment_vm_manifests(
             "layout": {"type": "DirectoryTree"},
         },
         workspace_volume=environment_sandbox.workspace_volume_spec(
-            {"claim": {"storageClassName": "test-storage"}}, layout_type="BlockFilesystem"
+            {"storageClassName": "test-storage"}, layout_type="BlockFilesystem"
         ),
     )
     docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))

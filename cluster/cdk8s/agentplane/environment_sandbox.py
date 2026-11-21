@@ -63,6 +63,7 @@ from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy, isolate_ingress
 from cluster.cdk8s.service_ref import Pods
 from cluster.cdk8s.settings_file import SettingsFile
+from cluster.crd_wire.sandbox_template import Layout, StateVolume
 
 # The Pod name label selects every Environment Runtime workload for the network fence.
 NAME = "environment-tools"
@@ -140,16 +141,16 @@ def pods(namespace: str) -> Pods:
 
 
 def workspace_volume_spec(
-    state_volume: dict[str, Any],
+    state_claim: dict[str, Any],
     *,
     layout_type: Literal["DirectoryTree", "RawDiskImage", "BlockFilesystem"],
     storage_class: str | None = None,
 ) -> dict[str, Any]:
     """The workspace claim follows the state claim, with layout-derived volume mode and optional class."""
-    layout: dict[str, str] = {"type": layout_type}
+    layout: Layout = {"type": layout_type}
     if layout_type != "DirectoryTree":
         layout["filesystem"] = "ext4"
-    claim = {**state_volume["claim"], "volumeMode": "Block" if layout_type == "BlockFilesystem" else "Filesystem"}
+    claim = {**state_claim, "volumeMode": "Block" if layout_type == "BlockFilesystem" else "Filesystem"}
     if storage_class is not None:
         if not storage_class:
             raise ValueError("storage_class cannot be empty")
@@ -199,8 +200,7 @@ class EnvironmentSandboxTemplate(Construct):
         self.agent_cli_env = agent_cli_environment(service_urls(env))
         if not env.isolated_codex_executor and executor_resources is not None:
             raise ValueError("executor_resources cannot be set when isolated Codex execution is disabled")
-        # The SandboxTemplate's spec: its `pod`, and the `stateVolume` the VM template shares.
-        self.spec = self._add_sandbox_template()
+        self.state_volume = self._add_sandbox_template()
 
     def _execution_mounts(self) -> list[k8s.VolumeMount]:
         return [
@@ -386,7 +386,7 @@ class EnvironmentSandboxTemplate(Construct):
             ),
         )
 
-    def _add_sandbox_template(self) -> dict[str, Any]:
+    def _add_sandbox_template(self) -> StateVolume:
         sidecar_settings = self._add_sidecar_settings(name=f"{self.name}-egress-sidecar")
         pod = sandbox_pod.render_pod_template(
             ENVIRONMENT_RUNTIME_LABELS,
@@ -422,7 +422,7 @@ class EnvironmentSandboxTemplate(Construct):
                 fs_group_change_policy="OnRootMismatch",
             ),
         )
-        state_volume = {
+        state_volume: StateVolume = {
             "name": _STATE_VOLUME_NAME,
             "layout": {"type": "DirectoryTree"},
             "claim": {
@@ -436,7 +436,7 @@ class EnvironmentSandboxTemplate(Construct):
         spec = {
             "pod": pod,
             "stateVolume": state_volume,
-            "workspaceVolume": workspace_volume_spec(state_volume, layout_type="DirectoryTree"),
+            "workspaceVolume": workspace_volume_spec(state_volume["claim"], layout_type="DirectoryTree"),
         }
         ApiObject(
             self,
@@ -445,7 +445,7 @@ class EnvironmentSandboxTemplate(Construct):
             kind="SandboxTemplate",
             metadata=ApiObjectMetadata(name=self.name, namespace=self.env.namespace),
         ).add_json_patch(JsonPatch.add("/spec", spec))
-        return spec
+        return state_volume
 
     def add_platform_resources(self, scope: Construct) -> None:
         """Add the network and platform-route fences for every environment runtime Pod."""

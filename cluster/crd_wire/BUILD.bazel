@@ -1,0 +1,100 @@
+# gazelle:ignore
+
+load("@aspect_bazel_lib//lib:run_binary.bzl", "run_binary")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_binary(
+    name = "datamodel_codegen",
+    main_module = "datamodel_code_generator.__main__",
+    deps = ["@pypi//datamodel_code_generator"],
+)
+
+genrule(
+    name = "artifact_generator_schema",
+    srcs = ["//cluster/k8s/flux/flux-system:gotk-components.yaml"],
+    outs = ["artifact_generator.json"],
+    cmd = "$(execpath //devinfra/k8s:extract_crd_bin) --openapi-schema --name artifactgenerators.source.extensions.fluxcd.io --version v1beta1 $(location //cluster/k8s/flux/flux-system:gotk-components.yaml) $@",
+    tools = ["//devinfra/k8s:extract_crd_bin"],
+)
+
+genrule(
+    name = "sandbox_template_schema",
+    srcs = ["//agentplane/crds:manifests/crd-sandboxtemplates.yaml"],
+    outs = ["sandbox_template.json"],
+    cmd = "$(execpath //devinfra/k8s:extract_crd_bin) --openapi-schema --name sandboxtemplates.agentplane.allegedly.works --version v1alpha1 $(location //agentplane/crds:manifests/crd-sandboxtemplates.yaml) $@",
+    tools = ["//devinfra/k8s:extract_crd_bin"],
+)
+
+[
+    run_binary(
+        name = name + "_codegen",
+        srcs = [":" + name + "_schema"],
+        outs = [name + ".py"],
+        args = [
+            "--input",
+            "$(location :" + name + "_schema)",
+            "--output",
+            "$(location " + name + ".py)",
+            "--class-name",
+            kind,
+            "--input-file-type",
+            "jsonschema",
+            "--output-model-type",
+            "typing.TypedDict",
+            "--target-python-version",
+            "3.14",
+            "--strict-nullable",
+            "--read-kubernetes-extensions",
+            "--type-mappings",
+            "string+duration=string",
+            "--formatters",
+            "builtin",
+            "--disable-timestamp",
+        ],
+        tool = ":datamodel_codegen",
+    )
+    for name, kind in [
+        ("artifact_generator", "ArtifactGenerator"),
+        ("sandbox_template", "SandboxTemplate"),
+    ]
+]
+
+py_library(
+    name = "artifact_generator_wire",
+    srcs = [":artifact_generator_codegen"],
+)
+
+py_library(
+    name = "sandbox_template_wire",
+    srcs = [":sandbox_template_codegen"],
+    visibility = [
+        "//agentplane/system_tests/deployment:__pkg__",
+        "//cluster/cdk8s/agentplane:__pkg__",
+    ],
+)
+
+py_test(
+    name = "test_wire",
+    srcs = ["test_wire.py"],
+    data = [
+        ":artifact_generator_schema",
+        ":sandbox_template_schema",
+        "//cluster:generated/artifact-generators/artifact-generators.k8s.yaml",
+        "//cluster/k8s/agentplane-staging:agentplane-staging.k8s.yaml",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":artifact_generator_wire",
+        ":sandbox_template_wire",
+        "//:conftest",
+        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
+        "@pypi//jsonschema",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+        "@pypi//referencing",  # imported by jsonschema type stubs
+        "@rules_python//python/runfiles",
+    ],
+)
