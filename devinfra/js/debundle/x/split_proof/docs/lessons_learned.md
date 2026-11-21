@@ -37,7 +37,7 @@ The checker reads one footprint per unit: what it declares, reads, may write, an
 
 ## What the large bundle says
 
-Numbers are for one production bundle of 9,707 units and its reviewed tree of 2,793 modules, under premise P3. The evidence is in the private repository.
+Numbers are for one production bundle of 9,707 units and its reviewed tree of 2,793 modules, under premise P3, with the analysis as it was before the fixes for F1 to F6. The last entry says what the fixes changed. The evidence is in the private repository.
 
 - **Unknown code dominates.** 1,584 units touch the world. 1,558 of them run unknown code, and each is taken to write about 7,800 names: every import and every name that escapes anywhere in the bundle. 98.5% of the 670,997 order obligations involve one such unit.
 - **A few imports cause most of it.** 35 vendor imports account for 978 of the 1,584 units. About 450 units are decorator applications.
@@ -51,6 +51,8 @@ Numbers are for one production bundle of 9,707 units and its reviewed tree of 2,
 - **A vendor table alone changes nothing at module level.** With 40 imports assumed harmless, the obligations halve, and the count of modules that peel alone stays at 873. A unit unlocks only when every call in it is known, and the unknown-code units that remain still write every escaped name.
 - **The largest lever is unproved.** Not counting names declared later as written by earlier unknown code would lift 873 to about 1,624. This is a candidate rule, and the count is optimistic: a name bound later to an object that escaped earlier must stay in, and the estimate drops it. A prototype of the sound version did not finish on the bundle in 15 minutes.
 - **Library code is out of reach.** On the 20,032-unit vendor chunk `lower` aborts with a stack overflow. In the first 3,000 units, one store to `window.Promise` makes every unit that is not a function declaration touch the world.
+
+- **Fixing six wrong rules cost little on the large bundle.** With the fixes for F1 to F6, 1,653 units touch the world (1,584 before) and 1,634 of them run unknown code (1,558). 9,633 of the 9,709 footprints are the same, and no unit stopped being an effect. The new effects are operations on a value the world made: `const a = imported.name` is unknown code now, since the import may be a `Proxy` or have a getter. At module level almost nothing moved: 886 modules still peel together, and 2,366 fit whole in bundle order (2,367), which `lowersplit` accepts. The obligation counts above were not measured again.
 
 ## What the inputs require
 
