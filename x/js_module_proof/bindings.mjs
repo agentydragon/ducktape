@@ -1454,7 +1454,8 @@ function generateFiles(source, spec, names) {
               returnBranch(terminal.alternate);
             const isTryFinally = (statement) =>
               statement.type === "TryStatement" &&
-              statement.handler === null &&
+              (statement.handler === null ||
+                (statement.handler.param === null && statement.handler.body.body.every(isWrite))) &&
               statement.finalizer?.type === "BlockStatement" &&
               statement.block.body.every(
                 (item, index) =>
@@ -1554,6 +1555,7 @@ function generateFiles(source, spec, names) {
                   if (part.type === "ThrowStatement") visit(part.argument);
                   else visitWrite(part);
                 });
+                if (item.handler) item.handler.body.body.forEach((write) => visitWrite(write));
                 item.finalizer.body.forEach((write) => visitWrite(write));
               } else if (item.type === "ForStatement") {
                 const loopName = item.init.declarations[0].id.name;

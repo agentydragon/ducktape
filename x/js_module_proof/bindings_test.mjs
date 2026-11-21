@@ -947,7 +947,7 @@ if (runSection(1)) {
   assert.ok(["proved under assumptions", "unknown"].includes(shadowResult.result), JSON.stringify(shadowResult));
 }
 
-if (runSection(1)) {
+if (runSection(6)) {
   const finallySource = join(root, "finally-alias-source.mjs");
   const finallySpec = join(root, "finally-alias-spec.json");
   const finallyOut = join(root, "finally-alias-out");
@@ -1013,4 +1013,26 @@ if (runSection(1)) {
   const throwRedirect = cli("validate", throwSource, finallySpec, throwOut).value;
   assert.equal(throwRedirect.result, "unsafe", JSON.stringify(throwRedirect));
   assert.equal(observedThrow(join(throwOut, "entry.mjs")), 5);
+
+  const catchSource = join(root, "catch-finally-alias-source.mjs");
+  const catchOut = join(root, "catch-finally-alias-out");
+  await writeFile(
+    catchSource,
+    `let value = 3;\nlet other = 5;\nfunction compute(p) { let local = p; try { throw value; } catch { local += value; } finally { local += value; } return local; }\nexport { compute };\n`
+  );
+  assert.equal(cli("generate", catchSource, finallySpec, catchOut).value.result, "generated");
+  const catchState = join(catchOut, "state.mjs");
+  await writeFile(catchState, (await readFile(catchState, "utf8")) + "export { other };\n");
+  const catchLogic = join(catchOut, "logic.mjs");
+  const catchText = await readFile(catchLogic, "utf8");
+  const catchResult = cli("validate", catchSource, finallySpec, catchOut).value;
+  assert.equal(catchResult.result, "proved under assumptions", JSON.stringify(catchResult));
+  assert.deepEqual(execute(catchSource, calls), { events: [], results: [6, 10] });
+  assert.deepEqual(execute(join(catchOut, "entry.mjs"), calls), { events: [], results: [6, 10] });
+  assert.match(catchText, /value as __split_local_0/);
+  await writeFile(catchLogic, catchText.replace("value as __split_local_0", "other as __split_local_0"));
+  const catchRedirect = cli("validate", catchSource, finallySpec, catchOut).value;
+  assert.equal(catchRedirect.result, "unsafe", JSON.stringify(catchRedirect));
+  assert.deepEqual(execute(catchSource, catchRedirect.calls), { events: [], results: [6] });
+  assert.deepEqual(execute(join(catchOut, "entry.mjs"), catchRedirect.calls), { events: [], results: [10] });
 }
