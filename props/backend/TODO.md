@@ -11,7 +11,7 @@
 
 - [ ] **Monitor core/API schema drift**
   - Establish pattern for when API schemas should diverge from domain models
-  - Currently `LineRange` is shared between core and API - watch for divergence
+  - Currently `LocationAnchor` (`props/db/snapshots.py`) is shared between DB storage and API responses - watch for divergence
 
 ## Active Features
 
