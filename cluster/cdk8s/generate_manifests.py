@@ -89,7 +89,6 @@ from cluster.cdk8s.agentplane import (
     staging,
     staging_vpa,
 )
-from cluster.cdk8s.agents import flux_kustomizations as agents_flux_kustomizations
 from cluster.cdk8s.artifact_generators import (
     artifact,
     artifact_generators as artifact_generators_factory,
@@ -1723,7 +1722,7 @@ def generate_manifests(root: Path) -> None:
         depends_on=flux.flux_kustomization_depends_on_many(external_secrets_operator_kustomization),
         description="Marks roaming laptop nodes out of service while their kubelet is silent, so offline laptops stop blocking DaemonSet rollouts, Helm waits and pod alerts.",
     )
-    agents_flux_kustomizations.plaid_spend_policy(flux_chart)
+    ducktape_flux.plaid_spend_policy(flux_chart)
     plaid_mcp_artifact = artifact("plaid-mcp", plaid_mcp_component.OUTPUT_DIR)
     plaid_mcp_directory = plaid_mcp_component.write_directory(root, plaid_mcp_artifact)
     plaid_mcp_kustomization = plaid_mcp_component.plaid_mcp(
