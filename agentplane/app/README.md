@@ -382,12 +382,12 @@ clears the token and rebuilds the inventory from a new snapshot; reloading the p
 empty. Disconnection keeps the previous view with stale health. Tokens advance after applying frames.
 
 Dispatcher records alone determine list membership, newest-first order and Environment grouping.
-The browser joins paged App metadata for titles and archived state and batched History summaries
+The browser joins paged App metadata for titles and archived state and History summaries
 for visible rows. History-only metadata cannot add a Session to the list. Search, archive counts
 and pagination apply to Dispatcher members; the open Session stays pinned outside the visible page.
 A missing History summary yields a row showing Dispatcher materialization, with no invented
-running/idle state. History summary and App metadata watches invalidate their joins; inventory
-upserts refresh them directly. There is no list polling loop. History content continues through
+running/idle state. App metadata watch frames reload metadata; summary frames and inventory
+upserts reselect the window. There is no list polling loop. History content continues through
 its existing Electric shapes. The App metadata list and watch expose only App-held titles and
 archived state, keyed by Session ID; metadata creation time orders metadata pages. They do not read
 History, filter by Environment, synthesize membership, or relay History notifications. Browsers get
