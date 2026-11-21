@@ -310,8 +310,6 @@ def _create_grader_tools(grader_run_id: UUID, snapshot_slug: SnapshotSlug, state
             logger.debug("Spurious wake — no pending work, going back to sleep")
         return "Woke up — new work arrived."
 
-    # --- Clustering tools ---
-
     def list_clusters(args: ListClustersArgs) -> list[ClusterSummary]:
         """List all clusters for this snapshot."""
         with db.session() as session:

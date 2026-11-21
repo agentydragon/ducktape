@@ -36,10 +36,6 @@ py_library(
     ],
 )
 
-# =============================================================================
-# In-container agent main entry point (snapshot grader)
-# =============================================================================
-
 py_library(
     name = "main",
     srcs = ["main.py"],
@@ -111,10 +107,6 @@ py_python3_symlink(
     binary_name = "grader_bin",
 )
 
-# =============================================================================
-# Library targets
-# =============================================================================
-
 py_library(
     name = "drift_handler",
     srcs = ["drift_handler.py"],
@@ -139,10 +131,6 @@ py_library(
         "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
     ],
 )
-
-# =============================================================================
-# Tests
-# =============================================================================
 
 py_test(
     name = "test_notification_middleware",
@@ -308,10 +296,6 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
-
-# =============================================================================
-# Container image (snapshot grader)
-# =============================================================================
 
 oci_image(
     name = "image",
