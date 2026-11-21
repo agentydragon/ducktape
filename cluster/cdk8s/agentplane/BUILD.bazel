@@ -325,8 +325,7 @@ py_library(
     ],
 )
 
-# The catalog Codex ships with, for the pinned Codex (the Bazel test pin, not the runner image's nixpkgs
-# `codex`); `codex_models` takes the entries of ChatGPT routes from it, and runner tests serve its code-mode ones.
+# Native tests use their pinned harness's own model catalog.
 genrule(
     name = "codex_upstream_models",
     outs = ["codex_upstream_models.json"],
@@ -335,12 +334,20 @@ genrule(
     visibility = ["//agentplane/native/codex/testing:__pkg__"],
 )
 
+# New served model slugs must not force a native app-server protocol upgrade.
+genrule(
+    name = "codex_deployment_models",
+    srcs = ["@codex_model_catalog//file"],
+    outs = ["codex_deployment_models.json"],
+    cmd = 'cp $(location @codex_model_catalog//file) "$@"',
+)
+
 py_library(
     name = "codex_models",
     srcs = ["codex_models.py"],
     data = [
         "codex_base_instructions.txt",
-        ":codex_upstream_models",
+        ":codex_deployment_models",
     ],
     deps = [
         "//cluster/cdk8s/agentplane:model_selections",

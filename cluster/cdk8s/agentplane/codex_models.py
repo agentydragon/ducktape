@@ -9,7 +9,7 @@ from python.runfiles import Runfiles
 from cluster.cdk8s.agentplane.model_selections import RUNNER_CONTEXT_OVERRIDES
 from model_catalog.catalog import Provider, Route
 
-_UPSTREAM_MODELS = "ducktape/cluster/cdk8s/agentplane/codex_upstream_models.json"
+_UPSTREAM_MODELS = "ducktape/cluster/cdk8s/agentplane/codex_deployment_models.json"
 # Codex's default prompt (`models-manager/prompt.md`, identical in 0.157.0 and 0.163.0). Codex refuses a
 # catalog entry that carries no instructions, and uses this text for a model it has no entry for.
 _BASE_INSTRUCTIONS = "ducktape/cluster/cdk8s/agentplane/codex_base_instructions.txt"
@@ -18,8 +18,7 @@ _BASE_INSTRUCTIONS = "ducktape/cluster/cdk8s/agentplane/codex_base_instructions.
 def codex_catalog(routes: Sequence[Route]) -> str | None:
     """Entries for the routes that need one, or None when none does.
 
-    A ChatGPT route serves an OpenAI model, so its entry is the upstream one from the pinned Codex. Any other
-    route gets an entry only where `RUNNER_CONTEXT_OVERRIDES` sets its window. A route without an entry keeps
+    A ChatGPT route uses the separately pinned upstream model catalog. Any other route gets an entry only where `RUNNER_CONTEXT_OVERRIDES` sets its window. A route without an entry keeps
     the metadata Codex falls back to for an unknown slug.
     """
     root = Runfiles.CreateOrRaise().root()
@@ -28,7 +27,7 @@ def codex_catalog(routes: Sequence[Route]) -> str | None:
     for route in sorted(routes, key=lambda route: route.id):
         if route.upstream.provider is Provider.CHATGPT:
             if (entry := upstream.get(route.model.id)) is None:
-                raise ValueError(f"The pinned Codex has no bundled entry for {route.model.id=}")
+                raise ValueError(f"The pinned deployment catalog has no entry for {route.model.id=}")
             entries.append({**entry, "slug": route.id})
         elif (window := RUNNER_CONTEXT_OVERRIDES.get(route)) is not None:
             instructions = (root / _BASE_INSTRUCTIONS).read_text()
