@@ -1427,11 +1427,6 @@ export async function validateBindings(sourcePath, specPath, out) {
     return { result: "unknown", reason: "scoped output function execution is not modeled" };
   if (actual.some((module, i) => names[i] !== spec.entry && module.mappings.some((item) => item.local !== item.public)))
     return { result: "unknown", reason: "aliases outside the entry module are unsupported" };
-  if (
-    source.mappings.some((item) => item.local !== item.public) &&
-    source.statements.some((item) => ["capturedFactory", "capturedClosure", "capturedAlias"].includes(item.ast.kind))
-  )
-    return { result: "unknown", reason: "aliased captured exports are not yet modeled" };
   const terms = actual.map((module, i) => leanModule(module, spec.modules[names[i]].statements));
   const leanMappings = (mappings) =>
     list(mappings.map(({ local, public: publicName }) => `(${str(local)}, ${str(publicName)})`));
@@ -1472,7 +1467,7 @@ theorem binding_throw_values (calls : List (String × List Nat)) : ((sourceBindi
     }
     return null;
   };
-  const exportRoots = source.exports.map(closureRoot);
+  const exportRoots = source.mappings.map((mapping) => closureRoot(mapping.local));
   const directCapturedExports = [...new Set(exportRoots.filter((root) => root !== null))];
   const twoCaptured =
     exportRoots.every((root) => root !== null) &&
@@ -1491,9 +1486,9 @@ theorem binding_throw_values (calls : List (String × List Nat)) : ((sourceBindi
     "(namespacedOutputDefinitions binding_output_key_names bindingModules)",
     directCapturedExports[1]
   );
-  const pairedTableProof = source.exports.reduceRight(
-    (tail, name, index) =>
-      `(.cons ${str(name)} (.${exportRoots[index] === directCapturedExports[0] ? "first" : "second"} _ _) ${tail})`,
+  const pairedTableProof = source.mappings.reduceRight(
+    (tail, mapping, index) =>
+      `(.cons ${str(mapping.public)} (.${exportRoots[index] === directCapturedExports[0] ? "first" : "second"} _ _) ${tail})`,
     ".nil"
   );
   const outputCaptureNames = source.statements.flatMap((item) =>
@@ -1508,9 +1503,9 @@ theorem binding_throw_values (calls : List (String × List Nat)) : ((sourceBindi
   );
   const membershipProof = (index) =>
     Array.from({ length: index }).reduce((result) => `(.tail _ ${result})`, "(.head _)");
-  const manyTableProof = source.exports.reduceRight(
-    (tail, name, index) =>
-      `(.cons ${str(name)} (.captured _ _ _ _ ${membershipProof(directCapturedExports.indexOf(exportRoots[index]))}) ${tail})`,
+  const manyTableProof = source.mappings.reduceRight(
+    (tail, mapping, index) =>
+      `(.cons ${str(mapping.public)} (.captured _ _ _ _ ${membershipProof(directCapturedExports.indexOf(exportRoots[index]))}) ${tail})`,
     ".nil"
   );
   const manyPresence = [...manySourceEnvs, ...manyOutputEnvs].map((env) => `${env}.isSome = true`).join(" ∧ ");
@@ -1523,12 +1518,12 @@ def binding_output_first := ${outputFirstEnv}.getD []
 def binding_output_second := ${outputSecondEnv}.getD []
 def binding_source_state := (sourceBindingState bindingSource).getD (⟨[], [], [], none, [], none, []⟩ : ExecutionState Unit)
 def binding_output_state := (namespacedOutputBindingState binding_output_key_names bindingSource bindingModules bindingEntry).getD (⟨[], [], [], none, [], none, []⟩ : ExecutionState Unit)
-def binding_source_table := (publicCallableTable bindingSource bindingExports).getD []
-def binding_output_table := (publicCallableTable (namespacedOutputDefinitions binding_output_key_names bindingModules) bindingExports).getD []
+def binding_source_table := ((publicCallableTable bindingSource bindingExports).bind (fun table => aliasPublicTable table bindingPublicMappings)).getD []
+def binding_output_table := ((publicCallableTable (namespacedOutputDefinitions binding_output_key_names bindingModules) bindingExports).bind (fun table => aliasPublicTable table bindingPublicMappings)).getD []
 theorem binding_namespaced_output_ready : (namespacedOutputBindingState binding_output_key_names bindingSource bindingModules bindingEntry).isSome = true := by decide
 theorem binding_captured_tables_present :
-    (publicCallableTable bindingSource bindingExports).isSome = true ∧
-    (publicCallableTable (namespacedOutputDefinitions binding_output_key_names bindingModules) bindingExports).isSome = true := by decide
+    ((publicCallableTable bindingSource bindingExports).bind (fun table => aliasPublicTable table bindingPublicMappings)).isSome = true ∧
+    ((publicCallableTable (namespacedOutputDefinitions binding_output_key_names bindingModules) bindingExports).bind (fun table => aliasPublicTable table bindingPublicMappings)).isSome = true := by decide
 theorem binding_captured_environments_present :
     ${sourceFirstEnv}.isSome = true ∧
     ${sourceSecondEnv}.isSome = true ∧
@@ -1626,11 +1621,11 @@ def binding_output_key_names := ${list(outputCaptureNames)}
 def binding_capture_pairs : List CapturePair := ${list(manyPairs)}
 def binding_source_state := (sourceBindingState bindingSource).getD (⟨[], [], [], none, [], none, []⟩ : ExecutionState Unit)
 def binding_output_state := (namespacedOutputBindingState binding_output_key_names bindingSource bindingModules bindingEntry).getD (⟨[], [], [], none, [], none, []⟩ : ExecutionState Unit)
-def binding_source_table := (publicCallableTable bindingSource bindingExports).getD []
-def binding_output_table := (publicCallableTable (namespacedOutputDefinitions binding_output_key_names bindingModules) bindingExports).getD []
+def binding_source_table := ((publicCallableTable bindingSource bindingExports).bind (fun table => aliasPublicTable table bindingPublicMappings)).getD []
+def binding_output_table := ((publicCallableTable (namespacedOutputDefinitions binding_output_key_names bindingModules) bindingExports).bind (fun table => aliasPublicTable table bindingPublicMappings)).getD []
 theorem binding_namespaced_output_ready : (namespacedOutputBindingState binding_output_key_names bindingSource bindingModules bindingEntry).isSome = true := by decide
-theorem binding_captured_tables_present : (publicCallableTable bindingSource bindingExports).isSome = true ∧
-  (publicCallableTable (namespacedOutputDefinitions binding_output_key_names bindingModules) bindingExports).isSome = true := by decide
+theorem binding_captured_tables_present : ((publicCallableTable bindingSource bindingExports).bind (fun table => aliasPublicTable table bindingPublicMappings)).isSome = true ∧
+  ((publicCallableTable (namespacedOutputDefinitions binding_output_key_names bindingModules) bindingExports).bind (fun table => aliasPublicTable table bindingPublicMappings)).isSome = true := by decide
 theorem binding_captured_environments_present : ${manyPresence} := by decide
 theorem binding_capture_pairs_unique : capturePairsUnique binding_capture_pairs := by decide
 theorem binding_capture_pairs_disjoint : capturePairsDisjoint binding_capture_pairs := by decide

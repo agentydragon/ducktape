@@ -1207,6 +1207,61 @@ export { first as a, second as b };
   assert.notDeepEqual(execute(source, unsafe.calls), execute(entry, unsafe.calls));
 }
 
+if (shard === 2) {
+  const source = join(root, "alias-captured-cell.mjs");
+  const spec = join(root, "alias-captured-cell.json");
+  const out = join(root, "alias-captured-cell-out");
+  await writeFile(
+    source,
+    `function make(start) { let value = start; return (step) => { value += step; return value; }; }
+const counter = make(1);
+export { counter as first, counter as second };
+`
+  );
+  await writeFile(
+    spec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0, 1] },
+        "entry.mjs": { imports: ["state.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", source, spec, out).result, "generated");
+  const proof = cli("validate", source, spec, out);
+  assert.equal(proof.result, "proved under assumptions", JSON.stringify(proof));
+  const calls = [
+    { name: "first", args: [1] },
+    { name: "second", args: [2] },
+    { name: "first", args: [3] },
+  ];
+  const trace = execute(source, calls);
+  assert.deepEqual(trace.results, [{ value: 2 }, { value: 4 }, { value: 7 }]);
+  assert.deepEqual(trace, execute(join(out, "entry.mjs"), calls));
+  const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
+    encoding: "utf8",
+    input:
+      models +
+      proof.certificate +
+      `
+theorem alias_captured_cell :
+  (runArgumentCalls binding_source_table binding_source_state [("first", [1]), ("second", [2]), ("first", [3])]).map
+    (fun state => state.returns) = some [some 2, some 4, some 7] := by decide
+#print axioms alias_captured_cell
+`,
+  });
+  assert.equal(replay.status, 0, replay.stdout + replay.stderr);
+  assert.match(replay.stdout, /'alias_captured_cell' does not depend on any axioms/);
+  assert.match(replay.stdout, /'binding_captured_observations' does not depend on any axioms/);
+  const state = join(out, "state.mjs");
+  await writeFile(state, (await readFile(state, "utf8")).replace("value += step", "value += 1"));
+  const unsafe = cli("validate", source, spec, out);
+  assert.equal(unsafe.result, "unsafe", JSON.stringify(unsafe));
+  assert.notDeepEqual(execute(source, unsafe.calls), execute(join(out, "entry.mjs"), unsafe.calls));
+}
+
 if (shard === 14) {
   const logicalSource = join(root, "logical-values.mjs");
   const logicalSpec = join(root, "logical-values.json");

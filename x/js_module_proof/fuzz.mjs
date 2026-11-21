@@ -578,6 +578,8 @@ function capturedCase(seed, index) {
   alias2.kind = "const";
   const definitions = [...closures, alias, alias2];
   const names = [...closures.map((_, i) => `closure${i}`), "alias", "alias2"];
+  const renamePublic = index % 256 === 28;
+  const publicNames = names.map((name) => (renamePublic && name === "closure0" ? "public_closure0" : name));
   const ast = {
     type: "Program",
     sourceType: "module",
@@ -589,7 +591,12 @@ function capturedCase(seed, index) {
       ...definitions,
       {
         type: "ExportNamedDeclaration",
-        specifiers: names.map((name) => ({ type: "ExportSpecifier", local: id(name), exported: id(name) })),
+        specifiers: [
+          ...names.map((name, i) => ({ type: "ExportSpecifier", local: id(name), exported: id(publicNames[i]) })),
+          ...(renamePublic
+            ? [{ type: "ExportSpecifier", local: id("closure0"), exported: id("second_closure0") }]
+            : []),
+        ],
       },
     ],
   };
@@ -610,7 +617,8 @@ function capturedCase(seed, index) {
           "closures.mjs": { imports: ["state.mjs"], statements: definitions.map((_, i) => i + 2) },
           "entry.mjs": { imports: ["closures.mjs"], statements: [] },
         };
-  const calls = [...names, ...names.slice().reverse()].map((name) => ({ name, args: [1 + rand(5)] }));
+  const callableNames = renamePublic ? [...publicNames, "second_closure0"] : publicNames;
+  const calls = [...callableNames, ...callableNames.slice().reverse()].map((name) => ({ name, args: [1 + rand(5)] }));
   return {
     ast,
     source: print(ast),
