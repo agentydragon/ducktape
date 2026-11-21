@@ -1,6 +1,6 @@
-"""The reference docs every debundle skill ships."""
+"""The `debundle_skill` macro and the reference docs every debundle skill ships."""
 
-load("//skills:defs.bzl", "skill_mapping")
+load("//skills:defs.bzl", "skill_mapping", "skill_package")
 
 # Mirrors the source layout (README/SPEC at the crate root, docs/ below it) so the
 # docs' relative links resolve inside the installed skill; each skill's archive
@@ -103,3 +103,15 @@ DEBUNDLE_REFERENCES = [
         prefix = "references/perf",
     ),
 ]
+
+def debundle_skill(name):
+    """`skill_package` for a debundle skill: its `SKILL.md` plus `DEBUNDLE_REFERENCES`."""
+    skill_package(
+        name = name,
+        contents = [
+            skill_mapping(
+                srcs = ["SKILL.md"],
+                preserve_paths = True,
+            ),
+        ] + DEBUNDLE_REFERENCES,
+    )
