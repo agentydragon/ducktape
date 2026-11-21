@@ -1,6 +1,6 @@
 # Evaluate BuildBuddy cache proxies for KVM workers
 
-Deferred on 20 November 2026. [Issue #18365](https://github.com/agentydragon/ducktape/issues/18365) tracks the experiment and placement decision. The first trial uses an isolated pool with manual test actions. Required CI keeps its current route during the trial.
+Deferred on 20 November 2026. [Issue #18365](https://github.com/agentydragon/ducktape/issues/18365) tracks the experiment and placement decision. The first trial uses an isolated pool with manual test actions. Required CI keeps its current route during the trial. [Manual shared-proxy trial](../kvm/x/shared_cache_canary/README.md).
 
 ## Evidence and decision
 
