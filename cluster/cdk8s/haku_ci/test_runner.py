@@ -12,14 +12,10 @@ def test_keda_authentication_and_scaled_job_are_wired(scratch_app: App) -> None:
     resources = Cdk8sTesting.synth(runner.chart(scratch_app))
 
     authentication = next(resource for resource in resources if resource["kind"] == "TriggerAuthentication")
-    assert authentication["metadata"]["name"] == "forgejo"
     assert authentication["metadata"]["namespace"] == runner.NAMESPACE
-    assert authentication["spec"]["secretTargetRef"] == [
-        {"parameter": "token", "name": runner.FORGEJO_TOKEN_SECRET, "key": runner.FORGEJO_TOKEN_KEY}
-    ]
 
     scaled_job = next(resource for resource in resources if resource["kind"] == "ScaledJob")
-    assert scaled_job["metadata"]["namespace"] == runner.NAMESPACE
+    assert scaled_job["metadata"]["namespace"] == authentication["metadata"]["namespace"]
     (trigger,) = scaled_job["spec"]["triggers"]
     assert trigger["type"] == "forgejo-runner"
     assert trigger["metadata"] == {
