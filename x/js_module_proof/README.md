@@ -180,8 +180,10 @@ redeclare parameters. Nested or later function-scoped `var` declarations remain
 unsupported.
 Discarded string, number, boolean and null literals are modeled as no-ops.
 The same holds for `void`, `!`, and `typeof` applied directly to those literals.
-Direct `globalThis.record` calls with printable ASCII string literals produce
-string observations; initialization-order counterexamples include those strings.
+Direct `globalThis.record` calls with well-formed Unicode string literals made
+of letters, marks, numbers, punctuation, symbols and spaces produce string
+observations; initialization-order counterexamples include those strings.
+Control and format characters and unpaired surrogates remain unsupported.
 Calls with boolean, null, or nonnegative safe-integer literals also produce
 observations and can appear in initialization-order witnesses.
 `globalThis.record(void 0)` and `void` of another primitive literal record

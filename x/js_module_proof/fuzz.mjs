@@ -1172,7 +1172,7 @@ export function makeComposedCase(seed, index) {
     : hasDiscardedLiteral
       ? [
           expr(discardedForms[Math.floor(index / 13) % discardedForms.length]),
-          recordLiteral(["start", 'quote "value"', "slash \\ path", ""][Math.floor(index / 13) % 4]),
+          recordLiteral(["start", 'quote "value"', "slash \\ path", "é 🙂"][Math.floor(index / 13) % 4]),
           recordLiteral([0, true, false, null][Math.floor(index / 13) % 4]),
           recordUndefined(),
         ]

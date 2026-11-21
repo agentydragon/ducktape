@@ -19,6 +19,8 @@ const primitiveLiteral = (node) =>
   !node.regex &&
   !node.bigint &&
   (node.value === null || ["string", "boolean", "number"].includes(typeof node.value));
+const supportedText = (value) =>
+  typeof value === "string" && value.isWellFormed() && !/[^\p{L}\p{M}\p{N}\p{P}\p{S}\p{Zs}]/u.test(value);
 const list = (values) => `[${values.join(", ")}]`;
 const str = JSON.stringify;
 
@@ -1112,8 +1114,7 @@ function statement(node) {
   const arg = expr.arguments[0];
   if (arg?.type === "UnaryExpression" && arg.operator === "void" && primitiveLiteral(arg.argument))
     return { kind: "recordUndefined" };
-  if (arg?.type === "Literal" && typeof arg.value === "string" && !/[^\x20-\x7e]/.test(arg.value))
-    return { kind: "recordText", value: arg.value };
+  if (arg?.type === "Literal" && supportedText(arg.value)) return { kind: "recordText", value: arg.value };
   if (
     arg?.type === "Literal" &&
     !arg.regex &&
@@ -1944,7 +1945,7 @@ theorem binding_export_difference :
             undefinedValue(value) ||
             value === null ||
             typeof value === "boolean" ||
-            (typeof value === "string" && !/[^\x20-\x7e]/.test(value)) ||
+            supportedText(value) ||
             (Number.isSafeInteger(value) && value >= 0)
         )
       )
