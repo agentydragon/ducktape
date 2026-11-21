@@ -303,6 +303,35 @@ _MCP_SERVERS = {
         redirect_uri=f"https://{_HOSTNAME}/mcp-linkage/callback",
     ),
 }
+# One mount per static-bearer MCP backend: the Action Service mounts the Secret in `mount_dir`, and its
+# group's `bearer_file` names `path` there.
+_SSH_MCP_MOUNT = BearerMcpMount(name="ssh-mcp", secret_name=_SSH_MCP_BEARER_SECRET, secret_key=BEARER_SECRET_KEY)
+_HA_MCP_MOUNT = BearerMcpMount(name="ha-mcp", secret_name=_HA_MCP_BEARER_SECRET, secret_key="bearer-token")
+# The Secret's own key is `token` (it's a Tana personal access token, not a
+# bearer minted for this purpose); renamed at mount time to the same
+# `bearer-token` file name every other static-bearer group uses.
+_TANA_MCP_MOUNT = BearerMcpMount(
+    name="tana-mcp", secret_name=_TANA_MCP_BEARER_SECRET, secret_key="token", optional=True
+)
+# One mount, shared by both the gmail and google_calendar ActionGroups -- one pod,
+# one caller-facing bearer.
+_GOOGLE_MCP_MOUNT = BearerMcpMount(name="google-mcp", secret_name=_GOOGLE_MCP_BEARER_SECRET, secret_key="bearer-token")
+
+
+def _static_bearer_group(
+    mount: BearerMcpMount, *, title: str, description: str, executor_description: str, url: str
+) -> ActionGroup:
+    return ActionGroup(
+        title=title,
+        description=description,
+        executor=McpExecutorBinding(
+            kind="mcp",
+            description=executor_description,
+            config={"transport": "streamable-http", "url": url, "auth": "static_bearer", "bearer_file": mount.path},
+        ),
+    )
+
+
 _ACTION_GROUPS = {
     "github": ActionGroup(
         title="GitHub MCP",
@@ -366,75 +395,40 @@ _ACTION_GROUPS = {
         # auto-approves them for the Connection's claude-ai account.
         direct_tools=frozenset(action.value for action in Action),
     ),
-    "ssh": ActionGroup(
+    "ssh": _static_bearer_group(
+        _SSH_MCP_MOUNT,
         title="SSH",
         description="SSH commands on configured targets; every Action remains subject to operator approval.",
-        executor=McpExecutorBinding(
-            kind="mcp",
-            description="SSH MCP backend (ssh-mcp); Agentplane retains approval and execution authority.",
-            config={
-                "transport": "streamable-http",
-                "url": MCP_URL,
-                "auth": "static_bearer",
-                "bearer_file": "/run/secrets/ssh-mcp/bearer-token",
-            },
-        ),
+        executor_description="SSH MCP backend (ssh-mcp); Agentplane retains approval and execution authority.",
+        url=MCP_URL,
     ),
-    "home_assistant": ActionGroup(
+    "home_assistant": _static_bearer_group(
+        _HA_MCP_MOUNT,
         title="Home Assistant MCP",
         description="Home Assistant tools; every Action remains subject to operator approval.",
-        executor=McpExecutorBinding(
-            kind="mcp",
-            description="Home Assistant MCP backend (ha-mcp).",
-            config={
-                "transport": "streamable-http",
-                "url": _HOME_ASSISTANT_MCP_URL,
-                "auth": "static_bearer",
-                "bearer_file": "/run/secrets/ha-mcp/bearer-token",
-            },
-        ),
+        executor_description="Home Assistant MCP backend (ha-mcp).",
+        url=_HOME_ASSISTANT_MCP_URL,
     ),
-    "tana": ActionGroup(
+    "tana": _static_bearer_group(
+        _TANA_MCP_MOUNT,
         title="Tana MCP",
         description="Tana read/write tools; every Action remains subject to operator approval.",
-        executor=McpExecutorBinding(
-            kind="mcp",
-            description="Tana MCP backend (tana-mcp).",
-            config={
-                "transport": "streamable-http",
-                "url": _TANA_MCP_URL,
-                "auth": "static_bearer",
-                "bearer_file": "/run/secrets/tana-mcp/bearer-token",
-            },
-        ),
+        executor_description="Tana MCP backend (tana-mcp).",
+        url=_TANA_MCP_URL,
     ),
-    "gmail": ActionGroup(
+    "gmail": _static_bearer_group(
+        _GOOGLE_MCP_MOUNT,
         title="Gmail",
         description="Gmail read/write tools; every Action remains subject to operator approval.",
-        executor=McpExecutorBinding(
-            kind="mcp",
-            description="Gmail MCP backend (google-mcp), on a write-scoped Google credential.",
-            config={
-                "transport": "streamable-http",
-                "url": _GMAIL_MCP_URL,
-                "auth": "static_bearer",
-                "bearer_file": "/run/secrets/google-mcp/bearer-token",
-            },
-        ),
+        executor_description="Gmail MCP backend (google-mcp), on a write-scoped Google credential.",
+        url=_GMAIL_MCP_URL,
     ),
-    "google_calendar": ActionGroup(
+    "google_calendar": _static_bearer_group(
+        _GOOGLE_MCP_MOUNT,
         title="Google Calendar",
         description="Google Calendar read/write tools; every Action remains subject to operator approval.",
-        executor=McpExecutorBinding(
-            kind="mcp",
-            description="Google Calendar MCP backend (google-mcp), on a write-scoped Google credential.",
-            config={
-                "transport": "streamable-http",
-                "url": _CALENDAR_MCP_URL,
-                "auth": "static_bearer",
-                "bearer_file": "/run/secrets/google-mcp/bearer-token",
-            },
-        ),
+        executor_description="Google Calendar MCP backend (google-mcp), on a write-scoped Google credential.",
+        url=_CALENDAR_MCP_URL,
     ),
 }
 
@@ -466,6 +460,17 @@ def _app_config(*, identity_catalog: bool) -> Settings:
 
 
 _APP_CONFIG = _app_config(identity_catalog=False)
+
+# The verified caller fields LiteLLM records as each request's spend-log metadata, sent both as one JSON
+# header and as W3C baggage under `litellm.metadata.spend_logs_metadata.`.
+_SPEND_LOGS_FIELDS = {
+    "agentplane.namespace": VerifiedClaim.NAMESPACE,
+    "agentplane.service_account": VerifiedClaim.SERVICE_ACCOUNT,
+    "agentplane.pod_name": VerifiedClaim.POD_NAME,
+    "agentplane.pod_uid": VerifiedClaim.POD_UID,
+    "agentplane.identity": VerifiedClaim.IDENTITY,
+    "agentplane.identity_uid": VerifiedClaim.IDENTITY_UID,
+}
 
 
 ENV = Environment(
@@ -584,37 +589,12 @@ ENV = Environment(
             json_headers=[
                 AttributionJsonHeader(
                     name="x-litellm-spend-logs-metadata",
-                    fields=[
-                        AttributionField(key="agentplane.namespace", source=VerifiedClaim.NAMESPACE),
-                        AttributionField(key="agentplane.service_account", source=VerifiedClaim.SERVICE_ACCOUNT),
-                        AttributionField(key="agentplane.pod_name", source=VerifiedClaim.POD_NAME),
-                        AttributionField(key="agentplane.pod_uid", source=VerifiedClaim.POD_UID),
-                        AttributionField(key="agentplane.identity", source=VerifiedClaim.IDENTITY),
-                        AttributionField(key="agentplane.identity_uid", source=VerifiedClaim.IDENTITY_UID),
-                    ],
+                    fields=[AttributionField(key=key, source=source) for key, source in _SPEND_LOGS_FIELDS.items()],
                 )
             ],
             baggage=[
-                AttributionField(
-                    key="litellm.metadata.spend_logs_metadata.agentplane.namespace", source=VerifiedClaim.NAMESPACE
-                ),
-                AttributionField(
-                    key="litellm.metadata.spend_logs_metadata.agentplane.service_account",
-                    source=VerifiedClaim.SERVICE_ACCOUNT,
-                ),
-                AttributionField(
-                    key="litellm.metadata.spend_logs_metadata.agentplane.pod_name", source=VerifiedClaim.POD_NAME
-                ),
-                AttributionField(
-                    key="litellm.metadata.spend_logs_metadata.agentplane.pod_uid", source=VerifiedClaim.POD_UID
-                ),
-                AttributionField(
-                    key="litellm.metadata.spend_logs_metadata.agentplane.identity", source=VerifiedClaim.IDENTITY
-                ),
-                AttributionField(
-                    key="litellm.metadata.spend_logs_metadata.agentplane.identity_uid",
-                    source=VerifiedClaim.IDENTITY_UID,
-                ),
+                AttributionField(key=f"litellm.metadata.spend_logs_metadata.{key}", source=source)
+                for key, source in _SPEND_LOGS_FIELDS.items()
             ],
         ),
     ),
@@ -659,17 +639,7 @@ ENV = Environment(
         ),
         oauth_secret_items=(),
         github_mcp_client_secret_name=_GITHUB_MCP_CLIENT_SECRET,
-        bearer_mcp_mounts=[
-            BearerMcpMount(name="ssh-mcp", secret_name=_SSH_MCP_BEARER_SECRET, secret_key=BEARER_SECRET_KEY),
-            BearerMcpMount(name="ha-mcp", secret_name=_HA_MCP_BEARER_SECRET, secret_key="bearer-token"),
-            # The Secret's own key is `token` (it's a Tana personal access token, not a
-            # bearer minted for this purpose); renamed at mount time to the same
-            # `bearer-token` file name every other static-bearer group uses.
-            BearerMcpMount(name="tana-mcp", secret_name=_TANA_MCP_BEARER_SECRET, secret_key="token", optional=True),
-            # One mount, shared by both the gmail and google_calendar ActionGroups -- one pod,
-            # one caller-facing bearer.
-            BearerMcpMount(name="google-mcp", secret_name=_GOOGLE_MCP_BEARER_SECRET, secret_key="bearer-token"),
-        ],
+        bearer_mcp_mounts=[_SSH_MCP_MOUNT, _HA_MCP_MOUNT, _TANA_MCP_MOUNT, _GOOGLE_MCP_MOUNT],
         extra_egress=[
             EgressRule.to_fqdns(*_WEB_PUSH_ALLOWED_HOSTS),
             EgressRule.to_endpoints(cilium.endpoint_labels("ssh-mcp", "ssh-mcp"), 8080),
