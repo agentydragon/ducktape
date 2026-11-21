@@ -95,9 +95,6 @@ importers:
       ajv:
         specifier: ^8.17.1
         version: 8.20.0
-      ajv-formats:
-        specifier: ^3.0.1
-        version: 3.0.1(ajv@8.20.0)
       chart.js:
         specifier: ^4.4.8
         version: 4.5.1
