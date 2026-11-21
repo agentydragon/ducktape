@@ -17,11 +17,9 @@ locals {
   # Proxmox network configuration
   proxmox_gateway = "10.2.0.1"
 
-  # Stable Talos endpoint used for post-bootstrap client configuration reads.
-  # Stage 3 (OVH storage tiering): point this at the new SYS-1 control plane so the
-  # former KS-5 control plane can be demoted without leaving this reference on a worker.
-  # The bootstrap/kubeconfig resources below ignore_changes on this so the repoint
-  # does NOT re-trigger a cluster bootstrap.
+  # Stable Talos endpoint used for post-bootstrap client configuration reads. The
+  # bootstrap/kubeconfig resources below ignore_changes on it, so repointing it does
+  # NOT re-trigger a cluster bootstrap.
   primary_controlplane_ip     = data.ovh_dedicated_server.kimsufi["ovh-ns1001419"].ip
   kubeconfig_cluster_endpoint = "https://api.${var.cluster_domain}:6443"
 
@@ -243,8 +241,7 @@ locals {
   }
 }
 
-# Bootstrap etcd. This resource records the already-bootstrapped cluster; the
-# endpoint is now an OVH control plane.
+# Bootstrap etcd. This resource records the already-bootstrapped cluster.
 resource "talos_machine_bootstrap" "cluster" {
   client_configuration = local.client_configuration
   endpoint             = local.primary_controlplane_ip
@@ -254,10 +251,9 @@ resource "talos_machine_bootstrap" "cluster" {
     talos_machine_configuration_apply.kimsufi,
   ]
 
-  # The cluster is already bootstrapped. Re-pointing primary_controlplane_ip
-  # (Stage 2 CP reshuffle) must NOT force this resource to re-run bootstrap against a
-  # new node — that would fail on an already-bootstrapped cluster. Bootstrap is a
-  # one-time event; ignore endpoint/node drift.
+  # Re-pointing primary_controlplane_ip must NOT force this resource to re-run bootstrap
+  # against a new node — that would fail on an already-bootstrapped cluster. Bootstrap is
+  # a one-time event; ignore endpoint/node drift.
   lifecycle {
     ignore_changes = [endpoint, node]
   }
