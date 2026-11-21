@@ -22,12 +22,11 @@ from ai_session_archive.source_paths import HarnessRoot
 
 def _configured_roots(cli_values: list[str], archive_env: str) -> list[str]:
     if cli_values:
-        values = cli_values
+        roots = cli_values
     elif value := os.environ.get(archive_env):
-        values = [value]
+        roots = [value]
     else:
         return []
-    roots = values
     if any(not Path(root).is_absolute() for root in roots):
         raise SystemExit(f"{archive_env} and root arguments must be absolute Restic paths")
     return roots

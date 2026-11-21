@@ -16,26 +16,22 @@ from ai_session_archive.ingest import ArchiveSource, SnapshotIngestor
 from ai_session_archive.models import Harness
 from ai_session_archive.restic import ResticChange, ResticFile, ResticRepository, ResticSnapshot
 from ai_session_archive.source_paths import HarnessRoot
-from ai_session_archive.testing import _backup, _new_repository
+from ai_session_archive.testing import backup, new_ingestor, new_repository
 
 pytest_plugins = ["testing.postgres_fixtures", "ai_session_archive.testing"]
 
 
 def test_postgres_file_transaction_rolls_back_and_retries(tmp_path: Path, postgres_engine: Engine) -> None:
-    repository, env = _new_repository(tmp_path)
+    repository, env = new_repository(tmp_path)
     claude_root = tmp_path / "home" / ".claude"
     transcript = claude_root / "projects" / "example-project" / "session.jsonl"
     transcript.parent.mkdir(parents=True)
     transcript.write_bytes(b'{"type":"user","message":{"content":"hello"}}\n')
-    _backup(env, claude_root)
-    source = ArchiveSource(
-        machine_id="transaction-test",
-        display_name="Transaction test host",
-        restic=repository,
-        roots=(HarnessRoot(Harness.CLAUDE, str(claude_root)),),
-    )
+    backup(env, claude_root)
     factory = sessionmaker(postgres_engine, expire_on_commit=False)
-    ingestor = SnapshotIngestor(factory, source)
+    ingestor = new_ingestor(
+        factory, repository, HarnessRoot(Harness.CLAUDE, str(claude_root)), machine_id="transaction-test"
+    )
 
     with postgres_engine.begin() as connection:
         connection.exec_driver_sql(
@@ -152,12 +148,12 @@ def test_inventory_rechecks_diff_parent_after_restic_read(postgres_engine: Engin
 
 
 def test_concurrent_import_does_not_hold_file_lock_during_restic_dump(tmp_path: Path, postgres_engine: Engine) -> None:
-    repository, env = _new_repository(tmp_path)
+    repository, env = new_repository(tmp_path)
     claude_root = tmp_path / "home" / ".claude"
     transcript = claude_root / "projects" / "example-project" / "session.jsonl"
     transcript.parent.mkdir(parents=True)
     transcript.write_bytes(b'{"type":"user","message":{"content":"hello"}}\n')
-    _backup(env, claude_root)
+    backup(env, claude_root)
     first_dump_started = Event()
     release_first_dump = Event()
     second_finished = Event()
@@ -180,14 +176,10 @@ def test_concurrent_import_does_not_hold_file_lock_during_restic_dump(tmp_path: 
             super().dump_to(snapshot_id, path, destination)
 
     blocking_repository = BlockingResticRepository(repository)
-    source = ArchiveSource(
-        machine_id="concurrent-import-test",
-        display_name="Concurrent import test host",
-        restic=blocking_repository,
-        roots=(HarnessRoot(Harness.CLAUDE, str(claude_root)),),
-    )
     factory = sessionmaker(postgres_engine, expire_on_commit=False)
-    ingestor = SnapshotIngestor(factory, source)
+    ingestor = new_ingestor(
+        factory, blocking_repository, HarnessRoot(Harness.CLAUDE, str(claude_root)), machine_id="concurrent-import-test"
+    )
     executor = ThreadPoolExecutor(max_workers=2)
     first = executor.submit(ingestor.ingest)
     second = None

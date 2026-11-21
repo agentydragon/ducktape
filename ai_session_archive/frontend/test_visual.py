@@ -21,7 +21,6 @@ async def test_session_list_and_compact_import_progress(visual: VisualHarness) -
         await expect(progress).to_contain_text("ThinkPad")
         await expect(progress).to_contain_text("Atlas")
         await expect(progress).to_contain_text("Rugged")
-        await expect(progress).to_contain_text("ThinkPad")
         await expect(progress).to_contain_text("72/198 snapshots remaining")
         await expect(progress).to_contain_text("Complete fixture machine")
         await expect(progress.get_by_role("status", name="Complete fixture machine synced")).to_be_visible()
@@ -367,10 +366,6 @@ async def test_claude_attachment_widgets(visual: VisualHarness, width: int) -> N
         await view.capture(name="expanded")
 
 
-if __name__ == "__main__":
-    pytest_bazel.main()
-
-
 @pytest.mark.parametrize(
     "viewport", [Viewport(width=1440, height=1000), Viewport(width=390, height=844)], ids=["desktop", "mobile"]
 )
@@ -398,3 +393,7 @@ async def test_session_kind_filters(visual: VisualHarness, viewport: Viewport) -
         await expect(sidebar.get_by_role("link", name="Inspect a local transcript")).to_be_visible()
         await expect(sidebar.get_by_role("button", name="Refresh session list")).to_be_enabled()
         await view.capture(name="all_kinds", target=page.locator("#root"))
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

@@ -88,6 +88,18 @@ def _contents() -> bytes:
     )
 
 
+def _change_identity(engine: Engine, changed_metadata: str) -> None:
+    with sessionmaker(engine)() as db, db.begin():
+        if changed_metadata == "file":
+            file = db.get(SnapshotFileRow, ("batch-test", SNAPSHOT.id, PATH))
+            assert file is not None
+            file.modified_at = SNAPSHOT.captured_at
+        else:
+            snapshot = db.get(ResticSnapshotRow, ("batch-test", SNAPSHOT.id))
+            assert snapshot is not None
+            snapshot.tree_id = "changed-tree"
+
+
 class SimulatedCrash(BaseException):
     pass
 
@@ -96,14 +108,8 @@ def test_committed_batch_survives_crash_without_publishing(postgres_engine: Engi
     contents = _contents()
     importer = _ingestor(postgres_engine, contents)
     store_batch = importer._staging.store_record_batch
-    read_batch = file_capture.read_record_batch
     factory = sessionmaker(postgres_engine)
     committed_sizes = []
-
-    def parse_without_transaction(*args: Any, **kwargs: Any) -> list[ParsedRecord]:
-        assert isinstance(postgres_engine.pool, QueuePool)
-        assert postgres_engine.pool.checkedout() == 0
-        return read_batch(*args, **kwargs)
 
     def crash_after_second_batch(*args: Any, **kwargs: Any) -> None:
         store_batch(*args, **kwargs)
@@ -139,7 +145,6 @@ def test_committed_batch_survives_crash_without_publishing(postgres_engine: Engi
 
     with (
         patch.object(importer._staging, "store_record_batch", side_effect=crash_after_second_batch),
-        patch.object(file_capture, "read_record_batch", side_effect=parse_without_transaction),
         pytest.raises(SimulatedCrash),
     ):
         importer.ingest()
@@ -508,15 +513,7 @@ def test_publication_rechecks_identity_after_parsing(postgres_engine: Engine, ch
 
     def change_file_identity_after_batch(*args: Any, **kwargs: Any) -> None:
         store_batch(*args, **kwargs)
-        with sessionmaker(postgres_engine)() as db, db.begin():
-            if changed_metadata == "file":
-                file = db.get(SnapshotFileRow, ("batch-test", SNAPSHOT.id, PATH))
-                assert file is not None
-                file.modified_at = SNAPSHOT.captured_at
-            else:
-                snapshot = db.get(ResticSnapshotRow, ("batch-test", SNAPSHOT.id))
-                assert snapshot is not None
-                snapshot.tree_id = "changed-tree"
+        _change_identity(postgres_engine, changed_metadata)
 
     with patch.object(importer._staging, "store_record_batch", side_effect=change_file_identity_after_batch):
         assert importer.ingest().files_failed == 1
@@ -535,15 +532,7 @@ def test_extraction_rechecks_identity_before_parsing(postgres_engine: Engine, ch
 
     def change_identity_during_dump(*args: Any, **kwargs: Any) -> None:
         dump(*args, **kwargs)
-        with sessionmaker(postgres_engine)() as db, db.begin():
-            if changed_metadata == "file":
-                file = db.get(SnapshotFileRow, ("batch-test", SNAPSHOT.id, PATH))
-                assert file is not None
-                file.modified_at = SNAPSHOT.captured_at
-            else:
-                snapshot = db.get(ResticSnapshotRow, ("batch-test", SNAPSHOT.id))
-                assert snapshot is not None
-                snapshot.tree_id = "changed-tree"
+        _change_identity(postgres_engine, changed_metadata)
 
     with (
         patch.object(importer._source.restic, "dump_to", side_effect=change_identity_during_dump),

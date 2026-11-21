@@ -8,44 +8,39 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
 from ai_session_archive.database import SessionRow, SnapshotFileRow
-from ai_session_archive.ingest import ArchiveSource, SnapshotIngestor
 from ai_session_archive.models import Harness
 from ai_session_archive.queries import list_sessions
 from ai_session_archive.source_paths import HarnessRoot
-from ai_session_archive.testing import _backup, _new_repository
+from ai_session_archive.testing import backup, new_ingestor, new_repository
 from ai_session_archive.version_queries import list_events, list_versions
 
 pytest_plugins = ["testing.postgres_fixtures", "ai_session_archive.testing"]
 
 
 def test_truncated_and_deleted_file_keeps_prior_versions(tmp_path: Path, postgres_engine: Engine) -> None:
-    repository, env = _new_repository(tmp_path)
+    repository, env = new_repository(tmp_path)
     claude_root = tmp_path / "home" / ".claude"
     main_path = claude_root / "projects" / "example-project" / "main-session.jsonl"
     main_path.parent.mkdir(parents=True)
     repeated = b'{"type":"user","timestamp":"2026-01-01T00:00:00Z","message":{"content":"hello"}}\n'
     ending = b'{"type":"assistant","timestamp":"2026-01-01T00:00:01Z","message":{"content":"ok"}}\n'
     main_path.write_bytes(repeated + repeated + ending)
-    _backup(env, claude_root)
+    backup(env, claude_root)
     initial_snapshot = repository.list_snapshots()[0]
 
     factory = sessionmaker(postgres_engine, expire_on_commit=False)
-    source = ArchiveSource(
-        machine_id="archive-truncated-test",
-        display_name="Archive truncated test host",
-        restic=repository,
-        roots=(HarnessRoot(Harness.CLAUDE, str(claude_root)),),
+    ingestor = new_ingestor(
+        factory, repository, HarnessRoot(Harness.CLAUDE, str(claude_root)), machine_id="archive-truncated-test"
     )
-    ingestor = SnapshotIngestor(factory, source)
     report = ingestor.ingest()
     assert report.files_failed == 0
     main_path.write_bytes(repeated)
-    _backup(env, claude_root)
+    backup(env, claude_root)
     truncation_snapshot = repository.list_snapshots()[-1]
     report = ingestor.ingest()
     assert report.files_failed == 0
     main_path.unlink()
-    _backup(env, claude_root)
+    backup(env, claude_root)
     deletion_snapshot = repository.list_snapshots()[-1]
     report = ingestor.ingest()
     assert report.files_failed == 0

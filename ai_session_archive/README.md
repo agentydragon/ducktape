@@ -108,7 +108,7 @@ native titles and renames replace a prompt fallback. A versioned title projectio
 refreshes existing sessions from stored raw record payloads during ingestion, without
 rereading transcript bytes from Restic.
 
-The browser frontend lives in `//ai_session_archive/frontend:bundle`. Its Bazel output is the portable `dist/` directory (`index.html`, `main.js`, and source maps) mounted by the archive web server.
+The browser frontend lives in `//ai_session_archive/frontend:bundle`. Its Bazel output is the portable `dist/` directory (`index.html`, `main.js`, `main.css`, and source maps) mounted by the archive web server.
 
 The session list has checkboxes for Main sessions, Subagents, Guardian, and Unknown.
 Main and Unknown are selected by default. Kind selections are retained in the URL
