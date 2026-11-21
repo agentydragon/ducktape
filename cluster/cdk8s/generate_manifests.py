@@ -796,6 +796,13 @@ def generate_manifests(root: Path) -> None:
             kyverno_kustomization, flux_image_automation_ghcr_kustomization
         ),
     )
+    tofu_controller_vpa_artifact = artifact(tofu_controller_release.VPA_NAME, tofu_controller_release.VPA_OUTPUT_DIR)
+    flux.flux_kustomization(
+        flux_chart,
+        tofu_controller_release.VPA_NAME,
+        write_directory(root, tofu_controller_vpa_artifact, tofu_controller_release.vpa_chart),
+        depends_on=flux.flux_kustomization_depends_on_many(vpa_kustomization, tofu_controller_kustomization),
+    )
     monitoring_home_switch_artifact = artifact("monitoring-home-switch", monitoring_home_switch.OUTPUT_DIR)
     home_switch_module = terraform.gitops_module(monitoring_home_switch.NAME)
     monitoring_home_switch_kustomization = flux.flux_kustomization(
@@ -2398,6 +2405,7 @@ def generate_manifests(root: Path) -> None:
             seaweedfs_cluster_artifact,
             seaweedfs_operator_artifact,
             tofu_controller_artifact,
+            tofu_controller_vpa_artifact,
             tofu_state_db_artifact,
             mcp_oauth_state_artifact,
             valkey_artifact,

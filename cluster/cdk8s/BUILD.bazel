@@ -2001,6 +2001,7 @@ py_library(
         ":terraform",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:imagerepository",
+        "//cluster/cdk8s/providers/vpa:verticalpodautoscaler",
         "@pypi//cdk8s",
         "@rules_python//python/runfiles",
     ],
