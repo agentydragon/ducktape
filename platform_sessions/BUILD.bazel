@@ -200,6 +200,7 @@ py_test(
     srcs = ["probe_metrics_test.py"],
     deps = [
         ":probe_metrics",
+        ":probe_types",
         ":registry",
         "//:conftest",
         "@pypi//prometheus_client",
