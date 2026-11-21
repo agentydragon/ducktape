@@ -331,7 +331,7 @@ for (const c of opaqueCases) {
     label: `opaque: ${c.name}`,
     source: c.source,
     program: { ...single(translated), scripts: scriptsOf(c) },
-    expectEnd: null,
+    expectEnd: c.end ?? "normal",
     set: null,
     opaqueCase: c,
   });

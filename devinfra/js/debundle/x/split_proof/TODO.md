@@ -1,5 +1,6 @@
 # TODO
 
+- **Lean formatter and optional linter.** Evaluate [`lean-fmt`](https://github.com/jcreinhold/lean-fmt), pinned to the project's Lean toolchain (`v4.35.0` has a matching release). As of 2026-11-21, nixpkgs code search finds no package and our pinned nixpkgs lacks `pkgs/by-name/le/lean-fmt/package.nix`; package it through the shared Nix tool environment if still absent. Check idempotence and compile the formatted corpus before adding pre-commit hooks; land the reformat separately from proof changes. Assess lint rules individually. Keep compilation and axiom audits in Bazel/CI. Existing hooks already check trailing whitespace and final newlines.
 - **`OrderOk` in near-linear time.** Check conflicting pairs, not all pairs: effect statements form a chain, each read points at its declaration, shared declarations conflict.
   Needs a position map and a proof that the edge check implies the `Pairwise` condition of `Semantics.exec_reorder`. 28 of 42 s at 42,880 statements ([experiments/README.md](experiments/README.md) § 5).
 - **`Faithful`: index selectors by name.** It still compares every selector with every statement. 5 s at 42,880 statements.
