@@ -17,5 +17,3 @@ images:
     kind: SandboxTemplate
   - path: spec/pod/spec/volumes[]/image/reference
     kind: SandboxTemplate
-  - path: spec/rules[]/context[]/variable/value/image
-    kind: ClusterPolicy

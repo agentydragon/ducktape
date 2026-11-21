@@ -76,11 +76,13 @@ def test_stage_artifact_copies_reject_unsafe_or_missing_paths(tmp_path: Path) ->
         stage_artifact_copies(repo_root, tmp_path / "artifact", [("@repo/missing.yaml", "@artifact/a.yaml")])
 
 
-def test_environment_tools_image_pin_reaches_every_sandbox_template_container(
+def test_image_pins_reach_every_sandbox_template_container(
     image_pins: dict[str, Any], kustomize: Path, tmp_path: Path
 ) -> None:
     environment_tools_image = "git.allegedly.works/ducktape-ci/environment-tools"
     environment_tools_pin = next(image for image in image_pins["images"] if image["name"] == environment_tools_image)
+    sidecar_image = "git.allegedly.works/ducktape-ci/agentplane-egress-sidecar"
+    sidecar_pin = next(image for image in image_pins["images"] if image["name"] == sidecar_image)
     (tmp_path / "kustomization.yaml").write_text(
         "apiVersion: kustomize.config.k8s.io/v1beta1\n"
         "kind: Kustomization\n"
@@ -95,6 +97,9 @@ def test_environment_tools_image_pin_reaches_every_sandbox_template_container(
         "spec:\n"
         "  pod:\n"
         "    spec:\n"
+        "      initContainers:\n"
+        "        - name: egress-sidecar\n"
+        f"          image: {sidecar_image}:unset\n"
         "      containers:\n"
         "        - name: environment-runtime\n"
         f"          image: {environment_tools_image}:unset\n"
@@ -104,43 +109,11 @@ def test_environment_tools_image_pin_reaches_every_sandbox_template_container(
     result = subprocess.run([kustomize, "build", tmp_path], capture_output=True, check=False)
     assert result.returncode == 0, result.stderr.decode()
     [template] = yaml.safe_load_all(result.stdout)
-    images = [container["image"] for container in template["spec"]["pod"]["spec"]["containers"]]
-    assert images == [f"{environment_tools_image}:{environment_tools_pin['newTag']}"] * 2
-
-
-def test_egress_sidecar_image_pin_reaches_launcher_relay_template(
-    image_pins: dict[str, Any], kustomize: Path, tmp_path: Path
-) -> None:
-    sidecar_image = "git.allegedly.works/ducktape-ci/agentplane-egress-sidecar"
-    sidecar_pin = next(image for image in image_pins["images"] if image["name"] == sidecar_image)
-    (tmp_path / "kustomization.yaml").write_text(
-        "apiVersion: kustomize.config.k8s.io/v1beta1\n"
-        "kind: Kustomization\n"
-        "resources: [relay-policy.yaml]\n"
-        "components: [image-pins]\n"
-    )
-    (tmp_path / "relay-policy.yaml").write_text(
-        yaml.safe_dump(
-            {
-                "apiVersion": "kyverno.io/v1",
-                "kind": "ClusterPolicy",
-                "metadata": {"name": "test-launcher-relay"},
-                "spec": {
-                    "rules": [
-                        {
-                            "name": "inject-test-relay",
-                            "context": [{"name": "relay", "variable": {"value": {"image": f"{sidecar_image}:unset"}}}],
-                        }
-                    ]
-                },
-            }
-        )
-    )
-    result = subprocess.run([kustomize, "build", tmp_path], capture_output=True, check=False)
-    assert result.returncode == 0, result.stderr.decode()
-    [policy] = yaml.safe_load_all(result.stdout)
-    relay = policy["spec"]["rules"][0]["context"][0]["variable"]["value"]
-    assert relay["image"] == f"{sidecar_image}:{sidecar_pin['newTag']}"
+    pod = template["spec"]["pod"]["spec"]
+    assert [container["image"] for container in pod["containers"]] == [
+        f"{environment_tools_image}:{environment_tools_pin['newTag']}"
+    ] * 2
+    assert [container["image"] for container in pod["initContainers"]] == [f"{sidecar_image}:{sidecar_pin['newTag']}"]
 
 
 if __name__ == "__main__":
