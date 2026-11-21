@@ -112,10 +112,48 @@ assert.deepEqual(execute(asyncCalls, ["first", "fail"]), {
 });
 const pendingCall = join(process.env.TEST_TMPDIR, `async-pending-${shard}.mjs`);
 await writeFile(pendingCall, "export async function wait() { await new Promise(() => {}); }");
-assert.deepEqual(execute(pendingCall, ["wait"]), { inconclusive: "no completion" });
+assert.deepEqual(execute(pendingCall, ["wait"]), {
+  events: [],
+  exports: ["wait"],
+  results: [],
+  error: null,
+  inconclusive: "no completion",
+});
+const primitives = join(process.env.TEST_TMPDIR, `primitives-${shard}.mjs`);
+await writeFile(
+  primitives,
+  "export function nan() { globalThis.record(Infinity); return NaN; } export function negzero() { return -0; } export function big() { return 9n; } export function object() { return {}; }"
+);
+const primitiveTrace = execute(primitives, ["nan", "negzero", "big"]);
+assert.deepEqual(primitiveTrace.events, [{ number: "Infinity" }]);
+assert.deepEqual(primitiveTrace.results, [
+  { value: { number: "NaN" } },
+  { value: { number: "-0" } },
+  { value: { bigint: "9" } },
+]);
+assert.equal(execute(primitives, ["object"]).inconclusive, "opaque observation");
+const hostileThrow = join(process.env.TEST_TMPDIR, `hostile-throw-${shard}.mjs`);
+await writeFile(hostileThrow, "export function fail() { throw { get name() { throw 9; } }; }");
+assert.deepEqual(execute(hostileThrow, ["fail"]).error, {
+  name: null,
+  phase: "call",
+  index: 0,
+  thrown: { kind: "opaque" },
+});
+const noisy = join(process.env.TEST_TMPDIR, `noisy-${shard}.mjs`);
+await writeFile(noisy, "export function emit() { for (let i = 0; i < 200000; i++) globalThis.record('long event'); }");
+const noisyTrace = execute(noisy, ["emit"]);
+assert.equal(noisyTrace.inconclusive, "output limit");
+assert.ok(noisyTrace.events.length > 0);
 const timeout = join(process.env.TEST_TMPDIR, `timeout-${shard}.mjs`);
-await writeFile(timeout, "while (true) {}");
-assert.deepEqual(execute(timeout, [], { timeoutMs: 250 }), { inconclusive: "timeout" });
+await writeFile(timeout, "globalThis.record(3); while (true) {}");
+assert.deepEqual(execute(timeout, [], { timeoutMs: 2000 }), {
+  events: [3],
+  exports: [],
+  results: [],
+  error: null,
+  inconclusive: "timeout",
+});
 const result = await runFuzz({ seed: 123, cases: 16, outputDir: process.env.TEST_TMPDIR, shard, shards });
 console.log(JSON.stringify(result));
 assert.equal(result.cases, 16 / shards);
@@ -238,6 +276,11 @@ if (shards === 4 && shard === 0) {
   const namedCaptured = await runFuzz({ seed: 123, start: 156, cases: 1, outputDir: process.env.TEST_TMPDIR });
   assert.equal(namedCaptured.capturedCompared, 1);
   assert.equal(namedCaptured.capturedProved, 1);
+  for (const index of [284, 412]) {
+    const expressionCaptured = await runFuzz({ seed: 123, start: index, cases: 1, outputDir: process.env.TEST_TMPDIR });
+    assert.equal(expressionCaptured.capturedCompared, 1);
+    assert.equal(expressionCaptured.capturedProved, 1);
+  }
   const parameterIndex = Array.from({ length: 32 }, (_, i) => 28 + 128 * i).find(
     (index) => makeCase(123, index).captureTarget === "start"
   );
@@ -333,6 +376,17 @@ const composedPrograms = Array.from({ length: 128 }, (_, i) => makeComposedCase(
 assert.ok(new Set(composedPrograms.map((item) => item.source)).size > 120);
 assert.ok(composedPrograms.some((item) => item.source.includes("const box =")));
 assert.ok(composedPrograms.some((item) => item.source.includes("function nested(")));
+assert.ok(composedPrograms.some((item) => item.source.includes("catch {")));
+assert.ok(
+  new Set(composedPrograms.map((item) => item.ast.body.filter((node) => node.type === "FunctionDeclaration").length))
+    .size > 1
+);
+assert.ok(
+  composedPrograms.some((item) => {
+    const functions = item.ast.body.filter((node) => node.type === "FunctionDeclaration");
+    return functions.length > 1 && JSON.stringify(functions[0].body) !== JSON.stringify(functions[1].body);
+  })
+);
 for (const item of composedPrograms) {
   assert.deepEqual(
     parse(item.source, { ecmaVersion: "latest", sourceType: "module" }).body.map((node) => node.type),

@@ -805,6 +805,46 @@ theorem finally_modeled_observation :
 }
 
 if (shard === 15) {
+  const source = join(root, "catch-source.mjs");
+  const spec = join(root, "catch-spec.json");
+  const out = join(root, "catch-out");
+  await writeFile(
+    source,
+    `function make(start) { let value = start; return (step) => { try { if (step) throw 7; return value; } catch { value += 2; return value; } finally { value += 1; } }; }
+const counter = make(2);
+export { counter };
+`
+  );
+  await writeFile(
+    spec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0, 1] },
+        "entry.mjs": { imports: ["state.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", source, spec, out).result, "generated");
+  const proof = cli("validate", source, spec, out);
+  assert.equal(proof.result, "proved under assumptions", JSON.stringify(proof));
+  const calls = [0, 1, 0].map((step) => ({ name: "counter", args: [step] }));
+  const trace = execute(source, calls);
+  assert.deepEqual(trace.results, [{ value: 2 }, { value: 5 }, { value: 6 }]);
+  assert.deepEqual(execute(join(out, "entry.mjs"), calls), trace);
+  const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
+    encoding: "utf8",
+    input: models + proof.certificate,
+  });
+  assert.equal(replay.status, 0, replay.stdout + replay.stderr);
+  assert.match(replay.stdout, /'binding_captured_observations' does not depend on any axioms/);
+  const unsupported = join(root, "catch-binding.mjs");
+  await writeFile(unsupported, (await readFile(source, "utf8")).replace("catch {", "catch (e) {"));
+  assert.equal(cli("generate", unsupported, spec, join(root, "catch-binding-out")).result, "unknown");
+}
+
+if (shard === 15) {
   const loopSource = join(root, "loop-source.mjs");
   const loopSpec = join(root, "loop-spec.json");
   const loopOut = join(root, "loop-out");

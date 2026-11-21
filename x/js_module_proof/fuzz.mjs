@@ -43,6 +43,8 @@ function print(node) {
       return `${print(node.id)} = ${print(node.init)}`;
     case "FunctionDeclaration":
       return `${node.async ? "async " : ""}function ${print(node.id)}(${node.params.map(print).join(", ")}) ${print(node.body)}`;
+    case "FunctionExpression":
+      return `function (${node.params.map(print).join(", ")}) ${print(node.body)}`;
     case "BlockStatement":
       return `{ ${node.body.map(print).join(" ")} }`;
     case "ReturnStatement":
@@ -75,7 +77,7 @@ function print(node) {
     case "IfStatement":
       return `if (${print(node.test)}) ${print(node.consequent)}${node.alternate ? ` else ${print(node.alternate)}` : ""}`;
     case "TryStatement":
-      return `try ${print(node.block)} finally ${print(node.finalizer)}`;
+      return `try ${print(node.block)}${node.handler ? ` catch${node.handler.param ? ` (${print(node.handler.param)})` : ""} ${print(node.handler.body)}` : ""}${node.finalizer ? ` finally ${print(node.finalizer)}` : ""}`;
     case "ForStatement":
       return `for (${print(node.init).slice(0, -1)}; ${print(node.test)}; ${print(node.update)}) ${print(node.body)}`;
     case "UpdateExpression":
@@ -541,23 +543,26 @@ function capturedCase(seed, index) {
   const count = 1 + rand(5);
   const unsafe = index % 128 === 92;
   const target = unsafe || rand(2) === 0 ? "value" : "start";
-  const namedClosure = Math.floor(index / 128) % 2 === 1;
+  const closureForm = Math.floor(index / 128) % 4;
   const closureBody = [add(target, "step"), returnNode(id(target))];
+  const expressionClosure = {
+    type: closureForm === 3 ? "FunctionExpression" : "ArrowFunctionExpression",
+    id: null,
+    params: [id("step")],
+    async: false,
+    generator: false,
+    body: { type: "BlockStatement", body: closureBody },
+  };
   const factory = functionNode(
     "make",
     ["start"],
     [
       declaration("value", { type: "BinaryExpression", operator: "+", left: id("start"), right: id("seed") }),
-      ...(namedClosure
+      ...(closureForm === 1
         ? [functionNode("increment", ["step"], closureBody), returnNode(id("increment"))]
-        : [
-            returnNode({
-              type: "ArrowFunctionExpression",
-              params: [id("step")],
-              async: false,
-              body: { type: "BlockStatement", body: closureBody },
-            }),
-          ]),
+        : closureForm >= 2
+          ? [{ ...declaration("increment", expressionClosure), kind: "const" }, returnNode(id("increment"))]
+          : [returnNode(expressionClosure)]),
     ]
   );
   const closures = Array.from({ length: count }, (_, i) => {
@@ -855,149 +860,167 @@ export function independentSplit(input, seed, index) {
 // each point. The program is generated before any optional repartitioning.
 export function makeComposedCase(seed, index) {
   const rand = random(seed ^ 0xc04f053, index);
-  const scope = new Scope();
-  scope.declare("parameter");
-  scope.declare("global");
-  const dataPrefix = [];
-  if (rand(3) === 0) {
-    const immutable = (name, initial) => {
-      const result = declaration(name, initial);
-      result.kind = "const";
-      return result;
-    };
-    const member = (object, property, computed) => ({
-      type: "MemberExpression",
-      object: id(object),
-      property: computed ? literal(property) : id(property),
-      computed,
-    });
-    dataPrefix.push(
-      immutable("box", {
-        type: "ObjectExpression",
-        properties: [
-          {
-            type: "Property",
-            key: id("value"),
-            value: literal(rand(5)),
-            kind: "init",
-            method: false,
-            shorthand: false,
-            computed: false,
-          },
-        ],
-      }),
-      immutable("alias", id("box")),
-      immutable("array", { type: "ArrayExpression", elements: [literal(rand(5)), literal(rand(5))] }),
-      expr({
-        type: "AssignmentExpression",
-        operator: "+=",
-        left: member("alias", "value", false),
-        right: member("array", rand(2), true),
-      }),
-      declaration("datum", member("box", "value", false))
-    );
-    scope.declare("datum");
-  }
-  const localPrefix = [];
-  const useLocalFunction = dataPrefix.length === 0 && rand(2) === 0;
-  if (useLocalFunction) {
-    localPrefix.push(
-      declaration("current", literal(rand(4))),
-      functionNode("nested", ["delta"], [add("current", "delta"), returnNode(id("current"))])
-    );
-    scope.declare("current");
-  }
-  let nextLocal = 0;
-  const expression = (visible, depth, forbidden = null) => {
-    if (useLocalFunction && depth > 0 && rand(6) === 0) return call(id("nested"), [literal(rand(4))]);
-    if (depth === 0 || rand(3) === 0) {
-      const names = visible.visible().filter((name) => name !== forbidden);
-      if (!names.length) return literal(rand(4));
-      return rand(3) ? id(names[rand(names.length)]) : literal(rand(4));
-    }
-    return {
-      type: "BinaryExpression",
-      operator: "+",
-      left: expression(visible, depth - 1, forbidden),
-      right: expression(visible, depth - 1, forbidden),
-    };
-  };
-  const sequence = (visible, depth) => {
-    const body = [];
-    const count = 1 + rand(3);
-    const mutableNames = [];
-    for (let i = 0; i < count; i++) {
-      const candidates =
-        visible.parent
-          ?.visible()
-          .filter((name) => !visible.names.has(name) && (!useLocalFunction || name !== "current")) ?? [];
-      const name =
-        i === 0 && candidates.length && rand(4) === 0 ? candidates[rand(candidates.length)] : `local${nextLocal++}`;
-      // A shadowing declaration's own binding is in the TDZ during its initializer.
-      const decl = declaration(name, expression(visible, 2, name));
-      const mutable = rand(2) === 0;
-      decl.kind = mutable ? "let" : "const";
-      if (mutable) mutableNames.push(name);
-      body.push(decl);
-      visible.declare(name);
-      if (mutable && rand(2))
-        body.push(
-          expr({ type: "AssignmentExpression", operator: "+=", left: id(name), right: expression(visible, 1) })
-        );
-    }
-    if (mutableNames.length && rand(3) === 0) {
-      const index = `loop${nextLocal++}`;
-      const target = mutableNames[rand(mutableNames.length)];
-      body.push({
-        type: "ForStatement",
-        init: variable(index, 0),
-        test: { type: "BinaryExpression", operator: "<", left: id(index), right: literal(rand(5)) },
-        update: { type: "UpdateExpression", operator: "++", prefix: false, argument: id(index) },
-        body: { type: "BlockStatement", body: [add(target, index)] },
+  const globals = Array.from({ length: 1 + rand(4) }, (_, i) => (i ? `global${i}` : "global"));
+  const makeFunction = (name) => {
+    const scope = new Scope();
+    scope.declare("parameter");
+    for (const name of globals) scope.declare(name);
+    const dataPrefix = [];
+    if (rand(3) === 0) {
+      const immutable = (name, initial) => {
+        const result = declaration(name, initial);
+        result.kind = "const";
+        return result;
+      };
+      const member = (object, property, computed) => ({
+        type: "MemberExpression",
+        object: id(object),
+        property: computed ? literal(property) : id(property),
+        computed,
       });
+      dataPrefix.push(
+        immutable("box", {
+          type: "ObjectExpression",
+          properties: [
+            {
+              type: "Property",
+              key: id("value"),
+              value: literal(rand(5)),
+              kind: "init",
+              method: false,
+              shorthand: false,
+              computed: false,
+            },
+          ],
+        }),
+        immutable("alias", id("box")),
+        immutable("array", { type: "ArrayExpression", elements: [literal(rand(5)), literal(rand(5))] }),
+        expr({
+          type: "AssignmentExpression",
+          operator: "+=",
+          left: member("alias", "value", false),
+          right: member("array", rand(2), true),
+        }),
+        declaration("datum", member("box", "value", false))
+      );
+      scope.declare("datum");
     }
-    let terminal;
-    if (depth && rand(2)) {
-      const operators = ["<", "<=", ">", ">=", "===", "!=="];
-      terminal = {
-        type: "IfStatement",
-        test: {
-          type: "BinaryExpression",
-          operator: operators[rand(operators.length)],
-          left: expression(visible, 1),
-          right: expression(visible, 1),
-        },
-        consequent: { type: "BlockStatement", body: sequence(new Scope(visible), depth - 1) },
-        alternate: { type: "BlockStatement", body: sequence(new Scope(visible), depth - 1) },
-      };
-    } else if (rand(4) === 0) {
-      const thrown = [false, null, "generated", rand(8)][rand(4)];
-      terminal = { type: "ThrowStatement", argument: literal(thrown) };
-    } else terminal = returnNode(expression(visible, 2));
-    if (mutableNames.length && rand(4) === 0) {
-      const target = mutableNames[rand(mutableNames.length)];
-      terminal = {
-        type: "TryStatement",
-        block: { type: "BlockStatement", body: [terminal] },
-        handler: null,
-        finalizer: {
-          type: "BlockStatement",
-          body: [expr({ type: "UpdateExpression", operator: "++", prefix: false, argument: id(target) })],
-        },
-      };
+    const localPrefix = [];
+    const useLocalFunction = dataPrefix.length === 0 && rand(2) === 0;
+    if (useLocalFunction) {
+      localPrefix.push(
+        declaration("current", literal(rand(4))),
+        functionNode("nested", ["delta"], [add("current", "delta"), returnNode(id("current"))])
+      );
+      scope.declare("current");
     }
-    body.push(terminal);
-    return body;
+    let nextLocal = 0;
+    const expression = (visible, depth, forbidden = null) => {
+      if (useLocalFunction && depth > 0 && rand(6) === 0) return call(id("nested"), [literal(rand(4))]);
+      if (depth === 0 || rand(3) === 0) {
+        const names = visible.visible().filter((name) => name !== forbidden);
+        if (!names.length) return literal(rand(4));
+        return rand(3) ? id(names[rand(names.length)]) : literal(rand(4));
+      }
+      return {
+        type: "BinaryExpression",
+        operator: "+",
+        left: expression(visible, depth - 1, forbidden),
+        right: expression(visible, depth - 1, forbidden),
+      };
+    };
+    const sequence = (visible, depth) => {
+      const body = [];
+      const count = 1 + rand(3);
+      const mutableNames = [];
+      for (let i = 0; i < count; i++) {
+        const candidates =
+          visible.parent
+            ?.visible()
+            .filter((name) => !visible.names.has(name) && (!useLocalFunction || name !== "current")) ?? [];
+        const name =
+          i === 0 && candidates.length && rand(4) === 0 ? candidates[rand(candidates.length)] : `local${nextLocal++}`;
+        // A shadowing declaration's own binding is in the TDZ during its initializer.
+        const decl = declaration(name, expression(visible, 2, name));
+        const mutable = rand(2) === 0;
+        decl.kind = mutable ? "let" : "const";
+        if (mutable) mutableNames.push(name);
+        body.push(decl);
+        visible.declare(name);
+        if (mutable && rand(2))
+          body.push(
+            expr({ type: "AssignmentExpression", operator: "+=", left: id(name), right: expression(visible, 1) })
+          );
+      }
+      if (mutableNames.length && rand(3) === 0) {
+        const index = `loop${nextLocal++}`;
+        const target = mutableNames[rand(mutableNames.length)];
+        body.push({
+          type: "ForStatement",
+          init: variable(index, 0),
+          test: { type: "BinaryExpression", operator: "<", left: id(index), right: literal(rand(5)) },
+          update: { type: "UpdateExpression", operator: "++", prefix: false, argument: id(index) },
+          body: { type: "BlockStatement", body: [add(target, index)] },
+        });
+      }
+      let terminal;
+      if (depth && rand(2)) {
+        const operators = ["<", "<=", ">", ">=", "===", "!=="];
+        terminal = {
+          type: "IfStatement",
+          test: {
+            type: "BinaryExpression",
+            operator: operators[rand(operators.length)],
+            left: expression(visible, 1),
+            right: expression(visible, 1),
+          },
+          consequent: { type: "BlockStatement", body: sequence(new Scope(visible), depth - 1) },
+          alternate: { type: "BlockStatement", body: sequence(new Scope(visible), depth - 1) },
+        };
+      } else if (rand(4) === 0) {
+        const thrown = [false, null, "generated", rand(8)][rand(4)];
+        terminal = { type: "ThrowStatement", argument: literal(thrown) };
+      } else terminal = returnNode(expression(visible, 2));
+      if (rand(4) === 0) {
+        terminal = {
+          type: "TryStatement",
+          block: { type: "BlockStatement", body: [terminal] },
+          handler: {
+            type: "CatchClause",
+            param: null,
+            body: { type: "BlockStatement", body: [returnNode(expression(visible, 1))] },
+          },
+          finalizer: null,
+        };
+      }
+      if (mutableNames.length && rand(4) === 0) {
+        const target = mutableNames[rand(mutableNames.length)];
+        terminal = {
+          type: "TryStatement",
+          block: { type: "BlockStatement", body: [terminal] },
+          handler: null,
+          finalizer: {
+            type: "BlockStatement",
+            body: [expr({ type: "UpdateExpression", operator: "++", prefix: false, argument: id(target) })],
+          },
+        };
+      }
+      body.push(terminal);
+      return body;
+    };
+    return functionNode(name, ["parameter"], [...localPrefix, ...dataPrefix, ...sequence(scope, 2)]);
   };
+  const functionNames = Array.from({ length: 1 + rand(3) }, (_, i) => (i ? `calculate${i}` : "calculate"));
+  const functions = functionNames.map(makeFunction);
   const ast = {
     type: "Program",
     sourceType: "module",
     body: [
-      variable("global", rand(4)),
-      functionNode("calculate", ["parameter"], [...localPrefix, ...dataPrefix, ...sequence(scope, 2)]),
+      ...globals.map((name) => variable(name, rand(4))),
+      ...functions,
       {
         type: "ExportNamedDeclaration",
-        specifiers: [{ type: "ExportSpecifier", local: id("calculate"), exported: id("calculate") }],
+        specifiers: functionNames.map((name) => ({ type: "ExportSpecifier", local: id(name), exported: id(name) })),
       },
     ],
   };
@@ -1013,12 +1036,15 @@ export function makeComposedCase(seed, index) {
       kind: "bindings",
       entry: "entry.mjs",
       modules: {
-        "state.mjs": { imports: [], statements: [0] },
-        "logic.mjs": { imports: ["state.mjs"], statements: [1] },
+        "state.mjs": { imports: [], statements: globals.map((_, index) => index) },
+        "logic.mjs": { imports: ["state.mjs"], statements: functionNames.map((_, index) => globals.length + index) },
         "entry.mjs": { imports: ["logic.mjs"], statements: [] },
       },
     },
-    calls: Array.from({ length: 1 + rand(4) }, () => ({ name: "calculate", args: [rand(5)] })),
+    calls: Array.from({ length: 1 + rand(4) }, () => ({
+      name: functionNames[rand(functionNames.length)],
+      args: [rand(5)],
+    })),
   };
 }
 
@@ -1075,7 +1101,17 @@ export function makeAsyncCase(seed, index) {
 export function execute(path, calls, { timeoutMs = 10000 } = {}) {
   const code = `
 const events=[];
-globalThis.record=v=>events.push(v);
+const send=(kind,value)=>process.stdout.write(JSON.stringify({kind,value})+'\\n');
+let opaqueObservation=false;
+const primitive=v=>{
+  if(v===undefined)return {undefined:true};
+  if(typeof v==='number' && (Number.isNaN(v)||Object.is(v,-0)||!Number.isFinite(v)))
+    return {number:Number.isNaN(v)?'NaN':Object.is(v,-0)?'-0':String(v)};
+  if(typeof v==='bigint')return {bigint:String(v)};
+  if(v===null||typeof v==='number'||typeof v==='string'||typeof v==='boolean')return v;
+  opaqueObservation=true;return {opaque:true};
+};
+globalThis.record=v=>{const value=primitive(v);events.push(value);send('event',value);};
 let phase='import', index=-1, names=[];
 const results=[];
 const thrownValue=v=>{
@@ -1084,28 +1120,58 @@ const thrownValue=v=>{
   if(typeof v==='number')return {kind:'number',value:Number.isNaN(v)?'NaN':Object.is(v,-0)?'-0':Number.isFinite(v)?v:String(v)};
   if(typeof v==='string'||typeof v==='boolean')return {kind:typeof v,value:v};
   if(typeof v==='bigint')return {kind:'bigint',value:String(v)};
-  if(v instanceof Error)return {kind:'opaque',name:v.name};
+  try{if(v instanceof Error)return {kind:'opaque',name:errorName(v)};}catch{return {kind:'opaque'};}
   return {kind:'opaque'};
 };
+const errorName=e=>{try{const name=e?.name;return typeof name==='string'?name:null;}catch{return null;}};
 try{
   const m=await import(${JSON.stringify(pathToFileURL(path).href)});
-  names=Object.keys(m);phase='call';
-  for(const call of ${JSON.stringify(calls)}){index++;const name=typeof call==='string'?call:call.name;const args=typeof call==='string'?[]:call.args;const v=await m[name](...args);results.push(v===undefined?{undefined:true}:{value:v});}
-  console.log(JSON.stringify({events,exports:names,results,error:null}));
+  names=Object.keys(m);send('exports',names);phase='call';
+  for(const call of ${JSON.stringify(calls)}){index++;const name=typeof call==='string'?call:call.name;const args=typeof call==='string'?[]:call.args;const raw=m[name](...args);const v=raw instanceof Promise?await raw:raw;const normalized=primitive(v);const result=v===undefined?normalized:{value:normalized};results.push(result);send('result',result);}
 }catch(e){
   const thrown=thrownValue(e);
-  console.log(JSON.stringify({events,exports:names,results,error:{name:e?.name??null,phase,index,thrown}}));
-}`;
+  send('error',{name:errorName(e),phase,index,thrown});
+}
+send('complete',opaqueObservation);`;
   const child = spawnSync(process.execPath, ["--input-type=module", "-e", code], {
     encoding: "utf8",
     timeout: timeoutMs,
   });
-  if (child.error?.code === "ETIMEDOUT") return { inconclusive: "timeout" };
+  const observed = { events: [], exports: [], results: [], error: null };
+  let complete = false,
+    opaque = false,
+    invalid = false;
+  const lines = child.stdout.split("\n");
+  if (lines.at(-1) !== "") lines.pop();
+  for (const line of lines) {
+    if (!line) continue;
+    let event;
+    try {
+      event = JSON.parse(line);
+    } catch {
+      invalid = true;
+      break;
+    }
+    if (event.kind === "event") observed.events.push(event.value);
+    else if (event.kind === "exports") observed.exports = event.value;
+    else if (event.kind === "result") observed.results.push(event.value);
+    else if (event.kind === "error") observed.error = event.value;
+    else if (event.kind === "complete") {
+      complete = true;
+      opaque = event.value;
+    } else {
+      invalid = true;
+      break;
+    }
+  }
+  if (child.error?.code === "ETIMEDOUT") return { ...observed, inconclusive: "timeout" };
+  if (child.error?.code === "ENOBUFS") return { ...observed, inconclusive: "output limit" };
   if (child.status === 13 && child.stderr.includes("unsettled top-level await"))
-    return { inconclusive: "no completion" };
+    return { ...observed, inconclusive: "no completion" };
   if (child.error || child.status !== 0) throw new Error(`Node oracle failed: ${child.error ?? child.stderr}`);
-  if (!child.stdout.trim()) return { inconclusive: "no completion" };
-  return JSON.parse(child.stdout);
+  if (invalid) return { ...observed, inconclusive: "unexpected output" };
+  if (!complete) return { ...observed, inconclusive: "no completion" };
+  return opaque ? { ...observed, inconclusive: "opaque observation" } : observed;
 }
 
 // Reduce top-level statements, call sequence, and module graph while retaining a

@@ -121,11 +121,13 @@ Functions may declare and call nonescaping local functions that capture and
 mutate surrounding numeric bindings. The checker rejects recursion, local
 function identities that escape, and cases where a captured name or the
 function itself could be shadowed at a call site.
-Returning or throwing functions may use a terminal `try`/`finally` without
-`catch`, when the finalizer consists of supported local assignments or updates.
-The finalizer runs after either completion; an exception from its expressions
-replaces the pending completion. Direct `return` or `throw` statements in the
-finalizer remain unsupported.
+Returning or throwing functions may use a terminal `try`/`catch` without a
+catch binding, optionally followed by `finally`. Both the try and catch blocks
+must return or throw using supported statements. The finalizer consists of
+supported local assignments or updates; it runs after either completion, and
+an exception from its expressions replaces the pending completion. Catch
+bindings and direct `return` or `throw` statements in the finalizer remain
+unsupported.
 Functions also support `for (let i = 0; i < N; i++)` with a literal `N`
 from 0 through 8 and a block of supported local assignments or updates. The
 body cannot write the loop variable. The frontend unrolls these bounded loops
@@ -149,8 +151,9 @@ The original incrementing factory requires its captured variable to have a
 different name from `seed`. The shared Lean lexical lookup treats a nearer
 uninitialized binding as a temporal-dead-zone reference rather than falling
 through to an outer one. The checker also supports factories with numeric
-parameters and initialized lexical locals that return a parameterized arrow
-or a named local function declaration. The returned function can mutate captured `let` bindings and parameters through
+parameters and initialized lexical locals that return a parameterized arrow,
+an anonymous function expression, or a named local function or const holding
+one of those expressions. The returned function can mutate captured `let` bindings and parameters through
 the supported numeric expression grammar. Top-level `const` declarations call
 these factories with numeric literals; each call receives independent captured
 cells. A chain of top-level `const` aliases can name one such closure, and
@@ -285,8 +288,8 @@ their grammar and sample acyclic graphs, cycles, and deliberately duplicated
 statement assignments. The summary records requested categories and refusals;
 an acyclic graph can still have missing dependencies or other invalid links.
 Use `--grammar composed` to generate bounded expression trees and nested
-returning branches from visible lexical names. It can be combined with either
-split mode; it currently covers only a subset of the planned grammar.
+returning branches and catch clauses from visible lexical names, with
+independently generated function bodies. It can be combined with either split mode; it currently covers only a subset of the planned grammar.
 `--grammar async` generates promise-based functions and observes each call to
 completion in Node. Pending promises and timeouts are inconclusive. Async
 execution is not yet part of the Lean proof-supported subset.
@@ -321,10 +324,11 @@ approximately 1/N sample for validation while still splitting and running all
 supported cases in Node. The summary distinguishes unvalidated cases, unknowns,
 proved results, unsafe witnesses and Node differences. A Node difference in an
 unvalidated or unknown case is useful evidence, not itself a validator error.
-The oracle records primitive thrown values and exception names, and retains the
-trace prefix before a throw. Timeouts and opaque thrown objects are reported as
-inconclusive, with artifacts retained; object identity and exception messages
-are not compared.
+The oracle records primitive returns, thrown values and exception names, and
+retains the trace prefix before a throw. It distinguishes `NaN`, infinities,
+negative zero and big integers. Timeouts, output limits, and opaque object
+observations are inconclusive, with artifacts retained; object identity and
+exception messages are not compared.
 
 The generator covers a deliberately small, extensible ESTree grammar: integer
 bindings, functions, calls, records and exports, and a separate scope-aware

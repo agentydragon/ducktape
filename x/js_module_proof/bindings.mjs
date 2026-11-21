@@ -552,14 +552,18 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
     return returning(first);
   };
   const returning = (statement) => {
-    if (statement?.type === "TryStatement" && statement.finalizer && !statement.handler) {
+    if (statement?.type === "TryStatement") {
+      check(!statement.handler || statement.handler.param === null, "catch bindings are unsupported");
+      let body = sequence(statement.block.body);
+      if (statement.handler) body = { kind: "catchError", body, handler: sequence(statement.handler.body.body) };
+      if (!statement.finalizer) return body;
       check(
         statement.finalizer.body.every((item) => item.type === "ExpressionStatement"),
         "unsupported finalizer statement"
       );
       return {
         kind: "finally",
-        body: sequence(statement.block.body),
+        body,
         finalizer: sequence([
           ...statement.finalizer.body,
           { type: "ReturnStatement", argument: { type: "Literal", value: 0 } },
@@ -615,6 +619,8 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
         return [...free(item.test, bound), ...free(item.consequent, bound), ...free(item.alternative, bound)];
       case "local":
         return [...free(item.initial, bound), ...free(item.body, [item.name, ...bound])];
+      case "catchError":
+        return [...free(item.body, bound), ...free(item.handler, bound)];
       case "finally":
         return [...free(item.body, bound), ...free(item.finalizer, bound)];
       case "followedBy":
@@ -666,14 +672,24 @@ function capturedFactory(node, functions) {
   if (closure?.type === "Identifier") {
     functionName = identifier(closure);
     const matches = declarations.filter(
-      (statement) => statement.type === "FunctionDeclaration" && statement.id?.name === functionName
+      (statement) =>
+        (statement.type === "FunctionDeclaration" && statement.id?.name === functionName) ||
+        (statement.type === "VariableDeclaration" &&
+          statement.kind === "const" &&
+          statement.declarations.length === 1 &&
+          statement.declarations[0].id?.name === functionName &&
+          ["ArrowFunctionExpression", "FunctionExpression"].includes(statement.declarations[0].init?.type))
     );
     check(matches.length === 1, "expected one returned local function declaration");
-    closure = matches[0];
-    declarations = declarations.filter((statement) => statement !== closure);
+    const definition = matches[0];
+    closure = definition.type === "FunctionDeclaration" ? definition : definition.declarations[0].init;
+    declarations = declarations.filter((statement) => statement !== definition);
   }
   check(
-    ["ArrowFunctionExpression", "FunctionDeclaration"].includes(closure?.type) && !closure.async && !closure.generator,
+    ["ArrowFunctionExpression", "FunctionDeclaration", "FunctionExpression"].includes(closure?.type) &&
+      !closure.async &&
+      !closure.generator &&
+      (closure.type !== "FunctionExpression" || closure.id === null),
     "unsupported returned function"
   );
   const closureParameters = closure.params.map(identifier);
@@ -1126,6 +1142,8 @@ function leanExpression(expression) {
       return `.${expression.kind} (${leanExpression(expression.test)}) (${leanExpression(expression.consequent)}) (${leanExpression(expression.alternative)})`;
     case "local":
       return `.local ${str(expression.name)} ${expression.mutable} (${leanExpression(expression.initial)}) (${leanExpression(expression.body)})`;
+    case "catchError":
+      return `.catchError (${leanExpression(expression.body)}) (${leanExpression(expression.handler)})`;
     case "finally":
       return `.finally (${leanExpression(expression.body)}) (${leanExpression(expression.finalizer)})`;
     case "followedBy":
@@ -1675,6 +1693,11 @@ theorem binding_captured_observations (calls : List (String × List Nat)) :
       const initial = expressionBound(expression.initial, bound);
       const body = expressionBound(expression.body, initial > bound ? initial : bound);
       return initial > body ? initial : body;
+    }
+    if (expression.kind === "catchError") {
+      const body = expressionBound(expression.body, bound);
+      const handler = expressionBound(expression.handler, body > bound ? body : bound);
+      return body > handler ? body : handler;
     }
     if (expression.kind === "finally") {
       const body = expressionBound(expression.body, bound);

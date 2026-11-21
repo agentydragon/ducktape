@@ -27,6 +27,7 @@ inductive NumericExpr where
   | conditional (test consequent alternative : NumericExpr)
   | guard (test consequent continuation : NumericExpr)
   | finally (body finalizer : NumericExpr)
+  | catchError (body handler : NumericExpr)
   | followedBy (first continuation : NumericExpr)
   | local (name : String) (mutable : Bool) (initial body : NumericExpr)
   | assign (name : String) (value body : NumericExpr)
@@ -246,6 +247,11 @@ def evaluateExpression (locals globals : List (String × Nat)) : NumericExpr →
       match bodyResult.locals with
       | [] => none
       | _ :: tail => pure ⟨tail, bodyResult.completion⟩
+  | .catchError body handler => do
+    let result ← evaluateExpression locals globals body
+    match result.completion with
+    | .error _ => evaluateExpression result.locals globals handler
+    | .ok _ => pure result
   | .finally body finalizer => do
     let bodyResult ← evaluateExpression locals globals body
     let finalResult ← evaluateExpression bodyResult.locals globals finalizer
@@ -312,6 +318,7 @@ def evaluateArguments (locals globals : List (String × Nat)) : NumericExpr → 
   | .conditional _ _ _ => none
   | .guard _ _ _ => none
   | .finally _ _ => none
+  | .catchError _ _ => none
   | .followedBy _ _ => none
   | .local _ _ _ _ => none
   | .assign _ _ _ => none
