@@ -28,7 +28,7 @@ from agentplane.system_tests.driver.agent import (
 from agentplane.system_tests.driver.app_sandbox import wait_until_running
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.offered_models import models_offered_for
-from agentplane.system_tests.driver.sandbox import VM_WORKING_DIRECTORY, Sandboxes
+from agentplane.system_tests.driver.sandbox import ENVIRONMENT_RUNTIME_CONTAINER, VM_WORKING_DIRECTORY, Sandboxes
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -218,7 +218,7 @@ async def preserves_live_guest(
 
     pod_json = json.loads(await cluster.kubectl("get", "pod", pod.name, "-o", "json"))
     (launcher,) = [
-        container for container in pod_json["spec"]["containers"] if container["name"] == "environment-runtime"
+        container for container in pod_json["spec"]["containers"] if container["name"] == ENVIRONMENT_RUNTIME_CONTAINER
     ]
     memory_limit = int(launcher["resources"]["limits"]["memory"])
     assert pod_json["status"]["qosClass"] == "Burstable"
@@ -230,16 +230,13 @@ async def preserves_live_guest(
             with attempt:
                 # Use the launcher's cgroup, which includes the VMM and buffered snapshot writes.
                 # The kernel high-water mark captures spikes between samples.
-                raw_memory = await cluster.kubectl(
-                    "exec",
+                raw_memory = await cluster.exec(
                     pod.name,
-                    "-c",
-                    "environment-runtime",
-                    "--",
                     "sh",
                     "-ec",
                     'cg="/sys/fs/cgroup$(cut -d: -f3 /proc/self/cgroup)"; '
                     'cat "$cg/memory.current" "$cg/memory.peak" "$cg/memory.max" "$cg/memory.stat" "$cg/memory.events"',
+                    container=ENVIRONMENT_RUNTIME_CONTAINER,
                     timeout_s=10,
                 )
                 current, peak, maximum, *counters = raw_memory.splitlines()

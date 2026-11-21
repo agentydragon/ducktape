@@ -108,10 +108,8 @@ def _normalize_delivery_state(dispatch: pb.Dispatch) -> None:
 
 
 async def _dispatcher_sql(cluster: Cluster, statement: str) -> str:
-    return await cluster.kubectl(
-        "exec",
+    return await cluster.exec(
         "deployment/postgres",
-        "--",
         "psql",
         "--host=/tmp",
         "--username=fixture_admin",

@@ -55,6 +55,13 @@ class Cluster:
             raise RuntimeError(f"kubectl {' '.join(args)}: {stderr.decode()}")
         return stdout.decode().strip()
 
+    async def exec(
+        self, target: str, *argv: str, container: str | None = None, timeout_s: float = KUBECTL_SECONDS
+    ) -> str:
+        """Run a command in a pod selected by name or a kubectl resource reference."""
+        container_args = ("-c", container) if container is not None else ()
+        return await self.kubectl("exec", target, *container_args, "--", *argv, timeout_s=timeout_s)
+
     @asynccontextmanager
     async def api_client(self) -> AsyncIterator[k8s.ApiClient]:
         configuration = k8s.Configuration()
