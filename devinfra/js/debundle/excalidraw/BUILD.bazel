@@ -54,6 +54,7 @@ esbuild(
     sourcemap = False,
     splitting = True,
     target = ["es2022"],
+    visibility = ["//devinfra/js/debundle/x/split_proof/experiments/translation:__pkg__"],
     deps = [":app"],
 )
 
