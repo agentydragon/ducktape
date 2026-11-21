@@ -41,7 +41,7 @@ The LLM proxy at `OPENAI_BASE_URL` authenticates with `OPENAI_API_KEY` and logs 
 | Capability | Critic | Grader | Critic developer (you) |
 |------------|--------|--------|------------------------|
 | PostgreSQL (RLS-scoped) | Yes | Yes | Yes |
-| LLM proxy (`/v1/responses`, `/v1/chat/completions`) | Yes | Yes | Yes |
+| LLM proxy (`/v1/responses`, `/v1/chat/completions`, `/v1/messages`) | Yes | Yes | Yes |
 | Runs API (`/api/runs/critic`) | No | No | Yes |
 | Registry proxy (`/v2/*`) | No | No | Yes |
 
@@ -168,7 +168,7 @@ proxies use their own environment variables:
 | `/api/runs/*` | Agent run management | No (admin) |
 | `/api/gt/*` | Ground truth management | No (admin) |
 
-Use `OPENAI_BASE_URL` for LLM calls (`/v1/responses`, `/v1/chat/completions`).
+Use `OPENAI_BASE_URL` for LLM calls (`/v1/responses`, `/v1/chat/completions`, `/v1/messages`).
 Use `PROPS_REGISTRY_URL` as the registry host for all `crane` and `/v2/`
 operations. Do not derive the registry from `PROPS_BACKEND_URL`.
 

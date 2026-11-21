@@ -18,7 +18,7 @@ ${describe_relation("snapshot_files")}
 ## 1. Critic Run
 
 **What the critic sees:**
-- Source code mounted at `/workspace` (read-only)
+- Source code fetched to `/workspace` at startup (writable)
 - System prompt with task description
 - Database access for writing issues
 
