@@ -7,19 +7,12 @@ conversion.
 
 ## ESO store/consumer agreement
 
-`cluster/validation/checks.py` sees generated and hand-written resources together.
-Resolve each ExternalSecret's store, including ClusterExternalSecret target namespaces;
-check store namespace conditions and the ServiceAccount required by Kubernetes-provider
-referent authentication. Existing checks cover external credential ownership and the
-Forgejo image distribution convention, not this general relationship.
+The [rendered-tree check](../docs/cdk8s.md#sops-secrets-in-a-converted-directory) includes
+local Flux `targetNamespace` overrides. Report consumers it cannot resolve because their
+namespace or selector labels come from outside the render. Keep access grants explicit.
 
-The missing agreement has already caused denied Airlock/Forgejo-image consumers and a
-missing `external-creds-reader` ServiceAccount. Handle namespace selectors as well as
-literal lists where used. Derive paired fields from an explicitly approved grant when
-they have one owner; never grant access just because an ExternalSecret requests it.
-
-Done: synthetic cases catch denied namespaces and absent referent identities, while
-valid generated and hand-written consumers pass. No duplicate consumer/provider roster.
+Done: all resolvable consumers are checked and any unresolved cases are described without
+claiming the render proves live readiness or maintaining a duplicate provider roster.
 
 ## Fleet rule waivers
 

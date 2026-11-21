@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from pathlib import Path
-from typing import NotRequired, TypedDict
+from typing import Any, NotRequired, TypedDict
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
@@ -221,6 +221,7 @@ class SecretStoreKubernetesProvider(BaseModel):
     model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
 
     remote_namespace: str = ""
+    auth: dict[str, Any] = Field(default_factory=dict)
 
 
 class SecretStoreProvider(BaseModel):
@@ -233,6 +234,7 @@ class SecretStoreSpec(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     provider: SecretStoreProvider = Field(default_factory=SecretStoreProvider)
+    conditions: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class SecretStoreResource(K8sResource):
@@ -241,6 +243,12 @@ class SecretStoreResource(K8sResource):
 
 class ExternalSecretResource(K8sResource):
     """An External Secrets `ExternalSecret`: `checks` looks up the ones a namespace has by name."""
+
+    spec: dict[str, Any] = Field(default_factory=dict)
+
+
+class ClusterExternalSecretResource(K8sResource):
+    spec: dict[str, Any] = Field(default_factory=dict)
 
 
 class GitRepositorySpec(BaseModel):
@@ -334,6 +342,7 @@ _KIND_MODELS: dict[str, type[K8sResource]] = {
     "Secret": SecretResource,
     "SecretStore": SecretStoreResource,
     "ClusterSecretStore": SecretStoreResource,
+    "ClusterExternalSecret": ClusterExternalSecretResource,
     "ExternalSecret": ExternalSecretResource,
     "CiliumNetworkPolicy": CiliumPolicyResource,
     "CiliumClusterwideNetworkPolicy": CiliumPolicyResource,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 import pytest_bazel
@@ -10,6 +11,7 @@ import pytest_bazel
 from cluster.validation.checks import (
     check_cilium_policy_rules_nonempty,
     check_external_credential_ownership,
+    check_external_secret_store_wiring,
     check_forgejo_image_namespace_reflection,
     check_goldilocks_namespace_labels,
 )
@@ -19,8 +21,8 @@ from cluster.validation.k8s import parse_k8s_resources
 from cluster.validation.kustomize import KustomizeBuildResult
 
 
-def _cluster_with(doc: dict) -> ParsedCluster:
-    return ParsedCluster(source_resources={Path("policy.yaml"): parse_k8s_resources([doc])})
+def _cluster_with(*docs: dict) -> ParsedCluster:
+    return ParsedCluster(source_resources={Path("policy.yaml"): parse_k8s_resources(docs)})
 
 
 def _external_creds_cluster(repo_root: Path, consumer_docs: list[dict]) -> ParsedCluster:
@@ -215,6 +217,141 @@ def test_sandbox_template_images_require_namespace_credentials(
 def test_external_credential_central_store_passes(tmp_path: Path) -> None:
     cluster = _external_creds_cluster(tmp_path, [_consumer_external_secret()])
     assert check_external_credential_ownership(cluster, tmp_path) == []
+
+
+def test_external_secret_store_conditions_and_referent_service_account() -> None:
+    store: dict[str, Any] = {
+        "kind": "ClusterSecretStore",
+        "metadata": {"name": "shared"},
+        "spec": {
+            "conditions": [{"namespaces": ["allowed"]}],
+            "provider": {"kubernetes": {"auth": {"serviceAccount": {"name": "reader"}}}},
+        },
+    }
+    secret: dict[str, Any] = {
+        "kind": "ExternalSecret",
+        "metadata": {"name": "credential", "namespace": "denied"},
+        "spec": {
+            "secretStoreRef": {"kind": "ClusterSecretStore", "name": "shared"},
+            "data": [{"remoteRef": {"key": "credential"}, "secretKey": "credential"}],
+        },
+    }
+    cluster = _cluster_with(store, secret)
+    errors = check_external_secret_store_wiring(cluster)
+    assert len(errors) == 2
+    assert any("denied by ClusterSecretStore 'shared'" in error for error in errors)
+    assert any("'denied/reader' missing" in error for error in errors)
+
+    secret["metadata"]["namespace"] = "allowed"
+    account = {"kind": "ServiceAccount", "metadata": {"name": "reader", "namespace": "allowed"}}
+    assert check_external_secret_store_wiring(_cluster_with(store, secret, account)) == []
+
+
+def test_cluster_external_secret_selectors_and_per_entry_store_refs() -> None:
+    namespace = {"kind": "Namespace", "metadata": {"name": "consumer", "labels": {"tenant": "active"}}}
+    store: dict[str, Any] = {
+        "kind": "ClusterSecretStore",
+        "metadata": {"name": "selected"},
+        "spec": {
+            "conditions": [{"namespaceSelector": {"matchLabels": {"tenant": "active"}}}],
+            "provider": {"kubernetes": {"auth": {"serviceAccount": {"name": "central", "namespace": "eso"}}}},
+        },
+    }
+    secret = {
+        "kind": "ClusterExternalSecret",
+        "metadata": {"name": "credential"},
+        "spec": {
+            "namespaceSelectors": [{"matchExpressions": [{"key": "tenant", "operator": "In", "values": ["active"]}]}],
+            "externalSecretSpec": {
+                # The per-entry source replaces this otherwise missing default store.
+                "secretStoreRef": {"kind": "ClusterSecretStore", "name": "unused"},
+                "dataFrom": [{"sourceRef": {"storeRef": {"kind": "ClusterSecretStore", "name": "selected"}}}],
+            },
+        },
+    }
+    assert check_external_secret_store_wiring(_cluster_with(namespace, store, secret)) == []
+    store["spec"]["conditions"] = [{"namespaceSelector": {"matchLabels": {"tenant": "different"}}}]
+    [error] = check_external_secret_store_wiring(_cluster_with(namespace, store, secret))
+    assert "denied by ClusterSecretStore 'selected'" in error
+
+
+def test_store_refs_use_namespace_and_per_entry_overrides() -> None:
+    secret: dict[str, Any] = {
+        "kind": "ExternalSecret",
+        "metadata": {"name": "credential", "namespace": "consumer"},
+        "spec": {
+            "secretStoreRef": {"name": "default"},
+            "data": [
+                {"remoteRef": {"key": "a"}, "secretKey": "a"},
+                {"remoteRef": {"key": "b"}, "secretKey": "b", "sourceRef": {"storeRef": {"name": "override"}}},
+            ],
+            "dataFrom": [{"sourceRef": {"generatorRef": {"kind": "Password", "name": "generator"}}}],
+        },
+    }
+    stores: list[dict[str, Any]] = [
+        {"kind": "SecretStore", "metadata": {"name": name, "namespace": "consumer"}} for name in ("default", "override")
+    ]
+    assert check_external_secret_store_wiring(_cluster_with(secret, *stores)) == []
+    stores[1]["metadata"]["namespace"] = "other"
+    [error] = check_external_secret_store_wiring(_cluster_with(secret, *stores))
+    assert "missing SecretStore 'override'" in error
+    del secret["spec"]["secretStoreRef"]
+    errors = check_external_secret_store_wiring(_cluster_with(secret, *stores))
+    assert any("without a store reference" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    ("conditions", "allowed"),
+    [
+        ([{"namespaceSelector": {}}], True),
+        ([{"namespaceSelector": {"matchLabels": {"team": "other"}}}], False),
+        (
+            [{"namespaceSelector": {"matchExpressions": [{"key": "team", "operator": "NotIn", "values": ["other"]}]}}],
+            True,
+        ),
+        ([{"namespaceSelector": {"matchExpressions": [{"key": "missing", "operator": "Exists"}]}}], False),
+        ([{"namespaceSelector": {"matchExpressions": [{"key": "missing", "operator": "DoesNotExist"}]}}], True),
+        ([{"namespaces": ["other"]}, {"namespaceRegexes": ["^consumer$"]}], True),
+    ],
+)
+def test_cluster_store_namespace_conditions(conditions: list[dict], allowed: bool) -> None:
+    namespace = {"kind": "Namespace", "metadata": {"name": "consumer", "labels": {"team": "active"}}}
+    store = {"kind": "ClusterSecretStore", "metadata": {"name": "shared"}, "spec": {"conditions": conditions}}
+    secret = {
+        "kind": "ExternalSecret",
+        "metadata": {"name": "credential", "namespace": "consumer"},
+        "spec": {
+            "secretStoreRef": {"kind": "ClusterSecretStore", "name": "shared"},
+            "data": [{"secretKey": "a", "remoteRef": {"key": "a"}}],
+        },
+    }
+    errors = check_external_secret_store_wiring(_cluster_with(namespace, store, secret))
+    assert bool(errors) is not allowed
+
+
+def test_cluster_external_secret_literal_namespace_and_unknown_labels() -> None:
+    store: dict[str, Any] = {
+        "kind": "ClusterSecretStore",
+        "metadata": {"name": "shared"},
+        "spec": {"conditions": [{"namespaceSelector": {"matchLabels": {"runtime": "yes"}}}]},
+    }
+    secret = {
+        "kind": "ClusterExternalSecret",
+        "metadata": {"name": "credential"},
+        "spec": {
+            "namespaces": ["runtime-created"],
+            "externalSecretSpec": {
+                "secretStoreRef": {"kind": "ClusterSecretStore", "name": "shared"},
+                "data": [{"secretKey": "a", "remoteRef": {"key": "a"}}],
+            },
+        },
+    }
+    # The namespace's runtime labels aren't in the render, so do not claim denial.
+    assert check_external_secret_store_wiring(_cluster_with(store, secret)) == []
+    store["spec"]["conditions"] = [{"namespaces": ["other"]}]
+    [error] = check_external_secret_store_wiring(_cluster_with(store, secret))
+    assert "runtime-created" in error
+    assert "denied" in error
 
 
 def test_external_credential_namespace_store_is_rejected(tmp_path: Path) -> None:

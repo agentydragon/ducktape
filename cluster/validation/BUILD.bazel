@@ -277,6 +277,7 @@ py_test(
         "//:session_backup_sops_source",
         "//agentplane/crds:manifests",
         "//cluster:generated_manifests",
+        "@multitool//tools/flux",
         "@multitool//tools/kustomize",
     ],
     deps = [
@@ -294,6 +295,7 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@pypi//types_pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 
