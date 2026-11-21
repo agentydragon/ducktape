@@ -359,13 +359,16 @@ if (runSection(0)) {
 
   const expressionSource = join(root, "unsupported-renamed-local-source.mjs");
   const expressionSpec = join(root, "unsupported-renamed-local-spec.json");
-  await writeFile(expressionSource, `let value = 3;\nfunction read(arg) { return value + arg; }\nexport { read };\n`);
+  await writeFile(
+    expressionSource,
+    `let value = 3;\nfunction read(arg) { let local = arg; return value + local; }\nexport { read };\n`
+  );
   generatedSpec.modules["state.mjs"].statements = [0];
   generatedSpec.modules["logic.mjs"].statements = [1];
   await writeFile(expressionSpec, JSON.stringify(generatedSpec));
   const unsupported = cli("generate", expressionSource, expressionSpec, join(root, "unsupported-renamed-local-out"));
   assert.equal(unsupported.value.result, "unknown");
-  assert.match(unsupported.value.reason, /local import renaming supports only parameterless pure expressions/);
+  assert.match(unsupported.value.reason, /local import renaming supports only pure returning expressions/);
 
   const observedSource = join(root, "observed-renamed-local-source.mjs");
   const observedSpec = join(root, "observed-renamed-local-spec.json");
@@ -479,7 +482,18 @@ if (runSection(0)) {
   const nonnumeric = spawnSync(process.execPath, ["--input-type=module", "-e", nonnumericScript], { encoding: "utf8" });
   assert.equal(nonnumeric.status, 0, nonnumeric.stderr);
   assert.equal(nonnumeric.stdout.trim(), "function");
+}
 
+if (runSection(2)) {
+  const generatedSpec = {
+    kind: "bindings",
+    entry: "entry.mjs",
+    modules: {
+      "state.mjs": { imports: [], statements: [] },
+      "logic.mjs": { imports: ["state.mjs"], statements: [], renameLocalImports: true },
+      "entry.mjs": { imports: ["logic.mjs"], statements: [] },
+    },
+  };
   const numericSource = join(root, "numeric-renamed-local-source.mjs");
   const numericSpec = join(root, "numeric-renamed-local-spec.json");
   const numericOut = join(root, "numeric-renamed-local-out");
@@ -507,6 +521,55 @@ if (runSection(0)) {
   assert.equal(numericRedirect.result, "unsafe", JSON.stringify(numericRedirect));
   assert.deepEqual(execute(numericSource, numericRedirect.calls), { events: [], results: [10] });
   assert.deepEqual(execute(join(numericOut, "entry.mjs"), numericRedirect.calls), { events: [], results: [12] });
+
+  const parameterSource = join(root, "parameter-alias-source.mjs");
+  const parameterSpec = join(root, "parameter-alias-spec.json");
+  const parameterOut = join(root, "parameter-alias-out");
+  await writeFile(
+    parameterSource,
+    `let value = 3;\nlet shadow = 8;\nfunction compute(shadow) { return value + shadow; }\nexport { compute };\n`
+  );
+  generatedSpec.modules["state.mjs"].statements = [0, 1];
+  generatedSpec.modules["logic.mjs"].statements = [2];
+  await writeFile(parameterSpec, JSON.stringify(generatedSpec));
+  assert.equal(cli("generate", parameterSource, parameterSpec, parameterOut).value.result, "generated");
+  const parameterState = join(parameterOut, "state.mjs");
+  await writeFile(parameterState, (await readFile(parameterState, "utf8")) + "export { shadow };\n");
+  const parameter = cli("validate", parameterSource, parameterSpec, parameterOut).value;
+  assert.equal(parameter.result, "proved under assumptions", JSON.stringify(parameter));
+  const parameterCalls = [
+    { name: "compute", args: [0] },
+    { name: "compute", args: [2] },
+  ];
+  assert.deepEqual(execute(parameterSource, parameterCalls), { events: [], results: [3, 5] });
+  assert.deepEqual(execute(join(parameterOut, "entry.mjs"), parameterCalls), { events: [], results: [3, 5] });
+  const parameterLogic = join(parameterOut, "logic.mjs");
+  const parameterText = await readFile(parameterLogic, "utf8");
+  assert.match(parameterText, /value as __split_local_0/);
+  await writeFile(parameterLogic, parameterText.replace("value as __split_local_0", "shadow as __split_local_0"));
+  const shadowRedirect = cli("validate", parameterSource, parameterSpec, parameterOut).value;
+  assert.equal(shadowRedirect.result, "unsafe", JSON.stringify(shadowRedirect));
+  assert.deepEqual(execute(parameterSource, shadowRedirect.calls), { events: [], results: [3] });
+  assert.deepEqual(execute(join(parameterOut, "entry.mjs"), shadowRedirect.calls), { events: [], results: [8] });
+
+  const collisionSource = join(root, "alias-name-collision-source.mjs");
+  const collisionSpec = join(root, "alias-name-collision-spec.json");
+  const collisionOut = join(root, "alias-name-collision-out");
+  await writeFile(
+    collisionSource,
+    `let value = 3;\nfunction compute(__split_local_0) { return value + __split_local_0; }\nexport { compute };\n`
+  );
+  generatedSpec.modules["state.mjs"].statements = [0];
+  generatedSpec.modules["logic.mjs"].statements = [1];
+  await writeFile(collisionSpec, JSON.stringify(generatedSpec));
+  assert.equal(cli("generate", collisionSource, collisionSpec, collisionOut).value.result, "generated");
+  assert.match(await readFile(join(collisionOut, "logic.mjs"), "utf8"), /value as __split_local__0/);
+  const collision = cli("validate", collisionSource, collisionSpec, collisionOut).value;
+  assert.equal(collision.result, "proved under assumptions", JSON.stringify(collision));
+  assert.deepEqual(execute(join(collisionOut, "entry.mjs"), [{ name: "compute", args: [2] }]), {
+    events: [],
+    results: [5],
+  });
 }
 
 if (runSection(0)) {

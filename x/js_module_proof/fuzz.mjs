@@ -1012,7 +1012,12 @@ export function makeLocalAliasCase(seed, index) {
       alternate: id("numericRight"),
     },
   ][Math.floor(index / 12) % 3];
-  const numeric = numericBindings.length ? [functionNode("compute", [], [returnNode(numericExpression)])] : [];
+  const numericParameters = index % 8 === 5 ? [index % 16 === 13 ? "numericOther" : "argument"] : [];
+  const numericArguments = numericParameters.length ? [1] : [];
+  const numericBody = numericParameters.length
+    ? { type: "BinaryExpression", operator: "+", left: numericExpression, right: id(numericParameters[0]) }
+    : numericExpression;
+  const numeric = numericBindings.length ? [functionNode("compute", numericParameters, [returnNode(numericBody)])] : [];
   const readerStart = state.length + observation.length + localState.length;
   const updateStart = readerStart + readers.length;
   const numericStart = updateStart + updates.length;
@@ -1083,6 +1088,7 @@ export function makeLocalAliasCase(seed, index) {
     source: print(ast),
     grammar: "alias",
     numericLeftIndex: bindings.length + updateBindings.length,
+    numericArguments,
     unsupported: false,
     cyclic: false,
     invalidAssignment: false,
@@ -1093,13 +1099,12 @@ export function makeLocalAliasCase(seed, index) {
       modules,
     },
     calls: [
-      ...readerNames,
-      ...(updates.length ? ["current", "bump", "current"] : []),
-      ...(numeric.length ? ["compute"] : []),
-    ].map((name) => ({
-      name,
-      args: [],
-    })),
+      ...[...readerNames, ...(updates.length ? ["current", "bump", "current"] : [])].map((name) => ({
+        name,
+        args: [],
+      })),
+      ...(numeric.length ? [{ name: "compute", args: numericArguments }] : []),
+    ],
   };
 }
 
@@ -2124,6 +2129,9 @@ export async function runFuzz({
     localImportAliasGeneratedCases: 0,
     localImportAliasComparedCases: 0,
     localImportAliasProvedCases: 0,
+    parameterizedAliasCases: 0,
+    parameterizedAliasComparedCases: 0,
+    parameterizedAliasProvedCases: 0,
     reexportRelayCases: 0,
     reexportRelayGeneratedCases: 0,
     reexportRelayComparedCases: 0,
@@ -2296,7 +2304,8 @@ export async function runFuzz({
       if (plannedMutation === "localAliasInitRedirect") input.calls = [];
       if (plannedMutation === "localAliasUpdateRedirect")
         input.calls = ["current", "bump", "current"].map((name) => ({ name, args: [] }));
-      if (plannedMutation === "localAliasNumericRedirect") input.calls = [{ name: "compute", args: [] }];
+      if (plannedMutation === "localAliasNumericRedirect")
+        input.calls = [{ name: "compute", args: input.numericArguments }];
       if (plannedMutation === "renamedReexport")
         input.calls =
           !input.redirectedCallee && (index % 256 === 187 || index % 256 === 251 || index % 512 === 315)
@@ -2341,6 +2350,7 @@ export async function runFuzz({
       const modules = Object.values(input.spec.modules);
       if (modules.some((module) => module.aliasImports)) summary.importAliasRequestedCases++;
       if (modules.some((module) => module.renameLocalImports)) summary.localImportAliasRequestedCases++;
+      if (input.grammar === "alias" && input.numericArguments.length) summary.parameterizedAliasCases++;
       if (modules.some((module) => module.renameReexports)) summary.renamedReexportRequestedCases++;
       const importCount = modules.reduce((count, module) => count + module.imports.length, 0);
       summary.moduleCountCases[modules.length] = (summary.moduleCountCases[modules.length] ?? 0) + 1;
@@ -2546,6 +2556,7 @@ export async function runFuzz({
       }
       if (hasGeneratedImportAlias) summary.importAliasComparedCases++;
       if (hasGeneratedLocalImportAlias) summary.localImportAliasComparedCases++;
+      if (input.grammar === "alias" && input.numericArguments.length) summary.parameterizedAliasComparedCases++;
       if (hasGeneratedRenamedReexport) summary.renamedReexportComparedCases++;
       if (input.grammar === "parameter") {
         summary.parameterCompared++;
@@ -2634,6 +2645,7 @@ export async function runFuzz({
           if (input.earlyVar) summary.earlyVarProvedCases++;
           if (hasGeneratedImportAlias) summary.importAliasProvedCases++;
           if (hasGeneratedLocalImportAlias) summary.localImportAliasProvedCases++;
+          if (input.grammar === "alias" && input.numericArguments.length) summary.parameterizedAliasProvedCases++;
           if (hasGeneratedRenamedReexport) summary.renamedReexportProvedCases++;
           if (input.grammar === "object") summary.objectProved++;
           if (input.grammar === "captured") summary.capturedProved++;

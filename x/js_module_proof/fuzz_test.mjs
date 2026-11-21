@@ -7,7 +7,8 @@ if (process.env.ACORN_RLOCATION)
   process.env.JS_MODULE_PROOF_ACORN = resolve(process.env.TEST_SRCDIR, process.env.ACORN_RLOCATION);
 process.env.JS_MODULE_PROOF_LEAN = resolve(process.env.TEST_SRCDIR, process.env.LEAN_RLOCATION);
 if (process.env.TEST_SHARD_STATUS_FILE) await writeFile(process.env.TEST_SHARD_STATUS_FILE, "");
-const { execute, independentSplit, makeCase, makeComposedCase, minimizeCase, runFuzz } = await import("./fuzz.mjs");
+const { execute, independentSplit, makeCase, makeComposedCase, makeLocalAliasCase, minimizeCase, runFuzz } =
+  await import("./fuzz.mjs");
 const { assessCorpus } = await import("./real_corpus.mjs");
 const shard = Number(process.env.TEST_SHARD_INDEX ?? 0);
 const shards = Number(process.env.TEST_TOTAL_SHARDS ?? 1);
@@ -102,6 +103,11 @@ if (shards === 4 && (shard === 2 || shard === 3)) {
   assert.equal(changedNumeric.mutationKinds.localAliasNumericRedirect, 1);
   assert.equal(changedNumeric.mutatedDifferent, 1);
   assert.equal(changedNumeric.mutatedVerdicts.unsafe, 1);
+  if (start === 13) {
+    assert.match(makeLocalAliasCase(773, start).source, /function compute\(numericOther\)/);
+    assert.equal(changedNumeric.parameterizedAliasCases, 1);
+    assert.equal(changedNumeric.parameterizedAliasComparedCases, 1);
+  }
   const unchangedNumeric = await runFuzz({
     seed: 773,
     start,
@@ -113,6 +119,7 @@ if (shards === 4 && (shard === 2 || shard === 3)) {
   });
   assert.equal(unchangedNumeric.localImportAliasProvedCases, 1);
   assert.equal(unchangedNumeric.equal, 1);
+  if (start === 13) assert.equal(unchangedNumeric.parameterizedAliasProvedCases, 1);
 }
 if (shards === 4 && shard === 1) {
   const relay = await runFuzz({

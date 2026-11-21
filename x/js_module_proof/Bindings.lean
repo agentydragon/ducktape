@@ -1273,6 +1273,60 @@ def witnessedExpressionFuel (modules : List BindingModule) : Nat → Nat → Lis
 def witnessedExpression (modules : List BindingModule) (index : Nat) (bound : List (String × String)) (expression : NumericExpr) : Option NumericExpr :=
   witnessedExpressionFuel modules 1024 index bound expression
 
+/- Pure expressions have no local binders to alpha-rename. -/
+def simpleAliasNumericExpr : NumericExpr → Bool
+  | .literal _ => true
+  | .name _ => true
+  | .add left right => simpleAliasNumericExpr left && simpleAliasNumericExpr right
+  | .multiply left right => simpleAliasNumericExpr left && simpleAliasNumericExpr right
+  | .subtract left right => simpleAliasNumericExpr left && simpleAliasNumericExpr right
+  | .remainder left right => simpleAliasNumericExpr left && simpleAliasNumericExpr right
+  | .divide left right => simpleAliasNumericExpr left && simpleAliasNumericExpr right
+  | .bitAnd left right => simpleAliasNumericExpr left && simpleAliasNumericExpr right
+  | .bitOr left right => simpleAliasNumericExpr left && simpleAliasNumericExpr right
+  | .bitXor left right => simpleAliasNumericExpr left && simpleAliasNumericExpr right
+  | .unsignedShift left right => simpleAliasNumericExpr left && simpleAliasNumericExpr right
+  | .shiftLeft left right => simpleAliasNumericExpr left && simpleAliasNumericExpr right
+  | .shiftRight left right => simpleAliasNumericExpr left && simpleAliasNumericExpr right
+  | .equal left right => simpleAliasNumericExpr left && simpleAliasNumericExpr right
+  | .less left right => simpleAliasNumericExpr left && simpleAliasNumericExpr right
+  | .greater left right => simpleAliasNumericExpr left && simpleAliasNumericExpr right
+  | .conditional test yes no => simpleAliasNumericExpr test && simpleAliasNumericExpr yes && simpleAliasNumericExpr no
+  | .guard test yes no => simpleAliasNumericExpr test && simpleAliasNumericExpr yes && simpleAliasNumericExpr no
+  | .finally _ _ => false
+  | .catchError _ _ => false
+  | .followedBy _ _ => false
+  | .local _ _ _ _ => false
+  | .assign _ _ _ => false
+  | .raise _ => false
+  | .raisePrimitive _ => false
+  | .argumentsNil => false
+  | .argumentsCons _ _ => false
+  | .invoke _ _ _ _ => false
+  | .invokeLocal _ _ _ _ => false
+
+/- Retaining parameter names is safe only if no resolved free binding becomes
+   one of those parameters. Otherwise witness lowering uses fresh names. -/
+def witnessedIdentityParametersSafe (modules : List BindingModule) (index : Nat)
+    (parameters : List String) (body : NumericExpr) : Bool :=
+  simpleAliasNumericExpr body && parameters.all (fun name => parameters.count name == 1) &&
+    (freeExpressionNames parameters body).all (fun name =>
+      match witnessedName modules index [] name with
+      | none => false
+      | some resolved => !parameters.contains resolved)
+
+example : witnessedIdentityParametersSafe [
+    { imports := [], exports := ["x"], statements := [.variable "x" 1], assignment := [0] },
+    { imports := [{ dependency := 0, locals := ["alias"], links := [("alias", "x")], reexports := [] }],
+      exports := [], statements := [], assignment := [] }
+  ] 1 ["p"] (.add (.name "alias") (.name "p")) = true := by decide
+
+example : witnessedIdentityParametersSafe [
+    { imports := [], exports := ["x"], statements := [.variable "x" 1], assignment := [0] },
+    { imports := [{ dependency := 0, locals := ["alias"], links := [("alias", "x")], reexports := [] }],
+      exports := [], statements := [], assignment := [] }
+  ] 1 ["x"] (.add (.name "alias") (.name "x")) = false := by decide
+
 /- The explicit cases avoid the axiom-using matcher generated for a catch-all
    that returns the original inductive value. -/
 def witnessedOutputStatement (modules : List BindingModule) (index : Nat) : BindingStmt → Option BindingStmt
@@ -1290,6 +1344,9 @@ def witnessedOutputStatement (modules : List BindingModule) (index : Nat) : Bind
     let references := freeExpressionNames parameters body ++ expressionCalls body
     if witnessedImportsStable modules && references.all (fun reference => (witnessedName modules index [] reference) == some reference) then
       some (.expressionFunction name parameters body)
+    else if witnessedIdentityParametersSafe modules index parameters body then do
+      let bindings := parameters.map (fun parameter => (parameter, parameter))
+      some (.expressionFunction name parameters (← witnessedExpression modules index bindings body))
     else do
       let renamed := witnessedParameters parameters []
       if !renamed.all (fun binding => witnessedFreshAvailable modules binding.2) then none else
@@ -1413,38 +1470,6 @@ def witnessedOutputState (source : List BindingStmt) (modules : List BindingModu
   let state ← runBindingStatements definitions statements
   canonicalBindingState source state
 
-/- Parameterless pure expressions have no local binders to alpha-rename. -/
-def simpleAliasNumericExpr : NumericExpr → Bool
-  | .literal _ => true
-  | .name _ => true
-  | .add left right => simpleAliasNumericExpr left && simpleAliasNumericExpr right
-  | .multiply left right => simpleAliasNumericExpr left && simpleAliasNumericExpr right
-  | .subtract left right => simpleAliasNumericExpr left && simpleAliasNumericExpr right
-  | .remainder left right => simpleAliasNumericExpr left && simpleAliasNumericExpr right
-  | .divide left right => simpleAliasNumericExpr left && simpleAliasNumericExpr right
-  | .bitAnd left right => simpleAliasNumericExpr left && simpleAliasNumericExpr right
-  | .bitOr left right => simpleAliasNumericExpr left && simpleAliasNumericExpr right
-  | .bitXor left right => simpleAliasNumericExpr left && simpleAliasNumericExpr right
-  | .unsignedShift left right => simpleAliasNumericExpr left && simpleAliasNumericExpr right
-  | .shiftLeft left right => simpleAliasNumericExpr left && simpleAliasNumericExpr right
-  | .shiftRight left right => simpleAliasNumericExpr left && simpleAliasNumericExpr right
-  | .equal left right => simpleAliasNumericExpr left && simpleAliasNumericExpr right
-  | .less left right => simpleAliasNumericExpr left && simpleAliasNumericExpr right
-  | .greater left right => simpleAliasNumericExpr left && simpleAliasNumericExpr right
-  | .conditional test yes no => simpleAliasNumericExpr test && simpleAliasNumericExpr yes && simpleAliasNumericExpr no
-  | .guard test yes no => simpleAliasNumericExpr test && simpleAliasNumericExpr yes && simpleAliasNumericExpr no
-  | .finally _ _ => false
-  | .catchError _ _ => false
-  | .followedBy _ _ => false
-  | .local _ _ _ _ => false
-  | .assign _ _ _ => false
-  | .raise _ => false
-  | .raisePrimitive _ => false
-  | .argumentsNil => false
-  | .argumentsCons _ _ => false
-  | .invoke _ _ _ _ => false
-  | .invokeLocal _ _ _ _ => false
-
 /- A small acceptance slice for local import aliases. Every extracted output
    statement is resolved through the actual graph before comparison with its
    source statement. Writes must target local mutable bindings; escaping
@@ -1460,7 +1485,8 @@ def simpleAliasStatement : BindingStmt → Bool
   | .recordPrimitive _ => true
   | .function _ _ _ => true
   | .thrower _ _ => false
-  | .expressionFunction _ parameters body => parameters.isEmpty && simpleAliasNumericExpr body
+  | .expressionFunction _ parameters body =>
+    parameters.all (fun name => parameters.count name == 1) && simpleAliasNumericExpr body
   | .capturedFactory _ _ _ _ _ => false
   | .capturedClosure _ _ _ _ => false
   | .capturedAlias _ _ => false
@@ -1482,7 +1508,8 @@ def simpleAliasSourceValid (source : List BindingStmt) : BindingStmt → Bool
   | .constant _ _ => true
   | .thrower _ _ => false
   | .expressionFunction _ parameters body =>
-    parameters.isEmpty && simpleAliasNumericExpr body && validNumericExpression body && validLocalWrites [] body &&
+    parameters.all (fun name => parameters.count name == 1) && simpleAliasNumericExpr body &&
+      validNumericExpression body && validLocalWrites (parameters.map (fun name => (name, true))) body &&
       (freeExpressionNames parameters body).all (isReadableBinding source)
   | .capturedFactory _ _ _ _ _ => false
   | .capturedClosure _ _ _ _ => false

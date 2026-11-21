@@ -1373,8 +1373,19 @@ function generateFiles(source, spec, names) {
   let aliasPrefix = "__split_alias_";
   while ([...defs.keys()].some((binding) => binding.startsWith(aliasPrefix))) aliasPrefix += "_";
   const generatedAliases = new Map([...defs.keys()].map((binding, index) => [binding, `${aliasPrefix}${index}`]));
+  const identifiers = new Set(source.mappings.flatMap(({ local, public: publicName }) => [local, publicName]));
+  const collectIdentifiers = (node) => {
+    if (!node || typeof node !== "object") return;
+    if (node.type === "Identifier") identifiers.add(node.name);
+    for (const value of Object.values(node)) {
+      if (Array.isArray(value)) value.forEach(collectIdentifiers);
+      else collectIdentifiers(value);
+    }
+  };
+  if (names.some((name) => spec.modules[name].renameLocalImports))
+    for (const item of source.statements) parseModule(item.source).forEach(collectIdentifiers);
   let localAliasPrefix = "__split_local_";
-  while ([...defs.keys()].some((binding) => binding.startsWith(localAliasPrefix))) localAliasPrefix += "_";
+  while ([...identifiers].some((binding) => binding.startsWith(localAliasPrefix))) localAliasPrefix += "_";
   const localAliases = new Map([...defs.keys()].map((binding, index) => [binding, `${localAliasPrefix}${index}`]));
   const aliasExports = new Set();
   for (const name of names)
@@ -1413,8 +1424,10 @@ function generateFiles(source, spec, names) {
           if (item.ast.kind === "expressionFunction") {
             const node = parseModule(statement)[0];
             check(
-              node.params.length === 0 && node.body.body.length === 1 && node.body.body[0].type === "ReturnStatement",
-              "local import renaming supports only parameterless pure expressions"
+              node.params.every((parameter) => parameter.type === "Identifier") &&
+                node.body.body.length === 1 &&
+                node.body.body[0].type === "ReturnStatement",
+              "local import renaming supports only pure returning expressions"
             );
             const edits = [];
             const visit = (expression) => {
@@ -1441,7 +1454,7 @@ function generateFiles(source, spec, names) {
                 visit(expression.argument);
                 return;
               }
-              check(false, "local import renaming supports only parameterless pure expressions");
+              check(false, "local import renaming supports only pure returning expressions");
             };
             visit(node.body.body[0].argument);
             check(
