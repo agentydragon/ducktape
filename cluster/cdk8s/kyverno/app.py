@@ -145,8 +145,9 @@ def _values() -> dict[str, object]:
             "enabled": True,
             # Each replica serves policy validation and cleanup webhooks. The
             # elected leader maintains certificates and schedules cleanup jobs.
-            "replicas": 2,
-            "podDisruptionBudget": {"minAvailable": 1},
+            "replicas": 3,
+            "podDisruptionBudget": {"minAvailable": 2},
+            "updateStrategy": {"rollingUpdate": {"maxUnavailable": 0}},
             "topologySpreadConstraints": [
                 {
                     "maxSkew": 1,

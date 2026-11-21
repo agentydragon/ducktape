@@ -5,7 +5,15 @@ Grafana reaches Loki internally via the cluster Service.
 
 from __future__ import annotations
 
+from textwrap import dedent
+
 from cdk8s import ApiObjectMetadata, App, Chart
+from flux_helm.io.fluxcd.toolkit.helm import (
+    HelmReleaseSpecPostRenderers,
+    HelmReleaseSpecPostRenderersKustomize,
+    HelmReleaseSpecPostRenderersKustomizePatches,
+    HelmReleaseSpecPostRenderersKustomizePatchesTarget,
+)
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 
 from cluster.cdk8s import cilium, namespaces, node_scheduling
@@ -211,6 +219,32 @@ def _helm_releases(chart: Chart) -> None:
         chart_interval="12h",
         install=RETRY_FAILED_INSTALL,
         values=_loki_values(),
+        # Loki 7.x's Deployment template hardcodes the rolling update strategy.
+        post_renderers=[
+            HelmReleaseSpecPostRenderers(
+                kustomize=HelmReleaseSpecPostRenderersKustomize(
+                    patches=[
+                        HelmReleaseSpecPostRenderersKustomizePatches(
+                            target=HelmReleaseSpecPostRenderersKustomizePatchesTarget(
+                                kind="Deployment", name="loki-read", namespace=NAME
+                            ),
+                            patch=dedent("""\
+                                apiVersion: apps/v1
+                                kind: Deployment
+                                metadata:
+                                  name: loki-read
+                                  namespace: loki
+                                spec:
+                                  strategy:
+                                    rollingUpdate:
+                                      maxSurge: 1
+                                      maxUnavailable: 0
+                                """),
+                        )
+                    ]
+                )
+            )
+        ],
     )
 
 
