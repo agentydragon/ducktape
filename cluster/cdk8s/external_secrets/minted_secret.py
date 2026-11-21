@@ -3,6 +3,11 @@ ciphertext for values nothing outside the cluster needs to know: an ESO `Passwor
 generator immediately consumed by a matching `ExternalSecret`. Two idioms share the
 generator half: a single opaque secret (`mint_bearer_secret`) and a multi-field DB role
 credential (`mint_db_role_secret`).
+
+A `Password` generator is stateless: every refresh mints a new value, so these Secrets are
+created once (`CREATED_ONCE`) or refreshed yearly (`8760h`). A value minted elsewhere (an
+Authentik OIDC client secret, created by Terraform) is read from there, never generated
+again: a second copy diverges at the first refresh.
 """
 
 from __future__ import annotations
