@@ -18,11 +18,14 @@ from cdk8s_plus_34 import (
 from cluster.cdk8s import pod_policy
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.gitlab_spike.app import DEMO_NAMESPACE, REGISTRY_HOSTNAME
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.probes import http_probe
 
 OUTPUT_DIR = f"{GENERATED_ROOT}/gitlab-spike/demo-seed"
-_NAMESPACE = "gitlab-spike-demo"
+# Match the project provisioned by tf/gitops/gitlab-spike.
+PROJECT = "spike/acceptance"
+IMAGE_REPOSITORY = f"{REGISTRY_HOSTNAME}/{PROJECT}"
 _NAME = "acceptance"
 
 
@@ -31,7 +34,7 @@ def chart(app: App) -> Chart:
     deployment = Deployment(
         chart,
         "deployment",
-        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=DEMO_NAMESPACE),
         replicas=1,
         automount_service_account_token=False,
         security_context=PodSecurityContextProps(ensure_non_root=True, user=65532, group=65532),
@@ -39,7 +42,7 @@ def chart(app: App) -> Chart:
     )
     deployment.add_container(
         name="app",
-        image="registry-gitlab-spike.allegedly.works/spike/acceptance:unset",
+        image=f"{IMAGE_REPOSITORY}:unset",
         port_number=8080,
         readiness=http_probe("/healthz", port=8080, initial_delay_seconds=1),
         liveness=http_probe("/healthz", port=8080, initial_delay_seconds=5),
@@ -52,7 +55,7 @@ def chart(app: App) -> Chart:
     Service(
         chart,
         "service",
-        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=DEMO_NAMESPACE),
         selector=deployment,
         ports=[ServicePort(port=8080, target_port=8080)],
     )
