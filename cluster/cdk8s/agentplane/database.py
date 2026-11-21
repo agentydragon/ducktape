@@ -15,12 +15,7 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecManagedRolesPasswordSecret,
     ClusterSpecPostgresql,
 )
-from cnpg_database_crds.io.cnpg.postgresql import (
-    Database,
-    DatabaseSpec,
-    DatabaseSpecCluster,
-    DatabaseSpecDatabaseReclaimPolicy,
-)
+from cnpg_database_crds.io.cnpg.postgresql import DatabaseSpecDatabaseReclaimPolicy
 from constructs import Construct
 
 from cluster.cdk8s.agentplane.environment import Environment
@@ -102,7 +97,7 @@ class Db(Construct):
             _role_credentials(self, f"role-credentials-{role}", cluster=cluster, role=role)
         _role_credentials(self, "role-credentials-electric", cluster=cluster, role=_ELECTRIC_ROLE, database_name="app")
 
-        cnpg.cluster(
+        postgres_cluster = cnpg.cluster(
             self,
             "cluster",
             ref=cluster,
@@ -142,19 +137,17 @@ class Db(Construct):
         )
 
         for role in roles:
-            Database(
+            cnpg.Database(
                 self,
                 f"database-{role}",
                 metadata=ApiObjectMetadata(name=role.replace("_", "-"), namespace=env.namespace),
-                spec=DatabaseSpec(
-                    cluster=DatabaseSpecCluster(name=cluster.name),
-                    name=role,
-                    owner=role,
-                    # Disabling the optional sampler must preserve its authored conversations.
-                    database_reclaim_policy=(
-                        DatabaseSpecDatabaseReclaimPolicy.RETAIN
-                        if role == "central_sampler"
-                        else DatabaseSpecDatabaseReclaimPolicy.DELETE
-                    ),
+                cluster=postgres_cluster,
+                name=role,
+                owner=role,
+                # Disabling the optional sampler must preserve its authored conversations.
+                database_reclaim_policy=(
+                    DatabaseSpecDatabaseReclaimPolicy.RETAIN
+                    if role == "central_sampler"
+                    else DatabaseSpecDatabaseReclaimPolicy.DELETE
                 ),
             )

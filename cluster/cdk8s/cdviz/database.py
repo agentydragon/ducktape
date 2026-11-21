@@ -6,14 +6,7 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecManagedRoles,
     ClusterSpecManagedRolesPasswordSecret,
 )
-from cnpg_database_crds.io.cnpg.postgresql import (
-    Database,
-    DatabaseSpec,
-    DatabaseSpecCluster,
-    DatabaseSpecDatabaseReclaimPolicy,
-    DatabaseSpecExtensions,
-    DatabaseSpecExtensionsEnsure,
-)
+from cnpg_database_crds.io.cnpg.postgresql import DatabaseSpecExtensions, DatabaseSpecExtensionsEnsure
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecDeletionPolicy,
     KustomizationSpecHealthCheckExprs,
@@ -50,7 +43,7 @@ def chart(app: App) -> Chart:
                 name=role, login=True, password_secret=ClusterSpecManagedRolesPasswordSecret(name=secret.name)
             )
         )
-    cluster.cluster(
+    postgres = cluster.cluster(
         chart,
         "cluster",
         ref=config.DATABASE,
@@ -62,17 +55,14 @@ def chart(app: App) -> Chart:
         managed=ClusterSpecManaged(roles=roles),
         wal_archive=True,
     )
-    Database(
+    cluster.Database(
         chart,
         "database",
         metadata=ApiObjectMetadata(name=config.DATABASE_NAME, namespace=config.NAMESPACE),
-        spec=DatabaseSpec(
-            cluster=DatabaseSpecCluster(name=config.DATABASE.name),
-            name=config.DATABASE_NAME,
-            owner=config.DATABASE_NAME,
-            database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.RETAIN,
-            extensions=[DatabaseSpecExtensions(name="timescaledb", ensure=DatabaseSpecExtensionsEnsure.PRESENT)],
-        ),
+        cluster=postgres,
+        name=config.DATABASE_NAME,
+        owner=config.DATABASE_NAME,
+        extensions=[DatabaseSpecExtensions(name=timescale.EXTENSION, ensure=DatabaseSpecExtensionsEnsure.PRESENT)],
     )
     backup.CnpgBackup(chart, "backup", ref=config.DATABASE, retention="30d", adopt_existing=False)
     return chart
@@ -96,7 +86,7 @@ def cdviz_database(
                 kind="Database",
                 current=(
                     f"{CNPG_DATABASE_READY} && has(status.extensions) && "
-                    "status.extensions.exists(e, e.name == 'timescaledb' && e.applied)"
+                    f"status.extensions.exists(e, e.name == '{timescale.EXTENSION}' && e.applied)"
                 ),
             )
         ],

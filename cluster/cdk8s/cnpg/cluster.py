@@ -1,8 +1,8 @@
-"""CNPG `Cluster`s: the shape every generated Postgres shares, its placement, and the reference
-its clients address it by."""
+"""CNPG Cluster and Database declarations, placement, and client references."""
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from cdk8s import ApiObjectMetadata
@@ -23,6 +23,13 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecProbesLivenessIsolationCheck,
     ClusterSpecResources,
     ClusterSpecStorage,
+)
+from cnpg_database_crds.io.cnpg.postgresql import (
+    Database as _Database,
+    DatabaseSpec,
+    DatabaseSpecCluster,
+    DatabaseSpecDatabaseReclaimPolicy,
+    DatabaseSpecExtensions,
 )
 from constructs import Construct
 
@@ -166,3 +173,34 @@ def cluster(
             monitoring=ClusterSpecMonitoring(enable_pod_monitor=True),
         ),
     )
+
+
+class Database(_Database):
+    """Our policy: keep the PostgreSQL database when its Kubernetes object is pruned."""
+
+    def __init__(
+        self,
+        scope: Construct,
+        id: str,
+        *,
+        metadata: ApiObjectMetadata,
+        cluster: Cluster,
+        name: str,
+        owner: str,
+        database_reclaim_policy: DatabaseSpecDatabaseReclaimPolicy | None = DatabaseSpecDatabaseReclaimPolicy.RETAIN,
+        extensions: Sequence[DatabaseSpecExtensions] | None = None,
+    ) -> None:
+        if metadata.namespace != cluster.metadata.namespace:
+            raise ValueError("A CNPG Database and its Cluster must be in the same namespace")
+        super().__init__(
+            scope,
+            id,
+            metadata=metadata,
+            spec=DatabaseSpec(
+                cluster=DatabaseSpecCluster(name=cluster.name),
+                name=name,
+                owner=owner,
+                database_reclaim_policy=database_reclaim_policy,
+                extensions=extensions,
+            ),
+        )
