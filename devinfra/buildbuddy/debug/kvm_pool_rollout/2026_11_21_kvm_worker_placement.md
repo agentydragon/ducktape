@@ -180,10 +180,19 @@ The table uses the earliest and latest node-exporter scrapes inside each interva
 | ssd-cold · nested image import envelope |   199.13 |            120.00 |      1.28 |         3.57 |     58.8% |         7.8% |
 | ssd-warm-1 · process                    |   344.88 |            240.00 |      0.54 |         0.85 |     24.4% |         4.0% |
 
-QEMU counted 3,077,193,728 read bytes and 18,499,571,712 written bytes on the canary's own HDD work device from boot to the warm action submission. That includes worker bootstrap, the cold action and its input staging. Across the separately bracketed warm action it counted 697,199,616 read bytes and 1,684,799,488 written bytes. The QEMU counts describe the guest work disk; the table above counts all I/O on the underlying wyrm2 virtual device. These are measurements at two layers of the same path.
+QEMU counted 3,077,193,728 read bytes and 18,499,571,712 written bytes on the canary's own HDD work device from boot to the warm action submission. That includes worker bootstrap, the cold action and its input staging. Across the separately bracketed warm action it counted 697,199,616 read bytes and 1,684,799,488 written bytes. The QEMU counts describe the guest work disk. The table above counts all I/O on the underlying wyrm2 virtual device. These are measurements at two layers of the same path.
 
 ### Placement and cleanup
 
 The KubeVirt compute container requests 8,468 MiB. OVH HDD worker memory request headroom was `ovh-ns102453` 4.23 GiB, `ovh-ns103656` 4.11 GiB, `ovh-ns103711` 4.90 GiB. All three had nested KVM and fell below the matched worker's memory request, so the trial stayed on wyrm2.
 
 Production was fully Ready in 127 of 127 samples during the monitored interval. After the final action, the canary was idle and drained. Both work claims, VMs, VolumeAttachments, runtime configuration and the trial pull secret were removed. SSD PV `pvc-6b6f6e4f-a4d8-4c1a-8aab-ab6aa626c4fa` reclaimed automatically. An ownership and detach check confirmed the HDD Retain PV `pvc-7f559530-66ea-4c3a-97b4-5897a1e46ca0` before removing its PV and LINSTOR resource. LINSTOR showed wyrm2's HDD pool free space rise from 325.21 GiB to 341.69 GiB.
+
+### Follow-up before changing production placement
+
+Run the required `//agentplane/system_tests/suites:test_vm` on matched SSD
+and HDD workers on one host. Check `recycled-runner.json` and
+`persistence-suite.json` for the same runner and a warm fixture with
+complete cleanup. This trial warmed caches with the preceding action and
+kept each worker running. A repeat on the same warmed work volumes after
+reboot would measure the effect of losing in-memory state.
