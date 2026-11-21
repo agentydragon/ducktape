@@ -1,6 +1,6 @@
-import React, { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback } from "react";
 
-import { COLORS, ErrorBanner, SectionTitle, fmtCredits, fmtHoursMin } from "./shared.jsx";
+import { COLORS, ErrorBanner, SectionTitle, fmtCredits, fmtDateTime, fmtHoursMin } from "./shared.jsx";
 import { fetchAdminUsers, fetchAdminUserState, useSyncStatus } from "./sync.js";
 
 export function AdminView({ addPrize, deletePrize, editPrize, ownUsername }) {
@@ -166,13 +166,7 @@ export function AdminView({ addPrize, deletePrize, editPrize, ownUsername }) {
                   <div>
                     <div style={{ fontSize: 15, color: COLORS.cream }}>{p.name}</div>
                     <div style={{ fontSize: 12, color: COLORS.creamDim, marginTop: 2 }}>
-                      {new Date(p.at_ms).toLocaleString([], {
-                        month: "short",
-                        day: "numeric",
-                        year: "numeric",
-                        hour: "numeric",
-                        minute: "2-digit",
-                      })}
+                      {fmtDateTime(p.at_ms, { year: "numeric" })}
                     </div>
                   </div>
                   <div className="mono" style={{ fontSize: 14, color: COLORS.gold }}>

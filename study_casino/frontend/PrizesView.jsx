@@ -1,6 +1,6 @@
-import React, { useState } from "react";
+import { useState } from "react";
 
-import { COLORS, SectionTitle, fmtCredits, fmtHoursMin } from "./shared.jsx";
+import { COLORS, FieldLabel, SectionTitle, fmtCredits, fmtDateTime, fmtHoursMin } from "./shared.jsx";
 
 export function PrizesView({ offline, credits, tokens, prizes, prizeLog, redeem, convertToTokens }) {
   const [confirming, setConfirming] = useState(null);
@@ -32,17 +32,7 @@ export function PrizesView({ offline, credits, tokens, prizes, prizeLog, redeem,
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 10, alignItems: "end" }}>
           <div>
-            <div
-              style={{
-                fontSize: 10,
-                color: COLORS.creamDim,
-                letterSpacing: "0.2em",
-                textTransform: "uppercase",
-                marginBottom: 4,
-              }}
-            >
-              Credits available
-            </div>
+            <FieldLabel>Credits available</FieldLabel>
             <div className="display-font mono" style={{ fontSize: 22, color: COLORS.gold, fontWeight: 700 }}>
               {fmtCredits(credits)}
             </div>
@@ -202,14 +192,7 @@ export function PrizesView({ offline, credits, tokens, prizes, prizeLog, redeem,
               >
                 <div>
                   <div style={{ fontSize: 15, color: COLORS.cream }}>{p.name}</div>
-                  <div style={{ fontSize: 12, color: COLORS.creamDim, marginTop: 2 }}>
-                    {new Date(p.at).toLocaleString([], {
-                      month: "short",
-                      day: "numeric",
-                      hour: "numeric",
-                      minute: "2-digit",
-                    })}
-                  </div>
+                  <div style={{ fontSize: 12, color: COLORS.creamDim, marginTop: 2 }}>{fmtDateTime(p.at)}</div>
                 </div>
                 <div className="mono" style={{ fontSize: 14, color: COLORS.gold }}>
                   −{p.cost.toLocaleString()}

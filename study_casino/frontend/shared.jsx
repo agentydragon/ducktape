@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 export const SUBJECTS = [
   "Biochemistry",
@@ -50,6 +50,18 @@ export function fmtHoursMin(sec) {
 // Credits are decimal (integer millicredits server-side); always show 1 decimal place.
 export function fmtCredits(credits) {
   return (credits ?? 0).toFixed(1);
+}
+
+// Epoch-ms timestamp as month, day and time in the browser's locale; `extra` adds
+// Intl.DateTimeFormat fields (e.g. `{ year: "numeric" }`).
+export function fmtDateTime(ms, extra = {}) {
+  return new Date(ms).toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    ...extra,
+  });
 }
 
 // Project the daily-bonus state of the current moment. All rules and amounts
@@ -210,6 +222,23 @@ export function SectionTitle({ children, small }) {
         fontWeight: 600,
         paddingBottom: 6,
         borderBottom: `1px solid rgba(212,165,72,0.2)`,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+/** Small uppercase caption above a form field. */
+export function FieldLabel({ children }) {
+  return (
+    <div
+      style={{
+        fontSize: 10,
+        color: COLORS.creamDim,
+        letterSpacing: "0.2em",
+        textTransform: "uppercase",
+        marginBottom: 4,
       }}
     >
       {children}
@@ -410,17 +439,7 @@ export function AddPastSessionForm({ offline, onAdd }) {
         }}
       >
         <div>
-          <div
-            style={{
-              fontSize: 10,
-              color: COLORS.creamDim,
-              letterSpacing: "0.2em",
-              textTransform: "uppercase",
-              marginBottom: 4,
-            }}
-          >
-            Subject
-          </div>
+          <FieldLabel>Subject</FieldLabel>
           <select value={subject} onChange={(e) => setSubject(e.target.value)} style={{ width: "100%" }}>
             {SUBJECTS.map((s) => (
               <option key={s} value={s}>
@@ -430,17 +449,7 @@ export function AddPastSessionForm({ offline, onAdd }) {
           </select>
         </div>
         <div>
-          <div
-            style={{
-              fontSize: 10,
-              color: COLORS.creamDim,
-              letterSpacing: "0.2em",
-              textTransform: "uppercase",
-              marginBottom: 4,
-            }}
-          >
-            Duration
-          </div>
+          <FieldLabel>Duration</FieldLabel>
           <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
             <input
               type="number"
@@ -462,17 +471,7 @@ export function AddPastSessionForm({ offline, onAdd }) {
           </div>
         </div>
         <div>
-          <div
-            style={{
-              fontSize: 10,
-              color: COLORS.creamDim,
-              letterSpacing: "0.2em",
-              textTransform: "uppercase",
-              marginBottom: 4,
-            }}
-          >
-            Ended at
-          </div>
+          <FieldLabel>Ended at</FieldLabel>
           <input
             type="datetime-local"
             value={endedAt}
@@ -610,14 +609,7 @@ export function SessionRow({ session, isLast, offline, onEdit, onDelete }) {
     >
       <div style={{ minWidth: 0, flex: 1 }}>
         <span style={{ color: COLORS.cream }}>{session.subject}</span>
-        <span style={{ color: COLORS.creamDim, marginLeft: 12, fontSize: 12 }}>
-          {new Date(session.endedAt).toLocaleString([], {
-            month: "short",
-            day: "numeric",
-            hour: "numeric",
-            minute: "2-digit",
-          })}
-        </span>
+        <span style={{ color: COLORS.creamDim, marginLeft: 12, fontSize: 12 }}>{fmtDateTime(session.endedAt)}</span>
       </div>
       <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
         <span className="mono" style={{ color: COLORS.cream }}>

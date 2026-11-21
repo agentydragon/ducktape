@@ -223,48 +223,34 @@ class CasinoSync {
 
 export const casinoSync = new CasinoSync();
 
+function useObservable(observable) {
+  const [value, setValue] = useState(observable.value);
+  useEffect(() => observable.subscribe(setValue), [observable]);
+  return value;
+}
+
 /** Subscribe to the current state cache. Returns null until the first
  *  /state fetch completes. */
-export function useCasinoState() {
-  const [state, setState] = useState(casinoSync.state.value);
-  useEffect(() => casinoSync.state.subscribe(setState), []);
-  return state;
-}
+export const useCasinoState = () => useObservable(casinoSync.state);
 
 /** Subscribe to the global SyncStatus store. */
-export function useSyncStatus() {
-  const [state, setState] = useState(casinoSync.status.value);
-  useEffect(() => casinoSync.status.subscribe(setState), []);
-  return state;
-}
+export const useSyncStatus = () => useObservable(casinoSync.status);
 
 /** Subscribe to the latest sync rejection (or null). */
-export function useSyncRejection() {
-  const [state, setState] = useState(casinoSync.rejection.value);
-  useEffect(() => casinoSync.rejection.subscribe(setState), []);
-  return state;
-}
+export const useSyncRejection = () => useObservable(casinoSync.rejection);
 
 /** Subscribe to the {username, is_admin} payload returned by /me.
  *  Returns null until the initial /me fetch completes. */
-export function useMe() {
-  const [state, setState] = useState(casinoSync.me.value);
-  useEffect(() => casinoSync.me.subscribe(setState), []);
-  return state;
-}
+export const useMe = () => useObservable(casinoSync.me);
 
 /** Subscribe to runtime deployment metadata. Returns null until /deployment loads. */
-export function useDeploymentInfo() {
-  const [state, setState] = useState(casinoSync.deploymentInfo.value);
-  useEffect(() => casinoSync.deploymentInfo.subscribe(setState), []);
-  return state;
-}
+export const useDeploymentInfo = () => useObservable(casinoSync.deploymentInfo);
 
-async function adminFetch(path) {
+async function getJson(path) {
   const resp = await fetch(path, { credentials: "same-origin" });
   if (resp.status === 401) {
     // Mirror the auth-expiry behaviour of fetchState/postAction so an
-    // expired session doesn't leave the admin panel showing a raw 401.
+    // expired session doesn't leave the admin or stats panel showing a raw 401.
     window.location.href = "/auth/login";
     throw new Error("not authenticated");
   }
@@ -274,23 +260,17 @@ async function adminFetch(path) {
 
 /** Admin-only: fetch the list of usernames the server has seeded. */
 export async function fetchAdminUsers() {
-  return zAdminUsersResponse.parse(await adminFetch("/admin/users")).users;
+  return zAdminUsersResponse.parse(await getJson("/admin/users")).users;
 }
 
 /** Admin-only: fetch the state_dump for any user. */
 export async function fetchAdminUserState(username) {
-  return zStateDump.parse(await adminFetch(`/admin/state?user=${encodeURIComponent(username)}`));
+  return zStateDump.parse(await getJson(`/admin/state?user=${encodeURIComponent(username)}`));
 }
 
 /** Fetch aggregated casino stats. With `targetUser`, hits the admin endpoint
  *  for any user (caller must be admin); otherwise the caller's own stats. */
 export async function fetchCasinoStats(targetUser) {
   const path = targetUser ? `/admin/casino/stats?user=${encodeURIComponent(targetUser)}` : "/casino/stats";
-  const resp = await fetch(path, { credentials: "same-origin" });
-  if (resp.status === 401) {
-    window.location.href = "/auth/login";
-    throw new Error("not authenticated");
-  }
-  if (!resp.ok) throw new Error(`${path} ${resp.status}`);
-  return zCasinoStats.parse(await resp.json());
+  return zCasinoStats.parse(await getJson(path));
 }

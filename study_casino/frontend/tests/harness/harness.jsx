@@ -5,7 +5,6 @@
 // scenario: full-app renders with different mocked `/state` payloads, or
 // standalone components that carry transient React state in production.
 
-import React from "react";
 import { createRoot } from "react-dom/client";
 
 import StudyCasino, { CasinoStyles } from "../../study_casino.jsx";

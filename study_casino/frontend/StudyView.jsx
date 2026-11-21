@@ -1,9 +1,8 @@
-import React from "react";
-
 import {
   COLORS,
   fmtClock,
   fmtCredits,
+  fmtDateTime,
   fmtHoursMin,
   projectSessionCredits,
   StatCard,
@@ -240,14 +239,7 @@ export function StudyView({
               >
                 <div>
                   <div style={{ fontSize: 15, color: COLORS.cream }}>{s.subject}</div>
-                  <div style={{ fontSize: 12, color: COLORS.creamDim, marginTop: 2 }}>
-                    {new Date(s.endedAt).toLocaleString([], {
-                      month: "short",
-                      day: "numeric",
-                      hour: "numeric",
-                      minute: "2-digit",
-                    })}
-                  </div>
+                  <div style={{ fontSize: 12, color: COLORS.creamDim, marginTop: 2 }}>{fmtDateTime(s.endedAt)}</div>
                 </div>
                 <div style={{ textAlign: "right" }}>
                   <div className="mono" style={{ fontSize: 15, color: COLORS.cream }}>
