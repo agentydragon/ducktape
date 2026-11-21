@@ -297,11 +297,13 @@ def test_pod_template_projects_the_buildbuddy_key_to_runner_and_executor(
     assert settings["configMap"]["name"] == f"{staging.POD_TEMPLATE}-egress-sidecar"
 
 
-def test_staging_app_config_offers_ollama_smoke_routes(staging_manifests: list[dict[str, Any]]) -> None:
+def test_staging_app_config_offers_tabbyapi_smoke_routes(staging_manifests: list[dict[str, Any]]) -> None:
     app_config = config_map_yaml(staging_manifests, "app-config", "config.yaml")
-    ollama_routes = {model["model"] for model in app_config["models"]["models"] if model["model"].startswith("ollama/")}
+    tabby_routes = {
+        model["model"] for model in app_config["models"]["models"] if model["model"].startswith("tabbyapi/")
+    }
     offered_routes = {route for routes in app_config["models"]["harnesses"].values() for route in routes}
-    assert ollama_routes & offered_routes, "Agentplane staging must offer at least one Ollama route for smoke tests"
+    assert tabby_routes & offered_routes, "Agentplane staging must offer at least one TabbyAPI route for smoke tests"
 
 
 def test_launcher_relay_listens_on_every_interface_and_otherwise_matches_the_runner_sidecar(

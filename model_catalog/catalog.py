@@ -535,7 +535,6 @@ def _ollama_routes(variant: ollama.ChatVariant, *, openai_reasoning_efforts: tup
 # TabbyAPI accepts these efforts; its template maps high to Qwen's xhigh.
 _QWEN_EFFORTS = ("low", "medium", "high")
 
-OLLAMA_QWEN_IQ4XS_128K = _ollama_routes(ollama.QWEN_IQ4XS_128K, openai_reasoning_efforts=_QWEN_EFFORTS)
 TABBYAPI_CHAT = Upstream(Provider.TABBYAPI, "hosted_vllm", "chat", supports_function_calling=True)
 TABBYAPI_QWEN_STOCK = Route(
     Model("qwen3.8-flash-next-exl3-256k", display_name="Qwen3.8 Flash-Next EXL3 2.68 bpw (256K)", reasoning=True),
