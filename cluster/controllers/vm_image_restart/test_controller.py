@@ -187,6 +187,21 @@ async def test_new_generation_resets_attempts_and_waits_for_terminating_vmi() ->
     assert vm_api.delete_calls == []
 
 
+@pytest.mark.parametrize("ready", [False, True], ids=["booting", "ready-with-staged-template"])
+async def test_matching_replacement_waits_for_readiness_or_restart_grace(ready: bool) -> None:
+    vm_api = FakeVMApi(_vm(), _vmi(uid="new-vmi", image=_NEW_IMAGE, ready=ready))
+    core = FakeCoreApi(_state())
+
+    deadline = await controller.reconcile(vm_api, core, _SETTINGS, **vm_api.caches())
+
+    assert vm_api.delete_calls == []
+    state = _stored_state(core)
+    assert state.old_vmi_uid == "new-vmi"
+    assert deadline == (state.next_attempt_at if ready else state.started_at + controller.ROLLOUT_TIMEOUT)
+    if ready:
+        assert state.next_attempt_at > _NOW
+
+
 async def test_restart_api_failures_are_backed_off_and_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
     clock = [_NOW]
     monkeypatch.setattr(controller, "_utcnow", lambda: clock[0])
@@ -194,9 +209,10 @@ async def test_restart_api_failures_are_backed_off_and_bounded(monkeypatch: pyte
     vm_api = FakeVMApi(_vm(), _vmi(uid="old-vmi", image=_OLD_IMAGE), delete_errors=[error, error, error])
     core = FakeCoreApi()
 
-    await controller.reconcile(vm_api, core, _SETTINGS, **vm_api.caches())
+    deadline = await controller.reconcile(vm_api, core, _SETTINGS, **vm_api.caches())
     assert len(vm_api.delete_calls) == 1
     assert _stored_state(core).attempts == 1
+    assert deadline == _stored_state(core).next_attempt_at
 
     # The persisted backoff prevents another delete at the same time.
     await controller.reconcile(vm_api, core, _SETTINGS, **vm_api.caches())
@@ -204,12 +220,13 @@ async def test_restart_api_failures_are_backed_off_and_bounded(monkeypatch: pyte
 
     while _stored_state(core).phase != "Failed":
         clock[0] = _stored_state(core).next_attempt_at + timedelta(seconds=1)
-        await controller.reconcile(vm_api, core, _SETTINGS, **vm_api.caches())
+        deadline = await controller.reconcile(vm_api, core, _SETTINGS, **vm_api.caches())
 
     state = _stored_state(core)
     assert len(vm_api.delete_calls) == controller.MAX_RESTART_ATTEMPTS
     assert state.attempts == controller.MAX_RESTART_ATTEMPTS
     assert state.phase == "Failed"
+    assert deadline is None
     assert _event_reasons(core)[-1] == "VMImageRestartFailed"
 
 
