@@ -1,7 +1,7 @@
 // Programs for `differential.mjs`, for what the generator rarely writes. Each runs in Node and in the model and must
 // print the same and end the same way. A case with `end: "unknown"` uses a value of the host that the model has no
 // rule for (`allowHost`) or an operation the model leaves to the host; there only the model's ending is checked.
-export const cases = [
+export const inheritanceCases = [
   {
     name: "default derived constructors forward arguments and the final instance prototype",
     source: `
@@ -87,6 +87,9 @@ export const cases = [
       try { const Invalid = class extends Later {}; } catch (e) { console.log("undefined base"); }
     `,
   },
+];
+
+export const cases = [
   {
     name: "getter on a prototype three levels up sees the receiver",
     source: `

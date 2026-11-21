@@ -5,7 +5,8 @@ then sends split plans through the real `lowersplit` emitter. CI:
 
 ```sh
 bbr test //devinfra/js/debundle/x/split_proof/experiments/translation:corejs_differential_test \
-  //devinfra/js/debundle/x/split_proof/experiments/translation:corejs_binding_differential_test
+  //devinfra/js/debundle/x/split_proof/experiments/translation:corejs_binding_differential_test \
+  //devinfra/js/debundle/x/split_proof/experiments/translation:corejs_inheritance_differential_test
 ```
 
 The fixed sample uses seeds 1–12. Appended `--test_arg=--count --test_arg=N`,
@@ -53,7 +54,7 @@ hash comparisons as the other proved moves. Exact final-state equality is the Le
 theorem’s guarantee; the runtime hash comparison is a regression oracle with the
 omissions described above. The broad `corejs_differential_test` retains
 the interpreter families, linked graphs, opaque cases, and original named splits.
-Both targets run in CI; splitting their workloads keeps their coverage assertions
+All three targets run in CI; splitting their workloads keeps their coverage assertions
 and execution independent as the certificate families grow.
 
 The broad [`translation/gen`](../translation/gen/) sample remains separate: the harness
@@ -115,11 +116,17 @@ capabilities not represented by the model end `unknown`.
 
 Handwritten cases cover chains, both prototype links, constructor-prototype mutation,
 invalid heritage/prototypes, null heritage, TDZ, returned objects, exceptions,
-invocation restrictions, and opaque base bodies. The generated `inheritance` family
-executes a default-constructor chain for each seed. Its required reordered split
+invocation restrictions, and opaque base bodies. The separate `corejs_inheritance_differential_test` (`--inheritance-only`) runs
+these cases and the generated `inheritance` family, executing a default-constructor
+chain for each of the same 12 seeds. Its required reordered split
 moves independent prefix allocations; it does not move the derived declaration.
 
 Derived creation has **no commutation permission yet**. The existing allocation
 rule's replay premise permits own-region object reads and selected lexical-cell
 reads. Reading an existing superclass/prototype requires an additional heap-read
 stability proof; adding only the superclass binding to `readsNow` is insufficient.
+
+The harness writes `progress.log` to Bazel's undeclared outputs, recording Node
+case labels and CoreJS batch boundaries for timeout diagnosis. The inheritance
+suite has its own test budget; the original broad suite retains its seeds and
+split-plan budget.

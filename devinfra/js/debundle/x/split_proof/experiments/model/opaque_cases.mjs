@@ -21,7 +21,7 @@ delete keyBoundaryObject.tail;
 keyBoundaryObject.tail = 2;
 const afterReinsert = Object.getOwnPropertyNames(keyBoundaryObject);
 
-export const opaqueCases = [
+export const inheritanceOpaqueCases = [
   {
     name: "default derived construction reaches an opaque base body with the derived receiver",
     source: `
@@ -40,6 +40,9 @@ export const opaqueCases = [
     },
     bodyParts: ["0/1", "1/1"],
   },
+];
+
+export const opaqueCases = [
   {
     name: "opaque class methods capture distinct enclosing function invocations",
     source: `

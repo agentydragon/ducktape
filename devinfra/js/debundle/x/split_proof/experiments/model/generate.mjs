@@ -67,14 +67,6 @@ export function generatedCases(seed) {
       const read = box.read;
       console.log(read(), Box.count, Box.name, box.constructor === Box);
     `,
-    inheritance: `
-      class Base { field = ${n}; constructor(value) { this.value = value; } }
-      class Middle extends Base {}
-      class Leaf extends Middle { read() { return this.field + this.value; } }
-      const instance = new Leaf(${num()});
-      console.log(instance.read(), Object.getPrototypeOf(instance) === Leaf.prototype,
-        Object.getPrototypeOf(Leaf) === Middle, Leaf.length);
-    `,
     control: `
       let value = 0;
       const saved = {};
@@ -267,6 +259,26 @@ export function generatedBindingCases(seed) {
       spec,
       refused: true,
       generatedBinding: true,
+    },
+  ];
+}
+
+export function generatedInheritanceCases(seed) {
+  const n = 1 + ((seed >>> 0) % 7);
+  return [
+    {
+      name: `default inheritance seed ${seed}`,
+      family: "inheritance",
+      source: `
+      const independent = () => ${n};
+      const first = ${n + 1};
+      class Base { field = ${n}; constructor(value) { this.value = value; } }
+      class Middle extends Base {}
+      class Leaf extends Middle { read() { return this.field + this.value; } }
+      const instance = new Leaf(${n + 2});
+      console.log(instance.read(), Object.getPrototypeOf(instance) === Leaf.prototype,
+        Object.getPrototypeOf(Leaf) === Middle, Leaf.length, independent(), first);
+    `,
     },
   ];
 }
