@@ -207,7 +207,7 @@ spec:
       deployment:
         annotations:
           goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies":[{"containerName":"registry","controlledValues":"RequestsOnly","minAllowed":{"cpu":"50m","memory":"96Mi"},"maxAllowed":{"cpu":"50m","memory":"128Mi"},"controlledResources":["memory"]},{"containerName":"*","controlledValues":"RequestsOnly","mode":"Off"}]}'
-          goldilocks.fairwinds.com/vpa-update-mode: initial
+          goldilocks.fairwinds.com/vpa-update-mode: auto
       storage:
         key: config
         secret: gitlab-spike-registry-connection

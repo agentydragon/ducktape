@@ -170,7 +170,8 @@ def _values() -> dict[str, object]:
                     # Registry's HPA uses CPU utilization, which depends on the request.
                     ContainerPolicy.memory_requests_only(
                         "registry", cpu_request="50m", memory_floor="96Mi", memory_limit="128Mi"
-                    )
+                    ),
+                    mode=Vpa.AUTO,
                 )
             },
         },
