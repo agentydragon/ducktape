@@ -172,6 +172,7 @@ py_library(
     ],
     deps = [
         ":app",
+        "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:pod_policy",
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
         "//cluster/cdk8s/providers/cilium:network_policy",

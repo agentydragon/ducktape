@@ -25,6 +25,7 @@ py_library(
     deps = [
         ":access_code",
         "//att_gateway:settings",
+        "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:home_lan",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:node_scheduling",
