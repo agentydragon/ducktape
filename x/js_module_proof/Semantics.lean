@@ -77,6 +77,35 @@ def updateBinding : List (String × Nat) → String → Nat → Option (List (St
     if key == name then some ((key, value) :: rest)
     else (updateBinding rest name value).map (fun tail => (key, old) :: tail)
 
+/- A successful lookup witnesses an existing cell. Updating that cell succeeds
+   and the same key subsequently resolves to the new value. -/
+theorem update_existing_cell (store : List (String × Nat)) (name : String) (old value : Nat)
+    (found : lookupBinding store name = some old) :
+    ∃ updated, updateBinding store name value = some updated ∧ lookupBinding updated name = some value := by
+  induction store with
+  | nil => cases found
+  | cons entry rest ih =>
+    cases entry with
+    | mk key previous =>
+      change (if key == name then some previous else lookupBinding rest name) = some old at found
+      change ∃ updated, (if key == name then some ((key, value) :: rest)
+        else (updateBinding rest name value).map (fun tail => (key, previous) :: tail)) = some updated ∧
+        lookupBinding updated name = some value
+      cases matchesKey : key == name with
+      | true =>
+        refine ⟨(key, value) :: rest, rfl, ?_⟩
+        change (if key == name then some value else lookupBinding rest name) = some value
+        rw [matchesKey]
+        rfl
+      | false =>
+        rw [matchesKey] at found
+        obtain ⟨tail, updatedTail, foundTail⟩ := ih found
+        rw [updatedTail]
+        refine ⟨(key, previous) :: tail, rfl, ?_⟩
+        change (if key == name then some previous else lookupBinding tail name) = some value
+        rw [matchesKey]
+        exact foundTail
+
 theorem lookup_update_other (store updated : List (String × Nat)) (target other : String) (value : Nat)
     (different : target ≠ other) (updatedStore : updateBinding store target value = some updated) :
     lookupBinding updated other = lookupBinding store other := by
