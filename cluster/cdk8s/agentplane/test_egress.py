@@ -49,7 +49,6 @@ from cluster.cdk8s.agentplane.egress import (
 from cluster.cdk8s.agentplane.egress_staging_credentials import AIQUOTA_READ_POLICY
 from cluster.cdk8s.agentplane.kubernetes_account_ref import shared_diagnostics
 from cluster.cdk8s.agentplane.model_selections import STAGING_APP_MODELS, chat_completions_id
-from cluster.cdk8s.agentplane.namespaces import kubernetes_accounts_namespace
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.testing.manifests import config_map_yaml, find_resource
 from model_catalog.catalog import TABBYAPI_QWEN_STOCK, Provider
@@ -757,37 +756,6 @@ def test_inference_is_granted_separately_from_platform_operations(catalog_manife
         secret = find_resource(catalog_manifests, "ExternalSecret", source["name"])
         assert secret["metadata"]["namespace"] == f"{staging.ENV.namespace}-egress-credentials"
         assert source["key"] in {item["secretKey"] for item in secret["spec"]["data"]}
-
-
-def test_the_proxy_impersonates_only_serviceaccounts_in_the_accounts_namespace(
-    catalog_manifests: list[dict[str, Any]],
-) -> None:
-    proxy = ("ServiceAccount", "egress", staging.ENV.namespace)
-    granted = [
-        (doc["roleRef"]["kind"], doc["roleRef"]["name"], doc["metadata"].get("namespace"))
-        for doc in catalog_manifests
-        if doc["kind"] in {"RoleBinding", "ClusterRoleBinding"}
-        and any((s["kind"], s["name"], s.get("namespace")) == proxy for s in doc.get("subjects", []))
-    ]
-    roles = {
-        (doc["kind"], doc["metadata"]["name"], doc["metadata"].get("namespace")): doc
-        for doc in catalog_manifests
-        if doc["kind"] in {"Role", "ClusterRole"}
-    }
-    # A RoleBinding to a ClusterRole grants it in the binding's namespace; either way the rules are the role's.
-    impersonating = [
-        (kind, name, namespace)
-        for kind, name, namespace in granted
-        if any(
-            {"impersonate", "*"} & set(rule["verbs"])
-            for rule in roles[(kind, name, None if kind == "ClusterRole" else namespace)]["rules"]
-        )
-    ]
-    kind, name, namespace = one(impersonating)
-    assert (kind, namespace) == ("Role", kubernetes_accounts_namespace(staging.ENV.namespace))
-    assert roles[(kind, name, namespace)]["rules"] == [
-        {"apiGroups": [""], "resources": ["serviceaccounts"], "verbs": ["impersonate"]}
-    ]
 
 
 def test_the_local_api_server_bearer_is_the_proxys_mounted_token(catalog_manifests: list[dict[str, Any]]) -> None:

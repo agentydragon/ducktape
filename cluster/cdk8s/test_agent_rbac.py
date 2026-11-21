@@ -277,12 +277,11 @@ def test_agent_permission_denials(rendering: Rendering) -> None:
 
 def test_egress_proxy_impersonates_only_and_every_account(rendering: Rendering) -> None:
     """The proxy's resolved bindings, wildcards and ClusterRoles included, let it impersonate only
-    ServiceAccounts of the accounts namespace (`test_identity_catalog` checks the Role that says
-    so), and each rendered account credential names one it may impersonate."""
+    ServiceAccounts of the accounts namespace, and each rendered account credential names one
+    it may impersonate."""
     proxy = rendering.rbac.identity("ServiceAccount", egress.NAME, _NAMESPACE)
     impersonation = {permission for permission in proxy if permission.verb in {"impersonate", "*"}}
-    assert impersonation
-    assert not uncovered(impersonation, {Permission(_ACCOUNTS_NAMESPACE, "", "serviceaccounts", "impersonate")})
+    assert impersonation == {Permission(_ACCOUNTS_NAMESPACE, "", "serviceaccounts", "impersonate")}
     accounts = {
         Permission(account["namespace"], "", "serviceaccounts", "impersonate", account["name"])
         for source in rendering.rbac.credentials.values()
