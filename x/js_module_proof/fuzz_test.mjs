@@ -279,6 +279,35 @@ if (shards === 4 && shard === 2) {
   assert.equal(shadowLoop.equal, 1);
   assert.equal(shadowLoop.loopShadowUnknownCases + shadowLoop.proved, 1);
 }
+if (shards === 4 && shard === 0) {
+  const composedA = makeLocalAliasCase(773, 997);
+  const composedB = makeLocalAliasCase(774, 997);
+  const body = (input) =>
+    input.ast.body.find((node) => node.type === "FunctionDeclaration" && node.id.name === "compute").body;
+  assert.notDeepEqual(body(composedA), body(composedB));
+  const changedComposed = await runFuzz({
+    seed: 773,
+    start: 997,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "alias",
+    validateEvery: 1,
+  });
+  assert.equal(changedComposed.composedAliasExpressionComparedCases, 1);
+  assert.equal(changedComposed.mutatedDifferent, 1);
+  assert.equal(changedComposed.mutatedVerdicts.unsafe, 1);
+  const unchangedComposed = await runFuzz({
+    seed: 773,
+    start: 997,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "alias",
+    mutationMode: "disabled",
+    validateEvery: 1,
+  });
+  assert.equal(unchangedComposed.composedAliasExpressionProvedCases, 1);
+  assert.equal(unchangedComposed.equal, 1);
+}
 if (shards === 4 && shard === 3) {
   const changedTerminal = await runFuzz({
     seed: 773,

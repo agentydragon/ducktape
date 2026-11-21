@@ -377,6 +377,9 @@ calls; replay with `--mutations disabled` to check the corresponding unchanged s
 Combine it with `--splits independent` to vary module graphs and request local
 import renaming on independently chosen modules; many graphs are refused, and
 requested, generated, and Node-compared aliases are counted separately.
+Later case indices also compose seeded arithmetic and conditional expression
+trees; their generated, Node-compared, and Lean-proved counts are reported
+separately.
 
 ```sh
 nix develop .#js-module-proof

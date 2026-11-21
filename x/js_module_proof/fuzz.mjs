@@ -1003,7 +1003,7 @@ export function makeLocalAliasCase(seed, index) {
         functionNode("current", [], [returnNode(id("total"))]),
       ]
     : [];
-  const numericExpression = [
+  let numericExpression = [
     {
       type: "BinaryExpression",
       operator: "+",
@@ -1025,6 +1025,24 @@ export function makeLocalAliasCase(seed, index) {
     },
     { type: "LogicalExpression", operator: "||", left: id("numericLeft"), right: id("numericRight") },
   ][Math.floor(index / 12) % 5];
+  const composedAliasExpression = numericBindings.length > 0 && index >= 973 && index % 12 === 1;
+  if (composedAliasExpression) {
+    const depth = 2 + rand(3);
+    numericExpression = id("numericLeft");
+    for (let level = 0; level < depth; level++) {
+      const operand = rand(2) ? id("numericRight") : literal(1 + rand(3));
+      const choice = rand(3);
+      numericExpression =
+        choice === 2
+          ? {
+              type: "ConditionalExpression",
+              test: { type: "BinaryExpression", operator: ">", left: id("numericRight"), right: literal(0) },
+              consequent: numericExpression,
+              alternate: { type: "BinaryExpression", operator: "+", left: numericExpression, right: literal(1) },
+            }
+          : { type: "BinaryExpression", operator: choice === 0 ? "+" : "*", left: numericExpression, right: operand };
+    }
+  }
   const numericParameters = index % 8 !== 5 ? [] : index % 16 === 13 ? ["numericOther"] : ["argument", "otherArgument"];
   const numericArguments = numericParameters.map((_, index) => index + 1);
   const numericBody = numericParameters.reduce(
@@ -1235,6 +1253,7 @@ export function makeLocalAliasCase(seed, index) {
     grammar: "alias",
     numericLeftIndex: bindings.length + updateBindings.length,
     numericArguments,
+    composedAliasExpression,
     aliasBranch,
     aliasLoop,
     loopShadow,
@@ -2282,6 +2301,9 @@ export async function runFuzz({
     multipleParameterAliasCases: 0,
     multipleParameterAliasComparedCases: 0,
     multipleParameterAliasProvedCases: 0,
+    composedAliasExpressionCases: 0,
+    composedAliasExpressionComparedCases: 0,
+    composedAliasExpressionProvedCases: 0,
     aliasBranchCases: 0,
     aliasBranchComparedCases: 0,
     aliasBranchProvedCases: 0,
@@ -2516,6 +2538,7 @@ export async function runFuzz({
       if (modules.some((module) => module.renameLocalImports)) summary.localImportAliasRequestedCases++;
       if (input.grammar === "alias" && input.numericArguments.length) summary.parameterizedAliasCases++;
       if (input.grammar === "alias" && input.numericArguments.length > 1) summary.multipleParameterAliasCases++;
+      if (input.composedAliasExpression) summary.composedAliasExpressionCases++;
       if (input.aliasBranch) summary.aliasBranchCases++;
       if (input.aliasLoop) summary.aliasLoopCases++;
       if (input.loopShadow) summary.loopShadowCases++;
@@ -2728,6 +2751,7 @@ export async function runFuzz({
       }
       if (hasGeneratedImportAlias) summary.importAliasComparedCases++;
       if (hasGeneratedLocalImportAlias) summary.localImportAliasComparedCases++;
+      if (input.composedAliasExpression) summary.composedAliasExpressionComparedCases++;
       if (input.aliasBranch) summary.aliasBranchComparedCases++;
       if (input.aliasLoop) summary.aliasLoopComparedCases++;
       if (input.loopShadow) summary.loopShadowComparedCases++;
@@ -2825,6 +2849,7 @@ export async function runFuzz({
           if (input.earlyVar) summary.earlyVarProvedCases++;
           if (hasGeneratedImportAlias) summary.importAliasProvedCases++;
           if (hasGeneratedLocalImportAlias) summary.localImportAliasProvedCases++;
+          if (input.composedAliasExpression) summary.composedAliasExpressionProvedCases++;
           if (input.aliasBranch) summary.aliasBranchProvedCases++;
           if (input.aliasLoop) summary.aliasLoopProvedCases++;
           if (input.grammar === "alias" && input.numericArguments.length) summary.parameterizedAliasProvedCases++;
