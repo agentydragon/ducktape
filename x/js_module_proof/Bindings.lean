@@ -1312,7 +1312,7 @@ def simpleAliasNumericExpr : NumericExpr → Bool
   | .local _ _ initial body =>
     simpleAliasNumericExpr initial && simpleAliasNumericExpr body
   | .assign _ value body => simpleAliasNumericExpr value && simpleAliasNumericExpr body
-  | .raise _ => false
+  | .raise value => simpleAliasNumericExpr value
   | .raisePrimitive _ => false
   | .argumentsNil => false
   | .argumentsCons _ _ => false

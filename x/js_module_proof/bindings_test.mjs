@@ -986,4 +986,31 @@ if (runSection(1)) {
   assert.equal(redirected.result, "unsafe", JSON.stringify(redirected));
   assert.deepEqual(execute(finallySource, redirected.calls), { events: [], results: [6] });
   assert.deepEqual(execute(join(finallyOut, "entry.mjs"), redirected.calls), { events: [], results: [10] });
+
+  const throwSource = join(root, "throw-finally-alias-source.mjs");
+  const throwOut = join(root, "throw-finally-alias-out");
+  await writeFile(
+    throwSource,
+    `let value = 3;\nlet other = 5;\nfunction compute(p) { let local = p; try { throw value; } finally { local += value; } return local; }\nexport { compute };\n`
+  );
+  assert.equal(cli("generate", throwSource, finallySpec, throwOut).value.result, "generated");
+  const throwState = join(throwOut, "state.mjs");
+  await writeFile(throwState, (await readFile(throwState, "utf8")) + "export { other };\n");
+  const throwLogic = join(throwOut, "logic.mjs");
+  const throwText = await readFile(throwLogic, "utf8");
+  const throwResult = cli("validate", throwSource, finallySpec, throwOut).value;
+  assert.equal(throwResult.result, "proved under assumptions", JSON.stringify(throwResult));
+  const observedThrow = (path) => {
+    const script = `import(${JSON.stringify(pathToFileURL(path).href)}).then(m => { try { m.compute(0); } catch (error) { console.log(JSON.stringify(error)); } });`;
+    const child = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" });
+    assert.equal(child.status, 0, child.stderr);
+    return JSON.parse(child.stdout);
+  };
+  assert.equal(observedThrow(throwSource), 3);
+  assert.equal(observedThrow(join(throwOut, "entry.mjs")), 3);
+  assert.match(throwText, /value as __split_local_0/);
+  await writeFile(throwLogic, throwText.replace("value as __split_local_0", "other as __split_local_0"));
+  const throwRedirect = cli("validate", throwSource, finallySpec, throwOut).value;
+  assert.equal(throwRedirect.result, "unsafe", JSON.stringify(throwRedirect));
+  assert.equal(observedThrow(join(throwOut, "entry.mjs")), 5);
 }

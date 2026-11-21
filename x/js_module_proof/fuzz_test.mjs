@@ -333,6 +333,38 @@ if (shards === 4 && shard === 2) {
   assert.equal(unchangedFinally.equal, 1);
 }
 if (shards === 4 && shard === 3) {
+  const changedThrownFinally = await runFuzz({
+    seed: 773,
+    start: 1045,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "alias",
+    validateEvery: 1,
+  });
+  assert.match(makeLocalAliasCase(773, 1045).source, /throw numericLeft/);
+  assert.equal(changedThrownFinally.mutatedVerdicts.unsafe, 1);
+  const witness = JSON.parse(
+    await readFile(
+      join(process.env.TEST_TMPDIR, changedThrownFinally.certifiedWitnesses[0].artifactPath, "node-witness.json"),
+      "utf8"
+    )
+  );
+  assert.equal(witness.before.error.thrown.kind, "number");
+  assert.equal(witness.after.error.thrown.kind, "number");
+  assert.notEqual(witness.before.error.thrown.value, witness.after.error.thrown.value);
+  const unchangedThrownFinally = await runFuzz({
+    seed: 773,
+    start: 1045,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "alias",
+    mutationMode: "disabled",
+    validateEvery: 1,
+  });
+  assert.equal(unchangedThrownFinally.localImportAliasProvedCases, 1);
+  assert.equal(unchangedThrownFinally.equal, 1);
+}
+if (shards === 4 && shard === 3) {
   const changedTerminal = await runFuzz({
     seed: 773,
     start: 685,

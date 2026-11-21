@@ -1456,7 +1456,10 @@ function generateFiles(source, spec, names) {
               statement.type === "TryStatement" &&
               statement.handler === null &&
               statement.finalizer?.type === "BlockStatement" &&
-              statement.block.body.every(isWrite) &&
+              statement.block.body.every(
+                (item, index) =>
+                  isWrite(item) || (index === statement.block.body.length - 1 && item.type === "ThrowStatement")
+              ) &&
               statement.finalizer.body.every(isWrite);
             const isLoop = (statement) =>
               statement.type === "ForStatement" &&
@@ -1547,7 +1550,10 @@ function generateFiles(source, spec, names) {
             for (const item of prefix) {
               if (item.type === "VariableDeclaration") visit(item.declarations[0].init);
               else if (item.type === "TryStatement") {
-                item.block.body.forEach((write) => visitWrite(write));
+                item.block.body.forEach((part) => {
+                  if (part.type === "ThrowStatement") visit(part.argument);
+                  else visitWrite(part);
+                });
                 item.finalizer.body.forEach((write) => visitWrite(write));
               } else if (item.type === "ForStatement") {
                 const loopName = item.init.declarations[0].id.name;

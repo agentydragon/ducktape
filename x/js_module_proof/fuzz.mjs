@@ -1050,6 +1050,7 @@ export function makeLocalAliasCase(seed, index) {
     numericExpression
   );
   const withFinally = numericBindings.length > 0 && index >= 949 && index % 96 === 85;
+  const withThrownFinally = withFinally && index >= 1045;
   const withLocal = numericBindings.length > 0 && ((index >= 61 && index % 48 === 13) || withFinally);
   const aliasLoop = numericBindings.length > 0 && index >= 781 && index % 96 === 13;
   const aliasBranch = numericBindings.length > 0 && index >= 397 && index % 96 === 13;
@@ -1076,6 +1077,7 @@ export function makeLocalAliasCase(seed, index) {
                       left: id("offset"),
                       right: id("numericLeft"),
                     }),
+                    ...(withThrownFinally ? [{ type: "ThrowStatement", argument: id("numericLeft") }] : []),
                   ],
                 },
                 handler: null,
@@ -1286,13 +1288,14 @@ export function makeLocalAliasCase(seed, index) {
     numericArguments,
     composedAliasExpression,
     withFinally,
+    withThrownFinally,
     aliasBranch,
     aliasLoop,
     loopShadow,
     unsupported: false,
     cyclic: false,
     invalidAssignment: false,
-    expectThrow: false,
+    expectThrow: withThrownFinally,
     spec: {
       kind: "bindings",
       entry: "entry.mjs",
