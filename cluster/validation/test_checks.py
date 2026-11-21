@@ -293,12 +293,15 @@ def test_store_refs_use_namespace_and_per_entry_overrides() -> None:
             [{"namespaceSelector": {"matchExpressions": [{"key": "team", "operator": "NotIn", "values": ["other"]}]}}],
             True,
         ),
-        ([{"namespaceSelector": {"matchExpressions": [{"key": "missing", "operator": "Exists"}]}}], False),
-        ([{"namespaceSelector": {"matchExpressions": [{"key": "missing", "operator": "DoesNotExist"}]}}], True),
+        ([{"namespaceSelector": {"matchLabels": {"missing": "value"}}}], None),
+        ([{"namespaceSelector": {"matchExpressions": [{"key": "missing", "operator": "Exists"}]}}], None),
+        ([{"namespaceSelector": {"matchExpressions": [{"key": "missing", "operator": "DoesNotExist"}]}}], None),
+        ([{"namespaceSelector": {"matchLabels": {"missing": "value", "team": "other"}}}], False),
+        ([{"namespaceSelector": {"matchLabels": {"missing": "value"}}, "namespaces": ["consumer"]}], True),
         ([{"namespaces": ["other"]}, {"namespaceRegexes": ["^consumer$"]}], True),
     ],
 )
-def test_cluster_store_namespace_conditions(conditions: list[dict], allowed: bool) -> None:
+def test_cluster_store_namespace_conditions(conditions: list[dict], allowed: bool | None) -> None:
     namespace = {"kind": "Namespace", "metadata": {"name": "consumer", "labels": {"team": "active"}}}
     store = {"kind": "ClusterSecretStore", "metadata": {"name": "shared"}, "spec": {"conditions": conditions}}
     secret = {
@@ -309,8 +312,9 @@ def test_cluster_store_namespace_conditions(conditions: list[dict], allowed: boo
             "data": [{"secretKey": "a", "remoteRef": {"key": "a"}}],
         },
     }
-    errors = check_external_secret_store_wiring(_cluster_with(namespace, store, secret)).errors
-    assert bool(errors) is not allowed
+    report = check_external_secret_store_wiring(_cluster_with(namespace, store, secret))
+    assert bool(report.errors) is (allowed is False)
+    assert bool(report.unresolved) is (allowed is None)
 
 
 def test_cluster_external_secret_literal_namespace_and_unknown_labels() -> None:
@@ -354,7 +358,7 @@ def test_multiple_namespace_label_sets_are_not_treated_as_a_live_label_set() -> 
         {"kind": "Namespace", "metadata": {"name": "consumer", "labels": {"team": team}}}
         for team in ("allowed", "other")
     ]
-    store = {
+    store: dict[str, Any] = {
         "kind": "ClusterSecretStore",
         "metadata": {"name": "shared"},
         "spec": {"conditions": [{"namespaceSelector": {"matchLabels": {"team": "allowed"}}}]},
@@ -371,6 +375,12 @@ def test_multiple_namespace_label_sets_are_not_treated_as_a_live_label_set() -> 
         report = check_external_secret_store_wiring(_cluster_with(*ordered, store, secret))
         assert report.errors == []
         assert any("namespace conditions cannot be evaluated" in item for item in report.unresolved)
+
+    # The API server supplies this immutable label even when other labels conflict.
+    store["spec"]["conditions"] = [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "consumer"}}}]
+    report = check_external_secret_store_wiring(_cluster_with(*namespaces, store, secret))
+    assert report.errors == []
+    assert report.unresolved == []
 
 
 def test_go_regex_unsupported_by_python_is_reported_as_unresolved() -> None:

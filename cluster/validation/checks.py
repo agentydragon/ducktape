@@ -84,24 +84,29 @@ def check_external_credential_ownership(cluster: ParsedCluster) -> list[str]:
     return errors
 
 
-def _selector_matches(selector: dict[str, Any], labels: dict[str, str]) -> bool:
-    """Evaluate the Kubernetes LabelSelector forms supported by ESO."""
-    if any(labels.get(key) != value for key, value in selector.get("matchLabels", {}).items()):
-        return False
+def _selector_matches(selector: dict[str, Any], labels: dict[str, str]) -> bool | None:
+    """Match known labels; absent labels can still be added outside the render."""
+    unknown = False
+    for key, value in selector.get("matchLabels", {}).items():
+        if key not in labels:
+            unknown = True
+        elif labels[key] != value:
+            return False
     for expression in selector.get("matchExpressions", []):
         key, operator = expression["key"], expression["operator"]
         values = expression.get("values", [])
-        if operator == "In" and (key not in labels or labels[key] not in values):
-            return False
-        if operator == "NotIn" and key in labels and labels[key] in values:
-            return False
-        if operator == "Exists" and key not in labels:
-            return False
-        if operator == "DoesNotExist" and key in labels:
-            return False
         if operator not in ("In", "NotIn", "Exists", "DoesNotExist"):
             raise ValueError(f"unsupported namespace selector operator {operator!r}")
-    return True
+        if key not in labels:
+            unknown = True
+            continue
+        if operator == "In" and labels[key] not in values:
+            return False
+        if operator == "NotIn" and labels[key] in values:
+            return False
+        if operator == "DoesNotExist":
+            return False
+    return None if unknown else True
 
 
 def _store_allows_namespace(store: SecretStoreResource, namespace: str, labels: dict[str, str] | None) -> bool | None:
@@ -114,12 +119,12 @@ def _store_allows_namespace(store: SecretStoreResource, namespace: str, labels: 
             return True
         selector = condition.get("namespaceSelector")
         if selector is not None:
-            if labels is None:
-                if not selector:
-                    return True
-                unknown = True
-            elif _selector_matches(selector, labels):
+            known_labels = labels if labels is not None else {"kubernetes.io/metadata.name": namespace}
+            matched = _selector_matches(selector, known_labels)
+            if matched is True:
                 return True
+            if matched is None:
+                unknown = True
         for pattern in condition.get("namespaceRegexes", []):
             try:
                 if re.search(pattern, namespace):
@@ -191,17 +196,16 @@ def check_external_secret_store_wiring(cluster: ParsedCluster) -> ExternalSecret
                     f"{origin}: ClusterExternalSecret '{resource.name}' namespace selectors cannot cover "
                     "namespaces or labels not established by the render"
                 )
-                unresolved.update(
-                    f"{origin}: ClusterExternalSecret '{resource.name}' cannot resolve Namespace '{name}' "
-                    "with multiple rendered label sets"
-                    for name, labels in namespaces.items()
-                    if labels is None
-                )
-            selected.update(
-                name
-                for name, labels in namespaces.items()
-                if labels is not None and any(_selector_matches(sel, labels) for sel in selectors)
-            )
+            for name, labels in namespaces.items():
+                known_labels = labels if labels is not None else {"kubernetes.io/metadata.name": name}
+                matches = [_selector_matches(selector, known_labels) for selector in selectors]
+                if True in matches:
+                    selected.add(name)
+                elif None in matches:
+                    unresolved.add(
+                        f"{origin}: ClusterExternalSecret '{resource.name}' cannot resolve selector "
+                        f"for Namespace '{name}' from rendered labels"
+                    )
             consumers.extend(
                 (origin, resource, namespace, resource.spec.get("externalSecretSpec", {}))
                 for namespace in sorted(selected)
