@@ -156,13 +156,15 @@ shape only, not a wire-format decision:
 ```yaml
 execution:
   placement:
-    type: shared_cgroup
+    type: systemd
     memory_max_bytes: 1073741824
     pids_max: 128
     cpu_quota_micros: 100000
 ```
 
-A Kubernetes placement would select a tools container and its deployment-owned resource settings.
+The discriminator names the placement mechanism actually required by the deployment. A future
+direct-cgroup implementation could use its own type without changing the execution API. A
+Kubernetes placement would select a tools container and its deployment-owned resource settings.
 Avoid duplicating container or VM budgets in two independent authorities. Specify supported
 modes and defaults per environment, validation of parent/headroom and disabled settings, restart
 requirements, unsupported-mode errors, and rollout/rollback behavior. The selectable
