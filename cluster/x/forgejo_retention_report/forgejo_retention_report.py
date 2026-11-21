@@ -159,7 +159,9 @@ def make_report(
     for version in versions.values():
         groups[f"{version['owner']}/{version['name']}"].append(version)
     candidates: set[int] = set()
+    out_of_policy_members: dict[tuple[str, str, str, bool], set[int]] = defaultdict(set)
     details = []
+    recent_cutoff = (now - timedelta(days=days)).timestamp()
     for image, group in sorted(groups.items()):
         public = sorted((v for v in group if not v["internal"]), key=lambda v: (v["created"], v["id"]), reverse=True)
         newest = {v["id"] for v in public[:keep]}
@@ -171,9 +173,13 @@ def make_report(
                 reasons.add("internal")
             if not TAG.fullmatch(v["version"]):
                 reasons.add("not-dated-devel-tag")
+            # Only permanent exclusions belong in the out-of-policy inventory.
+            if reasons:
+                group_key = (v["owner"], v["type"], classify_shape(v["version"]), v["internal"])
+                out_of_policy_members[group_key].add(v["id"])
             if v["id"] in newest:
                 reasons.add("newest-N")
-            if v["created"] >= (now - timedelta(days=days)).timestamp():
+            if v["created"] >= recent_cutoff:
                 reasons.add("recent")
             reasons.update(protection.tokens.get(v["version"], set()))
             reasons.update(protection.references.get(f"{image}:{v['version']}", set()))
@@ -193,12 +199,8 @@ def make_report(
                 }
             )
     reclaimable = {b for b, refs in blob_refs.items() if refs and refs <= candidates}
-    members: dict[tuple[str, str, str, bool], set[int]] = defaultdict(set)
-    for v in versions.values():
-        if not (v["owner"] == owner and v["type"] == "container" and TAG.fullmatch(v["version"]) and not v["internal"]):
-            members[(v["owner"], v["type"], classify_shape(v["version"]), v["internal"])].add(v["id"])
     out_of_policy = []
-    for (g_owner, g_type, shape, internal), ids in sorted(members.items()):
+    for (g_owner, g_type, shape, internal), ids in sorted(out_of_policy_members.items()):
         group_blobs = set().union(*(version_blobs[i] for i in ids))
         out_of_policy.append(
             {
