@@ -270,7 +270,6 @@ py_test(
         ":helm",
         ":secret_ref",
         "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
         "@pypi//pytest_bazel",
     ],
 )
@@ -308,10 +307,8 @@ py_test(
         ":conftest",
         ":service_ref",
         "//:conftest",
-        "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
-        "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
+        "@pypi//more_itertools",
         "@pypi//pytest_bazel",
     ],
 )
