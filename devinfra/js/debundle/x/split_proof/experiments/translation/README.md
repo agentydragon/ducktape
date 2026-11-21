@@ -177,6 +177,17 @@ node coverage_audit.mjs --samples 150 --seed 1 --out COVERAGE.md && prettier --w
 
 [`syntax_inventory.mjs`](syntax_inventory.mjs) lists the node types and forms (each with a witness snippet that `coverage_audit_test` parses), [`analysis_inventory.mjs`](analysis_inventory.mjs) reads the analysis's inventory from the Lean sources, and [`intrinsics_probe.mjs`](intrinsics_probe.mjs) counts the standard functions a program calls from its own code (`node --import`). `node fuzz.mjs --emit DIR` writes the bundles of a corpus mode without running them.
 
+## The host inventory
+
+[`host_inventory.mjs`](host_inventory.mjs) counts which standard and host features a set of JavaScript files uses: the globals (names no declaration in the file binds), the static member paths that start at one, the names of members of standard objects on any other receiver, host modules and the keys of `import.meta`. It reads source only.
+
+```sh
+node host_inventory.mjs scan PATH... > inventory.json   # files, directories, or @LIST with one file per line
+node host_inventory.mjs render inventory.json > report.md && prettier --write report.md
+```
+
+`render` prints only names that are public already: globals that a list of the [`globals`](https://www.npmjs.com/package/globals) package has, and member paths that resolve on Node's own objects. It counts the rest, so a report of private sources can be published; `render --full` prints every name. [`../../HOST_FEATURES.md`](../../HOST_FEATURES.md) is the report for the inputs this experiment has to support. The head of the script says what the scan does not see.
+
 ## The footprint oracle
 
 The reorder oracle above sees a wrong footprint only when a reorder happens to change what Node prints. [`footprint_oracle.mjs`](footprint_oracle.mjs) checks the footprints themselves: it runs a program unit by unit in Node, and after every unit compares what each top-level binding reaches with the unit's footprint from [`lower`](../effects/README.md).

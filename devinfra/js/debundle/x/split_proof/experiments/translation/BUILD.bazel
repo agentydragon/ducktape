@@ -483,6 +483,18 @@ js_test(
     entry_point = "coverage_audit_test.mjs",
 )
 
+# The host inventory: which standard and host features a set of JavaScript files uses.
+js_test(
+    name = "host_inventory_test",
+    data = [
+        "host_inventory.mjs",
+        ":node_modules/acorn",
+        ":node_modules/eslint-scope",
+        ":node_modules/globals",
+    ],
+    entry_point = "host_inventory_test.mjs",
+)
+
 # The footprint oracle: run a program unit by unit and compare what each binding reaches with `lower`'s footprints.
 js_test(
     name = "footprint_oracle_test",
