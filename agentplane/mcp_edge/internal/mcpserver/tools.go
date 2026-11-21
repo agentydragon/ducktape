@@ -8,6 +8,7 @@ import (
 	"math"
 	"slices"
 	"strings"
+	"time"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
@@ -49,6 +50,67 @@ type getActionInput struct {
 	Group         string   `json:"group"`
 	Name          string   `json:"name"`
 	IncludeFields []string `json:"include_fields"`
+}
+
+type getActionGroupInput struct {
+	Group string `json:"group"`
+}
+
+type groupWarning struct {
+	Action  string `json:"action"`
+	Message string `json:"message"`
+}
+
+type groupHealth struct {
+	State           string     `json:"state"`
+	Reason          *string    `json:"reason,omitempty"`
+	LastDiscoveryAt *time.Time `json:"last_discovery_at,omitempty"`
+	RetryAt         *time.Time `json:"retry_at,omitempty"`
+	Failures        int32      `json:"failures"`
+}
+
+// getActionGroup shows the connection state even when it is unavailable and offers no Actions.
+func (t *tools) getActionGroup(ctx context.Context, input getActionGroupInput) (*mcp.CallToolResult, error) {
+	response, err := t.core.ListActionGroups(ctx, &pb.ListActionGroupsRequest{})
+	if err != nil {
+		return nil, err
+	}
+	for _, group := range response.GetActionGroups() {
+		if group.GetKey() != input.Group {
+			continue
+		}
+		warnings := []groupWarning{}
+		for _, action := range group.GetActions() {
+			if action.InputSchemaWarning != nil {
+				warnings = append(warnings, groupWarning{Action: action.GetName(), Message: action.GetInputSchemaWarning()})
+			}
+		}
+		slices.SortFunc(warnings, func(a, b groupWarning) int { return strings.Compare(a.Action, b.Action) })
+		view := struct {
+			Group     string         `json:"group"`
+			Title     string         `json:"title"`
+			Available bool           `json:"available"`
+			Health    *groupHealth   `json:"health"`
+			Warnings  []groupWarning `json:"warnings"`
+		}{Group: group.GetKey(), Title: group.GetTitle(), Available: group.GetAvailable(), Warnings: warnings}
+		if health := group.GetHealth(); health != nil {
+			view.Health = &groupHealth{State: strings.ToLower(strings.TrimPrefix(health.GetState().String(), "MCP_LIFECYCLE_")), Failures: health.GetFailures()}
+			if health.Reason != nil {
+				reason := strings.ToLower(strings.TrimPrefix(health.GetReason().String(), "MCP_UNAVAILABLE_REASON_"))
+				view.Health.Reason = &reason
+			}
+			if stamp := health.GetLastDiscoveryAt(); stamp != nil {
+				at := stamp.AsTime()
+				view.Health.LastDiscoveryAt = &at
+			}
+			if stamp := health.GetRetryAt(); stamp != nil {
+				at := stamp.AsTime()
+				view.Health.RetryAt = &at
+			}
+		}
+		return actionresult.StructuredResult(view)
+	}
+	return nil, unknownGroup
 }
 
 type getActionPolicyInput struct {
@@ -168,15 +230,16 @@ func after(group, name string, cursor actionIdentity) bool {
 }
 
 type actionSummary struct {
-	Group       string                  `json:"group"`
-	Name        string                  `json:"name"`
-	Available   bool                    `json:"available"`
-	InputSchema shown[*structpb.Struct] `json:"input_schema,omitzero"`
-	Description shown[string]           `json:"description,omitzero"`
+	Group              string                  `json:"group"`
+	Name               string                  `json:"name"`
+	Available          bool                    `json:"available"`
+	InputSchema        shown[*structpb.Struct] `json:"input_schema,omitzero"`
+	Description        shown[string]           `json:"description,omitzero"`
+	InputSchemaWarning *string                 `json:"input_schema_warning,omitempty"`
 }
 
 func summarize(group string, available bool, action *pb.Action, fields []string) actionSummary {
-	view := actionSummary{Group: group, Name: action.GetName(), Available: available}
+	view := actionSummary{Group: group, Name: action.GetName(), Available: available, InputSchemaWarning: action.InputSchemaWarning}
 	if slices.Contains(fields, "input_schema") {
 		view.InputSchema = show(object(action.GetInputSchema()))
 	}

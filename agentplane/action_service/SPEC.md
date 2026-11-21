@@ -75,6 +75,11 @@ lowers those maxima. Both profiles derive from the same typed input contract.
 
 Go and Python Sandbox Action names are generated from a shared JSON Schema enum. Externally
 supplied MCP schemas and policy-authored argument schemas retain their own JSON Schema contracts.
+An MCP tool whose input schema is a JSON object but cannot be compiled remains available with an
+input schema warning: Agentplane forwards object arguments without checking that tool schema at
+admission or execution. The backend may validate them. Policy schemas and built-in input contracts
+remain enforced. Warnings are reported on Action reads, group inspection and the MCP servers page,
+and clear when discovery observes a usable schema.
 
 ## Caller admission and Connection authority
 

@@ -23,6 +23,20 @@ import { disconnectMcpLinkage, followMcpLinkages, startMcpLinkage } from "./mcp_
 
 type McpHealth = ActionGroup["health"];
 
+function SchemaWarnings({ group }: { group: ActionGroup }): JSX.Element | null {
+  const warnings = group.actions.filter((action) => action.inputSchemaWarning !== undefined);
+  if (warnings.length === 0) return null;
+  return (
+    <Alert color="yellow" title="Some tool arguments are not validated" mt="sm">
+      {warnings.map((action) => (
+        <Text key={action.name} size="sm">
+          {action.name}: {action.inputSchemaWarning}
+        </Text>
+      ))}
+    </Alert>
+  );
+}
+
 type Row =
   { kind: "oauth"; linkage: McpServerLinkage; group: ActionGroup | null } | { kind: "health-only"; group: ActionGroup };
 
@@ -329,6 +343,7 @@ export function McpServers(): JSX.Element {
                 </States>
               </Group>
               <RefreshFailure linkage={row.linkage} />
+              {row.group != null && <SchemaWarnings group={row.group} />}
               {/* A connection waiting on a linkage whose refresh failure is already shown has nothing to add. */}
               {row.group != null &&
                 row.linkage.status !== McpLinkageStatus.UNLINKED &&
@@ -371,6 +386,7 @@ export function McpServers(): JSX.Element {
                 </States>
               </Group>
               <HealthDetail health={row.group.health} />
+              <SchemaWarnings group={row.group} />
             </>
           )}
         </Paper>

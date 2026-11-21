@@ -211,6 +211,42 @@ func TestToolsCallTheCoreAsTheVerifiedCaller(t *testing.T) {
 	}
 }
 
+func TestActionGroupInspectionShowsSchemaWarnings(t *testing.T) {
+	warning := "Agentplane cannot validate arguments against this tool's input schema"
+	catalog := &pb.ListActionGroupsResponse{ActionGroups: []*pb.ActionGroup{{
+		Key: "tana", Title: "Tana", Available: true,
+		Health:  &pb.McpHealth{State: pb.McpLifecycle_MCP_LIFECYCLE_AVAILABLE},
+		Actions: []*pb.Action{{Group: "tana", Name: "search_nodes", InputSchemaWarning: &warning}},
+	}}}
+	recorder := &recordingCore{}
+	session := newHarness(t, recorder.core(map[string]proto.Message{
+		"ListActionGroups": catalog,
+		"GetAction":        &pb.GetActionResponse{Action: catalog.ActionGroups[0].Actions[0]},
+	}, noWatch), Options{}).connect(t, callerToken)
+	result := callTool(t, session, "get_action_group", `{"group":"tana"}`)
+	view, ok := result.StructuredContent.(map[string]any)
+	if !ok || view["group"] != "tana" || view["available"] != true {
+		t.Fatalf("group result = %#v", result.StructuredContent)
+	}
+	health, ok := view["health"].(map[string]any)
+	if !ok || health["state"] != "available" {
+		t.Errorf("health = %#v", view["health"])
+	}
+	warnings, ok := view["warnings"].([]any)
+	if !ok || len(warnings) != 1 {
+		t.Fatalf("warnings = %#v", view["warnings"])
+	}
+	got, ok := warnings[0].(map[string]any)
+	if !ok || got["action"] != "search_nodes" || got["message"] != warning {
+		t.Errorf("warning = %#v", warnings[0])
+	}
+	action := callTool(t, session, "get_action", `{"group":"tana","name":"search_nodes"}`)
+	actionView, ok := action.StructuredContent.(map[string]any)
+	if !ok || actionView["input_schema_warning"] != warning {
+		t.Errorf("action result = %#v", action.StructuredContent)
+	}
+}
+
 func TestInvalidArgumentsAreRefusedBeforeTheCore(t *testing.T) {
 	recorder := &recordingCore{}
 	session := newHarness(t, recorder.core(nil, noWatch), Options{MaxWaitSeconds: 30}).connect(t, callerToken)

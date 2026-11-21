@@ -27,6 +27,7 @@ import {
 } from "./network";
 import {
   ActionGroupSchema,
+  ActionSchema,
   ActionIdentitySchema,
   ActionRequestSchema,
   ListActionRequestHistoryResponseSchema,
@@ -2723,7 +2724,15 @@ const MCP_GROUPS: ActionGroup[] = [
     failures: 7,
   }),
   mcpGroup("gmail", "Test Gmail action group for Agentplane rendering."),
-  mcpGroup("example_notes", BEARER),
+  create(ActionGroupSchema, {
+    ...mcpGroup("example_notes", BEARER),
+    actions: [
+      create(ActionSchema, {
+        name: "search_notes",
+        inputSchemaWarning: "Agentplane cannot validate arguments against this tool's input schema",
+      }),
+    ],
+  }),
   mcpGroup("ssh", BEARER),
 ];
 const MCP_UNKNOWN_GROUPS: ActionGroup[] = [

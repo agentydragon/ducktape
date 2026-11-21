@@ -1079,6 +1079,15 @@ async def test_mcp_servers_linked_and_expired(view: VisualPage, app: AgentplaneF
     await view.capture(target=view.page.locator("#app"))
 
 
+@DESKTOP_AND_MOBILE
+async def test_mcp_servers_schema_warning(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.mount_app("/mcp-servers")
+    row = view.page.locator('[data-mcp-server="group:example_notes"]')
+    await expect(row.get_by_text("Some tool arguments are not validated")).to_be_visible()
+    await row.scroll_into_view_if_needed()
+    await view.capture(target=row)
+
+
 async def test_mcp_servers_unknown_linkage_status(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.set_flag(Flag.UNKNOWN_MCP_STATUS)
     await app.mount_app("/mcp-servers")

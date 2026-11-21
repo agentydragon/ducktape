@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"google.golang.org/grpc/codes"
@@ -16,6 +17,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -205,6 +207,30 @@ func TestADecidedOnlySubmissionNoPolicyDecidesIsRefusedAndStoresNothing(t *testi
 	decided.DecidedOnly = true
 	if got, err := s.submitAs(t, callerCertificate, decided); err != nil || got.GetState() != allowed {
 		t.Errorf("a decided-only submission a policy decides: %v, %v", got.GetState(), err)
+	}
+}
+
+func TestUnvalidatedToolStillEnforcesArgumentPolicy(t *testing.T) {
+	groups := newCatalog(t, submissionCatalog)
+	groups.Update("test-broken", func(group *catalog.Group) {
+		definition := group.Actions["test-action"]
+		definition.InputSchemaWarning = "Agentplane cannot validate arguments"
+		group.Actions = map[string]catalog.ActionDefinition{"test-action": definition}
+	})
+	s := serveWith(t, groups)
+	s.bind(t, actionPolicy(policyapi.ActionPolicy{
+		Type: "argument_schema", Actions: map[string]policyapi.ActionNames{"test-broken": {"test-action"}},
+		Schema: &runtime.RawExtension{Raw: []byte(`{"type":"object","properties":{"safe":{"const":true}},"required":["safe"]}`)},
+	}))
+	denied := envelope(t, "test-unvalidated-denied", "test-broken", "test-action", map[string]any{"safe": false})
+	denied.DecidedOnly = true
+	_, err := s.submitAs(t, callerCertificate, denied)
+	wantCode(t, "an unvalidated tool that does not match its policy", err, codes.PermissionDenied)
+	allowedRequest := envelope(t, "test-unvalidated-allowed", "test-broken", "test-action", map[string]any{"safe": true})
+	allowedRequest.DecidedOnly = true
+	got, err := s.submitAs(t, callerCertificate, allowedRequest)
+	if err != nil || got.GetState() != allowed {
+		t.Errorf("unvalidated tool with matching policy: %v, %v", got, err)
 	}
 }
 

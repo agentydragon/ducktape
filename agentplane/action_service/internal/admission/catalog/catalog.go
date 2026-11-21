@@ -34,6 +34,8 @@ type ActionDefinition struct {
 	Description string
 	// InputSchema is the JSON Schema a submission's arguments are validated against: a JSON object.
 	InputSchema json.RawMessage
+	// InputSchemaWarning marks an external schema the service could not compile. Its arguments still go through policy.
+	InputSchemaWarning string
 	// Title is the Action's display name; nil when it has none.
 	Title *string
 	// Annotations are the MCP tool's behavior hints; nil when it gives none. They shape how a client presents the

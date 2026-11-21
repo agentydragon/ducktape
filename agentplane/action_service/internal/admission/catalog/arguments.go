@@ -52,6 +52,9 @@ func (noDocuments) Load(url string) (any, error) {
 // schema. It returns nil when they satisfy it, ErrInvalidArguments when they do not, and another error when the
 // schema is not one CompileSchema compiles.
 func (a ActionDefinition) CheckArguments(arguments any) error {
+	if a.InputSchemaWarning != "" {
+		return nil
+	}
 	document, err := jsonschema.UnmarshalJSON(bytes.NewReader(a.InputSchema))
 	if err != nil {
 		return fmt.Errorf("input schema is not JSON: %w", err)

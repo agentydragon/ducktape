@@ -1014,8 +1014,22 @@
    ]
   },
   {
-   "actions": null,
-   "invalid": true,
+   "actions": {
+    "test_tool": {
+     "description": "MCP tool test_tool",
+     "input_schema": {
+      "properties": {
+       "test": {
+        "type": 1
+       }
+      },
+      "type": "object"
+     },
+     "title": null,
+     "annotations": null
+    }
+   },
+   "invalid": false,
    "name": "a schema that is not a JSON Schema",
    "tools": [
     {
