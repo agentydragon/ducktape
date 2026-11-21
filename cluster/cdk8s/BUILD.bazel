@@ -1870,6 +1870,7 @@ py_library(
         ":pod_policy",
         ":secret_ref",
         ":service_ref",
+        ":vpa_policy",
         "//cluster/cdk8s:volume_claim",
         "//cluster/cdk8s/cnpg:backup",
         "//cluster/cdk8s/cnpg:cluster",

@@ -1,8 +1,10 @@
 apiVersion: v1
 kind: Namespace
 metadata:
+  annotations:
+    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "*", "controlledValues": "RequestsOnly"}]}'
   labels:
-    goldilocks.fairwinds.com/enabled: "false"
+    goldilocks.fairwinds.com/vpa-update-mode: "off"
     name: claude-session-sync
   name: claude-session-sync
 spec: {}
@@ -176,6 +178,8 @@ kind: Deployment
 metadata:
   annotations:
     description: Serves the owner-authenticated Claude session page and proxies controls to the credential owner.
+    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "claude-session-sync", "controlledValues": "RequestsOnly", "controlledResources": ["cpu", "memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
+    goldilocks.fairwinds.com/vpa-update-mode: initial
   labels:
     app.kubernetes.io/component: web
     app.kubernetes.io/name: claude-session-sync
@@ -294,6 +298,8 @@ kind: Deployment
 metadata:
   annotations:
     description: Owns the rotating Claude OAuth credential, pairing flow, polling cycle, and live API streams.
+    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "claude-session-sync-control", "controlledValues": "RequestsOnly", "controlledResources": ["cpu", "memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
+    goldilocks.fairwinds.com/vpa-update-mode: initial
   labels:
     app.kubernetes.io/component: control
     app.kubernetes.io/name: claude-session-sync-control
