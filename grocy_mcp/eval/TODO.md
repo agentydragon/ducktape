@@ -198,4 +198,3 @@ eval to confirm the agent doesn't misfire.
    success criteria.
 3. Register it in `CASES`.
 4. Run `bb run //grocy_mcp/eval:cli_bin -- --case <id> --api anthropic`.
-5. Drop the rollout into `sample_rollouts/<id>/` alongside the others.
