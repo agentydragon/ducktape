@@ -1421,7 +1421,6 @@ py_library(
     srcs = ["route53_domain_delegation.py"],
     data = ["//tf/gitops/route53-domain-delegation:inline_source"],
     deps = [
-        ":flux",
         ":opentofu",
         ":route53",
         ":secret_ref",
@@ -1437,7 +1436,6 @@ py_library(
     srcs = ["crossplane_forgejo_agentydragon.py"],
     data = ["//tf/gitops/forgejo-agentydragon:inline_source"],
     deps = [
-        ":flux",
         ":opentofu",
         ":terraform",
         "@pypi//cdk8s",

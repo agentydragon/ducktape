@@ -663,7 +663,6 @@ def _bucket_stats(
         wagered=wagered,
         returned=returned,
         net=net,
-        expected_returned=expected_returned,
         expected_net=expected_net,
         payout_rate=payout_rate,
         rtp=rtp,
@@ -837,14 +836,12 @@ def _blackjack_slice(key: str, label: str, events: list[GameEventRead]) -> Black
 
 
 def _blackjack_summary(events: list[GameEventRead]) -> BlackjackSummary:
-    wins = losses = pushes = blackjacks = busts = 0
+    wins = losses = pushes = blackjacks = 0
     for e in events:
         assert isinstance(e.outcome, BlackjackOutcome)
         outcome = e.outcome.outcome
         if outcome == "blackjack":
             blackjacks += 1
-        elif outcome == "bust":
-            busts += 1
         if outcome in _BJ_WIN_OUTCOMES:
             wins += 1
         elif outcome in _BJ_LOSS_OUTCOMES:
@@ -858,8 +855,6 @@ def _blackjack_summary(events: list[GameEventRead]) -> BlackjackSummary:
         wins=wins,
         losses=losses,
         pushes=pushes,
-        blackjacks=blackjacks,
-        busts=busts,
         win_rate_excl_push=(wins / decided) if decided > 0 else None,
         blackjack_rate=(blackjacks / count) if count > 0 else None,
     )

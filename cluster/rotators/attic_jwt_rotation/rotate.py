@@ -332,7 +332,7 @@ def rotate_one(token: Token, config: Config) -> bool:
         return False
 
     stamps = unencrypted_stamps(destination.sops_file)
-    remaining = remaining_hours(destination.sops_file)
+    remaining = remaining_hours(stamps)
     drift = scope_drift(token, stamps)
     if remaining is not None and remaining > config.rotate_below_hours and drift is None:
         logger.info("%s: %.0fh remaining > %dh threshold; skipping", token.name, remaining, config.rotate_below_hours)
