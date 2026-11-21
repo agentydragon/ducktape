@@ -13,15 +13,13 @@ import logging
 import os
 import sys
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
-from typing import Annotated, Literal
 from urllib.parse import urlparse
 from uuid import UUID
 
 import httpx
 from agent_framework import ChatContext, MiddlewareTermination, MiddlewareTypes, chat_middleware
 from pydantic import BaseModel, Field
-from sqlalchemy import bindparam, func, text
+from sqlalchemy import bindparam, text
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Session
 from sqlalchemy.types import String
@@ -36,7 +34,6 @@ from props.core.ids import DefinitionId
 from props.core.models.examples import SingleFileSetExample
 from props.db.config import DatabaseConfig
 from props.db.database import Database
-from props.db.models import GradingPending
 
 # The critic-dev image bundles the recipe modules so in-container agents can import
 # them (they are advertised in prompt_base.md.mako); no Python import reaches them.
@@ -60,31 +57,15 @@ def _setup_crane_auth(config: DatabaseConfig) -> None:
 
 
 class TerminationSuccess(BaseModel):
-    kind: Literal["success"] = "success"
     definition_id: DefinitionId = Field(description="ID of the winning definition")
     total_credit: float = Field(description="Winning definition's sum of grader credits across allowed_examples")
     baseline_avg: float = Field(description="Average total_credit across baseline definitions")
 
 
-class BlockingStatus(BaseModel):
-    kind: Literal["blocking"] = "blocking"
-    message: str = Field(description="Human-readable explanation of what's blocking termination")
-    baseline_avg_credit: float | None = Field(
-        default=None, description="Average total_credit across baseline definitions"
-    )
-    best_candidate_credit: float | None = Field(default=None, description="Best candidate's total_credit")
-    best_candidate_id: str | None = Field(default=None, description="ID of the best candidate definition so far")
-    edges_needing_grading_count: int = Field(
-        default=0, description="Number of edges in grading_pending still awaiting grading"
-    )
-
-
-TerminationResult = Annotated[TerminationSuccess | BlockingStatus, Field(discriminator="kind")]
-
-
 def check_termination_condition(
     session: Session, improvement_run_id: UUID, type_config: CriticDevImproveTypeConfig
-) -> TerminationResult:
+) -> TerminationSuccess | None:
+    """Return the winner once a candidate covering every allowed example beats the baseline average, else `None`."""
     baseline_ids = type_config.baseline_image_digests
     allowed_examples = type_config.allowed_examples
     n_examples = len(allowed_examples)
@@ -183,95 +164,19 @@ def check_termination_condition(
         },
     ).fetchall()
 
-    @dataclass
-    class _CandidateScore:
-        definition_id: str
-        total_credit: float
-        coverage: int
-
-    best_full: _CandidateScore | None = None
-    best_partial: _CandidateScore | None = None
-
-    for row in candidate_results:
-        covered = row.covered_examples or 0
-        credit = row.total_credit or 0.0
-
-        if covered >= n_examples:
-            if best_full is None or credit > best_full.total_credit:
-                best_full = _CandidateScore(row.agent_definition_id, credit, covered)
-        elif (
-            best_partial is None
-            or covered > best_partial.coverage
-            or (covered == best_partial.coverage and credit > best_partial.total_credit)
-        ):
-            best_partial = _CandidateScore(row.agent_definition_id, credit, covered)
-
-    # Count edges awaiting grading from the grading_pending view
-    pending_grading_edges = (
-        session.query(func.count())
-        .select_from(GradingPending)
-        .filter(GradingPending.snapshot_slug.in_(snapshot_slugs))
-        .scalar()
-        or 0
+    best_full = max(
+        (row for row in candidate_results if (row.covered_examples or 0) >= n_examples),
+        key=lambda row: row.total_credit or 0.0,
+        default=None,
     )
+    if best_full is None or baseline_avg is None:
+        return None
 
-    if best_full is not None:
-        if baseline_avg is None:
-            return BlockingStatus(
-                message=(
-                    f"Definition '{best_full.definition_id}' has {best_full.total_credit:.1f} total credit, "
-                    f"but baseline definitions have no evals yet. "
-                    f"{pending_grading_edges} edges still awaiting grading."
-                ),
-                best_candidate_credit=best_full.total_credit,
-                best_candidate_id=best_full.definition_id,
-                edges_needing_grading_count=pending_grading_edges,
-            )
-
-        if best_full.total_credit > baseline_avg:
-            return TerminationSuccess(
-                definition_id=DefinitionId(best_full.definition_id),
-                total_credit=best_full.total_credit,
-                baseline_avg=baseline_avg,
-            )
-
-        return BlockingStatus(
-            message=(
-                f"Definition '{best_full.definition_id}' has {best_full.total_credit:.1f} total credit, "
-                f"but baseline average is {baseline_avg:.1f}. "
-                f"Need better credit or create a better definition."
-            ),
-            baseline_avg_credit=baseline_avg,
-            best_candidate_credit=best_full.total_credit,
-            best_candidate_id=best_full.definition_id,
-        )
-
-    if not candidate_results:
-        return BlockingStatus(
-            message=(
-                "No definitions created yet. "
-                "Create an improved definition at /workspace/improved/ and call create_definition."
-            ),
-            baseline_avg_credit=baseline_avg,
-            edges_needing_grading_count=pending_grading_edges,
-        )
-
-    assert best_partial is not None
-    missing_examples = n_examples - best_partial.coverage
-    return BlockingStatus(
-        message=(
-            f"Definition '{best_partial.definition_id}' has evals for {best_partial.coverage}/{n_examples} examples. "
-            f"Run evals for the remaining {missing_examples} examples to check if it beats baseline "
-            f"(baseline avg: {baseline_avg:.1f} credit)."
-            if baseline_avg
-            else f"Definition '{best_partial.definition_id}' has evals for {best_partial.coverage}/{n_examples} examples. "
-            f"Run evals for the remaining {missing_examples} examples. "
-            f"{pending_grading_edges} edges still awaiting grading."
-        ),
-        baseline_avg_credit=baseline_avg,
-        best_candidate_credit=best_partial.total_credit,
-        best_candidate_id=best_partial.definition_id,
-        edges_needing_grading_count=pending_grading_edges,
+    credit = best_full.total_credit or 0.0
+    if credit <= baseline_avg:
+        return None
+    return TerminationSuccess(
+        definition_id=DefinitionId(best_full.agent_definition_id), total_credit=credit, baseline_avg=baseline_avg
     )
 
 
