@@ -937,11 +937,12 @@ export function makeComposedCase(seed, index) {
         if (!names.length) return literal(rand(4));
         return rand(3) ? id(names[rand(names.length)]) : literal(rand(4));
       }
+      const modulo = rand(5) === 0;
       return {
         type: "BinaryExpression",
-        operator: "+",
+        operator: modulo ? "%" : "+",
         left: expression(visible, depth - 1, forbidden),
-        right: expression(visible, depth - 1, forbidden),
+        right: modulo ? literal(1 + rand(4)) : expression(visible, depth - 1, forbidden),
       };
     };
     const sequence = (visible, depth) => {
@@ -962,10 +963,17 @@ export function makeComposedCase(seed, index) {
         if (mutable) mutableNames.push(name);
         body.push(decl);
         visible.declare(name);
-        if (mutable && rand(2))
+        if (mutable && rand(2)) {
+          const modulo = rand(4) === 0;
           body.push(
-            expr({ type: "AssignmentExpression", operator: "+=", left: id(name), right: expression(visible, 1) })
+            expr({
+              type: "AssignmentExpression",
+              operator: modulo ? "%=" : "+=",
+              left: id(name),
+              right: modulo ? literal(1 + rand(4)) : expression(visible, 1),
+            })
           );
+        }
       }
       if (mutableNames.length && rand(3) === 0) {
         const index = `loop${nextLocal++}`;

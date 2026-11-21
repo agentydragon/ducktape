@@ -311,12 +311,24 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
       check(!localFunctions.has(value), "local function identity escapes");
       return { kind: "name", name: value };
     }
-    if (node?.type === "BinaryExpression" && ["+", "*", "-"].includes(node.operator))
+    if (node?.type === "BinaryExpression" && ["+", "*", "-", "%"].includes(node.operator)) {
+      check(
+        node.operator !== "%" || node.right?.type !== "Literal" || node.right.value !== 0,
+        "zero remainder divisor"
+      );
       return {
-        kind: node.operator === "+" ? "add" : node.operator === "*" ? "multiply" : "subtract",
+        kind:
+          node.operator === "+"
+            ? "add"
+            : node.operator === "*"
+              ? "multiply"
+              : node.operator === "-"
+                ? "subtract"
+                : "remainder",
         left: expression(node.left),
         right: expression(node.right),
       };
+    }
     if (node?.type === "CallExpression" && !node.optional) {
       const target = identifier(node.callee);
       check(target !== name, "recursive calls are unsupported");
@@ -500,12 +512,23 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
     if (first.type === "ExpressionStatement" && rest.length > 0) {
       const assignment = first.expression;
       let name, value;
-      if (assignment?.type === "AssignmentExpression" && ["=", "+=", "*=", "-="].includes(assignment.operator)) {
+      if (assignment?.type === "AssignmentExpression" && ["=", "+=", "*=", "-=", "%="].includes(assignment.operator)) {
         name = identifier(assignment.left);
+        check(
+          assignment.operator !== "%=" || assignment.right?.type !== "Literal" || assignment.right.value !== 0,
+          "zero remainder divisor"
+        );
         value = expression(assignment.right);
         if (assignment.operator !== "=")
           value = {
-            kind: assignment.operator === "+=" ? "add" : assignment.operator === "*=" ? "multiply" : "subtract",
+            kind:
+              assignment.operator === "+="
+                ? "add"
+                : assignment.operator === "*="
+                  ? "multiply"
+                  : assignment.operator === "-="
+                    ? "subtract"
+                    : "remainder",
             left: { kind: "name", name },
             right: value,
           };
@@ -662,6 +685,7 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
       case "add":
       case "multiply":
       case "subtract":
+      case "remainder":
       case "equal":
       case "less":
       case "greater":
@@ -1185,6 +1209,7 @@ function leanExpression(expression) {
     case "add":
     case "multiply":
     case "subtract":
+    case "remainder":
     case "equal":
     case "less":
     case "greater":
@@ -1608,7 +1633,7 @@ theorem binding_captured_observations (calls : List (String × List Nat)) :
       assumptions: [
         "The Acorn-to-Lean conversion, including local object and array scalarization when used, faithfully represents the actual source and output files",
         "The modeled module loading, linking and execution match ECMAScript for the supported syntax",
-        "All binding values, arguments and intermediate arithmetic results remain nonnegative safe integers",
+        "All binding values, arguments and intermediate arithmetic results remain nonnegative safe integers other than negative zero; remainder divisors are nonzero",
         ...(hasExpressions
           ? [
               "Expression functions and captured closures receive exactly their declared number of numeric arguments; other exports are called without arguments",
@@ -1616,7 +1641,7 @@ theorem binding_captured_observations (calls : List (String × List Nat)) :
           : []),
         "globalThis.record is a stable synchronous host function which returns normally without reentry or asynchronous effects",
         "Only initialization calls, their record observations, and calls through the entry exports after successful initialization are observed; loading, reflection, source text and identity are excluded",
-        "Supported thrown values are nonnegative safe integers, booleans, null, undefined or ASCII strings; a throw ends the observed call sequence",
+        "Supported thrown values are nonnegative safe integers other than negative zero, booleans, null, undefined or ASCII strings; a throw ends the observed call sequence",
       ],
     };
   }
@@ -1733,6 +1758,11 @@ theorem binding_captured_observations (calls : List (String × List Nat)) :
       const left = expressionBound(expression.left, bound);
       const right = expressionBound(expression.right, bound);
       return [left, right, left * right].reduce((a, b) => (a > b ? a : b));
+    }
+    if (expression.kind === "remainder") {
+      const left = expressionBound(expression.left, bound);
+      const right = expressionBound(expression.right, bound);
+      return left > right ? left : right;
     }
     if (expression.kind === "subtract") {
       const left = expressionBound(expression.left, bound);

@@ -877,7 +877,9 @@ function inclusive(x) { let total = x; for (let i = 2; i <= 4; i += 1) { total +
 function reversed(x) { let total = x; for (let i = 4; i < 2; i++) { total += i; } return total; }
 function recover(x) { let total = 1; try { total += maybe(x); } catch (error) { total += 5; } finally { total += 2; } return total; }
 function direct(x) { let total = x; try { total += 1; throw 5; } catch { total += 2; } return total; }
-export { sum, zero, interrupted, inclusive, reversed, recover, direct };
+function remainder(x) { return x % 3; }
+function remainderAssign(x) { let value = x; value %= 3; return value; }
+export { sum, zero, interrupted, inclusive, reversed, recover, direct, remainder, remainderAssign };
 `
   );
   await writeFile(
@@ -887,7 +889,7 @@ export { sum, zero, interrupted, inclusive, reversed, recover, direct };
       entry: "entry.mjs",
       modules: {
         "helpers.mjs": { imports: [], statements: [0] },
-        "functions.mjs": { imports: ["helpers.mjs"], statements: [1, 2, 3, 4, 5, 6, 7] },
+        "functions.mjs": { imports: ["helpers.mjs"], statements: [1, 2, 3, 4, 5, 6, 7, 8, 9] },
         "entry.mjs": { imports: ["functions.mjs"], statements: [] },
       },
     })
@@ -895,6 +897,8 @@ export { sum, zero, interrupted, inclusive, reversed, recover, direct };
   assert.equal(cli("generate", loopSource, loopSpec, loopOut).result, "generated");
   const proof = cli("validate", loopSource, loopSpec, loopOut);
   assert.equal(proof.result, "proved under assumptions", JSON.stringify(proof));
+  assert.ok(proof.assumptions.some((assumption) => assumption.includes("negative zero")));
+  assert.ok(proof.assumptions.some((assumption) => assumption.includes("remainder divisors are nonzero")));
   const calls = [
     { name: "sum", args: [2] },
     { name: "zero", args: [4] },
@@ -903,6 +907,8 @@ export { sum, zero, interrupted, inclusive, reversed, recover, direct };
     { name: "recover", args: [0] },
     { name: "recover", args: [2] },
     { name: "direct", args: [4] },
+    { name: "remainder", args: [8] },
+    { name: "remainderAssign", args: [7] },
     { name: "interrupted", args: [1] },
   ];
   const trace = execute(loopSource, calls);
@@ -914,8 +920,10 @@ export { sum, zero, interrupted, inclusive, reversed, recover, direct };
     { value: 3 },
     { value: 8 },
     { value: 7 },
+    { value: 2 },
+    { value: 1 },
   ]);
-  assert.deepEqual(trace.error, { name: null, phase: "call", index: 7, thrown: { kind: "number", value: 9 } });
+  assert.deepEqual(trace.error, { name: null, phase: "call", index: 9, thrown: { kind: "number", value: 9 } });
   assert.deepEqual(execute(join(loopOut, "entry.mjs"), calls), trace);
   const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
     encoding: "utf8",
@@ -926,9 +934,10 @@ export { sum, zero, interrupted, inclusive, reversed, recover, direct };
 theorem loop_modeled_observation :
   ((sourceBindingState bindingSource).bind (fun state =>
     (publicCallableTable bindingSource bindingExports).bind (fun table =>
-      runArgumentCalls table state [("sum", [2]), ("zero", [4]), ("inclusive", [1]), ("reversed", [6]), ("recover", [0]), ("recover", [2]), ("direct", [4]), ("interrupted", [1])]))).map
-    (fun state => (state.returns, state.thrown)) = some ([some 10, some 4, some 10, some 6, some 3, some 8, some 7], some (.number 9)) := by decide
+      runArgumentCalls table state [("sum", [2]), ("zero", [4]), ("inclusive", [1]), ("reversed", [6]), ("recover", [0]), ("recover", [2]), ("direct", [4]), ("remainder", [8]), ("remainderAssign", [7]), ("interrupted", [1])]))).map
+    (fun state => (state.returns, state.thrown)) = some ([some 10, some 4, some 10, some 6, some 3, some 8, some 7, some 2, some 1], some (.number 9)) := by decide
 #print axioms loop_modeled_observation
+example : evaluateExpression [] [] (.remainder (.literal 4) (.literal 0)) = none := by decide
 `,
   });
   assert.equal(replay.status, 0, replay.stdout + replay.stderr);
@@ -939,6 +948,18 @@ theorem loop_modeled_observation :
   const tooMany = join(root, "too-many-loop.mjs");
   await writeFile(tooMany, (await readFile(loopSource, "utf8")).replace("i < 3", "i <= 8"));
   assert.equal(cli("generate", tooMany, loopSpec, join(root, "too-many-loop-out")).result, "unknown");
+  for (const [name, from, to] of [
+    ["remainder-zero", "x % 3", "x % 0"],
+    ["remainder-assign-zero", "value %= 3", "value %= 0"],
+  ]) {
+    const invalid = join(root, `${name}.mjs`);
+    const invalidOut = join(root, `${name}-out`);
+    await writeFile(invalid, (await readFile(loopSource, "utf8")).replace(from, to));
+    const generated = cli("generate", invalid, loopSpec, invalidOut);
+    if (generated.result === "generated")
+      assert.equal(cli("validate", invalid, loopSpec, invalidOut).result, "unknown");
+    else assert.equal(generated.result, "unknown");
+  }
 }
 
 if (shard === 10) {

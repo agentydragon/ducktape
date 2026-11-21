@@ -101,12 +101,12 @@ integer are also supported after successful initialization. A throw terminates
 the observed call sequence, and the certificate proves matching thrown values.
 Top-level calls to such functions remain unsupported. Exported functions may
 also take numeric parameters and return expressions composed of those
-parameters, readable module bindings, nonnegative integer literals, `+`, `-`, `*`,
+parameters, readable module bindings, nonnegative integer literals, `+`, `-`, `*`, `%` with a nonzero divisor,
 numeric conditionals, and calls to modeled top-level functions with matching
 numeric arguments. The checker compares each called body with its declaration;
 recursive calls remain unsupported. Function bodies may introduce initialized local `let`
 or `const` bindings, mutate local `let` bindings and parameters using `=`, `+=`,
-`-=`, `*=`, `++` or `--`, and use `if`/`else` when both branches end in a supported return
+`-=`, `*=`, `%=`, `++` or `--`, and use `if`/`else` when both branches end in a supported return
 or throw. A no-`else` `if` may return or throw early before the remaining
 statements. Conditions may use numeric `===`, `!==`, `<`, `<=`, `>` and `>=`, boolean literals, `!`,
 `&&`, and `||`, including short-circuiting calls. Comparison and logical
@@ -225,16 +225,17 @@ covered by the relational acceptance proof. A safe
 result proves equal modeled initialization and matching return values and
 state for any finite sequence of subsequent calls. Function return values are
 modeled separately from host-recorded events; ignored top-level call results
-are not included in the return trace. An unsafe result includes a Lean proof of
-different modeled initialization and a Node witness. When initialization traces
+are not included in the return trace. An unsafe result includes a Lean proof of different modeled observations during
+initialization or later calls, and a Node witness. When initialization traces
 match, the validator also searches up to 64 sequences of one or two exported
 calls, provided a conservative numeric bound keeps every intermediate safe. Semantically equivalent
 rewrites beyond this AST subset can return `unknown`.
 
 This result assumes correct Acorn conversion and correspondence between the
 model and ECMAScript. All values and intermediate arithmetic results must remain
-nonnegative safe integers, `globalThis.record` must be stable and return normally without
-reentry or asynchronous effects, and module loading and linking must succeed.
+nonnegative safe integers excluding negative zero, remainder divisors must be
+nonzero, `globalThis.record` must be stable and return normally without reentry
+or asynchronous effects, and module loading and linking must succeed.
 Loading, reflection, source text and module identity are not observed. The JSON
 certificate can be replayed by concatenating `Semantics.lean`, `Effects.lean`,
 `Bindings.lean`, and the certificate and running `lean --trust=0 --stdin`.

@@ -389,6 +389,8 @@ assert.ok(composedPrograms.some((item) => item.source.includes("const box =")));
 assert.ok(composedPrograms.some((item) => item.source.includes("function nested(")));
 assert.ok(composedPrograms.some((item) => item.source.includes("catch {")));
 assert.ok(composedPrograms.some((item) => item.source.includes("catch (caught) {")));
+assert.ok(composedPrograms.some((item) => item.source.includes(" % ")));
+assert.ok(composedPrograms.some((item) => item.source.includes(" %= ")));
 assert.ok(
   new Set(composedPrograms.map((item) => item.ast.body.filter((node) => node.type === "FunctionDeclaration").length))
     .size > 1
