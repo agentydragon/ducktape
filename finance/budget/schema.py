@@ -359,11 +359,10 @@ class BudgetConfig(FrozenModel):
     @model_validator(mode="after")
     def _validate_references(self) -> BudgetConfig:
         bucket_by_id = {bucket.id: bucket for bucket in self.buckets}
-        for field_name, expected in (
-            ("default_outflow_bucket_id", TransferDirection.OUTFLOW),
-            ("default_inflow_bucket_id", TransferDirection.INFLOW),
+        for field_name, bucket_id, expected in (
+            ("default_outflow_bucket_id", self.default_outflow_bucket_id, TransferDirection.OUTFLOW),
+            ("default_inflow_bucket_id", self.default_inflow_bucket_id, TransferDirection.INFLOW),
         ):
-            bucket_id = getattr(self, field_name)
             target = bucket_by_id.get(bucket_id)
             if target is None:
                 raise ValueError(f"{field_name}={bucket_id!r} not in buckets ({sorted(bucket_by_id)})")
