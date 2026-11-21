@@ -65,37 +65,6 @@ subjects:
     name: opentofu-forgejo-agentydragon-repos
     namespace: crossplane-system
 ---
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: opentofu-forgejo-agentydragon-repos
-  namespace: agents-infra
-rules:
-  - apiGroups:
-      - ""
-    resourceNames:
-      - forgejo-token-mint-codex-pod
-    resources:
-      - secrets
-    verbs:
-      - get
-      - delete
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: rolebindingc8fc95dca5cdb410f424a3c779032d77a9ee05c330
-  namespace: agents-infra
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: opentofu-forgejo-agentydragon-repos
-subjects:
-  - apiGroup: ""
-    kind: ServiceAccount
-    name: opentofu-forgejo-agentydragon-repos
-    namespace: crossplane-system
----
 apiVersion: opentofu.upbound.io/v1beta1
 kind: ProviderConfig
 metadata:
