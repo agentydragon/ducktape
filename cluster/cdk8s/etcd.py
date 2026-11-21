@@ -1,5 +1,5 @@
 """Static scrape targets for Talos' etcd metrics: a headless Service with a hand-managed
-EndpointSlice naming every control plane's Nebula IP, and the ServiceMonitor over it.
+EndpointSlice naming every control plane's Nebula IP, and its ServiceMonitors.
 
 etcd runs outside Kubernetes (`listen-metrics-urls` on the node's Nebula IP, set by
 cluster/terraform/main/ovh-nodes.tf), so no selector can find it; the slice is rendered
@@ -15,6 +15,8 @@ from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitor,
     ServiceMonitorSpec,
     ServiceMonitorSpecEndpoints,
+    ServiceMonitorSpecEndpointsMetricRelabelings,
+    ServiceMonitorSpecEndpointsMetricRelabelingsAction,
     ServiceMonitorSpecEndpointsRelabelings,
     ServiceMonitorSpecNamespaceSelector,
     ServiceMonitorSpecSelector,
@@ -28,6 +30,7 @@ NAMESPACE = "monitoring"
 _NAME = "talos-etcd-metrics"
 _LABELS = {"app.kubernetes.io/name": _NAME, "app.kubernetes.io/part-of": NAMESPACE}
 _METRICS = Port(name="metrics", number=2381)
+_FAST_MONITOR = "talos-etcd-fast"
 
 
 class TalosEtcdMetrics(Construct):
@@ -65,22 +68,56 @@ class TalosEtcdMetrics(Construct):
                 for name, host in mesh.control_planes().items()
             ],
         )
+        namespace_selector = ServiceMonitorSpecNamespaceSelector(match_names=[NAMESPACE])
+        selector = ServiceMonitorSpecSelector(match_labels=_LABELS)
+        node_label = ServiceMonitorSpecEndpointsRelabelings(
+            source_labels=["__meta_kubernetes_endpointslice_endpoint_hostname"], target_label="node"
+        )
         ServiceMonitor(
             self,
             "servicemonitor",
             metadata=ApiObjectMetadata(name="talos-etcd", namespace=NAMESPACE, labels=_LABELS),
             spec=ServiceMonitorSpec(
-                namespace_selector=ServiceMonitorSpecNamespaceSelector(match_names=[NAMESPACE]),
-                selector=ServiceMonitorSpecSelector(match_labels=_LABELS),
+                namespace_selector=namespace_selector,
+                selector=selector,
+                endpoints=[
+                    ServiceMonitorSpecEndpoints(
+                        port=_METRICS.name, path="/metrics", scrape_timeout="10s", relabelings=[node_label]
+                    )
+                ],
+            ),
+        )
+        ServiceMonitor(
+            self,
+            "fast-servicemonitor",
+            metadata=ApiObjectMetadata(name=_FAST_MONITOR, namespace=NAMESPACE),
+            spec=ServiceMonitorSpec(
+                namespace_selector=namespace_selector,
+                selector=selector,
                 endpoints=[
                     ServiceMonitorSpecEndpoints(
                         port=_METRICS.name,
                         path="/metrics",
-                        scrape_timeout="10s",
+                        # One-minute scrapes straddled a six-second follower apply wait in #18601.
+                        interval="2s",
+                        scrape_timeout="1s",
                         relabelings=[
-                            ServiceMonitorSpecEndpointsRelabelings(
-                                source_labels=["__meta_kubernetes_endpointslice_endpoint_hostname"], target_label="node"
-                            )
+                            node_label,
+                            ServiceMonitorSpecEndpointsRelabelings(target_label="job", replacement=_FAST_MONITOR),
+                        ],
+                        metric_relabelings=[
+                            ServiceMonitorSpecEndpointsMetricRelabelings(
+                                action=ServiceMonitorSpecEndpointsMetricRelabelingsAction.KEEP,
+                                source_labels=["__name__"],
+                                regex="etcd_server_(proposals_(committed|applied)_total|has_leader|is_leader)",
+                            ),
+                            # Preserve the series matched by existing queries, including jobless selectors.
+                            ServiceMonitorSpecEndpointsMetricRelabelings(
+                                source_labels=["__name__"],
+                                regex="etcd_(.+)",
+                                target_label="__name__",
+                                replacement="etcd_fast_$1",
+                            ),
                         ],
                     )
                 ],

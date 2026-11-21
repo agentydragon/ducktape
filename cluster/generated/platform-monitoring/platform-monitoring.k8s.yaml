@@ -133,6 +133,41 @@ spec:
       app.kubernetes.io/part-of: monitoring
 ---
 apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: talos-etcd-fast
+  namespace: monitoring
+spec:
+  endpoints:
+    - interval: 2s
+      metricRelabelings:
+        - action: keep
+          regex: etcd_server_(proposals_(committed|applied)_total|has_leader|is_leader)
+          sourceLabels:
+            - __name__
+        - regex: etcd_(.+)
+          replacement: etcd_fast_$1
+          sourceLabels:
+            - __name__
+          targetLabel: __name__
+      path: /metrics
+      port: metrics
+      relabelings:
+        - sourceLabels:
+            - __meta_kubernetes_endpointslice_endpoint_hostname
+          targetLabel: node
+        - replacement: talos-etcd-fast
+          targetLabel: job
+      scrapeTimeout: 1s
+  namespaceSelector:
+    matchNames:
+      - monitoring
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: talos-etcd-metrics
+      app.kubernetes.io/part-of: monitoring
+---
+apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
   name: client-certificate-expiry-alerts
