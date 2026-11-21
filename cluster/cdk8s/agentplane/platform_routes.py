@@ -29,7 +29,8 @@ from agentplane.net.peertls.config import (
     NOTIFICATIONS_URI,
     SANDBOX_CONTROLLER_URI,
 )
-from cluster.cdk8s.agentplane import egress, environment_service, history_service, llm_ingress, notifications, telemetry
+from cluster.cdk8s.agentplane import egress, environment_service, history_service, llm_ingress, notifications
+from cluster.cdk8s.monitoring import alloy_endpoints
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.service_ref import Pods, ServiceRef
 
@@ -100,7 +101,7 @@ def telemetry_route() -> Route:
     """The runner's local, unauthenticated gRPC hop to Alloy."""
     return Route(
         "telemetry",
-        telemetry.ALLOY_OTLP_GRPC,
+        alloy_endpoints.OTLP_GRPC,
         PlaintextRouteTransport(),
         (
             "/opentelemetry.proto.collector.trace.v1.TraceService/",

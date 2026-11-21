@@ -43,6 +43,7 @@ from cluster.cdk8s.forgejo import secret_copy
 from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.kubevirt.virtual_machine import container_disk_vm, domain_labels
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.monitoring import alloy_endpoints
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Rule, group
@@ -305,7 +306,7 @@ def chart(app: App) -> Chart:
             # Adding ingress isolation to the virt-launcher also covers the existing
             # cpap-card Service path, whose only in-cluster client is the sync Job.
             IngressRule.from_endpoints(_GUEST_CARD_CLIENT_LABELS, ports=[_CARD.pod_port]),
-            IngressRule.from_endpoints(cilium.endpoint_labels("monitoring", "alloy-node"), ports=[_GUEST_METRICS_PORT]),
+            alloy_endpoints.NODE.admit(_GUEST_METRICS_PORT),
         ],
     )
     PrometheusRule(

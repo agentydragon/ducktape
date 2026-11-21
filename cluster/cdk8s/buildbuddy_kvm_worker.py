@@ -50,9 +50,9 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.kubevirt.virtual_machine_pool import container_disk_pool_template
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
-from cluster.cdk8s.monitoring import mimir
+from cluster.cdk8s.monitoring import alloy_endpoints, mimir
 from cluster.cdk8s.oci_cache import zot
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Rule, group
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from cluster.cdk8s.service_ref import Port
@@ -290,11 +290,7 @@ def chart(app: App) -> Chart:
         "pool-network",
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
         endpoint_selector=_WORKER_LABELS,
-        ingress=[
-            IngressRule.from_endpoints(
-                cilium.endpoint_labels("monitoring", "alloy-node"), ports=[_METRICS.number, _NODE_METRICS.number]
-            )
-        ],
+        ingress=[alloy_endpoints.NODE.admit(_METRICS.number, _NODE_METRICS.number)],
         egress=[
             cilium.dns_egress(resolves=["*"]),
             EgressRule.to_fqdns(*_HTTPS_HOSTS),

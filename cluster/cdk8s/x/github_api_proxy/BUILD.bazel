@@ -35,6 +35,7 @@ py_library(
         "//cluster/cdk8s/cert_manager:cluster_ca",
         "//cluster/cdk8s/cert_manager:config",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
+        "//cluster/cdk8s/monitoring:alloy_endpoints",
         "//cluster/cdk8s/providers/cert_manager:certificate",
         "//cluster/cdk8s/providers/cert_manager:certificate_private_key",
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",

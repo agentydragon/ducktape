@@ -56,6 +56,7 @@ from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo
 from cluster.cdk8s.gateway import GATEWAY_CLASS
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.monitoring import alloy_endpoints
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cert_manager.certificate import CertificatePrivateKey
 from cluster.cdk8s.providers.cilium.network_policy import Entity, IngressRule, NetworkPolicy
@@ -340,7 +341,7 @@ def _network_policy(scope: Construct) -> None:
         ingress=[
             IngressRule.from_gateway(_SERVICE.pod_port),
             # Scraped by the Alloy on this pod's node.
-            IngressRule.from_endpoints(cilium.endpoint_labels("monitoring", "alloy-node"), ports=[_METRICS.number]),
+            alloy_endpoints.NODE.admit(_METRICS.number),
         ],
         egress=[*cilium.open_internet_egress(ports=[80, 443], entities=(Entity.WORLD,))],
         # These non-public ranges can be outside Cilium's cluster identity set.
