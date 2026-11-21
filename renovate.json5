@@ -177,11 +177,5 @@
       matchFileNames: ["skills/freecad/conda/pixi.toml"],
       skipArtifactsUpdate: true,
     },
-    {
-      description: "Review the community Claude Managed Agents provider manually",
-      matchDatasources: ["terraform-provider"],
-      matchPackageNames: ["modus-agendi/anthropic-claude-managed-agents"],
-      automerge: false,
-    },
   ],
 }

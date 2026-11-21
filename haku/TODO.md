@@ -106,9 +106,9 @@ the runtimes differ in where the sandbox runs — see
 - **Self-hosted worker (Runtime B)** — operator activation to go live:
   <runtime/x/managed_agent/self_hosted/README.md> and its bring-up RCA.
 - **Anthropic-hosted cloud** — **PARKED (2026-07-04)**: the cloud control-plane
-  objects were deleted at Anthropic and `cluster/parked/cloud-agent-tf` is
-  suspended; see <runtime/x/managed_agent/anthropic_hosted/README.md> for the reason
-  and the resume decision. Per-runtime TODO (mostly moot until resumed):
+  objects were deleted at Anthropic and its Terraform root was retired (provider
+  dormant); see <runtime/x/managed_agent/anthropic_hosted/README.md> for the reason
+  and how to resume. Per-runtime TODO (mostly moot until resumed):
   <runtime/x/managed_agent/anthropic_hosted/TODO.md>.
 
 ## Later (post-v0)

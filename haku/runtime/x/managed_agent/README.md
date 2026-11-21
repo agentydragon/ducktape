@@ -8,5 +8,5 @@ reactivation decision; comparison with other runtimes: <../../../plans/runtime_o
   queue in `haku-sandbox`, behind our RBAC + egress perimeter. Unwired: no Flux registration.
 - [`anthropic_hosted/`](anthropic_hosted/README.md) — sandbox in Anthropic's cloud; reaches the
   cluster via a tunneled `haku`-scoped Kubernetes MCP server (ephemeral pods in `haku-sandbox`).
-  Agent, vault, and credentials deleted 2026-09-30; `cluster/parked/cloud-agent-tf` suspended;
-  resume decision in its README.
+  Docs only: objects deleted at Anthropic 2026-09-30; Terraform root and its parked CR deleted
+  2026-11-21 (provider dormant). Resuming: see its README.

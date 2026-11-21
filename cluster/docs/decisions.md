@@ -368,10 +368,6 @@ applications").
 - **kubectl-machine-mcp**: `cluster/parked/kubectl-machine-mcp/` — decommissioned
   with the managed-agent consumers that used it. Its Flux Kustomization is removed
   from the active bundle; manifests remain for manual revival.
-- **Haku cloud agent**: `cluster/parked/cloud-agent-tf/` — Anthropic-hosted Managed
-  Agent; its control-plane objects were deleted at Anthropic on 2026-09-30 and the
-  cluster Flux registration and artifact generation are removed. The HCL root and design docs live under
-  `haku/runtime/x/managed_agent/` with the parked runtime component.
 - **Haku managed agent**: `haku/runtime/x/managed_agent/self_hosted/deploy/` — the
   self-hosted in-cluster worker (Runtime B), parked by operator request. Its Flux
   registration, artifact generation, and source checkout are removed; automatic image
