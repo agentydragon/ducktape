@@ -27,6 +27,8 @@ The same requirement covers the standard library and the host: every standard an
 
 The inventory is static and by name: it is a lower bound on the globals and an upper bound on the members of standard objects, and it prints no name that a program or its page defines (270 globals and 805 member paths are counted only). [`experiments/translation/README.md`](experiments/translation/README.md#the-host-inventory) says how to run it.
 
+Both lists say what the inputs contain, not what runs when a module is evaluated. A split only changes the order in which top-level code is evaluated, so a precise model is needed only for the code that runs then: the top-level statements and what they call. A function body that is not called at start-up still has to be parsed, carried over unchanged and scanned for the names it mentions and the standard objects it patches, and it counts for what unknown code can reach; it does not have to be evaluated. How much of the syntax and of the standard library runs at start-up is not measured yet. It decides how large a proved model has to be ([`PLAN.md`](PLAN.md) § Direction).
+
 Run everything with `./run.sh` (add `--controls`, `--fuzz`, `--experiments`, `--lowering`, `--es-order` or `--splits`).
 It needs `nix`, `node` and `npm`. Lean 4.35 and gcc come from `nixpkgs`. A clean build takes about 20 s, the first `./run.sh` about a minute.
 `run.sh` copies each `package.json.in` to `package.json` before `npm ci`; the repository's CI treats a committed `package.json` as a change to the whole build graph.

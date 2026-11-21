@@ -499,7 +499,8 @@ export function render(inventory, { full = false } = {}) {
     "A global is a name that no declaration in its file binds. A member path starts at a global and follows the names the source spells, " +
       "three at most, through `window`, `self`, `globalThis` and `global` and through an object pattern. " +
       "The scan does not see a global reached through a local alias or a computed key, a member reached through a value " +
-      "(the two sections on members of standard objects bound those by name), or code built at run time. A name here is used somewhere; a missing name is not proved unused.",
+      "(the two sections on members of standard objects bound those by name), or code built at run time. A name here is used somewhere; a missing name is not proved unused. " +
+      "The scan reads all code, also function bodies that never run while a module is evaluated: a name here is not a claim that it is used at start-up.",
     ""
   );
   if (!full) {
