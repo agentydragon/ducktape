@@ -793,8 +793,8 @@ async def managed_cli_reads_retained_history_with_identity_uid_scope(
                     await _wait_app_down(cluster)
 
                     async def run_cli(*args: str) -> dict[str, Any]:
-                        output = await cluster.kubectl(
-                            "exec", current_pod, "-c", ENVIRONMENT_RUNTIME_CONTAINER, "--", CLI, "--json", *args
+                        output = await cluster.exec(
+                            current_pod, CLI, "--json", *args, container=ENVIRONMENT_RUNTIME_CONTAINER
                         )
                         page: dict[str, Any] = json.loads(output)
                         return page
@@ -806,12 +806,8 @@ async def managed_cli_reads_retained_history_with_identity_uid_scope(
                     assert own_page.get("entries"), own_page
 
                     async def refused_history(session_id: str) -> dict[str, Any]:
-                        output = await cluster.kubectl(
-                            "exec",
+                        output = await cluster.exec(
                             current_pod,
-                            "-c",
-                            ENVIRONMENT_RUNTIME_CONTAINER,
-                            "--",
                             "sh",
                             "-c",
                             '"$@" 2>&1 || true',
@@ -821,6 +817,7 @@ async def managed_cli_reads_retained_history_with_identity_uid_scope(
                             "history",
                             "read-session-events",
                             session_id,
+                            container=ENVIRONMENT_RUNTIME_CONTAINER,
                         )
                         result: dict[str, Any] = json.loads(output)
                         return result

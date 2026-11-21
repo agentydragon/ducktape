@@ -331,18 +331,8 @@ exit 1
 
 
 async def _exec_server_process(cluster: Cluster, pod: str, mode: str) -> str:
-    return await cluster.kubectl(
-        "exec",
-        pod,
-        "-c",
-        "codex-executor",
-        "--",
-        "/bin/sh",
-        "-c",
-        _EXEC_SERVER_PROCESS_SCRIPT,
-        "--",
-        mode,
-        timeout_s=10,
+    return await cluster.exec(
+        pod, "/bin/sh", "-c", _EXEC_SERVER_PROCESS_SCRIPT, "--", mode, container="codex-executor", timeout_s=10
     )
 
 

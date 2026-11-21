@@ -54,12 +54,8 @@ def _owned_by(*sandboxes: environment_service_pb2.EnvironmentDescriptor) -> list
 
 async def _whoami(cluster: Cluster, view: environment_service_pb2.EnvironmentDescriptor, credential: str) -> str:
     """The username the API server sees for a `kubectl auth whoami` the Sandbox sends through its proxy."""
-    return await cluster.kubectl(
-        "exec",
+    return await cluster.exec(
         view.kubernetes_diagnostics.pod.name,
-        "-c",
-        "environment-runtime",
-        "--",
         "kubectl",
         f"--server=https://{KUBERNETES_HOST}",
         f"--token={placeholder_of(credential)}",
@@ -67,17 +63,14 @@ async def _whoami(cluster: Cluster, view: environment_service_pb2.EnvironmentDes
         "whoami",
         "-o",
         "jsonpath={.status.userInfo.username}",
+        container=_RUNNER_CONTAINER,
     )
 
 
 async def _egress_refusal(cluster: Cluster, pod: str, url: str, *headers: str) -> str | None:
     """The proxy's refusal reason for `url` from `pod`'s workload container; None when it refused nothing."""
-    response = await cluster.kubectl(
-        "exec",
+    response = await cluster.exec(
         pod,
-        "-c",
-        "workload",
-        "--",
         "/bin/bash",
         "-c",
         """response=$("$0" "$@")
@@ -103,6 +96,7 @@ exit "$status"
         "15",
         *(argument for header in headers for argument in ("--header", header)),
         url,
+        container="workload",
     )
     for line in response.splitlines():
         name, _, value = line.partition(":")
@@ -277,15 +271,11 @@ async def a_command_box_presents_its_own_svid(
         pod = f"{caller}-{box}"
 
         async def in_box(*command: str) -> str:
-            return await cluster.kubectl("exec", pod, "-c", _BOX_CONTAINER, "--", *command)
+            return await cluster.exec(pod, *command, container=_BOX_CONTAINER)
 
         try:
-            printed = await cluster.kubectl(
-                "exec",
+            printed = await cluster.exec(
                 view.kubernetes_diagnostics.pod.name,
-                "-c",
-                _RUNNER_CONTAINER,
-                "--",
                 CLI,
                 "--json",
                 *submission(
@@ -295,6 +285,7 @@ async def a_command_box_presents_its_own_svid(
                     title="Create an SVID box",
                     wait=True,
                 ),
+                container=_RUNNER_CONTAINER,
             )
             receipt = json_format.Parse(
                 one(line for line in printed.splitlines() if line.startswith("{")), action_service_pb2.ActionRequest()
