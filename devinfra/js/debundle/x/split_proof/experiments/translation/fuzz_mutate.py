@@ -967,6 +967,12 @@ MUTANTS = {
         "        match ob.kind with",
         "premise P3 off: the world may have added a `toString`",
     ),
+    "a search reads nothing of its receiver": (
+        INTRINSICS,
+        '("Array.prototype.includes", { readsContents := [0] })',
+        '("Array.prototype.includes", {})',
+        "`Array.prototype.includes.call(like, x)` runs the `length` getter of `like`",
+    ),
     "nested hooks are unbounded": (
         EFFECTS,
         "  if (← get).hookDepth ≥ maxDepth then",

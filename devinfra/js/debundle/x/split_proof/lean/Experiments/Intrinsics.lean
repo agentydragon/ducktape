@@ -223,7 +223,9 @@ def table : Std.HashMap String Summary := Std.HashMap.ofList [
   ("Array.prototype.findLast", { ret := contents 0, calls := [1] }),
   ("Array.prototype.findIndex", { calls := [1] }),
   ("Array.prototype.reduce", { ret := contents 0, calls := [1], accumulates := true, returnsCalls := true, alsoReturns := [2] }),
-  ("Array.prototype.includes", {}), ("Array.prototype.indexOf", {}), ("Array.prototype.lastIndexOf", {}),
+  -- a search reads the length and the elements of its receiver, which need not be an array
+  ("Array.prototype.includes", { readsContents := [0] }), ("Array.prototype.indexOf", { readsContents := [0] }),
+  ("Array.prototype.lastIndexOf", { readsContents := [0] }),
   ("Array.prototype.join", { convertsContents := [0] }), ("Array.prototype.at", { ret := contents 0 }),
   -- Map, Set, WeakMap, WeakSet
   ("Map", { ret := inst "Map.prototype", iterates := [1] }), ("Set", { ret := inst "Set.prototype", iterates := [1] }),

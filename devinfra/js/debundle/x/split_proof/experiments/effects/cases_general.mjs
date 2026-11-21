@@ -1860,6 +1860,18 @@ console.log(seen);
     ),
     premises: {},
   },
+  // a search with a receiver that is not an array reads it through its getters
+  p3(
+    "Array.prototype.includes on an array-like reads length",
+    `
+const o = { n: 0 };
+const like = { get length() { o.n++; return 0; } };
+Array.prototype.includes.call(like, 1);
+const seen = o.n;
+console.log(seen);
+`,
+    [0, 1, 3, 2, 4]
+  ),
   {
     // precision: the `prototype` of a class is not writable, so an instance of an exported class does not inherit from the world
     name: "an instance of an exported class is made without unknown code",
