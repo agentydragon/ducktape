@@ -1,7 +1,8 @@
 package systemd
 
 // Observation is manager evidence for one native unit attempt. Revision orders
-// callbacks from concurrent backend workers; it is not durable state.
+// callbacks from concurrent backend workers; the process controller retains the
+// newest one in its attempt's status until the owner destroys the attempt.
 type Observation struct {
 	Revision             uint64
 	Unit                 string
