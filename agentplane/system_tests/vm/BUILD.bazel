@@ -130,7 +130,6 @@ oci_image(
 
 py_library(
     name = "block_storage",
-    testonly = True,
     srcs = ["block_storage.py"],
     visibility = ["//agentplane/system_tests:__subpackages__"],
     deps = [

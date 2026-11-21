@@ -45,8 +45,10 @@ in `testing/`, where `launches.py` wires the pinned binaries to a scripted upstr
 runs the runner as its own process so a crash takes its harnesses with it. No test here runs the
 image ([`image.nix`](../images/image.nix)), which carries nixpkgs' harnesses rather than these pinned ones; its header
 says what to run after a bump.
-The App and Sessions integration tests reuse these fixtures through
-[`native_service_fixtures.py`](../../testing/native_service_fixtures.py).
+The App, Sessions and native-contract integration tests reuse these fixtures through
+[`runtime_fixtures.py`](../../app/testing/runtime_fixtures.py) (App), the `pytest_plugins` of
+[`test_gateway_continuity.py`](../../session_dispatcher/test_gateway_continuity.py) (Sessions) and
+[`native_service_fixtures.py`](../../testing/native_service_fixtures.py) (native contracts).
 
 Durability unit tests live beside the code in [`env/runtime/`](../runtime) (`journal/`, `ingress/`,
 `supervision/` and the Session process tests); none are physical power-loss tests.
