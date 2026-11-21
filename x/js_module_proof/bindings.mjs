@@ -1466,12 +1466,12 @@ function generateFiles(source, spec, names) {
                 (statement.expression.type === "UpdateExpression" &&
                   ["++", "--"].includes(statement.expression.operator) &&
                   statement.expression.argument.type === "Identifier"));
-            const returnBranch = (statement) => {
-              if (statement.type === "ReturnStatement") return statement;
+            const completionBranch = (statement) => {
+              if (["ReturnStatement", "ThrowStatement"].includes(statement.type)) return statement;
               if (
                 statement.type === "BlockStatement" &&
                 statement.body.length === 1 &&
-                statement.body[0].type === "ReturnStatement"
+                ["ReturnStatement", "ThrowStatement"].includes(statement.body[0].type)
               )
                 return statement.body[0];
               return null;
@@ -1480,8 +1480,8 @@ function generateFiles(source, spec, names) {
             const terminalIf =
               terminal?.type === "IfStatement" &&
               terminal.alternate &&
-              returnBranch(terminal.consequent) &&
-              returnBranch(terminal.alternate);
+              completionBranch(terminal.consequent) &&
+              completionBranch(terminal.alternate);
             const isTry = (statement) =>
               statement.type === "TryStatement" &&
               (statement.handler === null ||
@@ -1515,7 +1515,7 @@ function generateFiles(source, spec, names) {
               statement.body.body.every(isWrite);
             const isBranch = (statement) =>
               statement.type === "IfStatement" &&
-              ((statement.alternate === null && returnBranch(statement.consequent)) ||
+              ((statement.alternate === null && completionBranch(statement.consequent)) ||
                 (statement.consequent.type === "BlockStatement" &&
                   statement.consequent.body.every(isWrite) &&
                   (statement.alternate === null ||
@@ -1613,8 +1613,8 @@ function generateFiles(source, spec, names) {
                 item.body.body.forEach((write) => visitWrite(write, new Set([loopName])));
               } else if (item.type === "IfStatement") {
                 visit(item.test);
-                const earlyReturn = returnBranch(item.consequent);
-                if (earlyReturn) visit(earlyReturn.argument);
+                const earlyCompletion = completionBranch(item.consequent);
+                if (earlyCompletion) visit(earlyCompletion.argument);
                 else item.consequent.body.forEach((write) => visitWrite(write));
                 if (item.alternate) item.alternate.body.forEach((write) => visitWrite(write));
               } else visitWrite(item);
@@ -1622,8 +1622,8 @@ function generateFiles(source, spec, names) {
             if (terminalTry) visitTry(terminal);
             else if (terminalIf) {
               visit(terminal.test);
-              visit(returnBranch(terminal.consequent).argument);
-              visit(returnBranch(terminal.alternate).argument);
+              visit(completionBranch(terminal.consequent).argument);
+              visit(completionBranch(terminal.alternate).argument);
             } else visit(terminal.argument);
             check(
               renamed.every((name) => edits.some((edit) => edit.name === name)),

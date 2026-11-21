@@ -100,6 +100,47 @@ theorem fixture_reference : ∃ owner declaration,
   }
 }
 
+if (runSection(3)) {
+  const source = join(root, "conditional-throw-source.mjs");
+  const spec = join(root, "conditional-throw-spec.json");
+  const out = join(root, "conditional-throw-out");
+  await writeFile(
+    source,
+    `let original = 3;\nlet alternate = 5;\nfunction compute(p) { if (p < original) { throw original; } else { return p + original; } }\nexport { compute };\n`
+  );
+  await writeFile(
+    spec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0, 1] },
+        "logic.mjs": { imports: ["state.mjs"], statements: [2], renameLocalImports: true },
+        "entry.mjs": { imports: ["logic.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", source, spec, out).value.result, "generated");
+  const state = join(out, "state.mjs");
+  await writeFile(state, (await readFile(state, "utf8")) + "export { alternate };\n");
+  const logic = join(out, "logic.mjs");
+  const text = await readFile(logic, "utf8");
+  const original = cli("validate", source, spec, out).value;
+  assert.equal(original.result, "proved under assumptions", JSON.stringify(original));
+  const observe = (path, argument) => {
+    const script = `const m = await import(${JSON.stringify(pathToFileURL(path).href)}); try { console.log(JSON.stringify({value: m.compute(${argument})})); } catch (value) { console.log(JSON.stringify({thrown: value})); }`;
+    const child = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" });
+    assert.equal(child.status, 0, child.stderr);
+    return JSON.parse(child.stdout);
+  };
+  for (const argument of [0, 4]) assert.deepEqual(observe(source, argument), observe(join(out, "entry.mjs"), argument));
+  await writeFile(logic, text.replace("original as __split_local_0", "alternate as __split_local_0"));
+  const redirected = cli("validate", source, spec, out).value;
+  assert.equal(redirected.result, "unsafe", JSON.stringify(redirected));
+  assert.deepEqual(observe(source, 0), { thrown: 3 });
+  assert.deepEqual(observe(join(out, "entry.mjs"), 0), { thrown: 5 });
+}
+
 if (runSection(2)) {
   // Numeric const bindings remain immutable across extraction and generation.
   const constSource = join(root, "const-source.mjs");

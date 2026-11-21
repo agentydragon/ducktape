@@ -1382,9 +1382,9 @@ export function makeLocalAliasCase(seed, index) {
 // exception shapes densely instead of waiting 96 cases for each one.
 export function makeExceptionCase(seed, index) {
   const variedSeed = (seed ^ Math.imul(index, 0x9e3779b9)) >>> 0;
-  const variant = index % 9;
+  const variant = index % 11;
   const result = makeLocalAliasCase(variedSeed, 1237 + 96 * (variant % 8));
-  if (variant === 8) {
+  if (variant >= 8) {
     const fn = result.ast.body.find(
       (statement) => statement.type === "FunctionDeclaration" && statement.id.name === "compute"
     );
@@ -1394,13 +1394,25 @@ export function makeExceptionCase(seed, index) {
         argument: { type: "BinaryExpression", operator: "+", left: id("numericLeft"), right: id("numericRight") },
       },
     ];
+    if (variant >= 9)
+      fn.body.body = [
+        {
+          type: "IfStatement",
+          test: { type: "BinaryExpression", operator: "<", left: id("argument"), right: id("numericLeft") },
+          consequent: { type: "BlockStatement", body: fn.body.body },
+          alternate: variant === 9 ? { type: "BlockStatement", body: [returnNode(id("numericLeft"))] } : null,
+        },
+        ...(variant === 10 ? [returnNode(id("numericLeft"))] : []),
+      ];
     result.source = print(result.ast);
     result.withTry = false;
     result.withCatch = false;
     result.withCatchBinding = false;
     result.composedAliasExpression = false;
     result.expectThrow = true;
-    result.directNumericThrow = true;
+    result.directNumericThrow = variant === 8;
+    result.conditionalThrow = variant >= 9;
+    result.earlyConditionalThrow = variant === 10;
   }
   return result;
 }
@@ -2496,6 +2508,9 @@ export async function runFuzz({
     directNumericThrowCases: 0,
     directNumericThrowComparedCases: 0,
     directNumericThrowProvedCases: 0,
+    conditionalThrowCases: 0,
+    conditionalThrowComparedCases: 0,
+    conditionalThrowProvedCases: 0,
     loopShadowCases: 0,
     loopShadowComparedCases: 0,
     loopShadowUnknownCases: 0,
@@ -2702,7 +2717,12 @@ export async function runFuzz({
       if (plannedMutation === "localAliasUpdateRedirect")
         input.calls = ["current", "bump", "current"].map((name) => ({ name, args: [] }));
       if (plannedMutation === "localAliasNumericRedirect")
-        input.calls = [{ name: "compute", args: input.numericArguments }];
+        input.calls = input.conditionalThrow
+          ? [
+              { name: "compute", args: [8, ...input.numericArguments.slice(1)] },
+              { name: "compute", args: input.numericArguments },
+            ]
+          : [{ name: "compute", args: input.numericArguments }];
       if (plannedMutation === "renamedReexport")
         input.calls =
           !input.redirectedCallee && (index % 256 === 187 || index % 256 === 251 || index % 512 === 315)
@@ -2757,6 +2777,7 @@ export async function runFuzz({
       if (input.catchShadow) summary.catchShadowCases++;
       if (input.terminalCatch) summary.terminalCatchCases++;
       if (input.directNumericThrow) summary.directNumericThrowCases++;
+      if (input.conditionalThrow) summary.conditionalThrowCases++;
       if (input.loopShadow) summary.loopShadowCases++;
       if (modules.some((module) => module.renameReexports)) summary.renamedReexportRequestedCases++;
       const importCount = modules.reduce((count, module) => count + module.imports.length, 0);
@@ -2975,6 +2996,7 @@ export async function runFuzz({
       if (input.catchShadow) summary.catchShadowComparedCases++;
       if (input.terminalCatch) summary.terminalCatchComparedCases++;
       if (input.directNumericThrow) summary.directNumericThrowComparedCases++;
+      if (input.conditionalThrow) summary.conditionalThrowComparedCases++;
       if (input.loopShadow) summary.loopShadowComparedCases++;
       if (input.grammar === "alias" && input.numericArguments.length) {
         summary.parameterizedAliasComparedCases++;
@@ -3078,6 +3100,7 @@ export async function runFuzz({
           if (input.catchShadow) summary.catchShadowProvedCases++;
           if (input.terminalCatch) summary.terminalCatchProvedCases++;
           if (input.directNumericThrow) summary.directNumericThrowProvedCases++;
+          if (input.conditionalThrow) summary.conditionalThrowProvedCases++;
           if (input.grammar === "alias" && input.numericArguments.length) summary.parameterizedAliasProvedCases++;
           if (input.grammar === "alias" && input.numericArguments.length > 1)
             summary.multipleParameterAliasProvedCases++;
