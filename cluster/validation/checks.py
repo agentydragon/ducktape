@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -83,24 +84,29 @@ def check_external_credential_ownership(cluster: ParsedCluster) -> list[str]:
     return errors
 
 
-def _selector_matches(selector: dict[str, Any], labels: dict[str, str]) -> bool:
-    """Evaluate the Kubernetes LabelSelector forms supported by ESO."""
-    if any(labels.get(key) != value for key, value in selector.get("matchLabels", {}).items()):
-        return False
+def _selector_matches(selector: dict[str, Any], labels: dict[str, str]) -> bool | None:
+    """Match known labels; absent labels can still be added outside the render."""
+    unknown = False
+    for key, value in selector.get("matchLabels", {}).items():
+        if key not in labels:
+            unknown = True
+        elif labels[key] != value:
+            return False
     for expression in selector.get("matchExpressions", []):
         key, operator = expression["key"], expression["operator"]
         values = expression.get("values", [])
-        if operator == "In" and (key not in labels or labels[key] not in values):
-            return False
-        if operator == "NotIn" and key in labels and labels[key] in values:
-            return False
-        if operator == "Exists" and key not in labels:
-            return False
-        if operator == "DoesNotExist" and key in labels:
-            return False
         if operator not in ("In", "NotIn", "Exists", "DoesNotExist"):
             raise ValueError(f"unsupported namespace selector operator {operator!r}")
-    return True
+        if key not in labels:
+            unknown = True
+            continue
+        if operator == "In" and labels[key] not in values:
+            return False
+        if operator == "NotIn" and labels[key] in values:
+            return False
+        if operator == "DoesNotExist":
+            return False
+    return None if unknown else True
 
 
 def _store_allows_namespace(store: SecretStoreResource, namespace: str, labels: dict[str, str] | None) -> bool | None:
@@ -113,12 +119,12 @@ def _store_allows_namespace(store: SecretStoreResource, namespace: str, labels: 
             return True
         selector = condition.get("namespaceSelector")
         if selector is not None:
-            if labels is None:
-                if not selector:
-                    return True
-                unknown = True
-            elif _selector_matches(selector, labels):
+            known_labels = labels if labels is not None else {"kubernetes.io/metadata.name": namespace}
+            matched = _selector_matches(selector, known_labels)
+            if matched is True:
                 return True
+            if matched is None:
+                unknown = True
         for pattern in condition.get("namespaceRegexes", []):
             try:
                 if re.search(pattern, namespace):
@@ -140,18 +146,30 @@ def _secret_store_refs(spec: dict[str, Any]) -> set[tuple[str, str]]:
     return {(ref.get("kind", "SecretStore"), ref.get("name", "")) for ref in refs}
 
 
-def check_external_secret_store_wiring(cluster: ParsedCluster) -> list[str]:
+@dataclass(frozen=True)
+class ExternalSecretWiringReport:
+    errors: list[str]
+    unresolved: list[str]
+
+
+def check_external_secret_store_wiring(cluster: ParsedCluster) -> ExternalSecretWiringReport:
     """Check rendered ESO consumers against rendered stores and referent service accounts.
 
     ClusterExternalSecret selectors are evaluated for namespaces visible in the render.
     This cannot establish the labels of namespaces created or modified outside GitOps.
     """
     resources = _rendered_resources_with_origin(cluster)
-    namespaces = {
-        resource.name: {**resource.metadata.labels, "kubernetes.io/metadata.name": resource.name}
-        for _, resource in resources
-        if resource.kind == "Namespace"
-    }
+    namespaces: dict[str, dict[str, str] | None] = {}
+    for _, resource in resources:
+        if resource.kind != "Namespace":
+            continue
+        labels = {**resource.metadata.labels, "kubernetes.io/metadata.name": resource.name}
+        if resource.name not in namespaces:
+            namespaces[resource.name] = labels
+        elif namespaces[resource.name] != labels:
+            # Multiple Flux owners can contribute labels to one live Namespace.
+            # Their rendered objects do not establish the final label set.
+            namespaces[resource.name] = None
     stores = {
         (resource.kind, resource.namespace if resource.kind == "SecretStore" else "", resource.name): resource
         for _, resource in resources
@@ -161,17 +179,35 @@ def check_external_secret_store_wiring(cluster: ParsedCluster) -> list[str]:
         (resource.namespace, resource.name) for _, resource in resources if resource.kind == "ServiceAccount"
     }
     consumers: list[tuple[str, K8sResource, str, dict[str, Any]]] = []
+    unresolved: set[str] = set()
     for origin, resource in resources:
-        if isinstance(resource, ExternalSecretResource) and resource.namespace:
-            consumers.append((origin, resource, resource.namespace, resource.spec))
+        if isinstance(resource, ExternalSecretResource):
+            if resource.namespace:
+                consumers.append((origin, resource, resource.namespace, resource.spec))
+            else:
+                unresolved.add(f"{origin}: ExternalSecret '{resource.name}' has no rendered namespace")
         elif isinstance(resource, ClusterExternalSecretResource):
             selected = set(resource.spec.get("namespaces", []))
             selectors = list(resource.spec.get("namespaceSelectors", []))
             if (selector := resource.spec.get("namespaceSelector")) is not None:
                 selectors.append(selector)
-            selected.update(
-                name for name, labels in namespaces.items() if any(_selector_matches(sel, labels) for sel in selectors)
-            )
+            if selectors:
+                unresolved.add(
+                    f"{origin}: ClusterExternalSecret '{resource.name}' namespace selectors cannot cover "
+                    "namespaces or labels not established by the render"
+                )
+            for name, namespace_labels in namespaces.items():
+                known_labels = (
+                    namespace_labels if namespace_labels is not None else {"kubernetes.io/metadata.name": name}
+                )
+                matches = [_selector_matches(selector, known_labels) for selector in selectors]
+                if True in matches:
+                    selected.add(name)
+                elif None in matches:
+                    unresolved.add(
+                        f"{origin}: ClusterExternalSecret '{resource.name}' cannot resolve selector "
+                        f"for Namespace '{name}' from rendered labels"
+                    )
             consumers.extend(
                 (origin, resource, namespace, resource.spec.get("externalSecretSpec", {}))
                 for namespace in sorted(selected)
@@ -188,8 +224,11 @@ def check_external_secret_store_wiring(cluster: ParsedCluster) -> list[str]:
             if store is None:
                 errors.append(f"{consumer} references missing {kind} '{name}'")
                 continue
-            if _store_allows_namespace(store, namespace, namespaces.get(namespace)) is False:
+            allowed = _store_allows_namespace(store, namespace, namespaces.get(namespace))
+            if allowed is False:
                 errors.append(f"{consumer} is denied by {kind} '{name}' namespace conditions")
+            elif allowed is None:
+                unresolved.add(f"{consumer}: {kind} '{name}' namespace conditions cannot be evaluated from the render")
             provider = store.spec.provider.kubernetes
             service_account = provider.auth.get("serviceAccount") if provider else None
             if service_account and not service_account.get("namespace"):
@@ -199,7 +238,7 @@ def check_external_secret_store_wiring(cluster: ParsedCluster) -> list[str]:
                         f"{consumer} uses {kind} '{name}' with referent ServiceAccount "
                         f"'{namespace}/{account_name}' missing from the rendered tree"
                     )
-    return errors
+    return ExternalSecretWiringReport(errors=errors, unresolved=sorted(unresolved))
 
 
 def check_goldilocks_namespace_labels(cluster: ParsedCluster) -> list[str]:

@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import shutil
 import tempfile
+import warnings
 from contextlib import ExitStack
 from pathlib import Path
 
@@ -196,8 +197,10 @@ def test_external_credential_ownership(cluster: ParsedCluster) -> None:
 
 
 def test_external_secret_store_wiring(cluster: ParsedCluster) -> None:
-    errors = check_external_secret_store_wiring(cluster)
-    assert not errors, "\n".join(errors)
+    report = check_external_secret_store_wiring(cluster)
+    if report.unresolved:
+        warnings.warn("ExternalSecret wiring was not fully resolved:\n" + "\n".join(report.unresolved), stacklevel=1)
+    assert not report.errors, "\n".join(report.errors)
 
 
 def test_external_secret_store_wiring_uses_each_flux_owners_target_namespace(tmp_path: Path) -> None:
@@ -248,7 +251,7 @@ def test_external_secret_store_wiring_uses_each_flux_owners_target_namespace(tmp
     write(
         "cluster/generated/namespaces/resources.yaml",
         {"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "allowed", "labels": {"team": "approved"}}},
-        {"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "denied"}},
+        {"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "denied", "labels": {"team": "other"}}},
     )
     write(
         "cluster/generated/policy/resources.yaml",
@@ -286,7 +289,7 @@ def test_external_secret_store_wiring_uses_each_flux_owners_target_namespace(tmp
     assert {resource.name: resource.namespace for resource in builds["policy"] if resource.kind == "Namespace"} == {
         "operator": ""
     }
-    errors = check_external_secret_store_wiring(parsed)
+    errors = check_external_secret_store_wiring(parsed).errors
     assert len(errors) == 2
     for secret in ("implicit", "explicit"):
         [error] = [

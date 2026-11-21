@@ -8,8 +8,9 @@ conversion.
 ## ESO store/consumer agreement
 
 The [rendered-tree check](../docs/cdk8s.md#sops-secrets-in-a-converted-directory) includes
-local Flux `targetNamespace` overrides. Report consumers it cannot resolve because their
-namespace or selector labels come from outside the render. Keep access grants explicit.
+local Flux `targetNamespace` overrides and reports rendered consumers it cannot resolve.
+External source trees and namespaces or selector labels created outside the render remain
+outside its inventory. Keep access grants explicit.
 
 Done: all resolvable consumers are checked and any unresolved cases are described without
 claiming the render proves live readiness or maintaining a duplicate provider roster.

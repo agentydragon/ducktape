@@ -219,14 +219,14 @@ def test_external_secret_store_conditions_and_referent_service_account() -> None
         },
     }
     cluster = _cluster_with(store, secret)
-    errors = check_external_secret_store_wiring(cluster)
+    errors = check_external_secret_store_wiring(cluster).errors
     assert len(errors) == 2
     assert any("denied by ClusterSecretStore 'shared'" in error for error in errors)
     assert any("'denied/reader' missing" in error for error in errors)
 
     secret["metadata"]["namespace"] = "allowed"
     account = {"kind": "ServiceAccount", "metadata": {"name": "reader", "namespace": "allowed"}}
-    assert check_external_secret_store_wiring(_cluster_with(store, secret, account)) == []
+    assert check_external_secret_store_wiring(_cluster_with(store, secret, account)).errors == []
 
 
 def test_cluster_external_secret_selectors_and_per_entry_store_refs() -> None:
@@ -251,9 +251,11 @@ def test_cluster_external_secret_selectors_and_per_entry_store_refs() -> None:
             },
         },
     }
-    assert check_external_secret_store_wiring(_cluster_with(namespace, store, secret)) == []
+    report = check_external_secret_store_wiring(_cluster_with(namespace, store, secret))
+    assert report.errors == []
+    assert any("namespace selectors cannot cover" in item for item in report.unresolved)
     store["spec"]["conditions"] = [{"namespaceSelector": {"matchLabels": {"tenant": "different"}}}]
-    [error] = check_external_secret_store_wiring(_cluster_with(namespace, store, secret))
+    [error] = check_external_secret_store_wiring(_cluster_with(namespace, store, secret)).errors
     assert "denied by ClusterSecretStore 'selected'" in error
 
 
@@ -273,12 +275,12 @@ def test_store_refs_use_namespace_and_per_entry_overrides() -> None:
     stores: list[dict[str, Any]] = [
         {"kind": "SecretStore", "metadata": {"name": name, "namespace": "consumer"}} for name in ("default", "override")
     ]
-    assert check_external_secret_store_wiring(_cluster_with(secret, *stores)) == []
+    assert check_external_secret_store_wiring(_cluster_with(secret, *stores)).errors == []
     stores[1]["metadata"]["namespace"] = "other"
-    [error] = check_external_secret_store_wiring(_cluster_with(secret, *stores))
+    [error] = check_external_secret_store_wiring(_cluster_with(secret, *stores)).errors
     assert "missing SecretStore 'override'" in error
     del secret["spec"]["secretStoreRef"]
-    errors = check_external_secret_store_wiring(_cluster_with(secret, *stores))
+    errors = check_external_secret_store_wiring(_cluster_with(secret, *stores)).errors
     assert any("without a store reference" in error for error in errors)
 
 
@@ -291,12 +293,15 @@ def test_store_refs_use_namespace_and_per_entry_overrides() -> None:
             [{"namespaceSelector": {"matchExpressions": [{"key": "team", "operator": "NotIn", "values": ["other"]}]}}],
             True,
         ),
-        ([{"namespaceSelector": {"matchExpressions": [{"key": "missing", "operator": "Exists"}]}}], False),
-        ([{"namespaceSelector": {"matchExpressions": [{"key": "missing", "operator": "DoesNotExist"}]}}], True),
+        ([{"namespaceSelector": {"matchLabels": {"missing": "value"}}}], None),
+        ([{"namespaceSelector": {"matchExpressions": [{"key": "missing", "operator": "Exists"}]}}], None),
+        ([{"namespaceSelector": {"matchExpressions": [{"key": "missing", "operator": "DoesNotExist"}]}}], None),
+        ([{"namespaceSelector": {"matchLabels": {"missing": "value", "team": "other"}}}], False),
+        ([{"namespaceSelector": {"matchLabels": {"missing": "value"}}, "namespaces": ["consumer"]}], True),
         ([{"namespaces": ["other"]}, {"namespaceRegexes": ["^consumer$"]}], True),
     ],
 )
-def test_cluster_store_namespace_conditions(conditions: list[dict], allowed: bool) -> None:
+def test_cluster_store_namespace_conditions(conditions: list[dict], allowed: bool | None) -> None:
     namespace = {"kind": "Namespace", "metadata": {"name": "consumer", "labels": {"team": "active"}}}
     store = {"kind": "ClusterSecretStore", "metadata": {"name": "shared"}, "spec": {"conditions": conditions}}
     secret = {
@@ -307,8 +312,9 @@ def test_cluster_store_namespace_conditions(conditions: list[dict], allowed: boo
             "data": [{"secretKey": "a", "remoteRef": {"key": "a"}}],
         },
     }
-    errors = check_external_secret_store_wiring(_cluster_with(namespace, store, secret))
-    assert bool(errors) is not allowed
+    report = check_external_secret_store_wiring(_cluster_with(namespace, store, secret))
+    assert bool(report.errors) is (allowed is False)
+    assert bool(report.unresolved) is (allowed is None)
 
 
 def test_cluster_external_secret_literal_namespace_and_unknown_labels() -> None:
@@ -329,11 +335,83 @@ def test_cluster_external_secret_literal_namespace_and_unknown_labels() -> None:
         },
     }
     # The namespace's runtime labels aren't in the render, so do not claim denial.
-    assert check_external_secret_store_wiring(_cluster_with(store, secret)) == []
+    report = check_external_secret_store_wiring(_cluster_with(store, secret))
+    assert report.errors == []
+    assert any("namespace conditions cannot be evaluated" in item for item in report.unresolved)
     store["spec"]["conditions"] = [{"namespaces": ["other"]}]
-    [error] = check_external_secret_store_wiring(_cluster_with(store, secret))
+    [error] = check_external_secret_store_wiring(_cluster_with(store, secret)).errors
     assert "runtime-created" in error
     assert "denied" in error
+
+
+def test_external_secret_without_rendered_namespace_is_reported() -> None:
+    secret = {"kind": "ExternalSecret", "metadata": {"name": "unplaced"}}
+    report = check_external_secret_store_wiring(_cluster_with(secret))
+    assert report.errors == []
+    assert report.unresolved == [
+        "test-app (./cluster/k8s/test-app): ExternalSecret 'unplaced' has no rendered namespace"
+    ]
+
+
+def test_cluster_external_secret_selector_with_runtime_label_is_reported() -> None:
+    namespace = {"kind": "Namespace", "metadata": {"name": "consumer"}}
+    secret = {
+        "kind": "ClusterExternalSecret",
+        "metadata": {"name": "credential"},
+        "spec": {"namespaceSelector": {"matchLabels": {"runtime": "yes"}}},
+    }
+    report = check_external_secret_store_wiring(_cluster_with(namespace, secret))
+    assert report.errors == []
+    assert any("cannot resolve selector for Namespace 'consumer'" in item for item in report.unresolved)
+
+
+def test_multiple_namespace_label_sets_are_not_treated_as_a_live_label_set() -> None:
+    namespaces = [
+        {"kind": "Namespace", "metadata": {"name": "consumer", "labels": {"team": team}}}
+        for team in ("allowed", "other")
+    ]
+    store: dict[str, Any] = {
+        "kind": "ClusterSecretStore",
+        "metadata": {"name": "shared"},
+        "spec": {"conditions": [{"namespaceSelector": {"matchLabels": {"team": "allowed"}}}]},
+    }
+    secret = {
+        "kind": "ExternalSecret",
+        "metadata": {"name": "credential", "namespace": "consumer"},
+        "spec": {
+            "secretStoreRef": {"kind": "ClusterSecretStore", "name": "shared"},
+            "data": [{"secretKey": "a", "remoteRef": {"key": "a"}}],
+        },
+    }
+    for ordered in (namespaces, list(reversed(namespaces))):
+        report = check_external_secret_store_wiring(_cluster_with(*ordered, store, secret))
+        assert report.errors == []
+        assert any("namespace conditions cannot be evaluated" in item for item in report.unresolved)
+
+    # The API server supplies this immutable label even when other labels conflict.
+    store["spec"]["conditions"] = [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "consumer"}}}]
+    report = check_external_secret_store_wiring(_cluster_with(*namespaces, store, secret))
+    assert report.errors == []
+    assert report.unresolved == []
+
+
+def test_go_regex_unsupported_by_python_is_reported_as_unresolved() -> None:
+    store = {
+        "kind": "ClusterSecretStore",
+        "metadata": {"name": "shared"},
+        "spec": {"conditions": [{"namespaceRegexes": [r"\p{Ll}+"]}]},
+    }
+    secret = {
+        "kind": "ExternalSecret",
+        "metadata": {"name": "credential", "namespace": "consumer"},
+        "spec": {
+            "secretStoreRef": {"kind": "ClusterSecretStore", "name": "shared"},
+            "data": [{"secretKey": "a", "remoteRef": {"key": "a"}}],
+        },
+    }
+    report = check_external_secret_store_wiring(_cluster_with(store, secret))
+    assert report.errors == []
+    assert any("namespace conditions cannot be evaluated" in item for item in report.unresolved)
 
 
 def test_external_credential_namespace_store_is_rejected() -> None:
