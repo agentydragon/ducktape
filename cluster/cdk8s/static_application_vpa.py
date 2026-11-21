@@ -13,8 +13,6 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}"
 _WORKLOADS = (
     ("agentplane-staging", "central-sampler", "central-sampler", "Off"),
     ("agentplane-staging", "egress", "proxy", "Initial"),
-    ("claude-session-sync", "claude-session-sync", "claude-session-sync", "Initial"),
-    ("claude-session-sync", "control", "claude-session-sync-control", "Initial"),
     ("haku-ci", "haku-ci-egress", "egress-sidecar", "Initial"),
 )
 

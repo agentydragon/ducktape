@@ -7,6 +7,7 @@ fails; generated files beside hand-written ones under `HAND_WRITTEN_ROOT` or `PA
 are pinned only one way.
 """
 
+import json
 import os
 from difflib import unified_diff
 from pathlib import Path
@@ -799,8 +800,6 @@ def test_static_application_vpas_target_only_selected_deployments(
     expected = {
         ("agentplane-staging", "central-sampler"): ("central-sampler", "Off"),
         ("agentplane-staging", "egress"): ("proxy", "Initial"),
-        ("claude-session-sync", "claude-session-sync"): ("claude-session-sync", "Initial"),
-        ("claude-session-sync", "control"): ("claude-session-sync-control", "Initial"),
         ("haku-ci", "haku-ci-egress"): ("egress-sidecar", "Initial"),
     }
     assert {(vpa["metadata"]["namespace"], vpa["metadata"]["name"]) for vpa in vpas} == expected.keys()
@@ -819,6 +818,38 @@ def test_static_application_vpas_target_only_selected_deployments(
             {"containerName": container, "controlledResources": ["cpu", "memory"], "controlledValues": "RequestsOnly"},
             {"containerName": "*", "mode": "Off"},
         ]
+
+
+def test_claude_session_sync_vpa_opt_in_is_limited_to_deployments(documents: list[dict[str, Any]]) -> None:
+    namespace = "claude-session-sync"
+    ns = find_resource(documents, "Namespace", namespace)
+    labels = ns["metadata"]["labels"]
+    mode_key = "goldilocks.fairwinds.com/vpa-update-mode"
+    policy_key = "goldilocks.fairwinds.com/vpa-resource-policy"
+    assert labels[mode_key] == "off"
+    assert "goldilocks.fairwinds.com/enabled" not in labels
+    assert json.loads(ns["metadata"]["annotations"][policy_key]) == {
+        "containerPolicies": [{"containerName": "*", "controlledValues": "RequestsOnly"}]
+    }
+    resources = [doc for doc in documents if doc.get("metadata", {}).get("namespace") == namespace]
+    assert not any(doc["kind"] == "VerticalPodAutoscaler" for doc in resources)
+    opted_in = {doc["metadata"]["name"]: doc for doc in resources if mode_key in doc["metadata"].get("annotations", {})}
+    assert set(opted_in) == {"claude-session-sync", "control"}
+    for deployment in opted_in.values():
+        assert deployment["kind"] == "Deployment"
+        annotations = deployment["metadata"]["annotations"]
+        assert annotations[mode_key] == "initial"
+        [container] = deployment["spec"]["template"]["spec"]["containers"]
+        assert json.loads(annotations[policy_key]) == {
+            "containerPolicies": [
+                {
+                    "containerName": container["name"],
+                    "controlledValues": "RequestsOnly",
+                    "controlledResources": ["cpu", "memory"],
+                },
+                {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"},
+            ]
+        }
 
 
 def test_policy_bindings_resolve_sets(documents: list[dict[str, Any]]) -> None:

@@ -4958,8 +4958,6 @@ spec:
       namespace: ducktape-flux
     - name: agentplane-staging
       namespace: ducktape-flux
-    - name: claude-session-sync
-      namespace: ducktape-flux
     - name: haku-ci
       namespace: ducktape-flux
   interval: 10m

@@ -23,11 +23,12 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
-from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.namespaces import Vpa, VpaProfile
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.volume_claim import volume_claim
+from cluster.cdk8s.vpa_policy import ContainerPolicy
 from devinfra.claude.session_export.settings import ControlSettings, WebSettings
 from util.settings_contract import env_name
 
@@ -132,7 +133,13 @@ def _deployment(
         chart,
         workload_id,
         metadata=k8s.ObjectMeta(
-            name=name, namespace=NAMESPACE, labels=labels, annotations={"description": description}
+            name=name,
+            namespace=NAMESPACE,
+            labels=labels,
+            annotations={
+                "description": description,
+                **namespaces.initial_request_annotations(ContainerPolicy.cpu_and_memory_requests_only(container)),
+            },
         ),
         spec=k8s.DeploymentSpec(
             replicas=replicas,
@@ -304,8 +311,8 @@ def chart(app: App) -> Chart:
         chart,
         "namespace",
         name=NAMESPACE,
-        # An eviction to resize the pod would interrupt a token refresh.
-        vpa=Vpa.DISABLED,
+        # Opt in the app Deployments at admission. An eviction would interrupt a token refresh.
+        vpa=VpaProfile.requests_only(Vpa.RECOMMEND),
         labels={"name": NAMESPACE},
     )
     pull_credentials.forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)

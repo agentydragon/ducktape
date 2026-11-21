@@ -1844,7 +1844,7 @@ def generate_manifests(root: Path) -> None:
     claude_session_sync_artifact = artifact(
         "claude-session-sync", claude_session_sync.OUTPUT_DIR, claude_session_sync.PINS_DIR
     )
-    claude_session_sync_kustomization = claude_session_sync.claude_session_sync(
+    claude_session_sync.claude_session_sync(
         flux_chart,
         write_directory(
             root,
@@ -2338,10 +2338,7 @@ def generate_manifests(root: Path) -> None:
         static_application_vpa.NAME,
         write_directory(root, static_application_vpa_artifact, static_application_vpa.chart),
         depends_on=flux.flux_kustomization_depends_on_many(
-            vpa_kustomization,
-            agentplane_staging_kustomization,
-            claude_session_sync_kustomization,
-            haku_ci_kustomization,
+            vpa_kustomization, agentplane_staging_kustomization, haku_ci_kustomization
         ),
     )
     agentplane_staging_delivery_artifact = artifact(
