@@ -490,6 +490,7 @@ mod tests {
         BackendValueId, BackendVariableAssignment,
     };
     use selector_ir::{SelectorAtom, SourceUnitTerm, StringTerm, VariableDomain};
+    use selector_test_fixtures::{declared_binding, source_unit_fact};
     use source_identity::SourceUnitId;
 
     use super::*;
@@ -560,21 +561,6 @@ mod tests {
 
     fn string(value: &str) -> ConstraintValue {
         ConstraintValue::String(value.to_string())
-    }
-
-    fn source_unit_fact(source_unit: SourceUnitId, ordinal: usize, kind: &str) -> SelectorFact {
-        SelectorFact::SourceUnit {
-            source_unit,
-            statement_ordinal: SourceUnitOrdinal(ordinal),
-            statement_kind: kind.to_string(),
-        }
-    }
-
-    fn binding_fact(source_unit: SourceUnitId, binding: &str) -> SelectorFact {
-        SelectorFact::DeclaredBinding {
-            source_unit,
-            binding: binding.to_string(),
-        }
     }
 
     fn binding_program() -> (SelectorProgram, SelectorTargetId) {
@@ -650,17 +636,17 @@ mod tests {
 
     fn facts() -> SelectorFactStore {
         let mut facts = SelectorFactStore::default();
-        facts.push(source_unit_fact(SourceUnitId(1), 10, "function"));
-        facts.push(binding_fact(SourceUnitId(1), "minA"));
-        facts.push(source_unit_fact(SourceUnitId(2), 20, "function"));
-        facts.push(binding_fact(SourceUnitId(2), "minB"));
+        facts.push(source_unit_fact(1, 10, "function"));
+        facts.push(declared_binding(1, "minA"));
+        facts.push(source_unit_fact(2, 20, "function"));
+        facts.push(declared_binding(2, "minB"));
         facts
     }
 
     fn single_binding_facts() -> SelectorFactStore {
         let mut facts = SelectorFactStore::default();
-        facts.push(source_unit_fact(SourceUnitId(1), 10, "function"));
-        facts.push(binding_fact(SourceUnitId(1), "minA"));
+        facts.push(source_unit_fact(1, 10, "function"));
+        facts.push(declared_binding(1, "minA"));
         facts
     }
 
@@ -878,12 +864,8 @@ mod tests {
         };
         let mut facts = SelectorFactStore::default();
         for (source_unit, binding) in [(1, "minA"), (2, "minB")] {
-            facts.push(source_unit_fact(
-                SourceUnitId(source_unit),
-                source_unit * 10,
-                "function",
-            ));
-            facts.push(binding_fact(SourceUnitId(source_unit), binding));
+            facts.push(source_unit_fact(source_unit, source_unit * 10, "function"));
+            facts.push(declared_binding(source_unit, binding));
         }
         let problem = compile_selector_problem(&program, &facts).unwrap();
         let source_unit_variable = |target| {

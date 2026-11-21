@@ -1778,6 +1778,7 @@ rust_test(
         ":selector_constraint_backend",
         ":selector_constraint_model_builder",
         ":selector_ir",
+        ":selector_test_fixtures",
         ":source_identity",
     ],
 )

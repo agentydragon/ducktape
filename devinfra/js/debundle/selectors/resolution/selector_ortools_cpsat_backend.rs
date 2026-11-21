@@ -522,6 +522,15 @@ mod tests {
         })
     }
 
+    #[track_caller]
+    fn assert_complete(result: &BackendSolveResult, status: BackendSolveStatus) {
+        assert_eq!(result.status, status);
+        assert_eq!(
+            result.assignment_coverage,
+            BackendAssignmentCoverage::TargetSupportComplete
+        );
+    }
+
     #[test]
     fn multiple_projection_rows_are_ambiguous() {
         let result = solve(&CompiledSelectorProblem {
@@ -530,11 +539,7 @@ mod tests {
             ..problem()
         });
 
-        assert_eq!(result.status, BackendSolveStatus::Ambiguous);
-        assert_eq!(
-            result.assignment_coverage,
-            BackendAssignmentCoverage::TargetSupportComplete
-        );
+        assert_complete(&result, BackendSolveStatus::Ambiguous);
         assert_eq!(result.assignments.len(), 2);
     }
 
@@ -546,11 +551,7 @@ mod tests {
             ..problem()
         });
 
-        assert_eq!(result.status, BackendSolveStatus::Satisfiable);
-        assert_eq!(
-            result.assignment_coverage,
-            BackendAssignmentCoverage::TargetSupportComplete
-        );
+        assert_complete(&result, BackendSolveStatus::Satisfiable);
         assert_eq!(result.assignments.len(), 1);
         assert!(row_has(&result.assignments[0], 0, 0));
         assert_eq!(result.assignments[0].values.len(), 1);
@@ -568,11 +569,7 @@ mod tests {
             ..problem()
         });
 
-        assert_eq!(result.status, BackendSolveStatus::Satisfiable);
-        assert_eq!(
-            result.assignment_coverage,
-            BackendAssignmentCoverage::TargetSupportComplete
-        );
+        assert_complete(&result, BackendSolveStatus::Satisfiable);
         assert_eq!(result.assignments.len(), 1);
         assert!(row_has(&result.assignments[0], 0, 1));
         assert!(row_has(&result.assignments[0], 1, 3));
@@ -608,11 +605,7 @@ mod tests {
             ..problem()
         });
 
-        assert_eq!(result.status, BackendSolveStatus::Unsatisfiable);
-        assert_eq!(
-            result.assignment_coverage,
-            BackendAssignmentCoverage::TargetSupportComplete
-        );
+        assert_complete(&result, BackendSolveStatus::Unsatisfiable);
         assert!(result.assignments.is_empty());
     }
 
@@ -630,11 +623,7 @@ mod tests {
             ..problem()
         });
 
-        assert_eq!(result.status, BackendSolveStatus::Unsatisfiable);
-        assert_eq!(
-            result.assignment_coverage,
-            BackendAssignmentCoverage::TargetSupportComplete
-        );
+        assert_complete(&result, BackendSolveStatus::Unsatisfiable);
         assert!(result.assignments.is_empty());
     }
 
@@ -648,11 +637,7 @@ mod tests {
             ..problem()
         });
 
-        assert_eq!(result.status, BackendSolveStatus::Satisfiable);
-        assert_eq!(
-            result.assignment_coverage,
-            BackendAssignmentCoverage::TargetSupportComplete
-        );
+        assert_complete(&result, BackendSolveStatus::Satisfiable);
         assert_eq!(result.assignments.len(), 1);
         assert!(row_has(&result.assignments[0], 0, 1));
         assert!(row_has(&result.assignments[0], 1, 1));
@@ -723,11 +708,7 @@ mod tests {
             ..problem()
         });
 
-        assert_eq!(result.status, BackendSolveStatus::Satisfiable);
-        assert_eq!(
-            result.assignment_coverage,
-            BackendAssignmentCoverage::TargetSupportComplete
-        );
+        assert_complete(&result, BackendSolveStatus::Satisfiable);
         assert_eq!(result.assignments.len(), 1);
         assert!(row_has(&result.assignments[0], 0, 0));
         assert_eq!(result.assignments[0].values.len(), 1);
@@ -744,11 +725,7 @@ mod tests {
             ..problem()
         });
 
-        assert_eq!(result.status, BackendSolveStatus::Satisfiable);
-        assert_eq!(
-            result.assignment_coverage,
-            BackendAssignmentCoverage::TargetSupportComplete
-        );
+        assert_complete(&result, BackendSolveStatus::Satisfiable);
         assert_eq!(result.assignments.len(), 1);
         assert!(row_has(&result.assignments[0], 0, 2));
         assert!(row_has(&result.assignments[0], 1, 0));
@@ -768,11 +745,7 @@ mod tests {
             ..problem()
         });
 
-        assert_eq!(result.status, BackendSolveStatus::Ambiguous);
-        assert_eq!(
-            result.assignment_coverage,
-            BackendAssignmentCoverage::TargetSupportComplete
-        );
+        assert_complete(&result, BackendSolveStatus::Ambiguous);
         assert!(result.assignments.len() <= 1 + 5 + 5 * 4);
         for variable in 0..5 {
             assert_eq!(
@@ -794,11 +767,7 @@ mod tests {
             ..problem()
         });
 
-        assert_eq!(result.status, BackendSolveStatus::Ambiguous);
-        assert_eq!(
-            result.assignment_coverage,
-            BackendAssignmentCoverage::TargetSupportComplete
-        );
+        assert_complete(&result, BackendSolveStatus::Ambiguous);
         assert_eq!(values_of(&result, 0), BTreeSet::from([3]));
         assert_eq!(values_of(&result, 1), BTreeSet::from([0, 1]));
         assert_eq!(values_of(&result, 2), BTreeSet::from([0, 1, 2]));

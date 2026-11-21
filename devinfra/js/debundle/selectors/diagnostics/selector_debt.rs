@@ -994,6 +994,17 @@ mod tests {
         fs::write(p, body).unwrap();
     }
 
+    fn report_with_chunk(root: &Path, chunk_source: &str) -> SelectorDebtReport {
+        let source_file = root.join("chunk.js");
+        fs::write(&source_file, chunk_source).unwrap();
+        let config = SourceAwareSelectorDebtConfig {
+            source_file: &source_file,
+            near_match_min_score: 55,
+            near_match_limit: 3,
+        };
+        compute_selector_debt_with_source(root, Some(&config)).unwrap()
+    }
+
     #[test]
     fn minified_score_ranks_short_and_vowelless_above_words() {
         // Single/double-char tokens are maximal; readable words are zero.
@@ -1140,19 +1151,10 @@ mod tests {
             "classes.yaml",
             "source_matches:\n  - match: |\n      class PickedClass {\n        important() {\n          return 1;\n        }\n      }\n    bindings: [PickedClass]\n",
         );
-        let source_file = root.join("chunk.js");
-        fs::write(
-            &source_file,
+        let report = report_with_chunk(
+            root,
             "class a { important() { return 1; } }\nclass b { important() { return 2; } }\n",
-        )
-        .unwrap();
-        let config = SourceAwareSelectorDebtConfig {
-            source_file: &source_file,
-            near_match_min_score: 55,
-            near_match_limit: 3,
-        };
-
-        let report = compute_selector_debt_with_source(root, Some(&config)).unwrap();
+        );
 
         assert_eq!(report.summary.source_aware_checked, 1);
         assert_eq!(report.summary.source_aware_unique, 1);
@@ -1176,19 +1178,10 @@ mod tests {
             "classes.yaml",
             "source_matches:\n  - match: |\n      class PickedClass {\n        important() {\n          return 1;\n        }\n      }\n    bindings: [PickedClass]\n",
         );
-        let source_file = root.join("chunk.js");
-        fs::write(
-            &source_file,
+        let report = report_with_chunk(
+            root,
             "class a { important() { return 1; } }\nclass b { important() { return 1; } }\n",
-        )
-        .unwrap();
-        let config = SourceAwareSelectorDebtConfig {
-            source_file: &source_file,
-            near_match_min_score: 55,
-            near_match_limit: 3,
-        };
-
-        let report = compute_selector_debt_with_source(root, Some(&config)).unwrap();
+        );
 
         assert_eq!(report.summary.source_aware_checked, 1);
         assert_eq!(report.summary.source_aware_unique, 0);
@@ -1203,20 +1196,11 @@ mod tests {
         let selector = "source_matches:\n  - match: |\n      function selectedFormatter(value) {\n        return value.trim().toUpperCase();\n      }\n    bindings:\n      - local: selectedFormatter\n        name: SelectedFormatter\n";
         write(root, "format/primary.yaml", selector);
         write(root, "format/duplicate.yaml", selector);
-        let source_file = root.join("chunk.js");
-        fs::write(
-            &source_file,
+        let report = report_with_chunk(
+            root,
             "function runtimeFormatter(value) { return value.trim().toUpperCase(); }\n\
              function otherFormatter(value) { return value.trim().toLowerCase(); }\n",
-        )
-        .unwrap();
-        let config = SourceAwareSelectorDebtConfig {
-            source_file: &source_file,
-            near_match_min_score: 55,
-            near_match_limit: 3,
-        };
-
-        let report = compute_selector_debt_with_source(root, Some(&config)).unwrap();
+        );
 
         assert_eq!(report.summary.source_match_total, 2);
         assert_eq!(report.summary.repeated_source_match_groups, 1);
@@ -1254,21 +1238,12 @@ mod tests {
         name: SecondaryReader
 "#,
         );
-        let source_file = root.join("chunk.js");
-        fs::write(
-            &source_file,
+        let report = report_with_chunk(
+            root,
             r#"const a = "WidgetShell-42", b = makeIgnored(), c = computeReader(1);
 const stableName = 1;
 "#,
-        )
-        .unwrap();
-        let config = SourceAwareSelectorDebtConfig {
-            source_file: &source_file,
-            near_match_min_score: 55,
-            near_match_limit: 3,
-        };
-
-        let report = compute_selector_debt_with_source(root, Some(&config)).unwrap();
+        );
 
         assert_eq!(report.summary.source_match_total, 2);
         assert_eq!(report.summary.source_aware_checked, 2);
@@ -1358,20 +1333,11 @@ const stableName = 1;
 "#;
         write(root, "styles/primary.yaml", first_selector);
         write(root, "readers/secondary.yaml", second_selector);
-        let source_file = root.join("chunk.js");
-        fs::write(
-            &source_file,
+        let report = report_with_chunk(
+            root,
             r#"const a = "WidgetShell-42", c = computeReader(1);
 "#,
-        )
-        .unwrap();
-        let config = SourceAwareSelectorDebtConfig {
-            source_file: &source_file,
-            near_match_min_score: 55,
-            near_match_limit: 3,
-        };
-
-        let report = compute_selector_debt_with_source(root, Some(&config)).unwrap();
+        );
 
         assert_eq!(report.summary.source_aware_binding_group_suggestions, 0);
         assert!(report.source_aware_binding_group_suggestions.is_empty());
@@ -1393,15 +1359,7 @@ const stableName = 1;
         name: SelectedValue
 "#,
         );
-        let source_file = root.join("chunk.js");
-        fs::write(&source_file, "let p = ignored(), q = computeValue();\n").unwrap();
-        let config = SourceAwareSelectorDebtConfig {
-            source_file: &source_file,
-            near_match_min_score: 55,
-            near_match_limit: 3,
-        };
-
-        let report = compute_selector_debt_with_source(root, Some(&config)).unwrap();
+        let report = report_with_chunk(root, "let p = ignored(), q = computeValue();\n");
 
         assert_eq!(report.summary.source_aware_binding_group_suggestions, 0,);
         assert!(report.source_aware_binding_group_suggestions.is_empty());
