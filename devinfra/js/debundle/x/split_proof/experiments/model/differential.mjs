@@ -357,7 +357,10 @@ for (const c of bindingOnly ? [] : [...moduleCases, ...linked]) {
 // Body fallback must not hide eager class work or unsupported invocation/home-object semantics.
 if (!bindingOnly) {
   for (const source of [
-    "class Box extends Base { method() { const [x] = []; } }",
+    "class Box extends Base { constructor() { super(); } }",
+    "class Box extends Base { field = 1; }",
+    "class Box extends Base { static field = 1; }",
+    "class Box { constructor() { this.target = new.target; } }",
     "class Box { [name]() { const [x] = []; } }",
     "class Box { static { sideEffect(); } method() { const [x] = []; } }",
     "class Box { method() { return super.value; } }",
@@ -880,7 +883,9 @@ console.log("whole CoreJS generator (no filtering):");
 console.table(focusedCoverage);
 assert.deepEqual(
   Object.keys(focusedCoverage).sort(),
-  bindingOnly ? [] : ["arrays", "classes", "closures", "control", "exceptions", "expressions", "host", "objects"],
+  bindingOnly
+    ? []
+    : ["arrays", "classes", "closures", "control", "exceptions", "expressions", "host", "inheritance", "objects"],
   "the whole-program generator must execute each promised family"
 );
 assert(

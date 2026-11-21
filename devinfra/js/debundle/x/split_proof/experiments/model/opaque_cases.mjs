@@ -23,6 +23,24 @@ const afterReinsert = Object.getOwnPropertyNames(keyBoundaryObject);
 
 export const opaqueCases = [
   {
+    name: "default derived construction reaches an opaque base body with the derived receiver",
+    source: `
+      class Base { constructor(value) { const [v] = [value]; this.value = v; } }
+      class Derived extends Base { read() { const [v] = [this.value]; return v; } }
+      const instance = new Derived(7);
+      console.log(instance.read(), Object.getPrototypeOf(instance) === Derived.prototype,
+        instance.constructor === Derived);
+    `,
+    scripts: {
+      "0/1": [["set", r(1), ["s", "value"], r(2)]],
+      "1/1": [
+        ["get", r(1), ["s", "value"]],
+        ["done", r(2)],
+      ],
+    },
+    bodyParts: ["0/1", "1/1"],
+  },
+  {
     name: "opaque class methods capture distinct enclosing function invocations",
     source: `
       function make(value) {

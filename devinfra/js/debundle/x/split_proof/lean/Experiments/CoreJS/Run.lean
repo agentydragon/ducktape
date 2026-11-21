@@ -275,6 +275,7 @@ def showProperty : Property → String
   | .accessor g st e c => s!"accessor {showVal g} {showVal st} {e} {c}"
 
 def showCode : Code → String
+  | .derived => "derived"
   | .closure f env fields =>
     s!"closure {f.name} {f.params} {env.vars.map fun (x, a) => (x, showAddr a)} {showVal env.this} {fields.map (·.1)}"
   | .host name => s!"host {name}"

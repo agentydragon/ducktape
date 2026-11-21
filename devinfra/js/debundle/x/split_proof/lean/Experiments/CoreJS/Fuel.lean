@@ -126,6 +126,12 @@ theorem perform_le {call call' : Call W} {cons cons' : Val → List Val → M W 
     | mono_step
     | exact M.le_refl _
 
+theorem classParents_le {call call' : Call W} (h : Call.le call call') (base : Val) :
+    classParents call base ⊑ classParents call' base := by
+  cases base <;> unfold classParents <;> repeat' first
+    | exact getProp_le h _ _
+    | mono_step
+
 /-- Every function of the interpreter with the bound `n`, against the same with the bound `m`. -/
 structure Mono (W : World) (n m : Nat) : Prop where
   expr : ∀ env e, (evalExpr n env e : M W _) ⊑ evalExpr m env e
@@ -135,7 +141,7 @@ structure Mono (W : World) (n m : Nat) : Prop where
   members : ∀ env proto c ms, (evalMembers n env proto c ms : M W _) ⊑ evalMembers m env proto c ms
   fields : ∀ env a fs, (evalFields n env a fs : M W _) ⊑ evalFields m env a fs
   call : ∀ callee this args, (callFn n callee this args : M W _) ⊑ callFn m callee this args
-  construct : ∀ callee args, (construct n callee args : M W _) ⊑ construct m callee args
+  construct : ∀ target callee args, (constructTarget n target callee args : M W _) ⊑ constructTarget m target callee args
   stmt : ∀ env s, (execStmt n env s : M W _) ⊑ execStmt m env s
   stmts : ∀ env ss, (execStmts n env ss : M W _) ⊑ execStmts m env ss
   loop : ∀ env fresh test update body, (loop n env fresh test update body : M W _) ⊑ loop m env fresh test update body
@@ -154,12 +160,13 @@ macro_rules
     | with_reducible exact ($h).members _ _ _ _
     | with_reducible exact ($h).fields _ _ _
     | with_reducible exact ($h).call _ _ _
-    | with_reducible exact ($h).construct _ _
+    | with_reducible exact ($h).construct _ _ _
     | with_reducible exact ($h).stmt _ _
     | with_reducible exact ($h).stmts _ _
     | with_reducible exact ($h).loop _ _ _ _ _
     | with_reducible exact ($h).converse _ _ _
-    | with_reducible exact attempt_le (perform_le ($h).callLe ($h).construct _ _ _)
+    | with_reducible exact attempt_le (perform_le ($h).callLe (fun f args => ($h).construct f f args) _ _ _)
+    | with_reducible exact classParents_le ($h).callLe _
     | with_reducible exact getProp_le ($h).callLe _ _
     | with_reducible exact setProp_le ($h).callLe _ _ _
     | with_reducible exact getRef_le ($h).callLe _ _
@@ -200,9 +207,9 @@ theorem Mono.call_succ (callee this : Val) (args : List Val) :
   unfold callFn
   mono ih
 
-theorem Mono.construct_succ (callee : Val) (args : List Val) :
-    (CoreJS.construct (n + 1) callee args : M W _) ⊑ CoreJS.construct (m + 1) callee args := by
-  unfold CoreJS.construct
+theorem Mono.construct_succ (target callee : Val) (args : List Val) :
+    (constructTarget (n + 1) target callee args : M W _) ⊑ constructTarget (m + 1) target callee args := by
+  unfold constructTarget
   mono ih
 
 theorem Mono.stmt_succ (env : Env) (s : Stmt) : (execStmt (n + 1) env s : M W _) ⊑ execStmt (m + 1) env s := by
@@ -266,7 +273,7 @@ theorem mono : ∀ n m, n ≤ m → Mono W n m := by
     intro m _
     exact ⟨fun _ _ => M.le_outOfFuel _, fun _ _ => M.le_outOfFuel _, fun _ _ => M.le_outOfFuel _,
       fun _ _ _ => M.le_outOfFuel _, fun _ _ _ _ => M.le_outOfFuel _, fun _ _ _ => M.le_outOfFuel _,
-      fun _ _ _ => M.le_outOfFuel _, fun _ _ => M.le_outOfFuel _, fun _ _ => M.le_outOfFuel _,
+      fun _ _ _ => M.le_outOfFuel _, fun _ _ _ => M.le_outOfFuel _, fun _ _ => M.le_outOfFuel _,
       fun _ _ => M.le_outOfFuel _, fun _ _ _ _ _ => M.le_outOfFuel _, fun _ _ _ => M.le_outOfFuel _⟩
   | succ n ih =>
     intro m hm

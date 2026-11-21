@@ -67,6 +67,14 @@ export function generatedCases(seed) {
       const read = box.read;
       console.log(read(), Box.count, Box.name, box.constructor === Box);
     `,
+    inheritance: `
+      class Base { field = ${n}; constructor(value) { this.value = value; } }
+      class Middle extends Base {}
+      class Leaf extends Middle { read() { return this.field + this.value; } }
+      const instance = new Leaf(${num()});
+      console.log(instance.read(), Object.getPrototypeOf(instance) === Leaf.prototype,
+        Object.getPrototypeOf(Leaf) === Middle, Leaf.length);
+    `,
     control: `
       let value = 0;
       const saved = {};

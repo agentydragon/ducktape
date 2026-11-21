@@ -28,6 +28,7 @@ def Val.nodes : Val → List HeapNode
 def Env.nodes (env : Env) : List HeapNode := env.vars.map (fun p => .cell p.2) ++ env.this.nodes
 
 def Code.nodes : Code → List HeapNode
+  | .derived => []
   | .closure _ env _ => env.nodes
   | .opaque _ _ cells => cells.filterMap (fun a => a.map HeapNode.cell)
   | .host _ => []

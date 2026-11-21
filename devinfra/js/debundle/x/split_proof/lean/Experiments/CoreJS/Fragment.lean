@@ -61,6 +61,9 @@ theorem allocOnly_class_nonliteralKey_rejected :
     (Expr.cls "Plain" false (.opaque "Plain" .classCtor false 0 0 0 [])
       [.method false (.var "key") (.opaque "method" .method false 0 0 1 [])]).allocOnly = false := rfl
 
+theorem allocOnly_derivedClass_rejected :
+    (Expr.derived "Derived" false (.var "Base") []).allocOnly = false := rfl
+
 mutual
 /-- The names an expression that only allocates reads when it runs. Functions and admitted plain classes read none: they keep bindings, not values. -/
 def Expr.readsNow : Expr → List Name

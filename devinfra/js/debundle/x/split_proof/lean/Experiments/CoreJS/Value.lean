@@ -66,6 +66,8 @@ def Env.capture (env : Env) (names : List Name) : Env where
 
 /-- What a callable object runs. `fields` are the instance fields of a class constructor. -/
 inductive Code where
+  /-- An implicit derived constructor forwards to its current internal prototype. -/
+  | derived
   | closure (f : Func) (env : Env) (fields : List (String × Expr))
   | host (name : String)
   /-- Part `part` of the opaque code `code`, which the world runs; `cells` are the bindings it was handed. -/
