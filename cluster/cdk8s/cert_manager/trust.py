@@ -26,7 +26,7 @@ def chart(app: App) -> Chart:
         "namespace",
         name=NAMESPACE,
         vpa=VpaProfile(
-            Vpa.INITIAL,
+            Vpa.AUTO,
             (
                 # Reserve above the webhook's 30-day peaks of 19.1m CPU and 65Mi working set.
                 ContainerPolicy(
