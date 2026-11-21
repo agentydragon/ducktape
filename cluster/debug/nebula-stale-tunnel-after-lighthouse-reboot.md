@@ -9,21 +9,8 @@ never re-establish tunnels. The peer's nebula process believes the tunnels are s
 alive and continues sending encrypted packets with old session keys. The lighthouses
 silently drop these packets (wrong session), but the peer never detects the failure.
 
-## Symptoms
-
-- `ping` to lighthouse nebula IPs: 100% packet loss
-- Nebula logs: `Attempt to relay through hosts [10.42.0.1 10.42.0.2]` (thinks tunnels
-  are alive, tries to relay through them)
-- No `Handshake message sent` to lighthouses — nebula isn't trying to re-handshake
-- `Refusing to handshake with myself` errors (NAT hairpin, unrelated noise)
-- TX dropped on `nebula1` tun interface: billions of packets
-
-## Impact
-
-This caused a cluster outage on 2026-03-30. VPS lighthouse nodes were rebooted to
-recover from OOM. Nebula on wyrm2 (non-lighthouse) didn't detect the stale tunnels.
-Cross-node pod networking was dead. Took ~3 hours to identify as a nebula issue
-(initially attributed to Cilium/etcd).
+Symptoms, the 2026-03-30 outage and the workaround (restart Nebula on the peers):
+[runbook](../docs/troubleshooting/nebula_lighthouse_reboot_stale_tunnel.md).
 
 ## Repro
 
@@ -177,15 +164,11 @@ talosctl -n <node> edit extensionserviceconfig nebula
 # Nebula will reload the config (SIGHUP) without restart
 ```
 
-For NixOS nodes (wyrm2, rugged):
+For NixOS nodes (wyrm2, rugged), `/etc/nebula/config.yaml` is a read-only symlink into
+the Nix store, so set `logging.level` in `nix/nixos/modules/nebula.nix` and switch (a
+config change restarts `nebula.service`):
 
 ```bash
-# Temporarily override logging level:
-sudo systemctl stop nebula@config
-# Edit /etc/nebula/config.yaml, set logging.level: debug
-sudo systemctl start nebula@config
-
-# Or rebuild with the change and switch:
 sudo nixos-rebuild switch
 ```
 
@@ -226,22 +209,8 @@ nebula -version
 
 Verify all nodes run v1.10.1+ (which added `accept_recv_error` config option).
 
-## Workaround
-
-Restart nebula on all non-lighthouse peers after lighthouse reboot:
-
-```bash
-# NixOS (wyrm2, rugged):
-sudo systemctl restart nebula@config
-
-# Talos (pve-cp-0):
-talosctl -n <node> service nebula restart
-```
-
 ## TODO
 
-- [ ] Add `logging` and `timers` config to all nebula deployments (Terraform, NixOS,
-      Ansible, k8s) — done in this commit
 - [ ] Verify nebula version on all nodes is ≥1.10.1
 - [ ] File upstream issue at <https://github.com/slackhq/nebula/issues> with:
   - Repro steps (restart both lighthouses, observe client never re-handshakes)

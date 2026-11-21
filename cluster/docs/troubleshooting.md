@@ -217,13 +217,13 @@ chowns before the app starts.
 ```bash
 talosctl -n <node-ip> logs ext-nebula          # Talos nodes
 systemctl status nebula                         # NixOS workers
-ping 10.42.0.15                                 # talos-kimsufi-cp-0 lighthouse
-ping 10.42.0.13                                 # talos-kimsufi-worker-0 lighthouse
+ping 10.42.0.15                                 # ovh-ns102453 lighthouse
+ping 10.42.0.13                                 # ovh-ns103656 lighthouse
 ```
 
 Port: UDP 4242. If down: check firewall, verify certs (`nebula-cert print -path /etc/nebula/host.crt`).
 
-If rebooting both lighthouses leaves peers stuck (tunnels reported alive, no
+If rebooting all lighthouses leaves peers stuck (tunnels reported alive, no
 re-handshake, decrypt failures), see
 <troubleshooting/nebula_lighthouse_reboot_stale_tunnel.md>.
 
@@ -301,7 +301,9 @@ Gotchas:
   pull fails `DeadlineExceeded` with no streams at all.
 - Timestamps in the API are **nanoseconds** (hence the `000000000` suffix).
 
-Grafana also has Loki as a datasource for interactive log exploration (Explore view).
+Grafana also has Loki as a datasource for interactive log exploration (Explore view). It
+cannot scope access by namespace (TeamLBAC is Enterprise-only); namespace-scoped read
+access for agents goes through `loki-read-proxy` (<../proxies/loki_read_proxy/main.py>).
 
 ### Nix Cache
 
