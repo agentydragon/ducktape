@@ -285,7 +285,8 @@ for (const [index, item] of composedPrograms.slice(0, 16).entries()) {
   const path = join(process.env.TEST_TMPDIR, `composed-${shard}-${index}.mjs`);
   await writeFile(path, item.source);
   const observed = execute(path, item.calls);
-  assert.equal(observed.error, null, item.source);
+  assert.ok(!observed.inconclusive, item.source);
+  if (observed.error) assert.ok(["boolean", "null", "string", "number"].includes(observed.error.thrown.kind));
   assert.ok(observed.results.every((result) => Number.isSafeInteger(result.value)));
 }
 const closures = Array.from({ length: 128 }, (_, i) => makeCase(917, 4 * i + 3)).filter((c) => c.grammar === "closure");

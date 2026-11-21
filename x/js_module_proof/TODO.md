@@ -69,9 +69,10 @@ cover only part of the grammar and split space described below.
       Automatically minimize unmutated proved-versus-Node counterexamples by
       removing statements, calls, empty modules and imports while preserving that
       predicate. Binary expression subtrees can also shrink to either child;
-      extend shrinking to mutated cases, other failure categories, more expression
-      forms and split transformations, and promote minimized
+      extend shrinking to other failure categories, more expression forms and
+      split transformations, and promote minimized
       bugs to regression tests.
+      Mutated proved-versus-Node counterexamples now use the same reducer.
 - [ ] Track grammar, split, verdict and observation coverage, including refusal
       and timeout rates. Support deterministic sharding and replay; run a bounded
       representative suite in CI and a configurable larger campaign separately.

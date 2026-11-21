@@ -736,6 +736,124 @@ export { first };
   assert.match(replay.stdout, /'binding_witness_difference' does not depend on any axioms/);
 }
 
+if (shard === 15) {
+  const finallySource = join(root, "finally-source.mjs");
+  const finallySpec = join(root, "finally-spec.json");
+  const finallyOut = join(root, "finally-out");
+  await writeFile(
+    finallySource,
+    `function fail(n) { if (n) throw 8; return n; }
+function make(start) { let value = start; return (step) => { try { if (step) throw 7; return value; } finally { value += 1; value += fail(step); } }; }
+const counter = make(2);
+export { counter };
+`
+  );
+  await writeFile(
+    finallySpec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0, 1, 2] },
+        "entry.mjs": { imports: ["state.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", finallySource, finallySpec, finallyOut).result, "generated");
+  const proof = cli("validate", finallySource, finallySpec, finallyOut);
+  assert.equal(proof.result, "proved under assumptions", JSON.stringify(proof));
+  const calls = [
+    { name: "counter", args: [0] },
+    { name: "counter", args: [0] },
+    { name: "counter", args: [1] },
+  ];
+  const trace = execute(finallySource, calls);
+  assert.deepEqual(trace.results, [{ value: 2 }, { value: 3 }]);
+  assert.deepEqual(trace.error, { name: null, phase: "call", index: 2, thrown: { kind: "number", value: 8 } });
+  assert.deepEqual(execute(join(finallyOut, "entry.mjs"), calls), trace);
+  const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
+    encoding: "utf8",
+    input:
+      models +
+      proof.certificate +
+      `
+theorem finally_modeled_observation :
+  ((sourceBindingState bindingSource).bind (fun state =>
+    (publicCallableTable bindingSource bindingExports).bind (fun table =>
+      runArgumentCalls table state [("counter", [0]), ("counter", [0]), ("counter", [1])]))).map
+    (fun state => (state.returns, state.thrown)) = some ([some 2, some 3], some (.number 8)) := by decide
+#print axioms finally_modeled_observation
+`,
+  });
+  assert.equal(replay.status, 0, replay.stdout + replay.stderr);
+  assert.match(replay.stdout, /'binding_future_calls' does not depend on any axioms/);
+  assert.match(replay.stdout, /'finally_modeled_observation' does not depend on any axioms/);
+  const unsupportedSource = join(root, "finally-return.mjs");
+  await writeFile(
+    unsupportedSource,
+    (await readFile(finallySource, "utf8")).replace("value += 1; value += fail(step);", "return 5;")
+  );
+  assert.equal(cli("generate", unsupportedSource, finallySpec, join(root, "finally-return-out")).result, "unknown");
+}
+
+if (shard === 15) {
+  const loopSource = join(root, "loop-source.mjs");
+  const loopSpec = join(root, "loop-spec.json");
+  const loopOut = join(root, "loop-out");
+  await writeFile(
+    loopSource,
+    `function maybe(n) { if (n === 2) throw 9; return n; }
+function sum(x) { let total = x; let i = 5; for (let i = 0; i < 3; i++) { total += i; } return total + i; }
+function zero(x) { let total = x; for (let i = 0; i < 0; i++) { total += 1; } return total; }
+function interrupted(x) { let total = x; for (let i = 0; i < 4; i++) { total += maybe(i); } return total; }
+export { sum, zero, interrupted };
+`
+  );
+  await writeFile(
+    loopSpec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "helpers.mjs": { imports: [], statements: [0] },
+        "functions.mjs": { imports: ["helpers.mjs"], statements: [1, 2, 3] },
+        "entry.mjs": { imports: ["functions.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", loopSource, loopSpec, loopOut).result, "generated");
+  const proof = cli("validate", loopSource, loopSpec, loopOut);
+  assert.equal(proof.result, "proved under assumptions", JSON.stringify(proof));
+  const calls = [
+    { name: "sum", args: [2] },
+    { name: "zero", args: [4] },
+    { name: "interrupted", args: [1] },
+  ];
+  const trace = execute(loopSource, calls);
+  assert.deepEqual(trace.results, [{ value: 10 }, { value: 4 }]);
+  assert.deepEqual(trace.error, { name: null, phase: "call", index: 2, thrown: { kind: "number", value: 9 } });
+  assert.deepEqual(execute(join(loopOut, "entry.mjs"), calls), trace);
+  const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
+    encoding: "utf8",
+    input:
+      models +
+      proof.certificate +
+      `
+theorem loop_modeled_observation :
+  ((sourceBindingState bindingSource).bind (fun state =>
+    (publicCallableTable bindingSource bindingExports).bind (fun table =>
+      runArgumentCalls table state [("sum", [2]), ("zero", [4]), ("interrupted", [1])]))).map
+    (fun state => (state.returns, state.thrown)) = some ([some 10, some 4], some (.number 9)) := by decide
+#print axioms loop_modeled_observation
+`,
+  });
+  assert.equal(replay.status, 0, replay.stdout + replay.stderr);
+  assert.match(replay.stdout, /'loop_modeled_observation' does not depend on any axioms/);
+  const unsupported = join(root, "dynamic-loop.mjs");
+  await writeFile(unsupported, (await readFile(loopSource, "utf8")).replace("i < 3", "i < x"));
+  assert.equal(cli("generate", unsupported, loopSpec, join(root, "dynamic-loop-out")).result, "unknown");
+}
+
 if (shard === 8) {
   const independentSource = join(root, "independent-named.mjs");
   const independentSpec = join(root, "independent-named.json");
@@ -778,7 +896,10 @@ export { first, second };
   assert.deepEqual(execute(join(independentOut, "entry.mjs"), independentCalls), independentTrace);
   const independentReplay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
     encoding: "utf8",
-    input: models + independentProof.certificate,
+    input:
+      models +
+      independentProof.certificate +
+      "\ntheorem real_split_capture_keys_differ : binding_source_first ≠ binding_output_first := by decide\n#print axioms real_split_capture_keys_differ\n",
   });
   assert.equal(independentReplay.status, 0, independentReplay.stdout + independentReplay.stderr);
   assert.match(independentReplay.stdout, /'binding_future_calls' does not depend on any axioms/);
@@ -797,6 +918,7 @@ export { first, second };
   assert.match(independentReplay.stdout, /'binding_exported_captured_calls' does not depend on any axioms/);
   assert.match(independentReplay.stdout, /'binding_exported_captured_calls_simulate' does not depend on any axioms/);
   assert.match(independentReplay.stdout, /'binding_captured_observations' does not depend on any axioms/);
+  assert.match(independentReplay.stdout, /'real_split_capture_keys_differ' does not depend on any axioms/);
   await writeFile(
     source,
     `let seed = 1;
@@ -1375,7 +1497,7 @@ if (shard === 15) {
     `let seed = 1;
 let amount = 1;
 function bump() { seed += amount; }
-function make(start) { let value = start * seed - 1; return (step) => { if (step < value) return value; return step; }; }
+function make(start) { let value = start * seed - 1; return (step) => { try { if (step < value) return value; return step; } finally { value += 1; } }; }
 bump();
 const first = make(2);
 export { first };

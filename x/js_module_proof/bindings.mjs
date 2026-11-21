@@ -230,6 +230,64 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
     check(--budget.remaining >= 0, "expression expansion limit exceeded");
     check(statements.length > 0, "expected a returning statement");
     const [first, ...rest] = statements;
+    if (first.type === "ForStatement") {
+      const init = first.init;
+      check(
+        init?.type === "VariableDeclaration" &&
+          init.kind === "let" &&
+          init.declarations.length === 1 &&
+          rest.length > 0,
+        "unsupported loop initializer"
+      );
+      const index = identifier(init.declarations[0].id);
+      check(!["globalThis", "eval", "arguments"].includes(index), "unsupported loop binding");
+      check(
+        init.declarations[0].init?.type === "Literal" && init.declarations[0].init.value === 0,
+        "unsupported loop initial value"
+      );
+      check(
+        first.test?.type === "BinaryExpression" &&
+          first.test.operator === "<" &&
+          first.test.left?.type === "Identifier" &&
+          first.test.left.name === index &&
+          first.test.right?.type === "Literal" &&
+          Number.isInteger(first.test.right.value) &&
+          first.test.right.value >= 0 &&
+          first.test.right.value <= 8,
+        "unsupported loop bound"
+      );
+      check(
+        first.update?.type === "UpdateExpression" &&
+          first.update.operator === "++" &&
+          first.update.argument?.type === "Identifier" &&
+          first.update.argument.name === index,
+        "unsupported loop update"
+      );
+      check(
+        first.body?.type === "BlockStatement" &&
+          first.body.body.every((item) => {
+            if (item.type !== "ExpressionStatement") return false;
+            const target =
+              item.expression?.type === "AssignmentExpression"
+                ? item.expression.left
+                : item.expression?.type === "UpdateExpression"
+                  ? item.expression.argument
+                  : null;
+            return target?.type === "Identifier" && target.name !== index;
+          }),
+        "unsupported loop body"
+      );
+      const iterations = Array.from({ length: first.test.right.value }, () => [
+        ...first.body.body,
+        { type: "ExpressionStatement", expression: first.update },
+      ]).flat();
+      const loopBody = sequence([...iterations, { type: "ReturnStatement", argument: { type: "Literal", value: 0 } }]);
+      return {
+        kind: "followedBy",
+        first: { kind: "local", name: index, mutable: true, initial: { kind: "literal", value: 0 }, body: loopBody },
+        continuation: sequence(rest),
+      };
+    }
     if (first.type === "VariableDeclaration") {
       check(
         (first.kind === "let" || first.kind === "const") && first.declarations.length === 1 && rest.length > 0,
@@ -280,6 +338,20 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
     return returning(first);
   };
   const returning = (statement) => {
+    if (statement?.type === "TryStatement" && statement.finalizer && !statement.handler) {
+      check(
+        statement.finalizer.body.every((item) => item.type === "ExpressionStatement"),
+        "unsupported finalizer statement"
+      );
+      return {
+        kind: "finally",
+        body: sequence(statement.block.body),
+        finalizer: sequence([
+          ...statement.finalizer.body,
+          { type: "ReturnStatement", argument: { type: "Literal", value: 0 } },
+        ]),
+      };
+    }
     if (statement?.type === "ReturnStatement") return expression(statement.argument);
     if (statement?.type === "ThrowStatement") {
       const argument = statement.argument;
@@ -329,6 +401,10 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
         return [...free(item.test, bound), ...free(item.consequent, bound), ...free(item.alternative, bound)];
       case "local":
         return [...free(item.initial, bound), ...free(item.body, [item.name, ...bound])];
+      case "finally":
+        return [...free(item.body, bound), ...free(item.finalizer, bound)];
+      case "followedBy":
+        return [...free(item.first, bound), ...free(item.continuation, bound)];
       case "assign":
         if (!bound.includes(item.name)) writes.add(item.name);
         return [
@@ -831,6 +907,10 @@ function leanExpression(expression) {
       return `.${expression.kind} (${leanExpression(expression.test)}) (${leanExpression(expression.consequent)}) (${leanExpression(expression.alternative)})`;
     case "local":
       return `.local ${str(expression.name)} ${expression.mutable} (${leanExpression(expression.initial)}) (${leanExpression(expression.body)})`;
+    case "finally":
+      return `.finally (${leanExpression(expression.body)}) (${leanExpression(expression.finalizer)})`;
+    case "followedBy":
+      return `.followedBy (${leanExpression(expression.first)}) (${leanExpression(expression.continuation)})`;
     case "assign":
       return `.assign ${str(expression.name)} (${leanExpression(expression.value)}) (${leanExpression(expression.body)})`;
     case "raise":
@@ -966,24 +1046,29 @@ theorem binding_throw_values (calls : List (String × List Nat)) : ((sourceBindi
     source.statements.some((item) => item.ast.kind === "capturedClosure" && item.ast.name === name)
   );
   const twoCaptured = source.exports.length === 2 && directCapturedExports.length === 2;
+  const outputCaptureNames = source.statements.flatMap((item) =>
+    item.ast.kind === "capturedClosure" ? item.ast.keys.map((key) => `(${str(key)}, ${str(`output:${key}`)})`) : []
+  );
   const capturedRelation = twoCaptured
     ? `
+def binding_output_key_names := ${list(outputCaptureNames)}
 def binding_source_first := (publicCapturedEnvironment bindingSource ${str(directCapturedExports[0])}).getD []
 def binding_source_second := (publicCapturedEnvironment bindingSource ${str(directCapturedExports[1])}).getD []
-def binding_output_first := (publicCapturedEnvironment (outputDefinitions bindingModules) ${str(directCapturedExports[0])}).getD []
-def binding_output_second := (publicCapturedEnvironment (outputDefinitions bindingModules) ${str(directCapturedExports[1])}).getD []
+def binding_output_first := (publicCapturedEnvironment (namespacedOutputDefinitions binding_output_key_names bindingModules) ${str(directCapturedExports[0])}).getD []
+def binding_output_second := (publicCapturedEnvironment (namespacedOutputDefinitions binding_output_key_names bindingModules) ${str(directCapturedExports[1])}).getD []
 def binding_source_state := (sourceBindingState bindingSource).getD (⟨[], [], [], none, [], none, []⟩ : ExecutionState Unit)
-def binding_output_state := (outputBindingState bindingSource bindingModules bindingEntry).getD (⟨[], [], [], none, [], none, []⟩ : ExecutionState Unit)
+def binding_output_state := (namespacedOutputBindingState binding_output_key_names bindingSource bindingModules bindingEntry).getD (⟨[], [], [], none, [], none, []⟩ : ExecutionState Unit)
 def binding_source_table := (publicCallableTable bindingSource bindingExports).getD []
-def binding_output_table := (publicCallableTable (outputDefinitions bindingModules) bindingExports).getD []
+def binding_output_table := (publicCallableTable (namespacedOutputDefinitions binding_output_key_names bindingModules) bindingExports).getD []
+theorem binding_namespaced_output_ready : (namespacedOutputBindingState binding_output_key_names bindingSource bindingModules bindingEntry).isSome = true := by decide
 theorem binding_captured_tables_present :
     (publicCallableTable bindingSource bindingExports).isSome = true ∧
-    (publicCallableTable (outputDefinitions bindingModules) bindingExports).isSome = true := by decide
+    (publicCallableTable (namespacedOutputDefinitions binding_output_key_names bindingModules) bindingExports).isSome = true := by decide
 theorem binding_captured_environments_present :
     (publicCapturedEnvironment bindingSource ${str(directCapturedExports[0])}).isSome = true ∧
     (publicCapturedEnvironment bindingSource ${str(directCapturedExports[1])}).isSome = true ∧
-    (publicCapturedEnvironment (outputDefinitions bindingModules) ${str(directCapturedExports[0])}).isSome = true ∧
-    (publicCapturedEnvironment (outputDefinitions bindingModules) ${str(directCapturedExports[1])}).isSome = true := by decide
+    (publicCapturedEnvironment (namespacedOutputDefinitions binding_output_key_names bindingModules) ${str(directCapturedExports[0])}).isSome = true ∧
+    (publicCapturedEnvironment (namespacedOutputDefinitions binding_output_key_names bindingModules) ${str(directCapturedExports[1])}).isSome = true := by decide
 theorem binding_source_captures_disjoint : capturesDisjoint binding_source_first binding_source_second := by decide
 theorem binding_output_captures_disjoint : capturesDisjoint binding_output_first binding_output_second := by decide
 theorem binding_source_first_unique : CaptureKeysUnique binding_source_first := by decide
@@ -1063,6 +1148,7 @@ theorem binding_captured_observations (calls : List (String × List Nat)) :
     binding_source_table binding_output_table binding_captured_tables_paired calls
     binding_source_state binding_output_state binding_captured_initial_related
 #print axioms binding_captured_tables_paired
+#print axioms binding_namespaced_output_ready
 #print axioms binding_captured_tables_present
 #print axioms binding_captured_observations
 #print axioms binding_exported_captured_calls
@@ -1126,6 +1212,7 @@ theorem binding_captured_observations (calls : List (String × List Nat)) :
     relationProof?.status === 0 &&
     [
       "binding_captured_tables_present",
+      "binding_namespaced_output_ready",
       "binding_captured_observations",
       "binding_captured_environments_present",
       "binding_source_captures_disjoint",
@@ -1281,6 +1368,16 @@ theorem binding_captured_observations (calls : List (String × List Nat)) :
       const initial = expressionBound(expression.initial, bound);
       const body = expressionBound(expression.body, initial > bound ? initial : bound);
       return initial > body ? initial : body;
+    }
+    if (expression.kind === "finally") {
+      const body = expressionBound(expression.body, bound);
+      const finalizer = expressionBound(expression.finalizer, body > bound ? body : bound);
+      return body > finalizer ? body : finalizer;
+    }
+    if (expression.kind === "followedBy") {
+      const first = expressionBound(expression.first, bound);
+      const continuation = expressionBound(expression.continuation, first > bound ? first : bound);
+      return first > continuation ? first : continuation;
     }
     if (expression.kind === "assign") {
       const value = expressionBound(expression.value, bound);

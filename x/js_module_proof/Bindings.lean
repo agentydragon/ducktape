@@ -246,6 +246,8 @@ def expressionNames : NumericExpr → List String
   | .subtract left right => expressionNames left ++ expressionNames right
   | .conditional test consequent alternative => expressionNames test ++ expressionNames consequent ++ expressionNames alternative
   | .guard test consequent alternative => expressionNames test ++ expressionNames consequent ++ expressionNames alternative
+  | .finally body finalizer => expressionNames body ++ expressionNames finalizer
+  | .followedBy first continuation => expressionNames first ++ expressionNames continuation
   | .local _ _ initial body => expressionNames initial ++ expressionNames body
   | .assign name value body => [name] ++ expressionNames value ++ expressionNames body
   | .raise value => expressionNames value
@@ -267,6 +269,8 @@ def laterExpressionNames : NumericExpr → List String
   | .subtract _ _ => []
   | .conditional _ _ _ => []
   | .guard _ _ continuation => laterExpressionNames continuation
+  | .finally _ _ => []
+  | .followedBy _ continuation => laterExpressionNames continuation
   | .raise _ => []
   | .raisePrimitive _ => []
   | .argumentsNil => []
@@ -289,6 +293,8 @@ def argumentCount : NumericExpr → Option Nat
   | .subtract _ _ => none
   | .conditional _ _ _ => none
   | .guard _ _ _ => none
+  | .finally _ _ => none
+  | .followedBy _ _ => none
   | .local _ _ _ _ => none
   | .assign _ _ _ => none
   | .raise _ => none
@@ -309,6 +315,10 @@ def validNumericExpression : NumericExpr → Bool
   | .guard test consequent continuation =>
     !(expressionNames test ++ expressionNames consequent).any (fun name => (laterExpressionNames continuation).contains name) &&
       validNumericExpression test && validNumericExpression consequent && validNumericExpression continuation
+  | .finally body finalizer => validNumericExpression body && validNumericExpression finalizer
+  | .followedBy first continuation =>
+    !(expressionNames first).any (fun name => (laterExpressionNames continuation).contains name) &&
+      validNumericExpression first && validNumericExpression continuation
   | .raise value => validNumericExpression value
   | .raisePrimitive _ => true
   | .local name _ initial body =>
@@ -335,6 +345,8 @@ def validNumericArguments : NumericExpr → Bool
   | .subtract _ _ => false
   | .conditional _ _ _ => false
   | .guard _ _ _ => false
+  | .finally _ _ => false
+  | .followedBy _ _ => false
   | .local _ _ _ _ => false
   | .assign _ _ _ => false
   | .raise _ => false
@@ -353,6 +365,8 @@ def expressionFreeNames (bound : List String) : NumericExpr → List String
   | .subtract left right => expressionFreeNames bound left ++ expressionFreeNames bound right
   | .conditional test consequent alternative => expressionFreeNames bound test ++ expressionFreeNames bound consequent ++ expressionFreeNames bound alternative
   | .guard test consequent alternative => expressionFreeNames bound test ++ expressionFreeNames bound consequent ++ expressionFreeNames bound alternative
+  | .finally body finalizer => expressionFreeNames bound body ++ expressionFreeNames bound finalizer
+  | .followedBy first continuation => expressionFreeNames bound first ++ expressionFreeNames bound continuation
   | .local name _ initial body => expressionFreeNames bound initial ++ expressionFreeNames (name :: bound) body
   | .assign name value body => (if bound.contains name then [] else [name]) ++ expressionFreeNames bound value ++ expressionFreeNames bound body
   | .raise value => expressionFreeNames bound value
@@ -377,6 +391,8 @@ def validLocalWrites (bound : List (String × Bool)) : NumericExpr → Bool
   | .subtract left right => validLocalWrites bound left && validLocalWrites bound right
   | .conditional test consequent alternative => validLocalWrites bound test && validLocalWrites bound consequent && validLocalWrites bound alternative
   | .guard test consequent alternative => validLocalWrites bound test && validLocalWrites bound consequent && validLocalWrites bound alternative
+  | .finally body finalizer => validLocalWrites bound body && validLocalWrites bound finalizer
+  | .followedBy first continuation => validLocalWrites bound first && validLocalWrites bound continuation
   | .local name mutable initial body => validLocalWrites bound initial && validLocalWrites ((name, mutable) :: bound) body
   | .assign name value body => mutableLocal bound name && validLocalWrites bound value && validLocalWrites bound body
   | .raise value => validLocalWrites bound value
@@ -424,6 +440,8 @@ def expressionCalls : NumericExpr → List String
   | .subtract left right => expressionCalls left ++ expressionCalls right
   | .conditional test consequent alternative => expressionCalls test ++ expressionCalls consequent ++ expressionCalls alternative
   | .guard test consequent alternative => expressionCalls test ++ expressionCalls consequent ++ expressionCalls alternative
+  | .finally body finalizer => expressionCalls body ++ expressionCalls finalizer
+  | .followedBy first continuation => expressionCalls first ++ expressionCalls continuation
   | .local _ _ initial body => expressionCalls initial ++ expressionCalls body
   | .assign _ value body => expressionCalls value ++ expressionCalls body
   | .raise value => expressionCalls value
@@ -443,6 +461,8 @@ def matchingInvocations (source : List BindingStmt) : NumericExpr → Bool
   | .subtract left right => matchingInvocations source left && matchingInvocations source right
   | .conditional test consequent alternative => matchingInvocations source test && matchingInvocations source consequent && matchingInvocations source alternative
   | .guard test consequent alternative => matchingInvocations source test && matchingInvocations source consequent && matchingInvocations source alternative
+  | .finally body finalizer => matchingInvocations source body && matchingInvocations source finalizer
+  | .followedBy first continuation => matchingInvocations source first && matchingInvocations source continuation
   | .local _ _ initial body => matchingInvocations source initial && matchingInvocations source body
   | .assign _ value body => matchingInvocations source value && matchingInvocations source body
   | .raise value => matchingInvocations source value
@@ -859,6 +879,40 @@ def outputBindingState (source : List BindingStmt) (modules : List BindingModule
   let statements ← indices.mapM (findAssignedStatement modules)
   let state ← runBindingStatements (outputDefinitions modules) statements
   canonicalBindingState source state
+
+/- Captured allocation keys are model-internal identities. Give the output
+   execution its own namespace so correspondence cannot accidentally rely on
+   the frontend choosing identical keys for the two executions. Graph checking
+   still compares the actual extracted declarations before this renaming. -/
+def outputCaptureNamespace (renames : List (String × String)) : BindingStmt → BindingStmt
+  | .capturedClosure name factory arguments keys =>
+    .capturedClosure name factory arguments (keys.map (fun key =>
+      ((renames.find? (fun pair => pair.1 == key)).map Prod.snd).getD key))
+  | .variable name initial => .variable name initial
+  | .constant name initial => .constant name initial
+  | .function name target source => .function name target source
+  | .reader name source => .reader name source
+  | .thrower name value => .thrower name value
+  | .expressionFunction name parameters expression => .expressionFunction name parameters expression
+  | .capturedFactory name parameters locals closureParameters body => .capturedFactory name parameters locals closureParameters body
+  | .capturedAlias name target => .capturedAlias name target
+  | .factory name localName source => .factory name localName source
+  | .closure name factory => .closure name factory
+  | .wrapper name target => .wrapper name target
+  | .recordCall name => .recordCall name
+  | .call name => .call name
+  | .record name => .record name
+
+def namespacedOutputDefinitions (renames : List (String × String)) (modules : List BindingModule) : List BindingStmt :=
+  (outputDefinitions modules).map (outputCaptureNamespace renames)
+
+def namespacedOutputBindingState (renames : List (String × String)) (source : List BindingStmt) (modules : List BindingModule) (entry : Nat) :
+    Option (ExecutionState Unit) := do
+  let order ← machineTrace (asEffectModules modules) entry
+  let indices ← order.mapM (fun label => (List.range source.length).find? (fun index => toString index == label))
+  let statements ← indices.mapM (findAssignedStatement modules)
+  let state ← runBindingStatements (namespacedOutputDefinitions renames modules) (statements.map (outputCaptureNamespace renames))
+  canonicalBindingState (source.map (outputCaptureNamespace renames)) state
 
 def publicFunctionTable (statements : List BindingStmt) (names : List String) : Option (List (String × List Operation)) :=
   names.mapM (fun name => (functionOperations statements name true).map (fun ops => (name, ops)))

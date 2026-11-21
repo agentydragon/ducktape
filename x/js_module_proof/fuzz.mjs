@@ -856,6 +856,7 @@ export function makeComposedCase(seed, index) {
   const sequence = (visible, depth) => {
     const body = [];
     const count = 1 + rand(3);
+    const mutableNames = [];
     for (let i = 0; i < count; i++) {
       const candidates = visible.parent?.visible().filter((name) => !visible.names.has(name)) ?? [];
       const name =
@@ -864,6 +865,7 @@ export function makeComposedCase(seed, index) {
       const decl = declaration(name, expression(visible, 2, name));
       const mutable = rand(2) === 0;
       decl.kind = mutable ? "let" : "const";
+      if (mutable) mutableNames.push(name);
       body.push(decl);
       visible.declare(name);
       if (mutable && rand(2))
@@ -871,9 +873,21 @@ export function makeComposedCase(seed, index) {
           expr({ type: "AssignmentExpression", operator: "+=", left: id(name), right: expression(visible, 1) })
         );
     }
+    if (mutableNames.length && rand(3) === 0) {
+      const index = `loop${nextLocal++}`;
+      const target = mutableNames[rand(mutableNames.length)];
+      body.push({
+        type: "ForStatement",
+        init: variable(index, 0),
+        test: { type: "BinaryExpression", operator: "<", left: id(index), right: literal(rand(5)) },
+        update: { type: "UpdateExpression", operator: "++", prefix: false, argument: id(index) },
+        body: { type: "BlockStatement", body: [add(target, index)] },
+      });
+    }
+    let terminal;
     if (depth && rand(2)) {
       const operators = ["<", "<=", ">", ">=", "===", "!=="];
-      body.push({
+      terminal = {
         type: "IfStatement",
         test: {
           type: "BinaryExpression",
@@ -883,8 +897,24 @@ export function makeComposedCase(seed, index) {
         },
         consequent: { type: "BlockStatement", body: sequence(new Scope(visible), depth - 1) },
         alternate: { type: "BlockStatement", body: sequence(new Scope(visible), depth - 1) },
-      });
-    } else body.push(returnNode(expression(visible, 2)));
+      };
+    } else if (rand(4) === 0) {
+      const thrown = [false, null, "generated", rand(8)][rand(4)];
+      terminal = { type: "ThrowStatement", argument: literal(thrown) };
+    } else terminal = returnNode(expression(visible, 2));
+    if (mutableNames.length && rand(4) === 0) {
+      const target = mutableNames[rand(mutableNames.length)];
+      terminal = {
+        type: "TryStatement",
+        block: { type: "BlockStatement", body: [terminal] },
+        handler: null,
+        finalizer: {
+          type: "BlockStatement",
+          body: [expr({ type: "UpdateExpression", operator: "++", prefix: false, argument: id(target) })],
+        },
+      };
+    }
+    body.push(terminal);
     return body;
   };
   const ast = {
@@ -903,6 +933,7 @@ export function makeComposedCase(seed, index) {
     ast,
     source: print(ast),
     grammar: "composed",
+    expectThrow: true,
     unsupported: false,
     cyclic: false,
     invalidAssignment: false,
@@ -1046,7 +1077,15 @@ export async function minimizeCase(input, fails) {
   return current;
 }
 
-async function minimizeProvedDifference(input, root) {
+async function mutateCellZero(out, owner) {
+  const file = join(out, owner);
+  const original = await readFile(file, "utf8");
+  const changed = original.replace(/let cell0 = (\d+);/, (_, n) => `let cell0 = ${Number(n) + 1};`);
+  if (changed === original) throw new Error("mutation failed");
+  await writeFile(file, changed);
+}
+
+async function minimizeProvedDifference(input, root, mutated = false) {
   const scratch = join(root, "shrink-attempt");
   const fails = async (candidate) => {
     await rm(scratch, { recursive: true, force: true });
@@ -1058,6 +1097,7 @@ async function minimizeProvedDifference(input, root) {
     await writeFile(spec, JSON.stringify(candidate.spec));
     try {
       await generateBindings(source, spec, out);
+      if (mutated) await mutateCellZero(out, candidate.cell0Owner);
       const before = execute(source, candidate.calls),
         after = execute(join(out, candidate.spec.entry), candidate.calls);
       if (
@@ -1084,6 +1124,7 @@ async function minimizeProvedDifference(input, root) {
     minimizedSpec = join(destination, "spec.json"),
     minimizedOut = join(destination, "out");
   await generateBindings(minimizedSource, minimizedSpec, minimizedOut);
+  if (mutated) await mutateCellZero(minimizedOut, minimized.cell0Owner);
   await writeFile(
     join(destination, "node.json"),
     JSON.stringify(
@@ -1121,6 +1162,11 @@ export async function runFuzz({
   if (!Number.isSafeInteger(shards) || shards < 1 || !Number.isSafeInteger(shard) || shard < 0 || shard >= shards)
     throw new Error("shard must be an integer between 0 and shards - 1");
   await mkdir(outputDir, { recursive: true });
+  const leanVersionResult = spawnSync(process.env.JS_MODULE_PROOF_LEAN ?? "lean", ["--version"], {
+    encoding: "utf8",
+    timeout: 5000,
+  });
+  const leanVersion = leanVersionResult.status === 0 ? leanVersionResult.stdout.trim() : null;
   const summary = {
     seed,
     start,
@@ -1129,6 +1175,8 @@ export async function runFuzz({
     cases: 0,
     splitMode,
     grammarMode,
+    nodeVersion: process.version,
+    leanVersion,
     independentRefused: 0,
     independentRequested: { acyclic: 0, cyclic: 0, invalidAssignment: 0 },
     independentRefusedByCategory: { acyclic: 0, cyclic: 0, invalidAssignment: 0 },
@@ -1242,6 +1290,7 @@ export async function runFuzz({
             grammarMode,
             ...(input.independentSplit ? { splitCategory: independentCategory } : {}),
             nodeVersion: process.version,
+            leanVersion,
           },
           null,
           2
@@ -1340,11 +1389,7 @@ export async function runFuzz({
       const mutated = input.grammar !== "composed" && !input.independentSplit && index % 8 === 2;
       if (mutated) {
         phase = "output-mutation";
-        const file = join(out, input.cell0Owner);
-        const original = await readFile(file, "utf8");
-        const changed = original.replace(/let cell0 = (\d+);/, (_, n) => `let cell0 = ${Number(n) + 1};`);
-        if (changed === original) throw new Error("mutation failed");
-        await writeFile(file, changed);
+        await mutateCellZero(out, input.cell0Owner);
         summary.mutated++;
       }
       phase = "node-comparison";
@@ -1438,7 +1483,7 @@ export async function runFuzz({
           if (input.grammar === "captured") summary.capturedProved++;
           if (input.grammar === "parameter") summary.parameterProved++;
           if (!equal || ((before.error || after.error) && !input.expectThrow)) {
-            if (!equal && !mutated) await minimizeProvedDifference(input, root);
+            if (!equal) await minimizeProvedDifference(input, root, mutated);
             throw new Error("proved case differs or fails in Node");
           }
         } else if (verdict.result === "unsafe") {
@@ -1475,7 +1520,17 @@ export async function runFuzz({
       await writeFile(
         join(root, "failure.json"),
         JSON.stringify(
-          { seed, index, phase, nodeVersion: process.version, error: String(error), stack: error?.stack },
+          {
+            seed,
+            index,
+            phase,
+            nodeVersion: process.version,
+            leanVersion,
+            grammarMode,
+            splitMode,
+            error: String(error),
+            stack: error?.stack,
+          },
           null,
           2
         ) + "\n"

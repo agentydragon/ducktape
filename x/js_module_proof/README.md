@@ -117,6 +117,16 @@ values are nonnegative safe integers, booleans, `null`, `undefined` (written as
 `void 0`), and ASCII strings. A throw stops the observed call sequence
 while preserving its preceding trace. The checker conservatively rejects local
 temporal-dead-zone reads.
+Returning or throwing functions may use a terminal `try`/`finally` without
+`catch`, when the finalizer consists of supported local assignments or updates.
+The finalizer runs after either completion; an exception from its expressions
+replaces the pending completion. Direct `return` or `throw` statements in the
+finalizer remain unsupported.
+Functions also support `for (let i = 0; i < N; i++)` with a literal `N`
+from 0 through 8 and a block of supported local assignments or updates. The
+body cannot write the loop variable. The frontend unrolls these bounded loops
+into the shared expression semantics; dynamic bounds and other loop forms
+return `unknown`.
 For these functions the certificate covers finite sequences of calls with
 explicit argument lists. Calls must supply exactly the declared number of
 nonnegative safe-integer arguments; intermediate results must stay in range.
@@ -186,7 +196,10 @@ and derives writeback agreement for all related states without assuming it.
 For two direct captured exports, the validator can use the relation itself for
 acceptance: it checks the callable tables, distinct and disjoint cells, and
 related initialized states, then proves equal observations for any finite call
-sequence. Other cases still require equal initialized states and callable tables.
+sequence. Its output execution allocates modeled captured cells in a separate
+namespace, after the checker has compared the extracted source and output
+statements. The generated certificate therefore exercises different private
+keys for the actual split. Other cases still require equal initialized states and callable tables.
 The frontend uses a factory-specific representation; arbitrary closures and
 alias patterns are not yet covered by the relational acceptance proof. A safe
 result proves equal modeled initialization and matching return values and
@@ -272,8 +285,8 @@ modulo N, so independent workers cover the same range without overlap.
 Failure artifacts include source, assignment, generated files,
 Node observations and, if available, the validator verdict. Unexpected failures
 also include a phase and error record. Cases with a Node difference and an unknown or unvalidated verdict are retained
-for investigation; other non-failing cases are removed. An unmodified split that
-is proved but differs in Node is reduced by removing statements, calls, empty
+for investigation; other non-failing cases are removed. A split that
+is proved but differs in Node, whether mutated or unmodified, is reduced by removing statements, calls, empty
 modules and imports while preserving that failure, with the result saved under
 `minimized/`. The fuzzer keeps files only inside the chosen output directory.
 Lean checking is expensive: `--validate-every N` selects a reproducible
