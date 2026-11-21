@@ -7,6 +7,8 @@ Goal: turn a minified production bundle into readable modules, with a machine-ch
 
 The design is "untrusted search, trusted check". The footprint analysis is the one place that breaks it: `Effects.lean` is unproved, and the checker believes it.
 
+**Decided (2026-11-21).** The model of item 3 is being built now, as a longer-term investment beside fixing the known wrong rules. The first rule to prove against it is the allocation rule of item 4.
+
 **Proposed, not decided.**
 
 1. **No new precision rules in the unproved interpreter**, beyond the one or two that a measurement shows are blocking. Each such rule is one more unproved claim that a construct commutes. Fixing a wrong rule is always in scope: F1 to F3 in [`generator_findings`](experiments/translation/debug/generator_findings/README.md) are open, and so are F4 and F5 of ducktape#18429.
@@ -29,20 +31,21 @@ The design is "untrusted search, trusted check". The footprint analysis is the o
 
 4. **Run it as a spike with a kill rule**, so it cannot become open-ended.
    - _First measurement:_ which constructs run during module start-up on the large bundle. Only that code needs a precise model, and it may be much smaller than the syntax the inputs contain.
-   - _First rule to prove:_ unknown code cannot write a name declared later, except through an object that escaped earlier. It is the largest lever the peel probe measured, and it is exactly the kind of rule that is easy to get wrong in the interpreter.
+   - _First rule to prove:_ a unit that only allocates has no footprint beyond the name it declares. Such a unit is built from literals, names, object and array literals, function and arrow expressions and plain classes; it runs no code but its own and changes nothing that existed. 7,123 of the 9,707 units of the large bundle have this shape ([`allocate_only_census.mjs`](experiments/translation/allocate_only_census.mjs)), and the modules that peel today are made of them. The hard part is what "the same result" means: two such units in the other order create the same objects at other addresses, so states are equal only up to a renaming of object identities. Settling that is the first piece of what a footprint means.
+   - _Second rule:_ unknown code cannot write a name declared later, except through an object that escaped earlier. It is the largest lever the peel probe measured, and it needs a statement of what unknown code may change.
    - _Success:_ commutation proved for closures, objects with prototypes, accessors and exceptions, and that fragment covers most of the units that get precise footprints today.
    - _Kill:_ the proof is not done within the budget set at the start, or coverage is under about half. Then the tested analysis stays, labelled as trusted.
 
 5. **Let footprints remove the order that a sequence imposes.** A spec with `sequential` keeps the bundle's order by imports, and `Valid` checks the plan ([`README.md`](README.md)). On the large bundle that makes 2,367 of the 2,793 modules of the reviewed tree valid whole, and `lowersplit` accepts the split. It is not yet what a person would write: 629 of its 3,049 modules get imports they need only for the order (2,744 bare imports), and the imports nest 466 deep. Each such import is a candidate to drop, and dropping one is a claim that two modules commute, which is where a footprint, or a proof, is needed. First candidates: a module that only declares functions can run early without harm, so a forward mention of one needs no ordering import. This turns "is the split valid" from the hard question into the easy one, and makes precision a matter of how natural the imports look. Step 5 below is a special case.
 
-**Open decisions for the owner.** Whether to start the spike, and with what budget. Whether to fix F1 to F5 before or beside it. Whether a reviewed vendor table is worth its review cost before the rule in item 4 exists: alone it does not change which modules peel.
+**Open decisions for the owner.** What budget the spike gets before its kill rule applies. Whether a reviewed vendor table is worth its review cost before the rule in item 4 exists: alone it does not change which modules peel.
 
 ## Order of work
 
-1. Run an accepted split of the large bundle in a browser, with the private repository's load check: the emitted modules have only been syntax-checked.
-2. F1 to F6 (in progress).
+1. F1 to F6 (in progress).
+2. The model of item 3: a first slice checked against Node (in progress), then the allocation rule of item 4.
 3. `import.meta` ([`SUPPORT.md`](SUPPORT.md)): the one common feature the tools refuse.
-4. Which rules fire per unit at start-up, then the spike of item 4, if started.
+4. Which rules fire per unit at start-up: it decides what the model covers after the first slice.
 5. Then by measured yield: fewer ordering imports (item 5): per-unit reasons in `lower` ([`TODO.md`](TODO.md)), a vendor table by library family, a rule for decorator applications. A stack-safe interpreter comes before any analysis of library code.
 
 ## More of debundle's cases through the Lean checker
