@@ -1553,6 +1553,16 @@ py_library(
 )
 
 py_library(
+    name = "static_application_vpa",
+    srcs = ["static_application_vpa.py"],
+    deps = [
+        ":manifest_roots",
+        "//cluster/cdk8s/providers/vpa:verticalpodautoscaler",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
     name = "vpa",
     srcs = ["vpa.py"],
     deps = [
@@ -1690,6 +1700,7 @@ py_library(
         ":seaweedfs_csi",
         ":session_archive",
         ":session_backup",
+        ":static_application_vpa",
         ":talos_cloud_controller_manager",
         ":tana_mcp",
         ":terraform",

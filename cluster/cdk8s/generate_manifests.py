@@ -71,6 +71,7 @@ from cluster.cdk8s import (
     seaweedfs_csi,
     session_archive,
     session_backup,
+    static_application_vpa,
     talos_cloud_controller_manager,
     tana_mcp,
     terraform,
@@ -1843,7 +1844,7 @@ def generate_manifests(root: Path) -> None:
     claude_session_sync_artifact = artifact(
         "claude-session-sync", claude_session_sync.OUTPUT_DIR, claude_session_sync.PINS_DIR
     )
-    claude_session_sync.claude_session_sync(
+    claude_session_sync_kustomization = claude_session_sync.claude_session_sync(
         flux_chart,
         write_directory(
             root,
@@ -2331,6 +2332,18 @@ def generate_manifests(root: Path) -> None:
         write_directory(root, agentplane_staging_vpa_artifact, staging_vpa.chart),
         depends_on=flux.flux_kustomization_depends_on_many(vpa_kustomization, agentplane_staging_kustomization),
     )
+    static_application_vpa_artifact = artifact(static_application_vpa.NAME, static_application_vpa.OUTPUT_DIR)
+    flux.flux_kustomization(
+        flux_chart,
+        static_application_vpa.NAME,
+        write_directory(root, static_application_vpa_artifact, static_application_vpa.chart),
+        depends_on=flux.flux_kustomization_depends_on_many(
+            vpa_kustomization,
+            agentplane_staging_kustomization,
+            claude_session_sync_kustomization,
+            haku_ci_kustomization,
+        ),
+    )
     agentplane_staging_delivery_artifact = artifact(
         "agentplane-staging-delivery", staging.LAYOUT.delivery_output_dir, staging.LAYOUT.image_pins
     )
@@ -2573,6 +2586,7 @@ def generate_manifests(root: Path) -> None:
             vpa_artifact,
             flux_system_vpa_artifact,
             agentplane_staging_vpa_artifact,
+            static_application_vpa_artifact,
             website_artifact,
             home_switch_module,
             gitlab_spike_module,

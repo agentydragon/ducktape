@@ -893,6 +893,11 @@ spec:
       name: agentplane-staging-vpa
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/static-application-vpa/**"
+          to: "@artifact/cluster/generated/static-application-vpa/"
+      name: static-application-vpa
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/generated/website/**"
           to: "@artifact/cluster/generated/website/"
         - from: "@repo/cluster/k8s/website-image-pins/**"
