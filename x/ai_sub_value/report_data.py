@@ -15,6 +15,7 @@ from x.ai_sub_value.analyze import (
     discontinuity,
     parse_time,
     read_rows,
+    require_single_quota_account,
     summarize_accounting,
     summarize_daily,
     summarize_quota,
@@ -109,6 +110,7 @@ def assemble_usage(sources: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
 def quota_weekly(
     rows: list[dict[str, Any]], codex_plan_periods: list[CodexPlanPeriod] | None = None
 ) -> list[dict[str, Any]]:
+    require_single_quota_account(rows)
     groups: dict[tuple[str, int, str, CodexPlanPeriod | None], dict[str, Poll]] = defaultdict(dict)
     reported_plan_types: dict[tuple[str, int, str, CodexPlanPeriod | None], set[str]] = defaultdict(set)
     for row in rows:

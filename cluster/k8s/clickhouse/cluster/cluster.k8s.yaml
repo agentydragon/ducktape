@@ -261,11 +261,12 @@ spec:
       aiquota_history_reader/quota: readonly
       aiquota_ingest/grants/query:
         - GRANT INSERT ON aiquota.raw_http_observations
-        - GRANT SELECT(event_id, observed_at, source, quota_windows, token_activity, reset_credits) ON aiquota.raw_http_observations
+        - GRANT SELECT(event_id, observed_at, source, account_id, quota_windows, token_activity, reset_credits) ON aiquota.raw_http_observations
         - GRANT SELECT, INSERT ON aiquota.aiquota_windows
         - GRANT SELECT, INSERT ON aiquota.token_activity_daily
         - GRANT SELECT, INSERT ON aiquota.reset_credits
         - GRANT CREATE, DROP TABLE, DROP VIEW ON aiquota.*
+        - GRANT ALTER VIEW MODIFY QUERY ON aiquota.*
         - GRANT ALTER ADD COLUMN ON aiquota.*
         - GRANT CLUSTER ON *.*
       aiquota_ingest/networks/ip:

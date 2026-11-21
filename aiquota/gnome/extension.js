@@ -116,6 +116,7 @@ function formatBankedResets(count, expiries, expiryLookupFailed, now, details = 
 }
 
 function isApiProvider(providerId) {
+  providerId = providerId.split(":", 1)[0];
   return providerId === "openai_platform" || providerId === "anthropic_platform";
 }
 
@@ -921,16 +922,14 @@ const QuotaIndicator = GObject.registerClass(
     }
 
     _loadViewData(data) {
-      const providerIds = new Set(
-        (Array.isArray(data.providers) ? data.providers : [])
-          .map((provider) => provider?.provider)
-          .filter((id) => PROVIDER_DEFS.some((definition) => definition.id === id))
+      const entries = (Array.isArray(data.providers) ? data.providers : []).filter((provider) =>
+        PROVIDER_DEFS.some((definition) => definition.id === provider?.provider)
       );
-      this._setProviderVisibility(providerIds);
+      this._setProviderVisibility(entries);
       const fetchedAt = data.fetched_at ? new Date(data.fetched_at).getTime() : null;
       this._viewConnectionError = data.connection_error ?? null;
       for (const p of this._providers) {
-        const pq = data.providers?.find((x) => x.provider === p.id);
+        const pq = entries.find((x) => x.provider === p.providerId && (x.account_id ?? null) === p.accountId);
         if (!pq) {
           p.state = emptyProviderState();
           continue;
@@ -970,13 +969,23 @@ const QuotaIndicator = GObject.registerClass(
       if (needsRebuild) this._buildPopup();
     }
 
-    _setProviderVisibility(providerIds) {
+    _setProviderVisibility(entries) {
       const currentIds = this._providers.map(({ id }) => id);
-      const nextIds = PROVIDER_DEFS.filter(({ id }) => providerIds.has(id)).map(({ id }) => id);
+      const definitions = PROVIDER_DEFS.flatMap((def) =>
+        entries
+          .filter((entry) => entry.provider === def.id)
+          .map((entry) => ({
+            ...def,
+            providerId: def.id,
+            accountId: entry.account_id ?? null,
+            id: entry.account_id ? `${def.id}:${entry.account_id}` : def.id,
+          }))
+      );
+      const nextIds = definitions.map(({ id }) => id);
       if (currentIds.length === nextIds.length && currentIds.every((id, index) => id === nextIds[index])) return;
 
       const priorState = new Map(this._providers.map((provider) => [provider.id, provider.state]));
-      this._providers = PROVIDER_DEFS.filter(({ id }) => providerIds.has(id)).map((def) => ({
+      this._providers = definitions.map((def) => ({
         ...def,
         state: priorState.get(def.id) ?? emptyProviderState(),
         icon: null,

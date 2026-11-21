@@ -20,6 +20,7 @@ from aiquota.models import (
     RawUpstreamResponse,
     ResetCreditsObservation,
     TokenActivityObservation,
+    account_capture_key,
     history_capture_key,
 )
 
@@ -71,7 +72,7 @@ class ClickHouseSnapshotSink:
                     )
 
     async def write(self, snapshot: QuotaSnapshot) -> int:
-        raw_rows = [_raw_row(snapshot, provider.provider) for provider in snapshot.quotas.providers]
+        raw_rows = [_raw_row(snapshot, provider) for provider in snapshot.quotas.providers]
         window_count = sum(_window_count(provider) for provider in snapshot.quotas.providers)
         async with httpx.AsyncClient(
             auth=(self._username, self._password), timeout=self._timeout, transport=self._transport
@@ -126,19 +127,20 @@ def schema_statements(sql: str) -> list[str]:
     return [statement for statement in statements if statement]
 
 
-def _raw_row(snapshot: QuotaSnapshot, provider_name: str) -> dict[str, object]:
-    provider = next(provider for provider in snapshot.quotas.providers if provider.provider == provider_name)
-    raw = snapshot.raw_responses.get(provider_name)
+def _raw_row(snapshot: QuotaSnapshot, provider: ProviderQuota) -> dict[str, object]:
+    provider_name = provider.provider
+    raw = snapshot.raw_responses.get(account_capture_key(provider_name, provider.account_id))
     raw_bytes, raw_sha256, body_size, truncated = _raw_bytes(raw)
     normalized = provider.model_dump_json()
     quota_windows = _window_values(provider)
     error = provider.last_output.result.error if isinstance(provider.last_output.result, FetchError) else ""
-    event_key = f"{provider_name}:{provider.last_output.fetched_at.isoformat()}:{raw_sha256}"
+    event_key = f"{provider_name}:{provider.account_id}:{provider.last_output.fetched_at.isoformat()}:{raw_sha256}"
     return {
         "event_id": str(uuid.uuid5(uuid.NAMESPACE_URL, f"aiquota:{event_key}")),
         "schema_version": 1,
         "dataset": _DATASET,
         "source": provider_name,
+        "account_id": provider.account_id or "",
         "observed_at": provider.last_output.fetched_at.isoformat(),
         # Keep retries byte-for-byte stable so ReplicatedMergeTree insert
         # deduplication can discard a replay after an uncertain insert.
@@ -157,7 +159,7 @@ def _raw_row(snapshot: QuotaSnapshot, provider_name: str) -> dict[str, object]:
 
 def _history_row(snapshot: HistorySnapshot, observation: HistoryObservation) -> dict[str, object]:
     payload = observation.payload
-    raw = snapshot.raw_responses.get(history_capture_key(observation.provider, payload.kind))
+    raw = snapshot.raw_responses.get(history_capture_key(observation.provider, payload.kind, observation.account_id))
     raw_bytes, raw_sha256, body_size, truncated = _raw_bytes(raw)
     match payload:
         case TokenActivityObservation():
@@ -175,12 +177,13 @@ def _history_row(snapshot: HistorySnapshot, observation: HistoryObservation) -> 
                 }
                 for credit in payload.credits
             ]
-    event_key = f"{observation.provider}:{payload.kind}:{observation.observed_at.isoformat()}:{raw_sha256}"
+    event_key = f"{observation.provider}:{observation.account_id}:{payload.kind}:{observation.observed_at.isoformat()}:{raw_sha256}"
     return {
         "event_id": str(uuid.uuid5(uuid.NAMESPACE_URL, f"aiquota:{event_key}")),
         "schema_version": 1,
         "dataset": _DATASET,
         "source": observation.provider,
+        "account_id": observation.account_id or "",
         "observed_at": observation.observed_at.isoformat(),
         "ingested_at": snapshot.fetched_at.astimezone(UTC).isoformat(),
         "status_code": raw.status_code if raw else 0,

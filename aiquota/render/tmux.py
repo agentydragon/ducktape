@@ -18,8 +18,10 @@ TINT_FG = {
 }
 
 
-def _render_provider(pq: ProviderView) -> str:
+def _render_provider(pq: ProviderView, *, distinguish: bool = False) -> str:
     prefix = PROVIDER_PREFIX.get(pq.provider, pq.provider[0].upper())
+    if distinguish:
+        prefix += f"({(pq.account_label or pq.account_id or 'unknown').replace('#', '##')})"
     windows = pq.display_windows
     index = pq.summary_index
     summary = windows[index] if index is not None and 0 <= index < len(windows) else None
@@ -52,5 +54,9 @@ def _render_provider(pq: ProviderView) -> str:
 
 
 def render_view(providers: list[ProviderView]) -> str:
-    segments = [_render_provider(provider) for provider in providers if provider.provider not in _API_PROVIDERS]
+    subscriptions = [provider for provider in providers if provider.provider not in _API_PROVIDERS]
+    segments = [
+        _render_provider(provider, distinguish=sum(p.provider == provider.provider for p in subscriptions) > 1)
+        for provider in subscriptions
+    ]
     return f"{_AI_GLYPH} " + " ".join(segments) if segments else ""

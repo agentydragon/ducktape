@@ -2,7 +2,7 @@
 WITH base64Decode(raw_body_base64) AS raw,
      JSONExtractArrayRaw(raw, 'weekly_scoped_shares') AS shares,
      arrayFirst(s -> JSONExtractInt(s, 'limit_index') = item_index - 1, shares) AS share
-SELECT event_id, observed_at, 'claude' AS provider,
+SELECT event_id, observed_at, 'claude' AS provider, account_id,
        JSONExtractString(item, 'kind') AS limit_kind,
        JSONExtractString(item, 'scope', 'model', 'display_name') AS model_scope,
        JSONExtractFloat(item, 'percent') AS used_percent,

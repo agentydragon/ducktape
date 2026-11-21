@@ -58,6 +58,13 @@ class PollingSettings(BaseModel):
     refresh_on_read: bool = True
 
 
+class AccountMetadata(BaseModel):
+    """Optional owner-supplied labels for a provider account."""
+
+    label: str | None = None
+    tier: str | None = None
+
+
 class Config(BaseModel):
     """AIQuota client, server polling, and provider configuration.
 
@@ -83,6 +90,8 @@ class Config(BaseModel):
     cli_proxy_api: CLIProxyAPISettings = Field(default_factory=CLIProxyAPISettings)
     remote_api: RemoteAPISettings = Field(default_factory=RemoteAPISettings)
     polling: PollingSettings = Field(default_factory=PollingSettings)
+    # Keys are "provider:<provider account id>"; no local account ID is minted.
+    accounts: dict[str, AccountMetadata] = Field(default_factory=dict)
     claude: ClaudeSettings = Field(default_factory=ClaudeSettings)
     codex: CodexSettings = Field(default_factory=CodexSettings)
     openai_platform: OpenAIPlatformSettings = Field(default_factory=OpenAIPlatformSettings)

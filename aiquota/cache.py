@@ -1,5 +1,6 @@
 import asyncio
 from collections.abc import Awaitable, Callable
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -9,6 +10,7 @@ from platformdirs import user_cache_dir
 from aiquota.config import Config
 from aiquota.models import (
     AllQuotas,
+    FetchError,
     FetchSuccess,
     ProviderFetch,
     ProviderQuota,
@@ -17,7 +19,12 @@ from aiquota.models import (
 )
 from aiquota.providers.anthropic_platform import AnthropicPlatformProvider
 from aiquota.providers.base import Provider
-from aiquota.providers.claude import ClaudeProvider
+from aiquota.providers.claude import (
+    _OAUTH_HEADERS,
+    PROFILE_URL as CLAUDE_PROFILE_URL,
+    ClaudeProvider,
+    _ClaudeProfileResponse,
+)
 from aiquota.providers.cli_proxy_api import CLIProxyAPIManagementClient
 from aiquota.providers.client import ProviderClientFactory, provider_client
 from aiquota.providers.codex import CodexProvider
@@ -51,9 +58,20 @@ class QuotaCache:
         cached = self.read()
         if not force_refresh and cached is not None and datetime.now(UTC) - cached.fetched_at < self.ttl:
             return cached
-        prior = {pq.provider: pq for pq in cached.providers} if cached else {}
+        prior = {(pq.provider, pq.account_id): pq for pq in cached.providers} if cached else {}
         outputs = await asyncio.gather(*(p.fetch() for p in providers))
-        results = [_assemble(p.name, out, prior.get(p.name)) for p, out in zip(providers, outputs, strict=True)]
+        results = [
+            _assemble(
+                p.name,
+                out,
+                prior.get((p.name, p.account_id)),
+                account_id=p.account_id,
+                account_label=p.account_label,
+                plan_type=p.plan_type,
+                account_tier=p.account_tier,
+            )
+            for p, out in zip(providers, outputs, strict=True)
+        ]
         fresh = AllQuotas(providers=results, fetched_at=datetime.now(UTC))
         self.write(fresh)
         return fresh
@@ -124,11 +142,113 @@ def _instantiate(
     return [p for p, enabled in candidates if enabled]
 
 
-def _assemble(name: str, output: ProviderFetch, prior: ProviderQuota | None) -> ProviderQuota:
+async def _instantiate_accounts(
+    config: Config, client_factory: ProviderClientFactory, cli_proxy_api_key: str | None
+) -> list[Provider]:
+    providers = _instantiate(config, client_factory, cli_proxy_api_key)
+    if not config.cli_proxy_api.url:
+        return providers
+    management = CLIProxyAPIManagementClient(config.cli_proxy_api.url, cli_proxy_api_key, client_factory)
+    try:
+        entries = await management.list_auth_files()
+    except Exception as error:
+        return [
+            _UnavailableProvider(p.name, f"CLIProxyAPI inventory: {type(error).__name__}")
+            if p.name in {"claude", "codex"}
+            else p
+            for p in providers
+        ]
+
+    async def account(entry: dict[str, object], provider: Provider) -> Provider:
+        index = entry.get("auth_index")
+        if not isinstance(index, str) or not index:
+            return _UnavailableProvider(provider.name, "credential is missing its auth index")
+        bound = replace(management, auth_index=index)
+        try:
+            if provider.name == "codex":
+                claims = entry.get("id_token")
+                account_id = claims.get("chatgpt_account_id") if isinstance(claims, dict) else None
+                plan = claims.get("plan_type") if isinstance(claims, dict) else None
+            else:
+                body = await bound.fetch_usage(
+                    "claude", CLAUDE_PROFILE_URL, _OAUTH_HEADERS, "claude_profile", capture_response=False
+                )
+                profile = _ClaudeProfileResponse.model_validate_json(body)
+                if profile.account is None:
+                    raise ValueError("Claude account identity is unavailable")
+                account_id = f"{profile.account.uuid}:{profile.organization.uuid}"
+                plan = None
+            if not isinstance(account_id, str) or not account_id:
+                raise ValueError("provider account identity is unavailable")
+            bound = replace(bound, account_id=account_id)
+            if provider.name == "codex":
+                result: Provider = CodexProvider(config.codex, client_factory, bound)
+            else:
+                result = ClaudeProvider(config.claude, client_factory, bound)
+            result.account_id = account_id
+            metadata = config.accounts.get(f"{provider.name}:{account_id}")
+            email = entry.get("email")
+            result.account_label = (
+                metadata.label if metadata and metadata.label else email if isinstance(email, str) else None
+            )
+            result.account_tier = metadata.tier if metadata else None
+            result.plan_type = plan if isinstance(plan, str) else None
+            return result
+        except Exception as error:
+            return _UnavailableProvider(provider.name, f"account identity unavailable: {type(error).__name__}")
+
+    expanded: list[Provider] = []
+    for provider in providers:
+        if provider.name not in {"codex", "claude"}:
+            expanded.append(provider)
+            continue
+        matching = [e for e in entries if str(e.get("provider", "")).lower() == provider.name]
+        if not matching:
+            expanded.append(_UnavailableProvider(provider.name, "no credential found"))
+            continue
+        accounts = await asyncio.gather(*(account(e, provider) for e in matching))
+        ids = [p.account_id for p in accounts if p.account_id is not None]
+        if len(ids) != len(set(ids)):
+            expanded.append(_UnavailableProvider(provider.name, "duplicate provider account identity"))
+        else:
+            expanded.extend(p for p in accounts if p.account_id is not None)
+            unknown = [p for p in accounts if p.account_id is None]
+            if unknown:
+                expanded.append(
+                    _UnavailableProvider(provider.name, f"{len(unknown)} credential(s) could not be identified")
+                )
+    return expanded
+
+
+class _UnavailableProvider(Provider):
+    def __init__(self, name: str, error: str) -> None:
+        self.name = name
+        self.error = error
+
+    async def fetch(self) -> ProviderFetch:
+        return ProviderFetch(fetched_at=datetime.now(UTC), result=FetchError(error=self.error))
+
+
+def _assemble(
+    name: str,
+    output: ProviderFetch,
+    prior: ProviderQuota | None,
+    *,
+    account_id: str | None = None,
+    account_label: str | None = None,
+    plan_type: str | None = None,
+    account_tier: str | None = None,
+) -> ProviderQuota:
     """Wrap a provider fetch, retaining the last substantive quota snapshot."""
     success: SuccessfulProviderFetch | None = None
     if isinstance(output.result, FetchSuccess) and is_substantive(output.result):
         success = SuccessfulProviderFetch(fetched_at=output.fetched_at, result=output.result)
     return ProviderQuota(
-        provider=name, last_output=output, last_success=success or (prior.last_success if prior else None)
+        provider=name,
+        account_id=account_id,
+        account_label=account_label,
+        plan_type=plan_type,
+        account_tier=account_tier,
+        last_output=output,
+        last_success=success or (prior.last_success if prior else None),
     )

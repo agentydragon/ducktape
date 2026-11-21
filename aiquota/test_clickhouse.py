@@ -253,7 +253,7 @@ async def test_apply_schema_posts_each_idempotent_statement_alone() -> None:
         # The HTTP interface refuses a body holding several statements, and the schema runs at
         # every start, so each statement must be a no-op the second time.
         assert ";" not in body
-        assert "IF NOT EXISTS" in body
+        assert "IF NOT EXISTS" in body or " MODIFY QUERY" in body
 
 
 async def test_apply_schema_failure_carries_the_explanation_clickhouse_gives() -> None:
@@ -273,3 +273,20 @@ def test_schema_statements_drop_comments_and_the_remainder_after_the_last_semico
     sql = "-- a; b\nCREATE TABLE t (x UInt8);\n\nALTER TABLE t ADD COLUMN y UInt8;\n-- end\n"
 
     assert schema_statements(sql) == ["CREATE TABLE t (x UInt8)", "ALTER TABLE t ADD COLUMN y UInt8"]
+
+
+async def test_clickhouse_keeps_same_provider_accounts_separate() -> None:
+    snapshot = _snapshot()
+    original = snapshot.quotas.providers[0]
+    snapshot.quotas.providers = [
+        original.model_copy(update={"account_id": "a"}),
+        original.model_copy(update={"account_id": "b"}),
+    ]
+    raw = snapshot.raw_responses.pop("claude")
+    snapshot.raw_responses.update({"claude:a": raw, "claude:b": raw})
+    requests: list[httpx.Request] = []
+    await _mock_sink(requests).write(snapshot)
+    rows = [json.loads(line) for line in requests[0].content.splitlines()]
+    assert [row["account_id"] for row in rows] == ["a", "b"]
+    assert rows[0]["event_id"] != rows[1]["event_id"]
+    assert all(row["raw_body_size_bytes"] == 35 for row in rows)

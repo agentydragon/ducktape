@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import ClassVar, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from aiquota.models import HistoryObservation, ProviderFetch
 
@@ -11,7 +11,11 @@ class Provider(ABC):
     expose a single `fetch()` method returning the latest quota state.
     """
 
-    name: ClassVar[str]
+    name: str
+    account_id: str | None = None
+    account_label: str | None = None
+    plan_type: str | None = None
+    account_tier: str | None = None
 
     @abstractmethod
     async def fetch(self) -> ProviderFetch: ...

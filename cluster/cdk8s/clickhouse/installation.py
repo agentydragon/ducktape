@@ -211,7 +211,7 @@ def _users() -> dict[str, object]:
             "GRANT INSERT ON aiquota.raw_http_observations",
             # The materialized views execute under the inserting identity, so they
             # need only these source columns to normalize a raw observation.
-            "GRANT SELECT(event_id, observed_at, source, quota_windows, token_activity, reset_credits)"
+            "GRANT SELECT(event_id, observed_at, source, account_id, quota_windows, token_activity, reset_credits)"
             " ON aiquota.raw_http_observations",
             # Read/write on the materialized views' own target tables: creating a
             # view is validated against the creator's grants on its target, not
@@ -223,6 +223,7 @@ def _users() -> dict[str, object]:
             # the same pattern as the langfuse user above. The aiquota database itself stays admin-created
             # (cluster/cdk8s/clickhouse/schema.sql).
             "GRANT CREATE, DROP TABLE, DROP VIEW ON aiquota.*",
+            "GRANT ALTER VIEW MODIFY QUERY ON aiquota.*",
             "GRANT ALTER ADD COLUMN ON aiquota.*",
             # Required to execute `ON CLUSTER default` DDL, same as the langfuse
             # user above.
