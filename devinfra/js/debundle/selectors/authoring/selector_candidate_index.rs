@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use source_match_holes::{
     CASE_REST_HOLE_KEYWORD, STRING_LITERAL_REGEX_PREDICATE, anything_hole_name, hole_name_for,
 };
+use swc_common::{Span, Spanned};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
@@ -168,7 +169,7 @@ fn collect_decl_features(decl: &Decl, features: &mut BTreeSet<SelectorFeature>) 
         Decl::Class(class) => {
             for member in &class.class.body {
                 if class_rest_hole_name(member).is_none()
-                    && let Some(label) = class_member_label(member)
+                    && let Some((label, _)) = class_member_label_span(member)
                 {
                     features.insert(SelectorFeature::ClassMember(label));
                 }
@@ -242,7 +243,7 @@ impl Visit for AstFeatureCollector<'_> {
             if object_property_list_hole_name(prop).is_some() {
                 continue;
             }
-            if let Some(label) = object_key_label(prop) {
+            if let Some((label, _)) = object_key_label_span(prop) {
                 self.features.insert(SelectorFeature::ObjectKey(label));
             }
             prop.visit_with(self);
@@ -257,7 +258,7 @@ impl Visit for AstFeatureCollector<'_> {
         // `ObjectKey` feature so a wide-destructure discriminator can be read off
         // and pinned. The minified binding itself is alpha-volatile and never a
         // feature.
-        if let Some(label) = object_pat_key_label(prop) {
+        if let Some((label, _)) = object_pat_key_label_span(prop) {
             self.features.insert(SelectorFeature::ObjectKey(label));
         }
         prop.visit_children_with(self);
@@ -267,7 +268,7 @@ impl Visit for AstFeatureCollector<'_> {
         if class_rest_hole_name(member).is_some() {
             return;
         }
-        if let Some(label) = class_member_label(member) {
+        if let Some((label, _)) = class_member_label_span(member) {
             self.features.insert(SelectorFeature::ClassMember(label));
         }
         member.visit_children_with(self);
@@ -400,7 +401,9 @@ fn callee_label(callee: &Callee) -> Option<String> {
     }
 }
 
-fn expr_label(expr: &Expr) -> Option<String> {
+/// Dotted label of an identifier or member path; `None` for an `ANYTHING` hole
+/// or any other expression. Shared with the read-off renderer.
+pub fn expr_label(expr: &Expr) -> Option<String> {
     match expr {
         Expr::Ident(ident) if anything_hole_name(ident.sym.as_ref()).is_none() => {
             Some(ident.sym.to_string())
@@ -414,7 +417,7 @@ fn expr_label(expr: &Expr) -> Option<String> {
     }
 }
 
-fn member_prop_label(prop: &MemberProp) -> Option<String> {
+pub fn member_prop_label(prop: &MemberProp) -> Option<String> {
     match prop {
         MemberProp::Ident(ident) => Some(ident.sym.to_string()),
         MemberProp::PrivateName(private) => Some(format!("#{}", private.name)),
@@ -422,63 +425,70 @@ fn member_prop_label(prop: &MemberProp) -> Option<String> {
     }
 }
 
-fn object_key_label(prop: &PropOrSpread) -> Option<String> {
+/// The stable property-name label of an object-literal property and the span of
+/// its key token, or `None` for the `ANYTHING` list hole or a computed key.
+/// Shared with the read-off renderer.
+pub fn object_key_label_span(prop: &PropOrSpread) -> Option<(String, Span)> {
     let PropOrSpread::Prop(prop) = prop else {
         return None;
     };
     match prop.as_ref() {
         Prop::Shorthand(ident) if anything_hole_name(ident.sym.as_ref()).is_none() => {
-            Some(ident.sym.to_string())
+            Some((ident.sym.to_string(), ident.span))
         }
-        Prop::KeyValue(prop) => prop_name_label(&prop.key),
+        Prop::KeyValue(prop) => prop_name_label_span(&prop.key),
         Prop::Assign(prop) if anything_hole_name(prop.key.sym.as_ref()).is_none() => {
-            Some(prop.key.sym.to_string())
+            Some((prop.key.sym.to_string(), prop.key.span))
         }
-        Prop::Getter(prop) => prop_name_label(&prop.key),
-        Prop::Setter(prop) => prop_name_label(&prop.key),
-        Prop::Method(prop) => prop_name_label(&prop.key),
+        Prop::Getter(prop) => prop_name_label_span(&prop.key),
+        Prop::Setter(prop) => prop_name_label_span(&prop.key),
+        Prop::Method(prop) => prop_name_label_span(&prop.key),
         _ => None,
     }
 }
 
-/// The stable property-name label of a destructure-pattern property, or `None`
-/// for the `ANYTHING` list hole, a rest element, or a computed key. Mirrors
-/// [`object_key_label`] for the object-pattern case.
-fn object_pat_key_label(prop: &ObjectPatProp) -> Option<String> {
+/// The stable property-name label of a destructure-pattern property and the span
+/// of its key token, or `None` for the `ANYTHING` list hole, a rest element, or a
+/// computed key. Mirrors [`object_key_label_span`] for the object-pattern case.
+pub fn object_pat_key_label_span(prop: &ObjectPatProp) -> Option<(String, Span)> {
     match prop {
-        ObjectPatProp::KeyValue(kv) => prop_name_label(&kv.key),
+        ObjectPatProp::KeyValue(kv) => prop_name_label_span(&kv.key),
         ObjectPatProp::Assign(assign)
             if anything_hole_name(assign.key.id.sym.as_ref()).is_none() =>
         {
-            Some(assign.key.id.sym.to_string())
+            Some((assign.key.id.sym.to_string(), assign.key.id.span))
         }
         ObjectPatProp::Assign(_) | ObjectPatProp::Rest(_) => None,
     }
 }
 
-fn class_member_label(member: &ClassMember) -> Option<String> {
+/// The member-name label of a class member and the span of its key token.
+/// Shared with the read-off renderer.
+pub fn class_member_label_span(member: &ClassMember) -> Option<(String, Span)> {
     match member {
-        ClassMember::Constructor(_) => Some("constructor".to_string()),
-        ClassMember::Method(method) => prop_name_label(&method.key),
-        ClassMember::PrivateMethod(method) => Some(format!("#{}", method.key.name)),
-        ClassMember::ClassProp(prop) => prop_name_label(&prop.key),
-        ClassMember::PrivateProp(prop) => Some(format!("#{}", prop.key.name)),
-        ClassMember::AutoAccessor(_) => None,
-        ClassMember::StaticBlock(_) | ClassMember::TsIndexSignature(_) | ClassMember::Empty(_) => {
-            None
+        ClassMember::Constructor(ctor) => Some(("constructor".to_string(), ctor.key.span())),
+        ClassMember::Method(method) => prop_name_label_span(&method.key),
+        ClassMember::PrivateMethod(method) => {
+            Some((format!("#{}", method.key.name), method.key.span))
         }
+        ClassMember::ClassProp(prop) => prop_name_label_span(&prop.key),
+        ClassMember::PrivateProp(prop) => Some((format!("#{}", prop.key.name), prop.key.span)),
+        ClassMember::AutoAccessor(_)
+        | ClassMember::StaticBlock(_)
+        | ClassMember::TsIndexSignature(_)
+        | ClassMember::Empty(_) => None,
     }
 }
 
-fn prop_name_label(name: &PropName) -> Option<String> {
+fn prop_name_label_span(name: &PropName) -> Option<(String, Span)> {
     match name {
         PropName::Ident(ident) if anything_hole_name(ident.sym.as_ref()).is_none() => {
-            Some(ident.sym.to_string())
+            Some((ident.sym.to_string(), ident.span))
         }
         PropName::Ident(_) => None,
-        PropName::Str(str_) => Some(str_.value.to_string_lossy().to_string()),
-        PropName::Num(num) => Some(num.value.to_string()),
-        PropName::BigInt(bigint) => Some(bigint.value.to_string()),
+        PropName::Str(str_) => Some((str_.value.to_string_lossy().to_string(), str_.span)),
+        PropName::Num(num) => Some((num.value.to_string(), num.span)),
+        PropName::BigInt(bigint) => Some((bigint.value.to_string(), bigint.span)),
         PropName::Computed(_) => None,
     }
 }

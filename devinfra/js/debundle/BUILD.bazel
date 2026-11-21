@@ -256,6 +256,7 @@ rust_library(
         "@crates//:roaring",
         "@crates//:serde",
         "@crates//:strum",
+        "@crates//:swc_common",
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_visit",
     ],
