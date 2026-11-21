@@ -3,6 +3,8 @@ name: "Copilot Setup Steps"
 on:
   workflow_dispatch:
   push:
+    # Path filters are not evaluated for tag pushes, so without this every release tag ran the setup.
+    tags-ignore: ["**"]
     paths:
       - .github/workflows/copilot-setup-steps.yml
   pull_request:
