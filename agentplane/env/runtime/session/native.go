@@ -26,7 +26,6 @@ import (
 
 type interruptTargetKey struct{}
 
-// Run read-only reconciliation off the stdout reader, which must deliver its RPC replies.
 func (s *Session) startHarness(ctx context.Context) (resultErr error) {
 	s.mu.Lock()
 	s.processState = sessionpb.ProcessState_PROCESS_STATE_STARTING
