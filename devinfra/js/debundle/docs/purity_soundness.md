@@ -192,49 +192,18 @@ reads, accessor hazards and callback execution retain their existing analysis.
 
 ## Ordinary own-property inspection and descriptor application
 
-The canonical index recognizes exact ordinary object-literal shapes with
-statically known string or number keys (including literal-computed data keys),
-without spreads, decorators or `__proto__`; computed method and accessor keys
-are not indexed. At capture time, the executor also
-requires an exact object identity, no prior taint, and equality between the
-literal's own-key set and the current identity-store key set. This admits a
-local binding or alias to that object; a known added key, an unknown key or an
-escaped/mutated source falls back. Tracked writes that only replace values keep
-their value-set overapproximation. The Object binding and native integrity
-must remain intact. Applying a captured descriptor map still requires the
-separate ordinary Object prototype guard on its `Object.defineProperties`
-target.
-
-`Object.getOwnPropertyNames` shares this exact-origin, static-shape and current
-prefix-state proof. It emits a dense array of exact string values in
-ECMAScript own-key order: canonical array indices in numeric order, followed
-by other strings in literal creation order. It does not read property values
-or invoke getters. Callee and argument evaluation still happen eagerly, and
-possible throws remain represented. This return/timing projection does not
-admit the call as pure or exception-free. Each call derives its prefix fact in
-a fresh short-lived context, so later mutations cannot reuse an earlier
-projection.
-
-`Object.getOwnPropertyDescriptors` captures the current data-value identities
-and getter/setter callbacks without invoking accessors. Its carrier has no
-general readable descriptor-map shape. The sole composition modeled is a
-direct, unmodified `Object.defineProperties` call with that live carrier and an
-untainted, currently empty fresh ordinary target. It writes captured data
-values and distinct accessor callback metadata into the target's existing
-identity, so aliases observe the same result. A callsite whose repeated
-execution sees a conflicting source identity or descriptor values is
-invalidated rather than joined. Map member access or mutation, return, escape,
-or opaque consumption invalidates application while retaining its callback
-graph. Copied accessor reads promote their getter; opaque target use retains
-getter, setter and method callbacks. Data-valued object identities remain
-connected to later mutations. Under exact native identity and intact Object
-prototype guards, a result expression may retain argument 0's target identity
-even when application eligibility is not proved, and it also retains a
-possible throw. This return-shape fact does not authorize descriptor
-application or suppress opaque timing/effect fallback. The proof does not
-cover returned/readable maps,
-arbitrary descriptor edits, `Object.assign`, imported wrapper bodies, general
-purity or exception freedom.
+The contract for `Object.getOwnPropertyNames` and
+`Object.getOwnPropertyDescriptors` on exact ordinary object literals is in
+[SPEC § Ordinary own-property inspection](../SPEC.md#ordinary-own-property-inspection).
+At capture time the executor additionally requires an exact object identity, no
+prior taint, and equality between the literal's own-key set and the current
+identity-store key set. Tracked writes that only replace values keep their
+value-set overapproximation. Each call derives its prefix fact in a fresh
+short-lived context, so later mutations cannot reuse an earlier projection.
+Data-valued object identities captured by `Object.getOwnPropertyDescriptors`
+remain connected to later mutations. Applying a captured descriptor map still
+requires the separate ordinary Object prototype guard on its
+`Object.defineProperties` target.
 
 ## Source-composed returned records
 
@@ -557,33 +526,11 @@ applies.
 
 `chunk_analysis_options.<consumer>.imported_primitive_array_spread_inputs` is
 a distinct exact-site premise for a top-level simple array initializer whose
-elements are direct imported identifier spreads. Each provider operand is
-source-selected as a dense array of primitive literals, and both parser-input
-digests plus the canonical import/export endpoints bind those facts to the
-consumer and configured provider chunk alias. The provider's ordinary static
-initialization closure must be complete, acyclic and initialized before the
-consumer.
-
-The author separately asserts that, through the selected spread, each producer
-keeps its identity, dense own-data primitive contents, ordinary Array
-prototype chain and binding, and has no own iterator or accessors. The shared
-whole-program iterator and `%ArrayIteratorPrototype%.next` census remains
-required. Known provider rebinds/indexed writes reject as unsupported because
-the existing provider write facts do not establish their ordering through the
-selected consumer spread. A direct eager consumer rebind before the selected
-spread and protocol writes contradict the input. Lazy consumer rebinds and
-indexed/member writes reject as unsupported when their execution ordering
-through the spread is not established; a cyclic provider is unsupported. The
-analysis does not trace mutations through independent aliases imported by
-other chunks, so the author must include those paths in the lifetime audit;
-opaque mutation routes, including routes through an exposed export, are also
-covered only by this exact lifetime promise. The transfer copies the finite primitive
-slot kinds into a fresh consumer allocation and carries no provider heap
-identity. It leaves provider evaluation and ownership, import dependencies,
-normal callback effects, other heap/global/host effects and later array uses
-under their existing analyses. The saved and rendered evidence keeps the
-author's lifetime fields separate from source-derived selectors, endpoints
-and primitive slot kinds.
+elements are direct imported identifier spreads; its contract is in
+[SPEC § Native integrity inputs](../SPEC.md#native-integrity-inputs). Each
+provider operand is source-selected as a dense array of primitive literals, and
+the provider's ordinary static initialization closure must be complete, acyclic
+and initialized before the consumer.
 
 An exact validated `symbol` site with zero arguments or one direct string
 literal has a separate pure-initializer consequence: the original native
@@ -1107,15 +1054,8 @@ annotation for imports, functions, classes, destructuring declarations,
 declarations without an initializer, and ambiguous multiple initialized sites.
 
 `initializer_binding_effects: "source_only"` is an independent lexical-effect
-contract for one selected direct top-level simple variable initializer. During
-its dynamic evaluation, including calls, getters, setters, and coercions, the
-initializer may not read or rebind this chunk's top-level lexical bindings
-beyond its syntactic eager-read and rebind footprint. The assertion follows the
-canonical per-declarator source-unit split: a comma-list sibling initializer
-and other statement work are outside the selected binding's assertion. A
-source-backed read or rebind beyond the asserted footprint rejects it.
-For that initializer, the assertion completes dynamic lexical read/rebind
-coverage while preserving its syntax-derived dependencies.
+contract for one selected direct top-level simple variable initializer; see
+[SPEC § Initializer binding effects](../SPEC.md#initializer-binding-effects).
 
 Unknown heap frontiers stay ordered around that initializer even with no modeled
 local heap cells (SPEC § Initializer binding effects). Ordering them around every
@@ -1232,21 +1172,12 @@ member-call purity.
 ## Audited namespace calls without reentry
 
 `no_reentry_members` suppresses only the opaque synchronous callback fallback
-for a direct, stable static namespace member call with primitive literals,
-`void` or `!` of a primitive literal, or uninterpolated templates. The separate
-`no_reentry_record_members` assertion admits calls with at least one fresh
-object literal recursively made of those values under static data keys. It
-rejects spread, computed keys, accessors, methods, shorthand, `__proto__`,
-identifier values, calls, functions, proxies, and arrays. A primitive-only
-assertion cannot admit records. This syntax check proves only that evaluating
-the argument does not itself run caller code. The record assertion must cover
-every admitted record shape and provider branch. Handling the object or its
-prototype must not invoke caller/importer/host callbacks or read
-importer-owned lexical state before the call returns. A provider that stores
-the record without inspecting it can satisfy this when its other reachable
-behavior is audited. No library name is implicitly trusted. The independent
-lookup, namespace identity, publication,
-and mutation checks still apply, and the return value remains opaque.
+for a direct, stable static namespace member call. The admitted call shapes, the
+separate `no_reentry_record_members` assertion and the author audit are in
+[SPEC § Namespace and record calls without synchronous reentry](../SPEC.md#namespace-and-record-calls-without-synchronous-reentry).
+The record syntax check proves only that evaluating the argument does not itself
+run caller code. A provider that stores the record without inspecting it can
+satisfy the record assertion when its other reachable behavior is audited.
 
 ## Implicit local class construction
 
@@ -1409,28 +1340,15 @@ and admits only when test and arms have covered access. It proves no exact
 truthiness or runtime equality. Effectful/coercing children and unavailable
 bindings cannot acquire an allocation-only certificate through an outer
 operator. General conditionals remain opaque and keep conservative branch reach.
-The author audit of a namespace-member contract and the checker's namespace
-provenance, write-receiver and call-argument rules are in
+The author audit of a namespace-member contract, the checker's namespace
+provenance, write-receiver and call-argument rules, and the rules for namespace
+member reads inside an admitted inline callback are in
 [SPEC § Namespace and record calls without synchronous reentry](../SPEC.md#namespace-and-record-calls-without-synchronous-reentry).
 Unsupported destructuring results stay possible namespace values through later
 local aliases. Recognized local class values and allocations are checked
 against their retained aggregate static or instance fields. A member projection
 checks the whole receiver, which may conservatively taint an unrelated sibling
 property. Method bodies keep their existing return and effect checks.
-Within a literal traversed inside an admitted inline callback, a direct static
-namespace member used as a call callee is analyzed as a callee, not as a
-captured namespace value. Its arguments and effects remain analyzed; computed
-and chained callees stay conservative.
-
-The author must additionally audit static member reads used as callback result
-object data properties. The analyzer treats a direct one-hop
-identifier-property read as a deferred member value, but does not infer whether
-that value aliases the namespace or can mutate a listed factory member. The
-author must establish that guarantee and audit any accessor, proxy, or callback
-behavior reachable through the member value. The object-literal `__proto__`
-prototype setter is not an ordinary data property and stays conservative. Only
-the direct data-property shape is accepted; computed reads, chains, calls,
-spreads, arrays, and other expression forms remain conservative.
 Factory calls remain effectful for ordering unless a separate purity contract
 applies. See <design.md> for how this contract scopes callback-flow analysis.
 
