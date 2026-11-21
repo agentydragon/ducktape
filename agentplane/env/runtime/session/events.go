@@ -49,12 +49,7 @@ func (s *Session) apply(entry *eventlogpb.EventEntry, ids []string) {
 			s.setup = sessionpb.SetupState_SETUP_STATE_INTERRUPTED
 		}
 	}
-	if e.GetHarnessLaunchFailed() != nil || e.GetSetupInterrupted() != nil || (e.GetSetupFinished() != nil && e.GetSetupFinished().ExitCode != 0) {
-		cursor := entry.Cursor
-		s.failure = &cursor
-	}
 	if e.GetHarnessStarted() != nil {
-		s.failure = nil
 		s.harnessFailure = nil
 	}
 	if e.GetHarnessLaunchFailed() != nil {
@@ -64,7 +59,6 @@ func (s *Session) apply(entry *eventlogpb.EventEntry, ids []string) {
 	if e.GetHarnessExited() != nil {
 		if !e.GetHarnessExited().StoppedByRunner {
 			cursor := entry.Cursor
-			s.failure = &cursor
 			s.harnessFailure = &cursor
 		}
 	}
