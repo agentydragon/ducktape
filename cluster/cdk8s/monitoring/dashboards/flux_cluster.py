@@ -2,10 +2,10 @@
 
 from grafana_foundation_sdk.builders import stat, timeseries
 from grafana_foundation_sdk.builders.common import ReduceDataOptions, VizLegendOptions, VizTooltipOptions
-from grafana_foundation_sdk.builders.dashboard import Dashboard, FieldColor, QueryVariable, ThresholdsConfig
+from grafana_foundation_sdk.builders.dashboard import Dashboard, FieldColor, ThresholdsConfig
 from grafana_foundation_sdk.models import common, dashboard
 
-from cluster.cdk8s.monitoring.dashboards.foundation import line_panel, mimir, mimir_query
+from cluster.cdk8s.monitoring.dashboards.foundation import line_panel, mimir, mimir_multi_query_variable, mimir_query
 
 _NAMESPACE_QUERY = "label_values(kube_customresource_flux_kustomization_ready, namespace)"
 _RESOURCE_KINDS = ("Kustomization", "HelmRelease", "GitRepository")
@@ -59,18 +59,7 @@ def build_dashboard() -> dashboard.Dashboard:
         .version(1)
         .refresh("1m")
         .time("now-6h", "now")
-        .with_variable(
-            QueryVariable("namespace")
-            .label("Namespace")
-            .datasource(mimir())
-            .definition(_NAMESPACE_QUERY)
-            .query(_NAMESPACE_QUERY)
-            .include_all(True)
-            .multi(True)
-            .all_value(".*")
-            .refresh(dashboard.VariableRefresh.ON_DASHBOARD_LOAD)
-            .current(dashboard.VariableOption(text="All", value=["$__all"]))
-        )
+        .with_variable(mimir_multi_query_variable("namespace", "Namespace", _NAMESPACE_QUERY))
         .with_panel(_resource_readiness(1, "Kustomization"))
         .with_panel(_resource_readiness(2, "Kustomization", ready=False))
         .with_panel(_resource_readiness(3, "HelmRelease"))

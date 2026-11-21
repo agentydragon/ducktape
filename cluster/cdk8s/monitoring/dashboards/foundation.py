@@ -4,6 +4,7 @@ from collections.abc import Mapping, Sequence
 
 from grafana_foundation_sdk.builders import loki, prometheus, timeseries
 from grafana_foundation_sdk.builders.common import VizLegendOptions, VizTooltipOptions
+from grafana_foundation_sdk.builders.dashboard import QueryVariable
 from grafana_foundation_sdk.cog.runtime import UnknownDataquery
 from grafana_foundation_sdk.cog.variants import Dataquery
 from grafana_foundation_sdk.models import (  # Builder/model name collision.
@@ -206,6 +207,23 @@ def mimir_multi_variable(
     )
 
 
+def mimir_multi_query_variable(name: str, label: str, query: str) -> QueryVariable:
+    """`mimir_multi_variable`'s builder twin, since `Dashboard.with_variable` takes builders: multi-select,
+    All by default and matching anything, unsorted."""
+    return (
+        QueryVariable(name)
+        .label(label)
+        .datasource(mimir())
+        .definition(query)
+        .query(query)
+        .include_all(True)
+        .multi(True)
+        .all_value(".*")
+        .refresh(dashboard.VariableRefresh.ON_DASHBOARD_LOAD)
+        .current(dashboard.VariableOption(text="All", value=["$__all"]))
+    )
+
+
 def storage_tier_variable() -> dashboard.VariableModel:
     return dashboard.VariableModel(
         type_val=dashboard.VariableType.CUSTOM,
@@ -217,6 +235,22 @@ def storage_tier_variable() -> dashboard.VariableModel:
             dashboard.VariableOption(selected=False, text="SSD", value="ssd"),
             dashboard.VariableOption(selected=False, text="HDD", value="hdd"),
             dashboard.VariableOption(selected=True, text="Both", value="ssd|hdd"),
+        ],
+    )
+
+
+def topk_variable(label: str) -> dashboard.VariableModel:
+    """The `$topk` row-count choice that a panel's `topk(${topk}, ...)` reads."""
+    return dashboard.VariableModel(
+        type_val=dashboard.VariableType.CUSTOM,
+        name="topk",
+        label=label,
+        query="10,25,50",
+        current=dashboard.VariableOption(text="10", value="10"),
+        options=[
+            dashboard.VariableOption(selected=True, text="10", value="10"),
+            dashboard.VariableOption(selected=False, text="25", value="25"),
+            dashboard.VariableOption(selected=False, text="50", value="50"),
         ],
     )
 

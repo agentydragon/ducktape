@@ -2,11 +2,11 @@
 
 from grafana_foundation_sdk.builders import gauge
 from grafana_foundation_sdk.builders.common import ReduceDataOptions, VizLegendOptions
-from grafana_foundation_sdk.builders.dashboard import Dashboard, QueryVariable
+from grafana_foundation_sdk.builders.dashboard import Dashboard
 from grafana_foundation_sdk.builders.timeseries import Panel as TimeSeriesPanel
 from grafana_foundation_sdk.models import common, dashboard
 
-from cluster.cdk8s.monitoring.dashboards.foundation import line_panel, mimir, mimir_query
+from cluster.cdk8s.monitoring.dashboards.foundation import line_panel, mimir, mimir_multi_query_variable, mimir_query
 
 _INSTANCE_QUERY = "label_values(DCGM_FI_DEV_GPU_TEMP, instance)"
 _GPU_QUERY = 'label_values(DCGM_FI_DEV_GPU_TEMP{instance=~"$instance"}, gpu)'
@@ -56,30 +56,8 @@ def build_dashboard() -> dashboard.Dashboard:
         .version(1)
         .refresh("1m")
         .time("now-6h", "now")
-        .with_variable(
-            QueryVariable("instance")
-            .label("Instance")
-            .datasource(mimir())
-            .definition(_INSTANCE_QUERY)
-            .query(_INSTANCE_QUERY)
-            .include_all(True)
-            .multi(True)
-            .all_value(".*")
-            .refresh(dashboard.VariableRefresh.ON_DASHBOARD_LOAD)
-            .current(dashboard.VariableOption(text="All", value=["$__all"]))
-        )
-        .with_variable(
-            QueryVariable("gpu")
-            .label("GPU")
-            .datasource(mimir())
-            .definition(_GPU_QUERY)
-            .query(_GPU_QUERY)
-            .include_all(True)
-            .multi(True)
-            .all_value(".*")
-            .refresh(dashboard.VariableRefresh.ON_DASHBOARD_LOAD)
-            .current(dashboard.VariableOption(text="All", value=["$__all"]))
-        )
+        .with_variable(mimir_multi_query_variable("instance", "Instance", _INSTANCE_QUERY))
+        .with_variable(mimir_multi_query_variable("gpu", "GPU", _GPU_QUERY))
         .with_panel(
             _gpu_gauge(
                 2,
