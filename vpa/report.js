@@ -232,11 +232,14 @@ function Inventory({ workloads, initialGroup }) {
     <${Text} size="sm" c="dimmed" aria-live="polite"
       >${`Showing ${Math.min(shown, filtered.length)} of ${filtered.length} matching rows. A missing filter matches either CPU or memory absent or zero. Filters distinguish templates from admitted active Pods; owner-only rows have no template and are not proof of direct VPA coverage.`}<//
     >
+    <${Text} size="sm" c="dimmed" hiddenFrom="xl" my="xs"
+      >Scroll the table sideways to see resource and usage details.<//
+    >
     <${Table.ScrollContainer}
       minWidth=${1160}
       type="native"
       tabIndex=${0}
-      aria-label="Current workload VPA inventory"
+      aria-label="Workload VPA inventory"
     >
       <${Table} striped highlightOnHover withTableBorder verticalSpacing="sm">
         <${Table.Thead}
@@ -464,7 +467,7 @@ function Report() {
         both the resource and Recreate queues. Confirm ownership and restart
         behavior before choosing the cohort. The staging service promotion and
         rollout gates are tracked in the ${" "}<${Anchor}
-          href=${github + "pull/18483"}
+          href=${github + "blob/devel/cluster/plans/vpa.md"}
           >cluster rollout plan<//
         >.
       <//>
@@ -493,11 +496,11 @@ function Report() {
       <${Stack} gap="sm" mt="sm">
         <${Text}>
           <strong>Resource ownership.</strong> For targets with a CPU or memory
-          HPA, keep that resource out of VPA control. There are
-          ${workloads.filter(reviewGroups[3].matches).length} active resource
-          HPA targets to ${link("Review HPA resources")}. External metric
-          scaling calls for its own startup and capacity check. Existing
-          RequestsAndLimits policies keep that ownership.
+          HPA, keep that resource out of VPA control.${" "}
+          ${`The snapshot has ${workloads.filter(reviewGroups[3].matches).length} active resource HPA targets. `}
+          ${link("Review HPA resources")}. External metric scaling calls for its
+          own startup and capacity check. Existing RequestsAndLimits policies
+          keep that ownership.
         <//>
         <${Text}>
           <strong>Admission and capacity.</strong> Verify recommendations and
@@ -507,9 +510,8 @@ function Report() {
           recommendations.
         <//>
         <${Text}>
-          <strong>Custom and dynamic ownership.</strong> The snapshot has
-          ${counts.pod_owner_rows} other active Pod owner rows, including CNPG
-          clusters, virtual machines and dynamic Jobs.
+          <strong>Custom and dynamic ownership.</strong>${" "}
+          ${`The snapshot has ${counts.pod_owner_rows} other active Pod owner rows, including CNPG clusters, virtual machines and dynamic Jobs. `}
           ${link("Review other Pod owners")} for ownership. Verify the supported
           control path before adding policy. Keep Agentplane dynamic Sandboxes
           disabled for namespace-wide Goldilocks and manage static services
@@ -527,10 +529,10 @@ function Report() {
                 ? `The registry was ${registry.readyReplicas}/${registry.desiredReplicas} Ready on ${registry.readyPodNodes.length} hosts in ${mode(registry)}. The admitted registry requests were ${registryRequests.join(" or ") || "unavailable"}.`
                 : "The current inventory has no registry Deployment row."
             }
-            ${" "}Its CPU HPA and 96–128 MiB memory-request VPA can coexist. The
-            S3 fix omits the explicit object ACL. The earlier 04:40 UTC check
-            fetched an authenticated image manifest from each Pod. Image push
-            and disruption recovery remain unverified.
+            ${" "}Its CPU-utilization HPA and 96–128 MiB memory-request VPA can
+            coexist. The S3 fix omits the explicit object ACL. The earlier 04:40
+            UTC check fetched an authenticated image manifest from each Pod.
+            Image push and disruption recovery remain unverified.
           <//>
           <${Group} gap="sm">
             <${Anchor} href=${github + "pull/18477"}>Registry S3 ACL change<//>
@@ -588,14 +590,14 @@ function Report() {
         <//>
         <${Text}>
           CPU and current memory use metrics-server samples. Seven-day
-          working-set maxima use Mimir through ${inventory.history_end_utc} and
-          match current Pod names. Replaced Pods can be absent and reused names
-          can include prior Pods. Unknown means there was no sample. Init and
-          ephemeral containers are outside the resource counts.
+          working-set maxima use Mimir and match current Pod names. The query
+          window ends at ${inventory.history_end_utc}. Replaced Pods can be
+          absent and reused names can include prior Pods. Unknown means there
+          was no sample. Init and ephemeral containers are outside the resource
+          counts.
         <//>
         <${Text}>
-          Flux source was observed at ${inventory.flux_source_observed_utc} as
-          ${" "}
+          ${`Flux source was observed at ${inventory.flux_source_observed_utc} as `}
           <${Anchor} href=${github + "tree/" + revision}
             ><${Code}>${revision.slice(0, 10)}<//><//
           >. The Git revision identifies the source artifact. The inventory
