@@ -13,6 +13,7 @@ import type {
 } from "../lib/schema";
 import IssueComment from "./IssueComment";
 import { CheckCircle, ChevronDown, ChevronRight, MessageSquare, XCircle } from "../lib/icons";
+import { issueColors } from "../lib/colors";
 import { detectLanguage } from "../lib/fileTypes";
 import { highlightLines } from "../lib/highlighting";
 import type { IssueMarker } from "../lib/types";
@@ -227,23 +228,12 @@ export default function FileViewer({
             <tbody>
               {lines.map((line, index) => {
                 const lineIssues = lineToIssues.get(index) ?? [];
-                const hasTP = lineIssues.some((issue) => issue.kind === "tp");
-                const hasFP = lineIssues.some((issue) => issue.kind === "fp");
-                const hasCritique = lineIssues.some((issue) => issue.kind === "critique");
-                const bgClass = hasTP
-                  ? "bg-green-50 dark:bg-green-950"
-                  : hasFP
-                    ? "bg-red-50 dark:bg-red-950"
-                    : hasCritique
-                      ? "bg-blue-50 dark:bg-blue-950"
-                      : "";
-                const borderClass = hasTP
-                  ? "border-l-4 border-green-500"
-                  : hasFP
-                    ? "border-l-4 border-red-500"
-                    : hasCritique
-                      ? "border-l-4 border-blue-500"
-                      : "";
+                // When issues overlap on a line, TP wins over FP and FP over critique.
+                const lineKind = (["tp", "fp", "critique"] as const).find((kind) =>
+                  lineIssues.some((issue) => issue.kind === kind)
+                );
+                const bgClass = lineKind ? issueColors[lineKind].bg : "";
+                const borderClass = lineKind ? issueColors[lineKind].borderLeft : "";
 
                 return (
                   <Fragment key={index}>
@@ -255,11 +245,11 @@ export default function FileViewer({
                               {lineIssues.map((issue, issueIndex) => (
                                 <Fragment key={`${getIssueKey(issue)}-${issueIndex}`}>
                                   {issue.kind === "tp" ? (
-                                    <CheckCircle size={12} className="text-green-600 dark:text-green-400" />
+                                    <CheckCircle size={12} className={issueColors.tp.text} />
                                   ) : issue.kind === "fp" ? (
-                                    <XCircle size={12} className="text-red-600 dark:text-red-400" />
+                                    <XCircle size={12} className={issueColors.fp.text} />
                                   ) : (
-                                    <MessageSquare size={12} className="text-blue-600 dark:text-blue-400" />
+                                    <MessageSquare size={12} className={issueColors.critique.text} />
                                   )}
                                 </Fragment>
                               ))}
