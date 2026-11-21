@@ -178,11 +178,7 @@ def _values() -> dict[str, object]:
         "gitlab": {
             "gitlab-exporter": {
                 "deployment": {
-                    "annotations": _vpa_annotations(
-                        ContainerPolicy.memory_requests_only(
-                            "gitlab-exporter", cpu_request="75m", memory_floor="96Mi", memory_limit="128Mi"
-                        )
-                    )
+                    "annotations": _vpa_annotations(ContainerPolicy.cpu_and_memory_requests_only("gitlab-exporter"))
                 }
             },
             "gitlab-shell": {

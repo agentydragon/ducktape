@@ -22,27 +22,25 @@ from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 NAME = "agentplane-staging-vpa"
 OUTPUT_DIR = f"{GENERATED_ROOT}/agentplane-staging/vpa"
 
-# (Deployment, container, memory floor, memory ceiling, controlled resources).
-_CPU_AND_MEMORY = ("cpu", "memory")
-_MEMORY = ("memory",)
+# (Deployment, container, memory floor, memory ceiling).
 _WORKLOADS = (
-    ("actions", "actions", "128Mi", "160Mi", _CPU_AND_MEMORY),
-    ("app", "app", "128Mi", "160Mi", _CPU_AND_MEMORY),
-    ("electric", "electric", "448Mi", "576Mi", _MEMORY),
-    ("environments", "environments", "64Mi", "112Mi", _CPU_AND_MEMORY),
-    ("frontend", "frontend", None, None, _CPU_AND_MEMORY),
-    ("history-service", "history-service", "128Mi", "256Mi", _CPU_AND_MEMORY),
-    ("llm-ingress", "ingress", "128Mi", "160Mi", _CPU_AND_MEMORY),
-    ("mcp-edge", "mcp-edge", "128Mi", "160Mi", _CPU_AND_MEMORY),
-    ("notifications", "notifications", "128Mi", "160Mi", _CPU_AND_MEMORY),
-    ("policy-controller", "policy-controller", "64Mi", "112Mi", _CPU_AND_MEMORY),
-    ("sessions", "sessions", "256Mi", "320Mi", _CPU_AND_MEMORY),
+    ("actions", "actions", "128Mi", "160Mi"),
+    ("app", "app", "128Mi", "160Mi"),
+    ("electric", "electric", "448Mi", None),
+    ("environments", "environments", "64Mi", "112Mi"),
+    ("frontend", "frontend", None, None),
+    ("history-service", "history-service", "128Mi", "256Mi"),
+    ("llm-ingress", "ingress", "128Mi", "160Mi"),
+    ("mcp-edge", "mcp-edge", "128Mi", "160Mi"),
+    ("notifications", "notifications", "128Mi", "160Mi"),
+    ("policy-controller", "policy-controller", "64Mi", "112Mi"),
+    ("sessions", "sessions", "256Mi", "320Mi"),
 )
 
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    for deployment, container, memory_floor, memory_ceiling, resources in _WORKLOADS:
+    for deployment, container, memory_floor, memory_ceiling in _WORKLOADS:
         VerticalPodAutoscaler(
             chart,
             deployment,
@@ -58,7 +56,7 @@ def chart(app: App) -> Chart:
                     container_policies=[
                         VerticalPodAutoscalerSpecResourcePolicyContainerPolicies(
                             container_name=container,
-                            controlled_resources=list(resources),
+                            controlled_resources=["cpu", "memory"],
                             controlled_values="RequestsOnly",
                             min_allowed={
                                 "memory": VerticalPodAutoscalerSpecResourcePolicyContainerPoliciesMinAllowed.from_string(
