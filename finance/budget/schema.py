@@ -37,14 +37,12 @@ class TransferDirection(StrEnum):
 class BucketKind(StrEnum):
     """How a bucket's money flows.
 
-    The earlier model split medical spend into REIMBURSABLE / REIMBURSEMENT and netted
-    them on a rolling window. That assumed reimbursements always arrive after charges
-    within a fixed window; in practice, insurance disbursements are lumpy and (for some
-    providers) actually arrive *before* the charge is submitted. The simpler model:
-    every bucket is either money leaving (EXPENSE), money coming in as a refund or
+    Every bucket is either money leaving (EXPENSE), money coming in as a refund or
     insurance payout (INFLOW), money moving between the user's own accounts (TRANSFER),
     or earned income (INCOME). The UI groups related buckets with `BucketDef.family`
-    and shows both sides without forcing them to balance.
+    and shows both sides without forcing them to balance: insurance disbursements are
+    lumpy and for some providers arrive *before* the charge is submitted, so they are
+    never netted against charges.
     """
 
     EXPENSE = "expense"
@@ -122,9 +120,9 @@ class PfcRule(_RuleBase):
     detailed: str | None = None
 
 
-# --- Condition DSL (Stage A): composable predicates for the `match` rule kind ---
-# Leaf conditions mirror the flat rule kinds plus regex / amount / account; composites
-# (all_of / any_of / not) nest arbitrarily. A `MatchRule` pairs a condition with a bucket.
+# Condition DSL: composable predicates for the `match` rule kind. Leaf conditions mirror
+# the flat rule kinds plus regex / amount / account; composites (all_of / any_of / not)
+# nest arbitrarily. A `MatchRule` pairs a condition with a bucket.
 
 
 class MerchantSubstringCondition(FrozenModel):
@@ -253,7 +251,7 @@ Condition = Annotated[
 
 
 class MatchRule(_RuleBase):
-    """Rich rule (Stage A): route to `bucket_id` when `condition` matches. Direction-gated
+    """Rich rule: route to `bucket_id` when `condition` matches. Direction-gated
     by the target bucket like the flat rule kinds; first match wins across all rules."""
 
     kind: Literal["match"] = "match"
