@@ -18,7 +18,7 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-sessions
     newTag: devel-20261120205951-cbf8551 # {"$imagepolicy": "flux-system:agentplane-sessions:tag"}
   - name: git.allegedly.works/ducktape-ci/environment-tools
-    newTag: devel-20261120115719-d2717cf # {"$imagepolicy": "flux-system:environment-tools:tag"}
+    newTag: devel-20261121025035-77cd80f # {"$imagepolicy": "flux-system:environment-tools:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox
     newTag: devel-20261120212222-1ef4c85 # {"$imagepolicy": "flux-system:agentplane-sandbox:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox-build
