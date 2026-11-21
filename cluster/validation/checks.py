@@ -55,11 +55,11 @@ def find_orphaned_files(cluster: ParsedCluster, repo_root: Path) -> list[str]:
     return errors
 
 
-def check_external_credential_ownership(cluster: ParsedCluster, repo_root: Path) -> list[str]:
+def check_external_credential_ownership(cluster: ParsedCluster) -> list[str]:
     """Only the shared external-creds ClusterSecretStore reads ducktape-flux."""
     store_owner = "external-secrets-config"
     store_name = "kubernetes-external-creds-secret-store"
-    resources_by_kustomization = cluster.flux_kust_resources(repo_root)
+    resources_by_kustomization = cluster.flux_kust_resources()
     errors: list[str] = []
     stores: list[SecretStoreResource] = []
     for kustomization, resources in resources_by_kustomization.items():
@@ -146,7 +146,7 @@ def check_external_secret_store_wiring(cluster: ParsedCluster) -> list[str]:
     ClusterExternalSecret selectors are evaluated for namespaces visible in the render.
     This cannot establish the labels of namespaces created or modified outside GitOps.
     """
-    resources = _rendered_or_source_resources(cluster)
+    resources = _rendered_resources(cluster)
     namespaces = {
         resource.name: {**resource.metadata.labels, "kubernetes.io/metadata.name": resource.name}
         for _, resource in resources
@@ -206,7 +206,7 @@ def check_goldilocks_namespace_labels(cluster: ParsedCluster) -> list[str]:
     """A namespace with a Goldilocks update mode is not opted out of Goldilocks, which would ignore
     the mode. Goldilocks runs on by default, so the mode needs no `enabled: "true"` beside it."""
     errors = []
-    for origin, resource in _rendered_or_source_resources(cluster):
+    for origin, resource in _rendered_resources(cluster):
         if resource.kind != "Namespace":
             continue
         labels = resource.metadata.labels
@@ -222,27 +222,22 @@ _GOLDILOCKS_ENABLED_LABEL = "goldilocks.fairwinds.com/enabled"
 _VPA_UPDATE_MODE_LABEL = "goldilocks.fairwinds.com/vpa-update-mode"
 
 
-def _rendered_or_source_resources(cluster: ParsedCluster) -> list[tuple[Path, K8sResource]]:
-    """Use rendered resources when available so patches are included."""
-    if cluster.build_results:
-        return [
-            (result.kustomization_path, resource) for result in cluster.build_results for resource in result.resources
-        ]
-
+def _rendered_resources(cluster: ParsedCluster) -> list[tuple[Path, K8sResource]]:
     return [
-        (file_path, resource) for file_path, resources in cluster.source_resources.items() for resource in resources
+        (build.kustomization_path, resource) for build in cluster.build_results.values() for resource in build.resources
     ]
 
 
 def check_forgejo_image_namespace_reflection(cluster: ParsedCluster) -> list[str]:
     """Every rendered Forgejo image workload namespace has its own forgejo-images-creds ExternalSecret."""
+    resources = _rendered_resources(cluster)
     namespaces_with_credential = {
         resource.namespace
-        for _, resource in _rendered_or_source_resources(cluster)
+        for _, resource in resources
         if isinstance(resource, ExternalSecretResource) and resource.name == _FORGEJO_CREDENTIAL_SECRET
     }
     errors: list[str] = []
-    for origin, resource in _rendered_or_source_resources(cluster):
+    for origin, resource in resources:
         if not isinstance(resource, _FORGEJO_IMAGE_WORKLOAD_TYPES):
             continue
         images = {image for image in resource.images if image.split("/", 1)[0] == _FORGEJO_REGISTRY}
@@ -257,7 +252,7 @@ def check_forgejo_image_namespace_reflection(cluster: ParsedCluster) -> list[str
     return errors
 
 
-def check_sops_decryption_blocks(cluster: ParsedCluster, repo_root: Path) -> list[str]:
+def check_sops_decryption_blocks(cluster: ParsedCluster) -> list[str]:
     """Active Flux Kustomizations that render a SOPS-encrypted Secret must declare
     spec.decryption with provider: sops AND a secretRef.name — otherwise Flux applies
     the ENC[...] ciphertext literally (no provider) or has no age key to decrypt with
@@ -265,7 +260,7 @@ def check_sops_decryption_blocks(cluster: ParsedCluster, repo_root: Path) -> lis
     applies, so it neither over-counts SOPS files in sibling/child kustomizations nor
     misses those pulled in via nested kustomize refs."""
     errors: list[str] = []
-    for name, resources in cluster.flux_kust_resources(repo_root).items():
+    for name, resources in cluster.flux_kust_resources().items():
         if not any(isinstance(r, SecretResource) and r.sops is not None for r in resources):
             continue
         spec = cluster.active_flux_kustomizations[name]
@@ -290,7 +285,7 @@ def check_cilium_policy_rules_nonempty(cluster: ParsedCluster) -> list[str]:
     """No Cilium policy rule `enforces_nothing`. The fleet rules refuse a generated one at
     synth; this holds hand-written policies and anything a kustomize patch changes after synth."""
     errors = []
-    for origin, resource in _rendered_or_source_resources(cluster):
+    for origin, resource in _rendered_resources(cluster):
         if not isinstance(resource, CiliumPolicyResource):
             continue
         for index, rule in enumerate(resource.rules):

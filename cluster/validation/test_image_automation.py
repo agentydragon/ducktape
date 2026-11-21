@@ -11,10 +11,10 @@ from typing import Any
 
 import pytest_bazel
 
-from cluster.validation.cluster import ParsedCluster
+from cluster.validation.cluster import FluxBuild, ParsedCluster
+from cluster.validation.flux import FluxKustomizationSpec
 from cluster.validation.image_automation import check_image_automation_webhook
 from cluster.validation.k8s import parse_k8s_resources
-from cluster.validation.kustomize import KustomizeBuildResult
 
 
 def _repo(name: str, image: str | None = None) -> dict[str, Any]:
@@ -42,10 +42,10 @@ def _receiver(repos: list[str], *, type: str = "github") -> dict[str, Any]:
 
 def _cluster(*docs: dict[str, Any]) -> ParsedCluster:
     """A ParsedCluster whose single build result renders the given manifests."""
-    result = KustomizeBuildResult(
-        kustomization_path=Path("flux/kustomization.yaml"), resources=parse_k8s_resources(docs)
+    return ParsedCluster(
+        flux_kustomizations={"fixture": FluxKustomizationSpec()},
+        build_results={"fixture": FluxBuild(Path("flux/kustomization.yaml"), parse_k8s_resources(docs))},
     )
-    return ParsedCluster(build_results=[result])
 
 
 def test_consistent_is_clean() -> None:

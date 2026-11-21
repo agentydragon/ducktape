@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import networkx as nx
 
 from cluster.validation.cluster import ParsedCluster
@@ -11,9 +9,7 @@ from cluster.validation.crd_layering import BOOTSTRAP_API_GROUPS, BUILT_IN_API_G
 from cluster.validation.flux import EXTERNAL_ARTIFACT_KIND
 
 
-def validate_operator_dependencies(
-    cluster: ParsedCluster, repo_root: Path, crd_to_operator: dict[str, str] | None = None
-) -> list[str]:
+def validate_operator_dependencies(cluster: ParsedCluster, crd_to_operator: dict[str, str] | None = None) -> list[str]:
     """Validate that kustomizations using CRD instances transitively depend on the managing operator.
 
     Uses CRD_TO_OPERATOR from crd_layering.py as the source of truth for which CRD kinds
@@ -23,7 +19,7 @@ def validate_operator_dependencies(
     if crd_to_operator is None:
         crd_to_operator = CRD_TO_OPERATOR
 
-    flux_resources = cluster.flux_kust_resources(repo_root)
+    flux_resources = cluster.flux_kust_resources()
     errors = []
     g = cluster.graph
     reported: set[tuple[str, str]] = set()
@@ -101,8 +97,8 @@ def check_source_references(cluster: ParsedCluster) -> list[str]:
     return errors
 
 
-def validate_dependencies(cluster: ParsedCluster, repo_root: Path) -> list[str]:
+def validate_dependencies(cluster: ParsedCluster) -> list[str]:
     """Validate operator prerequisites and sourceRef resolution across the Flux graph."""
     if not cluster.flux_kustomizations:
         return ["No Flux kustomizations found"]
-    return [*validate_operator_dependencies(cluster, repo_root), *check_source_references(cluster)]
+    return [*validate_operator_dependencies(cluster), *check_source_references(cluster)]

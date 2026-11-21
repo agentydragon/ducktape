@@ -41,7 +41,7 @@ def check_image_automation_webhook(cluster: ParsedCluster) -> list[str]:
     image_repos: set[str] = set()
     webhook_repos: set[str] = set()
 
-    for result in cluster.build_results:
+    for result in cluster.build_results.values():
         for resource in result.resources:
             if isinstance(resource, ImageRepositoryResource):
                 image_repos.add(resource.name)
@@ -78,7 +78,7 @@ def check_image_policy_markers(cluster: ParsedCluster, k8s_dir: Path) -> list[st
     """
     policies = {
         f"{resource.namespace}:{resource.name}"
-        for result in cluster.build_results
+        for result in cluster.build_results.values()
         for resource in result.resources
         if isinstance(resource, ImagePolicyResource)
     }

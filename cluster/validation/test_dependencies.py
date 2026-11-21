@@ -7,45 +7,39 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from cluster.validation.cluster import ParsedCluster
+from cluster.validation.cluster import FluxBuild, ParsedCluster
 from cluster.validation.dependencies import check_source_references, validate_dependencies
 from cluster.validation.flux import DependsOn, FluxKustomizationSpec, SourceRef
 from cluster.validation.k8s import K8sResource
-from cluster.validation.kustomize import KustomizeBuildResult
-
-
-def _build_result(repo_root: Path, subdir: str, resources: list[tuple[str, str]]) -> KustomizeBuildResult:
-    """Build a KustomizeBuildResult for a kustomization at repo_root/cluster/k8s/subdir/."""
-    return KustomizeBuildResult(
-        kustomization_path=repo_root / "cluster/k8s" / subdir / "kustomization.yaml",
-        resources=[K8sResource(kind=kind, apiVersion=api) for kind, api in resources],
-    )
 
 
 def _cluster(
     flux_kustomizations: dict[str, FluxKustomizationSpec],
-    build_results: list[KustomizeBuildResult] | None = None,
+    build_results: dict[str, FluxBuild] | None = None,
     flux_sources: set[tuple[str, str, str]] | None = None,
 ) -> ParsedCluster:
     return ParsedCluster(
-        flux_kustomizations=flux_kustomizations, build_results=build_results or [], flux_sources=flux_sources or set()
+        flux_kustomizations=flux_kustomizations, build_results=build_results or {}, flux_sources=flux_sources or set()
     )
 
 
 class TestValidateDependencies:
     @pytest.mark.parametrize("depends_on_provider", [False, True])
-    def test_certificate_still_requires_its_provider(self, tmp_path: Path, depends_on_provider: bool) -> None:
+    def test_certificate_still_requires_its_provider(self, depends_on_provider: bool) -> None:
         cluster = _cluster(
             {
                 "test-app": FluxKustomizationSpec(
-                    path="./cluster/k8s/test-app",
-                    depends_on=[DependsOn(name="cert-manager")] if depends_on_provider else [],
+                    depends_on=[DependsOn(name="cert-manager")] if depends_on_provider else []
                 ),
                 "cert-manager": FluxKustomizationSpec(),
             },
-            build_results=[_build_result(tmp_path, "test-app", [("Certificate", "cert-manager.io/v1")])],
+            build_results={
+                "test-app": FluxBuild(
+                    Path("kustomization.yaml"), [K8sResource(kind="Certificate", apiVersion="cert-manager.io/v1")]
+                )
+            },
         )
-        errors = validate_dependencies(cluster, tmp_path)
+        errors = validate_dependencies(cluster)
         assert errors == (
             []
             if depends_on_provider
@@ -59,18 +53,20 @@ class TestValidateDependencies:
             ("extensions.agents.x-k8s.io/v1beta1", "agent-sandbox-controller"),
         ],
     )
-    def test_a_shared_kind_requires_its_groups_provider(self, tmp_path: Path, api_version: str, provider: str) -> None:
+    def test_a_shared_kind_requires_its_groups_provider(self, api_version: str, provider: str) -> None:
         cluster = _cluster(
             {
-                "test-app": FluxKustomizationSpec(
-                    path="./cluster/k8s/test-app", depends_on=[DependsOn(name="agentplane-crds")]
-                ),
+                "test-app": FluxKustomizationSpec(depends_on=[DependsOn(name="agentplane-crds")]),
                 "agentplane-crds": FluxKustomizationSpec(),
                 "agent-sandbox-controller": FluxKustomizationSpec(),
             },
-            build_results=[_build_result(tmp_path, "test-app", [("SandboxTemplate", api_version)])],
+            build_results={
+                "test-app": FluxBuild(
+                    Path("kustomization.yaml"), [K8sResource(kind="SandboxTemplate", apiVersion=api_version)]
+                )
+            },
         )
-        errors = validate_dependencies(cluster, tmp_path)
+        errors = validate_dependencies(cluster)
         assert errors == (
             []
             if provider == "agentplane-crds"

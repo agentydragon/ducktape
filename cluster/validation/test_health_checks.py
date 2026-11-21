@@ -7,15 +7,13 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from cluster.validation.cluster import ParsedCluster
+from cluster.validation.cluster import FluxBuild, ParsedCluster
 from cluster.validation.flux import FluxKustomizationSpec, HealthCheck
 from cluster.validation.health_checks import check_controller_health_checks, check_retry_policy
 from cluster.validation.k8s import K8sResource
-from cluster.validation.kustomize import KustomizeBuildResult
 
 
 def _make_cluster(
-    repo_root: Path,
     *,
     resource_kind: str = "HelmRelease",
     resource_api_version: str = "helm.toolkit.fluxcd.io/v2",
@@ -23,24 +21,20 @@ def _make_cluster(
     wait: bool = False,
 ) -> ParsedCluster:
     """Build a minimal ParsedCluster with one resource and optional healthCheck."""
-    kust_file = repo_root / "cluster/k8s/test-app/kustomization.yaml"
-
     return ParsedCluster(
         flux_kustomizations={
             "test-app": FluxKustomizationSpec(
-                path="./cluster/k8s/test-app",
                 health_checks=[HealthCheck(kind=health_check_kind, name="test-app", namespace="test-app")]
                 if health_check_kind
                 else [],
                 wait=wait,
             )
         },
-        build_results=[
-            KustomizeBuildResult(
-                kustomization_path=kust_file,
-                resources=[K8sResource(kind=resource_kind, apiVersion=resource_api_version)],
+        build_results={
+            "test-app": FluxBuild(
+                Path("kustomization.yaml"), [K8sResource(kind=resource_kind, apiVersion=resource_api_version)]
             )
-        ],
+        },
     )
 
 
@@ -53,33 +47,30 @@ class TestControllerResourceHealthChecks:
         ],
     )
     def test_no_error_with_matching_healthcheck(
-        self, tmp_path: Path, resource_kind: str, resource_api_version: str, health_check_kind: str
+        self, resource_kind: str, resource_api_version: str, health_check_kind: str
     ) -> None:
         cluster = _make_cluster(
-            tmp_path,
-            resource_kind=resource_kind,
-            resource_api_version=resource_api_version,
-            health_check_kind=health_check_kind,
+            resource_kind=resource_kind, resource_api_version=resource_api_version, health_check_kind=health_check_kind
         )
-        assert check_controller_health_checks(cluster, tmp_path) == []
+        assert check_controller_health_checks(cluster) == []
 
     @pytest.mark.parametrize(
         ("resource_kind", "resource_api_version"),
         [("HelmRelease", "helm.toolkit.fluxcd.io/v2"), ("Terraform", "infra.contrib.fluxcd.io/v1alpha2")],
     )
-    def test_error_without_healthcheck(self, tmp_path: Path, resource_kind: str, resource_api_version: str) -> None:
-        cluster = _make_cluster(tmp_path, resource_kind=resource_kind, resource_api_version=resource_api_version)
-        errors = check_controller_health_checks(cluster, tmp_path)
+    def test_error_without_healthcheck(self, resource_kind: str, resource_api_version: str) -> None:
+        cluster = _make_cluster(resource_kind=resource_kind, resource_api_version=resource_api_version)
+        errors = check_controller_health_checks(cluster)
         assert len(errors) == 1
         assert resource_kind in errors[0]
 
-    def test_wait_covers_controller_resources(self, tmp_path: Path) -> None:
+    def test_wait_covers_controller_resources(self) -> None:
         """wait: true health-checks every applied object, the HelmRelease included."""
-        assert check_controller_health_checks(_make_cluster(tmp_path, wait=True), tmp_path) == []
+        assert check_controller_health_checks(_make_cluster(wait=True)) == []
 
-    def test_no_error_for_plain_resources(self, tmp_path: Path) -> None:
-        cluster = _make_cluster(tmp_path, resource_kind="ConfigMap", resource_api_version="v1")
-        assert check_controller_health_checks(cluster, tmp_path) == []
+    def test_no_error_for_plain_resources(self) -> None:
+        cluster = _make_cluster(resource_kind="ConfigMap", resource_api_version="v1")
+        assert check_controller_health_checks(cluster) == []
 
 
 @pytest.mark.parametrize(

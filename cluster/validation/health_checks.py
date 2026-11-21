@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cluster.validation.cluster import ParsedCluster
 
 HEALTH_CHECK_REQUIRED_KINDS = ["HelmRelease", "Terraform"]
@@ -24,10 +22,10 @@ _ASYNC_HEALTH_CHECK_KINDS = {
 _RETRY_INTERVAL_EXCEPTIONS = {"cli-proxy-api"}
 
 
-def check_controller_health_checks(cluster: ParsedCluster, repo_root: Path) -> list[str]:
+def check_controller_health_checks(cluster: ParsedCluster) -> list[str]:
     """Check that flux kustomizations deploying controller resources health-check them:
     `wait: true` checks every applied object, otherwise `healthChecks` must name the kind."""
-    flux_resources = cluster.flux_kust_resources(repo_root)
+    flux_resources = cluster.flux_kust_resources()
     return [
         f"{name}: deploys a {kind} but neither waits nor has healthChecks for it. "
         f"Leave wait on, or add a {kind} health check, on its node under cluster/cdk8s."
