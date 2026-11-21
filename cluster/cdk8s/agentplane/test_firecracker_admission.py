@@ -84,7 +84,8 @@ async def test_only_the_controller_can_launch_the_firecracker_shape(scratch_char
         svid = next(v for v in valid["spec"]["volumes"] if v["name"] == "agentplane-environment-runtime-tls")
         assert any("secret" in source for source in svid["projected"]["sources"])
         await wait_until_refused(lambda: admitted(OTHER, valid))
-        assert await admitted(CONTROLLER, valid)
+        async with server.impersonating(CONTROLLER) as client:
+            await k8s_client.CoreV1Api(client).create_namespaced_pod(NAMESPACE, cast(Any, valid), dry_run="All")
 
         unowned = deepcopy(valid)
         del unowned["metadata"]["ownerReferences"]
@@ -108,6 +109,13 @@ async def test_only_the_controller_can_launch_the_firecracker_shape(scratch_char
         settings = next(v for v in changed_config["spec"]["volumes"] if v["name"] == "firecracker-settings")
         settings["configMap"]["name"] = "unreviewed"
         assert not await admitted(CONTROLLER, changed_config)
+        wrong_svid = deepcopy(valid)
+        svid_volume = next(
+            v for v in wrong_svid["spec"]["volumes"] if v["name"] == "agentplane-environment-runtime-tls"
+        )
+        secret = next(p["secret"] for p in svid_volume["projected"]["sources"] if "secret" in p)
+        secret["name"] = "svid-another-sandbox-0123456789abcdef0123456789abcdef"
+        assert not await admitted(CONTROLLER, wrong_svid)
         changed_relay = deepcopy(valid)
         changed_relay["spec"]["initContainers"][0]["image"] = "registry.test/another-relay"
         assert not await admitted(CONTROLLER, changed_relay)

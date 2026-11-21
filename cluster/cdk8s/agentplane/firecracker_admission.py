@@ -180,11 +180,15 @@ def add_firecracker_admission(
             k8s.Variable(name="relay", expression="variables.pod.initContainers[0]"),
             k8s.Variable(name="owners", expression="object.metadata.?ownerReferences.orValue([])"),
             k8s.Variable(name="labels", expression="object.metadata.?labels.orValue({})"),
+            k8s.Variable(
+                name="credentialId",
+                expression=f"variables.labels[?'{GROUP}/environment-runtime-credential'].orValue('')",
+            ),
         ],
         validations=[
             k8s.Validation(
                 expression=(
-                    f"{controller_request} && request.subResource == ''"
+                    f"{controller_request} && request.?subResource.orValue('') == ''"
                     " && size(variables.owners) == 1 && variables.owners.all(o,"
                     f" o.apiVersion == '{GROUP}/{VERSION}' && o.kind == 'Sandbox'"
                     " && o.name == object.metadata.name && o.?controller.orValue(false) && o.uid != '')"
@@ -256,7 +260,8 @@ def add_firecracker_admission(
                     f" || (v.name == 'agentplane-firecracker-runner' && has(v.image) && ({_image('v.image.reference', RUNNER_DISK_IMAGE.rpartition(':')[0])}))"
                     " || (v.name == 'agentplane-environment-runtime-tls' && has(v.projected) && v.projected.sources.all(p,"
                     " p.?configMap.?name.orValue('') in ['cluster-internal-ca-bundle', 'agentplane-workload-ca-bundle']"
-                    " || p.?secret.?name.orValue('').matches('^svid-[a-z0-9.-]+-[0-9a-f]{32}$'))))"
+                    " || (variables.credentialId.matches('^[0-9a-f]{32}$') && p.?secret.?name.orValue('')"
+                    " == 'svid-' + object.metadata.name + '-' + variables.credentialId))))"
                 ),
                 message="Firecracker volumes are limited to the tun device, reviewed inputs and Sandbox-owned state.",
             ),
