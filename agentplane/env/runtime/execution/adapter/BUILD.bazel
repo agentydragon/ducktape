@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 package(default_visibility = ["//agentplane:__subpackages__"])
 
 go_library(
-    name = "execution",
+    name = "adapter",
     srcs = [
         "adapter.go",
         "connection.go",
@@ -24,9 +24,9 @@ go_library(
 )
 
 go_test(
-    name = "execution_test",
+    name = "adapter_test",
     srcs = ["adapter_test.go"],
-    embed = [":execution"],
+    embed = [":adapter"],
     race = "on",
     deps = [
         "//agentplane/env/runtime/execution:executor_go_proto",

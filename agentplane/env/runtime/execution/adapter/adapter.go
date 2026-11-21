@@ -1,4 +1,4 @@
-// Package execution translates typed Executor RPCs to the local Codex exec-server protocol.
+// Package adapter translates typed Executor RPCs to the local Codex exec-server protocol.
 package adapter
 
 import (
