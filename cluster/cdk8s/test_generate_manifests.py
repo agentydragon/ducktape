@@ -138,7 +138,13 @@ def test_kvm_worker_pool_members_are_selected_fenced_and_given_their_own_ssd_dis
     assert labels.items() <= template["metadata"]["labels"].items()
     assert labels.items() <= template["spec"]["template"]["metadata"]["labels"].items()
     guest = template["spec"]["template"]["spec"]
-    assert guest["nodeSelector"] == {"topology.kubernetes.io/region": "hil"}
+    # Wyrm2 is outside the OVH region, but workers still require nested virtualization.
+    assert "topology.kubernetes.io/region" not in guest.get("nodeSelector", {})
+    terms = guest["affinity"]["nodeAffinity"]["requiredDuringSchedulingIgnoredDuringExecution"]["nodeSelectorTerms"]
+    assert {term["matchExpressions"][0]["key"] for term in terms} == {
+        "cpu-feature.node.kubevirt.io/svm",
+        "cpu-feature.node.kubevirt.io/vmx",
+    }
     # A member is ready only once its executor has registered; the readiness endpoint is the executor's own.
     probe = guest["readinessProbe"]["httpGet"]
     assert probe["path"] == "/readyz"

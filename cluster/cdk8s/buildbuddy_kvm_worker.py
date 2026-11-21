@@ -123,8 +123,6 @@ def _pool_worker_template(*, image_pull_secret: str) -> VirtualMachinePoolSpecVi
         labels=_WORKER_LABELS,
         image=_IMAGE,
         image_pull_secret=image_pull_secret,
-        # Only OVH nodes carry the SSD pool sized for this disk.
-        node_selector={"topology.kubernetes.io/region": "hil"},
         cpu=VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecDomainCpu(
             cores=4,
             model="host-passthrough",
