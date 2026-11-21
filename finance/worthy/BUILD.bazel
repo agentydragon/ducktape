@@ -1,7 +1,6 @@
 load(
     "@rules_rust//rust:defs.bzl",
     "rust_binary",
-    #"rust_doc",
     "rust_library",
     "rust_test",
 )
@@ -40,8 +39,6 @@ rust_library(
     visibility = ["//visibility:public"],
     deps = [
         ":denomination",
-        "@crates//:chrono",
-        "@crates//:chrono-tz",
         "@crates//:rust_decimal",
     ],
 )
@@ -115,7 +112,6 @@ rust_test(
         ":denomination",
         ":exchange_rate",
         "@crates//:env_logger",
-        "@crates//:log",
         "@crates//:rust_decimal",
     ],
 )
@@ -148,16 +144,6 @@ rust_test(
     ],
 )
 
-#rust_doc(
-#    name = "rust_doc",
-#    dep = ":rust_main",
-#)
-
-rust_test(
-    name = "rust_main_test",
-    crate = ":rust_main",
-)
-
 rust_library(
     name = "denomination",
     srcs = ["denomination.rs"],
@@ -185,7 +171,6 @@ rust_library(
     srcs = ["flags.rs"],
     edition = "2024",
     deps = [
-        "@crates//:serde",
         "@crates//:structopt",
     ],
 )
@@ -200,7 +185,6 @@ rust_library(
         "//finance/worthy/source:ibflex_source",
         "@crates//:rust_decimal",
         "@crates//:serde",
-        "@crates//:serde_yaml",
     ],
 )
 
@@ -209,7 +193,6 @@ rust_test(
     srcs = ["flags_test.rs"],
     edition = "2024",
     deps = [
-        ":config",
         ":flags",
         "@crates//:structopt",
     ],
@@ -219,14 +202,10 @@ rust_library(
     name = "json_output",
     srcs = ["json_output.rs"],
     edition = "2024",
-    proc_macro_deps = [
-        "@crates//:rust_decimal_macros",
-    ],
     deps = [
         "@crates//:chrono",
         "@crates//:rust_decimal",
         "@crates//:serde",
-        "@crates//:serde_json",
     ],
 )
 
@@ -241,7 +220,6 @@ rust_test(
         ":json_output",
         "@crates//:chrono",
         "@crates//:rust_decimal",
-        "@crates//:serde",
         "@crates//:serde_json",
     ],
 )
