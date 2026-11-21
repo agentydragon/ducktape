@@ -1183,9 +1183,12 @@ export function makeComposedCase(seed, index) {
   };
   const functionNames = Array.from({ length: 1 + rand(3) }, (_, i) => (i ? `calculate${i}` : "calculate"));
   const functions = functionNames.map(makeFunction);
+  const throwVariant = ["string", "bigint", "null"][Math.floor(index / 64) % 3];
   if (index % 64 === 23) {
     const thrown =
-      index % 128 === 87 ? { type: "Literal", value: null, bigint: "12345678901234567890" } : literal("generated-left");
+      throwVariant === "bigint"
+        ? { type: "Literal", value: null, bigint: "12345678901234567890" }
+        : literal(throwVariant === "null" ? null : "generated-left");
     functionNames.push("fuzzThrower");
     functions.push(
       functionNode(
@@ -1260,7 +1263,7 @@ export function makeComposedCase(seed, index) {
     ast,
     source: print(ast),
     grammar: "composed",
-    hasBigIntegerThrow: index % 128 === 87,
+    throwVariant,
     hasDiscardedLiteral,
     hasTextObservation: hasDiscardedLiteral,
     hasPrimitiveObservation: hasDiscardedLiteral,
@@ -1563,11 +1566,20 @@ async function mutateOutput(out, input, kind) {
     const original = await readFile(file, "utf8");
     let changed = original;
     if (kind === "binding") changed = original.replace(/let cell0 = (\d+);/, (_, n) => `let cell0 = ${Number(n) + 1};`);
-    else if (kind === "throwValue")
-      changed = input.hasBigIntegerThrow
-        ? original.replace("throw 12345678901234567890n", "throw 12345678901234567891n")
-        : original.replace('throw "generated-left"', 'throw "generated-right"');
-    else if (kind === "composedEffect") {
+    else if (kind === "throwValue") {
+      const start = original.indexOf("function fuzzThrower(");
+      if (start >= 0) {
+        const prefix = original.slice(0, start),
+          body = original.slice(start);
+        const mutated =
+          input.throwVariant === "bigint"
+            ? body.replace("throw 12345678901234567890n", "throw 12345678901234567891n")
+            : input.throwVariant === "null"
+              ? body.replace("throw null", "throw void 0")
+              : body.replace('throw "generated-left"', 'throw "generated-right"');
+        changed = prefix + mutated;
+      }
+    } else if (kind === "composedEffect") {
       const discarded = print(input.ast.body[0]);
       if (original.includes(discarded)) {
         const moved = original.replace(discarded, "");
