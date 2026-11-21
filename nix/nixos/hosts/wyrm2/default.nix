@@ -203,7 +203,7 @@ in
   # retires the whole multi-seat-DM problem: GDM cannot complete a *non*-seat0 user
   # login (gdm!291 unmerged, blocked on systemd#42247), which is exactly the wall
   # the old `seatphysical` seat hit. Full analysis + the retracted multi-seat
-  # decision: nix/debug/wyrm2/direct_display_bringup/README.md (full multiseat saga archived under archive/).
+  # decision: nix/debug/wyrm2/direct_display_bringup/README.md (the full multiseat saga is in git history).
 
   # Mutter honors the GPU isolation rules below, keeping the other cards off seat0.
   services.displayManager.defaultSession = "gnome";

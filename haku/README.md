@@ -28,4 +28,8 @@ Current work is iterating that method until what it surfaces is genuinely good.
   (Managed Agents): `runtime/x/managed_agent/` + `plans/`.
 - Cluster wiring (RBAC, egress fence, secrets): `cluster/k8s/haku/` and
   `cluster/cdk8s/haku/`.
+- Open design: getting the `haku` run-tooling CLI onto `PATH` in every runtime:
+  <plans/haku_tooling_delivery.md>.
+- Deferred design: cross-job Bazel caching in the haku-ci runner:
+  <plans/ci_warm_bazel_server.md>.
 - The **actionable build checklist is `TODO.md`.**

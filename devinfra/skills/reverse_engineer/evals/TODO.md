@@ -1,13 +1,13 @@
 # reverse_engineer evals — TODO
 
 This file tracks future specimens and eval variants. The
-`go_crypto_server` reference under `specimens/` is the seed; everything
+`go_crypto_server` reference under `tasks/` is the seed; everything
 below is a separate planning round to scope and land.
 
 ## Additional language specimens
 
 Each shares the same protocol shape and crypto contract as
-`specimens/go_crypto_server` so that the rubric items (s-box, round
+`tasks/go_crypto_server` so that the rubric items (s-box, round
 constants, base32 alphabet, MAC construction, endpoint set) can be reused
 verbatim across implementations. What changes per specimen is the
 build-time scrambling and the language-specific recovery angles.

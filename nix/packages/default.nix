@@ -201,7 +201,7 @@ let
   # Check modules backing each console script with `importsCheck`, or run the
   # installed command with `entrypointChecks`. Both load the CLI at build time,
   # so a missing propagatedBuildInputs surfaces as a build failure
-  # instead of a runtime crash. See debug/aiquota-missing-atomicwrites.md.
+  # instead of a runtime crash.
   mkWheel =
     {
       pname,

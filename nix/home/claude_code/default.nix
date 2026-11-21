@@ -201,7 +201,7 @@ in
   # system). Ducktape installs these from `pluginSources` into
   # ~/.claude/plugins/cache/ and leaves installed_plugins.json to Claude; HM's
   # `plugins`/`marketplaces` options are left unused. (wyrm2 is on 26.05, where
-  # the collision breaks eval — see TODO(nixpkgs-bump) in flake.nix.)
+  # the collision breaks eval.)
   #
   # TODO(claude-code-plugins): properly adopt home-manager's upstream
   #   `programs.claude-code.plugins` + `.marketplaces` system and delete this

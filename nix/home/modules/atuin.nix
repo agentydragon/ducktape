@@ -1,4 +1,4 @@
-# Atuin shell-history sync. Three pieces wired in one place:
+# Atuin shell-history sync. Four pieces wired in one place:
 #   - programs.atuin (CLI config + shell integrations)
 #   - SOPS-managed E2EE sync key at ${xdg.dataHome}/atuin/key
 #   - SOPS-managed server password (shared with the cluster-side

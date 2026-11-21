@@ -38,7 +38,7 @@ doesn't help.
 1. Flip `import/order: "error"` in the gate config → crash (per-file aspect).
 2. Add a node resolver with `.ts`/`.tsx` extensions (`import-x/resolver`) → crash.
 3. Set both `import-x/resolver` **and** `import/resolver` namespaces → crash.
-4. Move it to the **whole-program** test (`//augur/frontend:eslint_typed_test`,
+4. Move it to the **whole-program** test (`//finance/augur/frontend:eslint_typed_test`,
    `parserOptions.projectService`, full tree + node_modules in one sandbox) →
    crash (same `getContextPackagePath`).
 5. Add `//:package.json` to that test's `data` so `pkgUp` could find one →
