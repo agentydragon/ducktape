@@ -2,10 +2,12 @@
 //
 //   node differential.mjs [--count N] [--seed S] [--splits K] [--show]
 //
-// Four sources of programs, and one more check:
+// Sources of programs, and the split checks:
 //   - `cases.mjs`, written by hand;
 //   - `module_cases.mjs`, programs of several modules, written by hand. The order in which the model runs the modules
 //     must also be the one `evalorder` prints for the import graph (`Plan.evalOrder` of the proved checker);
+//   - `generate.mjs`, bounded whole CoreJS programs, linked graphs and opaque closures. Every whole-program family
+//     executes in a required accepted reordered split, independent of the random-plan budget below;
 //   - the generator of `../translation/gen`, N programs for each set of families from seed S on. The generator leans on
 //     the standard library, so nearly no whole program is in the fragment. A program is cut down to the units the
 //     front end accepts alone and whose names are all declared by units that are kept, and one `console.log` is added
@@ -55,12 +57,13 @@ import { kindOf } from "../translation/gen/core.mjs";
 import { generateProgram, renderProgram } from "../translation/gen/index.mjs";
 import { coreOf, coreProgramOf, dumpOf } from "../translation/split_dump.mjs";
 import { cases, splitCases } from "./cases.mjs";
+import { generatedCases, generatedModuleCases, generatedOpaqueCase } from "./generate.mjs";
 import { moduleCases } from "./module_cases.mjs";
 import { opaqueCases, scriptsOf } from "./opaque_cases.mjs";
 import { bits, HOST_GLOBALS, Refused, toCore, toCoreProgram } from "./to_core.mjs";
 
 const option = (name, fallback) => {
-  const i = process.argv.indexOf(`--${name}`);
+  const i = process.argv.lastIndexOf(`--${name}`);
   return i < 0 ? fallback : Number(process.argv[i + 1]);
 };
 const count = option("count", 40);
@@ -311,7 +314,20 @@ for (const c of splitCases) {
     splitCase: c,
   });
 }
-for (const c of moduleCases) {
+const focused = Array.from({ length: count }, (_, i) => generatedCases(firstSeed + i)).flat();
+for (const c of focused) {
+  const translated = toCore(c.source);
+  jobs.push({
+    label: c.name,
+    source: c.source,
+    program: single(translated),
+    expectEnd: "normal",
+    set: null,
+    focused: c,
+  });
+}
+const linked = Array.from({ length: count }, (_, i) => generatedModuleCases(firstSeed + i)).flat();
+for (const c of [...moduleCases, ...linked]) {
   const entry = path.join(writeFiles(c.files), "main.mjs");
   jobs.push({
     label: `modules: ${c.name}`,
@@ -322,9 +338,11 @@ for (const c of moduleCases) {
     program: toCoreProgram(entry),
     expectEnd: c.end ?? null,
     set: null,
+    linked: linked.includes(c),
   });
 }
-for (const c of opaqueCases) {
+const allOpaqueCases = [...opaqueCases, ...Array.from({ length: count }, (_, i) => generatedOpaqueCase(firstSeed + i))];
+for (const c of allOpaqueCases) {
   const translated = coreOf(c.source);
   assert(translated.opaque.length > 0, `opaque case ${c.name}: no statement is opaque`);
   jobs.push({
@@ -566,12 +584,27 @@ function split(job, bundle, dump, kind, spec, named) {
     );
   else if (orderKept) tally.sliceNamed++;
   else if (slice?.startsWith("moves")) tally.movesNamed++;
+  if ((job.focused || job.opaqueCase?.move) && kind === "named") {
+    assert(!orderKept, `${label}: the required move kept the order`);
+    assert(slice?.startsWith("moves"), `${label}: the required move is outside the proved moves slice: ${slice}`);
+  }
   try {
     const scripts = job.program.scripts;
     const program = scripts
       ? { ...coreProgramOf(entry, { ids: modules }), scripts }
       : toCoreProgram(entry, { ids: modules });
-    splitJobs.push({ label, source: job.source, entry, order, orderKept, of: job, bundle, program, named });
+    splitJobs.push({
+      label,
+      source: job.source,
+      entry,
+      order,
+      orderKept,
+      moves: slice?.startsWith("moves"),
+      of: job,
+      bundle,
+      program,
+      named,
+    });
   } catch (e) {
     failures.push(`${label}: the front end takes the bundle and not the split: ${e.message}`);
   }
@@ -586,6 +619,15 @@ for (const job of jobs.filter((j) => j.opaqueCase))
 const candidates = jobs.filter((j) => !j.entry && j.node && j.result.end !== "unknown" && sameRun(j.result, j.node));
 for (const job of candidates.filter((j) => j.splitCase))
   split(job, numbered(job.source), dumpOf(job.source), "named", job.splitCase.spec, job.splitCase);
+// Every focused program gets a nontrivial split, independently of the manual-first random-plan budget.
+const swapPrefix = (dump) => ({
+  entry: "entry.mjs",
+  modules: { "m0.mjs": ["#1"], "entry.mjs": dump.statements.flatMap((_, i) => (i === 1 ? [] : [`#${i}`])) },
+});
+for (const job of candidates.filter((j) => j.focused || j.opaqueCase?.move)) {
+  const dump = dumpOf(job.source);
+  split(job, numbered(job.source, job.program.scripts), dump, "named", swapPrefix(dump), {});
+}
 // a program with opaque statements, in two consecutive pieces that run in order
 for (const job of candidates.filter((j) => j.opaqueCase)) {
   const dump = dumpOf(job.source);
@@ -622,7 +664,11 @@ runModel(splitJobs);
 // `order_kept_preserves` of `Split.lean` is about one world: a split that keeps the order also runs in the world its
 // bundle recorded, and must end there in the bundle's state.
 for (const job of splitJobs) job.inBundleWorld = { label: job.label, node: job.of.node, program: job.program };
-runModel(splitJobs.filter((job) => job.orderKept).map((job) => job.inBundleWorld));
+runModel(
+  splitJobs
+    .filter((job) => job.orderKept || (job.moves && job.of.node.end === "normal"))
+    .map((job) => job.inBundleWorld)
+);
 for (const job of splitJobs) {
   const files = () =>
     job.program.modules.map((m) => `// ${m.name}\n${readFileSync(path.join(path.dirname(job.entry), m.name), "utf8")}`);
@@ -666,6 +712,12 @@ for (const job of splitJobs) {
     if (there.state === bundle.state && sameRun(there, bundle)) tally.sameState++;
     else failures.push(`${job.label}: the split keeps the order and ends in another state than its bundle`);
   }
+  if (job.moves && job.of.node.end === "normal") {
+    const there = job.inBundleWorld.result;
+    const bundle = job.of.numbered.result;
+    if (there.state !== bundle.state || !sameRun(there, bundle))
+      failures.push(`${job.label}: the proved move ends in another state in the bundle's world`);
+  }
   if (!same(job.result.order, job.order))
     failures.push(`${job.label}: the model runs the modules as ${job.result.order}, the plan as ${job.order}`);
   for (const m of job.program.modules)
@@ -695,7 +747,7 @@ console.log("unknown code that units of generated programs were left out for:", 
 console.log(`model endings: ${JSON.stringify(ends)}; corejs took ${modelSeconds.toFixed(1)} s`);
 const verdicts = (kind) => `${kind}: ${tally[kind][0]} accepted, ${tally[kind][1]} rejected`;
 console.log(
-  `opaque cases: ${tally.opaqueCases} of ${opaqueCases.length} agree with Node; splits: ${tally.named[0]} named accepted, ${tally.named[1]} named rejected; ${tally.programs} programs; ${["cut", "ordered", "free", "opaque"].map(verdicts).join("; ")}; ` +
+  `opaque cases: ${tally.opaqueCases} of ${allOpaqueCases.length} agree with Node; splits: ${tally.named[0]} named accepted, ${tally.named[1]} named rejected; ${tally.programs} programs; ${["cut", "ordered", "free", "opaque"].map(verdicts).join("; ")}; ` +
     `${tally.unsupported} unsupported; ${tally.sliceNamed} accepted splits whose verdict names the order-kept slice, ${tally.movesNamed} the moves slice; ${tally.agree} accepted splits where the four runs agree, ` +
     `${tally.orderKept} of them with the statements in the bundle's order, ${tally.sameState} of those ending in ` +
     `the bundle's state; ${apart.splits} accepted splits move code ` +
@@ -703,6 +755,42 @@ console.log(
     `differ; ${tally.otherCalls} accepted splits make other host calls than their bundle, or in another order`
 );
 const total = (key) => summary.reduce((sum, s) => sum + s[key], 0);
+const focusedCoverage = {};
+for (const job of jobs.filter((j) => j.focused)) {
+  const covered = (focusedCoverage[job.focused.family] ??= { generated: 0, completed: 0, reordered: 0 });
+  covered.generated++;
+  if (job.result.end === "normal" && sameRun(job.result, job.node)) covered.completed++;
+  if (splitJobs.some((s) => s.of === job && !s.orderKept && sameRun(s.result, job.result) && sameRun(s.node, job.node)))
+    covered.reordered++;
+}
+console.log("whole CoreJS generator (no filtering):");
+console.table(focusedCoverage);
+assert.deepEqual(
+  Object.keys(focusedCoverage).sort(),
+  ["arrays", "classes", "closures", "control", "exceptions", "expressions", "host", "objects"],
+  "the whole-program generator must execute each promised family"
+);
+assert(
+  Object.values(focusedCoverage).every((c) => c.generated === count && c.completed === count && c.reordered === count),
+  "every focused family must complete and execute in a matching accepted reordered split for every seed"
+);
+assert(
+  jobs.filter((j) => j.linked).every((j) => sameRun(j.result, j.node)),
+  "every generated linked program must match Node"
+);
+assert.equal(
+  jobs.filter((j) => j.linked).length,
+  count * 3,
+  "each seed must run the diamond, cycle and abrupt module graphs"
+);
+console.log(`generated linked programs: ${linked.length}, compared with Node and Plan.evalOrder`);
+const opaqueMoved = splitJobs.filter((j) => j.of.opaqueCase?.move && !j.orderKept);
+assert.equal(
+  opaqueMoved.length,
+  allOpaqueCases.filter((c) => c.move).length,
+  "every opaque closure move must be accepted and executed"
+);
+console.log(`opaque closure moves: ${opaqueMoved.length}, four runs and final state compared`);
 console.log(
   `generated units: ${total("units")}; accepted alone: ${total("unitsAccepted")}; in the programs that ran: ` +
     `${total("unitsRun")} (${((100 * total("unitsRun")) / total("units")).toFixed(1)}%); ` +

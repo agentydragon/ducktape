@@ -76,6 +76,116 @@ export const opaqueCases = [
     },
   },
   {
+    name: "a failing opaque property request propagates an engine error to the model catch",
+    source: `
+      const box = {};
+      Object.defineProperty(box, "fixed", { value: 3 });
+      function remove(value) { const [removed] = [delete value.fixed]; return removed; }
+      try { remove(box); } catch (e) { console.log("delete caught", box.fixed); }
+      console.log("after failed request");
+    `,
+    scripts: {
+      "2/1": [
+        ["delete", r(2), ["s", "fixed"]],
+        ["done", r(3)],
+      ],
+    },
+  },
+  {
+    name: "opaque property requests observe deletion and inherited membership",
+    source: `
+      const base = { inherited: 7 };
+      const box = { __proto__: base, own: 3 };
+      const [removed, inherited, missing] = [delete box.own, "inherited" in box, "own" in box];
+      console.log(removed, inherited, missing, box.own, box.inherited);
+    `,
+    // Names: removed, inherited, missing, box. Each request's answer is observed.
+    scripts: {
+      "2/0": [
+        ["readVar", 3],
+        ["delete", r(2), ["s", "own"]],
+        ["initVar", 0, r(3)],
+        ["has", ["s", "inherited"], r(2)],
+        ["initVar", 1, r(5)],
+        ["has", ["s", "own"], r(2)],
+        ["initVar", 2, r(7)],
+      ],
+    },
+  },
+  {
+    name: "opaque construction reenters a model constructor",
+    source: `
+      function Box(n) { this.n = n + 1; }
+      const [made] = [new Box(4)];
+      console.log(made.n, made.constructor === Box);
+    `,
+    scripts: {
+      "1/0": [
+        ["readVar", 1],
+        ["construct", r(2), num(4)],
+        ["initVar", 0, r(3)],
+      ],
+    },
+  },
+  {
+    name: "an opaque constructor initializes the receiver allocated by new",
+    source: `
+      const Box = function(n) { const [v] = [n]; this.n = v; };
+      const independent = 3;
+      const made = new Box(6);
+      console.log(made.n, made.constructor === Box, Box.length, independent);
+    `,
+    scripts: { "0/1": [["set", r(1), ["s", "n"], r(2)]] },
+    move: true,
+  },
+  {
+    name: "opaque code allocates with an explicit prototype and calls a model primitive",
+    source: `
+      const base = { inherited: 9 };
+      const [made, inherited] = [Object.create(base), base.inherited];
+      console.log(made.inherited, inherited, Object.getPrototypeOf(made) === base);
+    `,
+    scripts: {
+      "1/0": [
+        ["readVar", 3],
+        ["newObject", r(2)],
+        ["prim", "getPrototypeOf", r(3)],
+        ["get", r(4), ["s", "inherited"]],
+        ["initVar", 0, r(3)],
+        ["initVar", 1, r(5)],
+      ],
+    },
+  },
+  {
+    name: "the world makes a constructor whose body receives the new object",
+    source: `
+      const [Box] = [function(n) { this.n = n; }];
+      console.log(new Box(11).n, Box.length);
+    `,
+    scripts: {
+      "0/0": [
+        ["newFunction", 1, "", 1, true],
+        ["initVar", 0, r(2)],
+      ],
+      "0/1": [["set", r(1), ["s", "n"], r(2)]],
+    },
+  },
+  {
+    name: "a model callback throws through the world and is caught by the model",
+    source: `
+      function invoke(f) { const [v] = [f()]; return v; }
+      const fail = () => { throw 13; };
+      try { invoke(fail); } catch (e) { console.log("caught callback", e); }
+      console.log("after callback");
+    `,
+    scripts: {
+      "0/1": [
+        ["call", r(2), ["u"]],
+        ["done", r(3)],
+      ],
+    },
+  },
+  {
     name: "opaque code reaches a declaration through a captured binding",
     source: `
       const read = () => value;
