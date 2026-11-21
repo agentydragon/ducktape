@@ -3,8 +3,8 @@
 The required VM suite runs on SSD-backed BuildBuddy workers. This is an open comparison of options
 that require no new paid service or license. A
 shared cluster could remove the inner control-plane startup and move image delivery out of the
-executor, but it changes who can act on which cluster. Measure the existing warm path and check
-the shared-cluster permission and storage contracts before choosing a replacement.
+executor, and changes who can act on which cluster. Use the measured SSD warm path as a baseline
+and check the shared-cluster permission and storage contracts before choosing a replacement.
 
 ## Current execution and isolation
 
@@ -91,6 +91,18 @@ approximately 16.4 GiB of accumulated QEMU work-disk writes in the cold HDD obse
 fixture activity. The warm HDD run shows a remaining storage penalty even when every import is
 skipped. Keep the production worker disks on SSD while the required retained suite's media
 sensitivity and fleet tail remain unmeasured.
+
+The required SSD suite's
+[retained-fixture trial](../../../devinfra/buildbuddy/debug/kvm_pool_rollout/2026_11_21_kvm_worker_placement.md#required-vm-suite-with-the-retained-fixture-on-ssd)
+used the same BuildBuddy action across cold and proved warm on one worker.
+TestRunner took 508.9 s cold and 357.2 s on reuse.
+QEMU work-disk writes fell from 7.79 to 1.07 GiB,
+with about 6.61 GiB saved during fixture setup. Setup still took
+65.7 s and wrote 0.43 GiB
+on reuse. Image streams went from 25 to zero. The baseline API, KubeVirt and PKI
+controllers stayed alive. Per-run workloads and credentials were renewed.
+These observations favor retaining compatible fixtures. They leave fleet hit
+rate, required-check feedback and storage-media sensitivity open.
 
 A previous same-worker recycling qualification measured 144.1 s setup and 309.9 s process time on
 its cold retained seed, 41.3 s and 203.8 s on the first warm reuse, and 104.7 s and 238.3 s on the
@@ -212,7 +224,8 @@ shared fixture still needs these gates:
 
 Start with direct KubeVirt in a disposable cluster, with a single leased run from a reviewed
 revision. This tests the proposed main-cluster topology without introducing a resource syncer or
-giving a PR workflow cluster access. Keep the required Bazel lane as the comparison baseline.
+giving a PR workflow cluster access. Keep the required Bazel lane as the comparison baseline. Its
+[measured SSD costs](#costs-by-fixture-state) establish the phases to compare.
 If a separate API and kernel boundary remain necessary, use a dedicated K3s worker VM and
 share its operators across runs. A privileged K3s node Pod shares its backing host kernel.
 
