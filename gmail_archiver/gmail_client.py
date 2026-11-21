@@ -40,11 +40,9 @@ def _get_retry_after(exception: HttpError) -> tuple[int | None, dict]:
     """
     debug_info: dict = {}
 
-    # Capture response details for debugging
     debug_info["status"] = exception.resp.status
     debug_info["headers"] = dict(exception.resp)  # Convert to dict for easier viewing
 
-    # Try to parse response body as JSON
     try:
         debug_info["body"] = json.loads(exception.content.decode("utf-8"))
     except json.JSONDecodeError, UnicodeDecodeError, AttributeError:
@@ -58,7 +56,6 @@ def _get_retry_after(exception: HttpError) -> tuple[int | None, dict]:
     retry_after = exception.resp.get("retry-after") or exception.resp.get("Retry-After")
     if retry_after:
         try:
-            # Try parsing as integer (seconds)
             return int(retry_after), debug_info
         except ValueError, TypeError:
             pass
@@ -67,14 +64,12 @@ def _get_retry_after(exception: HttpError) -> tuple[int | None, dict]:
     # Gmail may include: "Retry after 2024-02-26T12:16:36.009Z" in error message
     if isinstance(debug_info.get("body"), dict):
         try:
-            # Check in JSON error message field
             error_message = debug_info["body"].get("error", {}).get("message", "")
             if (
                 isinstance(error_message, str)
                 and "Retry after" in error_message
                 and (match := re.search(r"Retry after (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)", error_message))
             ):
-                # Extract ISO timestamp from error message
                 retry_timestamp = datetime.fromisoformat(match.group(1))
                 now = datetime.now(UTC)
                 seconds_to_wait = max(0, int((retry_timestamp - now).total_seconds()))
@@ -343,12 +338,10 @@ class GmailClient:
         if label_id := self.get_label_id(label_name):
             return label_id
 
-        # Create label
         label_object = {"name": label_name, "labelListVisibility": "labelShow", "messageListVisibility": "show"}
 
         result = self.service.users().labels().create(userId="me", body=label_object).execute()
 
-        # Invalidate cache
         self._label_cache = None
 
         return str(result["id"])
@@ -361,8 +354,6 @@ class GmailClient:
         labels = results.get("labels", [])
 
         self._label_cache = {label["name"]: label["id"] for label in labels}
-
-    # Filter operations
 
     def list_filters(self) -> list[GmailFilter]:
         """List all Gmail filters."""
@@ -383,8 +374,6 @@ class GmailClient:
     def delete_filter(self, filter_id: str) -> None:
         """Delete a Gmail filter by ID."""
         self.service.users().settings().filters().delete(userId="me", id=filter_id).execute()
-
-    # Label operations
 
     def list_labels_full(self) -> list[GmailLabel]:
         """List all labels with full metadata."""

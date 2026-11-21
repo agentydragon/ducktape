@@ -103,7 +103,6 @@ def display_plan(plan: Plan, inbox: GmailInbox, console: Console, dry_run: bool,
         console.print("[yellow]No actions planned[/yellow]")
         return
 
-    # Batch fetch metadata for all messages not already cached
     inbox.ensure_metadata_cached(plan.actions.keys())
 
     # When grouping by category on a merged plan, render one table per planner so
@@ -149,11 +148,9 @@ def _add_table_row(
     *,
     show_subject: bool = True,
 ):
-    # Look up message metadata from inbox cache (fetches on demand if not cached)
     metadata = inbox.get_metadata(message_id)
     action = planned_action.action
 
-    # Compute action icon
     has_ops = action.labels_to_add or action.labels_to_remove
     removes_inbox = SystemLabel.INBOX in action.labels_to_remove
 
@@ -164,13 +161,10 @@ def _add_table_row(
     else:
         action_icon = "🏷️  label"
 
-    # Format Gmail link (keep short label but clickable)
     link = gmail_link(message_id)
 
-    # Format date from metadata
     date_str = _format_date(metadata)
 
-    # Format custom data values using protocol
     custom_values = []
     data = action.custom_data
     for key, _label in custom_columns:
@@ -189,7 +183,6 @@ def _add_table_row(
 def summarize_plan(plan: Plan) -> str:
     total = len(plan.actions)
 
-    # Count actual operations
     remove_inbox = sum(1 for p in plan.actions.values() if SystemLabel.INBOX in p.action.labels_to_remove)
     add_labels = sum(len(p.action.labels_to_add) for p in plan.actions.values())
     remove_labels = sum(len(p.action.labels_to_remove) for p in plan.actions.values())

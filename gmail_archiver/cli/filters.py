@@ -206,7 +206,6 @@ def upload(filters_file: FiltersFileArg, dry_run: DryRunOption = None, token_fil
         console.print("[green]✓[/green] All filters already exist. Nothing to upload.")
         return
 
-    # Show what will be created
     console.print(f"[bold]Filters to create ({len(filter_diff.to_create)}):[/bold]")
     for f in filter_diff.to_create:
         console.print(f"  [green]+[/green] {format_filter_for_display(f)}")

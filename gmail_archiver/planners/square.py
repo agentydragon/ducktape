@@ -34,12 +34,10 @@ class SquareReceipt(BaseModel):
 
 
 def parse_square(email: Email) -> SquareReceipt:
-    # Get email date from parsed Date header
     email_dt = email.date
     if email_dt:
         email_dt = email_dt.replace(tzinfo=None)
 
-    # Extract text using get_text() which handles HTML conversion
     text = email.get_text()
 
     # Extract structured data using regex
@@ -84,7 +82,6 @@ class SquarePlanner:
     def plan(self, inbox: GmailInbox) -> Plan:
         plan = Plan(planner=self)
 
-        # Fetch messages using inbox interface
         query = "from:receipts@messaging.squareup.com in:inbox"
         messages = inbox.fetch_messages(query)
 

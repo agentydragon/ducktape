@@ -7,7 +7,6 @@ import typer
 
 from gmail_archiver.gmail_client import GmailClient
 
-# Default token file location
 GMAIL_TOKEN_FILE = Path.home() / ".gmail-mcp" / "token.json"
 
 
@@ -15,7 +14,6 @@ def get_client(token_file: Path | None) -> GmailClient:
     return GmailClient(token_file or GMAIL_TOKEN_FILE)
 
 
-# Reusable option type annotations
 TokenFileOption = Annotated[Path | None, typer.Option("--token-file", "-t", help="Path to Gmail OAuth token file")]
 
 # Dry run with interactive default (None = prompt user)

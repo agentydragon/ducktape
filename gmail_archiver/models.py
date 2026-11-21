@@ -37,7 +37,6 @@ class Email:
     internal_date: datetime
     snippet: str | None
 
-    # Raw content - single source of truth
     raw_bytes: bytes
 
     @cached_property

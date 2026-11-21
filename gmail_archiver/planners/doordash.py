@@ -61,15 +61,12 @@ def parse_doordash_subject(subject: str) -> DoorDashEmail:
     - "Details of your no-contact delivery from Sardine Can"
     - "Final receipt for Michael from Target"
     """
-    # Order confirmation
     if m := re.search(r"Order Confirmation for \w+ from (.+)$", subject):
         return DoorDashEmail(restaurant=m.group(1), email_type=DoorDashEmailType.CONFIRMATION)
 
-    # Delivery notification
     if m := re.search(r"delivery from (.+)$", subject):
         return DoorDashEmail(restaurant=m.group(1), email_type=DoorDashEmailType.DELIVERY)
 
-    # Final receipt
     if m := re.search(r"receipt for \w+ from (.+)$", subject):
         return DoorDashEmail(restaurant=m.group(1), email_type=DoorDashEmailType.RECEIPT)
 
@@ -93,7 +90,6 @@ class DoorDashPlanner:
 
         messages = inbox.fetch_messages("from:doordash.com label:INBOX")
 
-        # Group by (restaurant, date)
         by_order: dict[tuple[str, str], list[Email]] = defaultdict(list)
         parsed_cache: dict[str, DoorDashEmail] = {}
         unparseable: list[Email] = []
@@ -132,7 +128,6 @@ class DoorDashPlanner:
             latest = sorted_emails[0]
             latest_parsed = parsed_cache[latest.id]
 
-            # Keep the most final email
             plan.add_action(
                 message=latest,
                 labels_to_add=[],
@@ -141,7 +136,6 @@ class DoorDashPlanner:
                 custom_data=latest_parsed,
             )
 
-            # Archive older/less final emails
             for msg in sorted_emails[1:]:
                 plan.add_action(
                     message=msg,

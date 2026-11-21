@@ -15,7 +15,6 @@ class AnthemReimbursement(BaseModel):
 
 
 def parse_anthem_reimbursement(email: Email) -> AnthemReimbursement:
-    # Get email date from parsed Date header
     email_dt = email.date
     if email_dt:
         email_dt = email_dt.replace(tzinfo=None)
