@@ -46,7 +46,7 @@ spec:
       gitlab-exporter:
         deployment:
           annotations:
-            goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies":[{"containerName":"gitlab-exporter","controlledValues":"RequestsOnly","minAllowed":{"cpu":"75m","memory":"96Mi"},"maxAllowed":{"cpu":"75m","memory":"128Mi"},"controlledResources":["memory"]},{"containerName":"*","controlledValues":"RequestsOnly","mode":"Off"}]}'
+            goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies":[{"containerName":"gitlab-exporter","controlledValues":"RequestsOnly","controlledResources":["cpu","memory"]},{"containerName":"*","controlledValues":"RequestsOnly","mode":"Off"}]}'
             goldilocks.fairwinds.com/vpa-update-mode: initial
       gitlab-shell:
         deployment:

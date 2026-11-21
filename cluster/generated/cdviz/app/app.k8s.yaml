@@ -1161,7 +1161,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "collector", "controlledValues": "RequestsOnly", "controlledResources": ["memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
+    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "collector", "controlledValues": "RequestsOnly", "controlledResources": ["cpu", "memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
     goldilocks.fairwinds.com/vpa-update-mode: initial
   name: collector
   namespace: cdviz

@@ -189,15 +189,8 @@ def _deployment(scope: Construct, configuration: ConfigMap, caddy_config: Config
             labels=SERVICE.pods.selector,
             annotations=initial_request_annotations(
                 # Peak 30-day working sets were 475Mi and 35Mi.
-                ContainerPolicy.memory_requests_only(
-                    _NAME,
-                    cpu_request=_APP_CPU_REQUEST,
-                    memory_floor=_APP_MEMORY_REQUEST,
-                    memory_limit=_APP_MEMORY_LIMIT,
-                ),
-                ContainerPolicy.memory_requests_only(
-                    "caddy", cpu_request=_CADDY_CPU_REQUEST, memory_floor="40Mi", memory_limit=_CADDY_MEMORY_LIMIT
-                ),
+                ContainerPolicy.cpu_and_memory_requests_only(_NAME, memory_floor=_APP_MEMORY_REQUEST),
+                ContainerPolicy.cpu_and_memory_requests_only("caddy", memory_floor="40Mi"),
             ),
         ),
         spec=k8s.DeploymentSpec(
