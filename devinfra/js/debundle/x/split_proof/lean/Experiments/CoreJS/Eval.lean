@@ -56,7 +56,7 @@ def makeFunc (env : Env) (f : Func) : M W Val := do
   let env ← selfScope env f.self f.name
   let a ← alloc {
     proto := some functionProto, code := some (.closure f (env.capture f.closes) []),
-    props := [("length", .data (.num (Float.ofNat f.params.length)) false false true),
+    props := [("length", .data (.num (Float.ofNat f.length)) false false true),
       ("name", .data (.str f.name) false false true)] }
   (if f.kind == .normal then addPrototype a else pure ())
   initSelf env f.self f.name (.obj a)
@@ -179,7 +179,7 @@ def evalExpr : Nat → Env → Expr → M W Val
       let proto ← alloc { proto := some objectProto, props := [] }
       let c ← alloc {
         proto := some functionProto, code := some (.closure ctor closed []),
-        props := [("length", .data (.num (Float.ofNat ctor.params.length)) false false true),
+        props := [("length", .data (.num (Float.ofNat ctor.length)) false false true),
           ("name", .data (.str name) false false true), ("prototype", .data (.obj proto) false false false)] }
       modifyObj proto fun o => { o with props := [("constructor", .data (.obj c) true false true)] }
       -- methods and accessors in order; then the class has its name; then the static fields in order
@@ -337,10 +337,16 @@ def callFn : Nat → Val → Val → List Val → M W Val
       match (← getObj a).code with
       | some (.closure f closed _) =>
         if f.kind == .classCtor then throwErr .type "class constructor cannot be invoked without 'new'" else do
-        let env ← enterFunction f closed this args
-        match ← execStmts n env f.body with
-        | .ret v => pure v
-        | _ => pure .undef
+        match f.opaqueBody with
+        | some (code, part, free) =>
+          converse n code (free.map (closed.vars.lookup ·))
+            (.run code part (← toW callee) (← toW (if f.kind == .arrow then closed.this else this))
+              (← args.mapM toW) false)
+        | none =>
+          let env ← enterFunction f closed this args
+          match ← execStmts n env f.body with
+          | .ret v => pure v
+          | _ => pure .undef
       | some (.host name) => hostCall name this args
       | some (.opaque code part cells) => do
         converse n code cells (.run code part (← toW callee) (← toW this) (← args.mapM toW) false)
@@ -360,11 +366,19 @@ def construct : Nat → Val → List Val → M W Val
         let proto ← getProp (callFn n) callee (.str "prototype")
         let this ← alloc { proto := some (match proto with | .obj p => p | _ => objectProto), props := [] }
         evalFields n { closed with this := .obj this } this fields
-        let env ← enterFunction f closed (.obj this) args
-        match ← execStmts n env f.body with
-        | .ret (.obj r) => pure (.obj r)
-        | .ret (.error kind msg) => pure (.error kind msg)
-        | .ret (.host name) => unknown s!"host value {name} is inspected"
+        let result ← match f.opaqueBody with
+          | some (code, part, free) =>
+            converse n code (free.map (closed.vars.lookup ·))
+              (.run code part (← toW callee) (← toW (.obj this)) (← args.mapM toW) true)
+          | none =>
+            let env ← enterFunction f closed (.obj this) args
+            match ← execStmts n env f.body with
+            | .ret value => pure value
+            | _ => pure .undef
+        match result with
+        | .obj r => pure (.obj r)
+        | .error kind msg => pure (.error kind msg)
+        | .host name => unknown s!"host value {name} is inspected"
         | _ => pure (.obj this)
       | some (.opaque code part cells) => do
         let proto ← getProp (callFn n) callee (.str "prototype")

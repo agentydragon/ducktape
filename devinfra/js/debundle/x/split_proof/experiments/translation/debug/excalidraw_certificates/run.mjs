@@ -26,6 +26,7 @@ for (const file of files) {
       statements: core.numbered,
       modeled: core.units - core.opaque.length,
       opaque: core.opaque,
+      opaqueBodies: core.opaqueBodies,
       refused: core.refused,
     });
   } catch (e) {

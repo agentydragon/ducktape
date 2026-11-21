@@ -118,6 +118,9 @@ inductive ClassMember where
 /-- `self`: a named function expression, whose body sees its own name. -/
 inductive Func where
   | mk (name : String) (kind : FuncKind) (self : Bool) (params : List Name) (body : List Stmt)
+  /-- Deferred code: creation captures `free` cells; invocation gives the world callee, receiver and raw arguments.
+  `code` is the containing source unit's stable ID; `part` identifies a lexical function within it. -/
+  | opaque (name : String) (kind : FuncKind) (self : Bool) (length code part : Nat) (free : List Name)
 
 inductive Stmt where
   | expr (e : Expr)
@@ -151,11 +154,17 @@ is handed their bindings in this order. -/
 def opaqueNames (decls : List (Name × DeclKind)) (funs : List (Name × Nat × Bool)) (free : List Name) : List Name :=
   decls.map (·.1) ++ (funs.map (·.1) ++ free)
 
-def Func.name : Func → String | .mk n .. => n
-def Func.kind : Func → FuncKind | .mk _ k .. => k
-def Func.self : Func → Bool | .mk _ _ s .. => s
-def Func.params : Func → List Name | .mk _ _ _ ps _ => ps
-def Func.body : Func → List Stmt | .mk _ _ _ _ b => b
+def Func.name : Func → String | .mk n .. | .opaque n .. => n
+def Func.kind : Func → FuncKind | .mk _ k .. | .opaque _ k .. => k
+def Func.self : Func → Bool | .mk _ _ s .. | .opaque _ _ s .. => s
+/-- Modeled parameter bindings; an opaque invocation receives raw arguments instead. -/
+def Func.params : Func → List Name | .mk _ _ _ ps _ => ps | .opaque .. => []
+def Func.length : Func → Nat | .mk _ _ _ ps _ => ps.length | .opaque _ _ _ n .. => n
+/-- Modeled statements; opaque functions dispatch to the world before this accessor is used. -/
+def Func.body : Func → List Stmt | .mk _ _ _ _ b => b | .opaque .. => []
+def Func.opaqueBody : Func → Option (Nat × Nat × List Name)
+  | .opaque _ _ _ _ code part free => some (code, part, free)
+  | .mk .. => none
 
 /-! ## Modules -/
 
@@ -275,6 +284,7 @@ def ClassMember.free : ClassMember → List Name
 
 /-- The names of the scope around a function that its code can mean. -/
 def Func.free : Func → List Name
+  | .opaque name _ self _ _ _ free => free.filter fun x => !(self && x == name)
   | .mk name _ self params body =>
     (freeStmts body).filter fun x =>
       !(params.contains x || (varNamesOf body).contains x || (lexNames body).contains x || (self && x == name))

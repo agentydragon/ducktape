@@ -164,6 +164,40 @@ export function generatedOpaqueCase(seed) {
   };
 }
 
+// The class crosses an independent allocation before its captured binding is initialized.
+// The scripts read current bindings and receivers; no generated result is hard-coded in the world.
+export function generatedOpaqueClassCase(seed) {
+  const value = 1 + ((seed >>> 0) % 17);
+  return {
+    name: `opaque class capture seed ${seed}`,
+    source: `
+      class Box {
+        constructor(argument) { const [v] = [captured]; this.value = v; this.argument = argument; }
+        read() { const [v] = [this.argument]; return v; }
+      }
+      const independent = ${value};
+      let captured = ${value + 1};
+      captured = ${value + 2};
+      const box = new Box(${value + 3});
+      console.log(box.value, box.read(), independent, box.constructor === Box);
+    `,
+    scripts: {
+      "0/1": [
+        ["readVar", 0],
+        ["set", ["r", 1], ["s", "value"], ["r", 3]],
+        ["set", ["r", 1], ["s", "argument"], ["r", 2]],
+      ],
+      "0/2": [
+        ["get", ["r", 1], ["s", "argument"]],
+        ["done", ["r", 2]],
+      ],
+    },
+    bodyParts: ["0/1", "0/2"],
+    generatedClass: true,
+    move: true,
+  };
+}
+
 // Each generated plan crosses two real writes, with each assignment kept beside its own declaration.
 // Successful certification is mandatory; these cases do not rely on random split selection.
 export function generatedBindingCases(seed) {
