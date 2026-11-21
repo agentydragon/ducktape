@@ -1,7 +1,7 @@
 # U.S. federal income tax — 2024 tax-year brackets.
 #
-# Single filer only (MFJ / HoH / MFS deferred). Standard deduction
-# only (itemized deductions deferred until housing layer lands).
+# Single filer only (MFJ / HoH / MFS deferred). Itemized deductions come from a world's
+# `SaltDeduction` and `MortgageInterestDeduction` declarations.
 #
 # `upper: "Infinity"` is the open-ended top bracket. Brackets are
 # walked low to high; the rate applies to income in the slice

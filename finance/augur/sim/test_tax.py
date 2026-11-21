@@ -102,7 +102,7 @@ def test_carryforward_offsets_short_before_long() -> None:
     assert net_capital_gains(100, 200, 350, 30) == NettedGains(0, 0, 30, 20)
 
 
-def test_income_retains_exempt_sources_and_resets_only_one_taxpayer(federal: TaxRules) -> None:
+def test_income_retains_exempt_sources_and_resets_only_one_taxpayer() -> None:
     state_coupon = InterestIncome(character=Municipal(state=JurisdictionId("test_state")))
     income = IncomeLedger([ORDINARY_INCOME, state_coupon])
     income.enroll(AgentId("test_household"))

@@ -166,3 +166,13 @@ py_library(
     srcs = ["bills.py"],
     deps = ["//finance/augur/sim:bills"],
 )
+
+py_library(
+    name = "accounts",
+    srcs = ["accounts.py"],
+    deps = [
+        "//finance/augur/sim:books",
+        "//finance/augur/sim:ids",
+        "//finance/augur/sim:money",
+    ],
+)

@@ -42,21 +42,9 @@ request in <../product/> and tracks its household
 (<../policy/cash_band_household.py>, or a claims-only <../policy/funding.py> `ClaimPayer`)
 on each world it composes.
 
-## Outcomes and failure
-
-A rejected action stops that path, preserves successful earlier actions, and
-executes no later actions or policy calls on it. Unpaid due claims are a distinct
-stop reason. Invalid routing/input and simulator bugs are errors, not modeled
-investment outcomes. Independent paths continue.
-
-Results preserve original rollout IDs, the observed prefix, ending books and
-mark time. A stop book is not completed-horizon wealth; unobserved months are not
-zero-valued observations. Policy intentions, attempted requests and actual paid
-consumption are distinct. Tax and contractual liabilities are not inferred from
-a generic spending shortfall.
-
 ## References
 
+- <../SPEC.md>: failure, stop and result contracts (§ Accounting and failure, § Outputs and observation boundaries).
 - <DESIGN.md>: current preparation, execution and output boundaries.
 - <REQUIREMENTS.md>: capability requirements and limitations.
 - <docs/tax_engine_evaluation.md>: tax engine build-versus-adopt evaluation.

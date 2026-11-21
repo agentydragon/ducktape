@@ -50,8 +50,7 @@ TAX_ACCRUAL_EVENT_SCHEMA = pl.Schema(
     }
 )
 
-# `TaxBreakdown` records the inputs and component tax amounts behind
-# each year-end accrual.
+# The inputs and component tax amounts behind each `TaxAccrual` row.
 TAX_BREAKDOWN_EVENT_SCHEMA = pl.Schema(
     {
         "rollout_id": pl.Int64(),
@@ -65,7 +64,7 @@ TAX_BREAKDOWN_EVENT_SCHEMA = pl.Schema(
         "stcg_quanta": pl.Int64(),
         "standard_deduction_quanta": pl.Int64(),
         # MID under this jurisdiction's principal cap, summed across the profile's qualifying
-        # mortgages. Zero when no MortgageInterestDeductionPolicy applies (e.g. cash buy, owner
+        # mortgages. Zero when no MortgageInterestDeduction applies (e.g. cash buy, owner
         # doesn't live in the property, or jurisdiction excluded from the policy's cap map).
         "mortgage_interest_deduction_quanta": pl.Int64(),
         # Federal SALT deduction allowed this year: property tax paid this calendar year + state
@@ -89,9 +88,8 @@ TAX_BREAKDOWN_EVENT_SCHEMA = pl.Schema(
     }
 )
 
-# `TaxSettlement` applies paid tax dollars against already-accrued
-# liabilities for an agent and tax year. Cash still moves through
-# Transfer events; this frame is the liability-side settlement.
+# A `TaxSettlementOutcome`: paid tax dollars applied against already-accrued liabilities for an
+# agent and tax year. Cash still moves through `transfers`; this frame is the liability-side settlement.
 TAX_SETTLEMENT_EVENT_SCHEMA = pl.Schema(
     {
         "rollout_id": pl.Int64(),
@@ -185,10 +183,8 @@ MORTGAGE_PAYMENT_EVENT_SCHEMA = pl.Schema(
     }
 )
 
-# `RolloutFailure` flags a rollout where a required due-now
-# obligation could not be paid in full after liquidity policy sale
-# decisions. Once flagged, the rollout stays failed for the rest of the
-# simulation; the actual stopped book is retained and later months are unobserved.
+# The obligations a rollout failed to pay in full (`ObligationOutcome.failure_active`). A failed
+# rollout stays failed; its actual stopped book is retained and later months are unobserved.
 ROLLOUT_FAILURE_EVENT_SCHEMA = pl.Schema(
     {
         "rollout_id": pl.Int64(),
@@ -203,12 +199,8 @@ ROLLOUT_FAILURE_EVENT_SCHEMA = pl.Schema(
     }
 )
 
-# `LotDisposition` records the consumption of part (or all) of one
-# lot by one logical sale. A single AssetSale "sell N units of vti"
-# decomposes into one disposition row per lot the sale ate into;
-# `cause_id` groups all dispositions of the same sale for downstream
-# tax classification. Holding period for LTCG/STCG is
-# `month_index - purchase_month_index`.
+# One row per lot a `Sell` consumed from, in part or whole (`holdings.Disposition`); `cause_id` groups
+# the rows of one sale. The LTCG/STCG holding period is `month_index - purchase_month_index`.
 LOT_DISPOSITION_EVENT_SCHEMA = pl.Schema(
     {
         "rollout_id": pl.Int64(),

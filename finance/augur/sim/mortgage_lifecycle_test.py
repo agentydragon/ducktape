@@ -24,6 +24,7 @@ from finance.augur.sim.property import Housing, MortgageFinancing, Purchase, Sal
 from finance.augur.sim.property_tax import PropertyTaxPolicy
 from finance.augur.sim.results import Rejected
 from finance.augur.sim.schedule import Once
+from finance.augur.sim.testing.accounts import account, ref
 from finance.augur.sim.testing.bills import biller
 from finance.augur.sim.testing.series import level_series
 from finance.augur.sim.testing.situs import flat_parcel, property_tax
@@ -34,15 +35,6 @@ BOB = AgentId("bob")
 # Each home's parcel, taxed a flat 1.2% of its price.
 HOME_PARCEL = flat_parcel(Decimal("0.012"))
 SF_HOME = HomeValueKey(location_id=LocationId("sf"))
-
-
-def ref(agent_id: AgentId) -> AccountRef:
-    return AccountRef(agent_id=agent_id, account_id=CHECKING)
-
-
-def account(agent_id: AgentId, balance: Decimal | int = 0) -> tuple[AccountRef, int]:
-    """An account and its opening balance."""
-    return ref(agent_id), USD.quanta(balance)
 
 
 def home_value(*paths: list[Decimal | int], horizon_months: int) -> tuple[Series, ...]:
