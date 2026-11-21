@@ -100,7 +100,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 		commandLauncher.Slice = CommandSlice
 		commandLauncher.ProcessLimits = ResourceLimits{}
 		commandSupervisor := reconcileKernelSystemdScope(t, &commandLauncher, stateDir, sandboxUID, RuntimeOwner("command-proof"))
-		testCommandRelease(t, ctx, commandSupervisor, dir, runtimeOwner.LifetimeDirectory)
+		testCommandRelease(t, ctx, commandSupervisor, supervisor, dir, runtimeOwner.LifetimeDirectory)
 	})
 
 	t.Run("stale_runtime_invocation_cannot_execute", func(t *testing.T) {
@@ -937,22 +937,43 @@ func reconcileKernelSystemdScope(t *testing.T, launcher *SystemdLauncher, stateD
 	return supervisor
 }
 
-// The process-group leader has exited and been reaped by systemd before Release.
-// Signaling the stored pidfd must still kill its original group without touching
-// a child that called setsid, even after the executor closes its command socket.
-func testCommandRelease(t *testing.T, ctx context.Context, supervisor *Supervisor, dir, socketDir string) {
+// Launch the proof client as the guest user, just like the native executor.
+// Runtime's root UID has no CAP_KILL in the guest service.
+func testCommandRelease(t *testing.T, ctx context.Context, commandSupervisor, clientSupervisor *Supervisor, dir, socketDir string) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	listener, err := ListenCommandSocket(filepath.Join(socketDir, "command-proof.sock"))
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer listener.Close()
+	clientBinary, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := clientSupervisor.NewProcess(ProcessConfig{
+		Command: []string{clientBinary, "-test.run=^TestCommandReleaseClient$", "-test.v"},
+		Dir:     dir, StopGrace: fixtureStopGrace,
+		Env: map[string]string{"AGENTPLANE_COMMAND_PROOF_SOCKET": listener.Addr().String()},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := client.Stop(ctx); err != nil {
+			t.Error(err)
+		}
+	}()
+	go func() { _, _ = io.Copy(io.Discard, client.Stderr()) }()
 	ownerCtx, stopOwner := context.WithCancel(ctx)
 	ownerDone := make(chan error, 1)
 	helper := "/run/agentplane/environment/bin/agentplane-execution-service"
 	go func() {
-		ownerDone <- ServeCommands(ownerCtx, listener, supervisor, helper, os.Getpid)
+		ownerDone <- ServeCommands(ownerCtx, listener, commandSupervisor, helper, client.PID)
 	}()
 	stopAndWait := sync.OnceValue(func() error {
 		stopOwner()
@@ -968,6 +989,50 @@ func testCommandRelease(t *testing.T, ctx context.Context, supervisor *Superviso
 			t.Error(err)
 		}
 	}()
+	stdout := client.Stdout().(*os.File)
+	defer stdout.Close()
+	deadline, _ := ctx.Deadline()
+	if err := stdout.SetReadDeadline(deadline); err != nil {
+		t.Fatal(err)
+	}
+	output, err := io.ReadAll(stdout)
+	if err != nil {
+		t.Fatalf("read proof client output: %v (%q)", err, output)
+	}
+	if code, err := client.Wait(ctx); code != 0 || err != nil {
+		t.Fatalf("proof client exit = (%d, %v), output = %q", code, err, output)
+	}
+	detachedPID := 0
+	for _, line := range strings.Split(string(output), "\n") {
+		if value, ok := strings.CutPrefix(line, "COMMAND_DETACHED_PID "); ok {
+			_, _ = fmt.Sscan(value, &detachedPID)
+		}
+	}
+	if detachedPID <= 0 {
+		t.Fatalf("missing detached child PID in proof client output: %q", output)
+	}
+	detachedFD := testCommandPIDFD(t, detachedPID)
+	if err := stopAndWait(); err != nil {
+		t.Fatal(err)
+	}
+	if !testCommandExited(t, detachedFD, 0) {
+		t.Fatal("Runtime command owner returned before fencing the detached child")
+	}
+}
+
+// This test is invoked by the guest fixture in a separate non-root service.
+// systemd has reaped the leader before the client releases the original group.
+func TestCommandReleaseClient(t *testing.T) {
+	socket := os.Getenv("AGENTPLANE_COMMAND_PROOF_SOCKET")
+	if socket == "" {
+		t.Skip("this test runs as the non-root child of TestSystemdKernelFixture")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
 	out, outChild, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
@@ -988,7 +1053,7 @@ printf '%s %s %d %d\n' "$0" "$COMMAND_PROOF" "$group" "$detached"
 exit 23
 `},
 	}
-	command, err := StartRemoteCommand(ctx, listener.Addr().String(), config, CommandFiles{Stdout: outChild, Stderr: outChild})
+	command, err := StartRemoteCommand(ctx, socket, config, CommandFiles{Stdout: outChild, Stderr: outChild})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1022,12 +1087,7 @@ exit 23
 	if testCommandExited(t, detachedFD, 0) {
 		t.Fatal("setsid child exited during ordinary command release")
 	}
-	if err := stopAndWait(); err != nil {
-		t.Fatal(err)
-	}
-	if !testCommandExited(t, detachedFD, 0) {
-		t.Fatal("Runtime command owner returned before fencing the detached child")
-	}
+	fmt.Printf("COMMAND_DETACHED_PID %d\n", detachedPID)
 }
 
 func testCommandPIDFD(t *testing.T, pid int) int {
