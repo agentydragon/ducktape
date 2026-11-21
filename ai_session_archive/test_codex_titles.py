@@ -15,11 +15,10 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
 from ai_session_archive.database import CodexTitleBackfillRow, CodexTitleObservationRow, ResticSnapshotRow, SessionRow
-from ai_session_archive.ingest import ArchiveSource, SnapshotIngestor
 from ai_session_archive.models import Harness
 from ai_session_archive.restic import ResticCommandError
 from ai_session_archive.source_paths import HarnessRoot
-from ai_session_archive.testing import _backup, _new_repository
+from ai_session_archive.testing import backup, new_ingestor, new_repository
 
 pytest_plugins = ["testing.postgres_fixtures", "ai_session_archive.testing"]
 
@@ -63,20 +62,18 @@ def _transcript(home: Path) -> Path:
 
 
 def test_codex_titles_from_fresh_imports(tmp_path: Path, postgres_engine: Engine) -> None:
-    repository, env = _new_repository(tmp_path)
+    repository, env = new_repository(tmp_path)
     home = Path(env["HOME"])
     codex = home / ".codex"
     _transcript(home)
-    _backup(env, Path(".codex"), cwd=home)
+    backup(env, Path(".codex"), cwd=home)
     first_snapshot = repository.list_snapshots()[0]
     assert repository.list_files(first_snapshot.id, "/.codex/session_index.jsonl") == []
     assert (
         repository.list_files(first_snapshot.id, "/.local/state/ducktape/ai-session-backup-sqlite/manifest.json") == []
     )
     factory = sessionmaker(postgres_engine, expire_on_commit=False)
-    ingestor = SnapshotIngestor(
-        factory, ArchiveSource("host", "Host", repository, (HarnessRoot(Harness.CODEX, "/.codex"),))
-    )
+    ingestor = new_ingestor(factory, repository, HarnessRoot(Harness.CODEX, "/.codex"))
     assert ingestor.ingest().snapshots_incomplete == 0
     with factory() as db:
         assert db.scalar(select(SessionRow.title)) is None
@@ -85,7 +82,7 @@ def test_codex_titles_from_fresh_imports(tmp_path: Path, postgres_engine: Engine
     # A partially captured index must not hide the good SQLite image.
     (codex / "session_index.jsonl").write_text('{"id":"unfinished"')
     _snapshot_sqlite(home, "First name")
-    _backup(env, Path(".codex"), Path(".local/state/ducktape/ai-session-backup-sqlite"), cwd=home)
+    backup(env, Path(".codex"), Path(".local/state/ducktape/ai-session-backup-sqlite"), cwd=home)
     second_snapshot = repository.list_snapshots()[-1]
     report = ingestor.ingest()
     assert report.snapshots_incomplete == 0
@@ -114,18 +111,16 @@ def test_codex_titles_from_fresh_imports(tmp_path: Path, postgres_engine: Engine
 
 
 def test_codex_title_rename_order_and_partial_index(tmp_path: Path, postgres_engine: Engine) -> None:
-    repository, env = _new_repository(tmp_path)
+    repository, env = new_repository(tmp_path)
     home = Path(env["HOME"])
     codex = home / ".codex"
     _transcript(home)
     (codex / "session_index.jsonl").write_text(_index_record("First name"))
     _snapshot_sqlite(home, "Different SQLite title")
-    _backup(env, Path(".codex"), Path(".local/state/ducktape/ai-session-backup-sqlite"), cwd=home)
+    backup(env, Path(".codex"), Path(".local/state/ducktape/ai-session-backup-sqlite"), cwd=home)
     first_snapshot = repository.list_snapshots()[0]
     factory = sessionmaker(postgres_engine, expire_on_commit=False)
-    ingestor = SnapshotIngestor(
-        factory, ArchiveSource("host", "Host", repository, (HarnessRoot(Harness.CODEX, "/.codex"),))
-    )
+    ingestor = new_ingestor(factory, repository, HarnessRoot(Harness.CODEX, "/.codex"))
     assert ingestor.ingest().snapshots_incomplete == 0
     with factory() as db:
         assert db.scalar(select(SessionRow.title)) == "First name"
@@ -134,7 +129,7 @@ def test_codex_title_rename_order_and_partial_index(tmp_path: Path, postgres_eng
         index.write(_index_record("Renamed", timestamp="2026-01-02T00:00:00Z"))
         index.write('{"id":"unfinished"')
     _snapshot_sqlite(home, "Renamed")
-    _backup(env, Path(".codex"), Path(".local/state/ducktape/ai-session-backup-sqlite"), cwd=home)
+    backup(env, Path(".codex"), Path(".local/state/ducktape/ai-session-backup-sqlite"), cwd=home)
     report = ingestor.ingest()
     assert report.snapshots_incomplete == 0
     assert report.codex_metadata_partial == 1
@@ -150,7 +145,7 @@ def test_codex_title_rename_order_and_partial_index(tmp_path: Path, postgres_eng
 
 
 def test_retry_updates_observation_after_index_read_recovers(tmp_path: Path, postgres_engine: Engine) -> None:
-    repository, env = _new_repository(tmp_path)
+    repository, env = new_repository(tmp_path)
     home = Path(env["HOME"])
     codex = home / ".codex"
     _transcript(home)
@@ -160,12 +155,10 @@ def test_retry_updates_observation_after_index_read_recovers(tmp_path: Path, pos
         + "\n"
     )
     _snapshot_sqlite(home, "SQLite fallback")
-    _backup(env, Path(".codex"), Path(".local/state/ducktape/ai-session-backup-sqlite"), cwd=home)
+    backup(env, Path(".codex"), Path(".local/state/ducktape/ai-session-backup-sqlite"), cwd=home)
     snapshot = repository.list_snapshots()[0]
     factory = sessionmaker(postgres_engine, expire_on_commit=False)
-    ingestor = SnapshotIngestor(
-        factory, ArchiveSource("host", "Host", repository, (HarnessRoot(Harness.CODEX, "/.codex"),))
-    )
+    ingestor = new_ingestor(factory, repository, HarnessRoot(Harness.CODEX, "/.codex"))
 
     original_dump = repository.dump_to
 
@@ -202,7 +195,7 @@ def test_retry_updates_observation_after_index_read_recovers(tmp_path: Path, pos
 
 
 def test_index_title_requires_unique_native_identity(tmp_path: Path, postgres_engine: Engine) -> None:
-    repository, env = _new_repository(tmp_path)
+    repository, env = new_repository(tmp_path)
     home = Path(env["HOME"])
     codex = home / ".codex"
     for relative in ("sessions/2026/01/shared.jsonl", "archived_sessions/shared.jsonl"):
@@ -212,11 +205,9 @@ def test_index_title_requires_unique_native_identity(tmp_path: Path, postgres_en
     (codex / "session_index.jsonl").write_text(
         json.dumps({"id": "shared", "thread_name": "Ambiguous", "updated_at": "2026-01-01T00:00:00Z"}) + "\n"
     )
-    _backup(env, Path(".codex"), cwd=home)
+    backup(env, Path(".codex"), cwd=home)
     factory = sessionmaker(postgres_engine, expire_on_commit=False)
-    ingestor = SnapshotIngestor(
-        factory, ArchiveSource("host", "Host", repository, (HarnessRoot(Harness.CODEX, "/.codex"),))
-    )
+    ingestor = new_ingestor(factory, repository, HarnessRoot(Harness.CODEX, "/.codex"))
     assert ingestor.ingest().snapshots_incomplete == 0
     with factory() as db:
         assert [row.title for row in db.scalars(select(SessionRow))] == [None, None]

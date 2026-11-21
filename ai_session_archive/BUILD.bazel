@@ -267,7 +267,9 @@ py_library(
     srcs = ["testing.py"],
     deps = [
         ":database_migrate",
+        ":ingest",
         ":restic",
+        ":source_paths",
         "//testing:postgres",
         "@pypi//pytest",
         "@pypi//sqlalchemy",
@@ -302,7 +304,6 @@ py_test(
     requires_docker = True,
     deps = [
         ":database",
-        ":ingest",
         ":models",
         ":queries",
         ":record_json",
@@ -342,7 +343,6 @@ py_test(
     requires_docker = True,
     deps = [
         ":database",
-        ":ingest",
         ":models",
         ":queries",
         ":session_kind_projection",
@@ -365,7 +365,6 @@ py_test(
     requires_docker = True,
     deps = [
         ":database",
-        ":ingest",
         ":models",
         ":queries",
         ":source_paths",
@@ -387,7 +386,6 @@ py_test(
     requires_docker = True,
     deps = [
         ":database",
-        ":ingest",
         ":models",
         ":queries",
         ":source_paths",
@@ -409,7 +407,6 @@ py_test(
     requires_docker = True,
     deps = [
         ":database",
-        ":ingest",
         ":models",
         ":source_paths",
         ":testing",
@@ -469,7 +466,6 @@ py_test(
     requires_docker = True,
     deps = [
         ":database",
-        ":ingest",
         ":models",
         ":restic",
         ":source_paths",
@@ -621,7 +617,6 @@ py_test(
     requires_docker = True,
     deps = [
         ":database",
-        ":ingest",
         ":models",
         ":restic",
         ":source_paths",
@@ -641,7 +636,6 @@ py_test(
     requires_docker = True,
     deps = [
         ":database",
-        ":ingest",
         ":models",
         ":restic",
         ":source_paths",
@@ -667,7 +661,6 @@ py_test(
     requires_docker = True,
     deps = [
         ":database",
-        ":ingest",
         ":models",
         ":session_projection",
         ":source_paths",

@@ -2,15 +2,18 @@
 
 import os
 import subprocess
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session
 
 from ai_session_archive.database_migrate import RUNNER
+from ai_session_archive.ingest import ArchiveSource, SnapshotIngestor
 from ai_session_archive.restic import ResticRepository, find_pinned_restic_binary
+from ai_session_archive.source_paths import HarnessRoot
 from testing.postgres import DatabaseNames, create_temporary_database
 
 
@@ -25,7 +28,7 @@ def postgres_engine(postgres_admin_url: str, database_names: DatabaseNames) -> I
             engine.dispose()
 
 
-def _new_repository(tmp_path: Path) -> tuple[ResticRepository, dict[str, str]]:
+def new_repository(tmp_path: Path) -> tuple[ResticRepository, dict[str, str]]:
     repository_path = tmp_path / "repository"
     environment = {
         **os.environ,
@@ -41,9 +44,16 @@ def _new_repository(tmp_path: Path) -> tuple[ResticRepository, dict[str, str]]:
     return ResticRepository(binary=binary, environment=environment), environment
 
 
-def _backup(environment: dict[str, str], *source_paths: Path, force: bool = False, cwd: Path | None = None) -> None:
+def backup(environment: dict[str, str], *source_paths: Path, force: bool = False, cwd: Path | None = None) -> None:
     arguments = [find_pinned_restic_binary(), "backup"]
     if force:
         arguments.append("--force")
     arguments.extend(("--host", "archive-test", "--", *(str(path) for path in source_paths)))
     subprocess.run(arguments, env=environment, check=True, capture_output=True, cwd=cwd)
+
+
+def new_ingestor(
+    factory: Callable[[], Session], repository: ResticRepository, *roots: HarnessRoot, machine_id: str = "host"
+) -> SnapshotIngestor:
+    source = ArchiveSource(machine_id=machine_id, display_name="Test host", restic=repository, roots=roots)
+    return SnapshotIngestor(factory, source)
