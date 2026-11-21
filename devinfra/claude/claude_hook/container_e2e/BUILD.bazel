@@ -77,8 +77,6 @@ oci_image(
 
 oci_layout_py(
     name = "e2e_container_descriptor",
-    # `oci_layout_py` sets `testonly = False` by default, which overrides `default_testonly`.
-    testonly = True,
     image = ":e2e_container_image",
     visibility = ["//devinfra/claude:__subpackages__"],
 )
