@@ -12,7 +12,6 @@ from rich.table import Table
 
 from gmail_api.labels import SystemLabel, is_system_label
 from gmail_archiver.cli.options import DryRunOption, TokenFileOption, get_client
-from gmail_archiver.dirs import get_cache_dir
 from gmail_archiver.filter_planner import GmailFilterPlanner
 from gmail_archiver.filter_sync import (
     FilterDiff,
@@ -344,10 +343,10 @@ def apply(
     labels = client.list_labels_full()
     label_maps = LabelMaps.from_labels(labels)
 
-    planner = GmailFilterPlanner(target_filter, label_maps.by_id, additional_query=query)
+    planner = GmailFilterPlanner(target_filter, additional_query=query)
     console.print(f"Filter: {planner.name}")
 
-    inbox = GmailInbox(client, console, cache_dir=get_cache_dir())
+    inbox = GmailInbox(client, console)
     plan = planner.plan(inbox)
 
     for msg in plan.messages:

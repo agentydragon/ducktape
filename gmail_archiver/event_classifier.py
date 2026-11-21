@@ -2,7 +2,6 @@
 
 import json
 import logging
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Literal
@@ -66,8 +65,8 @@ class TemplateExtractionCache:
 class EmailTemplateExtractor:
     """Recognize email templates and extract structured data using OpenAI."""
 
-    def __init__(self, api_key: str | None = None):
-        self.client = openai.AsyncOpenAI(api_key=api_key or os.environ.get("OPENAI_API_KEY"))
+    def __init__(self):
+        self.client = openai.AsyncOpenAI()
         self.cache = TemplateExtractionCache()
 
     async def extract(self, email: Email, *, use_cache: bool = True) -> EmailTemplateExtraction:

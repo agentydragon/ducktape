@@ -1,7 +1,6 @@
 """Tests for GmailInbox behavior after partial batch fetches."""
 
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import cast
 
 import pytest
@@ -45,9 +44,9 @@ class _Client:
         return self.batch_responses.pop(0)
 
 
-def test_partial_fetch_raises_and_retains_success_for_retry(tmp_path: Path) -> None:
+def test_partial_fetch_raises_and_retains_success_for_retry() -> None:
     client = _Client()
-    inbox = GmailInbox(cast(GmailClient, client), Console(), tmp_path, show_progress=False)
+    inbox = GmailInbox(cast(GmailClient, client), Console(), show_progress=False)
 
     with pytest.raises(RuntimeError, match=r"Failed to fetch Gmail messages.*b"):
         inbox.fetch_messages("in:inbox", batch_size=2)
@@ -58,7 +57,7 @@ def test_partial_fetch_raises_and_retains_success_for_retry(tmp_path: Path) -> N
     assert client.batch_requests == [["a", "b"], ["b"]]
 
 
-def test_metadata_fetch_uses_metadata_cache_for_all_message_ids(tmp_path: Path) -> None:
+def test_metadata_fetch_uses_metadata_cache_for_all_message_ids() -> None:
     class _MixedCacheClient:
         def __init__(self) -> None:
             self.metadata_requests: list[list[str]] = []
@@ -98,7 +97,7 @@ def test_metadata_fetch_uses_metadata_cache_for_all_message_ids(tmp_path: Path) 
             ], []
 
     client = _MixedCacheClient()
-    inbox = GmailInbox(cast(GmailClient, client), Console(), tmp_path, show_progress=False)
+    inbox = GmailInbox(cast(GmailClient, client), Console(), show_progress=False)
     inbox.fetch_messages("full-cache-query")
     inbox.ensure_metadata_cached(["metadata-cache-message"])
 

@@ -6,7 +6,6 @@ py_library(
     srcs = ["main.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":dirs",
         ":event_classifier",
         ":fmt",
         ":inbox",

@@ -20,7 +20,6 @@ from gmail_api.labels import SystemLabel
 from gmail_archiver.cli.filters import filters_app
 from gmail_archiver.cli.labels import labels_app
 from gmail_archiver.cli.options import DryRunDefaultTrueOption, TokenFileOption, get_client
-from gmail_archiver.dirs import get_cache_dir
 from gmail_archiver.event_classifier import EmailTemplateExtractor
 from gmail_archiver.fmt import format_truncation_suffix
 from gmail_archiver.inbox import GmailInbox
@@ -60,7 +59,7 @@ def autoclean_inbox(dry_run: DryRunDefaultTrueOption = True, token_file: TokenFi
     console.print("[bold]Gmail Email Archiver[/bold] - Inbox Auto-Cleaner")
     console.print(f"Dry run: {dry_run}, Archive label: gmail-archiver/inbox-auto-cleaned\n")
 
-    inbox = GmailInbox(client, console, cache_dir=get_cache_dir())
+    inbox = GmailInbox(client, console)
 
     extractor = EmailTemplateExtractor()
     planners: list[Planner] = [
