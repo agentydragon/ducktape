@@ -115,12 +115,7 @@ from cluster.cdk8s.agentplane.generation import ManifestLayout
 from cluster.cdk8s.agentplane.kubernetes_account_ref import shared_diagnostics
 from cluster.cdk8s.agentplane.kubernetes_accounts import KubernetesAccount, KubernetesAccounts
 from cluster.cdk8s.agentplane.kubernetes_grants import KubernetesGrant
-from cluster.cdk8s.agentplane.model_selections import (
-    QWEN_CHAT_CANARY_ROUTE,
-    STAGING_APP_MODELS,
-    chat_completions_id,
-    model_configs,
-)
+from cluster.cdk8s.agentplane.model_selections import STAGING_APP_MODELS, chat_completions_id, model_configs
 from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE, kubernetes_accounts_namespace
 from cluster.cdk8s.agentplane.sandbox_pod import SECRET_NAME as SANDBOX_SECRET_NAME, TOOL_CONFIG_GRANT
 from cluster.cdk8s.cnpg import cluster
@@ -141,7 +136,7 @@ from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSec
 from cluster.cdk8s.public_coder import egress as public_coder_egress
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.ssh_mcp.config import BEARER_SECRET_KEY, BEARER_SECRET_NAME, MCP_URL
-from model_catalog.catalog import TABBYAPI_QWEN_ABLITERATED, Provider
+from model_catalog.catalog import TABBYAPI_QWEN_ABLITERATED, TABBYAPI_QWEN_STOCK, Provider
 
 _HOSTNAME = "agentplane-staging.allegedly.works"
 _ACTIONS_HOSTNAME = "agentplane-actions-staging.allegedly.works"
@@ -526,7 +521,7 @@ ENV = Environment(
                 else ModelConfig(
                     connection="llm-ingress",
                     provider_model=route.id,
-                    response_header_timeout_seconds=360 if route == QWEN_CHAT_CANARY_ROUTE else None,
+                    response_header_timeout_seconds=360 if route == TABBYAPI_QWEN_STOCK else None,
                     api="responses",
                     responses=(_LITE_RESPONSES if route.upstream.provider == Provider.CHATGPT else _STANDARD_RESPONSES),
                     exec_encoding="freeform" if route.upstream.provider == Provider.CHATGPT else "json",
@@ -540,7 +535,7 @@ ENV = Environment(
                 connection="llm-ingress",
                 provider_model=route.id,
                 response_header_timeout_seconds=360
-                if route in (QWEN_CHAT_CANARY_ROUTE, TABBYAPI_QWEN_ABLITERATED)
+                if route in (TABBYAPI_QWEN_STOCK, TABBYAPI_QWEN_ABLITERATED)
                 else None,
                 api="chat_completions",
                 exec_encoding="json",

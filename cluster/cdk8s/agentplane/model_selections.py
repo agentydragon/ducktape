@@ -46,13 +46,8 @@ _AGENTPLANE_ANTIGRAVITY_ROUTES = (
     ANTIGRAVITY_GEMINI_38_FLASH_HIGH,
 )
 
-# Ollama is scaled to zero; the stock Qwen checkpoint is served by TabbyAPI.
-_AGENTPLANE_LOCAL_ROUTES = (TABBYAPI_QWEN_STOCK,)
-
 # GPT-6 Sol remains served for other clients, but Agentplane exposes GPT-6.1 Sol instead.
 _AGENTPLANE_GPT6_RESPONSES_ROUTES = tuple(route for route in GPT6_RESPONSES_ROUTES if route != GPT6_SOL_RESPONSES)
-
-QWEN_CHAT_CANARY_ROUTE = TABBYAPI_QWEN_STOCK
 
 
 def chat_completions_id(route: Route, responses_routes: tuple[Route, ...]) -> str:
@@ -60,23 +55,21 @@ def chat_completions_id(route: Route, responses_routes: tuple[Route, ...]) -> st
 
 
 STAGING_APP_MODELS = HarnessRoutes(
-    central_sampler_chat=(QWEN_CHAT_CANARY_ROUTE, TABBYAPI_QWEN_ABLITERATED),
+    central_sampler_chat=(TABBYAPI_QWEN_STOCK, TABBYAPI_QWEN_ABLITERATED),
     claude=_AGENTPLANE_ANTIGRAVITY_ROUTES,
     codex=(
         *_AGENTPLANE_GPT6_RESPONSES_ROUTES,
         *_AGENTPLANE_ANTIGRAVITY_ROUTES,
-        *_AGENTPLANE_LOCAL_ROUTES,
+        TABBYAPI_QWEN_STOCK,
         TABBYAPI_QWEN_ABLITERATED,
     ),
     central_sampler=(
         *_AGENTPLANE_GPT6_RESPONSES_ROUTES,
         *_AGENTPLANE_ANTIGRAVITY_ROUTES,
-        *_AGENTPLANE_LOCAL_ROUTES,
+        TABBYAPI_QWEN_STOCK,
         *ANTHROPIC_API_LATEST_ROUTES,
     ),
 )
-
-QWEN_CHAT_CANARY_ID = chat_completions_id(QWEN_CHAT_CANARY_ROUTE, STAGING_APP_MODELS.central_sampler)
 
 # Client context budgets, not inferred from Ollama num_ctx or provider limits. The ingress serves
 # Claude's as `ModelConfig`; `codex_models.py` turns Codex's into catalog entries.
