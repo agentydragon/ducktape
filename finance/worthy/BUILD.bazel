@@ -64,6 +64,7 @@ rust_binary(
         "//finance/worthy/model:model_rs",
         "//finance/worthy/source:ibflex_source",
         "@crates//:chrono",
+        "@crates//:clap",
         "@crates//:csv",
         "@crates//:env_logger",
         "@crates//:futures",
@@ -76,7 +77,6 @@ rust_binary(
         "@crates//:serde_json",
         "@crates//:serde_yaml",
         "@crates//:shellexpand",
-        "@crates//:structopt",
         "@crates//:term-table",
         "@crates//:tokio",
         "@crates//:xdg",
@@ -171,7 +171,7 @@ rust_library(
     srcs = ["flags.rs"],
     edition = "2024",
     deps = [
-        "@crates//:structopt",
+        "@crates//:clap",
     ],
 )
 
@@ -194,7 +194,7 @@ rust_test(
     edition = "2024",
     deps = [
         ":flags",
-        "@crates//:structopt",
+        "@crates//:clap",
     ],
 )
 

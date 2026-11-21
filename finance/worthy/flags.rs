@@ -1,7 +1,7 @@
+use clap::Parser;
 use std::str::FromStr;
-use structopt::StructOpt;
 
-#[derive(Debug, StructOpt, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Command {
     Snapshot,
     Csv,
@@ -23,9 +23,9 @@ impl FromStr for Command {
     }
 }
 
-#[derive(Debug, StructOpt, PartialEq)]
+#[derive(Debug, Parser, PartialEq)]
 pub struct Opt {
-    #[structopt(
+    #[arg(
         long,
         help = "command; one of snapshot, csv, modellastsnapshot, server",
         default_value = "snapshot"
