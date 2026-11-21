@@ -197,13 +197,14 @@ filegroup(
     urls = ["https://registry.npmjs.org/@openai/codex/-/codex-0.166.0-linux-x64.tgz"],
 )
 
-# Deployment model metadata advances independently of the native harness protocol/test pin.
-http_archive(
-    name = "codex_model_catalog_cli_linux_x64",
-    build_file_content = 'exports_files(["bin/codex"])',
-    integrity = "sha512-l66NZkQgdk2C3pbcfULDz42yEUB581MVA6I+Y43Wp4OIqEy73HCdmZ0GTjeAHY2ycuH4N00d9VsLrwT1jxshTw==",
-    strip_prefix = "package/vendor/x86_64-unknown-linux-musl",
-    urls = ["https://registry.npmjs.org/@openai/codex/-/codex-0.171.0-linux-x64.tgz"],
+# Default to the native Codex CLI release above when updating this source catalog.
+# Intentional divergence: 0.171.0 supplies GPT-6.2 metadata while the native app-server
+# remains on 0.166.0. test_codex_models checks that the native CLI can read it.
+http_file(
+    name = "codex_model_catalog",
+    downloaded_file_path = "models.json",
+    sha256 = "d50b6749506d97e5f334dbabcb666eb1689f423cf3e88cfabdcf3c536b873068",
+    urls = ["https://raw.githubusercontent.com/openai/codex/ccf9be8cc458bd6b8336fe84d68d8893f2691a5e/codex-rs/models-manager/models.json"],
 )
 
 # The one browser every Playwright test drives: Chrome for Testing's headless shell. `:executable`
