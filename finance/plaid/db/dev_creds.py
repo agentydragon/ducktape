@@ -1,6 +1,6 @@
 """Developer credential loading for plaid (sandbox smoke test, ad-hoc scripts).
 
-Kept out of `plaid.client` so deployed Link and sync entrypoints never bundle
+Kept out of `finance.plaid.db.client` so deployed Link and sync entrypoints never bundle
 developer-only sops/subprocess loading; both construct `PlaidCreds` from env settings.
 """
 

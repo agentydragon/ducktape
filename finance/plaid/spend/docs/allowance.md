@@ -247,5 +247,4 @@ balance is still marked exceeded regardless of pace. The exhaustion timestamp us
 This is a noisy _estimate_, not a prediction or transaction authorization; Plaid sync and transaction posting lag, whose
 oldest timestamp is displayed on the primary allowance panel, can hide fresh purchases. The GNOME panel shows the
 allowance when active, and links to the cookie-authenticated dashboard for the purchase check; existing card cycles
-remain displayed separately. No account limit, card choice, bank controls or automatic recharging is configured by this
-PR.
+remain displayed separately.
