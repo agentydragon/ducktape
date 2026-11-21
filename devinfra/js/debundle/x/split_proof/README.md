@@ -274,6 +274,7 @@ Running `example/output/` in Node also found a bug in the first printer (no `exp
   `native_decide` runs the same decision procedure compiled and trusts Lean's compiler (2.3 s for lodash). The theorem does not depend on size.
   All times and conditions: [`experiments/TIMINGS.md`](experiments/TIMINGS.md).
 - **Reassignment.** The JavaScript extractor `extract.mjs` rejects reassigned `let`/`var` top-level bindings. The Lean front end accepts them: writers are ordered as cells and must stay with the declaration (`AssignsHome`), because ES imports are read-only.
+- **A name declared twice in one list.** `var a = 1, a = 2` is outside the accepted subset. The dump writes one statement per declarator, so it becomes two statements that declare `a`, and `UniqueDefs` rejects the bundle. Accepting it is not planned: no input we expect has it. Several `var a` statements are another case ([`PLAN.md`](PLAN.md) step 2).
 - **Exceptions.** The model has none. Order is kept for effects, TDZ reads and reads of undeclared globals. Those are the only throws the front end allows an inert statement.
 
 ## Going further
