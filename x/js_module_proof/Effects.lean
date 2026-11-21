@@ -73,15 +73,38 @@ theorem checked_trace_sound (modules : List EffectModule) (entry : Nat) (events 
 
 /- Replies are supplied by the host in call order. `some error` throws; an
    exhausted reply list means subsequent calls return normally. -/
-/- ECMAScript strings contain UTF-16 code units, including surrogate pairs.
-   This adapter embeds the ordinary Unicode strings used by the effect graph. -/
-def stringCodeUnits (value : String) : List Nat :=
-  value.toList.flatMap fun character =>
-    let code := character.toNat
-    if code < 65536 then [code]
-    else [55296 + (code - 65536) / 1024, 56320 + (code - 65536) % 1024]
+/- Decode Lean's valid UTF-8 strings to the UTF-16 code units observed by JS.
+   Access the underlying bytes directly: String.toList depends on Lean axioms,
+   which would make the effect behavior certificate fail its axiom-free check. -/
+def scalarCodeUnits (code : Nat) : List Nat :=
+  if code < 65536 then [code]
+  else [55296 + (code - 65536) / 1024, 56320 + (code - 65536) % 1024]
 
-example : stringCodeUnits "A🙂" = [65, 55357, 56898] := by decide
+def utf8CodeUnits : Nat → List Nat → List Nat
+  | 0, _ => []
+  | _ + 1, [] => []
+  | fuel + 1, first :: rest =>
+    if first < 128 then first :: utf8CodeUnits fuel rest
+    else match rest with
+      | [] => []
+      | second :: rest =>
+        if first < 224 then
+          scalarCodeUnits ((first % 32) * 64 + second % 64) ++ utf8CodeUnits fuel rest
+        else match rest with
+          | [] => []
+          | third :: rest =>
+            if first < 240 then
+              scalarCodeUnits ((first % 16) * 4096 + (second % 64) * 64 + third % 64) ++ utf8CodeUnits fuel rest
+            else match rest with
+              | [] => []
+              | fourth :: rest =>
+                scalarCodeUnits ((first % 8) * 262144 + (second % 64) * 4096 + (third % 64) * 64 + fourth % 64) ++ utf8CodeUnits fuel rest
+
+def stringCodeUnits (value : String) : List Nat :=
+  let bytes := value.toUTF8.data.toList.map UInt8.toNat
+  utf8CodeUnits bytes.length bytes
+
+example : stringCodeUnits "Aé€🙂" = [65, 233, 8364, 55357, 56898] := by decide
 
 def runEffects {α : Type} (events : List String) (replies : List (Option α)) : List String × Option α :=
   match runExecution ⟨[], [], replies, none, [], none, []⟩
