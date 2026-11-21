@@ -37,8 +37,8 @@ class JsonlTranscriptProvider(InMemoryHistoryProvider):
     only the new tail per call.
     """
 
-    def __init__(self, log_file: IO[str], source_id: str | None = None) -> None:
-        super().__init__(source_id=source_id)
+    def __init__(self, log_file: IO[str]) -> None:
+        super().__init__()
         self._log_file = log_file
         self._written_count = 0
 
