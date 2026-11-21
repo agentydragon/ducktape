@@ -163,7 +163,7 @@ def main() -> None:
     settings = ServerSettings()
     mcp = build_server(settings)
     tool_count = asyncio.run(record_tool_count(mcp))
-    # Grocy state lives downstream and OAuth state is externalized in Valkey;
+    # Grocy state lives downstream and OAuth state is externalized (`persistence`);
     # retaining stateful Streamable HTTP transports would leak one transport
     # per client session in the pinned MCP SDK.
     app = mcp.http_app(path="/mcp", stateless_http=True)

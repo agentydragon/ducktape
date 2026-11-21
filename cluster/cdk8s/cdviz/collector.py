@@ -163,7 +163,7 @@ def chart(app: App) -> Chart:
         chart,
         "service",
         metadata=k8s.ObjectMeta(name=config.COLLECTOR.name, namespace=config.NAMESPACE, labels=config.COLLECTOR.labels),
-        spec=k8s.ServiceSpec(selector=config.COLLECTOR.pods.selector, ports=[config.COLLECTOR.port.k8s_service_port()]),
+        spec=k8s.ServiceSpec(selector=config.COLLECTOR.pods.selector, ports=[config.COLLECTOR.k8s_service_port()]),
     )
     ServiceMonitor(
         chart,

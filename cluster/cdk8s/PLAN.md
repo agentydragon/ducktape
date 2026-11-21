@@ -39,13 +39,13 @@ ConfigMap rollout behavior; serialization changes can change hashes and restart 
 
 ### Close validation gaps before moving checks
 
-`resolved_references` only rejects a reference when the same name exists as
-the other kind in that App. Unknown names pass; namespace is not part of its lookup.
+`reference_kind_mismatches` only rejects a reference when the same name exists as
+the other kind in the same explicit namespace in that App. Unknown names pass.
 It does not establish that every Secret or ConfigMap reference resolves.
 
-First implement the bounded ESO store/consumer checks in [TODO.md](TODO.md), using the
-existing whole-tree validation boundary. Then assess reference
-resolution by namespace, including optional references and controller-created outputs.
+ESO store/consumer checks use the rendered-tree boundary; close the remaining gaps in
+[TODO.md](TODO.md). Assess other reference resolution by namespace, including optional
+references and controller-created outputs.
 Keep authorization grants explicit; observing a consumer must not automatically grant it
 access to a store.
 

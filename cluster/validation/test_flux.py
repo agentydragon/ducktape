@@ -11,7 +11,7 @@ from cluster.validation.flux_bootstrap_auth import check_flux_bootstrap_auth
 
 
 class TestParseFluxKustomization:
-    def test_parses_parked_marker(self, tmp_path: Path) -> None:
+    def test_parses_parked_marker_and_target_namespace(self, tmp_path: Path) -> None:
         flux_file = tmp_path / "flux-kustomization.yaml"
         _write_yaml(
             flux_file,
@@ -24,12 +24,14 @@ metadata:
     ducktape.org/parked: "true"
 spec:
   path: ./cluster/k8s/parked-app
+  targetNamespace: app
 """,
         )
 
         spec = parse_flux_kustomizations(flux_file)["parked-app"]
 
         assert spec.parked
+        assert spec.target_namespace == "app"
 
 
 def test_history_duration_is_seconds_and_missing_is_zero() -> None:

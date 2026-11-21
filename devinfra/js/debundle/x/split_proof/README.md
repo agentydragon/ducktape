@@ -24,6 +24,8 @@ Bazel and Lake both read the Lean version from `lean/lean-toolchain`. The other 
 
 `lowersplit … --plan <file>` also writes the plan as JSON: the order in which the modules run and the statements of each module, by their numbers in the bundle. The test of the CoreJS model reads it ([`experiments/README.md`](experiments/README.md) § 14).
 
+`lowersplit … --corejs <program.json>` makes the verdict name the proved slice that covers the split, or say what it lacks. `program.json` is the bundle in the CoreJS model, from `node experiments/translation/core_program.mjs <bundle.mjs>`. Two slices are proved: a split that keeps the order (`valid_order_kept_preserves`, [`Split.lean`](lean/Experiments/CoreJS/Split.lean)), for every way the bundle ends, and a split whose every pair run out of order passes `MayMove` (`moves_preserve`, [`Move.lean`](lean/Experiments/CoreJS/Move.lean)), for runs that end normally. The verdict decides each hypothesis as the theorem states it, the last of `moves_preserve` by `movesOk` (`movesOk_iff`), and otherwise counts the pairs that fail `MayMove`. A bundle's `import`s of outside modules are left out of that check: they bind before any statement runs, and leaving them out must change nothing else in the plan, which `lowersplit` checks.
+
 ## The example
 
 Input, [`example/input/bundle.mjs`](example/input/bundle.mjs). It has 12 top-level statements, numbered 0–11:

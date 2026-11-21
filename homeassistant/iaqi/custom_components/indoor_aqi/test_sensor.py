@@ -172,5 +172,20 @@ async def test_log_after_hour_unchanged(hass, caplog, freezer):
     assert "partial data" in caplog.text
 
 
+@pytest.mark.parametrize(
+    ("co2_ppm", "expected_iaqi"),
+    [
+        (400, 100),  # best breakpoint
+        (1500, 40),  # mid-range breakpoint
+        (4000, 0),  # worst breakpoint
+        (300, 100),  # below the first breakpoint: clamped
+        (5000, 0),  # above the last breakpoint: clamped
+        (800, 70),  # between (600, 80) and (1000, 60): linear interpolation
+    ],
+)
+def test_compute_iaqi_co2(co2_ppm, expected_iaqi):
+    assert compute_iaqi("co2", co2_ppm) == pytest.approx(expected_iaqi, abs=0.01)
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

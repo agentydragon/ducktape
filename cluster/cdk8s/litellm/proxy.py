@@ -1,4 +1,4 @@
-"""Reusable cdk8s constructs for the LiteLLM proxy deployments.
+"""Kubernetes resources for the LiteLLM proxy.
 
 The Deployment's image tag is a deliberate placeholder ("unset") -- the
 image-pins/ Kustomize Component (hand-written, see
@@ -9,8 +9,6 @@ cluster/docs/cdk8s.md.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from functools import partial
 from pathlib import Path
 
 from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, Duration, JsonPatch, Size
@@ -24,7 +22,6 @@ from cdk8s_plus_34 import (
     DeploymentStrategy,
     EnvValue,
     ImagePullPolicy,
-    LabeledNode,
     MemoryResources,
     Node,
     NodeLabelQuery,
@@ -33,11 +30,9 @@ from cdk8s_plus_34 import (
     PercentOrAbsolute,
     PodSecurityContextProps,
     Probe,
-    Secret,
     Service,
     ServiceAccount,
     ServiceType,
-    TaintedNode,
     TaintEffect,
     Volume,
     k8s,
@@ -56,11 +51,14 @@ from cluster.cdk8s.flux import (
     flux_kustomization_depends_on_many,
     kustomize_kustomization,
 )
-from cluster.cdk8s.forgejo_registry.pull_credentials import forgejo_images_creds_external_secret
+from cluster.cdk8s.forgejo_registry.pull_credentials import (
+    forgejo_images_creds_external_secret,
+    forgejo_images_creds_secret_ref,
+)
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.generation import write_app, write_yaml
 from cluster.cdk8s.litellm import database
-from cluster.cdk8s.litellm.config import CONFIG_MAP_NAME, ConfigMapSpec, proxy_configs
+from cluster.cdk8s.litellm.config import main_proxy_config
 from cluster.cdk8s.litellm.database import NAMESPACE
 from cluster.cdk8s.litellm.upstreams import (
     RUGGED_LOCAL_LLM_KEY_ENV,
@@ -77,167 +75,24 @@ from cluster.scripts.nebula_mesh import Mesh
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 APP_DIR = f"{HAND_WRITTEN_ROOT}/litellm/app"
-_HTTP = Port(name="http", number=4000)
+NAME = "litellm"
+SERVICE = ServiceRef(
+    name=NAME,
+    port=Port(name="http", number=4000),
+    pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", NAME),)),
+)
 # The proxy's admin key: its env and its ServiceMonitor's scrape bearer.
 _MASTER_KEY = SecretRef(namespace=NAMESPACE, name="litellm-master-key").key("api-key")
 _LANGFUSE_OTEL_CONFIG = SecretRef(namespace=NAMESPACE, name="litellm-langfuse-otel-config")
 _CONFIG_DIR = "/etc/litellm"
+_CONFIG_FILE = "config.yaml"
 _RUGGED_LOCAL_LLM_PORT = Port(name="http", number=RUGGED_LOCAL_LLM_PORT)
-
-
-@dataclass(frozen=True)
-class _LiteralEnv:
-    name: str
-    value: str
-
-
-@dataclass(frozen=True)
-class _SecretEnv:
-    name: str
-    secret: SecretKey
-    optional: bool = False
-
-
-_EnvEntry = _LiteralEnv | _SecretEnv
-
-
-@dataclass(frozen=True)
-class ProxySpec:
-    """Configuration for one instance of the reusable LiteLLM construct."""
-
-    config: ConfigMapSpec
-    image_name: str  # untagged -- e.g. "git.allegedly.works/ducktape-ci/tana-litellm-proxy"
-    replicas: int
-    env: tuple[_EnvEntry, ...]
-    startup_failure_threshold: int
-    resources: ContainerResources
-    image_pull_policy: ImagePullPolicy
-    image_pull_secret_name: str
-    service_account_name: str
-    termination_grace_period_seconds: int
-    node_affinity: LabeledNode
-    strategy: DeploymentStrategy
-    hostname: str
-    tolerations: tuple[TaintedNode, ...] = ()
-    # cdk8s_plus_34's fluent Deployment/Workload has no builder for custom
-    # topologySpreadConstraints (only an all-or-nothing `spread: bool`
-    # auto-toggle), but k8s.TopologySpreadConstraint (the raw generated struct)
-    # is real API-schema-validated input to the ApiObject escape hatch in
-    # _add_deployment, not a raw dict.
-    topology_spread_constraints: tuple[k8s.TopologySpreadConstraint, ...] = ()
-
-    @property
-    def name(self) -> str:
-        return self.config.name
-
-    @property
-    def namespace(self) -> str:
-        return self.config.namespace
-
-
-def service(spec: ProxySpec) -> ServiceRef:
-    return ServiceRef(
-        name=spec.name, port=_HTTP, pods=Pods(namespace=spec.namespace, labels=(("app.kubernetes.io/name", spec.name),))
-    )
-
-
-def _base_env(*entries: _EnvEntry) -> tuple[_EnvEntry, ...]:
-    return (_LiteralEnv("HOST", "0.0.0.0"), _LiteralEnv("PORT", str(_HTTP.number)), *entries)
-
-
-def _langfuse_env(*entries: _EnvEntry) -> tuple[_EnvEntry, ...]:
-    return (*_base_env(*entries), _SecretEnv("EXPORTERS", _LANGFUSE_OTEL_CONFIG.key("EXPORTERS"), optional=True))
-
-
-def proxy_specs() -> tuple[ProxySpec, ...]:
-    """Return the proxy-specific values consumed by :class:`LiteLLMProxy`."""
-    configs = {config.name: config for config in proxy_configs()}
-    return (
-        ProxySpec(
-            config=configs["litellm"],
-            image_name="git.allegedly.works/ducktape-ci/tana-litellm-proxy",
-            replicas=2,
-            env=_langfuse_env(
-                # Use the generic OTel callback. The optional Secret supplies EXPORTERS, the
-                # Langfuse OTLP exporter; if it is absent, LiteLLM keeps its console exporter
-                # so the proxy can start without Langfuse.
-                _LiteralEnv("LITELLM_OTEL_V2", "true"),
-                _LiteralEnv("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", "span_only"),
-                # Export only model-call spans, each as its trace root, so Langfuse stores
-                # each request once (cluster/cdk8s/litellm/docs/langfuse_tracing.md).
-                _LiteralEnv("LITELLM_OTEL_LANGFUSE_SPAN_SCOPE", "llm_only"),
-                _SecretEnv("LITELLM_MASTER_KEY", _MASTER_KEY),
-                _SecretEnv("DATABASE_URL", database.DATABASE.app_secret.key("uri")),
-                _SecretEnv("LITELLM_SALT_KEY", SecretRef(namespace=NAMESPACE, name="litellm-salt-key").key("key")),
-                _SecretEnv(
-                    "ANTHROPIC_API_KEY", SecretRef(namespace=NAMESPACE, name="litellm-anthropic-key").key("api-key")
-                ),
-                _SecretEnv("GROQ_API_KEY", SecretRef(namespace=NAMESPACE, name="litellm-groq-key").key("GROQ_API_KEY")),
-                _SecretEnv(
-                    "GEMINI_API_KEY", SecretRef(namespace=NAMESPACE, name="litellm-gemini-key").key("GEMINI_API_KEY")
-                ),
-                _SecretEnv(
-                    "MISTRAL_API_KEY", SecretRef(namespace=NAMESPACE, name="litellm-mistral-key").key("MISTRAL_API_KEY")
-                ),
-                _SecretEnv(
-                    "CLIPROXY_CLIENT_KEY",
-                    SecretRef(namespace=NAMESPACE, name="litellm-cliproxy-key").key("CLIPROXY_CLIENT_KEY"),
-                ),
-                _SecretEnv(
-                    "TANA_FIREBASE_REFRESH_TOKEN",
-                    SecretRef(namespace=NAMESPACE, name="tana-firebase-refresh-token").key("refresh_token"),
-                    optional=True,
-                ),
-                _SecretEnv(
-                    RUGGED_LOCAL_LLM_KEY_ENV, SecretRef(namespace=NAMESPACE, name=RUGGED_LOCAL_LLM_SECRET).key("token")
-                ),
-            ),
-            startup_failure_threshold=36,
-            resources=ContainerResources(
-                cpu=CpuResources(request=Cpu.millis(100), limit=Cpu.units(2)),
-                memory=MemoryResources(request=Size.gibibytes(1), limit=Size.gibibytes(4)),
-            ),
-            image_pull_policy=ImagePullPolicy.ALWAYS,
-            image_pull_secret_name="forgejo-images-creds",
-            service_account_name="litellm",
-            termination_grace_period_seconds=90,
-            node_affinity=Node.labeled(NodeLabelQuery.is_(node_scheduling.ZONE_LABEL, node_scheduling.HIL_OVH_ZONE)),
-            tolerations=(
-                Node.tainted(
-                    NodeTaintQuery.exists(node_scheduling.CONTROL_PLANE_TAINT_KEY, effect=TaintEffect.NO_SCHEDULE)
-                ),
-            ),
-            topology_spread_constraints=(
-                k8s.TopologySpreadConstraint(
-                    max_skew=1,
-                    topology_key="kubernetes.io/hostname",
-                    when_unsatisfiable="ScheduleAnyway",
-                    label_selector=k8s.LabelSelector(match_labels={"app.kubernetes.io/name": "litellm"}),
-                ),
-            ),
-            strategy=DeploymentStrategy.rolling_update(
-                max_surge=PercentOrAbsolute.absolute(1), max_unavailable=PercentOrAbsolute.absolute(0)
-            ),
-            hostname="litellm.allegedly.works",
-        ),
-    )
-
-
-def _formatted_config_map_data(data: dict[str, object]) -> dict[str, str]:
-    formatted: dict[str, str] = {}
-    for filename, value in data.items():
-        if isinstance(value, dict):
-            formatted[filename] = yaml_config(value)
-        else:
-            assert isinstance(value, str)
-            formatted[filename] = value
-    return formatted
 
 
 def _http_probe(path: str, initial_delay_seconds: int, failure_threshold: int) -> Probe:
     return http_probe(
         path,
-        port=_HTTP.number,
+        port=SERVICE.port.number,
         initial_delay_seconds=initial_delay_seconds,
         timeout_seconds=5,
         failure_threshold=failure_threshold,
@@ -245,14 +100,13 @@ def _http_probe(path: str, initial_delay_seconds: int, failure_threshold: int) -
 
 
 class LiteLLMProxy(Construct):
-    """Compose one LiteLLM ConfigMap, Deployment, Service, and optional extras."""
+    """Compose the LiteLLM ConfigMap, Deployment, Service, and route."""
 
-    def __init__(self, scope: Construct, id: str, spec: ProxySpec) -> None:
+    def __init__(self, scope: Construct, id: str) -> None:
         super().__init__(scope, id)
-        self.spec = spec
 
         config_map = self._add_config_map()
-        self._add_forgejo_image_credentials()
+        forgejo_images_creds_external_secret(self, "forgejo-images-creds", namespace=NAMESPACE)
         service_account = self._add_service_account()
         deployment = self._add_deployment(config_map, service_account)
         self._add_service(deployment)
@@ -263,46 +117,78 @@ class LiteLLMProxy(Construct):
             self,
             "config",
             metadata=ApiObjectMetadata(
-                name=CONFIG_MAP_NAME,
-                namespace=self.spec.namespace,
+                name="config",
+                namespace=NAMESPACE,
                 labels={"app.kubernetes.io/managed-by": "cdk8s", "app.kubernetes.io/part-of": "litellm"},
                 annotations={
                     "ducktape.dev/generated": "by cdk8s under Bazel",
                     "ducktape.dev/delivery": "Flux can consume this ordinary Kubernetes YAML",
                 },
             ),
-            data=_formatted_config_map_data(self.spec.config.data),
+            data={_CONFIG_FILE: yaml_config(main_proxy_config())},
         )
 
     def _env_variables(self) -> dict[str, EnvValue]:
-        return {
-            entry.name: (
-                EnvValue.from_value(entry.value)
-                if isinstance(entry, _LiteralEnv)
-                else entry.secret.env_value(self, f"{entry.name}-secret", optional=entry.optional)
-            )
-            for entry in self.spec.env
-        }
+        def secret(name: str, key: SecretKey, *, optional: bool = False) -> tuple[str, EnvValue]:
+            return name, key.env_value(self, f"{name}-secret", optional=optional)
+
+        return dict(
+            [
+                ("HOST", EnvValue.from_value("0.0.0.0")),
+                ("PORT", EnvValue.from_value(str(SERVICE.port.number))),
+                ("LITELLM_OTEL_V2", EnvValue.from_value("true")),
+                ("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", EnvValue.from_value("span_only")),
+                # Export only model-call spans, each as its trace root, so Langfuse stores
+                # each request once (cluster/cdk8s/litellm/docs/langfuse_tracing.md).
+                ("LITELLM_OTEL_LANGFUSE_SPAN_SCOPE", EnvValue.from_value("llm_only")),
+                secret("LITELLM_MASTER_KEY", _MASTER_KEY),
+                secret("DATABASE_URL", database.DATABASE.app_secret.key("uri")),
+                secret("LITELLM_SALT_KEY", SecretRef(namespace=NAMESPACE, name="litellm-salt-key").key("key")),
+                secret(
+                    "ANTHROPIC_API_KEY", SecretRef(namespace=NAMESPACE, name="litellm-anthropic-key").key("api-key")
+                ),
+                secret("GROQ_API_KEY", SecretRef(namespace=NAMESPACE, name="litellm-groq-key").key("GROQ_API_KEY")),
+                secret(
+                    "GEMINI_API_KEY", SecretRef(namespace=NAMESPACE, name="litellm-gemini-key").key("GEMINI_API_KEY")
+                ),
+                secret(
+                    "MISTRAL_API_KEY", SecretRef(namespace=NAMESPACE, name="litellm-mistral-key").key("MISTRAL_API_KEY")
+                ),
+                secret(
+                    "CLIPROXY_CLIENT_KEY",
+                    SecretRef(namespace=NAMESPACE, name="litellm-cliproxy-key").key("CLIPROXY_CLIENT_KEY"),
+                ),
+                secret(
+                    "TANA_FIREBASE_REFRESH_TOKEN",
+                    SecretRef(namespace=NAMESPACE, name="tana-firebase-refresh-token").key("refresh_token"),
+                    optional=True,
+                ),
+                secret(
+                    RUGGED_LOCAL_LLM_KEY_ENV, SecretRef(namespace=NAMESPACE, name=RUGGED_LOCAL_LLM_SECRET).key("token")
+                ),
+                # Without the optional Langfuse exporter, LiteLLM uses its console exporter.
+                secret("EXPORTERS", _LANGFUSE_OTEL_CONFIG.key("EXPORTERS"), optional=True),
+            ]
+        )
 
     def _add_deployment(self, config_map: ConfigMap, service_account: ServiceAccount) -> Deployment:
-        ref = service(self.spec)
         deployment = Deployment(
             self,
             "deployment",
             metadata=ApiObjectMetadata(
-                name=self.spec.name,
-                namespace=self.spec.namespace,
-                labels=ref.pods.selector,
-                annotations={"secret.reloader.stakater.com/reload": "litellm-langfuse-otel-config"},
+                name=NAME,
+                namespace=NAMESPACE,
+                labels=SERVICE.pods.selector,
+                annotations={"secret.reloader.stakater.com/reload": _LANGFUSE_OTEL_CONFIG.name},
             ),
-            pod_metadata=ApiObjectMetadata(labels=ref.pods.selector),
-            replicas=self.spec.replicas,
-            strategy=self.spec.strategy,
+            pod_metadata=ApiObjectMetadata(labels=SERVICE.pods.selector),
+            replicas=2,
+            strategy=DeploymentStrategy.rolling_update(
+                max_surge=PercentOrAbsolute.absolute(1), max_unavailable=PercentOrAbsolute.absolute(0)
+            ),
             service_account=service_account,
-            termination_grace_period=Duration.seconds(self.spec.termination_grace_period_seconds),
-            docker_registry_auth=Secret.from_secret_name(
-                self, "forgejo-images-creds-ref", self.spec.image_pull_secret_name
-            ),
+            termination_grace_period=Duration.seconds(90),
+            docker_registry_auth=forgejo_images_creds_secret_ref(self, "forgejo-images-creds-ref"),
             # cdk8s_plus_34 defaults pods to a hardened SecurityContext
             # (runAsNonRoot). Opt out explicitly to preserve today's actual behavior
             # -- the real container's root needs haven't been audited, so silently
@@ -312,87 +198,90 @@ class LiteLLMProxy(Construct):
 
         deployment.add_container(
             name="litellm",
-            image=f"{self.spec.image_name}:{_PLACEHOLDER_TAG}",
-            args=["--config", f"{_CONFIG_DIR}/config.yaml"],
-            ports=[ref.port.container_port()],
+            image=f"git.allegedly.works/ducktape-ci/tana-litellm-proxy:{_PLACEHOLDER_TAG}",
+            args=["--config", f"{_CONFIG_DIR}/{_CONFIG_FILE}"],
+            ports=[SERVICE.port.container_port()],
             env_variables=self._env_variables(),
-            image_pull_policy=self.spec.image_pull_policy,
+            image_pull_policy=ImagePullPolicy.ALWAYS,
             liveness=_http_probe("/health/liveliness", 30, 3),
             readiness=_http_probe("/health/readiness", 10, 3),
-            startup=_http_probe("/health/liveliness", 5, self.spec.startup_failure_threshold),
-            resources=self.spec.resources,
+            startup=_http_probe("/health/liveliness", 5, 36),
+            resources=ContainerResources(
+                cpu=CpuResources(request=Cpu.millis(100), limit=Cpu.units(2)),
+                memory=MemoryResources(request=Size.gibibytes(1), limit=Size.gibibytes(4)),
+            ),
             # Same rationale as the pod-level override above.
             security_context=ContainerSecurityContextProps(read_only_root_filesystem=False, ensure_non_root=False),
         )
         pod_policy.harden(deployment)
         volume = Volume.from_config_map(
-            self, "config-volume", config_map, items={"config.yaml": PathMapping(path="config.yaml")}
+            self, "config-volume", config_map, items={_CONFIG_FILE: PathMapping(path=_CONFIG_FILE)}
         )
         deployment.containers[0].mount(_CONFIG_DIR, volume, read_only=True)
 
-        deployment.scheduling.attract(self.spec.node_affinity)
-        for toleration in self.spec.tolerations:
-            deployment.scheduling.tolerate(toleration)
-        if self.spec.topology_spread_constraints:
-            # cdk8s_plus_34's Deployment (a Workload, not an ApiObject subclass) has
-            # no direct escape hatch; ApiObject.of() reaches the ApiObject it
-            # manages internally.
-            ApiObject.of(deployment).add_json_patch(
-                JsonPatch.add(
-                    "/spec/template/spec/topologySpreadConstraints", list(self.spec.topology_spread_constraints)
-                )
+        deployment.scheduling.attract(
+            Node.labeled(NodeLabelQuery.is_(node_scheduling.ZONE_LABEL, node_scheduling.HIL_OVH_ZONE))
+        )
+        deployment.scheduling.tolerate(
+            Node.tainted(NodeTaintQuery.exists(node_scheduling.CONTROL_PLANE_TAINT_KEY, effect=TaintEffect.NO_SCHEDULE))
+        )
+        # cdk8s-plus exposes no custom topology spread settings on Deployment.
+        ApiObject.of(deployment).add_json_patch(
+            JsonPatch.add(
+                "/spec/template/spec/topologySpreadConstraints",
+                [
+                    k8s.TopologySpreadConstraint(
+                        max_skew=1,
+                        topology_key="kubernetes.io/hostname",
+                        when_unsatisfiable="ScheduleAnyway",
+                        label_selector=k8s.LabelSelector(match_labels=SERVICE.pods.selector),
+                    )
+                ],
             )
+        )
         return deployment
 
     def _add_service(self, deployment: Deployment) -> None:
-        ref = service(self.spec)
-        if self.spec.replicas > 1:
-            disruption_budget.add_disruption_budget(self, "disruption-budget", name=ref.name, pods=ref.pods)
+        disruption_budget.add_disruption_budget(self, "disruption-budget", name=NAME, pods=SERVICE.pods)
         Service(
             self,
             "service",
-            metadata=ApiObjectMetadata(name=ref.name, namespace=ref.pods.namespace, labels=ref.labels),
+            metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE, labels=SERVICE.labels),
             selector=deployment,
-            ports=[ref.port.service_port()],
+            ports=[SERVICE.port.service_port()],
             type=ServiceType.CLUSTER_IP,
         )
 
     def _add_service_account(self) -> ServiceAccount:
         return ServiceAccount(
-            self,
-            "serviceaccount",
-            metadata=ApiObjectMetadata(name=self.spec.service_account_name, namespace=self.spec.namespace),
-            automount_token=False,
+            self, "serviceaccount", metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE), automount_token=False
         )
 
     def _add_http_route(self) -> None:
         https_route(
             self,
             "httproute",
-            metadata=ApiObjectMetadata(name=self.spec.name, namespace=self.spec.namespace),
-            hostnames=[self.spec.hostname],
-            backend=service(self.spec),
+            metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
+            hostnames=["litellm.allegedly.works"],
+            backend=SERVICE,
             timeout="2400s",
             hsts=False,
             listener=None,
         )
 
-    def _add_forgejo_image_credentials(self) -> None:
-        forgejo_images_creds_external_secret(self, "forgejo-images-creds", namespace=self.spec.namespace)
-
 
 class LiteLLMServiceMonitor(Construct):
-    """The monitoring resource shared by the main LiteLLM service."""
+    """Scrape metrics from the LiteLLM Service using its admin key."""
 
-    def __init__(self, scope: Construct, id: str, service: ServiceRef) -> None:
+    def __init__(self, scope: Construct, id: str) -> None:
         super().__init__(scope, id)
         ServiceMonitor(
             self,
             "servicemonitor",
-            metadata=ApiObjectMetadata(name=service.name, namespace=service.pods.namespace),
-            spec=service.service_monitor_spec(
+            metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
+            spec=SERVICE.service_monitor_spec(
                 Endpoint.bearer_token_secret(
-                    port=service.port.name,
+                    port=SERVICE.port.name,
                     secret_name=_MASTER_KEY.secret.name,
                     key=_MASTER_KEY.key,
                     scrape_timeout="10s",
@@ -402,11 +291,10 @@ class LiteLLMServiceMonitor(Construct):
 
 
 def _chart(app: App, mesh: Mesh) -> Chart:
-    (spec,) = proxy_specs()  # only one LiteLLM proxy today; extend proxy_specs() when a second lands
-    chart = Chart(app, spec.name, disable_resource_name_hashes=True)
+    chart = Chart(app, NAME, disable_resource_name_hashes=True)
     _rugged_local_llm_endpoint(chart, mesh)
-    LiteLLMProxy(chart, "proxy", spec)
-    LiteLLMServiceMonitor(chart, "monitoring", service(spec))
+    LiteLLMProxy(chart, "proxy")
+    LiteLLMServiceMonitor(chart, "monitoring")
     return chart
 
 
@@ -438,15 +326,17 @@ def _rugged_local_llm_endpoint(scope: Construct, mesh: Mesh) -> None:
     )
 
 
-def write_manifests(root: Path, mesh: Mesh) -> None:
+def write_manifests(root: Path, mesh: Mesh) -> Chart:
+    app = App()
+    chart = _chart(app, mesh)
     write_yaml(
         root / APP_DIR / "kustomization.yaml",
         kustomize_kustomization(
-            namespace="litellm",
-            resources=[write_charts(root, APP_DIR, partial(_chart, mesh=mesh))],
-            components=["./image-pins"],
+            namespace=NAMESPACE, resources=[write_app(root, APP_DIR, app)], components=["./image-pins"]
         ),
     )
+
+    return chart
 
 
 def litellm(
@@ -456,26 +346,18 @@ def litellm(
     external_secrets_operator: Kustomization,
     monitoring_crds: Kustomization,
     seaweedfs_operator: Kustomization,
+    *,
+    health_checks: list[KustomizationSpecHealthChecks],
 ) -> Kustomization:
     return flux_kustomization(
         flux_chart,
-        "litellm",
+        NAME,
         artifact,
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         decryption=SOPS_DECRYPTION,
         timeout="10m",
         wait=None,
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="postgresql.cnpg.io/v1", kind="Cluster", name=database.DATABASE.name, namespace=NAMESPACE
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="apps/v1", kind="Deployment", name="litellm", namespace=NAMESPACE
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="gateway.networking.k8s.io/v1", kind="HTTPRoute", name="litellm", namespace=NAMESPACE
-            ),
-        ],
+        health_checks=health_checks,
         depends_on=flux_kustomization_depends_on_many(
             cnpg, external_secrets_operator, monitoring_crds, seaweedfs_operator
         ),

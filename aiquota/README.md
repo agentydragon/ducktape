@@ -2,8 +2,8 @@
 
 `aiquota` can run as a small in-cluster API and an Authentik-gated browser
 dashboard in addition to the CLI and GNOME extension. Its Kubernetes manifests
-and Deployment are separate from CLIProxyAPI. The API's Codex adapter uses the
-CLIProxyAPI integration; it does not mount or access CLIProxyAPI's OAuth PVC.
+and Deployment are separate from CLIProxyAPI. The API's Claude and Codex adapters
+use the CLIProxyAPI integration; they do not mount or access CLIProxyAPI's OAuth PVC.
 
 ## Endpoints
 
@@ -181,7 +181,7 @@ applies.
 
 ## Historical collection
 
-The in-cluster Deployment refreshes Claude and Codex every five minutes even
+The in-cluster Deployment refreshes every enabled provider every five minutes even
 when no API client is active. Each provider snapshot is appended to the shared
 analytics ClickHouse cluster:
 
@@ -333,7 +333,7 @@ appropriate where another process is the declared sole refresh owner.
 ### Initial API deployment
 
 The API has one Claude credential path: CLIProxyAPI's authenticated management
-integration. AIQuota does not receive the Claude setup token, mount the
+integration. AIQuota does not receive the Claude setup token or mount the
 CLIProxyAPI PVC.
 
 ### CLIProxyAPI integration

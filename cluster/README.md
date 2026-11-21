@@ -12,8 +12,8 @@ Small Talos k8s cluster with GitOps and HTTPS.
   cross-namespace. No Vault (<docs/decisions.md> § "Secrets: SOPS SSOT").
 
 Prerequisites (credentials and access): <docs/bootstrap.md#prerequisites>. direnv in
-`cluster/`: its `.envrc` exports `KUBECONFIG`/`TALOSCONFIG` and provides `talosctl`,
-`kubectl`, `get-passwords` (service credentials).
+`cluster/` exports `KUBECONFIG` and `TALOSCONFIG` for the devshell's `kubectl` and
+`talosctl`.
 
 ## Infrastructure
 

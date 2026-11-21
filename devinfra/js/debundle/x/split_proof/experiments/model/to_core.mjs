@@ -154,7 +154,8 @@ const moduleName = (node) => (node.type === "Identifier" ? node.name : refuse(no
  * (the order of evaluation would change), a direct `eval` (its names are not known from the text), and what depends
  * on the file the code is in: `import.meta`, `import()`. With `census`, such a statement does not end the translation:
  * it is listed in `refused`, and the result is not a program to run. `external` takes the module's `import`s for the host's: the
- * names they bind are not declared, and the result has no imports.
+ * names they bind are not declared, and the result has no imports. Each `import` still takes an identity, with no
+ * statement, as an `export { … }` list does, so that identities count the file's statements as `lowersplit` does.
  */
 export function toCore(
   source,
@@ -586,7 +587,7 @@ export function toCore(
   }
 
   function importDeclaration(node) {
-    if (external) return;
+    if (external) return unit(node, () => 0);
     if (node.attributes?.length) refuse(node, "an import attribute");
     if (!/^\.\.?\//.test(node.source.value)) refuse(node, "an import of a module that is not a relative path");
     const names = node.specifiers.map((specifier) => {
@@ -762,7 +763,23 @@ export function toCore(
         seen.add(name);
         free.push(name);
       }
-    emit("opaque", id, decls, funs, free);
+    emit("opaque", id, decls, funs, free, closures(node, decls, funs));
+  }
+  /**
+   * What the opaque statement `node` makes when it runs, if it only makes functions, else `null` (the world runs it).
+   * A function declaration makes nothing when it runs: its function is made when the program is linked. A declaration
+   * whose initializer is a function or an arrow, whatever its parameters and body, makes `[name, length, constructor]`.
+   */
+  function closures(node, decls, funs) {
+    const declared = node.type === "ExportDefaultDeclaration" ? node.declaration : node;
+    if (declared.type === "FunctionDeclaration") return decls.length === 0 ? [] : null;
+    if (node.type !== "VariableDeclarator" || node.id.type !== "Identifier" || decls.length !== 1 || funs.length !== 0)
+      return null;
+    const f = node.init;
+    if (f?.type === "ArrowFunctionExpression") return [[node.id.name, paramLength(f.params), false]];
+    if (f?.type === "FunctionExpression")
+      return [[f.id?.name ?? node.id.name, paramLength(f.params), !(f.async || f.generator)]];
+    return null;
   }
 
   for (const node of ast.body)

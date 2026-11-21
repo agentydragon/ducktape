@@ -4,14 +4,36 @@ from pathlib import Path
 from platformdirs import user_config_dir
 from pydantic import BaseModel, Field, SecretStr
 
-from aiquota.providers.anthropic_platform import AnthropicPlatformSettings
-from aiquota.providers.claude import ClaudeSettings
-from aiquota.providers.codex import CodexSettings
-from aiquota.providers.openai_platform import OpenAIPlatformSettings
-from aiquota.providers.zai import ZaiSettings
-
 CONFIG_DIR = Path(user_config_dir("aiquota"))
 DEFAULT_CONFIG_PATH = CONFIG_DIR / "config.toml"
+
+
+class AnthropicPlatformSettings(BaseModel):
+    enabled: bool = False
+    url: str | None = None
+    token_path: Path | None = None
+
+
+class ClaudeSettings(BaseModel):
+    enabled: bool = True
+    credentials_path: Path = Path.home() / ".claude" / ".credentials.json"
+
+
+class CodexSettings(BaseModel):
+    enabled: bool = True
+    auth_path: Path = Path.home() / ".codex" / "auth.json"
+
+
+class OpenAIPlatformSettings(BaseModel):
+    enabled: bool = False
+    url: str | None = None
+    token_path: Path | None = None
+
+
+class ZaiSettings(BaseModel):
+    enabled: bool = True
+    # No sensible default — user must point this at a file containing the key.
+    api_key_path: Path | None = None
 
 
 class CLIProxyAPISettings(BaseModel):

@@ -6,6 +6,8 @@ from typing import Any
 
 import pytest
 import pytest_bazel
+import yaml
+from cdk8s import App, Chart
 from litellm.integrations.otel.model.baggage import DEFAULT_BAGGAGE_METADATA_KEYS, promoted_baggage
 from litellm.integrations.otel.model.config import CaptureMessageContent, ExporterOwner, OpenTelemetryV2Config
 from litellm.integrations.otel.model.metadata import RequestIdentity
@@ -16,9 +18,10 @@ from litellm.litellm_core_utils.litellm_logging import (
 from litellm.proxy.litellm_pre_call_utils import LiteLLMProxyRequestSetup
 
 from cluster.cdk8s.litellm.config import main_proxy_config, model_entry
-from cluster.cdk8s.litellm.proxy import _LiteralEnv, _SecretEnv, proxy_specs
+from cluster.cdk8s.litellm.proxy import LiteLLMProxy
 from cluster.cdk8s.litellm.secrets import LANGFUSE_EXPORTERS_TEMPLATE
 from cluster.cdk8s.litellm.upstreams import RUGGED_LOCAL_LLM_API_BASE, RUGGED_LOCAL_LLM_KEY_ENV
+from cluster.cdk8s.testing.manifests import find_resource
 from model_catalog.catalog import (
     RUGGED_LOCAL_CANDIDATE_ROUTES,
     RUGGED_LOCAL_EXPERIMENTAL_ROUTES,
@@ -31,6 +34,16 @@ from model_catalog.catalog import (
 )
 
 
+@pytest.fixture(scope="module")
+def deployment_env() -> dict[str, dict[str, Any]]:
+    app = App()
+    chart = Chart(app, "litellm", disable_resource_name_hashes=True)
+    LiteLLMProxy(chart, "proxy")
+    deployment = find_resource(yaml.safe_load_all(app.synth_yaml()), "Deployment", "litellm", namespace="litellm")
+    [container] = deployment["spec"]["template"]["spec"]["containers"]
+    return {entry["name"]: entry for entry in container["env"]}
+
+
 def test_tana_routes_project_to_the_in_process_provider() -> None:
     config = main_proxy_config()
     tana_entries = [model_entry(route) for route in TANA_ROUTES]
@@ -40,7 +53,7 @@ def test_tana_routes_project_to_the_in_process_provider() -> None:
     assert any(item["provider"] == "tana" for item in config["litellm_settings"]["custom_provider_map"])
 
 
-def test_rugged_routes_register_and_inject_the_bearer_key() -> None:
+def test_rugged_routes_register_and_inject_the_bearer_key(deployment_env: dict[str, dict[str, Any]]) -> None:
     config = main_proxy_config()
     rugged_routes = (*RUGGED_LOCAL_CANDIDATE_ROUTES, *RUGGED_LOCAL_EXPERIMENTAL_ROUTES)
     configured_routes = {
@@ -52,8 +65,7 @@ def test_rugged_routes_register_and_inject_the_bearer_key() -> None:
         assert params["model"] == f"openai/{route.upstream_model}"
         assert params["api_base"] == RUGGED_LOCAL_LLM_API_BASE
         assert params["api_key"] == f"os.environ/{RUGGED_LOCAL_LLM_KEY_ENV}"
-    [spec] = proxy_specs()
-    assert RUGGED_LOCAL_LLM_KEY_ENV in {entry.name for entry in spec.env}
+    assert RUGGED_LOCAL_LLM_KEY_ENV in deployment_env
 
 
 def test_stock_qwen_routes_to_tabbyapi() -> None:
@@ -92,19 +104,19 @@ def test_route_timeouts_are_projected_independently() -> None:
     assert "stream_timeout" not in untimed
 
 
-def test_langfuse_exporter_is_model_call_scoped_and_console_without_secret(monkeypatch: pytest.MonkeyPatch) -> None:
-    [spec] = proxy_specs()
-    env = {entry.name: entry.value for entry in spec.env if isinstance(entry, _LiteralEnv)}
+def test_langfuse_exporter_is_model_call_scoped_and_console_without_secret(
+    deployment_env: dict[str, dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
     config = main_proxy_config()
-    secret_env = {entry.name for entry in spec.env if isinstance(entry, _SecretEnv) and entry.optional}
-    assert "EXPORTERS" in secret_env
+    assert deployment_env["EXPORTERS"]["valueFrom"]["secretKeyRef"]["optional"] is True
     assert config["litellm_settings"]["callbacks"] == ["otel", "prometheus"]
     assert config["callback_settings"]["otel"]["mapper_names"] == ["langfuse"]
 
     # LiteLLM's own settings loader reads the Deployment's literal env; ESO renders the Go
     # template in EXPORTERS, so any credential string stands in for it here.
-    for name, value in env.items():
-        monkeypatch.setenv(name, value)
+    for name, entry in deployment_env.items():
+        if "value" in entry:
+            monkeypatch.setenv(name, entry["value"])
     without_secret = OpenTelemetryV2Config()
     assert [exporter.kind for exporter in without_secret.exporters] == ["console"]
 

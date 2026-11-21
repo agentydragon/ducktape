@@ -12,6 +12,7 @@ from cdk8s import App, Testing as Cdk8sTesting  # Aliased: pytest would collect 
 from more_itertools import one
 
 from cluster.cdk8s import agent_access_profiles
+from cluster.cdk8s.agent_rbac_test_support import Permission, Rbac, uncovered
 from cluster.cdk8s.agentplane import binding_delegation, egress, kubernetes_account_ref, policy_controller, staging
 from cluster.cdk8s.agentplane.actions_staging_policies import COMMON_GITHUB_READ_SET
 from cluster.cdk8s.agentplane.egress import BASIC_POLICY, KUBERNETES_HOST
@@ -182,18 +183,12 @@ def test_every_grant_names_role_sets_and_an_account_that_exist(
 
 def test_api_server_is_reached_only_as_rendered_accounts(identity_catalog_manifests: list[dict[str, Any]]) -> None:
     """`basic` holds no API server rule; every rule that does acts as an account the platform renders
-    in the one namespace whose ServiceAccounts the proxy may impersonate, never as a stored secret,
-    and is its account's one-rule use set. Every launch holds the shared account's use set."""
+    and is its account's one-rule use set. Every launch holds the shared account's use set.
+    test_agent_rbac checks the proxy's effective impersonation permissions."""
     docs = identity_catalog_manifests
     policy_sets = {doc["metadata"]["name"]: doc["spec"]["rules"] for doc in _of(docs, "PolicySet")}
     assert not [rule for rule in policy_sets[BASIC_POLICY] if KUBERNETES_HOST in rule.get("hosts", [])]
     credentials = {doc["metadata"]["name"]: doc["spec"]["source"] for doc in _of(docs, "EgressCredential")}
-    impersonation = {
-        doc["metadata"]["namespace"]
-        for doc in _of(docs, "Role")
-        for policy_rule in doc["rules"]
-        if "impersonate" in policy_rule["verbs"] and "serviceaccounts" in policy_rule["resources"]
-    }
     accounts = _names(docs, "ServiceAccount")
     account_sets = set()
     for name, rules in policy_sets.items():
@@ -203,42 +198,13 @@ def test_api_server_is_reached_only_as_rendered_accounts(identity_catalog_manife
             source = credentials[rule["credentialRef"]["name"]]
             assert set(source) == {"kubernetesServiceAccount"}, name
             account = source["kubernetesServiceAccount"]
-            assert account["namespace"] in impersonation, name
             assert (account["namespace"], account["name"]) in accounts, name
             assert (name, rules) == (rule["credentialRef"]["name"], [rule])
             account_sets.add(name)
-    assert len(impersonation) == 1
     app_config = one(doc for doc in _of(docs, "ConfigMap") if doc["metadata"]["name"] == "app-config")
     presets = yaml.safe_load(app_config["data"]["config.yaml"])["sandbox_presets"]
     # Every preset grants the shared diagnostics account's use set.
     assert all(account_sets & set(spec["policy_sets"]) for spec in presets.values()), presets
-
-
-def _bindable(docs: list[dict[str, Any]], *, namespace: str, account: str) -> set[tuple[str, str | None, str]]:
-    """(kind, namespace or None for cluster-wide, name) of every role `account` may bind."""
-    roles = {
-        (doc["kind"], doc["metadata"].get("namespace"), doc["metadata"]["name"]): doc.get("rules", [])
-        for doc in docs
-        if doc["kind"] in {"Role", "ClusterRole"}
-    }
-    bindable: set[tuple[str, str | None, str]] = set()
-    for binding in docs:
-        if binding["kind"] not in {"RoleBinding", "ClusterRoleBinding"}:
-            continue
-        if not any(
-            subject["kind"] == "ServiceAccount" and subject["name"] == account and subject.get("namespace") == namespace
-            for subject in binding.get("subjects", [])
-        ):
-            continue
-        scope = binding["metadata"]["namespace"] if binding["kind"] == "RoleBinding" else None
-        ref = binding["roleRef"]
-        for rule in roles[(ref["kind"], scope if ref["kind"] == "Role" else None, ref["name"])]:
-            if "bind" not in rule["verbs"] or _RBAC_GROUP not in rule["apiGroups"]:
-                continue
-            for resource, kind in (("roles", "Role"), ("clusterroles", "ClusterRole")):
-                if resource in rule["resources"]:
-                    bindable |= {(kind, scope, name) for name in rule["resourceNames"]}
-    return bindable
 
 
 def test_controller_may_bind_every_role_a_role_set_names(
@@ -254,23 +220,30 @@ def test_controller_may_bind_every_role_a_role_set_names(
             Cdk8sTesting.synth(binding_delegation.chart(scratch_app_factory(), env, target, grants)),
         )
     ]
-    bindable = _bindable(
-        [*identity_catalog_manifests, *delegation], namespace=env.namespace, account=policy_controller.NAME
-    )
-    needed: set[tuple[str, str, str]] = set()
+    rbac = Rbac([*identity_catalog_manifests, *delegation])
+    direct = rbac.subjects({("ServiceAccount", policy_controller.NAME, env.namespace)})
+    bindable = {
+        permission
+        for permission in direct
+        if permission.api_group == _RBAC_GROUP
+        and permission.verb == "bind"
+        and permission.resource in {"roles", "clusterroles"}
+    }
+    assert all(permission.name is not None for permission in bindable), "bind grants must name their roles"
+    needed: set[Permission] = set()
     for role_set in _of(identity_catalog_manifests, "KubernetesRoleSet"):
         for rule in role_set["spec"]["rules"]:
             if rule["type"] == "cluster_role_binding":
-                needed.add(("ClusterRole", "", rule["clusterRole"]))
+                needed.add(Permission(None, _RBAC_GROUP, "clusterroles", "bind", rule["clusterRole"]))
             else:
-                needed |= {(rule["role"]["kind"], namespace, rule["role"]["name"]) for namespace in rule["namespaces"]}
+                role = rule["role"]
+                resource = "roles" if role["kind"] == "Role" else "clusterroles"
+                needed |= {
+                    Permission(namespace, _RBAC_GROUP, resource, "bind", role["name"])
+                    for namespace in rule["namespaces"]
+                }
     assert needed
-    unbindable = {
-        (kind, namespace, name)
-        for kind, namespace, name in needed
-        if (kind, None, name) not in bindable and (kind, namespace or None, name) not in bindable
-    }
-    assert unbindable == set()
+    assert not uncovered(needed, bindable)
 
 
 if __name__ == "__main__":

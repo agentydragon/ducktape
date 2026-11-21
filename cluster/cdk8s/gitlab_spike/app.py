@@ -28,6 +28,8 @@ from cluster.cdk8s.vpa_policy import (
 
 NAME = "gitlab-spike"
 NAMESPACE = NAME
+RUNNER_NAMESPACE = "gitlab-spike-ci"
+DEMO_NAMESPACE = "gitlab-spike-demo"
 OUTPUT_DIR = f"{GENERATED_ROOT}/gitlab-spike/app"
 HOSTNAME = "gitlab-spike.allegedly.works"
 REGISTRY_HOSTNAME = "registry-gitlab-spike.allegedly.works"

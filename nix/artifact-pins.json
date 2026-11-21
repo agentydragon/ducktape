@@ -25,8 +25,8 @@
       "sha256": "MoGvOcGiZJkXyqtla6jTt8u5v4ZABGBxcR650NhvLS8="
     },
     "difftree": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/difftree-73b8b5f2e5c2/difftree-0.1.0-py3-none-any.whl",
-      "sha256": "c7i18uXCEW5cObzp2EW68JQMxVLyisZl+yeXRs6zGmU="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/difftree-44642a1bc6b3/difftree-0.1.0-py3-none-any.whl",
+      "sha256": "RGQqG8azEaF7GhFsD8YQW08uIpjikE741MSAlMHckGc="
     },
     "gmail-archiver": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/gmail-archiver-b4b089aabdea/gmail_archiver-0.1.0-py3-none-any.whl",
@@ -53,12 +53,12 @@
       "sha256": "aX9i931ISRvLkqmMjp+MJbtzSzYfLa18t0tRz0OmL2E="
     },
     "aiquota-extension": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-74c631634af2/aiquota.zip",
-      "sha256": "4VxsX5753ZrvoVy3Kuc61Ie58oR2ks08aphTM6EzbTY="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-53042e2882d2/aiquota.zip",
+      "sha256": "oIAKo6J5CrsvSym1PoPyvtZ4X8pGMV50uneGLmmGD2I="
     },
     "aiquota": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-74c631634af2/aiquota-0.1.0-py3-none-any.whl",
-      "sha256": "DL2er5zq8PJgv1poOFgKW+ExWIBGNZa3tz+PDx7U1SM="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-53042e2882d2/aiquota-0.1.0-py3-none-any.whl",
+      "sha256": "5/2gtFIO9x6EAJoL4zQh0+2VWiZFXDu+YysE7FYboDU="
     },
     "debundle": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-c63e90e398ed/debundle",
@@ -73,8 +73,8 @@
       "sha256": "crjXbT8QAJetIscZiuvo/VIBQYfqBRc5BLxOy+OOz08="
     },
     "skill-flux_reconcile_audit": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-flux_reconcile_audit-053b894da092/flux_reconcile_audit.skill",
-      "sha256": "BTuJTaCSLSCLFD22XcGOGa1h3KVmC3eJ7AIqvwVrezs="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-flux_reconcile_audit-e3876195e1e8/flux_reconcile_audit.skill",
+      "sha256": "44dhleHoJ/Uy4vR3JIG5btJ3Kp0lslJC5JhUfvV0XhE="
     },
     "skill-proxmox_vm": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-proxmox_vm-ef9676d0a96e/proxmox_vm.skill",

@@ -495,7 +495,7 @@ def _activitywatch_read(
         key="token",
     )
     credential = "activitywatch-read"
-    host = "activitywatch-read.allegedly.works"
+    host = activitywatch.READ_HOSTNAME
     _present(
         scope,
         ACTIVITYWATCH_READ_POLICY,
@@ -706,7 +706,7 @@ def _haku_mailbox(scope: Construct, *, reader: ServiceAccount, namespace: str, c
         key="jwt",
     )
     credential = "haku-mailbox"
-    host = "haku-mailbox.allegedly.works"
+    host = mailbox.PUBLIC_HOSTNAME
     _present(
         scope,
         HAKU_MAILBOX_POLICY,

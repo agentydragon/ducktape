@@ -54,20 +54,19 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def flux_annotations(chart: Chart, directory: RenderedDirectory, grafana_operator: Kustomization) -> Kustomization:
+def flux_annotations(
+    chart: Chart,
+    directory: RenderedDirectory,
+    grafana_operator: Kustomization,
+    *,
+    health_checks: list[KustomizationSpecHealthChecks],
+) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
         directory,
         wait=None,
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="grafana.integreatly.org/v1beta1",
-                kind="GrafanaServiceAccount",
-                name=_ACCOUNT,
-                namespace=_NAMESPACE,
-            )
-        ],
+        health_checks=health_checks,
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(grafana_operator),
     )

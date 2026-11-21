@@ -230,7 +230,7 @@ def token (tag : String) (args : List Json) : D Unit := do
   | "tryFinally", [] => do
     let finalizer ← popStmt
     push (.stmt (.tryFinally (← popStmt) finalizer))
-  | "opaque", [code, decls, funs, free] => do
+  | "opaque", [code, decls, funs, free, run] => do
     let pairs (j : Json) : D (List (Json × Json)) := do
       (← liftM (m := Except String) j.getArr?).toList.mapM fun p => do
         match (← liftM (m := Except String) p.getArr?).toList with
@@ -242,7 +242,13 @@ def token (tag : String) (args : List Json) : D Unit := do
       | [x, length, constructor] => pure (← str x, ← nat length, ← bool constructor)
       | _ => fail "a function of an opaque statement is [name, length, constructor]"
     let free ← (← liftM (m := Except String) free.getArr?).toList.mapM str
-    push (.stmt (.opaque (← nat code) decls funs free))
+    -- `null`: the world runs it; else the functions it makes, `[name, length, constructor]` for each declaration
+    let run ← if run.isNull then pure OpaqueRun.world else
+      OpaqueRun.closures <$> (← liftM (m := Except String) run.getArr?).toList.mapM fun f => do
+        match (← liftM (m := Except String) f.getArr?).toList with
+        | [x, length, constructor] => pure (← str x, ← nat length, ← bool constructor)
+        | _ => fail "a function an opaque statement makes is [name, length, constructor]"
+    push (.stmt (.opaque (← nat code) decls funs free run))
   | _, _ => fail s!"unknown token {tag} with {args.length} operands"
 
 /-- The statements of a module, from its tokens. -/

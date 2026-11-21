@@ -11,6 +11,8 @@ from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
 )
 from python.runfiles import Runfiles
 
+from cluster.cdk8s import cilium
+from cluster.cdk8s.monitoring import alloy_endpoints
 from cluster.cdk8s.ollama.tabby_endpoint import MODEL_NAME, NAME, NAMESPACE, PORT, SWITCHING_SERVICE
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from model_catalog.catalog import TABBYAPI_QWEN_ABLITERATED
@@ -200,7 +202,7 @@ def add_tabbyapi(scope: Construct) -> None:
         scope,
         "tabbyapi-service",
         metadata=k8s.ObjectMeta(name=SERVICE.name, namespace=NAMESPACE, labels=_PODS.selector),
-        spec=k8s.ServiceSpec(selector=_PODS.selector, ports=[SERVICE.port.k8s_service_port()]),
+        spec=k8s.ServiceSpec(selector=_PODS.selector, ports=[SERVICE.k8s_service_port()]),
     )
     # The older pod serves unknown model IDs with its loaded stock model. The
     # candidate route must only reach the new pod, even if LiteLLM rolls first.
@@ -208,9 +210,9 @@ def add_tabbyapi(scope: Construct) -> None:
         scope,
         SWITCHING_SERVICE,
         metadata=k8s.ObjectMeta(name=SWITCHING_SERVICE, namespace=NAMESPACE, labels=_PODS.selector),
-        spec=k8s.ServiceSpec(selector={**_PODS.selector, **_SWITCHING_LABEL}, ports=[SERVICE.port.k8s_service_port()]),
+        spec=k8s.ServiceSpec(selector={**_PODS.selector, **_SWITCHING_LABEL}, ports=[SERVICE.k8s_service_port()]),
     )
-    # LiteLLM authenticates client requests. Gatus only needs the model-list health check.
+    # LiteLLM authenticates clients; Gatus probes health and Alloy scrapes metrics.
     k8s.KubeNetworkPolicy(
         scope,
         "tabbyapi-ingress",
@@ -222,10 +224,16 @@ def add_tabbyapi(scope: Construct) -> None:
                 k8s.NetworkPolicyIngressRule(
                     from_=[
                         k8s.NetworkPolicyPeer(
-                            namespace_selector=k8s.LabelSelector(match_labels={"kubernetes.io/metadata.name": name}),
-                            pod_selector=k8s.LabelSelector(match_labels={"app.kubernetes.io/name": name}),
+                            namespace_selector=k8s.LabelSelector(
+                                match_labels={"kubernetes.io/metadata.name": peer.namespace}
+                            ),
+                            pod_selector=k8s.LabelSelector(match_labels=peer.selector),
                         )
-                        for name in ("litellm", "gatus")
+                        for peer in (
+                            Pods(namespace="litellm", labels=(("app.kubernetes.io/name", "litellm"),)),
+                            cilium.PROBER,
+                            alloy_endpoints.NODE,
+                        )
                     ],
                     ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(SERVICE.pod_port), protocol="TCP")],
                 )

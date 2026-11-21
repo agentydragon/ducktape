@@ -75,13 +75,6 @@ class KustomizeFile(_CamelCaseModel):
         return result
 
 
-class KustomizeBuildResult(BaseModel):
-    """Successful kustomize build output for a single kustomization directory."""
-
-    kustomization_path: Path
-    resources: list[K8sResource] = []
-
-
 def has_kustomization_file(directory: Path) -> bool:
     return any((directory / name).is_file() for name in KUSTOMIZATION_FILE_NAMES)
 
@@ -190,7 +183,7 @@ def _kustomize_build_args(kust: KustomizeFile, scratch: Path) -> list[str | Path
     return [scratch, "--load-restrictor", "LoadRestrictionsNone"]
 
 
-async def run_kustomize_build(kust: KustomizeFile) -> KustomizeBuildResult:
+async def run_kustomize_build(kust: KustomizeFile) -> list[K8sResource]:
     """Run kustomize build and parse the output. Raises KustomizeBuildError on failure."""
     kustomize_bin = Runfiles.CreateOrRaise().root() / "multitool/tools/kustomize/kustomize"
     with tempfile.TemporaryDirectory() as scratch:
@@ -206,7 +199,4 @@ async def run_kustomize_build(kust: KustomizeFile) -> KustomizeBuildResult:
     if proc.returncode != 0:
         raise KustomizeBuildError(kust.path, stderr.decode())
 
-    output = stdout.decode()
-    resources = parse_k8s_resources(yaml.safe_load_all(output))
-
-    return KustomizeBuildResult(kustomization_path=kust.path, resources=resources)
+    return parse_k8s_resources(yaml.safe_load_all(stdout.decode()))

@@ -17,25 +17,12 @@ import {
   staleObservationAt,
   formatDeadline,
   formatResetCreditSummary,
-  formatPrepaidBalance,
   formatSummaryUsd,
   roundHalfToEven,
 } from "../shared/presentation.js";
 
 beforeAll(() => vi.stubEnv("TZ", "UTC"));
 afterAll(() => vi.unstubAllEnvs());
-
-describe("formatPrepaidBalance", () => {
-  it.each([
-    [12345, 2, "USD", "$123.45"],
-    [123, 0, "USD", "$123"],
-    [1234567, 3, "EUR", "1,234.567 EUR"],
-    [0, 2, "USD", "$0.00"],
-    [-123, 2, "USD", "-$1.23"],
-  ])("matches Python's exact minor-unit rendering for %s %s %s", (amountMinor, exponent, currency, expected) => {
-    expect(formatPrepaidBalance(amountMinor, exponent, currency)).toBe(expected);
-  });
-});
 
 describe("Python's ties-to-even rounding", () => {
   it.each([

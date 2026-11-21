@@ -13,14 +13,7 @@ from typing import Annotated, Literal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
-from study_casino.events import (
-    BlackjackSettlementOutcome,
-    Card,
-    GameEventRead,
-    LedgerEventRead,
-    RouletteOutcome,
-    SlotsOutcome,
-)
+from study_casino.events import BlackjackSettlementOutcome, Card, RouletteOutcome, SlotsOutcome
 from study_casino.models import HandStatus, RouletteBetType
 
 _ACTION_ID_PATTERN = r"^[a-zA-Z0-9._:@-]+$"
@@ -205,9 +198,7 @@ class ActionResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     client_action_id: str
-    event: LedgerEventRead
     result: ActionResult
-    game_event: GameEventRead | None = None
 
 
 class SessionCompleteRequest(ActionRequest):

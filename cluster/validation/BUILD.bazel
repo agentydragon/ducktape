@@ -31,7 +31,6 @@ py_test(
         ":cluster",
         ":flux",
         ":k8s",
-        ":kustomize",
         "@pypi//pytest_bazel",
     ],
 )
@@ -61,14 +60,12 @@ py_library(
 py_library(
     name = "flux",
     srcs = ["flux.py"],
-    data = ["@multitool//tools/flux"],
     deps = [
         ":k8s",
         "//cluster/cdk8s:manifest_roots",
         "@pypi//durationpy",
         "@pypi//pydantic",
         "@pypi//pyyaml",
-        "@rules_python//python/runfiles",
     ],
 )
 
@@ -185,7 +182,6 @@ py_test(
         ":cluster",
         ":flux",
         ":k8s",
-        ":kustomize",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -209,7 +205,6 @@ py_test(
         ":dependencies",
         ":flux",
         ":k8s",
-        ":kustomize",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -223,7 +218,6 @@ py_test(
         ":flux",
         ":health_checks",
         ":k8s",
-        ":kustomize",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -237,7 +231,6 @@ py_test(
         ":dependencies",
         ":flux",
         ":k8s",
-        ":kustomize",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -279,6 +272,7 @@ py_test(
         "//:session_backup_sops_source",
         "//agentplane/crds:manifests",
         "//cluster:generated_manifests",
+        "@multitool//tools/flux",
         "@multitool//tools/kustomize",
     ],
     deps = [
@@ -296,6 +290,7 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@pypi//types_pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -324,7 +319,6 @@ py_test(
         ":cluster",
         ":flux",
         ":k8s",
-        ":kustomize",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -337,19 +331,21 @@ py_test(
     # <devinfra/buildbuddy/debug/2026_08_rbe_small_test_timeouts.md>.
     size = "medium",
     srcs = ["test_flux_build.py"],
-    # validate_flux_build needs the whole tree the root kustomization references.
+    # Flux needs the whole tree the root Kustomization references.
     # cluster_all_files' glob stops at package boundaries, so each local package
-    # supplies its Kustomize inputs through a filegroup. :cluster_k8s_inputs collects them;
-    # :flux carries the CLI.
+    # supplies its Kustomize inputs through the :cluster_k8s_inputs filegroup.
     data = [
         ":cluster_k8s_inputs",
         "//cluster:generated_manifests",
+        "@multitool//tools/flux",
     ],
     deps = [
         ":conftest",
-        ":flux",
+        ":k8s",
         "//:conftest",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -358,9 +354,9 @@ py_test(
     srcs = ["test_image_automation.py"],
     deps = [
         ":cluster",
+        ":flux",
         ":image_automation",
         ":k8s",
-        ":kustomize",
         "@pypi//pytest_bazel",
     ],
 )
@@ -374,6 +370,7 @@ py_test(
     ],
     deps = [
         ":conftest",
+        ":flux",
         "//:conftest",
         "//cluster/cdk8s:manifest_roots",
         "@pypi//pytest_bazel",

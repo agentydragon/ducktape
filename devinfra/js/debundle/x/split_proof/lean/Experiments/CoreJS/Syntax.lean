@@ -48,6 +48,15 @@ inductive FuncKind where
   | normal | arrow | method | classCtor
   deriving DecidableEq, Repr
 
+/-- What an opaque statement does when it runs. -/
+inductive OpaqueRun where
+  /-- The world runs part 0 of its code. -/
+  | world
+  /-- No code: the statement only makes functions. Its `k`-th declaration gets a new function, part
+  `funs.length + 1 + k` of the code, with the name, `length` and constructibility in `fns`. A statement that declares
+  only functions makes them when the program is linked, so it has no declaration and does nothing when it runs. -/
+  | closures (fns : List (String × Nat × Bool))
+
 mutual
 
 inductive Expr where
@@ -127,11 +136,13 @@ inductive Stmt where
   | throw (e : Expr)
   | tryCatch (body : Stmt) (param : Option Name) (handler : Stmt)
   | tryFinally (body : Stmt) (finalizer : Stmt)
-  /-- A statement outside the model's syntax: the world runs it (`World.talk`). `code` tells the world which one.
-  It declares `decls`, and `funs` are its function declarations, each with its `length` and whether it can be
-  constructed: the `k`-th is part `k` of the code, and is made when the program is linked. `free` are the other names of the scope around it that it can mean. The front end writes it only at the top level
-  of a module, where linking makes its bindings; elsewhere only its `var` names would be bound. -/
+  /-- A statement outside the model's syntax: the world runs it (`World.talk`), unless it only makes functions
+  (`run`). `code` tells the world which one. It declares `decls`, and `funs` are its function declarations, each with
+  its `length` and whether it can be constructed: the `k`-th is part `k` of the code, and is made when the program is
+  linked. `free` are the other names of the scope around it that it can mean. The front end writes it only at the top
+  level of a module, where linking makes its bindings; elsewhere only its `var` names would be bound. -/
   | opaque (code : Nat) (decls : List (Name × DeclKind)) (funs : List (Name × Nat × Bool)) (free : List Name)
+    (run : OpaqueRun)
 
 end
 
@@ -184,7 +195,7 @@ def Stmt.varNames : Stmt → List Name
   | .loop init _ _ body => init.varNames ++ body.varNames
   | .tryCatch body _ handler => body.varNames ++ handler.varNames
   | .tryFinally body finalizer => body.varNames ++ finalizer.varNames
-  | .opaque _ decls _ _ => decls.filterMap fun (x, kind) => if kind == .var then some x else none
+  | .opaque _ decls _ _ _ => decls.filterMap fun (x, kind) => if kind == .var then some x else none
   | _ => []
 
 def varNamesOf : List Stmt → List Name
@@ -280,7 +291,7 @@ def Stmt.free : Stmt → List Name
   | .brk | .cont => []
   | .tryCatch body param handler => body.free ++ handler.free.filter fun x => !(param == some x)
   | .tryFinally body finalizer => body.free ++ finalizer.free
-  | .opaque _ decls funs free => opaqueNames decls funs free
+  | .opaque _ decls funs free _ => opaqueNames decls funs free
 
 def freeExprs : List Expr → List Name
   | [] => []

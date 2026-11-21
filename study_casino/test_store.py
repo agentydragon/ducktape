@@ -13,9 +13,9 @@ from sqlalchemy import create_engine, select, text
 from sqlalchemy.exc import IntegrityError
 
 from study_casino.actions import ConvertResult, ImportData, ImportPrize, ImportResult, ResetResult
-from study_casino.models import Game, GameEventRow, GameEventSource, StateSnapshotRow
+from study_casino.models import Game, GameEventRow, GameEventSource, LedgerEventRow, StateSnapshotRow
 from study_casino.state import BalanceRead
-from study_casino.store import ActionMutation, ActionRejectedError, ServerActionResult, SqlStore, locked_balance
+from study_casino.store import ActionMutation, ActionRejectedError, SqlStore, locked_balance
 
 
 @pytest.fixture
@@ -109,6 +109,15 @@ def _seed_game_events(store: SqlStore, rows: list[GameEventRow]) -> None:
         s.add_all(rows)
 
 
+def _ledger_rows(store: SqlStore, username: str = _U) -> list[LedgerEventRow]:
+    with store._Session() as s:
+        return list(
+            s.scalars(
+                select(LedgerEventRow).where(LedgerEventRow.user_id == username).order_by(LedgerEventRow.id)
+            ).all()
+        )
+
+
 def test_economy_rebalance_migration_preserves_progress(empty_db_url: str) -> None:
     engine = create_engine(empty_db_url)
     cfg = AlembicConfig()
@@ -145,18 +154,14 @@ def test_run_server_action_persists_balance_and_writes_ledger(store: SqlStore) -
     result = store.run_server_action(
         username=_U, client_action_id="act-1", action_type="test.grant", mutator=grant_credits
     )
-    assert isinstance(result, ServerActionResult)
-    assert result.event.action_type == "test.grant"
-    assert result.event.credits_before_millis == 0
-    assert result.event.credits_after_millis == 7000
-    assert result.result == ConvertResult(amount=7)
+    assert result == ConvertResult(amount=7)
 
     state = store.state_dump(_U)
     assert state.balance.credits_millis == 7000
 
-    ledger = store.list_ledger_events(_U)
-    assert len(ledger) == 1
-    assert ledger[0].client_action_id == "act-1"
+    [ledger] = _ledger_rows(store)
+    assert (ledger.client_action_id, ledger.action_type) == ("act-1", "test.grant")
+    assert (ledger.credits_before, ledger.credits_after) == (0, 7000)
 
 
 def test_run_server_action_is_idempotent_on_retry(store: SqlStore) -> None:
@@ -171,10 +176,10 @@ def test_run_server_action_is_idempotent_on_retry(store: SqlStore) -> None:
     second = store.run_server_action(
         username=_U, client_action_id="act-dup", action_type="test.grant", mutator=grant_credits
     )
-    assert second.event.id == first.event.id
-    assert second.result == first.result
+    assert second == first
     # Mutator was NOT replayed — credits stayed at 5000 millis, not 10000.
     assert store.state_dump(_U).balance.credits_millis == 5000
+    assert len(_ledger_rows(store)) == 1
 
 
 def test_action_rejected_rolls_back_mutator_changes(store: SqlStore) -> None:
@@ -190,7 +195,7 @@ def test_action_rejected_rolls_back_mutator_changes(store: SqlStore) -> None:
 
     # Transaction was rolled back: balance unchanged, no ledger row.
     assert store.state_dump(_U).balance.credits_millis == 0
-    assert len(store.list_ledger_events(_U)) == 0
+    assert _ledger_rows(store) == []
 
 
 def test_snapshot_reason_writes_state_snapshots_row(store: SqlStore) -> None:
@@ -307,8 +312,8 @@ def test_two_users_share_db_without_collision(store: SqlStore) -> None:
     assert store.state_dump("alice").balance.credits_millis == 10000
     assert store.state_dump("bob").balance.credits_millis == 99000
     # Each user's ledger lists only their own row.
-    assert len(store.list_ledger_events("alice")) == 1
-    assert len(store.list_ledger_events("bob")) == 1
+    assert len(_ledger_rows(store, "alice")) == 1
+    assert len(_ledger_rows(store, "bob")) == 1
 
 
 def test_casino_stats_aggregates_server_resolved_only(store: SqlStore) -> None:

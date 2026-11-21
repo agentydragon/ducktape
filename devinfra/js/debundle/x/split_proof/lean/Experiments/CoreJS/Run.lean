@@ -1,5 +1,6 @@
 import Experiments.CoreJS.Decode
 import Experiments.CoreJS.Eval
+import Experiments.CoreJS.Fragment
 
 /-!
 # CoreJS: the `corejs` executable
@@ -18,7 +19,8 @@ receiver and arguments, and ends as it did there. `world` in the output says whe
 recording, if they did, and `left` how many recorded calls the model did not make.
 
 `corejs --host-names` prints the members the model gives the host's prototypes, and the host functions it asks the
-world about.
+world about. `corejs --footprints` checks footprints against a program (`checkFootprints`), and `corejs --moves`
+counts the statements whose footprint is proved (`moveCensus`).
 -/
 
 open Lean (Json)
@@ -304,7 +306,7 @@ def checkFootprints (program : Program) (lines : List String) : Except String St
   let names (j : Json) (k : String) : Except String (List String) := do
     (← j.getObjVal? k >>= Json.getArr?).toList.mapM Json.getStr?
   let mut checked := 0
-  let mut opaques := 0
+  let mut opaques : Nat := 0
   let mut problems : Array String := #[]
   let mut failed := 0
   for (line, i) in lines.zipIdx do
@@ -329,6 +331,46 @@ def checkFootprints (program : Program) (lines : List String) : Except String St
   pure (Json.mkObj [("checked", checked), ("opaque", opaques), ("failed", failed),
     ("problems", Json.arr (problems.map Json.str))]).compress
 
+/-- **Which statements have a proved footprint** (`Fragment.lean`): the statements that do nothing when they run, and
+the others that only allocate: declarations whose initializers only allocate, opaque statements that only make
+functions. With the footprints of `lower` (one line per identity), it also counts how the analysis
+describes those statements: as an effect or as writing a name (more than is proved: imprecise, not wrong), and
+whether it lists every name the statement reads among the names it reads while it runs or declares (if not, a
+finding). One line of JSON. -/
+def moveCensus (program : Program) (lines : Option (List String)) : Except String String := do
+  let body := program.modules.flatMap (·.body)
+  let names (j : Json) (k : String) : Except String (List String) := do
+    (← j.getObjVal? k >>= Json.getArr?).toList.mapM Json.getStr?
+  let fps ← (lines.getD []).mapM Json.parse
+  let mut opaques := 0
+  let mut inert : Nat := 0
+  let mut inertEffect : Nat := 0
+  let mut allocs : Nat := 0
+  let mut effect : Nat := 0
+  let mut writes : Nat := 0
+  let mut findings : Array String := #[]
+  for (i, s) in body do
+    if let .opaque .. := s then opaques := opaques + 1
+    if s.inert then
+      inert := inert + 1
+      if let some fp := fps[i]? then
+        if (fp.getObjValAs? Bool "effect").toOption == some true then inertEffect := inertEffect + 1
+    else if let some (_, reads) := s.allocs then
+      allocs := allocs + 1
+      if let some fp := fps[i]? then
+        if (fp.getObjValAs? Bool "effect").toOption == some true then effect := effect + 1
+        if !(← names fp "writes").isEmpty then writes := writes + 1
+        let known := (← names fp "defs") ++ (← names fp "eager")
+        match reads.filter (!known.contains ·) with
+        | [] => pure ()
+        | missing => findings := findings.push s!"{i}: reads {missing.eraseDups}, which the footprint does not list"
+  let counts : List (String × Json) := [("units", (body.length : Nat)), ("opaque", (opaques : Nat)),
+    ("inert", (inert : Nat)), ("allocate", (allocs : Nat))]
+  let analysis : List (String × Json) := [("inert_effect", (inertEffect : Nat)), ("allocate_effect", (effect : Nat)),
+    ("allocate_writes", (writes : Nat)),
+    ("findings", Json.arr (findings.map Json.str))]
+  pure (Json.mkObj (counts ++ if lines.isSome then analysis else [])).compress
+
 def main (args : List String) : IO UInt32 := do
   match args with
   | ["--host-names"] =>
@@ -349,13 +391,21 @@ def main (args : List String) : IO UInt32 := do
     match Json.parse (← IO.FS.readFile programFile) >>= Decode.program >>= (checkFootprints · lines) with
     | .ok report => IO.println report; pure 0
     | .error msg => IO.eprintln msg; pure 1
+  | "--moves" :: programFile :: rest =>
+    let lines ← match rest with
+      | [] => pure none
+      | [footprintsFile] => pure (some (((← IO.FS.readFile footprintsFile).splitOn "\n").filter (· != "")))
+      | _ => IO.eprintln "usage: corejs --moves program.json [footprints.jsonl]"; return 2
+    match Json.parse (← IO.FS.readFile programFile) >>= Decode.program >>= (moveCensus · lines) with
+    | .ok report => IO.println report; pure 0
+    | .error msg => IO.eprintln msg; pure 1
   | [file] | [file, "--fuel", _] =>
     let fuel := (args[2]?.bind String.toNat?).getD 100000
     for line in (← IO.FS.lines file) do
       IO.println (runLine fuel line)
     pure 0
   | _ =>
-    IO.eprintln "usage: corejs programs.jsonl [--fuel N] | corejs --host-names | corejs --footprints program.json footprints.jsonl"
+    IO.eprintln "usage: corejs programs.jsonl [--fuel N] | corejs --host-names | corejs --footprints program.json footprints.jsonl | corejs --moves program.json [footprints.jsonl]"
     pure 2
 
 end CoreJS

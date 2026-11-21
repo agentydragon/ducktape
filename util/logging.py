@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
-import logging
 import os
 from enum import StrEnum
 from logging.config import dictConfig
 from pathlib import Path
 from typing import Annotated
 
-import structlog
 import typer
-from structlog.typing import Processor
 
 
 class LogLevel(StrEnum):
@@ -25,7 +22,7 @@ class LogLevel(StrEnum):
 def configure_logging(log_output: str | None = None, log_level: str | LogLevel | None = None) -> None:
     """Single source of truth for logging configuration.
 
-    - Routes ALL logs through stdlib logging (structlog uses stdlib LoggerFactory)
+    - Routes ALL logs through stdlib logging
     - Configurable output destination and level
     - No prints; no library-specific handlers
 
@@ -83,20 +80,6 @@ def configure_logging(log_output: str | None = None, log_level: str | LogLevel |
             "handlers": handlers_config,
             "root": {"level": log_level_enum, "handlers": root_handlers},
         }
-    )
-
-    # Route structlog through stdlib, obeying the same handlers
-    procs: list[Processor] = [structlog.processors.TimeStamper(fmt="iso"), structlog.processors.add_log_level]
-    if os.getenv("MINICODEX_DEBUG"):
-        procs.append(structlog.processors.JSONRenderer())
-    else:
-        procs.append(structlog.processors.KeyValueRenderer(key_order=["event"]))
-
-    structlog.configure(
-        processors=procs,
-        wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
-        logger_factory=structlog.stdlib.LoggerFactory(),
-        cache_logger_on_first_use=False,
     )
 
 

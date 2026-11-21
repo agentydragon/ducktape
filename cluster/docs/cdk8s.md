@@ -121,12 +121,21 @@ directory: the generated `kustomization.yaml` lists it as a sibling resource
 that directory's object in the central Flux chart carries the `decryption:` block when any
 such file is listed; `flux_kustomization` derives it from the `RenderedDirectory`.
 `ExternalSecret` objects are generated outright; they carry only a pointer at a store key.
+Whole-tree validation checks referenced ESO stores and their namespace conditions and,
+for Kubernetes-provider referent authentication, the consuming namespace's
+ServiceAccount. Each local Flux owner with a `targetNamespace` is built independently
+with the pinned Flux CLI in dry-run mode. Other local builds use plain Kustomize and
+omit Flux-level patches. Validation skips ExternalSecrets still missing a namespace
+and evaluates ClusterExternalSecret selectors against rendered Namespace labels.
+External source trees, runtime substitutions and labels, unsupported Go regexes,
+and live secret readiness are outside this check.
 
 Fleet rules run on every App `generation.write_app` writes, over all its charts together;
 strategic-merge patch files are not checked. Their
-`resolved_references` check rejects some same-App Secret/ConfigMap kind mismatches,
-including names derived from controller-created targets; it permits unknown references
-and does not distinguish namespaces. It does not establish reference existence.
+`reference_kind_mismatches` check rejects some same-App Secret/ConfigMap kind mismatches
+when both objects explicitly name the same namespace, including controller-created
+targets. Unknown references and namespaces remain outside its proof. It does not
+establish reference existence.
 Whole-tree validation work is tracked in <../cdk8s/TODO.md>.
 
 A `configMapGenerator` input (`cluster/k8s/haku/mailbox/nginx.conf`)

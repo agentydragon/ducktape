@@ -45,6 +45,7 @@ py_library(
     srcs = ["bootstrap.py"],
     data = [":bootstrap_scripts"],
     deps = [
+        ":app",
         "//cluster/cdk8s:api_resource",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:namespaces",
@@ -60,6 +61,8 @@ py_library(
     name = "delivery",
     srcs = ["delivery.py"],
     deps = [
+        ":app",
+        ":demo",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:image_automation",
         "//cluster/cdk8s/providers/flux:gitrepository",
@@ -104,7 +107,6 @@ py_library(
         "//ssh_keys:wyrm2-forgejo.pub",
     ],
     deps = [
-        ":runner",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
@@ -122,6 +124,7 @@ py_library(
     srcs = ["runner.py"],
     data = [":runner_config"],
     deps = [
+        ":app",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:namespaces",
@@ -153,6 +156,7 @@ py_library(
     name = "demo",
     srcs = ["demo.py"],
     deps = [
+        ":app",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",

@@ -22,6 +22,8 @@ from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT, PARK
 from cluster.cdk8s.testing.manifests import find_resource
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
+type YamlDocuments = dict[Path, list[dict[str, Any]]]
+
 _REGENERATE = "regenerate with `bb run //cluster/cdk8s:generate_manifests` and commit the result"
 
 
@@ -30,46 +32,43 @@ def _files(root: Path) -> set[str]:
 
 
 @pytest.fixture(scope="module")
-def generated(runfiles: Runfiles, checkout: Path) -> Path:
+def generated(runfiles: Runfiles) -> Path:
     root_path = runfiles.Rlocation(os.environ["GENERATED_MANIFESTS_RLOCATION"])
     assert root_path is not None
-    root = Path(root_path)
-    # CI uses the same pinned generator as local runs. Preserve its exact drift as an
-    # applyable artifact rather than making authors reconstruct generated YAML by hand.
-    patch: list[str] = []
-    for relative in sorted(_files(root)):
-        committed = checkout / relative
-        before = committed.read_text().splitlines(keepends=True) if committed.is_file() else []
-        after = (root / relative).read_text().splitlines(keepends=True)
-        patch.extend(
-            unified_diff(
-                before, after, fromfile=f"a/{relative}" if committed.is_file() else "/dev/null", tofile=f"b/{relative}"
-            )
-        )
-    if patch:
-        (undeclared_outputs_dir() / "generated-manifests.patch").write_text("".join(patch))
-    return root
+    return Path(root_path)
 
 
 @pytest.fixture(scope="module")
-def parsed_yaml_documents(generated: Path) -> dict[Path, tuple[Any, ...]]:
-    """Cache parsed documents for read-only inspection by manifest assertions."""
-    return {path: tuple(yaml.load_all(path.read_text(), Loader=yaml.CSafeLoader)) for path in generated.rglob("*.yaml")}
+def parsed_yaml_documents(generated: Path) -> YamlDocuments:
+    """YAML mappings by repository-relative path."""
+    return {
+        path.relative_to(generated): [
+            doc for doc in yaml.load_all(path.read_text(), Loader=yaml.CSafeLoader) if isinstance(doc, dict)
+        ]
+        for path in generated.rglob("*.yaml")
+    }
 
 
 @pytest.fixture(scope="module")
-def documents(generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]) -> list[dict[str, Any]]:
-    """Objects written by cdk8s, including generated files beside hand-written inputs."""
-    generated_root = generated / GENERATED_ROOT
-    hand_written_root = generated / HAND_WRITTEN_ROOT
-    return [
-        doc
+def active_yaml_documents(parsed_yaml_documents: YamlDocuments) -> YamlDocuments:
+    """Files written by cdk8s into the active Flux roots."""
+    return {
+        path: docs
         for path, docs in parsed_yaml_documents.items()
-        if path.is_relative_to(generated_root)
-        or (path.is_relative_to(hand_written_root) and path.name.endswith(".k8s.yaml"))
-        for doc in docs
-        if isinstance(doc, dict)
-    ]
+        if path.is_relative_to(GENERATED_ROOT)
+        or (path.is_relative_to(HAND_WRITTEN_ROOT) and path.name.endswith(".k8s.yaml"))
+    }
+
+
+@pytest.fixture(scope="module")
+def documents(active_yaml_documents: YamlDocuments) -> list[dict[str, Any]]:
+    return [doc for docs in active_yaml_documents.values() for doc in docs]
+
+
+@pytest.fixture(scope="module")
+def active_api_objects(active_yaml_documents: YamlDocuments) -> list[dict[str, Any]]:
+    """API objects, excluding local Kustomize configuration."""
+    return [doc for path, docs in active_yaml_documents.items() if path.name.endswith(".k8s.yaml") for doc in docs]
 
 
 def test_auto_vpa_namespaces_declare_a_resource_policy(documents: list[dict[str, Any]], checkout: Path) -> None:
@@ -96,10 +95,8 @@ def test_auto_vpa_namespaces_declare_a_resource_policy(documents: list[dict[str,
     assert not missing, f"auto VPA namespaces missing a resource policy: {missing}"
 
 
-def test_tofu_controller_accepts_external_artifacts(
-    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
-) -> None:
-    documents = parsed_yaml_documents[generated / GENERATED_ROOT / "tofu-controller/tofu-controller.k8s.yaml"]
+def test_tofu_controller_accepts_external_artifacts(parsed_yaml_documents: YamlDocuments) -> None:
+    documents = parsed_yaml_documents[Path(GENERATED_ROOT, "tofu-controller/tofu-controller.k8s.yaml")]
     release = next(doc for doc in documents if doc["kind"] == "HelmRelease")
     crd = next(doc for doc in documents if doc["kind"] == "CustomResourceDefinition")
     assert release["spec"]["values"]["featureGates"]["externalArtifact"] is True
@@ -307,14 +304,29 @@ def checkout(runfiles: Runfiles) -> Path:
 
 def test_generated_tree_matches_committed_snapshot(generated: Path, checkout: Path) -> None:
     generated_files = _files(generated)
-    committed_files = _files(checkout / GENERATED_ROOT)
-    missing = sorted(relative for relative in generated_files if not (checkout / relative).is_file())
-    stale = sorted(
-        relative
-        for relative in generated_files
-        if (checkout / relative).is_file() and (generated / relative).read_text() != (checkout / relative).read_text()
-    )
-    committed = {f"{GENERATED_ROOT}/{relative}" for relative in committed_files}
+    missing: list[str] = []
+    stale: list[str] = []
+    patch: list[str] = []
+    for relative in sorted(generated_files):
+        committed_path = checkout / relative
+        before = committed_path.read_text() if committed_path.is_file() else None
+        after = (generated / relative).read_text()
+        if before == after:
+            continue
+        (missing if before is None else stale).append(relative)
+        patch.extend(
+            unified_diff(
+                (before or "").splitlines(keepends=True),
+                after.splitlines(keepends=True),
+                fromfile="/dev/null" if before is None else f"a/{relative}",
+                tofile=f"b/{relative}",
+            )
+        )
+    # CI uses the pinned generator, so its diff can be applied directly to repair drift.
+    if patch:
+        (undeclared_outputs_dir() / "generated-manifests.patch").write_text("".join(patch))
+
+    committed = {f"{GENERATED_ROOT}/{relative}" for relative in _files(checkout / GENERATED_ROOT)}
     extra = sorted(committed - generated_files)
 
     failures = []
@@ -675,30 +687,11 @@ def test_piraeus_controller_network_policy_only_admits_api_tls(documents: list[d
     assert policy["spec"]["ingress"] == [{"ports": [{"port": 3371, "protocol": "TCP"}]}]
 
 
-def test_ducktape_artifact_copy_sources_are_in_sparse_checkout(
-    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
-) -> None:
-    documents = [
-        document
-        for path in generated.rglob("*.yaml")
-        for document in parsed_yaml_documents[path]
-        if isinstance(document, dict)
-    ]
-    source = next(
-        document
-        for document in documents
-        if document["kind"] == "GitRepository"
-        and document["metadata"].get("name") == "ducktape"
-        and document["metadata"].get("namespace") == "ducktape-flux"
-    )
+def test_ducktape_artifact_copy_sources_are_in_sparse_checkout(parsed_yaml_documents: YamlDocuments) -> None:
+    documents = [doc for docs in parsed_yaml_documents.values() for doc in docs]
+    source = find_resource(documents, "GitRepository", "ducktape", namespace="ducktape-flux")
     sparse_roots = tuple(path.strip("/") for path in source["spec"].get("sparseCheckout", []))
-    generator = next(
-        document
-        for document in documents
-        if document["kind"] == "ArtifactGenerator"
-        and document["metadata"].get("name") == "ducktape-artifacts"
-        and document["metadata"].get("namespace") == "ducktape-flux"
-    )
+    generator = find_resource(documents, "ArtifactGenerator", "ducktape-artifacts", namespace="ducktape-flux")
     repo_aliases = {
         artifact_source["alias"]
         for artifact_source in generator["spec"]["sources"]
@@ -764,32 +757,26 @@ def test_no_image_automation_markers(generated: Path) -> None:
     assert not marked, "Generated files must not carry a Flux image-automation marker:\n" + "\n".join(marked)
 
 
-def test_flux_kustomizations_under_parked_path_are_annotated(
-    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
-) -> None:
-    flux_chart = generated / HAND_WRITTEN_ROOT / "flux/kustomizations.k8s.yaml"
+def test_flux_kustomizations_under_parked_path_are_annotated(parsed_yaml_documents: YamlDocuments) -> None:
+    flux_chart = Path(HAND_WRITTEN_ROOT, "flux/kustomizations.k8s.yaml")
     missing = sorted(
         doc["metadata"]["name"]
         for doc in parsed_yaml_documents[flux_chart]
-        if isinstance(doc, dict)
-        and doc.get("kind") == "Kustomization"
+        if doc.get("kind") == "Kustomization"
         and Path(doc["spec"]["path"].removeprefix("./")).is_relative_to(PARKED_ROOT)
         and doc["metadata"].get("annotations", {}).get("ducktape.org/parked") != "true"
     )
     assert not missing, f"Kustomizations under {PARKED_ROOT}/ lack the parked annotation: {missing}"
 
 
-def test_goldilocks_explicit_decision(generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]) -> None:
+def test_goldilocks_explicit_decision(active_yaml_documents: YamlDocuments) -> None:
     update_mode = "goldilocks.fairwinds.com/vpa-update-mode"
     enabled = "goldilocks.fairwinds.com/enabled"
     missing = sorted(
-        f"{path.relative_to(generated)}: Namespace '{doc['metadata']['name']}'"
-        for path, documents in parsed_yaml_documents.items()
-        if path.is_relative_to(generated / GENERATED_ROOT)
-        or (path.is_relative_to(generated / HAND_WRITTEN_ROOT) and path.name.endswith(".k8s.yaml"))
-        for doc in documents
-        if isinstance(doc, dict)
-        and doc.get("kind") == "Namespace"
+        f"{path}: Namespace '{doc['metadata']['name']}'"
+        for path, docs in active_yaml_documents.items()
+        for doc in docs
+        if doc.get("kind") == "Namespace"
         and update_mode not in (labels := (doc["metadata"].get("labels") or {}))
         and labels.get(enabled) != "false"
     )
@@ -888,43 +875,31 @@ def test_cluster_diagnostics_kustomizations_are_read_only(documents: list[dict[s
 
 
 def test_parked_haku_backup_and_shared_services_remain_configured(
-    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
+    generated: Path, active_api_objects: list[dict[str, Any]], parsed_yaml_documents: YamlDocuments
 ) -> None:
-    active = [
-        doc
-        for path in generated.rglob("*.k8s.yaml")
-        if "parked" not in path.parts
-        for doc in parsed_yaml_documents[path]
-        if doc
-    ]
-    owners = {doc["metadata"]["name"]: doc for doc in active if doc["kind"] == "Kustomization"}
+    owners = {doc["metadata"]["name"] for doc in active_api_objects if doc["kind"] == "Kustomization"}
     # Keep Haku's namespace and the public coder's namespace and access Roles alive.
-    assert {"haku-namespace", "public-coder-agent-access"} <= owners.keys()
-    assert any(doc["kind"] == "Namespace" and doc["metadata"]["name"] == "public-coder-agent" for doc in active)
+    assert {"haku-namespace", "public-coder-agent-access"} <= owners
+    assert any(
+        doc["kind"] == "Namespace" and doc["metadata"]["name"] == "public-coder-agent" for doc in active_api_objects
+    )
     # Only the retained backup recovery package remains reproducible outside the live roots.
-    archived = generated / "cluster/parked/haku-openclaw-spike"
+    archived = Path(PARKED_ROOT, "haku-openclaw-spike")
     backup = parsed_yaml_documents[archived / "backup/backup.k8s.yaml"]
     bucket = next(doc for doc in backup if doc["kind"] == "Bucket")
     assert bucket["spec"]["reclaimPolicy"] == "Retain"
     credentials = next(doc for doc in backup if doc["kind"] == "S3Credentials")
     assert credentials["spec"]["reclaimPolicy"] == "Retain"
-    assert (archived / "backup/repository.sops.yaml").is_file()
-    assert (archived / "backup/README.md").is_file()
+    assert (generated / archived / "backup/repository.sops.yaml").is_file()
+    assert (generated / archived / "backup/README.md").is_file()
 
 
 def test_parked_claude_namespace_preserves_credentials_and_egress_fence(
-    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
+    active_api_objects: list[dict[str, Any]],
 ) -> None:
-    active = [
-        doc
-        for path in generated.rglob("*.k8s.yaml")
-        if "parked" not in path.parts
-        for doc in parsed_yaml_documents[path]
-        if isinstance(doc, dict)
-    ]
     # Claude's shared roles, identities and credentials survive; ad-hoc compute does not.
-    claude = [doc for doc in active if doc["metadata"].get("namespace") == "claude-sandbox"]
-    owners = {doc["metadata"]["name"]: doc for doc in active if doc["kind"] == "Kustomization"}
+    claude = [doc for doc in active_api_objects if doc["metadata"].get("namespace") == "claude-sandbox"]
+    owners = {doc["metadata"]["name"] for doc in active_api_objects if doc["kind"] == "Kustomization"}
     quota = next(doc for doc in claude if doc["kind"] == "ResourceQuota")
     assert str(quota["spec"]["hard"]["pods"]) == "0"
     fence = next(
@@ -934,18 +909,19 @@ def test_parked_claude_namespace_preserves_credentials_and_egress_fence(
     assert {"buildbuddy-api-key", "claude-forgejo-credentials"} <= {
         doc["metadata"]["name"] for doc in claude if doc["kind"] == "ExternalSecret"
     }
-    assert not any(doc["kind"] == "ClusterPolicy" and doc["metadata"]["name"] == "inject-mitmproxy" for doc in active)
-    assert {"agent-sandbox-controller", "public-coder-agent-access", "claude-sandbox-secrets"} <= owners.keys()
+    assert not any(
+        doc["kind"] == "ClusterPolicy" and doc["metadata"]["name"] == "inject-mitmproxy" for doc in active_api_objects
+    )
+    assert {"agent-sandbox-controller", "public-coder-agent-access", "claude-sandbox-secrets"} <= owners
 
 
-def test_openclaw_cutover_waits_for_agentplane_credentials(
-    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
-) -> None:
+def test_openclaw_cutover_waits_for_agentplane_credentials(parsed_yaml_documents: YamlDocuments) -> None:
     owners = {
         doc["metadata"]["name"]: doc
-        for path in generated.rglob("*.k8s.yaml")
-        for doc in parsed_yaml_documents[path]
-        if isinstance(doc, dict) and doc["kind"] == "Kustomization"
+        for path, docs in parsed_yaml_documents.items()
+        if path.name.endswith(".k8s.yaml")
+        for doc in docs
+        if doc["kind"] == "Kustomization"
     }
     app = owners["public-coder-agent-app"]["spec"]
     assert "agentplane-staging" in {dependency["name"] for dependency in app["dependsOn"]}
@@ -958,16 +934,13 @@ def test_openclaw_cutover_waits_for_agentplane_credentials(
     }
 
 
-def test_public_coder_pause_retains_state_after_devbox_retirement(
-    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
-) -> None:
-    roots = (generated / "cluster/parked/public-coder-agent", generated / "cluster/generated/agents/public-coder-agent")
+def test_public_coder_pause_retains_state_after_devbox_retirement(parsed_yaml_documents: YamlDocuments) -> None:
+    roots = (Path(PARKED_ROOT, "public-coder-agent"), Path(GENERATED_ROOT, "agents/public-coder-agent"))
     objects = [
         doc
         for path, docs in parsed_yaml_documents.items()
         if path.name.endswith(".k8s.yaml") and any(path.is_relative_to(root) for root in roots)
         for doc in docs
-        if isinstance(doc, dict)
     ]
     deployments = [doc for doc in objects if doc["kind"] == "Deployment"]
     assert {doc["metadata"]["name"] for doc in deployments} == {"public-coder-agent"}
@@ -984,7 +957,7 @@ def test_public_coder_pause_retains_state_after_devbox_retirement(
         doc["metadata"]["name"]: doc["spec"]
         for docs in parsed_yaml_documents.values()
         for doc in docs
-        if isinstance(doc, dict) and doc.get("kind") == "Kustomization" and "spec" in doc
+        if doc.get("kind") == "Kustomization" and "spec" in doc
     }
     for name in ("public-coder-agent-access", "public-coder-agent-app", "public-coder-agent-backup"):
         assert owners[name]["deletionPolicy"] == "Orphan"

@@ -24,6 +24,8 @@ from constructs import Construct
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
 from cluster.cdk8s import cilium, namespaces, node_scheduling, pod_policy
+from cluster.cdk8s.agentplane import actions
+from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.forgejo_registry.pull_credentials import (
@@ -32,11 +34,9 @@ from cluster.cdk8s.forgejo_registry.pull_credentials import (
 )
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.probes import http_probe
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
-from cluster.cdk8s.secret_ref import SecretRef
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 from cluster.cdk8s.ssh_mcp.config import (
-    BEARER_SECRET_KEY,
-    BEARER_SECRET_NAME,
+    BEARER,
     CONFIG_DIR,
     CONFIG_MAP_NAME,
     NAME,
@@ -53,7 +53,6 @@ IMAGE_NAME = "git.allegedly.works/ducktape-ci/ssh-mcp"
 PLACEHOLDER_TAG = "unset"
 _CPU_REQUEST_MILLIS = 50
 _MEMORY_LIMIT_MIB = 512
-_BEARER = SecretRef(namespace=NAMESPACE, name=BEARER_SECRET_NAME).key(BEARER_SECRET_KEY)
 _KEY_VOLUMES = (
     ("keys", "ssh-mcp-keys", f"{CONFIG_DIR}/keys"),
     ("keys-atlas", "ssh-mcp-keys-atlas", f"{CONFIG_DIR}/keys-atlas"),
@@ -122,9 +121,9 @@ class SshMcp(Construct):
         mint_bearer_secret(
             self,
             "bearer-external-secret",
-            name=_BEARER.secret.name,
-            namespace=_BEARER.secret.namespace,
-            key=_BEARER.key,
+            name=BEARER.secret.name,
+            namespace=BEARER.secret.namespace,
+            key=BEARER.key,
             creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         )
 
@@ -157,7 +156,7 @@ class SshMcp(Construct):
             image_pull_policy=ImagePullPolicy.ALWAYS,
             env_variables={
                 "SSH_MCP_CONFIG_FILE": EnvValue.from_value(f"{CONFIG_DIR}/settings.yaml"),
-                "SSH_MCP_BEARER_TOKEN": _BEARER.env_value(self, "bearer-secret-ref"),
+                "SSH_MCP_BEARER_TOKEN": BEARER.env_value(self, "bearer-secret-ref"),
                 "SSH_MCP_HOST": EnvValue.from_value("0.0.0.0"),
                 "SSH_MCP_PORT": EnvValue.from_value(str(SERVICE.pod_port)),
             },
@@ -178,9 +177,7 @@ class SshMcp(Construct):
         )
         # The home switch is reachable from the home-LAN node. Keep the backend
         # there so its egress follows the same routed path as the tofu runner.
-        pod_policy.place(
-            deployment, node_scheduling.Placement(node_selector={"topology.kubernetes.io/zone": "home-lan"})
-        )
+        pod_policy.place(deployment, node_scheduling.Placement(node_selector=node_scheduling.HOME_LAN_NODE_SELECTOR))
         config_volume = Volume.from_config_map(self, "config-volume", config_map)
         deployment.containers[0].mount(CONFIG_DIR, config_volume, read_only=True)
         # cdk8s_plus has no optional SecretVolumeSource builder. Keep the optionality in
@@ -226,11 +223,7 @@ class SshMcp(Construct):
             "network-policy",
             metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
             endpoint_selector=SERVICE.pods.selector,
-            ingress=[
-                IngressRule.from_endpoints(
-                    cilium.endpoint_labels("agentplane-staging", "actions"), ports=[SERVICE.pod_port]
-                )
-            ],
+            ingress=[actions.service(STAGING_NAMESPACE).pods.admit(SERVICE.pod_port)],
             egress=_egress(mesh, config),
         )
 

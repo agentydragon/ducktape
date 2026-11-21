@@ -16,6 +16,7 @@ import httpx
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError
 from pydantic.alias_generators import to_camel
 
+from aiquota.config import ClaudeSettings
 from aiquota.models import (
     ClaudeResetGrant,
     ExtraSpend,
@@ -46,11 +47,6 @@ LONG_WINDOW_SECS = 7 * 86400
 _OAUTH_HEADERS = {"Authorization": "Bearer $TOKEN$", "anthropic-beta": "oauth-2025-04-20"}
 # Anthropic gates reset inventory on both this option and the Claude Code surface.
 _USAGE_HEADERS = {**_OAUTH_HEADERS, "User-Agent": "claude-cli/2.1.292 (external, cli) aiquota/1.0"}
-
-
-class ClaudeSettings(BaseModel):
-    enabled: bool = True
-    credentials_path: Path = Path.home() / ".claude" / ".credentials.json"
 
 
 # Preserve unknown fields (e.g. mcpOAuth) on the round-trip so that

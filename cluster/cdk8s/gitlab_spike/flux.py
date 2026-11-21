@@ -4,7 +4,6 @@ from cdk8s import App, Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecDeletionPolicy,
     KustomizationSpecHealthCheckExprs,
-    KustomizationSpecHealthChecks,
 )
 from pydantic import BaseModel
 from python.runfiles import Runfiles
@@ -13,7 +12,6 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from cluster.cdk8s import terraform
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import CNPG_DATABASE_READY
-from cluster.cdk8s.gitlab_spike import runner
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 GITOPS_NAME = "gitlab-spike-gitops"
@@ -98,24 +96,4 @@ def gitops(
         timeout="15m",
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         depends_on=flux_kustomization_depends_on_many(bootstrap, tofu_controller, forgejo),
-    )
-
-
-def integrations(chart: Chart, directory: RenderedDirectory, gitops: Kustomization) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        INTEGRATIONS_NAME,
-        directory,
-        timeout="10m",
-        # The source and demo cannot become ready before the manual seed and first image.
-        wait=False,
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="helm.toolkit.fluxcd.io/v2",
-                kind="HelmRelease",
-                name=runner.NAME,
-                namespace=runner.NAMESPACE,
-            )
-        ],
-        depends_on=flux_kustomization_depends_on_many(gitops),
     )

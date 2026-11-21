@@ -219,7 +219,7 @@ class SandboxController(Construct):
                 type="ClusterIP",
                 external_i_ps=[],
                 selector=environment_service.ENVIRONMENTS_ROUTING_LABELS,
-                ports=[environments.port.k8s_service_port(), _METRICS_PORT.k8s_service_port()],
+                ports=[environments.k8s_service_port(), _METRICS_PORT.k8s_service_port()],
             ),
         )
         prerequisites = Construct(self, "environments-prerequisites")

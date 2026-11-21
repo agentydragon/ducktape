@@ -96,6 +96,7 @@ py_library(
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:ntfy",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:kustomization",
         "@pypi//cdk8s",
@@ -117,6 +118,7 @@ py_library(
         "//cluster/cdk8s/att_gateway_exporter:__pkg__",
     ],
     deps = [
+        ":alloy_endpoints",
         ":grafana_helmrepository",
         ":loki",
         ":mimir",
@@ -143,6 +145,7 @@ py_library(
         "//cluster/cdk8s/gatus:__pkg__",
     ],
     deps = [
+        ":alloy_endpoints",
         ":grafana_helmrepository",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:flux",
@@ -215,6 +218,7 @@ py_library(
         "//cluster/cdk8s/monitoring/dashboards:rugged-power.json",
         "//cluster/cdk8s/monitoring/dashboards:s3-operations.json",
         "//cluster/cdk8s/monitoring/dashboards:storage-service-details.json",
+        "//cluster/cdk8s/monitoring/dashboards:tabbyapi.json",
         "//cluster/cdk8s/monitoring/dashboards:zot-cache-image-pulls.json",
     ],
     visibility = ["//cluster/cdk8s:__subpackages__"],
@@ -319,6 +323,7 @@ py_library(
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        ":alloy_endpoints",
         ":namespace",
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
         "//cluster/cdk8s/providers/prometheus_operator:prometheusrule",
@@ -390,6 +395,7 @@ py_library(
         ":namespace",
         "//cluster/cdk8s:home_lan",
         "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:terraform",
         "//cluster/cdk8s/cert_manager:cluster_ca",
@@ -607,5 +613,15 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//testcontainers",
         "@rules_python//python/runfiles",
+    ],
+)
+
+py_library(
+    name = "alloy_endpoints",
+    srcs = ["alloy_endpoints.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":namespace",
+        "//cluster/cdk8s:service_ref",
     ],
 )

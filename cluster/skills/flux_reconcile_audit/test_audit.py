@@ -1,11 +1,12 @@
 from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
+import httpx
 import pytest
 import pytest_bazel
 from kubernetes_asyncio import client
 
-from cluster.skills.flux_reconcile_audit.audit import classify, collect_universe
+from cluster.skills.flux_reconcile_audit.audit import classify, collect_universe, loki_reconcile_counts
 
 _SINCE = datetime(2026, 1, 1, tzinfo=UTC)
 
@@ -104,6 +105,32 @@ async def test_kustomization_uses_latest_reconcile_history() -> None:
     assert resource.evidence["failures_attempts"] == 2
     assert resource.evidence["max_history_duration_s"] == 12
     assert resource.evidence["latest_revision"] == "test-revision"
+
+
+async def test_loki_counts_route_by_kind_and_outcome() -> None:
+    # One failed query must leave the other outcomes available, even for the same resource name.
+    def respond(request: httpx.Request) -> httpx.Response:
+        query = request.url.params["query"]
+        failed = '"Reconciliation failed"' in query
+        if 'app="kustomize-controller"' in query:
+            label, value = "Kustomization_name", "2" if failed else "3"
+        else:
+            assert 'app="helm-controller"' in query
+            if failed:
+                raise httpx.ConnectError("test failure")
+            label, value = "HelmRelease_name", "5"
+        assert f"by ({label})" in query
+        return httpx.Response(200, json={"data": {"result": [{"metric": {label: "test-app"}, "value": [0, value]}]}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as http:
+        counts = await loki_reconcile_counts(http, "2h")
+
+    assert counts == {
+        ("Kustomization", "fail"): {"test-app": 2},
+        ("Kustomization", "ok"): {"test-app": 3},
+        ("HelmRelease", "fail"): {},
+        ("HelmRelease", "ok"): {"test-app": 5},
+    }
 
 
 if __name__ == "__main__":

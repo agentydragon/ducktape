@@ -46,21 +46,21 @@ FAILURE_STATUSES = {
 
 CULPRIT_RE = re.compile(r"\[(\w+)/([\w\-.]+)/([\w\-.]+) status: '([^']+)'\]")
 
-# Probe targets: (group, version, plural, Kind).
-DEFAULT_PROBE_KINDS: list[tuple[str, str, str, str]] = [
-    ("apps", "v1", "deployments", "Deployment"),
-    ("apps", "v1", "statefulsets", "StatefulSet"),
-    ("apps", "v1", "daemonsets", "DaemonSet"),
-    ("batch", "v1", "jobs", "Job"),
-    ("batch", "v1", "cronjobs", "CronJob"),
-    ("helm.toolkit.fluxcd.io", "v2", "helmreleases", "HelmRelease"),
-    ("external-secrets.io", "v1", "externalsecrets", "ExternalSecret"),
-    ("postgresql.cnpg.io", "v1", "clusters", "Cluster"),
-    ("cdi.kubevirt.io", "v1beta1", "datavolumes", "DataVolume"),
-    ("kubevirt.io", "v1", "virtualmachines", "VirtualMachine"),
-    ("seaweed.seaweedfs.com", "v1", "buckets", "Bucket"),
-    ("infra.contrib.fluxcd.io", "v1alpha2", "terraforms", "Terraform"),
-    ("cilium.io", "v2", "ciliumenvoyconfigs", "CiliumEnvoyConfig"),
+# Probe API addresses: (group, version, plural).
+DEFAULT_PROBE_KINDS: list[tuple[str, str, str]] = [
+    ("apps", "v1", "deployments"),
+    ("apps", "v1", "statefulsets"),
+    ("apps", "v1", "daemonsets"),
+    ("batch", "v1", "jobs"),
+    ("batch", "v1", "cronjobs"),
+    ("helm.toolkit.fluxcd.io", "v2", "helmreleases"),
+    ("external-secrets.io", "v1", "externalsecrets"),
+    ("postgresql.cnpg.io", "v1", "clusters"),
+    ("cdi.kubevirt.io", "v1beta1", "datavolumes"),
+    ("kubevirt.io", "v1", "virtualmachines"),
+    ("seaweed.seaweedfs.com", "v1", "buckets"),
+    ("infra.contrib.fluxcd.io", "v1alpha2", "terraforms"),
+    ("cilium.io", "v2", "ciliumenvoyconfigs"),
 ]
 
 FLUX_LABEL = "kustomize.toolkit.fluxcd.io/name"
@@ -112,22 +112,22 @@ async def mimir_p99_by_name(http: httpx.AsyncClient, window: str) -> dict[tuple[
     return out
 
 
-async def loki_count_by_name(
+async def _loki_count_by_name(
     http: httpx.AsyncClient, app: str, name_label: str, line_match: str, window: str
 ) -> dict[str, int]:
-    promql = (
+    logql = (
         f"sum by ({name_label}) (count_over_time("
         f'{{namespace="flux-system",app="{app}"}} | json | __error__="" '
         f'|~ "{line_match}" [{window}]))'
     )
     try:
-        r = await http.get(f"{LOKI_URL}/query", params={"query": promql}, timeout=90.0)
-        result = r.json()["data"]["result"]
+        response = await http.get(f"{LOKI_URL}/query", params={"query": logql}, timeout=90.0)
+        samples = response.json()["data"]["result"]
     except httpx.HTTPError, KeyError, ValueError:
         logger.warning("Loki query failed; its reconcile counts are missing from this report", exc_info=True)
         return {}
     out: dict[str, int] = {}
-    for series in result:
+    for series in samples:
         nm = series.get("metric", {}).get(name_label)
         if not nm:
             continue
@@ -136,6 +136,15 @@ async def loki_count_by_name(
         except KeyError, ValueError:
             continue
     return out
+
+
+async def loki_reconcile_counts(http: httpx.AsyncClient, window: str) -> dict[tuple[str, str], dict[str, int]]:
+    queries = {
+        (kind, outcome): _loki_count_by_name(http, app, f"{kind}_name", match, window)
+        for kind, app in (("Kustomization", "kustomize-controller"), ("HelmRelease", "helm-controller"))
+        for outcome, match in (("fail", "Reconciliation failed"), ("ok", "Reconciliation finished"))
+    }
+    return dict(zip(queries, await asyncio.gather(*queries.values()), strict=True))
 
 
 async def collect_universe(custom: client.CustomObjectsApi) -> list[Resource]:
@@ -168,21 +177,18 @@ async def collect_universe(custom: client.CustomObjectsApi) -> list[Resource]:
     return out
 
 
-async def fetch_probe_kinds(
-    custom: client.CustomObjectsApi, probe_kinds: list[tuple[str, str, str, str]]
-) -> dict[str, list[dict]]:
-    async def _fetch(spec: tuple[str, str, str, str]) -> list[dict]:
+async def fetch_probe_kinds(custom: client.CustomObjectsApi) -> dict[str, list[dict]]:
+    async def _fetch(group: str, version: str, plural: str) -> list[dict]:
         try:
-            return (await custom.list_cluster_custom_object(group=spec[0], version=spec[1], plural=spec[2])).get(
-                "items", []
-            ) or []
+            response = await custom.list_cluster_custom_object(group=group, version=version, plural=plural)
+            return response.get("items") or []
         except client.ApiException, OSError:
             logger.warning(
-                "Listing %s.%s failed; its objects are missing from the probes", spec[2], spec[0], exc_info=True
+                "Listing %s.%s failed; its objects are missing from the probes", plural, group, exc_info=True
             )
             return []
 
-    results = await asyncio.gather(*(_fetch(s) for s in probe_kinds))
+    results = await asyncio.gather(*(_fetch(*address) for address in DEFAULT_PROBE_KINDS))
     by_kustomization: dict[str, list[dict]] = defaultdict(list)
     for items in results:
         for obj in items:
@@ -219,28 +225,19 @@ def classify(
     success_entries = [e for e in history_in if e.last_reconciled_status in SUCCESS_STATUSES]
     failure_entries = [e for e in history_in if e.last_reconciled_status in FAILURE_STATUSES]
 
-    # Per-revision rollup. Each history entry IS per-revision-digest already;
-    # we use it to drive the Miswired ("same revision: failed then succeeded
-    # later" or "had failure entries then a success entry") and Broken
-    # decisions. Counts are by *entry*, not by individual reconcile attempt.
+    # A revision can have separate success and failure entries for different build digests.
     successful_revisions = {e.revision for e in success_entries}
-    failed_revisions_with_recovery = {e.revision for e in failure_entries if e.revision in successful_revisions}
+    failed_revisions_with_recovery = {e.revision for e in failure_entries} & successful_revisions
 
-    # Per-history-entry attempt counts (best precision we have without Loki).
-    successes_attempts = sum(e.total_reconciliations for e in success_entries)
-    failures_attempts = sum(e.total_reconciliations for e in failure_entries)
-    failures_attempts = max(failures_attempts, loki_fail_supplement)
-    successes_attempts = max(successes_attempts, loki_success_supplement)
+    successes_attempts = max(sum(e.total_reconciliations for e in success_entries), loki_success_supplement)
+    failures_attempts = max(sum(e.total_reconciliations for e in failure_entries), loki_fail_supplement)
 
     last_was_failure = latest is not None and latest.last_reconciled_status in FAILURE_STATUSES
 
-    # Use the longest last reconcile in history as the threshold fallback.
     max_history_duration_s = max((e.duration_s for e in history_in), default=0.0)
     duration_s = p99_mimir if p99_mimir > 0 else max_history_duration_s
 
-    # Underlying-resource attribution. Latest history doesn't carry the
-    # error message, so we fall back to the current `Ready` condition's
-    # message which Flux populates with the bracketed reference.
+    # Flux history omits error messages. The current Ready condition can name the culprit.
     culprit = None
     last_error = None
     ready = r.status.ready
@@ -259,7 +256,6 @@ def classify(
         "p99_mimir": p99_mimir,
         "loki_fail_supplement": loki_fail_supplement,
         "loki_success_supplement": loki_success_supplement,
-        "last_was_failure": last_was_failure,
         "latest_status": latest.last_reconciled_status if latest else None,
         "latest_revision": latest.revision if latest else None,
         "failed_revisions_with_recovery": sorted(failed_revisions_with_recovery),
@@ -288,35 +284,16 @@ def classify(
             r.evidence.update(culprit=None, last_error=None)
         return
 
-    # Classification (first match wins).
-    #
-    # Broken: latest history entry has a failure status. The controller is
-    # currently stuck at this revision.
     if last_was_failure:
         r.bucket = "Broken"
-        return
-
-    # Propagating: currently Ready=False because a dependsOn target is still
-    # catching up. No real failures in history means the resource is in the
-    # transient propagation state, not broken.
-    if ready and ready.status == "False" and ready.reason == "DependencyNotReady" and len(failure_entries) == 0:
+    elif ready and ready.status == "False" and ready.reason == "DependencyNotReady" and not failure_entries:
         r.bucket = "Propagating"
-        return
-
-    # Miswired: latest is a success but earlier entries in the window
-    # failed — Flux retried until it converged. Covers both "same revision
-    # had failures then succeeded" and "earlier revision failed before the
-    # current healthy one".
-    if len(failure_entries) > 0:
+    elif failure_entries:
         r.bucket = "Miswired"
-        return
-
-    # Slow: succeeded but took too long. Threshold is per-kind.
-    if len(success_entries) > 0 and duration_s >= slow_threshold_s:
+    elif success_entries and duration_s >= slow_threshold_s:
         r.bucket = "Slow"
-        return
-
-    r.bucket = "Healthy"
+    else:
+        r.bucket = "Healthy"
 
 
 def _cond_str(c: dict) -> str:
@@ -378,7 +355,7 @@ def _format_history_table(history: list[FluxReconcileHistoryEntry], n: int = 5) 
     )
     lines = []
     for e in sorted_h[:n]:
-        rev = e.revision.split(":", 1)[-1][:10] if ":" in e.revision else e.revision[:10]
+        rev = e.revision.split(":", 1)[-1][:10]
         ts = e.last_reconciled.isoformat(timespec="seconds") if e.last_reconciled else "?"
         lines.append(
             f"  - {ts} `{e.last_reconciled_status}` rev=`{rev}` total={e.total_reconciliations} dur={e.duration_s:.1f}s"
@@ -406,26 +383,28 @@ def emit_report(
         f"({sum(1 for r in rs if r.kind == 'Kustomization')} Kustomizations, "
         f"{sum(1 for r in rs if r.kind == 'HelmRelease')} HelmReleases)\n"
     )
+    sections = {
+        "Broken": "Broken",
+        "Miswired": "Miswired but converges",
+        "Slow": "Slow but converges",
+        "Propagating": "Propagating (transient)",
+        "Unknown": "Unknown",
+        "Suspended": "Suspended (informational)",
+    }
     print("| Bucket | Count |")
     print("|---|---:|")
-    for b in ("Broken", "Miswired", "Slow", "Propagating", "Unknown", "Suspended", "Healthy"):
-        print(f"| {b} | {len(by_bucket[b])} |")
+    for bucket in (*sections, "Healthy"):
+        print(f"| {bucket} | {len(by_bucket[bucket])} |")
     print()
 
-    for b, header in [
-        ("Broken", "## Broken"),
-        ("Miswired", "## Miswired but converges"),
-        ("Slow", "## Slow but converges"),
-        ("Propagating", "## Propagating (transient)"),
-        ("Unknown", "## Unknown"),
-        ("Suspended", "## Suspended (informational)"),
-    ]:
+    for bucket, header in sections.items():
         items = sorted(
-            by_bucket[b], key=lambda r: (-r.evidence.get("failures_attempts", 0), -r.evidence.get("duration_s", 0.0))
+            by_bucket[bucket],
+            key=lambda r: (-r.evidence.get("failures_attempts", 0), -r.evidence.get("duration_s", 0.0)),
         )
         if not items:
             continue
-        print(f"\n{header} ({len(items)})\n")
+        print(f"\n## {header} ({len(items)})\n")
         for r in items:
             ev = r.evidence
             ready = r.status.ready
@@ -456,12 +435,10 @@ def emit_report(
                 )
             if ev.get("latest_status"):
                 rev = ev.get("latest_revision") or ""
-                rev_short = rev.split(":", 1)[-1][:10] if ":" in rev else rev[:10]
+                rev_short = rev.split(":", 1)[-1][:10]
                 print(f"- Latest entry: `{ev['latest_status']}` at rev `{rev_short}`")
             if ev.get("failed_revisions_with_recovery"):
-                revs = ", ".join(
-                    (r.split(":", 1)[-1][:10] if ":" in r else r[:10]) for r in ev["failed_revisions_with_recovery"][:3]
-                )
+                revs = ", ".join(rev.split(":", 1)[-1][:10] for rev in ev["failed_revisions_with_recovery"][:3])
                 print(f"- Revisions that failed then recovered: {revs}")
             if ev.get("culprit"):
                 k, ns, nm, st = ev["culprit"]
@@ -485,10 +462,6 @@ def emit_report(
     print(f"\n## Healthy ({healthy})\n\n{healthy} resources passed all checks.\n")
 
 
-async def _empty_dict() -> dict:
-    return {}
-
-
 async def async_main(args: argparse.Namespace) -> None:
     window_s = parse_window_seconds(args.window)
     since = datetime.now(UTC) - timedelta(seconds=window_s)
@@ -503,41 +476,21 @@ async def async_main(args: argparse.Namespace) -> None:
     async with client.ApiClient() as api, httpx.AsyncClient() as http:
         custom = client.CustomObjectsApi(api)
 
-        loki_specs: list[tuple[str, str]] = []
-        loki_coros = []
-        if use_loki:
-            for kind, app, name_label in [
-                ("Kustomization", "kustomize-controller", "Kustomization_name"),
-                ("HelmRelease", "helm-controller", "HelmRelease_name"),
-            ]:
-                for which, match in (("fail", "Reconciliation failed"), ("ok", "Reconciliation finished")):
-                    loki_specs.append((kind, which))
-                    loki_coros.append(loki_count_by_name(http, app, name_label, match, args.window))
-
-        f_universe = asyncio.create_task(collect_universe(custom))
-        f_probe = asyncio.create_task(fetch_probe_kinds(custom, DEFAULT_PROBE_KINDS))
-        f_mimir = asyncio.create_task(mimir_p99_by_name(http, args.window) if use_mimir else _empty_dict())
-        f_loki = [asyncio.create_task(c) for c in loki_coros] if loki_coros else []
-
-        rs = await f_universe
-        probe_objs = await f_probe
-        p99_map = await f_mimir
-        loki_results = [await c for c in f_loki]
+        universe = asyncio.create_task(collect_universe(custom))
+        probes = asyncio.create_task(fetch_probe_kinds(custom))
+        mimir = asyncio.create_task(mimir_p99_by_name(http, args.window)) if use_mimir else None
+        loki = asyncio.create_task(loki_reconcile_counts(http, args.window)) if use_loki else None
+        rs, probe_objs = await universe, await probes
+        p99_map = await mimir if mimir else {}
+        loki_counts = await loki if loki else {}
 
     if args.name:
         rs = [r for r in rs if r.name == args.name]
 
-    loki_fail: dict[tuple[str, str], int] = {}
-    loki_ok: dict[tuple[str, str], int] = {}
-    for (kind, which), counts in zip(loki_specs, loki_results, strict=True):
-        target = loki_fail if which == "fail" else loki_ok
-        for nm, cnt in counts.items():
-            target[(kind, nm)] = cnt
-
     for r in rs:
         thr = args.slow_kustomization_s if r.kind == "Kustomization" else args.slow_helmrelease_s
-        f_supp = loki_fail.get((r.kind, r.name), 0)
-        ok_supp = loki_ok.get((r.kind, r.name), 0)
+        f_supp = loki_counts.get((r.kind, "fail"), {}).get(r.name, 0)
+        ok_supp = loki_counts.get((r.kind, "ok"), {}).get(r.name, 0)
         p99 = p99_map.get((r.kind, r.name), 0.0)
         try:
             classify(r, since, thr, f_supp, ok_supp, p99)

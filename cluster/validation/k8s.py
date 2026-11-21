@@ -1,16 +1,15 @@
 """Kubernetes resource models and parsing utilities.
 
-`parse_k8s_resources` is a small kind-discriminated parser: it returns the typed subclass
-for the kinds checks care about (ImageRepository, ImagePolicy, Receiver, secret stores, and
-selected workloads); every other kind stays as the generic `K8sResource` base. Consumers
-isinstance-narrow to the variant they need.
+`parse_k8s_resources` selects typed views for resources inspected by validation checks.
+SandboxTemplate dispatch also uses the API group because the two groups have different shapes.
+Other resources use the generic `K8sResource` base.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable
 from pathlib import Path
-from typing import NotRequired, TypedDict
+from typing import Any, NotRequired, TypedDict
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
@@ -113,8 +112,8 @@ class PodTemplateWorkloadResource(K8sResource):
     spec: PodTemplateWorkloadSpec = Field(default_factory=PodTemplateWorkloadSpec)
 
     @property
-    def pod_specs(self) -> list[PodSpec]:
-        return [self.spec.template.spec]
+    def images(self) -> list[str]:
+        return self.spec.template.spec.images
 
 
 class CronJobJobTemplate(BaseModel):
@@ -133,8 +132,8 @@ class CronJobResource(K8sResource):
     spec: CronJobSpec = Field(default_factory=CronJobSpec)
 
     @property
-    def pod_specs(self) -> list[PodSpec]:
-        return [self.spec.job_template.template.spec]
+    def images(self) -> list[str]:
+        return self.spec.job_template.template.spec.images
 
 
 class SandboxTemplateSpec(BaseModel):
@@ -147,8 +146,40 @@ class SandboxTemplateResource(K8sResource):
     spec: SandboxTemplateSpec = Field(default_factory=SandboxTemplateSpec)
 
     @property
-    def pod_specs(self) -> list[PodSpec]:
-        return [self.spec.pod_template.spec]
+    def images(self) -> list[str]:
+        return self.spec.pod_template.spec.images
+
+
+class FirecrackerTemplateSpec(BaseModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
+
+    pod: PodTemplateSpec = Field(default_factory=PodTemplateSpec)
+    boot_image: str | None = None
+    runner_image: str | None = None
+
+
+class AgentplaneSandboxTemplateSpec(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    pod: PodTemplateSpec | None = None
+    vm: PodTemplateWorkloadSpec | None = None
+    firecracker: FirecrackerTemplateSpec | None = None
+
+
+class AgentplaneSandboxTemplateResource(K8sResource):
+    spec: AgentplaneSandboxTemplateSpec = Field(default_factory=AgentplaneSandboxTemplateSpec)
+
+    @property
+    def images(self) -> list[str]:
+        if self.spec.pod is not None:
+            return self.spec.pod.spec.images
+        if self.spec.vm is not None:
+            return self.spec.vm.template.spec.images
+        if firecracker := self.spec.firecracker:
+            # The controller mounts these as OCI image volumes on the launcher Pod.
+            volumes = [image for image in (firecracker.boot_image, firecracker.runner_image) if image]
+            return [*firecracker.pod.spec.images, *volumes]
+        return []
 
 
 class ImageRepositoryResource(K8sResource):
@@ -190,6 +221,7 @@ class SecretStoreKubernetesProvider(BaseModel):
     model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
 
     remote_namespace: str = ""
+    auth: dict[str, Any] = Field(default_factory=dict)
 
 
 class SecretStoreProvider(BaseModel):
@@ -202,6 +234,7 @@ class SecretStoreSpec(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     provider: SecretStoreProvider = Field(default_factory=SecretStoreProvider)
+    conditions: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class SecretStoreResource(K8sResource):
@@ -210,6 +243,12 @@ class SecretStoreResource(K8sResource):
 
 class ExternalSecretResource(K8sResource):
     """An External Secrets `ExternalSecret`: `checks` looks up the ones a namespace has by name."""
+
+    spec: dict[str, Any] = Field(default_factory=dict)
+
+
+class ClusterExternalSecretResource(K8sResource):
+    spec: dict[str, Any] = Field(default_factory=dict)
 
 
 class GitRepositorySpec(BaseModel):
@@ -303,6 +342,7 @@ _KIND_MODELS: dict[str, type[K8sResource]] = {
     "Secret": SecretResource,
     "SecretStore": SecretStoreResource,
     "ClusterSecretStore": SecretStoreResource,
+    "ClusterExternalSecret": ClusterExternalSecretResource,
     "ExternalSecret": ExternalSecretResource,
     "CiliumNetworkPolicy": CiliumPolicyResource,
     "CiliumClusterwideNetworkPolicy": CiliumPolicyResource,
@@ -310,19 +350,26 @@ _KIND_MODELS: dict[str, type[K8sResource]] = {
     "DaemonSet": PodTemplateWorkloadResource,
     "Deployment": PodTemplateWorkloadResource,
     "Job": PodTemplateWorkloadResource,
-    "SandboxTemplate": SandboxTemplateResource,
     "StatefulSet": PodTemplateWorkloadResource,
     "VirtualMachine": PodTemplateWorkloadResource,
 }
 
 
+_GROUP_KIND_MODELS: dict[tuple[str, str], type[K8sResource]] = {
+    ("agentplane.allegedly.works", "SandboxTemplate"): AgentplaneSandboxTemplateResource,
+    ("extensions.agents.x-k8s.io", "SandboxTemplate"): SandboxTemplateResource,
+}
+
+
+def _resource_model(doc: dict) -> type[K8sResource]:
+    kind = doc["kind"]
+    group = (doc.get("apiVersion") or "").rpartition("/")[0]
+    return _GROUP_KIND_MODELS.get((group, kind), _KIND_MODELS.get(kind, K8sResource))
+
+
 def parse_k8s_resources(docs: Iterable[object]) -> list[K8sResource]:
     """Parse YAML documents into K8s resources (typed subclass per kind), skipping non-resources."""
-    return [
-        _KIND_MODELS.get(doc["kind"], K8sResource).model_validate(doc)
-        for doc in docs
-        if isinstance(doc, dict) and doc.get("kind")
-    ]
+    return [_resource_model(doc).model_validate(doc) for doc in docs if isinstance(doc, dict) and doc.get("kind")]
 
 
 def parse_k8s_resource_file(yaml_file: Path) -> list[K8sResource]:

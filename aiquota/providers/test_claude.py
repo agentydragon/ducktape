@@ -7,13 +7,13 @@ import pytest
 import pytest_bazel
 import respx
 
+from aiquota.config import ClaudeSettings
 from aiquota.models import ClaudeResetGrant, FetchSuccess, PrepaidBalanceAvailable, PrepaidBalanceUnavailable
 from aiquota.providers.claude import (
     PLAIN_USAGE_URL,
     PROFILE_URL,
     USAGE_URL,
     ClaudeProvider,
-    ClaudeSettings,
     _prepaid_balance_from_body,
     _spend_to_extra_spend,
     _to_success,

@@ -513,6 +513,8 @@ const tally = {
   unsupported: 0,
   agree: 0,
   orderKept: 0,
+  sliceNamed: 0,
+  movesNamed: 0,
   sameState: 0,
   otherCalls: 0,
 };
@@ -522,12 +524,26 @@ const splitJobs = [];
 
 /** Split the bundle of `job` by `spec`. An accepted split becomes a job; `named` is its entry of `splitCases`. */
 function split(job, bundle, dump, kind, spec, named) {
-  const dir = writeFiles({ "ast.json": JSON.stringify(dump), "spec.json": JSON.stringify(spec) });
+  const dir = writeFiles({
+    "ast.json": JSON.stringify(dump),
+    "spec.json": JSON.stringify(spec),
+    "program.json": JSON.stringify(bundle.program),
+  });
   const out = path.join(dir, "out");
   const plan = path.join(dir, "plan.json");
-  const run = spawnSync(lowersplit, [path.join(dir, "ast.json"), path.join(dir, "spec.json"), out, "--plan", plan], {
-    encoding: "utf8",
-  });
+  const run = spawnSync(
+    lowersplit,
+    [
+      path.join(dir, "ast.json"),
+      path.join(dir, "spec.json"),
+      out,
+      "--plan",
+      plan,
+      "--corejs",
+      path.join(dir, "program.json"),
+    ],
+    { encoding: "utf8" }
+  );
   const label = `${job.label}, split ${kind} ${JSON.stringify(spec)}`;
   if (named?.refused) {
     assert.equal(run.status, 1, `${label}: lowersplit does not reject it\n${run.stdout}\n${run.stderr}`);
@@ -542,6 +558,14 @@ function split(job, bundle, dump, kind, spec, named) {
   const entry = path.join(out, "entry.mjs");
   const statements = order.flatMap((m) => modules[m]);
   const orderKept = statements.every((id, k) => k === 0 || statements[k - 1] < id);
+  // The verdict names the order-kept slice exactly when the split keeps the order: its other hypotheses hold here.
+  const slice = run.stdout.match(/^ {2}proved slice: (.*)$/m)?.[1];
+  if (orderKept !== Boolean(slice?.startsWith("order kept")))
+    failures.push(
+      `${label}: the plan ${orderKept ? "keeps" : "does not keep"} the order, and the verdict says ${slice}`
+    );
+  else if (orderKept) tally.sliceNamed++;
+  else if (slice?.startsWith("moves")) tally.movesNamed++;
   try {
     const scripts = job.program.scripts;
     const program = scripts
@@ -672,7 +696,7 @@ console.log(`model endings: ${JSON.stringify(ends)}; corejs took ${modelSeconds.
 const verdicts = (kind) => `${kind}: ${tally[kind][0]} accepted, ${tally[kind][1]} rejected`;
 console.log(
   `opaque cases: ${tally.opaqueCases} of ${opaqueCases.length} agree with Node; splits: ${tally.named[0]} named accepted, ${tally.named[1]} named rejected; ${tally.programs} programs; ${["cut", "ordered", "free", "opaque"].map(verdicts).join("; ")}; ` +
-    `${tally.unsupported} unsupported; ${tally.agree} accepted splits where the four runs agree, ` +
+    `${tally.unsupported} unsupported; ${tally.sliceNamed} accepted splits whose verdict names the order-kept slice, ${tally.movesNamed} the moves slice; ${tally.agree} accepted splits where the four runs agree, ` +
     `${tally.orderKept} of them with the statements in the bundle's order, ${tally.sameState} of those ending in ` +
     `the bundle's state; ${apart.splits} accepted splits move code ` +
     `of a bundle that does not end normally and are not compared with it (premise P4), ${apart.differ} of them ` +

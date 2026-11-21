@@ -47,7 +47,8 @@ _INGRESS_OBJECT_NAME = "smtp-ingress"  # the DaemonSet and its CiliumNetworkPoli
 _TLS_SECRET = "mx-allegedly-works-tls"
 DATABASE = cluster.PostgresRef.generated(name="haku-mailbox-db", namespace=NAMESPACE)
 _DB_PASSWORD = DATABASE.app_secret.key("password")
-_PUBLIC_URL = "https://haku-mailbox.allegedly.works"
+PUBLIC_HOSTNAME = "haku-mailbox.allegedly.works"
+PUBLIC_URL = f"https://{PUBLIC_HOSTNAME}"
 # In-repo repack of stalwartlabs/stalwart with stalwart-cli layered in
 # (//cluster/k8s/haku/mailbox/image) -- upstream ships the CLI only as a distroless image,
 # unusable from the pod. Published by the push-images workflow; image-pins/ sets the tag Flux
@@ -123,7 +124,7 @@ def _add_deployment(chart: Chart) -> None:
     An init container applies it with a temporary fallback admin before production starts.
     Authentication is exclusively Authentik OIDC bearer tokens (the stalwart-haku provider); no
     mailbox password exists."""
-    public_url = k8s.EnvVar(name="STALWART_PUBLIC_URL", value=_PUBLIC_URL)
+    public_url = k8s.EnvVar(name="STALWART_PUBLIC_URL", value=PUBLIC_URL)
     # Reloader's `autoReloadAll` restarts this on rotation of the mounted STARTTLS certificate and
     # DB credentials so the normal server re-reads them.
     k8s.KubeDeployment(
@@ -232,7 +233,7 @@ def _add_services(chart: Chart) -> None:
                 )
             },
         ),
-        spec=k8s.ServiceSpec(selector=_SMTP.pods.selector, ports=[_SMTP.port.k8s_service_port()]),
+        spec=k8s.ServiceSpec(selector=_SMTP.pods.selector, ports=[_SMTP.k8s_service_port()]),
     )
     k8s.KubeService(
         chart,
@@ -243,15 +244,13 @@ def _add_services(chart: Chart) -> None:
             annotations={
                 "description": (
                     "Stalwart's cluster-internal listeners: HTTP (JMAP + management API, exposed "
-                    "publicly only via the cluster-gateway HTTPRoute haku-mailbox.allegedly.works) and "
+                    f"publicly only via the cluster-gateway HTTPRoute {PUBLIC_HOSTNAME}) and "
                     "plaintext IMAP for haku-sandbox clients (himalaya) — no route, no externalIPs, "
                     "OAUTHBEARER-only auth."
                 )
             },
         ),
-        spec=k8s.ServiceSpec(
-            selector=HTTP.pods.selector, ports=[HTTP.port.k8s_service_port(), _IMAP.port.k8s_service_port()]
-        ),
+        spec=k8s.ServiceSpec(selector=HTTP.pods.selector, ports=[HTTP.k8s_service_port(), _IMAP.k8s_service_port()]),
     )
 
 
@@ -445,7 +444,7 @@ def chart(app: App) -> Chart:
                 )
             },
         ),
-        hostnames=["haku-mailbox.allegedly.works"],
+        hostnames=[PUBLIC_HOSTNAME],
         backend=HTTP,
         timeout="60s",
         hsts=False,

@@ -9,11 +9,13 @@ from cdk8s_plus_34 import Role, RoleBinding, RolePolicyRule, Secret, ServiceAcco
 
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import SecretStoreRef
+from cluster.cdk8s.secret_ref import SecretRef
 
 NAMESPACE = "ducktape-flux"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/external-creds"
 _READER_SERVICE_ACCOUNT = "external-creds-reader"
 STORE = SecretStoreRef.cluster("kubernetes-external-creds-secret-store")
+TANA_PAT = SecretRef(namespace=NAMESPACE, name="tana-agentydragon-gmail-com-account-pat").key("token")
 
 
 @dataclass(frozen=True)
@@ -161,8 +163,8 @@ CREDENTIALS = (
     ),
     Credential(secret_file="sfpl-credentials.sops.yaml", secret_name="sfpl-credentials"),
     Credential(
-        secret_file="tana-agentydragon-gmail-com-account-pat.sops.yaml",
-        secret_name="tana-agentydragon-gmail-com-account-pat",
+        secret_file=f"{TANA_PAT.secret.name}.sops.yaml",
+        secret_name=TANA_PAT.secret.name,
         consumers=(
             ApprovedConsumer("agentplane-staging", "tana-agentydragon-gmail-com-account-pat-agentplane-staging-reader"),
             ApprovedConsumer("tana-mcp", "tana-agentydragon-gmail-com-account-pat-tana-mcp-reader"),

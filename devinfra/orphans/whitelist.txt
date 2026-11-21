@@ -54,7 +54,6 @@ nix/**
 # Cluster manifests and supporting files not consistently covered by Bazel
 cluster/k8s/**
 cluster/parked/**
-cluster/scripts/get-passwords
 cluster/docs/iam-policy-route53.json
 
 # Website (Hakyll, not Bazelized)

@@ -17,8 +17,9 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         "//cluster/cdk8s:home_lan",
+        "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
-        "//ssh_mcp_server:server",
+        "//ssh_mcp_server:settings",
         "@rules_python//python/runfiles",
     ],
 )
@@ -35,8 +36,9 @@ py_library(
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:pod_policy",
         "//cluster/cdk8s:probes",
-        "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:vpa_policy",
+        "//cluster/cdk8s/agentplane:actions",
+        "//cluster/cdk8s/agentplane:namespaces",
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",

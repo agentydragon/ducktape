@@ -38,12 +38,15 @@ from external_secrets_crds.io.external_secrets import (
 )
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 
-from aiquota.config import CLIProxyAPISettings, Config
-from aiquota.providers.anthropic_platform import AnthropicPlatformSettings
-from aiquota.providers.claude import ClaudeSettings
-from aiquota.providers.codex import CodexSettings
-from aiquota.providers.openai_platform import OpenAIPlatformSettings
-from aiquota.providers.zai import ZaiSettings
+from aiquota.config import (
+    AnthropicPlatformSettings,
+    ClaudeSettings,
+    CLIProxyAPISettings,
+    CodexSettings,
+    Config,
+    OpenAIPlatformSettings,
+    ZaiSettings,
+)
 from aiquota.settings import Settings
 from cluster.cdk8s import pod_policy
 from cluster.cdk8s.agentplane.egress_credentials import STAGING_CREDENTIALS_NAMESPACE
@@ -73,8 +76,7 @@ BEARER_SECRET_NAME = "aiquota-api-bearer"  # the SOPS-managed Secret; every mirr
 _CONFIG_PATH: Path = Settings.model_fields["config_path"].default
 _PLATFORM_SESSIONS_READ_TOKEN = "platform-sessions-aiquota-bearer"
 # The CLIProxyAPI integration keeps the Claude and Codex OAuth credentials and performs
-# authenticated usage requests. Haku's existing egress proxy still owns the legacy Claude
-# setup token.
+# authenticated usage requests.
 _CONFIG = Config(
     cli_proxy_api=CLIProxyAPISettings(url=f"{cli_proxy_api_app.SERVICE.url}/v0/management"),
     claude=ClaudeSettings(enabled=True),

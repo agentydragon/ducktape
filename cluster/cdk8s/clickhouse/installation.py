@@ -57,6 +57,7 @@ from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.monitoring import alloy_endpoints
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
@@ -508,8 +509,7 @@ def service_chart(app: App) -> Chart:
             annotations={"description": "Stable client endpoint for the shared ClickHouse installation."},
         ),
         spec=k8s.ServiceSpec(
-            selector=client.HTTP.pods.selector,
-            ports=[client.HTTP.port.k8s_service_port(), client.NATIVE.port.k8s_service_port()],
+            selector=client.HTTP.pods.selector, ports=[client.HTTP.k8s_service_port(), client.NATIVE.k8s_service_port()]
         ),
     )
     return chart
@@ -561,12 +561,12 @@ def networkpolicy_chart(app: App) -> Chart:
                     ports=_ports(client.HTTP.pod_port, _METRICS.number),
                 ),
                 k8s.NetworkPolicyIngressRule(
-                    from_=_from_namespace("monitoring", {"app.kubernetes.io/name": "alloy"}),
+                    from_=_from_namespace(alloy_endpoints.CENTRAL.namespace, alloy_endpoints.CENTRAL.selector),
                     ports=_ports(client.HTTP.pod_port, _METRICS.number),
                 ),
                 # Scraped by the Alloy on each ClickHouse pod's node.
                 k8s.NetworkPolicyIngressRule(
-                    from_=_from_namespace("monitoring", {"app.kubernetes.io/name": "alloy-node"}),
+                    from_=_from_namespace(alloy_endpoints.NODE.namespace, alloy_endpoints.NODE.selector),
                     ports=_ports(_METRICS.number),
                 ),
                 k8s.NetworkPolicyIngressRule(

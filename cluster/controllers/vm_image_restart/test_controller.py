@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 import pytest_bazel
 from kubernetes_asyncio import client
 from kubernetes_asyncio.client import ApiException
 
-from cluster.controllers.vm_image_restart import controller
+from cluster.controllers.vm_image_restart import controller, kubernetes_watch
 from cluster.controllers.vm_image_restart.settings import Settings
 
 _NOW = datetime(2026, 9, 30, 12, 0, tzinfo=UTC)
@@ -184,6 +187,21 @@ async def test_new_generation_resets_attempts_and_waits_for_terminating_vmi() ->
     assert vm_api.delete_calls == []
 
 
+@pytest.mark.parametrize("ready", [False, True], ids=["booting", "ready-with-staged-template"])
+async def test_matching_replacement_waits_for_readiness_or_restart_grace(ready: bool) -> None:
+    vm_api = FakeVMApi(_vm(), _vmi(uid="new-vmi", image=_NEW_IMAGE, ready=ready))
+    core = FakeCoreApi(_state())
+
+    deadline = await controller.reconcile(vm_api, core, _SETTINGS, **vm_api.caches())
+
+    assert vm_api.delete_calls == []
+    state = _stored_state(core)
+    assert state.old_vmi_uid == "new-vmi"
+    assert deadline == (state.next_attempt_at if ready else state.started_at + controller.ROLLOUT_TIMEOUT)
+    if ready:
+        assert state.next_attempt_at > _NOW
+
+
 async def test_restart_api_failures_are_backed_off_and_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
     clock = [_NOW]
     monkeypatch.setattr(controller, "_utcnow", lambda: clock[0])
@@ -191,9 +209,10 @@ async def test_restart_api_failures_are_backed_off_and_bounded(monkeypatch: pyte
     vm_api = FakeVMApi(_vm(), _vmi(uid="old-vmi", image=_OLD_IMAGE), delete_errors=[error, error, error])
     core = FakeCoreApi()
 
-    await controller.reconcile(vm_api, core, _SETTINGS, **vm_api.caches())
+    deadline = await controller.reconcile(vm_api, core, _SETTINGS, **vm_api.caches())
     assert len(vm_api.delete_calls) == 1
     assert _stored_state(core).attempts == 1
+    assert deadline == _stored_state(core).next_attempt_at
 
     # The persisted backoff prevents another delete at the same time.
     await controller.reconcile(vm_api, core, _SETTINGS, **vm_api.caches())
@@ -201,12 +220,13 @@ async def test_restart_api_failures_are_backed_off_and_bounded(monkeypatch: pyte
 
     while _stored_state(core).phase != "Failed":
         clock[0] = _stored_state(core).next_attempt_at + timedelta(seconds=1)
-        await controller.reconcile(vm_api, core, _SETTINGS, **vm_api.caches())
+        deadline = await controller.reconcile(vm_api, core, _SETTINGS, **vm_api.caches())
 
     state = _stored_state(core)
     assert len(vm_api.delete_calls) == controller.MAX_RESTART_ATTEMPTS
     assert state.attempts == controller.MAX_RESTART_ATTEMPTS
     assert state.phase == "Failed"
+    assert deadline is None
     assert _event_reasons(core)[-1] == "VMImageRestartFailed"
 
 
@@ -245,6 +265,51 @@ async def test_invalid_persisted_state_is_ignored() -> None:
     core.state = '{"generation":"not-an-integer"}'
 
     assert await controller._read_state(core, _SETTINGS) is None
+
+
+@pytest.mark.parametrize("watch_failure", [False, True], ids=["stream-ended", "watch-error"])
+async def test_watch_relists_and_uses_the_list_resource_version(
+    monkeypatch: pytest.MonkeyPatch, watch_failure: bool
+) -> None:
+    name = _SETTINGS.target_vm_name
+    obj = {"metadata": {"name": name}}
+    store: dict[str, dict[str, Any]] = {}
+    changed = asyncio.Event()
+    api = Mock(spec=client.CustomObjectsApi)
+    api.list_namespaced_custom_object = AsyncMock(
+        side_effect=[
+            {"items": [obj], "metadata": {"resourceVersion": "100"}},
+            {"items": [], "metadata": {"resourceVersion": "200"}},
+        ]
+    )
+    watcher = Mock()
+
+    async def stream(*args: Any, resource_version: str, **kwargs: Any) -> AsyncIterator[dict[str, Any]]:
+        assert kwargs["field_selector"] == f"metadata.name={name}"
+        assert isinstance(kwargs["timeout_seconds"], int)
+        assert changed.is_set()
+        changed.clear()
+        if resource_version == "100":
+            assert store == {name: obj}
+            updated = {**obj, "status": {"phase": "Running"}}
+            yield {"type": "MODIFIED", "object": updated}
+            assert store == {name: updated}
+            assert changed.is_set()
+            changed.clear()
+            if watch_failure:
+                raise ApiException(status=503)
+        else:
+            assert resource_version == "200"
+            assert store == {}
+            raise asyncio.CancelledError
+
+    watcher.stream = stream
+    monkeypatch.setattr(kubernetes_watch.watch, "Watch", lambda: watcher)
+    with pytest.raises(asyncio.CancelledError):
+        await kubernetes_watch.watch_kubevirt_resource(
+            api, _SETTINGS.target_namespace, "virtualmachineinstances", name, store, changed
+        )
+    assert watcher.stop.call_count == 2
 
 
 if __name__ == "__main__":

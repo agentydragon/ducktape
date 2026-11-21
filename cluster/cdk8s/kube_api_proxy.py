@@ -10,11 +10,10 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ConfigMap, k8s
-from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from python.runfiles import Runfiles
 
+from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.container_resources import container_resources
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL, Vpa
@@ -89,7 +88,7 @@ def _deployment(chart: Chart) -> None:
                     ),
                     topology_spread_constraints=[
                         k8s.TopologySpreadConstraint(
-                            topology_key="topology.kubernetes.io/zone",
+                            topology_key=node_scheduling.ZONE_LABEL,
                             max_skew=1,
                             # A single eligible zone can keep both replicas on different hosts.
                             min_domains=1,
@@ -207,21 +206,6 @@ def chart(app: App) -> Chart:
         chart,
         "service",
         metadata=k8s.ObjectMeta(name=_SERVICE.name, namespace=NAMESPACE),
-        spec=k8s.ServiceSpec(selector=_SERVICE.pods.selector, ports=[_SERVICE.port.k8s_service_port()]),
+        spec=k8s.ServiceSpec(selector=_SERVICE.pods.selector, ports=[_SERVICE.k8s_service_port()]),
     )
     return chart
-
-
-def kube_api_proxy(chart: Chart, directory: RenderedDirectory) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        NAME,
-        directory,
-        wait=None,
-        health_checks=[
-            KustomizationSpecHealthChecks(api_version="apps/v1", kind="Deployment", name=_PROXY, namespace=NAMESPACE),
-            KustomizationSpecHealthChecks(
-                api_version="gateway.networking.k8s.io/v1", kind="HTTPRoute", name=_ROUTE, namespace=NAMESPACE
-            ),
-        ],
-    )

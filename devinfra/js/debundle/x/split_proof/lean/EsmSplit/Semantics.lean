@@ -100,32 +100,26 @@ theorem Bundle.exec_cons (B : Bundle) (M : Meaning V W) (s : St V W) (j : Nat) (
 theorem Bundle.exec_append (B : Bundle) (M : Meaning V W) (s : St V W) (l l' : List Nat) :
     B.exec M s (l ++ l') = B.exec M (B.exec M s l) l' := List.foldl_append
 
-/-- A statement that conflicts with nothing in `q` can be run after `q` instead of before it. -/
-theorem Bundle.exec_move_past_by (B : Bundle) (M : Meaning V W) (conflict : Nat → Nat → Bool)
-    (comm : ∀ i j, conflict i j = false → ∀ s, B.step M j (B.step M i s) = B.step M i (B.step M j s))
-    {x : Nat} {q : List Nat} (hq : ∀ y ∈ q, conflict x y = false) (s : St V W) :
-    B.exec M (B.step M x s) q = B.step M x (B.exec M s q) := by
+/-- A step that conflicts with nothing in `q` can be taken after `q` instead of before it. Here a step is any
+function `f j` of a state, and the states are folded through the steps in order. -/
+theorem foldl_move_past {α : Type} (f : Nat → α → α) (conflict : Nat → Nat → Bool)
+    (comm : ∀ i j, conflict i j = false → ∀ s, f j (f i s) = f i (f j s))
+    {x : Nat} {q : List Nat} (hq : ∀ y ∈ q, conflict x y = false) (s : α) :
+    q.foldl (fun s j => f j s) (f x s) = f x (q.foldl (fun s j => f j s) s) := by
   induction q generalizing s with
   | nil => rfl
   | cons y q ih =>
-    rw [B.exec_cons, B.exec_cons, comm x y (hq y (List.mem_cons_self ..))]
+    rw [List.foldl_cons, List.foldl_cons, comm x y (hq y (List.mem_cons_self ..))]
     exact ih (fun z hz => hq z (List.mem_cons_of_mem _ hz)) _
 
-theorem Bundle.exec_move_past (B : Bundle) (M : Meaning V W) {x : Nat} {q : List Nat}
-    (hq : ∀ y ∈ q, B.conflict x y = false) (s : St V W) :
-    B.exec M (B.step M x s) q = B.step M x (B.exec M s q) :=
-  B.exec_move_past_by M B.conflict (fun _ _ h s => B.step_comm M h s) hq s
-
-/-- **Reordering theorem.** Run the statements `0 … n-1` in any order that lists each exactly
-once and keeps every conflicting pair in its original order. The final state (the value of every
-name, and the world) is the same as when running them in bundle order, whatever the statements
-mean. -/
-theorem Bundle.exec_reorder_by (B : Bundle) (M : Meaning V W) (conflict : Nat → Nat → Bool)
-    (comm : ∀ i j, conflict i j = false → ∀ s, B.step M j (B.step M i s) = B.step M i (B.step M j s))
-    (s0 : St V W) :
+/-- **Reordering, for any steps.** Take the steps `0 … n-1` in any order that lists each exactly once and keeps
+every conflicting pair in its original order: the end is the same as in the order `0 … n-1`, when steps that do not
+conflict commute. -/
+theorem foldl_reorder {α : Type} (f : Nat → α → α) (conflict : Nat → Nat → Bool)
+    (comm : ∀ i j, conflict i j = false → ∀ s, f j (f i s) = f i (f j s)) (s0 : α) :
     ∀ (n : Nat) (ord : List Nat), ord.Nodup → (∀ x, x ∈ ord ↔ x < n) →
       ord.Pairwise (fun a b => a < b ∨ conflict a b = false) →
-      B.exec M s0 ord = B.exec M s0 (List.range n) := by
+      ord.foldl (fun s j => f j s) s0 = (List.range n).foldl (fun s j => f j s) s0 := by
   intro n
   induction n with
   | zero =>
@@ -161,18 +155,22 @@ theorem Bundle.exec_reorder_by (B : Bundle) (M : Meaning V W) (conflict : Nat �
       rcases (List.pairwise_cons.1 hok'.2.1).1 y hy with h | h
       · exact absurd ((hpq y).1 (List.mem_append_right _ hy)) (Nat.not_lt.2 (Nat.le_of_lt h))
       · exact h
-    have hperm : B.exec M s0 (p ++ n :: q) = B.step M n (B.exec M s0 (p ++ q)) := by
-      rw [B.exec_append, B.exec_cons, B.exec_move_past_by M conflict comm hq, ← B.exec_append]
-    rw [hperm, ih (p ++ q) ?_ hpq ?_, List.range_succ, B.exec_append]
+    have hperm : (p ++ n :: q).foldl (fun s j => f j s) s0 = f n ((p ++ q).foldl (fun s j => f j s) s0) := by
+      rw [List.foldl_append, List.foldl_cons, foldl_move_past f conflict comm hq, ← List.foldl_append]
+    rw [hperm, ih (p ++ q) ?_ hpq ?_, List.range_succ, List.foldl_append]
     · rfl
     · exact List.nodup_append.2 ⟨hnd'.1, hnq.2, fun a ha b hb => hnd'.2.2 a ha b (List.mem_cons_of_mem _ hb)⟩
     · refine List.pairwise_append.2 ⟨hok'.1, (List.pairwise_cons.1 hok'.2.1).2, fun a ha b hb => ?_⟩
       exact hok'.2.2 a ha b (List.mem_cons_of_mem _ hb)
 
+/-- **Reordering theorem.** Run the statements `0 … n-1` in any order that lists each exactly
+once and keeps every conflicting pair in its original order. The final state (the value of every
+name, and the world) is the same as when running them in bundle order, whatever the statements
+mean. -/
 theorem Bundle.exec_reorder (B : Bundle) (M : Meaning V W) (s0 : St V W) :
     ∀ (n : Nat) (ord : List Nat), ord.Nodup → (∀ x, x ∈ ord ↔ x < n) →
       ord.Pairwise (fun a b => a < b ∨ B.conflict a b = false) →
       B.exec M s0 ord = B.exec M s0 (List.range n) :=
-  B.exec_reorder_by M B.conflict (fun _ _ h s => B.step_comm M h s) s0
+  foldl_reorder (B.step M) B.conflict (fun _ _ h s => B.step_comm M h s) s0
 
 end EsmSplit

@@ -278,8 +278,8 @@ def generate_manifests(root: Path) -> None:
     ssh_config = ssh_mcp_config.load()
     seaweedfs_cluster.write_manifests(root)
     litellm_namespace.write_manifests(root)
-    litellm_proxy.write_manifests(root, mesh)
-    litellm_database.write_manifests(root)
+    litellm_proxy_chart = litellm_proxy.write_manifests(root, mesh)
+    litellm_database_chart = litellm_database.write_manifests(root)
     litellm_secrets.write_manifests(root)
     tofu_state_namespace.write_manifests(root)
     tofu_state_db.write_manifests(root)
@@ -353,8 +353,16 @@ def generate_manifests(root: Path) -> None:
         wait=None,
         timeout="2m",
     )
+    kube_api_proxy_app = App()
+    kube_api_proxy_chart = kube_api_proxy.chart(kube_api_proxy_app)
     kube_api_proxy_artifact = artifact("kube-api-proxy", kube_api_proxy.OUTPUT_DIR)
-    kube_api_proxy.kube_api_proxy(flux_chart, write_directory(root, kube_api_proxy_artifact, kube_api_proxy.chart))
+    flux.flux_kustomization(
+        flux_chart,
+        kube_api_proxy.NAME,
+        write_directory(root, kube_api_proxy_artifact, app=kube_api_proxy_app),
+        wait=None,
+        health_checks=flux.health_checks(kube_api_proxy_chart, ["Deployment", "HTTPRoute"]),
+    )
     kubevirt_cdi_operator_artifact = artifact("kubevirt-cdi-operator", kubevirt_operators.CDI_OPERATOR_DIR)
     cdi_operator_kustomization = flux.flux_kustomization(
         flux_chart,
@@ -449,8 +457,16 @@ def generate_manifests(root: Path) -> None:
         wait=None,
         timeout="10m",
     )
+    valkey_app = App()
+    valkey_chart = valkey.chart(valkey_app)
     valkey_artifact = artifact("valkey", valkey.OUTPUT_DIR)
-    valkey_kustomization = valkey.valkey(flux_chart, write_directory(root, valkey_artifact, valkey.chart))
+    valkey_kustomization = flux.flux_kustomization(
+        flux_chart,
+        valkey.NAME,
+        write_directory(root, valkey_artifact, app=valkey_app),
+        wait=None,
+        health_checks=flux.health_checks(valkey_chart, ["HelmRelease"]),
+    )
     gaffer_private_source_artifact = artifact("gaffer-private-source", gaffer_private_source.OUTPUT_DIR)
     gaffer_private_source.gaffer_private_source(
         flux_chart,
@@ -598,11 +614,14 @@ def generate_manifests(root: Path) -> None:
         ],
         description="Direct TCP and HTTPS connectivity probes from optiplex and wyrm2.",
     )
+    grafana_operator_app = App()
+    grafana_operator_chart = grafana_operator.chart(grafana_operator_app)
     grafana_operator_artifact = artifact("grafana-operator", grafana_operator.OUTPUT_DIR)
     grafana_operator_kustomization = grafana_operator.grafana_operator(
         flux_chart,
-        write_directory(root, grafana_operator_artifact, grafana_operator.chart),
+        write_directory(root, grafana_operator_artifact, app=grafana_operator_app),
         monitoring_namespace_kustomization,
+        health_checks=flux.health_checks(grafana_operator_chart, ["HelmRelease"]),
     )
     nvidia_device_plugin_artifact = artifact("nvidia-device-plugin", nvidia_device_plugin.OUTPUT_DIR)
     nvidia_device_plugin_kustomization = flux.flux_kustomization(
@@ -652,9 +671,14 @@ def generate_manifests(root: Path) -> None:
             "(parked) worker."
         ),
     )
+    claude_rbac_app = App()
+    claude_rbac_chart = agent_rbac_base.chart(claude_rbac_app)
     claude_rbac_artifact = artifact("claude-rbac", agent_rbac_base.OUTPUT_DIR)
     claude_rbac_kustomization = agent_rbac_base.claude_rbac(
-        flux_chart, write_directory(root, claude_rbac_artifact, agent_rbac_base.chart), kyverno_policies_kustomization
+        flux_chart,
+        write_directory(root, claude_rbac_artifact, app=claude_rbac_app),
+        kyverno_policies_kustomization,
+        health_checks=flux.health_checks(claude_rbac_chart, ["Namespace"]),
     )
     vpa_artifact = artifact("vpa", vpa.OUTPUT_DIR)
     vpa_kustomization = flux.flux_kustomization(
@@ -1041,9 +1065,14 @@ def generate_manifests(root: Path) -> None:
         write_directory(root, external_dns_records_artifact, functools.partial(external_dns.records_chart, mesh=mesh)),
         depends_on=[flux.flux_kustomization_depends_on(external_dns_kustomization)],
     )
+    infra_drift_app = App()
+    infra_drift_chart = drift_watch.chart(infra_drift_app)
     infra_drift_artifact = artifact("infra-drift", drift_watch.OUTPUT_DIR)
     drift_watch.infra_drift(
-        flux_chart, write_directory(root, infra_drift_artifact, drift_watch.chart), tofu_controller_kustomization
+        flux_chart,
+        write_directory(root, infra_drift_artifact, app=infra_drift_app),
+        tofu_controller_kustomization,
+        health_checks=flux.health_checks(infra_drift_chart, ["Terraform"]),
     )
     alloy_otlp_bearer_artifact = artifact("alloy-otlp-bearer", alloy_otlp_bearer.OUTPUT_DIR)
     flux.flux_kustomization(
@@ -1264,16 +1293,19 @@ def generate_manifests(root: Path) -> None:
         timeout="10m",
         description="Manage Forgejo SSH keys with their existing OpenTofu state.",
     )
+    monitoring_stack_app = App()
+    monitoring_stack_chart = monitoring_stack.chart(monitoring_stack_app)
     monitoring_stack_artifact = artifact("monitoring-stack", monitoring_stack.OUTPUT_DIR)
     monitoring_stack_kustomization = monitoring_stack.monitoring_stack(
         flux_chart,
         # The SOPS sibling turns on Flux decryption.
         write_directory(
-            root, monitoring_stack_artifact, monitoring_stack.chart, siblings=["grafana-admin-password.sops.yaml"]
+            root, monitoring_stack_artifact, app=monitoring_stack_app, siblings=["grafana-admin-password.sops.yaml"]
         ),
         monitoring_namespace_kustomization,
         monitoring_crds_kustomization,
         kyverno_kustomization,
+        health_checks=flux.health_checks(monitoring_stack_chart, ["HelmRelease"]),
     )
     claude_sandbox_secrets_artifact = artifact("claude-sandbox-secrets", claude_sandbox_secrets.OUTPUT_DIR)
     flux.flux_kustomization(
@@ -1455,16 +1487,23 @@ def generate_manifests(root: Path) -> None:
     gitlab_spike_integrations_artifact = artifact(
         gitlab_spike_flux.INTEGRATIONS_NAME, gitlab_spike_flux.INTEGRATIONS_DIR
     )
-    gitlab_spike_flux.integrations(
+    gitlab_spike_integrations_app = App()
+    gitlab_spike_runner_chart = gitlab_spike_runner.chart(gitlab_spike_integrations_app)
+    flux.flux_kustomization(
         flux_chart,
+        gitlab_spike_flux.INTEGRATIONS_NAME,
         write_directory(
             root,
             gitlab_spike_integrations_artifact,
-            gitlab_spike_runner.chart,
             gitlab_spike_delivery.chart,
             gitlab_spike_benchmark.chart,
+            app=gitlab_spike_integrations_app,
         ),
-        gitlab_spike_gitops_kustomization,
+        timeout="10m",
+        # The source and demo cannot become ready before the manual seed and first image.
+        wait=False,
+        health_checks=flux.health_checks(gitlab_spike_runner_chart, ["HelmRelease"]),
+        depends_on=flux.flux_kustomization_depends_on_many(gitlab_spike_gitops_kustomization),
     )
     matrix_app_artifact = artifact("matrix-app", matrix.OUTPUT_DIR)
     matrix_kustomization = matrix.matrix(
@@ -1514,11 +1553,16 @@ def generate_manifests(root: Path) -> None:
         ),
         timeout="2m",
     )
+    monitoring_alloy_app = App()
+    monitoring_alloy_chart = alloy.chart(monitoring_alloy_app)
     monitoring_alloy_artifact = artifact("monitoring-alloy", alloy.OUTPUT_DIR)
     alloy.alloy(
         flux_chart,
-        write_directory(root, monitoring_alloy_artifact, alloy.chart, namespace=monitoring_namespace.NAMESPACE),
+        write_directory(
+            root, monitoring_alloy_artifact, app=monitoring_alloy_app, namespace=monitoring_namespace.NAMESPACE
+        ),
         monitoring_crds_kustomization,
+        health_checks=flux.health_checks(monitoring_alloy_chart, ["HelmRelease"]),
     )
     public_coder_agent_backup_artifact = artifact("public-coder-agent-backup", public_coder_backup.OUTPUT_DIR)
     public_coder_backup.public_coder_agent_backup(
@@ -1671,11 +1715,14 @@ def generate_manifests(root: Path) -> None:
         keda_kustomization,
         external_secrets_operator_kustomization,
     )
+    flux_annotations_app = App()
+    flux_annotations_chart = flux_annotations.chart(flux_annotations_app)
     flux_annotations_artifact = artifact("flux-grafana-secrets", flux_annotations.OUTPUT_DIR)
     flux_annotations.flux_annotations(
         flux_chart,
-        write_directory(root, flux_annotations_artifact, flux_annotations.chart),
+        write_directory(root, flux_annotations_artifact, app=flux_annotations_app),
         grafana_operator_kustomization,
+        health_checks=flux.health_checks(flux_annotations_chart, ["GrafanaServiceAccount"]),
     )
     clickhouse_grafana_artifact = artifact("clickhouse-grafana", aiquota_analytics.OUTPUT_DIR)
     flux.flux_kustomization(
@@ -2160,6 +2207,10 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         monitoring_crds_kustomization,
         seaweedfs_operator_kustomization,
+        health_checks=[
+            *flux.health_checks(litellm_database_chart, ["Cluster"]),
+            *flux.health_checks(litellm_proxy_chart, ["Deployment", "HTTPRoute"]),
+        ],
     )
     aiquota_artifact = artifact("aiquota", aiquota.OUTPUT_DIR)
     flux.flux_kustomization(
