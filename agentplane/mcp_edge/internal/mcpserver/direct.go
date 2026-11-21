@@ -171,7 +171,8 @@ func (t *tools) directTool(group *pb.ActionGroup, action *pb.Action) *mcp.Tool {
 	}
 	description := action.GetDescription()
 	if notEnforced {
-		description += "\n\nWarning: " + action.GetInputSchemaValidation().GetDetail() + " Read the original schema with get_action."
+		description += "\n\nWarning: Agentplane does not validate arguments against this tool's input schema. " +
+			action.GetInputSchemaValidation().GetDetail() + " Read the original schema with get_action."
 	}
 	var annotations *mcp.ToolAnnotations
 	if hints := action.GetAnnotations(); hints != nil {
