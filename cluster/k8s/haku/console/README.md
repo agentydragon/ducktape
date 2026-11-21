@@ -6,17 +6,16 @@ notes here cover only what's specific to running it in-cluster.
 The `console.k8s.yaml` and `kustomization.yaml` here are generated from
 `cluster/cdk8s/haku/` (`charts.py` composes the database, migration, console and API proxy
 in one Kustomization, emitted in the central Flux chart; `console_config.py` is the non-secret config
-the `haku-console-config` ConfigMap carries, rendered and checked through the console's
+the `config` ConfigMap carries, rendered and checked through the console's
 own `Settings`). Regenerate per <../../../docs/cdk8s.md>. Hand-written beside them: the SOPS
 Secrets, `image-pins/`, and the two ConfigMaps carrying Flux image markers
 (`static-metadata.yaml`, `image-metadata.yaml`).
 
-## App-owned auth (the forward-auth outpost is retired)
+## App-owned auth
 
 The console authenticates its own surface instead of sitting behind the shared Authentik
 proxy outpost. The HTTPRoute points `haku.allegedly.works` at the standalone static
-Service; its nginx proxies backend paths to the API Service. The retired `haku-dashboard`
-proxy provider and its deletion tombstone are gone.
+Service; its nginx proxies backend paths to the API Service.
 The operator browser-login provider is minted by `tf/gitops/agent-machine-access`; its credentials
 and the session-signing secret are mirrored into `haku-console-oidc`. Operator browser OAuth remains
 under `/auth/*`.
@@ -28,7 +27,7 @@ prefix needs a matching `location` in `haku/console/default.conf.template`**, or
 the SPA shell instead of reaching the app. The static Deployment's
 `HAKU_CONSOLE_API_UPSTREAM` is derived from the API Service's name and port. nginx sets response headers (CSP/Cache-Control/…) only
 on the static content it serves itself; the app owns the headers on everything proxied (`app.py`
-`_security_headers`), so the two no longer write the same policy twice. The static Deployment has
+`_security_headers`), so the two never write the same policy. The static Deployment has
 no Console secrets, ServiceAccount token, or database access.
 
 ## Schema migrations are release work
@@ -43,16 +42,16 @@ asyncpg and the migration command selects psycopg at runtime.
 console share one Flux Kustomization, and a Kustomization applies its objects without ordering
 — so the API Deployment can be rolling while the migration Job is still running. Schema changes
 must therefore be compatible with both the outgoing and incoming code (see _Rolling release
-compatibility_ below, which the previous ordered-Kustomization layout already required). What
-the ordering does still hold for is _dependent Kustomizations_: `wait` plus the database and
-migration health checks keep anything with `dependsOn: haku-console` from reconciling until the
-database is ready and the migration Job succeeds.
+compatibility_ below). What the ordering does still hold for is _dependent Kustomizations_:
+`wait` plus the database and migration health checks keep anything with
+`dependsOn: haku-console` from reconciling until the database is ready and the migration Job
+succeeds.
 
 The Job has no Kubernetes API authority and is recreated only when its desired image or manifest
 changes (`kustomize.toolkit.fluxcd.io/force: enabled`). It has no TTL, and it retries
 (`backoffLimit: 10`, 20m deadline) because it has to wait out CNPG bootstrapping the Cluster
 beside it. Each attempt leaves its own Pod, so a genuine migration failure is still readable
-from the logs; it no longer fails after exactly one try. See `cluster/docs/troubleshooting.md` →
+from the logs. See `cluster/docs/troubleshooting.md` →
 “A Failed Job Wedges Its Flux Kustomization”. It temporarily uses the existing CNPG
 application-owner credential. The old `mcp_oauth_kv` table is retained through the rolling release;
 remove it only after outgoing replicas no longer initialize it.
@@ -81,12 +80,6 @@ that release boundary.
 
 Stored values and cross-replica payloads have the analogous adjacent-release rule; the reader/writer
 vocabulary policy remains in <../../../../haku/console/README.md> § Vocabularies across a roll.
-
-## Retired Console Recall integration
-
-The Console reader, in-process Recall tool, indexer grant provisioner, and indexer credentials were
-removed, and migration 0136 drops its Recall schema and data. The `vector` extension stays
-provisioned because the 0135 baseline needs `halfvec` on a fresh database.
 
 ## `haku-console-github-mcp-client-credentials` belongs to agentplane-staging
 
