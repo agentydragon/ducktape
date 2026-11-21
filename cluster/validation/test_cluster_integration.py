@@ -263,7 +263,8 @@ def test_sops_secrets_have_decryption_block(cluster: ParsedCluster, repo_root: P
 
 
 def test_retry_policy(cluster: ParsedCluster) -> None:
-    check_retry_policy(cluster)
+    errors = check_retry_policy(cluster)
+    assert not errors, "\n".join(errors)
 
 
 def test_no_orphaned_files(cluster: ParsedCluster, repo_root: Path) -> None:

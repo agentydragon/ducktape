@@ -82,41 +82,29 @@ class TestControllerResourceHealthChecks:
         assert check_controller_health_checks(cluster, tmp_path) == []
 
 
-class TestRetryPolicy:
-    def _make_cluster(
-        self, *, health_check_kind: str | None = "HelmRelease", retry_interval: str | None = None, wait: bool = False
-    ) -> ParsedCluster:
-        return ParsedCluster(
-            flux_kustomizations={
-                "test-app": FluxKustomizationSpec(
-                    path="./cluster/k8s/test-app",
-                    health_checks=[HealthCheck(kind=health_check_kind, name="test-app", namespace="test-app")]
-                    if health_check_kind
-                    else [],
-                    retry_interval=retry_interval,
-                    wait=wait,
-                )
-            }
-        )
-
-    def test_async_health_check_with_retry_interval_passes(self) -> None:
-        check_retry_policy(self._make_cluster(retry_interval="1m"))
-
-    def test_async_health_check_without_retry_interval_fails(self) -> None:
-        with pytest.raises(AssertionError, match="no retryInterval"):
-            check_retry_policy(self._make_cluster())
-
-    def test_wait_true_without_retry_interval_fails(self) -> None:
-        """wait: true requires retryInterval (spec.retries was removed from the Flux CRD)."""
-        with pytest.raises(AssertionError, match="no retryInterval"):
-            check_retry_policy(self._make_cluster(health_check_kind=None, wait=True))
-
-    def test_wait_true_with_retry_passes(self) -> None:
-        check_retry_policy(self._make_cluster(health_check_kind=None, wait=True, retry_interval="1m"))
-
-    def test_sync_only_no_wait_no_retry_passes(self) -> None:
-        """Sync-only health checks (Namespace) without wait don't need retryInterval."""
-        check_retry_policy(self._make_cluster(health_check_kind="Namespace"))
+@pytest.mark.parametrize(
+    ("health_checks", "wait", "retry_interval", "flags_missing_retry"),
+    [
+        pytest.param([HealthCheck(kind="HelmRelease")], False, "1m", False, id="async-with-retry"),
+        pytest.param([HealthCheck(kind="HelmRelease")], False, None, True, id="async-without-retry"),
+        pytest.param([], True, "1m", False, id="wait-with-retry"),
+        pytest.param([], True, None, True, id="wait-without-retry"),
+        pytest.param([HealthCheck(kind="Namespace")], False, None, False, id="sync-without-retry"),
+    ],
+)
+def test_retry_policy(
+    health_checks: list[HealthCheck], wait: bool, retry_interval: str | None, flags_missing_retry: bool
+) -> None:
+    spec = FluxKustomizationSpec(
+        path="./cluster/k8s/test-app", health_checks=health_checks, retry_interval=retry_interval, wait=wait
+    )
+    errors = check_retry_policy(ParsedCluster(flux_kustomizations={"test-app": spec}))
+    if flags_missing_retry:
+        assert len(errors) == 1
+        assert "test-app" in errors[0]
+        assert "no retryInterval" in errors[0]
+    else:
+        assert errors == []
 
 
 if __name__ == "__main__":
