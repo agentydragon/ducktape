@@ -36,6 +36,13 @@ defaults an omitted type to `authorization`; provider 2026.8.0 stores that on re
 diffs it against the omitted key, so the plan never converges and every 15-minute
 reconcile PUTs the provider.
 
+**Gotcha — `authentik_rbac_permission_role` returned `405 Method Not Allowed` on Authentik
+2026.2.1.** Upstream never routed the `assign`/`unassign` actions of
+`RoleAssignedPermissionViewSet`, so `POST /api/v3/rbac/permissions/assigned_by_roles/{uuid}/assign/`
+failed in every release checked and on `master` (2026-05-05). Server and provider are now
+2026.8: re-test before using the resource. The retired `claude-diagnostics` role (#11887) set
+its permissions in an `authentik_rbac.role` blueprint entry instead, which avoids that endpoint.
+
 ### Blueprint-managed providers (migration backlog)
 
 Active proxy providers remain under `k8s/authentik/app/blueprints/` while issue #987
