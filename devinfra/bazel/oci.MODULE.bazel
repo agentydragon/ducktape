@@ -273,17 +273,10 @@ apt.install(
     ],
 )
 
-# CPAP sync: the Wi-Fi tooling cpap/sync.py runs (ip, iw, wpa_supplicant,
-# dhclient) + git (pushes to the cpap-data Forgejo repo) on debian:trixie-slim.
+# git on debian:trixie-slim for the CPAP sync, which pushes to the cpap-data Forgejo repo.
 apt.install(
     dependency_set = "trixie_cpap_sync",
-    packages = [
-        "git",
-        "iproute2",
-        "isc-dhcp-client",
-        "iw",
-        "wpasupplicant",
-    ],
+    packages = ["git"],
     suites = [
         "trixie",
         "trixie-security",
