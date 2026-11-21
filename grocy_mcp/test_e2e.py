@@ -10,7 +10,6 @@ The session-scoped setup is charged to the first test: about 20 s on RBE (image 
 
 from __future__ import annotations
 
-import logging
 import uuid
 from collections.abc import AsyncGenerator
 from datetime import date, timedelta
@@ -29,7 +28,6 @@ from grocy_mcp.server import build_mcp
 from grocy_mcp.testing.ref_data import RefData, create_ref_data
 from grocy_mcp.testing.results import unwrap_result
 
-logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
 
 
