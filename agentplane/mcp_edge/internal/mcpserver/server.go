@@ -108,6 +108,7 @@ func newServer(t *tools, options Options, schemaCache *mcp.SchemaCache, catalog 
 	logger := options.Logger
 	addTool(server, known["get_guide"], logger, t.getGuide)
 	addTool(server, known["list_actions"], logger, t.listActions)
+	addTool(server, known["get_action_group"], logger, t.getActionGroup)
 	addTool(server, known["get_action"], logger, t.getAction)
 	addTool(server, known["get_action_policy"], logger, t.getActionPolicy)
 	addTool(server, known["request_action"], logger, t.requestAction)

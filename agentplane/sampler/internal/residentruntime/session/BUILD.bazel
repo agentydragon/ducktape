@@ -122,6 +122,7 @@ go_test(
     name = "unit_test",
     size = "medium",
     srcs = [
+        "codemode_actions_unit_test.go",
         "provider_authorization_test.go",
     ],
     embed = [
@@ -129,11 +130,13 @@ go_test(
     ],
     race = "on",
     deps = [
+        "//agentplane/action_service/api/contracts:action_service_go_proto",
         "//agentplane/identity/auth",
         "//agentplane/net/peertls",
         "//agentplane/proto:delegation_go_proto",
         "//agentplane/proto:identity_go_proto",
         "//agentplane/sampler/internal/settings",
         "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//types/known/structpb",
     ],
 )

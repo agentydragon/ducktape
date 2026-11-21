@@ -27,11 +27,14 @@ import {
 } from "./network";
 import {
   ActionGroupSchema,
+  ActionSchema,
   ActionIdentitySchema,
   ActionRequestSchema,
   ListActionRequestHistoryResponseSchema,
   ActionState,
   ExecutorKind,
+  InputSchemaValidationStatus,
+  InputSchemaValidationReason,
   McpLifecycle,
   McpHealthSchema,
   McpUnavailableReason,
@@ -2723,7 +2726,19 @@ const MCP_GROUPS: ActionGroup[] = [
     failures: 7,
   }),
   mcpGroup("gmail", "Test Gmail action group for Agentplane rendering."),
-  mcpGroup("example_notes", BEARER),
+  create(ActionGroupSchema, {
+    ...mcpGroup("example_notes", BEARER),
+    actions: [
+      create(ActionSchema, {
+        name: "search_notes",
+        inputSchemaValidation: {
+          status: InputSchemaValidationStatus.NOT_ENFORCED,
+          reason: InputSchemaValidationReason.SCHEMA_COMPILE_FAILED,
+          detail: "Agentplane could not compile this tool's input schema.",
+        },
+      }),
+    ],
+  }),
   mcpGroup("ssh", BEARER),
 ];
 const MCP_UNKNOWN_GROUPS: ActionGroup[] = [

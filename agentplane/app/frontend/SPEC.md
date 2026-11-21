@@ -7,6 +7,9 @@ display states remain readable as `unknown (value)`; they do not become an allow
 successful state. Required identities and timestamps, decision verdicts, mutation version checks,
 and nonempty watch frames remain validated.
 
+The MCP servers page shows each available group's tool schema warnings. An unvalidated tool remains
+callable under its usual Action policy, but its arguments are not checked against that input schema.
+
 ## Action previews
 
 The expanded Actions pane and receipt details show live Gmail subjects beside recorded thread IDs

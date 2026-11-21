@@ -10,6 +10,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/santhosh-tekuri/jsonschema/v6"
@@ -88,14 +89,28 @@ func mirrorOne(listed *mcp.Tool) (catalog.ActionDefinition, *jsonschema.Schema, 
 		return catalog.ActionDefinition{}, nil, fmt.Errorf("input schema: %w", err)
 	}
 	arguments, err := compileSchema(schema)
-	if err != nil {
-		return catalog.ActionDefinition{}, nil, fmt.Errorf("input schema: %w", err)
+	// The catalog's wire representation requires an object even when its schema cannot be compiled.
+	var object map[string]any
+	if json.Unmarshal(schema, &object) != nil || object == nil {
+		return catalog.ActionDefinition{}, nil, fmt.Errorf("input schema must be a JSON object")
 	}
 	description := cmp.Or(listed.Description, "MCP tool "+listed.Name)
 	if utf8.RuneCountInString(description) > maxDescription {
 		return catalog.ActionDefinition{}, nil, fmt.Errorf("description is longer than %d characters", maxDescription)
 	}
 	definition := catalog.ActionDefinition{Description: description, InputSchema: schema}
+	if err != nil {
+		// Do not expose compiler errors: remote $refs can contain backend addresses or credentials.
+		detail := "Agentplane could not compile this tool's input schema."
+		definition.InputSchemaValidation = &action_servicepb.InputSchemaValidation{
+			Status: action_servicepb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_NOT_ENFORCED,
+			Reason: action_servicepb.InputSchemaValidationReason_INPUT_SCHEMA_VALIDATION_REASON_SCHEMA_COMPILE_FAILED,
+			Detail: &detail,
+		}
+		slog.Warn("MCP input schema cannot be compiled", "tool", listed.Name, "error_type", fmt.Sprintf("%T", err))
+	} else {
+		definition.InputSchemaValidation = &action_servicepb.InputSchemaValidation{Status: action_servicepb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_ENFORCED}
+	}
 	title := listed.Title
 	if hints := listed.Annotations; hints != nil {
 		// `annotations.title` is the older spelling of the display name that `title` replaced.
@@ -137,7 +152,13 @@ func compileSchema(schema json.RawMessage) (*jsonschema.Schema, error) {
 // matches is whether arguments, a JSON object, satisfy the tool's input schema.
 func (t tool) matches(arguments json.RawMessage) bool {
 	value, err := jsonschema.UnmarshalJSON(bytes.NewReader(arguments))
-	return err == nil && t.arguments.Validate(value) == nil
+	if err != nil {
+		return false
+	}
+	if _, ok := value.(map[string]any); !ok {
+		return false
+	}
+	return t.arguments == nil || t.arguments.Validate(value) == nil
 }
 
 // storedResult is the tool's answer as its Execution keeps it: the CallToolResult whole, every content block,

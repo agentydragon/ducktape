@@ -56,3 +56,23 @@ func TestActionText(t *testing.T) {
 		t.Fatalf("cancellation text = %q, error %v", cancellation, err)
 	}
 }
+
+func TestSchemaValidationAppearsInActionAndGroupText(t *testing.T) {
+	validation := &action_servicepb.InputSchemaValidation{
+		Status: action_servicepb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_NOT_ENFORCED,
+		Reason: action_servicepb.InputSchemaValidationReason_INPUT_SCHEMA_VALIDATION_REASON_SCHEMA_COMPILE_FAILED,
+		Detail: new("Agentplane could not compile this tool's input schema."),
+	}
+	action := &action_servicepb.Action{Group: "tana", Name: "search_nodes", Description: "Search", InputSchema: &structpb.Struct{}, InputSchemaValidation: validation}
+	group, _ := groupLine(&action_servicepb.ActionGroup{Key: "tana", Available: true, Actions: []*action_servicepb.Action{action}})
+	line, _ := actionLine(action)
+	detail, err := actionDetail(action)
+	if err != nil || !strings.Contains(group, "1 schema warning)") || !strings.Contains(line, "input schema not enforced") ||
+		!strings.Contains(detail, "input schema validation: not_enforced: Agentplane could not compile") {
+		t.Errorf("group %q, action %q, detail %q, error %v", group, line, detail, err)
+	}
+	unknown, _ := actionDetail(&action_servicepb.Action{InputSchema: &structpb.Struct{}})
+	if !strings.Contains(unknown, "input schema validation: unknown") {
+		t.Errorf("missing validation status = %q", unknown)
+	}
+}

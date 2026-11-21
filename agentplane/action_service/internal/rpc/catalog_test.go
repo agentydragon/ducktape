@@ -60,8 +60,9 @@ func testReadAction(t *testing.T) *action_servicepb.Action {
 	}
 	return &action_servicepb.Action{
 		Group: "test-mcp", Name: "test-read", Description: "test read description", InputSchema: schema,
-		Title:       proto.String("Test read"),
-		Annotations: &action_servicepb.ToolAnnotations{ReadOnlyHint: proto.Bool(true), OpenWorldHint: proto.Bool(false)},
+		InputSchemaValidation: &action_servicepb.InputSchemaValidation{Status: action_servicepb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_ENFORCED},
+		Title:                 proto.String("Test read"),
+		Annotations:           &action_servicepb.ToolAnnotations{ReadOnlyHint: proto.Bool(true), OpenWorldHint: proto.Bool(false)},
 	}
 }
 
@@ -74,8 +75,8 @@ func testCatalogViews(t *testing.T, health *action_servicepb.McpHealth) []*actio
 			ExecutorKind: action_servicepb.ExecutorKind_EXECUTOR_KIND_MCP, ExecutorDescription: "test MCP executor",
 			Available: true,
 			Actions: []*action_servicepb.Action{
-				{Group: "test-mcp", Name: "test-delete", Description: "test delete description", InputSchema: &structpb.Struct{}},
-				{Group: "test-mcp", Name: "test-list", Description: "test list description", InputSchema: &structpb.Struct{}},
+				{Group: "test-mcp", Name: "test-delete", Description: "test delete description", InputSchema: &structpb.Struct{}, InputSchemaValidation: &action_servicepb.InputSchemaValidation{Status: action_servicepb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_ENFORCED}},
+				{Group: "test-mcp", Name: "test-list", Description: "test list description", InputSchema: &structpb.Struct{}, InputSchemaValidation: &action_servicepb.InputSchemaValidation{Status: action_servicepb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_ENFORCED}},
 				testReadAction(t),
 			},
 			// The group does not offer test-undiscovered.

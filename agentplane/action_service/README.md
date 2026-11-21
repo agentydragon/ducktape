@@ -214,8 +214,9 @@ settings. See the edge's [Go OAuth configuration](../mcp_edge/cmd/config.go), th
 | Tool                         | Use                                                                                                                                                            |
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `list_actions`               | Compact `{group, name, available}` entries; optional group filter, `limit` (default 30, max 100), keyset `after`/`next_after`.                                 |
+| `get_action_group`           | One group's availability, MCP connection state and per-tool schema warnings.                                                                                   |
 | `get_action_policy`          | The effective policy of a `target`: `"self"` (default) or a named Sandbox or ServiceAccount; its bindings, the sets that resolved, and the auto-approval list. |
-| `get_action`                 | One definition by group/name. `include_fields` on either catalog read accepts only `input_schema` and `description`; omitted/empty excludes both.              |
+| `get_action`                 | One definition by group/name, including schema-validation status. `include_fields` selects `input_schema` and `description`; omitted/empty excludes both.      |
 | `request_action`             | The request envelope under `request`, validated as on HTTP; a used key is refused. Answers like `get_action_result`, or `respond_with: receipt`.               |
 | `get_action_request`         | One own-caller receipt by exactly one of `request_id` or `idempotency_key`; the key lookup recovers a submission whose response was lost.                      |
 | `get_action_result`          | The outcome as the tool that ran answered, named and waited on like `get_action_request`; see below.                                                           |

@@ -173,7 +173,7 @@ message SubmitActionRequestRequest {
   // Chosen by the caller, unique per ServiceAccount: 1 to 200 characters.
   string idempotency_key = 1;
   ActionIdentity action = 2;
-  // Must satisfy the Action's input schema (`GetAction`); `{}` for an Action without arguments.
+  // Must satisfy the Action's input schema (`GetAction`) when Agentplane can enforce it; `{}` for no arguments.
   google.protobuf.Struct arguments = 3;
   // One plain-language line saying what the request does, for the operator deciding it: 1 to 60 characters, of
   // commit-subject length ("delete crashlooping backend pod"). Not the Action's group and name, which are shown
@@ -757,21 +757,41 @@ enum McpUnavailableReason {
   MCP_UNAVAILABLE_REASON_SUPERVISOR_STOPPED = 6;
 }
 
-// One Action: its description and the argument schema a submission is validated against.
+// One Action: its description and the backend's argument schema.
 message Action {
   // The ActionGroup's key.
   string group = 1;
   // The Action's name within the group.
   string name = 2;
   string description = 3;
-  // A JSON Schema of `arguments`. Execution checks the backend's schema again, so a schema that changed after
-  // discovery can still fail the request.
+  // The backend's input schema. When supported, admission and execution check it; a later schema change can still
+  // fail the request. See input_schema_validation for whether Agentplane can enforce it.
   google.protobuf.Struct input_schema = 4;
   // A display name; absent when the backend gives none.
   optional string title = 5;
   // The backend's MCP behavior hints; absent when it gives none. Advisory: they shape how a client presents the
   // Action, never what the service allows.
   ToolAnnotations annotations = 6;
+  // Status of Agentplane's tool-schema check. Missing or UNKNOWN never implies enforcement.
+  InputSchemaValidation input_schema_validation = 7;
+}
+
+// Whether Agentplane can enforce the tool's input schema; this does not describe policy validation.
+message InputSchemaValidation {
+  InputSchemaValidationStatus status = 1;
+  InputSchemaValidationReason reason = 2;
+  optional string detail = 3;
+}
+
+enum InputSchemaValidationStatus {
+  INPUT_SCHEMA_VALIDATION_STATUS_UNKNOWN = 0;
+  INPUT_SCHEMA_VALIDATION_STATUS_ENFORCED = 1;
+  INPUT_SCHEMA_VALIDATION_STATUS_NOT_ENFORCED = 2;
+}
+
+enum InputSchemaValidationReason {
+  INPUT_SCHEMA_VALIDATION_REASON_UNSPECIFIED = 0;
+  INPUT_SCHEMA_VALIDATION_REASON_SCHEMA_COMPILE_FAILED = 1;
 }
 
 // MCP tool behavior hints as the backend gave them; each is absent when the backend left it out.
