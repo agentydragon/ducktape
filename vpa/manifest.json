@@ -3,8 +3,8 @@
   "audited_at_utc": "2026-11-21 06:56:58 UTC",
   "snapshot_utc": "2026-11-21T06:56:58Z",
   "scope": "Current Kubernetes VPA policies, workload owners, metrics samples and rollout review cohorts. Earlier evidence retains its original observation window.",
-  "report_html_sha256": "517b8bc9f9373063dda198ba31721bc40603759fbaa2565144aa021309fb5050",
-  "report_script_sha256": "f9ba012b3e2eeec1a338a8b924e28382ed7f4d437c8ea9834def2566949dad6b",
+  "report_html_sha256": "3b6beb206cd6a3994ec5800f3b23ac88fbb51722d676c55ef34fb64883055175",
+  "report_script_sha256": "b1734dd667cd654d3c675e4f82773e9cb11940dd0579cbdd4021daebb02f5179",
   "evidence_sha256": "c69cc4092a6f9640579e2dce32e0f2f37af78498b947522c2320f49698a86a28",
   "architecture_source_devel_commit": "d81bd68165097b089cace9ae168b6e8f202f1b7e",
   "architecture_reviewed_at_utc": "2026-11-20T03:36:52Z",
@@ -813,6 +813,100 @@
             "owner": "goldilocks",
             "desired_policy_applied": false,
             "generation": 2,
+            "recommendation_generation": 2,
+            "cpu_targets": {
+              "gitlab-spike-runner-gitlab-runner": null
+            }
+          }
+        }
+      },
+      "after_scoped_goldilocks_reconciliation": {
+        "reconciliation_observed_utc": "2026-11-21T07:11Z",
+        "observed_utc": "2026-11-21T07:12:53+00:00",
+        "namespaces_reconciled": ["cdviz", "plaid-mcp", "gitlab-spike-ci"],
+        "matched_spec_count": 8,
+        "current_cpu_target_count": 4,
+        "policies_pending_current_recommendations": [
+          "cdviz/collector",
+          "plaid-mcp/plaid-pgweb",
+          "plaid-mcp/plaid-spend",
+          "gitlab-spike-ci/gitlab-spike-runner-gitlab-runner"
+        ],
+        "expected_next_recommender_cycle_utc": "2026-11-21T07:15:17Z",
+        "audit_unchanged": [
+          "unrelated VPA specs",
+          "Pod UIDs",
+          "Ready endpoint sets"
+        ],
+        "policies": {
+          "agentplane-staging/electric": {
+            "owner": "flux",
+            "desired_policy_applied": true,
+            "generation": 2,
+            "recommendation_generation": 2,
+            "cpu_targets": {
+              "electric": "49m"
+            }
+          },
+          "cdviz/collector": {
+            "owner": "goldilocks",
+            "desired_policy_applied": true,
+            "generation": 3,
+            "recommendation_generation": 2,
+            "cpu_targets": {
+              "collector": null
+            }
+          },
+          "home-assistant/home-assistant": {
+            "owner": "goldilocks",
+            "desired_policy_applied": true,
+            "generation": 3,
+            "recommendation_generation": 3,
+            "cpu_targets": {
+              "caddy": "11m",
+              "home-assistant": "11m"
+            }
+          },
+          "plaid-mcp/plaid-pgweb": {
+            "owner": "goldilocks",
+            "desired_policy_applied": true,
+            "generation": 3,
+            "recommendation_generation": 2,
+            "cpu_targets": {
+              "pgweb": null
+            }
+          },
+          "plaid-mcp/plaid-spend": {
+            "owner": "goldilocks",
+            "desired_policy_applied": true,
+            "generation": 3,
+            "recommendation_generation": 2,
+            "cpu_targets": {
+              "plaid-spend": null
+            }
+          },
+          "study-casino/study-casino": {
+            "owner": "flux",
+            "desired_policy_applied": true,
+            "generation": 2,
+            "recommendation_generation": 2,
+            "cpu_targets": {
+              "app": "15m"
+            }
+          },
+          "gitlab-spike/gitlab-spike-gitlab-exporter": {
+            "owner": "goldilocks",
+            "desired_policy_applied": true,
+            "generation": 3,
+            "recommendation_generation": 3,
+            "cpu_targets": {
+              "gitlab-exporter": "23m"
+            }
+          },
+          "gitlab-spike-ci/gitlab-spike-runner-gitlab-runner": {
+            "owner": "goldilocks",
+            "desired_policy_applied": true,
+            "generation": 3,
             "recommendation_generation": 2,
             "cpu_targets": {
               "gitlab-spike-runner-gitlab-runner": null

@@ -471,11 +471,13 @@ function Report() {
           the Deployment annotations had changed: CDViz collector, Home
           Assistant, Plaid pgweb, Plaid Spend and the GitLab runner manager. By
           07:00:24 UTC Home Assistant had also converged, and all four updated
-          VPAs had current CPU targets. CDViz, both Plaid services and the
-          runner manager retained their older policies. Check owner-matched
-          admission for converged targets and review namespace scope before
-          triggering Goldilocks for the rest. ${" "}<${Anchor}
-            href=${github + "pull/18519"}
+          VPAs had current CPU targets. Scoped Goldilocks reconciliation at
+          07:11 UTC brought CDViz, Plaid pgweb, Plaid Spend and the GitLab
+          runner manager onto the new policy. The audit found unchanged
+          unrelated VPA specs, Pod UIDs and Ready endpoints. At 07:12:53 UTC all
+          eight policies matched, with four recommendation updates still
+          pending. Check generation and owner-matched admission after the
+          expected 07:15 cycle. ${" "}<${Anchor} href=${github + "pull/18519"}
             >Application batch<//
           >.
         <//>
