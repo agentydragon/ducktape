@@ -235,6 +235,14 @@ certificate can be replayed by concatenating `Semantics.lean`, `Effects.lean`,
 
 ## Differential fuzzer
 
+To measure coverage on trusted JavaScript files from the repository, run
+`node x/js_module_proof/real_corpus.mjs OUTPUT_DIR SOURCE...`. It tries a
+single-module baseline plus alternating and contiguous two-module assignments for each file,
+reports proved, unsafe and unknown counts, and keeps assignments, output files
+and verdicts under the output directory. These are candidate assignments, not
+an exhaustive survey; the validator may execute recognized programs when
+seeking an unsafe witness.
+
 The [fuzzer follow-ups](TODO.md) track broader JavaScript generation, split
 coverage, oracle improvements, and extensions to the proof-supported subset.
 
@@ -279,6 +287,9 @@ an acyclic graph can still have missing dependencies or other invalid links.
 Use `--grammar composed` to generate bounded expression trees and nested
 returning branches from visible lexical names. It can be combined with either
 split mode; it currently covers only a subset of the planned grammar.
+`--grammar async` generates promise-based functions and observes each call to
+completion in Node. Pending promises and timeouts are inconclusive. Async
+execution is not yet part of the Lean proof-supported subset.
 
 ```sh
 nix develop .#js-module-proof

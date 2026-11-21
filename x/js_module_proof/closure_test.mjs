@@ -31,6 +31,7 @@ if (shard === 0) {
     encoding: "utf8",
     input:
       models +
+      "\n#print axioms captured_pairs_sequence_simulates\n#print axioms captured_pairs_runs_complete_together\n#print axioms captured_pairs_argument_calls_observations\n" +
       "\n#print axioms capture_matching_transfer\n#print axioms distinct_writeback_transfer\n#print axioms distinct_writebacks_agree\n#print axioms two_distinct_captured_call_sequence_simulates\n#print axioms decideCaptureKeysUnique\n" +
       "\n#print axioms runExecution_relation_preserved\n#print axioms executeCaptured_success\n#print axioms captured_paired_step_preserved\n#print axioms executeCaptured_decompose\n#print axioms captured_unblocked_step_related\n#print axioms captured_call_sequence_related\n#print axioms lookup_update_other\n#print axioms lookup_store_other\n#print axioms load_store_disjoint\n#print axioms storeCapturedFrame_origin\n#print axioms captured_step_preserves_disjoint\n#print axioms captured_step_preserves_watched\n#print axioms two_captured_call_sequence_related\n#print axioms successful_store_captures_matches\n#print axioms distinct_related_writebacks_exist\n#print axioms distinct_captured_writeback_exists\n#print axioms store_captures_roundtrip\n#print axioms load_captures_update_other\n#print axioms update_existing_cell\n#print axioms two_captured_call_sequence_simulates\n#print axioms runExecution_simulates\n#print axioms captured_step_simulates\n#print axioms paired_captured_table_call\n#print axioms two_captured_argument_calls_related\n#print axioms related_argument_call_operations\n#print axioms decideRelatedCapturedEnvironments\n#print axioms decideCapturesDisjoint\n" +
       'example : relatedCapturedEnvironments [("a", 3)] [("b", 3)] [("x", "a")] [("x", "b")] := by decide\n' +
@@ -64,6 +65,12 @@ if (shard === 0) {
       'example : PairedCapturedTables [("x", "a")] [("x", "b")] [("x", "c")] [("x", "d")] [("f", .captured [("x", "a")] ["n"] (.name "n")), ("g", .captured [("x", "c")] [] (.name "x"))] [("f", .captured [("x", "b")] ["n"] (.name "n")), ("g", .captured [("x", "d")] [] (.name "x"))] := by exact .cons "f" (.first _ _) (.cons "g" (.second _ _) .nil)\n',
   });
   assert.equal(modelCheck.status, 0, modelCheck.stdout + modelCheck.stderr);
+  for (const name of [
+    "captured_pairs_sequence_simulates",
+    "captured_pairs_runs_complete_together",
+    "captured_pairs_argument_calls_observations",
+  ])
+    assert.match(modelCheck.stdout, new RegExp(`'${name}' does not depend on any axioms`));
   assert.match(modelCheck.stdout, /'renamed_capture_observations' does not depend on any axioms/);
   for (const theorem of [
     "capture_matching_transfer",

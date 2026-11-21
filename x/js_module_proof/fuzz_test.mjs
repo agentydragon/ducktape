@@ -8,6 +8,7 @@ if (process.env.ACORN_RLOCATION)
 process.env.JS_MODULE_PROOF_LEAN = resolve(process.env.TEST_SRCDIR, process.env.LEAN_RLOCATION);
 if (process.env.TEST_SHARD_STATUS_FILE) await writeFile(process.env.TEST_SHARD_STATUS_FILE, "");
 const { execute, independentSplit, makeCase, makeComposedCase, minimizeCase, runFuzz } = await import("./fuzz.mjs");
+const { assessCorpus } = await import("./real_corpus.mjs");
 const shard = Number(process.env.TEST_SHARD_INDEX ?? 0);
 const shards = Number(process.env.TEST_TOTAL_SHARDS ?? 1);
 assert.deepEqual(makeCase(123, 42), makeCase(123, 42));
@@ -47,6 +48,16 @@ assert.ok(
 assert.equal(new Set(generatedObjects.map((item) => item.ast.body[1].body.body.at(-1).argument.left.computed)).size, 2);
 const captureTargets = new Set(Array.from({ length: 32 }, (_, i) => makeCase(123, 28 + 128 * i).captureTarget));
 assert.deepEqual(captureTargets, new Set(["value", "start"]));
+const captureCounts = new Set(
+  Array.from(
+    { length: 64 },
+    (_, i) =>
+      makeCase(123, 28 + 128 * i).ast.body.filter(
+        (node) => node.type === "VariableDeclaration" && node.declarations[0].id.name.startsWith("closure")
+      ).length
+  )
+);
+assert.deepEqual(captureCounts, new Set([1, 2, 3, 4, 5]));
 const expressionInput = makeCase(123, 28);
 const expressionShrunk = await minimizeCase(
   expressionInput,
@@ -88,6 +99,20 @@ assert.deepEqual(execute(nullThrow, ["fail"]).error, {
 const opaqueThrow = join(process.env.TEST_TMPDIR, `opaque-throw-${shard}.mjs`);
 await writeFile(opaqueThrow, "export function fail() { throw { value: 1 }; }");
 assert.equal(execute(opaqueThrow, ["fail"]).error.thrown.kind, "opaque");
+const asyncCalls = join(process.env.TEST_TMPDIR, `async-${shard}.mjs`);
+await writeFile(
+  asyncCalls,
+  "export async function first() { await Promise.resolve(); globalThis.record(1); return 4; } export async function fail() { await Promise.resolve(); globalThis.record(2); throw 'async'; }"
+);
+assert.deepEqual(execute(asyncCalls, ["first", "fail"]), {
+  events: [1, 2],
+  exports: ["fail", "first"],
+  results: [{ value: 4 }],
+  error: { name: null, phase: "call", index: 1, thrown: { kind: "string", value: "async" } },
+});
+const pendingCall = join(process.env.TEST_TMPDIR, `async-pending-${shard}.mjs`);
+await writeFile(pendingCall, "export async function wait() { await new Promise(() => {}); }");
+assert.deepEqual(execute(pendingCall, ["wait"]), { inconclusive: "no completion" });
 const timeout = join(process.env.TEST_TMPDIR, `timeout-${shard}.mjs`);
 await writeFile(timeout, "while (true) {}");
 assert.deepEqual(execute(timeout, [], { timeoutMs: 250 }), { inconclusive: "timeout" });
@@ -104,6 +129,31 @@ assert.equal(
   result.cases
 );
 if (shards === 4 && shard === 0) {
+  const runfiles = resolve(process.env.TEST_SRCDIR, process.env.TEST_WORKSPACE);
+  const corpusOutput = join(process.env.TEST_UNDECLARED_OUTPUTS_DIR ?? process.env.TEST_TMPDIR, "real-corpus");
+  const corpus = await assessCorpus(
+    [
+      join(runfiles, "x/js_module_proof/example/bindings/original.mjs"),
+      join(runfiles, "devinfra/pr_visuals/gallery_sort.js"),
+    ],
+    corpusOutput
+  );
+  await writeFile(join(corpusOutput, "summary.json"), JSON.stringify(corpus, null, 2) + "\n");
+  assert.equal(corpus.programs, 2);
+  assert.equal(corpus.assignments, 6);
+  assert.equal(corpus.proved + corpus.unsafe + corpus.unknown, 6);
+  assert.equal(
+    corpus.entries.find(
+      (entry) => entry.path.endsWith("example/bindings/original.mjs") && entry.assignment === "baseline"
+    ).result,
+    "proved under assumptions"
+  );
+  assert.equal(
+    corpus.entries.find(
+      (entry) => entry.path.endsWith("example/bindings/original.mjs") && entry.assignment === "contiguous"
+    ).result,
+    "proved under assumptions"
+  );
   const original = makeCase(123, 2);
   const independent = independentSplit(original, 123, 2);
   assert.deepEqual(independent, independentSplit(original, 123, 2));
@@ -136,6 +186,9 @@ if (shards === 4 && shard === 0) {
   assert.equal(composed.equal, 16);
   assert.ok(composed.proved > 0);
   assert.ok(composed.astNodeCases.IfStatement > 0);
+  const asyncCampaign = await runFuzz({ seed: 37, cases: 8, outputDir: process.env.TEST_TMPDIR, grammarMode: "async" });
+  assert.equal(asyncCampaign.asyncSourceExecuted, 8);
+  assert.equal(asyncCampaign.inconclusive, 0);
   const generatedExpressions = Array.from({ length: 128 }, (_, i) => makeCase(123, 12 + 32 * i));
   assert.deepEqual(new Set(generatedExpressions.map((item) => item.expressionDepth)), new Set([0, 1, 2]));
   assert.deepEqual(

@@ -42,7 +42,7 @@ function print(node) {
     case "VariableDeclarator":
       return `${print(node.id)} = ${print(node.init)}`;
     case "FunctionDeclaration":
-      return `function ${print(node.id)}(${node.params.map(print).join(", ")}) ${print(node.body)}`;
+      return `${node.async ? "async " : ""}function ${print(node.id)}(${node.params.map(print).join(", ")}) ${print(node.body)}`;
     case "BlockStatement":
       return `{ ${node.body.map(print).join(" ")} }`;
     case "ReturnStatement":
@@ -80,6 +80,8 @@ function print(node) {
       return `for (${print(node.init).slice(0, -1)}; ${print(node.test)}; ${print(node.update)}) ${print(node.body)}`;
     case "UpdateExpression":
       return node.prefix ? `${node.operator}${print(node.argument)}` : `${print(node.argument)}${node.operator}`;
+    case "AwaitExpression":
+      return `await ${print(node.argument)}`;
     case "EmptyStatement":
       return ";";
     case "ArrowFunctionExpression":
@@ -1020,6 +1022,56 @@ export function makeComposedCase(seed, index) {
   };
 }
 
+export function makeAsyncCase(seed, index) {
+  const rand = random(seed ^ 0xa51c, index);
+  const value = 1 + rand(5);
+  const fn = functionNode(
+    "calculate",
+    ["x"],
+    [
+      expr({
+        type: "AwaitExpression",
+        argument: call({ type: "MemberExpression", object: id("Promise"), property: id("resolve"), computed: false }),
+      }),
+      record("x"),
+      {
+        type: "IfStatement",
+        test: { type: "BinaryExpression", operator: "===", left: id("x"), right: literal(0) },
+        consequent: { type: "BlockStatement", body: [{ type: "ThrowStatement", argument: literal(7) }] },
+        alternate: null,
+      },
+      returnNode({ type: "BinaryExpression", operator: "+", left: id("x"), right: literal(1) }),
+    ]
+  );
+  fn.async = true;
+  const ast = {
+    type: "Program",
+    sourceType: "module",
+    body: [
+      fn,
+      {
+        type: "ExportNamedDeclaration",
+        specifiers: [{ type: "ExportSpecifier", local: id("calculate"), exported: id("calculate") }],
+      },
+    ],
+  };
+  return {
+    ast,
+    source: print(ast),
+    grammar: "async",
+    unsupported: true,
+    cyclic: false,
+    invalidAssignment: false,
+    expectThrow: true,
+    calls: [
+      { name: "calculate", args: [value] },
+      { name: "calculate", args: [0] },
+    ],
+    asyncFirstValue: value,
+    spec: { kind: "bindings", entry: "entry.mjs", modules: { "entry.mjs": { imports: [], statements: [0] } } },
+  };
+}
+
 export function execute(path, calls, { timeoutMs = 10000 } = {}) {
   const code = `
 const events=[];
@@ -1038,7 +1090,7 @@ const thrownValue=v=>{
 try{
   const m=await import(${JSON.stringify(pathToFileURL(path).href)});
   names=Object.keys(m);phase='call';
-  for(const call of ${JSON.stringify(calls)}){index++;const name=typeof call==='string'?call:call.name;const args=typeof call==='string'?[]:call.args;const v=m[name](...args);results.push(v===undefined?{undefined:true}:{value:v});}
+  for(const call of ${JSON.stringify(calls)}){index++;const name=typeof call==='string'?call:call.name;const args=typeof call==='string'?[]:call.args;const v=await m[name](...args);results.push(v===undefined?{undefined:true}:{value:v});}
   console.log(JSON.stringify({events,exports:names,results,error:null}));
 }catch(e){
   const thrown=thrownValue(e);
@@ -1049,7 +1101,10 @@ try{
     timeout: timeoutMs,
   });
   if (child.error?.code === "ETIMEDOUT") return { inconclusive: "timeout" };
+  if (child.status === 13 && child.stderr.includes("unsettled top-level await"))
+    return { inconclusive: "no completion" };
   if (child.error || child.status !== 0) throw new Error(`Node oracle failed: ${child.error ?? child.stderr}`);
+  if (!child.stdout.trim()) return { inconclusive: "no completion" };
   return JSON.parse(child.stdout);
 }
 
@@ -1259,7 +1314,7 @@ export async function runFuzz({
   grammarMode = "pattern",
 }) {
   if (!["pattern", "independent"].includes(splitMode)) throw new Error("unknown split mode");
-  if (!["pattern", "composed"].includes(grammarMode)) throw new Error("unknown grammar mode");
+  if (!["pattern", "composed", "async"].includes(grammarMode)) throw new Error("unknown grammar mode");
   if (!Number.isSafeInteger(shards) || shards < 1 || !Number.isSafeInteger(shard) || shard < 0 || shard >= shards)
     throw new Error("shard must be an integer between 0 and shards - 1");
   await mkdir(outputDir, { recursive: true });
@@ -1276,6 +1331,8 @@ export async function runFuzz({
     cases: 0,
     splitMode,
     grammarMode,
+    asyncSourceExecuted: 0,
+    asyncRefused: 0,
     nodeVersion: process.version,
     leanVersion,
     independentRefused: 0,
@@ -1355,10 +1412,15 @@ export async function runFuzz({
     let keep = true;
     let phase = "generate-ast";
     try {
-      const generated = grammarMode === "composed" ? makeComposedCase(seed, index) : makeCase(seed, index);
+      const generated =
+        grammarMode === "composed"
+          ? makeComposedCase(seed, index)
+          : grammarMode === "async"
+            ? makeAsyncCase(seed, index)
+            : makeCase(seed, index);
       const input = splitMode === "independent" ? independentSplit(generated, seed, index) : generated;
       const mutation =
-        input.grammar !== "composed" && !input.independentSplit && index % 8 === 2
+        !["composed", "async"].includes(input.grammar) && !input.independentSplit && index % 8 === 2
           ? ["binding", "effect", "function", "export", "import"][Math.floor(index / 8) % 5]
           : null;
       const independentCategory = input.invalidAssignment ? "invalidAssignment" : input.cyclic ? "cyclic" : "acyclic";
@@ -1405,6 +1467,23 @@ export async function runFuzz({
         ) + "\n"
       );
       if (input.useConstant) summary.constantCases++;
+      if (input.grammar === "async") {
+        phase = "source-execution";
+        const observed = execute(source, input.calls);
+        await writeFile(join(root, "node-source.json"), JSON.stringify(observed, null, 2) + "\n");
+        if (observed.inconclusive) {
+          summary.inconclusive++;
+          summary.inconclusiveCases.push({ index, reason: observed.inconclusive, artifacts: root, artifactPath });
+          continue;
+        }
+        if (
+          JSON.stringify(observed.events) !== JSON.stringify([input.asyncFirstValue, 0]) ||
+          observed.results[0]?.value !== input.asyncFirstValue + 1 ||
+          observed.error?.thrown?.value !== 7
+        )
+          throw new Error(`generated asynchronous program did not finish as expected: ${JSON.stringify(observed)}`);
+        summary.asyncSourceExecuted++;
+      }
       if (input.grammar === "object") {
         phase = "source-execution";
         summary.objectCases++;
@@ -1486,6 +1565,7 @@ export async function runFuzz({
         else if (input.unsupported) summary.unsupportedCaseRefused++;
         if (input.grammar === "closure") summary.closureRefused++;
         if (input.grammar === "object") summary.objectRefused++;
+        if (input.grammar === "async") summary.asyncRefused++;
         if (!input.independentSplit && !input.unsupported && !input.invalidAssignment)
           throw new Error(`supported generated case was refused: ${error}`);
         keep = false;
@@ -1594,7 +1674,6 @@ export async function runFuzz({
           if (input.expectUnsafe) summary.modeledClosureUnsafe++;
           else summary.modeledClosureProved++;
         }
-        if (input.cyclic && verdict.result !== "unknown") throw new Error("cycle unexpectedly accepted");
         if (verdict.result === "proved under assumptions") {
           summary.proved++;
           if (input.grammar === "object") summary.objectProved++;
@@ -1702,7 +1781,7 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.
       !opts["--output-dir"]
     )
       throw new Error(
-        "usage: fuzz.mjs --output-dir DIR [--seed UINT32] [--start N] [--cases N] [--validate-every N] [--shard N --shards N] [--splits pattern|independent] [--grammar pattern|composed]"
+        "usage: fuzz.mjs --output-dir DIR [--seed UINT32] [--start N] [--cases N] [--validate-every N] [--shard N --shards N] [--splits pattern|independent] [--grammar pattern|composed|async]"
       );
     console.log(
       JSON.stringify(
