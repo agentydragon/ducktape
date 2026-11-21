@@ -463,32 +463,36 @@ function Report() {
           <strong>Agentplane staging.</strong> All nine services in the merged
           CPU sizing wave were 2/2 Ready and had CPU and memory recommendations
           in Initial. Flux reported the VPA Kustomization Ready and Healthy at
-          05:16:41 UTC. All nine uncapped CPU targets were below their
-          configured ceilings in this snapshot. ${" "}<${Anchor}
+          05:16:41 UTC. All nine uncapped CPU targets were below their ceilings
+          configured at that observation. ${" "}<${Anchor}
             href=${github + "pull/18487"}
             >Staging policy change<//
           >.
         <//>
         <${Text}>
-          The placement model left 95m CPU on the tightest OVH worker with the
-          eight worker-only services at all request ceilings, one replica each,
-          the two ingress replicas on separate control-plane hosts, and
-          noncohort reservations fixed at their 05:04 UTC values. Before raising
-          a ceiling, compare uncapped recommendations with bounds and recheck
-          node reservations and Pending Pods. On natural replacements, verify
-          admitted CPU and memory requests and limits.
+          The earlier placement model left 95m CPU on the tightest OVH worker
+          with the eight worker-only services at all request ceilings, one
+          replica each, the two ingress replicas on separate control-plane
+          hosts, and noncohort reservations fixed at their 05:04 UTC values.
+          Before overlapping rollouts, compare current recommendations and
+          recheck node reservations and Pending Pods. On natural replacements,
+          verify admitted CPU and memory requests and limits.
         <//>
       <//>
 
       <${Text} id="flux-request-wave" mt="md">
-        <strong>Flux controllers.</strong> Seven singleton Deployments have CPU
-        and memory request policies in Initial and were 1/1 Ready. The policy
-        Kustomization was Ready and Healthy at 05:53:35 UTC. At collection, 0 of
-        7 had CPU and memory targets. The next recommender cycle was expected
-        around 06:00 UTC. Once targets appear, check owner-matched admission and
-        ordinary replacements. The policy change records the operator recovery
-        steps if a Flux Pod cannot schedule. ${" "}<${Anchor}
-          href=${github + "pull/18494"}
+        <strong>Flux controllers.</strong> Seven singleton Deployments were 1/1
+        Ready with Initial policies for CPU and memory requests. The policy
+        Kustomization was Ready and Healthy at 05:53:35 UTC. After the 06:00
+        recommender cycle, all seven owner-matched server dry runs applied
+        recommendations and kept the existing limits at 06:00:29 UTC. All seven
+        incumbent Pods kept their resources and restart counts. Kustomize and
+        source requested 977m and 920m in the dry runs, above the earlier
+        placement estimates of 631m and 502m. At 06:02:04 UTC, substituting all
+        seven admitted requests on their existing hosts left 1,167m CPU on the
+        tightest affected host with other reservations fixed. Recheck headroom
+        before overlapping rollouts and verify actual scheduling on ordinary
+        replacements. ${" "}<${Anchor} href=${github + "pull/18494"}
           >Flux policy and recovery<//
         >.
       <//>
@@ -537,20 +541,23 @@ function Report() {
         ${" "}<${Anchor} href=${github + "pull/18495"}>Replica rollout<//>.
       <//>
       <${Text} id="nfd-request-wave" mt="md">
-        <strong>Node Feature Discovery.</strong> After this census, the GC,
-        master and worker policies moved to CPU and memory requests in Initial.
-        At 05:55:21 UTC the three live VPAs still awaited new CPU targets. Check
+        <strong>Node Feature Discovery.</strong> The GC, master and worker
+        gained CPU sizing after the census. At 06:01:59 UTC, all three VPAs had
+        observed their current Initial policies and recommended 15m CPU. Check
         admission and worker readiness on natural replacements. ${" "}<${Anchor}
           href=${github + "pull/18493"}
           >NFD policy change<//
         >.
       <//>
       <${Text} id="platform-request-wave" mt="md">
-        <strong>Platform Sessions and MCP.</strong> At 05:58:49 UTC, ten
-        post-census VPAs used Initial for CPU and memory requests. Their first
-        CPU targets were pending. All nine staging services in the earlier wave
-        had also dropped their explicit CPU bounds. Check both cohorts on
-        natural replacements. ${" "}<${Anchor} href=${github + "pull/18492"}
+        <strong>Platform Sessions and MCP.</strong> At 06:01:59 UTC, all ten
+        post-census Initial policies had CPU and memory recommendations. All
+        nine staging services also had current targets with their explicit CPU
+        bounds removed. Existing memory floors raised recommendations from about
+        156 to 416 MiB for BlueShield, 105 to 192 MiB for kubectl passthrough
+        MCP, and 100 to 256 MiB for staging Sessions. Review what those
+        reservations buy during ordinary replacements. ${" "}<${Anchor}
+          href=${github + "pull/18492"}
           >Platform and staging policy change<//
         >.
       <//>
