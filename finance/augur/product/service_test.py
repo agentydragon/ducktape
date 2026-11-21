@@ -97,7 +97,7 @@ from finance.augur.product.wire import (
 from finance.augur.sim.ids import AccountId, LotId, PortfolioId, PropertyId
 from finance.augur.sim.market_path import IndexedAmount
 from finance.augur.sim.schedule import Once, Recurring
-from finance.augur.sim.tlh import TlhAssumptions
+from finance.augur.sim.testing.tlh import NO_HARVEST
 from finance.augur.x.models.independent import IndependentProviderConfig
 from finance.augur.x.models.provider_config import CompositeProviderConfig, MirroringProviderConfig
 
@@ -809,13 +809,7 @@ def test_a_managed_sleeve_weight_lowers_to_its_portfolio_and_draws_on_its_accoun
         account_id=AccountId("test_managed_brokerage"),
         asset=SecurityKey(symbol=SecuritySymbol("test-index")),
         initial_cohorts=[TlhCohort(value=Decimal(3_000), cost_basis=Decimal(3_000), purchase_month_index=-24)],
-        assumptions=TlhAssumptions(
-            peak_annual_yield=0,
-            floor_annual_yield=0,
-            maturity_decay_exponent=1,
-            drawdown_sensitivity=0,
-            short_term_fraction=1,
-        ),
+        assumptions=NO_HARVEST,
     )
 
     def lowered(*sleeves: SleeveWeight) -> Situation:
