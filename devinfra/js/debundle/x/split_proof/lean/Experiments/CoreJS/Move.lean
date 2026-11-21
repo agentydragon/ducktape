@@ -837,7 +837,8 @@ def MovesSound (W : World) (ss : List Stmt) (allows : Nat → Nat → Bool) : Pr
 theorem MovesSound.or {ss : List Stmt} {a b : Nat → Nat → Bool}
     (ha : MovesSound W ss a) (hb : MovesSound W ss b) : MovesSound W ss (fun i j => a i j || b i j) := by
   intro frames s s' hframes n i j hij h
-  rcases Bool.or_eq_true.1 h with h | h
+  simp only [Bool.or_eq_true] at h
+  rcases h with h | h
   · exact ha frames s s' hframes n i j hij h
   · exact hb frames s s' hframes n i j hij h
 
