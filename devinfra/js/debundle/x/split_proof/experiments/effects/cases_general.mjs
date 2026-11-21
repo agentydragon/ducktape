@@ -1077,4 +1077,115 @@ console.log(kind);
 `,
     [0, 2, 1, 3]
   ),
+  // what a standard function returns is an object of the right kind: `Array(n)` an array, `new String(s)` an object, and `JSON.parse` anything
+  p3(
+    "forEach of new Array(1).fill(7) runs a callback that writes o",
+    `
+const o = { n: 0 };
+const a = new Array(1).fill(7);
+a.forEach(() => { o.n++; });
+const seen = o.n;
+console.log(seen);
+`,
+    [0, 1, 3, 2, 4]
+  ),
+  p3(
+    "Array(2).fill(o) stores o, and a write through the array writes o",
+    `
+const o = { n: 0 };
+const a = Array(2).fill(o);
+a[0].n = 1;
+const seen = o.n;
+console.log(seen);
+`,
+    [0, 1, 3, 2, 4]
+  ),
+  p3(
+    "Array.apply(null, Array(2)) is an array: map runs its callback",
+    `
+const o = { n: 0 };
+Array.apply(null, Array(2)).map(() => { o.n++; });
+const seen = o.n;
+console.log(seen);
+`,
+    [0, 2, 1, 3]
+  ),
+  p3(
+    "for-of over Array(2).fill(o) yields o",
+    `
+const o = { n: 0 };
+for (const x of Array(2).fill(o)) x.n = 1;
+const seen = o.n;
+console.log(seen);
+`,
+    [0, 2, 1, 3]
+  ),
+  p3(
+    "JSON.parse of an array is an array: forEach runs its callback",
+    `
+const o = { n: 0 };
+const parsed = JSON.parse("[1, 2]");
+parsed.forEach(() => { o.n++; });
+const seen = o.n;
+console.log(seen);
+`,
+    [0, 1, 3, 2, 4]
+  ),
+  p3(
+    "JSON.parse holds what its reviver returned, at any depth",
+    `
+const o = { n: 0 };
+const parsed = JSON.parse('{"a":{"b":1}}', (k, v) => (k === "b" ? o : v));
+parsed.a.b.n = 1;
+const seen = o.n;
+console.log(seen);
+`,
+    [0, 1, 3, 2, 4]
+  ),
+  p3(
+    "the reviver of JSON.parse gets what it returned for a member",
+    `
+const o = { n: 0 };
+JSON.parse('{"a":{"b":1}}', (k, v) => { if (k === "b") return o; if (k === "a") v.b.n = 1; return v; });
+const seen = o.n;
+console.log(seen);
+`,
+    [0, 2, 1, 3]
+  ),
+  p3(
+    "new String is an object that holds what is stored in it",
+    `
+const o = { n: 0 };
+const s = new String("a");
+s.held = o;
+s.held.n = 1;
+const seen = o.n;
+console.log(seen);
+`,
+    [0, 1, 2, 4, 3, 5]
+  ),
+  p3(
+    "new Number is an object: a method stored in it is called",
+    `
+const o = { n: 0 };
+const boxed = new Number(1);
+boxed.bump = () => { o.n++; };
+boxed.bump();
+const seen = o.n;
+console.log(seen);
+`,
+    [0, 1, 2, 4, 3, 5]
+  ),
+  p3(
+    "Object(1) is an object: a method stored in it is called",
+    `
+const o = { n: 0 };
+const boxed = Object(1);
+boxed.bump = () => { o.n++; };
+boxed.bump();
+const seen = o.n;
+console.log(seen);
+`,
+    [0, 1, 2, 4, 3, 5]
+  ),
 ];

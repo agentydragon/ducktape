@@ -16,7 +16,7 @@ export const FAMILIES = { expressions, statements, functions, classes, patterns,
  * One program for `seed`: `{ units: [{ tmpl, src, defs, uses }], exports }`, the shape the fuzzer's splitter takes.
  * `families` names the families to install (all by default), `units` the size to aim for, and `avoid` the constructs that are
  * left out, one for each finding of `debug/generator_findings` that stands, so that it does not hide the next:
- * `array-constructor` (F3, `new Array(n)`) and `proxy` (F6, a `Proxy` with traps).
+ * `proxy` (F6, a `Proxy` with traps).
  */
 export function generateProgram(seed, { families = Object.keys(FAMILIES), units, avoid } = {}) {
   return build(

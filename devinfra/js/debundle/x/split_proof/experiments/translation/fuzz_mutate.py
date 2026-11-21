@@ -844,6 +844,24 @@ MUTANTS = {
         ("  match typ t with", "", '        let c := fld j "callee"'),
         "`delete Math?.max` in a generator body",
     ),
+    "Array(n) is a primitive": (
+        INTRINSICS,
+        '("Array", { ret := freshArgs }),',
+        '("Array", {}),',
+        "`Array(2).fill(o)` holds `o`, and its `forEach` runs the callback",
+    ),
+    "JSON.parse returns an empty object": (
+        INTRINSICS,
+        '("Math.abs", {}),',
+        '("JSON.parse", { ret := inst "Object.prototype" }), ("Math.abs", {}),',
+        "the result may be an array, and holds what the reviver returned",
+    ),
+    "new String is a primitive": (
+        EFFECTS,
+        "    if isNew && (match table[path]? with",
+        "    if false && (match table[path]? with",
+        "`new String(s)` is an object that holds what is stored in it",
+    ),
     "nested accessors are unbounded": (
         EFFECTS,
         "  if (← get).accessorDepth ≥ maxDepth then",

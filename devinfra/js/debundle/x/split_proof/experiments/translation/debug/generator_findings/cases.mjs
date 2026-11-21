@@ -6,7 +6,7 @@
 // `experiments/effects/cases_general.mjs`. See README.md for the table of causes.
 //
 // Premise P3 is on: it is the setting of the fuzzers and of the large bundle. F1 and F2 are the same as existing golden
-// cases (`cases_general.mjs`) with a pure reader added, or with P3 on instead of off. F3 and F6 were found by `gen/`.
+// cases (`cases_general.mjs`) with a pure reader added, or with P3 on instead of off. F6 was found by `gen/`.
 export const premises = { noWorldHooks: true };
 
 const finding = (name, source, order) => ({
@@ -82,29 +82,6 @@ p11.g;
 console.log(o.n);
 `,
     [...Array(13).keys(), 14, 13]
-  ),
-  // F3: `new Array(n)` and `Array(n)` are plain objects for the analysis (`("Array", { ret := fresh, … })`), so no array method is found
-  finding(
-    "F3 forEach of new Array(1).fill(7) runs a callback that writes o",
-    `
-const o = { n: 0 };
-const a = new Array(1).fill(7);
-a.forEach(() => { o.n++; });
-const seen = o.n;
-console.log(seen);
-`,
-    [0, 1, 3, 2, 4]
-  ),
-  finding(
-    "F3 Array(2).fill(o) stores o, and a write through the array writes o",
-    `
-const o = { n: 0 };
-const a = Array(2).fill(o);
-a[0].n = 1;
-const seen = o.n;
-console.log(seen);
-`,
-    [0, 1, 3, 2, 4]
   ),
   // F6: a Proxy is an object the world returned, and with premise P3 on a read of a property of such an object is pure; the traps are
   // the program's own code, which the read runs. `set`, `deleteProperty`, `defineProperty`, `apply` and a method call through the

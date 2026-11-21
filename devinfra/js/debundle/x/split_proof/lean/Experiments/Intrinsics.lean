@@ -52,8 +52,6 @@ namespace Effects
 inductive Ret where
   /-- a primitive -/
   | prim
-  /-- a new plain object with nothing known in it -/
-  | fresh
   /-- the receiver -/
   | thisV
   /-- argument `i` -/
@@ -66,8 +64,6 @@ inductive Ret where
   | freshOfCalls
   /-- a new array of primitives -/
   | freshPrims
-  /-- a new object of the same family as the receiver: `family` below -/
-  | member
   /-- a new plain object whose prototype is the object at the position -/
   | freshProto (pos : Nat)
   /-- the prototypes of the objects at the position -/
@@ -131,7 +127,7 @@ structure Summary where
   accessors : List (Nat × Nat) := []
   /-- the callback result feeds the next call (`reduce`): it runs twice -/
   accumulates : Bool := false
-  /-- what the callbacks return may be returned (`reduce`, a reviver, a `mapFn`) -/
+  /-- what the callbacks return may be returned (`reduce`, a `mapFn`) -/
   returnsCalls : Bool := false
   /-- positions whose values may be returned (the initial value of `reduce`) -/
   alsoReturns : List Nat := []
@@ -196,7 +192,6 @@ def table : Std.HashMap String Summary := Std.HashMap.ofList (([
   ("Object.prototype.valueOf", { ret := thisV }),
   -- Symbol, JSON, Math, conversions
   ("Symbol", {}), ("Symbol.for", {}), ("Symbol.keyFor", {}),
-  ("JSON.parse", { ret := fresh, calls := [2], returnsCalls := true }),
   ("Math.abs", {}), ("Math.ceil", {}), ("Math.floor", {}), ("Math.round", {}), ("Math.trunc", {}), ("Math.sign", {}),
   ("Math.max", {}), ("Math.min", {}), ("Math.pow", {}), ("Math.sqrt", {}), ("Math.log", {}), ("Math.exp", {}),
   ("Math.random", { world := true }),
@@ -209,7 +204,7 @@ def table : Std.HashMap String Summary := Std.HashMap.ofList (([
   ("parseInt", {}), ("parseFloat", {}), ("isNaN", {}), ("isFinite", {}),
   ("encodeURIComponent", {}), ("decodeURIComponent", {}), ("encodeURI", {}), ("decodeURI", {}),
   -- Array
-  ("Array", { ret := fresh, storeArgs := true }),
+  ("Array", { ret := freshArgs }),
   ("Array.isArray", {}),
   ("Array.of", { ret := freshArgs }),
   ("Array.from", { ret := freshOf 1, calls := [2], optionalIterates := [1], returnsCalls := true }),

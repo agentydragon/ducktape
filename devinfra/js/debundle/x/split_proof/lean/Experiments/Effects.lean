@@ -970,7 +970,11 @@ partial def callVal (c : Nat) (thisV : AV) (args : List AV) (isNew : Bool) (fr :
       joinProto inst (← getVal c (some "prototype"))
       construct (c - 1) inst args fr site
     else return #[]
-  | .builtin path => callBuiltin path thisV args fr site
+  | .builtin path =>
+    -- `new String(…)`, `new Number(…)` and `new Boolean(…)` make objects that hold what is stored into them; the rows of
+    -- these functions describe the conversions, which return primitives
+    if isNew && (match table[path]? with | some { ret := .prim, .. } => true | _ => false) then worldCall (thisV :: args)
+    else callBuiltin path thisV args fr site
   | .bound target bthis bargs =>
     tick
     if (← isBroke) then return AV.top
@@ -1266,17 +1270,12 @@ partial def applySummary (s : Summary) (thisV : AV) (args : List AV) (fr : Fr) (
   let shape : M AV := do
     match s.ret with
     | .prim => return AV.prim
-    | .fresh =>
-      let o ← alloc .plain (some (mixHash (mixHash fr.path site) 59))
-      if s.storeArgs then joinAny o (AV.joinAll args)
-      return AV.ofObj o
     | .thisV => return thisV
     | .arg i => return pos (i + 1)
     | .contents p => contentsOf (pos p)
     | .freshOf p => mkArr ((← contentsOf (pos p)).join (if s.returnsCalls then calledRet else #[]))
     | .freshOfCalls => mkArr calledRet
     | .freshPrims => mkArr AV.prim
-    | .member => return AV.top
     | .freshProto p =>
       let o ← alloc .plain (some (mixHash (mixHash fr.path site) 73))
       joinProto o (pos p)
@@ -1345,7 +1344,7 @@ partial def applySummary (s : Summary) (thisV : AV) (args : List AV) (fr : Fr) (
       return AV.ofObj o
 
   let r ← shape
-  -- what a callback returned (`reduce`, a reviver) and the initial value may be what the call returns
+  -- what a callback returned (`reduce`) and the initial value may be what the call returns
   let extra : AV := AV.join (s.alsoReturns.foldl (fun (acc : AV) p => AV.join acc (pos p)) #[]) (if s.returnsCalls then calledRet else #[])
   return r.join extra
 
