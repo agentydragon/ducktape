@@ -490,11 +490,27 @@ function Report() {
         source requested 977m and 920m in the dry runs, above the earlier
         placement estimates of 631m and 502m. At 06:02:04 UTC, substituting all
         seven admitted requests on their existing hosts left 1,167m CPU on the
-        tightest affected host with other reservations fixed. Recheck headroom
-        before overlapping rollouts and verify actual scheduling on ordinary
-        replacements. ${" "}<${Anchor} href=${github + "pull/18494"}
+        tightest affected host with other reservations fixed. Verify actual
+        scheduling on ordinary replacements. ${" "}<${Anchor}
+          href=${github + "pull/18494"}
           >Flux policy and recovery<//
         >.
+      <//>
+      <${Text} id="worker-loss-placement" mt="md">
+        <strong>Overlapping rollouts during worker loss.</strong> The 06:06:43
+        UTC model applied all 29 current recommendations and included the third
+        Loki and Kyverno replicas. All 16 modeled single-OVH-worker-loss
+        placements fit with two staging surges across surviving OVH workers and
+        five Flux surges on an eligible home node. The lowest surviving CPU
+        headroom was 319m, falling to 41m under selected simultaneous historical
+        CPU peaks. The lowest memory headroom was 1,942 MiB, or 1,534 MiB with
+        the selected Loki peak. An extra 977m Kustomize surge would exceed the
+        tightest worker's remaining CPU. The model held other reservations
+        fixed. Avoid overlapping surges if the home node is unavailable or the
+        survivor is near that CPU margin. Two Loki replicas can continue serving
+        while the third waits for a third eligible OVH host. Platform providers
+        with local capture volumes on the lost worker remain pinned there.
+        ${" "}<${Anchor} href="./manifest.json">Placement model details<//>.
       <//>
     </section>
 

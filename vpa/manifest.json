@@ -3,8 +3,8 @@
   "audited_at_utc": "2026-11-21 05:53:34 UTC",
   "snapshot_utc": "2026-11-21T05:53:34Z",
   "scope": "Current Kubernetes VPA policies, workload owners, metrics samples and rollout review cohorts. Earlier evidence retains its original observation window.",
-  "report_html_sha256": "091c4e1fc0b6e266399fc102a34cd496d2033254c880728c3d146c07d1df02d7",
-  "report_script_sha256": "97726e33305789d44b42da8f1b1d53c671e923f5875064d9a848f3bb6af2a223",
+  "report_html_sha256": "8433893dd8a14bd62b27f107afb38ea9c9039f80d62340300a978763499a6982",
+  "report_script_sha256": "cd220a0ac680f1c24fa82d3048d0f61501e578d60ab886595a0e3a3041718c25",
   "evidence_sha256": "c69cc4092a6f9640579e2dce32e0f2f37af78498b947522c2320f49698a86a28",
   "architecture_source_devel_commit": "d81bd68165097b089cace9ae168b6e8f202f1b7e",
   "architecture_reviewed_at_utc": "2026-11-20T03:36:52Z",
@@ -641,6 +641,20 @@
         "kubectl-passthrough-mcp/kubectl-passthrough-mcp": [105, 192],
         "agentplane-staging/sessions": [100, 256]
       }
+    },
+    "single_ovh_worker_loss_estimate": {
+      "reservations_observed_utc": "2026-11-21T06:06:43Z",
+      "modeled_placements": 16,
+      "fitting_placements": 16,
+      "policies_used": 29,
+      "minimum_survivor_cpu_headroom_millicores": 319,
+      "minimum_survivor_memory_headroom_mib": 1942,
+      "selected_peak_cpu_headroom_millicores": 41,
+      "selected_peak_memory_headroom_mib": 1534,
+      "kustomize_surge_cpu_request_millicores": 977,
+      "scope": "Each case loses one ready OVH worker and varies eligible Flux source and two staging surge placements. Five rolling Flux surges use an eligible home node. Includes the third Loki and Kyverno replicas in the baseline and holds noncohort reservations fixed.",
+      "peak_sensitivity": "Substitute selected measured NFD, Flux source and Flux Kustomize CPU peaks and Loki working-set memory. CPU and memory minima are across cases and can occur on different hosts.",
+      "availability_limits": "A third Loki read replica requires a third eligible OVH worker. Platform providers with capture volumes local to the failed worker cannot relocate. Concurrent home-node loss is outside the model."
     }
   }
 }
