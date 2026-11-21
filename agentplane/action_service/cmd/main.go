@@ -268,11 +268,10 @@ func sessionDelegationExecutors(
 ) (map[string]worker.Executor, error) {
 	byGroup := map[string]worker.Executor{}
 	for key, group := range groups.Groups() {
-		binding, isSessionDelegation := group.Executor.(catalog.SessionDelegationBinding)
-		if !isSessionDelegation {
+		if _, isSessionDelegation := group.Executor.(catalog.SessionDelegationBinding); !isSessionDelegation {
 			continue
 		}
-		executor, err := sessiondelegation.NewExecutor(key, binding, environment, dispatcher, history)
+		executor, err := sessiondelegation.NewExecutor(key, environment, dispatcher, history)
 		if err != nil {
 			return nil, fmt.Errorf("ActionGroup %s: %w", key, err)
 		}

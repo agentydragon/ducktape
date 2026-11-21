@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/session_delegation/contract"
 	"github.com/agentydragon/ducktape/agentplane/environments/access"
@@ -156,7 +155,7 @@ func TestAnIdentitysSessionActionsSucceedAgainstTheDispatcher(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = appConnection.Close() })
 	app := dispatcherpb.NewSessionDispatcherClient(appConnection)
-	executor, err := NewExecutor(contract.GroupSessions, catalog.SessionDelegationBinding{Description: "forwards caller"},
+	executor, err := NewExecutor(contract.GroupSessions,
 		environmentpb.NewEnvironmentServiceClient(connection), dispatcherpb.NewSessionDispatcherClient(connection),
 		historypb.NewHistoryServiceClient(connection))
 	if err != nil {
