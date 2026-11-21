@@ -138,6 +138,7 @@ lean_binary(
         # the verdict decides the hypotheses of `valid_order_kept_preserves`
         "Experiments/CoreJS/Decode.lean",
         "Experiments/CoreJS/Eval.lean",
+        "Experiments/CoreJS/Fragment.lean",
         "Experiments/CoreJS/Frame.lean",
         "Experiments/CoreJS/Fuel.lean",
         "Experiments/CoreJS/Number.lean",
