@@ -26,6 +26,7 @@ from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.ollama import tabby
 from cluster.cdk8s.ollama.tabby_endpoint import NAMESPACE
+from cluster.cdk8s.reflector import mirror_annotations
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.volume_claim import volume_claim
@@ -363,12 +364,7 @@ def _direct_token(scope: Construct) -> None:
         refresh="8760h",
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-        target_annotations={
-            "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
-            "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": "claude-sandbox",
-            "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
-            "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": "claude-sandbox",
-        },
+        target_annotations=mirror_annotations(["claude-sandbox"]),
     )
 
 

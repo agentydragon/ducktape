@@ -1046,6 +1046,7 @@ py_library(
         ":manifest_roots",
         ":pod_policy",
         ":probes",
+        ":reflector",
         ":secret_ref",
         ":service_ref",
         "//aiquota:config",
