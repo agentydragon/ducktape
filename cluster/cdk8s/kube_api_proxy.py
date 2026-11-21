@@ -17,9 +17,14 @@ from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.namespaces import initial_memory_request_annotations
+from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL, Vpa
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
-from cluster.cdk8s.vpa_policy import ContainerPolicy
+from cluster.cdk8s.vpa_policy import (
+    VPA_RESOURCE_POLICY_ANNOTATION,
+    ContainerPolicy,
+    ControlledValues,
+    resource_policy_annotation,
+)
 
 NAME = "kube-api-proxy"
 NAMESPACE = "default"
@@ -56,11 +61,13 @@ def _deployment(chart: Chart) -> None:
                     "Bridges the gap between Cilium Gateway (TLS terminate) and the\n"
                     "apiserver (requires HTTPS). Used by kubeapi.allegedly.works route.\n"
                 ),
-                **initial_memory_request_annotations(
-                    # The working set peaked below 10Mi. Cap the global 100Mi recommendation floor.
+                VPA_UPDATE_MODE_LABEL: Vpa.AUTO,
+                VPA_RESOURCE_POLICY_ANNOTATION: resource_policy_annotation(
+                    # Cap the global 100Mi recommendation floor for this small proxy.
                     ContainerPolicy.memory_requests_only(
                         "nginx", cpu_request=_NGINX_CPU_REQUEST, memory_floor=_NGINX_MEMORY_REQUEST, memory_limit="24Mi"
-                    )
+                    ),
+                    ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
                 ),
             },
         ),
