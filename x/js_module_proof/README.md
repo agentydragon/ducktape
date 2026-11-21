@@ -183,7 +183,7 @@ The same holds for `void`, `!`, and `typeof` applied directly to those literals.
 Direct `globalThis.record` calls with well-formed Unicode string literals
 produce string observations; initialization-order counterexamples include
 those strings. Unpaired UTF-16 surrogates remain unsupported.
-Calls with boolean, null, or nonnegative safe-integer literals also produce
+Calls with boolean, null, or safe-integer literals, including negative zero, also produce
 observations and can appear in initialization-order witnesses.
 `globalThis.record(void 0)` and `void` of another primitive literal record
 `undefined` without reading a binding.
@@ -261,8 +261,10 @@ calls, provided a conservative numeric bound keeps every intermediate safe. Sema
 rewrites beyond this AST subset can return `unknown`.
 
 This result assumes correct Acorn conversion and correspondence between the
-model and ECMAScript. All values and intermediate arithmetic results must remain
-nonnegative safe integers excluding negative zero; remainder and division
+model and ECMAScript. Numeric bindings, exported-function arguments and modeled
+numeric expression intermediates must remain nonnegative safe integers excluding
+negative zero. Independently recorded integer literals may be negative or negative zero;
+remainder and division
 divisors must be nonzero, division results must be integers, and signed bitwise
 results must be nonnegative;
 `globalThis.record` must be stable and return normally without reentry or

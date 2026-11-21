@@ -2,6 +2,8 @@
 inductive Observation where
   | text (value : String)
   | number (value : Nat)
+  | negativeNumber (magnitude : Nat)
+  | negativeZero
   | boolean (value : Bool)
   | nullValue
   | undefined

@@ -1115,6 +1115,21 @@ function statement(node) {
     "expected globalThis.record(binding)"
   );
   const arg = expr.arguments[0];
+  if (
+    arg?.type === "UnaryExpression" &&
+    arg.operator === "-" &&
+    arg.argument.type === "Literal" &&
+    arg.argument.value === 0
+  )
+    return { kind: "recordNegativeZero" };
+  if (
+    arg?.type === "UnaryExpression" &&
+    arg.operator === "-" &&
+    arg.argument.type === "Literal" &&
+    Number.isSafeInteger(arg.argument.value) &&
+    arg.argument.value > 0
+  )
+    return { kind: "recordNegative", magnitude: arg.argument.value };
   if (arg?.type === "UnaryExpression" && arg.operator === "void" && primitiveLiteral(arg.argument))
     return { kind: "recordUndefined" };
   if (arg?.type === "Literal" && supportedText(arg.value)) return { kind: "recordText", value: arg.value };
@@ -1501,6 +1516,10 @@ function leanStatement(item) {
       return `.recordPrimitive (${item.value === null ? ".nullValue" : typeof item.value === "boolean" ? `.boolean ${item.value}` : `.number ${item.value}`})`;
     case "recordUndefined":
       return ".recordPrimitive (.undefined)";
+    case "recordNegative":
+      return `.recordPrimitive (.negativeNumber ${item.magnitude})`;
+    case "recordNegativeZero":
+      return ".recordPrimitive (.negativeZero)";
     case "variable":
     case "hoistedVariable":
       return `.${item.kind} ${str(item.name)} ${item.value}`;
@@ -1566,7 +1585,7 @@ export async function generateBindings(sourcePath, specPath, out) {
 }
 
 function execute(path, calls = []) {
-  const script = `const events=[];globalThis.record=v=>events.push(v===undefined?{undefined:true}:v);import(${str(pathToFileURL(resolve(path)).href)}).then(m=>{const exports=Object.keys(m);const results=${str(calls)}.map(call=>typeof call==='string'?m[call]():m[call.name](...call.args));console.log(JSON.stringify(${calls.length ? "{events,exports,results}" : "{events,exports}"}));});`;
+  const script = `const events=[];globalThis.record=v=>events.push(v===undefined?{undefined:true}:Object.is(v,-0)?{number:'-0'}:v);import(${str(pathToFileURL(resolve(path)).href)}).then(m=>{const exports=Object.keys(m);const results=${str(calls)}.map(call=>typeof call==='string'?m[call]():m[call.name](...call.args));console.log(JSON.stringify(${calls.length ? "{events,exports,results}" : "{events,exports}"}));});`;
   const child = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" });
   if (child.error || child.status !== 0) throw new Error(child.stderr || String(child.error));
   return JSON.parse(child.stdout);
@@ -1901,7 +1920,7 @@ theorem binding_aliased_future_calls (calls : ${aliasCallType}) :
       assumptions: [
         "The Acorn-to-Lean conversion, including local object and array scalarization when used, faithfully represents the actual source and output files",
         "The modeled module loading, linking and execution match ECMAScript for the supported syntax",
-        "All initialized numeric binding values, arguments and intermediate arithmetic results remain nonnegative safe integers other than negative zero; remainder and division divisors are nonzero, division results are integers, and bitwise results are nonnegative",
+        "All initialized numeric binding values, exported-function arguments and modeled numeric expression intermediates remain nonnegative safe integers other than negative zero; recorded integer literals may also be negative safe integers or negative zero; remainder and division divisors are nonzero, division results are integers, and bitwise results are nonnegative",
         ...(source.statements.some((item) => item.ast.kind === "hoistedVariable")
           ? [
               "Before a var initializer, the model supports only direct globalThis.record observations of its undefined value",
@@ -1942,14 +1961,17 @@ theorem binding_export_difference :
     const events = (trace) => {
       const undefinedValue = (value) =>
         value && typeof value === "object" && value.undefined === true && Object.keys(value).length === 1;
+      const negativeZero = (value) =>
+        value && typeof value === "object" && value.number === "-0" && Object.keys(value).length === 1;
       if (
         !trace.events.every(
           (value) =>
             undefinedValue(value) ||
+            negativeZero(value) ||
             value === null ||
             typeof value === "boolean" ||
             supportedText(value) ||
-            (Number.isSafeInteger(value) && value >= 0)
+            (Number.isSafeInteger(value) && !Object.is(value, -0))
         )
       )
         return null;
@@ -1957,13 +1979,17 @@ theorem binding_export_difference :
         trace.events.map((value) =>
           undefinedValue(value)
             ? ".undefined"
-            : value === null
-              ? ".nullValue"
-              : typeof value === "boolean"
-                ? `.boolean ${value}`
-                : typeof value === "string"
-                  ? `.text ${leanText(value)}`
-                  : `.number ${value}`
+            : negativeZero(value)
+              ? ".negativeZero"
+              : value === null
+                ? ".nullValue"
+                : typeof value === "boolean"
+                  ? `.boolean ${value}`
+                  : typeof value === "string"
+                    ? `.text ${leanText(value)}`
+                    : value < 0
+                      ? `.negativeNumber ${-value}`
+                      : `.number ${value}`
         )
       );
     };
