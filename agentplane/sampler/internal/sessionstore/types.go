@@ -355,7 +355,7 @@ func (result TurnResult) Outcome() samplerpb.CommandOutcome {
 	return samplerpb.CommandOutcome_COMMAND_OUTCOME_APPLIED
 }
 
-// endsTurn reports whether the turn loop stops advancing.
+// EndsTurn reports whether the turn loop stops advancing.
 func (result TurnResult) EndsTurn() bool {
 	return result == TurnDone || result == TurnInterrupted || result == TurnEffectsUnknown
 }

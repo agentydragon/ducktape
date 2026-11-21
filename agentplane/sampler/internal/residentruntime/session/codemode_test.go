@@ -128,7 +128,6 @@ func TestCodeModeStoreFailureIsNotModelInputError(t *testing.T) {
 	}
 }
 
-// sendDelegate sends a blank notification: a store-free delegate round trip.
 func newFakeCodeModeManager(t *testing.T, acknowledge ...string) (*CodeModeHost, func() []*runtimetesting.CodeModePeer) {
 	t.Helper()
 	manager, peers, _ := newFakeCodeModeManagerWithLogDirectory(t, 2*time.Second, 300*time.Second, acknowledge...)
