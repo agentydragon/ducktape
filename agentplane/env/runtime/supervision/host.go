@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 
+	systemdops "github.com/agentydragon/ducktape/agentplane/env/runtime/supervision/internal/systemd"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
@@ -305,7 +306,7 @@ func (h *Host) runStart(entry *processHostEntry, start *processStartSlot) {
 
 // observeSystemd records only newer observations for a fresh launch UUID.
 // A callback arriving after retirement finds no entry and cannot recreate it.
-func (h *Host) observeSystemd(id string, observation SystemdObservation) {
+func (h *Host) observeSystemd(id string, observation systemdops.Observation) {
 	h.mu.Lock()
 	entry := h.entries[id]
 	if entry == nil || observation.Revision == 0 {
