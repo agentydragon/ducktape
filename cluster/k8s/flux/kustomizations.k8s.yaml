@@ -1946,6 +1946,8 @@ spec:
       namespace: ducktape-flux
     - name: kyverno
       namespace: ducktape-flux
+    - name: monitoring-crds
+      namespace: ducktape-flux
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
