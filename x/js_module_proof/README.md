@@ -378,8 +378,8 @@ calls; replay with `--mutations disabled` to check the corresponding unchanged s
 Combine it with `--splits independent` to vary module graphs and request local
 import renaming on independently chosen modules; many graphs are refused, and
 requested, generated, and Node-compared aliases are counted separately. Some
-independent splits also mutate a numeric initializer in its actual owning module;
-use `--mutations disabled` to check the unchanged partition.
+independent splits also alter initializers or initialization records, or add an
+initialization event; use `--mutations disabled` to check the unchanged partition.
 Later case indices also compose seeded arithmetic and conditional expression
 trees; their generated, Node-compared, and Lean-proved counts are reported
 separately.
