@@ -55,7 +55,7 @@ def test_default_rows_keep_balances_grants_groups_and_subscription_windows_separ
     assert "Banked resets: 3 · next known expiry Jan 29, 12:00 · 1 expiry unknown" in rendered
     assert "\n\nAPI balances\n\nOpenAI API\n  Available balance: $60" in rendered
     assert "Grant: $60 remaining · expires Jun 1" in rendered
-    assert "Anthropic API\n  Shared org\n    Available balance: $75" in rendered
+    assert "Anthropic API · Shared org\n  Available balance: $75" in rendered
     assert "Promo grant: $25 remaining · expires May 1 · scope: Claude API (Sonnet)" in rendered
     assert "$100.00 granted" not in rendered
     window_rows = [line for line in rendered.splitlines() if "% used" in line]

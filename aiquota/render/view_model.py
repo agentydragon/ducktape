@@ -276,7 +276,20 @@ def _provider_view(
         if anthropic_credits is not None
         else None
     )
-    balances, grants = _credit_rows(selection, display_openai_platform_credits, display_anthropic_credits, stale_since)
+    org_label = (
+        display_anthropic_credits.organizations[0].name
+        if pq.provider == "anthropic_platform"
+        and display_anthropic_credits is not None
+        and len(display_anthropic_credits.organizations) == 1
+        else None
+    )
+    balances, grants = _credit_rows(
+        selection,
+        display_openai_platform_credits,
+        display_anthropic_credits,
+        stale_since,
+        inline_anthropic_org=org_label is not None,
+    )
     grants.extend(_reset_grant_rows(source, now))
     reset_pending = any(window.reset_pending for window in display_windows)
     activity_current = stale_since is None and not reset_pending
@@ -302,7 +315,12 @@ def _provider_view(
         label=" · ".join(
             filter(
                 None,
-                [_PROVIDER_LABELS.get(pq.provider, pq.provider), pq.account_label, pq.account_tier or pq.plan_type],
+                [
+                    _PROVIDER_LABELS.get(pq.provider, pq.provider),
+                    pq.account_label,
+                    pq.account_tier or pq.plan_type,
+                    org_label,
+                ],
             )
         ),
         balances=balances,
@@ -424,6 +442,8 @@ def _credit_rows(
     openai: OpenAIPlatformCredits | None,
     anthropic: AnthropicPlatformCredits | None,
     stale_since: datetime | None,
+    *,
+    inline_anthropic_org: bool = False,
 ) -> tuple[list[BalanceView], list[GrantView]]:
     balances: list[BalanceView] = []
     grants: list[GrantView] = []
@@ -516,7 +536,7 @@ def _credit_rows(
                         )
                         else None
                     ),
-                    group=org.name,
+                    group=None if inline_anthropic_org else org.name,
                     error=org.error,
                 )
             )
@@ -565,7 +585,7 @@ def _credit_rows(
                             expires_at=tranche.expires_at,
                             scope=None if broad_scope else scope,
                             scope_detail=scope if broad_scope else None,
-                            group=org.name,
+                            group=None if inline_anthropic_org else org.name,
                         )
                     )
     return balances, grants

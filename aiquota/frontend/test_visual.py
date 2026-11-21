@@ -230,8 +230,8 @@ async def test_platform_credits_with_subscription_resets(view: VisualPage) -> No
     openai = view.page.locator('.aiquota-card[aria-label="OpenAI API quota"]')
     await expect(openai.get_by_role("heading", name="OpenAI API")).to_be_visible()
     await expect(openai.get_by_text("$60", exact=True)).to_be_visible()
-    anthropic = view.page.locator('.aiquota-card[aria-label="Anthropic API quota"]')
-    await expect(anthropic.get_by_text("Shared org", exact=True)).to_be_visible()
+    anthropic = view.page.locator('.aiquota-card[aria-label="Anthropic API · Shared org quota"]')
+    await expect(anthropic.get_by_role("heading", name="Anthropic API · Shared org")).to_be_visible()
     await expect(anthropic.get_by_text("$75", exact=True)).to_be_visible()
     await expect(anthropic.get_by_text("$25 remaining", exact=True)).to_be_visible()
 
@@ -258,7 +258,7 @@ async def test_stale_observation(view: VisualPage) -> None:
 async def test_observed_account_expiries_and_promo_details(view: VisualPage) -> None:
     await expect(view.page.locator(".aiquota-window")).to_have_count(2)
     await expect(view.page.get_by_text("Grant details", exact=True)).to_have_count(5)
-    card = view.page.locator('.aiquota-card[aria-label="Anthropic API quota"]')
+    card = view.page.locator('.aiquota-card[aria-label^="Anthropic API · "]')
     await expect(card.get_by_text("Expires Nov 25", exact=True)).to_be_visible()
     await expect(card.get_by_text("Expires Jul 1, 2027", exact=True)).to_be_visible()
     openai = view.page.locator('.aiquota-card[aria-label="OpenAI API quota"]')

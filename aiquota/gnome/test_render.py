@@ -541,7 +541,7 @@ def test_observed_account_2026_11_04(session: GnomeSession, capture_menu: GnomeM
 def test_anthropic_organization_headers_and_group_transitions(session: GnomeSession) -> None:
     popup = _ProviderPopup(session, "anthropic_platform")
     _reload_fixture(session, "platform_credits_with_subscription_resets")
-    assert popup.header == "Anthropic API — Shared org"
+    assert popup.header == "Anthropic API · Shared org"
     (single,) = popup.groups
     assert single["header"] == ""
     assert single["balance"] == "Available balance: $75"
@@ -567,7 +567,7 @@ def test_anthropic_organization_headers_and_group_transitions(session: GnomeSess
     assert secondary["grants"] == ""
 
     _reload_fixture(session, "platform_credits_with_subscription_resets")
-    assert popup.header == "Anthropic API — Shared org"
+    assert popup.header == "Anthropic API · Shared org"
     assert len(popup.groups) == 1
 
 
@@ -580,7 +580,7 @@ def test_anthropic_balance_error_remains_visible_under_its_header(
     session.close_menu()
     session.call("SetViewForTest", json.dumps(data))
     popup = _ProviderPopup(session, "anthropic_platform")
-    assert popup.header == "Anthropic API — Shared org"
+    assert popup.header == "Anthropic API · Shared org"
     assert popup.groups[0]["balance"] == "Available balance: lookup failed"
     details = popup.details
     assert "Available balance: example lookup failure" in details
