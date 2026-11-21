@@ -49,9 +49,8 @@ pub fn tree_spec_args(root: &Path) -> [OsString; 8] {
     ]
 }
 
-/// Writes `fixture` and runs `debundle run` on it in tree form with
-/// `extra_args`, writing the JS tree.
-/// A tree fixture for tests whose queries require full graph reports.
+/// [`run_tree_fixture`] with `--graphs`, for tests whose queries require full
+/// graph reports.
 pub fn run_tree_graph_fixture(fixture: &TreeFixture<'_>, extra_args: &[&str]) -> TreeRun {
     let args = std::iter::once("--graphs")
         .chain(extra_args.iter().copied())
@@ -59,6 +58,8 @@ pub fn run_tree_graph_fixture(fixture: &TreeFixture<'_>, extra_args: &[&str]) ->
     run_tree_fixture(fixture, &args)
 }
 
+/// Writes `fixture` and runs `debundle run` on it in tree form with
+/// `extra_args`, writing the JS tree.
 pub fn run_tree_fixture(fixture: &TreeFixture<'_>, extra_args: &[&str]) -> TreeRun {
     write_tree_fixture(fixture).run(extra_args)
 }
