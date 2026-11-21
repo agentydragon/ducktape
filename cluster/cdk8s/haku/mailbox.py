@@ -141,7 +141,7 @@ def _add_deployment(chart: Chart) -> None:
                     automount_service_account_token=False,
                     # OVH-only resilience: inbound mail must not depend on Proxmox, and the CNPG
                     # store is pinned to hil-ovh -- co-locate with it (same pin as other
-                    # OVH-pinned apps, e.g. paperless).
+                    # OVH-pinned apps).
                     node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                     security_context=k8s.PodSecurityContext(
                         run_as_non_root=True,

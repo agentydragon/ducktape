@@ -111,16 +111,6 @@ locals {
       client_type   = "public"
       callback_urls = ["https://home.allegedly.works/auth/oidc/callback"]
     }
-    paperless = {
-      name      = "paperless-oauth2"
-      client_id = "paperless"
-      property_mappings = concat(
-        local.oidc_property_mappings.email_profile,
-        [authentik_property_mapping_provider_scope.paperless_groups.id],
-      )
-      # django-allauth openid_connect callback (provider_id = "authentik").
-      callback_urls = ["https://paperless.allegedly.works/accounts/oidc/authentik/login/callback/"]
-    }
     plaid_link = {
       name                  = "plaid-link-oidc"
       client_id             = "plaid-link"
@@ -234,11 +224,6 @@ moved {
 moved {
   from = authentik_provider_oauth2.home_assistant
   to   = authentik_provider_oauth2.providers["home_assistant"]
-}
-
-moved {
-  from = authentik_provider_oauth2.paperless
-  to   = authentik_provider_oauth2.providers["paperless"]
 }
 
 moved {

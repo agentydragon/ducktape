@@ -382,7 +382,11 @@ applications").
   from Git and Ollama). The cdk8s module and image build stay for revival; automatic image
   publication, Flux tracking, and the unused image pin were removed. See its README.
 - **Paperless**: `cluster/parked/paperless/` — decommissioned; third-party
-  (`ghcr.io/paperless-ngx/paperless-ngx`), no ducktape source.
+  (`ghcr.io/paperless-ngx/paperless-ngx`), no ducktape source. Its Authentik provider,
+  application, `paperless_admins` group and reflected `paperless-sso-providers` Secret are
+  no longer provisioned. A revival restores them from `8f5c464419`
+  (`git show 8f5c464419:tf/gitops/sso-providers/provider_paperless.tf`, plus the `paperless`
+  entry in `providers.tf` of the same commit).
 - **Firecrawl**: `cluster/parked/firecrawl/` — its namespace, database, and app
   declarations remain in Git.
 - **OpenHands**: `cluster/parked/openhands/` — experimental and not currently used;
