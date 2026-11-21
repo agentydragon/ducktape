@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 import httpx
-import pytest
 import pytest_bazel
 
 from x.google_mcp_server.server import create_app
 
 
-@pytest.mark.anyio
 async def test_create_app_has_public_health_and_protected_gmail_and_calendar_mcp() -> None:
     app = create_app(google_access_token="test-google-access-token", bearer="test-bearer")
     async with (
