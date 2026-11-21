@@ -5,7 +5,7 @@ use analysis::DependencyGraphInput;
 use analysis_model::DepKind;
 use anyhow::{Context, Result};
 use clap::Args as ClapArgs;
-use command_output::{write_ndjson_list, write_report};
+use command_output::{infallible, write_ndjson_list, write_report};
 use peel::plan::{LimitReport, apply_limit_with_metadata};
 use peel::{
     CommonArgs as PeelCommonArgs, DEFAULT_DESCRIBE_LIMIT, ExplainDirection, OutputFormat,
@@ -206,11 +206,7 @@ pub fn run_scc(args: SccArgs, output: &mut dyn std::io::Write) -> Result<()> {
     if write_ndjson_list(&report.sccs, format, output)? {
         return Ok(());
     }
-    write_report(&report, format, output, |report, out| {
-        render_scc_text(report, out);
-        Ok(())
-    })
-    .context("writing scc output")
+    write_report(&report, format, output, infallible(render_scc_text)).context("writing scc output")
 }
 
 fn render_scc_text(report: &SccReport, out: &mut String) {
@@ -299,11 +295,8 @@ pub fn run_cluster(args: ClusterArgs, output: &mut dyn std::io::Write) -> Result
         limits: LimitReport { limit, sections },
     };
     let format = OutputFormat::resolve(args.format);
-    write_report(&report, format, output, |report, out| {
-        render_cluster_text(report, out);
-        Ok(())
-    })
-    .context("writing cluster output")
+    write_report(&report, format, output, infallible(render_cluster_text))
+        .context("writing cluster output")
 }
 
 /// Pair an interned module key with its human path label, falling back

@@ -16,23 +16,12 @@ class LineRange(BaseModel):
             "(e.g., 'definition site' vs 'call site' within the same occurrence)"
         ),
     )
-    # NOTE: No default on end_line for OpenAI strict mode compatibility (used in MCP inputs)
-    # TODO: Decouple DB state and MCP I/O shapes so database models can have sensible defaults
-    # while MCP inputs maintain strict mode compliance
 
     @model_validator(mode="after")
     def _validate_range(self) -> LineRange:
-        if self.start_line < 1:
-            raise ValueError("start_line must be >= 1")
         if self.end_line is not None and self.end_line < self.start_line:
             raise ValueError("end_line must be >= start_line when provided")
         return self
-
-    def format(self) -> str:
-        """Format line range as string (e.g., '123' or '123-145')."""
-        if self.end_line is None:
-            return str(self.start_line)
-        return f"{self.start_line}-{self.end_line}"
 
     model_config = ConfigDict(extra="forbid")
 

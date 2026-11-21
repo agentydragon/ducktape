@@ -11,12 +11,6 @@ from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
-from cilium_envoyconfig_crds.io.cilium import (
-    CiliumEnvoyConfig,
-    CiliumEnvoyConfigSpec,
-    CiliumEnvoyConfigSpecBackendServices,
-    CiliumEnvoyConfigSpecNodeSelector,
-)
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
@@ -33,8 +27,10 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 
 from cluster.cdk8s import node_scheduling
+from cluster.cdk8s.cilium import tcp_listener
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.forgejo import cache, db
+from cluster.cdk8s.forgejo.namespace import NAMESPACE
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.helm import helm_release, oci_helm_repository
@@ -43,24 +39,24 @@ from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from cluster.cdk8s.seaweedfs import s3
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.volume_claim import volume_claim
 
 _OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/forgejo"
 _NAME = "forgejo"
-_NAMESPACE = "forgejo"
 HOSTNAME = "git.allegedly.works"
-_METRICS_TOKEN = SecretRef(namespace=_NAMESPACE, name="forgejo-metrics-token").key("token")
+_METRICS_TOKEN = SecretRef(namespace=NAMESPACE, name="forgejo-metrics-token").key("token")
 _GIT_CLAIM = "forgejo-git-rwx-ssd"
 _RELEASE_LABELS = {"app.kubernetes.io/name": _NAME, "app.kubernetes.io/instance": _NAME}
 # The chart's HTTP and SSH Services.
 HTTP = ServiceRef(
     name="forgejo-http",
     port=Port(name="http", number=3000),
-    pods=Pods(namespace=_NAMESPACE, labels=tuple(_RELEASE_LABELS.items())),
+    pods=Pods(namespace=NAMESPACE, labels=tuple(_RELEASE_LABELS.items())),
 )
 _SSH = ServiceRef(name="forgejo-ssh", port=Port(name="ssh", number=2222), pods=HTTP.pods)
 _VALKEY = f"redis://{cache.MASTER.host}:{cache.MASTER.port.number}/0"
 _CLUSTER_CA_MOUNT = {"name": "cluster-ca", "mountPath": "/etc/ssl/certs/cluster-ca", "readOnly": True}
-_SECRET_KEY = SecretRef(namespace=_NAMESPACE, name="forgejo-secret-key").key("replacement")
+_SECRET_KEY = SecretRef(namespace=NAMESPACE, name="forgejo-secret-key").key("replacement")
 _SECRET_KEY_MOUNT = {"name": "secret-key", "mountPath": "/etc/forgejo-key", "readOnly": True}
 
 
@@ -77,19 +73,15 @@ def _git_storage(scope: Construct) -> None:
     # *.lock files do not serialize ref updates between replicas on different nodes, and a
     # collision can leave the ref empty:
     # cluster/docs/lessons_learned/2026_09_23_forgejo_cross_mount_ref_lock_zeroed_main.md.
-    k8s.KubePersistentVolumeClaim(
+    volume_claim(
         scope,
         "git-storage",
-        metadata=k8s.ObjectMeta(
-            name=_GIT_CLAIM,
-            namespace=_NAMESPACE,
-            annotations={"description": "Forgejo git repos on the SeaweedFS SSD tier, RWX for 2-replica HA"},
-        ),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteMany"],
-            storage_class_name="seaweedfs-ovh-ssd",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("200Gi")}),
-        ),
+        name=_GIT_CLAIM,
+        namespace=NAMESPACE,
+        storage_class="seaweedfs-ovh-ssd",
+        size="200Gi",
+        access_mode="ReadWriteMany",
+        annotations={"description": "Forgejo git repos on the SeaweedFS SSD tier, RWX for 2-replica HA"},
     )
 
 
@@ -98,7 +90,7 @@ def _object_storage(scope: Construct) -> s3.PrivateBucket:
         scope,
         "object-storage",
         name=_NAME,
-        tenant=_NAMESPACE,
+        tenant=NAMESPACE,
         adopt_existing=True,
         description="Forgejo packages, LFS, attachments, and artifacts.",
         key_fields=s3.SecretKeyFields(access_key="accessKey", secret_key="secretKey"),
@@ -124,10 +116,9 @@ def _values(storage: s3.PrivateBucket) -> dict[str, object]:
         "global": {"imageRegistry": ""},
         # HA: two replicas sharing the RWX git PVC. Both pods mount the same SeaweedFS
         # volume concurrently (RWX multi-mount; git ref locks do not hold across the two
-        # mounts, see _git_storage), so a rolling update is safe — the old RWO Recreate-only
-        # deadlock (RollingUpdate + RWO = stuck init container) no longer applies. Session
-        # and issue search live in Postgres, and cache/queue in the shared valkey
-        # (../cache), so neither replica holds per-instance state.
+        # mounts, see _git_storage), so a rolling update is safe. Session and issue search
+        # live in Postgres, and cache/queue in the shared valkey (../cache), so neither
+        # replica holds per-instance state.
         "replicaCount": 2,
         "strategy": {
             "type": "RollingUpdate",
@@ -145,11 +136,7 @@ def _values(storage: s3.PrivateBucket) -> dict[str, object]:
             # each; if a worker is gone the second can still schedule elsewhere (the off-CP
             # rule above is only a soft preference), so this never blocks the second
             # replica — it only forbids co-location.
-            "podAntiAffinity": {
-                "requiredDuringSchedulingIgnoredDuringExecution": [
-                    {"labelSelector": {"matchLabels": _RELEASE_LABELS}, "topologyKey": "kubernetes.io/hostname"}
-                ]
-            },
+            **node_scheduling.one_per_host(_RELEASE_LABELS),
         },
         # Forgejo configuration (chart retains the legacy `gitea:` values key)
         "gitea": {
@@ -226,7 +213,7 @@ def _values(storage: s3.PrivateBucket) -> dict[str, object]:
                 # registered act_runner (cluster/cdk8s/haku_ci) executes workflows. Used so
                 # Haku can build its own UI image from haku-state source entirely
                 # in-cluster — haku-state may hold private operator data, so its builds must
-                # never go to BuildBuddy/RBE or any external CI. See haku/PLAN.md.
+                # never go to BuildBuddy/RBE or any external CI. See haku_ci/README.md.
                 "actions": {"ENABLED": True},
                 "metrics": {"ENABLED": True},
                 "security": {
@@ -335,8 +322,8 @@ def _helm_release(scope: Construct, *, storage: s3.PrivateBucket) -> None:
     helm_release(
         scope,
         _NAME,
-        _NAMESPACE,
-        repository=oci_helm_repository(scope, _NAME, _NAMESPACE, url="oci://code.forgejo.org/forgejo-helm"),
+        NAMESPACE,
+        repository=oci_helm_repository(scope, _NAME, NAMESPACE, url="oci://code.forgejo.org/forgejo-helm"),
         chart=_NAME,
         version="17.1.6",
         interval="15m",
@@ -359,70 +346,13 @@ def _helm_release(scope: Construct, *, storage: s3.PrivateBucket) -> None:
     )
 
 
-_TCP_PROXY_TYPE = "type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy"
-
-
-def _ssh_listener(scope: Construct) -> None:
-    """Public Forgejo SSH via a manual CiliumEnvoyConfig.
-
-    Cilium 1.19's Gateway API controller supports HTTPRoute/GRPCRoute/TLSRoute but not TCPRoute,
-    and SSH has no SNI/Host header to route on. The Cilium Envoy DaemonSet already runs with
-    hostNetwork on HIL gateway nodes, so this binds git.allegedly.works:2222 directly on those
-    nodes and forwards raw TCP to Forgejo's in-cluster SSH service.
-    """
-    service = _SSH.name
-    cluster = f"{_NAMESPACE}:{service}:{_SSH.port.number}"
-    CiliumEnvoyConfig(
-        scope,
-        "ssh-listener",
-        metadata=ApiObjectMetadata(
-            name=service, namespace=_NAMESPACE, annotations={"cec.cilium.io/use-original-source-address": "false"}
-        ),
-        spec=CiliumEnvoyConfigSpec(
-            node_selector=CiliumEnvoyConfigSpecNodeSelector(match_labels={"topology.kubernetes.io/region": "hil"}),
-            backend_services=[
-                CiliumEnvoyConfigSpecBackendServices(name=service, namespace=_NAMESPACE, number=[str(_SSH.port.number)])
-            ],
-            resources=[
-                {
-                    "@type": "type.googleapis.com/envoy.config.listener.v3.Listener",
-                    "name": service,
-                    "address": {"socketAddress": {"address": "0.0.0.0", "portValue": 2222}},
-                    "filterChains": [
-                        {
-                            "filters": [
-                                {
-                                    "name": "envoy.filters.network.tcp_proxy",
-                                    "typedConfig": {
-                                        "@type": _TCP_PROXY_TYPE,
-                                        "statPrefix": service,
-                                        "cluster": cluster,
-                                        "idleTimeout": "3600s",
-                                    },
-                                }
-                            ]
-                        }
-                    ],
-                },
-                {
-                    "@type": "type.googleapis.com/envoy.config.cluster.v3.Cluster",
-                    "name": cluster,
-                    "type": "EDS",
-                    "edsClusterConfig": {"serviceName": f"{_NAMESPACE}/{service}:{_SSH.port.number}"},
-                    "outlierDetection": {"splitExternalLocalOriginErrors": True},
-                },
-            ],
-        ),
-    )
-
-
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
     _helm_release(chart, storage=_object_storage(chart))
     https_route(
         chart,
         "route",
-        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=NAMESPACE),
         hostnames=[HOSTNAME],
         backend=HTTP,
         hsts=False,
@@ -437,7 +367,7 @@ def chart(app: App) -> Chart:
     k8s.KubePodDisruptionBudget(
         chart,
         "disruption-budget",
-        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name=_NAME, namespace=NAMESPACE),
         spec=k8s.PodDisruptionBudgetSpec(
             min_available=k8s.IntOrString.from_number(1), selector=k8s.LabelSelector(match_labels=_RELEASE_LABELS)
         ),
@@ -445,7 +375,7 @@ def chart(app: App) -> Chart:
     ServiceMonitor(
         chart,
         "service-monitor",
-        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=NAMESPACE),
         spec=HTTP.service_monitor_spec(
             Endpoint.bearer_token_secret(
                 port=HTTP.port.name, secret_name=_METRICS_TOKEN.secret.name, key=_METRICS_TOKEN.key
@@ -453,7 +383,8 @@ def chart(app: App) -> Chart:
         ),
     )
     _metrics_token(chart)
-    _ssh_listener(chart)
+    # Public SSH on git.allegedly.works:2222, on the HIL gateway nodes.
+    tcp_listener(chart, "ssh-listener", service=_SSH)
     return chart
 
 

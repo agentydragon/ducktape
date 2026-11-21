@@ -1,6 +1,6 @@
 """The cluster's shared Gateway API `Gateway` -- every generated `HttpRoute` in this
 repo attaches to it -- with its `gateway-system` Namespace, the plaintext listener's
-redirect to HTTPS, and the directory's Flux Kustomization.
+redirect to HTTPS.
 """
 
 from __future__ import annotations
@@ -8,6 +8,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s_plus_34 import k8s
 from constructs import Construct
 from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRoute,
@@ -107,9 +108,54 @@ def https_route(
     )
 
 
+def add_agent_gateway_admission(scope: Construct) -> None:
+    """Keep Gateway API writes in agent sandboxes off the shared public gateway."""
+    name = "restrict-agent-gateway-routes"
+    k8s.KubeValidatingAdmissionPolicy(
+        scope,
+        "agent-gateway-admission",
+        metadata=k8s.ObjectMeta(name=name),
+        spec=k8s.ValidatingAdmissionPolicySpec(
+            failure_policy="Fail",
+            match_constraints=k8s.MatchResources(
+                resource_rules=[
+                    k8s.NamedRuleWithOperations(
+                        api_groups=["gateway.networking.k8s.io"],
+                        api_versions=["*"],
+                        operations=["CREATE", "UPDATE"],
+                        resources=["gateways", "grpcroutes", "httproutes", "tcproutes", "tlsroutes", "udproutes"],
+                        scope="Namespaced",
+                    )
+                ]
+            ),
+            match_conditions=[
+                k8s.MatchCondition(
+                    name="agent-sandbox", expression="request.namespace in ['claude-sandbox', 'haku-sandbox']"
+                )
+            ],
+            validations=[
+                k8s.Validation(
+                    expression="false",
+                    message=(
+                        "Gateway API routes and Gateways may not be written in agent sandbox namespaces. "
+                        "Public ingress is operator-owned through the Authentik proxy."
+                    ),
+                )
+            ],
+        ),
+    )
+    k8s.KubeValidatingAdmissionPolicyBinding(
+        scope,
+        "agent-gateway-admission-binding",
+        metadata=k8s.ObjectMeta(name=name),
+        spec=k8s.ValidatingAdmissionPolicyBindingSpec(policy_name=name, validation_actions=["Deny"]),
+    )
+
+
 def chart(app: App, mesh: nebula_mesh.Mesh) -> Chart:
     chart = Chart(app, "gateway-system", disable_resource_name_hashes=True)
     namespaces.namespace(chart, "namespace", name=_NAMESPACE, vpa=Vpa.RECOMMEND)
+    add_agent_gateway_admission(chart)
     public_gateway_ips = sorted(
         ip for host in mesh.public_kubernetes_nodes().values() if (ip := host.public_ip) is not None
     )
@@ -117,10 +163,9 @@ def chart(app: App, mesh: nebula_mesh.Mesh) -> Chart:
         raise ValueError("cluster Gateway needs at least one public node for ExternalDNS")
     # Every listener admits routes from all namespaces. Per-listener Selector restriction is
     # avoided because Cilium bug #42159 makes listener-scoped allowedRoutes config bleed
-    # across listeners (see cluster/docs/plan.md). The fence against agents publishing
-    # public routes that bypass Authentik is instead the Kyverno ClusterPolicy
-    # `restrict-agent-gateway-routes`, which denies route creation in the agent sandbox
-    # namespaces.
+    # across listeners (see cluster/k8s/TODO.md). The fence against agents publishing
+    # public routes that bypass Authentik is the `restrict-agent-gateway-routes`
+    # admission policy, which denies Gateway API writes in the agent sandbox namespaces.
     all_namespaces = GatewaySpecListenersAllowedRoutes(
         namespaces=GatewaySpecListenersAllowedRoutesNamespaces(
             from_=GatewaySpecListenersAllowedRoutesNamespacesFrom.ALL

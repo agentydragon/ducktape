@@ -5,6 +5,7 @@ import json
 import subprocess
 from datetime import timedelta
 from pathlib import Path
+from typing import Any
 from uuid import UUID
 
 import pytest
@@ -21,6 +22,7 @@ from devinfra.pr_visuals.collection import (
 from devinfra.pr_visuals.determinism import (
     Execution,
     Findings,
+    Observations,
     Render,
     Roster,
     analyze,
@@ -102,6 +104,10 @@ def _target_runs(invocations: list[str], *, status: str = "PASSED") -> dict[str,
     return {invocation: {_TARGET: [_test_run(status=status)]} for invocation in invocations}
 
 
+def _observe(invocations: list[str], **collection: Any) -> Observations:
+    return from_collection(_collection(invocations, **collection), invocations, [_TARGET], _target_runs(invocations))
+
+
 def _noop_runner(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
     return subprocess.CompletedProcess([], 0, "", "")
 
@@ -109,12 +115,7 @@ def _noop_runner(*_args: object, **_kwargs: object) -> subprocess.CompletedProce
 def test_identical_successful_screenshot_observations_compare_by_digest() -> None:
     invocations = ["run-1", "run-2"]
     screenshot = Render(_TARGET, "dialog/mobile", "expanded", "screenshot")
-    observed = from_collection(
-        _collection(invocations, outputs=(_output("run-1", "same"), _output("run-2", "same"))),
-        invocations,
-        [_TARGET],
-        _target_runs(invocations),
-    )
+    observed = _observe(invocations, outputs=(_output("run-1", "same"), _output("run-2", "same")))
 
     assert analyze(observed) == Findings([], [])
     assert observed.screenshots[screenshot].runs_present == 2
@@ -129,12 +130,7 @@ def test_identical_successful_screenshot_observations_compare_by_digest() -> Non
 def test_changed_digest_is_drift_for_the_same_logical_identity() -> None:
     invocations = ["run-1", "run-2"]
     screenshot = Render(_TARGET, "dialog/mobile", "expanded", "screenshot")
-    observed = from_collection(
-        _collection(invocations, outputs=(_output("run-1", "first"), _output("run-2", "second"))),
-        invocations,
-        [_TARGET],
-        _target_runs(invocations),
-    )
+    observed = _observe(invocations, outputs=(_output("run-1", "first"), _output("run-2", "second")))
 
     assert analyze(observed) == Findings([screenshot], [])
 
@@ -142,18 +138,13 @@ def test_changed_digest_is_drift_for_the_same_logical_identity() -> None:
 def test_output_absence_is_reported_only_across_complete_successful_rosters() -> None:
     invocations = ["run-1", "run-2"]
     missing_screenshot = Render(_TARGET, "dialog/desktop", "expanded", "screenshot")
-    observed = from_collection(
-        _collection(
-            invocations,
-            outputs=(
-                _output("run-1", "same"),
-                _output("run-1", "desktop", case_id="dialog/desktop"),
-                _output("run-2", "same"),
-            ),
-        ),
+    observed = _observe(
         invocations,
-        [_TARGET],
-        _target_runs(invocations),
+        outputs=(
+            _output("run-1", "same"),
+            _output("run-1", "desktop", case_id="dialog/desktop"),
+            _output("run-2", "same"),
+        ),
     )
 
     assert analyze(observed) == Findings([], [missing_screenshot])
@@ -193,16 +184,11 @@ def test_retry_attempts_are_not_extra_rosters_and_terminal_success_is_used() -> 
     invocations = ["run-1", "run-2"]
     first_attempt = _coverage("run-1", attempt=1, selected=False, retried_by=2)
     terminal_attempt = _coverage("run-1", attempt=2)
-    observed = from_collection(
-        _collection(
-            invocations,
-            outputs=(_output("run-1", "same", attempt=2), _output("run-2", "same")),
-            results=(first_attempt, terminal_attempt, _coverage("run-2")),
-            issues=(CollectionIssue("retried by attempt 2", result=ResultKey("run-1", _TARGET, "config-a", 1, 1, 1)),),
-        ),
+    observed = _observe(
         invocations,
-        [_TARGET],
-        _target_runs(invocations),
+        outputs=(_output("run-1", "same", attempt=2), _output("run-2", "same")),
+        results=(first_attempt, terminal_attempt, _coverage("run-2")),
+        issues=(CollectionIssue("retried by attempt 2", result=ResultKey("run-1", _TARGET, "config-a", 1, 1, 1)),),
     )
 
     assert analyze(observed) == Findings([], [])
@@ -221,9 +207,7 @@ def test_disjoint_shards_form_one_roster_without_counting_each_shard_as_a_run() 
         for shard, case in enumerate(cases, start=1)
     )
     results = tuple(_coverage(invocation, shard=shard) for invocation in invocations for shard in (1, 2))
-    observed = from_collection(
-        _collection(invocations, outputs=outputs, results=results), invocations, [_TARGET], _target_runs(invocations)
-    )
+    observed = _observe(invocations, outputs=outputs, results=results)
 
     assert len(observed.complete_rosters[_TARGET]) == 2
     assert len(observed.screenshots) == 2
@@ -235,9 +219,7 @@ def test_duplicate_identity_across_shards_invalidates_roster_instead_of_faking_d
     invocations = ["run-1", "run-2"]
     outputs = (_output("run-1", "same", shard=1), _output("run-1", "same", shard=2), _output("run-2", "same", shard=1))
     results = (_coverage("run-1", shard=1), _coverage("run-1", shard=2), _coverage("run-2", shard=1))
-    observed = from_collection(
-        _collection(invocations, outputs=outputs, results=results), invocations, [_TARGET], _target_runs(invocations)
-    )
+    observed = _observe(invocations, outputs=outputs, results=results)
 
     assert len(observed.complete_rosters[_TARGET]) == 1
     assert analyze(observed) == Findings([], [])
@@ -247,18 +229,13 @@ def test_duplicate_identity_across_shards_invalidates_roster_instead_of_faking_d
 def test_multiple_configurations_fail_closed_without_comparing_digests() -> None:
     invocations = ["run-1", "run-2"]
     results = (_coverage("run-1", configuration="config-a"), _coverage("run-2", configuration="config-b"))
-    observed = from_collection(
-        _collection(
-            invocations,
-            outputs=(
-                _output("run-1", "first", configuration="config-a"),
-                _output("run-2", "second", configuration="config-b"),
-            ),
-            results=results,
-        ),
+    observed = _observe(
         invocations,
-        [_TARGET],
-        _target_runs(invocations),
+        outputs=(
+            _output("run-1", "first", configuration="config-a"),
+            _output("run-2", "second", configuration="config-b"),
+        ),
+        results=results,
     )
 
     assert observed.complete_rosters == {}
@@ -268,14 +245,9 @@ def test_multiple_configurations_fail_closed_without_comparing_digests() -> None
 
 def test_non_screenshot_roles_are_informational_and_never_diffed() -> None:
     invocations = ["run-1", "run-2"]
-    observed = from_collection(
-        _collection(
-            invocations,
-            outputs=(_output("run-1", "first", role="diagnostics"), _output("run-2", "second", role="diagnostics")),
-        ),
+    observed = _observe(
         invocations,
-        [_TARGET],
-        _target_runs(invocations),
+        outputs=(_output("run-1", "first", role="diagnostics"), _output("run-2", "second", role="diagnostics")),
     )
 
     assert observed.screenshots == {}
@@ -291,9 +263,7 @@ def test_complete_visual_roster_without_a_screenshot_fails(diagnostic_only: bool
         if diagnostic_only
         else ()
     )
-    observed = from_collection(
-        _collection(invocations, outputs=outputs), invocations, [_TARGET], _target_runs(invocations)
-    )
+    observed = _observe(invocations, outputs=outputs)
 
     assert not observed.complete_rosters.get(_TARGET)
     assert any("emitted no screenshot outputs" in issue.message for issue in observed.incomplete_rosters)
@@ -302,12 +272,7 @@ def test_complete_visual_roster_without_a_screenshot_fails(diagnostic_only: bool
 
 def test_incomplete_roster_does_not_skip_the_next_valid_roster() -> None:
     invocations = ["empty", "present"]
-    observed = from_collection(
-        _collection(invocations, outputs=(_output("present", "same"),)),
-        invocations,
-        [_TARGET],
-        _target_runs(invocations),
-    )
+    observed = _observe(invocations, outputs=(_output("present", "same"),))
 
     assert len(observed.complete_rosters[_TARGET]) == 1
     assert observed.complete_rosters[_TARGET][0].invocation == "present"
@@ -349,12 +314,7 @@ def test_case_checkpoint_role_and_target_are_all_part_of_render_identity() -> No
 
 def test_report_separates_unavailable_invocation_from_missing_screenshots() -> None:
     invocation = "present"
-    observed = from_collection(
-        _collection([invocation], outputs=(_output(invocation, "same"),)),
-        [invocation],
-        [_TARGET],
-        _target_runs([invocation]),
-    )
+    observed = _observe([invocation], outputs=(_output(invocation, "same"),))
     executions = [
         Execution("missing", ("bbr", "test", "--invocation_id=missing"), 19),
         Execution(invocation, ("bbr", "test", "--invocation_id=present"), 0),
@@ -399,12 +359,7 @@ def test_report_links_compact_result_refs_and_aggregates_shards() -> None:
             output=OutputKey(_REPOSITORY, _TARGET, "dialog/mobile", None, "screenshot"),
         ),
     )
-    observed = from_collection(
-        _collection([invocation], outputs=(_output(invocation, "same"),), issues=issues),
-        [invocation],
-        [_TARGET],
-        _target_runs([invocation]),
-    )
+    observed = _observe([invocation], outputs=(_output(invocation, "same"),), issues=issues)
     summary = report(observed, [invocation], {_TARGET: [_test_run()]})
 
     assert "[invocation 1](https://app.buildbuddy.io/invocation/run%2Fwith%20space)" in summary
@@ -423,12 +378,7 @@ def test_report_links_compact_result_refs_and_aggregates_shards() -> None:
 
 def test_report_numbers_available_invocations_missing_from_execution_rows() -> None:
     invocation = "available-only"
-    observed = from_collection(
-        _collection([invocation], outputs=(_output(invocation, "same"),)),
-        [invocation],
-        [_TARGET],
-        _target_runs([invocation]),
-    )
+    observed = _observe([invocation], outputs=(_output(invocation, "same"),))
 
     summary = report(
         observed,

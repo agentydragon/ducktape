@@ -28,10 +28,9 @@ from dataclasses import dataclass
 from uuid import UUID
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import create_async_engine
 
+from props.db.async_database import AsyncDatabase
 from props.db.config import DatabaseConfig
-from util.db_url import async_engine_url
 
 _SALT_ENV_VAR = "PROPS_AGENT_PASSWORD_SALT"
 
@@ -74,20 +73,14 @@ class AgentCredentials:
     password: str
 
 
-def derive_agent_password(agent_run_id: UUID, salt: str | None = None) -> str:
-    """Derive a deterministic password for an agent from salt and run ID.
+def derive_agent_password(agent_run_id: UUID) -> str:
+    """Derive a deterministic password for an agent from ``PROPS_AGENT_PASSWORD_SALT`` and run ID.
 
     Uses HMAC-SHA256 for secure key derivation, then base64-encodes the result.
     The same agent_run_id always produces the same password (given the same salt),
-    enabling agents to reconnect with consistent credentials. The salt defaults to
-    the required ``PROPS_AGENT_PASSWORD_SALT`` environment variable; an explicitly
-    passed salt must be non-empty (an empty one is a caller bug, not a fallback).
+    enabling agents to reconnect with consistent credentials.
     """
-    if salt is None:
-        salt = _require_password_salt()
-    elif not salt:
-        raise ValueError("explicit salt must be non-empty")
-    key = salt.encode("utf-8")
+    key = _require_password_salt().encode("utf-8")
     msg = str(agent_run_id).encode("utf-8")
     digest = hmac.new(key, msg, hashlib.sha256).digest()
     return urlsafe_b64encode(digest).decode("ascii").rstrip("=")
@@ -97,40 +90,26 @@ async def ensure_agent_role(db_config: DatabaseConfig, agent_run_id: UUID) -> Ag
     """Ensure PostgreSQL role exists for agent, return credentials.
 
     Creates the role idempotently with deterministic password derived from
-    salt + agent_run_id. Grants agent_base role for RLS-scoped access.
-
-    Args:
-        db_config: Database connection config (must have CREATE ROLE permission)
-        agent_run_id: Agent run ID (encoded in username, used for password derivation)
-
-    Returns:
-        AgentCredentials with username and password for database connection
+    salt + agent_run_id. Grants agent_base role for RLS-scoped access. `db_config` needs CREATE ROLE permission.
     """
     username = f"agent_{agent_run_id}"
     password = derive_agent_password(agent_run_id)
 
     logger.info("Ensuring agent role exists: %s", username)
 
-    engine = create_async_engine(async_engine_url(db_config.url), echo=False)
+    async with AsyncDatabase(db_config) as db, db.session() as session:
+        # Check if role exists
+        result = await session.execute(text("SELECT 1 FROM pg_roles WHERE rolname = :username"), {"username": username})
+        role_exists = result.scalar() is not None
 
-    try:
-        async with engine.begin() as conn:
-            # Check if role exists
-            result = await conn.execute(
-                text("SELECT 1 FROM pg_roles WHERE rolname = :username"), {"username": username}
-            )
-            role_exists = result.scalar() is not None
-
-            if not role_exists:
-                # Create role with password
-                escaped_password = password.replace("'", "''")
-                quoted_username = _quote_ident(username)
-                await conn.execute(text(f"CREATE ROLE {quoted_username} WITH LOGIN PASSWORD '{escaped_password}'"))
-                await conn.execute(text(f"GRANT agent_base TO {quoted_username}"))
-                logger.info("Created agent role: %s", username)
-            else:
-                logger.debug("Agent role exists: %s", username)
-    finally:
-        await engine.dispose()
+        if not role_exists:
+            # Create role with password
+            escaped_password = password.replace("'", "''")
+            quoted_username = _quote_ident(username)
+            await session.execute(text(f"CREATE ROLE {quoted_username} WITH LOGIN PASSWORD '{escaped_password}'"))
+            await session.execute(text(f"GRANT agent_base TO {quoted_username}"))
+            logger.info("Created agent role: %s", username)
+        else:
+            logger.debug("Agent role exists: %s", username)
 
     return AgentCredentials(username=username, password=password)

@@ -19,7 +19,7 @@ py_library(
     name = "visual_browser",
     srcs = ["visual_browser.py"],
     deps = [
-        "//util/testing/frontend_visual:capture",
+        "//testing/frontend_visual:capture",
         "@pypi//playwright",
     ],
 )
@@ -31,10 +31,10 @@ py_library(
         ":recorded",
         "//devinfra/oci",
         "//devinfra/testing:undeclared_outputs",
+        "//testing:container_logs",
         "//third_party/containers:grafana_visual",
         "//third_party/containers:prometheus_visual",
         "//third_party/containers:ryuk",
-        "//util/testing:container_logs",
         "@pypi//docker",
         "@pypi//httpx",
         "@pypi//testcontainers",

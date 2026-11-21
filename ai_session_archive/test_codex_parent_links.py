@@ -1,4 +1,4 @@
-# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep :testing
 from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
@@ -9,12 +9,12 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
 from ai_session_archive.database import SessionRow
-from ai_session_archive.ingest import ArchiveSource, SnapshotIngestor
 from ai_session_archive.models import Harness
 from ai_session_archive.restic import ResticChange, ResticFile, ResticRepository, ResticSnapshot
 from ai_session_archive.source_paths import HarnessRoot
+from ai_session_archive.testing import new_ingestor
 
-pytest_plugins = ["util.testing.postgres_fixtures", "ai_session_archive.testing"]
+pytest_plugins = ["testing.postgres_fixtures", "ai_session_archive.testing"]
 
 
 def test_codex_parent_links_resolve_late_and_mark_conflicting_identity_ambiguous(postgres_engine: Engine) -> None:
@@ -74,15 +74,7 @@ def test_codex_parent_links_resolve_late_and_mark_conflicting_identity_ambiguous
     }
     repository = ResticRepository(binary="unused", environment={})
     factory = sessionmaker(postgres_engine, expire_on_commit=False)
-    ingestor = SnapshotIngestor(
-        factory,
-        ArchiveSource(
-            machine_id="codex-parent-test",
-            display_name="Codex parent test host",
-            restic=repository,
-            roots=(HarnessRoot(Harness.CODEX, codex_root),),
-        ),
-    )
+    ingestor = new_ingestor(factory, repository, HarnessRoot(Harness.CODEX, codex_root), machine_id="codex-parent-test")
     with (
         patch.object(
             repository,

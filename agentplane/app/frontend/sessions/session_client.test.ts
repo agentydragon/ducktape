@@ -64,6 +64,9 @@ it.each([undefined, null, "", "setup"])(
           },
         },
         model: "test-model",
+        cwd: "",
+        reasoningEffort: "",
+        instructions: "",
       },
       ...(setup === undefined ? {} : { setup_script: setup }),
     });
@@ -157,14 +160,16 @@ it("rejects a different Session ID in the Dispatcher response", async () => {
   expect(fetchMock.mock.calls[0]![0]).toBe(`/upstream/dispatcher/v1/sessions/${id}`);
 });
 
-it.each([
-  { body: { code: 3, message: "invalid request" }, rejected: true },
-  { body: { title: "Unprocessable Entity", status: 422, detail: "invalid request" }, rejected: true },
-  { body: { title: "Bad Request", status: 400 }, rejected: false },
-  { body: { code: "3", message: "invalid request" }, rejected: false },
-])("classifies only explicit gRPC or legacy Huma rejections", ({ body, rejected }) => {
-  expect(sessionCreateRejected(new HttpError(new Response(null, { status: 422 }), body))).toBe(rejected);
+it.each([3, 5, 6, 7, 9, 10, 16])("classifies gRPC outcome %s as a rejection", (code) => {
+  expect(sessionCreateRejected(new HttpError(new Response(null, { status: 422 }), { code }))).toBe(true);
 });
+
+it.each([{ title: "Unprocessable Entity", status: 422 }, { code: "3" }])(
+  "keeps an untyped error body uncertain: %o",
+  (body) => {
+    expect(sessionCreateRejected(new HttpError(new Response(null, { status: 422 }), body))).toBe(false);
+  }
+);
 
 it.each([1, 2, 4, 8, 13, 14, 15])("keeps gRPC outcome %s uncertain", (code) => {
   expect(sessionCreateRejected(new HttpError(new Response(null, { status: 400 }), { code }))).toBe(false);

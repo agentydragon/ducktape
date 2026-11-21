@@ -11,13 +11,13 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import grafana_helmrepository
+from cluster.cdk8s.monitoring.namespace import NAMESPACE
 from cluster.cdk8s.providers.seaweedfs.bucket import BucketAccess
 from cluster.cdk8s.seaweedfs import s3
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "mimir"
 OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/mimir"
-_NAMESPACE = "monitoring"
 _CREDENTIALS_SECRET = "mimir-seaweedfs-credentials"
 _S3_ENDPOINT = "seaweedfs-s3.seaweedfs.svc:8333"
 # The chart's nginx gateway Service, named after the release: port 80 onto the Pods' 8080.
@@ -26,7 +26,7 @@ GATEWAY = ServiceRef(
     port=Port(name="http-metrics", number=80),
     target_port=8080,
     pods=Pods(
-        namespace=_NAMESPACE,
+        namespace=NAMESPACE,
         labels=(
             ("app.kubernetes.io/component", "gateway"),
             ("app.kubernetes.io/instance", NAME),
@@ -63,13 +63,13 @@ def _component(replicas: int, cpu: str, memory: str, **extra: object) -> dict[st
 
 def _storage(chart: Chart) -> None:
     # Tenant-local ownership for Mimir's existing Seaweed buckets and credentials.
-    identity = s3.identity(chart, "identity", name=NAME, namespace=_NAMESPACE)
+    identity = s3.identity(chart, "identity", name=NAME, namespace=NAMESPACE)
     for bucket, description in (("mimir-blocks", "Mimir blocks."), ("mimir-ruler", "Mimir ruler state.")):
         s3.bucket(
             chart,
             bucket,
             name=bucket,
-            namespace=_NAMESPACE,
+            namespace=NAMESPACE,
             access=[BucketAccess.read_write(identity.name)],
             adopt_existing=True,
             description=description,
@@ -78,7 +78,7 @@ def _storage(chart: Chart) -> None:
         chart,
         "credentials",
         identity=identity.name,
-        namespace=_NAMESPACE,
+        namespace=NAMESPACE,
         secret=_CREDENTIALS_SECRET,
         key_fields=s3.AWS_ENV_KEY_FIELDS,
         description="Mimir's tenant-local SeaweedFS credentials.",
@@ -145,7 +145,6 @@ def _values() -> dict[str, object]:
                 },
             }
         },
-        # --- Component replicas (minimal for small cluster) ---
         # All pinned to the OVH kimsufi workers. No CP tolerations — workers only.
         # No explicit limits — Goldilocks/VPA (mode: initial) manages them.
         "distributor": _component(1, "50m", "128Mi"),
@@ -160,20 +159,13 @@ def _values() -> dict[str, object]:
             "zoneAwareReplication": {"enabled": False},
             "affinity": {
                 "nodeAffinity": node_scheduling.PREFER_WORKERS.node_affinity,
-                "podAntiAffinity": {
-                    "requiredDuringSchedulingIgnoredDuringExecution": [
-                        {
-                            "labelSelector": {
-                                "matchLabels": {
-                                    "app.kubernetes.io/component": "ingester",
-                                    "app.kubernetes.io/name": NAME,
-                                    "app.kubernetes.io/instance": NAME,
-                                }
-                            },
-                            "topologyKey": "kubernetes.io/hostname",
-                        }
-                    ]
-                },
+                **node_scheduling.one_per_host(
+                    {
+                        "app.kubernetes.io/component": "ingester",
+                        "app.kubernetes.io/name": NAME,
+                        "app.kubernetes.io/instance": NAME,
+                    }
+                ),
             },
         },
         "querier": _component(1, "50m", "128Mi"),
@@ -194,7 +186,6 @@ def _values() -> dict[str, object]:
         # ServiceMonitor so TargetDown only covers real Mimir components.
         "gateway": _component(1, "10m", "32Mi", service={"labels": {"prometheus.io/service-monitor": "false"}}),
         "ruler": {"enabled": True, **_component(1, "50m", "128Mi")},
-        # --- Disabled components ---
         "alertmanager": {"enabled": False},
         "chunks-cache": {"enabled": False},
         "index-cache": {"enabled": False},
@@ -217,7 +208,7 @@ def chart(app: App) -> Chart:
     helm_release(
         chart,
         NAME,
-        _NAMESPACE,
+        NAMESPACE,
         repository=grafana_helmrepository.SOURCE_REF,
         chart="mimir-distributed",
         version="6.x",

@@ -21,20 +21,21 @@ from agentplane.sampler.settings import (
     AuthConfig,
     ConnectionConfig,
     ModelConfig,
+    Settings,
 )
 from agentplane.sampler.testing import (
-    METADATA,
     SESSION_ID,
     Endpoint,
     create_request,
     service,
-    settings,
     submit_input,
     turn_completed,
+    wait_for_command,
 )
 from agentplane.sampler.testing_store import Store
-from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
-from util.testing.sqlalchemy_engines import postgres_async_engine
+
+# gazelle:include_dep //agentplane/sampler:testing_fixtures
+pytest_plugins = ("agentplane.sampler.testing_fixtures",)
 
 ROUTE = "anthropic-native-test"
 TURN_ID = "anthropic-truncated"
@@ -97,21 +98,6 @@ def end_turn_events(message_id: str) -> tuple[SseEvent, ...]:
     )
 
 
-async def wait_command_outcome(stub: Any, command_id: str, expected: int) -> Any:
-    deadline = asyncio.get_running_loop().time() + 10
-    while True:
-        result = await stub.admin.GetCommand(
-            sampler_admin_pb2.GetCommandRequest(session_id=SESSION_ID, command_id=command_id),
-            metadata=METADATA,
-            timeout=10,
-        )
-        if result.outcome == expected:
-            return result
-        if asyncio.get_running_loop().time() >= deadline:
-            raise AssertionError(f"command {command_id!r} did not reach outcome {expected}: {result}")
-        await asyncio.sleep(0.05)
-
-
 async def provider_attempts(engine: Any, command_id: str) -> list[dict[str, Any]]:
     async with engine.connect() as connection:
         rows = (
@@ -145,7 +131,7 @@ async def provider_attempts(engine: Any, command_id: str) -> list[dict[str, Any]
 
 async def assert_reconstructed_request(stub: Any, request_id: str, expected: dict[str, Any]) -> None:
     request = sampler_admin_pb2.ReadProviderRequestRequest(session_id=SESSION_ID, request_id=request_id)
-    chunks = [chunk async for chunk in stub.admin.ReadProviderRequest(request, metadata=METADATA, timeout=10)]
+    chunks = [chunk async for chunk in stub.admin.ReadProviderRequest(request, timeout=10)]
     assert chunks[0].metadata.request_id == request_id
     assert "x-api-key" not in chunks[0].metadata.headers
     assert json.loads(b"".join(chunk.body_chunk for chunk in chunks[1:])) == expected
@@ -161,216 +147,200 @@ async def assert_reconstructed_request(stub: Any, request_id: str, expected: dic
 
 @pytest.mark.parametrize("operation", ["partial_exec", "failed_compaction"])
 async def test_anthropic_truncated_stream_retries_without_committing_partial_data(
-    operation: str, database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
+    endpoint: Endpoint, config: Settings, store: Store, operation: str, tmp_path: Path
 ) -> None:
-    async with postgres_async_engine(database_url) as engine, Endpoint() as endpoint:
-        store = Store(engine)
-        base = settings(
-            database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
-        )
-        config = native_config(base)
-        async with service(config) as stub:
-            request = create_request(tmp_path)
-            request.session_id = SESSION_ID
-            request.spec.model = ROUTE
-            request.spec.reasoning_effort = "low"
-            await stub.CreateSession(request, metadata=METADATA, timeout=10)
+    config = native_config(config)
+    async with service(config) as stub:
+        request = create_request(tmp_path)
+        request.session_id = SESSION_ID
+        request.spec.model = ROUTE
+        request.spec.reasoning_effort = "low"
+        await stub.CreateSession(request, timeout=10)
 
-            if operation == "failed_compaction":
-                await submit_input(
-                    stub,
-                    session_id=SESSION_ID,
-                    command_id="anthropic-seed",
-                    text="Save the pre-compaction context.",
-                    timeout_s=10,
-                )
-                async with await endpoint.next() as exchange:
-                    assert exchange.request.body["stream"] is True
-                    assert exchange.headers.get("x-api-key") == "fixture-anthropic-key"
-                    await exchange.send(*end_turn_events("msg_seed"))
-                assert (
-                    await turn_completed(stub, SESSION_ID, "anthropic-seed", timeout_s=TIMEOUT_SECONDS)
-                ).status == event_pb2.TURN_STATUS_COMPLETED
-                transcript_before = await store.transcript_items(SESSION_ID)
-                active_before = await store.active_context(SESSION_ID)
-                await stub.admin.Compact(
-                    sampler_admin_pb2.CompactRequest(session_id=SESSION_ID, command_id="anthropic-compact-failed"),
-                    metadata=METADATA,
-                    timeout=10,
-                )
-                compact_request = None
-                for attempt in range(3):
-                    async with asyncio.timeout(15):
-                        exchange = await endpoint.next()
-                    async with exchange:
-                        current_request = exchange.request.body
-                        assert current_request["compaction"] == {"type": "summarize"}
-                        compact_messages = current_request.get("messages")
-                        assert isinstance(compact_messages, list)
-                        assert compact_messages
-                        if compact_request is None:
-                            compact_request = current_request
-                        else:
-                            assert current_request == compact_request, "compaction retry changed the frozen request"
-                        await exchange.send(
-                            message_start(f"msg_compaction_incomplete_{attempt + 1}"),
-                            anthropic_event(
-                                "content_block_start",
-                                index=0,
-                                content_block={
-                                    "type": "compaction",
-                                    "content": "summary that must not be committed",
-                                    "signature": "fixture-signature",
-                                },
-                            ),
-                            anthropic_event("content_block_stop", index=0),
-                            anthropic_event(
-                                "message_delta", delta={"stop_reason": "compaction"}, usage={"output_tokens": 5}
-                            ),
-                        )
-                        await exchange.close()
-                assert compact_request is not None
-                command = await wait_command_outcome(
-                    stub, "anthropic-compact-failed", sampler_pb2.COMMAND_OUTCOME_FAILED
-                )
-                assert command.failure_reason
-                assert await store.transcript_items(SESSION_ID) == transcript_before, (
-                    "failed compaction changed the transcript"
-                )
-                assert await store.active_context(SESSION_ID) == active_before, (
-                    "failed compaction changed active context"
-                )
-                attempts = await provider_attempts(engine, "anthropic-compact-failed")
-                assert len(attempts) == 3
-                assert [attempt["number"] for attempt in attempts] == [1, 2, 3]
-                assert {attempt["step_id"] for attempt in attempts} == {attempts[0]["step_id"]}
-                assert [attempt["previous_id"] for attempt in attempts] == [None, attempts[0]["id"], attempts[1]["id"]]
-                assert [attempt["budget"] for attempt in attempts] == [3, 3, 3]
-                assert [attempt["retry_scheduled"] for attempt in attempts] == [True, True, False]
-                assert all(attempt["result"]["status"] == "abandoned" for attempt in attempts)
-                intents = await store.intents()
-                compaction_intents = [intent for intent in intents if intent.request.get("kind") == "compaction"]
-                assert len(compaction_intents) == 3
-                for intent in compaction_intents:
-                    assert intent.body == compact_request, (
-                        "reconstructed content differs from the captured provider request"
+        if operation == "failed_compaction":
+            await submit_input(
+                stub,
+                session_id=SESSION_ID,
+                command_id="anthropic-seed",
+                text="Save the pre-compaction context.",
+                timeout_s=10,
+            )
+            async with await endpoint.next() as exchange:
+                assert exchange.request.body["stream"] is True
+                assert exchange.headers.get("x-api-key") == "fixture-anthropic-key"
+                await exchange.send(*end_turn_events("msg_seed"))
+            assert (
+                await turn_completed(stub, SESSION_ID, "anthropic-seed", timeout_s=TIMEOUT_SECONDS)
+            ).status == event_pb2.TURN_STATUS_COMPLETED
+            transcript_before = await store.transcript_items(SESSION_ID)
+            active_before = await store.active_context(SESSION_ID)
+            await stub.admin.Compact(
+                sampler_admin_pb2.CompactRequest(session_id=SESSION_ID, command_id="anthropic-compact-failed"),
+                timeout=10,
+            )
+            compact_request = None
+            for attempt in range(3):
+                async with asyncio.timeout(15):
+                    exchange = await endpoint.next()
+                async with exchange:
+                    current_request = exchange.request.body
+                    assert current_request["compaction"] == {"type": "summarize"}
+                    compact_messages = current_request.get("messages")
+                    assert isinstance(compact_messages, list)
+                    assert compact_messages
+                    if compact_request is None:
+                        compact_request = current_request
+                    else:
+                        assert current_request == compact_request, "compaction retry changed the frozen request"
+                    await exchange.send(
+                        message_start(f"msg_compaction_incomplete_{attempt + 1}"),
+                        anthropic_event(
+                            "content_block_start",
+                            index=0,
+                            content_block={
+                                "type": "compaction",
+                                "content": "summary that must not be committed",
+                                "signature": "fixture-signature",
+                            },
+                        ),
+                        anthropic_event("content_block_stop", index=0),
+                        anthropic_event(
+                            "message_delta", delta={"stop_reason": "compaction"}, usage={"output_tokens": 5}
+                        ),
                     )
-                    assert intent.request.get("profile_id"), "compact request has no stored profile reference"
-                    assert "body" not in intent.request
-                    assert "wire_request" not in intent.request
-                    await assert_reconstructed_request(stub, intent.id, compact_request)
-                snapshot = await stub.admin.GetSession(
-                    sampler_admin_pb2.GetSessionRequest(session_id=SESSION_ID), metadata=METADATA
+                    await exchange.close()
+            assert compact_request is not None
+            command = await wait_for_command(
+                stub, SESSION_ID, "anthropic-compact-failed", sampler_pb2.COMMAND_OUTCOME_FAILED
+            )
+            assert command.failure_reason
+            assert await store.transcript_items(SESSION_ID) == transcript_before, (
+                "failed compaction changed the transcript"
+            )
+            assert await store.active_context(SESSION_ID) == active_before, "failed compaction changed active context"
+            attempts = await provider_attempts(store.engine, "anthropic-compact-failed")
+            assert len(attempts) == 3
+            assert [attempt["number"] for attempt in attempts] == [1, 2, 3]
+            assert {attempt["step_id"] for attempt in attempts} == {attempts[0]["step_id"]}
+            assert [attempt["previous_id"] for attempt in attempts] == [None, attempts[0]["id"], attempts[1]["id"]]
+            assert [attempt["budget"] for attempt in attempts] == [3, 3, 3]
+            assert [attempt["retry_scheduled"] for attempt in attempts] == [True, True, False]
+            assert all(attempt["result"]["status"] == "abandoned" for attempt in attempts)
+            intents = await store.intents()
+            compaction_intents = [intent for intent in intents if intent.request.get("kind") == "compaction"]
+            assert len(compaction_intents) == 3
+            for intent in compaction_intents:
+                assert intent.body == compact_request, (
+                    "reconstructed content differs from the captured provider request"
                 )
-                assert not snapshot.blocked, "exhausting provider retries blocked the Session"
+                assert intent.request.get("profile_id"), "compact request has no stored profile reference"
+                assert "body" not in intent.request
+                assert "wire_request" not in intent.request
+                await assert_reconstructed_request(stub, intent.id, compact_request)
+            snapshot = await stub.admin.GetSession(sampler_admin_pb2.GetSessionRequest(session_id=SESSION_ID))
+            assert not snapshot.blocked, "exhausting provider retries blocked the Session"
 
-                await submit_input(
-                    stub,
-                    session_id=SESSION_ID,
-                    command_id="input-after-failed-compaction",
-                    text="Continue after compaction failure.",
-                    timeout_s=10,
-                )
-                async with await endpoint.next() as exchange:
-                    next_body = exchange.request.body
-                    assert "Continue after compaction failure." in json.dumps(next_body)
-                    await exchange.send(*end_turn_events("msg_after_compaction_failure"))
-                assert (
-                    await turn_completed(stub, SESSION_ID, "input-after-failed-compaction", timeout_s=TIMEOUT_SECONDS)
-                ).status == event_pb2.TURN_STATUS_COMPLETED
-                await wait_command_outcome(stub, "input-after-failed-compaction", sampler_pb2.COMMAND_OUTCOME_APPLIED)
-            else:
-                await submit_input(
-                    stub,
-                    session_id=SESSION_ID,
-                    command_id=TURN_ID,
-                    text="Ask the eager JSON tool to run once.",
-                    timeout_s=10,
-                )
-                body = None
-                for attempt in range(3):
-                    async with asyncio.timeout(15):
-                        exchange = await endpoint.next()
-                    async with exchange:
-                        current_body = exchange.request.body
-                        assert exchange.headers.get("x-api-key") == "fixture-anthropic-key"
-                        assert exchange.headers.get("anthropic-version") == "2023-06-01"
-                        assert current_body["tools"][0]["eager_input_streaming"] is True
-                        if body is None:
-                            body = current_body
-                        else:
-                            assert current_body == body, "sampling retry changed the frozen request"
-                        await exchange.send(
-                            message_start(f"msg_tool_incomplete_{attempt + 1}"),
-                            anthropic_event(
-                                "content_block_start",
-                                index=0,
-                                content_block={
-                                    "type": "tool_use",
-                                    "id": "call_uncommitted",
-                                    "name": "exec",
-                                    "input": {},
-                                },
-                            ),
-                            anthropic_event(
-                                "content_block_delta",
-                                index=0,
-                                delta={
-                                    "type": "input_json_delta",
-                                    "partial_json": '{"code":"text(\'must not execute\')"}',
-                                },
-                            ),
-                            anthropic_event("content_block_stop", index=0),
-                            anthropic_event(
-                                "message_delta", delta={"stop_reason": "tool_use"}, usage={"output_tokens": 4}
-                            ),
-                        )
-                        await exchange.close()
-                assert body is not None
-                terminal = await turn_completed(stub, SESSION_ID, TURN_ID, timeout_s=TIMEOUT_SECONDS)
-                assert terminal.status == event_pb2.TURN_STATUS_FAILED
-                command = await wait_command_outcome(stub, TURN_ID, sampler_pb2.COMMAND_OUTCOME_FAILED)
-                assert command.failure_reason
-                assert not (await store.get_session(SESSION_ID)).blocked
-                attempts = await provider_attempts(engine, TURN_ID)
-                assert len(attempts) == 3
-                assert [attempt["number"] for attempt in attempts] == [1, 2, 3]
-                assert {attempt["step_id"] for attempt in attempts} == {attempts[0]["step_id"]}
-                assert [attempt["previous_id"] for attempt in attempts] == [None, attempts[0]["id"], attempts[1]["id"]]
-                assert [attempt["budget"] for attempt in attempts] == [3, 3, 3]
-                assert [attempt["retry_scheduled"] for attempt in attempts] == [True, True, False]
-                assert all(attempt["result"]["status"] == "abandoned" for attempt in attempts)
-                intents = await store.intents()
-                sampling_intents = [intent for intent in intents if intent.request.get("kind") == "sampling"]
-                assert len(sampling_intents) == 3
-                for intent in sampling_intents:
-                    assert intent.body == body, "reconstructed content differs from the captured provider request"
-                    assert intent.request.get("profile_id"), "sampling request has no stored profile reference"
-                    assert "body" not in intent.request
-                    assert "wire_request" not in intent.request
-                    await assert_reconstructed_request(stub, intent.id, body)
-                assert not any(intent.request.get("kind") == "tool" for intent in intents), (
-                    "partial tool arguments crossed the terminal provider-message boundary"
-                )
-                assert not any(item.get("role") == "assistant" for item in await store.transcript_items(SESSION_ID)), (
-                    "an incomplete provider response was appended to canonical context"
-                )
-                assert not await store.has_live_cell(SESSION_ID), "partial tool call dispatched an executor cell"
+            await submit_input(
+                stub,
+                session_id=SESSION_ID,
+                command_id="input-after-failed-compaction",
+                text="Continue after compaction failure.",
+                timeout_s=10,
+            )
+            async with await endpoint.next() as exchange:
+                next_body = exchange.request.body
+                assert "Continue after compaction failure." in json.dumps(next_body)
+                await exchange.send(*end_turn_events("msg_after_compaction_failure"))
+            assert (
+                await turn_completed(stub, SESSION_ID, "input-after-failed-compaction", timeout_s=TIMEOUT_SECONDS)
+            ).status == event_pb2.TURN_STATUS_COMPLETED
+            await wait_for_command(
+                stub, SESSION_ID, "input-after-failed-compaction", sampler_pb2.COMMAND_OUTCOME_APPLIED
+            )
+        else:
+            await submit_input(
+                stub,
+                session_id=SESSION_ID,
+                command_id=TURN_ID,
+                text="Ask the eager JSON tool to run once.",
+                timeout_s=10,
+            )
+            body = None
+            for attempt in range(3):
+                async with asyncio.timeout(15):
+                    exchange = await endpoint.next()
+                async with exchange:
+                    current_body = exchange.request.body
+                    assert exchange.headers.get("x-api-key") == "fixture-anthropic-key"
+                    assert exchange.headers.get("anthropic-version") == "2023-06-01"
+                    assert current_body["tools"][0]["eager_input_streaming"] is True
+                    if body is None:
+                        body = current_body
+                    else:
+                        assert current_body == body, "sampling retry changed the frozen request"
+                    await exchange.send(
+                        message_start(f"msg_tool_incomplete_{attempt + 1}"),
+                        anthropic_event(
+                            "content_block_start",
+                            index=0,
+                            content_block={"type": "tool_use", "id": "call_uncommitted", "name": "exec", "input": {}},
+                        ),
+                        anthropic_event(
+                            "content_block_delta",
+                            index=0,
+                            delta={"type": "input_json_delta", "partial_json": '{"code":"text(\'must not execute\')"}'},
+                        ),
+                        anthropic_event("content_block_stop", index=0),
+                        anthropic_event("message_delta", delta={"stop_reason": "tool_use"}, usage={"output_tokens": 4}),
+                    )
+                    await exchange.close()
+            assert body is not None
+            terminal = await turn_completed(stub, SESSION_ID, TURN_ID, timeout_s=TIMEOUT_SECONDS)
+            assert terminal.status == event_pb2.TURN_STATUS_FAILED
+            command = await wait_for_command(stub, SESSION_ID, TURN_ID, sampler_pb2.COMMAND_OUTCOME_FAILED)
+            assert command.failure_reason
+            assert not (await store.get_session(SESSION_ID)).blocked
+            attempts = await provider_attempts(store.engine, TURN_ID)
+            assert len(attempts) == 3
+            assert [attempt["number"] for attempt in attempts] == [1, 2, 3]
+            assert {attempt["step_id"] for attempt in attempts} == {attempts[0]["step_id"]}
+            assert [attempt["previous_id"] for attempt in attempts] == [None, attempts[0]["id"], attempts[1]["id"]]
+            assert [attempt["budget"] for attempt in attempts] == [3, 3, 3]
+            assert [attempt["retry_scheduled"] for attempt in attempts] == [True, True, False]
+            assert all(attempt["result"]["status"] == "abandoned" for attempt in attempts)
+            intents = await store.intents()
+            sampling_intents = [intent for intent in intents if intent.request.get("kind") == "sampling"]
+            assert len(sampling_intents) == 3
+            for intent in sampling_intents:
+                assert intent.body == body, "reconstructed content differs from the captured provider request"
+                assert intent.request.get("profile_id"), "sampling request has no stored profile reference"
+                assert "body" not in intent.request
+                assert "wire_request" not in intent.request
+                await assert_reconstructed_request(stub, intent.id, body)
+            assert not any(intent.request.get("kind") == "tool" for intent in intents), (
+                "partial tool arguments crossed the terminal provider-message boundary"
+            )
+            assert not any(item.get("role") == "assistant" for item in await store.transcript_items(SESSION_ID)), (
+                "an incomplete provider response was appended to canonical context"
+            )
+            assert not await store.has_live_cell(SESSION_ID), "partial tool call dispatched an executor cell"
 
-                await submit_input(
-                    stub,
-                    session_id=SESSION_ID,
-                    command_id="input-after-truncated-sampling",
-                    text="Continue after provider failure.",
-                    timeout_s=10,
-                )
-                async with await endpoint.next() as exchange:
-                    assert "Continue after provider failure." in json.dumps(exchange.request.body)
-                    await exchange.send(*end_turn_events("msg_after_sampling_failure"))
-                assert (
-                    await turn_completed(stub, SESSION_ID, "input-after-truncated-sampling", timeout_s=TIMEOUT_SECONDS)
-                ).status == event_pb2.TURN_STATUS_COMPLETED
-                await wait_command_outcome(stub, "input-after-truncated-sampling", sampler_pb2.COMMAND_OUTCOME_APPLIED)
+            await submit_input(
+                stub,
+                session_id=SESSION_ID,
+                command_id="input-after-truncated-sampling",
+                text="Continue after provider failure.",
+                timeout_s=10,
+            )
+            async with await endpoint.next() as exchange:
+                assert "Continue after provider failure." in json.dumps(exchange.request.body)
+                await exchange.send(*end_turn_events("msg_after_sampling_failure"))
+            assert (
+                await turn_completed(stub, SESSION_ID, "input-after-truncated-sampling", timeout_s=TIMEOUT_SECONDS)
+            ).status == event_pb2.TURN_STATUS_COMPLETED
+            await wait_for_command(
+                stub, SESSION_ID, "input-after-truncated-sampling", sampler_pb2.COMMAND_OUTCOME_APPLIED
+            )
 
 
 # gazelle:include_dep @pypi//grpcio

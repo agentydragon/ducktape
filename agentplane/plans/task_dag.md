@@ -42,8 +42,7 @@ Independent ready work may proceed alongside the main track; priority is not a n
 Preserve existing in-flight ownership and explicit holds. Nodes not selected above, component-plan
 follow-ups, inline TODOs and open PRs are not automatically next work merely because they exist.
 Recheck their current state before dispatch: some old PRs overlap shipped changes. Actual failure
-cases can justify pulling a narrower fix forward. The sprint dispatch below scopes the currently
-authorized work; the priority list does not dispatch the other tracks.
+cases can justify pulling a narrower fix forward. The priority list does not dispatch work.
 
 **Component boundaries:** the [Environment Runtime](../env/runtime/SPEC.md),
 [Execution service](../env/runtime/execution/SPEC.md) and their Session and native process components
@@ -110,56 +109,7 @@ A **capstone** closes an integrated contract, not another implementation. Solid 
 prerequisites; dashed arrows explicitly label scheduling holds or conditional choices. All service
 contracts remain multi-replica unless a reviewed temporary restriction says otherwise.
 
-### Sprint scope and reliability follow-ups
-
-**Two-week timebox; operator dispatch, 2026-10-30 PDT; remaining scope reconciled 2026-11-02 UTC.**
-Reliability contracts live in the
-[runtime specification](../sampler/SPEC.md#runtime-and-effects) and
-[recovery guide](../sampler/docs/blocked_session_recovery.md). The
-[acceptance record](../sampler/docs/rollout_acceptance.md)
-retains the deployed exporter evidence and its limits.
-The shared explicit/automatic resume authority and uncertain-outcome contract live in the
-[lifecycle manager specification](../environments/lifecycle/SPEC.md) and concise
-[lifecycle README](../environments/lifecycle/README.md).
-
-**Operator decision, 2026-10-31 UTC:** skip the dedicated continuation/disruption exercise,
-coverage audit and additional acceptance tests. The operator will evaluate reliability through
-normal use. Revisit [a focused follow-up](task_freezer.md#central_sampler_reliability_followup--investigate-instability-observed-in-normal-use)
-only if that use exposes continued instability. This exercise no longer gates the sprint or the
-daily CI milestone; no dedicated acceptance worker is dispatched.
-
-The [delegation contract](https://github.com/agentydragon/ducktape/pull/13229) is **approved for
-implementation, operator 2026-10-31**, and its backend tools are built; routine calls use same-SA authorization and environment creation initially needs human
-approval when implemented. **First release: reuse existing environments; new environment creation
-and template-catalogue ownership are deferred by the operator.** Prefer existing gRPC methods and
-CLI access, with Actions-first adapters allowed and explicit RPC/CLI extraction TODOs where needed. File conflicts do
-not block independent PRs. Required system checks and a documented rollback precede staging changes.
-
-The control-plane deployment target remains rolling updates with at least two replicas, with the
-accepted [Electric exception](../docs/electric_single_replica.md). K3s fixtures remain single-replica; a two-replica
-nested K3s roll and associated RBE kernel change are waived. Arbitrary JS-state restoration and
-the broader runtime redesign remain outside this sprint.
-
-### Dispatch order and prerequisites
-
-Keep reliability follow-up regression-driven; it does not block other work.
-
-Scheduled wake is an unscheduled [persistent-agents proposal](persistent_agents.md), not a dispatch
-priority. The daily CI capstone's scheduling/delegation dependencies do not select it for work.
-
-Natural-agent delegation usability is an operator follow-up; no model exercise is dispatched.
-Focused regression tests and Bazel runs remain authorized; broad disruption exercises remain waived.
-Revisit reliability work when normal use exposes a concrete regression. Provider attempt recovery
-and remaining native cleanup blocks follow the
-[sampler contract](../sampler/SPEC.md#runtime-and-effects); the executor's survival across
-control-plane rolls is
-[`EXECUTOR_SURVIVES_CONTROL_ROLLS`](task_freezer.md#executor_survives_control_rolls--an-executor-session-outlives-a-gateway-or-sampler-roll).
-
-| Lane          | Next reviewable outcome                                                       | Prerequisite / stopping point                 |
-| ------------- | ----------------------------------------------------------------------------- | --------------------------------------------- |
-| P1 delegation | `THREAD_CREATE_AUTHORIZATION`: operator follow-up for natural-agent usability | Ordinary use; no model exercise is dispatched |
-
-Scheduled wake and the daily CI capstone await selection by the operator.
+### Unexplained cleanup timeouts
 
 The original native-cleanup timeout remains unexplained; the closed
 [#13442](https://github.com/agentydragon/ducktape/pull/13442) path-reconstruction workaround is not
@@ -168,21 +118,18 @@ also lacks causal evidence. On recurrence, capture shutdown-stage/join evidence 
 either failure or claiming it fixed. Passing later tests and the merged Runtime COSI improvements
 do not establish either cause.
 
-Small launch-UX work can proceed alongside these tracks. Fresh-VM latency and VM-based Bazel are
-next and are independent of each other; image/layering work becomes a prerequisite only when the
-chosen change actually needs it. Existing technical, authorization, data-preservation and explicit
-operator-review gates remain in the owning nodes. Lower-priority maintenance stays in its sections;
-its old ordering does not give it precedence over the selected tracks.
+A third is also unexplained: a Dispatcher system-test cleanup timed out waiting for the Sandbox to
+stop ([note](../debug/dispatcher_cleanup_timeout.md)). On recurrence, read its captured diagnostics
+before changing lifecycle behavior.
 
 ### Released work in flight, 2026-11-15
 
 The operator released these tracks; Codex workers build them. Each node owns its gates; the Go
 reorganization is [section 17](#17-two-binaries-and-the-go-layout). States as of 2026-11-16 07:47 UTC.
 
-| Track                    | Operator release (UTC) | Node                        | State                                                                         |
-| ------------------------ | ---------------------- | --------------------------- | ----------------------------------------------------------------------------- |
-| Versioned dispatch watch | 2026-11-16 06:40       | none (`CLEANUP` tombstone)  | Chunked-notice cleanup awaits the rollback window                             |
-| Leftover settings keys   | 2026-11-16 06:40       | none (`CLEANUP` tombstones) | In flight; manifests stop setting each key before the code stops accepting it |
+| Track                  | Operator release (UTC) | Node                        | State                                                                         |
+| ---------------------- | ---------------------- | --------------------------- | ----------------------------------------------------------------------------- |
+| Leftover settings keys | 2026-11-16 06:40       | none (`CLEANUP` tombstones) | In flight; manifests stop setting each key before the code stops accepting it |
 
 Not released:
 `CommandSettled`, retiring `orchestration_v1` and launcher auto-grants.
@@ -385,7 +332,9 @@ Service scans a Session's raw history from the History Service for its own comma
 the one service besides the History Service fold that derives state from Session events. A command's
 `CommandAdmitted` entry says the runner admitted it, but not that the harness executed it or that
 the message reached the model's context; today that needs the history. Decide where that
-outcome is recorded before the Notification Service stops reading history.
+outcome is recorded before the Notification Service stops reading history. If the design still
+requires a raw event scan, consider moving it to `FollowSession` while keeping receipt
+reconciliation bounded per claim.
 
 ### `NOTIFICATION_SERVICE_SPLIT` — split, move or rename the Notification Service's responsibilities
 
@@ -415,7 +364,7 @@ a message has a sender, which is another agent or an event source such as GitHub
 structured, like a GitHub webhook, or unstructured text; a subscription connects an inbox to an event
 source, with its configuration (which pull requests, for example). Today's terms to reconcile with it
 include entries and their event identities (`actions`, `github`, `message`), notices, sources and
-`DestinationRef`. The `InboxesPerAccount` quota now counts per Sandbox incarnation, so its name goes with this rethink.
+`DestinationRef`. The `InboxesPerAccount` quota counts inboxes per execution Identity, so its name goes with this rethink.
 
 **Operator direction, 2026-11-14 01:11–01:12 UTC:** the service "might make good sense to split
 into, approximately", "one service/thing that holds inboxes for agents" and "github webhook
@@ -1013,6 +962,8 @@ a block StorageClass does not itself make Pod and VM layouts interchangeable. Se
 ```mermaid
 flowchart LR
     ENVIRONMENT_SUSPEND_MODES_DESIGN[Decision: distinct suspend and resume modes]
+    FIRECRACKER_INTEGRATION_DESIGN[Decision: Firecracker integration and privilege boundary]
+    FIRECRACKER_INTEGRATION_DESIGN -. related lifecycle contract .-> ENVIRONMENT_SUSPEND_MODES_DESIGN
     VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM]
     ENVIRONMENT_SUSPEND_MODES_DESIGN --> VM_RAM_SUSPEND
     VM_CONSOLE_DEFERRED_ATTACH[Unscheduled: attach the console when a starting VM becomes attachable]
@@ -1021,6 +972,60 @@ flowchart LR
     STATE_VOLUME_BLOCK -. related .-> VM_RAM_SUSPEND
     LOCAL_BAZEL[Unscheduled: bounded local Bazel client in VM]
 ```
+
+### `FIRECRACKER_INTEGRATION_DESIGN` — choose Firecracker integration and privilege boundary
+
+**Decision; unscheduled; operator request, 2026-11-20.** Decide how Agentplane should run and
+manage Firecracker Sandboxes in the cluster, including whether to build on an existing integration.
+The current [Firecracker backend](../docs/firecracker_sandboxes.md) runs one launcher Pod per guest;
+its network setup needs privileges that staging's baseline Pod Security policy rejects. KubeVirt
+already uses privileged infrastructure while its launcher Pods can be unprivileged. Do not assume a
+Talos API-server exemption or a new controller is the only solution.
+
+Compare at least these patterns and their costs:
+
+- Keep our launcher, with launcher Pods in a dedicated privileged infrastructure namespace. A
+  controller's namespace does not exempt Pods created in another namespace; decide whether the
+  existing controller can own this or a separate controller provides a useful authority boundary.
+  Work through cross-namespace PVCs, Secrets, identity, network policy, ownership and cleanup;
+  Pods cannot directly mount another namespace's PVCs or Secrets, and namespaced owner references
+  cannot cross namespaces.
+- Keep launcher Pods in their current namespace, using a narrowly constrained admission exception;
+  assess the scope and operational cost of API-server exemptions and replacement policy, including
+  the proposal in [#18428](https://github.com/agentydragon/ducktape/pull/18428).
+- Follow the KubeVirt pattern: a trusted node-side helper or networking integration performs the
+  privileged setup and fencing while the launcher has reduced privileges. Account for device
+  access, TAP and firewall lifecycle, the helper's authority, and the complexity of an extra
+  node service. Consider other container runtime or Kubernetes integration patterns as well.
+- Evaluate existing systems, including [OpenSandbox Fast Sandbox](https://github.com/opensandbox-group/fast-sandbox)
+  and its [checkpoint design](https://github.com/opensandbox-group/OpenSandbox/blob/main/docs/architecture/fast-sandbox/checkpoints.md),
+  as well as [Kata](https://github.com/kata-containers/kata-containers),
+  [Cocoon](https://github.com/cocoonstack/cocoon-operator),
+  [Setec](https://github.com/zeroroot-ai/setec), and
+  [SPACE](https://github.com/perplexityai/SPACE). Check maintenance and actual implemented behavior,
+  not just advertised features; consider a bounded Fast Sandbox trial if it can resolve material
+  uncertainties. Distinguish an integration usable as-is, an adaptable component, and an
+  architectural reference. [firecracker-containerd](https://github.com/firecracker-microvm/firecracker-containerd)
+  is archived; recheck the state of each candidate when investigating.
+
+Compare security and control-plane trust, node changes, scheduling and KVM, operational and
+maintenance burden, resource accounting, workspace and persistent storage, guest networking and
+egress, and rollout and cleanup. For suspend/resume, compare process and RAM preservation,
+checkpoint storage and consistency, Pod/node loss, identity and credentials, clock repair,
+network/admission fencing and recovery from interrupted operations. The current same-Pod behavior
+is a baseline, not a requirement to retain its limitations; identify any contract changes and
+their migration. Coordinate with `ENVIRONMENT_SUSPEND_MODES_DESIGN`, `VM_RAM_SUSPEND`, and
+`SANDBOX_QUIESCENCE_DESIGN` without making their independent work wait on this investigation.
+
+**Rollout references:** [#18428](https://github.com/agentydragon/ducktape/pull/18428) proposes
+the admission exception and is closed pending this decision. The staging launch preset
+[#18421](https://github.com/agentydragon/ducktape/pull/18421) and launcher memory changes
+[#18443](https://github.com/agentydragon/ducktape/pull/18443) and
+[#18482](https://github.com/agentydragon/ducktape/pull/18482) have already merged.
+
+**Exit:** a reviewed comparison and recommendation, with a bounded experiment where needed,
+explicit authority and lifecycle boundaries, security tradeoffs and unresolved gaps. Select any
+implementation and rollout work separately; this decision does not authorize a particular backend.
 
 ### `VM_INTRA_SANDBOX_HARDENING` — optional process and state hardening inside one Sandbox
 
@@ -1096,7 +1101,7 @@ flowchart LR
     SESSION_LAUNCH_FRICTION[Alongside: fewer clicks on reused environments]
     VM_STARTUP_LATENCY[Later: measure production VM startup]
     ACTION_SURFACES_DESIGN[Decision: where and in what states Actions render]
-    EGRESS_RELAY_RENAME[TODO: rename egress sidecar to relay]
+    EGRESS_RELAY_RENAME[Deferred: rename egress sidecar to relay]
     EGRESS_CREDENTIAL_TRANSPORT_DESIGN[Decision: credential upstream schemes and ports]
     RUNNER_HARNESS_DELIVERY_DESIGN[Decision: decoupled harness delivery]
     K3S_BUNDLED_SERVICES_SPIKE[Unscheduled: measure bundled control-plane services]
@@ -1203,13 +1208,13 @@ Represent Sandbox-local native harnesses/state and central Sessions whose option
 execution in one shared domain vocabulary. A native harness's required local environment is a
 capability constraint of that harness, not a universal Session attachment requirement. Keep
 Session identity, durable harness stores, running hosts, placement and execution attachments distinct.
-The landed [SessionSpec placement contract](../session_dispatcher/dispatcher/SPEC.md#sessionspec-placement-cutover)
+The landed [SessionSpec placement contract](../session_dispatcher/dispatcher/SPEC.md#session-binding)
 makes the owner variant explicit: `environment_hosted` carries the exact native environment and
 harness, and `central_sampler_v1` carries one exact required executor environment. #14314 retains
 the Dispatcher Session row when that required Environment is deleted, but central V1 still has no
 optional attachments, environment-free admission or alternate executor. The principal and
 harness-store contracts remain unresolved.
-The [Dispatcher outcome contract](../session_dispatcher/dispatcher/SPEC.md#native-opening-outcomes-and-dependent-commands)
+The [Dispatcher outcome contract](../session_dispatcher/dispatcher/SPEC.md#opening-outcomes-and-dependent-commands)
 also leaves unconfirmed native owner admission explicit: `UNKNOWN` outcomes hold dependent queued
 commands without forwarding or waking, and those commands remain cancellable. Automatic resolution
 is not provided; decide whether an authorized caller or operator can resolve the hold from durable
@@ -1252,7 +1257,7 @@ transition proposal. Recording the broader model does not dispatch a worker or a
 
 ### `AGENT_AUTHORED_CONVERSATIONS_EXPERIMENT` — try an authored conversation in a CLI
 
-**Follow-up in review, 2026-11-12.** The implementation merged as
+**Follow-ups merged, 2026-11-12.** The implementation merged as
 [#15896](https://github.com/agentydragon/ducktape/pull/15896), providing the
 [bounded CLI experiment](authored_conversation_experiment.md): our own agent loop with Qwen through
 LiteLLM's OpenAI-compatible API, a retained thread read/written through tools, separate working
@@ -1392,10 +1397,12 @@ compact how.
 
 **Unscheduled; operator requested tracking, 2026-10-30 PDT.** Ordinary Anthropic compaction is
 [implemented and deployed](../sampler/docs/anthropic_acceptance.md). [Design and acceptance](../sampler/plans/anthropic.md#background-compaction).
-Use Anthropic on-demand compaction concurrently with ordinary turns. Persist the exact summarized
-prefix and atomically replace only it, retaining the appended suffix. Separate the background
-operation from the foreground pending-effect fence; reject stale results after context/ownership
-changes. Exit: deterministic concurrent-turn, suffix-preservation, restart and failure-isolation
+Add an opt-in flag for eager compaction on Anthropic and Chat Completions routes. At an early
+context-usage threshold, send a compaction request for a recorded prefix while the agent continues
+ordinary turns. When the summary is ready and usage reaches a later threshold, atomically replace
+only that prefix at a provider-request boundary. Keep the entire suffix, including messages added
+between taking the snapshot and applying the summary. Give the background request its own pending
+state and reject stale results after context or ownership changes. Exit: deterministic concurrent-turn, suffix-preservation, restart and failure-isolation
 coverage, plus one bounded direct real-model continuation from the background summary. No worker
 or priority is assigned, and this follow-up does not gate ordinary Anthropic compaction.
 
@@ -1597,10 +1604,9 @@ PostgreSQL-first sequencing or a custom parallel import/unpack scheduler to the 
 
 ### `EGRESS_RELAY_RENAME` — rename the egress sidecar to relay
 
-**TODO; operator request, 2026-10-16.** The separately acceptable
-[relay migration section](deployed_service_names.md#egress_relay_rename--separate-approval) owns
-its inventory, proposed names and image/reader/template rollout gates. No dependency on the
-Sessions/Environments deployed-name decision; deployed configuration stays unchanged until review.
+**Deferred pending operator approval.** The [relay migration plan](egress_relay_rename.md) owns
+the image, settings and template rollout gates. R0 starts with a fresh inventory of live and
+retained relay consumers.
 
 ### `RUNNER_HARNESS_DELIVERY_DESIGN` — choose how runners obtain harness binaries
 
@@ -1798,6 +1804,12 @@ flowchart TD
     AGENT_RESUME_NOTICE[Unscheduled: tell agents when their Sandbox was suspended and resumed]
     ENVIRONMENT_READINESS_WAIT[Unscheduled: bounded CLI and Action/MCP readiness waits]
     AGENT_EXECUTOR_LOSS_NOTICE[Unscheduled: tell agents when executor restarts or kills lose their processes]
+    CENTRAL_EXECUTOR_LIFECYCLE_DESIGN[Decision: central Session execution and Sandbox lifecycle]
+    SANDBOX_QUIESCENCE_DESIGN[Decision: Sandbox stop, Session settlement and unused-Sandbox deletion]
+    CENTRAL_EXECUTOR_LIFECYCLE_DESIGN -. related execution lifetime .-> SANDBOX_QUIESCENCE_DESIGN
+    VM_RAM_SUSPEND -. related suspend semantics .-> SANDBOX_QUIESCENCE_DESIGN
+    RUNNER_BUSY_TRACKING -. related .-> CENTRAL_EXECUTOR_LIFECYCLE_DESIGN
+    AGENT_RESUME_NOTICE -. related .-> CENTRAL_EXECUTOR_LIFECYCLE_DESIGN
     RUNNER_BUSY_TRACKING -. related .-> AGENT_RESUME_NOTICE
     ENVIRONMENT_SUSPEND_MODES_DESIGN[Decision: distinct suspend modes, section 4] -. multi-mode notice .-> AGENT_RESUME_NOTICE
     RUNNER_BUSY_TRACKING[Unscheduled: the runner counts terminals and background processes as busy]
@@ -1919,9 +1931,9 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 flowchart TD
     SANDBOX_GENERIC_SPLIT[Unscheduled: split the generic Sandbox from the runner's sealing]
     RUNNER_IMAGE_LAYERING_DESIGN[Decision: what carries the runner, harnesses and per-template tools]
-    RUNNER_LAYERING_SPIKE[Paused: workload-image prototype merged; evidence incomplete]
+    RUNNER_LAYERING_SPIKE[Paused: sparse-root compatibility and measurement work]
     RUNNER_LAYERING_SPIKE_EXIT[Blocked: finish update-boundary evidence, measurements and recommendation]
-    RUNNER_LAYERING_SPIKE_RETIRE[Blocked: port retained pieces or delete spike after design]
+    RUNNER_LAYERING_SPIKE_RETIRE[Blocked: port or retire the sparse-root scenario after design]
     SANDBOX_GENERIC_SPLIT -. related .-> RUNNER_IMAGE_LAYERING_DESIGN
     RUNNER_LAYERING_SPIKE --> RUNNER_LAYERING_SPIKE_EXIT
     RUNNER_LAYERING_SPIKE_EXIT --> RUNNER_IMAGE_LAYERING_DESIGN
@@ -2006,40 +2018,20 @@ in #14034. None of this selects a separate tools/harness disk layout.
 
 ### `RUNNER_LAYERING_SPIKE` — minimal guest, harness and tools-layer evidence
 
-**Prototype merged (#10741, #10744, #10789); operator-requested 2026-10-16. The remaining compatibility
-evidence is paused.** The merged experiment proves a Codex text turn, shell call through a separate Bash
-tools OCI layer, native resume after killing the harness, runner survival and private-state separation
-in the RBE test; a local Firecracker guest boots the digest-pinned ELF kernel and mounts separate
-read-only tools and harness SquashFS drives. #10789 added `workload-tool` in its own OCI tar
-layer and changed the mocked Codex shell call to run it before the harness exit, confirmed its
-workspace write survives resume, then asked the resumed harness to execute the same workload tool.
-The sparse-root scenario passed in RBE; the marker remained readable from the persistent workspace
-after the harness was killed and resumed, and the resumed Codex process emitted the tool's output
-again. Production VM layout selection and implementation remain open.
-The guest's Bash and pinned Codex `--version` probes pass; the same probe records a Claude 2.1.252
-SIGABRT in the uid-107 mount-namespace child, while the exact binary succeeds on the full host and
-in the guest chroot as root without that namespace. The UID and namespace effects still need to be
-separated. Measured artifacts are a 1.9 MB base initramfs, 7.2 MB tools SquashFS, and 168.9 MB
-harness SquashFS (the source Bash OCI layer tar is 22.3 MB). A disposable K3s `v1.33.4+k3s1` Pod
-with ImageVolume enabled was accepted by the API but containerd `v2.0.5-k3s2` failed container
-spec creation (`failed to mkdir ""`), before Bash ran; no Pod image-volume execution is established.
-This is evidence about that tested stack, not a universal claim about image volumes. Full coding
-work, Nix-root compatibility, true cache-cold preparation and guest-only boot latency remain
-unproven; no runtime upgrade or further experiment is currently assigned.
+**Paused.** The [spike notes](../x/runner_layering/README.md) record the historical two-disk
+Firecracker experiment, the Claude child-context abort, and the K3s ImageVolume trial. The retained
+sparse-root scenario exercises a workload-owned tool, native Codex resume and private-state
+separation. The local boot probe's exact recipe is available from its original revision.
 
-Candidate layout to carry into the design review: keep stage-one init and runner control outside the
-tools root; mount the per-template tools image read-only; give the workspace and harness homes
-explicit writable mounts, use tmpfs for `/tmp`, and provide only the required `/proc` and `/dev/null`
-paths to the child. Reuse that filesystem contract in Pods by mounting the same tools image beside
-the runner image, with workspace and persistent session state on separate volumes. The guest's
-distinct mounts work in the local probe; the tested K3s runtime did not create a Pod with an image
-volume, and Claude's child-context abort remains unexplained. Further intra-Sandbox hardening is
-not required by the production contract.
+Candidate layout to review: keep stage-one init and runner control outside the tools root. Mount
+per-template tools read-only with explicit writable workspace and harness homes, tmpfs for `/tmp`,
+and the required `/proc` and `/dev/null` paths. Consider the same filesystem contract via Pod image
+volumes with separate workspace and persistent Session state. The Sandbox is the isolation boundary.
 
-The spike exits when those update boundaries and startup measurements are documented alongside a
-bounded compatibility contract and a production DAG proposal. After the design decision, either
-port only the accepted artifacts and tests to their production owners or remove the spike-only
-package, kernel pin, and child fence; do not leave the experiment as an implicit supported runtime.
+Finish the update-boundary and startup measurements for the design review. State any remaining
+limits around full coding tasks, Claude, and Nix roots. Exercise independent tools-image replacement
+and the selected mount layout on the maintained runtime that adopts them. After the decision, port
+the sparse-root scenario to its production owner if its assertions apply, or retire it.
 
 ### `RUNNER_LAYERING_VM` — a guest takes the runner, harnesses and tools from separate images
 
@@ -2128,6 +2120,52 @@ attached terminals should block idle suspension and who reports them.
 Test an attached terminal that detaches, a background process that outlives a turn, and a runner
 restart. `AGENT_RESUME_NOTICE` tells the agent what a suspend ended.
 
+### `CENTRAL_EXECUTOR_LIFECYCLE_DESIGN` — central Session execution and Sandbox lifecycle
+
+**Decision; unscheduled.** Decide how a central-sampler Session and model interact with a suspended
+executor Sandbox and how execution affects idleness ([issue #18311](https://github.com/agentydragon/ducktape/issues/18311)).
+Options include automatic wake and an activity hold, informing the model and providing explicit
+resume/lifecycle controls, or a combination; no approach is selected. Map existing wake, busy and
+authorization ownership before choosing. The selected design must honor wake policy and Sandbox UID
+and incarnation fences, preserve uncertain outcomes without replay, and cover suspended requests,
+long-running processes, disconnect/recovery and eventual idleness.
+
+### `SANDBOX_QUIESCENCE_DESIGN` — redesign Sandbox stopping and Session settlement
+
+**Decision; unscheduled.** Redesign the ownership and protocol for suspend, resume and deletion
+across the Sandbox Controller, Session Dispatcher, Gateway, Environment Runtime, Execution Service
+and History. Separate deciding the fate of Sessions and queued commands from stopping processes,
+sealing Runtime journals, delivering their final History cursors, and removing workloads and
+volumes. Consider whether Dispatcher should coordinate the Sessions that might belong to a Sandbox;
+do not assume it owns all Runtime work or select a particular protocol yet. Coordinate with
+`SESSION_DELETION_FENCE`, `CENTRAL_EXECUTOR_LIFECYCLE_DESIGN` and the suspend-mode decision without
+making this redesign a prerequisite for their existing work.
+
+**Desired outcome:** ideally, deletion of a Sandbox that has never received commands or Session
+commands should not need to start or quiesce an Environment Runtime. Establish what durable,
+exact-Sandbox and incarnation evidence would prove that is safe, including whether a Runtime ran
+but admitted no work; do not restrict the goal to a Pod that was never scheduled. Account for
+bootstrap and setup, direct Execution calls, Session creation and retained journals, and any
+other work outside the Dispatcher. Fence new admission and concurrent forwarding before making a
+no-work decision; distinguish known-unsent work from possibly forwarded or admitted work and
+preserve unknown outcomes without replay. A Dispatcher acknowledgment proves journal admission,
+not completed effects or History delivery, and an absent or disconnected Runtime is not proof it
+never ran. Preserve existing journal, History, process-fencing and authored-data guarantees when
+the evidence is uncertain, including after controller takeover or an incarnation replacement.
+
+Compare Pod, KubeVirt and Firecracker lifecycles. Firecracker RAM suspension retains processes and
+needs its admission barrier and checkpoint semantics; a launcher reporting `suspended` can mean
+either a cold, never-booted guest or a completed checkpoint. Cover the scheduler bind versus stop
+race, lost acknowledgments, startup and bootstrap races, prior unsealed incarnations, crash and
+reconnect, queued but unsent commands, and deletion of a genuinely unused Sandbox. The observed
+unscheduled staging VM that remained in quiescence is a concrete motivating case;
+[#18530](https://github.com/agentydragon/ducktape/pull/18530) is a narrower VM fix, not the
+redesign's exit criterion.
+
+**Exit:** a reviewed ownership and race contract identifying each durable proof and service
+boundary, the unused-Sandbox deletion behavior, and a testable migration from current guarantees.
+Select implementation separately after that decision.
+
 ### `SESSION_ACTIVITY_STREAM` — the notification service delivers on a Session's idle time
 
 **Unscheduled.** The History Service folds `idle_since` into `SessionSummary` (the turn and harness
@@ -2168,7 +2206,8 @@ for a reviewed contract that the code does not already satisfy; do not add an im
 ## 8. Ownership and naming cleanup
 
 Decisions and designs about what things are called and which service owns what. The decided
-renames and ownership moves (`ACTION_BOX_RENAME`, `RUNNER_GATEWAY_RENAME`, `HISTORY_DATABASE_RENAME`) are dispatched from [Cleanups](#15-cleanups). Staging data follows
+renames and ownership moves (`ACTION_BOX_RENAME`, `HISTORY_DATABASE_RENAME`) are dispatched
+from [Cleanups](#15-cleanups). Staging data follows
 [staging data preservation](../docs/staging_data_preservation.md): Session identities and history
 are irreplaceable, and a node that deletes a column or row stops for the operator.
 
@@ -2176,7 +2215,6 @@ are irreplaceable, and a node that deletes a column or row stops for the operato
 flowchart TD
     ACTION_BOX_IDLE_REAPER[Unscheduled: delete Action boxes nobody uses]
     SANDBOX_ENVIRONMENT_RENAME_DESIGN[Later proposed: scope Sandbox to Environment naming]
-    ENVIRONMENT_RUNTIME_SERVICE_SPLIT[Unscheduled: split Environment and Harness/Session APIs]
     HISTORY_SERVICE_RENAME[Decision, unscheduled: History as a transcript service]
     SERVICE_SETTINGS_RETHINK[Decision, unscheduled: choose a shared service settings framework]
 ```
@@ -2195,18 +2233,6 @@ agent-sandbox `Sandbox` CRD remains separately owned. Action execution boxes kee
 and reference migration that preserves identities and stored data. Do not use a global text
 replacement or implicitly rename upstream APIs/resources. No implementation or wire/CRD/storage
 cutover is approved here; this proposal is independent of current authorization and reliability work.
-
-### `ENVIRONMENT_RUNTIME_SERVICE_SPLIT` — separate environment and Harness/Session APIs
-
-**Unscheduled.** Split the renamed public Environment Runtime API by
-responsibility: environment identity, bootstrap, component discovery, health and environment lifecycle
-actions belong to the Environment API; Harness/Session admission and operations belong to the
-Harness/Session API. Plan for distinct public gRPC services, with names and method mapping selected in
-the implementation design. Keep the Runtime-to-Host in-process lifecycle contract distinct. This split
-does not decide whether the services use separate binaries or Deployments; that grouping remains
-separate from API ownership. Update Gateway routing, authorization, tests, component specs and system
-overviews with the split. Base the boundary on
-[`session_runtime_model.md`](session_runtime_model.md#role-boundaries-and-routing).
 
 ### `HISTORY_SERVICE_RENAME` — History as a transcript service
 
@@ -2234,19 +2260,23 @@ Boxes and Sandboxes are to converge into one object type
 
 ### `SERVICE_SETTINGS_RETHINK` — how Agentplane services are configured
 
-**Decision, then migration. Unscheduled (operator, 2026-11-17).** Choose one typed settings framework
-for Agentplane services. Evaluate defining the schema in protobuf and loading it from YAML or
-textproto, alongside the current typed YAML approach. The design should show how the deployment
-renderer and service loaders use the same schema and handle unknown fields, defaults, and explicit
-runtime Secret inputs. Start from the [current settings contract](../AGENTS.md#settings).
+**Decision, then migration. Unscheduled (operator, 2026-11-19).** Protobuf is the leading candidate
+for generating Go and Python settings bindings. Compare it with the current typed YAML setup.
+
+- Compare protobuf-aware YAML, textproto and binary protobuf for the settings file. Check presence,
+  defaults, unknown fields, deployment diffs and startup diagnostics.
+- Go must reject invalid settings at startup. Go-only validation is acceptable initially. Python may
+  render well-formed settings that Go rejects on semantic grounds. Consider shared schema rules
+  such as Protovalidate if synthesis-time checking is worth the integration cost. Keep runtime
+  Secret inputs explicit.
+
+The [sidecar and LLM ingress spike](https://github.com/agentydragon/ducktape/pull/12232) tried
+generated bindings, Buf protoyaml and Protovalidate. Decide whether the App's generated configuration
+API can reuse settings schemas for fields it exposes to the browser. Start from the
+[current settings contract](../AGENTS.md#settings).
 
 The shared strict YAML loader is the interim improvement. Choose the schema and file format before
 planning the service migrations.
-
-## 9. Legacy burn-down
-
-Folded into [Cleanups](#15-cleanups) on 2026-11-10; the number stays so later sections keep their
-anchors.
 
 ## 10. Runner ingress and control split
 
@@ -2317,8 +2347,9 @@ flowchart TD
     THREAD_READ_POLICY[Blocked: scoped archive reads, section 3]
 ```
 
-[`history_read_follow.md`](history_read_follow.md) records how orchestration builds on the API and
-which other consumers may move to it. Automatic titles remain deferred under
+Revisit replacing `ReadSessionEvents` with `FollowSession` and `follow = false` once callers can
+preserve bounded reads and the browser's raw observation detail through the HTTP facade.
+Automatic titles remain deferred under
 [`THREAD_TITLE_GENERATION`](task_freezer.md#thread_title_generation--revisit-automatic-thread-titles).
 
 ### `JOURNAL_REPRESENTATION_DESIGN` — History as stored journals
@@ -2389,7 +2420,7 @@ a feature such as driver-hosted tools crosses the common set.
 "might be better", "to be looked into"; it costs a separate container.
 
 Electric replicates two History tables, `thread_entity` and `thread_payload_chunk`, per Thread and
-projection epoch, through the app's authorizing [proxy](../app/internal/proxy/electric.go), for
+projection epoch, through the app's authorizing [proxy](../app/internal/electricproxy/electric.go), for
 the thread view alone ([`electric_sync.tsx`](../app/frontend/sessions/electric_sync.tsx)). Every
 other live browser view already follows gRPC watches through the app facade
 ([`watch_stream.ts`](../app/frontend/transport/watch_stream.ts)). Its costs are:
@@ -2414,18 +2445,6 @@ electric" ([`JOURNAL_REPRESENTATION_DESIGN`](#journal_representation_design--his
 watch facade, and build it once against whichever History representation is chosen rather than
 first over the fold tables. **Question for review:** build the replacement now over the fold, or
 after the History representation decision, over journal records?
-
-## Scope and retirement of stale gates
-
-- Notifications keep workers in the HTTP service. Retention, worker extraction, idle-polling
-  optimization and new-source wiring are frozen with triggers, not hidden release prerequisites.
-- Broad provider-matrix exploration is frozen; ordinary auth/signature denial regression coverage
-  belongs with the implementation, not an unbounded production checklist.
-- Native subsessions and runner durability/thin-adapter redesign remain frozen. Neither the runner
-  channel nor multiagent design unfreezes the broader runner-state redesign.
-- Existing security boundaries, data-preserving migration checks and representative deployment
-  integration checks remain requirements. The freezer is not a waiver for a known data-loss or
-  unauthorized-access bug; promote one when evidence makes it concrete.
 
 ## 13. Delivery boundaries, APIs and harness identity
 
@@ -2858,7 +2877,7 @@ and a shared Environment, including caller authority, failure/retry and migratio
 ### `CENTRAL_SESSION_CREATION_CONTRACT` — opening a central Session without an Environment
 
 **Decision; drafted for review in [#15436](https://github.com/agentydragon/ducktape/pull/15436)
-(central-session-design, 2026-11-10): [creation contract](central_session_contract.md#1-central_session_creation_contract-opening-with-zero-environments).**
+(central-session-design, 2026-11-10): [creation contract](https://github.com/agentydragon/ducktape/blob/448cd6eafce4427af1eb3baa801bc318578d4daa/agentplane/plans/central_session_contract.md#1-central_session_creation_contract-opening-with-zero-environments).**
 Recommended there: a new `central_sampler {}` placement variant with the Identity named in
 `CreateSessionRequest`; `setup_script` and `cwd` rejected at creation and moved to attachments;
 `central_sampler_v1` retired in the same cutover, each executor becoming the Session's first
@@ -2881,7 +2900,7 @@ Environment exists, with exact acceptance and unknown-outcome boundaries.
 ### `SESSION_ATTACHMENT_CONTRACT` — Session-to-Environment relationships
 
 **Decision; drafted for review in [#15436](https://github.com/agentydragon/ducktape/pull/15436)
-(central-session-design, 2026-11-10): [attachment contract](central_session_contract.md#2-session_attachment_contract-environments-a-session-may-use).**
+(central-session-design, 2026-11-10): [attachment contract](https://github.com/agentydragon/ducktape/blob/448cd6eafce4427af1eb3baa801bc318578d4daa/agentplane/plans/central_session_contract.md#2-session_attachment_contract-environments-a-session-may-use).**
 Recommended there: Dispatcher-owned desired attachments (`AttachEnvironment`/`DetachEnvironment` on
 SessionDispatcher, caller-chosen attachment ID, Session-local name, exact target UID, optional cwd,
 desired versus observed state, a per-Session revision and a `session_attachment_transition` table as
@@ -3142,7 +3161,7 @@ decision below retains its existing owner and gate.
 **Decision; Dispatcher row retention (#14314) and Notification's inbox retention after a missing or
 replaced Sandbox are implemented; the rest is drafted for review in
 [#15436](https://github.com/agentydragon/ducktape/pull/15436) (central-session-design, 2026-11-10):
-[lifetime contract](central_session_contract.md#3-session_and_inbox_lifetime-what-outlives-an-environment-and-explicit-deletion).**
+[lifetime contract](https://github.com/agentydragon/ducktape/blob/448cd6eafce4427af1eb3baa801bc318578d4daa/agentplane/plans/central_session_contract.md#3-session_and_inbox_lifetime-what-outlives-an-environment-and-explicit-deletion).**
 Recommended there: retain inbox, subscriptions and Session row until an explicit `DeleteSession` on
 SessionDispatcher, scoped first to central Sessions and native Sessions whose required Environment is
 deleted (the sampler seals and exports before dropping; Notification retires the inbox on
@@ -3157,8 +3176,9 @@ after the required Sandbox UID is deleted. Cleanup tombstones the deleted UID an
 `IN_PROGRESS` becomes `UNKNOWN`, and accepted or terminal evidence remains. A replacement cannot
 receive the retained Session's work. Central V1 still requires its exact executor Environment;
 retaining its Session row does not provide environment-free admission or an alternate target.
-Notification's worker keeps the inbox and subscriptions live while the recorded Sandbox is absent or
-replaced and waits for the exact UID (`store.ObserveStale`); explicit retirement stays an API call.
+Notification's worker keeps the inbox and subscriptions live while its Dispatcher Session is missing,
+unplaced or owned by another Identity, and retries on `unavailable_destination_retry_s`; it addresses the
+current Session by ID with no exact-UID wait, and explicit retirement stays an API call.
 Those transitions are not a cross-service transaction. The central Session lifetime direction is indefinite, and app archive is separate. The
 selected Dispatcher identity policy is to forget a Session only upon a future explicit Session
 deletion; that API is not implemented. The treatment of other services' data remains open.
@@ -3178,6 +3198,20 @@ as implemented for the current UID-pinned destination. Revisit sustained collect
 evidence warrants it. App archive remains separate. Explicit Session deletion is not implemented; whether it deletes
 inbox contents or History remains deferred, and inbox/subscription behavior after deletion needs
 design.
+
+**Operator follow-up, 2026-11-21: resolve stranded notifications.** A retained native Session whose
+required Sandbox is deleted can keep an active inbox and subscriptions while notice delivery retries
+indefinitely; [#18323](https://github.com/agentydragon/ducktape/pull/18323) explains the failure in
+the app but does not resolve it. Reconsider the selected retention and collection policy above:
+investigate whether Notification should consult SessionDispatcher and stop notice attempts, cancel
+subscriptions, or take another action when the Session is gone or cannot run its harness. Distinguish
+confirmed deletion or permanent placement loss from temporary unavailability, and define authority,
+recovery, races and operator visibility before changing behavior. Preserve unread entries and History;
+do not silently discard data or treat app archive as deletion. A central sampler Session can eventually
+run and receive notices with no Sandbox attached, so missing attachment alone must not disable its
+inbox or subscriptions. Coordinate the decision with `SESSION_LIFETIME_IMPLEMENTATION` and
+`CENTRAL_SESSION_NOTIFICATIONS`, and with the proposed lifetime contract in #15436.
+
 While a Session's recorded `Identity` is absent, the operator's direction is human-operator-only
 inspection and administration through an operator-authenticated entry point, such as the app, and
 explicitly privileged service credentials. Under the selected name-based principal model, an
@@ -3238,11 +3272,9 @@ protocol-specific transport for now.
 Login/OAuth redirects, static assets, health probes, API documentation and OTLP telemetry are also
 protocol-specific HTTP surfaces, not application RPCs to convert mechanically.
 
-Session-opening follow-ups: replace the untyped override map with a typed contract while preserving
-omitted, null and empty semantics; retire mixed-version browser compatibility only after the
-replica, cached-bundle and rollback windows close; and preserve status information for non-JSON
-HTTP failures without treating uncertain openings as rejected. Details are in
-[generated HTTP facades](grpc_http_facade.md#open).
+Session-create follow-ups: replace the untyped override map with a typed contract while preserving
+omitted, null and empty semantics, and adopt generated route bindings when available. Details are
+in [generated HTTP facades](grpc_http_facade.md#open).
 
 **Prerequisites:** no dependency on a service rename.
 Before each independently reviewable migration, identify the owning service and preserve the app's
@@ -3528,14 +3560,16 @@ evidence exists.
 
 ### `SESSION_SUBAGENT_DELEGATION` — a Session creates and messages a sub-Session
 
-Identity `CreateSession` remains denied. Existing operator-provisioned same-Identity child steering
+Identity `CreateSession` is admitted only for an `environment_hosted` Session under a current
+`bind_session` grant ([Dispatcher SPEC](../session_dispatcher/dispatcher/SPEC.md#session-binding));
+central placement stays refused. Existing operator-provisioned same-Identity child steering
 and the approved `orchestration_v1` broker flow continue to work; this node is separate from the
 completed Sandbox workload cutover.
 
 **Design, not started (operator, 2026-11-10).** Decide how a Session asks Agentplane to create a
-child Session and then message it. Dispatcher refuses an Identity caller at `CreateSession`
-(`PermissionDenied`); privileged platform components retain their creation path, and an Identity
-can read, steer, interrupt and cancel its own Identity-recorded Sessions. Build on the existing
+child Session and then message it. Without that grant Dispatcher refuses an Identity caller at
+`CreateSession` (`PermissionDenied`); privileged platform components retain their creation path,
+and an Identity can read, steer, interrupt and cancel its own Identity-recorded Sessions. Build on the existing
 [delegated authorization](../docs/delegated_authorization.md) contract and the messaging path that
 landed in #15437 and #15438. The Sandbox launch Identity sequence is settled in the identity plan
 and does not determine the child-Session design. The environment rule's `bind_session` operation
@@ -3549,9 +3583,9 @@ with its implementation slices; no authority change is selected by this tracking
 
 Inbox ownership and History workload reads now use the recorded Session Identity. Notification's
 same-Identity send path also passes without a grant. Cross-Identity sends still require
-`session_inbox_access`, whose current binding is on the sender and whose targets are Sandboxes/tags;
-component senders and their ServiceAccount provenance remain supported. The target/group model and
-grant lifetime remain unresolved under
+`session_inbox_access` (`notification_service/internal/rpc/messages.go`), whose current binding is on
+the sender and whose targets are Sandboxes/tags; component senders and their ServiceAccount
+provenance remain supported. The target/group model and grant lifetime remain unresolved under
 [`SESSION_ACCESS_GROUPING_DESIGN`](#session_access_grouping_design--access-groups-across-independent-sessions-and-environments).
 Preserve the current enforcement while that design is reviewed. Broader cross-principal History
 reads remain held by `THREAD_READ_POLICY_DESIGN`. **Exit:** resolve target/group ownership, target
@@ -3630,7 +3664,7 @@ Deletions and simplifications that exist only because of a transition, a migrati
 design or a track that has landed: dead code, met gates, compatibility shims, stale names, redundant
 tests and docs. Census of 2026-11-10 over the `CLEANUP(added …)` tombstones, component `TODO.md`
 files, `TODO` comments, sections 13 and 14, the identity plans, open PRs and the freezer; it absorbs
-the 2026-10-10 legacy burn-down (section 9) and the 2026-10-21 census of the lanes. **Unblocked**
+the 2026-10-10 legacy burn-down and the 2026-10-21 census of the lanes. **Unblocked**
 has no gate, or a gate met on devel; **Blocked** names the node, PR or merge it waits for;
 **Future** waits on an undecided design or a track not started. Each entry says what goes, where,
 the gate and the source; a removal a track's own node lists is linked, not copied, and feature or
@@ -3644,7 +3678,6 @@ service SVID admission; Kubernetes API credentials and historical account attrib
 ```mermaid
 flowchart LR
     ACTION_BOX_RENAME[Unscheduled: Action boxes stop being called sandboxes]
-    RUNNER_GATEWAY_RENAME[Unscheduled: deployed names follow the two-binary split]
     PROTO_PACKAGE_ALIGNMENT[Future: align protobuf packages with their directories]
     RUNNER_LAYERING_VM[Paused: layered VM guest, section 7] --> K3S_TEST_GUEST_RETIRE[Blocked: delete the k3s test guest]
     HISTORY_SERVICE_RENAME[Decision, section 8] -. takes its name .-> HISTORY_DATABASE_RENAME[Deferred: rename the sandbox_service database and role]
@@ -3701,22 +3734,9 @@ into one object type
 ([`SANDBOX_BOX_CONVERGENCE`](task_freezer.md#sandbox_box_convergence--sandboxes-and-action-boxes-as-one-object-type)),
 which would settle the name instead; check that before dispatch.
 
-#### `RUNNER_GATEWAY_RENAME` — deployed names for the Sessions and Environments binaries
-
-**Plan released by the operator, 2026-11-16 20:06 UTC; implementation awaits review.**
-[Deployed service names](deployed_service_names.md) owns the verified inventory, proposed
-`sessions` / `environments` names, operator decisions and ordered rollout/rollback gates.
-The two-binary decision ([section 17](#17-two-binaries-and-the-go-layout)) and source directories
-are settled: `agentplane/session_dispatcher/` and `agentplane/environments/`. Deployed names,
-settings and security identities remain unchanged until the corresponding migration gate lands;
-the 2026-10-31 "Environment Gateway" proposal is superseded. The relay rename has a separately
-acceptable section in the same plan and is not a prerequisite.
-
 ### Blocked
 
-Grouped by the node, PR or merge each waits for. Completed workload-Identity source lanes are
-removed; remaining deployment observations and rollback windows stay here only when they still have
-a specific stopping condition.
+Grouped by the node, PR or merge each waits for.
 
 #### By gate
 
@@ -3725,15 +3745,10 @@ a specific stopping condition.
   network-policy identities. The remaining check is the staging proxy decision log naming the
   `haku-ci` relay's Identity for the expected egress decision; this does not imply that rollout is
   blocked today.
-- **`RUNNER_STORE_SESSION_IDENTITY`:** `RUNNER_IDENTITY_LEGACY_CLEANUP` (section 13) retires the old
-  per-Session-process assumptions, stale docs and protos after the private mapping rolls out.
 - **`DELIVERY_DESTINATION_CONTRACT` (in progress):** the browser's legacy command-destination records
   (`LocalCommand` with `target` null or `sessionAddressed` false, `app/frontend/sessions/local_commands.ts`)
   are retired once every retained record is Session-addressed; preserve unconfirmed saved input and
   its Sandbox UID fence, and never replay an uncertain command. Source: [app TODO](../app/TODO.md).
-- **The Session-opening facade's rollback window:** the legacy Huma status fallback and wire-format
-  workarounds in the browser's Session-opening path go once old app replicas, cached browser bundles
-  and the supported rollback window are gone. Source: [generated HTTP facades § Open](grpc_http_facade.md#open).
 
 #### `K3S_TEST_GUEST_RETIRE` — delete the k3s test guest
 
@@ -3768,34 +3783,20 @@ Dispatch reviewed migrations separately, rather than coupling them to package-di
   `session_dispatcher/dispatcher/testing_client.py`, `sampler/testing.py` and
   `system_tests/scenarios/central_sampler.py`; each V1 row becomes a `central_sampler` Session with
   one `executor` attachment. The plan file `central_session_contract.md` burns down with its three decisions.
-- **`SESSION_IDENTITY_AUTHZ`:** `notification_service/internal/rpc/messages.go` still authorizes
-  cross-Identity sends through sender-bound `session_inbox_access` Sandbox/tag targets. Inbox
-  ownership and History workload reads already use the recorded Session Identity. The remaining
-  target/group/lifetime decision and its consumer/grant migration are described above and follow
-  `SESSION_ACCESS_GROUPING_DESIGN`.
-- **`HISTORY_DATABASE_RENAME`** (below): deferred by the operator, and takes the name
-  `HISTORY_SERVICE_RENAME` (section 8) decides.
 - **The observation naming layer** (`Event.observation`, Runtime's observation handling, History's
   `ReadSessionObservations` and `ReadNativeFrames`, the debug UI): squash to "Event" if the operator
   agrees it is not a deliberate distinction. Source: [frontend TODO](../app/frontend/TODO.md#thread-view-ux).
 - **One result shape for executors:** the MCP edge's per-executor result rendering
   (`mcp_edge/internal/mcpserver/results.go`) goes if the Sandbox executor answers as an MCP tool. Source:
   [Action Service TODO](../action_service/TODO.md#executors-that-answer-as-mcp-tools).
-- **Frozen:** [`WORKLOAD_AUDIENCE_RENAME`](task_freezer.md#workload_audience_rename--rename-the-agentplane-egress-audience)
-  (the `agentplane-egress` audience name; tokens retire under the service SVID decision) and
-  [`HAKU_ACTION_NATIVE_CLIENT`](task_freezer.md#haku_action_native_client--migrate-the-existing-haku-action-client)
-  (Haku UI's client off the retired Action HTTP facade) stay in the freezer with their triggers.
-- **Plan files with a stated exit:** [`architecture_overview.md`](architecture_overview.md) is deleted
-  when a direction is chosen and its parts land in owning docs.
 
 #### Authentication: waiting on a decision
 
 - **Pod-bound checks per route** ([identity plan open question 1](identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits)):
-  `IsPodBound` gates privilege in Dispatcher (`dispatcher/api.go`), History reads
-  (`history_service/internal/rpc/service.go`), EnvironmentService management and the lifecycle manager
-  (`environments/management.go`, `lifecycle/manager.go`), and the resolver's `RequirePod` is step 7
-  of SVID resolution. Once every workload is an Identity SVID with a per-incarnation credential, each
-  route decides whether a Pod proof still adds anything; the checks that do not are deleted then.
+  Dispatcher and the lifecycle manager no longer gate privilege on `IsPodBound`, which has no
+  caller left. Once every workload is an Identity SVID with a
+  per-incarnation credential, each route decides whether a Pod proof still adds anything; the
+  checks that do not are deleted then.
 
 #### `HISTORY_DATABASE_RENAME` — name the database for its owner
 
@@ -3807,29 +3808,10 @@ the database and role in place (`ALTER DATABASE`/`ALTER ROLE ... RENAME`) and ha
 the log. Verify the History Service and Electric reconnect with no data movement. Update the
 `history_service/internal/migrations/migrations.go` and `cluster/cdk8s/agentplane/history_service.py` docstrings.
 
-## 16. Standard idioms over hand-rolled mechanisms
-
-From the 2026-10-30 idiom audit; `SAMPLER_JOURNAL_DIET` awaits the operator's view.
-
-```mermaid
-flowchart LR
-    SAMPLER_JOURNAL_DIET[Decision: what the sampler journals]
-```
-
-### `SAMPLER_JOURNAL_DIET` — what the sampler journals
-
-**Decision; operator to weigh in.** At the 2026-10-30 audit (re-check before starting), every
-sampling intent stored the full Responses request body (`sessionstore` `Store.Begin`) and nothing
-read it beyond its kind, with no deletion, so storage grows
-with turns × context. Every streamed provider event was journaled as a `BoundaryRecord` in its own
-locking transaction, then again inside the intent's result and again in failure evidence. Options:
-store kind plus a conversation reference and journal raw events once (recommended); batch per-event
-writes or keep only item-done and terminal events; or keep everything and add retention.
-
 ## 17. Two binaries and the Go layout
 
-The [two binaries](../docs/adr_two_binaries.md), Sessions and Environments, are decided and serve;
-their deployed names change under `RUNNER_GATEWAY_RENAME`. The
+The [two binaries](../docs/adr_two_binaries.md), Sessions and Environments, serve under their
+canonical names. The
 [Go reorganization plan](https://agentydragon.github.io/ducktape/agentplane-organization/) holds the
 evidence and line-level steps for every track below; its stages are ordered by certainty. Stages 1,
 2 and 4 are done; the others keep their numbers.
@@ -3843,7 +3825,6 @@ evidence and line-level steps for every track below; its stages are ordered by c
 ```mermaid
 flowchart LR
     ENVIRONMENT_KEEP_ALIVE_HOLDS[Proposed design: keep-alive holds]
-    RUNNER_GATEWAY_RENAME[Unscheduled: deployed names, section 15]
 ```
 
 ### `ENVIRONMENT_KEEP_ALIVE_HOLDS` — keep a Sandbox awake until a time

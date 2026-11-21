@@ -31,7 +31,7 @@ from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.claims import ObligationType
 from finance.augur.sim.fixed_point import rate_to_ppb, round_currency_amount
-from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LiabilityId, PropertyId
+from finance.augur.sim.ids import CHECKING, AgentId, JurisdictionId, LiabilityId, PropertyId
 from finance.augur.sim.income import (
     ORDINARY_INCOME,
     InterestIncome,
@@ -61,14 +61,14 @@ from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tax_authority import MortgageInterestDeduction, SaltCap, SaltDeduction, TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
+from finance.augur.sim.testing.accounts import account, ref
 from finance.augur.sim.testing.rollouts import book, cash
 from finance.augur.sim.testing.series import level_series
 from finance.augur.sim.testing.session import each, finish
-from finance.augur.sim.testing.situs import START_YEAR, UNTAXED, flat_parcel
+from finance.augur.sim.testing.situs import UNTAXED, flat_parcel, property_tax
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
-CHECKING = AccountId("checking")
 OWNER = AgentId("owner")
 TENANT = AgentId("tenant")
 AGENCY = AgentId("property_management_agency")
@@ -91,15 +91,6 @@ BUILDING_BASIS_QUANTA = 400_000 * 100
 MUNI_INTEREST = InterestIncome(character=Municipal(state=CALIFORNIA))
 
 
-def ref(agent_id: AgentId) -> AccountRef:
-    return AccountRef(agent_id=agent_id, account_id=CHECKING)
-
-
-def account(agent_id: AgentId, balance: Decimal | int = 0) -> tuple[AccountRef, int]:
-    """An account and its opening balance."""
-    return ref(agent_id), USD.quanta(balance)
-
-
 def indexed(base_amount: Decimal | int) -> IndexedAmount:
     """A rent-indexed amount resetting annually, which is what the product layer lowers rent to."""
 
@@ -120,96 +111,6 @@ class Cashflow:
     income: TransferIncomeCategory | None = None
     deduction: TransferDeductionCategory | None = None
     property_id: PropertyId | None = None
-
-
-def recurring_transfer(
-    cause_id: str,
-    *,
-    start_month: int,
-    end_month: int | None,
-    payer: AgentId,
-    payee: AgentId,
-    amount: Amount,
-    income: TransferIncomeCategory | None = None,
-    deduction: TransferDeductionCategory | None = None,
-) -> Cashflow:
-    return Cashflow(
-        cause_id=cause_id,
-        schedule=Recurring(start_month=start_month, end_month=end_month),
-        payer=payer,
-        payee=payee,
-        amount=amount,
-        income=income,
-        deduction=deduction,
-    )
-
-
-def scheduled_transfer(
-    cause_id: str,
-    *,
-    month: int,
-    payer: AgentId,
-    payee: AgentId,
-    amount: Amount,
-    income: TransferIncomeCategory | None = None,
-    deduction: TransferDeductionCategory | None = None,
-) -> Cashflow:
-    return Cashflow(
-        cause_id=cause_id,
-        schedule=Once(month=month),
-        payer=payer,
-        payee=payee,
-        amount=amount,
-        income=income,
-        deduction=deduction,
-    )
-
-
-def recurring_property_cashflow(
-    cause_id: str,
-    *,
-    property_id: PropertyId,
-    start_month: int,
-    end_month: int | None,
-    payer: AgentId,
-    payee: AgentId,
-    amount: Amount,
-    income: TransferIncomeCategory | None = None,
-    deduction: TransferDeductionCategory | None = None,
-) -> Cashflow:
-    return Cashflow(
-        cause_id=cause_id,
-        schedule=Recurring(start_month=start_month, end_month=end_month),
-        payer=payer,
-        payee=payee,
-        amount=amount,
-        income=income,
-        deduction=deduction,
-        property_id=property_id,
-    )
-
-
-def scheduled_property_cashflow(
-    cause_id: str,
-    *,
-    property_id: PropertyId,
-    month: int,
-    payer: AgentId,
-    payee: AgentId,
-    amount: Amount,
-    income: TransferIncomeCategory | None = None,
-    deduction: TransferDeductionCategory | None = None,
-) -> Cashflow:
-    return Cashflow(
-        cause_id=cause_id,
-        schedule=Once(month=month),
-        payer=payer,
-        payee=payee,
-        amount=amount,
-        income=income,
-        deduction=deduction,
-        property_id=property_id,
-    )
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -277,19 +178,6 @@ def purchase(
     )
 
 
-def property_tax(property_id: PropertyId, owner: AgentId, *, end_month: int | None = None) -> PropertyTaxPolicy:
-    return PropertyTaxPolicy(
-        property_id=property_id,
-        owner_agent_id=owner,
-        from_account_id=CHECKING,
-        tax_authority_agent_id=COUNTY,
-        tax_authority_account_id=CHECKING,
-        start_year=START_YEAR,
-        start_month=0,
-        end_month=end_month,
-    )
-
-
 def mortgage_interest_deduction(liability_id: LiabilityId, owner: AgentId) -> MortgageInterestDeduction:
     """Acquisition debt under the post-TCJA federal and preserved pre-TCJA California caps."""
 
@@ -330,10 +218,7 @@ class Situation:
     accounts: tuple[tuple[AccountRef, int], ...]
     income_sources: tuple[TransferIncomeCategory, ...] = (ORDINARY_INCOME,)
     tax_profiles: tuple[TaxProfile, ...] = ()
-    recurring_transfers: tuple[Cashflow, ...] = ()
-    scheduled_transfers: tuple[Cashflow, ...] = ()
-    recurring_property_cashflows: tuple[Cashflow, ...] = ()
-    scheduled_property_cashflows: tuple[Cashflow, ...] = ()
+    cashflows: tuple[Cashflow, ...] = ()
     obligations: tuple[Dues, ...] = ()
     housing: Housing = field(default_factory=Housing)
     property_tax_policies: tuple[PropertyTaxPolicy, ...] = ()
@@ -361,12 +246,7 @@ def compose(situation: Situation, rollout_id: int) -> World:
         world.declare_housing(situation.housing, situation.property_tax_policies)
     # Counterparty cashflows rather than actions: the world moves these when their month opens,
     # before the month's claims are assembled.
-    for flow in (
-        *situation.scheduled_transfers,
-        *situation.recurring_transfers,
-        *situation.scheduled_property_cashflows,
-        *situation.recurring_property_cashflows,
-    ):
+    for flow in situation.cashflows:
         world.declare_flow(
             schedule=flow.schedule,
             property_id=flow.property_id,
@@ -513,34 +393,35 @@ def rental(
 
     end_month = horizon_months - 1
     accounts = [account(OWNER, initial_cash), account(TENANT)]
-    recurring = [
-        recurring_transfer(
-            "rental_income:p1",
-            start_month=0,
-            end_month=end_month,
+    cashflows = [
+        Cashflow(
+            cause_id="rental_income:p1",
+            schedule=Recurring(start_month=0, end_month=end_month),
             payer=TENANT,
             payee=OWNER,
             amount=indexed(monthly_rent),
         )
     ]
-    scheduled: list[Cashflow] = []
     if monthly_management_fee is not None or leasing_fees_by_month is not None:
         accounts.append(account(AGENCY))
     if monthly_management_fee is not None:
-        recurring.append(
-            recurring_transfer(
-                "management_fee:p1",
-                start_month=0,
-                end_month=end_month,
+        cashflows.append(
+            Cashflow(
+                cause_id="management_fee:p1",
+                schedule=Recurring(start_month=0, end_month=end_month),
                 payer=OWNER,
                 payee=AGENCY,
                 amount=indexed(monthly_management_fee),
             )
         )
     if leasing_fees_by_month is not None:
-        scheduled.extend(
-            scheduled_transfer(
-                f"leasing_fee:p1:m{month}", month=month, payer=OWNER, payee=AGENCY, amount=indexed(amount)
+        cashflows.extend(
+            Cashflow(
+                cause_id=f"leasing_fee:p1:m{month}",
+                schedule=Once(month=month),
+                payer=OWNER,
+                payee=AGENCY,
+                amount=indexed(amount),
             )
             for month, amount in leasing_fees_by_month.items()
         )
@@ -549,8 +430,7 @@ def rental(
         rollout_count=1,
         series=level_series({RENT: [[1.0] * (horizon_months + 1)]}, horizon_months=horizon_months, rollout_count=1),
         accounts=tuple(accounts),
-        recurring_transfers=tuple(recurring),
-        scheduled_transfers=tuple(scheduled),
+        cashflows=tuple(cashflows),
     )
 
 
@@ -563,11 +443,10 @@ def taxed_rental(*, monthly_rent: Decimal | int, horizon_months: int = 12) -> Si
         series=level_series({RENT: [[1.0] * (horizon_months + 1)]}, horizon_months=horizon_months, rollout_count=1),
         accounts=(account(OWNER, 100_000), account(TENANT), account(IRS)),
         tax_profiles=(taxpayer(),),
-        recurring_transfers=(
-            recurring_transfer(
-                "rental_income:p1",
-                start_month=0,
-                end_month=horizon_months - 1,
+        cashflows=(
+            Cashflow(
+                cause_id="rental_income:p1",
+                schedule=Recurring(start_month=0, end_month=horizon_months - 1),
                 payer=TENANT,
                 payee=OWNER,
                 amount=indexed(monthly_rent),
@@ -588,11 +467,10 @@ def sale_situation(
     """A $500k SF rental bought for cash at month zero and sold at `sale_month` with 6% closing costs."""
 
     accounts = [account(OWNER, 600_000), account(TENANT), account(SELLER), account(IRS)]
-    recurring = [
-        recurring_transfer(
-            "rental_income:p1",
-            start_month=0,
-            end_month=sale_month - 1,
+    cashflows = [
+        Cashflow(
+            cause_id="rental_income:p1",
+            schedule=Recurring(start_month=0, end_month=sale_month - 1),
             payer=TENANT,
             payee=OWNER,
             amount=5_000 * 100,
@@ -601,11 +479,10 @@ def sale_situation(
     ]
     if year2_wage > 0:
         accounts.append(account(EMPLOYER))
-        recurring.append(
-            recurring_transfer(
-                "wages:employer",
-                start_month=12,
-                end_month=23,
+        cashflows.append(
+            Cashflow(
+                cause_id="wages:employer",
+                schedule=Recurring(start_month=12, end_month=23),
                 payer=EMPLOYER,
                 payee=OWNER,
                 amount=USD.quanta(round_currency_amount(Decimal(year2_wage) / Decimal(12), quantum=QUANTUM)),
@@ -621,7 +498,7 @@ def sale_situation(
         ),
         accounts=tuple(accounts),
         tax_profiles=(taxpayer(),),
-        recurring_transfers=tuple(recurring),
+        cashflows=tuple(cashflows),
         housing=Housing(
             purchases=(purchase(PropertyId("p1"), rented_fraction=1 if rented else 0),),
             sales=(
@@ -663,12 +540,11 @@ class TestRentalLifecycleCashflows:
             rollout_count=1,
             series=level_series({RENT: [[1.0] * 13]}, horizon_months=12, rollout_count=1),
             accounts=(account(OWNER, 700_000), account(TENANT), account(AGENCY)),
-            recurring_transfers=(
+            cashflows=(
                 *(
-                    recurring_transfer(
-                        "rental_income:p1",
-                        start_month=start_month,
-                        end_month=end_month,
+                    Cashflow(
+                        cause_id="rental_income:p1",
+                        schedule=Recurring(start_month=start_month, end_month=end_month),
                         payer=TENANT,
                         payee=OWNER,
                         amount=indexed(amount),
@@ -677,10 +553,9 @@ class TestRentalLifecycleCashflows:
                     for start_month, end_month, amount in [(0, 2, 1_500), (3, 5, 4_500), (8, 11, 3_000)]
                 ),
                 *(
-                    recurring_transfer(
-                        "management_fee:p1",
-                        start_month=start_month,
-                        end_month=end_month,
+                    Cashflow(
+                        cause_id="management_fee:p1",
+                        schedule=Recurring(start_month=start_month, end_month=end_month),
                         payer=OWNER,
                         payee=AGENCY,
                         amount=indexed(amount),
@@ -743,12 +618,11 @@ class TestRentalIncomeTaxation:
         situation = replace(
             base,
             accounts=(*base.accounts, account(AGENCY)),
-            recurring_transfers=(
-                *base.recurring_transfers,
-                recurring_transfer(
-                    "management_fee:p1",
-                    start_month=0,
-                    end_month=11,
+            cashflows=(
+                *base.cashflows,
+                Cashflow(
+                    cause_id="management_fee:p1",
+                    schedule=Recurring(start_month=0, end_month=11),
                     payer=OWNER,
                     payee=AGENCY,
                     amount=indexed(500),
@@ -821,11 +695,10 @@ class TestRentalIncomeTaxation:
             series=level_series({RENT: [[1.0] * 25], HOME_VALUE: [[1.0] * 25]}, horizon_months=24, rollout_count=1),
             accounts=(account(OWNER, 600_000), account(TENANT), account(SELLER), account(IRS)),
             tax_profiles=(taxpayer(),),
-            recurring_transfers=(
-                recurring_transfer(
-                    "rental_income:p1",
-                    start_month=rental_months[0],
-                    end_month=rental_months[1],
+            cashflows=(
+                Cashflow(
+                    cause_id="rental_income:p1",
+                    schedule=Recurring(start_month=rental_months[0], end_month=rental_months[1]),
                     payer=TENANT,
                     payee=OWNER,
                     amount=indexed(5_000),
@@ -871,11 +744,10 @@ class TestRentalIncomeTaxation:
             series=level_series({HOME_VALUE: [[1.0] * 13]}, horizon_months=12, rollout_count=1),
             accounts=(account(OWNER, 700_000), account(TENANT), account(SELLER), account(LENDER), account(IRS)),
             tax_profiles=(taxpayer(),),
-            recurring_transfers=(
-                recurring_transfer(
-                    "paycheck",
-                    start_month=0,
-                    end_month=11,
+            cashflows=(
+                Cashflow(
+                    cause_id="paycheck",
+                    schedule=Recurring(start_month=0, end_month=11),
                     payer=TENANT,
                     payee=OWNER,
                     amount=5_000 * 100,
@@ -911,11 +783,10 @@ class TestRentalIncomeTaxation:
             series=level_series({HOME_VALUE: [[1.0] * 13]}, horizon_months=12, rollout_count=1),
             accounts=(account(OWNER, 700_000), account(TENANT), account(SELLER), account(IRS)),
             tax_profiles=(taxpayer(),),
-            recurring_transfers=(
-                recurring_transfer(
-                    "rental_income:p1",
-                    start_month=0,
-                    end_month=11,
+            cashflows=(
+                Cashflow(
+                    cause_id="rental_income:p1",
+                    schedule=Recurring(start_month=0, end_month=11),
                     payer=TENANT,
                     payee=OWNER,
                     amount=5_000 * 100,
@@ -953,11 +824,10 @@ class TestRentalIncomeTaxation:
             series=level_series({HOME_VALUE: [[1.0] * 13]}, horizon_months=12, rollout_count=1),
             accounts=(account(OWNER, 700_000), account(EMPLOYER), account(SELLER), account(IRS)),
             tax_profiles=(taxpayer(),),
-            recurring_transfers=(
-                recurring_transfer(
-                    "wages:employer",
-                    start_month=0,
-                    end_month=11,
+            cashflows=(
+                Cashflow(
+                    cause_id="wages:employer",
+                    schedule=Recurring(start_month=0, end_month=11),
                     payer=EMPLOYER,
                     payee=OWNER,
                     amount=5_000 * 100,
@@ -1050,12 +920,11 @@ class TestRentalIncomeTaxation:
             ),
             accounts=(account(OWNER, 700_000), account(TENANT), account(SELLER), account(LENDER), account(IRS)),
             tax_profiles=(taxpayer(),),
-            recurring_property_cashflows=(
-                recurring_property_cashflow(
-                    "rental_income:p1",
+            cashflows=(
+                Cashflow(
+                    cause_id="rental_income:p1",
                     property_id=PropertyId("p1"),
-                    start_month=0,
-                    end_month=11,
+                    schedule=Recurring(start_month=0, end_month=11),
                     payer=TENANT,
                     payee=OWNER,
                     amount=5_000 * 100,
@@ -1157,17 +1026,19 @@ class TestRentalIncomeTaxation:
             ),
             income_sources=(ORDINARY_INCOME, MUNI_INTEREST),
             tax_profiles=(taxpayer(BOB, jurisdiction_ids=(FEDERAL,)), taxpayer(ALICE, jurisdiction_ids=(FEDERAL,))),
-            scheduled_transfers=(
-                scheduled_transfer(
-                    "california_muni_interest", month=0, payer=ISSUER, payee=BOB, amount=100 * 100, income=MUNI_INTEREST
+            cashflows=(
+                Cashflow(
+                    cause_id="california_muni_interest",
+                    schedule=Once(month=0),
+                    payer=ISSUER,
+                    payee=BOB,
+                    amount=100 * 100,
+                    income=MUNI_INTEREST,
                 ),
-            ),
-            recurring_property_cashflows=(
-                recurring_property_cashflow(
-                    "rental_income:alice_rental",
+                Cashflow(
+                    cause_id="rental_income:alice_rental",
                     property_id=PropertyId("alice_rental"),
-                    start_month=0,
-                    end_month=sale_month - 1,
+                    schedule=Recurring(start_month=0, end_month=sale_month - 1),
                     payer=TENANT,
                     payee=ALICE,
                     amount=monthly_rent * 100,
@@ -1218,8 +1089,8 @@ class TestRentalIncomeTaxation:
                 initial_residences=(PrimaryResidence(agent_id=BOB, property_id=PropertyId("bob_home")),),
             ),
             property_tax_policies=(
-                property_tax(PropertyId("alice_rental"), ALICE),
-                property_tax(PropertyId("bob_home"), BOB),
+                property_tax(PropertyId("alice_rental"), COUNTY, owner=ALICE),
+                property_tax(PropertyId("bob_home"), COUNTY, owner=BOB),
             ),
             mortgage_interest_policies=(
                 mortgage_interest_deduction(LiabilityId("alice_rental_mortgage"), ALICE),
@@ -1329,52 +1200,45 @@ class TestRentalIncomeTaxation:
         situation = replace(
             base,
             accounts=(*base.accounts, account(AGENCY), account(AgentId("generic_payer"))),
-            recurring_transfers=(
-                recurring_transfer(
-                    "generic_transfer",
-                    start_month=0,
-                    end_month=23,
+            cashflows=(
+                Cashflow(
+                    cause_id="generic_transfer",
+                    schedule=Recurring(start_month=0, end_month=23),
                     payer=AgentId("generic_payer"),
                     payee=OWNER,
                     amount=generic_transfer * 100,
                 ),
-            ),
-            recurring_property_cashflows=(
-                recurring_property_cashflow(
-                    "rental_income:p1",
+                Cashflow(
+                    cause_id="rental_income:p1",
                     property_id=PropertyId("p1"),
-                    start_month=0,
-                    end_month=23,
+                    schedule=Recurring(start_month=0, end_month=23),
                     payer=TENANT,
                     payee=OWNER,
                     amount=monthly_rent * 100,
                     income=ORDINARY_INCOME,
                 ),
-                recurring_property_cashflow(
-                    "management_fee:p1",
+                Cashflow(
+                    cause_id="management_fee:p1",
                     property_id=PropertyId("p1"),
-                    start_month=0,
-                    end_month=23,
+                    schedule=Recurring(start_month=0, end_month=23),
                     payer=OWNER,
                     payee=AGENCY,
                     amount=monthly_management_fee * 100,
                     deduction="ordinary",
                 ),
-            ),
-            scheduled_property_cashflows=(
-                scheduled_property_cashflow(
-                    "leasing_fee:p1:m0",
+                Cashflow(
+                    cause_id="leasing_fee:p1:m0",
                     property_id=PropertyId("p1"),
-                    month=0,
+                    schedule=Once(month=0),
                     payer=OWNER,
                     payee=AGENCY,
                     amount=leasing_fee * 100,
                     deduction="ordinary",
                 ),
-                scheduled_property_cashflow(
-                    f"leasing_fee:p1:m{sale_month}",
+                Cashflow(
+                    cause_id=f"leasing_fee:p1:m{sale_month}",
                     property_id=PropertyId("p1"),
-                    month=sale_month,
+                    schedule=Once(month=sale_month),
                     payer=OWNER,
                     payee=AGENCY,
                     amount=leasing_fee * 100,
@@ -1521,7 +1385,7 @@ class TestRentalIncomeTaxation:
         )
         situation = replace(
             base,
-            recurring_transfers=(),
+            cashflows=(),
             housing=replace(
                 base.housing,
                 residence_events=(

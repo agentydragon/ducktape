@@ -10,7 +10,6 @@ This is an investigation helper, not production CI code. It shells out to:
 from __future__ import annotations
 
 import argparse
-import dataclasses
 import gzip
 import json
 import re
@@ -23,9 +22,8 @@ from pathlib import Path
 from typing import Any, cast
 
 from devinfra.buildbuddy.ci.invocation_ids import invocation_id
+from devinfra.buildbuddy.ci.remote_log_markers import parse_probe_cas, strip_ansi
 
-ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
-CARET_ANSI_RE = re.compile(r"\^\[\[[0-9;]*m")
 COMMAND_RE = re.compile(r"CI_BAZEL_COMMAND role=(?P<role>[a-z0-9_-]+)")
 ANALYZING_RE = re.compile(
     r"Analyzing:\s*(?P<targets>\d+) targets "
@@ -36,23 +34,15 @@ PROCESS_RE = re.compile(r"(?P<count>\d+) process(?:es)?: (?P<text>.*)")
 PROBE_SUMMARY_RE = re.compile(r"CI_VM_PROBE_SUMMARY (?P<kv>.*)")
 PROBE_SERVER_RE = re.compile(r"CI_VM_PROBE_SERVER (?P<kv>.*)")
 PROBE_ARCHIVE_RE = re.compile(r"CI_VM_PROBE_ARCHIVE (?P<kv>.*)")
-PROBE_CAS_RE = re.compile(r"CI_VM_PROBE_CAS (?P<rest>.*)")
 
 
-@dataclasses.dataclass
-class CommandResult:
-    argv: list[str]
-    stdout: str
-    stderr: str
-
-
-def run(argv: list[str], *, cwd: Path | None = None, check: bool = True) -> CommandResult:
-    proc = subprocess.run(argv, cwd=cwd, check=False, text=True, capture_output=True)
-    if check and proc.returncode != 0:
+def _run_command(argv: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
+    try:
+        return subprocess.run(argv, check=check, text=True, capture_output=True)
+    except subprocess.CalledProcessError as error:
         raise RuntimeError(
-            f"command failed\nargv={argv!r}\nreturncode={proc.returncode}\nstdout={proc.stdout}\nstderr={proc.stderr}"
-        )
-    return CommandResult(argv=argv, stdout=proc.stdout, stderr=proc.stderr)
+            f"command failed\nargv={argv!r}\nreturncode={error.returncode}\nstdout={error.stdout}\nstderr={error.stderr}"
+        ) from error
 
 
 def intish(value: Any) -> int | None:
@@ -62,10 +52,6 @@ def intish(value: Any) -> int | None:
         return int(value)
     except TypeError, ValueError:
         return None
-
-
-def strip_ansi(line: str) -> str:
-    return CARET_ANSI_RE.sub("", ANSI_RE.sub("", line))
 
 
 def as_json_dict(value: Any) -> dict[str, Any]:
@@ -114,18 +100,8 @@ def parse_log(text: str, known_invocations: list[dict[str, str]]) -> dict[str, A
         if match := PROBE_ARCHIVE_RE.search(line):
             probe_archives.append(parse_kv(match.group("kv")))
             continue
-        if match := PROBE_CAS_RE.search(line):
-            rest = match.group("rest")
-            if rest.startswith("digest="):
-                digest = rest.removeprefix("digest=")
-                if digest:
-                    probe_cas.append({"digest": digest})
-                else:
-                    probe_cas.append({"missing_digest": "empty"})
-            elif rest.startswith("missing_digest="):
-                probe_cas.append({"missing_digest": rest.removeprefix("missing_digest=")})
-            else:
-                probe_cas.append({"raw": rest})
+        if (probe := parse_probe_cas(line)) is not None:
+            probe_cas.append(probe)
             continue
         if match := COMMAND_RE.search(line):
             current = invocations_by_role.get(match.group("role"))
@@ -252,7 +228,7 @@ def profile_summary(path: Path) -> dict[str, Any]:
 
 
 def fetch_bes_events(invocation_id: str, *, bbapi: Path = Path("bbapi")) -> list[dict[str, Any]]:
-    result = run([str(bbapi), "invocation", "events", invocation_id])
+    result = _run_command([str(bbapi), "invocation", "events", invocation_id])
     data = json.loads(result.stdout)
     if not isinstance(data, list):
         raise RuntimeError(f"BES raw JSON for {invocation_id} was not a list")
@@ -334,7 +310,7 @@ def bes_summary(events: list[dict[str, Any]]) -> dict[str, Any]:
 
 def gh_run_metadata(repo: str, run_id: str) -> dict[str, Any]:
     fields = "databaseId,attempt,workflowName,event,headBranch,headSha,displayTitle,status,conclusion,createdAt,updatedAt,jobs"
-    data = json.loads(run(["gh", "run", "view", run_id, "--repo", repo, "--json", fields]).stdout)
+    data = json.loads(_run_command(["gh", "run", "view", run_id, "--repo", repo, "--json", fields]).stdout)
     if not isinstance(data, dict):
         raise RuntimeError(f"GitHub run metadata for {run_id} was not a JSON object")
     return cast(dict[str, Any], data)
@@ -348,16 +324,14 @@ def bazel_job_id(run_meta: dict[str, Any]) -> str:
 
 
 def download_job_log(repo: str, run_id: str, job_id: str, out: Path) -> str:
-    log = run(["gh", "run", "view", run_id, "--job", job_id, "--log", "--repo", repo]).stdout
+    log = _run_command(["gh", "run", "view", run_id, "--job", job_id, "--log", "--repo", repo]).stdout
     out.write_text(log)
     return log
 
 
 def download_profile(bbapi: Path, invocation_id: str, out: Path) -> Path | None:
     out.parent.mkdir(parents=True, exist_ok=True)
-    result = run([str(bbapi), "tool-log", "download", invocation_id, "command.profile.gz", "-o", str(out)], check=False)
-    if "Downloaded to " not in result.stdout and not out.exists():
-        return None
+    _run_command([str(bbapi), "tool-log", "download", invocation_id, "command.profile.gz", "-o", str(out)], check=False)
     return out if out.exists() else None
 
 
@@ -374,7 +348,7 @@ def decompressed_profile_path(profile_gz: Path) -> Path:
 
 def download_probe_bundle(digest: str, out: Path) -> bool:
     out.parent.mkdir(parents=True, exist_ok=True)
-    result = run(["bb", "download", digest, f"--output_file={out}"], check=False)
+    result = _run_command(["bb", "download", digest, f"--output_file={out}"], check=False)
     return out.exists() and result.stderr == ""
 
 

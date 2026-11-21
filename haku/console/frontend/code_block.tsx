@@ -1,12 +1,11 @@
 // Read-only CodeMirror 6 viewer for highlighted, foldable code — the one component behind every
-// code-shaped surface: tool-call previews (JSON arguments/results, plain bodies like an email or a
-// routine instruction) and trusted shell details such as bridge-request options. Per-language
+// code-shaped surface: tool-call previews (JSON arguments/results, a plain routine instruction)
+// and trusted shell details such as bridge-request options. Per-language
 // grammars arrive as extensions; the fold gutter collapses long/nested regions. Colors read the
 // `--haku-json-*` / `--haku-code-*` CSS variables (see styles.src.css), which flip with the Mantine
 // color scheme, so one style adapts to light and dark.
 import CodeMirror from "@uiw/react-codemirror";
 import { json } from "@codemirror/lang-json";
-import { yaml } from "@codemirror/lang-yaml";
 import {
   foldEffect,
   foldable,
@@ -20,9 +19,7 @@ import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { type JSX, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { shellLanguage } from "./shell_lang";
-
-export type CodeLanguage = "json" | "yaml" | "shell";
+export type CodeLanguage = "json";
 
 const HAKU_HIGHLIGHT = HighlightStyle.define([
   { tag: tags.propertyName, color: "var(--haku-json-key)" },
@@ -57,8 +54,6 @@ const HAKU_THEME = EditorView.theme({
 
 const LANGUAGE_EXTENSIONS: Record<CodeLanguage, () => Extension> = {
   json: () => json(),
-  yaml: () => yaml(),
-  shell: () => shellLanguage,
 };
 
 // Lines of content that fit in the editor's clipped height — the compact block fills this rather
@@ -205,8 +200,8 @@ function useNearViewport(): { ref: (node: HTMLDivElement | null) => void; near: 
   return { ref, near };
 }
 
-/** Read-only, foldable, syntax-highlighted code. Omit `language` for plain text (an email body, a
- * routine instruction) — same neutral chrome, no grammar and so no fold gutter. `compact` (only
+/** Read-only, foldable, syntax-highlighted code. Omit `language` for plain text (a routine
+ * instruction) — same neutral chrome, no grammar and so no fold gutter. `compact` (only
  * meaningful with a `language`) auto-folds so the block fills its height with leading entries
  * instead of overflowing; `lineNumbers` is off by default, on for long detailed surfaces.
  *

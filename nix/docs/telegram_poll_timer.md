@@ -20,8 +20,8 @@ was used for TTL timers in [upstream commit
 `b2e8299`](https://github.com/telegramdesktop/tdesktop/commit/b2e829904fb7976784618dea18700dbb5568b42f).
 
 The current root [flake lock](../../flake.lock) selects the `nixpkgs` revision
-[`c56a87d`](https://github.com/NixOS/nixpkgs/commit/c56a87d8e41ce69bd2af57eb35dcc117a9dfca33),
-whose [Telegram Desktop derivation](https://github.com/NixOS/nixpkgs/blob/c56a87d8e41ce69bd2af57eb35dcc117a9dfca33/pkgs/applications/networking/instant-messengers/telegram/telegram-desktop/unwrapped.nix)
+[`b349185`](https://github.com/NixOS/nixpkgs/commit/b349185bb79c7cf7ad8ea8c097931730bf473c71),
+whose [Telegram Desktop derivation](https://github.com/NixOS/nixpkgs/blob/b349185bb79c7cf7ad8ea8c097931730bf473c71/pkgs/applications/networking/instant-messengers/telegram/telegram-desktop/unwrapped.nix)
 sets version `7.2.9`. Its
 [`data_session.cpp`](https://github.com/telegramdesktop/tdesktop/blob/v7.2.9/Telegram/SourceFiles/data/data_session.cpp#L5004-L5008)
 caps the poll timer at 24 hours and checks again later. This confirms the

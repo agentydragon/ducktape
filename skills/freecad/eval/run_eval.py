@@ -1,8 +1,8 @@
 """Run a FreeCAD skill eval: agent produces baseplate.FCStd, transcript logged.
 
 Usage:
-  ANTHROPIC_API_KEY=sk-... bazel run //skills/freecad/eval:run_eval -- /tmp/eval-output
-  ANTHROPIC_API_KEY=sk-... bazel run //skills/freecad/eval:run_eval -- /tmp/out --model claude-opus-5
+  ANTHROPIC_API_KEY=sk-... bazel run //skills/freecad/eval:run_eval_bin -- /tmp/eval-output
+  ANTHROPIC_API_KEY=sk-... bazel run //skills/freecad/eval:run_eval_bin -- /tmp/out --model claude-opus-5
 """
 
 import argparse

@@ -13,8 +13,9 @@ from cdk8s_plus_34 import ConfigMap
 from more_itertools import one
 from python.runfiles import Runfiles
 
-from agentplane.env.config import CodexReadiness, Configuration, VMEnvironment
+from agentplane.env.config import CodexReadiness, Configuration, SystemdEnvironment
 from cluster.cdk8s.agentplane import environment_guest, environment_sandbox, environment_vm, launcher_relay, staging
+from cluster.cdk8s.testing.manifests import find_resource
 
 HARNESS_ENV = {"EXAMPLE_SERVICE_URL": "http://service.test"}
 
@@ -60,9 +61,7 @@ def _environment_vm_manifests(
         ),
     )
     docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
-    config_map = one(
-        doc for doc in docs if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "environment-vm-config"
-    )
+    config_map = find_resource(docs, "ConfigMap", "environment-vm-config")
     sandbox_template = one(doc for doc in docs if doc["kind"] == "SandboxTemplate")
     return {
         "config_map": config_map["data"],
@@ -102,8 +101,20 @@ def test_console_autologin_reaches_the_vm_environment_only_when_enabled(
     config = Configuration.model_validate(
         _environment_vm_manifests(app=scratch_app, console_autologin=console_autologin)["environment_runtime"]
     )
-    assert isinstance(config.environment, VMEnvironment)
+    assert isinstance(config.environment, SystemdEnvironment)
     assert config.environment.console_autologin == rendered
+
+
+def test_executor_selects_native_implementation(scratch_app: App) -> None:
+    rendered = _environment_vm_manifests(app=scratch_app, console_autologin=False)
+    executor = rendered["environment_runtime"]["environment"]["executor"]
+    assert executor["implementation"] == "native"
+    assert executor["owner"] == {"kind": "systemd"}
+    assert executor["placement"] == "systemd"
+    assert staging.STAGING_VM_RESOURCES.executor_workload is not None
+    assert rendered["environment_runtime"]["environment"]["resources"]["executor_workload"] == (
+        staging.STAGING_VM_RESOURCES.executor_workload.model_dump()
+    )
 
 
 def test_harness_env_reaches_the_vm_environment(scratch_app: App) -> None:
@@ -114,7 +125,7 @@ def test_harness_env_reaches_the_vm_environment(scratch_app: App) -> None:
     assert config.session_reconcile_concurrency is None
     assert config.codex_readiness is None
     assert "codex_readiness" not in rendered["environment_runtime"]
-    assert isinstance(config.environment, VMEnvironment)
+    assert isinstance(config.environment, SystemdEnvironment)
 
 
 def test_session_reconcile_concurrency_reaches_vm_environment_runtime_configuration(scratch_app: App) -> None:
@@ -175,11 +186,7 @@ def test_vm_workspace_is_a_controller_attached_block_filesystem(scratch_app: App
 def test_staging_uses_the_replicated_class_for_both_vm_claims_and_keeps_pod_storage(
     staging_manifests: list[dict[str, Any]],
 ) -> None:
-    vm_template = one(
-        doc
-        for doc in staging_manifests
-        if doc["kind"] == "SandboxTemplate" and doc["metadata"]["name"] == environment_vm.NAME
-    )
+    vm_template = find_resource(staging_manifests, "SandboxTemplate", environment_vm.NAME)
     vm_state = vm_template["spec"]["stateVolume"]
     vm_workspace = vm_template["spec"]["workspaceVolume"]
     assert vm_state["layout"] == {"type": "DirectoryTree"}
@@ -191,11 +198,7 @@ def test_staging_uses_the_replicated_class_for_both_vm_claims_and_keeps_pod_stor
     assert staging.ENV.vm_storage_class == "piraeus-ssd-2-autodiskful"
     assert vm_state["claim"]["storageClassName"] == staging.ENV.vm_storage_class
 
-    environment_template = one(
-        doc
-        for doc in staging_manifests
-        if doc["kind"] == "SandboxTemplate" and doc["metadata"]["name"] == staging.POD_TEMPLATE
-    )
+    environment_template = find_resource(staging_manifests, "SandboxTemplate", staging.POD_TEMPLATE)
     pod_state = environment_template["spec"]["stateVolume"]
     assert pod_state["claim"]["storageClassName"] != vm_state["claim"]["storageClassName"]
     assert environment_template["spec"]["workspaceVolume"]["layout"] == {"type": "DirectoryTree"}

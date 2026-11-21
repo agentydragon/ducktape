@@ -2,19 +2,15 @@ import { readFileSync } from "node:fs";
 import { TextDecoder, TextEncoder } from "node:util";
 import { URLSearchParams } from "node:url";
 import { runInNewContext } from "node:vm";
-import { create, fromJson, type JsonObject } from "@bufbuild/protobuf";
-import { TimestampSchema } from "@bufbuild/protobuf/wkt";
+import { fromJson } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 
 import {
-  ActionIdentitySchema,
-  ActionRequestSchema,
-  ActionState,
   Verdict as ProtoVerdict,
   type ActionRequest,
 } from "../../../../../action_service/api/contracts/action_service_pb";
 import { DecideActionRequestRequestSchema } from "../../../../../action_service/api/contracts/operator_action_service_pb";
-import { decideActionRequestProtoJson, listActionRequestsProtoJson } from "../../testing/proto_fixtures";
+import { actionRequest, decideActionRequestProtoJson, listActionRequestsProtoJson } from "../../testing/proto_fixtures";
 
 type PushMessage =
   | {
@@ -52,28 +48,8 @@ type TestWorker = {
   setPending(actions: ActionRequest[] | null): void;
 };
 
-function actionRequest(fields: {
-  action: { group: string; name: string };
-  arguments: JsonObject;
-  title: string;
-  description?: string | null;
-}): ActionRequest {
-  return create(ActionRequestSchema, {
-    id: "00000000-0000-4000-8000-000000000001",
-    idempotencyKey: "notification-format-test",
-    action: create(ActionIdentitySchema, fields.action),
-    arguments: fields.arguments,
-    title: fields.title,
-    description: fields.description ?? undefined,
-    caller: { namespace: "test-namespace", name: "test-account" },
-    state: ActionState.DECISION_PENDING,
-    version: 1n,
-    createdAt: fromJson(TimestampSchema, "2026-10-09T12:00:00Z"),
-    updatedAt: fromJson(TimestampSchema, "2026-10-09T12:00:00Z"),
-  });
-}
-
-function loadWorker(): TestWorker {
+function loadWorker(options: { previews?: boolean; lookup?: () => Promise<Response> } = {}): TestWorker {
+  const { lookup } = options;
   const listeners: TestWorker["listeners"] = new Map();
   const requests: TestWorker["requests"] = [];
   const windows: TestWorker["windows"] = [];
@@ -111,8 +87,11 @@ function loadWorker(): TestWorker {
     TextDecoder,
     TextEncoder,
     URLSearchParams,
+    AbortSignal,
+    caches: { match: async () => (options.previews ? new Response() : undefined) },
     fetch: async (url: string, options?: RequestInit) => {
       requests.push({ url, options });
+      if (url.endsWith("-summaries")) return lookup ? lookup() : Response.json({}, { status: 503 });
       const actionRequest = pending?.[0];
       const body =
         options?.method === "POST"
@@ -171,6 +150,78 @@ describe("service worker notifications", () => {
       }
     `);
     expect(notice.actions).toHaveLength(2);
+  });
+
+  it("keeps Gmail subjects out of notifications until the browser opts in", async () => {
+    const pending = actionRequest({
+      action: { group: "gmail", name: "threads_modify_labels" },
+      title: "Mark deployment review as read",
+      arguments: { thread_ids: ["thread-1", "thread-2"], add: ["Reviewed"] },
+    });
+    const lookup = async () => Response.json({ threads: [{ threadId: "thread-1", subject: "Deployment review" }] });
+    const disabled = loadWorker({ lookup });
+    disabled.setPending([pending]);
+    expect((await show(disabled)).body).toBe("2 threads");
+    expect(disabled.requests).toHaveLength(1);
+
+    const enabled = loadWorker({ previews: true, lookup });
+    enabled.setPending([pending]);
+    expect((await show(enabled)).body).toBe("Deployment review · +1 thread");
+    expect(enabled.requests[1]?.url).toContain(`/operator/action-requests/${pending.id}/gmail-thread-summaries`);
+  });
+
+  it("shows Tana names when available and falls back if the lookup fails", async () => {
+    const pending = actionRequest({
+      action: { group: "tana", name: "move_node" },
+      title: "Organize draft",
+      description: "Move the draft into the project.",
+      arguments: { nodeId: "draft", targetNodeId: "project" },
+    });
+    const lookup = async () =>
+      Response.json({
+        nodes: [
+          { nodeId: "draft", name: "Draft notes" },
+          { nodeId: "project", name: "Website project" },
+        ],
+      });
+    const enabled = loadWorker({ previews: true, lookup });
+    enabled.setPending([pending]);
+    expect((await show(enabled)).body).toBe("Draft notes → Website project");
+    expect(enabled.requests[1]?.url).toContain(`/operator/action-requests/${pending.id}/tana-node-summaries`);
+
+    const unavailable = loadWorker({ previews: true });
+    unavailable.setPending([pending]);
+    expect((await show(unavailable)).body).toBe("Move the draft into the project.");
+  });
+
+  it("discards a preview whose notification was superseded during the lookup", async () => {
+    let releaseLookup: (result: Response) => void = () => {};
+    let lookupStarted: () => void = () => {};
+    const waiting = new Promise<void>((resolve) => {
+      lookupStarted = resolve;
+    });
+    const lookup = () =>
+      new Promise<Response>((resolve) => {
+        releaseLookup = resolve;
+        lookupStarted();
+      });
+    const worker = loadWorker({ previews: true, lookup });
+    worker.setPending([
+      actionRequest({
+        action: { group: "gmail", name: "threads_modify_labels" },
+        title: "Relabel archived thread",
+        arguments: { thread_ids: ["stale"] },
+      }),
+    ]);
+    const firstPush = dispatch(worker, "push", { data: { json: () => showMessage } });
+    await waiting;
+
+    worker.setPending([]);
+    await show(worker, { kind: "retract", action_id: "request" });
+    releaseLookup(Response.json({ threads: [{ threadId: "stale", subject: "Old subject" }] }));
+    await firstPush;
+    expect(worker.notices).toHaveLength(1);
+    expect(worker.notices[0]?.silent).toBe(true);
   });
 
   it("renders SSH exec with its target, command, and timeout", async () => {

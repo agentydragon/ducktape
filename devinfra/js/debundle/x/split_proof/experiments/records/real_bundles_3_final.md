@@ -1,0 +1,11 @@
+| Input             | Statements | Modules | JSON | Footprints | mkPlan | UniqueDefs | ReadsClosed | Faithful | Linkable | Hygienic | Permutes | OrderOk | All checks | Verdict                          |
+| ----------------- | ---------- | ------- | ---- | ---------- | ------ | ---------- | ----------- | -------- | -------- | -------- | -------- | ------- | ---------- | -------------------------------- |
+| lodash, first 100 | 100        | 4       | 3    | 0          | 0      | 1          | 0           | 0        | 0        | 0        | 0        | 1       | 2          | accepted                         |
+| lodash, first 200 | 200        | 8       | 4    | 0          | 1      | 0          | 1           | 0        | 0        | 0        | 0        | 2       | 3          | accepted                         |
+| lodash, first 300 | 300        | 12      | 9    | 2          | 2      | 0          | 1           | 1        | 0        | 1        | 0        | 3       | 6          | accepted                         |
+| semver            | 59         | 4       | 13   | 3          | 1      | 0          | 1           | 0        | 0        | 0        | 0        | 1       | 2          | accepted                         |
+| lodash            | 670        | 6       | 13   | 3          | 5      | 0          | 6           | 1        | 0        | 1        | 0        | 13      | 21         | accepted                         |
+| acorn             | 447        | 5       | 44   | 6          | 6      | 0          | 2           | 0        | 0        | 1        | 0        | 4       | 7          | accepted                         |
+| acorn, minified   | 374        | 5       | 42   | 8          | 6      | 1          | 4           | 0        | 1        | 0        | 0        | 5       | 11         | rejected: OrderOk front-end rule |
+| zod, minified     | 805        | 8       | 132  | 25         | 29     | 0          | 61          | 3        | 2        | 5        | 1        | 62      | 134        | rejected: OrderOk front-end rule |
+| zod               | 1072       | 8       | 117  | 26         | 26     | 0          | 19          | 3        | 2        | 4        | 1        | 20      | 49         | rejected: OrderOk front-end rule |

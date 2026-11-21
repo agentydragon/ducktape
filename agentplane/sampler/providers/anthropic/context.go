@@ -132,7 +132,11 @@ func (c *Context) AppendToolResult(call protocol.ToolInvocation, parts []protoco
 	if c == nil {
 		return errors.New("nil Anthropic context")
 	}
-	found, err := c.FindCall(call.CallID)
+	calls, err := c.toolCalls()
+	if err != nil {
+		return err
+	}
+	found, err := findToolCall(calls, call.CallID)
 	if err != nil {
 		return err
 	}
@@ -143,7 +147,7 @@ func (c *Context) AppendToolResult(call protocol.ToolInvocation, parts []protoco
 	if err != nil {
 		return err
 	}
-	answered, err := c.answeredCalls()
+	answered, err := c.answeredCalls(calls)
 	if err != nil {
 		return err
 	}
@@ -211,6 +215,10 @@ func (c *Context) FindCall(callID string) (protocol.ToolInvocation, error) {
 	if err != nil {
 		return protocol.ToolInvocation{}, err
 	}
+	return findToolCall(calls, callID)
+}
+
+func findToolCall(calls []protocol.ToolInvocation, callID string) (protocol.ToolInvocation, error) {
 	for _, call := range calls {
 		if call.CallID == callID {
 			return call, nil
@@ -227,7 +235,7 @@ func (c *Context) PendingCalls() ([]protocol.ToolInvocation, error) {
 	if err != nil {
 		return nil, err
 	}
-	answered, err := c.answeredCalls()
+	answered, err := c.answeredCalls(calls)
 	if err != nil {
 		return nil, err
 	}
@@ -240,83 +248,75 @@ func (c *Context) PendingCalls() ([]protocol.ToolInvocation, error) {
 	return pending, nil
 }
 
-func (c *Context) toolCalls() ([]protocol.ToolInvocation, error) {
-	calls := []protocol.ToolInvocation{}
-	seen := map[string]bool{}
-	for recordIndex, record := range c.messages {
+func (c *Context) visitToolBlocks(role Role, kind BlockType, visit func(int, map[string]json.RawMessage) error) error {
+	for index, record := range c.messages {
 		fields := messageFields(record)
 		if len(fields) == 0 {
-			return nil, fmt.Errorf("decode Anthropic record %d", recordIndex+1)
+			return fmt.Errorf("decode Anthropic record %d", index+1)
 		}
-		if roleOf(fields) != RoleAssistant {
+		if roleOf(fields) != role {
 			continue
 		}
 		content, err := anthropicContentBlocks(fields["content"])
 		if err != nil {
-			return nil, fmt.Errorf("decode Anthropic record %d content: %w", recordIndex+1, err)
+			return fmt.Errorf("decode Anthropic record %d content: %w", index+1, err)
 		}
-		for _, blockRaw := range content {
+		for _, raw := range content {
 			var block map[string]json.RawMessage
-			if err := json.Unmarshal(blockRaw, &block); err != nil {
-				return nil, fmt.Errorf("decode Anthropic content block: %w", err)
+			if err := json.Unmarshal(raw, &block); err != nil {
+				return fmt.Errorf("decode Anthropic content block: %w", err)
 			}
-			if blockTypeOf(block) != BlockToolUse {
-				continue
+			if blockTypeOf(block) == kind {
+				if err := visit(index+1, block); err != nil {
+					return err
+				}
 			}
-			callID, name := rawString(block, "id"), rawString(block, "name")
-			input := bytes.TrimSpace(block["input"])
-			var object map[string]json.RawMessage
-			if callID == "" || name == "" || len(input) == 0 || json.Unmarshal(input, &object) != nil || object == nil {
-				return nil, errors.New("invalid Anthropic tool_use block")
-			}
-			if seen[callID] {
-				return nil, fmt.Errorf("duplicate Anthropic tool call ID %q", callID)
-			}
-			seen[callID] = true
-			calls = append(calls, protocol.ToolInvocation{
-				Encoding: protocol.ExecEncodingJSON, CallID: callID, Name: name, Input: string(input), SourceRecord: recordIndex + 1,
-			})
 		}
+	}
+	return nil
+}
+
+func (c *Context) toolCalls() ([]protocol.ToolInvocation, error) {
+	calls := []protocol.ToolInvocation{}
+	seen := map[string]bool{}
+	err := c.visitToolBlocks(RoleAssistant, BlockToolUse, func(record int, block map[string]json.RawMessage) error {
+		callID, name := rawString(block, "id"), rawString(block, "name")
+		input := bytes.TrimSpace(block["input"])
+		var object map[string]json.RawMessage
+		if callID == "" || name == "" || len(input) == 0 || json.Unmarshal(input, &object) != nil || object == nil {
+			return errors.New("invalid Anthropic tool_use block")
+		}
+		if seen[callID] {
+			return fmt.Errorf("duplicate Anthropic tool call ID %q", callID)
+		}
+		seen[callID] = true
+		calls = append(calls, protocol.ToolInvocation{
+			Encoding: protocol.ExecEncodingJSON, CallID: callID, Name: name, Input: string(input), SourceRecord: record,
+		})
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return calls, nil
 }
 
-func (c *Context) answeredCalls() (map[string]bool, error) {
+func (c *Context) answeredCalls(calls []protocol.ToolInvocation) (map[string]bool, error) {
 	known := map[string]bool{}
-	calls, err := c.toolCalls()
-	if err != nil {
-		return nil, err
-	}
 	for _, call := range calls {
 		known[call.CallID] = true
 	}
 	answered := map[string]bool{}
-	for recordIndex, record := range c.messages {
-		fields := messageFields(record)
-		if len(fields) == 0 {
-			return nil, fmt.Errorf("decode Anthropic record %d", recordIndex+1)
+	err := c.visitToolBlocks(RoleUser, BlockToolResult, func(record int, block map[string]json.RawMessage) error {
+		var callID string
+		if err := json.Unmarshal(block["tool_use_id"], &callID); err != nil || callID == "" || !known[callID] || answered[callID] {
+			return fmt.Errorf("invalid or duplicate Anthropic tool_result at record %d", record)
 		}
-		if roleOf(fields) != RoleUser {
-			continue
-		}
-		content, err := anthropicContentBlocks(fields["content"])
-		if err != nil {
-			return nil, fmt.Errorf("decode Anthropic record %d content: %w", recordIndex+1, err)
-		}
-		for _, blockRaw := range content {
-			var block map[string]json.RawMessage
-			if err := json.Unmarshal(blockRaw, &block); err != nil {
-				return nil, fmt.Errorf("decode Anthropic content block: %w", err)
-			}
-			if blockTypeOf(block) != BlockToolResult {
-				continue
-			}
-			var callID string
-			if err := json.Unmarshal(block["tool_use_id"], &callID); err != nil || callID == "" || !known[callID] || answered[callID] {
-				return nil, fmt.Errorf("invalid or duplicate Anthropic tool_result at record %d", recordIndex+1)
-			}
-			answered[callID] = true
-		}
+		answered[callID] = true
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return answered, nil
 }

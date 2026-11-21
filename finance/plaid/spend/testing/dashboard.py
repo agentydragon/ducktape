@@ -28,11 +28,9 @@ from finance.plaid.spend.allowance import (
     TransactionDecision,
     calculate,
 )
-from finance.plaid.spend.configuration import CardConfig, SpendConfiguration
+from finance.plaid.spend.configuration import CardConfig, SpendConfiguration, configuration_view
 from finance.plaid.spend.models import (
     AlertState,
-    AllowanceConfigurationView,
-    CardConfigurationView,
     CardView,
     ProvisionalCardPeriod,
     SpendConfigurationView,
@@ -288,29 +286,4 @@ def spend_configuration(*, warmup: bool = False, monthly_minor_units: int = 7000
 
 
 def configuration() -> SpendConfigurationView:
-    config = spend_configuration()
-    allowance = config.allowance
-    assert allowance is not None
-    return SpendConfigurationView(
-        time_zone=config.time_zone.key,
-        cards=[
-            CardConfigurationView(
-                label=card.label,
-                enabled=card.enabled,
-                limit_minor_units=card.limit_minor_units,
-                alert_threshold_percent=card.alert_threshold_percent,
-            )
-            for card in config.cards
-        ],
-        allowance=AllowanceConfigurationView(
-            monthly_minor_units=allowance.monthly_minor_units,
-            activation_at=allowance.activation_at,
-            currency=allowance.currency,
-            spending_account_count=len(allowance.spending_account_ids),
-            max_sync_age_hours=allowance.max_sync_age_hours,
-            forecast_basis_period_id=allowance.forecast_basis_period_id,
-            rules=allowance.rules,
-            analysis_categories=allowance.analysis_categories,
-            reversal_pairs=allowance.reversal_pairs,
-        ),
-    )
+    return configuration_view(spend_configuration())

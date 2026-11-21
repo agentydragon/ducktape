@@ -26,8 +26,8 @@ type deferredProviderError struct{ cause error }
 func (e *deferredProviderError) Error() string { return e.cause.Error() }
 func (e *deferredProviderError) Unwrap() error { return e.cause }
 
-func runtimeProviderAttemptPolicy(settings samplersettings.Settings) sessionstore.ProviderAttemptPolicy {
-	return sessionstore.ProviderAttemptPolicy{Budget: 3, Lease: settings.ProviderAttemptLease()}
+func runtimeProviderAttemptPolicy(settings samplersettings.Settings, model samplersettings.ModelConfig) sessionstore.ProviderAttemptPolicy {
+	return sessionstore.ProviderAttemptPolicy{Budget: 3, Lease: settings.ProviderAttemptLease(model)}
 }
 
 func providerBackoff(number int, hint time.Duration) time.Duration {
@@ -143,7 +143,7 @@ func (r *Driver) providerFrontier(ctx context.Context, owner sessionstore.Owner,
 	}
 	if frontier.Kind == sessionstore.PendingIntentCompaction && ((expected.CompactionControl == nil) != (stored.CompactionControl == nil) ||
 		expected.CompactionControl != nil && *expected.CompactionControl != *stored.CompactionControl) {
-		return nil, r.failProviderFrontier(ctx, owner, session, frontier, "compaction suffix or effort policy changed during recovery")
+		return nil, r.failProviderFrontier(ctx, owner, session, frontier, "compaction policy changed during recovery")
 	}
 	return frontier, nil
 }
@@ -224,7 +224,7 @@ func (r *Driver) sampleProvider(ctx context.Context, owner sessionstore.Owner, s
 	if err != nil {
 		return nil, r.providerFailure(ctx, owner, session, intentID, err)
 	}
-	identity, err := executionIdentity(session)
+	identity, err := session.ExecutionIdentity()
 	if err != nil {
 		return nil, r.providerFailure(ctx, owner, session, intentID, err)
 	}
@@ -236,7 +236,7 @@ func (r *Driver) sampleProvider(ctx context.Context, owner sessionstore.Owner, s
 	if err != nil {
 		return nil, r.providerFailure(ctx, owner, session, intentID, err)
 	}
-	client = providerio.WithProviderResponseHeaderTimeout(client, r.settings.ProviderResponseHeaderTimeout())
+	client = providerio.WithProviderResponseHeaderTimeout(client, r.settings.ProviderResponseHeaderTimeout(r.settings.Models[session.Model]))
 	if compact || connection.TLS != nil {
 		defer client.CloseIdleConnections()
 	}

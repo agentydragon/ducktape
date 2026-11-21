@@ -208,11 +208,7 @@ func Sample(ctx context.Context, client *http.Client, baseURL, authorization str
 		if len(body) > maxProviderErrorBytes {
 			body = append(body[:maxProviderErrorBytes], []byte("[truncated]")...)
 		}
-		evidence := map[string]any{"http_status": response.StatusCode, "body": string(body)}
-		if response.StatusCode == http.StatusRequestTimeout || response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= http.StatusInternalServerError {
-			return nil, &protocol.ProviderTransientError{Cause: fmt.Errorf("provider returned HTTP %d", response.StatusCode), RetryAfter: providerio.ParseProviderRetryAfter(response.Header.Get("Retry-After"))}
-		}
-		return nil, &protocol.KnownFailureError{Evidence: evidence}
+		return nil, providerio.ProviderStatusError(response, "provider", map[string]any{"http_status": response.StatusCode, "body": string(body)})
 	}
 	result, err := readStream(ctx, io.LimitReader(reader, protocol.MaxProviderStreamBytes), evidence, hooks)
 	if err != nil {

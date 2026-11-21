@@ -21,8 +21,6 @@ import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
-	"github.com/cosi-project/runtime/pkg/resource/typed"
-	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
@@ -445,21 +443,6 @@ func removeAdmissionState(t *testing.T, r *Runtime) func() {
 	}
 }
 
-// The controller creates its output; COSI watches creation and retries version conflicts.
-func modifyLifecycleForTest[T lifecycle.Spec[T]](ctx context.Context, r *Runtime, id, owner string, modify func(*T)) error {
-	var zero T
-	ptr := lifecycle.ResourceFor(id, zero).Metadata()
-	if _, err := safe.StateWatchFor[*typed.Resource[T, lifecycle.Extension[T]]](ctx, r.lifecycleState, ptr,
-		state.WithEventTypes(state.Created, state.Updated)); err != nil {
-		return err
-	}
-	_, err := safe.StateUpdateWithConflicts(ctx, r.lifecycleState, ptr, func(value *typed.Resource[T, lifecycle.Extension[T]]) error {
-		modify(value.TypedSpec())
-		return nil
-	}, state.WithUpdateOwner(owner))
-	return err
-}
-
 func TestClosingIntentPreservesSealAndWaitsForSetup(t *testing.T) {
 	r, s, finishSetup := lifecycleTestBlockedSetup(t)
 
@@ -538,11 +521,12 @@ func TestQuiesceWaitsForExactSealedCursorAcknowledgement(t *testing.T) {
 	assertDeliveryPending := func(ack retained.Acknowledgement, present bool) {
 		t.Helper()
 		waitLifecycle(t, r, func() bool {
-			status, found, err := session.ReadLifecycleStatus(context.Background(), r.lifecycleState, s.ID())
-			return err == nil && found && status.Sealed && status.SealUID == seal.IncarnationUID &&
-				status.SealCursor == seal.Cursor && !status.Delivered &&
-				status.AcknowledgementPresent == present && status.AcknowledgementSealed == ack.Sealed &&
-				status.AcknowledgementCursor == ack.Cursor && currentSessionLifecycleStatus(r).Stage == lifecycle.Flushing
+			current := currentSessionLifecycleStatus(r)
+			blocker := current.Blocker
+			return current.Stage == lifecycle.Flushing && blocker.Kind == lifecycle.IngressAcknowledgementPending &&
+				blocker.ResourceID == s.ID() && blocker.JournalSealPresent && blocker.JournalSealUID == seal.IncarnationUID &&
+				blocker.JournalSealCursor == seal.Cursor && blocker.AcknowledgementPresent == present &&
+				blocker.AcknowledgementSealed == ack.Sealed && blocker.AcknowledgementCursor == ack.Cursor
 		}, "Session delivery to remain pending")
 	}
 	assertDeliveryPending(retained.Acknowledgement{}, false)
@@ -559,11 +543,6 @@ func TestQuiesceWaitsForExactSealedCursorAcknowledgement(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertDeliveryPending(retained.Acknowledgement{Cursor: seal.Cursor - 1, Sealed: true}, true)
-	waitLifecycle(t, r, func() bool {
-		current := currentSessionLifecycleStatus(r)
-		return current.Stage == lifecycle.Flushing && current.Blocker.Kind == lifecycle.IngressAcknowledgementPending &&
-			current.Blocker.AcknowledgementPresent && current.Blocker.AcknowledgementCursor == seal.Cursor-1
-	}, "publish the under-cursor acknowledgement blocker")
 	blocked := sessionLifecycleSnapshot(t, r)
 	if !blocked.ProgressCurrent || blocked.Stage != sessionpb.EnvironmentRuntimeLifecycleStage_ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_FLUSHING ||
 		blocked.Blocker == nil || blocked.Blocker.Kind != sessionpb.EnvironmentRuntimeLifecycleBlockerKind_ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_INGRESS_ACKNOWLEDGEMENT ||
@@ -588,10 +567,6 @@ func TestQuiesceWaitsForExactSealedCursorAcknowledgement(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitLifecycle(t, r, func() bool { return currentSessionLifecycleStatus(r).Stage == lifecycle.Quiesced }, "exact sealed cursor acknowledgement")
-	status, found, err := session.ReadLifecycleStatus(context.Background(), r.lifecycleState, s.ID())
-	if err != nil || !found || !status.Delivered || status.SealUID != seal.IncarnationUID || status.SealCursor != seal.Cursor {
-		t.Fatalf("Session delivery = %+v, found %t, err %v", status, found, err)
-	}
 	quiesced := sessionLifecycleSnapshot(t, r)
 	if quiesced.Stage != sessionpb.EnvironmentRuntimeLifecycleStage_ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_QUIESCED || quiesced.Blocker != nil {
 		t.Fatalf("GetStatus after exact acknowledgement = %+v, want QUIESCED without a blocker", quiesced)
@@ -605,9 +580,12 @@ func TestQuiesceWaitsForExactSealedCursorAcknowledgement(t *testing.T) {
 	}
 }
 
-func TestSessionDeliveryCompleteRequiresCurrentGenerationAndSealUID(t *testing.T) {
+func TestSessionDeliveryCompleteRequiresCurrentSealAndExactAcknowledgement(t *testing.T) {
 	desired := lifecycle.EnvironmentDesired{Generation: 7, SealUID: "current"}
-	status := session.LifecycleStatus{EnvironmentGeneration: 7, AdmissionClosed: true, Sealed: true, SealUID: "current", SealCursor: 0, Delivered: true}
+	status := session.LifecycleStatus{
+		EnvironmentGeneration: 7, AdmissionClosed: true, Sealed: true, SealUID: "current", SealCursor: 0,
+		AcknowledgementPresent: true, AcknowledgementSealed: true, AcknowledgementCursor: 0,
+	}
 	if !sessionSealComplete(status, true, desired) || !sessionDeliveryComplete(status, true, desired) {
 		t.Fatal("exact current-generation zero-cursor seal and delivery were rejected")
 	}
@@ -617,7 +595,7 @@ func TestSessionDeliveryCompleteRequiresCurrentGenerationAndSealUID(t *testing.T
 		t.Fatal("sealed status with admission still open completed the sealing barrier")
 	}
 	for name, check := range map[string]func() bool{
-		"missing": func() bool { return sessionDeliveryComplete(status, false, desired) },
+		"missing status": func() bool { return sessionDeliveryComplete(status, false, desired) },
 		"stale generation": func() bool {
 			stale := status
 			stale.EnvironmentGeneration--
@@ -633,15 +611,25 @@ func TestSessionDeliveryCompleteRequiresCurrentGenerationAndSealUID(t *testing.T
 			open.AdmissionClosed = false
 			return sessionDeliveryComplete(open, true, desired)
 		},
-		"unsealed": func() bool {
+		"unsealed journal": func() bool {
 			unsealed := status
 			unsealed.Sealed = false
 			return sessionDeliveryComplete(unsealed, true, desired)
 		},
-		"undelivered": func() bool {
+		"missing acknowledgement": func() bool {
 			pending := status
-			pending.Delivered = false
+			pending.AcknowledgementPresent = false
 			return sessionDeliveryComplete(pending, true, desired)
+		},
+		"unsealed acknowledgement": func() bool {
+			unsealed := status
+			unsealed.AcknowledgementSealed = false
+			return sessionDeliveryComplete(unsealed, true, desired)
+		},
+		"different acknowledgement cursor": func() bool {
+			wrongCursor := status
+			wrongCursor.AcknowledgementCursor++
+			return sessionDeliveryComplete(wrongCursor, true, desired)
 		},
 	} {
 		if check() {
@@ -728,6 +716,13 @@ func TestAdmissionDoesNotObserveAggregateStatusFailure(t *testing.T) {
 	})
 	if err != nil || response == nil || response.Admission == nil || response.Admission.Cursor <= before {
 		t.Fatalf("command admission = response %v, err %v; want durable admission", response, err)
+	}
+	store.statusReadMu.Lock()
+	pending := len(store.statusReadFailures)
+	store.statusReadFailures = nil
+	store.statusReadMu.Unlock()
+	if pending != 1 {
+		t.Fatal("command admission consumed the aggregate-status read failure")
 	}
 	select {
 	case failure := <-r.fatal:
@@ -907,26 +902,21 @@ func TestCloseProgressesForEmptyRuntime(t *testing.T) {
 	}
 }
 
-func TestJournalAndAcknowledgementChangesWakeObservers(t *testing.T) {
+func TestJournalChangesWakeSessionSummaryObservers(t *testing.T) {
 	r, s := lifecycleTestSession(t)
-	changes := r.changesSince()
+	summaryChanges := r.sessions.SummaryChangesSince()
 	inventoryChanges := r.sessions.InventoryChangesSince()
 	if err := s.Emit(r.lifecycleContext, &eventpb.Event{Observation: &eventpb.Event_HarnessStderr{HarnessStderr: &eventpb.HarnessStderr{Text: "journal update"}}}, nil); err != nil {
 		t.Fatal(err)
 	}
-	ack := retained.Acknowledgement{Cursor: s.EventJournal().LastCursor()}
-	if err := r.store.WriteAcknowledgement(s.ID(), ack); err != nil {
-		t.Fatal(err)
-	}
-	r.changed() // Acknowledgement receipt still wakes observer-only consumers.
 	select {
-	case <-changes:
+	case <-summaryChanges:
 	default:
-		t.Fatal("journal/acknowledgement changes did not wake Runtime observers")
+		t.Fatal("journal change did not wake Session summary observers")
 	}
 	select {
 	case <-inventoryChanges:
-		t.Fatal("journal/acknowledgement changes woke ingress inventory observers")
+		t.Fatal("journal change woke ingress inventory observers")
 	default:
 	}
 }

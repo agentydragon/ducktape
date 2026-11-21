@@ -18,13 +18,13 @@ The upstream `nixos/nix` image is root-oriented. This pod therefore emits
 `restricted` PodSecurity warnings; making this non-root needs a custom image or a
 different writable-store design.
 
-This is deliberately under `agents/x/` and is not referenced by any Flux
+This is parked under `cluster/parked/` and is not referenced by any Flux
 `Kustomization`.
 
 ## Apply
 
 ```bash
-kubectl apply -k cluster/k8s/agents/x/codex-nix-image-pod
+kubectl apply -k cluster/parked/codex-nix-image-pod
 kubectl -n codex-nix-image-pod wait --for=condition=Ready pod/codex-nix-image-pod --timeout=10m
 ```
 

@@ -1,5 +1,5 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
-load("//util/testing:postgres_exec_properties.bzl", "POSTGRES_IMAGE_EXEC_PROPERTIES")
+load("//testing:postgres_exec_properties.bzl", "POSTGRES_IMAGE_EXEC_PROPERTIES")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -24,6 +24,7 @@ py_library(
     deps = [
         ":schema",
         ":wire",
+        "//finance:calendar_months",
         "//finance/plaid/db:models",
         "@pypi//sqlalchemy",
     ],
@@ -39,6 +40,7 @@ py_test(
         ":conftest",
         ":schema",
         ":sql_read_model",
+        ":wire",
         "//:conftest",
         "//finance/plaid/db:models",
         "@pypi//pydantic",
@@ -52,7 +54,10 @@ py_test(
 py_library(
     name = "csv_export",
     srcs = ["csv_export.py"],
-    deps = [":wire"],
+    deps = [
+        ":schema",
+        ":wire",
+    ],
 )
 
 py_test(
@@ -78,6 +83,7 @@ py_library(
         ":schema",
         ":sql_read_model",
         ":wire",
+        "//finance:calendar_months",
         "@pypi//sqlalchemy",
     ],
 )
@@ -88,6 +94,6 @@ py_library(
     srcs = ["conftest.py"],
     deps = [
         "//finance/plaid/db:testing",
-        "//util/testing:postgres_fixtures",
+        "//testing:postgres_fixtures",
     ],
 )

@@ -80,9 +80,6 @@ func (r *SessionDeliveryRouter) CreateSession(ctx context.Context, sandbox Sandb
 	if err := ValidateRuntime(session.Placement, setup, r.Target); err != nil {
 		return err
 	}
-	if session.Placement == placement.CentralSampler && sandbox.Incarnation == "" {
-		return status.Error(codes.FailedPrecondition, "executor incarnation is not available")
-	}
 	target, err := r.hostTarget(session.Placement, sandbox)
 	if err != nil {
 		return err

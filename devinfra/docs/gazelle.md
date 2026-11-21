@@ -51,7 +51,7 @@ and lazy imports belong in `deps`.
 Import validation is on; every escape is explicit and local:
 
 - `# gazelle:ignore <mod>` in the `.py` file for imports the environment provides
-  (`FreeCAD`, `gi`, `PySide6`, `pivy`, `_bazel_site_init`) or that resolve to a
+  (`FreeCAD`, `gi`, `PySide6`, `pivy`) or that resolve to a
   Bazel-generated `__init__` stub with no target of its own.
 - `# gazelle:include_dep <label>` in the `.py` file for runtime-only deps the import
   scan cannot see, placed in the module that triggers the hidden import: SQLAlchemy
@@ -65,7 +65,7 @@ Import validation is on; every escape is explicit and local:
   gazelle-managed.
 - A rule-level `# keep` on hand-maintained rules whose `srcs` are excluded files:
   gazelle deletes managed-kind rules over files it cannot see
-  (`devinfra/skills/forgejo/scripts:forgejo_lib`, `skills/testing:frontmatter_test`).
+  (`skills/session_logs:session_logs_lib`, `skills/testing:frontmatter_test`).
 - A dep-level `# keep: <reason>` suffix where the source file cannot carry the
   annotation: sibling stub dists a package's `__init__` chains into
   (`agent_framework_{anthropic,claude,openai}` beside `_core`), and any dep of a rule

@@ -20,10 +20,10 @@ from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.monitoring.namespace import NAMESPACE
 
 NAME = "monitoring-stack"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/monitoring"
-_NAMESPACE = "monitoring"
 _HELM_REPOSITORY = "prometheus-community"
 
 
@@ -203,6 +203,8 @@ def _values() -> dict[str, object]:
                 "KubeControllerManagerInstanceUnreachable": True,
                 "KubeSchedulerDown": True,
                 "KubeSchedulerInstanceUnreachable": True,
+                # Replaced by the filtered rules in rules.py.
+                "KubeClientCertificateExpiration": True,
                 # Forked in `rules.py` to exclude offline roaming nodes.
                 "TargetDown": True,
                 # Replaced by NodeIOPressure in cluster/cdk8s/monitoring/rules.py, which measures stalled tasks
@@ -223,6 +225,7 @@ def _values() -> dict[str, object]:
             "enabled": True,
             "config": _alertmanager_config(),
             "ingress": {"enabled": False},
+            "podDisruptionBudget": {"enabled": True, "minAvailable": 1},
             "alertmanagerSpec": {
                 "replicas": 2,
                 "secrets": ["alertmanager-ntfy-webhook"],
@@ -419,7 +422,7 @@ def chart(app: App) -> Chart:
     release = helm_release(
         chart,
         "kube-prometheus-stack",
-        _NAMESPACE,
+        NAMESPACE,
         repository=https_helm_repository(
             chart,
             _HELM_REPOSITORY,
@@ -469,7 +472,7 @@ def monitoring_stack(
                 api_version="helm.toolkit.fluxcd.io/v2",
                 kind="HelmRelease",
                 name="kube-prometheus-stack",
-                namespace="monitoring",
+                namespace=NAMESPACE,
             )
         ],
         timeout="10m",

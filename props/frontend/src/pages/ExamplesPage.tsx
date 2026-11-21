@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 
 import { Center, Loader, Text } from "@mantine/core";
 
@@ -6,6 +6,7 @@ import ExampleDetail from "$components/ExampleDetail";
 import { useSearchParams } from "react-router";
 import type { ExampleDetailResponse, ExampleKind } from "$lib/schema";
 import { fetchExampleDetail } from "$lib/api/client";
+import { exampleDetailQueryKey } from "$lib/queryKeys";
 
 interface Props {
   initialData?: ExampleDetailResponse;
@@ -17,38 +18,18 @@ export default function ExamplesPage({ initialData }: Props) {
   const exampleKind = (searchParams.get("example_kind") ?? "whole_snapshot") as ExampleKind;
   const filesHash = searchParams.get("files_hash");
 
-  const [example, setExample] = useState<ExampleDetailResponse | null>(initialData ?? null);
-  const [loading, setLoading] = useState(!initialData);
-  const [error, setError] = useState<string | null>(null);
+  const query = useQuery({
+    queryKey: exampleDetailQueryKey(snapshotSlug, exampleKind, filesHash),
+    queryFn: () => fetchExampleDetail(snapshotSlug, exampleKind, filesHash),
+    enabled: !initialData && Boolean(snapshotSlug),
+  });
+  const example = initialData ?? query.data;
 
-  useEffect(() => {
-    if (!snapshotSlug) {
-      setError("Missing snapshot_slug parameter");
-      setLoading(false);
-      return;
-    }
-    if (initialData) return;
-
-    let current = true;
-    setLoading(true);
-    setError(null);
-    void fetchExampleDetail(snapshotSlug, exampleKind, filesHash)
-      .then((data) => {
-        if (current) setExample(data);
-      })
-      .catch((reason: unknown) => {
-        if (current) setError(reason instanceof Error ? reason.message : "Failed to load example");
-      })
-      .finally(() => {
-        if (current) setLoading(false);
-      });
-
-    return () => {
-      current = false;
-    };
-  }, [snapshotSlug, exampleKind, filesHash, initialData]);
-
-  if (loading) {
+  if (!snapshotSlug) return <Text c="dimmed">Missing snapshot_slug parameter</Text>;
+  if (query.error) {
+    return <Text c="dimmed">{query.error instanceof Error ? query.error.message : "Failed to load example"}</Text>;
+  }
+  if (!example) {
     return (
       <Center mih={160}>
         <Loader size="sm" />
@@ -56,7 +37,5 @@ export default function ExamplesPage({ initialData }: Props) {
       </Center>
     );
   }
-  if (error) return <Text c="dimmed">{error}</Text>;
-  if (example) return <ExampleDetail data={example} />;
-  return null;
+  return <ExampleDetail data={example} />;
 }

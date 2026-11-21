@@ -1,4 +1,4 @@
-//! Typed deserialisation surface for `js.ast_transform_spec` YAML files.
+//! Typed deserialisation surface for flat-spec YAML files ([`TransformSpec`]).
 //!
 //! Two declarative top-level maps describe what the spec wants applied:
 //!
@@ -40,7 +40,6 @@ pub struct TransformSpec {
     #[serde(default)]
     pub program_premises: ProgramPremises,
 
-    // --- declarative data sections ---
     #[serde(default)]
     pub vendor: BTreeMap<String, VendorMark>,
     #[serde(default)]
@@ -93,7 +92,6 @@ pub struct TransformSpec {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub chunk_export_purity: BTreeMap<String, ChunkExportPurity>,
 
-    // --- per-stage configuration ---
     /// Output configuration for vendor swap emission outputs (wrappers,
     /// facade bundles, the combined manifest); this field only adds
     /// output paths and a `write` toggle. All inner fields have
@@ -1265,8 +1263,6 @@ fn is_default_member_effect(effect: &MemberEffect) -> bool {
     matches!(effect, MemberEffect::Default)
 }
 
-// --- Vendor ---------------------------------------------------------------
-
 /// One vendor annotation, keyed in the spec by chunk path
 /// (e.g. `"static/lib.js"`). The `level` discriminator selects between
 /// `swap` / `partial_swap` / `bundled_partial_swap`; `swap` carries the
@@ -1483,8 +1479,6 @@ fn is_default_partial_swap_kind(kind: &PartialSwapKind) -> bool {
 
 pub use spec_wire_proto::debundle::spec::WrapperShape;
 
-// --- Logical modules -----------------------------------------------------
-
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct LogicalModule {
@@ -1518,7 +1512,7 @@ pub struct LogicalModule {
     /// Optional human-readable comment emitted at the top of the
     /// generated module file, before any imports. Per-line literal
     /// `// ` prefix; empty input lines emit as `//`. See
-    /// `CLI.md` § "per-member and module-level `comment:` fields".
+    /// `docs/spec_editing.md` § Comments and notes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub comment: Option<String>,
     /// Optional YAML-only note: module-level provenance / honest-debt
@@ -1526,7 +1520,7 @@ pub struct LogicalModule {
     /// `modules merge`) that survives spec edits without appearing in
     /// generated JS. Ignored by the lowering pass — unlike `comment:`,
     /// which emits a `//` block. Same non-emitting contract and STYLE.md local
-    /// exemption (see AGENTS.md "Spec `note:` field").
+    /// exemption (see AGENTS.md § Spec).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
 }
@@ -2177,11 +2171,11 @@ impl MemberOfModuleSelector {
 }
 
 /// Pin a member by it being **passed as an argument** to a call of a known callee
-/// — the `resolves_to`-of-argument primitive — instead of by this member's own
-/// (re-minify-fragile) minified name. The canonical shape is a registry-style
-/// target: a top-level `class FooAccessor {}` (often empty or otherwise shapeless)
-/// whose only stable identity is an external `registry.register(FooAccessor)`
-/// statement. The target *is the argument*; the call that names it lives elsewhere.
+/// instead of by this member's own (re-minify-fragile) minified name. The
+/// canonical shape is a registry-style target: a top-level `class FooAccessor {}`
+/// (often empty or otherwise shapeless) whose only stable identity is an
+/// external `registry.register(FooAccessor)` statement. The target *is the
+/// argument*; the call that names it lives elsewhere.
 /// This is the inverse direction of [`MemberOfModuleSelector`], which pins the
 /// source_unit whose *own* subtree consumes `mod.X` and explicitly cannot reach a target
 /// distinguished only by such an external registration. `callee_member` (the call's
@@ -2244,8 +2238,8 @@ impl PassedToCallSelector {
 /// The inverse direction of `passed_to_call` (the target *makes* the call rather
 /// than being *passed to* it). The byte-identical-across-modules helper copies have
 /// no anchor in their own body; this selector pins each by the **class it
-/// decorates** — a separately-pinned entity reached through `resolves_to` — so the
-/// edge survives a rebuild while the helper's minified name does not.
+/// decorates** — a separately-pinned entity — so the edge survives a rebuild
+/// while the helper's minified name does not.
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, Ord, PartialOrd)]
 #[serde(deny_unknown_fields)]
 pub struct MakesDecorateCallSelector {

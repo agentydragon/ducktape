@@ -65,15 +65,20 @@ from agentplane.action_service.catalog import ActionGroup
 from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.app.oidc import OIDCSettings
 from agentplane.app.settings import FrontendConfig, LangfuseSearchSettings, Settings, TraceSearchSettings
-from agentplane.env.config import CodexReadiness
+from agentplane.env.config import CodexReadiness, Executor, SystemdExecutorOwner
 from agentplane.env.runtime.harness import Harness
 from agentplane.identity.operator.settings import OperatorOidcSettings
 from agentplane.net.peertls.config import (
     APP_URI,
     CENTRAL_SAMPLER_URI,
+    EGRESS_PROXY_URI,
     GATEWAY_SESSIONS_URI,
+    HISTORY_SERVICE_URI,
     LLM_INGRESS_URI,
+    NOTIFICATIONS_URI,
     POLICY_CONTROLLER_URI,
+    SANDBOX_CONTROLLER_URI,
+    SESSION_DISPATCHER_URI,
     TLS,
 )
 from agentplane.notification_service.settings import NoticeDebounceSettings
@@ -152,9 +157,6 @@ from cluster.cdk8s.providers.cert_manager.certificate import CertificatePrivateK
 from cluster.cdk8s.service_ref import Pods, ServiceRef
 from model_catalog.catalog import GPT6_LUNA_RESPONSES, HAIKU_API, Route
 
-RUNNER_GATEWAY = "runner-gateway"
-SESSION_DISPATCHER = "session-dispatcher"
-
 
 @dataclass(frozen=True)
 class AppFixture:
@@ -220,6 +222,12 @@ PUBLIC_LITELLM_ROUTES = HarnessRoutes(claude=(HAIKU_API,), codex=(GPT6_LUNA_RESP
 _ONE_REPLICA = ReplicaProfile(count=1, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None)
 _EGRESS_CA = "systest-egress-ca"
 _LITELLM_KEY_SECRET = "litellm-key-cheap-experiments"
+_THREAD_PRESETS = {launch_preset.THREAD_PRESET: launch_preset.thread_preset(model=GPT6_LUNA_RESPONSES.id)}
+_SANDBOX_PRESETS = {
+    launch_preset.SANDBOX_PRESET: launch_preset.sandbox_preset(
+        template=POD_TEMPLATE, policy_sets=[egress.PACKAGES_POLICY]
+    )
+}
 
 
 def add_secret(
@@ -276,12 +284,6 @@ def app_props(
     *, routes: HarnessRoutes, operator_oidc: OperatorOidcSettings, operator_token_key: str | None, app_origin: str
 ) -> AppProps:
     catalog = app_settings.model_catalog(routes, central_sampler_enabled=bool(routes.central_sampler))
-    thread_presets = {launch_preset.THREAD_PRESET: launch_preset.thread_preset(model=GPT6_LUNA_RESPONSES.id)}
-    sandbox_presets = {
-        launch_preset.SANDBOX_PRESET: launch_preset.sandbox_preset(
-            template=POD_TEMPLATE, policy_sets=[egress.PACKAGES_POLICY]
-        )
-    }
     return AppProps(
         origin=app_origin,
         oidc_issuer=DEX_ISSUER,
@@ -289,22 +291,27 @@ def app_props(
         config=Settings(
             models=catalog,
             connection_service_url=AnyHttpUrl(f"https://{MCP_EDGE_SERVICE.fqdn}:{MCP_EDGE_SERVICE.port.number}"),
-            thread_presets=thread_presets,
-            sandbox_presets=sandbox_presets,
+            thread_presets=_THREAD_PRESETS,
+            sandbox_presets=_SANDBOX_PRESETS,
             egress_admin_url=AnyHttpUrl(egress.admin(NAMESPACE).url),
+            egress_admin_tls=workload_tls.service_client_tls(EGRESS_PROXY_URI, client_uri=APP_URI),
             sandbox_namespace=NAMESPACE,
             runner_gateway_target=(
                 f"{environment_service.environments_service(NAMESPACE).fqdn}:{environment_service.environments_service(NAMESPACE).pod_port}"
             ),
+            runner_gateway_tls=workload_tls.service_client_tls(SANDBOX_CONTROLLER_URI, client_uri=APP_URI),
             session_dispatcher_target=(
                 f"{runner_gateway.sessions_service(NAMESPACE).fqdn}:{runner_gateway.sessions_service(NAMESPACE).port.number}"
             ),
+            session_dispatcher_tls=workload_tls.service_client_tls(SESSION_DISPATCHER_URI, client_uri=APP_URI),
             policy_service_target=policy_controller.tls_target(NAMESPACE),
             policy_service_tls=workload_tls.service_client_tls(POLICY_CONTROLLER_URI, client_uri=APP_URI),
             history_service_target=(
                 f"{history_service.service(NAMESPACE).fqdn}:{history_service.service(NAMESPACE).port.number}"
             ),
+            history_service_tls=workload_tls.service_client_tls(HISTORY_SERVICE_URI, client_uri=APP_URI),
             notifications_url=AnyHttpUrl(notifications.service(NAMESPACE).url),
+            notifications_tls=workload_tls.service_client_tls(NOTIFICATIONS_URI, client_uri=APP_URI),
             listen_address="0.0.0.0:8080",
             log_levels={},
             oidc=OIDCSettings(issuer=DEX_ISSUER, public_base_url=app_origin)
@@ -348,6 +355,7 @@ def central_sampler_props(*, model: Route) -> CentralSamplerProps:
             model.id: ModelConfig(
                 connection="llm-ingress",
                 provider_model=model.id,
+                response_header_timeout_seconds=360,
                 reasoning_efforts={"", *model.reasoning_efforts},
                 api="responses",
                 responses=ResponsesConfig(dialect="lite"),
@@ -375,12 +383,6 @@ def actions_props(
     oauth_secret_items: Sequence[str],
     central_sampler_session_delegation: bool,
 ) -> ActionsProps:
-    thread_presets = {launch_preset.THREAD_PRESET: launch_preset.thread_preset(model=GPT6_LUNA_RESPONSES.id)}
-    sandbox_presets = {
-        launch_preset.SANDBOX_PRESET: launch_preset.sandbox_preset(
-            template=POD_TEMPLATE, policy_sets=[egress.PACKAGES_POLICY]
-        )
-    }
     return ActionsProps(
         central_sampler_session_delegation=central_sampler_session_delegation,
         operator_oidc=operator_oidc,
@@ -403,7 +405,7 @@ def actions_props(
         },
         oauth_secret_items=oauth_secret_items,
         orchestration_v1=OrchestrationProps(
-            presets=app_settings.orchestration_presets(sandbox_presets=sandbox_presets, thread_presets=thread_presets)
+            presets=app_settings.orchestration_presets(sandbox_presets=_SANDBOX_PRESETS, thread_presets=_THREAD_PRESETS)
         ),
     )
 
@@ -417,7 +419,6 @@ def mcp_edge_props(*, operator_oidc: OperatorOidcSettings, oauth_secret_name: st
 def environment(
     *,
     runtime: SandboxRuntime,
-    platform_callers: dict[ServiceAccountRef, Pods],
     routes: HarnessRoutes,
     app: AppProps | None,
     central_sampler: CentralSamplerProps | None,
@@ -451,10 +452,10 @@ def environment(
         vm_sandboxes=runtime is SandboxRuntime.KUBEVIRT,
         firecracker_sandboxes=runtime is SandboxRuntime.FIRECRACKER,
         vm_resources=vm_configuration.RESOURCES if runtime is not SandboxRuntime.POD else None,
+        vm_executor=Executor(url="ws://127.0.0.1:4501", owner=SystemdExecutorOwner(), placement="systemd")
+        if runtime is not SandboxRuntime.POD
+        else None,
         vm_console_autologin=True,
-        wake_caller_accounts=frozenset(
-            {*platform_callers, ServiceAccountRef(namespace=NAMESPACE, name=notifications.NAME)}
-        ),
     )
 
 
@@ -543,11 +544,9 @@ def configure_port_forward_tls(documents: list[dict[str, Any]]) -> None:
     """Give port-forwarded Python gRPC clients DNS SANs to verify in the k3s-only fixture."""
     names_by_certificate = {
         "agentplane-egress-proxy": f"egress-admin.{NAMESPACE}.svc.cluster.local",
-        "runner-gateway-workload": f"{SESSION_DISPATCHER}.{NAMESPACE}.svc.cluster.local",
-        "sessions-workload": f"{SESSION_DISPATCHER}.{NAMESPACE}.svc.cluster.local",
+        "sessions-workload": runner_gateway.sessions_service(NAMESPACE).fqdn,
         "history-service-workload": f"history-service.{NAMESPACE}.svc.cluster.local",
-        "environments-client-workload": f"sandbox-controller.{NAMESPACE}.svc.cluster.local",
-        "sandbox-controller-client-workload": f"sandbox-controller.{NAMESPACE}.svc.cluster.local",
+        "environments-client-workload": environment_service.environments_service(NAMESPACE).fqdn,
     }
     certificates = {
         document["metadata"]["name"]: document["spec"]
@@ -556,7 +555,6 @@ def configure_port_forward_tls(documents: list[dict[str, Any]]) -> None:
     }
     for certificate_name, dns_name in names_by_certificate.items():
         certificates[certificate_name]["dnsNames"] = [dns_name]
-    certificates["runner-gateway-workload"]["ipAddresses"] = ["127.0.0.1"]
     certificates["sessions-workload"]["ipAddresses"] = ["127.0.0.1"]
     if sampler := certificates.get("central-sampler-workload"):
         sampler["dnsNames"] = [f"central-sampler.{NAMESPACE}.svc.cluster.local"]
@@ -664,9 +662,7 @@ def add_backend_services(
             history_service.service(env.namespace),
             llm_ingress.service(env.namespace),
             notifications.service(env.namespace),
-            runner_gateway.service(env.namespace),
             runner_gateway.sessions_service(env.namespace),
-            environment_service.service(env.namespace),
             environment_service.environments_service(env.namespace),
             actions.service(NAMESPACE),
         ],
@@ -684,39 +680,30 @@ def add_backend_services(
         else ()
     )
     gateway_callers = platform_callers | notifications_caller
-    runner_gateway_workload.add_stable_services(chart, env)
+    runner_gateway_workload.add_service(chart, env)
     runner_gateway_workload.RunnerGateway(
         chart,
-        "runner-gateway",
+        "sessions",
         env,
         dispatcher_callers=gateway_callers | orchestration_caller,
         orchestration_callers=orchestration_caller,
         wake_service_callers=sandbox_controller.WAKE_SERVICE_CALLERS,
         delegation_actor=environment_service_delegation_actor,
-        wake_callers=env.wake_caller_accounts | orchestration_caller.keys(),
         database_url=dispatcher_database_url,
-        # Both deployment names import the same freshly built binary in this fixture.
-        sessions_image="git.allegedly.works/ducktape-ci/agentplane-runner-gateway:unset",
-        # Start on the renamed workload; failover scenarios activate old rollback capacity.
-        legacy_replica_profile=replace(env.replicas, count=0, pdb_min_available=None),
+        sessions_image="git.allegedly.works/ducktape-ci/agentplane-sessions:unset",
         registry_secret_name=None,
         placement=None,
         container_env=database_env,
         memory_request=Size.mebibytes(64),
         memory_limit=None,
     )
-    control_target = environment_service.control_target(NAMESPACE)
     history_service.HistoryService(
         chart,
         "history-service",
         env,
         database_url=history_database_url,
         callers=platform_callers | notifications_caller | orchestration_caller,
-        delegation_actor=(
-            ServiceAccountRef(namespace=NAMESPACE, name=actions.NAME)
-            if env.actions.orchestration_v1 is not None
-            else None
-        ),
+        delegation_actor=environment_service_delegation_actor,
         placement=None,
         registry_secret_name=None,
         container_env=database_env,
@@ -725,11 +712,9 @@ def add_backend_services(
     )
     sandbox_controller.SandboxController(
         chart,
-        "sandbox-controller",
+        "environments",
         env,
-        environments_image="git.allegedly.works/ducktape-ci/agentplane-sandbox-controller:unset",
-        legacy_replica_profile=replace(env.replicas, count=0, pdb_min_available=None),
-        gateway_control_target=control_target,
+        environments_image="git.allegedly.works/ducktape-ci/agentplane-environments:unset",
         authority=sandbox_controller.environment_service_authority(
             env,
             launchers=orchestration_caller,
@@ -768,8 +753,6 @@ def add_backend_services(
         env,
         database_url=notifications_database_url,
         actions=actions.service(NAMESPACE),
-        gateway=runner_gateway.service(NAMESPACE),
-        gateway_control_target=control_target,
         history=history_service.service(NAMESPACE),
         dispatcher=runner_gateway.sessions_service(NAMESPACE),
         callers=list(notification_callers),
@@ -929,21 +912,13 @@ def _fixture_vm_firmware(kernel_args: str) -> VirtualMachineSpecTemplateSpecDoma
 
 
 def add_vm_templates(
-    chart: Chart,
-    env: Environment,
-    runner_template: environment_sandbox.EnvironmentSandboxTemplate,
-    *,
-    workspace_storage_class: str = block_storage.STORAGE_CLASS,
+    chart: Chart, env: Environment, runner_template: environment_sandbox.EnvironmentSandboxTemplate
 ) -> None:
     """Compose the ordinary and test-only VM templates from the fixture's runner Pod."""
     scope = chart
     relay_settings = runner_template.add_launcher_relay_settings(name="launcher-relay-egress-sidecar")
     launcher_relay.LauncherRelayPolicy(
-        scope,
-        "launcher-relay",
-        namespace=env.namespace,
-        runner_pod=runner_template.spec["pod"],
-        settings_config_map=relay_settings,
+        scope, "launcher-relay", namespace=env.namespace, template_name=POD_TEMPLATE, settings_config_map=relay_settings
     )
     state_volume = runner_template.spec["stateVolume"]
     state_claim = {**state_volume["claim"], "volumeMode": "Filesystem"}
@@ -951,7 +926,7 @@ def add_vm_templates(
         state_claim["storageClassName"] = env.vm_storage_class
     vm_state_volume = {**state_volume, "claim": state_claim}
     workspace_volume = environment_sandbox.workspace_volume_spec(
-        vm_state_volume, layout_type="BlockFilesystem", storage_class=workspace_storage_class
+        vm_state_volume, layout_type="BlockFilesystem", storage_class=block_storage.STORAGE_CLASS
     )
     config_data = environment_guest.guest_config_data(
         env,

@@ -14,7 +14,7 @@ import json
 import logging
 from collections.abc import Awaitable, Mapping
 from datetime import UTC, datetime, timedelta
-from typing import Any, Literal, Protocol, cast
+from typing import Any, Literal, Protocol
 
 from kubernetes_asyncio import client, config
 from kubernetes_asyncio.client import ApiException
@@ -53,11 +53,7 @@ class RestartState(BaseModel):
 
 
 class VMApi(Protocol):
-    """KubeVirt API operations used by reconciliation."""
-
-    def get_namespaced_custom_object(
-        self, group: str, version: str, namespace: str, plural: str, name: str
-    ) -> Awaitable[Any]: ...
+    """KubeVirt API operation used by reconciliation."""
 
     def delete_namespaced_custom_object(
         self, group: str, version: str, namespace: str, plural: str, name: str, *, body: client.V1DeleteOptions
@@ -78,9 +74,9 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-def _container_disk_image(spec: dict[str, Any], volume_name: str = "rootdisk") -> str | None:
+def _container_disk_image(spec: dict[str, Any]) -> str | None:
     for volume in spec.get("volumes", []):
-        if volume.get("name") == volume_name:
+        if volume.get("name") == "rootdisk":
             return (volume.get("containerDisk") or {}).get("image")
     return None
 
@@ -99,57 +95,12 @@ def _ready(vmi: dict[str, Any]) -> bool:
     )
 
 
-async def _get_vmi(
-    api: VMApi, settings: Settings, cache: Mapping[str, dict[str, Any]] | None = None
-) -> dict[str, Any] | None:
-    if cache is not None:
-        return cache.get(settings.target_vm_name)
-    try:
-        return cast(
-            dict[str, Any],
-            await api.get_namespaced_custom_object(
-                group="kubevirt.io",
-                version="v1",
-                namespace=settings.target_namespace,
-                plural="virtualmachineinstances",
-                name=settings.target_vm_name,
-            ),
-        )
-    except ApiException as exc:
-        if exc.status == 404:
-            return None
-        raise
-
-
-async def _get_vm(
-    api: VMApi, settings: Settings, cache: Mapping[str, dict[str, Any]] | None = None
-) -> dict[str, Any] | None:
-    if cache is not None:
-        return cache.get(settings.target_vm_name)
-    try:
-        return cast(
-            dict[str, Any],
-            await api.get_namespaced_custom_object(
-                group="kubevirt.io",
-                version="v1",
-                namespace=settings.target_namespace,
-                plural="virtualmachines",
-                name=settings.target_vm_name,
-            ),
-        )
-    except ApiException as exc:
-        if exc.status == 404:
-            return None
-        raise
-
-
 async def _next_reconcile_delay(
-    vm_api: VMApi,
     core: CoreApi,
     settings: Settings,
     *,
-    vm_cache: Mapping[str, dict[str, Any]] | None = None,
-    vmi_cache: Mapping[str, dict[str, Any]] | None = None,
+    vm_cache: Mapping[str, dict[str, Any]],
+    vmi_cache: Mapping[str, dict[str, Any]],
 ) -> float | None:
     """Return the next retry/timeout timer; normal reconciles are watch-triggered."""
     state = await _read_state(core, settings)
@@ -157,10 +108,10 @@ async def _next_reconcile_delay(
         return None
 
     deadlines = [state.started_at + ROLLOUT_TIMEOUT]
-    vm = await _get_vm(vm_api, settings, cache=vm_cache)
+    vm = vm_cache.get(settings.target_vm_name)
     if vm is None:
         return max(0.0, (deadlines[0] - _utcnow()).total_seconds())
-    vmi = await _get_vmi(vm_api, settings, cache=vmi_cache)
+    vmi = vmi_cache.get(settings.target_vm_name)
     if vmi is not None:
         metadata = vmi.get("metadata", {})
         generation = int(vm.get("status", {}).get("desiredGeneration") or vm["metadata"].get("generation", 0))
@@ -352,10 +303,10 @@ async def reconcile(
     core: CoreApi,
     settings: Settings,
     *,
-    vm_cache: Mapping[str, dict[str, Any]] | None = None,
-    vmi_cache: Mapping[str, dict[str, Any]] | None = None,
+    vm_cache: Mapping[str, dict[str, Any]],
+    vmi_cache: Mapping[str, dict[str, Any]],
 ) -> None:
-    vm = await _get_vm(vm_api, settings, cache=vm_cache)
+    vm = vm_cache.get(settings.target_vm_name)
     if vm is None:
         return
     annotations = vm.get("metadata", {}).get("annotations", {})
@@ -369,7 +320,7 @@ async def reconcile(
         logger.error("%s/%s has no rootdisk containerDisk image", settings.target_namespace, settings.target_vm_name)
         return
 
-    vmi = await _get_vmi(vm_api, settings, cache=vmi_cache)
+    vmi = vmi_cache.get(settings.target_vm_name)
     state = await _read_state(core, settings)
     now = _utcnow()
 
@@ -513,7 +464,7 @@ async def _run_reconcile_loop(
         changed.clear()
         try:
             await reconcile(vm_api, core, settings, vm_cache=vm_cache, vmi_cache=vmi_cache)
-            delay = await _next_reconcile_delay(vm_api, core, settings, vm_cache=vm_cache, vmi_cache=vmi_cache)
+            delay = await _next_reconcile_delay(core, settings, vm_cache=vm_cache, vmi_cache=vmi_cache)
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -555,14 +506,10 @@ async def main() -> None:
         async def on_change(_kind: WatchedKind) -> None:
             changed.set()
 
-        async def on_cycle(_kind: WatchedKind, _at: datetime) -> None:
-            pass
-
         informer = ListWatch(
             kinds=(watched_kind("virtualmachines", vm_cache), watched_kind("virtualmachineinstances", vmi_cache)),
             resync_seconds=WATCH_TIMEOUT_SECONDS,
             on_change=on_change,
-            on_cycle=on_cycle,
         )
         informer_task = asyncio.create_task(informer.run(), name="kubevirt-vm-informer")
         try:

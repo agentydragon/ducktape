@@ -29,7 +29,6 @@ from agentplane.session_dispatcher.client import SandboxControlClient
 from agentplane.session_dispatcher.dispatcher.api.session import session_dispatcher_pb2, session_dispatcher_pb2_grpc
 from agentplane.session_dispatcher.testing.gateway_process import GatewayProcess, run_gateway
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
-from agentplane.testing.native_gateway_fixtures import DISPATCHER_AUDIENCE, GATEWAY_AUDIENCE
 from agentplane.testing.tls import RUNNER_GATEWAY_TEST_DNS
 
 # gazelle:include_dep @pypi//protobuf
@@ -113,8 +112,6 @@ class TestGatewayContinuity:
             database_url=dispatcher_database_url,
             namespace=sandbox.namespace,
             runtime_proxy_executor_callers=(CENTRAL_SAMPLER_URI,),
-            dispatcher_audience=DISPATCHER_AUDIENCE,
-            gateway_audience=GATEWAY_AUDIENCE,
         ) as gateway:
             yield gateway
 
@@ -137,7 +134,6 @@ class TestGatewayContinuity:
         ) as replica:
             replica_client = SandboxControlClient(
                 control_target=replica.target,
-                token_file=None,
                 request_timeout_s=20,
                 channel_credentials=replica.channel_credentials(APP_URI),
             )
@@ -157,7 +153,6 @@ class TestGatewayContinuity:
         gateway_a_client = gateway_service.environment_runtime_client()
         gateway_b_client = SandboxControlClient(
             control_target=sibling_environment_service.target,
-            token_file=None,
             request_timeout_s=20,
             channel_credentials=sibling_environment_service.channel_credentials(APP_URI),
         )

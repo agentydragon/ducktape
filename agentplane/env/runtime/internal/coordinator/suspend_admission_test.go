@@ -6,38 +6,20 @@ import (
 	"testing"
 	"time"
 
-	runtimecontrol "github.com/agentydragon/ducktape/agentplane/env/runtime/control"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	environmentruntimetransport "github.com/agentydragon/ducktape/agentplane/net/peertls"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func TestSuspendAdmissionFencePersistsAcrossIndependentWatchAndGeneration(t *testing.T) {
 	workspace := t.TempDir()
-	config := lifecycleConfig(t, "http://127.0.0.1", workspace, nil, "/bin/false")
-	r := newLifecycleRuntime(t, config)
-	listener, server, err := r.control.Listen(r.executorProxy)
-	if err != nil {
-		t.Fatal(err)
-	}
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(func() { server.Stop(); _ = listener.Close() })
-	credentials, err := (environmentruntimetransport.Security{Mode: environmentruntimetransport.Insecure}).ClientCredentials("")
-	if err != nil {
-		t.Fatal(err)
-	}
-	conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(credentials))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = conn.Close() })
+	r, peers := startControl(t, lifecycleConfig(t, "http://127.0.0.1", workspace, nil, "/bin/false"), environmentruntimetransport.Insecure)
+	conn := peers.dial(t, "")
 	client := environmentruntimepb.NewEnvironmentRuntimeClient(conn)
 	host := harnesshostpb.NewHarnessHostClient(conn)
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
@@ -57,14 +39,7 @@ func TestSuspendAdmissionFencePersistsAcrossIndependentWatchAndGeneration(t *tes
 		}
 		return response
 	}
-	call := func() context.Context {
-		return metadata.AppendToOutgoingContext(
-			ctx,
-			runtimecontrol.SandboxMetadata, "sandbox-uid",
-			runtimecontrol.IncarnationMetadata, "pod-uid-1",
-			runtimecontrol.BootMetadata, r.bootID,
-		)
-	}
+	call := func() context.Context { return fencedContext(ctx, "sandbox-uid", "pod-uid-1", r.bootID) }
 	first := watch()
 	if first.GetFacts().GetIdleSince() == nil {
 		t.Fatalf("initial Runtime was not idle: %v", first.GetFacts())

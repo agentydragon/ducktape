@@ -30,7 +30,7 @@ central sampler.
 ### Commands
 
 [`Command`](../proto/command.proto) has five operations. Dispatcher exposes four as RPCs and
-delivers each as a typed Runtime RPC ([`RuntimeProxyClient.Deliver`](../session_dispatcher/dispatcher/runtime_client.go))
+delivers each as a typed Runtime RPC ([`HarnessHostClient.Deliver`](../session_dispatcher/dispatcher/runtime_client.go))
 or sampler RPC ([`SessionDeliveryRouter.Deliver`](../session_dispatcher/dispatcher/central_delivery.go)). The
 Runtime's [adapters](../env/runtime/harness/adapter.go) translate them:
 
@@ -95,7 +95,7 @@ order with the Runtime's own writes. The per-kind packages are about 2,800 lines
 | Runtime itself ([journal](../env/runtime/journal/journal.go), [status](../env/runtime/session/status.go))                       | active turn, model and effort in the checkpoint; `idle_since` for autosuspend; interrupt fencing | no                     |
 | Dispatcher                                                                                                                      | only the admission receipt a delivery RPC returns                                                | no                     |
 | Wake and suspend                                                                                                                | Dispatcher wakes on queued work; the Sandbox Controller suspends on the Runtime's `idle_since`   | no                     |
-| [Notification inbox](../notification_service/internal/store/notices.go)                                                         | admitted, confirmed, failed or no-op per notice                                                  | no                     |
+| [Notification inbox](../notification_service/internal/inbox/notices.go)                                                         | admitted, confirmed, failed or no-op per notice                                                  | no                     |
 | [`ObserveInput`](../action_service/internal/sessionclient/observe_input.go) (`observe_input`)                                   | confirmation, failure, turn status                                                               | final text             |
 | [`TurnProjection`](../action_service/internal/sessionclient/turns.go) (`read_turns` in session_delegation and orchestration_v1) | turns and their inputs                                                                           | tool names, final text |
 | History [fold](../history_service/internal/threadfold/fold.go), synced to the app's conversation view                           | everything                                                                                       | yes                    |

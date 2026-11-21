@@ -24,10 +24,9 @@ remainder needs a bit more care:
   resources; dropping the verb (`system_info`, `db_changed_time`,
   `current_user`) reads more naturally as MCP resources than as tools.
 - **Product stock helpers** (OpenAPI) — `get_product_stock`,
-  `open_product_stock`, `transfer_product_stock` (already disabled). The
-  `<entity>_<verb>` rename is mechanical (`product_stock_get`,
-  `product_stock_open`) but the `product_stock` name implies it's a
-  standalone entity, which it isn't — it's a derived view over
+  `open_product_stock`. The `<entity>_<verb>` rename is mechanical
+  (`product_stock_get`, `product_stock_open`) but the `product_stock` name
+  implies it's a standalone entity, which it isn't — it's a derived view over
   `stock_entries` filtered by product. Worth thinking about whether to
   promote to a batch tool that groups with `stock_*`.
 
@@ -91,8 +90,9 @@ and is missing `ShoppingList`, `ProductGroup`, `Recipe` entirely.
 Action: file an issue + PR against https://github.com/grocy/grocy adding
 the missing properties and the three missing schemas. Maintainer (berrnd)
 has accepted similar drift fixes (#1451, #1967, #2198, #2694). Once a
-Grocy release shipping the upstream fix is pinned in `MODULE.bazel`,
-remove the corresponding downstream patches from `fix_openapi_spec.py`.
+Grocy release shipping the upstream fix is pinned as `@grocy_openapi_spec`
+in <../devinfra/bazel/artifacts.MODULE.bazel>, remove the corresponding
+downstream patches from `fix_openapi_spec.py`.
 Checked 2026-10-28: upstream `master` still lacks the patched Product fields,
 the cited Location/QuantityUnit/ShoppingListItem fields, and the three named
 schemas. A repository issue/PR search for missing OpenAPI schemas found no

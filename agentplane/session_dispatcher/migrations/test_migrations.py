@@ -7,8 +7,8 @@ import pytest_bazel
 from python.runfiles import Runfiles
 from sqlalchemy import create_engine, text
 
+from testing.postgres import DatabaseNames, create_temporary_database
 from util.db_url import render_postgresql_url
-from util.testing.postgres import DatabaseNames, create_temporary_database
 
 # SQLAlchemy loads this URL dialect dynamically.
 # gazelle:include_dep @pypi//psycopg
@@ -20,7 +20,7 @@ _VERSION = "runner_gateway_dispatcher_goose_version"
 def _run(url: str, *, check: bool = True) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [_SERVICE, "--migrate-only"],
-        env={"AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL": _wire_url(url)},
+        env={"AGENTPLANE_SESSIONS_DISPATCHER_DATABASE_URL": _wire_url(url)},
         text=True,
         capture_output=True,
         timeout=60,
@@ -59,14 +59,14 @@ def test_concurrent_runners_serialize(postgres_admin_url: str, database_names: D
         argv: list[str | Path] = [_SERVICE, "--migrate-only"]
         first = subprocess.Popen(
             argv,
-            env={"AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL": _wire_url(url)},
+            env={"AGENTPLANE_SESSIONS_DISPATCHER_DATABASE_URL": _wire_url(url)},
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
         )
         second = subprocess.Popen(
             argv,
-            env={"AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL": _wire_url(url)},
+            env={"AGENTPLANE_SESSIONS_DISPATCHER_DATABASE_URL": _wire_url(url)},
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/journal"
@@ -42,7 +43,7 @@ func cutoffInterrupt(id string) *commandpb.Command {
 func TestFinalAdmissionCutoffPreservesReceiptsAndSettlesEarlierInterrupt(t *testing.T) {
 	s, _, _ := frameTestSession(t, []string{"/bin/cat"})
 	ctx := t.Context()
-	if err := s.Emit(ctx, observation(&eventpb.TurnStarted{TurnId: "turn-1"}), nil); err != nil {
+	if err := s.Emit(ctx, harness.Observation(&eventpb.TurnStarted{TurnId: "turn-1"}), nil); err != nil {
 		t.Fatal(err)
 	}
 	prior := cutoffInterrupt("before-cutoff")
@@ -222,7 +223,7 @@ func TestObsoleteSealCannotCloseSuccessorAdmission(t *testing.T) {
 func TestInterruptRacingFinalAdmissionCutoff(t *testing.T) {
 	s, _, _ := frameTestSession(t, []string{"/bin/cat"})
 	ctx := context.Background()
-	if err := s.Emit(ctx, observation(&eventpb.TurnStarted{TurnId: "turn-1"}), nil); err != nil {
+	if err := s.Emit(ctx, harness.Observation(&eventpb.TurnStarted{TurnId: "turn-1"}), nil); err != nil {
 		t.Fatal(err)
 	}
 	s.admitMu.Lock()

@@ -10,7 +10,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { create, fromJson, toJson, type JsonValue, type MessageInitShape } from "@bufbuild/protobuf";
 
 import { createElectricThreadSync, electricThreadSync } from "./electric_sync";
-import { electricEntityVariant } from "./testing/electric_entity";
+import { ELECTRIC_SCHEMAS, electricEntityVariant } from "./testing/electric_entity";
 import { Operation } from "../../../proto/command_pb";
 import { ItemKind } from "../../../proto/event_pb";
 import { type ThreadSync, type ThreadWindow } from "./thread_sync";
@@ -31,33 +31,8 @@ import {
 
 type Json = Record<string, unknown>;
 
-const SCHEMAS: Record<string, Json> = {
-  thread_entity: {
-    thread_id: { type: "uuid", not_null: true, pk_index: 0 },
-    projection_epoch: { type: "text", not_null: true, pk_index: 1 },
-    entity_kind: { type: "text", not_null: true, pk_index: 2 },
-    entity_id: { type: "text", not_null: true, pk_index: 3 },
-    entity_index: { type: "int8", not_null: true },
-    cursor: { type: "int8", not_null: true },
-    revision_cursor: { type: "int8", not_null: true },
-    pending: { type: "bool", not_null: true },
-    state: { type: "jsonb", not_null: true },
-  },
-  thread_payload_chunk: {
-    thread_id: { type: "uuid", not_null: true, pk_index: 0 },
-    projection_epoch: { type: "text", not_null: true, pk_index: 1 },
-    owner_cursor: { type: "int8", not_null: true, pk_index: 2 },
-    owner_id: { type: "text", not_null: true, pk_index: 3 },
-    field: { type: "text", not_null: true, pk_index: 4 },
-    generation: { type: "int8", not_null: true, pk_index: 5 },
-    chunk_index: { type: "int8", not_null: true, pk_index: 6 },
-    text: { type: "json", not_null: true },
-  },
-};
-
 function key(relation: string, row: Json): string {
-  const schema = SCHEMAS[relation] as Record<string, { pk_index?: number }>;
-  const identity = Object.entries(schema)
+  const identity = Object.entries(ELECTRIC_SCHEMAS[relation]!)
     .filter(([, column]) => column.pk_index !== undefined)
     .map(([name]) => JSON.stringify(String(row[name])));
   return `"public"."${relation}"/${identity.join("/")}`;
@@ -73,7 +48,7 @@ function headers(relation: string, handle: string, offset = "0_0"): HeadersInit 
     "electric-handle": handle,
     "electric-offset": offset,
     "electric-cursor": "1",
-    "electric-schema": JSON.stringify(SCHEMAS[relation]),
+    "electric-schema": JSON.stringify(ELECTRIC_SCHEMAS[relation]),
   };
 }
 

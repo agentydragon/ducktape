@@ -11,8 +11,6 @@ import { testSandbox } from "../testing/sandbox";
 import { serveEventStreams, stubWatchFetch, type ServedWatch } from "../testing/watch";
 import { SandboxesLiveProvider, useEnvironmentWatch, useRequiredSandboxesLive } from "./live";
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-
 const roots: Root[] = [];
 
 afterEach(async () => {
@@ -113,13 +111,24 @@ it("retains the previous inventory until a reconnect snapshot is complete", asyn
   });
   expect(watches).toHaveLength(2);
   await act(async () => {
-    watches[1]?.send({ snapshot: { environments: [toJson(EnvironmentDescriptorSchema, testSandbox("new", "u2"))] } });
+    watches[1]?.send({
+      snapshot: { environments: [toJson(EnvironmentDescriptorSchema, testSandbox("partial", "u2"))] },
+    });
+    watches[1]?.send({ upsert: toJson(EnvironmentDescriptorSchema, testSandbox("too-early", "u3")) });
   });
   expect(container.textContent).toBe("old:u1");
   await act(async () => {
-    watches[1]?.send({ snapshotComplete: {} });
+    await vi.advanceTimersByTimeAsync(5000);
   });
-  expect(container.textContent).toBe("new:u2");
+  expect(watches).toHaveLength(3);
+  await act(async () => {
+    watches[2]?.send({ snapshot: { environments: [toJson(EnvironmentDescriptorSchema, testSandbox("new", "u4"))] } });
+  });
+  expect(container.textContent).toBe("old:u1");
+  await act(async () => {
+    watches[2]?.send({ snapshotComplete: {} });
+  });
+  expect(container.textContent).toBe("new:u4");
 });
 
 function Detail({ target }: { target: EnvironmentTarget | undefined }) {

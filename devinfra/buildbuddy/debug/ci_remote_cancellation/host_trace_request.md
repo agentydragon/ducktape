@@ -22,7 +22,7 @@ and resource timings, not the requested lease-renewal and VMM-stop events:
 [node metadata schema](https://github.com/buildbuddy-io/buildbuddy/blob/a04caa741548187c77dc991c8d8384c6788e24a9/proto/scheduler.proto#L669-L690).
 
 The repository's self-hosted executor manifest is
-[parked with zero replicas](../../../../cluster/parked/buildbuddy-executor/helmrelease.yaml).
+[disabled with zero replicas](../../kvm/README.md).
 That is repository configuration, not a fresh cluster-state observation, and
 does not provide access to the hosted worker. No key expansion or infrastructure
 change was attempted. The next evidence requires a hosted operator or an

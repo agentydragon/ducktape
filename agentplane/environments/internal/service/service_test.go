@@ -16,12 +16,12 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
+	"github.com/agentydragon/ducktape/agentplane/testing/testscheme"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -32,7 +32,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -47,16 +46,14 @@ const (
 	sandboxUID   = "sandbox-uid-current"
 	executionUID = "service-account-uid-current"
 
-	actionRequestID       = "00000000-0000-4000-8000-000000000001"
-	actionExecutionID     = "00000000-0000-4000-8000-000000000002"
 	delegatedIdentityName = "delegated-agent"
 	delegatedIdentityUID  = "delegated-identity-uid"
 )
 
-func discoveryLifecycle(t *testing.T, objects client.WithWatch, wakeCallers []string) *resume.Manager {
+func discoveryLifecycle(t *testing.T, objects client.WithWatch, wakeServiceCallers []string) *resume.Manager {
 	t.Helper()
 	manager, err := resume.NewManager(lifecycle.Options{
-		Namespace: discoveryNamespace, Objects: objects, WakeServiceCallers: wakeCallers,
+		Namespace: discoveryNamespace, Objects: objects, WakeServiceCallers: wakeServiceCallers,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -92,9 +89,9 @@ func serveFixture(t *testing.T, methods auth.Methods, register func(*grpc.Server
 		peertls.ActionsURI, peertls.RuntimeProxyURI, peertls.NotificationsURI, peertls.AppURI)
 }
 
-func serveDiscoveryWithOptions(t *testing.T, objects client.WithWatch, catalog runtimeconfig.Catalog, delegatedMethods []string, wakeCallers []string) environmentpb.EnvironmentServiceClient {
+func serveDiscoveryWithOptions(t *testing.T, objects client.WithWatch, catalog runtimeconfig.Catalog, delegatedMethods []string, wakeServiceCallers []string) environmentpb.EnvironmentServiceClient {
 	t.Helper()
-	service, err := New(discoveryNamespace, objects, catalog, discoveryLifecycle(t, objects, wakeCallers), Options{
+	service, err := New(discoveryNamespace, objects, catalog, discoveryLifecycle(t, objects, wakeServiceCallers), Options{
 		ServiceManagers: sets.New(peertls.ActionsURI), ServiceLaunchers: sets.New(peertls.RuntimeProxyURI),
 	})
 	if err != nil {
@@ -115,9 +112,9 @@ func serveDiscoveryWithOptions(t *testing.T, objects client.WithWatch, catalog r
 	return environmentpb.NewEnvironmentServiceClient(serveFixture(t, methods, func(server *grpc.Server) { environmentpb.RegisterEnvironmentServiceServer(server, service) }))
 }
 
-func serveDiscoveryWithComponentReader(t *testing.T, objects client.WithWatch, catalog runtimeconfig.Catalog, wakeCallers []string) environmentpb.EnvironmentServiceClient {
+func serveDiscoveryWithComponentReader(t *testing.T, objects client.WithWatch, catalog runtimeconfig.Catalog, wakeServiceCallers []string) environmentpb.EnvironmentServiceClient {
 	t.Helper()
-	service, err := New(discoveryNamespace, objects, catalog, discoveryLifecycle(t, objects, wakeCallers), Options{
+	service, err := New(discoveryNamespace, objects, catalog, discoveryLifecycle(t, objects, wakeServiceCallers), Options{
 		ServiceReaders: sets.New(peertls.ActionsURI), ServiceManagers: sets.New(peertls.ActionsURI), ServiceLaunchers: sets.New(peertls.RuntimeProxyURI),
 	})
 	if err != nil {
@@ -145,20 +142,7 @@ func configureDelegatedIdentity(t *testing.T, objects client.WithWatch, sandboxN
 
 func readerWithObjects(t *testing.T, objects ...client.Object) client.WithWatch {
 	t.Helper()
-	scheme := runtime.NewScheme()
-	if err := sandboxapi.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
-	}
-	if err := corev1.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
-	}
-	if err := workloadapi.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
-	}
-	if err := policyapi.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
-	}
-	builder := clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...)
+	builder := clientfake.NewClientBuilder().WithScheme(testscheme.New(t)).WithObjects(objects...)
 	// The fake client implements API field selection through explicit indexes.
 	for _, object := range []client.Object{&sandboxapi.Sandbox{}, &corev1.ServiceAccount{}} {
 		builder.WithIndex(object, "metadata.name", func(object client.Object) []string { return []string{object.GetName()} })
@@ -275,15 +259,7 @@ func serviceContext(t *testing.T, uri string) context.Context {
 
 func delegatedServiceContext(t *testing.T, uri string, identity auth.Identity) context.Context {
 	t.Helper()
-	envelope := &delegationpb.Delegation{
-		EffectiveCaller: &delegationpb.Delegation_Identity{Identity: &identitypb.Identity{Name: identity.Name, Uid: identity.UID}},
-		Provenance:      &delegationpb.Delegation_Action{Action: &delegationpb.ActionProvenance{RequestId: actionRequestID, ExecutionId: actionExecutionID}},
-	}
-	encoded, err := auth.MarshalDelegation(envelope)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return metadata.AppendToOutgoingContext(serviceContext(t, uri), auth.DelegationMetadataKey, string(encoded))
+	return grpcmethods.WithActionDelegation(t, serviceContext(t, uri), identity)
 }
 
 func serveIdentityDiscovery(
@@ -576,7 +552,7 @@ func TestRevalidateDescriptorRefreshesIdentityAfterSameUIDChange(t *testing.T) {
 	if err := objects.Update(t.Context(), resource); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, visible, err := service.revalidateDescriptor(t.Context(), descriptor, environmentCaller{}, true); err != nil || !visible || descriptor.GetIdentityName() != "new-agent" {
+	if visible, err := service.revalidateDescriptor(t.Context(), descriptor, environmentCaller{}, true); err != nil || !visible || descriptor.GetIdentityName() != "new-agent" {
 		t.Fatalf("revalidated identity = %q, visible %t, error %v; want new-agent", descriptor.GetIdentityName(), visible, err)
 	}
 	if err := objects.Get(t.Context(), key, resource); err != nil {
@@ -586,7 +562,7 @@ func TestRevalidateDescriptorRefreshesIdentityAfterSameUIDChange(t *testing.T) {
 	if err := objects.Update(t.Context(), resource); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, visible, err := service.revalidateDescriptor(t.Context(), descriptor, environmentCaller{}, true); err != nil || !visible || descriptor.IdentityName != nil {
+	if visible, err := service.revalidateDescriptor(t.Context(), descriptor, environmentCaller{}, true); err != nil || !visible || descriptor.IdentityName != nil {
 		t.Fatalf("revalidated unbound identity = %q, visible %t, error %v; want absent", descriptor.GetIdentityName(), visible, err)
 	}
 }

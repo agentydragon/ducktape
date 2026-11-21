@@ -1,11 +1,10 @@
 // @vitest-environment happy-dom
 
 import { act, type JSX } from "react";
-import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
-import { MantineProvider } from "@mantine/core";
 import { QueryClientProvider } from "@tanstack/react-query";
 
+import { cleanupMounted, mountWithMantine } from "../../../../util/frontend/testing/react";
 import { EvidencePanel, EvidenceToggle, revealEvidenceOnTap } from "./thread_evidence";
 import { ChronologicalDebugProvider } from "./chronological_debug";
 import { createAppQueryClient } from "../transport/query";
@@ -14,17 +13,11 @@ import { ItemKind } from "../../../proto/event_pb";
 import { RetainedDisclosureProvider } from "../../../../util/frontend/transcript/retained_disclosures";
 import { deferred } from "../../../../util/frontend/testing/deferred";
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-
-const mounted: { root: ReturnType<typeof createRoot>; container: HTMLElement }[] = [];
 const clients: ReturnType<typeof createAppQueryClient>[] = [];
 
 afterEach(async () => {
   window.getSelection()?.removeAllRanges();
-  for (const { root, container } of mounted.splice(0)) {
-    await act(async () => root.unmount());
-    container.remove();
-  }
+  await cleanupMounted();
   for (const client of clients.splice(0)) client.clear();
   vi.unstubAllGlobals();
 });
@@ -59,11 +52,7 @@ function History(): JSX.Element {
 }
 
 async function mountHistory(): Promise<(testId: string) => HTMLElement> {
-  const container = document.createElement("div");
-  document.body.append(container);
-  const root = createRoot(container);
-  mounted.push({ root, container });
-  await act(async () => root.render(<History />));
+  const { container } = await mountWithMantine(<History />);
   return (testId) => container.querySelector<HTMLElement>(`[data-testid="${testId}"]`)!;
 }
 
@@ -114,31 +103,21 @@ it("selects a message bubble when the adjacent command gutter is tapped", async 
 });
 
 async function mountEvidence(threadId: string) {
-  const container = document.createElement("div");
-  document.body.append(container);
-  const root = createRoot(container);
-  mounted.push({ root, container });
   const client = createAppQueryClient();
   clients.push(client);
   const entity = testItem(1, ItemKind.ASSISTANT_TEXT);
-  async function render(id: string): Promise<void> {
-    await act(async () =>
-      root.render(
-        <QueryClientProvider client={client}>
-          <MantineProvider env="test">
-            <RetainedDisclosureProvider>
-              <ChronologicalDebugProvider threadId={id}>
-                <EvidenceToggle entity={entity} />
-                <EvidencePanel threadId={id} entity={entity} />
-              </ChronologicalDebugProvider>
-            </RetainedDisclosureProvider>
-          </MantineProvider>
-        </QueryClientProvider>
-      )
-    );
-  }
-  await render(threadId);
-  return { container, render };
+  const view = (id: string) => (
+    <QueryClientProvider client={client}>
+      <RetainedDisclosureProvider>
+        <ChronologicalDebugProvider threadId={id}>
+          <EvidenceToggle entity={entity} />
+          <EvidencePanel threadId={id} entity={entity} />
+        </ChronologicalDebugProvider>
+      </RetainedDisclosureProvider>
+    </QueryClientProvider>
+  );
+  const { container, rerender } = await mountWithMantine(view(threadId));
+  return { container, render: (id: string) => rerender(view(id)) };
 }
 
 function control(container: HTMLElement, text: string): HTMLButtonElement {

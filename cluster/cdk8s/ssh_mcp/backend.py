@@ -4,11 +4,9 @@ from __future__ import annotations
 
 from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, JsonPatch, Size
 from cdk8s_plus_34 import (
-    Capability,
     ConfigMap,
     ContainerResources,
     ContainerSecurityContextProps,
-    ContainerSecutiryContextCapabilities,
     Cpu,
     CpuResources,
     Deployment,
@@ -48,10 +46,13 @@ from cluster.cdk8s.ssh_mcp.config import (
     NebulaDestination,
     SshMcpConfig,
 )
+from cluster.cdk8s.vpa_policy import ContainerPolicy
 from cluster.scripts.nebula_mesh import Mesh
 
 IMAGE_NAME = "git.allegedly.works/ducktape-ci/ssh-mcp"
 PLACEHOLDER_TAG = "unset"
+_CPU_REQUEST_MILLIS = 50
+_MEMORY_LIMIT_MIB = 512
 _BEARER = SecretRef(namespace=NAMESPACE, name=BEARER_SECRET_NAME).key(BEARER_SECRET_KEY)
 _KEY_VOLUMES = (
     ("keys", "ssh-mcp-keys", f"{CONFIG_DIR}/keys"),
@@ -131,7 +132,15 @@ class SshMcp(Construct):
         deployment = Deployment(
             self,
             "deployment",
-            metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE, labels=SERVICE.pods.selector),
+            metadata=ApiObjectMetadata(
+                name=NAME,
+                namespace=NAMESPACE,
+                labels=SERVICE.pods.selector,
+                annotations=namespaces.initial_request_annotations(
+                    # Peak 30-day working set was 123Mi.
+                    ContainerPolicy.cpu_and_memory_requests_only("server", memory_floor="144Mi")
+                ),
+            ),
             pod_metadata=ApiObjectMetadata(labels=SERVICE.pods.selector),
             replicas=1,
             select=False,
@@ -154,13 +163,12 @@ class SshMcp(Construct):
             },
             ports=[SERVICE.port.container_port()],
             resources=ContainerResources(
-                cpu=CpuResources(request=Cpu.millis(50), limit=Cpu.millis(500)),
-                memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),
+                cpu=CpuResources(request=Cpu.millis(_CPU_REQUEST_MILLIS), limit=Cpu.millis(500)),
+                memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(_MEMORY_LIMIT_MIB)),
             ),
             readiness=http_probe("/healthz", port=SERVICE.pod_port, initial_delay_seconds=3),
             liveness=http_probe("/healthz", port=SERVICE.pod_port, initial_delay_seconds=15, period_seconds=20),
             security_context=ContainerSecurityContextProps(
-                capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
                 ensure_non_root=True,
                 user=1000,
                 group=1000,
@@ -233,7 +241,7 @@ def chart(app: App, *, config: SshMcpConfig, mesh: Mesh) -> Chart:
         chart,
         "namespace",
         name=NAMESPACE,
-        vpa=Vpa.DISABLED,
+        vpa=Vpa.RECOMMEND,
         labels={"name": NAMESPACE},
         annotations={"description": "SSH MCP backend; private keys stay in this namespace."},
     )

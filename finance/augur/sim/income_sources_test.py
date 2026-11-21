@@ -6,10 +6,9 @@ apart is what lets a simulator answer both "how much treasury interest did alice
 "how much of it can California tax" — a ledger that resolved the exemption on the way in
 could answer only the second, and would report exempt income as no income at all.
 
-Two taxpayers and two sources is the smallest shape that can catch the row arithmetic going
-wrong. A row is `taxpayer * source_count + source`, so with one taxpayer the first term
-vanishes and with one source the second does; either degenerate shape agrees with a plain
-per-taxpayer index that is wrong. Four distinct amounts separate them.
+Two taxpayers and two sources is the smallest shape that can catch income booked to the wrong
+taxpayer or the wrong source: with one taxpayer a lookup that ignores the taxpayer still agrees,
+and with one source a lookup that ignores the source does. Four distinct amounts separate them.
 """
 
 from dataclasses import dataclass
@@ -21,7 +20,7 @@ import pytest_bazel
 from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.fixed_point import currency_amount_to_quanta
-from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId
+from finance.augur.sim.ids import CHECKING, AgentId, JurisdictionId
 from finance.augur.sim.income import (
     ORDINARY_INCOME,
     InterestIncome,
@@ -30,21 +29,16 @@ from finance.augur.sim.income import (
     Treasury,
     income_source_sort_key,
 )
-from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
-from finance.augur.sim.money import USD
 from finance.augur.sim.results import Rollout
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
-from finance.augur.sim.tax_authority import TaxAuthority
-from finance.augur.sim.tax_indexation import FixedNominalLaw
-from finance.augur.sim.tax_profile import TaxProfile, compile_profile
 from finance.augur.sim.testing.rollouts import book, tax_by_jurisdiction
 from finance.augur.sim.testing.session import each, finish
+from finance.augur.sim.testing.tax_authority import filer
 from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
-CHECKING = AccountId("checking")
 PAYER = AgentId("payer")
 IRS = AgentId("irs")
 # Every recipient is a California resident filing federally too.
@@ -61,7 +55,7 @@ ORDINARY_SOURCE = "ordinary"
 # Through December of the first year, so the year-end assessment has fired.
 HORIZON_MONTHS = 13
 WAGE_MONTH, INTEREST_MONTH = 0, 3
-# Four distinct amounts, one per (taxpayer, source): any collision in the row arithmetic
+# Four distinct amounts, one per (taxpayer, source): income booked to the wrong pair
 # produces a visibly wrong sum rather than a plausible one.
 ALICE_WAGES, ALICE_INTEREST = Decimal(120_000), Decimal(45_000)
 BOB_WAGES, BOB_INTEREST = Decimal(260_000), Decimal(70_000)
@@ -96,7 +90,6 @@ def compose(payments: tuple[Payment, ...]) -> World:
     """Every recipient a California resident with their own tax profile, paid from `payer`."""
 
     recipients = sorted({payment.to_agent_id for payment in payments})
-    jurisdictions = {id_: load_jurisdiction(id_) for id_ in FILED_IN}
     world = World(
         MarketPath((), 0, rollout_count=1),
         horizon_months=HORIZON_MONTHS,
@@ -111,16 +104,7 @@ def compose(payments: tuple[Payment, ...]) -> World:
     ):
         _account(world, agent_id, balance)
     for recipient in recipients:
-        world.track(
-            TaxAuthority(
-                compile_profile(
-                    TaxProfile(agent_id=recipient, jurisdiction_ids=list(FILED_IN), tax_authority_agent_id=IRS),
-                    jurisdictions,
-                    currency=USD,
-                ),
-                indexation=FixedNominalLaw(),
-            )
-        )
+        world.track(filer(recipient, FILED_IN, authority=IRS))
     for index, payment in enumerate(payments):
         world.declare_flow(
             schedule=Once(month=payment.month),

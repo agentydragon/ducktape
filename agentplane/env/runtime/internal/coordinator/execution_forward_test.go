@@ -2,65 +2,46 @@ package coordinator
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"google.golang.org/grpc"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/control"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
 	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	"github.com/coder/websocket"
-	"google.golang.org/grpc"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
+	"github.com/cosi-project/runtime/pkg/resource"
+	"github.com/cosi-project/runtime/pkg/state"
+	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
+	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
 type directExecutionTestClient struct {
 	ctx         context.Context
-	cancel      context.CancelFunc
-	conn        *grpc.ClientConn
 	runtime     environmentruntimepb.EnvironmentRuntimeClient
 	harnessHost harnesshostpb.HarnessHostClient
 	executor    executorpb.ExecutorClient
 	callCtx     context.Context
 	stopWatch   func() error
-	bootID      string
 	incarnation string
 	identity    configuration.SandboxIdentity
 }
 
 func startDirectExecutionTestClient(t *testing.T, r *Runtime, incarnation string) *directExecutionTestClient {
 	t.Helper()
-	listener, server, err := r.control.Listen(r.executorProxy)
-	if err != nil {
-		t.Fatal(err)
-	}
-	go func() { _ = server.Serve(listener) }()
+	conn := dialControl(t, serveControl(t, r), r.security, "")
 	ctx, cancel := context.WithTimeout(t.Context(), lifecycleTestTimeout)
-	credentials, err := r.security.ClientCredentials("")
-	if err != nil {
-		cancel()
-		server.Stop()
-		_ = listener.Close()
-		t.Fatal(err)
-	}
-	conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(credentials))
-	if err != nil {
-		cancel()
-		server.Stop()
-		_ = listener.Close()
-		t.Fatal(err)
-	}
+	t.Cleanup(cancel)
 	runtimeClient := environmentruntimepb.NewEnvironmentRuntimeClient(conn)
 	bindTestIncarnation(t, runtimeClient, r.config.Launch.Sandbox.UID, incarnation)
 	watchCtx, stopWatch := context.WithCancel(ctx)
@@ -69,35 +50,15 @@ func startDirectExecutionTestClient(t *testing.T, r *Runtime, incarnation string
 	})
 	if err != nil {
 		stopWatch()
-		cancel()
-		_ = conn.Close()
-		server.Stop()
-		_ = listener.Close()
 		t.Fatal(err)
 	}
 	first, err := watch.Recv()
 	if err != nil {
-		cancel()
-		_ = conn.Close()
-		server.Stop()
-		_ = listener.Close()
 		t.Fatal(err)
 	}
-	callCtx := metadata.AppendToOutgoingContext(
-		ctx,
-		control.SandboxMetadata, r.config.Launch.Sandbox.UID,
-		control.IncarnationMetadata, incarnation,
-		control.BootMetadata, first.GetEnvironmentRuntimeBootId(),
-	)
-	t.Cleanup(func() {
-		cancel()
-		server.Stop()
-		_ = listener.Close()
-		_ = conn.Close()
-	})
 	return &directExecutionTestClient{
-		ctx: ctx, cancel: cancel, conn: conn, runtime: runtimeClient, harnessHost: harnesshostpb.NewHarnessHostClient(conn),
-		executor: executorpb.NewExecutorClient(conn), callCtx: callCtx, stopWatch: func() error {
+		ctx: ctx, runtime: runtimeClient, harnessHost: harnesshostpb.NewHarnessHostClient(conn),
+		executor: executorpb.NewExecutorClient(conn), stopWatch: func() error {
 			stopWatch()
 			for {
 				if _, err := watch.Recv(); err != nil {
@@ -105,7 +66,8 @@ func startDirectExecutionTestClient(t *testing.T, r *Runtime, incarnation string
 				}
 			}
 		},
-		bootID: first.GetEnvironmentRuntimeBootId(), incarnation: incarnation, identity: r.config.Launch.Sandbox,
+		callCtx:     fencedContext(ctx, r.config.Launch.Sandbox.UID, incarnation, first.GetEnvironmentRuntimeBootId()),
+		incarnation: incarnation, identity: r.config.Launch.Sandbox,
 	}
 }
 
@@ -140,13 +102,7 @@ func (h *directExecutionTestClient) replaceWatch(incarnation string) error {
 		return err
 	}
 	h.incarnation = incarnation
-	h.bootID = first.GetEnvironmentRuntimeBootId()
-	h.callCtx = metadata.AppendToOutgoingContext(
-		h.ctx,
-		control.SandboxMetadata, h.identity.UID,
-		control.IncarnationMetadata, incarnation,
-		control.BootMetadata, h.bootID,
-	)
+	h.callCtx = fencedContext(h.ctx, h.identity.UID, incarnation, first.GetEnvironmentRuntimeBootId())
 	h.stopWatch = func() error {
 		stopWatch()
 		for {
@@ -158,58 +114,46 @@ func (h *directExecutionTestClient) replaceWatch(incarnation string) error {
 	return nil
 }
 
+type executionTestServer struct {
+	executorpb.UnimplementedExecutorServer
+	opened, closed chan string
+	notify         bool
+}
+
+func (s *executionTestServer) OpenSession(r *executorpb.OpenSessionRequest, stream executorpb.Executor_OpenSessionServer) error {
+	id := "native-" + r.GetRequestId()
+	if r.GetResumeSessionId() != "" {
+		id = r.GetResumeSessionId()
+	}
+	response := &executorpb.OpenSessionResponse{Status: &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_COMPLETED}, ExecutionSessionId: id}
+	if err := stream.Send(response); err != nil {
+		return err
+	}
+	s.opened <- id
+	defer func() {
+		select {
+		case s.closed <- id:
+		default:
+		}
+	}()
+	if s.notify {
+		if err := stream.Send(&executorpb.OpenSessionResponse{NativeFrames: []*executorpb.ExecutionNativeFrame{{Direction: "notification", Payload: []byte("event")}}}); err != nil {
+			return err
+		}
+	}
+	<-stream.Context().Done()
+	return nil
+}
+
 func startNativeExecutionTestServer(t *testing.T, notify bool) (string, <-chan string, <-chan string) {
 	t.Helper()
-	opened := make(chan string, 8)
-	closed := make(chan string, 8)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-		connection, err := websocket.Accept(w, request, nil)
-		if err != nil {
-			return
-		}
-		var sessionID string
-		defer func() {
-			connection.CloseNow()
-			if sessionID != "" {
-				select {
-				case closed <- sessionID:
-				default:
-				}
-			}
-		}()
-		_, payload, err := connection.Read(request.Context())
-		if err != nil {
-			return
-		}
-		var initialize struct {
-			ID string `json:"id"`
-		}
-		if json.Unmarshal(payload, &initialize) != nil || initialize.ID == "" {
-			return
-		}
-		sessionID = "native-" + initialize.ID
-		response := []byte(fmt.Sprintf(`{"id":%q,"result":{"sessionId":%q,"environmentInfo":{"shell":{"name":"bash","path":"/bin/bash"}}}}`, initialize.ID, sessionID))
-		if connection.Write(request.Context(), websocket.MessageText, response) != nil {
-			return
-		}
-		if _, _, err := connection.Read(request.Context()); err != nil { // initialized notification
-			return
-		}
-		opened <- sessionID
-		if notify {
-			payload := []byte(fmt.Sprintf(`{"method":"codex/event","params":{"sessionId":%q}}`, sessionID))
-			if connection.Write(request.Context(), websocket.MessageText, payload) != nil {
-				return
-			}
-		}
-		for {
-			if _, _, err := connection.Read(request.Context()); err != nil {
-				return
-			}
-		}
-	}))
-	t.Cleanup(server.Close)
-	return "ws" + strings.TrimPrefix(server.URL, "http"), opened, closed
+	s := &executionTestServer{opened: make(chan string, 8), closed: make(chan string, 8), notify: notify}
+	return startExecutorTestGRPC(t, s), s.opened, s.closed
+}
+
+func startExecutorTestGRPC(t *testing.T, service executorpb.ExecutorServer) string {
+	t.Helper()
+	return grpcserver.ServeRegistered(t, func(server *grpc.Server) { executorpb.RegisterExecutorServer(server, service) })
 }
 
 func TestOpenSessionSurvivesGatewayObserverLoss(t *testing.T) {
@@ -224,11 +168,7 @@ func TestOpenSessionSurvivesGatewayObserverLoss(t *testing.T) {
 	if err != nil || response.GetStatus().GetOutcome() != executorpb.ExecutionStatus_OUTCOME_COMPLETED {
 		t.Fatalf("OpenSession before supersession = %v, err=%v", response, err)
 	}
-	select {
-	case <-opened:
-	case <-time.After(lifecycleTestTimeout):
-		t.Fatal("local execution session did not initialize")
-	}
+	waitSignal(t, opened, "local execution session did not initialize")
 	second, err := client.open(client.callCtx, "second-session", "second-open-before-supersession")
 	if err != nil {
 		t.Fatalf("second OpenSession RPC: %v", err)
@@ -237,11 +177,7 @@ func TestOpenSessionSurvivesGatewayObserverLoss(t *testing.T) {
 	if err != nil || secondResponse.GetStatus().GetOutcome() != executorpb.ExecutionStatus_OUTCOME_COMPLETED {
 		t.Fatalf("second OpenSession before supersession = %v, err=%v", secondResponse, err)
 	}
-	select {
-	case <-opened:
-	case <-time.After(lifecycleTestTimeout):
-		t.Fatal("second local execution session did not initialize")
-	}
+	waitSignal(t, opened, "second local execution session did not initialize")
 
 	if err := client.stopWatch(); status.Code(err) != codes.Canceled {
 		t.Fatalf("Gateway observer cancellation = %v, want Canceled", err)
@@ -258,11 +194,7 @@ func TestOpenSessionSurvivesGatewayObserverLoss(t *testing.T) {
 	if _, err := client.open(client.callCtx, "third-session", "third-open-after-observer-loss"); err != nil {
 		t.Fatalf("OpenSession after Gateway observer loss: %v", err)
 	}
-	select {
-	case <-opened:
-	case <-time.After(lifecycleTestTimeout):
-		t.Fatal("new local execution session did not initialize after observer loss")
-	}
+	waitSignal(t, opened, "new local execution session did not initialize after observer loss")
 	r.mu.Lock()
 	activeCalls = r.activeExecutionCalls
 	r.mu.Unlock()
@@ -329,6 +261,55 @@ func TestDirectUnaryExecutionCallHoldsAdmissionUntilCompletion(t *testing.T) {
 	}, "direct unary admission release")
 }
 
+type failingAdmissionCountState struct {
+	state.State
+	failNext atomic.Bool
+	failure  error
+}
+
+func (s *failingAdmissionCountState) UpdateWithConflicts(ctx context.Context, pointer resource.Pointer, update state.UpdaterFunc, options ...state.UpdateOption) (resource.Resource, error) {
+	if pointer.Type() == lifecycle.AdmissionCountType && s.failNext.Swap(false) {
+		return nil, s.failure
+	}
+	return s.State.UpdateWithConflicts(ctx, pointer, update, options...)
+}
+
+func TestDirectUnaryExecutionAdmissionFailureLeavesNoCall(t *testing.T) {
+	executor := &blockingDirectExecutor{started: make(chan struct{}), release: make(chan struct{})}
+	close(executor.release)
+	config := executionRuntimeConfig(t, "ws://unused", nil)
+	config.expectCloseError = true
+	config.deps.startExecution = func(context.Context, Config, string) (executionHandle, error) {
+		return &executionServiceHandle{executor: executor, fence: func(context.Context) error { return nil }}, nil
+	}
+	store := &failingAdmissionCountState{
+		State:   state.WrapCore(namespaced.NewState(inmem.Build)),
+		failure: status.Error(codes.Internal, "injected admission count write failure"),
+	}
+	r := newLifecycleRuntimeWithState(t, config, store)
+	client := startDirectExecutionTestClient(t, r, "incarnation-1")
+	request := &executorpb.StartProcessRequest{Scope: client.scope("unary-session")}
+	store.failNext.Store(true)
+
+	if _, err := client.executor.StartProcess(client.callCtx, request); status.Code(err) != codes.Internal || store.failNext.Load() {
+		t.Fatalf("StartProcess with failed admission count write = %v, want injected failure", err)
+	}
+	if _, err := client.executor.StartProcess(client.callCtx, request); status.Code(err) != codes.Unavailable {
+		t.Fatalf("StartProcess after failed admission count write = %v, want Unavailable", err)
+	}
+	select {
+	case <-executor.started:
+		t.Fatal("failed admission dispatched an execution call")
+	default:
+	}
+	r.mu.Lock()
+	admissions, calls, registered := r.activeAdmissions, r.activeExecutionCalls, len(r.execCalls)
+	r.mu.Unlock()
+	if admissions != 0 || calls != 0 || registered != 0 {
+		t.Fatalf("failed admission retained work: active admissions=%d, active execution calls=%d, registered calls=%d", admissions, calls, registered)
+	}
+}
+
 func TestStaleExecutionIncarnationReportsVerifiedIdentity(t *testing.T) {
 	url, _, _ := startNativeExecutionTestServer(t, false)
 	r := newExecutionRuntime(t, url, nil)
@@ -364,7 +345,12 @@ func TestStaleExecutionIncarnationReportsVerifiedIdentity(t *testing.T) {
 		code   codes.Code
 	}{
 		{name: "incomplete scope", mutate: func(scope *executorpb.ExecutionScope) { scope.ExpectedIncarnationUid = "" }, code: codes.InvalidArgument},
+		{name: "missing target", mutate: func(scope *executorpb.ExecutionScope) { scope.Destination.Target = nil }, code: codes.InvalidArgument},
 		{name: "foreign Sandbox", mutate: func(scope *executorpb.ExecutionScope) { scope.Destination.Target.Uid = "another-sandbox" }, code: codes.PermissionDenied},
+		{name: "foreign Sandbox with long Session ID", mutate: func(scope *executorpb.ExecutionScope) {
+			scope.Destination.Target.Uid = "another-sandbox"
+			scope.SessionId = strings.Repeat("x", 129)
+		}, code: codes.PermissionDenied},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			scope := client.scope("sampler-session")

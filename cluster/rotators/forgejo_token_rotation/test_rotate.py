@@ -7,7 +7,6 @@ import httpx
 import pytest
 import pytest_bazel
 
-from cluster.rotators.forgejo_token_rotation import rotate
 from cluster.rotators.forgejo_token_rotation.config import FULL_ACCOUNT_SCOPES, Rotation, TeaSecretOutput
 from cluster.rotators.forgejo_token_rotation.rotate import (
     ForgejoCredentials,
@@ -37,61 +36,6 @@ def _minting_client(seen: list[httpx.Request]) -> httpx.Client:
         )
 
     return httpx.Client(transport=httpx.MockTransport(handler))
-
-
-def test_write_raw_token_sops_file_formats_after_encrypt(monkeypatch, tmp_path: Path):
-    sops_file = tmp_path / "secrets" / "haku.yaml"
-    rotation = Rotation(name="haku", credentials_dir=Path("/creds"), sops_file=sops_file)
-    creds = ForgejoCredentials("test-user", "test-secret", "http://forgejo.test:3000", "https://git.test")
-    calls: list[tuple[str, object]] = []
-
-    def fake_run(args, **kwargs):
-        assert kwargs == {"check": True}
-        calls.append(("run", list(args)))
-
-    def fake_format(path: Path) -> None:
-        calls.append(("format", path))
-
-    monkeypatch.setattr(rotate.subprocess, "run", fake_run)
-    monkeypatch.setattr(rotate, "prettier_format_yaml_in_place", fake_format)
-
-    rotate.write_raw_token_sops_file(
-        rotation,
-        creds,
-        {"id": 12, "name": "forgejo-tea-haku-20260701", "sha1": "token-value", "token_last_eight": "en-value"},
-        now=datetime(2026, 7, 1, tzinfo=UTC),
-    )
-
-    assert calls == [("run", ["sops", "encrypt", "--indent", "2", "--in-place", str(sops_file)]), ("format", sops_file)]
-
-
-def test_write_tea_secret_formats_after_encrypt(monkeypatch, tmp_path: Path):
-    out = TeaSecretOutput(
-        path=tmp_path / "cluster/k8s/haku/managed-agent/haku-forgejo-tea.sops.yaml", name="tea", namespace="haku"
-    )
-    rotation = Rotation(
-        name="haku", credentials_dir=Path("/creds"), sops_file=tmp_path / "secrets/haku.yaml", tea_secret=out
-    )
-    creds = ForgejoCredentials("test-user", "test-secret", "http://forgejo.test:3000", "https://git.test")
-    calls: list[tuple[str, object]] = []
-
-    def fake_run(args, **kwargs):
-        assert kwargs == {"check": True}
-        calls.append(("run", list(args)))
-
-    def fake_format(path: Path) -> None:
-        calls.append(("format", path))
-
-    monkeypatch.setattr(rotate.subprocess, "run", fake_run)
-    monkeypatch.setattr(rotate, "prettier_format_yaml_in_place", fake_format)
-
-    rotate.write_tea_secret(
-        rotation,
-        creds,
-        {"id": 12, "name": "forgejo-tea-haku-20260701", "sha1": "token-value", "token_last_eight": "en-value"},
-    )
-
-    assert calls == [("run", ["sops", "encrypt", "--indent", "2", "--in-place", str(out.path)]), ("format", out.path)]
 
 
 def test_build_tea_secret_preserves_configured_metadata_annotations(tmp_path: Path):
@@ -256,13 +200,7 @@ def test_tokens_to_prune_keeps_current_and_newest_previous():
         keep_previous=1,
     )
     creds = ForgejoCredentials("test-user", "test-secret", "http://forgejo.test:3000", "https://git.test")
-    current = RotatedToken(
-        rotation=r,
-        credentials=creds,
-        token_id=4,
-        token_name="forgejo-tea-haku-20260704000000",
-        token_last_eight="current",
-    )
+    current = RotatedToken(rotation=r, credentials=creds, token_id=4, token_name="forgejo-tea-haku-20260704000000")
     tokens = [
         {"id": 4, "name": "forgejo-tea-haku-20260704000000"},
         {"id": 3, "name": "forgejo-tea-haku-20260703000000"},

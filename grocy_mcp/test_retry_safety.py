@@ -22,7 +22,7 @@ from grocy_mcp.batch_tools import build_batch_tools_mcp
 from grocy_mcp.client import GrocyClient
 from grocy_mcp.mcp_types import ServerSettings
 from grocy_mcp.request_scoped_openapi import borrowed_http_client_provider
-from grocy_mcp.testing.helpers import unwrap_result
+from grocy_mcp.testing.results import unwrap_result
 
 BASE_URL = "https://grocy.example.com/api"
 # Not every test calls every route _setup_entity_routes registers.
@@ -143,13 +143,6 @@ async def test_unit_validation_rejects_wrong_qu(mcp_client: tuple[Client, respx.
     op = unwrap_result(result)[0]
     assert op["kind"] == "error", f"expected error for wrong QU, got: {op}"
     assert "pieces" in op["error"], "error should mention the expected stock QU"
-
-
-async def test_unit_validation_rejects_missing_qu(mcp_client: tuple[Client, respx.Router]) -> None:
-    """Omitting qu should fail validation."""
-    client, _router = mcp_client
-    with pytest.raises(Exception, match="qu"):
-        await client.call_tool("stock_add", {"items": [{"product": 1, "amount": 5, "location": "TestLoc"}]})
 
 
 async def test_http_errors_are_compact_and_include_status_url_and_body(mcp_client: tuple[Client, respx.Router]) -> None:

@@ -10,21 +10,21 @@ export type ArgumentsPreview<S extends z.ZodType = z.ZodType> = {
   // Stored with `never` args: the schema-specific type is checked where `definePreview` is called
   // and erased here, so one registry holds every Action's entry. `renderPreview` is the one place
   // that feeds it the parsed output.
-  render: (args: never) => ReactNode;
+  render: (args: never, requestId?: string) => ReactNode;
 };
 
 /** A call whose request and returned value form one view, such as creating a draft. */
 export type CallPreview<ArgsSchema extends z.ZodType = z.ZodType, ResultSchema extends z.ZodType = z.ZodType> = {
   argumentSchema: ArgsSchema;
   resultSchema: ResultSchema;
-  render: (args: never, result: never | undefined) => ReactNode;
+  render: (args: never, result: never | undefined, requestId?: string) => ReactNode;
 };
 
 /** The props every arguments widget takes: the Action's parsed arguments. */
-export type PreviewProps<Args> = { args: Args };
+export type PreviewProps<Args> = { args: Args; requestId?: string };
 
 /** The props a combined call widget takes. `result` is absent while the call is pending or failed. */
-export type CallPreviewProps<Args, Result> = { args: Args; result: Result | undefined };
+export type CallPreviewProps<Args, Result> = { args: Args; result: Result | undefined; requestId?: string };
 
 /** Bind an Action's argument schema to the widget that draws it. Pass the component itself: this
  * builds a `<Widget/>` element, a real child component, so the widget's own hooks work. */
@@ -32,7 +32,7 @@ export function definePreview<S extends z.ZodType>(
   schema: S,
   Widget: (props: PreviewProps<z.infer<S>>) => ReactNode
 ): ArgumentsPreview<S> {
-  const render = (args: z.infer<S>): ReactNode => <Widget args={args} />;
+  const render = (args: z.infer<S>, requestId?: string): ReactNode => <Widget args={args} requestId={requestId} />;
   return { schema, render: render as ArgumentsPreview["render"] };
 }
 
@@ -42,17 +42,34 @@ export function defineCallPreview<ArgsSchema extends z.ZodType, ResultSchema ext
   resultSchema: ResultSchema,
   Widget: (props: CallPreviewProps<z.infer<ArgsSchema>, z.infer<ResultSchema>>) => ReactNode
 ): CallPreview<ArgsSchema, ResultSchema> {
-  const render = (args: z.infer<ArgsSchema>, result: z.infer<ResultSchema> | undefined): ReactNode => (
-    <Widget args={args} result={result} />
-  );
+  const render = (
+    args: z.infer<ArgsSchema>,
+    result: z.infer<ResultSchema> | undefined,
+    requestId?: string
+  ): ReactNode => <Widget args={args} result={result} requestId={requestId} />;
+  return { argumentSchema, resultSchema, render: render as CallPreview["render"] };
+}
+
+/** A combined receipt that replaces the separate arguments and result only after both sides parse. */
+export function defineReceiptPreview<ArgsSchema extends z.ZodType, ResultSchema extends z.ZodType>(
+  argumentSchema: ArgsSchema,
+  resultSchema: ResultSchema,
+  Widget: (props: { args: z.infer<ArgsSchema>; result: z.infer<ResultSchema> }) => ReactNode
+): CallPreview<ArgsSchema, ResultSchema> {
+  const render = (args: z.infer<ArgsSchema>, result: z.infer<ResultSchema> | undefined): ReactNode =>
+    result === undefined ? null : <Widget args={args} result={result} />;
   return { argumentSchema, resultSchema, render: render as CallPreview["render"] };
 }
 
 /** Parse `args` with the entry's schema and render; `undefined` on a mismatch, so the caller uses
  * its host fallback. `null` from a matching renderer intentionally suppresses the slot. Arguments
  * are not checked against the tool until it runs, so a pending call's may not fit. */
-export function renderPreview(preview: ArgumentsPreview, args: unknown): ReactNode | null | undefined {
+export function renderPreview(
+  preview: ArgumentsPreview,
+  args: unknown,
+  requestId?: string
+): ReactNode | null | undefined {
   const parsed = preview.schema.safeParse(args);
   // `definePreview` bound this render to exactly this schema's output, so the cast is sound.
-  return parsed.success ? preview.render(parsed.data as never) : undefined;
+  return parsed.success ? preview.render(parsed.data as never, requestId) : undefined;
 }

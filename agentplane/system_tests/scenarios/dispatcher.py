@@ -19,11 +19,9 @@ import yaml
 from kubernetes_asyncio import client as k8s
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from agentplane.crd_group import GROUP, VERSION
 from agentplane.environments.v1 import environment_service_pb2 as environments_pb, environment_service_pb2_grpc
 from agentplane.grpc.calls import dial
 from agentplane.proto import environment_lifecycle_pb2 as lifecycle_pb, event_log_pb2, identity_pb2, session_pb2
-from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.session_dispatcher.dispatcher.api.session import (
     session_dispatcher_pb2 as pb,
     session_dispatcher_pb2_grpc,
@@ -31,21 +29,21 @@ from agentplane.session_dispatcher.dispatcher.api.session import (
 from agentplane.system_tests.driver.cleanup_diagnostics import capture_without_masking, cleanup_without_masking
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.dispatcher_operations import session_until
-from agentplane.system_tests.driver.dispatcher_transport import Caller, forward as _forward, service_caller
+from agentplane.system_tests.driver.dispatcher_transport import forward, service_caller
 from agentplane.system_tests.driver.identity import LAUNCH_DEFAULT_POLICY_SETS, scenario_identity
-from agentplane.system_tests.driver.port_forward import PortForward, async_port_forward
 from agentplane.system_tests.driver.sandbox import POD_TEMPLATE
+from agentplane.system_tests.driver.sandbox_cleanup import delete_sandbox
 from agentplane.system_tests.driver.sandbox_diagnostics import (
     archive_runner_data,
     capture_cleanup_diagnostics,
     container_mount_sources,
 )
+from agentplane.system_tests.driver.sandbox_object import create_sandbox_object
 from agentplane.system_tests.driver.tls import service_credentials, service_svid_credentials
 from agentplane.system_tests.driver.tracing import tracer
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 WORKLOAD = "sessions"
-_ROLLBACK_WORKLOAD = "runner-gateway"
 BOUND_SECONDS = 300
 type Dispatcher = session_dispatcher_pb2_grpc.SessionDispatcherAsyncStub
 
@@ -55,19 +53,11 @@ class DispatchFailedError(RuntimeError):
 
 
 async def _delete_pod(cluster: Cluster, name: str, uid: str) -> None:
-    await _delete(cluster, "pod", name, uid)
-
-
-async def _delete(cluster: Cluster, kind: str, name: str, uid: str) -> None:
     async with cluster.api_client() as api:
-        options = k8s.V1DeleteOptions(preconditions=k8s.V1Preconditions(uid=uid))
-        if kind == "pod":
-            await k8s.CoreV1Api(api).delete_namespaced_pod(name, cluster.namespace, body=options)
-        else:
-            await k8s.CustomObjectsApi(api).delete_namespaced_custom_object(
-                GROUP, VERSION, cluster.namespace, "sandboxes", name, body=options
-            )
-    await cluster.kubectl("wait", f"{kind}/{name}", "--for=delete", "--timeout=120s")
+        await k8s.CoreV1Api(api).delete_namespaced_pod(
+            name, cluster.namespace, body=k8s.V1DeleteOptions(preconditions=k8s.V1Preconditions(uid=uid))
+        )
+    await cluster.kubectl("wait", f"pod/{name}", "--for=delete", "--timeout=120s")
 
 
 async def _cleanup_sandbox(
@@ -79,44 +69,19 @@ async def _cleanup_sandbox(
     session_ids: list[str],
     command_ids: list[str],
 ) -> None:
-    with tracer.start_as_current_span("system_test.dispatcher.cleanup"):
-        try:
-            await cluster.kubectl(
-                "patch",
-                "sandbox.agentplane.allegedly.works",
-                name,
-                "--type=merge",
-                "-p",
-                json.dumps({"metadata": {"uid": uid}, "spec": {"running": False}}),
-            )
-            await cluster.kubectl(
-                "wait",
-                f"sandbox.agentplane.allegedly.works/{name}",
-                "--for=jsonpath={.status.operatingMode}=Suspended",
-                "--timeout=300s",
-            )
-            await cluster.kubectl(
-                "wait",
-                f"sandbox.agentplane.allegedly.works/{name}",
-                "--for=jsonpath={.status.stopStage}=Stopped",
-                "--timeout=300s",
-            )
-            await _delete(cluster, "sandbox.agentplane.allegedly.works", name, uid)
-        except Exception as error:
-            await capture_without_masking(
-                error, lambda: capture_cleanup_diagnostics(crictl_command, cluster, name, session_ids, command_ids)
-            )
-            raise
+    try:
+        await delete_sandbox(cluster, name, uid)
+    except Exception as error:
+        await capture_without_masking(
+            error, lambda: capture_cleanup_diagnostics(crictl_command, cluster, name, session_ids, command_ids)
+        )
+        raise
 
 
-async def _dispatch_until(
-    stub: Dispatcher, caller: Caller, session: str, predicate: Callable[[pb.Dispatch], bool]
-) -> pb.Dispatch:
+async def _dispatch_until(stub: Dispatcher, session: str, predicate: Callable[[pb.Dispatch], bool]) -> pb.Dispatch:
     with tracer.start_as_current_span("system_test.dispatcher.admission"):
         stream = stub.WatchDispatches(
-            pb.WatchDispatchesRequest(filter=pb.DispatchFilter(session_id=session)),
-            metadata=caller.metadata,
-            timeout=BOUND_SECONDS,
+            pb.WatchDispatchesRequest(filter=pb.DispatchFilter(session_id=session)), timeout=BOUND_SECONDS
         )
         try:
             async for response in stream:
@@ -139,10 +104,8 @@ def _normalize_delivery_state(dispatch: pb.Dispatch) -> None:
 
 
 async def _dispatcher_sql(cluster: Cluster, statement: str) -> str:
-    return await cluster.kubectl(
-        "exec",
+    return await cluster.exec(
         "deployment/postgres",
-        "--",
         "psql",
         "--host=/tmp",
         "--username=fixture_admin",
@@ -338,36 +301,46 @@ async def _crashed_dispatcher_process(
             await send_signal("SIGKILL")
 
 
+async def _wait_for_dispatcher_replicas(cluster: Cluster, count: int) -> list[dict[str, Any]]:
+    async for attempt in AsyncRetrying(
+        stop=stop_after_delay(120), wait=wait_fixed(0.25), retry=retry_if_exception_type(AssertionError), reraise=True
+    ):
+        with attempt:
+            pods = json.loads(
+                await cluster.kubectl("get", "pods", "-l", f"app.kubernetes.io/name={WORKLOAD}", "-o", "json")
+            )
+            live = [item for item in pods["items"] if not item["metadata"].get("deletionTimestamp")]
+            assert len(live) == count, f"expected {count} live Sessions replicas, found {len(live)}"
+            for pod in live:
+                assert any(
+                    condition["type"] == "Ready" and condition["status"] == "True"
+                    for condition in pod["status"].get("conditions", [])
+                ), f"Sessions Pod {pod['metadata']['name']} is not Ready"
+            return live
+    raise AssertionError("Sessions replicas never became ready")
+
+
 @asynccontextmanager
 async def _replace_original_with_peer(
     cluster: Cluster, deployment_uid: str, evidence: dict[str, object], *, crictl_command: tuple[str, ...] | None = None
 ) -> AsyncIterator[str]:
     with tracer.start_as_current_span("system_test.dispatcher.peer_lifetime"):
-        pods = json.loads(
-            await cluster.kubectl("get", "pods", "-l", f"app.kubernetes.io/name={WORKLOAD}", "-o", "json")
-        )
-        live = [item for item in pods["items"] if not item["metadata"].get("deletionTimestamp")]
-        assert len(live) == 1, f"expected the initial singleton, found {len(live)} live replicas"
-        original = live[0]
-        rollback = json.loads(await cluster.kubectl("get", "deployment", _ROLLBACK_WORKLOAD, "-o", "json"))
-        assert rollback["spec"]["replicas"] == 0
-        current = json.loads(await cluster.kubectl("get", "deployment", WORKLOAD, "-o", "json"))
-        assert current["metadata"]["uid"] == deployment_uid
-        rollback_uid = rollback["metadata"]["uid"]
+        (original,) = await _wait_for_dispatcher_replicas(cluster, 1)
+        original_uid = original["metadata"]["uid"]
         scaled_generation: int | None = None
         try:
             patched = json.loads(
                 await cluster.kubectl(
                     "patch",
                     "deployment",
-                    _ROLLBACK_WORKLOAD,
+                    WORKLOAD,
                     "--type=json",
                     "-p",
                     json.dumps(
                         [
-                            {"op": "test", "path": "/metadata/uid", "value": rollback_uid},
-                            {"op": "test", "path": "/spec/replicas", "value": 0},
-                            {"op": "replace", "path": "/spec/replicas", "value": 1},
+                            {"op": "test", "path": "/metadata/uid", "value": deployment_uid},
+                            {"op": "test", "path": "/spec/replicas", "value": 1},
+                            {"op": "replace", "path": "/spec/replicas", "value": 2},
                         ]
                     ),
                     "-o",
@@ -375,42 +348,45 @@ async def _replace_original_with_peer(
                 )
             )
             scaled_generation = patched["metadata"]["generation"]
-            await cluster.kubectl("rollout", "status", f"deployment/{_ROLLBACK_WORKLOAD}", "--timeout=120s")
-            pods = json.loads(
-                await cluster.kubectl("get", "pods", "-l", f"app.kubernetes.io/name={_ROLLBACK_WORKLOAD}", "-o", "json")
-            )
-            live = [item for item in pods["items"] if not item["metadata"].get("deletionTimestamp")]
-            assert len(live) == 1, f"expected one rollback peer after scale-up, found {len(live)}"
-            (peer,) = live
+            live = await _wait_for_dispatcher_replicas(cluster, 2)
+            assert any(pod["metadata"]["uid"] == original_uid for pod in live), "original Sessions replica disappeared"
+            (peer,) = [pod for pod in live if pod["metadata"]["uid"] != original_uid]
             if crictl_command is None:
-                await _delete_pod(cluster, original["metadata"]["name"], original["metadata"]["uid"])
+                await _delete_pod(cluster, original["metadata"]["name"], original_uid)
             else:
                 async with _crashed_dispatcher_process(cluster, original, crictl_command), cluster.api_client() as api:
                     await k8s.CoreV1Api(api).delete_namespaced_pod(
                         original["metadata"]["name"],
                         cluster.namespace,
-                        body=k8s.V1DeleteOptions(preconditions=k8s.V1Preconditions(uid=original["metadata"]["uid"])),
+                        body=k8s.V1DeleteOptions(preconditions=k8s.V1Preconditions(uid=original_uid)),
                     )
                 await cluster.kubectl("wait", f"pod/{original['metadata']['name']}", "--for=delete", "--timeout=120s")
-            evidence["original_dispatcher_pod_uid"] = original["metadata"]["uid"]
+            evidence["original_dispatcher_pod_uid"] = original_uid
             evidence["peer_dispatcher_pod_uid"] = peer["metadata"]["uid"]
             yield peer["metadata"]["name"]
         finally:
             if scaled_generation is not None:
-                current = json.loads(await cluster.kubectl("get", "deployment", _ROLLBACK_WORKLOAD, "-o", "json"))
-                # Do not overwrite a concurrent operator or GitOps rollout.
+                current = json.loads(await cluster.kubectl("get", "deployment", WORKLOAD, "-o", "json"))
                 if (
-                    current["metadata"]["uid"] == rollback_uid
+                    current["metadata"]["uid"] == deployment_uid
                     and current["metadata"]["generation"] == scaled_generation
                 ):
                     await cluster.kubectl(
-                        "scale",
-                        f"deployment/{_ROLLBACK_WORKLOAD}",
-                        "--current-replicas=1",
-                        "--replicas=0",
-                        f"--resource-version={current['metadata']['resourceVersion']}",
+                        "patch",
+                        "deployment",
+                        WORKLOAD,
+                        "--type=json",
+                        "-p",
+                        json.dumps(
+                            [
+                                {"op": "test", "path": "/metadata/uid", "value": deployment_uid},
+                                {"op": "test", "path": "/metadata/generation", "value": scaled_generation},
+                                {"op": "test", "path": "/spec/replicas", "value": 2},
+                                {"op": "replace", "path": "/spec/replicas", "value": 1},
+                            ]
+                        ),
                     )
-                    await cluster.kubectl("rollout", "status", f"deployment/{_ROLLBACK_WORKLOAD}", "--timeout=120s")
+                    await cluster.kubectl("rollout", "status", f"deployment/{WORKLOAD}", "--timeout=120s")
 
 
 async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
@@ -440,22 +416,10 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
         )
         identities = await stack.enter_async_context(AsyncExitStack())
         identity = await identities.enter_async_context(scenario_identity(cluster, sandbox, policies))
-        created = json.loads(
-            await cluster.kubectl(
-                "create",
-                "-f",
-                "-",
-                "-o",
-                "json",
-                body={
-                    "apiVersion": SANDBOX_API_VERSION,
-                    "kind": "Sandbox",
-                    "metadata": {"name": sandbox, "namespace": cluster.namespace},
-                    "spec": {"template": POD_TEMPLATE, "running": False, "identity": {"name": identity}},
-                },
-            )
+        resource = await create_sandbox_object(
+            cluster, sandbox, template=POD_TEMPLATE, identity=identity, running=False
         )
-        uid = created["metadata"]["uid"]
+        uid = resource["metadata"]["uid"]
         evidence["sandbox_uid"] = uid
         cleaned = False
 
@@ -484,24 +448,24 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
             "--timeout=300s",
         )
         server_credentials = authentication.channel_credentials
-        target = await stack.enter_async_context(_forward(cluster))
+        target = await stack.enter_async_context(forward(cluster))
         channel = await stack.enter_async_context(
             dial(
                 target,
                 channel_credentials=server_credentials,
-                server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
+                server_name=f"sessions.{cluster.namespace}.svc.cluster.local",
             )
         )
         stub: Dispatcher = session_dispatcher_pb2_grpc.SessionDispatcherStub(channel)
         with pytest.raises(grpc.aio.AioRpcError) as retired_environment_api:
             await environment_service_pb2_grpc.EnvironmentServiceStub(channel).ListEnvironments(
-                environments_pb.ListEnvironmentsRequest(), metadata=authentication.metadata, timeout=15
+                environments_pb.ListEnvironmentsRequest(), timeout=15
             )
         assert retired_environment_api.value.code() == grpc.StatusCode.UNIMPLEMENTED
         async with dial(
             target,
             channel_credentials=await service_credentials(cluster),
-            server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
+            server_name=f"sessions.{cluster.namespace}.svc.cluster.local",
         ) as anonymous_channel:
             with pytest.raises(grpc.aio.AioRpcError) as unauthenticated:
                 await session_dispatcher_pb2_grpc.SessionDispatcherStub(anonymous_channel).ListDispatches(
@@ -514,7 +478,6 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
                 pb.ChangeReasoningEffortRequest(
                     expected_sandbox_uid=uid, session_id=session, command_id=command, effort="low"
                 ),
-                metadata=authentication.metadata,
                 timeout=15,
             )
         assert unregistered.value.code() == grpc.StatusCode.NOT_FOUND
@@ -528,19 +491,13 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
             cwd="/state/work",
             reasoning_effort="low",
         )
-        created = await stub.CreateSession(
-            pb.CreateSessionRequest(session_id=session, spec=spec), metadata=authentication.metadata, timeout=15
-        )
+        created = await stub.CreateSession(pb.CreateSessionRequest(session_id=session, spec=spec), timeout=15)
         assert created.session.status.materialization == pb.SessionStatus.SESSION_MATERIALIZATION_WAITING
         queued = await stub.ChangeReasoningEffort(
-            pb.ChangeReasoningEffortRequest(session_id=session, command_id=command, effort="low"),
-            metadata=authentication.metadata,
-            timeout=15,
+            pb.ChangeReasoningEffortRequest(session_id=session, command_id=command, effort="low"), timeout=15
         )
         assert queued.dispatch.state == pb.DELIVERY_STATE_QUEUED_IN_DISPATCHER
-        waiting = await session_until(
-            stub, authentication, session, lambda row: row.status.reason == "sandbox_operator_requested_stop"
-        )
+        waiting = await session_until(stub, session, lambda row: row.status.reason == "sandbox_operator_requested_stop")
         assert waiting.placement.environment_hosted.environment.uid == uid
         assert waiting.status.delivery_blocker.kind == lifecycle_pb.DELIVERY_BLOCKER_KIND_OPERATOR_REQUESTED_STOP
         assert waiting.status.wake_assessment.state == lifecycle_pb.WAKE_STATE_DENIED
@@ -558,18 +515,16 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
             peer = await stack.enter_async_context(
                 _replace_original_with_peer(cluster, deployment["metadata"]["uid"], evidence)
             )
-            peer_target = await stack.enter_async_context(_forward(cluster, f"pod/{peer}"))
+            peer_target = await stack.enter_async_context(forward(cluster, f"pod/{peer}"))
             peer_channel = await stack.enter_async_context(
                 dial(
                     peer_target,
                     channel_credentials=server_credentials,
-                    server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
+                    server_name=f"sessions.{cluster.namespace}.svc.cluster.local",
                 )
             )
             stub = session_dispatcher_pb2_grpc.SessionDispatcherStub(peer_channel)
-            retained = await stub.GetDispatch(
-                pb.GetDispatchRequest(command_id=command), metadata=authentication.metadata, timeout=15
-            )
+            retained = await stub.GetDispatch(pb.GetDispatchRequest(command_id=command), timeout=15)
             assert retained.dispatch.created_at == queued.dispatch.created_at
             assert retained.dispatch.state == pb.DELIVERY_STATE_QUEUED_IN_DISPATCHER
 
@@ -593,24 +548,20 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
                 )
             )
             await settlement_gate.aclose()
-            peer_target = await stack.enter_async_context(_forward(cluster, f"pod/{peer}"))
+            peer_target = await stack.enter_async_context(forward(cluster, f"pod/{peer}"))
             peer_channel = await stack.enter_async_context(
                 dial(
                     peer_target,
                     channel_credentials=server_credentials,
-                    server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
+                    server_name=f"sessions.{cluster.namespace}.svc.cluster.local",
                 )
             )
             stub = session_dispatcher_pb2_grpc.SessionDispatcherStub(peer_channel)
 
         try:
-            admitted = await _dispatch_until(
-                stub, authentication, session, lambda row: row.state == pb.DELIVERY_STATE_RUNNER_ADMITTED
-            )
+            admitted = await _dispatch_until(stub, session, lambda row: row.state == pb.DELIVERY_STATE_RUNNER_ADMITTED)
         except (DispatchFailedError, grpc.aio.AioRpcError) as error:
-            failed_session = await stub.GetSession(
-                pb.GetSessionRequest(session_id=session), metadata=authentication.metadata, timeout=15
-            )
+            failed_session = await stub.GetSession(pb.GetSessionRequest(session_id=session), timeout=15)
             evidence.update(
                 {
                     "failure": str(error),
@@ -624,13 +575,9 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
         assert admitted.sandbox_uid == uid
         assert admitted.admission.event.command_admitted.command.command_id == command
         assert admitted.admission.event.command_admitted.command.change_reasoning_effort.effort == "low"
-        session_status = await stub.GetSession(
-            pb.GetSessionRequest(session_id=session), metadata=authentication.metadata, timeout=15
-        )
+        session_status = await stub.GetSession(pb.GetSessionRequest(session_id=session), timeout=15)
         assert session_status.session.status.materialization == pb.SessionStatus.SESSION_MATERIALIZATION_ACCEPTED
-        observed = await session_until(
-            stub, authentication, session, lambda row: row.status.activity.WhichOneof("kind") == "observed"
-        )
+        observed = await session_until(stub, session, lambda row: row.status.activity.WhichOneof("kind") == "observed")
         assert observed.status.activity.observed.session_id == session
         assert observed.status.activity.observed.WhichOneof("host") == "environment_hosted"
         evidence["observed_activity"] = str(observed.status.activity)
@@ -648,13 +595,10 @@ SELECT json_build_object('attempted',delivery_attempted,'created_at',created_at,
             assert receipt["attempted"] is True
             next_command = str(uuid4())
             await stub.ChangeReasoningEffort(
-                pb.ChangeReasoningEffortRequest(session_id=session, command_id=next_command, effort="low"),
-                metadata=authentication.metadata,
-                timeout=15,
+                pb.ChangeReasoningEffortRequest(session_id=session, command_id=next_command, effort="low"), timeout=15
             )
             next_admitted = await _dispatch_until(
                 stub,
-                authentication,
                 session,
                 lambda row: row.command_id == next_command and row.state == pb.DELIVERY_STATE_RUNNER_ADMITTED,
             )
@@ -698,7 +642,6 @@ SELECT json_build_object('attempted',delivery_attempted,'created_at',created_at,
             )
             suspended = await session_until(
                 stub,
-                authentication,
                 session,
                 lambda row: (
                     row.status.activity.WhichOneof("kind") == "environment_down"
@@ -710,39 +653,29 @@ SELECT json_build_object('attempted',delivery_attempted,'created_at',created_at,
             deletion_command = str(uuid4())
             cleanup_sessions = [session, deletion_session]
             cleanup_commands = [command, deletion_command]
-            await stub.CreateSession(
-                pb.CreateSessionRequest(session_id=deletion_session, spec=spec),
-                metadata=authentication.metadata,
-                timeout=15,
-            )
+            await stub.CreateSession(pb.CreateSessionRequest(session_id=deletion_session, spec=spec), timeout=15)
             await stub.ChangeReasoningEffort(
                 pb.ChangeReasoningEffortRequest(
                     expected_sandbox_uid=uid, session_id=deletion_session, command_id=deletion_command, effort="low"
                 ),
-                metadata=authentication.metadata,
                 timeout=15,
             )
-            await cluster.kubectl("rollout", "status", f"deployment/{WORKLOAD}", "--timeout=120s")
-            pods = json.loads(
-                await cluster.kubectl("get", "pods", "-l", "app.kubernetes.io/component=sessions", "-o", "json")
-            )
-            live = [item for item in pods["items"] if not item["metadata"].get("deletionTimestamp")]
-            assert len(live) == 2
+            live = await _wait_for_dispatcher_replicas(cluster, 2)
+            assert any(pod["metadata"]["uid"] == evidence["peer_dispatcher_pod_uid"] for pod in live)
             streams = []
             server_credentials = authentication.channel_credentials
             for replica in live:
-                target = await stack.enter_async_context(_forward(cluster, f"pod/{replica['metadata']['name']}"))
+                target = await stack.enter_async_context(forward(cluster, f"pod/{replica['metadata']['name']}"))
                 channel = await stack.enter_async_context(
                     dial(
                         target,
                         channel_credentials=server_credentials,
-                        server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
+                        server_name=f"sessions.{cluster.namespace}.svc.cluster.local",
                     )
                 )
                 reader = session_dispatcher_pb2_grpc.SessionDispatcherStub(channel)
                 stream = reader.WatchDispatches(
                     pb.WatchDispatchesRequest(filter=pb.DispatchFilter(session_id=deletion_session)),
-                    metadata=authentication.metadata,
                     timeout=BOUND_SECONDS,
                 )
                 stack.callback(stream.cancel)
@@ -757,7 +690,6 @@ SELECT json_build_object('attempted',delivery_attempted,'created_at',created_at,
             cleaned = True
             deleted = await session_until(
                 stub,
-                authentication,
                 session,
                 lambda row: (
                     row.status.activity.WhichOneof("kind") == "environment_down"
@@ -780,22 +712,13 @@ SELECT json_build_object('attempted',delivery_attempted,'created_at',created_at,
             evidence["deletion_observed_replicas"] = [item["metadata"]["uid"] for item in live]
         else:
             environment_target = await stack.enter_async_context(
-                async_port_forward(
-                    PortForward(
-                        cluster.command("port-forward"),
-                        resource="service/sandbox-controller",
-                        local_address="127.0.0.1",
-                        local_port=None,
-                        remote_port=8082,
-                        readiness_timeout_s=30,
-                    )
-                )
+                forward(cluster, "service/environments", remote_port=8082)
             )
             environment_channel = await stack.enter_async_context(
                 dial(
                     environment_target,
                     channel_credentials=await service_svid_credentials(cluster, "app-workload-tls"),
-                    server_name=f"sandbox-controller.{cluster.namespace}.svc.cluster.local",
+                    server_name=f"environments.{cluster.namespace}.svc.cluster.local",
                 )
             )
             environments = environment_service_pb2_grpc.EnvironmentServiceStub(environment_channel)
@@ -819,9 +742,7 @@ SELECT json_build_object('attempted',delivery_attempted,'created_at',created_at,
             await environments.SetEnvironmentIdentity(change, timeout=15)
             rebound = json.loads(await cluster.kubectl("get", "sandbox", sandbox, "-o", "json"))
             assert rebound["spec"]["identity"]["name"] == next_identity
-            retained_session = await stub.GetSession(
-                pb.GetSessionRequest(session_id=session), metadata=authentication.metadata, timeout=15
-            )
+            retained_session = await stub.GetSession(pb.GetSessionRequest(session_id=session), timeout=15)
             assert retained_session.session.identity == session_status.session.identity
             assert retained_session.session.identity.name == identity
             next_command = str(uuid4())
@@ -829,13 +750,10 @@ SELECT json_build_object('attempted',delivery_attempted,'created_at',created_at,
                 pb.SubmitInputRequest(
                     session_id=session, command_id=next_command, text="Input to a retained Session after rebinding."
                 ),
-                metadata=authentication.metadata,
                 timeout=15,
             )
             stream = stub.WatchDispatches(
-                pb.WatchDispatchesRequest(filter=pb.DispatchFilter(session_id=session)),
-                metadata=authentication.metadata,
-                timeout=BOUND_SECONDS,
+                pb.WatchDispatchesRequest(filter=pb.DispatchFilter(session_id=session)), timeout=BOUND_SECONDS
             )
             try:
                 async for response in stream:
@@ -916,28 +834,10 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
     # Closed in cleanup, after the Sandbox that acts as it.
     identities = AsyncExitStack()
     identity = await identities.enter_async_context(scenario_identity(cluster, sandbox, policies))
-    created = json.loads(
-        await cluster.kubectl(
-            "create",
-            "-f",
-            "-",
-            "-o",
-            "json",
-            body={
-                "apiVersion": SANDBOX_API_VERSION,
-                "kind": "Sandbox",
-                "metadata": {"name": sandbox, "namespace": cluster.namespace},
-                "spec": {
-                    "template": POD_TEMPLATE,
-                    "running": True,
-                    "wakeOnSend": True,
-                    "idleSuspendAfter": "1m",
-                    "identity": {"name": identity},
-                },
-            },
-        )
+    resource = await create_sandbox_object(
+        cluster, sandbox, template=POD_TEMPLATE, identity=identity, running=True, wakeOnSend=True, idleSuspendAfter="1m"
     )
-    uid = created["metadata"]["uid"]
+    uid = resource["metadata"]["uid"]
     evidence["sandbox_uid"] = uid
     cleaned = False
 
@@ -989,18 +889,18 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
         }
         path.write_text(json.dumps(evidence, indent=2) + "\n")
         server_credentials = app_authentication.channel_credentials
-        async with _forward(cluster) as target:
+        async with forward(cluster) as target:
             channel = dial(
                 target,
                 channel_credentials=server_credentials,
-                server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
+                server_name=f"sessions.{cluster.namespace}.svc.cluster.local",
             )
             try:
                 stub: Dispatcher = session_dispatcher_pb2_grpc.SessionDispatcherStub(channel)
                 notification_channel = dial(
                     target,
                     channel_credentials=notification_authentication.channel_credentials,
-                    server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
+                    server_name=f"sessions.{cluster.namespace}.svc.cluster.local",
                 )
                 notification_stub = session_dispatcher_pb2_grpc.SessionDispatcherStub(notification_channel)
                 created = await stub.CreateSession(
@@ -1019,7 +919,6 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
                             instructions=f"EARLY_DIAGNOSTIC_PAYLOAD_{sandbox}",
                         ),
                     ),
-                    metadata=app_authentication.metadata,
                     timeout=15,
                 )
                 queued = await notification_stub.SubmitInput(
@@ -1029,7 +928,6 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
                         command_id=command,
                         text=f"LATE_DIAGNOSTIC_PAYLOAD_{sandbox} Reply with exactly OK and do not use tools.",
                     ),
-                    metadata=notification_authentication.metadata,
                     timeout=15,
                 )
                 assert created.session.status.materialization == pb.SessionStatus.SESSION_MATERIALIZATION_WAITING
@@ -1057,10 +955,7 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
                 assert ready_incarnation
                 assert ready_incarnation != initial_incarnation
                 admitted = await _dispatch_until(
-                    notification_stub,
-                    notification_authentication,
-                    session,
-                    lambda row: row.state == pb.DELIVERY_STATE_RUNNER_ADMITTED,
+                    notification_stub, session, lambda row: row.state == pb.DELIVERY_STATE_RUNNER_ADMITTED
                 )
                 assert admitted.command_id == command
                 assert admitted.admission.event.command_admitted.command.submit_input.text == (
@@ -1073,9 +968,7 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
                     reraise=True,
                 ):
                     with attempt:
-                        session_status = await stub.GetSession(
-                            pb.GetSessionRequest(session_id=session), metadata=app_authentication.metadata, timeout=15
-                        )
+                        session_status = await stub.GetSession(pb.GetSessionRequest(session_id=session), timeout=15)
                         materialization = session_status.session.status.materialization
                         if materialization in (
                             pb.SessionStatus.SESSION_MATERIALIZATION_FAILED,

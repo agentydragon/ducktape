@@ -2,6 +2,7 @@
 {
   config,
   pkgs,
+  pkgsUnstable,
   ducktapePackages,
   ...
 }:
@@ -21,6 +22,10 @@
   ducktape.githubSsh.sopsFile = ../../../ssh_keys/rugged-github.sops.key;
 
   ducktape.codex.chatgptPackage = ducktapePackages.chatgpt;
+
+  programs.gnome-shell.extensions = [
+    { package = pkgsUnstable.gnomeExtensions.battery-time-3; }
+  ];
 
   ducktape.sessionBackup = {
     enable = true;
@@ -50,11 +55,7 @@
   # importer is the transport now (fleet-wide Syncthing teardown is a follow-up).
   ducktape.activitywatch.sync = {
     enable = true;
-    dest = {
-      url = "https://activitywatch-write.allegedly.works";
-      device = "rugged";
-      tokenSopsFile = ../../../cluster/k8s/activitywatch/activitywatch-write-token.sops.yaml;
-    };
+    dest.device = "rugged";
   };
 
   # SSH keys for wyrm and vps, decrypted from SOPS binary at activation time.
@@ -111,7 +112,6 @@
     pkgs.psmisc
     pkgs.telegram-desktop
     pkgs.lightburn
-    ducktapePackages.tana-outliner
   ];
 
   # Parked with Wyrm2's XRDP service; restore together with pkgs.freerdp.

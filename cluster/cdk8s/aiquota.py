@@ -14,11 +14,9 @@ from pathlib import Path
 import tomli_w
 from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import (
-    Capability,
     ConfigMap,
     ContainerResources,
     ContainerSecurityContextProps,
-    ContainerSecutiryContextCapabilities,
     Cpu,
     CpuResources,
     Deployment,
@@ -61,6 +59,7 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
+from cluster.cdk8s.reflector import mirror_annotations
 from cluster.cdk8s.secret_ref import SecretKey, SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from util.settings_contract import checked_value, env_name
@@ -170,13 +169,7 @@ class Aiquota(Construct):
             deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
             template=ExternalSecretSpecTargetTemplate(
                 metadata=ExternalSecretSpecTargetTemplateMetadata(
-                    annotations={
-                        "description": mirror.description,
-                        "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
-                        "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": mirror.namespace,
-                        "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
-                        "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": mirror.namespace,
-                    }
+                    annotations={"description": mirror.description, **mirror_annotations([mirror.namespace])}
                 )
             ),
         )
@@ -263,10 +256,7 @@ class Aiquota(Construct):
             liveness=http_probe(
                 "/healthz", port=SERVICE.pod_port, initial_delay_seconds=10, period_seconds=20, timeout_seconds=5
             ),
-            security_context=ContainerSecurityContextProps(
-                capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
-                read_only_root_filesystem=False,
-            ),
+            security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
             volume_mounts=[
                 VolumeMount(
                     path=str(_CONFIG_PATH.parent),

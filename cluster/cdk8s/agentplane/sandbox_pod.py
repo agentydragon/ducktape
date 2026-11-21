@@ -24,6 +24,7 @@ from cluster.cdk8s.agentplane import egress, telemetry
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.kubernetes_grants import RoleBindingGrant, RoleRef
 from cluster.cdk8s.config_format import yaml_config
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME
 from cluster.cdk8s.settings_file import PodWiring, SettingsFile
 
@@ -58,13 +59,8 @@ def proxy_environment() -> list[k8s.EnvVar]:
     return [
         *(k8s.EnvVar(name=name, value=_MITM_PROXY_URL) for name in PROXY_VAR_NAMES),
         *(k8s.EnvVar(name=name, value=_NO_PROXY_HOSTS) for name in NO_PROXY_VAR_NAMES),
-        *trust_environment(),
+        *(k8s.EnvVar(name=name, value=_CA_BUNDLE_PATH) for name in CA_BUNDLE_VAR_NAMES),
     ]
-
-
-def trust_environment() -> list[k8s.EnvVar]:
-    """System CA paths for workloads that need trust without the egress proxy."""
-    return [k8s.EnvVar(name=name, value=_CA_BUNDLE_PATH) for name in CA_BUNDLE_VAR_NAMES]
 
 
 def workload_environment(env: Environment, existing: Sequence[k8s.EnvVar]) -> list[k8s.EnvVar]:
@@ -188,7 +184,6 @@ def _egress_sidecar(
     resources: k8s.ResourceRequirements,
     *,
     telemetry_enabled: bool,
-    disable_otel_sdk: bool,
     restart_policy: str | None = None,
     volume_mounts: Sequence[k8s.VolumeMount] = (),
 ) -> k8s.Container:
@@ -204,11 +199,7 @@ def _egress_sidecar(
         name=sidecar_config.CONTAINER_NAME,
         restart_policy=restart_policy,
         image=f"{_EGRESS_SIDECAR_IMAGE}:{_PLACEHOLDER_TAG}",
-        env=[
-            settings.path_env,
-            *telemetry_env,
-            *([k8s.EnvVar(name="OTEL_SDK_DISABLED", value="true")] if disable_otel_sdk else []),
-        ],
+        env=[settings.path_env, *telemetry_env],
         security_context=k8s.SecurityContext(
             allow_privilege_escalation=False,
             capabilities=k8s.Capabilities(drop=["ALL"]),
@@ -241,13 +232,12 @@ def pod_spec(
     *,
     workload: k8s.Container,
     additional_workloads: Sequence[k8s.Container] = (),
-    sidecar_settings: SettingsFile | None,
+    sidecar_settings: SettingsFile,
     node_selector: Mapping[str, str] | None = None,
     workload_volumes: Sequence[k8s.Volume] = (),
     sidecar_resources: k8s.ResourceRequirements | None = None,
     image_pull_secret_name: str | None = SECRET_NAME,
     enable_telemetry: bool = False,
-    disable_otel_sdk: bool = False,
     keep_sidecar_until_workload_exit: bool = False,
     sidecar_mounts: Sequence[k8s.VolumeMount] = (),
     security_context: k8s.PodSecurityContext | None = None,
@@ -259,49 +249,29 @@ def pod_spec(
     The Sandbox controller sets the Sandbox's ServiceAccount. Command boxes use the namespace's
     default ServiceAccount and carry their effective Identity only in the WorkloadCredential.
     `additional_workloads` are other workload containers. `sidecar_settings` is the sidecar's
-    settings file (`add_sidecar_settings`); `None` omits the sidecar and settings mount. `workload_volumes`
+    settings file (`add_sidecar_settings`). `workload_volumes`
     are Pod volumes the workload mounts beyond the trust and tool-config
     volumes. `node_selector` is the optional
-    placement restriction for this template. `disable_otel_sdk` avoids a sidecar export attempt in a
-    hermetic fixture with no collector. A Runner needs its local telemetry relay through its own
+    placement restriction for this template. A Runner needs its local telemetry relay through its own
     tracing shutdown; `keep_sidecar_until_workload_exit` uses Kubernetes' native sidecar lifecycle.
     A caller-supplied `security_context` carries its own fsGroup policy; `fs_group_change_policy` applies
     to the default context. Stateful Sandbox templates set it, while command boxes leave it unset."""
-    if (keep_sidecar_until_workload_exit or sidecar_mounts) and sidecar_settings is None:
-        raise ValueError("sidecar settings are required for sidecar lifecycle or mounts")
-    settings = (
-        sidecar_settings.pod_wiring(
-            volume_name=SIDECAR_SETTINGS_VOLUME_NAME, env=sidecar_config.Settings.config_file_env
-        )
-        if sidecar_settings is not None
-        else None
+    settings = sidecar_settings.pod_wiring(
+        volume_name=SIDECAR_SETTINGS_VOLUME_NAME, env=sidecar_config.Settings.config_file_env
     )
-    sidecar = (
-        _egress_sidecar(
-            env,
-            settings,
-            sidecar_resources
-            or k8s.ResourceRequirements(
-                requests={"cpu": k8s.Quantity.from_string("10m"), "memory": k8s.Quantity.from_string("32Mi")},
-                limits={"cpu": k8s.Quantity.from_string("100m"), "memory": k8s.Quantity.from_string("128Mi")},
-            ),
-            telemetry_enabled=enable_telemetry,
-            disable_otel_sdk=disable_otel_sdk,
-            restart_policy="Always" if keep_sidecar_until_workload_exit else None,
-            volume_mounts=sidecar_mounts,
-        )
-        if settings is not None
-        else None
+    sidecar = _egress_sidecar(
+        env,
+        settings,
+        sidecar_resources or container_resources(cpu="10m", memory="32Mi", cpu_limit="100m", memory_limit="128Mi"),
+        telemetry_enabled=enable_telemetry,
+        restart_policy="Always" if keep_sidecar_until_workload_exit else None,
+        volume_mounts=sidecar_mounts,
     )
     return k8s.PodSpec(
         # The workload first: with no default-container annotation, the first container is the one
         # `kubectl exec` and the sandbox Actions run a command in.
-        containers=[
-            workload,
-            *additional_workloads,
-            *([sidecar] if sidecar is not None and not keep_sidecar_until_workload_exit else []),
-        ],
-        init_containers=[sidecar] if sidecar is not None and keep_sidecar_until_workload_exit else None,
+        containers=[workload, *additional_workloads, *([] if keep_sidecar_until_workload_exit else [sidecar])],
+        init_containers=[sidecar] if keep_sidecar_until_workload_exit else None,
         automount_service_account_token=False,
         # Container restarts create a fresh PID namespace for the isolated Codex executor.
         restart_policy=restart_policy,
@@ -321,7 +291,7 @@ def pod_spec(
             fs_group_change_policy=fs_group_change_policy,
             seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),
         ),
-        volumes=[*_egress_volumes(env), *([settings.volume] if settings is not None else []), *workload_volumes],
+        volumes=[*_egress_volumes(env), settings.volume, *workload_volumes],
     )
 
 

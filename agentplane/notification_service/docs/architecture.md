@@ -101,7 +101,7 @@ a freshness guarantee.
 
 ## Recovery acceptance
 
-The [GitHub service acceptance test](../acceptance_github_test.go) runs the configured HTTP API,
+The [GitHub service acceptance test](../cmd/acceptance_github_test.go) runs the configured HTTP API,
 background workers and PostgreSQL store against the shared fake GitHub API and fake Dispatcher and
 History peers. It establishes a quiet PR subscription, changes current GitHub facts, records a pending catch-up job while stopped, and restarts the service. The workers
 must process that job into check-run, commit-status, review and lifecycle entries, dispatch a notice, follow its
@@ -119,9 +119,10 @@ Dispatcher owns Session lookup for notification subscriptions.
 Actions service-reader access does not confer operator or execution rights. The receiver verifies workload
 SVIDs against live WorkloadCredentials and Identities and admits exact service SVID diagnostic grants.
 It performs no TokenReview. Kubernetes reads cover those records, the Sandboxes used for existing message
-authorization, and the watched PolicySets/PolicyBindings used for send authorization. Legacy receiver settings still decode but grant no
-admission; their removal follows manifest omission and rollout. Existing RBAC and token projections await
-that separate cleanup. Network and reader allowlists are owned by
+authorization, and the watched PolicySets/PolicyBindings used for send authorization. The listener
+schema has no bearer mode, so a settings file naming one fails startup. This Deployment projects only its
+workload certificate and the workload CA bundle, sets no peer `token_file`, and its Role grants no
+TokenReview. Network and reader allowlists are owned by
 [`cluster/cdk8s/agentplane/notifications.py`](../../../cluster/cdk8s/agentplane/notifications.py),
 not by the integration app. Operator watch streams use committed invalidations to reread current
 state; PostgreSQL NOTIFY is not their replay log.

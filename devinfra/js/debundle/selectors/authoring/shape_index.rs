@@ -618,8 +618,8 @@ impl ShapeIndex {
         }
         for &shape in &item.skeletons {
             let f = ShapeFeature::Skeleton(shape);
-            // W2 note #3: a shape skeleton interned many times across the chunk
-            // is structural noise (a common scaffold), not a stable anchor; one
+            // A shape skeleton interned many times across the chunk is
+            // structural noise (a common scaffold), not a stable anchor; one
             // interned rarely is a distinctive shape worth pinning. Demote the
             // common ones to `Structural` so a value-bearing semantic anchor
             // (literal, key, member) wins the stability tiebreak when their
@@ -676,22 +676,37 @@ impl ShapeIndex {
             });
         }
 
-        // Greedy set-cover tail: bounded to the target's own features. The
-        // "universe" is the non-target items still in the running intersection;
-        // each step takes the feature excluding the most of them.
-        //
-        // W1 hand-off note #1 (cheap perf fix): seed `covered` from the *smallest
-        // relevant posting list* — the most-selective feature, which is
-        // `scored.first()` since `scored` is sorted by ascending selectivity —
-        // rather than `0..N`. The final intersection is a subset of every chosen
-        // feature's posting list, so seeding from one of them (the target is in
-        // all of its own features' lists) loses nothing; it just bounds per-item
-        // cost to that list's size instead of the whole chunk, so unresolvable
-        // items pay O(smallest posting) per step rather than O(N).
-        let mut remaining = scored;
+        self.greedy_cover(body_idx, scored)
+            .map(|anchors| AnchorSet {
+                body_idx,
+                opt_one: anchors.len() == 1,
+                anchors,
+            })
+    }
+
+    /// Greedy set-cover over `remaining`, best-ranked first, bounded to the
+    /// target's own features. The "universe" is the non-target items still in
+    /// the running intersection; each step takes the feature excluding the most
+    /// of them. Returns the chosen features once their posting-list
+    /// intersection is `{body_idx}`, or `None` when `remaining` cannot single
+    /// `body_idx` out.
+    ///
+    /// Seeds `covered` from the *smallest relevant posting list* — the
+    /// most-selective feature, which is `remaining.first()` since the list is
+    /// sorted by ascending selectivity — rather than `0..N`. The final
+    /// intersection is a subset of every chosen feature's posting list, so
+    /// seeding from one of them (the target is in all of its own features'
+    /// lists) loses nothing; it just bounds per-item cost to that list's size
+    /// instead of the whole chunk, so unresolvable items pay O(smallest
+    /// posting) per step rather than O(N).
+    fn greedy_cover(
+        &self,
+        body_idx: usize,
+        mut remaining: Vec<ScoredFeature>,
+    ) -> Option<Vec<ScoredFeature>> {
         let seed = remaining.first()?;
         let mut covered = self.posting(&seed.feature).clone();
-        let mut chosen: Vec<ScoredFeature> = vec![remaining.remove(0)];
+        let mut chosen = vec![remaining.remove(0)];
         let mut scratch = CandidateSet::default();
 
         while covered.len() > 1 {
@@ -704,8 +719,8 @@ impl ShapeIndex {
                 .enumerate()
                 .map(|(i, f)| (i, covered.intersection_len(self.posting(&f.feature))))
                 .min_by(|(ai, a), (bi, b)| a.cmp(b).then(ai.cmp(bi)))?;
-            // No feature makes progress: the target is not separable by its own
-            // features. Report "unminimizable" rather than loop forever.
+            // No feature makes progress: the target is not separable by
+            // `remaining`. Report "unminimizable" rather than loop forever.
             if best_len == covered.len() {
                 return None;
             }
@@ -714,11 +729,7 @@ impl ShapeIndex {
             chosen.push(remaining.remove(best_i));
         }
 
-        (covered.len() == 1 && covered.contains(body_idx)).then_some(AnchorSet {
-            body_idx,
-            opt_one: chosen.len() == 1,
-            anchors: chosen,
-        })
+        (covered.len() == 1 && covered.contains(body_idx)).then_some(chosen)
     }
 
     /// The best-ranked feature only `body_idx` exhibits that a template can
@@ -801,44 +812,21 @@ impl ShapeIndex {
         if body_idx >= self.items.len() {
             return None;
         }
-        let mut remaining: Vec<ScoredFeature> = self
+        let value_features = self
             .scored_features(body_idx)
             .into_iter()
             .filter(|scored| anchor_renders_a_value(&scored.feature))
             .collect();
-        let seed = remaining.first()?;
-        let mut covered = self.posting(&seed.feature).clone();
-        let mut chosen: Vec<ScoredFeature> = vec![remaining.remove(0)];
-        let mut scratch = CandidateSet::default();
-
-        while covered.len() > 1 {
-            // The value feature that shrinks the candidate set the most; ranked by
-            // intersection size only, ties broken toward the better-ranked feature.
-            let (best_i, best_len) = remaining
-                .iter()
-                .enumerate()
-                .map(|(i, f)| (i, covered.intersection_len(self.posting(&f.feature))))
-                .min_by(|(ai, a), (bi, b)| a.cmp(b).then(ai.cmp(bi)))?;
-            // No remaining value anchor makes progress: value anchors alone cannot
-            // single the target out. Leave the residual to structural paths.
-            if best_len == covered.len() {
-                return None;
-            }
-            covered.intersect_into(self.posting(&remaining[best_i].feature), &mut scratch);
-            std::mem::swap(&mut covered, &mut scratch);
-            chosen.push(remaining.remove(best_i));
-        }
-
         // A single-anchor cover means the seed value anchor was already unique —
         // that is the single-anchor candidates' job, walked first by the renderer.
         // Yield only the genuinely multi-anchor covers.
-        (chosen.len() >= 2 && covered.len() == 1 && covered.contains(body_idx)).then_some(
-            AnchorSet {
+        self.greedy_cover(body_idx, value_features)
+            .filter(|anchors| anchors.len() >= 2)
+            .map(|anchors| AnchorSet {
                 body_idx,
                 opt_one: false,
-                anchors: chosen,
-            },
-        )
+                anchors,
+            })
     }
 
     /// Enclosing-context read-off (#2315): the disambiguating handles on a
@@ -896,9 +884,9 @@ fn anchor_renders_a_value(feature: &ShapeFeature) -> bool {
 }
 
 /// Multiplicity above which a shape skeleton reads as structural noise rather
-/// than a distinctive anchor (W2 note #3). A shape interned more than this many
-/// times across the chunk is a common scaffold; one interned at most this often
-/// is distinctive enough to rank as a semantic anchor on stability ties.
+/// than a distinctive anchor. A shape interned more than this many times across
+/// the chunk is a common scaffold; one interned at most this often is
+/// distinctive enough to rank as a semantic anchor on stability ties.
 const SKELETON_NOISE_MULTIPLICITY: u32 = 4;
 
 /// Ranking key: most selective first (smallest posting list), then most stable,

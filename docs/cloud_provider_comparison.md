@@ -1,42 +1,26 @@
-# Cloud Provider Comparison (May 2026)
+# Cloud provider comparison (May 2026)
 
-Baseline: 4× Hetzner CPX31 @ ~$25/mo each = ~$100/mo total.
-CPX31 = 4 vCPU (shared AMD), 8 GB RAM, 160 GB NVMe SSD, Hillsboro OR (HIL).
-
-Note: Hetzner raised CPX31 from ~$18 to ~$25 in April 2026.
+Baseline when written: 4× Hetzner CPX31 (4 shared AMD vCPU, 8 GB, 160 GB NVMe, Hillsboro `HIL`) at ~$25/mo each, ~$100 total; Hetzner raised CPX31 from ~$18 in April 2026. The cluster has since moved to OVH dedicated servers in `hil` ([nodes](../cluster/docs/topology.md#nodes)). To refresh prices: `cluster/scripts/ovh_hil_availability.py` (sub-$100 OVH dedicated in Hillsboro) and `cluster/scripts/hcloud_server_types.py` (Hetzner types).
 
 ## Per-node comparison (~$25 budget, equivalent specs)
 
-| Provider            | Plan         | Type       | vCPU                 | RAM   | Storage       | $/mo    | US West?     | TF provider                                       |
-| ------------------- | ------------ | ---------- | -------------------- | ----- | ------------- | ------- | ------------ | ------------------------------------------------- |
-| **Hetzner Cloud**   | CPX31        | shared VPS | 4                    | 8 GB  | 160 GB NVMe   | $25     | HIL ✓        | `hcloud` (official, mature)                       |
-| **OVHcloud**        | VPS-1        | shared VPS | 4                    | 8 GB  | 75 GB SSD     | $6.46\* | unclear†     | `ovh/ovh` (official, `ovh_vps`)                   |
-| **OVHcloud**        | VPS-3        | shared VPS | 8                    | 24 GB | 200 GB NVMe   | $20     | unclear†     | `ovh/ovh` (official, `ovh_vps`)                   |
-| **OVH Eco Kimsufi** | KS-1         | dedicated  | 4c/8t Xeon-D 1520    | 32 GB | 2×480 GB SSD  | $20     | HIL ✓        | `ovh/ovh` but **broken for Eco line** (see below) |
-| **OVH Eco RISE-S**  | RISE-S       | dedicated  | 8c/16t Ryzen 7 9700X | 64 GB | 2×512 GB NVMe | $77     | HIL ✓        | `ovh/ovh` (official, works for RISE)              |
-| **DigitalOcean**    | Basic 4vCPU  | shared VPS | 4                    | 8 GB  | 160 GB SSD    | $48     | SFO3 ✓       | `digitalocean/digitalocean` (official, mature)    |
-| **Vultr**           | Cloud HP     | shared VPS | 4                    | 8 GB  | 180 GB SSD    | $48     | LA/SJC ✓     | `vultr/vultr` (official)                          |
-| **Linode/Akamai**   | Shared 4vCPU | shared VPS | 4                    | 8 GB  | 160 GB SSD    | $48     | Fremont CA ✓ | `linode/linode` (official)                        |
-| **Contabo**         | Cloud VPS 10 | shared VPS | 4                    | 8 GB  | 75 GB NVMe    | ~$7     | Seattle ✓    | none (scripted API only)                          |
+| Provider            | Plan         | Type       | vCPU                 | RAM   | Storage       | $/mo    | US West?     |
+| ------------------- | ------------ | ---------- | -------------------- | ----- | ------------- | ------- | ------------ |
+| **Hetzner Cloud**   | CPX31        | shared VPS | 4                    | 8 GB  | 160 GB NVMe   | $25     | HIL ✓        |
+| **OVHcloud**        | VPS-1        | shared VPS | 4                    | 8 GB  | 75 GB SSD     | $6.46\* | unclear†     |
+| **OVHcloud**        | VPS-3        | shared VPS | 8                    | 24 GB | 200 GB NVMe   | $20     | unclear†     |
+| **OVH Eco Kimsufi** | KS-1         | dedicated  | 4c/8t Xeon-D 1520    | 32 GB | 2×480 GB SSD  | $20     | HIL ✓        |
+| **OVH Eco RISE-S**  | RISE-S       | dedicated  | 8c/16t Ryzen 7 9700X | 64 GB | 2×512 GB NVMe | $77     | HIL ✓        |
+| **DigitalOcean**    | Basic 4vCPU  | shared VPS | 4                    | 8 GB  | 160 GB SSD    | $48     | SFO3 ✓       |
+| **Vultr**           | Cloud HP     | shared VPS | 4                    | 8 GB  | 180 GB SSD    | $48     | LA/SJC ✓     |
+| **Linode/Akamai**   | Shared 4vCPU | shared VPS | 4                    | 8 GB  | 160 GB SSD    | $48     | Fremont CA ✓ |
+| **Contabo**         | Cloud VPS 10 | shared VPS | 4                    | 8 GB  | 75 GB NVMe    | ~$7     | Seattle ✓    |
 
-\*OVH VPS "starting from" price is likely EU-DC. US location may cost more — unverified.
-†OVH VPS US West availability unclear from public docs; dedicated (Eco/RISE) US West confirmed.
+\*OVH VPS "starting from" price is likely an EU DC; the US price may be higher (unverified). †OVH VPS US West availability is unclear from public docs; dedicated (Eco/RISE) US West is confirmed.
 
-## What does ~$100/mo buy?
+What ~$100/mo buys: 4× CPX31 = 16 shared vCPU, 32 GB; 5× KS-1 = 20c/40t, 160 GB; 1× RISE-S = 8c/16t, 64 GB NVMe ($77); 2× DO/Vultr/Linode = 8 shared vCPU, 16 GB ($96); 14× Contabo VPS 10 = 56 nominal vCPU, 112 GB (~$98).
 
-| Provider                      | Config            | vCPU total     | RAM total  | $/mo  |
-| ----------------------------- | ----------------- | -------------- | ---------- | ----- |
-| **Hetzner Cloud** _(current)_ | 4× CPX31          | 16 shared      | 32 GB      | ~$100 |
-| **OVH Eco Kimsufi**           | 5× KS-1 dedicated | 20c/40t Xeon-D | 160 GB     | $100  |
-| **OVH Eco RISE-S**            | 1× Ryzen 7 9700X  | 8c/16t         | 64 GB NVMe | $77   |
-| **DigitalOcean SFO3**         | 2× Basic 4vCPU    | 8 shared       | 16 GB      | $96   |
-| **Vultr LA/SJC**              | 2× Cloud HP       | 8 shared       | 16 GB      | $96   |
-| **Linode/Akamai Fremont**     | 2× Shared 4vCPU   | 8 shared       | 16 GB      | $96   |
-| **Contabo Seattle**           | 14× Cloud VPS 10  | 56 shared‡     | 112 GB     | ~$98  |
-
-‡Contabo vCPU count is nominal — see rejection notes below.
-
-## OVH Eco full range (as of May 2026, US West available on all)
+## OVH Eco full range (May 2026, US West available on all)
 
 | Series       | Plan   | CPU                     | RAM        | Storage         | $/mo |
 | ------------ | ------ | ----------------------- | ---------- | --------------- | ---- |
@@ -49,91 +33,27 @@ Note: Hetzner raised CPX31 from ~$18 to ~$25 in April 2026.
 | RISE         | RISE-M | Ryzen 9 9900X (12c/24t) | 64 GB      | 2×512 GB NVMe   | $118 |
 | RISE         | RISE-L | Ryzen 9 9950X (16c/32t) | 128 GB     | 2×960 GB NVMe   | $177 |
 
-## TF provisioning notes per provider
+## Terraform provisioning per provider
 
-**Hetzner Cloud** — `hcloud` provider is mature, first-class. Snapshot-based provisioning
-(Packer → `hcloud_server`) is already in use. Easiest path.
-
-**OVH VPS** — `ovh/ovh` provider has `ovh_vps` data source (read-only) but no
-`ovh_vps` resource for creating VPS instances. VPS creation would require the OVH
-Public Cloud (OpenStack) API or manual provisioning.
-
-**OVH Eco RISE** — `ovh/ovh` provider works for RISE/Advance dedicated servers.
-Auth requires 3-part OAuth token (app key + app secret + consumer key), not a single
-token. Provisioning flow: `ovh_dedicated_server_update` (set rescue boot) →
-`ovh_dedicated_server_reboot_task` → `null_resource` remote-exec (dd Talos) →
-`talos_machine_configuration_apply`. Server acquisition is manual (order on website
-→ server lands in account). Moderate effort.
-
-**OVH Eco Kimsufi** — Same provider as RISE but **broken**: open GitHub issue
-[#1176](https://github.com/ovh/terraform-provider-ovh/issues/1176) — the provider
-hardcodes the `baremetalServers` endpoint which doesn't work for the Eco product line.
-Kimsufi servers would require fully scripted provisioning via `null_resource` +
-`local-exec` curl calls to the OVH API, or waiting for the bug to be fixed.
-
-**DigitalOcean / Vultr / Linode** — All have official, mature TF providers. VPS
-creation is straightforward (`digitalocean_droplet`, `vultr_instance`,
-`linode_instance`). No snapshot needed — pick a base OS image and cloud-init.
-However, none of these support bare-metal Talos installs (cloud VPS only), so
-you'd run Talos inside a VPS rather than on bare metal, same as Hetzner Cloud.
-
-**Contabo** — No official TF provider. Only option is scripted API calls via
-`null_resource` + `local-exec`. Not viable for a clean IaC setup.
+- **Hetzner Cloud**: `hcloud` is mature; Packer snapshot → `hcloud_server` was in use. Easiest.
+- **OVH VPS**: `ovh/ovh` has an `ovh_vps` data source only, no resource. Creating VPS needs the Public Cloud (OpenStack) API or manual provisioning.
+- **OVH Eco RISE**: `ovh/ovh` works. Auth is a 3-part OAuth token (app key, app secret, consumer key). Flow: `ovh_dedicated_server_update` (rescue boot) → `ovh_dedicated_server_reboot_task` → `null_resource` remote-exec (`dd` Talos) → `talos_machine_configuration_apply`. Ordering the server is manual (website order → lands in the account).
+- **OVH Eco Kimsufi**: same provider, **broken** for Eco: [ovh/terraform-provider-ovh#1176](https://github.com/ovh/terraform-provider-ovh/issues/1176), the provider hardcodes the `baremetalServers` endpoint. Needs scripted `null_resource` + `local-exec` curl against the OVH API, or the fix.
+- **DigitalOcean / Vultr / Linode**: official mature providers (`digitalocean_droplet`, `vultr_instance`, `linode_instance`); base image + cloud-init, no snapshot. Cloud VPS only: Talos runs inside a VPS, not on bare metal, as on Hetzner Cloud.
+- **Contabo**: no official provider; only scripted API calls via `null_resource` + `local-exec`. Not viable for clean IaC.
 
 ## Considered and rejected
 
-### Equinix Metal (bare metal, Silicon Valley / LA)
-
-**Rejected: EOL.** Service ends June 30, 2026. Commercial sales already closed.
-Do not investigate further.
-
-### Latitude.sh (bare metal, Los Angeles)
-
-**Rejected: too expensive.** Cheapest plan is $296/mo (6c AMD, 64 GB). Designed
-for AI/ML workloads. Complete overkill for general k8s workers.
-
-### Hetzner Robot auction
-
-**Rejected: EU-only.** As of May 2026, all 312 auction servers are in FSN1
-(Falkenstein), HEL1 (Helsinki), or NBG1 (Nuremberg). No HIL. Latency from US West
-to EU is ~130ms. See `idea/hetzner_auction_k8s_node.md` for full analysis.
-
-### AWS EC2 / GCP / Azure
-
-**Rejected: cost.** A comparable instance (e.g., AWS t3.xlarge: 4 vCPU, 16 GB) runs
-~$120–150/mo on-demand in us-west. Reserved instances reduce this but require 1–3yr
-commitments. 5–6× the cost of Hetzner for no meaningful benefit in this use case.
-
-### Contabo (US West — Seattle)
-
-**Rejected: quality.** At ~$7/mo for 4vCPU/8GB it looks compelling on paper, but
-Contabo is notorious for extreme CPU overselling — the stated vCPU count is nominal
-and sustained CPU workloads (e.g. etcd, kube-apiserver) perform like ~1.5–2 real
-cores. No official TF provider. Not suitable for k8s control-plane-adjacent nodes.
-Might be acceptable for very bursty/idle worker workloads but hard to recommend.
-
-### Linode/Akamai (Fremont CA)
-
-**Not compelling.** $48/mo for 4vCPU/8GB — same price tier as DigitalOcean and
-Vultr, 2× Hetzner. Fremont is genuinely closer to California than HIL, but the
-value/price ratio doesn't justify switching from Hetzner. Reasonable fallback if
-Hetzner HIL has availability issues.
-
-### DigitalOcean (SFO3) / Vultr (LA/SJC)
-
-**Not compelling.** Both $48/mo for 4vCPU/8GB — same specs as Hetzner CPX31 for 2×
-the price. Closer to California than HIL but not enough to justify the premium unless
-sub-20ms latency to CA is a hard requirement. Good TF provider support. Keep in mind
-if Hetzner raises prices again.
+- **Equinix Metal** (Silicon Valley / LA bare metal): EOL, service ends June 30, 2026, sales closed.
+- **Latitude.sh** (Los Angeles bare metal): cheapest plan $296/mo (6c AMD, 64 GB), built for AI/ML; overkill for k8s workers.
+- **Hetzner Robot auction**: EU-only. All 312 auction servers are in FSN1, HEL1 or NBG1 (May 2026), no HIL; ~130 ms from US West. Analysis: `idea/hetzner_auction_k8s_node.md`.
+- **AWS / GCP / Azure**: cost. t3.xlarge (4 vCPU, 16 GB) is ~$120–150/mo on-demand in us-west; reserved needs 1–3 yr commitments. 5–6× Hetzner for no benefit here.
+- **Contabo Seattle**: quality. ~$7/mo for 4 vCPU/8 GB, but heavy CPU oversell: the stated vCPU count is nominal, and sustained loads (etcd, kube-apiserver) get ~1.5–2 real cores. No TF provider. Unfit for control-plane-adjacent nodes; maybe bursty or idle workers.
+- **Linode/Akamai Fremont, DigitalOcean SFO3, Vultr LA/SJC**: not compelling. $48/mo for 4 vCPU/8 GB is 2× CPX31. Closer to California than HIL, but only worth it if sub-20 ms to CA is a hard requirement. Fallback if HIL availability suffers or Hetzner raises prices again.
 
 ## Key takeaways
 
-- **Best value for raw RAM near California**: OVH Eco Kimsufi KS-1 ($20/mo, 32 GB
-  dedicated, HIL). 4× the RAM of CPX31 for 20% less. Catch: TF provider broken for
-  Eco line (scripted provisioning only), bare metal (no live migration).
-- **Best value for a single beefy node**: OVH RISE-S ($77/mo, Ryzen 7 9700X, 64 GB,
-  HIL). TF provider works. Rescue-mode Talos install via `null_resource`.
-- **Cloud VPS options near California** (DO/Vultr/Linode): all ~$48/mo = 2× Hetzner.
-  Only worth it if you need to be in SFO/LA specifically.
-- **Hetzner stays best overall** for cloud VPS value at HIL despite April 2026 price
-  increase, unless raw RAM density is the priority.
+- Best raw RAM near California: OVH Eco Kimsufi KS-1 ($20/mo, 32 GB dedicated, HIL): 4× the RAM of CPX31 for 20% less. Catch: TF provider broken for Eco (scripted provisioning), bare metal (no live migration).
+- Best single beefy node: OVH RISE-S ($77/mo, Ryzen 7 9700X, 64 GB, HIL). TF provider works; rescue-mode Talos install via `null_resource`.
+- DO/Vultr/Linode near California: ~$48/mo, 2× Hetzner; only for needing SFO/LA specifically.
+- Hetzner was the best cloud VPS value at HIL despite the April 2026 increase, unless RAM density matters.

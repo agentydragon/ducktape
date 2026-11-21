@@ -15,7 +15,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/testing/spans"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
-	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -397,33 +396,6 @@ func TestFollowSessionEndsItsLeaseWithReconnectRequired(t *testing.T) {
 	follow.wantReconnectAndCleanEnd()
 }
 
-type blockedFollowStream struct {
-	grpc.ServerStream
-	release chan struct{}
-}
-
-func (s blockedFollowStream) Send(*historypb.FollowSessionResponse) error {
-	<-s.release
-	return nil
-}
-
-func TestFollowSessionBoundsAWriteTheCallerDoesNotRead(t *testing.T) {
-	stream := blockedFollowStream{release: make(chan struct{})}
-	t.Cleanup(func() { close(stream.release) })
-	failed := make(chan error, 1)
-	go func() {
-		failed <- sendWithin(t.Context(), stream, 10*time.Millisecond, &historypb.FollowSessionResponse{})
-	}()
-	select {
-	case err := <-failed:
-		if got := status.Code(err); got != codes.DeadlineExceeded {
-			t.Errorf("send status %v, want DeadlineExceeded", got)
-		}
-	case <-time.After(callDeadline):
-		t.Fatal("the FollowSession write was not given up on")
-	}
-}
-
 type leaseBlockedFollowStream struct {
 	grpc.ServerStream
 	ctx           context.Context
@@ -450,11 +422,7 @@ func (s admissionContextHealth) Check(ctx context.Context, _ *healthpb.HealthChe
 // directAdmissionContext captures a context from an RPC held behind the real shared auth middleware.
 func directAdmissionContext(t *testing.T) (context.Context, storage.Identity, storage.Sandbox) {
 	t.Helper()
-	workload := workloadauthtesting.NewIdentityWorkload(t, kube, testNamespace, "follow-lease-"+uuid.NewString()[:8], "test-history-policies")
-	resolver, err := auth.NewKubernetesSVIDResolver(kube.Config, []string{testNamespace}, &resolver.Identities{PolicyNamespace: "test-history-policies"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	workload := workloadauthtesting.NewIdentityWorkload(t, kube, testNamespace, "follow-lease-"+uuid.NewString()[:8], testPolicyNamespace)
 	ca := transporttesting.NewCA(t)
 	serverFiles := ca.Issue(t, peertls.HistoryIngressURI)
 	serverTLS, err := serverFiles.WorkloadServerTLSConfigWithServices(peertls.HistoryIngressURI, true)
@@ -467,7 +435,7 @@ func directAdmissionContext(t *testing.T) (context.Context, storage.Identity, st
 	}
 	service := admissionContextHealth{captured: make(chan context.Context, 1), release: make(chan struct{})}
 	server := grpc.NewServer(append(auth.Methods{
-		healthpb.Health_Check_FullMethodName: auth.AnySubject(resolver),
+		healthpb.Health_Check_FullMethodName: auth.AnySubject(newSVIDResolver(t)),
 	}.ServerOptions(0), grpc.Creds(credentials.NewTLS(serverTLS)))...)
 	healthpb.RegisterHealthServer(server, service)
 	go func() { _ = server.Serve(listener) }()

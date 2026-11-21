@@ -22,6 +22,7 @@ from model_catalog.catalog import (
     RUGGED_LOCAL_CANDIDATE_ROUTES,
     RUGGED_LOCAL_EXPERIMENTAL_ROUTES,
     SERVED_ROUTES,
+    TABBYAPI_QWEN_ABLITERATED,
     Route,
     RouteAlias,
 )
@@ -76,5 +77,15 @@ KEY_MODEL_LANES = {
     "gemini_client_models": ModelLaneRoutes(allowed=GEMINI_ROUTES, fallbacks=(GEMINI_FLASH_LITE,)),
     "antigravity_client_models": ModelLaneRoutes(allowed=ANTIGRAVITY_ROUTES),
     "ollama_chat_client_models": ModelLaneRoutes(allowed=OLLAMA_CHAT_ROUTES),
+    "tabbyapi_chat_client_models": ModelLaneRoutes(allowed=(TABBYAPI_QWEN_ABLITERATED,)),
     "cheap_experiments_models": ModelLaneRoutes(allowed=CHEAP_EXPERIMENTS_ROUTES),
 }
+
+# Agentplane staging uses one LiteLLM key for its ingress-backed routes.
+AGENTPLANE_STAGING_MODEL_LANES = (
+    "gpt6_oai_lane_models",
+    "claude_client_models",
+    "antigravity_client_models",
+    "ollama_chat_client_models",
+    "tabbyapi_chat_client_models",
+)

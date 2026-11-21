@@ -17,38 +17,21 @@ Debounce [#8988](https://github.com/agentydragon/ducktape/pull/8988) is not part
 ## Shared GitHub state rollout — 2026-10-09
 
 PR [#9482](https://github.com/agentydragon/ducktape/pull/9482) merged as `00003af`.
-Staging ran notification image `devel-20261009024342-00003af` with 2/2 updated, ready and
-available replicas, no old replicas remaining, and zero restarts at the rollout check.
-Both image-coupled migration init containers exited 0. Readiness passed on both replicas;
-it checks worker tasks, PostgreSQL connectivity and the LISTEN connection.
-
 An authenticated read of an existing cancelled PR subscription returned structured
 `github.access` and `github.subject` observations. Shared repository access was currently valid,
 with a successful refresh and no recorded error/retry deadline. New pods accepted webhooks
-with HTTP 202. This proves rollout and basic status projection, not full behavioral acceptance.
-
-CI passed for the merged change, including 70 GitHub notification tests covering normalized
-entities, structured delivery-subject links, leases/generation fences, refresh reuse, expiry
-rollback, migrations and required nullable response fields. Those are automated tests, not
-live restart/revocation/fork acceptance.
-
-Rollout logs also showed webhook HTTP 400 rejections. A subsequent bounded 35-minute log read
-found 154 webhook 400 responses and 352 webhook 202 responses across the two replicas;
-rejections were recurring, not a single startup blip. At that point the access log did not
-identify an event or rejection reason. The diagnosis and fix are recorded below.
+with HTTP 202. This proves basic status projection, not full behavioral acceptance.
 
 ## Workflow-job and issue delivery — 2026-10-09
 
-Rejection diagnostics from [#9528](https://github.com/agentydragon/ducktape/pull/9528), deployed as
-`devel-20261009042853-3ee90b7`, identified 142 unsupported `workflow_job` events and one unsupported
-`issues` event in the inspected sample. No signature or schema-validation failures appeared in
-that sample. This diagnoses the observed rejections, not every possible ingress failure.
+Rejection diagnostics from [#9528](https://github.com/agentydragon/ducktape/pull/9528) explained the webhook
+HTTP 400s seen after the shared-state rollout: 142 unsupported `workflow_job` events and one unsupported
+`issues` event in the inspected sample. No signature or schema-validation failures appeared in that sample.
+This diagnoses the observed rejections, not every possible ingress failure.
 
-Support landed in [#9531](https://github.com/agentydragon/ducktape/pull/9531). Staging ran image
-`devel-20261009051250-b7234b2` with 2/2 updated, ready and available replicas, zero restarts,
-and both migration init containers exiting 0. A bounded post-rollout log read contained 166
-webhook responses, all HTTP 202, with no rejection diagnostics. The live source schema exposed
-`workflow_job`, `issues` and the `issue` subject. This is a sampled observation, not a guarantee
+Support landed in [#9531](https://github.com/agentydragon/ducktape/pull/9531). A bounded post-rollout log
+read contained 166 webhook responses, all HTTP 202, with no rejection diagnostics. The live source schema
+exposed `workflow_job`, `issues` and the `issue` subject. This is a sampled observation, not a guarantee
 that all future deliveries succeed.
 
 Live verification on `agentydragon/ducktape`:
@@ -89,10 +72,7 @@ that a live refresh-reuse/restart test was performed or remove the automated reg
 ## Configurable GitHub client rollout — 2026-10-09
 
 PR [#9544](https://github.com/agentydragon/ducktape/pull/9544) merged as
-`2d23dc31af50999a4ca76f41d90612402a3fa8d0`. Staging Deployment generation 49 was observed
-at generation 49 with 2/2 updated, ready and available replicas running
-`devel-20261009071137-2d23dc3`, no old replicas remaining and zero restarts.
-Both migration init containers exited 0.
+`2d23dc31af50999a4ca76f41d90612402a3fa8d0`.
 
 A bounded log read (`--since=10m`, at most 5000 lines per pod) found 167 webhook responses,
 all HTTP 202, and 51 readiness responses, all HTTP 200. No error, traceback, webhook-rejection
@@ -101,7 +81,6 @@ status read succeeded and returned the structured shared observations without an
 Its cached successful access observation predated the rollout; it is not evidence of a fresh
 outbound GitHub request by the new client.
 
-The deployed revision and normal API/ingress health check are complete. Custom API endpoint,
-timeout and version overrides, token-cache behavior and redirect rejection were tested in CI;
-they were not exercised by changing staging configuration. No deliberate GitHub failure/backoff
-injection or refresh-reuse/restart exercise was performed or remains required.
+The normal API/ingress health check is complete. Custom API endpoint, timeout and version
+overrides, token-cache behavior and redirect rejection were tested in CI; they were not exercised
+by changing staging configuration.

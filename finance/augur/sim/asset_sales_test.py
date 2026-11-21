@@ -16,7 +16,7 @@ from finance.augur.sim.actions import Action, LotSale, Sell
 from finance.augur.sim.books import AccountRef, SecurityLotState
 from finance.augur.sim.external_series import compile_series, materialize_sampled_exogenous
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
+from finance.augur.sim.ids import CHECKING, AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath, Series
@@ -36,7 +36,6 @@ QQQ = SecurityKey(symbol=SecuritySymbol("qqq"))
 BTC = SecurityKey(symbol=SecuritySymbol("btc"))
 QUANTUM = Decimal("0.01")
 ALICE = AgentId("alice")
-CHECKING = AccountId("checking")
 VTI_ASSET = AssetId(VTI.symbol)
 
 

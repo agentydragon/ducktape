@@ -19,24 +19,10 @@ from finance.augur.sim.books import (
 from finance.augur.sim.events import EVENT_FRAMES, EventLog
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.holdings import Disposition
-from finance.augur.sim.ids import AgentId
 from finance.augur.sim.managed import FinancialEffect
 from finance.augur.sim.payments import ObligationOutcome
 from finance.augur.sim.property import CapitalImprovement, Origination, Purchase, RentedFraction, Residence, Sale
 from finance.augur.sim.world import World
-
-
-@dataclass(frozen=True)
-class Failure:
-    month: int
-    cause_id: str
-    agent_id: AgentId
-    deficit: int
-    obligation_id: str
-    obligation_type: str
-    amount_due: int
-    amount_paid: int
-    shortfall: int
 
 
 @dataclass(frozen=True)
@@ -83,22 +69,8 @@ class FinancialOutput:
     properties: PropertyOutcomes | None = None
 
     @property
-    def rollout_failures(self) -> list[Failure]:
-        return [
-            Failure(
-                row.month,
-                f"{row.cause_id}_failure",
-                row.from_account.agent_id,
-                row.shortfall,
-                row.obligation_id,
-                row.obligation_type,
-                row.amount_due,
-                row.amount_paid,
-                row.shortfall,
-            )
-            for row in self.obligations
-            if row.failure_active
-        ]
+    def rollout_failures(self) -> list[ObligationOutcome]:
+        return [row for row in self.obligations if row.failure_active]
 
 
 class FinancialCapture:
@@ -200,10 +172,18 @@ class FinancialCapture:
 
 
 def event_log(output: FinancialOutput) -> EventLog:
-    frames = {}
-    frames["transfers"] = EVENT_FRAMES.transfers.schema.to_frame()
-    if output.transfers:
-        frames["transfers"] = pl.DataFrame(
+    tlh_financial_effects = [] if output.tlh_financial_effects is None else output.tlh_financial_effects
+    private_equity_events = [] if output.private_equity is None else output.private_equity.events
+    private_equity_opportunities = [] if output.private_equity is None else output.private_equity.opportunities
+    property_purchases = [] if output.properties is None else output.properties.purchases
+    mortgage_originations = [] if output.properties is None else output.properties.mortgage_originations
+    primary_residence_events = [] if output.properties is None else output.properties.primary_residence_events
+    property_rented_fraction_events = [] if output.properties is None else output.properties.rented_fraction_events
+    capital_improvements = [] if output.properties is None else output.properties.capital_improvements
+    property_sales = [] if output.properties is None else output.properties.sales
+    frame_rows = (
+        (
+            EVENT_FRAMES.transfers,
             [
                 {
                     "rollout_id": output.rollout_id,
@@ -218,11 +198,9 @@ def event_log(output: FinancialOutput) -> EventLog:
                 }
                 for row in output.transfers
             ],
-            schema=EVENT_FRAMES.transfers.schema,
-        )
-    frames["lot_dispositions"] = EVENT_FRAMES.lot_dispositions.schema.to_frame()
-    if output.dispositions:
-        frames["lot_dispositions"] = pl.DataFrame(
+        ),
+        (
+            EVENT_FRAMES.lot_dispositions,
             [
                 {
                     "rollout_id": output.rollout_id,
@@ -241,11 +219,9 @@ def event_log(output: FinancialOutput) -> EventLog:
                 }
                 for row in output.dispositions
             ],
-            schema=EVENT_FRAMES.lot_dispositions.schema,
-        )
-    frames["tlh_financial_effects"] = EVENT_FRAMES.tlh_financial_effects.schema.to_frame()
-    if output.tlh_financial_effects:
-        frames["tlh_financial_effects"] = pl.DataFrame(
+        ),
+        (
+            EVENT_FRAMES.tlh_financial_effects,
             [
                 {
                     "rollout_id": output.rollout_id,
@@ -262,14 +238,11 @@ def event_log(output: FinancialOutput) -> EventLog:
                     "basis_change_quanta": row.basis_change,
                     "income_quanta": row.income,
                 }
-                for row in output.tlh_financial_effects
+                for row in tlh_financial_effects
             ],
-            schema=EVENT_FRAMES.tlh_financial_effects.schema,
-        )
-    frames["private_equity_events"] = EVENT_FRAMES.private_equity_events.schema.to_frame()
-    private_equity_events = [] if output.private_equity is None else output.private_equity.events
-    if private_equity_events:
-        frames["private_equity_events"] = pl.DataFrame(
+        ),
+        (
+            EVENT_FRAMES.private_equity_events,
             [
                 {
                     "rollout_id": output.rollout_id,
@@ -287,12 +260,9 @@ def event_log(output: FinancialOutput) -> EventLog:
                 }
                 for row in private_equity_events
             ],
-            schema=EVENT_FRAMES.private_equity_events.schema,
-        )
-    frames["private_equity_opportunities"] = EVENT_FRAMES.private_equity_opportunities.schema.to_frame()
-    private_equity_opportunities = [] if output.private_equity is None else output.private_equity.opportunities
-    if private_equity_opportunities:
-        frames["private_equity_opportunities"] = pl.DataFrame(
+        ),
+        (
+            EVENT_FRAMES.private_equity_opportunities,
             [
                 {
                     "rollout_id": output.rollout_id,
@@ -317,11 +287,9 @@ def event_log(output: FinancialOutput) -> EventLog:
                 }
                 for row in private_equity_opportunities
             ],
-            schema=EVENT_FRAMES.private_equity_opportunities.schema,
-        )
-    frames["obligation_accruals"] = EVENT_FRAMES.obligation_accruals.schema.to_frame()
-    if output.obligations:
-        frames["obligation_accruals"] = pl.DataFrame(
+        ),
+        (
+            EVENT_FRAMES.obligation_accruals,
             [
                 {
                     "rollout_id": output.rollout_id,
@@ -337,11 +305,9 @@ def event_log(output: FinancialOutput) -> EventLog:
                 }
                 for row in output.obligations
             ],
-            schema=EVENT_FRAMES.obligation_accruals.schema,
-        )
-    frames["obligation_settlements"] = EVENT_FRAMES.obligation_settlements.schema.to_frame()
-    if output.obligations:
-        frames["obligation_settlements"] = pl.DataFrame(
+        ),
+        (
+            EVENT_FRAMES.obligation_settlements,
             [
                 {
                     "rollout_id": output.rollout_id,
@@ -357,18 +323,15 @@ def event_log(output: FinancialOutput) -> EventLog:
                 }
                 for row in output.obligations
             ],
-            schema=EVENT_FRAMES.obligation_settlements.schema,
-        )
-    frames["rollout_failures"] = EVENT_FRAMES.rollout_failures.schema.to_frame()
-    if output.rollout_failures:
-        frames["rollout_failures"] = pl.DataFrame(
+        ),
+        (
+            EVENT_FRAMES.rollout_failures,
             [
                 {
                     "rollout_id": output.rollout_id,
                     "month_index": row.month,
-                    "cause_id": row.cause_id,
-                    "agent_id": row.agent_id,
-                    "deficit_quanta": row.deficit,
+                    "cause_id": f"{row.cause_id}_failure",
+                    "agent_id": row.from_account.agent_id,
                     "obligation_id": row.obligation_id,
                     "obligation_type": row.obligation_type,
                     "amount_due_quanta": row.amount_due,
@@ -377,12 +340,9 @@ def event_log(output: FinancialOutput) -> EventLog:
                 }
                 for row in output.rollout_failures
             ],
-            schema=EVENT_FRAMES.rollout_failures.schema,
-        )
-    frames["property_purchases"] = EVENT_FRAMES.property_purchases.schema.to_frame()
-    property_purchases = [] if output.properties is None else output.properties.purchases
-    if property_purchases:
-        frames["property_purchases"] = pl.DataFrame(
+        ),
+        (
+            EVENT_FRAMES.property_purchases,
             [
                 {
                     "rollout_id": output.rollout_id,
@@ -400,12 +360,9 @@ def event_log(output: FinancialOutput) -> EventLog:
                 }
                 for row in property_purchases
             ],
-            schema=EVENT_FRAMES.property_purchases.schema,
-        )
-    frames["mortgage_originations"] = EVENT_FRAMES.mortgage_originations.schema.to_frame()
-    mortgage_originations = [] if output.properties is None else output.properties.mortgage_originations
-    if mortgage_originations:
-        frames["mortgage_originations"] = pl.DataFrame(
+        ),
+        (
+            EVENT_FRAMES.mortgage_originations,
             [
                 {
                     "rollout_id": output.rollout_id,
@@ -424,11 +381,9 @@ def event_log(output: FinancialOutput) -> EventLog:
                 }
                 for row in mortgage_originations
             ],
-            schema=EVENT_FRAMES.mortgage_originations.schema,
-        )
-    frames["mortgage_payments"] = EVENT_FRAMES.mortgage_payments.schema.to_frame()
-    if output.mortgage_payments:
-        frames["mortgage_payments"] = pl.DataFrame(
+        ),
+        (
+            EVENT_FRAMES.mortgage_payments,
             [
                 {
                     "rollout_id": output.rollout_id,
@@ -446,12 +401,9 @@ def event_log(output: FinancialOutput) -> EventLog:
                 }
                 for row in output.mortgage_payments
             ],
-            schema=EVENT_FRAMES.mortgage_payments.schema,
-        )
-    frames["set_primary_residence_events"] = EVENT_FRAMES.set_primary_residence_events.schema.to_frame()
-    primary_residence_events = [] if output.properties is None else output.properties.primary_residence_events
-    if primary_residence_events:
-        frames["set_primary_residence_events"] = pl.DataFrame(
+        ),
+        (
+            EVENT_FRAMES.set_primary_residence_events,
             [
                 {
                     "rollout_id": output.rollout_id,
@@ -462,12 +414,9 @@ def event_log(output: FinancialOutput) -> EventLog:
                 }
                 for row in primary_residence_events
             ],
-            schema=EVENT_FRAMES.set_primary_residence_events.schema,
-        )
-    frames["set_rented_fraction_events"] = EVENT_FRAMES.set_rented_fraction_events.schema.to_frame()
-    property_rented_fraction_events = [] if output.properties is None else output.properties.rented_fraction_events
-    if property_rented_fraction_events:
-        frames["set_rented_fraction_events"] = pl.DataFrame(
+        ),
+        (
+            EVENT_FRAMES.set_rented_fraction_events,
             [
                 {
                     "rollout_id": output.rollout_id,
@@ -477,12 +426,9 @@ def event_log(output: FinancialOutput) -> EventLog:
                 }
                 for row in property_rented_fraction_events
             ],
-            schema=EVENT_FRAMES.set_rented_fraction_events.schema,
-        )
-    frames["capital_improvement_events"] = EVENT_FRAMES.capital_improvement_events.schema.to_frame()
-    capital_improvements = [] if output.properties is None else output.properties.capital_improvements
-    if capital_improvements:
-        frames["capital_improvement_events"] = pl.DataFrame(
+        ),
+        (
+            EVENT_FRAMES.capital_improvement_events,
             [
                 {
                     "rollout_id": output.rollout_id,
@@ -493,12 +439,9 @@ def event_log(output: FinancialOutput) -> EventLog:
                 }
                 for row in capital_improvements
             ],
-            schema=EVENT_FRAMES.capital_improvement_events.schema,
-        )
-    frames["property_sale_events"] = EVENT_FRAMES.property_sale_events.schema.to_frame()
-    property_sales = [] if output.properties is None else output.properties.sales
-    if property_sales:
-        frames["property_sale_events"] = pl.DataFrame(
+        ),
+        (
+            EVENT_FRAMES.property_sale_events,
             [
                 {
                     "rollout_id": output.rollout_id,
@@ -517,11 +460,9 @@ def event_log(output: FinancialOutput) -> EventLog:
                 }
                 for row in property_sales
             ],
-            schema=EVENT_FRAMES.property_sale_events.schema,
-        )
-    frames["tax_accruals"] = EVENT_FRAMES.tax_accruals.schema.to_frame()
-    if output.tax_accruals:
-        frames["tax_accruals"] = pl.DataFrame(
+        ),
+        (
+            EVENT_FRAMES.tax_accruals,
             [
                 {
                     "rollout_id": output.rollout_id,
@@ -534,11 +475,9 @@ def event_log(output: FinancialOutput) -> EventLog:
                 }
                 for row in output.tax_accruals
             ],
-            schema=EVENT_FRAMES.tax_accruals.schema,
-        )
-    frames["tax_breakdowns"] = EVENT_FRAMES.tax_breakdowns.schema.to_frame()
-    if output.tax_accruals:
-        frames["tax_breakdowns"] = pl.DataFrame(
+        ),
+        (
+            EVENT_FRAMES.tax_breakdowns,
             [
                 {
                     "rollout_id": output.rollout_id,
@@ -564,11 +503,9 @@ def event_log(output: FinancialOutput) -> EventLog:
                 }
                 for row in output.tax_accruals
             ],
-            schema=EVENT_FRAMES.tax_breakdowns.schema,
-        )
-    frames["tax_settlements"] = EVENT_FRAMES.tax_settlements.schema.to_frame()
-    if output.tax_settlements:
-        frames["tax_settlements"] = pl.DataFrame(
+        ),
+        (
+            EVENT_FRAMES.tax_settlements,
             [
                 {
                     "rollout_id": output.rollout_id,
@@ -580,6 +517,9 @@ def event_log(output: FinancialOutput) -> EventLog:
                 }
                 for row in output.tax_settlements
             ],
-            schema=EVENT_FRAMES.tax_settlements.schema,
-        )
-    return EventLog.from_frames(frames, rollout_ids=[output.rollout_id])
+        ),
+    )
+    return EventLog.from_frames(
+        {spec.name: pl.DataFrame(rows, schema=spec.schema) for spec, rows in frame_rows},
+        rollout_ids=[output.rollout_id],
+    )

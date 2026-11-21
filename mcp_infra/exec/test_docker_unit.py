@@ -12,21 +12,15 @@ from tenacity import AsyncRetrying, retry_if_result, stop_after_delay, wait_fixe
 
 from mcp_infra.exec.docker import container_session, launcher
 from mcp_infra.exec.docker.container_session import ContainerSessionState, run_session_container, scoped_container
-from mcp_infra.exec.docker.server import FILE_RESOURCE_URI_TEMPLATE, ContainerExecServer
+from mcp_infra.exec.docker.server import FILE_RESOURCE_URI_TEMPLATE
 from mcp_infra.exec.docker.types import AlwaysSetTo, ContainerExecServerConfig, ResolvedExecInput
 from mcp_infra.testing.fixtures import make_container_opts
 from util.exec.models import BaseExecResult, Exited, TimedOut
 
 
 @pytest.fixture
-def exec_server(async_docker_client, debian_slim_image):
-    """Container exec server for docker exec tests."""
-    return ContainerExecServer(async_docker_client, make_container_opts(debian_slim_image))
-
-
-@pytest.fixture
-async def exec_session(exec_server):
-    async with Client(exec_server) as session:
+async def exec_session(docker_exec_server):
+    async with Client(docker_exec_server) as session:
         yield session
 
 
@@ -211,7 +205,10 @@ def test_launcher_json_config_sets_container_creation_options(monkeypatch) -> No
     captured: dict[str, ContainerExecServerConfig] = {}
 
     class FakeDockerClient:
-        async def close(self) -> None:
+        async def __aenter__(self) -> FakeDockerClient:
+            return self
+
+        async def __aexit__(self, *_: object) -> None:
             pass
 
     docker_client = FakeDockerClient()

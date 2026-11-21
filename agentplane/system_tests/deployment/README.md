@@ -27,8 +27,10 @@ not declare: Pod and MCP suites share a recycling key, while their deployment re
 different service images. A later MCP suite imports any edge or fixture-server images it needs.
 Cleanup also runs with
 the kubelet stopped during a cold rebuild, before restored obsolete layers can trigger evictions
-while a fresh kubelet waits for its image-GC minimum age. See the
-[storage-pressure reproduction](../k3s/debug/2026_11_02_image_store_pressure.md).
+while a fresh kubelet waits for its image-GC minimum age. Replacing a fixture's stable tag leaves the old
+config-ID alias and its unpacked layers on imagefs, which is the snapshotter tmpfs, not the disk that
+`EstimatedFreeDiskBytes` sizes. A controlled reproduction with cleanup disabled filled imagefs to 96.7% and the
+kubelet evicted a Pod on `imagefs.available`; with cleanup it stayed at 44.1%.
 During imports, using half of a group's starting filesystem headroom triggers an intermediate
 sweep. Filesystem checks avoid a CRI round trip for each unchanged or small image import.
 
@@ -128,8 +130,9 @@ Direct native fixture clients reuse the fixture's `app-workload-tls` certificate
 without bearer metadata and do not start or call the App, request an App login, or change production
 listeners or settings.
 
-A suite using the MCP fixture stack takes the `//agentplane/system_tests/suites:mcp_manifests.json`
-rendering and also imports and runs Dex, `mcp-everything` and the OAuth MCP fixture, with
+A suite using the MCP fixture stack takes the `//agentplane/system_tests/suites:mcp_manifests.json` rendering (or
+`mcp_services_manifests.json`, the same stack without the central sampler) and also imports and runs Dex,
+`mcp-everything` and the OAuth MCP fixture, with
 test-only Dex clients, operator, MCP server and Action groups. The
 standalone MCP edge serves its OAuth and MCP endpoints in this fixture; Actions keeps its separate
 OAuth client for the upstream fixture used by `mcp:test_actions`. Dex
@@ -174,28 +177,28 @@ Actions and Notifications apply Goose migrations from their serving processes be
 listeners or starting workers. Their startup probes wait for initialization; the fixture renders no
 separate migration containers for either service.
 The fixture selects that runtime explicitly; staging selects its own independently.
-The `probe_manifests`, `real_model_manifests`, `history_manifests` and `mcp_manifests` recipes add
-the standalone MCP edge because the app's Connection Service endpoint targets it. The edge's
+The `probe_manifests`, `real_model_manifests`, `history_manifests`, `mcp_manifests` and `mcp_services_manifests`
+recipes add the standalone MCP edge because the app's Connection Service endpoint targets it. The edge's
 PostgreSQL database, embedded Goose migrations, caller-token RBAC and startup/readiness probes use
-the shared construct. The Pod and deletion (`pod_manifests`), recovery (`recovery_manifests`), VM and
+the shared construct. The Pod and deletion (`pod_manifests`), VM and
 Firecracker recipes omit the edge because their scenarios do not exercise external Connections; the
-app retains its unused Connection routes and reports the service unavailable. The MCP recipe also
-adds the edge's OAuth Secret and Dex trust.
+app retains its unused Connection routes and reports the service unavailable. The native Pod
+(`pod_native_manifests`) and recovery (`recovery_manifests`) recipes deploy neither the app nor the edge.
+The MCP recipes also add the edge's OAuth Secret and Dex trust.
 One PostgreSQL 18 Deployment uses the pinned published CNPG minimal image and an emptyDir data
 volume. [`postgres_entrypoint.sh`](postgres_entrypoint.sh) runs bootstrap SQL assembled by
 [`fixture_database.py`](fixture_database.py) to create the service-owned databases. Unsupported
 Cilium, Gateway API, Prometheus and External Secrets resources are omitted during
-construction. VM stacks install Kyverno for the launcher relay. The chart instantiates the Go Runner Gateway
-directly with one gRPC listener on port 8080; the stable `runner-gateway` and `session-dispatcher`
-Service names remain. The serving process applies the embedded Dispatcher migrations before opening
-the listener, using the Dispatcher database Secret. [`stack.py`](stack.py) starts k3s, streams
+construction. VM stacks install Kyverno for the launcher relay. The chart instantiates Sessions
+with one gRPC listener on port 8080. The serving process applies the embedded Dispatcher migrations
+before opening the listener, using the Dispatcher database Secret. [`stack.py`](stack.py) starts k3s, streams
 the Bazel-built OCI image layouts into containerd, applies the rendered stack and reports Deployment
 readiness. It uses the pinned K3s binary from Bazel runfiles, so no action downloads K3s at runtime.
 
 Every stack explicitly uses mTLS for runner control and installs real cert-manager and trust-manager from pinned upstream manifests/charts and
 Bazel-pulled OCI layouts. Startup probes admission through both webhooks before applying the fixture.
-A self-signed bootstrap ClusterIssuer issues the test root CA; the production runner Certificate/Issuer
-constructs issue the intermediate CA and Gateway leaf. Sandbox Controller creates each runner's
+A self-signed bootstrap ClusterIssuer issues the test root CA. The production workload issuer issues
+the Sessions and Environments certificates, and the Environments controller creates each runner's
 Certificate. trust-manager distributes the root through a Bundle into the workload namespace;
 startup waits for certificate readiness and Bundle synchronization. Controller logs and PKI resource
 status are retained under `certificates/` in undeclared test outputs. Optional insecure transport is
@@ -243,12 +246,13 @@ selector is removed; environment kind does not select an auth mode. This is the 
 
 ## RBE executor constraints
 
-Probed 2026-10-21 with `bb execute` under the k3s target's isolation properties: kernel 5.15.0, no `/dev/kvm`
-(`CONFIG_KVM` unset, only `CONFIG_KVM_GUEST`) and no BPF JIT. So the stack runs no Cilium, KubeVirt only with
-software emulation, and kube-proxy with ClusterIP Services.
+Probed 2026-10-21 with `bb execute` on the managed executor under the k3s target's isolation properties: kernel 5.15.0, no `/dev/kvm`
+(`CONFIG_KVM` unset, only `CONFIG_KVM_GUEST`) and no BPF JIT. That managed stack ran KubeVirt with software emulation and used kube-proxy with ClusterIP Services.
+The required VM suite now uses the [hosted KVM pool](../../../devinfra/ci/README.md#where-bazel-ci-runs-tests).
 
-The earlier RBE precompile failure no longer reproduces with `rules_python` 2.4.3: a target using
-`pyc_collection = "include_pyc"` passes and Python loads the generated `.pyc` files. The
+The earlier RBE precompile failure did not recur on 2026-10-30 with `rules_python` 2.4.3 (`MODULE.bazel` now
+pins 2.5.0-rc4): a target using `pyc_collection = "include_pyc"` passed and Python loaded the generated `.pyc`
+files. The
 [current experiment](../k3s/debug/pyc_precompilation.md) shows the large compile action graph and the
 observed warm-run difference, so the suites do not enable collection yet. With the chart rendered at
 build time, imports still took 10–13 s before pytest in the October 21 measurements
@@ -266,15 +270,16 @@ The controller gates Ready on workload readiness, runner connection and bootstra
 Exact bootstrap and seal-before-stop ordering belongs in deterministic
 [controller tests](../../environments/internal/controller/controller_test.go), including
 `TestReadyWaitsForTheBootstrapAndStopsOnItsFailure` and
-`TestSuspensionWaitsForTheRunnerToQuiesce`.
+`TestSuspensionWaitsForRuntimeToQuiesce`.
 
 ## VM Sandboxes
 
 VM stacks, `test_vm` and the opt-in `test_vm_manual` and `test_vm_oom`,
 ([system tests README](../README.md)), run on a stack rendered with VM Sandboxes
 (`//agentplane/system_tests/suites:vm_manifests.json`), so [`sandboxes.py`](../vm/sandboxes.py)
-installs production's KubeVirt release with `useEmulation` (QEMU TCG; the executor has no `/dev/kvm`)
-and Kyverno's admission controller, which adds the egress relay to each launcher Pod as in
+installs production's KubeVirt release and Kyverno's admission controller. The required `test_vm`
+uses nested KVM on the hosted workers. The manual `test_vm_tcg` comparison and managed diagnostics
+use QEMU software emulation. Kyverno adds the egress relay to each launcher Pod as in
 production. The fixture applies once KubeVirt's VirtualMachine API is served: the Sandbox Controller
 looks for it only at start. The stack writes KubeVirt's and Kyverno's view of the VMs, each guest's
 serial console and any image a Pod pulled from a registry to `test.outputs/vm-sandboxes.txt`.
@@ -323,31 +328,20 @@ exits; otherwise Pod termination can stop the state filesystem while the guest c
 Existing KubeVirt initializers run before these daemons; ContainerPath daemons retain their ordinary
 container placement for KubeVirt reconciliation.
 
-`test_vm` starts five VM Sandboxes concurrently in one stack: one per harness for the
-scripted turn, one per harness for credential authentication, and one for Codex tool OOM containment.
-The OOM scenario drives the real Codex app-server to run a memory-exhausting shell command through
-its isolated exec-server. The allocator
-touches memory beyond the configured executor limit, with a raised `oom_score_adj` to select that
-tool as the victim. The test checks a single
-`memory.events` OOM kill with `memory.oom.group=0`, a tool result reporting exit 137, and a failed
-native command item with that exit code; the turn itself completes normally. Runner boot identity
-and app-server process identity/PID stay unchanged before and after the OOM and a successful
-follow-up turn. That command runs in the same executor leaf and reports exit zero. Evidence goes
-to `test.outputs/vm-codex-oom.json`, alongside the guest console and scripted upstream requests.
-The OOM template explicitly sets `agentplane.cgroup-observer=1`, starting a root observer outside
-the execution slices to publish read-only snapshots of executor limits and OOM counters. Other
-guests retain the observer unit for the unprivileged restart-denial check without starting its
-polling process ([native CPU evidence](../debug/codex_tool_oom/vm_observer_scope.md)). Tool processes retain
-production's UID and cgroup permissions.
-The executor aggregate's hierarchical OOM counter proves the constrained subtree, while the leaf's
-victim counter proves the single kill: either the aggregate or leaf limit can trigger first.
-This exercises the test guest's kernel, shared production systemd units, and production Runner/Codex
-binaries; it does not boot the production NixOS image or force exec-server death/restart.
+`test_vm_oom` drives the real Codex app-server to run a command that allocates and touches
+memory beyond the shared systemd command slice's configured limit. It checks the slice's local
+OOM counter, the subtree's OOM kill counter, exit 137 in both the tool response and the native
+command item, and a successful follow-up command on the same Codex Session. The Runtime boot ID,
+harness attachment, app-server process and native executor PID and start time must survive.
+A loopback gRPC probe opens a native execution session before the OOM, then resumes that exact
+session ID and reads successful output from a new process in it.
+Evidence goes to `test.outputs/vm-codex-oom.json`, alongside the guest console and scripted
+upstream requests.
 
-Only this OOM sandbox selects the `environment-vm-codex-oom` template to enable the guest
-cgroup observer. Its guest RAM and all resource budgets match `environment-vm`, including the
-256 MiB native executor leaf. The command grows above that limit so the kernel exercises the OOM
-path while the Codex session remains active; see [the measured budget probe](../debug/codex_tool_oom/vm_oom_budget.md).
+The `environment-vm-codex-oom` template adds `agentplane.cgroup-observer=1` to `environment-vm`'s
+guest configuration. The argument starts a root service that publishes read-only snapshots of
+kernel counters and executor identity outside both execution slices. Tool processes retain
+production's UID and cgroup permissions.
 
 KubeVirt's and Kyverno's images are Bazel-pulled layouts (`vm_sandboxes/`, pinned in `MODULE.bazel`),
 imported before their releases are applied, so no Pod pulls them; the releases roll out while the

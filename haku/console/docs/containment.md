@@ -63,7 +63,7 @@ Haku could author hostile UI). Safety comes from the perimeter, not from trustin
    table: <../../docs/security.md> § _Browser-side exfiltration_.
 3. **The agent cannot create public routes.** Haku's `haku-sandbox-admin` Role omits
    `httproutes`/`gateways` (do not add them), and the `restrict-agent-gateway-routes`
-   Kyverno ClusterPolicy denies route/Gateway creation in agent namespaces even if RBAC
+   ValidatingAdmissionPolicy denies route and Gateway writes in agent namespaces even if RBAC
    drifted. Remaining belt-and-suspenders (listener `allowedRoutes` selector) is deferred —
    `cluster/k8s/TODO.md`.
 4. **Worst case is bounded.** A hostile iframe can render misleading UI and read/write
@@ -92,7 +92,7 @@ chrome.
 
 **The shell chrome.** A persistent shell-owned left rail reserves layout space the frame cannot
 render into. It navigates among the still-mounted Haku UI frame and the trusted console pages,
-opens the approvals drawer independently, and exposes location, screenshot, sync and
+opens the approvals drawer independently, and exposes location, screenshot and
 session-expiry state through compact indicator popovers. It is **not** a consent surface:
 it only reveals state and _reduces_ privilege, so — unlike `ConfirmDialog` — it needn't be a
 top-layer `<dialog>`. The one authority moment (granting a capability) always stays in the
@@ -157,17 +157,17 @@ it ends. Why it must route through the shell, and how consent works:
   (the shell owns `clearWatch`) — the Location panel's "Stop" is a real kill switch.
 - **A shell-owned standing grant is the gate** (`geolocation_grant.ts`, persisted in the
   shell origin's `localStorage` — cross-origin isolated, so the frame can't read or forge
-  it). The **first** ask with no grant pops the top-layer consent confirm ("Allow Haku to use
-  your location?", which discloses continuous tracking); approving records the grant, so
-  subsequent reads/watches start **without** re-confirming — "allow until withdrawn". The
-  shell reads location _only_ while the grant is set.
+  it). The **first** ask with no grant queues a non-modal approval card ("Allow location
+  sharing?", or "Allow continuous location sharing?" for a watch); approving records the
+  grant, so subsequent reads/watches start **without** re-confirming — "allow until
+  withdrawn". The shell reads location _only_ while the grant is set.
 - **Two independent gates.** The shell grant is the app-level gate; the browser's own
   geolocation permission (its native prompt on first read, its site-settings revoke) is the
   platform-level gate. Both must be "on" to read; withdrawing either stops reads.
 - **Withdrawal** is a shell control in the Location panel: it
-  stops every live watch and revokes the grant. Declining the confirm, withdrawing, or the
+  stops every live watch and revokes the grant. Declining the approval, withdrawing, or the
   watch ending yields `code: 1` (`PERMISSION_DENIED`; `reason` `declined`/`withdrawn`) so the
-  frame treats it exactly like a native denial. The ⚙ indicator pulses while a watch streams.
+  frame treats it exactly like a native denial. The map-pin indicator pulses while a watch streams.
 - **Residual:** once granted, location (a live stream, under continuous tracking) is a datum
   the assumed-adversarial frame now holds and can exfiltrate only via the already-accepted
   browser channels (whitelisted `openLink`, WebRTC). Bounded by the operator's explicit

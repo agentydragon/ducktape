@@ -18,13 +18,12 @@ from agentplane.action_service.catalog import ActionGroup, Key
 from agentplane.action_service.mcp_settings import McpClientMetadataSettings, McpOAuthServer
 from agentplane.action_service.orchestration_v1.binding import LaunchPreset
 from agentplane.app.settings import Settings
-from agentplane.env.config import GuestResources
+from agentplane.env.config import Executor, GuestResources
 from agentplane.identity.operator.settings import OperatorOidcSettings
 from agentplane.llm_ingress.models import AttributionConfig, ModelConfig, default_attribution
 from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.sampler import settings
 from agentplane.sandboxes.runtimeconfig.model_catalog import Catalog
-from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s.secret_ref import SecretKey
 from model_catalog.catalog import Route
 
@@ -112,14 +111,22 @@ class AppProps:
 
 @dataclass(frozen=True)
 class BearerMcpMount:
-    """The environment's copy of one static-bearer MCP backend's bearer Secret, mounted at
-    `/run/secrets/<name>/<file_name>` for an `action_groups` entry's `bearer_file` to name."""
+    """The environment's copy of one static-bearer MCP backend's bearer Secret, mounted in `mount_dir`
+    for an `action_groups` entry's `bearer_file` to name as `path`."""
 
     name: str
     secret_name: str
     secret_key: str
     file_name: str = "bearer-token"
     optional: bool = False
+
+    @property
+    def mount_dir(self) -> str:
+        return f"/run/secrets/{self.name}"
+
+    @property
+    def path(self) -> str:
+        return f"{self.mount_dir}/{self.file_name}"
 
 
 @dataclass(frozen=True)
@@ -215,6 +222,8 @@ class Environment:
     vm_sandboxes: bool
     # Deployment-published runtime facts shared with the co-hosted discovery service.
     runtime_catalog: Catalog | None = None
+    # Static services that should retain replicas across hosts.
+    hostname_spread_services: frozenset[str] = frozenset()
     # Whether the policy catalog renders in the identity shapes: every Flux `PolicyBinding` names an
     # `Identity`, Kubernetes rules are `KubernetesRoleSet`s, and agents reach the API server only as
     # accounts (kubernetes_account_ref.py), not as the Sandbox's own ServiceAccount through `basic`.
@@ -226,6 +235,7 @@ class Environment:
     vm_storage_class: str | None = None
     # Guest sizing and Runner cgroup budgets shared by the VM template and guest config seed.
     vm_resources: GuestResources | None = None
+    vm_executor: Executor | None = None
     # Opt-in: trusted KVM launcher with same-Pod RAM checkpoints.
     firecracker_sandboxes: bool = False
     # Whether runner Pods delegate Codex command execution to a companion with its own PID namespace.
@@ -233,8 +243,6 @@ class Environment:
     # Whether a VM Sandbox's serial console is a root shell, for whoever holds the VMI `console`
     # subresource. Only meaningful with `vm_sandboxes`.
     vm_console_autologin: bool = False
-    # Authenticated service callers permitted to wake only Sandboxes whose own `wakeOnSend` is true.
-    wake_caller_accounts: frozenset[ServiceAccountRef] = frozenset()
     notifications_github: GitHubAppProps | None = None
     # Binding scopes delegated (binding_delegation.py) after their catalog entries are removed, so
     # the bindings existing Sandboxes still hold can be cleaned up.

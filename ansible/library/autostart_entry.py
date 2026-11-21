@@ -9,14 +9,14 @@ from pathlib import Path
 from ansible.module_utils.basic import AnsibleModule
 
 
-def build_desktop_content(exec: str, name: str, icon: str | None, enabled: bool) -> str:
+def build_desktop_content(exec: str, name: str, icon: str | None) -> str:
     """Compose the content of the desktop entry."""
     lines: list[str] = [
         "[Desktop Entry]",
         "Type=Application",
         f"Name={name}",
         f"Exec={exec}",
-        f"X-GNOME-Autostart-enabled={'true' if enabled else 'false'}",
+        "X-GNOME-Autostart-enabled=true",
     ]
 
     if icon:
@@ -29,10 +29,8 @@ def run_module() -> None:
     module = AnsibleModule(
         argument_spec={
             "exec": {"type": "str", "required": True},
-            "name": {"type": "str"},
+            "name": {"type": "str", "required": True},
             "icon": {"type": "str"},
-            "enabled": {"type": "bool", "default": True},
-            "desktop_file_name": {"type": "str"},
         },
         supports_check_mode=True,
     )
@@ -40,24 +38,12 @@ def run_module() -> None:
     params = module.params
 
     exec: str = params["exec"]
-    name: str = params.get("name", exec)
+    name: str = params["name"]
     icon: str | None = params.get("icon")
-    enabled: bool = params["enabled"]
 
-    # ``params`` always contains ``desktop_file_name`` because it is declared in
-    # ``argument_spec``.  When the caller does **not** specify a value Ansible
-    # sets the key to ``None`` instead of omitting it.  Using ``dict.get`` with
-    # a default therefore does **not** help - we would still receive ``None``
-    # and calling ``lower()`` on that would raise an ``AttributeError``.
+    desktop_path = Path.home() / ".config" / "autostart" / f"{name.lower()}.desktop"
 
-    # Prefer the explicitly provided file name when it is a non-empty string,
-    # otherwise fall back to the (required) ``name`` parameter.
-    desktop_file_name: str | None = params.get("desktop_file_name")
-
-    desktop_base: str = (desktop_file_name or name).lower()
-    desktop_path = Path.home() / ".config" / "autostart" / f"{desktop_base}.desktop"
-
-    desired_content = build_desktop_content(exec, name, icon, enabled)
+    desired_content = build_desktop_content(exec, name, icon)
 
     changed = not desktop_path.exists() or (desktop_path.read_text() != desired_content)
 

@@ -1,13 +1,6 @@
 from __future__ import annotations
 
-from tana.domain.constants import (
-    AND_OPERATOR_ID,
-    MIN_TUPLE_CHILDREN,
-    NOT_OPERATOR_ID,
-    OR_OPERATOR_ID,
-    SEARCH_EXPRESSION_KEY_ID,
-)
-from tana.domain.nodes import BaseNode, TupleNode
+from tana.domain.nodes import MIN_TUPLE_CHILDREN, BaseNode, TupleNode
 from tana.domain.search import (
     BooleanOperator,
     BooleanSearch,
@@ -17,6 +10,7 @@ from tana.domain.search import (
     TextSearch,
     TypeSearch,
 )
+from tana.domain.system_nodes import AND_OPERATOR_ID, NOT_OPERATOR_ID, OR_OPERATOR_ID, SEARCH_EXPRESSION_KEY_ID
 from tana.domain.types import NodeId
 from tana.graph.graph import TanaGraph
 

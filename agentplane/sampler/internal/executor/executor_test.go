@@ -18,7 +18,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/outputbuffer"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionstore"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/toolcontract"
-	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	execfake "github.com/agentydragon/ducktape/agentplane/testing/executor"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -1160,10 +1159,7 @@ func TestExecutorReplacesDefinitivelyLostSessionWithoutReplayingCurrentOperation
 }
 
 func TestReconcileProcessWaitsForSameSessionAcrossGatewayOutage(t *testing.T) {
-	store, owner, request := resumedExecutorStore(t, protocol.APIStyleResponses)
-	if err := store.SetExecutorSession(t.Context(), owner, "retained-executor", nil); err != nil {
-		t.Fatal(err)
-	}
+	store, owner, request := resumedStoreWithRetainedSession(t)
 	if err := store.RegisterProcess(t.Context(), owner, "running-process", false); err != nil {
 		t.Fatal(err)
 	}
@@ -1542,27 +1538,8 @@ func establishFakeExecutorSession(t *testing.T, e *Executor, client *execfake.Cl
 	}
 }
 
-func intentResultForDB(t *testing.T, store *sessionstore.Store, id string) (map[string]any, error) {
-	t.Helper()
-	var raw []byte
-	if err := store.DB().QueryRowContext(t.Context(), `SELECT result FROM sampler_intent WHERE id=$1`, id).Scan(&raw); err != nil {
-		return nil, err
-	}
-	var result map[string]any
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return nil, err
-	}
-	return result, nil
-}
-
 func ptrInt32(value int32) *int32 { return &value }
 func ptrInt(value int) *int       { return &value }
-func boolInt(value bool) int {
-	if value {
-		return 1
-	}
-	return 0
-}
 
 func assertNoUnresolvedNestedIntents(t *testing.T, store *sessionstore.Store, owner sessionstore.Owner) {
 	t.Helper()

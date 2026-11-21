@@ -1,4 +1,4 @@
-// Bundles the visual-test harness into a single IIFE that renders into #root.
+// Bundles the visual-test harness into a single IIFE that renders into #app.
 // Output goes to tests/harness/dist/harness.js (referenced by the harness's
 // index.html). Format must be IIFE so the file:// page can <script>-load it
 // without module CORS restrictions in the headless Chromium runner.
@@ -20,7 +20,6 @@ await esbuild.build({
   sourcemap: false,
   target: ["es2022"],
   jsx: "automatic",
-  loader: { ".js": "jsx" },
   outExtension: { ".js": ".js" },
   entryNames: "harness",
   nodePaths: [resolve(process.cwd(), "node_modules")],

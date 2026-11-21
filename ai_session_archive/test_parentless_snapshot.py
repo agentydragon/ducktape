@@ -1,4 +1,4 @@
-# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep :testing
 from pathlib import Path
 
@@ -7,34 +7,29 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
 from ai_session_archive.database import ResticSnapshotRow, SnapshotFileRow
-from ai_session_archive.ingest import ArchiveSource, SnapshotIngestor
 from ai_session_archive.models import Harness
 from ai_session_archive.source_paths import HarnessRoot
-from ai_session_archive.testing import _backup, _new_repository
+from ai_session_archive.testing import backup, new_ingestor, new_repository
 
-pytest_plugins = ["util.testing.postgres_fixtures", "ai_session_archive.testing"]
+pytest_plugins = ["testing.postgres_fixtures", "ai_session_archive.testing"]
 
 
 def test_parentless_restic_snapshot_uses_full_inventory(tmp_path: Path, postgres_engine: Engine) -> None:
-    repository, env = _new_repository(tmp_path)
+    repository, env = new_repository(tmp_path)
     claude_root = tmp_path / "home" / ".claude"
     transcript = claude_root / "projects" / "example-project" / "session.jsonl"
     transcript.parent.mkdir(parents=True)
     transcript.write_bytes(b'{"type":"user","message":{"content":"original"}}\n')
-    _backup(env, claude_root)
+    backup(env, claude_root)
     first_snapshot = repository.list_snapshots()[0]
     factory = sessionmaker(postgres_engine, expire_on_commit=False)
-    source = ArchiveSource(
-        machine_id="parentless-test",
-        display_name="Parentless test host",
-        restic=repository,
-        roots=(HarnessRoot(Harness.CLAUDE, str(claude_root)),),
+    ingestor = new_ingestor(
+        factory, repository, HarnessRoot(Harness.CLAUDE, str(claude_root)), machine_id="parentless-test"
     )
-    ingestor = SnapshotIngestor(factory, source)
     ingestor.ingest()
 
     transcript.write_bytes(b'{"type":"user","message":{"content":"forced snapshot"}}\n')
-    _backup(env, claude_root, force=True)
+    backup(env, claude_root, force=True)
     second_snapshot = next(snapshot for snapshot in repository.list_snapshots() if snapshot.id != first_snapshot.id)
     assert second_snapshot.parent_id is None
     report = ingestor.ingest()

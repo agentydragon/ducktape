@@ -15,7 +15,7 @@ Getting these wrong is destructive or silently corrupting.
 - **Wiping a backing DB orphans tofu state.** `tf/gitops/sso-providers/` (Authentik OAuth2
   providers) and `props/deploy/forgejo/tofu/` (Forgejo registry user) record IDs of objects
   in other stateful systems; wiping that DB without clearing tofu state (CNPG
-  `tofu-state-db-ovh`, one schema per `Terraform` CR) yields
+  `tofu-state-db-ovh`, one schema per root) yields
   `Unable to read … not found with id N`. Recovery: <docs/troubleshooting.md>
   § "Resource ID Desync After Wiping a Backing Datastore".
 - **DNS and website must survive OVH-only** (README § "OVH-Only Resilience Invariants").
@@ -44,7 +44,7 @@ Getting these wrong is destructive or silently corrupting.
 
 `ovh-nodes.tf` (OVH bare metal), `home-nodes.tf` (home Talos workers), `proxmox-nodes.tf`
 (Proxmox VMs), `talos-machine-secrets.tf` (persistent), `cilium.tf`, `infrastructure.tf`
-(firewall, Talos bootstrap, registry mirrors), `persistent-auth.tf` (`prevent_destroy`),
+(Talos bootstrap, registry mirrors), `persistent-auth.tf` (`prevent_destroy`),
 `nebula.tf` (per-node config + endpoint drift check).
 
 ## Secrets
@@ -107,6 +107,19 @@ Before operating on SeaweedFS `Bucket`/`S3Identity`/`S3Credentials` objects, rea
 For retirement, follow <docs/runbooks/seaweedfs_s3_retirement.md>; delete the
 identity only after credential and other IAM writers have finalized.
 For volume bytes above what the filer accounts for, follow <docs/runbooks/seaweedfs_orphan_chunks.md>.
+
+### DRBD disk recovery
+
+After a backing-disk I/O failure, do not bulk-clear `DrbdOptions/SkipDisk` and assume
+reattachment healed the volumes. Inventory each resource's consumer, role, disk states,
+and authoritative copy first. For a replicated resource with an active consumer, quiesce
+the consumer and confirm the volume is no longer in use before reattaching its disk; then
+recover one resource at a time, verify resync reaches `UpToDate` with zero out-of-sync
+data, and check the application before proceeding. Preserve the sole healthy copy; do not
+force promotion or discard data to make a sync proceed. Capture DRBD state before and after
+attachment, and investigate a stalled sync rather than waiting indefinitely. This is a
+precaution based on a suspected, not proven, diskless-primary reattachment issue:
+<debug/2026_11_20_ovh_nvme_drbd.md>.
 
 ## Flux Kustomizations
 

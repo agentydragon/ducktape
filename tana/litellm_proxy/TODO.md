@@ -8,26 +8,17 @@ source-faithful to that evidence.
 
 ## P0: Required before OpenCode or Claude Code use
 
-- Add OpenAI-compatible smoke tests through LiteLLM Proxy:
-  - `/v1/chat/completions`
-  - streaming `/v1/chat/completions`
-  - function-tool call and tool-result continuation
-- Add Anthropic-compatible smoke tests through LiteLLM Proxy:
-  - `/v1/messages`
-  - streaming `/v1/messages`
-  - Claude Code-shaped streaming `/v1/messages` with Anthropic system content
-    blocks, `cache_control`, `tool_use`, and `tool_result` transcript entries
-  - `/v1/messages/count_tokens`
-  - tool use and tool-result continuation
+- Add an Anthropic-compatible `/v1/messages/count_tokens` smoke test through
+  LiteLLM Proxy.
 - Map upstream failures into useful client-facing errors:
   - Firebase refresh-token exchange failures
   - Tana 5xx and malformed stream events
 - Re-probe the RE-listed models and either support or intentionally suppress
   those that fail. The 2026-06-10 probe is historical; current model behavior is
   unverified. Keep the full list in `model_registry.py` and expose only the
-  supported subset through `TANA_LLM_PROXY_RESPONDING_MODELS`. The direct
-  `probe_models_bin` refreshes Firebase credentials without persisting rotated
-  refresh tokens; establish a safe credential path before a live re-probe.
+  supported subset. The direct `probe_models_bin` refreshes Firebase credentials
+  without persisting rotated refresh tokens; establish a safe credential path
+  before a live re-probe.
 
 ## P1: Agent-client compatibility polish
 

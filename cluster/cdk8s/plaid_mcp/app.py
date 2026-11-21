@@ -16,6 +16,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetDeletionPolicy,
 )
 
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
@@ -37,13 +38,12 @@ _WEB = ServiceRef(
     pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", _NAME),)),
 )
 _OIDC_ISSUER = "https://auth.allegedly.works/application/o/plaid-link/"
-_OIDC_CREDENTIALS_NAME = "plaid-link-oidc-config"
 _OIDC_READER = "plaid-link-oidc-reader"
 _WEBHOOK_HOST = "plaid-mcp.allegedly.works"
 _WEBHOOK_URL = f"https://{_WEBHOOK_HOST}/webhooks/plaid"
 _CONFIG = {
     "PLAID_MCP_PLAID_ENV": "production",
-    "PLAID_MCP_PUBLIC_BASE_URL": "https://plaid-mcp.allegedly.works",
+    "PLAID_MCP_PUBLIC_BASE_URL": f"https://{_WEBHOOK_HOST}",
     "PLAID_MCP_WEBHOOK_URL": _WEBHOOK_URL,
     "PLAID_MCP_TRANSACTION_DAYS": "730",
     "PLAID_MCP_INVESTMENT_TRANSACTION_DAYS": "730",
@@ -77,10 +77,7 @@ def _container_security_context() -> k8s.SecurityContext:
 
 
 def _resources() -> k8s.ResourceRequirements:
-    return k8s.ResourceRequirements(
-        requests={"memory": k8s.Quantity.from_string("128Mi"), "cpu": k8s.Quantity.from_string("50m")},
-        limits={"memory": k8s.Quantity.from_string("512Mi"), "cpu": k8s.Quantity.from_string("500m")},
-    )
+    return container_resources(cpu="50m", memory="128Mi", cpu_limit="500m", memory_limit="512Mi")
 
 
 def _oidc_credentials(chart: Chart) -> None:
@@ -96,16 +93,16 @@ def _oidc_credentials(chart: Chart) -> None:
         "plaid-link-oidc",
         reader=reader,
         source_namespace="authentik",
-        source_secret=_OIDC_CREDENTIALS_NAME,
+        source_secret=_OIDC_CREDENTIALS.name,
         consumer_namespace=NAMESPACE,
     )
     ExternalSecret(
         chart,
         "oidc-external-secret",
-        metadata=ApiObjectMetadata(name=_OIDC_CREDENTIALS_NAME, namespace=NAMESPACE),
+        metadata=ApiObjectMetadata(name=_OIDC_CREDENTIALS.name, namespace=NAMESPACE),
         refresh_interval="10m",
         secret_store_ref=SecretStoreRef.cluster(store),
-        data_from=[DataFrom.from_extract(_OIDC_CREDENTIALS_NAME)],
+        data_from=[DataFrom.from_extract(_OIDC_CREDENTIALS.name)],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.DELETE,
     )
@@ -262,7 +259,7 @@ def chart(app: App) -> Chart:
             namespace=NAMESPACE,
             annotations={"description": "Plaid Link UI; browser access authenticates with Authentik OIDC."},
         ),
-        hostnames=["plaid-mcp.allegedly.works"],
+        hostnames=[_WEBHOOK_HOST],
         backend=_WEB,
         listener=None,
     )

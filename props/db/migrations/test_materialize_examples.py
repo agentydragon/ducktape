@@ -4,29 +4,28 @@ This module verifies the function-level workaround used by the migration.
 """
 
 from collections.abc import Generator
+from contextlib import ExitStack
 
 import pytest
 import pytest_bazel
 from sqlalchemy import Engine, create_engine, text
 
 from props.db.config import DatabaseConfig
-from util.testing.postgres import DatabaseNames, create_temporary_database
+from testing.postgres import DatabaseNames, create_temporary_database
 
-# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep //props/testing/fixtures:db
-pytest_plugins = ("util.testing.postgres_fixtures", "props.testing.fixtures.db")
+pytest_plugins = ("testing.postgres_fixtures", "props.testing.fixtures.db")
 
 
 @pytest.fixture
 def blank_engine(postgres_base_config: DatabaseConfig, database_names: DatabaseNames) -> Generator[Engine]:
     """Engine for a fresh database with no migrations applied."""
     admin_url = postgres_base_config.with_database("postgres").url
-    with create_temporary_database(admin_url, database_names()) as url:
+    with create_temporary_database(admin_url, database_names()) as url, ExitStack() as cleanup:
         engine = create_engine(url)
-        try:
-            yield engine
-        finally:
-            engine.dispose()
+        cleanup.callback(engine.dispose)
+        yield engine
 
 
 def test_pg18_unqualified_table_in_function_fails_in_matview(blank_engine: Engine) -> None:

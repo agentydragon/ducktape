@@ -1,4 +1,4 @@
-"""Security contracts for Authentik and Dex access-token principal verification."""
+"""Security contracts for Authentik access-token principal verification."""
 
 from __future__ import annotations
 
@@ -24,13 +24,12 @@ from starlette.routing import Route
 
 from finance.plaid.spend.oidc_principal import (
     AuthentikOidcPrincipalResolver,
-    DexOidcPrincipalResolver,
     InvalidOidcPrincipalError,
     OidcPrincipalVerificationUnavailableError,
     VerifiedOidcPrincipal,
 )
-from util.testing.asgi import bind_http_server
-from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
+from testing.asgi import bind_http_server
+from testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 
 _ISSUER = "https://auth.example.test/application/o/haku-mcp/"
 _CLIENT_ID = "haku-mcp"
@@ -157,59 +156,6 @@ async def test_issuer_comparison_preserves_original_url_spelling(
         await resolver.resolve(
             _token_response(_token(signing_keys[0], claims=_claims(iss="https://auth.example.test/")))
         )
-
-
-@pytest.mark.parametrize("with_azp", [False, True])
-async def test_dex_single_audience_does_not_require_azp(
-    jwks_server, signing_keys: tuple[_SigningKey, _SigningKey, _SigningKey], with_azp: bool
-) -> None:
-    _state, jwks_uri = jwks_server
-    claims = _claims()
-    if not with_azp:
-        del claims["azp"]
-    resolver = DexOidcPrincipalResolver(
-        expected_issuer=_ISSUER,
-        discovered_issuer=_ISSUER,
-        jwks_uri=jwks_uri,
-        signing_algorithms=["RS256"],
-        client_id=_CLIENT_ID,
-    )
-    assert await resolver.resolve(_token_response(_token(signing_keys[0], claims=claims))) == VerifiedOidcPrincipal(
-        issuer=_ISSUER, subject=_SUBJECT
-    )
-
-
-@pytest.mark.parametrize(
-    ("claim", "value"),
-    [
-        ("iss", "https://other-issuer.example.test/"),
-        ("aud", "other-client"),
-        ("aud", [_CLIENT_ID, "other-client"]),
-        ("aud", [_CLIENT_ID]),
-        ("azp", "other-client"),
-        ("azp", None),
-        ("azp", [_CLIENT_ID]),
-        ("sub", ""),
-        ("iat", "1"),
-        ("exp", 0),
-    ],
-)
-async def test_dex_still_rejects_invalid_claims(
-    jwks_server, signing_keys: tuple[_SigningKey, _SigningKey, _SigningKey], claim: str, value: Any
-) -> None:
-    _state, jwks_uri = jwks_server
-    resolver = DexOidcPrincipalResolver(
-        expected_issuer=_ISSUER,
-        discovered_issuer=_ISSUER,
-        jwks_uri=jwks_uri,
-        signing_algorithms=["RS256"],
-        client_id=_CLIENT_ID,
-    )
-    claims = _claims()
-    del claims["azp"]
-    claims[claim] = value
-    with pytest.raises(InvalidOidcPrincipalError):
-        await resolver.resolve(_token_response(_token(signing_keys[0], claims=claims)))
 
 
 @pytest.mark.parametrize(

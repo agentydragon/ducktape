@@ -76,7 +76,7 @@ existing server.
 
 **Current**: one directory per internal UUID
 
-```
+```text
 ~/.claude/session-env/
   1c9fe809-b4dd-4f3f-924c-900b1ebfeaad/  (dead after resume)
   3a1f5b5a-0438-416c-b26d-ddcb3e5a4dad/  (current)
@@ -85,7 +85,7 @@ existing server.
 **Proposed**: stable directory keyed on `CLAUDE_CODE_SESSION_ID`, with
 per-UUID subdirs for things that genuinely need per-transition state
 
-```
+```text
 ~/.claude/session-env/
   cse_01ANqoTWWCxF71H5Aq2DqwnT/         (stable, survives resume)
     bazelrc
@@ -153,7 +153,7 @@ mode would be novel.
 1. **Make `CLAUDE_CODE_SESSION_ID` available to the Rust hook's path computations** — thread
    it from the hook environment through to path computation
 2. **Stable bazelrc** — change path generation to use stable key
-3. **Bazel wrapper** — update `DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR` to
+3. **Bazel wrapper** — update `__DUCKTAPE_CLAUDE_HOOKS_SHIM_DIR` to
    point to stable dir (or make wrapper resolve it)
 4. **Cleanup** — garbage-collect old per-UUID dirs that aren't the
    current stable dir

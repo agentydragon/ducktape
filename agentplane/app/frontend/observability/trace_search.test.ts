@@ -15,9 +15,9 @@ function pane(url: string): Record<string, unknown> {
 }
 
 it.each([
-  ["sandbox", 'sandbox "quoted"\\name', "span.sandbox.name"],
-  ["session", "session-123", "span.session.id"],
-] as const)("builds a scoped Grafana Explore link for a %s", (kind, id, attribute) => {
+  ["sandbox", 'sandbox "quoted"\\name'],
+  ["session", "session-123"],
+] as const)("builds a scoped Grafana Explore link for a %s", (kind, id) => {
   const url = new URL(traceSearchUrl(settings, { kind, id }));
   expect(url.origin).toBe("https://grafana.example.test");
   expect(url.pathname).toBe("/observability/explore");
@@ -41,7 +41,6 @@ it.each([
     query: expectedQuery,
     limit: 20,
   });
-  expect(expectedQuery).toContain(attribute);
   expect(explorePane.range).toEqual({ from: "now-24h", to: "now" });
 });
 

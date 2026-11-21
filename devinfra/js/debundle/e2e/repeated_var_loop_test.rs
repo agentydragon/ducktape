@@ -3,63 +3,38 @@
 use debundle_e2e_support::*;
 
 #[test]
-fn repeated_var_loop_counter_preserves_execution() {
-    let fixture = run_fixture(
-        FixtureOpts::new(
+fn repeated_var_declarations_preserve_execution_in_the_entry() {
+    for (case, source, expected) in [
+        // Both initializers run in order; `var` leaves one shared binding after the loops.
+        (
+            "repeated_var_loop_counter_preserves_execution",
             r#"for (var i = 0; i < 2; i++) console.log(i);
 for (var i = 3; i < 5; i++) console.log(i);
 console.log(i);
 "#,
-            vec![],
-        )
-        .with_import_order(&["residual"]),
-    );
-    // Both initializers run in order; `var` leaves one shared binding after the loops.
-    assert_entry_output(&fixture, "0\n1\n3\n4\n5\n");
-}
-
-#[test]
-fn bare_redeclaration_does_not_reset_an_existing_value() {
-    let fixture = run_fixture(
-        FixtureOpts::new(
+            "0\n1\n3\n4\n5\n",
+        ),
+        (
+            "bare_redeclaration_does_not_reset_an_existing_value",
             r#"var value = "initial";
 value = "assigned";
 var value;
 console.log(value);
 export { value };
 "#,
-            vec![],
-        )
-        .with_import_order(&["residual"]),
-    );
-
-    assert_entry_output(&fixture, "assigned\n");
-}
-
-#[test]
-fn repeated_initializers_stay_around_intervening_reads_in_source_order() {
-    let fixture = run_fixture(
-        FixtureOpts::new(
+            "assigned\n",
+        ),
+        (
+            "repeated_initializers_stay_around_intervening_reads_in_source_order",
             r#"var value = (console.log("first initializer"), 1);
 console.log("between", value);
 var value = (console.log("second initializer"), value + 1);
 console.log("after", value);
 "#,
-            vec![],
-        )
-        .with_import_order(&["residual"]),
-    );
-
-    assert_entry_output(
-        &fixture,
-        "first initializer\nbetween 1\nsecond initializer\nafter 2\n",
-    );
-}
-
-#[test]
-fn conditional_var_initializers_only_update_the_shared_binding_when_run() {
-    let fixture = run_fixture(
-        FixtureOpts::new(
+            "first initializer\nbetween 1\nsecond initializer\nafter 2\n",
+        ),
+        (
+            "conditional_var_initializers_only_update_the_shared_binding_when_run",
             r#"var value = "initial";
 if (false) {
   var value = "skipped";
@@ -70,30 +45,42 @@ if (true) {
 }
 console.log(value);
 "#,
-            vec![],
-        )
-        .with_import_order(&["residual"]),
-    );
-
-    assert_entry_output(&fixture, "initial\nselected\n");
-}
-
-#[test]
-fn closure_reads_the_binding_updated_by_a_later_redeclaration() {
-    let fixture = run_fixture(
-        FixtureOpts::new(
+            "initial\nselected\n",
+        ),
+        (
+            "closure_reads_the_binding_updated_by_a_later_redeclaration",
             r#"var count = 1;
 var readCount = () => count;
 console.log(readCount());
 var count = count + 1;
 console.log(readCount());
 "#,
-            vec![],
-        )
-        .with_import_order(&["residual"]),
-    );
-
-    assert_entry_output(&fixture, "1\n2\n");
+            "1\n2\n",
+        ),
+        (
+            "read_before_first_initializer_observes_undefined",
+            r#"console.log(value);
+var value = "first";
+var value = "second";
+console.log(value);
+export { value };
+"#,
+            "undefined\nsecond\n",
+        ),
+        (
+            "consecutive_for_in_and_for_of_var_heads_share_the_binding",
+            r#"for (var value in { first: 1, second: 2 }) console.log("in", value);
+for (var value of ["third", "fourth"]) console.log("of", value);
+console.log("final", value);
+"#,
+            "in first\nin second\nof third\nof fourth\nfinal fourth\n",
+        ),
+    ] {
+        eprintln!("checking {case}");
+        let fixture =
+            run_fixture(FixtureOpts::new(source, vec![]).with_import_order(&["residual"]));
+        assert_entry_output(&fixture, expected);
+    }
 }
 
 #[test]
@@ -168,43 +155,6 @@ export { seen, value };
         ),
         &["reader", "state"],
         &[],
-    );
-}
-
-#[test]
-fn read_before_first_initializer_observes_undefined() {
-    let fixture = run_fixture(
-        FixtureOpts::new(
-            r#"console.log(value);
-var value = "first";
-var value = "second";
-console.log(value);
-export { value };
-"#,
-            vec![],
-        )
-        .with_import_order(&["residual"]),
-    );
-
-    assert_entry_output(&fixture, "undefined\nsecond\n");
-}
-
-#[test]
-fn consecutive_for_in_and_for_of_var_heads_share_the_binding() {
-    let fixture = run_fixture(
-        FixtureOpts::new(
-            r#"for (var value in { first: 1, second: 2 }) console.log("in", value);
-for (var value of ["third", "fourth"]) console.log("of", value);
-console.log("final", value);
-"#,
-            vec![],
-        )
-        .with_import_order(&["residual"]),
-    );
-
-    assert_entry_output(
-        &fixture,
-        "in first\nin second\nof third\nof fourth\nfinal fourth\n",
     );
 }
 

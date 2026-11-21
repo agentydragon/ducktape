@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"net"
 	"slices"
 	"strings"
 	"sync"
@@ -12,6 +11,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/cli/internal/invocation"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -124,7 +124,6 @@ type actionFake struct {
 
 	listGroups    func(context.Context, *action_servicepb.ListActionGroupsRequest) (*action_servicepb.ListActionGroupsResponse, error)
 	getAction     func(context.Context, *action_servicepb.GetActionRequest) (*action_servicepb.GetActionResponse, error)
-	getPolicy     func(context.Context, *action_servicepb.GetActionPolicyRequest) (*action_servicepb.GetActionPolicyResponse, error)
 	submit        func(context.Context, *action_servicepb.SubmitActionRequestRequest) (*action_servicepb.SubmitActionRequestResponse, error)
 	listRequests  func(context.Context, *action_servicepb.ListActionRequestsRequest) (*action_servicepb.ListActionRequestsResponse, error)
 	getRequest    func(context.Context, *action_servicepb.GetActionRequestRequest) (*action_servicepb.GetActionRequestResponse, error)
@@ -138,19 +137,11 @@ func newActionFake(t *testing.T) (*actionFake, string) {
 	for _, variable := range []string{"HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy"} {
 		t.Setenv(variable, "")
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	server := grpc.NewServer()
 	fake := &actionFake{}
 	action_servicepb.RegisterActionServiceServer(server, fake)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(func() {
-		server.Stop()
-		_ = listener.Close()
-	})
-	return fake, "http://" + listener.Addr().String()
+	address := grpcserver.Serve(t, server)
+	return fake, "http://" + address
 }
 
 func (s *actionFake) record(ctx context.Context, method string) {
@@ -192,11 +183,8 @@ func (s *actionFake) GetAction(ctx context.Context, request *action_servicepb.Ge
 	return nil, status.Error(codes.NotFound, "Action not found")
 }
 
-func (s *actionFake) GetActionPolicy(ctx context.Context, request *action_servicepb.GetActionPolicyRequest) (*action_servicepb.GetActionPolicyResponse, error) {
+func (s *actionFake) GetActionPolicy(ctx context.Context, _ *action_servicepb.GetActionPolicyRequest) (*action_servicepb.GetActionPolicyResponse, error) {
 	s.record(ctx, "GetActionPolicy")
-	if s.getPolicy != nil {
-		return s.getPolicy(ctx, request)
-	}
 	return &action_servicepb.GetActionPolicyResponse{ActionPolicy: &action_servicepb.CallerActionPolicy{}}, nil
 }
 

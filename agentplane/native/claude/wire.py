@@ -397,8 +397,3 @@ class UserInput(BaseModel):
 class ControlResponse(BaseModel):
     type: Literal["control_response"] = "control_response"
     response: ControlResponseBody
-
-
-Outbound = (
-    InitializeRequest | InterruptRequest | SetModelRequest | ApplyFlagSettingsRequest | UserInput | ControlResponse
-)

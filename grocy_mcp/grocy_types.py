@@ -7,8 +7,7 @@ not to the MCP tool I/O types (see mcp_types.py for those).
 from __future__ import annotations
 
 from enum import StrEnum
-
-# ── Entity types exposed by GrocyClient ─────────────────────────────────────
+from typing import Literal
 
 
 class EntityType(StrEnum):
@@ -22,9 +21,6 @@ class EntityType(StrEnum):
     QUANTITY_UNIT = "quantity_units"
     PRODUCT_GROUP = "product_groups"
     SHOPPING_LIST = "shopping_lists"
-
-
-# ── Entity types for the batch CRUD tools ───────────────────────────────────
 
 
 class WriteableEntityType(StrEnum):
@@ -73,7 +69,6 @@ class ReadableEntityType(StrEnum):
     ``permission_hierarchy``).
     """
 
-    # ── Writeable ────────────────────────────────────────────────────────
     PRODUCTS = "products"
     PRODUCT_BARCODES = "product_barcodes"
     PRODUCT_GROUPS = "product_groups"
@@ -96,7 +91,6 @@ class ReadableEntityType(StrEnum):
     USERENTITIES = "userentities"
     USEROBJECTS = "userobjects"
     API_KEYS = "api_keys"
-    # ── Read-only (Grocy ExposedEntityNoEdit) ────────────────────────────
     STOCK = "stock"
     STOCK_LOG = "stock_log"
     STOCK_CURRENT_LOCATIONS = "stock_current_locations"
@@ -110,11 +104,13 @@ class ReadableEntityType(StrEnum):
     PERMISSION_HIERARCHY = "permission_hierarchy"
 
 
+# Shopping-list items support exact lookups. Keep them out of generic collection reads.
+type GettableEntityType = ReadableEntityType | Literal["shopping_list"]
+
+
 # Sanity check: every WriteableEntityType must be a valid ReadableEntityType.
 assert {t.value for t in WriteableEntityType} <= {t.value for t in ReadableEntityType}
 
-
-# ── Product writable fields ─────────────────────────────────────────────────
 
 # Writable columns on the products table (migration 0207 + 0210 + 0219).
 # Grocy's GET returns computed view fields (has_sub_products, qu_factor_*, etc.)

@@ -56,7 +56,6 @@ OPENAI_CHAT_TOOL_CHOICE: dict[str, Any] = {"type": "function", "function": {"nam
 FUNCTION_TOOL_CHOICE: dict[str, Any] = {"type": "function", "name": EXPECTED_TOOL_NAME}
 ANTHROPIC_TOOL_CHOICE: dict[str, Any] = {"type": "tool", "name": EXPECTED_TOOL_NAME}
 DEFAULT_BACKENDS = {"ollama"}
-DEFAULT_PARITY_MODELS = {"gemini-2.5-flash", "glm-4.5-air-anthropic"}
 TEXT_MODES = {"chat", "responses"}
 
 
@@ -281,10 +280,7 @@ def _parse_args() -> argparse.Namespace:
         "--backend",
         action="append",
         default=None,
-        help=(
-            "Probe models backed by this provider. Repeatable. Defaults to ollama plus cheap z.ai/gemini parity "
-            "models. Use 'all' to disable filtering."
-        ),
+        help="Probe models backed by this provider. Repeatable. Defaults to ollama. Use 'all' to disable filtering.",
     )
     parser.add_argument(
         "--model", action="append", help="Probe one model. Repeatable. Defaults to all selected models."
@@ -375,17 +371,11 @@ def _backend_name(litellm_params: dict[str, Any]) -> str:
     if "ollama" in api_base:
         return "ollama"
     model = str(litellm_params.get("model", ""))
-    if "api.z.ai" in api_base or "z.ai" in api_base:
+    if "z.ai" in api_base:
         return "z.ai"
-    if model.startswith("chatgpt/"):
-        return "chatgpt"
     if "/" in model:
         return model.split("/", 1)[0]
     return "unknown"
-
-
-def _default_selected_probe(probe: ModelProbe) -> bool:
-    return probe.backend in DEFAULT_BACKENDS or probe.name in DEFAULT_PARITY_MODELS
 
 
 def _headers(args: argparse.Namespace) -> dict[str, str]:
@@ -425,17 +415,8 @@ def _error_detail(body: Any) -> str | None:
 
 
 def _chat_content_detail(body: Any) -> str | None:
-    if isinstance(body, dict):
-        choices = body.get("choices")
-        if isinstance(choices, list) and choices:
-            first = choices[0]
-            if isinstance(first, dict):
-                message = first.get("message")
-                if isinstance(message, dict):
-                    content = message.get("content")
-                    if isinstance(content, str):
-                        return _compact_detail(content)
-    return None
+    content = _first_chat_message(body).get("content")
+    return _compact_detail(content) if isinstance(content, str) else None
 
 
 def _json_field_detail(field: str) -> DetailExtractor:
@@ -913,7 +894,8 @@ def _write_html_report(path: Path, results: list[ProbeResult], response_dir: Pat
     path.write_text(html_text)
 
 
-def main() -> int:
+def main() -> None:
+    """Exit status is the verdict for the invoking shell: 2 unknown `--model`, 1 any probe failed, 130 interrupted."""
     args = _parse_args()
     base_url = args.base_url.rstrip("/")
     all_probes = _load_model_probes(args.config)
@@ -922,13 +904,13 @@ def main() -> int:
         unknown = sorted(selected - {probe.name for probe in all_probes})
         if unknown:
             print(f"Unknown model(s): {', '.join(unknown)}", file=sys.stderr)
-            return 2
+            raise SystemExit(2)
         probes = [probe for probe in all_probes if probe.name in selected]
     elif args.backend:
         backends = set(args.backend)
         probes = all_probes if "all" in backends else [probe for probe in all_probes if probe.backend in backends]
     else:
-        probes = [probe for probe in all_probes if _default_selected_probe(probe)]
+        probes = [probe for probe in all_probes if probe.backend in DEFAULT_BACKENDS]
 
     headers = _headers(args)
     shapes = args.shape or list(DEFAULT_SHAPES)
@@ -944,35 +926,32 @@ def main() -> int:
         if result.request_key in planned_keys
     ]
     results_by_key = _merge_results(prior_results)
-    if args.report_only:
-        results = list(results_by_key.values())
-        _write_html_report(report_path, results, response_dir)
-        print(f"html report: {report_path}", file=sys.stderr, flush=True)
-        return 1 if any(result.status == "fail" for result in results) else 0
-    timeout = httpx.Timeout(args.timeout_seconds, connect=15.0)
     interrupted = False
-    try:
-        with httpx.Client(timeout=timeout, follow_redirects=True) as client:
-            ProbeContext(
-                client=client,
-                base_url=base_url,
-                headers=headers,
-                max_output_tokens=args.max_output_tokens,
-                include_unsupported=args.include_unsupported,
-                continue_on_error=args.continue_on_error,
-                json_lines=args.json,
-                resume_dirs=tuple(args.resume_dir),
-            ).run_matrix(probes, shapes, scenarios, response_dir, results_by_key)
-    except KeyboardInterrupt:
-        interrupted = True
-        print("interrupted: writing report for completed probe records", file=sys.stderr, flush=True)
+    if not args.report_only:
+        timeout = httpx.Timeout(args.timeout_seconds, connect=15.0)
+        try:
+            with httpx.Client(timeout=timeout, follow_redirects=True) as client:
+                ProbeContext(
+                    client=client,
+                    base_url=base_url,
+                    headers=headers,
+                    max_output_tokens=args.max_output_tokens,
+                    include_unsupported=args.include_unsupported,
+                    continue_on_error=args.continue_on_error,
+                    json_lines=args.json,
+                    resume_dirs=tuple(args.resume_dir),
+                ).run_matrix(probes, shapes, scenarios, response_dir, results_by_key)
+        except KeyboardInterrupt:
+            interrupted = True
+            print("interrupted: writing report for completed probe records", file=sys.stderr, flush=True)
     results = list(results_by_key.values())
     _write_html_report(report_path, results, response_dir)
     print(f"html report: {report_path}", file=sys.stderr, flush=True)
     if interrupted:
-        return 130
-    return 1 if any(result.status == "fail" for result in results) else 0
+        raise SystemExit(130)
+    if any(result.status == "fail" for result in results):
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

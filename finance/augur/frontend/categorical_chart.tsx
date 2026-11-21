@@ -3,8 +3,6 @@
 // or polylines (>12) compare the normalized per-bucket market shares against the model's
 // per-bucket rollout shares at a date.
 
-import React from "react";
-
 import { fmtKl, fmtProb, klTextClass, PlatformBadge } from "./calibration_format";
 import type { fetchCalibrationRun } from "./client";
 
@@ -35,7 +33,7 @@ function probabilityY(value: number | null, top: number, chartHeight: number) {
   return top + (1 - bounded) * chartHeight;
 }
 
-export function CategoricalMiniChart({ buckets }: { buckets: readonly CategoricalBucket[] }) {
+function CategoricalMiniChart({ buckets }: { buckets: readonly CategoricalBucket[] }) {
   const width = 320;
   const height = 124;
   const top = 10;

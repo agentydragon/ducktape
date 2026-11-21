@@ -31,7 +31,6 @@ class Credential:
     secret_file: str
     secret_name: str
     consumers: tuple[ApprovedConsumer, ...] = ()
-    namespace: str = NAMESPACE
 
 
 # This roster is the authorization boundary: each consumer is an explicit approval.
@@ -176,7 +175,7 @@ def chart(app: App) -> Chart:
             Role(
                 chart,
                 f"role-{credential.secret_name}",
-                metadata=ApiObjectMetadata(name=role_name, namespace=credential.namespace),
+                metadata=ApiObjectMetadata(name=role_name, namespace=NAMESPACE),
                 rules=[
                     RolePolicyRule(
                         resources=[
@@ -192,7 +191,7 @@ def chart(app: App) -> Chart:
                 RoleBinding(
                     chart,
                     f"binding-{credential.secret_name}-{index}",
-                    metadata=ApiObjectMetadata(name=consumer.binding_name, namespace=credential.namespace),
+                    metadata=ApiObjectMetadata(name=consumer.binding_name, namespace=NAMESPACE),
                     role=Role.from_role_name(chart, f"role-ref-{credential.secret_name}-{index}", role_name),
                 ).add_subjects(
                     ServiceAccount.from_service_account_name(

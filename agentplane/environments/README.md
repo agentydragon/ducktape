@@ -1,31 +1,21 @@
 # Sandbox Controller
 
-Deployment enables EnvironmentService on every replica at `sandbox-controller:8082`, using the
-existing Sandbox Controller service SVID. Reconcilers and lifecycle-fact observation stay leader-only;
-the listener and its independent policy watches determine readiness on leaders and standbys. See
-[the serving contract](SPEC.md#environmentservice-listener). App and Actions use this receiver with
+Environments serves EnvironmentService on every replica at `environments:8082`, using the
+existing Sandbox Controller service SVID; reconcilers and lifecycle-fact observation stay leader-only.
+See [the serving contract](SPEC.md#environmentservice-listener). App and Actions use this receiver with
 service SVIDs. Actions preserves effective-Identity delegation for list/get/resume and the separate
-launcher grant for reviewed orchestration. Managed Sandbox CLIs use the dedicated local EnvironmentService route. The Sessions
-binary does not serve EnvironmentService; automatic wake stays with Sessions.
+launcher grant for reviewed orchestration. Managed Sandbox CLIs use the dedicated local EnvironmentService route.
 Explicit resume is implemented in `internal/resume` without a wake-budget dependency. Dispatcher
 owns automatic wake execution and budgeting; the two owners share `environments/lifecycle` policy
 and guarded writes, with independent policy views and no Environments-to-Sessions call.
 Enabling `environment_service` requires the accepting Controller image to be pinned first; remove
 that configuration before rolling back to an image that cannot decode it.
 
-Deployment enables `environment_service.runtime_proxy` to serve the existing Runtime proxy and
-Executor on every replica at `sandbox-controller:8082`, with independent routing watches and narrow
-service SVID grants. Its outbound `runtime-proxy` certificate is separate from the Controller's
-binding observer certificate. Sessions delivery, central sampler Executor and Controller lifecycle
-calls use the proxy and pin its Sandbox Controller server identity. App diagnostics
-use `EnvironmentService.GetRuntimeDiagnostics` on the same listener; the App has no raw-proxy grant. The Sessions
-binary has no Runtime proxy or Executor receiver and starts no direct Runtime watches.
-Proxy admission uses service SVIDs directly; `runtime_proxy` has no bearer audience setting.
-See [the receiver contract](SPEC.md#optional-runtime-proxy-and-executor-receiver).
-
-EnvironmentService admits workload and exact-role service SVIDs only, without TokenReview. Configure
-service SVID allowlists and typed service delegation. TokenReview RBAC and projected-token cleanup remain
-a separate final stage across receivers.
+`environment_service.runtime_proxy` enables the Runtime proxy and Executor on the same listener
+([receiver contract](SPEC.md#optional-runtime-proxy-and-executor-receiver),
+[proxy contract](runtimeproxy/SPEC.md)). App diagnostics use `EnvironmentService.GetRuntimeDiagnostics`;
+the App has no raw-proxy grant. The Sessions binary serves neither EnvironmentService nor the proxy
+and Executor, and starts no direct Runtime watches.
 
 Reconciles `Sandbox` into retained state and optional workspace PVCs and, while running as the
 `Identity` its spec names, one Pod or KubeVirt VM from its `SandboxTemplate`. Contract: [`SPEC.md`](SPEC.md). The CRDs are in
@@ -43,7 +33,8 @@ Session: the controller calls `EnvironmentRuntime.Quiesce` through the
 [Runtime proxy](runtimeproxy/SPEC.md) and sets the
 `Quiesced` condition. Suspension seals the same way before the Pod stops, recorded as
 `status.quiescedIncarnation`. `runner_security` selects the Controller's own direct observer credentials;
-`runner_gateway_target` and `runner_gateway_token_file` remain required settings in the mounted YAML file.
+`runner_gateway_target` and `runner_gateway_tls` configure its outbound lifecycle call to
+Environments in staging.
 Storage layouts, compatible attachments and retained identities: [Sandbox storage](../docs/sandbox_storage.md).
 
 Each incarnation runs with the Sandbox's `WorkloadCredential`, which the controller requests
@@ -99,19 +90,13 @@ retain their creation records and are never reapplied from a changed template.
 
 ## Running
 
-Every Agentplane environment runs it from `cluster/cdk8s/agentplane/sandbox_controller.py`, which
-also holds its RBAC; its runner `SandboxTemplate`s are in `environment_sandbox.py`. The Controller
-reads its required, strict YAML settings file from the path named by
-`AGENTPLANE_ENVIRONMENTS_CONFIG_FILE` or `AGENTPLANE_SANDBOX_CONTROLLER_CONFIG_FILE`.
-Empty bootstrap values are absent; two different nonempty paths fail startup.
-Both `agentplane-sandbox-controller` and `agentplane-environments` publish the image;
-the Deployment and Service retain their current names during bootstrap-reader rollout.
-Static settings are authored in
-[`settings.py`](settings.py); the projected `runner_token_file` remains a separate read-only file.
-Locally:
+The cdk8s construct in `cluster/cdk8s/agentplane/sandbox_controller.py` owns the Environments
+Deployment and RBAC. SandboxTemplates live in `environment_sandbox.py`. CI publishes the serving
+image as `agentplane-environments`. The process reads strict YAML settings from the path in
+`AGENTPLANE_ENVIRONMENTS_CONFIG_FILE`. Static settings are authored in [`settings.py`](settings.py).
 
 ```bash
-AGENTPLANE_SANDBOX_CONTROLLER_CONFIG_FILE=<settings.yaml> \
+AGENTPLANE_ENVIRONMENTS_CONFIG_FILE=<settings.yaml> \
   bb run //agentplane/environments/cmd:sandbox-controller
 ```
 
@@ -129,7 +114,7 @@ on `:8081`, and replicas elect a leader by a Lease in the namespace.
   deletion a blocking reference would remove the state while a sealing runner still writes to it.
 - **The Pod is deleted before the finalizer clears**, in separate reconciles, so the PVC, which
   garbage collection removes afterwards, never goes while a container can still write to it.
-- **The runner seals, the controller asks.** The seal is a unary `Runner.Quiesce` through the Environments
+- **The runner seals, the controller asks.** The seal is a unary `EnvironmentRuntime.Quiesce` through the Environments
   proxy. The controller records the last request time for that runner incarnation before calling,
   and makes at most three attempts on transient `Unavailable` replies within one 30-second handshake, opening a new connection through the stable
   Environments Service on each try and fencing every call to that same incarnation Pod UID. A changed
@@ -181,10 +166,8 @@ on `:8081`, and replicas elect a leader by a Lease in the namespace.
   fields, so the tests build it on a plain object tracker.
 
 EnvironmentService handlers, management and views live in [internal/service](internal/service/README.md).
-The shared lifecycle manager remains outside that internal boundary until the explicit/automatic
-split; automatic wake execution and budget ownership stay with Dispatcher.
 
-Runtime process, Session and lifecycle evidence is available through the App-only
+Runtime process and lifecycle evidence is available through the App-only
 `EnvironmentService.GetRuntimeDiagnostics` RPC and the App's authenticated generated facade at
 `GET /upstream/environments/v1/environments/{namespace}/{name}:runtime-diagnostics?target.uid={uid}`.
 The App reads this RPC over its existing EnvironmentService connection and App service SVID; the

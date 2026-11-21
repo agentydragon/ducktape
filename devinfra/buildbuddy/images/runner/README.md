@@ -58,6 +58,5 @@ without changing a branch pin. The pin job checks the current base and image der
 and again after rebasing. A concurrent advance after that check rejects the push.
 
 FreeCAD and other standalone images keep their separate container-images workflow.
-The RBE action image, its trigger, and its pin are unchanged by this migration.
 A real BuildBuddy runner invocation remains necessary when changing the image's
 runtime contract: Docker smoke tests alone do not exercise Firecracker or goinit.

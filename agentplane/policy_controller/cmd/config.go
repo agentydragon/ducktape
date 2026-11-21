@@ -93,7 +93,7 @@ func (c config) validate() error {
 			return fmt.Errorf("invalid PolicyService service allowlist")
 		}
 	}
-	if (len(c.ReaderServices) > 0 || len(c.WriterServices) > 0) && (c.GRPCTLS == nil || c.GRPCTLS.ClientCAFile == "") {
+	if (len(c.ReaderServices) > 0 || len(c.WriterServices) > 0) && c.GRPCTLS.ClientCAFile == "" {
 		return errors.New("PolicyService service allowlists require grpc_tls.client_ca_file")
 	}
 	return nil

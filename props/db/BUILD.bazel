@@ -2,10 +2,6 @@ load("//devinfra/deps:check.bzl", "assert_no_deps")
 load("//devinfra/python:defs.bzl", "py_library")
 load("//props:py_test.bzl", "py_test")
 
-# =============================================================================
-# Leaf modules (no db/ deps)
-# =============================================================================
-
 py_library(
     name = "config",
     srcs = ["config.py"],
@@ -45,10 +41,6 @@ py_library(
         ":models",
     ],
 )
-
-# =============================================================================
-# Core models (depend on config, snapshots, external modules)
-# =============================================================================
 
 py_library(
     name = "models",
@@ -103,17 +95,12 @@ py_library(
     ],
 )
 
-# =============================================================================
-# Higher-level modules (depend on models, session)
-# =============================================================================
-
 py_library(
     name = "query_builders",
     srcs = ["query_builders.py"],
     visibility = ["//props:__subpackages__"],
     deps = [
         ":models",
-        "//props/core:ids",
         "//props/core:splits",
         "//props/core/models:examples",
         "@pypi//pydantic",
@@ -135,10 +122,6 @@ py_library(
         "@pypi//sqlalchemy",
     ],
 )
-
-# =============================================================================
-# Tests
-# =============================================================================
 
 # db/ must not depend on agent code (container-only)
 assert_no_deps(
@@ -173,7 +156,7 @@ py_test(
         "//props/agents/critic_dev/recipes:ground_truth",
         "//props/core:splits",
         "//props/testing/fixtures:db",
-        "//util/testing:postgres_fixtures",
+        "//testing:postgres_fixtures",
         "@pypi//pytest_bazel",
     ],
 )
@@ -192,12 +175,12 @@ py_test(
         "//props:conftest",
         "//props/core:splits",
         "//props/core/models:examples",
-        "//props/testing:constants",
+        "//props/testing:models",
         "//props/testing/fixtures:db",
         "//props/testing/fixtures:ground_truth",
         "//props/testing/fixtures:runs",
         "//props/testing/fixtures:scopes",
-        "//util/testing:postgres_fixtures",
+        "//testing:postgres_fixtures",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
@@ -216,7 +199,7 @@ py_test(
         "//:conftest",
         "//props:conftest",
         "//props/testing/fixtures:db",
-        "//util/testing:postgres_fixtures",
+        "//testing:postgres_fixtures",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -243,11 +226,12 @@ py_test(
         "//props/core:agent_types",
         "//props/core:ids",
         "//props/orchestration:agent_credentials",
-        "//props/testing:constants",
+        "//props/testing:models",
         "//props/testing/fixtures:credentials",
         "//props/testing/fixtures:db",
         "//props/testing/fixtures:runs",
-        "//util/testing:postgres_fixtures",
+        "//testing:postgres_fixtures",
+        "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",

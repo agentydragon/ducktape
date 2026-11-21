@@ -37,6 +37,9 @@ func actionView(group, name string, action catalog.ActionDefinition) (*action_se
 	view := &action_servicepb.Action{
 		Group: group, Name: name, Description: action.Description, InputSchema: schema, Title: action.Title,
 	}
+	if action.InputSchemaValidation != nil {
+		view.InputSchemaValidation = proto.CloneOf(action.InputSchemaValidation)
+	}
 	if hints := action.Annotations; hints != nil {
 		view.Annotations = &action_servicepb.ToolAnnotations{
 			ReadOnlyHint: hints.ReadOnlyHint, DestructiveHint: hints.DestructiveHint,

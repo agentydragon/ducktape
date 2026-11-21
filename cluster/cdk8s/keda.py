@@ -2,37 +2,90 @@
 
 from __future__ import annotations
 
+from textwrap import dedent
+
 from cdk8s import App, Chart
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
     HelmReleaseSpecInstallCrds,
     HelmReleaseSpecInstallRemediation,
+    HelmReleaseSpecPostRenderers,
+    HelmReleaseSpecPostRenderersKustomize,
+    HelmReleaseSpecPostRenderersKustomizePatches,
+    HelmReleaseSpecPostRenderersKustomizePatchesTarget,
     HelmReleaseSpecUpgrade,
     HelmReleaseSpecUpgradeCrds,
     HelmReleaseSpecUpgradeRemediation,
 )
 
-from cluster.cdk8s import namespaces
+from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.haku_ci import runner
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.namespaces import Vpa, VpaProfile
+from cluster.cdk8s.vpa_policy import ContainerPolicy, ControlledValues
 
 NAME = "keda"
 NAMESPACE = "keda"
+METRICS_SERVER_NAME = "keda-operator-metrics-apiserver"
 OUTPUT_DIR = f"{GENERATED_ROOT}/keda"
 
 
-def _resources(*, cpu_request: str, memory_request: str, cpu_limit: str, memory_limit: str) -> dict[str, object]:
+def _resources(
+    *, cpu_request: str, memory_request: str, cpu_limit: str, memory_limit: str
+) -> dict[str, dict[str, str]]:
     return {
         "requests": {"cpu": cpu_request, "memory": memory_request},
         "limits": {"cpu": cpu_limit, "memory": memory_limit},
     }
 
 
+def _memory_policy(container_name: str, resources: dict[str, dict[str, str]]) -> ContainerPolicy:
+    requests = resources["requests"]
+    return ContainerPolicy.memory_requests_only(
+        container_name,
+        cpu_request=requests["cpu"],
+        memory_floor=requests["memory"],
+        memory_limit=resources["limits"]["memory"],
+    )
+
+
+def _auto_vpa_patch(name: str) -> HelmReleaseSpecPostRenderersKustomizePatches:
+    # The chart lacks per-Deployment annotations; inherit the namespace's VPA policy.
+    return HelmReleaseSpecPostRenderersKustomizePatches(
+        target=HelmReleaseSpecPostRenderersKustomizePatchesTarget(kind="Deployment", name=name),
+        patch=dedent(f"""\
+            apiVersion: apps/v1
+            kind: Deployment
+            metadata:
+              name: {name}
+              annotations:
+                {namespaces.VPA_UPDATE_MODE_LABEL}: {Vpa.AUTO}
+            """),
+    )
+
+
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.RECOMMEND)
+    operator_resources = _resources(cpu_request="50m", memory_request="128Mi", cpu_limit="250m", memory_limit="256Mi")
+    metrics_resources = _resources(cpu_request="50m", memory_request="128Mi", cpu_limit="250m", memory_limit="256Mi")
+    webhook_resources = _resources(cpu_request="25m", memory_request="64Mi", cpu_limit="100m", memory_limit="128Mi")
+    namespaces.namespace(
+        chart,
+        "namespace",
+        name=NAMESPACE,
+        vpa=VpaProfile(
+            Vpa.INITIAL,
+            (
+                # Keep CPU reservations for these scaling and admission services. The memory floors
+                # preserve the startup reservations even when the recommender has sparse samples.
+                _memory_policy("keda-operator", operator_resources),
+                _memory_policy(METRICS_SERVER_NAME, metrics_resources),
+                _memory_policy("keda-admission-webhooks", webhook_resources),
+                ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
+            ),
+        ),
+    )
     helm_release(
         chart,
         NAME,
@@ -50,21 +103,31 @@ def chart(app: App) -> Chart:
         upgrade=HelmReleaseSpecUpgrade(
             crds=HelmReleaseSpecUpgradeCrds.CREATE_REPLACE, remediation=HelmReleaseSpecUpgradeRemediation(retries=3)
         ),
+        post_renderers=[
+            HelmReleaseSpecPostRenderers(
+                kustomize=HelmReleaseSpecPostRenderersKustomize(
+                    patches=[_auto_vpa_patch("keda-admission-webhooks"), _auto_vpa_patch(METRICS_SERVER_NAME)]
+                )
+            )
+        ],
         values={
             # Keep the watch list limited: Helm binds the operator's ClusterRole through
             # namespaced RoleBindings in each watched namespace and the KEDA namespace.
             "watchNamespace": f"{runner.NAMESPACE},buildbuddy-executor",
             "nodeSelector": {"topology.kubernetes.io/region": "hil"},
+            "webhooks": {
+                "replicaCount": 2,
+                "affinity": node_scheduling.one_per_host({"app": "keda-admission-webhooks"}),
+            },
+            "metricsServer": {"replicaCount": 2},
+            "topologySpreadConstraints": {
+                "metricsServer": [node_scheduling.hostname_spread({"app": METRICS_SERVER_NAME})]
+            },
+            "podDisruptionBudget": {"webhooks": {"minAvailable": 1}, "metricServer": {"minAvailable": 1}},
             "resources": {
-                "operator": _resources(
-                    cpu_request="50m", memory_request="128Mi", cpu_limit="250m", memory_limit="256Mi"
-                ),
-                "metricServer": _resources(
-                    cpu_request="50m", memory_request="128Mi", cpu_limit="250m", memory_limit="256Mi"
-                ),
-                "webhooks": _resources(
-                    cpu_request="25m", memory_request="64Mi", cpu_limit="100m", memory_limit="128Mi"
-                ),
+                "operator": operator_resources,
+                "metricServer": metrics_resources,
+                "webhooks": webhook_resources,
             },
         },
     )

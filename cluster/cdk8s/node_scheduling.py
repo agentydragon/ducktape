@@ -19,10 +19,6 @@ ZONE_LABEL = "topology.kubernetes.io/zone"
 HIL_OVH_ZONE = "hil-ovh"
 # Consolidate the two home zones and update replica counts with #11643.
 HOME_AND_OVH_ZONES = (HIL_OVH_ZONE, "home-lan", "atlas")
-REGION_LABEL = "topology.kubernetes.io/region"
-# The laptops (iguana, rugged): they join and leave the cluster, so nothing that must keep running
-# belongs there.
-ROAMING_REGION = "roaming"
 # A dict typed read-only: jsii serializes only `dict` instances as maps.
 HIL_OVH_NODE_SELECTOR: Mapping[str, str] = {ZONE_LABEL: HIL_OVH_ZONE}
 # NFD reconciles the host's OS release independently of kubelet registration.
@@ -84,4 +80,29 @@ def zone_spread(zones: Sequence[str], labels: Mapping[str, str]) -> k8s.Topology
         when_unsatisfiable="DoNotSchedule",
         label_selector=k8s.LabelSelector(match_labels=dict(labels)),
         match_label_keys=["pod-template-hash"],
+    )
+
+
+def one_per_host(labels: Mapping[str, str]) -> dict[str, object]:
+    """An untyped `affinity` for Helm values and operator pod templates. Required, so a Pod waits
+    Pending rather than share a host with another Pod matching `labels`."""
+    return {
+        "podAntiAffinity": {
+            "requiredDuringSchedulingIgnoredDuringExecution": [
+                {"labelSelector": {"matchLabels": dict(labels)}, "topologyKey": "kubernetes.io/hostname"}
+            ]
+        }
+    }
+
+
+def hostname_spread(labels: Mapping[str, str]) -> k8s.TopologySpreadConstraint:
+    """Spread each revision across two hosts, leaving a replica Pending if only one is eligible."""
+    return k8s.TopologySpreadConstraint(
+        topology_key="kubernetes.io/hostname",
+        max_skew=1,
+        min_domains=2,
+        when_unsatisfiable="DoNotSchedule",
+        label_selector=k8s.LabelSelector(match_labels=dict(labels)),
+        match_label_keys=["pod-template-hash"],
+        node_taints_policy="Honor",
     )

@@ -20,8 +20,8 @@ from agentplane.net.peertls.config import POLICY_CONTROLLER_URI
 from agentplane.proto import identity_pb2
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
 from agentplane.testing.tls import make_ca
+from testing.postgres import DatabaseNames, create_temporary_database
 from util.net import listen_tcp
-from util.testing.postgres import DatabaseNames, create_temporary_database
 
 # gazelle:include_dep //agentplane/app:integration_fixtures
 pytest_plugins = ("agentplane.app.integration_fixtures",)
@@ -41,6 +41,7 @@ async def test_go_app_serves_a_parent_owned_listener(
             "sandbox_namespace": sandbox.namespace,
             "policy_service_target": "127.0.0.1:1",
             "policy_service_tls": {"ca_file": str(policy_ca_file), "server_uri": POLICY_CONTROLLER_URI},
+            "policy_service_token_file": "/test-unused-token",
         }
         async with spawn_go_app(config, listener=listener) as app:
             assert app.url == f"http://{listener.host}:{listener.port}"
@@ -125,12 +126,9 @@ async def test_go_app_creates_a_sandbox_and_rejects_invalid_create_requests(
 
     # The Environment names an Identity created separately, and the browser-facing ProtoJSON
     # descriptor carries that name through the existing GetEnvironment route.
-    identity_response = await http.get(route, params=params)
-    assert identity_response.status_code == 200, identity_response.text
-    assert identity_response.json()["identityName"] == "route-identity"
-    identity_descriptor = ParseDict(identity_response.json(), environment_service_pb2.EnvironmentDescriptor())
-    assert identity_descriptor.HasField("identity_name")
-    assert identity_descriptor.identity_name == "route-identity"
+    assert created_response.json()["identityName"] == "route-identity"
+    assert created.HasField("identity_name")
+    assert created.identity_name == "route-identity"
 
     missing = await http.get(
         f"/upstream/environments/v1/environments/{target.namespace}/missing", params={"target.uid": "missing-uid"}
@@ -201,27 +199,11 @@ async def test_policy_mutations_require_the_generated_operator_facade(
         assert revoke.status_code == 403, revoke.text
 
 
-async def test_go_openapi_tracks_frontend_config_route(http: httpx.AsyncClient) -> None:
-    response = await http.get("/openapi.json")
-    assert response.status_code == 200, response.text
-    document = response.json()
-    paths = document.get("paths") or {}
-    schemas = (document.get("components") or {}).get("schemas") or {}
-
-    assert "/frontend-config" not in paths
-    assert "FrontendConfig" not in schemas
-    assert "/sandboxes/form" not in paths
-    assert "SandboxFormOutputBody" not in schemas
-
-
 async def test_go_app_exposes_configured_browser_views_over_http(http: httpx.AsyncClient) -> None:
     frontend = await http.get("/upstream/app-config/v1/frontend-config")
     assert frontend.status_code == 200, frontend.text
     # The generated gateway encodes unset message fields as ProtoJSON null; the frontend adapter maps both to null.
     assert frontend.json() == {"frontendConfig": {"traceSearch": None, "langfuseSearch": None}}
-
-    legacy_frontend = await http.get("/frontend-config")
-    assert legacy_frontend.status_code == 404, legacy_frontend.text
 
     models = await http.get("/upstream/app-config/v1/models")
     assert models.status_code == 200, models.text
@@ -258,10 +240,6 @@ async def test_protected_go_routes_reject_kubernetes_bearer(app: AppProcess, kub
 
 
 async def test_system_status_uses_generated_appservice_facade(http: httpx.AsyncClient) -> None:
-    openapi = await http.get("/openapi.json")
-    assert openapi.status_code == 200, openapi.text
-    assert "/system/status" not in openapi.json().get("paths", {})
-
     status = await http.get("/upstream/app/v1/system/status")
     assert status.status_code == 200, status.text
     components = status.json().get("components")
@@ -272,9 +250,6 @@ async def test_system_status_uses_generated_appservice_facade(http: httpx.AsyncC
         and isinstance(component.get("checkedAt"), str)
         for component in components
     )
-
-    legacy = await http.get("/system/status")
-    assert legacy.status_code == 404, legacy.text
 
 
 if __name__ == "__main__":

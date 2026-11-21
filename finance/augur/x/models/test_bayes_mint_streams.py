@@ -13,12 +13,12 @@ import random
 import pytest
 import pytest_bazel
 
+from finance.augur.dates import DAYS_PER_MONTH
 from finance.augur.model.series import IssuerId
 from finance.augur.x.models.bayes_mint_streams import BayesianMintStreamsPriors, fit_bayesian_mint_streams_prior
 from finance.augur.x.models.private_equity_fit import PriceObservation, ValuationObservation
 
 _BASE = dt.date(2020, 1, 1)
-_DAYS_PER_MONTH = 365.2425 / 12.0
 
 
 def _price(observed_at: dt.date, price_usd_per_share: float, sigma: float = 0.08) -> PriceObservation:
@@ -49,7 +49,7 @@ def _primary(
 
 
 def _date_at_months(months: float) -> dt.date:
-    return _BASE + dt.timedelta(days=round(months * _DAYS_PER_MONTH))
+    return _BASE + dt.timedelta(days=round(months * DAYS_PER_MONTH))
 
 
 def _synthetic_mint_streams_data(

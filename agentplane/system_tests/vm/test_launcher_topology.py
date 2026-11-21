@@ -150,25 +150,13 @@ def test_missing_file_backed_daemon_is_reported() -> None:
     assert "virtiofs_daemon_missing" in _issue_codes(report)
 
 
-def test_file_source_without_virtiofs_device_does_not_require_a_daemon() -> None:
+@pytest.mark.parametrize(
+    "filesystem", [{"name": "config"}, {"name": "config", "virtiofs": None}], ids=["absent", "null"]
+)
+def test_file_source_without_a_virtiofs_device_does_not_require_a_daemon(filesystem: dict[str, object]) -> None:
     vmi = _vmi()
     vmi["spec"]["volumes"].append({"name": "config", "configMap": {"name": "test-config"}})
-    vmi["spec"]["domain"]["devices"]["filesystems"].append({"name": "config"})
-    pod = _pod(
-        init_containers=[_daemon("virtiofs-state", restart_policy="Always")],
-        init_statuses=[_running_status("virtiofs-state")],
-    )
-
-    report = inspect_launcher_topology(pod, vmi)
-
-    assert _issue_codes(report) == set()
-    assert [filesystem["volume"] for filesystem in report["eligible_filesystems"]] == ["state"]
-
-
-def test_file_source_with_null_virtiofs_device_does_not_require_a_daemon() -> None:
-    vmi = _vmi()
-    vmi["spec"]["volumes"].append({"name": "config", "configMap": {"name": "test-config"}})
-    vmi["spec"]["domain"]["devices"]["filesystems"].append({"name": "config", "virtiofs": None})
+    vmi["spec"]["domain"]["devices"]["filesystems"].append(filesystem)
     pod = _pod(
         init_containers=[_daemon("virtiofs-state", restart_policy="Always")],
         init_statuses=[_running_status("virtiofs-state")],

@@ -16,7 +16,7 @@ from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.actions import LotSale, Sell
 from finance.augur.sim.books import AccountRef, TaxLiabilityState
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta, round_currency_amount
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
+from finance.augur.sim.ids import CHECKING, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.income import (
     ORDINARY_INCOME,
     InterestCharacter,
@@ -42,7 +42,6 @@ from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
 ALICE, PAYROLL, IRS, LANDLORD = AgentId("alice"), AgentId("payroll"), AgentId("irs"), AgentId("landlord")
-CHECKING = AccountId("checking")
 FEDERAL, CALIFORNIA = JurisdictionId("federal_us"), JurisdictionId("california")
 VTI = SecurityKey(symbol=SecuritySymbol("vti"))
 IXUS = SecurityKey(symbol=SecuritySymbol("ixus"))

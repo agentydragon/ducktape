@@ -37,19 +37,48 @@ spec:
   targetNamespace: kyverno
   values:
     admissionController:
+      annotations:
+        goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "kyverno", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "100m", "memory": "224Mi"}, "maxAllowed": {"cpu": "100m", "memory": "384Mi"}, "controlledResources": ["memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
+        goldilocks.fairwinds.com/vpa-update-mode: auto
       antiAffinity:
         enabled: true
       certManager:
         enabled: false
+      container:
+        resources:
+          limits:
+            memory: 384Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
       nodeSelector:
         node-role.kubernetes.io/control-plane: ""
+      podDisruptionBudget:
+        minAvailable: 2
       priorityClassName: system-cluster-critical
       replicas: 3
       tolerations:
         - effect: NoSchedule
           key: node-role.kubernetes.io/control-plane
           operator: Exists
+      topologySpreadConstraints:
+        - labelSelector:
+            matchLabels:
+              app.kubernetes.io/component: admission-controller
+              app.kubernetes.io/instance: "{{ .Release.Name }}"
+          matchLabelKeys:
+            - pod-template-hash
+          maxSkew: 1
+          nodeTaintsPolicy: Honor
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+      updateStrategy:
+        rollingUpdate:
+          maxUnavailable: 0
     backgroundController:
+      annotations:
+        goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "controller", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "50m", "memory": "208Mi"}, "maxAllowed": {"cpu": "50m", "memory": "256Mi"}, "controlledResources": ["memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
+        goldilocks.fairwinds.com/vpa-update-mode: initial
       enabled: true
       priorityClassName: system-cluster-critical
       replicas: 1
@@ -61,9 +90,14 @@ spec:
           cpu: 50m
           memory: 64Mi
     cleanupController:
+      annotations:
+        goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "controller", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "10m", "memory": "124Mi"}, "maxAllowed": {"cpu": "10m", "memory": "128Mi"}, "controlledResources": ["memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
+        goldilocks.fairwinds.com/vpa-update-mode: initial
       enabled: true
+      podDisruptionBudget:
+        minAvailable: 2
       priorityClassName: system-cluster-critical
-      replicas: 1
+      replicas: 3
       resources:
         limits:
           cpu: 100m
@@ -71,6 +105,20 @@ spec:
         requests:
           cpu: 10m
           memory: 32Mi
+      topologySpreadConstraints:
+        - labelSelector:
+            matchLabels:
+              app.kubernetes.io/component: cleanup-controller
+              app.kubernetes.io/instance: "{{ .Release.Name }}"
+          matchLabelKeys:
+            - pod-template-hash
+          maxSkew: 1
+          nodeTaintsPolicy: Honor
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+      updateStrategy:
+        rollingUpdate:
+          maxUnavailable: 0
     config:
       excludeKyvernoNamespace: true
     crds:
@@ -86,6 +134,9 @@ spec:
       image:
         registry: ghcr.io
     reportsController:
+      annotations:
+        goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "controller", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "100m", "memory": "256Mi"}, "maxAllowed": {"cpu": "100m", "memory": "512Mi"}, "controlledResources": ["memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
+        goldilocks.fairwinds.com/vpa-update-mode: initial
       enabled: true
       priorityClassName: system-cluster-critical
       replicas: 1

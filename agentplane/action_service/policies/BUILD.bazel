@@ -58,7 +58,6 @@ py_library(
     deps = [
         ":kind",
         ":registry",
-        "//agentplane:crd_group",
         "@pypi//pydantic",
     ],
 )

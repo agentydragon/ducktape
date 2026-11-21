@@ -1,3 +1,4 @@
+import { resourceListResult } from "./list_result";
 import type { JSX } from "react";
 import { Code, Text } from "@mantine/core";
 import { z } from "zod";
@@ -66,6 +67,6 @@ export const resourcesListSummary: ArgumentsPreview = definePreview(resourcesLis
 export const resourcesListPresentation: ActionPresentation = {
   label: resourcesListLabel,
   pane: { collapsed: resourcesListSummary, opened: resourcesListPane },
-  details: { arguments: resourcesListPane },
+  details: { arguments: resourcesListPane, envelopeResult: resourceListResult },
   offersCardDecisionButtons: offersCardDecisionButtonsResourcesList,
 };

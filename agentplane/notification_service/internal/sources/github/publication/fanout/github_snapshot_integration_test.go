@@ -40,9 +40,7 @@ func snapshotSubscription(t *testing.T, event githubmodel.EventName, count int) 
 		MergeCommit: testMergeCommit(commitB, commitA),
 	})
 	publishSnapshotObservations(t, g, seed, event, 0, count)
-	destination := g.destination
-	destination.Name = "snapshot-subscriber"
-	sub := g.followIn(t, destination, source, "snapshot")
+	sub := g.followIn(t, "snapshot-subscriber", source, "snapshot")
 	table := "github_commit_subscription_snapshot"
 	if event == githubmodel.EventPullRequestReview {
 		table = "github_pr_state_subscription_snapshot"

@@ -45,6 +45,7 @@ _VMI_NAME = "ci-guest"
 _STATE_PVC_NAME = "ci-guest-state"
 _WORKSPACE_PVC_NAME = "ci-guest-workspace"
 _POLICY_SUFFIX = "-virtiofs-shutdown"
+_POLICY_RESOURCE = "mutatingpolicies.policies.kyverno.io"
 _BOOT_EVIDENCE = "AGENTPLANE_BOOT_EVIDENCE_END status=complete"
 _VIRSH_URI = "qemu+unix:///session?socket=/var/run/libvirt/virtqemud-sock"
 _BOOT_WAIT_SECONDS = 240
@@ -200,7 +201,7 @@ def _virtiofs_shutdown_policy(namespace: str) -> dict[str, Any]:
     return policy
 
 
-def _create_cluster_policy(k3s: baseline.K3s, namespace: str) -> dict[str, Any]:
+def _create_mutating_policy(k3s: baseline.K3s, namespace: str) -> dict[str, Any]:
     resource = _virtiofs_shutdown_policy(namespace)
     try:
         return _create(k3s, resource)
@@ -209,7 +210,7 @@ def _create_cluster_policy(k3s: baseline.K3s, namespace: str) -> dict[str, Any]:
         # kubectl lost its response.
         current = k3s.kubectl(
             "get",
-            "clusterpolicy",
+            _POLICY_RESOURCE,
             resource["metadata"]["name"],
             "-o",
             "json",
@@ -225,7 +226,7 @@ def _create_cluster_policy(k3s: baseline.K3s, namespace: str) -> dict[str, Any]:
             metadata.get("labels", {}).get(_OWNER_LABEL) != _owner_value(namespace)
             or metadata.get("labels", {}).get(_OWNER_NAMESPACE_LABEL) != namespace
         ):
-            raise RuntimeError(f"refusing create recovery for unowned ClusterPolicy {metadata.get('name')}")
+            raise RuntimeError(f"refusing create recovery for unowned MutatingPolicy {metadata.get('name')}")
         return cast(dict[str, Any], policy)
 
 
@@ -435,19 +436,16 @@ def _stop_launcher_lifecycle_capture(stop: threading.Event, thread: threading.Th
 
 def _count_guest_payload(consoles: Path, payload: bytes) -> int:
     return sum(
-        1
-        for path in consoles.glob("*/*.cri.log")
-        for line in path.read_bytes().splitlines(keepends=True)
-        if line.endswith(b"\n") and line.rstrip(b"\r\n").split(b" ", 3)[1:] == [b"stdout", b"F", payload]
+        1 for path in consoles.glob("*/*.cri.log") for _, record in guest_logs.cri_records(path) if record == payload
     )
 
 
 def _write_shutdown_request_count(output: Path) -> int:
     consoles = output / "vm-artifacts" / "consoles"
     try:
-        count = _count_guest_payload(consoles, host_qemu.SHUTDOWN_REQUESTED)
+        count = _count_guest_payload(consoles, shutdown_diagnostic.SHUTDOWN_REQUESTED)
         result: dict[str, Any] = {
-            "marker": host_qemu.SHUTDOWN_REQUESTED.decode(),
+            "marker": shutdown_diagnostic.SHUTDOWN_REQUESTED.decode(),
             "observed_guest_acpi_request_markers": count,
             "meaning": "count of exact guest-console CRI payloads emitted by the ACPI poweroff handler",
             "qmp_system_powerdown_commands_observed": False,
@@ -461,15 +459,10 @@ def _write_shutdown_request_count(output: Path) -> int:
 
 def _require_shutdown_proof_progress(consoles: Path, output: Path) -> None:
     """Require direct-TTY progress markers from a complete healthy guest shutdown."""
-    records: list[tuple[str, bytes]] = []
-    for path in sorted(consoles.glob("*/*.cri.log")):
-        for line in path.read_bytes().splitlines(keepends=True):
-            if not line.endswith(b"\n"):
-                continue
-            fields = line.rstrip(b"\r\n").split(b" ", 3)
-            if len(fields) == 4 and fields[1:3] == [b"stdout", b"F"]:
-                records.append((fields[0].decode("ascii", errors="replace"), fields[3]))
-    records.sort(key=lambda record: record[0])
+    records = sorted(
+        (record for path in sorted(consoles.glob("*/*.cri.log")) for record in guest_logs.cri_records(path)),
+        key=lambda record: record[0],
+    )
     payloads = [payload for _, payload in records]
     expected_markers = [
         (b"AGENTPLANE_SHUTDOWN_PROOF_ENTER", True),
@@ -1050,7 +1043,7 @@ def _cleanup_namespace(
 
     policy_name = name + _POLICY_SUFFIX
     policy_json = k3s.kubectl(
-        "get", "clusterpolicy", policy_name, "-o", "json", "--ignore-not-found=true", check=False, stdout_only=True
+        "get", _POLICY_RESOURCE, policy_name, "-o", "json", "--ignore-not-found=true", check=False, stdout_only=True
     )
     if policy_json:
         policy = json.loads(policy_json)
@@ -1060,12 +1053,12 @@ def _cleanup_namespace(
             or metadata.get("labels", {}).get(_OWNER_LABEL) != _owner_value(name)
             or metadata.get("labels", {}).get(_OWNER_NAMESPACE_LABEL) != name
         ):
-            raise RuntimeError(f"refusing to delete ClusterPolicy {policy_name}: its UID or ownership labels changed")
-        k3s.kubectl("delete", "clusterpolicy", policy_name, "--wait=true", "--timeout=30s")
+            raise RuntimeError(f"refusing to delete MutatingPolicy {policy_name}: its UID or ownership labels changed")
+        k3s.kubectl("delete", _POLICY_RESOURCE, policy_name, "--wait=true", "--timeout=30s")
         if k3s.kubectl(
-            "get", "clusterpolicy", policy_name, "--ignore-not-found=true", "-o", "name", check=False, stdout_only=True
+            "get", _POLICY_RESOURCE, policy_name, "--ignore-not-found=true", "-o", "name", check=False, stdout_only=True
         ).strip():
-            raise RuntimeError(f"action-owned ClusterPolicy {policy_name} did not disappear")
+            raise RuntimeError(f"action-owned MutatingPolicy {policy_name} did not disappear")
 
     pvc_json = k3s.kubectl(
         "get",
@@ -1213,7 +1206,7 @@ def _write_failure_report(k3s: baseline.K3s, namespace: str, output: Path) -> No
         ("namespace-events.yaml", ("get", "events", "-n", namespace, "--sort-by=.lastTimestamp", "-o", "yaml")),
         ("namespace-pvc.yaml", ("get", "pvc", "-n", namespace, "-o", "yaml")),
         ("namespace-configmaps.yaml", ("get", "configmap", "-n", namespace, "-o", "yaml")),
-        ("namespace-launcher-policy.yaml", ("get", "clusterpolicy", namespace + _POLICY_SUFFIX, "-o", "yaml")),
+        ("namespace-launcher-policy.yaml", ("get", _POLICY_RESOURCE, namespace + _POLICY_SUFFIX, "-o", "yaml")),
         ("kubevirt.yaml", ("get", "kubevirt", "kubevirt", "-n", infrastructure.KUBEVIRT_NAMESPACE, "-o", "yaml")),
         ("node.yaml", ("get", "node", "env", "-o", "yaml")),
     ]:
@@ -1235,27 +1228,17 @@ def test_virtiofs_shutdown_policy_is_the_production_rule_scoped_to_one_namespace
 
     assert policy["metadata"]["name"] == namespace + _POLICY_SUFFIX
     assert policy["metadata"]["labels"][_OWNER_NAMESPACE_LABEL] == namespace
-    rules = policy["spec"]["rules"]
-    assert len(rules) == 1
-    rule = rules[0]
-    assert rule["name"] == "keep-virtiofs-through-guest-shutdown"
-    resources = rule["match"]["any"][0]["resources"]
-    assert resources["namespaces"] == [namespace]
-    assert resources["selector"]["matchLabels"] == {"kubevirt.io": "virt-launcher"}
-    conditions = policy["spec"]["webhookConfiguration"]["matchConditions"]
-    assert len(conditions) == 1
-    assert f"request.namespace == '{namespace}'" in conditions[0]["expression"]
-    assert [entry["name"] for entry in rule["context"]] == ["vmiOwner", "vmi"]
-    foreach = rule["mutate"]["foreach"]
-    assert len(foreach) == 1
-    assert foreach[0]["list"] == "request.object.spec.containers"
-    patches = foreach[0]["patchesJson6902"]
-    assert "/spec/initContainers/-" in patches
-    assert '"restartPolicy":"Always"' in patches
-    assert "/spec/containers/{{elementIndex}}" in patches
+    conditions = policy["spec"]["matchConditions"]
+    assert any(f"request.namespace == '{namespace}'" in condition["expression"] for condition in conditions)
+    assert [m["name"] for m in policy["spec"]["variables"]][:2] == ["vmiOwner", "vmi"]
+    mutations = policy["spec"]["mutations"]
+    assert len(mutations) == 1
+    expression = mutations[0]["jsonPatch"]["expression"]
+    assert "/spec/initContainers/-" in expression
+    assert "'Always'" in expression
 
 
-def test_shutdown_policy_cleanup_after_generation_failure_ignores_missing_cluster_policy(
+def test_shutdown_policy_cleanup_after_generation_failure_ignores_missing_mutating_policy(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     namespace = _NAMESPACE_PREFIX + "unit-test"
@@ -1272,7 +1255,7 @@ def test_shutdown_policy_cleanup_after_generation_failure_ignores_missing_cluste
             self.calls.append((args, stdout_only))
             if args[:2] == ("get", "namespace"):
                 return json.dumps(namespace_object) if self.namespace_exists else ""
-            if args[0] == "get" and args[1] in {"vmi", "clusterpolicy", "pvc"}:
+            if args[0] == "get" and args[1] in {"vmi", _POLICY_RESOURCE, "pvc"}:
                 # kubectl can print a NotFound diagnostic on stderr even with --ignore-not-found;
                 # stdout-only reads keep that diagnostic from being mistaken for JSON/object data.
                 return "" if stdout_only else "Error from server (NotFound): resource not found"
@@ -1288,56 +1271,38 @@ def test_shutdown_policy_cleanup_after_generation_failure_ignores_missing_cluste
 
     monkeypatch.setattr(sys.modules[__name__], "_virtiofs_shutdown_policy", fail_generation)
     with pytest.raises(RuntimeError, match="policy generation failed"):
-        _create_cluster_policy(cast(baseline.K3s, k3s), namespace)
+        _create_mutating_policy(cast(baseline.K3s, k3s), namespace)
 
     _cleanup_namespace(cast(baseline.K3s, k3s), namespace, "owned-uid", None, None, None)
 
     assert any(args[:2] == ("delete", "namespace") for args, _ in k3s.calls)
     assert all(args[:2] != ("create", "-") for args, _ in k3s.calls)
-    assert any(args[:2] == ("get", "clusterpolicy") and stdout_only for args, stdout_only in k3s.calls)
+    assert any(args[:2] == ("get", _POLICY_RESOURCE) and stdout_only for args, stdout_only in k3s.calls)
 
 
-def test_virtiofs_policy_skip_is_opt_in_and_rejects_other_values(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv(_SKIP_VIRTIOFS_POLICY_ENV, raising=False)
-    assert strict_env_flag(_SKIP_VIRTIOFS_POLICY_ENV) is False
-
-    monkeypatch.setenv(_SKIP_VIRTIOFS_POLICY_ENV, "1")
-    assert strict_env_flag(_SKIP_VIRTIOFS_POLICY_ENV) is True
-
-    monkeypatch.setenv(_SKIP_VIRTIOFS_POLICY_ENV, "0")
-    assert strict_env_flag(_SKIP_VIRTIOFS_POLICY_ENV) is False
-
-    monkeypatch.setenv(_SKIP_VIRTIOFS_POLICY_ENV, "true")
-    with pytest.raises(ValueError, match="must be '0' or '1'"):
-        strict_env_flag(_SKIP_VIRTIOFS_POLICY_ENV)
-
-
-def test_shutdown_policy_cycle_count_and_debug_args_are_bounded_opt_ins(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_shutdown_policy_cycle_count_is_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(_CYCLES_ENV, raising=False)
-    monkeypatch.delenv(_DEBUG_KERNEL_ARGS_ENV, raising=False)
     assert _cycle_count() == 1
-    assert strict_env_flag(_DEBUG_KERNEL_ARGS_ENV) is False
 
     monkeypatch.setenv(_CYCLES_ENV, "3")
-    monkeypatch.setenv(_DEBUG_KERNEL_ARGS_ENV, "1")
     assert _cycle_count() == 3
-    assert strict_env_flag(_DEBUG_KERNEL_ARGS_ENV) is True
 
     for value in ("0", "4", "abc"):
         monkeypatch.setenv(_CYCLES_ENV, value)
         with pytest.raises(ValueError, match="integer from 1 to 3"):
             _cycle_count()
-    monkeypatch.setenv(_DEBUG_KERNEL_ARGS_ENV, "true")
-    with pytest.raises(ValueError, match="must be '0' or '1'"):
-        strict_env_flag(_DEBUG_KERNEL_ARGS_ENV)
 
 
-def test_shutdown_policy_debug_kernel_args_change_only_guest_boot_args() -> None:
-    images = {
+@pytest.fixture
+def images() -> dict[str, str]:
+    return {
         "agentplane-vm-guest-boot:unset": "boot",
         "agentplane-vm-guest-root:unset": "root",
         "agentplane-runner-disk:unset": "runner",
     }
+
+
+def test_shutdown_policy_debug_kernel_args_change_only_guest_boot_args(images: dict[str, str]) -> None:
     namespace = _NAMESPACE_PREFIX + "unit-test"
     plain = _vmi(namespace, images)
     debug = _vmi(namespace, images, debug_kernel_args=True)
@@ -1349,41 +1314,19 @@ def test_shutdown_policy_debug_kernel_args_change_only_guest_boot_args() -> None
 
 
 @pytest.mark.parametrize(
-    ("environment", "vmi_options", "expected_arg"),
+    ("vmi_options", "expected_arg"),
     [
+        pytest.param(_BootOptionVMIArgs(boot_rcu_observe=True), "agentplane.boot-rcu-observe=1", id="boot_rcu"),
         pytest.param(
-            _BOOT_RCU_ENV, _BootOptionVMIArgs(boot_rcu_observe=True), "agentplane.boot-rcu-observe=1", id="boot_rcu"
+            _BootOptionVMIArgs(synthetic_slice_probe=True), "agentplane.synthetic-slice-probe=1", id="synthetic_slice"
         ),
-        pytest.param(
-            _SYNTHETIC_SLICE_ENV,
-            _BootOptionVMIArgs(synthetic_slice_probe=True),
-            "agentplane.synthetic-slice-probe=1",
-            id="synthetic_slice",
-        ),
-        pytest.param(
-            _CGROUP_PILOT_ENV, _BootOptionVMIArgs(cgroup_pilot=True), "agentplane.cgroup-pilot=1", id="cgroup_pilot"
-        ),
-        pytest.param(
-            _CGROUP_STRESS_ENV, _BootOptionVMIArgs(cgroup_stress=True), "agentplane.cgroup-stress=1", id="cgroup_stress"
-        ),
+        pytest.param(_BootOptionVMIArgs(cgroup_pilot=True), "agentplane.cgroup-pilot=1", id="cgroup_pilot"),
+        pytest.param(_BootOptionVMIArgs(cgroup_stress=True), "agentplane.cgroup-stress=1", id="cgroup_stress"),
     ],
 )
 def test_boot_option_is_opt_in_and_changes_only_guest_boot_args(
-    monkeypatch: pytest.MonkeyPatch, environment: str, vmi_options: _BootOptionVMIArgs, expected_arg: str
+    images: dict[str, str], vmi_options: _BootOptionVMIArgs, expected_arg: str
 ) -> None:
-    monkeypatch.delenv(environment, raising=False)
-    assert strict_env_flag(environment) is False
-    monkeypatch.setenv(environment, "1")
-    assert strict_env_flag(environment) is True
-    monkeypatch.setenv(environment, "true")
-    with pytest.raises(ValueError, match="must be '0' or '1'"):
-        strict_env_flag(environment)
-
-    images = {
-        "agentplane-vm-guest-boot:unset": "boot",
-        "agentplane-vm-guest-root:unset": "root",
-        "agentplane-runner-disk:unset": "runner",
-    }
     plain = _vmi(_NAMESPACE_PREFIX + "unit-test", images)
     observed = _vmi(_NAMESPACE_PREFIX + "unit-test", images, **vmi_options)
     plain_args = plain["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
@@ -1393,12 +1336,7 @@ def test_boot_option_is_opt_in_and_changes_only_guest_boot_args(
     assert observed == plain
 
 
-def test_boot_apic_observer_adds_only_the_launcher_discovery_label() -> None:
-    images = {
-        "agentplane-vm-guest-boot:unset": "boot",
-        "agentplane-vm-guest-root:unset": "root",
-        "agentplane-runner-disk:unset": "runner",
-    }
+def test_boot_apic_observer_adds_only_the_launcher_discovery_label(images: dict[str, str]) -> None:
     plain = _vmi(_NAMESPACE_PREFIX + "unit-test", images)
     observed = _vmi(_NAMESPACE_PREFIX + "unit-test", images, boot_apic_observe=True)
 
@@ -1406,12 +1344,7 @@ def test_boot_apic_observer_adds_only_the_launcher_discovery_label() -> None:
     assert observed == plain
 
 
-def test_early_boot_preset_matches_four_virtiofs_sources_and_block_workspace() -> None:
-    images = {
-        "agentplane-vm-guest-boot:unset": "boot",
-        "agentplane-vm-guest-root:unset": "root",
-        "agentplane-runner-disk:unset": "runner",
-    }
+def test_early_boot_preset_matches_four_virtiofs_sources_and_block_workspace(images: dict[str, str]) -> None:
     plain = _vmi(_NAMESPACE_PREFIX + "unit-test", images)
     observed = _vmi(_NAMESPACE_PREFIX + "unit-test", images, early_boot_preset=True)
     domain = observed["spec"]["domain"]
@@ -1580,14 +1513,9 @@ def test_cgroup_pilot_requires_all_ordered_exact_results_before_acpi(
     assert output.read_text() == complete
 
 
-def test_cgroup_stress_resident_condition_matches_guest_boot_arg_and_probe_script() -> None:
+def test_cgroup_stress_resident_condition_matches_guest_boot_arg_and_probe_script(images: dict[str, str]) -> None:
     guest_dir = Runfiles.CreateOrRaise().root() / "_main/agentplane/system_tests/vm/guest"
     script = (guest_dir / "cgroup_pilot_probe").read_text()
-    images = {
-        "agentplane-vm-guest-boot:unset": "boot",
-        "agentplane-vm-guest-root:unset": "root",
-        "agentplane-runner-disk:unset": "runner",
-    }
     for mode, kernel_arg in (("pilot", "agentplane.cgroup-pilot=1"), ("stress", "agentplane.cgroup-stress=1")):
         vmi = _vmi(
             _NAMESPACE_PREFIX + "unit-test", images, cgroup_pilot=mode == "pilot", cgroup_stress=mode == "stress"
@@ -1747,20 +1675,7 @@ def test_delegated_cgroup_stress_requires_owned_descendant_witness_and_clean_pai
     )
 
 
-def test_delegated_cgroup_stress_is_opt_in_and_adds_only_its_guest_boot_arg(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv(_DELEGATED_CGROUP_STRESS_ENV, raising=False)
-    assert strict_env_flag(_DELEGATED_CGROUP_STRESS_ENV) is False
-    monkeypatch.setenv(_DELEGATED_CGROUP_STRESS_ENV, "1")
-    assert strict_env_flag(_DELEGATED_CGROUP_STRESS_ENV) is True
-    monkeypatch.setenv(_DELEGATED_CGROUP_STRESS_ENV, "true")
-    with pytest.raises(ValueError, match="must be '0' or '1'"):
-        strict_env_flag(_DELEGATED_CGROUP_STRESS_ENV)
-
-    images = {
-        "agentplane-vm-guest-boot:unset": "boot",
-        "agentplane-vm-guest-root:unset": "root",
-        "agentplane-runner-disk:unset": "runner",
-    }
+def test_delegated_cgroup_stress_is_opt_in_and_adds_only_its_guest_boot_arg(images: dict[str, str]) -> None:
     namespace = _NAMESPACE_PREFIX + "unit-test"
     plain = _vmi(namespace, images, boot_rcu_observe=True)
     observed = _vmi(namespace, images, boot_rcu_observe=True, delegated_cgroup_stress=True)
@@ -1885,13 +1800,13 @@ def _run_cycle(
             )
         policy: dict[str, Any] | None = None
         if not skip_virtiofs_policy:
-            policy = _create_cluster_policy(k3s, namespace_name)
+            policy = _create_mutating_policy(k3s, namespace_name)
             policy_uid = policy["metadata"]["uid"]
             (output / "virtiofs-shutdown-policy.yaml").write_text(json.dumps(policy, indent=2, sort_keys=True) + "\n")
             k3s.kubectl(
                 "wait",
                 "--for=condition=Ready",
-                f"clusterpolicy/{namespace_name + _POLICY_SUFFIX}",
+                f"{_POLICY_RESOURCE}/{namespace_name + _POLICY_SUFFIX}",
                 f"--timeout={infrastructure.READY_SECONDS}s",
             )
         (output / "virtiofs-policy-mode.json").write_text(

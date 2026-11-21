@@ -9,7 +9,7 @@ from cdk8s import App, Chart
 from cluster.cdk8s import namespaces
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.namespaces import Vpa, VpaProfile
 
 NAME = "reflector"
 NAMESPACE = "reflector-system"
@@ -30,7 +30,13 @@ def mirror_annotations(namespaces: Sequence[str]) -> dict[str, str]:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.RECOMMEND)
+    namespaces.namespace(
+        chart,
+        "namespace",
+        name=NAMESPACE,
+        # Allow the updater to restart Reflector's single replica when its recommendation changes.
+        vpa=VpaProfile.requests_only(Vpa.AUTO, min_replicas=1),
+    )
     helm_release(
         chart,
         NAME,
@@ -50,7 +56,8 @@ def chart(app: App) -> Chart:
             "configuration": {"logging": {"minimumLevel": "Information"}, "watcher": {"timeout": 300}},
             "rbac": {"enabled": True},
             "serviceAccount": {"create": True, "name": NAME},
-            "resources": {"requests": {"memory": "128Mi", "cpu": "100m"}, "limits": {"memory": "256Mi", "cpu": "200m"}},
+            # Reflector was OOM-killed at the 256Mi limit on 2026-11-19.
+            "resources": {"requests": {"memory": "512Mi", "cpu": "100m"}, "limits": {"memory": "768Mi", "cpu": "200m"}},
         },
     )
     return chart

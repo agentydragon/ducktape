@@ -101,9 +101,9 @@ func ParseSessionSpec(defaults *sessionpb.SessionSpec, fields map[string]any) (*
 	if err := (protojson.UnmarshalOptions{DiscardUnknown: false}).Unmarshal(encoded, partial); err != nil {
 		return nil, &MalformedMessageError{Cause: err}
 	}
-	// protojson.Unmarshal resets its destination, while the Python ParseDict
-	// contract merges fields into the preset. Copy only keys present in the
-	// request, including explicitly supplied zero values such as "model": "".
+	// protojson.Unmarshal resets its destination, but request fields merge into the
+	// preset. Copy only keys present in the request, including explicitly supplied
+	// zero values such as "model": "".
 	descriptor := merged.ProtoReflect().Descriptor().Fields()
 	for name := range fields {
 		field := descriptor.ByJSONName(name)

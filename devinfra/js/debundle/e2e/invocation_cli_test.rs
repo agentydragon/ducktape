@@ -1,4 +1,5 @@
 use debundle_e2e_graph_support::GraphFixture;
+use debundle_e2e_support::process;
 use std::fs;
 use std::process::Command;
 
@@ -8,12 +9,7 @@ use tempfile::TempDir;
 fn run_json(command: &mut Command) -> Value {
     let output = debundle_e2e_support::process::debundle_output(command)
         .unwrap_or_else(|err| panic!("{err}"));
-    assert!(
-        output.status.success(),
-        "stdout: {}\nstderr: {}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
+    process::assert_success(&output);
     serde_json::from_slice(&output.stdout).expect("JSON invocation output")
 }
 
@@ -323,11 +319,7 @@ fn print_only_edit_and_capture_report_consistent_plans() {
         "--invocation-out",
         invocation_path.to_str().unwrap(),
     ]);
-    assert!(
-        captured.status.success(),
-        "{}",
-        String::from_utf8_lossy(&captured.stderr)
-    );
+    process::assert_success(&captured);
     let actual: Value = serde_json::from_slice(&fs::read(&invocation_path).unwrap()).unwrap();
     assert_eq!(actual["argv"], preview["argv"]);
     assert_eq!(actual["arguments"], preview["arguments"]);
@@ -371,11 +363,7 @@ fn option_looking_positional_text_after_double_dash_survives_capture_and_replay(
         .env_remove("DEBUNDLE_MODULES");
     let replayed = debundle_e2e_support::process::debundle_output(&mut replay)
         .unwrap_or_else(|err| panic!("{err}"));
-    assert!(
-        replayed.status.success(),
-        "{}",
-        String::from_utf8_lossy(&replayed.stderr)
-    );
+    process::assert_success(&replayed);
     let outcome: Value = serde_json::from_slice(&replayed.stdout).unwrap();
     assert_eq!(outcome["comment"], "--invocation-out");
 }

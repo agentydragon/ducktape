@@ -42,7 +42,7 @@ message ExecutionEnvironmentFailure {
   Outcome outcome = 2;
 }
 
-// Outcomes describe the observed local Codex reply, not process completion.
+// Outcomes describe the observed execution operation, not process completion.
 // Transport loss can leave an effect unknown; request IDs do not provide deduplication.
 message ExecutionStatus {
   enum Outcome {
@@ -73,13 +73,15 @@ message OpenSessionRequest {
 }
 message OpenSessionResponse {
   // The first response has an outcome and session identity. Later responses carry
-  // asynchronous native notifications with no status.
+  // coalesced process-change wakeups or native evidence with no status.
   ExecutionStatus status = 1;
   string execution_session_id = 2;
   ExecutionShell shell = 3;
   // Environments supplies the verified incarnation on the first response. Subsequent calls
   // must fence on it. Absent on older peers; callers with an existing fence keep that fence.
   string incarnation_uid = 4;
+  // Coalesced wakeup: clients read process cursors for authoritative state.
+  bool process_changed = 5;
   repeated ExecutionNativeFrame native_frames = 20;
 }
 // Caller-selected IDs correlate requests and evidence; they are not retry or admission receipts.

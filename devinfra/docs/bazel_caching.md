@@ -24,14 +24,13 @@ The `repository_cache` stores compressed downloads (~2GB). It is content-address
 
 ## Cache key strategy
 
-```
+```text
 bazel-repo-cache-<hash of MODULE.bazel + **/*.MODULE.bazel + MODULE.bazel.lock>
 ```
 
-- **Shared by default** — workflows using the action without `extra_hash` use the same key. Repository downloads are content-addressed, so a cache populated by one job can be reused by another.
-- **Optional `extra_hash`** — callers can append a caller-defined hash to specialize the key. The action combines the first 8 characters of the base and extra hashes; without `extra_hash`, it uses the first 16 characters of the base hash.
+- **Shared** — workflows using the action use the same key (the first 16 characters of the hash). Repository downloads are content-addressed, so a cache populated by one job can be reused by another.
 - **`restore-keys: bazel-repo-cache-`** — on dependency changes, the previous cache is partially restored (content-addressable, so unchanged downloads are reused).
-- **Cache size** — entries can be around 2GB. Dependency changes and optional `extra_hash` values can create multiple keys, all counting toward the default 10GB per-repository cache quota.
+- **Cache size** — entries can be around 2GB. Dependency changes can create multiple keys, all counting toward the default 10GB per-repository cache quota.
 
 ## Cache flow
 
@@ -41,8 +40,10 @@ back to the newest `bazel-repo-cache-` entry after dependency changes. Bazel
 and Bazelisk populate the restored directories as the job runs.
 
 The action uses unified `actions/cache@v6`, which saves the populated cache as
-a post step only when the exact key was absent during restore. There is no
-dedicated prewarm or `compute-targets` job. BuildBuddy-hosted `bb remote` runs
+a post step only when the exact key was absent during restore. A separate
+`actions/cache/save` step would create a duplicate entry for an existing key,
+and the GitHub cache service then answers every restore with HTTP 400. There is
+no dedicated prewarm or `compute-targets` job. BuildBuddy-hosted `bb remote` runs
 execute in separate runner VMs and use BuildBuddy's cache rather than this
 GitHub-runner filesystem cache.
 
@@ -83,12 +84,6 @@ The blunt form of the same fix, and it does work — but `toplevel` downloads
 every top-level target's important artifacts, which on `bazel test //...` means
 every OCI image tarball lands on the runner. The regex asks for the few hundred
 kilobytes of PNGs that BEP actually needs.
-
-## Duplicate-key problem (historical)
-
-The former `bazel-repo-cache-save` action used `actions/cache/save@v4`, which creates a new cache entry even when the same key already exists. Multiple CI runs created conflicting entries per key. The GHA cache service responded with HTTP 400 on all restore attempts, making the cache useless across all jobs.
-
-The fix was to switch to the unified `actions/cache` action (currently v6), which only saves when the exact key was not found during restore. This prevents duplicate entries by design.
 
 ## Cached paths
 

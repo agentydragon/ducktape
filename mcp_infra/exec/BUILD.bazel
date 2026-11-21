@@ -13,7 +13,6 @@ py_library(
     ],
 )
 
-# Docker container types (no MCP dependencies)
 py_binary(
     name = "docker_launcher",
     main_module = "mcp_infra.exec.docker.launcher",
@@ -109,7 +108,6 @@ live_openai_py_test(
         "//util/exec:models",
         "@pypi//fastmcp_slim",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
     ],
 )
@@ -124,7 +122,6 @@ py_test(
         "//mcp_infra:conftest",
         "//mcp_infra/exec/docker:server",
         "@pypi//fastmcp_slim",
-        "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
     ],
 )

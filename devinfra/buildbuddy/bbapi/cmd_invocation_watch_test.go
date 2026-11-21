@@ -13,6 +13,7 @@ import (
 	"time"
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
+	commonpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	eventlogpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	invocationpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
@@ -158,6 +159,26 @@ func readInvocationWatchResult(t *testing.T, path string) invocationWatchResult 
 		t.Fatalf("decode result file: %v\n%s", err, data)
 	}
 	return result
+}
+
+func TestFailedTestFindsTimedOutTarget(t *testing.T) {
+	const want = "//pkg:timed_out_test"
+	c := &client{rpc: &invocationWatchTestRPC{
+		getTarget: func(_ context.Context, request *targetpb.GetTargetRequest) (*targetpb.GetTargetResponse, error) {
+			if request.GetStatus() == commonpb.Status_TIMED_OUT {
+				return invocationWatchTestTargetResponse(want), nil
+			}
+			return invocationWatchTestTargetResponse(""), nil
+		},
+	}}
+
+	label, err := failedTest(c, "invocation-test", "test-group")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if label != want {
+		t.Errorf("failedTest label = %q, want %q", label, want)
+	}
 }
 
 func TestWatchInvocationWritesEarlyTestFailureResult(t *testing.T) {
@@ -458,25 +479,30 @@ func TestWatchInvocationContinuesStatusAfterPersistentLogIndexLimit(t *testing.T
 }
 
 func TestWatchInvocationFailFastTargetOverridesObservedCompletion(t *testing.T) {
-	const failedTest = "//pkg:failed_test"
-	client := newChunkedInvocationWatchTestClient(
-		t,
-		invocationstatuspb.InvocationStatus_COMPLETE_INVOCATION_STATUS,
-		false,
-		failedTest,
-		[]invocationWatchTestChunk{{id: "chunk-1", buffer: "first chunk\n"}},
-		nil,
-	)
-	resultPath := filepath.Join(t.TempDir(), "result.json")
-	var logs bytes.Buffer
+	for name, nextChunkID := range map[string]string{"final log chunk": "", "more log chunks": "chunk-2"} {
+		t.Run(name, func(t *testing.T) {
+			const failedTest = "//pkg:failed_test"
+			client := newChunkedInvocationWatchTestClient(
+				t,
+				invocationstatuspb.InvocationStatus_COMPLETE_INVOCATION_STATUS,
+				false,
+				failedTest,
+				// Leave chunk-2 unserved so fetching it before reporting failure fails the test.
+				[]invocationWatchTestChunk{{id: "chunk-1", nextChunkID: nextChunkID, buffer: "first chunk\n"}},
+				nil,
+			)
+			resultPath := filepath.Join(t.TempDir(), "result.json")
+			var logs bytes.Buffer
 
-	err := watchInvocation(client, "invocation-test", &logs, time.Millisecond, true, resultPath)
-	if err == nil || !strings.Contains(err.Error(), failedTest) {
-		t.Fatalf("watchInvocation error = %v, want failing target", err)
-	}
-	result := readInvocationWatchResult(t, resultPath)
-	if result.State != "failure" || result.Reason != "test_failure" || !result.InvocationComplete || result.FailedTest != failedTest {
-		t.Errorf("fail-fast result = %+v", result)
+			err := watchInvocation(client, "invocation-test", &logs, time.Millisecond, true, resultPath)
+			if err == nil || !strings.Contains(err.Error(), failedTest) {
+				t.Fatalf("watchInvocation error = %v, want failing target", err)
+			}
+			result := readInvocationWatchResult(t, resultPath)
+			if result.State != "failure" || result.Reason != "test_failure" || !result.InvocationComplete || result.FailedTest != failedTest {
+				t.Errorf("fail-fast result = %+v", result)
+			}
+		})
 	}
 }
 

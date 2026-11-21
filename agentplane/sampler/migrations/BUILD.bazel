@@ -8,11 +8,11 @@ go_library(
         "schema/0016_provider_attempts.sql",
         "schema/0017_delete_pre_identity_sessions.sql",
         "schema/0018_service_session_owners.sql",
+        "schema/0019_chat_completions.sql",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/sampler/migrations",
     visibility = [
         "//agentplane/history_service/internal/ingress:__pkg__",  # sampler export integration test
-        "//agentplane/sampler:__pkg__",
         "//agentplane/sampler:__subpackages__",
     ],
     deps = ["//agentplane/postgres/migrate"],

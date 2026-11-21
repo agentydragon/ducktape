@@ -45,7 +45,7 @@ Provide a clear summary of:
 
 Use a visual stack representation showing the task hierarchy:
 
-```
+```text
 [Task 1: Main objective]
 └─[Task 2: Subtask we pivoted to]
   └─[Task 3: Current focus] ← YOU ARE HERE

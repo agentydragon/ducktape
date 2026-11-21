@@ -18,13 +18,18 @@ from jinja2 import Environment, StrictUndefined
 from python.runfiles import Runfiles
 
 from cluster.cdk8s import namespaces
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.ollama import tabby
+from cluster.cdk8s.ollama.tabby_endpoint import NAMESPACE
+from cluster.cdk8s.reflector import mirror_annotations
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.volume_claim import volume_claim
 
 # Avoid colliding with this module's ollama Flux constructor.
 from model_catalog import ollama as models
@@ -32,15 +37,14 @@ from model_catalog import ollama as models
 OUTPUT_DIR = f"{GENERATED_ROOT}/ollama"
 _SOURCE_DIR = "ducktape/cluster/cdk8s/ollama"
 _NAME = "ollama"
-_NAMESPACE = "ollama"
-_PODS = Pods(namespace=_NAMESPACE, labels=(("app.kubernetes.io/name", _NAME),))
+_PODS = Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", _NAME),))
 # Ollama's own API, without auth, for in-cluster clients.
 SERVICE = ServiceRef(name=_NAME, port=Port(name="http", number=11434), pods=_PODS)
 # The bearer-checking nginx in front of it, which the public route targets.
 AUTH_PROXY = ServiceRef(name=_NAME, port=Port(name="auth-proxy", number=11435), pods=_PODS)
 _MODELS_CLAIM = "models"
 _SSD_MODELS_CLAIM = "qwen38-iq4"
-DIRECT_TOKEN = SecretRef(namespace=_NAMESPACE, name="ollama-direct-token").key("token")
+DIRECT_TOKEN = SecretRef(namespace=NAMESPACE, name="ollama-direct-token").key("token")
 _AUTH_PROXY_CONFIG_MAP = "auth-proxy"
 _SCRIPTS_CONFIG_MAP = "gpt-oss-scripts"
 _SETUP_SCRIPT = "setup-gpt-oss-v2.sh"
@@ -50,15 +54,13 @@ _NGINX_CONF = "nginx.conf"
 _MODELS_DIR = "/models"
 _SSD_MODELS_DIR = "/ssd-models"
 _SCRIPTS_DIR = "/scripts"
-# Pause this Deployment before exclusive host inference experiments.
-_PAUSED_FOR_HOST_EXPERIMENTS = False
 
 
 def _namespace(scope: Construct) -> None:
     namespaces.namespace(
         scope,
         "namespace",
-        name=_NAMESPACE,
+        name=NAMESPACE,
         # `auto` mode rewrites pod limits at admission time using the VPA's
         # idle-history recommendations. For a bursty LLM workload that sits at
         # ~50 MiB until a model loads (then needs tens of GiB) this caused the
@@ -71,25 +73,21 @@ def _namespace(scope: Construct) -> None:
 
 def _claims(scope: Construct) -> None:
     # Both on wyrm2's own Piraeus pools, which pins Ollama to the GPU host.
-    k8s.KubePersistentVolumeClaim(
+    volume_claim(
         scope,
         "piraeus-models",
-        metadata=k8s.ObjectMeta(name=_MODELS_CLAIM, namespace=_NAMESPACE),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="piraeus-hdd-local",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("200Gi")}),
-        ),
+        name=_MODELS_CLAIM,
+        namespace=NAMESPACE,
+        storage_class="piraeus-hdd-local",
+        size="200Gi",
     )
-    k8s.KubePersistentVolumeClaim(
+    volume_claim(
         scope,
         "piraeus-ssd-models",
-        metadata=k8s.ObjectMeta(name=_SSD_MODELS_CLAIM, namespace=_NAMESPACE),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="piraeus-ssd-local",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("100Gi")}),
-        ),
+        name=_SSD_MODELS_CLAIM,
+        namespace=NAMESPACE,
+        storage_class="piraeus-ssd-local",
+        size="100Gi",
     )
 
 
@@ -145,10 +143,7 @@ def _link_ssd_models_container() -> k8s.Container:
         name="link-ssd-models",
         image="ollama/ollama:0.34.4",
         command=["/bin/sh", f"{_SCRIPTS_DIR}/{_LINK_SCRIPT}"],
-        resources=k8s.ResourceRequirements(
-            requests={"cpu": k8s.Quantity.from_string("10m"), "memory": k8s.Quantity.from_string("16Mi")},
-            limits={"memory": k8s.Quantity.from_string("64Mi")},
-        ),
+        resources=container_resources(cpu="10m", memory="16Mi", memory_limit="64Mi"),
         volume_mounts=[
             k8s.VolumeMount(name="models", mount_path=_MODELS_DIR),
             k8s.VolumeMount(name="ssd-models", mount_path=_SSD_MODELS_DIR, read_only=True),
@@ -162,10 +157,7 @@ def _auth_proxy_container() -> k8s.Container:
         name="auth-proxy",
         image="nginx:1.31-alpine",
         # activitywatch's nginx:alpine sidecar peaks at a 60Mi VPA upper bound.
-        resources=k8s.ResourceRequirements(
-            requests={"cpu": k8s.Quantity.from_string("10m"), "memory": k8s.Quantity.from_string("32Mi")},
-            limits={"memory": k8s.Quantity.from_string("256Mi")},
-        ),
+        resources=container_resources(cpu="10m", memory="32Mi", memory_limit="256Mi"),
         ports=[AUTH_PROXY.port.k8s_container_port()],
         # nginx-auth-proxy.conf.template reads all three.
         env=[
@@ -189,9 +181,10 @@ def _deployment(scope: Construct, scripts: ConfigMap, auth_proxy_config: ConfigM
     k8s.KubeDeployment(
         scope,
         "deployment",
-        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE, labels=_PODS.selector),
+        metadata=k8s.ObjectMeta(name=_NAME, namespace=NAMESPACE, labels=_PODS.selector),
         spec=k8s.DeploymentSpec(
-            replicas=0 if _PAUSED_FOR_HOST_EXPERIMENTS else 1,
+            # TabbyAPI owns both GPUs. Keep Ollama available for GitOps rollback.
+            replicas=0,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
             selector=k8s.LabelSelector(match_labels=_PODS.selector),
             template=k8s.PodTemplateSpec(
@@ -233,7 +226,7 @@ def _service(scope: Construct) -> None:
     k8s.KubeService(
         scope,
         "service",
-        metadata=k8s.ObjectMeta(name=SERVICE.name, namespace=_NAMESPACE, labels={"app": "ollama"}),
+        metadata=k8s.ObjectMeta(name=SERVICE.name, namespace=NAMESPACE, labels={"app": "ollama"}),
         spec=k8s.ServiceSpec(
             type="ClusterIP",
             selector=_PODS.selector,
@@ -256,7 +249,7 @@ def _rbac(scope: Construct) -> None:
     k8s.KubeRole(
         scope,
         "reader",
-        metadata=k8s.ObjectMeta(name="reader", namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name="reader", namespace=NAMESPACE),
         rules=[
             k8s.PolicyRule(
                 api_groups=[""],
@@ -271,7 +264,7 @@ def _rbac(scope: Construct) -> None:
     k8s.KubeRoleBinding(
         scope,
         "reader-binding",
-        metadata=k8s.ObjectMeta(name="claude-ollama-reader", namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name="claude-ollama-reader", namespace=NAMESPACE),
         role_ref=k8s.RoleRef(api_group="rbac.authorization.k8s.io", kind="Role", name="reader"),
         subjects=[
             k8s.Subject(kind="ServiceAccount", name="default", namespace="claude-sandbox"),
@@ -287,7 +280,7 @@ def _setup_job(scope: Construct, scripts: ConfigMap) -> None:
         scope,
         "setup-gpt-oss",
         # Explicit version bumps own reruns.
-        metadata=k8s.ObjectMeta(name="setup-gpt-oss-v10", namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name="setup-gpt-oss-v10", namespace=NAMESPACE),
         spec=k8s.JobSpec(
             template=k8s.PodTemplateSpec(
                 spec=k8s.PodSpec(
@@ -345,13 +338,7 @@ def _setup_job(scope: Construct, scripts: ConfigMap) -> None:
                             command=[f"{_SCRIPTS_DIR}/{_SETUP_SCRIPT}"],
                             env=[k8s.EnvVar(name="OLLAMA_HOST", value="http://127.0.0.1:11434")],
                             # curl calls against the local registration API.
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("10m"),
-                                    "memory": k8s.Quantity.from_string("16Mi"),
-                                },
-                                limits={"memory": k8s.Quantity.from_string("64Mi")},
-                            ),
+                            resources=container_resources(cpu="10m", memory="16Mi", memory_limit="64Mi"),
                             volume_mounts=[k8s.VolumeMount(name="scripts", mount_path=_SCRIPTS_DIR, read_only=True)],
                         )
                     ],
@@ -375,12 +362,7 @@ def _direct_token(scope: Construct) -> None:
         refresh="8760h",
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-        target_annotations={
-            "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
-            "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": "claude-sandbox",
-            "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
-            "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": "claude-sandbox",
-        },
+        target_annotations=mirror_annotations(["claude-sandbox"]),
     )
 
 
@@ -392,7 +374,7 @@ def chart(app: App) -> Chart:
     scripts = ConfigMap(
         chart,
         "scripts",
-        metadata=ApiObjectMetadata(name=_SCRIPTS_CONFIG_MAP, namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name=_SCRIPTS_CONFIG_MAP, namespace=NAMESPACE),
         data={
             _SETUP_SCRIPT: Environment(undefined=StrictUndefined, keep_trailing_newline=True)
             .from_string((source_dir / f"{_SETUP_SCRIPT}.j2").read_text())
@@ -413,7 +395,7 @@ def chart(app: App) -> Chart:
     auth_proxy_config = ConfigMap(
         chart,
         "auth-proxy-config",
-        metadata=ApiObjectMetadata(name=_AUTH_PROXY_CONFIG_MAP, namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name=_AUTH_PROXY_CONFIG_MAP, namespace=NAMESPACE),
         data={
             "default.conf.template": (source_dir / "nginx-auth-proxy.conf.template").read_text(),
             _NGINX_CONF: (source_dir / _NGINX_CONF).read_text(),
@@ -424,7 +406,7 @@ def chart(app: App) -> Chart:
     https_route(
         chart,
         "route",
-        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=NAMESPACE),
         hostnames=["ollama.allegedly.works"],
         backend=AUTH_PROXY,
         timeout="600s",
@@ -432,9 +414,9 @@ def chart(app: App) -> Chart:
         listener=None,
     )
     _rbac(chart)
-    if not _PAUSED_FOR_HOST_EXPERIMENTS:
-        _setup_job(chart, scripts)
+    _setup_job(chart, scripts)
     _direct_token(chart)
+    tabby.add_tabbyapi(chart)
     return chart
 
 
@@ -450,11 +432,14 @@ def ollama(
         timeout="10m",
         health_checks=[
             KustomizationSpecHealthChecks(
+                api_version="apps/v1", kind="Deployment", name=tabby.SERVICE.name, namespace=NAMESPACE
+            ),
+            KustomizationSpecHealthChecks(
                 api_version="external-secrets.io/v1",
                 kind="ExternalSecret",
                 name=DIRECT_TOKEN.secret.name,
-                namespace=_NAMESPACE,
-            )
+                namespace=NAMESPACE,
+            ),
         ],
         depends_on=flux_kustomization_depends_on_many(
             # ExternalSecret CRD and ESO's failurePolicy: Fail webhook

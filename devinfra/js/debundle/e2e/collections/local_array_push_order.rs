@@ -446,110 +446,93 @@ fn aliased_function_call_is_a_heap_barrier_when_body_summary_is_unavailable() {
     }
 }
 
-#[test]
-fn pure_for_in_reader_precedes_later_array_write() {
+/// The push in `source` stays after an earlier call to a pure reader: unit
+/// `later` (`values.push(42)`) has a `Sequenced` edge to unit `earlier` (the
+/// call). The last line of `source` observes the result.
+fn assert_pure_reader_precedes_array_write(
+    source: &str,
+    readers: &[Member],
+    stdout: &str,
+    (later, earlier): (usize, usize),
+) {
+    let observed = source.lines().last().expect("observed statement");
     let fixture = run_fixture_with_graphs(FixtureOpts::new(
-        "const values = [];\nfunction count() { let n = 0; for (const key in values) n++; return n; }\nconst first = count();\nvalues.push(42);\nconsole.log(first);\n",
+        source,
         vec![
             logical_module("values", &[Member::new("values")]),
-            logical_module(
-                "a_reader",
-                &[
-                    Member::new("count").with_purity(MemberPurity::Pure),
-                    Member::new("first"),
-                ],
-            ),
+            logical_module("a_reader", readers),
             logical_module_with_anon("z_mutation", &[], &["values.push(42);"]),
-            logical_module_with_anon("observe", &[], &["console.log(first);"]),
+            logical_module_with_anon("observe", &[], &[observed]),
         ],
     ));
-    assert_preserved_entry_output(&fixture, "0\n");
-    assert_sequenced_edge(&fixture.dependency_graph(), 3, 2);
+    assert_preserved_entry_output(&fixture, stdout);
+    assert_sequenced_edge(&fixture.dependency_graph(), later, earlier);
+}
+
+#[test]
+fn pure_for_in_reader_precedes_later_array_write() {
+    assert_pure_reader_precedes_array_write(
+        "const values = [];\nfunction count() { let n = 0; for (const key in values) n++; return n; }\nconst first = count();\nvalues.push(42);\nconsole.log(first);\n",
+        &[
+            Member::new("count").with_purity(MemberPurity::Pure),
+            Member::new("first"),
+        ],
+        "0\n",
+        (3, 2),
+    );
 }
 
 #[test]
 fn pure_coercion_reader_precedes_later_array_write() {
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
+    assert_pure_reader_precedes_array_write(
         "const values = [];\nfunction text() { return '' + values; }\nconst before = text();\nvalues.push(42);\nconsole.log(before);\n",
-        vec![
-            logical_module("values", &[Member::new("values")]),
-            logical_module(
-                "a_reader",
-                &[
-                    Member::new("text").with_purity(MemberPurity::Pure),
-                    Member::new("before"),
-                ],
-            ),
-            logical_module_with_anon("z_mutation", &[], &["values.push(42);"]),
-            logical_module_with_anon("observe", &[], &["console.log(before);"]),
+        &[
+            Member::new("text").with_purity(MemberPurity::Pure),
+            Member::new("before"),
         ],
-    ));
-    assert_preserved_entry_output(&fixture, "\n");
-    assert_sequenced_edge(&fixture.dependency_graph(), 3, 2);
+        "\n",
+        (3, 2),
+    );
 }
 
 #[test]
 fn pure_getter_carrier_reader_precedes_later_array_write() {
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
+    assert_pure_reader_precedes_array_write(
         "const values = [];\nconst box = { get value() { return values.length; } };\nfunction read() { return box.value; }\nconst before = read();\nvalues.push(42);\nconsole.log(before);\n",
-        vec![
-            logical_module("values", &[Member::new("values")]),
-            logical_module(
-                "a_reader",
-                &[
-                    Member::new("box"),
-                    Member::new("read").with_purity(MemberPurity::Pure),
-                    Member::new("before"),
-                ],
-            ),
-            logical_module_with_anon("z_mutation", &[], &["values.push(42);"]),
-            logical_module_with_anon("observe", &[], &["console.log(before);"]),
+        &[
+            Member::new("box"),
+            Member::new("read").with_purity(MemberPurity::Pure),
+            Member::new("before"),
         ],
-    ));
-    assert_preserved_entry_output(&fixture, "0\n");
-    assert_sequenced_edge(&fixture.dependency_graph(), 4, 3);
+        "0\n",
+        (4, 3),
+    );
 }
 
 #[test]
 fn pure_optional_reader_precedes_later_array_write() {
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
+    assert_pure_reader_precedes_array_write(
         "const values = [];\nfunction read() { return values.length; }\nconst before = read?.();\nvalues.push(42);\nconsole.log(before);\n",
-        vec![
-            logical_module("values", &[Member::new("values")]),
-            logical_module(
-                "a_reader",
-                &[
-                    Member::new("read").with_purity(MemberPurity::Pure),
-                    Member::new("before"),
-                ],
-            ),
-            logical_module_with_anon("z_mutation", &[], &["values.push(42);"]),
-            logical_module_with_anon("observe", &[], &["console.log(before);"]),
+        &[
+            Member::new("read").with_purity(MemberPurity::Pure),
+            Member::new("before"),
         ],
-    ));
-    assert_preserved_entry_output(&fixture, "0\n");
-    assert_sequenced_edge(&fixture.dependency_graph(), 3, 2);
+        "0\n",
+        (3, 2),
+    );
 }
 
 #[test]
 fn pure_tagged_template_reader_precedes_later_array_write() {
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
+    assert_pure_reader_precedes_array_write(
         "const values = [];\nfunction tag() { return values.length; }\nconst first = tag``;\nvalues.push(42);\nconsole.log(first);\n",
-        vec![
-            logical_module("values", &[Member::new("values")]),
-            logical_module(
-                "a_reader",
-                &[
-                    Member::new("tag").with_purity(MemberPurity::Pure),
-                    Member::new("first"),
-                ],
-            ),
-            logical_module_with_anon("z_mutation", &[], &["values.push(42);"]),
-            logical_module_with_anon("observe", &[], &["console.log(first);"]),
+        &[
+            Member::new("tag").with_purity(MemberPurity::Pure),
+            Member::new("first"),
         ],
-    ));
-    assert_preserved_entry_output(&fixture, "0\n");
-    assert_sequenced_edge(&fixture.dependency_graph(), 3, 2);
+        "0\n",
+        (3, 2),
+    );
 }
 
 #[test]

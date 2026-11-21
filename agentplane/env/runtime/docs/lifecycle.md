@@ -7,13 +7,13 @@ are ordinary components in one COSI engine and the `environment-runtime` namespa
 
 ```mermaid
 flowchart LR
-  G["Gateway"] -->|"authenticated gRPC"| R
+  G["Environments proxy"] -->|"authenticated gRPC"| R
   subgraph RuntimeProcess["Environment Runtime process"]
     R["Runtime admission and lifecycle"]
     S["Session manager, retained store and journals"]
     C["Session and harness controllers"]
     B["Bootstrap"]
-    E["Execution lifecycle and adapter"]
+    E["Execution lifecycle and typed proxy"]
     H["History delivery worker"]
     R -->|"construct and own"| S & C & B & E & H
     C -->|"direct bootstrap wait"| B
@@ -21,13 +21,13 @@ flowchart LR
     S -->|"inventory and journal sources"| H
   end
   C -->|"supervise"| Native["Claude, shared Codex app-server, setup and workspace helpers"]
-  E -.->|"VM supervised launch / Pod companion ownership"| X["Codex exec-server"]
+  E -.->|"VM supervised launch / Pod companion ownership"| X["Native execution service"]
   H -->|"gRPC journal push"| History["History ingress"]
   History -->|"exact cursor ACK"| H
 ```
 
 The Pod execution companion retains its external Unix ownership/fence protocol and separate PID
-namespace. Native protocol probing establishes Execution readiness; a published status cannot
+namespace. Typed gRPC and Codex protocol probes establish Execution readiness; a published status cannot
 substitute for the live owner check. VM transient units retain their systemd invocation and cgroup
 fences. See [supervision](../supervision/docs/supervision.md).
 
@@ -95,7 +95,7 @@ sequenceDiagram
   H->>I: final entries and seals
   I->>H: exact sealed cursor acknowledgement
   H->>H: persist IngressAcks
-  C->>C: publish per-Session sealed and delivered status
+  C->>C: publish per-Session seal and acknowledgement facts
   C->>R: exact aggregate completion
 ```
 
@@ -108,20 +108,20 @@ Runtime-domain attempts keep their own bootstrap/Execution barriers. An old
 component status cannot satisfy a successor revision. Execution fencing associates its own attempt
 generation with the lifecycle generation; a successor cannot start before its predecessor is fenced.
 Close observes the accepted bootstrap request and terminal status directly through COSI. A pending
-request holds the bootstrap settlement stage until a status change wakes reconciliation; a terminal
+request holds the Close worker until a status change wakes it. A terminal
 failure or interruption is settled because the bootstrap owner has completed cleanup.
 
 Close observes the exact-generation aggregate Session status for `NativeStopped` directly through
-COSI. Its existing fence deadline wakes reconciliation if that status never arrives. Native-stop
+COSI. The fence deadline wakes the Close worker to make a final observation. Native-stop
 errors are saved while Close attempts the Execution fence and reported at the History barrier if
 that fence succeeds.
 
 A seal request waits for native cleanup and the exact Execution fence before journals seal. The
 Session lifecycle controller closes the final admission gate, settles accepted commands, commits
-the seal and observes the exact durable acknowledgement. Its generation-qualified status reports
-those Session boundaries to the environment aggregate. Retained COSI Session records define the
-drain membership; a missing owner or lifecycle status blocks completion.
-Under-cursor, unsealed or non-durable acknowledgements cannot satisfy the sealed delivery barrier.
+the seal and reads the durable acknowledgement. The environment aggregate derives delivery from
+the seal and acknowledgement in each Session's generation-qualified status. Retained COSI Session
+records define the drain membership. A missing owner or lifecycle status blocks completion.
+Delivery requires a durable sealed acknowledgement at the exact seal cursor.
 Quiesce acceptance and Close completion are separate boundaries. Repeated Quiesce preserves a
 healthy desired generation; only an error for that current generation may request a retry.
 
@@ -135,15 +135,13 @@ Quiesce use direct requests to a Go-owned operation coordinator; per-operation c
 private request/status resources. Each accepted operation has one worker that calls adoption or
 Quiesce barriers sequentially, checking caller and engine cancellation before the next effect.
 Execution start and fence failures retain their settlement barriers before another operation can
-be accepted. Runtime starts that coordinator with its COSI engine. The Close controller cancels the
-shared lifecycle context on its first exit, even if Runtime's serving loop has not handled a fatal
-error. Runtime joins the coordinator on every engine exit, including early failure. The coordinator
-signals stopped before joining an accepted worker, so callers release the transition mutex. Close is the only COSI lifecycle
-controller: it observes the Closing generation after Runtime has settled the accepted operation and
-its prior fence under the transition mutex. Its workers never take that mutex, so an engine failure
-cannot wait on a Close worker blocked behind the operation caller. Close waits for the controller's
-exact-generation live COSI status before joining the engine. Accepted work and uncertain starts remain
-owned until joined or fenced.
+be accepted. Runtime starts that coordinator with its COSI engine. A lifecycle guard observes
+desired-state read failures and propagates engine cancellation before COSI joins its controllers,
+independently of the serving loop. The coordinator signals stopped before joining an accepted worker,
+so transition callers release the mutex even when an effect is still settling. Runtime joins the
+coordinator on every engine exit. The Close worker publishes the Closing generation under the
+transition mutex and waits on component proofs before joining the engine. Accepted work and
+uncertain starts remain owned until joined or fenced.
 
 Session recovery or History delivery failure closes admission and starts local cleanup without
 inventing a seal. Failed native cleanup, engine failure or failed sealed delivery remains a failure.

@@ -1,30 +1,25 @@
-# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep :testing
-import base64
-import json
-import time
 from pathlib import Path
 
 import pytest_bazel
 from fastapi.testclient import TestClient
-from itsdangerous import TimestampSigner
 from sqlalchemy import inspect, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
 from ai_session_archive.database import RecordPayloadRow, SessionRow, SnapshotFileRow, UsageObservationRow
-from ai_session_archive.ingest import ArchiveSource, SnapshotIngestor
 from ai_session_archive.models import Harness
 from ai_session_archive.queries import list_sessions
 from ai_session_archive.record_json import ParsedRecordJson, RecordJsonParseError, parse_record_json
 from ai_session_archive.source_paths import HarnessRoot
-from ai_session_archive.testing import _backup, _new_repository
+from ai_session_archive.testing import backup, new_ingestor, new_repository
 from ai_session_archive.usage_observations import UsageCounterKind
 from ai_session_archive.version_queries import list_events, list_versions
 from ai_session_archive.web import create_app
-from ai_session_archive.web_settings import WebSettings
+from ai_session_archive.web_testing import fake_web_settings, owner_session_cookie
 
-pytest_plugins = ["util.testing.postgres_fixtures", "ai_session_archive.testing"]
+pytest_plugins = ["testing.postgres_fixtures", "ai_session_archive.testing"]
 
 
 def test_json_null_and_syntax_errors_keep_distinct_parse_state() -> None:
@@ -38,7 +33,7 @@ def test_json_null_and_syntax_errors_keep_distinct_parse_state() -> None:
 
 
 def test_ingest_and_http_round_trip_json_nul_and_parse_issue(tmp_path: Path, postgres_engine: Engine) -> None:
-    repository, environment = _new_repository(tmp_path)
+    repository, environment = new_repository(tmp_path)
     claude_root = tmp_path / "home" / ".claude"
     transcript = claude_root / "projects" / "example-project" / "session.jsonl"
     transcript.parent.mkdir(parents=True)
@@ -51,16 +46,12 @@ def test_ingest_and_http_round_trip_json_nul_and_parse_issue(tmp_path: Path, pos
         b'{"type":"assistant","message":{"content":"following readable record"}}\n',
     ]
     transcript.write_bytes(b"".join(lines))
-    _backup(environment, claude_root)
+    backup(environment, claude_root)
 
     factory = sessionmaker(postgres_engine, expire_on_commit=False)
-    source = ArchiveSource(
-        machine_id="json-storage-test",
-        display_name="JSON storage test",
-        restic=repository,
-        roots=(HarnessRoot(Harness.CLAUDE, str(claude_root)),),
-    )
-    report = SnapshotIngestor(factory, source).ingest()
+    report = new_ingestor(
+        factory, repository, HarnessRoot(Harness.CLAUDE, str(claude_root)), machine_id="json-storage-test"
+    ).ingest()
     with factory() as db:
         failed_files = list(db.scalars(select(SnapshotFileRow).where(SnapshotFileRow.status == "failed")))
     assert report.files_failed == 0, [file.error for file in failed_files]
@@ -115,26 +106,9 @@ def test_ingest_and_http_round_trip_json_nul_and_parse_issue(tmp_path: Path, pos
     assert payload_column_types["parse_error"] == "text"
     assert payload_column_types["kind"] == "text"
 
-    settings = WebSettings(
-        database_url="postgresql+psycopg://archive_user:archive_password@db.invalid/archive",
-        public_base_url="http://testserver",
-        oidc_issuer="https://idp.example.invalid",
-        oidc_client_id="fake-client",
-        oidc_client_secret="fake-client-secret",
-        oidc_session_secret="fake-session-secret",
-        oidc_allowed_subject="fake-owner",
-    )
+    settings = fake_web_settings()
     client = TestClient(create_app(engine=postgres_engine, settings=settings))
-    signed_in = {
-        "user": {
-            "issuer": settings.oidc_issuer,
-            "subject": settings.oidc_allowed_subject,
-            "username": "fake-user",
-            "expires_at": time.time() + 600,
-        }
-    }
-    cookie_payload = base64.b64encode(json.dumps(signed_in).encode())
-    client.cookies.set("ai-session-archive", TimestampSigner("fake-session-secret").sign(cookie_payload).decode())
+    client.cookies.set("ai-session-archive", owner_session_cookie(settings))
     response = client.get(f"/api/sessions/{session.id}/versions/{version.id}/events")
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"
@@ -152,7 +126,7 @@ def test_ingest_and_http_round_trip_json_nul_and_parse_issue(tmp_path: Path, pos
 def test_usage_observations_preserve_source_blocks_and_deduplicate_payloads(
     tmp_path: Path, postgres_engine: Engine
 ) -> None:
-    repository, environment = _new_repository(tmp_path)
+    repository, environment = new_repository(tmp_path)
     home = tmp_path / "home"
     claude_root = home / ".claude"
     codex_root = home / ".codex"
@@ -190,16 +164,16 @@ def test_usage_observations_preserve_source_blocks_and_deduplicate_payloads(
     )
     claude_transcript.write_bytes(message + message + result)
     codex_transcript.write_bytes(codex_response + codex_response + codex_token_count)
-    _backup(environment, home)
+    backup(environment, home)
 
     factory = sessionmaker(postgres_engine, expire_on_commit=False)
-    source = ArchiveSource(
+    ingestor = new_ingestor(
+        factory,
+        repository,
+        HarnessRoot(Harness.CLAUDE, str(claude_root)),
+        HarnessRoot(Harness.CODEX, str(codex_root)),
         machine_id="usage-test",
-        display_name="Usage test",
-        restic=repository,
-        roots=(HarnessRoot(Harness.CLAUDE, str(claude_root)), HarnessRoot(Harness.CODEX, str(codex_root))),
     )
-    ingestor = SnapshotIngestor(factory, source)
     ingestor.ingest()
     with factory() as db:
         before = list(

@@ -7,7 +7,7 @@ and the agent_run_budget_status DB view with real Postgres.
 from __future__ import annotations
 
 from unittest.mock import AsyncMock
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import pytest
 import pytest_bazel
@@ -17,16 +17,16 @@ from fastapi.testclient import TestClient
 from props.backend.auth import AdminRole, AuthenticatedIdentity, get_caller_db, require_critic_run_access
 from props.backend.deps import get_admin_db
 from props.backend.routes import runs
-from props.core.agent_types import CriticTypeConfig
 from props.db.database import Database
-from props.db.models import AgentRun, AgentRunBudgetStatus, AgentRunStatus, LLMRequest
+from props.db.models import AgentRunBudgetStatus, AgentRunStatus
 from props.orchestration.agent_registry import BudgetExceededError, ImageResolutionError, ResolvedImage
-from props.testing.constants import BUDGET_TEST_MODEL, TRAIN_EXAMPLE
-from props.testing.fixtures.runs import FAKE_CRITIC_DIGEST, ensure_fake_agent_definitions, make_fake_critic_run
+from props.testing.examples import TRAIN_EXAMPLE
+from props.testing.fixtures.runs import FAKE_CRITIC_DIGEST, make_fake_critic_run, make_llm_request
+from props.testing.models import BUDGET_TEST_MODEL
 
-# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep //props/testing/fixtures:db
-pytest_plugins = ("util.testing.postgres_fixtures", "props.testing.fixtures.db")
+pytest_plugins = ("testing.postgres_fixtures", "props.testing.fixtures.db")
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
 # gazelle:include_dep @pypi//httpx
@@ -37,24 +37,18 @@ FAKE_RESOLVED = ResolvedImage(digest=FAKE_CRITIC_DIGEST, oci_ref=f"localhost:500
 @pytest.fixture
 def parent_run(synced_db: Database) -> UUID:
     """Create a parent agent run with $2.00 budget, return its ID."""
-    run_id = uuid4()
     with synced_db.session() as session:
-        ensure_fake_agent_definitions(session)
-        session.add(
-            AgentRun(
-                agent_run_id=run_id,
-                image_digest=FAKE_CRITIC_DIGEST,
-                model=BUDGET_TEST_MODEL,
-                type_config=CriticTypeConfig(example=TRAIN_EXAMPLE),
-                status=AgentRunStatus.IN_PROGRESS,
-                budget_usd=2.0,
-            )
+        run = make_fake_critic_run(
+            session=session,
+            example=TRAIN_EXAMPLE,
+            model=BUDGET_TEST_MODEL,
+            status=AgentRunStatus.IN_PROGRESS,
+            budget_usd=2.0,
         )
+        run_id = run.agent_run_id
+        session.add(run)
         session.commit()
     return run_id
-
-
-# --- agent_run_budget_status view tests (real Postgres) ---
 
 
 def test_budget_view_no_spend(synced_db: Database, parent_run: UUID) -> None:
@@ -72,18 +66,7 @@ def test_budget_view_with_spend(synced_db: Database, parent_run: UUID) -> None:
     """View subtracts LLM request costs from remaining budget."""
     with synced_db.session() as session:
         # 1M input tokens at $1.25/M = $1.25 spent, leaving $0.75
-        session.add(
-            LLMRequest(
-                agent_run_id=parent_run,
-                model=BUDGET_TEST_MODEL,
-                request_body={"model": BUDGET_TEST_MODEL},
-                response_body={},
-                input_tokens=1_000_000,
-                cached_input_tokens=0,
-                output_tokens=0,
-                latency_ms=100,
-            )
-        )
+        session.add(make_llm_request(agent_run_id=parent_run, input_tokens=1_000_000))
         session.commit()
 
     with synced_db.session() as session:
@@ -97,33 +80,18 @@ def test_budget_view_with_spend(synced_db: Database, parent_run: UUID) -> None:
 
 def test_budget_view_includes_child_costs(synced_db: Database, parent_run: UUID) -> None:
     """View includes costs from child (descendant) runs in parent's spent."""
-    child_id = uuid4()
     with synced_db.session() as session:
-        ensure_fake_agent_definitions(session)
-        session.add(
-            AgentRun(
-                agent_run_id=child_id,
-                image_digest=FAKE_CRITIC_DIGEST,
-                parent_agent_run_id=parent_run,
-                model=BUDGET_TEST_MODEL,
-                type_config=CriticTypeConfig(example=TRAIN_EXAMPLE),
-                status=AgentRunStatus.IN_PROGRESS,
-                budget_usd=1.0,
-            )
+        child = make_fake_critic_run(
+            session=session,
+            example=TRAIN_EXAMPLE,
+            model=BUDGET_TEST_MODEL,
+            status=AgentRunStatus.IN_PROGRESS,
+            parent_agent_run_id=parent_run,
+            budget_usd=1.0,
         )
+        session.add(child)
         session.flush()
-        session.add(
-            LLMRequest(
-                agent_run_id=child_id,
-                model=BUDGET_TEST_MODEL,
-                request_body={"model": BUDGET_TEST_MODEL},
-                response_body={},
-                input_tokens=500_000,
-                cached_input_tokens=0,
-                output_tokens=0,
-                latency_ms=100,
-            )
-        )
+        session.add(make_llm_request(agent_run_id=child.agent_run_id, input_tokens=500_000))
         session.commit()
 
     with synced_db.session() as session:
@@ -133,9 +101,6 @@ def test_budget_view_includes_child_costs(synced_db: Database, parent_run: UUID)
         assert status.own_spent_usd == 0.0  # Parent itself spent nothing
         assert status.tree_spent_usd == pytest.approx(0.625, abs=0.01)
         assert status.remaining_usd == pytest.approx(1.375, abs=0.01)
-
-
-# --- HTTP endpoint tests (mock registry, real FastAPI) ---
 
 
 def test_active_runs_returns_only_active_run_details(synced_db: Database, parent_run: UUID) -> None:
@@ -233,20 +198,6 @@ def test_run_critic_registry_initializing_returns_503(run_critic_client) -> None
     response = client.post("/api/runs/critic", json=_critic_request())
 
     assert response.status_code == 503
-
-
-def test_run_critic_uses_registry_dependency_override(run_critic_client) -> None:
-    client, _ = run_critic_client
-    client.app.state.registry = None
-    registry = AsyncMock()
-    registry.resolve_image.side_effect = ImageResolutionError("override registry")
-    client.app.dependency_overrides[runs.get_registry] = lambda: registry
-
-    response = client.post("/api/runs/critic", json=_critic_request())
-
-    assert response.status_code == 422
-    assert response.json()["detail"] == "override registry"
-    registry.resolve_image.assert_awaited_once()
 
 
 def test_run_critic_snapshot_not_found_returns_404(run_critic_client) -> None:

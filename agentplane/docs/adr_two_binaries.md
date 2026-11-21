@@ -17,7 +17,7 @@ The operator adopted two binaries in place of `runner-gateway` and `sandbox-cont
   wake budget (07:41 UTC, card "No budget for explicit resume"). Automatic wake and explicit resume
   share `environments/lifecycle` policy and guarded writes, with independent policy views.
 - **Directory names** `session_dispatcher` and `environments` (05:49 UTC, card
-  "session_dispatcher + environments"). Deployed names, Services and SPIFFE IDs change separately,
-  under `RUNNER_GATEWAY_RENAME`.
+  "session_dispatcher + environments"). The deployed Services are `sessions` and
+  `environments`, with the server SVIDs listed in the [system overview](system_overview.md).
 - **The Runtime never dials Sessions or Environments.** Environments dials each Runtime; the earlier
   mode where a Runtime dialed the Gateway was removed deliberately.

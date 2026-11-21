@@ -18,10 +18,10 @@ from props.db.database import Database
 from props.db.models import AgentRun
 from props.testing.fixtures.runs import FAKE_CRITIC_DIGEST, ensure_fake_agent_definitions
 
-# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep //props/testing/fixtures:db
 # gazelle:include_dep //props/testing/fixtures:runs
-pytest_plugins = ("util.testing.postgres_fixtures", "props.testing.fixtures.db", "props.testing.fixtures.runs")
+pytest_plugins = ("testing.postgres_fixtures", "props.testing.fixtures.db", "props.testing.fixtures.runs")
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
 # gazelle:include_dep @pypi//httpx
@@ -37,9 +37,6 @@ def stats_client(synced_db: Database) -> TestClient:
     # RLS scoping is tested separately in test_split_based_rls.
     app.dependency_overrides[get_caller_db] = lambda: synced_db
     return TestClient(app, raise_server_exceptions=False)
-
-
-# --- /definitions/{image_digest} ---
 
 
 def test_definition_detail_not_found(stats_client: TestClient) -> None:
@@ -72,9 +69,6 @@ def test_definition_detail_with_runs(
     assert body["examples"]
 
 
-# --- /occurrences ---
-
-
 def test_occurrences_empty(stats_client: TestClient) -> None:
     """Returns empty list when no runs exist."""
     resp = stats_client.get("/api/stats/occurrences")
@@ -99,9 +93,6 @@ def test_occurrences_with_runs(
         assert row["mean_credit"] == pytest.approx(0.76)
         assert row["min_credit"] == pytest.approx(0.72)
         assert row["max_credit"] == pytest.approx(0.8)
-
-
-# --- /coverage ---
 
 
 def test_coverage_empty(stats_client: TestClient) -> None:

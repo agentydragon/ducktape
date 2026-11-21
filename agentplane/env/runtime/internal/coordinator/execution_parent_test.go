@@ -6,7 +6,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
 )
@@ -35,15 +34,6 @@ func (p *heldExecutionPublication) publishExecutionOwner(uid string, result exec
 	return admitted
 }
 
-func waitExecutionBarrier(t *testing.T, barrier <-chan struct{}, description string) {
-	t.Helper()
-	select {
-	case <-barrier:
-	case <-time.After(lifecycleTestTimeout):
-		t.Fatalf("waiting for %s", description)
-	}
-}
-
 func assertExecutionMutexAvailable(t *testing.T, h *executionLifecycle) {
 	t.Helper()
 	unlocked := make(chan struct{})
@@ -52,7 +42,7 @@ func assertExecutionMutexAvailable(t *testing.T, h *executionLifecycle) {
 		h.mu.Unlock()
 		close(unlocked)
 	}()
-	waitExecutionBarrier(t, unlocked, "lifecycle mutex while parent publication is blocked")
+	waitSignal(t, unlocked, "timed out waiting for lifecycle mutex while parent publication is blocked")
 }
 
 func assertExecutionOwnerRetained(t *testing.T, r *Runtime, handle executionHandle) {
@@ -88,7 +78,7 @@ func TestExecutionParentStartPublicationRechecksAdmission(t *testing.T) {
 			defer cancel()
 			startDone := make(chan error, 1)
 			go func() { startDone <- r.startExecutionForUID(ctx, "incarnation") }()
-			waitExecutionBarrier(t, p.entered, "start owner publication")
+			waitSignal(t, p.entered, "timed out waiting for start owner publication")
 			assertExecutionMutexAvailable(t, r.executionLifecycle)
 			if revoke == "caller-cancel" {
 				cancel()
@@ -101,7 +91,7 @@ func TestExecutionParentStartPublicationRechecksAdmission(t *testing.T) {
 				r.mu.Unlock()
 			}
 			publication.Do(func() { close(p.release) })
-			waitExecutionBarrier(t, fenceEntered, "rejected start fence")
+			waitSignal(t, fenceEntered, "timed out waiting for rejected start fence")
 			if <-p.admitted {
 				t.Fatal("stale start was admitted at owner publication")
 			}
@@ -147,7 +137,7 @@ func TestExecutionParentFenceDrainsCallsBeforeReleasingOwner(t *testing.T) {
 	})
 	stopDone := make(chan error, 1)
 	go func() { stopDone <- r.stopExecution(context.Background()) }()
-	waitExecutionBarrier(t, canceled, "forwarded call cancellation")
+	waitSignal(t, canceled, "timed out waiting for forwarded call cancellation")
 	assertExecutionOwnerRetained(t, r, handle)
 	select {
 	case <-fenceEntered:
@@ -159,7 +149,7 @@ func TestExecutionParentFenceDrainsCallsBeforeReleasingOwner(t *testing.T) {
 	delete(r.execCalls, 1)
 	r.changedLocked()
 	r.mu.Unlock()
-	waitExecutionBarrier(t, fenceEntered, "native fence after call drain")
+	waitSignal(t, fenceEntered, "timed out waiting for native fence after call drain")
 	assertExecutionOwnerRetained(t, r, handle)
 	select {
 	case err := <-stopDone:
@@ -205,7 +195,7 @@ func TestExecutionParentRecoveryPublicationRechecksBinding(t *testing.T) {
 				t.Fatal(err)
 			}
 			first.exited <- childExit{}
-			waitExecutionBarrier(t, p.entered, "recovery owner publication")
+			waitSignal(t, p.entered, "timed out waiting for recovery owner publication")
 			assertExecutionMutexAvailable(t, r.executionLifecycle)
 			if revoke == "seal" {
 				if err := r.state.EnterLameduck(); err != nil {
@@ -222,7 +212,7 @@ func TestExecutionParentRecoveryPublicationRechecksBinding(t *testing.T) {
 				r.mu.Unlock()
 			}
 			publication.Do(func() { close(p.release) })
-			waitExecutionBarrier(t, fenceEntered, "stale recovery fence")
+			waitSignal(t, fenceEntered, "timed out waiting for stale recovery fence")
 			if <-p.admitted {
 				t.Fatal("recovery published an owner after its binding was revoked")
 			}
@@ -261,7 +251,6 @@ func (p *heldExecutionWorker) registerExecutionWorker() func() {
 func TestExecutionParentCloseJoinsRegisteredWorkerBeforeStoreRelease(t *testing.T) {
 	config := lifecycleConfig(t, "", t.TempDir(), nil, "/bin/false")
 	config.CodexExecServer = &codexexecserver.Config{URL: "ws://unused"}
-	config.CodexBinary = "/bin/false"
 	config.HarnessEnvironment = map[string]string{}
 	r, err := newTestRuntime(t, config.Config, nil, runtimeDeps{
 		startExecution: func(context.Context, Config, string) (executionHandle, error) {
@@ -286,28 +275,19 @@ func TestExecutionParentCloseJoinsRegisteredWorkerBeforeStoreRelease(t *testing.
 	if err := r.startExecutionForUID(t.Context(), "incarnation"); err != nil {
 		t.Fatal(err)
 	}
-	waitExecutionBarrier(t, p.returned, "registered launch worker completion")
+	waitSignal(t, p.returned, "timed out waiting for registered launch worker completion")
 	closeDone := make(chan error, 1)
 	go func() { closeDone <- r.Close(context.Background()) }()
-	waitExecutionBarrier(t, r.lifecycleDone, "Close to join the engine")
+	waitSignal(t, r.lifecycleDone, "timed out waiting for Close to join the engine")
 	select {
 	case err := <-closeDone:
 		t.Fatalf("Close returned before the registered worker joined: %v", err)
 	default:
 	}
-	if backing, err := openTestRuntimeStore(config.StateDir); err == nil {
-		_ = backing.Close()
-		t.Fatal("Runtime released its state store before joining its Execution worker")
-	}
+	requireOwnerRetained(t, config.StateDir, "Runtime released its state store before joining its Execution worker")
 	release.Do(func() { close(p.release) })
 	if err := waitClose(t, closeDone); err != nil {
 		t.Fatal(err)
 	}
-	backing, err := openTestRuntimeStore(config.StateDir)
-	if err != nil {
-		t.Fatalf("Runtime retained its store after the worker joined: %v", err)
-	}
-	if err := backing.Close(); err != nil {
-		t.Fatal(err)
-	}
+	requireOwnerReleased(t, config.StateDir, "Runtime retained its store after the worker joined")
 }

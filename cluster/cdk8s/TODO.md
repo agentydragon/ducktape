@@ -23,13 +23,17 @@ valid generated and hand-written consumers pass. No duplicate consumer/provider 
 
 ## Fleet rule waivers
 
-Proxy policies that already broke a rule when the rules started covering every App carry
-`unpinned_https_egress` waivers at their write call, each under a `CLEANUP(added 2026-10-12)`
-comment. For each unpinned proxy, either pin `serverNames` or keep the waiver with a comment
-saying why it is exempt by design, as Agentplane's egress proxy does.
+Two `unpinned_https_egress` waivers remain, each at its write call:
+
+- `github-api-proxy` (`x/github_api_proxy/proxy.py`) carries a `CLEANUP(added 2026-10-12)`
+  comment. Pin its `serverNames`, or keep the waiver with a comment saying why it is exempt
+  by design.
+- Agentplane's egress proxy (`agentplane/generation.py`) is exempt by design and documented
+  there: the interception proxy terminates TLS, so its allowlist is the egress PolicySets.
+
 Synth fails on a waiver whose object passes, so a fix includes deleting it.
 
-Done: no `CLEANUP(added 2026-10-12)` waiver remains except the documented by-design exemptions.
+Done: no `CLEANUP(added 2026-10-12)` waiver remains except documented by-design exemptions.
 
 ## Fleet rule references
 
@@ -70,22 +74,27 @@ that policy permits traffic.
 Done per neighborhood: producer and consumers share labels without import cycles or a
 new peer registry.
 
-## Kyverno preconditions typed schema (v2beta1)
+## Kyverno CEL policy migration
 
-`providers/kyverno/cluster_policy.py`'s `Validate.deny(conditions=...)` takes
-`preconditions`/`deny.conditions` as a raw dict because `ClusterPolicy`'s `v1` schema --
-the version `cdk8s_import` names plainly, and what this repo's `ClusterPolicySpecRules`
-types come from -- declares `preconditions` as `x-kubernetes-preserve-unknown-fields:
-true`, with no structure at all.
+Kyverno 1.20 stops enforcing `kyverno.io` `ClusterPolicy`/`Policy`/`CleanupPolicy`/
+`ClusterCleanupPolicy`; its chart refuses to upgrade while any exist (override
+`upgrade.acknowledgeLegacyPoliciesNotEnforced` = they silently stop enforcing). Legacy CRDs
+go away in 1.21. The chart is held at 3.9.x (Kyverno 1.19) in `renovate.json5` until done.
 
-The CRD's `v2beta1` schema (served, not storage; generated as suffixed
-`ClusterPolicyV2Beta1Spec*` types) has a real typed shape instead: `any`/`all` arrays of
-`{key, operator, value, message}`, with `operator` a genuine 14-value enum. Migrating
-the wrapper to `v2beta1` would let `Validate.deny()` grow a typed `preconditions`
-factory instead of a raw-dict escape hatch -- worth doing sometime, not urgent.
+Move to `policies.kyverno.io/v1` kinds (CEL; `preconditions` -> `matchConditions`,
+`context` -> `spec.variables`, `patchStrategicMerge` -> `ApplyConfiguration`/`JSONPatch`).
+Moved: `require-gitops`, `default-disable-service-links`, `require-secret-store-conditions`,
+the janitor, and `agentplane-staging-launcher-relay` (`ValidatingPolicy` plus a `MutatingPolicy`, both
+with `resource.Get` variables), and the props finished-pod reaper (`NamespacedDeletingPolicy`). Left:
+gaffer-private's thrive-scraper Job reaper (agentydragon/gaffer-private#1467), then the chart bump below.
 
-Done: `providers/kyverno` targets `v2beta1` (or offers it alongside `v1`), and
-`preconditions` has a typed factory built from the real `any`/`all` shape.
+Offline `kyverno apply` evaluates `resource.Get` only for kinds it can map (core kinds with
+`--context-file`); for KubeVirt and Agentplane kinds the tests substitute `json.unmarshal`
+variables, so the live lookups run only in the cluster.
+
+Done when: no `kyverno.io` policy kinds remain; `providers/kyverno` wrapper targets the new CRDs;
+CRD pins in `devinfra/bazel/artifacts.MODULE.bazel` and the `kyverno` CLI pin match 1.20; the
+Renovate hold is removed.
 
 ## Watch GitHub secret inputs declaratively (deferred)
 

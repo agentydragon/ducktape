@@ -35,13 +35,10 @@ type Source struct {
 type Client struct {
 	rpc   ingresspb.SessionJournalIngressClient
 	store *retained.Store
-	onAck func(string, retained.Acknowledgement) error
 }
 
-// NewClient binds the RPC client to durable acknowledgement storage and its
-// observation owner. Deliver receives the outgoing-authenticated context.
-func NewClient(rpc ingresspb.SessionJournalIngressClient, store *retained.Store, onAck func(string, retained.Acknowledgement) error) *Client {
-	return &Client{rpc: rpc, store: store, onAck: onAck}
+func NewClient(rpc ingresspb.SessionJournalIngressClient, store *retained.Store) *Client {
+	return &Client{rpc: rpc, store: store}
 }
 
 // Deliver retries one Session's push stream until it is sealed or canceled.
@@ -65,14 +62,9 @@ func isLocalFailure(err error) bool {
 	return errors.As(err, &local) || errors.As(err, &storage)
 }
 
-func (c *Client) acknowledge(source Source, ack retained.Acknowledgement) error {
-	if err := c.store.WriteAcknowledgement(source.ID, ack); err != nil {
+func (c *Client) acknowledge(id string, ack retained.Acknowledgement) error {
+	if err := c.store.WriteAcknowledgement(id, ack); err != nil {
 		return &localError{err}
-	}
-	if c.onAck != nil {
-		if err := c.onAck(source.ID, ack); err != nil {
-			return &localError{err}
-		}
 	}
 	return nil
 }
@@ -130,7 +122,7 @@ func (c *Client) pushOnce(ctx context.Context, source Source) (bool, error) {
 		return false, status.Error(codes.FailedPrecondition, "ingress cursor exceeds the journal")
 	}
 	acknowledged, sent := first.ack.Cursor, first.ack.Cursor
-	if err := c.acknowledge(source, retained.Acknowledgement{Cursor: acknowledged, Sealed: first.ack.Sealed}); err != nil {
+	if err := c.acknowledge(source.ID, retained.Acknowledgement{Cursor: acknowledged, Sealed: first.ack.Sealed}); err != nil {
 		return false, err
 	}
 	if first.ack.Sealed {
@@ -218,7 +210,7 @@ func (c *Client) pushOnce(ctx context.Context, source Source) (bool, error) {
 					return progressed, status.Error(codes.FailedPrecondition, "ingress acknowledged an unsent seal")
 				}
 			}
-			if err := c.acknowledge(source, retained.Acknowledgement{Cursor: ack.Cursor, Sealed: ack.Sealed}); err != nil {
+			if err := c.acknowledge(source.ID, retained.Acknowledgement{Cursor: ack.Cursor, Sealed: ack.Sealed}); err != nil {
 				return progressed, err
 			}
 			if ack.Sealed {

@@ -3,6 +3,7 @@
 import gzip
 import json
 from dataclasses import dataclass
+from itertools import batched
 from typing import Any
 
 from sqlalchemy import bindparam, text
@@ -126,8 +127,7 @@ class Store:
         level = list(dict.fromkeys(content_id for content_id in root_ids if content_id))
         while level:
             missing = [content_id for content_id in level if content_id not in self._content_cache]
-            for start in range(0, len(missing), 500):
-                batch = missing[start : start + 500]
+            for batch in batched(missing, 500, strict=False):
                 query = text("SELECT id, kind, payload FROM sampler_content WHERE id IN :ids").bindparams(
                     bindparam("ids", expanding=True)
                 )
@@ -247,18 +247,6 @@ class Store:
         ids = (await self._context_record_ids([context_id]))[context_id]
         await self._prefetch_content(ids)
         return [self._restore_record(api, content_id) for content_id in ids]
-
-    async def released_generation(self, session_id: str) -> int | None:
-        async with self.engine.connect() as connection:
-            generation = await connection.scalar(
-                text(
-                    "SELECT c.generation FROM sampler_conversation c "
-                    "JOIN sampler_session s ON s.conversation_id=c.id "
-                    "WHERE s.id=:session_id AND c.owner IS NULL"
-                ),
-                {"session_id": session_id},
-            )
-        return None if generation is None else int(generation)
 
     async def resident_generation(self, session_id: str) -> int | None:
         async with self.engine.connect() as connection:

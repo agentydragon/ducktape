@@ -22,12 +22,13 @@ from airlock.oauth.config import OAuth2ProviderConfig, OAuthConfig, TokenSecretC
 from airlock.settings import Settings
 from cluster.cdk8s import namespaces
 from cluster.cdk8s.config_format import yaml_config
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.namespaces import Vpa, VpaProfile
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import (
     ClusterDataFrom,
@@ -36,6 +37,7 @@ from cluster.cdk8s.providers.external_secrets.external_secret import (
 )
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.vpa_policy import ContainerPolicy, ControlledValues
 from util.settings_contract import validate_settings_fragment
 
 NAME = "airlock"
@@ -218,15 +220,8 @@ def _deployment(chart: Chart) -> None:
                                     name="public-web-pki", mount_path="/var/run/public-web-pki", read_only=True
                                 ),
                             ],
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "memory": k8s.Quantity.from_string("256Mi"),
-                                    "cpu": k8s.Quantity.from_string("100m"),
-                                },
-                                limits={
-                                    "memory": k8s.Quantity.from_string("512Mi"),
-                                    "cpu": k8s.Quantity.from_string("500m"),
-                                },
+                            resources=container_resources(
+                                cpu="100m", memory="256Mi", cpu_limit="500m", memory_limit="512Mi"
                             ),
                             liveness_probe=_probe("/healthz", 15, 20),
                             readiness_probe=_probe("/healthz", 5, 10),
@@ -294,17 +289,15 @@ def chart(app: App) -> Chart:
         chart,
         "namespace",
         name=NAME,
-        vpa=Vpa.AUTO,
+        vpa=VpaProfile(
+            Vpa.AUTO,
+            (
+                ContainerPolicy(
+                    controlled_values=ControlledValues.REQUESTS_ONLY, min_allowed={"cpu": "100m", "memory": "128Mi"}
+                ),
+            ),
+        ),
         labels={"name": NAME},
-        annotations={
-            # controlledValues has to be spelled out here: default-vpa-requests-only
-            # only adds the annotation when it is absent, so declaring any policy of
-            # your own opts the namespace out of the default entirely.
-            "goldilocks.fairwinds.com/vpa-resource-policy": (
-                '{ "containerPolicies": [ { "containerName": "*", "controlledValues":'
-                ' "RequestsOnly", "minAllowed": { "cpu": "100m", "memory": "128Mi" } } ] }\n'
-            )
-        },
     )
     _session_secret(chart)
     _deployment(chart)

@@ -38,7 +38,7 @@ type Server struct {
 	// Config reaches the API server as a cluster administrator.
 	Config    *rest.Config
 	Clientset kubernetes.Interface
-	// UserToken authenticates User, for the audiences WithUserAudiences names.
+	// UserToken authenticates User.
 	UserToken string
 
 	environment *envtest.Environment
@@ -53,12 +53,6 @@ func WithAPIServerFlag(name string, values ...string) Option {
 	return func(environment *envtest.Environment) {
 		environment.ControlPlane.GetAPIServer().Configure().Set(name, values...)
 	}
-}
-
-// WithUserAudiences lets UserToken authenticate for audiences. The API server reviews a token that
-// names no audience of its own, as a static token does not, only for the audiences it serves.
-func WithUserAudiences(audiences ...string) Option {
-	return WithAPIServerFlag("api-audiences", audiences...)
 }
 
 // WithCRDs also installs the CRDs at paths, files or directories, such as cert-manager's.
@@ -158,34 +152,6 @@ func (s *Server) ServiceAccount(ctx context.Context, account auth.Account) (*cor
 		return nil, fmt.Errorf("create ServiceAccount %s/%s: %w", account.Namespace, account.Name, err)
 	}
 	return created, nil
-}
-
-// RecreateServiceAccount deletes account's ServiceAccount and creates it again under the same name
-// with a new UID, so tokens of the old one stop authenticating. It returns once the API server
-// authenticates the new one's tokens: it checks a token's ServiceAccount against a cache that can
-// still hold the deleted one for a moment.
-func (s *Server) RecreateServiceAccount(ctx context.Context, account auth.Account) error {
-	err := s.Clientset.CoreV1().ServiceAccounts(account.Namespace).Delete(ctx, account.Name, metav1.DeleteOptions{})
-	if err != nil {
-		return fmt.Errorf("delete ServiceAccount %s/%s: %w", account.Namespace, account.Name, err)
-	}
-	probe, err := s.UnboundToken(ctx, account)
-	if err != nil {
-		return err
-	}
-	err = wait.PollUntilContextTimeout(ctx, 100*time.Millisecond, time.Minute, true, func(ctx context.Context) (bool, error) {
-		review, err := s.TokenReviews().Create(ctx, &authenticationv1.TokenReview{
-			Spec: authenticationv1.TokenReviewSpec{Token: probe},
-		}, metav1.CreateOptions{})
-		if err != nil {
-			return false, err
-		}
-		return review.Status.Authenticated, nil
-	})
-	if err != nil {
-		return fmt.Errorf("wait for the API server to authenticate recreated ServiceAccount %s/%s: %w", account.Namespace, account.Name, err)
-	}
-	return nil
 }
 
 // Pod is a new Pod running as account, whose ServiceAccount and namespace are created when absent.

@@ -3,16 +3,17 @@
 import os
 import shutil
 import subprocess
-from collections.abc import Generator
+import sys
+from collections.abc import Callable, Generator
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from opentelemetry import trace
 from python.runfiles import Runfiles
 
-from devinfra.bazel.subprocess import _merge_pythonpath
-from util.testing.otel_tracing import configure_tracing
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
+from testing.otel_tracing import configure_tracing
 
 _CONDA_ENV_REPO = "rules_conda++conda+freecad_conda"
 
@@ -60,11 +61,6 @@ def pytest_configure(config: pytest.Config) -> None:
     configure_tracing(config)
 
 
-# ---------------------------------------------------------------------------
-# Conda env helpers
-# ---------------------------------------------------------------------------
-
-
 def _find_conda_root() -> Path:
     """Locate the conda env root via Rlocation of an anchor file inside the env."""
     anchor = Runfiles.CreateOrRaise().root() / _CONDA_FREECADCMD_RLOCATION
@@ -90,7 +86,8 @@ def freecad_env(conda_root: Path, freecad_home: Path, *, display: str | None = N
         "PYTHONHOME": str(conda_root),
         "PATH": str(conda_root / "bin") + os.pathsep + os.environ.get("PATH", ""),
         "QT_PLUGIN_PATH": str(conda_root / "lib" / "qt6" / "plugins"),
-        # FreeCAD isolation
+        # FreeCAD isolation. A custom FREECAD_USER_HOME also skips DlgVersionMigrator: on a fresh default
+        # home its modal dialog is invisible offscreen and blocks Gui.showMainWindow() forever.
         "HOME": str(freecad_home),
         "FREECAD_USER_HOME": str(freecad_home),
         # Do not inherit the RBE worker's system font inventory.  The worker
@@ -127,10 +124,9 @@ def _freecad_run(
     # Inject this repository's runfiles paths so FreeCAD scripts can import from it.
     # Bazel's Python site-packages conflict with FreeCAD's bundled Python.
     repo_root = Path(__file__).absolute().parents[2]
-    base_pythonpath = _merge_pythonpath()
     inject_paths = [
         p
-        for p in base_pythonpath.split(os.pathsep)
+        for p in dict.fromkeys([*sys.path, *os.environ.get("PYTHONPATH", "").split(os.pathsep)])
         if p and Path(p).is_relative_to(repo_root) and "site-packages" not in Path(p).parts
     ]
     wrapper = outdir / "_freecad_wrapper.py"
@@ -146,11 +142,6 @@ def _freecad_run(
     )
     wrapper.unlink(missing_ok=True)
     return result
-
-
-# ---------------------------------------------------------------------------
-# Utility functions
-# ---------------------------------------------------------------------------
 
 
 def assert_run_ok(result: subprocess.CompletedProcess, script_name: str, uo: Path, name: str) -> None:
@@ -171,9 +162,44 @@ def copy_outputs(src: Path, dst: Path) -> None:
             shutil.copy2(f, dst / f.name)
 
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class Stage:
+    """One FreeCAD script run of a golden test."""
+
+    script: str  # runfiles path
+    label: str  # stem of the stdout/stderr files saved as undeclared outputs
+    gui: bool = True  # False runs headless with freecadcmd
+
+
+@dataclass(frozen=True)
+class StageRunner:
+    freecad_run: Callable[..., subprocess.CompletedProcess]
+    freecad_gui: Callable[..., subprocess.CompletedProcess]
+    runfiles: Runfiles
+    tmp_path_factory: pytest.TempPathFactory
+
+    def run(self, name: str, *stages: Stage, fcstd: str) -> Path:
+        """Run `stages` in order in a fresh directory and return it.
+
+        The first stage must produce `fcstd`; later stages get it as `INPUT`. Each stage's
+        stdout/stderr and the final directory contents are saved under undeclared outputs `name`.
+        """
+        out_dir = self.tmp_path_factory.mktemp(name)
+        uo = undeclared_outputs_dir() / name
+        uo.mkdir(parents=True, exist_ok=True)
+
+        env: dict[str, str] | None = None
+        for stage in stages:
+            runner = self.freecad_gui if stage.gui else self.freecad_run
+            result = runner(self.runfiles.root() / stage.script, outdir=out_dir, env=env)
+            assert_run_ok(result, Path(stage.script).name, uo, stage.label)
+            if env is None:
+                produced = out_dir / fcstd
+                assert produced.exists(), f"{fcstd} not produced — see {stage.label}.stderr in test outputs"
+                env = {"INPUT": str(produced)}
+
+        copy_outputs(out_dir, uo)
+        return out_dir
 
 
 @pytest.fixture(scope="session")
@@ -232,5 +258,7 @@ def freecad_run(conda_root: Path, freecad_home: Path):
     return _make_runner(conda_root / "bin" / "freecadcmd", freecad_env(conda_root, freecad_home), default_timeout=120)
 
 
-if __name__ == "__main__":
-    pytest_bazel.main()
+@pytest.fixture(scope="session")
+def stage_runner(freecad_run, freecad_gui, runfiles: Runfiles, tmp_path_factory: pytest.TempPathFactory) -> StageRunner:
+    """Run a golden test's FreeCAD scripts in order into one output directory."""
+    return StageRunner(freecad_run, freecad_gui, runfiles, tmp_path_factory)

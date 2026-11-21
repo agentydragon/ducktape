@@ -1,0 +1,15 @@
+function v2(v3) { return ((v0(3) < 0) ? v3 : ((v3 < 1) ? (v3 * v0(8)) : v3)); }
+(globalThis.saved = v2);
+function v4(v5) { return () => v1(7); }
+(globalThis.saved = v2);
+function v6(v7) { return v1(7); }
+function v8(v9) { return (v9 + (v0(3) - v9)); }
+console.log("effect", ((2 + ((4 < 5) ? 5 : 4)) + ((9 * 6) + (3 + 5))));
+const v10 = ({ value: ((5 < 0) ? 7 : ((0 < 2) ? 0 : 5)) });
+function v11(v12) { return v12; }
+const v0 = () => 0;
+const v1 = v0;
+function v13(v14) { return () => v14; }
+console.log("callback", globalThis.saved(v10.value));
+console.log("callback", globalThis.saved((6 * 3)));
+console.log("final", (((2 * 1) * 6) * v10.value));

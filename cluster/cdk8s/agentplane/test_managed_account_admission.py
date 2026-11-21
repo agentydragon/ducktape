@@ -4,29 +4,29 @@ account, acting as the owning account, and never takes over an object that accou
 from __future__ import annotations
 
 import copy
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from typing import Any, cast
 
 import cdk8s
 import pytest_bazel
 from cdk8s import Chart
 from kubernetes_asyncio import client as k8s_client
-from kubernetes_asyncio.client.exceptions import ApiException
-from kubernetes_asyncio.config import new_client_from_config
 from more_itertools import one
-from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
+from agentplane.crd_group import GROUP, VERSION
 from agentplane.subjects import ServiceAccountRef
-from agentplane.testing.kubernetes_apiserver import KubernetesApiServer, kubernetes_apiserver
+from agentplane.testing.kubernetes_apiserver import (
+    KubernetesApiServer,
+    dry_run_admitted,
+    kubernetes_apiserver,
+    wait_until_refused,
+)
 from cluster.cdk8s.agentplane.kubernetes_account_ref import KubernetesAccountRef
 from cluster.cdk8s.agentplane.kubernetes_accounts import KubernetesAccount
 from cluster.cdk8s.agentplane.managed_account_admission import add_managed_account_admission
 
 Body = dict[str, Any]
-Admits = Callable[[str, Body], Awaitable[bool]]
 
-GROUP = "agentplane.allegedly.works"
-VERSION = "v1alpha1"
 NAMESPACE = "test-policy"
 ACCOUNTS_NAMESPACE = "test-policy-accounts"
 CONTROLLER = ServiceAccountRef(namespace=NAMESPACE, name="test-policy-controller")
@@ -60,19 +60,12 @@ def _renamed(body: Body, name: str) -> Body:
 
 
 async def _admitted(server: KubernetesApiServer, user: str, body: Body) -> bool:
-    async with await new_client_from_config(config_file=str(server.kubeconfig)) as impersonating:
-        impersonating.set_default_header("Impersonate-User", user)
-        # Authorized as an administrator, so that admission alone decides.
-        impersonating.set_default_header("Impersonate-Group", "system:masters")
-        try:
-            await k8s_client.CustomObjectsApi(impersonating).create_namespaced_custom_object(
+    async with server.impersonating(user) as impersonating:
+        return await dry_run_admitted(
+            k8s_client.CustomObjectsApi(impersonating).create_namespaced_custom_object(
                 GROUP, VERSION, NAMESPACE, _PLURALS[body["kind"]], body, dry_run="All"
             )
-        except ApiException as error:
-            if error.status != 422:
-                raise
-            return False
-        return True
+        )
 
 
 async def _replaced(server: KubernetesApiServer, user: str, body: Body) -> bool:
@@ -86,18 +79,12 @@ async def _replaced(server: KubernetesApiServer, user: str, body: Body) -> bool:
     )
     replacement = copy.deepcopy(body)
     replacement["metadata"]["resourceVersion"] = current["metadata"]["resourceVersion"]
-    async with await new_client_from_config(config_file=str(server.kubeconfig)) as impersonating:
-        impersonating.set_default_header("Impersonate-User", user)
-        impersonating.set_default_header("Impersonate-Group", "system:masters")
-        try:
-            await k8s_client.CustomObjectsApi(impersonating).replace_namespaced_custom_object(
+    async with server.impersonating(user) as impersonating:
+        return await dry_run_admitted(
+            k8s_client.CustomObjectsApi(impersonating).replace_namespaced_custom_object(
                 GROUP, VERSION, NAMESPACE, plural, body["metadata"]["name"], replacement, dry_run="All"
             )
-        except ApiException as error:
-            if error.status != 422:
-                raise
-            return False
-        return True
+        )
 
 
 async def test_controller_writes_only_its_accounts_use(scratch_chart: Chart) -> None:
@@ -120,18 +107,12 @@ async def test_controller_writes_only_its_accounts_use(scratch_chart: Chart) -> 
     use_set = _owned(static_set, [OWNER])
 
     async with kubernetes_apiserver() as server:
-        core = k8s_client.CoreV1Api(server.api)
-        await core.create_namespace(k8s_client.V1Namespace(metadata=k8s_client.V1ObjectMeta(name=NAMESPACE)))
-        admission = k8s_client.AdmissionregistrationV1Api(server.api)
-        # The client serializes a manifest dict as it would its own model, which is what its stubs name.
-        policy: Any = one(d for d in documents if d["kind"] == "ValidatingAdmissionPolicy")
-        binding: Any = one(d for d in documents if d["kind"] == "ValidatingAdmissionPolicyBinding")
-        await admission.create_validating_admission_policy(policy)
-        await admission.create_validating_admission_policy_binding(binding)
-        # The API server loads a new policy in the background, and shows no sign of having loaded it.
-        async for attempt in AsyncRetrying(stop=stop_after_delay(30), wait=wait_fixed(0.1), reraise=True):
-            with attempt:
-                assert not await _admitted(server, CONTROLLER_USER, static_credential)
+        await server.install_admission_policy(
+            one(d for d in documents if d["kind"] == "ValidatingAdmissionPolicy"),
+            one(d for d in documents if d["kind"] == "ValidatingAdmissionPolicyBinding"),
+            namespaces=[NAMESPACE],
+        )
+        await wait_until_refused(lambda: _admitted(server, CONTROLLER_USER, static_credential))
 
         assert await _admitted(server, CONTROLLER_USER, credential)
         assert await _admitted(server, CONTROLLER_USER, use_set)

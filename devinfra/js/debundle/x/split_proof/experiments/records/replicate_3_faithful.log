@@ -1,0 +1,14 @@
+## lodash x1: 670 statements, 6 modules
+[read + parse JSON: 21 ms;[footprints (Lean analysis): 3 ms;[load spec: 3 ms;[mkPlan: 2 ms;pass UniqueDefs  (0 ms);pass ReadsClosed  (6 ms);pass Faithful  (3 ms);pass Linkable  (0 ms);pass Hygienic  (1 ms);pass Permutes  (0 ms);pass OrderOk  (15 ms);[all seven checks: 25 ms;[render + write: 5 ms;[total: 59 ms;
+## lodash x2: 1340 statements, 12 modules
+[read + parse JSON: 15 ms;[footprints (Lean analysis): 4 ms;[load spec: 3 ms;[mkPlan: 13 ms;pass UniqueDefs  (1 ms);pass ReadsClosed  (14 ms);pass Faithful  (8 ms);pass Linkable  (1 ms);pass Hygienic  (3 ms);pass Permutes  (0 ms);pass OrderOk  (46 ms);[all seven checks: 73 ms;[render + write: 7 ms;[total: 115 ms;
+## lodash x4: 2680 statements, 24 modules
+[read + parse JSON: 14 ms;[footprints (Lean analysis): 4 ms;[load spec: 3 ms;[mkPlan: 29 ms;pass UniqueDefs  (2 ms);pass ReadsClosed  (27 ms);pass Faithful  (28 ms);pass Linkable  (2 ms);pass Hygienic  (8 ms);pass Permutes  (1 ms);pass OrderOk  (136 ms);[all seven checks: 204 ms;[render + write: 22 ms;[total: 276 ms;
+## lodash x8: 5360 statements, 48 modules
+[read + parse JSON: 13 ms;[footprints (Lean analysis): 4 ms;[load spec: 4 ms;[mkPlan: 76 ms;pass UniqueDefs  (3 ms);pass ReadsClosed  (57 ms);pass Faithful  (79 ms);pass Linkable  (2 ms);pass Hygienic  (25 ms);pass Permutes  (3 ms);pass OrderOk  (515 ms);[all seven checks: 684 ms;[render + write: 60 ms;[total: 841 ms;
+## lodash x16: 10720 statements, 96 modules
+[read + parse JSON: 19 ms;[footprints (Lean analysis): 4 ms;[load spec: 7 ms;[mkPlan: 260 ms;pass UniqueDefs  (7 ms);pass ReadsClosed  (114 ms);pass Faithful  (313 ms);pass Linkable  (5 ms);pass Hygienic  (99 ms);pass Permutes  (10 ms);pass OrderOk  (1862 ms);[all seven checks: 2411 ms;[render + write: 151 ms;[total: 2853 ms;
+## lodash x32: 21440 statements, 192 modules
+[read + parse JSON: 18 ms;[footprints (Lean analysis): 4 ms;[load spec: 16 ms;[mkPlan: 1001 ms;pass UniqueDefs  (27 ms);pass ReadsClosed  (268 ms);pass Faithful  (1291 ms);pass Linkable  (10 ms);pass Hygienic  (407 ms);pass Permutes  (17 ms);pass OrderOk  (6812 ms);[all seven checks: 8835 ms;[render + write: 608 ms;[total: 10482 ms;
+## lodash x64: 42880 statements, 384 modules
+[read + parse JSON: 16 ms;[footprints (Lean analysis): 4 ms;[load spec: 28 ms;[mkPlan: 3596 ms;pass UniqueDefs  (37 ms);pass ReadsClosed  (458 ms);pass Faithful  (5310 ms);pass Linkable  (24 ms);pass Hygienic  (2116 ms);pass Permutes  (44 ms);pass OrderOk  (27882 ms);[all seven checks: 35882 ms;[render + write: 2510 ms;[total: 42036 ms;

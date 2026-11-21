@@ -18,6 +18,7 @@ mod member_read_certificates;
 mod program;
 mod read_only_callbacks;
 mod return_summary;
+mod scalar_sequence;
 use call_effects::{CallEffectBody, CallEffectRules, KnownCellAccesses};
 use candidate_reachability::CandidateReachabilityClosure;
 pub(crate) use initialization::CallableDeclaration;
@@ -107,6 +108,7 @@ struct OriginId(u32);
 pub(super) struct OriginTable {
     origins: Vec<Value>,
     ids: HashMap<Value, OriginId>,
+    function_class_ids: RoaringBitmap,
 }
 
 impl OriginTable {
@@ -125,7 +127,17 @@ impl OriginTable {
                 )
             })
             .collect();
-        Self { origins, ids }
+        let function_class_ids = origins
+            .iter()
+            .enumerate()
+            .filter(|(_, value)| matches!(value, Value::Alloc(Kind::Function | Kind::Class, _)))
+            .map(|(index, _)| u32::try_from(index).expect("origin count exceeds u32"))
+            .collect();
+        Self {
+            origins,
+            ids,
+            function_class_ids,
+        }
     }
 
     fn id(&self, origin: Value) -> OriginId {
@@ -291,6 +303,17 @@ impl Values {
             changed = true;
         }
         changed
+    }
+
+    fn without_function_class(&self) -> Self {
+        if self.bitmap.is_disjoint(&self.origins.function_class_ids) {
+            return self.clone();
+        }
+        Self {
+            bitmap: Arc::new(self.bitmap.as_ref() - &self.origins.function_class_ids),
+            unknown: self.unknown,
+            origins: self.origins.clone(),
+        }
     }
 
     fn difference(&self, delivered: &Self) -> Self {
@@ -1299,12 +1322,20 @@ impl ChunkValueFlow {
         }
         match expr.unwrap_parens() {
             Expr::Ident(ident) => {
-                if let Some((receiver, property)) =
+                let values = if let Some((receiver, property)) =
                     self.member_read_certificates.guarded_projection(ident.span)
                 {
                     self.values_of_member(self.values_of_binding(receiver), Some(property), false)
                 } else {
                     self.values_of_binding(&ident.to_id())
+                };
+                if self
+                    .member_read_certificates
+                    .excludes_function_class(ident.span, &ident.to_id())
+                {
+                    values.without_function_class()
+                } else {
+                    values
                 }
             }
             Expr::Fn(function) => {
@@ -1590,6 +1621,11 @@ fn append_value_expr(
                     unknown(SourceUnknownCause::UndeclaredBinding);
                     values.push(Value::Top);
                 }
+            }
+            FlowValueExpr::NonFunction(inner) => {
+                let mut result = values.child();
+                append_value_expr(inner, &mut result, declared, returns, read_values, unknown);
+                values.extend(&result.finish().without_function_class());
             }
             FlowValueExpr::Value(value) => values.push(*value),
             FlowValueExpr::Member { object, property } => {
@@ -2004,6 +2040,7 @@ impl FlowSymbols {
 #[derive(Debug, Clone)]
 enum FlowValueExpr {
     Binding(BindingSlot),
+    NonFunction(Box<FlowValueExpr>),
     Value(Value),
     Member {
         object: Box<FlowValueExpr>,
@@ -2033,6 +2070,7 @@ impl FlowValueExpr {
                 | Self::Member { .. }
                 | Self::NumericMember { .. }
                 | Self::Call { .. } => return true,
+                Self::NonFunction(inner) => pending.push(inner),
                 Self::Union(left, right) => {
                     pending.push(left);
                     pending.push(right);
@@ -2104,7 +2142,11 @@ impl FlowValueExpr {
     fn from_ast_leaf(expr: &Expr, symbols: &mut FlowSymbols) -> Self {
         match expr {
             Expr::Ident(ident) => {
-                if let Some((receiver, property)) = symbols
+                let binding = ident.to_id();
+                let excludes_function_class = symbols
+                    .member_read_certificates
+                    .excludes_function_class(ident.span, &binding);
+                let value = if let Some((receiver, property)) = symbols
                     .member_read_certificates
                     .guarded_projection(ident.span)
                     .cloned()
@@ -2114,7 +2156,12 @@ impl FlowValueExpr {
                         property: Some(symbols.property(property)),
                     }
                 } else {
-                    Self::Binding(symbols.binding(ident.to_id()))
+                    Self::Binding(symbols.binding(binding))
+                };
+                if excludes_function_class {
+                    Self::NonFunction(Box::new(value))
+                } else {
+                    value
                 }
             }
             Expr::Fn(function) => {
@@ -4531,6 +4578,34 @@ mod bitmap_join_tests {
 
     fn mask_bitmap(mask: u32, width: u32) -> Arc<RoaringBitmap> {
         bitmap((0..width).filter(|bit| mask & (1 << bit) != 0))
+    }
+
+    #[test]
+    fn guarded_non_function_projection_preserves_unknown_and_proxy_values() {
+        let function = Value::Alloc(Kind::Function, 1);
+        let class = Value::Alloc(Kind::Class, 2);
+        let proxy = Value::Alloc(Kind::Proxy, 3);
+        let object = Value::Alloc(Kind::Object, 4);
+        let origins = Arc::new(OriginTable::from_origins([function, class, proxy, object]));
+        let mut values = Values::empty(origins);
+        for value in [function, class, proxy, object, Value::Top] {
+            values.insert(value);
+        }
+
+        let filtered = values.without_function_class();
+        assert!(!filtered.contains(&function));
+        assert!(!filtered.contains(&class));
+        assert!(filtered.contains(&proxy));
+        assert!(filtered.contains(&object));
+        assert!(filtered.contains(&Value::Top));
+
+        let unchanged = Values::singleton(values.origins.clone(), object);
+        let original_bitmap = unchanged.bitmap.clone();
+        let filtered_unchanged = unchanged.without_function_class();
+        assert!(
+            Arc::ptr_eq(&filtered_unchanged.bitmap, &original_bitmap),
+            "a disjoint filter should preserve bitmap sharing",
+        );
     }
 
     #[test]

@@ -30,7 +30,7 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
-    deps = ["//util/testing:postgres_fixtures"],
+    deps = ["//testing:postgres_fixtures"],
 )
 
 py_test(

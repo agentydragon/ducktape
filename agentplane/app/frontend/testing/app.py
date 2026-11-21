@@ -122,6 +122,23 @@ class AgentplaneFixture:
     async def environment_identity(self, name: str | None) -> None:
         await self.page.evaluate("name => window.agentplaneVisual.environmentIdentity(name)", name)
 
+    async def set_thread_archived(self, thread_id: str, archived: bool) -> None:
+        await self.page.evaluate(
+            "([threadId, archived]) => window.agentplaneVisual.setThreadArchived(threadId, archived)",
+            [thread_id, archived],
+        )
+
+    async def set_required_environment(self, thread_id: str, deleted: bool) -> None:
+        await self.page.evaluate(
+            "([threadId, deleted]) => window.agentplaneVisual.setRequiredEnvironment(threadId, deleted)",
+            [thread_id, deleted],
+        )
+
+    async def set_inbox_snapshot(self, session_id: str, inbox: dict[str, object]) -> None:
+        await self.page.evaluate(
+            "([sessionId, inbox]) => window.agentplaneVisual.setInboxSnapshot(sessionId, inbox)", [session_id, inbox]
+        )
+
     async def name_thread(self, thread_id: str, name: str) -> None:
         await self.page.evaluate("([id, name]) => window.agentplaneVisual.nameThread(id, name)", [thread_id, name])
 
@@ -162,6 +179,13 @@ class AgentplaneFixture:
         )
         await expect(self.page.locator("#app > *").first).to_be_attached()
 
+    async def mount_action_presentations(self, *, sidebar_width: int, detail_width: int, mcp: bool) -> None:
+        await self.page.evaluate(
+            "([sidebar, detail, mcp]) => window.agentplaneVisual.mountActionPresentations(sidebar, detail, mcp)",
+            [sidebar_width, detail_width, mcp],
+        )
+        await expect(self.page.locator("[data-action-visual=sidebar]")).to_be_attached()
+
     async def mount_operation_presentation(self) -> None:
         await self.page.evaluate("() => window.agentplaneVisual.mountOperationPresentation()")
         await expect(self.page.locator("#operation-presentation-surface")).to_be_attached()
@@ -191,10 +215,12 @@ class AgentplaneFixture:
     async def consecutive_reasoning_history(self) -> None:
         await self.page.evaluate("() => window.agentplaneVisual.consecutiveReasoningHistory()")
 
-    async def show_action_preview(self, group: str, name: str, arguments: dict[str, object]) -> None:
+    async def show_action_preview(
+        self, group: str, name: str, arguments: dict[str, object], summaries: dict[str, object] | None = None
+    ) -> None:
         await self.page.evaluate(
-            "([action, args]) => window.agentplaneVisual.showActionPreview(action, args)",
-            [{"group": group, "name": name}, arguments],
+            "([action, args, summaries]) => window.agentplaneVisual.showActionPreview(action, args, summaries)",
+            [{"group": group, "name": name}, arguments, summaries],
         )
 
     async def show_action_result(self, name: str, arguments: dict[str, object], result: dict[str, object]) -> None:

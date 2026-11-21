@@ -3,8 +3,8 @@
 The standalone `mcp-edge` binary is the external MCP endpoint and Connection/OAuth authority. It
 owns its PostgreSQL schema, serves the operator [`ConnectionService`](api/connection/connection_service.proto)
 over gRPC and HTTP/JSON, and, when OAuth is configured, serves `/mcp` and the OAuth protocol routes.
-It calls the Action Service over gRPC with its own projected workload token and a method-scoped,
-Connection-backed Identity delegation.
+It calls the Action Service over gRPC with its own service SVID (or a projected workload token where
+`actions_token_file` is configured) and a method-scoped, Connection-backed Identity delegation.
 The Action Service keeps upstream MCP linkage and CIMD, but does not serve external `/mcp`, OAuth,
 or ConnectionService endpoints.
 
@@ -34,8 +34,7 @@ instructions point to the guide reader, while detailed workflows stay out of sta
 ## Authority
 
 The MCP edge's admission gate protects the nine `ConnectionService` methods with the configured
-operator OIDC issuer. Native gRPC and the HTTP facade both require one valid operator bearer; the
-facade registers directly against the in-process service and applies the same admission gate. An
+operator OIDC issuer. Native gRPC and the HTTP facade both require one valid operator bearer.
 When `rpc_tls.client_ca_file` and `operator_services` are configured, the listener admits only those
 service SVIDs as an additional peer check. Calls still require a valid operator bearer, which supplies
 the operator authority. Certificate-only calls, other service SVIDs and all delegation metadata are
@@ -48,8 +47,10 @@ Action policy namespace and pin its exact Kubernetes UID. Resolution checks that
 unavailable, deleted or replaced Identity refuses the request. The operator-facing picker also
 requires a current Identity watch.
 
-For each admitted Action RPC, the edge sends its own projected `agentplane-egress` audience token
-plus typed Connection ID, grant ID and effective Identity provenance. The edge resolves the external
+For each admitted Action RPC the edge either presents its `spiffe://agentplane/mcp-edge` service SVID,
+pinning `spiffe://agentplane/actions` as the server, or sends the audience token named by
+`actions_token_file`; `actions_tls.ValidateCaller` refuses both at once. It adds typed Connection ID, grant
+ID and effective Identity provenance. The edge resolves the external
 bearer against its live grant and Connection binding and checks the exact Identity UID before
 dispatch. Action middleware separately admits the configured edge actor, accepts typed Connection
 provenance only on explicitly configured methods, and validates the effective Identity; it does not
@@ -78,9 +79,9 @@ Secret and is not part of the file model. `actions_target` is the internal Actio
 endpoint. OAuth deployments set `policy_namespace` to the namespace whose live Identities may be
 selected. `actions_tls` verifies the Action Service SVID and can also present the edge's service
 SVID. When that client certificate is configured, `actions_token_file` must be absent; there is no
-bearer fallback if the certificate is unavailable. Otherwise, `actions_token_file` selects the
-mounted projected Action audience token. Staging keeps the token mount and ServiceAccount RBAC for
-rollback while selecting the SVID in config, so the projected token is not sent to Actions.
+bearer fallback if the certificate is unavailable. Otherwise, `actions_token_file` selects a
+mounted projected Action audience token. Staging configures the edge's service SVID and has no Action
+audience token mount: the `mcp-edge` Role grants only `identities` reads.
 `operator_oidc` requires the
 issuer, audience, JWKS URI and token profile used by the app's operator tokens. `oauth` is an
 optional typed inline object for synthetic deployments. Staging instead sets `oauth_file` to the
@@ -103,10 +104,13 @@ uses the same lifecycle for explicit initialization; both modes read `AGENTPLANE
 ## Connection and OAuth storage
 
 The MCP edge owns Connection and external OAuth state in its `mcp_edge` database. Its serving
-tables are independent of the Action Service database. Actions migration 9 retires the old copies
-after the operator approved deleting their eight historical records. See the
-[staging investigation](debug/staging_handoff_20261023.md) for the pre-retirement inventory.
-Actions still owns upstream MCP server linkage and OAuth token state for configured Actions.
+tables are independent of the Action Service database. Actions migration 9 retired the old copies
+after the operator approved deleting their eight historical records, and the Actions baseline refuses a
+database that still holds them. Reverting the Actions image cannot restore the deleted rows: recover
+only by restoring a pre-drop Actions backup into an isolated database and copying out the needed state.
+Never overwrite new writes in either live database, and never restart the retired integrated
+Connection/OAuth writer. Actions still owns upstream MCP server linkage and OAuth token state for
+configured Actions.
 
 The operator accepts database-stored secrets without application-level encryption; issued opaque
 tokens are stored only as hashes.

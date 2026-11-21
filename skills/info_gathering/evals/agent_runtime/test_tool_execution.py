@@ -10,7 +10,7 @@ import pytest_bazel
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
-from hamcrest import anything, assert_that, contains_string, has_entries
+from hamcrest import assert_that, contains_string, has_entries
 from more_itertools import one
 
 from openai_utils.model import FunctionCallItem, ResponsesRequest, ResponsesResult, UserMessage
@@ -22,10 +22,7 @@ from skills.info_gathering.evals.agent_runtime.events import ToolCallOutput
 from skills.info_gathering.evals.agent_runtime.loop_control import RequireAnyTool
 from skills.info_gathering.evals.agent_runtime.mcp_provider import MCPToolProvider
 from skills.info_gathering.evals.agent_runtime.testing.handlers import TextCaptureHandler, run_until_text
-from skills.info_gathering.evals.agent_runtime.testing.matchers import (
-    assert_function_call_output_structured,
-    tool_call_with_error_text,
-)
+from skills.info_gathering.evals.agent_runtime.testing.matchers import assert_function_call_output_structured
 from skills.info_gathering.evals.agent_runtime.testing.mcp.echo_server import ECHO_TOOL_NAME
 from skills.info_gathering.evals.agent_runtime.tool_provider import ImageContent, TextContent, ToolResult
 
@@ -42,9 +39,6 @@ def test_agent_tool_boundary_validates_nested_union() -> None:
         _make_strict_function_tool("sample", "sample", schema)
     object_variant["additionalProperties"] = False
     assert _make_strict_function_tool("sample", "sample", schema).strict is True
-
-
-# ---- Local fixtures (only used by this module) ----
 
 
 class SendMessageInput(OpenAIStrictModeBaseModel):
@@ -71,9 +65,6 @@ class ValidationServer(FastMCP):
 def validation_server() -> ValidationServer:
     """ValidationServer with typed tool access."""
     return ValidationServer()
-
-
-# --- Tool error continuation tests ---
 
 
 async def test_tool_error_continues_turn(validation_server) -> None:
@@ -126,9 +117,6 @@ async def test_tool_error_continues_turn(validation_server) -> None:
     assert_that(result, contains_string("Successfully sent message"))
 
 
-# --- Malformed JSON tests ---
-
-
 async def _run_malformed_json_test(mcp_tool_provider_echo, *first_turn_calls: FunctionCallItem) -> tuple[str, list]:
     """Run tool calls and capture the agent's response and events."""
     factory = ResponsesFactory()
@@ -136,7 +124,7 @@ async def _run_malformed_json_test(mcp_tool_provider_echo, *first_turn_calls: Fu
     async def handle_request(req: ResponsesRequest) -> ResponsesResult:
         if len(req.input) == 1:
             return factory.make(*first_turn_calls)
-        return factory.make_assistant_message("I received an error")
+        return factory.make(factory.assistant_text("I received an error"))
 
     client = make_mock(handle_request)
     capture = TextCaptureHandler()
@@ -161,7 +149,8 @@ async def test_invalid_tool_argument_json(mcp_tool_provider_echo, arguments) -> 
     assert len(tool_outputs) == 1
 
     tool_result = tool_outputs[0].result
-    assert_that(tool_result, tool_call_with_error_text(anything()))
+    assert tool_result.is_error
+    assert isinstance(one(tool_result.content), TextContent)
 
 
 async def test_malformed_json_multiple_tool_calls(mcp_tool_provider_echo) -> None:
@@ -188,9 +177,6 @@ async def test_malformed_json_multiple_tool_calls(mcp_tool_provider_echo) -> Non
 
     assert error_count == 1
     assert success_count == 1
-
-
-# --- Null byte sanitization tests ---
 
 
 def test_no_nulls_unchanged():

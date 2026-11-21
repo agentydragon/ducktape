@@ -11,7 +11,7 @@ from aiohttp import ClientConnectionError, ClientSession, ClientTimeout
 from devinfra.oci.oci import load_oci_image
 from devinfra.x.github_proxy.central import github_api_proxy_image
 from devinfra.x.github_proxy.central.testing.certificates import certificates
-from util.testing.container_logs import LoggedContainer
+from testing.container_logs import LoggedContainer
 
 
 async def test_image_boots_with_readonly_secrets_and_persistent_capture(tmp_path: Path) -> None:

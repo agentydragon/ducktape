@@ -63,11 +63,6 @@ def _exec_under_env(
     return c.exec(["bash", "-c", f"source {_ENV_FILE} && {shell_cmd}"], workdir=workdir, check=check)
 
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture
 def staged_project(runfiles: Runfiles, tmp_path: Path) -> Path:
     project = tmp_path / "project"
@@ -122,11 +117,6 @@ def container(staged_project: Path, test_age_key: str, e2e_image: str) -> Iterat
         extra_rust_files=["daemon.pid"],
     ) as c:
         yield c
-
-
-# ---------------------------------------------------------------------------
-# Contract test
-# ---------------------------------------------------------------------------
 
 
 def test_container_e2e(container: container_e2e.E2EContainer) -> None:

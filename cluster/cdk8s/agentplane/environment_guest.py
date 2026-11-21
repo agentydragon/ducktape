@@ -15,14 +15,13 @@ from agentplane.env.config import (
     EnvironmentRuntimeControl,
     Harness,
     SVIDEndpoint,
-    VMEnvironment,
-    VMExecutor,
+    SystemdEnvironment,
 )
 from agentplane.net.peertls.config import HISTORY_SERVICE_URI, MTLS, TLS
 from agentplane.sandboxes.runtimeconfig.model_catalog import WORKSPACE_ROOT
 from cluster.cdk8s.agentplane import history_service, llm_ingress, platform_routes, sandbox_pod, telemetry
 from cluster.cdk8s.agentplane.environment import Environment
-from cluster.cdk8s.cert_manager.cluster_ca import BUNDLE_KEY as ENVIRONMENT_RUNTIME_TRUST_BUNDLE_KEY
+from cluster.cdk8s.cert_manager import cluster_ca
 
 _ENVIRONMENT_RUNTIME_PORT = 9090
 _ENVIRONMENT_RUNTIME_TLS_PATH = "/run/agentplane/environment-runtime-tls"
@@ -61,7 +60,7 @@ def guest_config_data(
     }
     llm_url = llm_ingress.proxied_url(namespace)
     config = Configuration(
-        version=2,
+        version=3,
         session_reconcile_concurrency=session_reconcile_concurrency,
         codex_readiness=codex_readiness,
         state_dir="/state",
@@ -75,8 +74,8 @@ def guest_config_data(
                 else TLS(
                     cert_file=f"{_ENVIRONMENT_RUNTIME_TLS_PATH}/tls.crt",
                     key_file=f"{_ENVIRONMENT_RUNTIME_TLS_PATH}/tls.key",
-                    ca_file=f"{_ENVIRONMENT_RUNTIME_TRUST_PATH}/{ENVIRONMENT_RUNTIME_TRUST_BUNDLE_KEY}",
-                    client_ca_file=f"{_ENVIRONMENT_RUNTIME_WORKLOAD_TRUST_PATH}/{ENVIRONMENT_RUNTIME_TRUST_BUNDLE_KEY}",
+                    ca_file=f"{_ENVIRONMENT_RUNTIME_TRUST_PATH}/{cluster_ca.BUNDLE_KEY}",
+                    client_ca_file=f"{_ENVIRONMENT_RUNTIME_WORKLOAD_TRUST_PATH}/{cluster_ca.BUNDLE_KEY}",
                 )
             ),
         ),
@@ -104,13 +103,14 @@ def guest_config_data(
         ),
         claude=Harness(binary="/run/current-system/sw/bin/claude", base_url=llm_url, token_env="ANTHROPIC_AUTH_TOKEN"),
         codex=Codex(binary="/run/current-system/sw/bin/codex", base_url=f"{llm_url}/v1", token_env="OPENAI_API_KEY"),
-        environment=VMEnvironment(
+        environment=SystemdEnvironment(
+            supervision="systemd",
             resources=resources,
             console_autologin=env.vm_console_autologin,
             agent_uid=107,
             agent_gid=107,
             block_devices=block_devices,
-            executor=VMExecutor(url="ws://127.0.0.1:4501") if resources.executor is not None else None,
+            executor=env.vm_executor,
         ),
     )
     return {

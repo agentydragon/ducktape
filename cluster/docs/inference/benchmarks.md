@@ -180,8 +180,7 @@ for actual model discrimination.
 
 The vast majority of useful evals are already packaged. This historical survey
 informed the initial campaign. Prefer packaged evaluators over hand-rolled task
-implementations, and prefer published leaderboard numbers over re-running them
-locally (see <PLAN.md> § "Quality evidence policy").
+implementations, and prefer published leaderboard numbers over re-running them locally.
 
 | Repo                                                                                                                                               | Use for                                                                                  | Why                                                                                             |
 | -------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
@@ -314,7 +313,7 @@ NVMe-vs-HDD-storage-class question.
 
 ## Where new results belong
 
-Follow <PLAN.md> § "Repository structure". Each new run gets a `runs/<run-id>/`
+Follow <PLAN.md> § "Experiment records and deployment". Each new run gets a `runs/<run-id>/`
 directory with the manifests/scripts that ran and a `README.md` recording the
 numbers; add a row to <results.md> rather than editing these historical tables.
 

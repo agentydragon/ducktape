@@ -104,7 +104,7 @@ trees; the country packages define entities, variables, parameters, and data.
 
 Augur draws the same boundaries: core code in this repo, jurisdiction rules as
 data, deployment-specific and private data in downstream repos (README
-§ Planning boundary), and inspectable `Trace` output (books, journal, events,
+§ Public/private boundary), and inspectable `Trace` output (books, journal, events,
 receipts).
 
 ### Tax-Calculator and PSL
@@ -259,13 +259,3 @@ These follow naturally from the prior art and were rejected; the reasons are in
   simulator; exogenous paths flow one way.
 - Do not add core options for agreements between actors. An agreement is a
   tracked counterparty or contract (`Biller`, `Mortgage`).
-
-## Source Categories Covered
-
-- Quant/risk architecture: QuantLib and ORE.
-- Tax-benefit/rule microsimulation: OpenFisca and PolicyEngine.
-- Public tax microsimulation: Tax-Calculator/Policy Simulation Library.
-- Dynamic microsimulation literature: International Journal of Microsimulation
-  survey and challenge papers.
-- General simulation frameworks: Mesa and SimPy.
-- Model and risk-data governance: SR 11-7 and BCBS 239.

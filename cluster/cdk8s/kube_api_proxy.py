@@ -13,15 +13,25 @@ from cdk8s_plus_34 import ConfigMap, k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from python.runfiles import Runfiles
 
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL, Vpa
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.vpa_policy import (
+    VPA_RESOURCE_POLICY_ANNOTATION,
+    ContainerPolicy,
+    ControlledValues,
+    resource_policy_annotation,
+)
 
 NAME = "kube-api-proxy"
 NAMESPACE = "default"
 OUTPUT_DIR = f"{GENERATED_ROOT}/kube-api-proxy"
 _PROXY = "kubeapi-proxy"
+_NGINX_CPU_REQUEST = "10m"
+_NGINX_MEMORY_REQUEST = "16Mi"
 _CONFIG_MAP = "kubeapi-proxy-config"
 _ROUTE = "kubeapi-allegedly-works"
 _SERVICE = ServiceRef(
@@ -50,7 +60,15 @@ def _deployment(chart: Chart) -> None:
                     "nginx reverse proxy: HTTP 8080 → HTTPS kubernetes.default.svc:443.\n"
                     "Bridges the gap between Cilium Gateway (TLS terminate) and the\n"
                     "apiserver (requires HTTPS). Used by kubeapi.allegedly.works route.\n"
-                )
+                ),
+                VPA_UPDATE_MODE_LABEL: Vpa.AUTO,
+                VPA_RESOURCE_POLICY_ANNOTATION: resource_policy_annotation(
+                    # Cap the global 100Mi recommendation floor for this small proxy.
+                    ContainerPolicy.memory_requests_only(
+                        "nginx", cpu_request=_NGINX_CPU_REQUEST, memory_floor=_NGINX_MEMORY_REQUEST, memory_limit="24Mi"
+                    ),
+                    ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
+                ),
             },
         ),
         spec=k8s.DeploymentSpec(
@@ -59,6 +77,28 @@ def _deployment(chart: Chart) -> None:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=_SERVICE.pods.selector),
                 spec=k8s.PodSpec(
+                    affinity=k8s.Affinity(
+                        pod_anti_affinity=k8s.PodAntiAffinity(
+                            required_during_scheduling_ignored_during_execution=[
+                                k8s.PodAffinityTerm(
+                                    label_selector=k8s.LabelSelector(match_labels=_SERVICE.pods.selector),
+                                    topology_key="kubernetes.io/hostname",
+                                )
+                            ]
+                        )
+                    ),
+                    topology_spread_constraints=[
+                        k8s.TopologySpreadConstraint(
+                            topology_key="topology.kubernetes.io/zone",
+                            max_skew=1,
+                            # A single eligible zone can keep both replicas on different hosts.
+                            min_domains=1,
+                            when_unsatisfiable="DoNotSchedule",
+                            label_selector=k8s.LabelSelector(match_labels=_SERVICE.pods.selector),
+                            match_label_keys=["pod-template-hash"],
+                            node_taints_policy="Honor",
+                        )
+                    ],
                     # nginx forwards each caller's own bearer and needs only the cluster CA.
                     automount_service_account_token=False,
                     containers=[
@@ -66,6 +106,11 @@ def _deployment(chart: Chart) -> None:
                             name="nginx",
                             image="nginxinc/nginx-unprivileged:1.31-alpine",
                             ports=[k8s.ContainerPort(container_port=_SERVICE.pod_port)],
+                            # Mark the Pod ready after nginx starts accepting connections.
+                            readiness_probe=k8s.Probe(
+                                tcp_socket=k8s.TcpSocketAction(port=k8s.IntOrString.from_number(_SERVICE.pod_port)),
+                                period_seconds=5,
+                            ),
                             volume_mounts=[
                                 # A subPath mount doesn't hot-reload: Reloader's `autoReloadAll`
                                 # rolls the pods when the config changes.
@@ -79,12 +124,8 @@ def _deployment(chart: Chart) -> None:
                                 k8s.VolumeMount(name="tmp", mount_path="/tmp"),
                                 k8s.VolumeMount(name="cache", mount_path="/var/cache/nginx"),
                             ],
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("10m"),
-                                    "memory": k8s.Quantity.from_string("16Mi"),
-                                },
-                                limits={"memory": k8s.Quantity.from_string("64Mi")},
+                            resources=container_resources(
+                                cpu=_NGINX_CPU_REQUEST, memory=_NGINX_MEMORY_REQUEST, memory_limit="64Mi"
                             ),
                             security_context=k8s.SecurityContext(
                                 allow_privilege_escalation=False,
@@ -153,6 +194,15 @@ def chart(app: App) -> Chart:
         data={"nginx.conf": _NGINX_CONF},
     )
     _deployment(chart)
+    k8s.KubePodDisruptionBudget(
+        chart,
+        "disruption-budget",
+        metadata=k8s.ObjectMeta(name=_PROXY, namespace=NAMESPACE),
+        spec=k8s.PodDisruptionBudgetSpec(
+            min_available=k8s.IntOrString.from_number(1),
+            selector=k8s.LabelSelector(match_labels=_SERVICE.pods.selector),
+        ),
+    )
     k8s.KubeService(
         chart,
         "service",

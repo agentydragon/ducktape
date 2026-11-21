@@ -2,7 +2,6 @@ package bearer
 
 import (
 	"context"
-	"net"
 	"os"
 	"path/filepath"
 	"testing"
@@ -10,6 +9,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	peertlstesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health"
@@ -43,13 +43,8 @@ func start(t *testing.T, tokenPath string, timeout time.Duration) (healthpb.Heal
 		}),
 	)
 	healthpb.RegisterHealthServer(server, health.NewServer())
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	go server.Serve(listener)
-	t.Cleanup(server.Stop)
-	connection, err := Dial(listener.Addr().String(), tokenPath, timeout, nil)
+	serverAddr := grpcserver.Serve(t, server)
+	connection, err := Dial(serverAddr, tokenPath, timeout, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,18 +173,13 @@ func TestServiceSVIDCallsHaveNoBearerForUnaryAndStream(t *testing.T) {
 			return handler(srv, stream)
 		}))
 	healthpb.RegisterHealthServer(server, health.NewServer())
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	go server.Serve(listener)
-	defer server.Stop()
+	serverAddr := grpcserver.Serve(t, server)
 	leaf := ca.Issue(t, peertls.AppURI)
 	transport := &peertls.ClientTLS{
 		CAFile: ca.RootFile, ServerURI: peertls.HistoryIngressURI,
 		CertFile: leaf.CertFile, KeyFile: leaf.KeyFile, ClientURI: peertls.AppURI,
 	}
-	conn, err := Dial(listener.Addr().String(), "", time.Second, transport)
+	conn, err := Dial(serverAddr, "", time.Second, transport)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,7 +205,7 @@ func TestServiceSVIDCallsHaveNoBearerForUnaryAndStream(t *testing.T) {
 	if _, err := client.Check(metadata.AppendToOutgoingContext(t.Context(), "authorization", "Bearer forbidden"), &healthpb.HealthCheckRequest{}); status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("mixed outgoing auth = %v", err)
 	}
-	if _, err := Dial(listener.Addr().String(), "/unused-token", time.Second, transport); err == nil {
+	if _, err := Dial(serverAddr, "/unused-token", time.Second, transport); err == nil {
 		t.Fatal("accepted configured bearer plus SVID")
 	}
 }

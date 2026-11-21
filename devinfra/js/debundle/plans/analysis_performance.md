@@ -36,47 +36,47 @@ or a synthetic cut does not establish unchanged passing-subset acceptance.
 
 Remaining work, in order:
 
-1. Use the recorded old/current selected-call inventory and same-engine
-   local/program comparison in the private investigation. Reuse their frozen
-   input identities and receipts; do not rerun an expensive baseline solely to
-   reconstruct those decisions. Follow targeted value-bearing provenance for
-   each inventoried cause before proposing another recognizer. Track
-   the values and predicates that reach the actual rejection, grouping paths
-   that share a causal transition. Distinguish the contribution that changes
-   the gate decision from inherited or unrelated origins; an origin-set size
-   change alone is not an explanation. Verify the exact source use and its
-   certificate premises, while keeping source provenance separate from later
-   interpreter fallback or global reach.
+1. Test the surviving source-use hypothesis after definite local scalar
+   overwrites. A function may receive a callable argument, overwrite it with a
+   primitive, and copy it through another local before a property write. Its
+   flow-insensitive binding union must not make that later exact read carry
+   the earlier function origin. Validate the bounded sequence-local proof in
+   [Scalar local overwrites](../docs/inference.md#scalar-local-overwrites-in-comma-expressions)
+   against the observed path, retaining capture/dynamic-scope barriers, Top,
+   Proxy, ordinary effects and dependency subscriptions. This is a bounded
+   may-flow experiment, not a purity rule or a claim that the gate rejection
+   has this sole cause.
 
-   Bound capture, retained traversal state and output independently. Emit a
-   connected value-source witness; dependency reads used only to select a
-   receiver or callee are not value provenance. Record omitted alternatives,
-   unsupported transitions and exhausted budgets explicitly. A missing witness
-   never establishes absence. Validate the observer on small positive and
-   control-only paths, with emitted behavior and gate-decision parity.
+   Continue to use bounded value-source traces to choose and interpret each
+   experiment. Separate value-bearing inputs from reads used only to select a
+   receiver or callee; report omitted alternatives, unsupported transfers and
+   exhausted capture/output budgets. A missing witness never establishes that
+   a source path is absent. Small neutral CLI controls validate the observer,
+   but same-engine queries and source traces cannot establish normal-gate
+   acceptance or an end-to-end performance improvement.
 
-   Same-engine queries, source inspection, saved-artifact application and
-   narrower selection checks are diagnostic only. They cannot establish
-   normal-gate acceptance, whole-program behavior or a performance improvement.
-
-2. Run a causal experiment for one grouped cause at a time. State the predicted
+   Run a causal experiment for one grouped cause at a time. State the predicted
    decision or provenance change, hold source/spec and the rest of the engine
    fixed, and compare the result with the baseline and relevant negative
    controls. If the predicted change does not occur, stop and update the cause
    model before proposing another recognizer. Preserve ordinary effects,
    unknown-property behavior, source-order visibility and conservative fallback.
+   A diagnostic reduction may isolate a mechanism, but record its relation to
+   the frozen input and reconstruct the supported shape in a neutral CLI
+   regression. Never count a reduced-input gate result as acceptance of the
+   unchanged passing subset.
    Run expensive diagnostic pipelines serially under a 900-second, 16-GiB,
    zero-swap cap, labeling them diagnostic-only; they do not satisfy the
    300-second completion requirement.
 
-3. Add or extend a neutral real-CLI regression for the actual source-chain
+2. Add or extend a neutral real-CLI regression for the actual source-chain
    shape. Reproduce the current normal-gate refusal, then assert the intended
    accepted-and-emitted behavior for the valid case and retain unsafe-cut
    controls for mutation, getters, captures, writes and unsupported shapes.
    Check fresh/saved parity and emitted runtime behavior. Analysis queries,
    synthetic-only fixtures and report output cannot serve as the sole oracle.
 
-4. Re-run the unchanged passing ownership subset through the normal gate. It
+3. Re-run the unchanged passing ownership subset through the normal gate. It
    must pass ownership, realizability, selector realization, translation and
    emitted-runtime checks without weakening those checks or changing the
    selected assignment. Keep exact-use admission, the full-gate result, and
@@ -91,7 +91,7 @@ Remaining work, in order:
    more than 10%. This is independent of private-subset acceptance. Diagnostic
    builds and instrumented profiles do not qualify.
 
-5. Only after the unchanged subset passes, measure the final production path
+4. Only after the unchanged subset passes, measure the final production path
    with a fresh, unprofiled optimized run. Include fresh projection, whole-
    program analysis and passing-subset application; finish within 300 seconds
    and 16 GiB. Compare gate and emitted-program behavior as well as time.

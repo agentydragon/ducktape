@@ -5,6 +5,11 @@
     # NixOS 26.05 stable release
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
 
+    fenix = {
+      url = "github:nix-community/fenix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     nix-fast-build = {
       url = "github:Mic92/nix-fast-build/1.6.0";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -76,6 +81,7 @@
       nixpkgs,
       nixpkgs-unstable,
       nixpkgs-master,
+      fenix,
       home-manager,
       nix-colors,
       nixGL,
@@ -407,6 +413,7 @@
           ducktapePkgs
           ruffLatest
           ;
+        rustToolchain = fenix.packages.${system}.stable;
       };
       inherit (devTools)
         localOnlyPackages

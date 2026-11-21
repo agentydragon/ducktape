@@ -6,13 +6,6 @@ package(default_visibility = [
     "//finance/augur/x:__subpackages__",
 ])
 
-# Quarantined: fails `sanity_test` (reason and numbers in its `QUARANTINED`) and predates the
-# required dated VECM state. Kept only to verify legacy configs require refitting, never as a model.
-filegroup(
-    name = "trained_vecm_provider",
-    srcs = ["trained_vecm_provider.yaml"],
-)
-
 # Checked-in structural_macro fit — produced by `bb run //finance/augur/x/models:train_bin --
 # --model structural_macro ...` and loaded via runfiles as StructuralMacroProviderConfig's/
 # EquityProcess's shipped defaults (see ../structural_macro.py's `_fitted_defaults`). It isn't itself

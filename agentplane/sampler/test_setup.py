@@ -15,17 +15,21 @@ from agentplane.harness_host import harness_host_pb2
 from agentplane.native.codex.testing.responses_sse import Message, response_stream
 from agentplane.proto import event_pb2, session_pb2
 from agentplane.sampler.api import sampler_admin_pb2
+from agentplane.sampler.settings import Settings
 from agentplane.sampler.testing import (
-    METADATA,
     Endpoint,
     Request,
     SamplerTestClient,
     create_request,
+    follow_until,
     service,
     settings,
     submit_input,
 )
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
+
+# gazelle:include_dep //agentplane/sampler:testing_fixtures
+pytest_plugins = ("agentplane.sampler.testing_fixtures",)
 
 
 class SetupEndpoint(Endpoint):
@@ -42,26 +46,14 @@ class SetupEndpoint(Endpoint):
 
 
 async def through_event(stub: SamplerTestClient, session_id: str, kind: str) -> list[event_pb2.Event]:
-    stream = stub.admin.FollowEvents(
-        sampler_admin_pb2.FollowEventsRequest(session_id=session_id, follow=True), metadata=METADATA
-    )
-    events = []
-    try:
-        async with asyncio.timeout(15):
-            async for frame in stream:
-                events.append(frame.entry.event)
-                if frame.entry.event.HasField(kind):
-                    return events
-    finally:
-        stream.cancel()
-    raise AssertionError(f"event stream ended before {kind}")
+    return await follow_until(stub, session_id, lambda event: event.HasField(kind), timeout_s=15)
 
 
 async def recorded_events(stub: SamplerTestClient, session_id: str) -> list[event_pb2.Event]:
     return [
         frame.entry.event
         async for frame in stub.admin.FollowEvents(
-            sampler_admin_pb2.FollowEventsRequest(session_id=session_id), metadata=METADATA, timeout=10
+            sampler_admin_pb2.FollowEventsRequest(session_id=session_id), timeout=10
         )
     ]
 
@@ -86,15 +78,15 @@ async def test_setup_runs_at_open_and_gates_queued_sampling(
             printf done > complete
             """)
         async with service(config) as stub:
-            opened = await stub.CreateSession(request, metadata=METADATA, timeout=10)
+            opened = await stub.CreateSession(request, timeout=10)
             assert opened.attached.setup_state == session_pb2.SETUP_STATE_RUNNING
             await through_event(stub, request.session_id, "setup_output")
-            duplicate = await stub.CreateSession(request, metadata=METADATA, timeout=10)
+            duplicate = await stub.CreateSession(request, timeout=10)
             assert duplicate.attached.setup_state == session_pb2.SETUP_STATE_RUNNING
             command = harness_host_pb2.SubmitInputRequest(
                 session_id=request.session_id, command_id="queued-during-setup", text="Read the prepared workspace."
             )
-            admission = await stub.SubmitInput(command, metadata=METADATA, timeout=10)
+            admission = await stub.SubmitInput(command, timeout=10)
             before = await recorded_events(stub, request.session_id)
             assert not any(event.HasField("harness_started") for event in before)
             assert endpoint.requests == 0
@@ -116,9 +108,9 @@ async def test_setup_runs_at_open_and_gates_queued_sampling(
             assert events[finished].setup_finished.exit_code == 0
             assert finished < started
             assert sum(event.HasField("setup_started") for event in events) == 1
-            assert await stub.SubmitInput(command, metadata=METADATA, timeout=10) == admission
+            assert await stub.SubmitInput(command, timeout=10) == admission
         async with service(config) as stub:
-            reopened = await stub.CreateSession(request, metadata=METADATA, timeout=10)
+            reopened = await stub.CreateSession(request, timeout=10)
             assert reopened.attached.setup_state == session_pb2.SETUP_STATE_SUCCEEDED
             events = await recorded_events(stub, request.session_id)
             assert sum(event.HasField("setup_started") for event in events) == 1
@@ -127,7 +119,7 @@ async def test_setup_runs_at_open_and_gates_queued_sampling(
             changed.CopyFrom(request)
             changed.setup_script += "\nprintf changed\n"
             with pytest.raises(grpc.aio.AioRpcError) as conflict:
-                await stub.CreateSession(changed, metadata=METADATA, timeout=10)
+                await stub.CreateSession(changed, timeout=10)
             assert conflict.value.code() == grpc.StatusCode.ALREADY_EXISTS
 
 
@@ -142,16 +134,16 @@ async def test_failed_setup_remains_terminal_after_reopen(
         request = create_request(tmp_path)
         request.setup_script = f"printf x >> attempts\n{failure}\nprintf done > unreachable\n"
         async with service(config) as stub:
-            await stub.CreateSession(request, metadata=METADATA, timeout=10)
+            await stub.CreateSession(request, timeout=10)
             events = await through_event(stub, request.session_id, "setup_finished")
             assert events[-1].setup_finished.exit_code != 0
             if failure == "exit 23":
                 assert events[-1].setup_finished.exit_code == 23
         async with service(config) as stub:
-            reopened = await stub.CreateSession(request, metadata=METADATA, timeout=10)
+            reopened = await stub.CreateSession(request, timeout=10)
             assert reopened.attached.setup_state == session_pb2.SETUP_STATE_FAILED
             snapshot = await stub.admin.GetSession(
-                sampler_admin_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA, timeout=10
+                sampler_admin_pb2.GetSessionRequest(session_id=request.session_id), timeout=10
             )
             assert snapshot.blocked
             with pytest.raises(grpc.aio.AioRpcError) as rejected:
@@ -192,21 +184,21 @@ async def test_restart_during_setup_interrupts_without_replaying_effects(
             printf done > unreachable
             """)
         async with service(config) as stub:
-            await stub.CreateSession(request, metadata=METADATA, timeout=10)
+            await stub.CreateSession(request, timeout=10)
             await through_event(stub, request.session_id, "setup_output")
             command = harness_host_pb2.SubmitInputRequest(
                 session_id=request.session_id, command_id="waiting-for-setup", text="Never sample this input."
             )
-            receipt = await stub.SubmitInput(command, metadata=METADATA, timeout=10)
+            receipt = await stub.SubmitInput(command, timeout=10)
         async with service(config) as stub:
             await through_event(stub, request.session_id, "setup_interrupted")
-            reopened = await stub.CreateSession(request, metadata=METADATA, timeout=10)
+            reopened = await stub.CreateSession(request, timeout=10)
             assert reopened.attached.setup_state == session_pb2.SETUP_STATE_INTERRUPTED
             snapshot = await stub.admin.GetSession(
-                sampler_admin_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA, timeout=10
+                sampler_admin_pb2.GetSessionRequest(session_id=request.session_id), timeout=10
             )
             assert snapshot.blocked
-            assert await stub.SubmitInput(command, metadata=METADATA, timeout=10) == receipt
+            assert await stub.SubmitInput(command, timeout=10) == receipt
             events = await recorded_events(stub, request.session_id)
             assert sum(event.HasField("setup_started") for event in events) == 1
             assert sum(event.HasField("setup_interrupted") for event in events) == 1
@@ -216,23 +208,17 @@ async def test_restart_during_setup_interrupts_without_replaying_effects(
             assert endpoint.requests == 0
 
 
-async def test_setup_script_limit_counts_utf8_bytes(
-    database_url: str, execution_target: str, codex_binary: str, code_mode_host: str, tmp_path: Path
-) -> None:
-    async with Endpoint() as endpoint:
-        config = settings(
-            database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
-        )
-        request = create_request(tmp_path)
-        request.setup_script = "#" + "λ" * 32768 + "\n"
-        async with service(config) as stub:
-            with pytest.raises(grpc.aio.AioRpcError) as rejected:
-                await stub.CreateSession(request, metadata=METADATA, timeout=10)
-            assert rejected.value.code() == grpc.StatusCode.INVALID_ARGUMENT
-            request.setup_script = "#" + "λ" * 32767 + "\n"
-            await stub.CreateSession(request, metadata=METADATA, timeout=10)
-            events = await through_event(stub, request.session_id, "setup_finished")
-            assert events[-1].setup_finished.exit_code == 0
+async def test_setup_script_limit_counts_utf8_bytes(config: Settings, tmp_path: Path) -> None:
+    request = create_request(tmp_path)
+    request.setup_script = "#" + "λ" * 32768 + "\n"
+    async with service(config) as stub:
+        with pytest.raises(grpc.aio.AioRpcError) as rejected:
+            await stub.CreateSession(request, timeout=10)
+        assert rejected.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+        request.setup_script = "#" + "λ" * 32767 + "\n"
+        await stub.CreateSession(request, timeout=10)
+        events = await through_event(stub, request.session_id, "setup_finished")
+        assert events[-1].setup_finished.exit_code == 0
 
 
 if __name__ == "__main__":

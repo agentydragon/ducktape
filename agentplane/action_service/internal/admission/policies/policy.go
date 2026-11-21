@@ -33,7 +33,7 @@ type Kind interface {
 	evaluate(ctx context.Context, action store.ActionIdentity, arguments map[string]any, visibility *Visibility) Outcome
 }
 
-// Outcome is a policy's answer to one request: Matched or NotMatched.
+// Outcome is a policy's answer to one request: Matched, NotMatched, or Indeterminate.
 type Outcome interface{ isOutcome() }
 
 type Matched struct {
@@ -42,11 +42,15 @@ type Matched struct {
 	Repository *store.MatchedRepository
 }
 
-// NotMatched sends the request to the human path; a policy never denies.
+// NotMatched lets the provider try another auto-approval rule; a policy never denies.
 type NotMatched struct{ Reason string }
 
-func (Matched) isOutcome()    {}
-func (NotMatched) isOutcome() {}
+// Indeterminate stops policy evaluation and leaves the request to a human.
+type Indeterminate struct{ Reason string }
+
+func (Matched) isOutcome()       {}
+func (NotMatched) isOutcome()    {}
+func (Indeterminate) isOutcome() {}
 
 // ParseRule reads an `action_auto_approve` rule. The PolicySet CRD has already pruned unknown fields and held each
 // policy type to its own fields; this checks what the CRD cannot say.

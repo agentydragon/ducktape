@@ -175,7 +175,7 @@ rm -rf "$TMPCA"
 
 - **NixOS workers** (wyrm2, rugged, iguana): `nixos-rebuild switch` — certs
   deployed via `environment.etc`, key via sops-nix binary format
-  (`nix/nixos/modules/k8s-worker-sops.nix`)
+  (`nix/nixos/modules/k8s-worker.nix`)
 - **atlas**: `ansible-playbook atlas.yaml --tags nebula` — certs copied from
   plaintext files, key decrypted from SOPS binary
 - **Mobile Nebula clients**: render a plaintext import file locally, transfer it

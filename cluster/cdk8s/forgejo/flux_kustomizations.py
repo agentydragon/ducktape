@@ -18,10 +18,9 @@ def forgejo(
     monitoring_crds: Kustomization,
     valkey: Kustomization,
 ) -> Kustomization:
-    name = "forgejo"
     return flux_kustomization(
         chart,
-        name,
+        "forgejo",
         artifact,
         timeout="5m",
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,

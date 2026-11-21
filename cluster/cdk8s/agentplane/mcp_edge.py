@@ -23,7 +23,6 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 
-from agentplane.action_service.policies.resources import CALLER_LABEL
 from agentplane.crd_group import GROUP
 from agentplane.mcp_edge.settings import Settings
 from agentplane.net.peertls.config import ACTIONS_URI, APP_URI, MCP_EDGE_URI, ClientTLS, ServerTLSListener
@@ -90,7 +89,6 @@ class McpEdge(Construct):
             image_pull_policy=image_pull_policy,
             replica_profile=props.replicas,
             env_variables=variables,
-            service_account_labels={CALLER_LABEL: "true"} if props.oauth_secret_name is not None else None,
             readiness=http_probe("/readyz", port=self.http.pod_port, initial_delay_seconds=3),
             liveness=http_probe("/healthz", port=self.http.pod_port, initial_delay_seconds=20),
             startup=http_probe(

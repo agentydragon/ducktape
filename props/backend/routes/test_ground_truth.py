@@ -24,10 +24,10 @@ from props.db.models import TruePositive
 from props.testing.fixtures.credentials import make_agent_credentials
 from props.testing.fixtures.runs import FAKE_CRITIC_DEV_OPTIMIZE_DIGEST
 
-# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep //props/testing/fixtures:db
 # gazelle:include_dep //props/testing/fixtures:scopes
-pytest_plugins = ("util.testing.postgres_fixtures", "props.testing.fixtures.db", "props.testing.fixtures.scopes")
+pytest_plugins = ("testing.postgres_fixtures", "props.testing.fixtures.db", "props.testing.fixtures.scopes")
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
 # gazelle:include_dep @pypi//httpx
@@ -55,9 +55,6 @@ async def critic_dev_optimize_gt_client(synced_db: Database):
         yield make_gt_client(user_db)
     finally:
         user_db.dispose()
-
-
-# --- Admin access ---
 
 
 def test_admin_can_list_snapshots(synced_db: Database) -> None:

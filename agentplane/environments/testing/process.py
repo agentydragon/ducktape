@@ -4,8 +4,8 @@
 
 import asyncio
 import os
-from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
-from contextlib import AsyncExitStack, asynccontextmanager
+from collections.abc import AsyncIterator, Sequence
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -25,7 +25,7 @@ from agentplane.net.peertls.config import (
 )
 from agentplane.proto.identity_pb2 import SandboxDestination
 from agentplane.session_dispatcher.client import SandboxControlClient
-from agentplane.testing.go_process import GoProcess, go_process
+from agentplane.testing.go_process import GoProcess, RestartGoProcess, WhileStopped, go_process, restartable_go_process
 from agentplane.testing.tls import CertificateAuthority, issue_workload_leaf, make_ca, write_ca
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.net import listen_tcp
@@ -42,7 +42,7 @@ class EnvironmentServiceProcess:
     service_certificates: dict[str, tuple[Path, Path]]
     process: asyncio.subprocess.Process
     log_path: Path
-    _restart: Callable[[Callable[[], Awaitable[None]] | None], Awaitable[GoProcess]]
+    _restart: RestartGoProcess
 
     @property
     def tls(self) -> ClientTLS:
@@ -73,7 +73,7 @@ class EnvironmentServiceProcess:
         cert_file, key_file = issue_workload_leaf(self.ca, uri, directory)
         return TLS(cert_file=str(cert_file), key_file=str(key_file), ca_file=str(self.ca_file))
 
-    async def restart(self, *, while_stopped: Callable[[], Awaitable[None]] | None = None) -> None:
+    async def restart(self, *, while_stopped: WhileStopped | None = None) -> None:
         """Replace the Environments process while retaining its listener, CA and credentials."""
         started = await self._restart(while_stopped)
         self.process = started.process
@@ -105,10 +105,7 @@ async def run_environment_service(
     namespace: str,
     *,
     caller_uri: str,
-    additional_callers: Sequence[str] = (),
     environment_runtime_ca: CertificateAuthority | None = None,
-    runtime_proxy_readers: Sequence[str] = (APP_URI, GATEWAY_SESSIONS_URI),
-    runtime_proxy_session_callers: Sequence[str] = (GATEWAY_SESSIONS_URI,),
     runtime_proxy_controller_callers: Sequence[str] = (),
     runtime_proxy_executor_callers: Sequence[str] = (),
 ) -> AsyncIterator[EnvironmentServiceProcess]:
@@ -131,13 +128,13 @@ async def run_environment_service(
         server_dir.mkdir()
         cert, key = issue_workload_leaf(ca, SANDBOX_CONTROLLER_URI, server_dir, dns_name="localhost")
 
-        service_callers = tuple(dict.fromkeys((caller_uri, *additional_callers)))
+        service_callers = (caller_uri,)
+        runtime_proxy_readers = (APP_URI, GATEWAY_SESSIONS_URI)
         runtime_callers = tuple(
             dict.fromkeys(
                 (
                     *service_callers,
                     *runtime_proxy_readers,
-                    *runtime_proxy_session_callers,
                     *runtime_proxy_controller_callers,
                     *runtime_proxy_executor_callers,
                     GATEWAY_RUNTIME_PROXY_URI,
@@ -166,12 +163,12 @@ async def run_environment_service(
             "ENVIRONMENTS_TEST_RUNTIME_PROXY_KEY": str(runtime_proxy_key),
             "ENVIRONMENTS_TEST_RUNTIME_PROXY_CA": str(ca_file),
             "ENVIRONMENTS_TEST_RUNTIME_READERS": ",".join(runtime_proxy_readers),
-            "ENVIRONMENTS_TEST_RUNTIME_SESSION_CALLERS": ",".join(runtime_proxy_session_callers),
+            "ENVIRONMENTS_TEST_RUNTIME_SESSION_CALLERS": GATEWAY_SESSIONS_URI,
             "ENVIRONMENTS_TEST_RUNTIME_CONTROLLER_CALLERS": ",".join(runtime_proxy_controller_callers),
             "ENVIRONMENTS_TEST_RUNTIME_EXECUTOR_CALLERS": ",".join(runtime_proxy_executor_callers),
         }
 
-        def process_context(generation: int):
+        def process_context(generation: int) -> AbstractAsyncContextManager[GoProcess]:
             log_path = undeclared_outputs_dir() / f"environments-{uuid4().hex}-{generation}.log"
             return go_process(
                 Path(binary),
@@ -183,18 +180,7 @@ async def run_environment_service(
                 grace_s=10,
             )
 
-        generation = 0
-        async with AsyncExitStack() as process_stack:
-            started = await process_stack.enter_async_context(process_context(generation))
-
-            async def restart(while_stopped: Callable[[], Awaitable[None]] | None) -> GoProcess:
-                nonlocal generation
-                await process_stack.aclose()
-                if while_stopped is not None:
-                    await while_stopped()
-                generation += 1
-                return await process_stack.enter_async_context(process_context(generation))
-
+        async with restartable_go_process(process_context) as (started, restart):
             yield EnvironmentServiceProcess(
                 target=f"localhost:{listener.port}",
                 client_uri=caller_uri,

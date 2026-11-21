@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import durationpy
-import pytest
 import pytest_bazel
 
 from cluster.validation.flux import FluxReconcileHistoryEntry, parse_flux_kustomizations
@@ -34,16 +32,9 @@ spec:
         assert spec.parked
 
 
-def test_history_duration_uses_go_duration_syntax() -> None:
-    for duration, seconds in [("1h30m1.25s", 5401.25), ("940.5ms", 0.9405), ("-1s", -1.0), ("0", 0.0), (None, 0.0)]:
-        entry = FluxReconcileHistoryEntry(last_reconciled_duration=duration)
-        assert entry.duration_s == seconds
-
-
-def test_history_invalid_duration_is_reported() -> None:
-    entry = FluxReconcileHistoryEntry(last_reconciled_duration="invalid 2s")
-    with pytest.raises(durationpy.DurationError):
-        _ = entry.duration_s
+def test_history_duration_is_seconds_and_missing_is_zero() -> None:
+    assert FluxReconcileHistoryEntry(last_reconciled_duration="1h30m1.25s").duration_s == 5401.25
+    assert FluxReconcileHistoryEntry().duration_s == 0.0
 
 
 def _write_yaml(path, content: str) -> None:

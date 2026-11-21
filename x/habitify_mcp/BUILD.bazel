@@ -140,16 +140,6 @@ py_binary(
 )
 
 py_binary(
-    name = "run_server",
-    srcs = ["examples/run_server.py"],
-    main = "examples/run_server.py",
-    deps = [
-        ":cli_utils",
-        ":server",
-    ],
-)
-
-py_binary(
     name = "mcp_dev_runner",
     srcs = ["examples/mcp_dev_runner.py"],
     main = "examples/mcp_dev_runner.py",

@@ -888,11 +888,30 @@ spec:
       newTag: v8.6.0
   interval: 10m
   patches:
-    - patch: |-
-        - op: add
-          path: /spec/template/spec/nodeSelector
-          value:
-            topology.kubernetes.io/zone: hil-ovh
+    - patch: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: snapshot-controller
+          namespace: kube-system
+          annotations:
+            goldilocks.fairwinds.com/vpa-update-mode: auto
+        spec:
+          strategy:
+            rollingUpdate:
+              maxSurge: 1
+              maxUnavailable: 0
+          template:
+            spec:
+              nodeSelector:
+                topology.kubernetes.io/zone: hil-ovh
+              affinity:
+                podAntiAffinity:
+                  requiredDuringSchedulingIgnoredDuringExecution:
+                    - topologyKey: kubernetes.io/hostname
+                      labelSelector:
+                        matchLabels:
+                          app.kubernetes.io/name: snapshot-controller
       target:
         kind: Deployment
         name: snapshot-controller
@@ -975,6 +994,48 @@ spec:
     name: vpa
     namespace: ducktape-flux
   timeout: 5m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: kubevirt-cdi-vpa
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: vpa
+      namespace: ducktape-flux
+    - name: kubevirt
+      namespace: ducktape-flux
+    - name: cdi
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/kubevirt/vpa
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: kubevirt-cdi-vpa
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: flux-system-vpa
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: vpa
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/flux-system-vpa
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: flux-system-vpa
+    namespace: ducktape-flux
   wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
@@ -1658,8 +1719,6 @@ spec:
   dependsOn:
     - name: kyverno
       namespace: ducktape-flux
-    - name: tofu-controller
-      namespace: ducktape-flux
   interval: 10m
   path: ./k8s
   prune: true
@@ -1888,6 +1947,10 @@ spec:
     - name: kyverno
       namespace: ducktape-flux
   healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: tabbyapi
+      namespace: ollama
     - apiVersion: external-secrets.io/v1
       kind: ExternalSecret
       name: ollama-direct-token
@@ -3070,8 +3133,6 @@ spec:
       name: sops-age-cluster-secrets
   dependsOn:
     - name: external-secrets-operator
-      namespace: ducktape-flux
-    - name: tofu-controller
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/forgejo-images
@@ -4262,6 +4323,27 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  name: study-casino-vpa
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: vpa
+      namespace: ducktape-flux
+    - name: study-casino
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/study-casino-vpa
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: study-casino-vpa
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
   name: litellm
   namespace: ducktape-flux
 spec:
@@ -4725,10 +4807,6 @@ spec:
       namespace: agentplane-staging
     - apiVersion: apps/v1
       kind: Deployment
-      name: sandbox-controller
-      namespace: agentplane-staging
-    - apiVersion: apps/v1
-      kind: Deployment
       name: environments
       namespace: agentplane-staging
     - apiVersion: apps/v1
@@ -4774,14 +4852,6 @@ spec:
     - apiVersion: cert-manager.io/v1
       kind: Certificate
       name: app-workload
-      namespace: agentplane-staging
-    - apiVersion: cert-manager.io/v1
-      kind: Certificate
-      name: sandbox-controller-client-workload
-      namespace: agentplane-staging
-    - apiVersion: cert-manager.io/v1
-      kind: Certificate
-      name: sandbox-controller-runtime-proxy-client-workload
       namespace: agentplane-staging
     - apiVersion: cert-manager.io/v1
       kind: Certificate
@@ -4855,6 +4925,27 @@ spec:
     namespace: ducktape-flux
   suspend: false
   timeout: 10m
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: agentplane-staging-vpa
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: vpa
+      namespace: ducktape-flux
+    - name: agentplane-staging
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agentplane-staging/vpa
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: agentplane-staging-vpa
+    namespace: ducktape-flux
+  wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization

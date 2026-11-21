@@ -34,6 +34,7 @@ from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
 from cluster.cdk8s import pod_policy
 from cluster.cdk8s.cert_manager import cluster_ca
 from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import (
     ConfigMapArgs,
@@ -43,8 +44,11 @@ from cluster.cdk8s.flux import (
     flux_kustomization_depends_on_many,
 )
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
+from cluster.cdk8s.namespaces import initial_request_annotations
 from cluster.cdk8s.platform_sessions import config
 from cluster.cdk8s.providers.flux.image_policy import ImagePolicy
+from cluster.cdk8s.volume_claim import volume_claim
+from cluster.cdk8s.vpa_policy import ContainerPolicy
 
 NAMESPACE = "platform-sessions"
 NAME = "platform-sessions-remote"
@@ -74,6 +78,7 @@ _RECORD_BUNDLE = "platform-sessions-recorder-trust"
 _RECORD_CA_DIR = "/var/run/session-recorder-ca"
 _RECORD_TRUST_DIR = "/var/run/session-recorder-trust"
 _RECORD_PORT = 18080
+_CPU_REQUEST = "50m"
 
 
 def _provider_name(instance: str) -> str:
@@ -185,10 +190,7 @@ def _container_security() -> k8s.SecurityContext:
 
 
 def _resources(*, memory_request: str = "128Mi", memory_limit: str = "1Gi") -> k8s.ResourceRequirements:
-    return k8s.ResourceRequirements(
-        requests={"cpu": k8s.Quantity.from_string("50m"), "memory": k8s.Quantity.from_string(memory_request)},
-        limits={"cpu": k8s.Quantity.from_string("1"), "memory": k8s.Quantity.from_string(memory_limit)},
-    )
+    return container_resources(cpu=_CPU_REQUEST, memory=memory_request, cpu_limit="1", memory_limit=memory_limit)
 
 
 def _deployment(
@@ -200,11 +202,16 @@ def _deployment(
     selector_name: str,
     node_selector: dict[str, str] | None = None,
     init_containers: list[k8s.Container] | None = None,
+    vpa_policy: ContainerPolicy | None = None,
 ) -> None:
     deployment = k8s.KubeDeployment(
         chart,
         f"{name}-deployment",
-        metadata=k8s.ObjectMeta(name=name, namespace=NAMESPACE),
+        metadata=k8s.ObjectMeta(
+            name=name,
+            namespace=NAMESPACE,
+            annotations=initial_request_annotations(vpa_policy) if vpa_policy is not None else None,
+        ),
         spec=k8s.DeploymentSpec(
             replicas=1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
@@ -265,31 +272,25 @@ def _add_provider(chart: Chart, instance: str) -> None:
         ),
     )
 
-    k8s.KubePersistentVolumeClaim(
+    volume_claim(
         chart,
         f"{name}-piraeus",
-        metadata=k8s.ObjectMeta(
-            name=f"{name}-piraeus", namespace=NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"}
-        ),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="piraeus-ssd-2-autodiskful",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("1Gi")}),
-        ),
+        name=f"{name}-piraeus",
+        namespace=NAMESPACE,
+        storage_class="piraeus-ssd-2-autodiskful",
+        size="1Gi",
+        annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"},
     )
 
     # Keep the capture PVC even when recording is disabled; it contains user data.
-    k8s.KubePersistentVolumeClaim(
+    volume_claim(
         chart,
         f"{name}-captures",
-        metadata=k8s.ObjectMeta(
-            name=f"{name}-captures", namespace=NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"}
-        ),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="piraeus-hdd-local",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("20Gi")}),
-        ),
+        name=f"{name}-captures",
+        namespace=NAMESPACE,
+        storage_class="piraeus-hdd-local",
+        size="20Gi",
+        annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"},
     )
 
 
@@ -389,6 +390,13 @@ def _provider_workload(chart: Chart, instance: str, *, provider_type: str, recor
         if record_upstream_traffic
         else []
     )
+    recorder_listening = k8s.ExecAction(
+        command=[
+            "python",
+            "-c",
+            f"import socket; socket.create_connection(('127.0.0.1', {_RECORD_PORT}), timeout=2).close()",
+        ]
+    )
     recorder_sidecars = (
         [
             k8s.Container(
@@ -399,28 +407,10 @@ def _provider_workload(chart: Chart, instance: str, *, provider_type: str, recor
                 command=[
                     "sh",
                     "-c",
-                    "umask 077; exec mitmdump -q --listen-host 127.0.0.1 --listen-port 18080 --set confdir=/config -w '+/captures/%Y-%m-%d.mitm'",
+                    f"umask 077; exec mitmdump -q --listen-host 127.0.0.1 --listen-port {_RECORD_PORT} --set confdir=/config -w '+/captures/%Y-%m-%d.mitm'",
                 ],
-                readiness_probe=k8s.Probe(
-                    exec=k8s.ExecAction(
-                        command=[
-                            "python",
-                            "-c",
-                            "import socket; socket.create_connection(('127.0.0.1', 18080), timeout=2).close()",
-                        ]
-                    )
-                ),
-                startup_probe=k8s.Probe(
-                    exec=k8s.ExecAction(
-                        command=[
-                            "python",
-                            "-c",
-                            "import socket; socket.create_connection(('127.0.0.1', 18080), timeout=2).close()",
-                        ]
-                    ),
-                    period_seconds=2,
-                    failure_threshold=30,
-                ),
+                readiness_probe=k8s.Probe(exec=recorder_listening),
+                startup_probe=k8s.Probe(exec=recorder_listening, period_seconds=2, failure_threshold=30),
                 volume_mounts=[
                     k8s.VolumeMount(name="recorder-config", mount_path="/config"),
                     k8s.VolumeMount(name="captures", mount_path="/captures"),
@@ -432,6 +422,18 @@ def _provider_workload(chart: Chart, instance: str, *, provider_type: str, recor
         if record_upstream_traffic
         else []
     )
+    # Retain the memory reservations for providers with sampled working-set peaks near those requests.
+    # Recorder and other init-container resources are outside these policies.
+    vpa_policy: ContainerPolicy | None
+    match instance:
+        case "anthropic" | "chatgpt" | "openai":
+            vpa_policy = ContainerPolicy.cpu_and_memory_requests_only("provider", memory_floor="128Mi")
+        case "blueshield":
+            vpa_policy = ContainerPolicy.cpu_and_memory_requests_only("provider", memory_floor="416Mi")
+        case "quest-scheduler":
+            vpa_policy = ContainerPolicy.cpu_and_memory_requests_only("provider", memory_floor="576Mi")
+        case _:
+            vpa_policy = None
     _deployment(
         chart,
         instance,
@@ -469,18 +471,16 @@ def _provider_workload(chart: Chart, instance: str, *, provider_type: str, recor
                 k8s.EnvVar(name="HOME", value="/tmp"),
                 *recorder_env,
                 *(
-                    [
-                        k8s.EnvVar(name="MYQUEST_BROWSER_RECORD_HAR", value="true"),
-                        *(
-                            []
-                            if record_upstream_traffic
-                            else [
-                                k8s.EnvVar(name="PLATFORM_SESSIONS_PROXY_ENABLED", value="false"),
-                                k8s.EnvVar(name="MYQUEST_BROWSER_LAUNCH_MODE", value="cdp"),
-                            ]
-                        ),
-                    ]
+                    [k8s.EnvVar(name="MYQUEST_BROWSER_RECORD_HAR", value="true")]
                     if instance == "myquest-canary"
+                    else []
+                ),
+                *(
+                    [
+                        k8s.EnvVar(name="PLATFORM_SESSIONS_PROXY_ENABLED", value="false"),
+                        k8s.EnvVar(name="MYQUEST_BROWSER_LAUNCH_MODE", value="cdp"),
+                    ]
+                    if instance in {"myquest", "myquest-canary"} and not record_upstream_traffic
                     else []
                 ),
             ],
@@ -524,6 +524,7 @@ def _provider_workload(chart: Chart, instance: str, *, provider_type: str, recor
         selector_name=name,
         node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
         init_containers=[*recorder_init, *recorder_sidecars],
+        vpa_policy=vpa_policy,
     )
     _service(
         chart,
@@ -560,15 +561,14 @@ def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
     for integration in config.INTEGRATIONS["integrations"]:
         instance = str(integration["id"])
         _add_provider(chart, instance)
+        if instance == "myquest-canary":
+            provider_recording = config.MYQUEST_CANARY_RECORD_UPSTREAM_TRAFFIC
+        elif instance == "myquest":
+            provider_recording = False
+        else:
+            provider_recording = record_upstream_traffic
         _provider_workload(
-            chart,
-            instance,
-            provider_type=str(integration["type"]),
-            record_upstream_traffic=(
-                config.MYQUEST_CANARY_RECORD_UPSTREAM_TRAFFIC
-                if instance == "myquest-canary"
-                else record_upstream_traffic
-            ),
+            chart, instance, provider_type=str(integration["type"]), record_upstream_traffic=provider_recording
         )
     for image in PROVIDER_IMAGES:
         _image_policy(chart, image)
@@ -630,6 +630,7 @@ def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
             ),
         ],
         selector_name=GATEWAY,
+        vpa_policy=ContainerPolicy.cpu_and_memory_requests_only("gateway"),
     )
     _service(
         chart,

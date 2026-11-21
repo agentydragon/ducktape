@@ -16,9 +16,6 @@ from typing import Any
 
 HARNESS_NAMES = ("claude", "codex")
 MAX_REPORTED_PARSE_ISSUES = 20
-CODEX_HARNESS_INSERTION_KINDS = frozenset(
-    {"agents_md.instructions", "environments.environment_context", "skills.selected_skill_instructions"}
-)
 
 
 class SessionLogsError(RuntimeError):
@@ -77,17 +74,16 @@ def iter_entries(path: Path, stats: ParseStats | None = None) -> Iterator[dict[s
             yield entry
 
 
-def report_parse_issues(stats: ParseStats, stream: Any = None) -> None:
+def report_parse_issues(stats: ParseStats) -> None:
     """Report skipped records without dumping their potentially sensitive text."""
 
-    output = stream or sys.stderr
     if not stats.malformed_records:
         return
-    print(f"Warning: skipped {stats.malformed_records} malformed JSONL record(s).", file=output)
+    print(f"Warning: skipped {stats.malformed_records} malformed JSONL record(s).", file=sys.stderr)
     for issue in stats.issues:
-        print(f"  line {issue.line_number}: {issue.message}", file=output)
+        print(f"  line {issue.line_number}: {issue.message}", file=sys.stderr)
     if stats.malformed_records > len(stats.issues):
-        print(f"  ... {stats.malformed_records - len(stats.issues)} more omitted", file=output)
+        print(f"  ... {stats.malformed_records - len(stats.issues)} more omitted", file=sys.stderr)
 
 
 def _without_subagents(path: Path) -> bool:
@@ -112,8 +108,8 @@ def _choose_most_recent(paths: Sequence[Path], harness: str) -> Path:
     return max(candidates, key=lambda path: path.stat().st_mtime)
 
 
-def _recent_files(root: Path, pattern: str, now: float) -> list[Path]:
-    cutoff = now - 120 * 60
+def _recent_files(root: Path, pattern: str) -> list[Path]:
+    cutoff = time.time() - 120 * 60
     return [
         path
         for path in root.rglob(pattern)
@@ -121,27 +117,16 @@ def _recent_files(root: Path, pattern: str, now: float) -> list[Path]:
     ]
 
 
-def find_current_session(
-    harness: str | None = None,
-    *,
-    home: Path | None = None,
-    cwd: Path | None = None,
-    environ: Mapping[str, str] | None = None,
-    now: float | None = None,
-) -> Path:
+def find_current_session(harness: str | None = None) -> Path:
     """Find the current transcript using the same harness rules as the skill docs."""
 
-    env = environ or os.environ
+    env = os.environ
     selected_harness = harness or ("codex" if env.get("CODEX_THREAD_ID") or env.get("CODEX_SESSION_ID") else "claude")
     if selected_harness not in HARNESS_NAMES:
         raise SessionLogsError(f"unknown harness: {selected_harness}")
 
-    root_home = home or Path.home()
-    current_directory = cwd or Path.cwd()
-    current_time = time.time() if now is None else now
-
     if selected_harness == "claude":
-        projects_root = root_home / ".claude" / "projects"
+        projects_root = Path.home() / ".claude" / "projects"
         if not projects_root.is_dir():
             raise SessionLogsError(f"Claude transcript directory not found: {projects_root}")
 
@@ -151,15 +136,15 @@ def find_current_session(
             if matches:
                 return matches[0]
 
-        project_root = projects_root / str(current_directory).replace("/", "-")
+        project_root = projects_root / str(Path.cwd()).replace("/", "-")
         candidates = (
             [path for path in project_root.glob("*.jsonl") if _without_subagents(path)] if project_root.is_dir() else []
         )
         if not candidates:
-            candidates = _recent_files(projects_root, "*.jsonl", current_time)
+            candidates = _recent_files(projects_root, "*.jsonl")
         return _choose_most_recent(candidates, selected_harness)
 
-    sessions_root = root_home / ".codex" / "sessions"
+    sessions_root = Path.home() / ".codex" / "sessions"
     if not sessions_root.is_dir():
         raise SessionLogsError(f"Codex transcript directory not found: {sessions_root}")
 
@@ -171,7 +156,7 @@ def find_current_session(
             # larger file is the canonical parent conversation.
             return max(matches, key=lambda path: path.stat().st_size)
 
-    candidates = _recent_files(sessions_root, "rollout-*.jsonl", current_time)
+    candidates = _recent_files(sessions_root, "rollout-*.jsonl")
     return _choose_most_recent(candidates, selected_harness)
 
 
@@ -208,7 +193,7 @@ def _codex_content(entry: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     return [part for part in content if isinstance(part, dict)] if isinstance(content, list) else []
 
 
-def _codex_user_text(entry: Mapping[str, Any], *, strip_kinds: frozenset[str] = CODEX_HARNESS_INSERTION_KINDS) -> str:
+def _codex_user_text(entry: Mapping[str, Any], *, strip_kinds: frozenset[str]) -> str:
     payload = entry.get("payload")
     metadata = payload.get("internal_chat_message_metadata_passthrough") if isinstance(payload, dict) else None
     kinds = metadata.get("content_item_kinds") if isinstance(metadata, dict) else None
@@ -223,10 +208,6 @@ def _codex_user_text(entry: Mapping[str, Any], *, strip_kinds: frozenset[str] = 
             and kinds[index] in strip_kinds
         )
     )
-
-
-def user_text(entry: Mapping[str, Any], harness: str) -> str:
-    return _claude_user_text(entry) if harness == "claude" else _codex_user_text(entry)
 
 
 def is_user(entry: Mapping[str, Any], harness: str) -> bool:
@@ -400,19 +381,17 @@ def followups_replay_guidance(compactions: int, malformed_records: int) -> Repla
     return ReplayGuidance.SKIP
 
 
-def main_find() -> int:
+def main_find() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("harness", nargs="?", choices=HARNESS_NAMES)
     args = parser.parse_args()
     try:
         print(find_current_session(args.harness))
     except SessionLogsError as error:
-        print(f"Error: {error}", file=sys.stderr)
-        return 1
-    return 0
+        raise SystemExit(f"Error: {error}") from error
 
 
-def main_analyze() -> int:
+def main_analyze() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("positionals", nargs="*")
     args = parser.parse_args()
@@ -422,8 +401,7 @@ def main_analyze() -> int:
             raise SessionLogsError(f"transcript file not found: {path}")
         summary, stats = analyze_transcript(path, harness)
     except SessionLogsError as error:
-        print(f"Error: {error}", file=sys.stderr)
-        return 1
+        raise SystemExit(f"Error: {error}") from error
     print(f"=== Session analysis: {path.name} ===")
     print(f"Harness: {harness}")
     print(f"Session ID: {summary['session_id']}")
@@ -442,7 +420,6 @@ def main_analyze() -> int:
     )
     print(f"Transcript: {path}")
     report_parse_issues(stats)
-    return 0
 
 
 def _render_recent(recent: Sequence[tuple[str, str]], maximum: int) -> str:
@@ -454,7 +431,7 @@ def _render_recent(recent: Sequence[tuple[str, str]], maximum: int) -> str:
     )
 
 
-def main_conversation() -> int:
+def main_conversation() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--max-display-text-length", type=int, default=1000)
     parser.add_argument(
@@ -484,8 +461,7 @@ def main_conversation() -> int:
         if not path.is_file():
             raise SessionLogsError(f"transcript file not found: {path}")
     except SessionLogsError as error:
-        print(f"Error: {error}", file=sys.stderr)
-        return 1
+        raise SystemExit(f"Error: {error}") from error
 
     scan = ParseStats()
     compactions = sum(1 for entry in iter_entries(path, scan) if is_compaction(entry, harness))
@@ -517,7 +493,7 @@ def main_conversation() -> int:
             recent.append((_timestamp(entry), assistant_text(entry, harness)))
             del recent[:-2]
         elif is_user(entry, harness):
-            text = _codex_user_text(entry, strip_kinds=strip_kinds) if harness == "codex" else user_text(entry, harness)
+            text = _codex_user_text(entry, strip_kinds=strip_kinds) if harness == "codex" else _claude_user_text(entry)
             if not text.strip():
                 continue
             user_count += 1
@@ -526,4 +502,3 @@ def main_conversation() -> int:
             print("--- user message ---")
             print(display_text(text, args.max_display_text_length))
     report_parse_issues(stats)
-    return 0

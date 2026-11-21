@@ -13,7 +13,7 @@ The evidence establishes usable native execution and observation, not automatic 
 identity, authorization, transcript reconciliation or independent control. Discovery therefore does
 not by itself remove the remaining product/authority decisions for child Session projection.
 
-The Runtime's [root-only normalization contract](../../env/runtime/docs/session_protocol.md#native-subagents) retains
+The Runtime's [root-only normalization contract](../../env/runtime/docs/session_protocol.md#harness-originated-messages) retains
 raw child frames and parent delegation results without letting children mutate root turn/input state.
 Child Session discovery remains deferred; its unmeasured configurations and control experiments
 are not additional acceptance gates for native delegation.
@@ -76,7 +76,7 @@ captures exposed asynchronous journal writes. This test establishes recovery of 
 not a zero-loss guarantee for crashes immediately after a result receipt. Parent model history is
 also not a substitute for a child's complete transcript.
 
-## Codex app-server (0.157.0)
+## Codex app-server (0.166.0)
 
 [`test_v2_discovery.py`](../codex/test_v2_discovery.py) includes separate v1 and v2 cases:
 

@@ -138,7 +138,7 @@ func (w *Worker) deliver(ctx context.Context, claim inboxstore.Claim, notice inb
 		SessionId: claim.SessionID, CommandId: current.CommandID.String(), Text: current.Text,
 	})
 	if err != nil {
-		return unavailable(err)
+		return unavailableNotFound(err, "DispatcherNotFoundError", seconds(w.Settings.UnavailableDestinationRetrySeconds))
 	}
 	dispatch := response.GetDispatch()
 	state := dispatchstate.NormalizeDeliveryState(dispatch.GetState())

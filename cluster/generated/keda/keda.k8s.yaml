@@ -1,8 +1,10 @@
 apiVersion: v1
 kind: Namespace
 metadata:
+  annotations:
+    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "keda-operator", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "50m", "memory": "128Mi"}, "maxAllowed": {"cpu": "50m", "memory": "256Mi"}, "controlledResources": ["memory"]}, {"containerName": "keda-operator-metrics-apiserver", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "50m", "memory": "128Mi"}, "maxAllowed": {"cpu": "50m", "memory": "256Mi"}, "controlledResources": ["memory"]}, {"containerName": "keda-admission-webhooks", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "25m", "memory": "64Mi"}, "maxAllowed": {"cpu": "25m", "memory": "128Mi"}, "controlledResources": ["memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
   labels:
-    goldilocks.fairwinds.com/vpa-update-mode: "off"
+    goldilocks.fairwinds.com/vpa-update-mode: initial
   name: keda
 spec: {}
 ---
@@ -35,13 +37,43 @@ spec:
     remediation:
       retries: 3
   interval: 15m
+  postRenderers:
+    - kustomize:
+        patches:
+          - patch: |
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: keda-admission-webhooks
+                annotations:
+                  goldilocks.fairwinds.com/vpa-update-mode: auto
+            target:
+              kind: Deployment
+              name: keda-admission-webhooks
+          - patch: |
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: keda-operator-metrics-apiserver
+                annotations:
+                  goldilocks.fairwinds.com/vpa-update-mode: auto
+            target:
+              kind: Deployment
+              name: keda-operator-metrics-apiserver
   upgrade:
     crds: CreateReplace
     remediation:
       retries: 3
   values:
+    metricsServer:
+      replicaCount: 2
     nodeSelector:
       topology.kubernetes.io/region: hil
+    podDisruptionBudget:
+      metricServer:
+        minAvailable: 1
+      webhooks:
+        minAvailable: 1
     resources:
       metricServer:
         limits:
@@ -64,4 +96,25 @@ spec:
         requests:
           cpu: 25m
           memory: 64Mi
+    topologySpreadConstraints:
+      metricsServer:
+        - labelSelector:
+            matchLabels:
+              app: keda-operator-metrics-apiserver
+          matchLabelKeys:
+            - pod-template-hash
+          maxSkew: 1
+          minDomains: 2
+          nodeTaintsPolicy: Honor
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
     watchNamespace: haku-ci,buildbuddy-executor
+    webhooks:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app: keda-admission-webhooks
+              topologyKey: kubernetes.io/hostname
+      replicaCount: 2

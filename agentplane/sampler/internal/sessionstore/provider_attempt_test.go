@@ -30,13 +30,6 @@ func providerAttemptTestPolicyPointer() *ProviderAttemptPolicy {
 	return &policy
 }
 
-func providerAttemptTestPolicyForKind(kind PendingIntentKind) *ProviderAttemptPolicy {
-	if kind == PendingIntentSampling {
-		return providerAttemptTestPolicyPointer()
-	}
-	return nil
-}
-
 func providerAttemptTestRequest(kind PendingIntentKind) (IntentPayload, requestPreparation) {
 	connection := samplersettings.ConnectionConfig{BaseURL: "https://provider.example.test"}
 	model := samplersettings.ModelConfig{
@@ -85,12 +78,7 @@ func reopenProviderAttemptStore(t *testing.T, store *Store, dsn string) *Store {
 }
 
 func TestProviderAttemptLeaseAndOwnerFences(t *testing.T) {
-	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, session, owner := claimedSession(t)
 	policy := ProviderAttemptPolicy{Budget: 2, Lease: time.Minute}
 	intentID, _, err := store.Begin(t.Context(), owner, IntentPayload{Kind: PendingIntentSampling}, nil, &policy)
 	if err != nil {
@@ -110,16 +98,11 @@ func TestProviderAttemptLeaseAndOwnerFences(t *testing.T) {
 	if err := store.RenewProviderAttempt(t.Context(), owner, intentID, time.Minute); !errors.Is(err, protocol.ErrPrecondition) {
 		t.Fatalf("expired attempt was renewed: %v", err)
 	}
-	if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1`, session.ConversationID); err != nil {
-		t.Fatal(err)
-	}
+	expireLease(t, store, session)
 	if err := store.RenewProviderAttempt(t.Context(), owner, intentID, time.Minute); !errors.As(err, new(*LostOwnershipError)) {
 		t.Fatalf("expired owner renewed provider attempt: %v", err)
 	}
-	newOwner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	newOwner := claim(t, store, session)
 	if newOwner.Generation != owner.Generation+1 {
 		t.Fatalf("new generation=%d, old=%d", newOwner.Generation, owner.Generation)
 	}
@@ -131,12 +114,7 @@ func TestProviderAttemptLeaseAndOwnerFences(t *testing.T) {
 }
 
 func TestProviderAttemptMigrationBackfillsUnresolvedIntentWithoutRetryAllowance(t *testing.T) {
-	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, session, owner := claimedSession(t)
 	const commandID = "pre-attempt-schema-command"
 	admitProviderCommand(t, store, owner, session.ID, commandID, false)
 	request, prepare := providerAttemptTestRequest(PendingIntentSampling)
@@ -181,12 +159,7 @@ func TestProviderAttemptMigrationBackfillsUnresolvedIntentWithoutRetryAllowance(
 }
 
 func TestReadProviderFinishDistinguishesOpenAndCommittedIntent(t *testing.T) {
-	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, session, owner := claimedSession(t)
 	const commandID = "provider-finish-readback"
 	admitProviderCommand(t, store, owner, session.ID, commandID, false)
 	request, prepare := providerAttemptTestRequest(PendingIntentSampling)
@@ -214,13 +187,8 @@ func TestReadProviderFinishDistinguishesOpenAndCommittedIntent(t *testing.T) {
 			t.Fatalf("terminal provider result marker %q readback=%+v err=%v", status, state, err)
 		}
 	}
-	if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1`, session.ConversationID); err != nil {
-		t.Fatal(err)
-	}
-	newOwner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	expireLease(t, store, session)
+	newOwner := claim(t, store, session)
 	if _, err := store.ReadProviderFinish(t.Context(), newOwner, intentID); !errors.As(err, new(*LostOwnershipError)) {
 		t.Fatalf("readback accepted a prior owner generation: %v", err)
 	}
@@ -229,17 +197,13 @@ func TestReadProviderFinishDistinguishesOpenAndCommittedIntent(t *testing.T) {
 func TestProviderFinishDoesNotCommitAfterDurableInterrupt(t *testing.T) {
 	for _, kind := range []PendingIntentKind{PendingIntentSampling, PendingIntentCompaction} {
 		t.Run(string(kind), func(t *testing.T) {
-			store := newTestStore(t)
-			session := openSessionForStore(t, store, "")
-			owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-			if err != nil {
-				t.Fatal(err)
-			}
+			store, session, owner := claimedSession(t)
 			commandID := "provider-interrupt-" + string(kind)
 			admitProviderCommand(t, store, owner, session.ID, commandID, kind == PendingIntentCompaction)
 			request, prepare := providerAttemptTestRequest(kind)
 			var intentID string
 			var original protocol.Context
+			var err error
 			if kind == PendingIntentSampling {
 				intentID, _, err = store.begin(t.Context(), owner, request, prepare, providerAttemptTestPolicyPointer())
 			} else {
@@ -276,23 +240,15 @@ func TestProviderFinishDoesNotCommitAfterDurableInterrupt(t *testing.T) {
 func TestCheckRecoveryAllowsOldProviderIntentButBlocksOldNativeIntent(t *testing.T) {
 	store := newTestStore(t)
 	providerSession := openSessionForStore(t, store, "")
-	providerOwner, err := store.Claim(t.Context(), providerSession.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	providerOwner := claim(t, store, providerSession)
 	admitProviderCommand(t, store, providerOwner, providerSession.ID, "old-provider-command", false)
 	request, prepare := providerAttemptTestRequest(PendingIntentSampling)
 	providerIntent, _, err := store.begin(t.Context(), providerOwner, request, prepare, providerAttemptTestPolicyPointer())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1`, providerSession.ConversationID); err != nil {
-		t.Fatal(err)
-	}
-	newProviderOwner, err := store.Claim(t.Context(), providerSession.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	expireLease(t, store, providerSession)
+	newProviderOwner := claim(t, store, providerSession)
 	if err := store.CheckRecovery(t.Context(), newProviderOwner); err != nil {
 		t.Fatalf("new owner was blocked by read-only provider intent %s: %v", providerIntent, err)
 	}
@@ -316,22 +272,14 @@ func TestCheckRecoveryAllowsOldProviderIntentButBlocksOldNativeIntent(t *testing
 	}
 
 	nativeSession := openSessionForStore(t, store, "")
-	nativeOwner, err := store.Claim(t.Context(), nativeSession.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	nativeOwner := claim(t, store, nativeSession)
 	admitProviderCommand(t, store, nativeOwner, nativeSession.ID, "old-native-command", false)
 	nativeIntent, _, err := store.Begin(t.Context(), nativeOwner, IntentPayload{Kind: PendingIntentCell}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1`, nativeSession.ConversationID); err != nil {
-		t.Fatal(err)
-	}
-	newNativeOwner, err := store.Claim(t.Context(), nativeSession.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	expireLease(t, store, nativeSession)
+	newNativeOwner := claim(t, store, nativeSession)
 	var unknown *protocol.UnknownEffectError
 	if err := store.CheckRecovery(t.Context(), newNativeOwner); !errors.As(err, &unknown) {
 		t.Fatalf("new owner was allowed through old native effect %s: %v", nativeIntent, err)
@@ -339,12 +287,7 @@ func TestCheckRecoveryAllowsOldProviderIntentButBlocksOldNativeIntent(t *testing
 }
 
 func TestFailProviderCommandPreservesUnrelatedLiveCell(t *testing.T) {
-	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, session, owner := claimedSession(t)
 	const commandID = "provider-permanent-failure"
 	admitProviderCommand(t, store, owner, session.ID, commandID, false)
 	request, prepare := providerAttemptTestRequest(PendingIntentSampling)
@@ -390,10 +333,7 @@ func TestFailProviderCommandPreservesUnrelatedLiveCell(t *testing.T) {
 func TestProviderAttemptRetryPersistsFrontierAndEvidenceAcrossStoreReopen(t *testing.T) {
 	store, dsn := newTestStoreWithDSN(t)
 	session := openSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	owner := claim(t, store, session)
 	const commandID = "durable-provider-command"
 	admitProviderCommand(t, store, owner, session.ID, commandID, false)
 	request, prepare := providerAttemptTestRequest(PendingIntentSampling)
@@ -484,10 +424,7 @@ func TestProviderAttemptRetryPersistsFrontierAndEvidenceAcrossStoreReopen(t *tes
 func TestProviderRecoveryFrontierPersistsExhaustedFailureAcrossStoreReopen(t *testing.T) {
 	store, dsn := newTestStoreWithDSN(t)
 	session := openSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	owner := claim(t, store, session)
 	const commandID = "exhausted-provider-command"
 	admitProviderCommand(t, store, owner, session.ID, commandID, false)
 	request, prepare := providerAttemptTestRequest(PendingIntentSampling)
@@ -516,12 +453,7 @@ func TestProviderRecoveryFrontierPersistsExhaustedFailureAcrossStoreReopen(t *te
 }
 
 func TestProviderEvidenceRaceWithAbandonmentIsFenced(t *testing.T) {
-	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, session, owner := claimedSession(t)
 	admitProviderCommand(t, store, owner, session.ID, "provider-evidence-race", false)
 	request, prepare := providerAttemptTestRequest(PendingIntentSampling)
 	intentID, _, err := store.begin(t.Context(), owner, request, prepare, providerAttemptTestPolicyPointer())
@@ -590,12 +522,7 @@ func TestProviderEvidenceRaceWithAbandonmentIsFenced(t *testing.T) {
 }
 
 func TestCompactionRetryRetainsOriginalNativeContext(t *testing.T) {
-	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, session, owner := claimedSession(t)
 	const commandID = "durable-compaction-command"
 	admitProviderCommand(t, store, owner, session.ID, commandID, true)
 	original, err := store.Read(t.Context(), owner)
@@ -635,12 +562,7 @@ func TestCompactionRetryRetainsOriginalNativeContext(t *testing.T) {
 }
 
 func TestProviderRetryDueIsClearedOnHostLossWithoutErasingAncestry(t *testing.T) {
-	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, session, owner := claimedSession(t)
 	if err := store.StampCodeHostInstance(t.Context(), owner, "00000000-0000-4000-8000-000000000001"); err != nil {
 		t.Fatal(err)
 	}
@@ -677,12 +599,7 @@ func TestProviderRetryDueIsClearedOnHostLossWithoutErasingAncestry(t *testing.T)
 }
 
 func TestProviderAttemptAbandonedByHostLossKeepsRecoveryFrontier(t *testing.T) {
-	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, session, owner := claimedSession(t)
 	if err := store.StampCodeHostInstance(t.Context(), owner, "00000000-0000-4000-8000-000000000001"); err != nil {
 		t.Fatal(err)
 	}
@@ -723,12 +640,7 @@ func TestProviderHostLossSuccessorsPreserveFiniteLineageAndUseFreshContext(t *te
 		{name: "compaction after unresolved attempt", kind: PendingIntentCompaction},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			store := newTestStore(t)
-			session := openSessionForStore(t, store, "")
-			owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-			if err != nil {
-				t.Fatal(err)
-			}
+			store, session, owner := claimedSession(t)
 			if err := store.StampCodeHostInstance(t.Context(), owner, "00000000-0000-4000-8000-000000000001"); err != nil {
 				t.Fatal(err)
 			}
@@ -738,6 +650,7 @@ func TestProviderHostLossSuccessorsPreserveFiniteLineageAndUseFreshContext(t *te
 			var initialID string
 			var initialWire []byte
 			var original protocol.Context
+			var err error
 			if tc.kind == PendingIntentSampling {
 				initialID, initialWire, err = store.begin(t.Context(), owner, request, prepare, providerAttemptTestPolicyPointer())
 			} else {
@@ -797,12 +710,7 @@ func TestProviderHostLossSuccessorsPreserveFiniteLineageAndUseFreshContext(t *te
 }
 
 func TestProviderHostLossDoesNotResetExhaustedBudget(t *testing.T) {
-	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, session, owner := claimedSession(t)
 	if err := store.StampCodeHostInstance(t.Context(), owner, "00000000-0000-4000-8000-000000000001"); err != nil {
 		t.Fatal(err)
 	}

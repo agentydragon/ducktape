@@ -20,15 +20,12 @@ name: RBE Container Image
 on:
   push:
     branches: [main, devel]
-    paths:
+    paths: &rbe_image_paths
       - "devinfra/buildbuddy/images/rbe/Dockerfile"
       - "devinfra/buildbuddy/images/rbe/dockerd_wrapper.sh"
       - ".github/workflows/rbe-container-image.yml"
   pull_request:
-    paths:
-      - "devinfra/buildbuddy/images/rbe/Dockerfile"
-      - "devinfra/buildbuddy/images/rbe/dockerd_wrapper.sh"
-      - ".github/workflows/rbe-container-image.yml"
+    paths: *rbe_image_paths
   workflow_dispatch:
 
 concurrency:
@@ -89,8 +86,8 @@ jobs:
   # This commit deliberately carries no `[skip ci]`, unlike every other pin
   # commit. A new RBE container-image pin changes the action platform value and cache key,
   # so it earns a devel sweep rather than having the next unlucky PR
-  # discover it; and the push is what cascades into container-images.yml, which
-  # rebuilds the runner on the new base. Nothing else in image_pins.json may
+  # discover it; and the push is what cascades into buildbuddy-remote-runner-image.yml,
+  # which rebuilds the runner on the new base. Nothing else in image_pins.json may
   # drop `[skip ci]`, or the two workflows will pin each other in a loop.
   pin:
     name: Pin Digest

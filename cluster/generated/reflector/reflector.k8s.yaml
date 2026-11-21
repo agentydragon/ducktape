@@ -1,8 +1,11 @@
 apiVersion: v1
 kind: Namespace
 metadata:
+  annotations:
+    goldilocks.fairwinds.com/vpa-min-replicas: "1"
+    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "*", "controlledValues": "RequestsOnly"}]}'
   labels:
-    goldilocks.fairwinds.com/vpa-update-mode: "off"
+    goldilocks.fairwinds.com/vpa-update-mode: auto
   name: reflector-system
 spec: {}
 ---
@@ -51,10 +54,10 @@ spec:
     resources:
       limits:
         cpu: 200m
-        memory: 256Mi
+        memory: 768Mi
       requests:
         cpu: 100m
-        memory: 128Mi
+        memory: 512Mi
     serviceAccount:
       create: true
       name: reflector

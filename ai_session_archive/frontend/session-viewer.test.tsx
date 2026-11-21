@@ -1,63 +1,38 @@
 // @vitest-environment happy-dom
 
-import { MantineProvider } from "@mantine/core";
-import { act } from "react";
-import { createRoot } from "react-dom/client";
+import { act, type ReactNode } from "react";
 import { createMemoryRouter, MemoryRouter, RouterProvider } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { deferred } from "../../util/frontend/testing/deferred";
+import { cleanupMounted, mountWithMantine } from "../../util/frontend/testing/react";
 import type { SessionBrowserApi } from "./api";
 import { ApiError, httpApi } from "./api";
 import { App } from "./app";
-import { sessionFixtureApi } from "./fixtures/session-data";
+import { createSessionSummary, sessionFixtureApi } from "./fixtures/session-data";
 import type { EventPage, EventRecord, SessionPage } from "./schema";
 import type { SessionSummary, SessionVersion } from "./openapi_schema";
 
-const defaultSessionSummaryMetadata: Pick<
-  SessionSummary,
-  | "native_session_id_conflict"
-  | "native_session_id_candidates"
-  | "parent_native_session_id_conflict"
-  | "parent_native_session_id_candidates"
-> = {
-  native_session_id_conflict: false,
-  native_session_id_candidates: [],
-  parent_native_session_id_conflict: false,
-  parent_native_session_id_candidates: [],
-};
-
-Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
-
-let root: ReturnType<typeof createRoot> | null = null;
-let container: HTMLDivElement | null = null;
-
 afterEach(async () => {
-  if (root !== null) await act(async () => root?.unmount());
-  container?.remove();
-  root = null;
-  container = null;
+  await cleanupMounted();
   localStorage.removeItem("ai-session-archive-sidebar-width");
   vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
-async function renderViewer(api: SessionBrowserApi, initialPath = "/"): Promise<HTMLDivElement> {
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-  await act(async () => {
-    root?.render(
-      <MantineProvider env="test">
-        <MemoryRouter initialEntries={[initialPath]}>
-          <App api={api} />
-        </MemoryRouter>
-      </MantineProvider>
-    );
-    await flush();
-  });
+async function mountAndSettle(node: ReactNode): Promise<HTMLDivElement> {
+  const { container } = await mountWithMantine(node);
+  await act(async () => flush());
   await waitForQueriesToSettle(container);
   return container;
+}
+
+function renderViewer(api: SessionBrowserApi, initialPath = "/"): Promise<HTMLDivElement> {
+  return mountAndSettle(
+    <MemoryRouter initialEntries={[initialPath]}>
+      <App api={api} />
+    </MemoryRouter>
+  );
 }
 
 async function flush(): Promise<void> {
@@ -302,23 +277,12 @@ it("opens a direct session link outside the first page and restores the requeste
 });
 
 it("keeps session selection in history for back and forward navigation", async () => {
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
   const router = createMemoryRouter([{ path: "*", element: <App api={sessionFixtureApi} /> }], {
     initialEntries: ["/sessions/codex-thread-1?kind=main&kind=subagent&kind=unknown"],
   });
+  const container = await mountAndSettle(<RouterProvider router={router} />);
   await act(async () => {
-    root?.render(
-      <MantineProvider env="test">
-        <RouterProvider router={router} />
-      </MantineProvider>
-    );
-    await flush();
-  });
-  await waitForQueriesToSettle(container);
-  await act(async () => {
-    findControl(container!, "Inspect a local transcript").click();
+    findControl(container, "Inspect a local transcript").click();
     await flush();
   });
   await waitForQueriesToSettle(container);
@@ -568,25 +532,17 @@ it("distinguishes inventory, failed and missing imports from an empty captured v
     latest_version_id: string | null = null,
     latest_version_record_count: number | null = null
   ): SessionSummary {
-    return {
-      ...defaultSessionSummaryMetadata,
+    return createSessionSummary({
       id,
       machine_id: "thinkpad",
       harness: "codex",
       session_kind: "main",
       title,
-      cwd: null,
-      started_at: null,
-      last_activity_at: null,
       latest_version_id,
       version_count,
       latest_version_record_count,
       transcript_status,
-      parent_session_id: null,
-      parent_link_kind: null,
-      parent_native_session_id: null,
-      identity_inferred: false,
-    };
+    });
   }
 
   const sessions = [
@@ -668,17 +624,12 @@ it("refreshes import progress on demand and polls automatically", async () => {
     },
   };
   vi.useFakeTimers();
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
+  const { container } = await mountWithMantine(
+    <MemoryRouter initialEntries={["/?view=import-progress"]}>
+      <App api={api} />
+    </MemoryRouter>
+  );
   await act(async () => {
-    root?.render(
-      <MantineProvider env="test">
-        <MemoryRouter initialEntries={["/?view=import-progress"]}>
-          <App api={api} />
-        </MemoryRouter>
-      </MantineProvider>
-    );
     await Promise.resolve();
     await Promise.resolve();
   });
@@ -686,7 +637,7 @@ it("refreshes import progress on demand and polls automatically", async () => {
   expect(container.textContent).toContain("27 processed");
 
   await act(async () => {
-    findControl(container!, "Refresh").click();
+    findControl(container, "Refresh").click();
     await Promise.resolve();
   });
   expect(requests).toBe(2);
@@ -754,25 +705,15 @@ it("shows inferred subagent links and navigates to a placeholder parent", async 
 });
 
 it("shows unresolved native parent metadata without inventing a session link", async () => {
-  const unresolvedSession: SessionSummary = {
-    ...defaultSessionSummaryMetadata,
+  const unresolvedSession = createSessionSummary({
     id: "codex-child-unresolved",
     machine_id: "thinkpad",
     harness: "codex",
     session_kind: "main",
     title: "Inspect native child transcript",
-    cwd: null,
-    started_at: null,
-    last_activity_at: null,
-    latest_version_id: null,
-    version_count: 0,
-    latest_version_record_count: null,
-    transcript_status: "unavailable",
-    parent_session_id: null,
     parent_link_kind: "codex_parent_thread_id_unresolved",
     parent_native_session_id: "thread-parent-123",
-    identity_inferred: false,
-  };
+  });
   const api: SessionBrowserApi = {
     ...sessionFixtureApi,
     listSessions(query) {
@@ -792,27 +733,16 @@ it("shows unresolved native parent metadata without inventing a session link", a
 });
 
 it("keeps native parent metadata reachable without counting an uncaptured parent relation", async () => {
-  const metadataOnlySession: SessionSummary = {
-    ...defaultSessionSummaryMetadata,
+  const metadataOnlySession = createSessionSummary({
     id: "codex-child-metadata-only",
     machine_id: "thinkpad",
     harness: "codex",
     session_kind: "main",
     title: "Inspect native metadata without a parent link",
-    cwd: null,
-    started_at: null,
-    last_activity_at: null,
-    latest_version_id: null,
-    version_count: 0,
-    latest_version_record_count: null,
-    transcript_status: "unavailable",
-    parent_session_id: null,
-    parent_link_kind: null,
     parent_native_session_id: "thread-parent-unlinked",
     parent_native_session_id_conflict: true,
     parent_native_session_id_candidates: ["thread-parent-unlinked", "thread-parent-candidate"],
-    identity_inferred: false,
-  };
+  });
   const api: SessionBrowserApi = {
     ...sessionFixtureApi,
     listSessions(query) {
@@ -834,25 +764,16 @@ it("keeps native parent metadata reachable without counting an uncaptured parent
 });
 
 it("shows parent and child lookup failures instead of leaving loading indicators active", async () => {
-  const session: SessionSummary = {
-    ...defaultSessionSummaryMetadata,
+  const session = createSessionSummary({
     id: "codex-child-unavailable-parent",
     machine_id: "thinkpad",
     harness: "codex",
     session_kind: "main",
     title: "Inspect a child with unavailable relations",
-    cwd: null,
-    started_at: null,
-    last_activity_at: null,
-    latest_version_id: null,
-    version_count: 0,
-    latest_version_record_count: null,
-    transcript_status: "unavailable",
     parent_session_id: "missing-parent",
     parent_link_kind: "codex_parent_thread_id",
     parent_native_session_id: "thread-parent-missing",
-    identity_inferred: false,
-  };
+  });
   const api: SessionBrowserApi = {
     ...sessionFixtureApi,
     listSessions(query) {
@@ -874,29 +795,18 @@ it("shows parent and child lookup failures instead of leaving loading indicators
 });
 
 it("shows conflicting Codex native and parent IDs without inventing a parent link", async () => {
-  const conflictingSession: SessionSummary = {
-    ...defaultSessionSummaryMetadata,
+  const conflictingSession = createSessionSummary({
     id: "codex-child-conflicting",
     machine_id: "thinkpad",
     harness: "codex",
     session_kind: "main",
     title: "Inspect conflicting thread metadata",
-    cwd: null,
-    started_at: null,
-    last_activity_at: null,
-    latest_version_id: null,
-    version_count: 0,
-    latest_version_record_count: null,
-    transcript_status: "unavailable",
-    parent_session_id: null,
     parent_link_kind: "codex_parent_thread_id_inconsistent",
-    parent_native_session_id: null,
-    identity_inferred: false,
     native_session_id_conflict: true,
     native_session_id_candidates: ["thread-child-a", "thread-child-b"],
     parent_native_session_id_conflict: true,
     parent_native_session_id_candidates: ["thread-parent-a", "thread-parent-b"],
-  };
+  });
   const api: SessionBrowserApi = {
     ...sessionFixtureApi,
     listSessions(query) {
@@ -915,25 +825,13 @@ it("shows conflicting Codex native and parent IDs without inventing a parent lin
 });
 
 it("labels a resolved Codex parent_thread_id link and navigates to the captured parent", async () => {
-  const parent: SessionSummary = {
-    ...defaultSessionSummaryMetadata,
+  const parent = createSessionSummary({
     id: "codex-parent-session",
     machine_id: "thinkpad",
     harness: "codex",
     session_kind: "main",
     title: "Captured Codex parent",
-    cwd: null,
-    started_at: null,
-    last_activity_at: null,
-    latest_version_id: null,
-    version_count: 0,
-    latest_version_record_count: null,
-    transcript_status: "unavailable",
-    parent_session_id: null,
-    parent_link_kind: null,
-    parent_native_session_id: null,
-    identity_inferred: false,
-  };
+  });
   const child: SessionSummary = {
     ...parent,
     id: "codex-child-session",
@@ -1045,25 +943,13 @@ it.each(["harness", "kind"])("does not append a session page after changing the 
 
   pending.resolve({
     data: [
-      {
-        ...defaultSessionSummaryMetadata,
+      createSessionSummary({
         id: "stale-session",
         machine_id: "thinkpad",
         harness: "codex",
         session_kind: "main",
         title: "Stale session page",
-        cwd: null,
-        started_at: null,
-        last_activity_at: null,
-        latest_version_id: null,
-        version_count: 0,
-        latest_version_record_count: null,
-        transcript_status: "unavailable",
-        parent_session_id: null,
-        parent_link_kind: null,
-        parent_native_session_id: null,
-        identity_inferred: false,
-      },
+      }),
     ],
     next_cursor: null,
   });

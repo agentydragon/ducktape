@@ -9,12 +9,10 @@ from enum import StrEnum
 from pydantic import Field, NonNegativeInt, model_validator
 
 from finance.augur.api.finance import FinanceSnapshot
-from finance.augur.api.portfolio import HoldingKind, PortfolioAccountType, PortfolioConfig, PositiveCurrencyAmount
-from finance.augur.api.schemas import ApiModel
+from finance.augur.api.portfolio import HoldingKind, PortfolioAccountType, PortfolioConfig
+from finance.augur.api.schemas import ID_PATTERN, ApiModel, PositiveCurrencyAmount
 from finance.augur.sim.ids import AccountId, AgentId
 from finance.augur.sim.tlh import TlhAssumptions
-
-_ID_PATTERN = r"^[a-z0-9][a-z0-9_\-]*$"
 
 
 class PlaidBalanceField(StrEnum):
@@ -39,7 +37,7 @@ class PlaidProxyHoldingPeriodBucket(ApiModel):
     so the position totals always match the current Plaid snapshot.
     """
 
-    key: str = Field(pattern=_ID_PATTERN, description="Lot-id suffix for this bucket, e.g. 'lt12'.")
+    key: str = Field(pattern=ID_PATTERN, description="Lot-id suffix for this bucket, e.g. 'lt12'.")
     holding_period_months_at_start: NonNegativeInt = Field(
         description="Representative months held at month 0 for this bucket's lot (e.g. the MV-weighted mean age)."
     )
@@ -61,9 +59,9 @@ class PlaidProxyHoldingPeriodBucket(ApiModel):
 class PlaidSp500ProxyGroupConfig(ApiModel):
     """Map selected Plaid investment accounts into one Augur SP500 proxy position, or a TLH portfolio."""
 
-    position_id: str = Field(pattern=_ID_PATTERN)
-    portfolio_account_id: AccountId = Field(pattern=_ID_PATTERN)
-    owner_agent_id: AgentId = Field(pattern=_ID_PATTERN)
+    position_id: str = Field(pattern=ID_PATTERN)
+    portfolio_account_id: AccountId = Field(pattern=ID_PATTERN)
+    owner_agent_id: AgentId = Field(pattern=ID_PATTERN)
     plaid_account_ids: tuple[str, ...] = Field(min_length=1)
     account_type: PortfolioAccountType = PortfolioAccountType.TAXABLE_BROKERAGE
     account_label: str | None = None

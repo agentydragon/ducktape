@@ -1,10 +1,13 @@
 //! Selected-ownership corpus proposals reuse verified program preparation.
 
-use super::support::{graph_args, proposal_args, restore_tree, run, unit_id_for_binding};
+use super::support::{
+    graph_for, plan_args, proposal_args, restore_tree, run, run_ok, tree_run_args,
+    unit_id_for_binding,
+};
 use debundle_e2e_graph_support::json_module_path_for_unit;
 use debundle_e2e_support::{
     TreeFixture, TreeWorkspace, assert_node_output, parse_stdout_json, read_gzip_json, read_tree,
-    tree_spec_args, write_tree_fixture,
+    write_tree_fixture,
 };
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -99,31 +102,30 @@ fn one_binding_view(binding: &str) -> Value {
     })
 }
 
-fn capture_selected(root: &Path, output_root: &Path, view: &Path) -> Output {
-    let mut args = vec!["run".to_owned()];
-    args.extend(
-        tree_spec_args(root)
-            .into_iter()
-            .map(|arg| arg.into_string().expect("fixture path is UTF-8")),
-    );
-    args.extend([
-        "--out-root".to_owned(),
-        path_arg(output_root),
-        "--graphs".to_owned(),
-        "--ownership-subset".to_owned(),
-        path_arg(view),
-    ]);
-    run(&args)
+#[track_caller]
+fn capture_selected(root: &Path, output_root: &Path, view: &Path) {
+    let view = path_arg(view);
+    run_ok(&tree_run_args(
+        root,
+        output_root,
+        &["--ownership-subset", view.as_str()],
+    ));
 }
 
-fn graph_for(reports_root: &Path, chunk: &str) -> PathBuf {
-    reports_root.join(chunk).join("dependency_graph.json.gz")
+fn selected_args(root: &Path, args: Vec<String>) -> Vec<String> {
+    let mut selected = vec!["--graph-ownership-subset-root".into(), path_arg(root)];
+    selected.extend(args);
+    selected
 }
 
 fn corpus_args(root: &Path, graphs: &Path) -> Vec<String> {
-    let mut args = vec!["--graph-ownership-subset-root".into(), path_arg(root)];
-    args.extend(proposal_args(root, "--graphs", graphs));
-    args
+    selected_args(root, proposal_args(root, "--graphs", graphs))
+}
+
+#[track_caller]
+fn run_plan(fixture: &Fixture, command: &str, graph: &Path, plan: &Path, flags: &[&str]) -> Output {
+    let args = plan_args(&fixture.root, command, graph, plan, flags);
+    run_ok(&selected_args(&fixture.root, args))
 }
 
 fn assert_stale_corpus_refused(
@@ -191,13 +193,7 @@ fn selected_corpus_plans_share_preparation_and_apply_as_chunk_local_views() {
     let original_config = fs::read(&fixture.config).unwrap();
     let original_modules = read_tree(&fixture.modules);
     let first_capture = fixture.root.join("capture");
-    let captured = capture_selected(&fixture.root, &first_capture, &view);
-    assert!(
-        captured.status.success(),
-        "selected graph capture failed:\n{}\n{}",
-        String::from_utf8_lossy(&captured.stdout),
-        String::from_utf8_lossy(&captured.stderr)
-    );
+    capture_selected(&fixture.root, &first_capture, &view);
     for chunk in ["alpha", "beta"] {
         assert_runtime(&first_capture, chunk);
     }
@@ -220,13 +216,7 @@ fn selected_corpus_plans_share_preparation_and_apply_as_chunk_local_views() {
         }
     }
 
-    let corpus_output = run(&corpus_args(&fixture.root, &reports_root));
-    assert!(
-        corpus_output.status.success(),
-        "stdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&corpus_output.stdout),
-        String::from_utf8_lossy(&corpus_output.stderr)
-    );
+    let corpus_output = run_ok(&corpus_args(&fixture.root, &reports_root));
     let corpus = parse_stdout_json(&corpus_output);
     assert_eq!(corpus["status"], "found", "{corpus}");
     assert_eq!(corpus["chunks"].as_array().unwrap().len(), 2, "{corpus}");
@@ -319,71 +309,16 @@ fn selected_corpus_plans_share_preparation_and_apply_as_chunk_local_views() {
         let plan_path = fixture.root.join(format!("{chunk}-plan.json"));
         fs::write(&plan_path, serde_json::to_vec_pretty(&plan).unwrap()).unwrap();
 
-        let mut check = vec![
-            "--graph-ownership-subset-root".to_owned(),
-            path_arg(&fixture.root),
-        ];
-        check.extend(["modules".into(), "check".into()]);
-        check.extend(graph_args(&fixture.root, "--graph", &graph));
-        check.extend([
-            "--plan".into(),
-            path_arg(&plan_path),
-            "--format".into(),
-            "json".into(),
-        ]);
-        let checked = run(&check);
-        assert!(
-            checked.status.success(),
-            "check {chunk} failed:\n{}\n{}",
-            String::from_utf8_lossy(&checked.stdout),
-            String::from_utf8_lossy(&checked.stderr)
-        );
+        let checked = run_plan(&fixture, "check", &graph, &plan_path, &[]);
         assert_eq!(parse_stdout_json(&checked)["accepted"], true);
 
         let before_preview = read_tree(&fixture.modules);
-        let mut preview = vec![
-            "--graph-ownership-subset-root".to_owned(),
-            path_arg(&fixture.root),
-        ];
-        preview.extend(["modules".into(), "apply".into()]);
-        preview.extend(graph_args(&fixture.root, "--graph", &graph));
-        preview.extend([
-            "--plan".into(),
-            path_arg(&plan_path),
-            "--dry-run".into(),
-            "--format".into(),
-            "json".into(),
-        ]);
-        let previewed = run(&preview);
-        assert!(
-            previewed.status.success(),
-            "preview {chunk} failed:\n{}\n{}",
-            String::from_utf8_lossy(&previewed.stdout),
-            String::from_utf8_lossy(&previewed.stderr)
-        );
+        run_plan(&fixture, "apply", &graph, &plan_path, &["--dry-run"]);
         assert_eq!(read_tree(&fixture.modules), before_preview);
         assert_eq!(fs::read(&fixture.config).unwrap(), original_config);
         assert_eq!(fs::read(&view).unwrap(), original_view);
 
-        let mut apply = vec![
-            "--graph-ownership-subset-root".to_owned(),
-            path_arg(&fixture.root),
-        ];
-        apply.extend(["modules".into(), "apply".into()]);
-        apply.extend(graph_args(&fixture.root, "--graph", &graph));
-        apply.extend([
-            "--plan".into(),
-            path_arg(&plan_path),
-            "--format".into(),
-            "json".into(),
-        ]);
-        let applied = run(&apply);
-        assert!(
-            applied.status.success(),
-            "apply {chunk} failed:\n{}\n{}",
-            String::from_utf8_lossy(&applied.stdout),
-            String::from_utf8_lossy(&applied.stderr)
-        );
+        run_plan(&fixture, "apply", &graph, &plan_path, &[]);
         assert_eq!(read_tree(&fixture.modules), original_modules);
         let applied_view: Value = serde_json::from_slice(&fs::read(&view).unwrap()).unwrap();
         assert!(
@@ -407,13 +342,7 @@ fn selected_corpus_plans_share_preparation_and_apply_as_chunk_local_views() {
         );
 
         let output_root = fixture.root.join(format!("after-{chunk}"));
-        let regenerated = capture_selected(&fixture.root, &output_root, &view);
-        assert!(
-            regenerated.status.success(),
-            "selected regeneration after {chunk} apply failed:\n{}\n{}",
-            String::from_utf8_lossy(&regenerated.stdout),
-            String::from_utf8_lossy(&regenerated.stderr)
-        );
+        capture_selected(&fixture.root, &output_root, &view);
         assert_runtime(&output_root, &chunk);
         let graph_before: Value = read_gzip_json(&graph);
         let graph_after: Value =
@@ -453,13 +382,7 @@ fn corpus_does_not_share_preparation_across_distinct_selected_views() {
     let capture_a = fixture.root.join("capture-a");
     let capture_b = fixture.root.join("capture-b");
     for (output_root, view) in [(&capture_a, &view_a), (&capture_b, &view_b)] {
-        let output = capture_selected(&fixture.root, output_root, view);
-        assert!(
-            output.status.success(),
-            "selected capture failed:\n{}\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
+        capture_selected(&fixture.root, output_root, view);
     }
 
     // Each graph keeps its own program_graph reference and captured subset
@@ -488,13 +411,7 @@ fn corpus_does_not_share_preparation_across_distinct_selected_views() {
     )
     .unwrap();
 
-    let output = run(&corpus_args(&fixture.root, &graphs_root));
-    assert!(
-        output.status.success(),
-        "mixed selected corpus was refused:\n{}\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
+    let output = run_ok(&corpus_args(&fixture.root, &graphs_root));
     let corpus = parse_stdout_json(&output);
     assert_eq!(corpus["status"], "found", "{corpus}");
     let rows = corpus["chunks"].as_array().unwrap();

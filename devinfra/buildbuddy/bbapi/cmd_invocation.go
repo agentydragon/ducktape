@@ -41,10 +41,6 @@ func invocationCmd() *cobra.Command {
 				return printProtoJSON(resp)
 			}
 			for _, inv := range resp.GetInvocation() {
-				sha := inv.GetCommitSha()
-				if len(sha) > 8 {
-					sha = sha[:8]
-				}
 				fmt.Printf("Invocation:  %s\n", inv.GetInvocationId())
 				fmt.Printf("Status:      %s\n", inv.GetInvocationStatus().String())
 				fmt.Printf("Command:     %s %s\n", inv.GetCommand(), strings.Join(inv.GetPattern(), " "))
@@ -52,7 +48,7 @@ func invocationCmd() *cobra.Command {
 				fmt.Printf("Duration:    %s\n", fmtDurationUsec(inv.GetDurationUsec()))
 				fmt.Printf("User:        %s\n", inv.GetUser())
 				fmt.Printf("Host:        %s\n", inv.GetHost())
-				fmt.Printf("Commit:      %s\n", sha)
+				fmt.Printf("Commit:      %s\n", shortSHA(inv.GetCommitSha()))
 				fmt.Printf("Branch:      %s\n", inv.GetBranchName())
 				fmt.Printf("Repo:        %s\n", inv.GetRepoUrl())
 				if role := inv.GetRole(); role != "" {
@@ -71,16 +67,8 @@ func invocationCmd() *cobra.Command {
 					fmt.Printf("UL bytes:    %d\n", cs.GetTotalUploadSizeBytes())
 				}
 				// Show child invocation IDs (for workflow invocations)
-				for _, ev := range inv.GetEvent() {
-					be := ev.GetBuildEvent()
-					if be == nil {
-						continue
-					}
-					for _, child := range be.GetChildren() {
-						if cid := child.GetChildInvocationCompleted(); cid != nil && cid.GetInvocationId() != "" {
-							fmt.Printf("Child:       %s\n", cid.GetInvocationId())
-						}
-					}
+				for _, child := range childInvocationIDs(inv) {
+					fmt.Printf("Child:       %s\n", child)
 				}
 			}
 			return nil
@@ -172,10 +160,6 @@ func invocationListCmd() *cobra.Command {
 			t := newTable()
 			t.header("INVOCATION", "CREATED", "DUR", "COMMAND", "STATUS", "ROLE", "TAGS", "SHA")
 			for _, inv := range resp.GetInvocation() {
-				sha := inv.GetCommitSha()
-				if len(sha) > 8 {
-					sha = sha[:8]
-				}
 				t.row(
 					inv.GetInvocationId(),
 					time.UnixMicro(inv.GetCreatedAtUsec()).Format("2006-01-02 15:04"),
@@ -184,7 +168,7 @@ func invocationListCmd() *cobra.Command {
 					inv.GetInvocationStatus().String(),
 					inv.GetRole(),
 					formatTags(inv),
-					sha,
+					shortSHA(inv.GetCommitSha()),
 				)
 			}
 			t.flush()
@@ -284,19 +268,22 @@ func getChildInvocationIDs(c *client, invocationID string) ([]string, error) {
 	}
 	var children []string
 	for _, inv := range resp.GetInvocation() {
-		for _, ev := range inv.GetEvent() {
-			be := ev.GetBuildEvent()
-			if be == nil {
-				continue
-			}
-			for _, child := range be.GetChildren() {
-				if cid := child.GetChildInvocationCompleted(); cid != nil && cid.GetInvocationId() != "" {
-					children = append(children, cid.GetInvocationId())
-				}
+		children = append(children, childInvocationIDs(inv)...)
+	}
+	return children, nil
+}
+
+// childInvocationIDs returns the IDs of the child invocations recorded in a workflow invocation's events.
+func childInvocationIDs(inv *invocationpb.Invocation) []string {
+	var ids []string
+	for _, ev := range inv.GetEvent() {
+		for _, child := range ev.GetBuildEvent().GetChildren() {
+			if id := child.GetChildInvocationCompleted().GetInvocationId(); id != "" {
+				ids = append(ids, id)
 			}
 		}
 	}
-	return children, nil
+	return ids
 }
 
 // resolveInvocationIDs returns the invocation ID(s) to query for artifacts/targets.

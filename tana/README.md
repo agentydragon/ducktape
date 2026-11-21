@@ -12,7 +12,8 @@ bb run //tana/export:convert_bin -- --help
   (`load_workspace`).
 - `query/` — filters, search parser/evaluator/materializer.
 - `render/` — Markdown/TanaPaste formatting.
-- `export/` — CLI entry points and workflows.
+- `export/` — CLI entry points and workflows; saved-search re-execution: <export/SEARCH_README.md>,
+  search-node export format: <export/search_node_analysis.md>.
 - `mcp_server/` — container packaging for the internal desktop-backed Tana MCP server (its public
   OAuth facade is the shared `mcp-oauth-facade` image, <../x/mcp_oauth_facade/>).
 - `firebase_resigner/` — sidecar re-signing the in-pod Tana Desktop's stale Firebase session.

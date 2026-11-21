@@ -33,7 +33,6 @@ py_library(
     name = "push_images",
     srcs = ["push_images.py"],
     deps = [
-        ":env",
         "//devinfra/oci",
         "@rules_python//python/runfiles",
     ],
@@ -60,7 +59,6 @@ py_binary(
 
 py_test(
     name = "test_system_prompts",
-    size = "medium",
     srcs = ["test_system_prompts.py"],
     data = [
         "//props/agents/critic:prompt.md.mako",
@@ -82,7 +80,6 @@ py_test(
         "//props/agents/docs:system_access.md",
         "//props/agents/grader:prompt.md.mako",
     ],
-    requires_docker = True,
     deps = [
         ":runtime",
         "//:conftest",
@@ -91,15 +88,7 @@ py_test(
         "//props/core:agent_types",
         "//props/core:ids",
         "//props/core/models:examples",
-        "//props/db:database",
-        "//props/testing/fixtures:db",
-        "//util/testing:postgres_fixtures",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
     ],
-)
-
-py_library(
-    name = "env",
-    srcs = ["env.py"],
 )

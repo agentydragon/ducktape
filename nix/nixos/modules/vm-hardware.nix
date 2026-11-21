@@ -4,7 +4,6 @@
 # Filesystem mounts use mkDefault so /etc/nixos/hardware-configuration.nix can override them
 # under --impure. Guests someone actually looks at additionally import vm-desktop.nix.
 {
-  config,
   lib,
   modulesPath,
   ...

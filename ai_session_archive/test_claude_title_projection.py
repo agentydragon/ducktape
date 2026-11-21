@@ -1,4 +1,4 @@
-# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep :testing
 import json
 from pathlib import Path
@@ -10,17 +10,16 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
 from ai_session_archive.database import SessionRow
-from ai_session_archive.ingest import ArchiveSource, SnapshotIngestor
 from ai_session_archive.models import Harness
 from ai_session_archive.session_projection import CLAUDE_TITLE_PROJECTION_VERSION
 from ai_session_archive.source_paths import HarnessRoot
-from ai_session_archive.testing import _backup, _new_repository
+from ai_session_archive.testing import backup, new_ingestor, new_repository
 
-pytest_plugins = ["util.testing.postgres_fixtures", "ai_session_archive.testing"]
+pytest_plugins = ["testing.postgres_fixtures", "ai_session_archive.testing"]
 
 
 def test_claude_title_projection_follows_native_renames(tmp_path: Path, postgres_engine: Engine) -> None:
-    repository, environment = _new_repository(tmp_path)
+    repository, environment = new_repository(tmp_path)
     home = Path(environment["HOME"])
     path = home / ".claude/projects/example-project/example-session.jsonl"
     path.parent.mkdir(parents=True)
@@ -33,11 +32,9 @@ def test_claude_title_projection_follows_native_renames(tmp_path: Path, postgres
         {"type": "user", "message": {"content": "Inspect the parser"}},
     ]
     path.write_text("".join(json.dumps(record) + "\n" for record in records))
-    _backup(environment, Path(".claude"), cwd=home)
+    backup(environment, Path(".claude"), cwd=home)
     factory = sessionmaker(postgres_engine, expire_on_commit=False)
-    ingestor = SnapshotIngestor(
-        factory, ArchiveSource("example-host", "Example host", repository, (HarnessRoot(Harness.CLAUDE, "/.claude"),))
-    )
+    ingestor = new_ingestor(factory, repository, HarnessRoot(Harness.CLAUDE, "/.claude"))
     assert ingestor.ingest().snapshots_incomplete == 0
     with factory() as db:
         assert db.scalar(select(SessionRow.title)) == "Inspect the parser"
@@ -46,14 +43,14 @@ def test_claude_title_projection_follows_native_renames(tmp_path: Path, postgres
         records.append({"type": "custom-title", "customTitle": name, "sessionId": "example-session"})
         records.append({"type": "summary", "summary": "Generated summary", "leafUuid": "example-leaf"})
         path.write_text("".join(json.dumps(record) + "\n" for record in records))
-        _backup(environment, Path(".claude"), cwd=home)
+        backup(environment, Path(".claude"), cwd=home)
         assert ingestor.ingest().snapshots_incomplete == 0
         with factory() as db:
             assert db.scalar(select(SessionRow.title)) == name
 
 
 def test_claude_title_projection_backfills_stored_ai_title_records(tmp_path: Path, postgres_engine: Engine) -> None:
-    repository, environment = _new_repository(tmp_path)
+    repository, environment = new_repository(tmp_path)
     home = Path(environment["HOME"])
     path = home / ".claude/projects/example-project/ff64fbf0-73ff-46fb-af69-3749e514879f.jsonl"
     path.parent.mkdir(parents=True)
@@ -66,11 +63,9 @@ def test_claude_title_projection_backfills_stored_ai_title_records(tmp_path: Pat
         },
     ]
     path.write_text("".join(json.dumps(record) + "\n" for record in records))
-    _backup(environment, Path(".claude"), cwd=home)
+    backup(environment, Path(".claude"), cwd=home)
     factory = sessionmaker(postgres_engine, expire_on_commit=False)
-    ingestor = SnapshotIngestor(
-        factory, ArchiveSource("example-host", "Example host", repository, (HarnessRoot(Harness.CLAUDE, "/.claude"),))
-    )
+    ingestor = new_ingestor(factory, repository, HarnessRoot(Harness.CLAUDE, "/.claude"))
     assert ingestor.ingest().snapshots_incomplete == 0
     with factory() as db, db.begin():
         session = db.scalar(select(SessionRow))

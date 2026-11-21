@@ -1,6 +1,7 @@
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("//agentplane/app/frontend:vitest.bzl", "agentplane_vitest_test")
 load("//devinfra/js:ts_library.bzl", "ts_library")
+load("//devinfra/js:vitest.bzl", "check_vitest_specs")
 
 package(default_visibility = ["//agentplane/app:__subpackages__"])
 
@@ -131,6 +132,7 @@ ts_library(
         "//agentplane/app/frontend/transport:watch_stream",
         "//agentplane/app/frontend/ui:inline_name",
         "//agentplane/mcp_edge/api/connection:connection_service_pb",
+        "//agentplane/proto:code_pb",
         "//agentplane/proto:identity_pb",
     ],
 )
@@ -139,7 +141,6 @@ agentplane_vitest_test(
     name = "management_test",
     srcs = ["management.test.tsx"],
     deps = [
-        ":connection_service_client",
         ":management",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@types/react",
@@ -150,6 +151,9 @@ agentplane_vitest_test(
         "//agentplane/app/frontend/connections/testing:fixture",
         "//agentplane/app/frontend/connections/testing:test_support",
         "//agentplane/mcp_edge/api/connection:connection_service_pb",
+        "//agentplane/proto:code_pb",
         "//agentplane/proto:identity_pb",
     ],
 )
+
+check_vitest_specs()

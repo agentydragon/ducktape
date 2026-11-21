@@ -15,6 +15,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/toolcontract"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/anthropic"
+	"github.com/agentydragon/ducktape/agentplane/sampler/providers/chatcompletions"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/responses"
 	"google.golang.org/protobuf/proto"
 )
@@ -24,11 +25,6 @@ import (
 type providerAttribution struct {
 	SessionID string
 	Identity  *identitypb.Identity
-}
-
-// executionIdentity is the exact Identity the Dispatcher recorded for the Session.
-func executionIdentity(session *sessionstore.Session) (*identitypb.Identity, error) {
-	return session.ExecutionIdentity()
 }
 
 // providerAuthorization is the Authorization value and the attribution headers of one provider
@@ -65,7 +61,7 @@ func providerAuthorization(connection samplersettings.ConnectionConfig, attribut
 
 type sampleResult struct {
 	Records []json.RawMessage
-	// Audit is the adapter's stored intent result: *responses.Audit or *anthropic.Audit.
+	// Audit is the adapter's native stored intent result.
 	Audit           any
 	ResponsesEvents []responses.Event
 	AnthropicEvents []json.RawMessage
@@ -83,13 +79,14 @@ type protocolAdapter interface {
 	API() protocol.APIStyle
 	Prepare(*sessionstore.Session, protocol.SessionAttribution) *providerrequest.Preparation
 	Sample(context.Context, *http.Client, samplersettings.ConnectionConfig, []byte, protocol.EvidenceSink, providerAttribution, bool, protocol.ProviderHooks) (*sampleResult, error)
-	AutoCompactTokens(*int) *int
-	PrepareCompaction(*sessionstore.Conversation, *sessionstore.Session, *sessionstore.ExecutionState, protocol.SessionAttribution, string) (*compactionPlan, error)
+	AutoCompactTokens(*int, protocol.Context) *int
+	PrepareCompaction(*sessionstore.Conversation, *sessionstore.Session, protocol.SessionAttribution, string) (*compactionPlan, error)
 }
 
 type (
 	responsesAdapter struct{ config samplersettings.ModelConfig }
 	anthropicAdapter struct{ config samplersettings.ModelConfig }
+	chatAdapter      struct{ config samplersettings.ModelConfig }
 )
 
 func adapterFor(config samplersettings.ModelConfig) (protocolAdapter, error) {
@@ -98,6 +95,8 @@ func adapterFor(config samplersettings.ModelConfig) (protocolAdapter, error) {
 		return responsesAdapter{config}, nil
 	case protocol.APIStyleAnthropicMessages:
 		return anthropicAdapter{config}, nil
+	case protocol.APIStyleChatCompletions:
+		return chatAdapter{config}, nil
 	default:
 		return nil, protocol.ErrInvalid
 	}
@@ -159,15 +158,17 @@ func readProviderCredential(connection samplersettings.ConnectionConfig) (string
 	}
 	return credential, nil
 }
-func (a responsesAdapter) AutoCompactTokens(fallback *int) *int { return fallback }
-func (a anthropicAdapter) AutoCompactTokens(_ *int) *int {
+
+func (a responsesAdapter) AutoCompactTokens(fallback *int, _ protocol.Context) *int { return fallback }
+
+func (a anthropicAdapter) AutoCompactTokens(_ *int, _ protocol.Context) *int {
 	if a.config.AnthropicMessages.Compaction == nil {
 		return nil
 	}
 	return a.config.AnthropicMessages.Compaction.AutoCompactTokens
 }
 
-func (a responsesAdapter) PrepareCompaction(c *sessionstore.Conversation, s *sessionstore.Session, state *sessionstore.ExecutionState, attribution protocol.SessionAttribution, environment string) (*compactionPlan, error) {
+func (a responsesAdapter) PrepareCompaction(c *sessionstore.Conversation, s *sessionstore.Session, attribution protocol.SessionAttribution, environment string) (*compactionPlan, error) {
 	return &compactionPlan{Preparation: &providerrequest.Preparation{
 		ModelConfig: a.config, SessionEffort: s.Effort,
 		SessionConfiguration: append([]byte(nil), s.Configuration...), Attribution: attribution, Compaction: true,
@@ -176,7 +177,7 @@ func (a responsesAdapter) PrepareCompaction(c *sessionstore.Conversation, s *ses
 	}}, nil
 }
 
-func (a anthropicAdapter) PrepareCompaction(c *sessionstore.Conversation, s *sessionstore.Session, _ *sessionstore.ExecutionState, _ protocol.SessionAttribution, _ string) (*compactionPlan, error) {
+func (a anthropicAdapter) PrepareCompaction(c *sessionstore.Conversation, s *sessionstore.Session, _ protocol.SessionAttribution, _ string) (*compactionPlan, error) {
 	effort := s.Effort
 	if a.config.AnthropicMessages.PerMessageEffort {
 		launch := &sessionconfig.Configuration{}
@@ -204,4 +205,47 @@ func (a anthropicAdapter) PrepareCompaction(c *sessionstore.Conversation, s *ses
 	}, Apply: func(result *sampleResult) (protocol.Context, error) {
 		return plan.Apply(result.Records, result.Audit.(*anthropic.Audit), result.AnthropicEvents)
 	}}, nil
+}
+
+func (a chatAdapter) API() protocol.APIStyle { return protocol.APIStyleChatCompletions }
+
+func (a chatAdapter) Prepare(session *sessionstore.Session, attribution protocol.SessionAttribution) *providerrequest.Preparation {
+	return &providerrequest.Preparation{ModelConfig: a.config, SessionEffort: session.Effort, Attribution: attribution}
+}
+
+func (a chatAdapter) Sample(ctx context.Context, client *http.Client, connection samplersettings.ConnectionConfig, wire []byte, evidence protocol.EvidenceSink, attribution providerAttribution, compaction bool, hooks protocol.ProviderHooks) (*sampleResult, error) {
+	authorization, headers, err := providerAuthorization(connection, attribution)
+	if err != nil {
+		return nil, err
+	}
+	response, err := chatcompletions.Sample(ctx, client, connection.BaseURL, authorization, wire, evidence, headers, compaction, hooks)
+	if err != nil {
+		return nil, err
+	}
+	return &sampleResult{Records: []json.RawMessage{response.Record}, Audit: response.Audit, ContextTokens: response.ContextTokens}, nil
+}
+
+func (a chatAdapter) AutoCompactTokens(_ *int, state protocol.Context) *int {
+	config := a.config.ChatCompaction
+	if config != nil && config.AutoCompactTokens != nil && state.(*chatcompletions.Context).CanCompact(config.KeepRecentTurns) {
+		return config.AutoCompactTokens
+	}
+	return nil
+}
+
+func (a chatAdapter) PrepareCompaction(c *sessionstore.Conversation, session *sessionstore.Session, _ protocol.SessionAttribution, environment string) (*compactionPlan, error) {
+	config := a.config.ChatCompaction
+	if config == nil {
+		return nil, protocol.ErrPrecondition
+	}
+	plan, err := c.Context().(*chatcompletions.Context).PrepareCompaction(*config, environment)
+	if err != nil {
+		return nil, err
+	}
+	return &compactionPlan{
+		Preparation: &providerrequest.Preparation{ModelConfig: a.config, SessionEffort: session.Effort, Compaction: true},
+		Apply: func(result *sampleResult) (protocol.Context, error) {
+			return plan.Apply(result.Records, result.Audit.(chatcompletions.Audit))
+		},
+	}, nil
 }

@@ -34,19 +34,24 @@ from volsync_replicationsource_crds.backube.volsync import (
 
 from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.config_format import yaml_config
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import ConfigMapArgs, kustomize_kustomization
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.home_assistant.db import DATABASE
+from cluster.cdk8s.home_assistant.namespace import NAMESPACE
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.namespaces import initial_request_annotations
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Rule, group
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from cluster.cdk8s.providers.volsync.replication_source import ReplicationSource
 from cluster.cdk8s.restic_backup import direct_restic_mover, restic_egress
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import HostNetworkServiceRef, Pods, Port
+from cluster.cdk8s.volume_claim import volume_claim
+from cluster.cdk8s.vpa_policy import ContainerPolicy
 
 # Aliased: each provisioner names its model `Settings`, in a module named `settings`.
 from homeassistant.provisioner.components import settings as components
@@ -58,17 +63,21 @@ from util.yaml_file_settings import YamlFileSettings
 
 _OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/home-assistant/app"
 _NAME = "home-assistant"
-_NAMESPACE = "home-assistant"
 _HOSTNAME = "home.allegedly.works"
+_APP_CPU_REQUEST = "250m"
+_APP_MEMORY_REQUEST = "512Mi"
+_APP_MEMORY_LIMIT = "2Gi"
+_CADDY_CPU_REQUEST = "20m"
+_CADDY_MEMORY_LIMIT = "128Mi"
 # Caddy in the hostNetwork Pod answers on the node, so clients use an entity rule on `SERVICE.port`.
 SERVICE = HostNetworkServiceRef(
     name=_NAME,
     port=Port(name="http", number=8123),
-    pods=Pods(namespace=_NAMESPACE, labels=(("app.kubernetes.io/name", _NAME),)),
+    pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", _NAME),)),
 )
 CONFIG_CLAIM = "home-assistant-config-piraeus"
 # `password` is the ESO Password generator's own field, which `_metrics_token` copies verbatim.
-_METRICS_TOKEN = SecretRef(namespace=_NAMESPACE, name="home-assistant-metrics-token").key("password")
+_METRICS_TOKEN = SecretRef(namespace=NAMESPACE, name="home-assistant-metrics-token").key("password")
 _BACKUP = "home-assistant-config-restic"
 _BACKUP_LABELS = {"app.kubernetes.io/name": _BACKUP}
 _STORAGE_CLASS = "piraeus-ssd-local"
@@ -116,14 +125,14 @@ _COMPONENTS = (
 HA_MCP_TOKEN = tokens.TokenConfig(
     client_name="ha-mcp-cluster",
     secret_name="ha-mcp-home-assistant-token",
-    secret_namespace=_NAMESPACE,
+    secret_namespace=NAMESPACE,
     description="Long-lived token of Home Assistant's local owner, which ha-mcp copies",
 )
 AGENTPLANE_READER_TOKEN = tokens.TokenConfig(
     client_name="agentplane-egress",
     read_only_user="agentplane-reader",
     secret_name="agentplane-home-assistant-token",
-    secret_namespace=_NAMESPACE,
+    secret_namespace=NAMESPACE,
     description=(
         "Long-lived token of Home Assistant's read-only agentplane-reader user, which agentplane-staging's egress "
         "proxy presents"
@@ -131,23 +140,19 @@ AGENTPLANE_READER_TOKEN = tokens.TokenConfig(
 )
 _TOKENS = (HA_MCP_TOKEN, AGENTPLANE_READER_TOKEN)
 
-_BREAK_GLASS_PASSWORD = SecretRef(namespace=_NAMESPACE, name="home-assistant-break-glass").key("password")
+_BREAK_GLASS_PASSWORD = SecretRef(namespace=NAMESPACE, name="home-assistant-break-glass").key("password")
 # The home zone's `latitude` and `longitude`, encrypted in home-location.sops.yaml so that this public
 # repository does not show them. Optional: without it, onboarding leaves the location as set in the
 # UI. Changing it re-runs nothing by itself: bump the onboarding Job's bootstrap-revision in the same
 # change.
-_LOCATION = SecretRef(namespace=_NAMESPACE, name="home-assistant-location")
-
-
-def _quantities(**values: str) -> dict[str, k8s.Quantity]:
-    return {key: k8s.Quantity.from_string(value) for key, value in values.items()}
+_LOCATION = SecretRef(namespace=NAMESPACE, name="home-assistant-location")
 
 
 def _settings_config_map(scope: Construct, name: str, content: BaseModel | dict[str, object]) -> ConfigMap:
     return ConfigMap(
         scope,
         name,
-        metadata=ApiObjectMetadata(name=name, namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
         data={"settings.yaml": yaml_config(content)},
     )
 
@@ -178,7 +183,16 @@ def _deployment(scope: Construct, configuration: ConfigMap, caddy_config: Config
     k8s.KubeDeployment(
         scope,
         "deployment",
-        metadata=k8s.ObjectMeta(name=_NAME, namespace=_NAMESPACE, labels=SERVICE.pods.selector),
+        metadata=k8s.ObjectMeta(
+            name=_NAME,
+            namespace=NAMESPACE,
+            labels=SERVICE.pods.selector,
+            annotations=initial_request_annotations(
+                # Peak 30-day working sets were 475Mi and 35Mi.
+                ContainerPolicy.cpu_and_memory_requests_only(_NAME, memory_floor=_APP_MEMORY_REQUEST),
+                ContainerPolicy.cpu_and_memory_requests_only("caddy", memory_floor="40Mi"),
+            ),
+        ),
         spec=k8s.DeploymentSpec(
             replicas=1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
@@ -196,13 +210,7 @@ def _deployment(scope: Construct, configuration: ConfigMap, caddy_config: Config
                         k8s.Container(
                             name="provision-components",
                             image=_COMPONENT_INSTALLER_IMAGE,
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("50m"),
-                                    "memory": k8s.Quantity.from_string("128Mi"),
-                                },
-                                limits={"memory": k8s.Quantity.from_string("512Mi")},
-                            ),
+                            resources=container_resources(cpu="50m", memory="128Mi", memory_limit="512Mi"),
                             image_pull_policy="Always",
                             command=["/homeassistant/provisioner/components/install_bin"],
                             env=[_settings_env(components.Settings)],
@@ -228,8 +236,8 @@ def _deployment(scope: Construct, configuration: ConfigMap, caddy_config: Config
                             ports=[_BACKEND.k8s_container_port()],
                             readiness_probe=_backend_probe(initial_delay_seconds=15, period_seconds=10),
                             liveness_probe=_backend_probe(initial_delay_seconds=60, period_seconds=30),
-                            resources=k8s.ResourceRequirements(
-                                requests=_quantities(cpu="250m", memory="512Mi"), limits=_quantities(memory="2Gi")
+                            resources=container_resources(
+                                cpu=_APP_CPU_REQUEST, memory=_APP_MEMORY_REQUEST, memory_limit=_APP_MEMORY_LIMIT
                             ),
                             volume_mounts=[
                                 k8s.VolumeMount(name="config", mount_path=_CONFIG_DIR),
@@ -252,8 +260,8 @@ def _deployment(scope: Construct, configuration: ConfigMap, caddy_config: Config
                                 ),
                                 period_seconds=10,
                             ),
-                            resources=k8s.ResourceRequirements(
-                                requests=_quantities(cpu="20m", memory="32Mi"), limits=_quantities(memory="128Mi")
+                            resources=container_resources(
+                                cpu=_CADDY_CPU_REQUEST, memory="32Mi", memory_limit=_CADDY_MEMORY_LIMIT
                             ),
                             volume_mounts=[
                                 k8s.VolumeMount(
@@ -281,7 +289,7 @@ def _deployment(scope: Construct, configuration: ConfigMap, caddy_config: Config
     k8s.KubeService(
         scope,
         "service",
-        metadata=k8s.ObjectMeta(name=SERVICE.name, namespace=_NAMESPACE, labels=SERVICE.labels),
+        metadata=k8s.ObjectMeta(name=SERVICE.name, namespace=NAMESPACE, labels=SERVICE.labels),
         spec=k8s.ServiceSpec(selector=SERVICE.pods.selector, ports=[SERVICE.port.k8s_service_port()]),
     )
 
@@ -307,7 +315,7 @@ _ONBOARDING_SETTINGS_CONTENT = {
 }
 _ONBOARDING_SETTINGS = ConfigMapArgs(
     name=_ONBOARDING,
-    namespace=_NAMESPACE,
+    namespace=NAMESPACE,
     data={"settings.yaml": yaml_config(validate_settings_fragment(onboarding.Settings, _ONBOARDING_SETTINGS_CONTENT))},
 )
 
@@ -318,7 +326,7 @@ def _onboarding_job(scope: Construct) -> None:
         "onboarding",
         metadata=k8s.ObjectMeta(
             name=_ONBOARDING_JOB,
-            namespace=_NAMESPACE,
+            namespace=NAMESPACE,
             # Flux re-runs this Job, replacing it whenever its template changes.
             annotations={"kustomize.toolkit.fluxcd.io/force": "enabled"},
         ),
@@ -353,9 +361,7 @@ def _onboarding_job(scope: Construct) -> None:
                                     for key in ("latitude", "longitude")
                                 ),
                             ],
-                            resources=k8s.ResourceRequirements(
-                                requests=_quantities(cpu="20m", memory="64Mi"), limits=_quantities(memory="256Mi")
-                            ),
+                            resources=container_resources(cpu="20m", memory="64Mi", memory_limit="256Mi"),
                             volume_mounts=[_settings_mount("settings")],
                         )
                     ],
@@ -373,12 +379,12 @@ def _token_provisioner(scope: Construct) -> None:
     k8s.KubeServiceAccount(
         scope,
         "token-provisioner-service-account",
-        metadata=k8s.ObjectMeta(name=_TOKEN_PROVISIONER, namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name=_TOKEN_PROVISIONER, namespace=NAMESPACE),
     )
     k8s.KubeRole(
         scope,
         "token-provisioner-role",
-        metadata=k8s.ObjectMeta(name=_TOKEN_PROVISIONER, namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name=_TOKEN_PROVISIONER, namespace=NAMESPACE),
         rules=[
             k8s.PolicyRule(
                 api_groups=[""],
@@ -394,15 +400,15 @@ def _token_provisioner(scope: Construct) -> None:
     k8s.KubeRoleBinding(
         scope,
         "token-provisioner-binding",
-        metadata=k8s.ObjectMeta(name=_TOKEN_PROVISIONER, namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name=_TOKEN_PROVISIONER, namespace=NAMESPACE),
         role_ref=k8s.RoleRef(api_group="rbac.authorization.k8s.io", kind="Role", name=_TOKEN_PROVISIONER),
-        subjects=[k8s.Subject(kind="ServiceAccount", name=_TOKEN_PROVISIONER, namespace=_NAMESPACE)],
+        subjects=[k8s.Subject(kind="ServiceAccount", name=_TOKEN_PROVISIONER, namespace=NAMESPACE)],
     )
     labels = {"app.kubernetes.io/name": "home-assistant-token-provisioner"}
     k8s.KubeCronJob(
         scope,
         "token-provisioner-cronjob",
-        metadata=k8s.ObjectMeta(name=_TOKEN_PROVISIONER, namespace=_NAMESPACE, labels=labels),
+        metadata=k8s.ObjectMeta(name=_TOKEN_PROVISIONER, namespace=NAMESPACE, labels=labels),
         spec=k8s.CronJobSpec(
             # A valid token costs one request, so the interval is what bounds how long a missing or
             # refused one lasts.
@@ -434,10 +440,7 @@ def _token_provisioner(scope: Construct) -> None:
                                         _settings_env(tokens.Settings),
                                         _BREAK_GLASS_PASSWORD.env_var(env_name(tokens.Settings, "owner_password")),
                                     ],
-                                    resources=k8s.ResourceRequirements(
-                                        requests=_quantities(cpu="20m", memory="64Mi"),
-                                        limits=_quantities(memory="256Mi"),
-                                    ),
+                                    resources=container_resources(cpu="20m", memory="64Mi", memory_limit="256Mi"),
                                     security_context=k8s.SecurityContext(
                                         allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
                                     ),
@@ -470,7 +473,7 @@ def _monitoring(scope: Construct) -> None:
     ServiceMonitor(
         scope,
         "service-monitor",
-        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=NAMESPACE),
         spec=SERVICE.service_monitor_spec(
             Endpoint.bearer_authorization(
                 port=SERVICE.port.name,
@@ -483,7 +486,7 @@ def _monitoring(scope: Construct) -> None:
     PrometheusRule(
         scope,
         "prometheus-rule",
-        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=NAMESPACE),
         spec=PrometheusRuleSpec(
             groups=[
                 group(
@@ -511,7 +514,7 @@ def _backup(scope: Construct) -> None:
     ReplicationSource(
         scope,
         "backup",
-        metadata=ApiObjectMetadata(name=_BACKUP, namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name=_BACKUP, namespace=NAMESPACE),
         source_pvc=CONFIG_CLAIM,
         trigger=ReplicationSourceSpecTrigger(schedule="17 */6 * * *"),
         mover=direct_restic_mover(
@@ -543,52 +546,40 @@ def _backup(scope: Construct) -> None:
     k8s.KubeNetworkPolicy(
         scope,
         "backup-egress",
-        metadata=k8s.ObjectMeta(name="config-restic-egress", namespace=_NAMESPACE),
+        metadata=k8s.ObjectMeta(name="config-restic-egress", namespace=NAMESPACE),
         spec=restic_egress(_BACKUP_LABELS),
     )
 
 
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
-    k8s.KubePersistentVolumeClaim(
-        chart,
-        "config",
-        metadata=k8s.ObjectMeta(name=CONFIG_CLAIM, namespace=_NAMESPACE),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name=_STORAGE_CLASS,
-            resources=k8s.VolumeResourceRequirements(requests=_quantities(storage="32Gi")),
-        ),
-    )
+    volume_claim(chart, "config", name=CONFIG_CLAIM, namespace=NAMESPACE, storage_class=_STORAGE_CLASS, size="32Gi")
     # Retain storage class plus prune protection preserve these historical copies.
     # Pinned restore helpers bind them on OptiPlex before application startup.
     for name, capacity in (("recovered-config-608a0bc6", "32Gi"), ("recovered-cache-7e9d03f8", "1Gi")):
-        k8s.KubePersistentVolumeClaim(
+        volume_claim(
             chart,
             name,
-            metadata=k8s.ObjectMeta(
-                name=name, namespace=_NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"}
-            ),
-            spec=k8s.PersistentVolumeClaimSpec(
-                access_modes=["ReadWriteOnce"],
-                storage_class_name=_STORAGE_CLASS,
-                resources=k8s.VolumeResourceRequirements(requests=_quantities(storage=capacity)),
-            ),
+            name=name,
+            namespace=NAMESPACE,
+            storage_class=_STORAGE_CLASS,
+            size=capacity,
+            annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"},
         )
-    forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=_NAMESPACE)
+    forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
     _metrics_token(chart)
     # Fixed names preserve Reloader updates for these mounted files.
     config_dir = Runfiles.CreateOrRaise().root() / "ducktape" / _OUTPUT_DIR
     configuration = ConfigMap(
         chart,
         "configuration",
-        metadata=ApiObjectMetadata(name="configuration", namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name="configuration", namespace=NAMESPACE),
         data={"configuration.yaml": (config_dir / "configuration.yaml.conf").read_text()},
     )
     caddy_config = ConfigMap(
         chart,
         "caddy-config",
-        metadata=ApiObjectMetadata(name="caddy", namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name="caddy", namespace=NAMESPACE),
         data={"Caddyfile": (config_dir / "Caddyfile").read_text()},
     )
     _deployment(chart, configuration, caddy_config)
@@ -597,7 +588,7 @@ def chart(app: App) -> Chart:
     https_route(
         chart,
         "route",
-        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=NAMESPACE),
         hostnames=[_HOSTNAME],
         backend=SERVICE,
         hsts=False,

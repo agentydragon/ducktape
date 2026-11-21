@@ -3,7 +3,6 @@ package migrations
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"os"
 	"strings"
 	"sync"
@@ -20,32 +19,18 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
-	_ "github.com/lib/pq"
 )
 
 var integrationDatabase *postgres.Database
 
 func TestMain(m *testing.M) {
-	os.Exit(postgres.RunIntegrationTests(Up, func(database *postgres.Database) int {
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-		defer cancel()
-		if err := database.PrepareCloneTemplate(ctx); err != nil {
-			fmt.Fprintln(os.Stderr, "prepare migrated PostgreSQL clone template:", err)
-			return 1
-		}
-		integrationDatabase = database
-		return m.Run()
-	}))
+	os.Exit(postgres.RunIntegrationTestsWithCloneTemplate(m, Up, &integrationDatabase))
 }
 
 func cloneDatabase(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := sql.Open("postgres", integrationDatabase.Clone(t))
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := postgres.Open(t, integrationDatabase.Clone(t))
 	db.SetMaxOpenConns(4)
-	t.Cleanup(func() { _ = db.Close() })
 	return db
 }
 
@@ -60,12 +45,46 @@ func newStore(db *sql.DB) *inboxstore.Store {
 	return inboxstore.New(db, transaction.New(db), inboxstore.Quotas{InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000})
 }
 
+// legacyInboxKeyWriter supplies the key a pre-contract writer stored when a test seeds an inbox into
+// a schema that still requires it. The current store keys an inbox on its Session ID alone, so the
+// NOT NULL Sandbox-derived column is filled from that Session ID, as the previous writer filled it.
+// It is a no-op once the contract migration retired the column, so the same seeding helper serves both
+// the migrated template and a schema its predecessor left.
+func legacyInboxKeyWriter(t *testing.T, db *sql.DB) func() {
+	t.Helper()
+	var required bool
+	if err := db.QueryRowContext(t.Context(), `SELECT EXISTS (
+		SELECT 1 FROM information_schema.columns
+		WHERE table_name = 'inbox' AND column_name = 'destination_key')`).Scan(&required); err != nil {
+		t.Fatal("inspect legacy inbox key column:", err)
+	}
+	if !required {
+		return func() {}
+	}
+	if _, err := db.ExecContext(t.Context(), `
+		CREATE FUNCTION seed_legacy_inbox_key() RETURNS trigger LANGUAGE plpgsql AS $legacy$
+	BEGIN
+		IF NEW.destination_key IS NULL THEN NEW.destination_key := NEW.session_id; END IF;
+		RETURN NEW;
+	END
+	$legacy$;
+	CREATE TRIGGER seed_legacy_inbox_key BEFORE INSERT ON inbox
+		FOR EACH ROW EXECUTE FUNCTION seed_legacy_inbox_key()`); err != nil {
+		t.Fatal("install legacy inbox key writer:", err)
+	}
+	return func() {
+		if _, err := db.ExecContext(t.Context(), `DROP TRIGGER seed_legacy_inbox_key ON inbox; DROP FUNCTION seed_legacy_inbox_key()`); err != nil {
+			t.Fatal("remove legacy inbox key writer:", err)
+		}
+	}
+}
+
 func seedSubscription(t *testing.T, db *sql.DB, sessionID string) (inboxstore.Owner, inboxstore.Subscription) {
 	t.Helper()
-	owner := inboxstore.Owner{Identity: model.Identity{Name: "baseline-identity", UID: "baseline-identity-uid"}, SandboxUID: "adoption-uid"}
+	owner := inboxstore.Owner{Identity: model.Identity{Name: "baseline-identity", UID: "baseline-identity-uid"}}
+	defer legacyInboxKeyWriter(t, db)()
 	subscription, err := newStore(db).Subscribe(t.Context(), owner, sourceadapter.Subscribe{
-		DestinationRef: model.DestinationRef{Namespace: "notifications-test", Name: "adoption", UID: owner.SandboxUID},
-		SessionID:      sessionID, IdempotencyKey: "adoption-subscription",
+		SessionID: sessionID, IdempotencyKey: "adoption-subscription",
 		Source: sourceadapter.WrapActionsSource(model.ActionsSource{RequestID: uuid.New()}), LifetimeDays: 7,
 	}, sourceadapter.ActionsAuthorization{})
 	if err != nil {
@@ -203,22 +222,15 @@ func TestIdentityActionActorMigrationPreservesExistingRowsAndLegacyWriters(t *te
 	if _, err := provider.Up(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	// Seed an inbox in the pre-18 schema using the legacy Sandbox-keyed shape. The current
-	// writer targets the expanded schema and deliberately omits these Sandbox columns.
+	// Seed an inbox in the pre-18 schema in the legacy Sandbox-keyed shape.
 	inboxID := uuid.New()
-	sessionID := "legacy-action-actors"
-	legacyDestination := model.DestinationRef{
-		Namespace: "legacy-namespace",
-		Name:      "legacy-account",
-		UID:       "legacy-destination-uid",
-	}
 	_, err = db.ExecContext(t.Context(), `INSERT INTO inbox (
 		id, owner_namespace, owner_name, destination_key, session_id,
 		last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until,
 		destination_namespace, destination_name, destination_uid, owner_identity_name, owner_identity_uid)
-		VALUES ($1, $2, $3, $4, $5, 0, 0, 0, 0, false, now(), now(), now(), $2, $3, $6, 'baseline-identity', 'baseline-identity-uid')`,
-		inboxID, legacyDestination.Namespace, legacyDestination.Name,
-		model.DestinationKey(legacyDestination, sessionID), sessionID, legacyDestination.UID)
+		VALUES ($1, 'legacy-namespace', 'legacy-account', 'legacy-action-actors-key', 'legacy-action-actors',
+			0, 0, 0, 0, false, now(), now(), now(), 'legacy-namespace', 'legacy-account', 'legacy-destination-uid',
+			'baseline-identity', 'baseline-identity-uid')`, inboxID)
 	if err != nil {
 		t.Fatal("seed legacy inbox:", err)
 	}

@@ -30,8 +30,8 @@ py_library(
     srcs = ["agent_credentials.py"],
     visibility = ["//props:__subpackages__"],
     deps = [
+        "//props/db:async_database",
         "//props/db:config",
-        "//util:db_url",
         "@pypi//sqlalchemy",
     ],
 )
@@ -155,7 +155,7 @@ py_test(
         "//props/testing/fixtures:db",
         "//props/testing/fixtures:runs",
         "//props/testing/fixtures:scopes",
-        "//util/testing:postgres_fixtures",
+        "//testing:postgres_fixtures",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

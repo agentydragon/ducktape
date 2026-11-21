@@ -44,7 +44,7 @@ def test_static_image_cache_contract() -> None:
         assert revalidated.status_code == 200
         assert revalidated.headers["cache-control"] == "no-store"
 
-        for path in ("/_console/settings", "/_console/tool-calls", "/tool-calls", "/garden/test-note"):
+        for path in ("/_console/settings", "/_console/unknown", "/garden/test-note"):
             deep_link = httpx.get(f"{base_url}{path}")
             assert deep_link.status_code == 200
             assert deep_link.text == shell.text
@@ -80,8 +80,7 @@ def test_static_image_cache_contract() -> None:
         assert "proxy_set_header X-Forwarded-Proto $scheme;" not in nginx_config
         assert "proxy_pass http://127.0.0.1:8080;" in nginx_config
         # The FastAPI side has no upstream here to serve a response, so the half of the compression
-        # contract that covers proxied JSON (a tool-call history page is hundreds of KB of it) is
-        # pinned in the rendered config rather than over the wire.
+        # contract that covers proxied JSON is pinned in the rendered config rather than over the wire.
         assert "gzip_proxied any;" in nginx_config
         assert "application/json" in nginx_config
 

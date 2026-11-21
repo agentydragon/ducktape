@@ -22,6 +22,7 @@ from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import egress, platform_routes, sandbox_pod
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.cert_manager import cluster_ca
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 
 # The command box's PodTemplate, and both boxes' Pod name label and fence. The egress proxy's
@@ -42,15 +43,9 @@ _SIDECAR_TRUST_DIR = Path("/run/agentplane/workload-trust")
 # The box's own SVID, which the Action Service mounts into the sidecar alone; keep in sync with
 # `svidMountPath` in agentplane/action_service/sandbox/inventory.go.
 _SVID_DIR = Path("/run/agentplane/workload-svid")
-COMMAND_RESOURCES = k8s.ResourceRequirements(
-    requests={"cpu": k8s.Quantity.from_string("100m"), "memory": k8s.Quantity.from_string("256Mi")},
-    limits={"cpu": k8s.Quantity.from_string("1"), "memory": k8s.Quantity.from_string("2Gi")},
-)
+COMMAND_RESOURCES = container_resources(cpu="100m", memory="256Mi", cpu_limit="1", memory_limit="2Gi")
 # A Bazel build of the system test suite fits in.
-_BUILD_RESOURCES = k8s.ResourceRequirements(
-    requests={"cpu": k8s.Quantity.from_string("500m"), "memory": k8s.Quantity.from_string("1Gi")},
-    limits={"cpu": k8s.Quantity.from_string("2"), "memory": k8s.Quantity.from_string("4Gi")},
-)
+_BUILD_RESOURCES = container_resources(cpu="500m", memory="1Gi", cpu_limit="2", memory_limit="4Gi")
 # The build box's home, on the Pod rather than in the container: running out of memory kills every
 # process in the container, and the container that replaces it still has the checkout and Bazel's
 # cache.
@@ -81,14 +76,12 @@ class CommandSandbox(Construct):
         *,
         runner_zone: str | None,
         image_pull_secret_name: str | None = sandbox_pod.SECRET_NAME,
-        sidecar_resources: k8s.ResourceRequirements | None = None,
         trust_mounts: Sequence[k8s.VolumeMount] | None = None,
     ) -> None:
         super().__init__(scope, id)
         self.env = env
         self.runner_zone = runner_zone
         self.image_pull_secret_name = image_pull_secret_name
-        self.sidecar_resources = sidecar_resources
         mounts = trust_mounts if trust_mounts is not None else sandbox_pod.proxy_trust_mounts()
         rules = platform_routes.egress_rules(env.namespace)
         self.sidecar_settings = sandbox_pod.add_sidecar_settings(
@@ -150,7 +143,6 @@ class CommandSandbox(Construct):
                         ),
                     ],
                     sidecar_settings=self.sidecar_settings,
-                    sidecar_resources=self.sidecar_resources,
                     sidecar_mounts=[
                         k8s.VolumeMount(name=_SIDECAR_TRUST_VOLUME, mount_path=str(_SIDECAR_TRUST_DIR), read_only=True)
                     ],
@@ -169,7 +161,7 @@ class CommandSandbox(Construct):
         NetworkPolicy(
             self,
             "networkpolicy",
-            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=env.namespace),
+            metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace),
             endpoint_selector=_LABELS,
             ingress=[CiliumNetworkPolicySpecIngress()],
             egress=[cilium.dns_egress(), egress.proxy(env.namespace).egress()],

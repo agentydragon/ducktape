@@ -2,18 +2,44 @@
 
 use debundle_e2e_support::*;
 
-const PROVIDER: &str = r#"const prefix = new globalThis.Date();
-const dynamic = ((object) => {
-  object[(object.key = 0)] = "value";
-  return "ready";
-})({});
-const later = dynamic;
-class Registry { static current = later; }
-export function readLater() { return Registry.current; }
+const DATE: &str = "new globalThis.Date()";
+const CONSUMER: &str = r#"import { readLater } from "./provider.js";
+export { readLater };
 "#;
 
+/// The provider module, with the statements that decide whether an importer can re-enter it
+/// spliced in around the shared body.
+fn provider_source(
+    head: &str,
+    prefix_init: &str,
+    after_prefix: &str,
+    before_later: &str,
+) -> String {
+    format!(
+        r#"{head}const prefix = {prefix_init};
+{after_prefix}const dynamic = ((object) => {{
+  object[(object.key = 0)] = "value";
+  return "ready";
+}})({{}});
+{before_later}const later = dynamic;
+class Registry {{ static current = later; }}
+export function readLater() {{ return Registry.current; }}
+"#
+    )
+}
+
+/// The provider that calls back into its importer before `later` is initialized.
+fn entering_provider() -> String {
+    provider_source(
+        "import { enter } from \"./consumer.js\";\n",
+        DATE,
+        "",
+        "enter();\n",
+    )
+}
+
 fn expect_provider_conflict(
-    provider: &'static str,
+    provider: &str,
     extra_chunks: &[(&'static str, &'static str)],
     extra_files: &[(&'static str, &'static str)],
 ) {
@@ -27,7 +53,7 @@ fn expect_provider_conflict(
 }
 
 fn expect_provider_conflict_with_overrides(
-    provider: &'static str,
+    provider: &str,
     extra_chunks: &[(&'static str, &'static str)],
     extra_files: &[(&'static str, &'static str)],
     admission_overrides: &'static [&'static str],
@@ -61,17 +87,13 @@ fn acyclic_consumer_cannot_reenter_exported_reader_during_provider_evaluation() 
             ),
         ],
     )];
-    let provider_chunks = [("static/provider", PROVIDER)];
+    let provider = provider_source("", DATE, "", "");
+    let provider_chunks = [("static/provider", provider.as_str())];
     let fixture = run_fixture(
-        FixtureOpts::new(
-            r#"import { readLater } from "./provider.js";
-export { readLater };
-"#,
-            vec![],
-        )
-        .with_chunk_id("static/consumer")
-        .with_extra_chunks(&provider_chunks)
-        .with_extra_chunk_logical_modules(&provider_modules),
+        FixtureOpts::new(CONSUMER, vec![])
+            .with_chunk_id("static/consumer")
+            .with_extra_chunks(&provider_chunks)
+            .with_extra_chunk_logical_modules(&provider_modules),
     );
 
     assert_entry_output(&fixture, "");
@@ -97,37 +119,15 @@ export { readLater };
 
 #[test]
 fn cyclic_consumer_can_reenter_exported_reader_during_provider_evaluation() {
-    let provider = r#"import { enter } from "./consumer.js";
-const prefix = new globalThis.Date();
-const dynamic = ((object) => {
-  object[(object.key = 0)] = "value";
-  return "ready";
-})({});
-enter();
-const later = dynamic;
-class Registry { static current = later; }
-export function readLater() { return Registry.current; }
-"#;
     let consumer = r#"import { readLater } from "./provider.js";
 export { readLater };
 export function enter() { return readLater(); }
 "#;
-    expect_provider_conflict(provider, &[("static/consumer", consumer)], &[]);
+    expect_provider_conflict(&entering_provider(), &[("static/consumer", consumer)], &[]);
 }
 
 #[test]
 fn named_reexport_backedge_keeps_export_fallback() {
-    let provider = r#"import { enter } from "./consumer.js";
-const prefix = new globalThis.Date();
-const dynamic = ((object) => {
-  object[(object.key = 0)] = "value";
-  return "ready";
-})({});
-enter();
-const later = dynamic;
-class Registry { static current = later; }
-export function readLater() { return Registry.current; }
-"#;
     let consumer = r#"import { readLater } from "./bridge.js";
 export { readLater };
 export function enter() { return readLater(); }
@@ -135,7 +135,7 @@ export function enter() { return readLater(); }
     let bridge = r#"export { readLater } from "./provider.js";
 "#;
     expect_provider_conflict(
-        provider,
+        &entering_provider(),
         &[("static/consumer", consumer), ("static/bridge", bridge)],
         &[],
     );
@@ -143,17 +143,6 @@ export function enter() { return readLater(); }
 
 #[test]
 fn star_reexport_backedge_keeps_export_fallback() {
-    let provider = r#"import { enter } from "./consumer.js";
-const prefix = new globalThis.Date();
-const dynamic = ((object) => {
-  object[(object.key = 0)] = "value";
-  return "ready";
-})({});
-enter();
-const later = dynamic;
-class Registry { static current = later; }
-export function readLater() { return Registry.current; }
-"#;
     let consumer = r#"import { readLater } from "./bridge.js";
 export { readLater };
 export function enter() { return readLater(); }
@@ -161,7 +150,7 @@ export function enter() { return readLater(); }
     let bridge = r#"export * from "./provider.js";
 "#;
     expect_provider_conflict(
-        provider,
+        &entering_provider(),
         &[("static/consumer", consumer), ("static/bridge", bridge)],
         &[],
     );
@@ -169,67 +158,31 @@ export function enter() { return readLater(); }
 
 #[test]
 fn unresolved_import_in_provider_closure_keeps_export_fallback() {
-    let provider = r#"import "./outside.js";
-const prefix = new globalThis.Date();
-const dynamic = ((object) => {
-  object[(object.key = 0)] = "value";
-  return "ready";
-})({});
-const later = dynamic;
-class Registry { static current = later; }
-export function readLater() { return Registry.current; }
-"#;
-    let consumer = r#"import { readLater } from "./provider.js";
-export { readLater };
-"#;
+    let provider = provider_source("import \"./outside.js\";\n", DATE, "", "");
     expect_provider_conflict(
-        provider,
-        &[("static/consumer", consumer)],
+        &provider,
+        &[("static/consumer", CONSUMER)],
         &[("static/outside.js", "export {};\n")],
     );
 }
 
 #[test]
 fn unresolved_source_reexport_keeps_export_fallback() {
-    let provider = r#"export * from "./outside.js";
-const prefix = new globalThis.Date();
-const dynamic = ((object) => {
-  object[(object.key = 0)] = "value";
-  return "ready";
-})({});
-const later = dynamic;
-class Registry { static current = later; }
-export function readLater() { return Registry.current; }
-"#;
-    let consumer = r#"import { readLater } from "./provider.js";
-export { readLater };
-"#;
+    let provider = provider_source("export * from \"./outside.js\";\n", DATE, "", "");
     expect_provider_conflict(
-        provider,
-        &[("static/consumer", consumer)],
+        &provider,
+        &[("static/consumer", CONSUMER)],
         &[("static/outside.js", "export const outsideValue = 0;\n")],
     );
 }
 
 #[test]
 fn top_level_await_in_an_unselected_dependency_keeps_export_fallback() {
-    let provider = r#"import "./bridge.js";
-const prefix = new globalThis.Date();
-const dynamic = ((object) => {
-  object[(object.key = 0)] = "value";
-  return "ready";
-})({});
-const later = dynamic;
-class Registry { static current = later; }
-export function readLater() { return Registry.current; }
-"#;
-    let consumer = r#"import { readLater } from "./provider.js";
-export { readLater };
-"#;
+    let provider = provider_source("import \"./bridge.js\";\n", DATE, "", "");
     expect_provider_conflict(
-        provider,
+        &provider,
         &[
-            ("static/consumer", consumer),
+            ("static/consumer", CONSUMER),
             ("static/bridge", "await Promise.resolve();\nexport {};\n"),
         ],
         &[],
@@ -238,57 +191,22 @@ export { readLater };
 
 #[test]
 fn passing_the_reader_to_an_opaque_constructor_keeps_export_fallback() {
-    let provider = r#"const prefix = new globalThis.Error(readLater);
-const dynamic = ((object) => {
-  object[(object.key = 0)] = "value";
-  return "ready";
-})({});
-const later = dynamic;
-class Registry { static current = later; }
-export function readLater() { return Registry.current; }
-"#;
-    let consumer = r#"import { readLater } from "./provider.js";
-export { readLater };
-"#;
-    expect_provider_conflict(provider, &[("static/consumer", consumer)], &[]);
+    let provider = provider_source("", "new globalThis.Error(readLater)", "", "");
+    expect_provider_conflict(&provider, &[("static/consumer", CONSUMER)], &[]);
 }
 
 #[test]
 fn global_reader_leak_after_an_opaque_call_keeps_export_fallback() {
-    let provider = r#"const prefix = new globalThis.Date();
-globalThis.reader = readLater;
-const dynamic = ((object) => {
-  object[(object.key = 0)] = "value";
-  return "ready";
-})({});
-const later = dynamic;
-class Registry { static current = later; }
-export function readLater() { return Registry.current; }
-"#;
-    let consumer = r#"import { readLater } from "./provider.js";
-export { readLater };
-"#;
-    expect_provider_conflict(provider, &[("static/consumer", consumer)], &[]);
+    let provider = provider_source("", DATE, "globalThis.reader = readLater;\n", "");
+    expect_provider_conflict(&provider, &[("static/consumer", CONSUMER)], &[]);
 }
 
 #[test]
 fn global_require_member_alias_keeps_export_fallback() {
-    let provider = r#"const load = globalThis["require"];
-const prefix = new globalThis.Date();
-const dynamic = ((object) => {
-  object[(object.key = 0)] = "value";
-  return "ready";
-})({});
-const later = dynamic;
-class Registry { static current = later; }
-export function readLater() { return Registry.current; }
-"#;
-    let consumer = r#"import { readLater } from "./provider.js";
-export { readLater };
-"#;
+    let provider = provider_source("const load = globalThis[\"require\"];\n", DATE, "", "");
     expect_provider_conflict_with_overrides(
-        provider,
-        &[("static/consumer", consumer)],
+        &provider,
+        &[("static/consumer", CONSUMER)],
         &[],
         &[],
         &["values/dynamic", "values/later", "residual"],
@@ -297,23 +215,15 @@ export { readLater };
 
 #[test]
 fn import_meta_require_member_alias_keeps_export_fallback() {
-    let provider = r#"const load = import.meta.require;
-globalThis.loader = load;
-const prefix = new globalThis.Date();
-const dynamic = ((object) => {
-  object[(object.key = 0)] = "value";
-  return "ready";
-})({});
-const later = dynamic;
-class Registry { static current = later; }
-export function readLater() { return Registry.current; }
-"#;
-    let consumer = r#"import { readLater } from "./provider.js";
-export { readLater };
-"#;
+    let provider = provider_source(
+        "const load = import.meta.require;\nglobalThis.loader = load;\n",
+        DATE,
+        "",
+        "",
+    );
     expect_provider_conflict_with_overrides(
-        provider,
-        &[("static/consumer", consumer)],
+        &provider,
+        &[("static/consumer", CONSUMER)],
         &[],
         &["a5_import_meta"],
         &["values/dynamic", "values/later", "residual"],

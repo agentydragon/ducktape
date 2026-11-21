@@ -676,7 +676,7 @@ def test_produced_outputs_survive_collection_and_content_addressed_publication(t
     artifacts: dict[str, list[BuildBuddyArtifact]] = {}
     blobs: dict[str, bytes] = {}
     downloaded: set[str] = set()
-    identities = {("dialog/mobile", None), ("dialog/mobile", "expanded"), ("dialog/desktop", None)}
+    filenames: dict[tuple[str, str | None], str] = {}
     specs = [
         ("first", 1, 1, "FAILED"),
         ("first", 1, 2, "PASSED"),
@@ -689,13 +689,14 @@ def test_produced_outputs_survive_collection_and_content_addressed_publication(t
         case_id = "dialog/mobile" if shard == 1 else "dialog/desktop"
         outputs = BoundTestOutputs(output_dir=root, case_id=case_id)
         for checkpoint in [None, "expanded"] if shard == 1 else [None]:
-            outputs.publish(
+            payload = outputs.publish(
                 checkpoint=checkpoint,
                 role="screenshot",
                 data=failed_image if status == "FAILED" else image,
                 suffix="png",
                 title="Dialog states",
             )
+            filenames[case_id, checkpoint] = payload.name
         outputs.publish(role="trace", data=b"diagnostics", suffix="zip")
         result = ResultKey(invocation, "//ui:visual", "config-a", 1, shard, attempt)
         summary = BESTestSummary(
@@ -753,8 +754,9 @@ def test_produced_outputs_survive_collection_and_content_addressed_publication(t
     assert review.baseline_eligible
     assert not review.issues
     assert review.notices
-    assert {(asset.case_id, asset.checkpoint) for asset in review.assets} == identities
-    assert len({asset.path for asset in review.assets}) == len(identities)
+    assert len(review.assets) == len(filenames)
+    assert len({asset.path for asset in review.assets}) == len(filenames)
+    assert {(asset.case_id, asset.checkpoint): asset.path for asset in review.assets} == filenames
     assert all(asset.classification == "new" for asset in review.assets)
     for asset in review.assets:
         assert len(asset.variants) == 1
@@ -1478,19 +1480,24 @@ class PublishedObjects:
         self.events.append(key)
 
 
+def _upload(bundle: Path, client: PublishedObjects, *, key: str = "reviews/a", **kwargs: Any) -> None:
+    upload_bundle(
+        bundle,
+        staged_image_root=bundle.parent.parent,
+        bucket="visuals",
+        key=key,
+        client=cast("S3Client", client),
+        **kwargs,
+    )
+
+
 def test_upload_reuses_shared_images_and_publishes_indexes_last(tmp_path: Path) -> None:
     source = _single_asset_test(tmp_path / "source")
     client = PublishedObjects()
     for sha in ("a" * 40, "b" * 40):
         bundle = build_bundle([source], tmp_path / "site", commit_sha=sha, repository="r")
         client.events.clear()
-        upload_bundle(
-            bundle,
-            staged_image_root=bundle.parent.parent,
-            bucket="visuals",
-            key=f"reviews-test-outputs/{sha}",
-            client=cast("S3Client", client),
-        )
+        _upload(bundle, client, key=f"reviews-test-outputs/{sha}")
         if sha == "a" * 40:
             assert client.events[0].startswith("assets/")
         first_index = next(index for index, key in enumerate(client.events) if key.endswith("index.html"))
@@ -1550,15 +1557,7 @@ def test_published_cas_image_skips_candidate_download_and_keeps_fresh_provenance
     client = CountingBucket()
     image_key = f"assets/{hashlib.sha256(body).hexdigest()}.png"
     client.objects[image_key] = body
-    upload_bundle(
-        bundle,
-        staged_image_root=bundle.parent.parent,
-        bucket="visuals",
-        key="reviews/a",
-        client=cast("S3Client", client),
-        candidates=tests,
-        run=lambda *_a, **_k: pytest.fail("downloaded"),
-    )
+    _upload(bundle, client, candidates=tests, run=lambda *_a, **_k: pytest.fail("downloaded"))
 
     assert client.heads == [image_key]
     assert client.puts == []
@@ -1581,15 +1580,7 @@ def test_existing_historical_image_is_reused_without_revalidating_png(tmp_path: 
     client = PublishedObjects()
     client.objects[f"assets/{hashlib.sha256(body).hexdigest()}.png"] = body
 
-    upload_bundle(
-        bundle,
-        staged_image_root=bundle.parent.parent,
-        bucket="visuals",
-        key="reviews/a",
-        client=cast("S3Client", client),
-        candidates=[test],
-        run=lambda *_a, **_k: pytest.fail("downloaded"),
-    )
+    _upload(bundle, client, candidates=[test], run=lambda *_a, **_k: pytest.fail("downloaded"))
     assert client.puts == []
     assert client.events[-1] == "reviews/a/index.html"
 
@@ -1623,15 +1614,7 @@ def test_candidate_image_must_be_verified_before_page_publication(
     client = PublishedObjects()
 
     with pytest.raises(ValueError, match=message):
-        upload_bundle(
-            bundle,
-            staged_image_root=bundle.parent.parent,
-            bucket="visuals",
-            key="reviews/a",
-            client=cast("S3Client", client),
-            candidates=[test],
-            run=run,
-        )
+        _upload(bundle, client, candidates=[test], run=run)
     assert client.events == []
 
 
@@ -1651,15 +1634,7 @@ def test_missing_cas_image_is_downloaded_once_for_duplicate_targets(tmp_path: Pa
         return subprocess.CompletedProcess(command, 0, "", "")
 
     client = PublishedObjects()
-    upload_bundle(
-        bundle,
-        staged_image_root=bundle.parent.parent,
-        bucket="visuals",
-        key="reviews/a",
-        client=cast("S3Client", client),
-        candidates=tests,
-        run=run,
-    )
+    _upload(bundle, client, candidates=tests, run=run)
     assert len(manifests) == 1
     assert len(manifests[0]) == 1
     assert len(client.puts) == 1
@@ -1682,15 +1657,7 @@ def test_wrong_size_existing_image_cannot_publish_a_review(tmp_path: Path) -> No
     client = WrongSizeBucket()
     client.objects[image_key] = b"wrong size"
     with pytest.raises(ValueError, match="wrong size"):
-        upload_bundle(
-            bundle,
-            staged_image_root=bundle.parent.parent,
-            bucket="visuals",
-            key="reviews/a",
-            client=cast("S3Client", client),
-            candidates=[test],
-            run=_download_runner({Blob(body).uri: body}),
-        )
+        _upload(bundle, client, candidates=[test], run=_download_runner({Blob(body).uri: body}))
     assert client.events == []
 
 
@@ -1766,23 +1733,11 @@ def test_shared_image_upload_errors_do_not_publish_broken_reviews(tmp_path: Path
 
     client = RacingOrFailingS3()
     if code == "PreconditionFailed":
-        upload_bundle(
-            bundle,
-            staged_image_root=bundle.parent.parent,
-            bucket="visuals",
-            key="reviews-test-outputs/sha",
-            client=cast("S3Client", client),
-        )
+        _upload(bundle, client, key="reviews-test-outputs/sha")
         assert client.events[-1] == "reviews-test-outputs/sha/index.html"
     else:
         with pytest.raises(ClientError):
-            upload_bundle(
-                bundle,
-                staged_image_root=bundle.parent.parent,
-                bucket="visuals",
-                key="reviews-test-outputs/sha",
-                client=cast("S3Client", client),
-            )
+            _upload(bundle, client, key="reviews-test-outputs/sha")
         assert not client.events
 
 
@@ -1817,6 +1772,20 @@ def test_build_bundle_classifies_structured_assets_against_eligible_baseline(tmp
         )
         for asset in baseline_assets
     ]
+    # This baseline is a parent PR's review. One screenshot returns in the
+    # child and the other stays absent.
+    baseline_records.extend(
+        ReviewAsset(
+            path=asset.review_filename,
+            label=asset.label,
+            case_id=asset.case_id,
+            checkpoint=asset.checkpoint,
+            role=asset.role,
+            baseline_sha256=asset.variants[0].sha256,
+            classification="removed",
+        )
+        for asset in (candidate.assets[-1], _asset_from_file(_png(baseline_dir / "previously-removed.png")))
+    )
     objects = {
         f"reviews-test-outputs/{base_sha}/tests/{candidate.slug}/metadata.json": BaselineMetadata(
             assets=baseline_records,
@@ -2006,13 +1975,7 @@ def test_upload_image_checks_are_bounded_and_drained_before_review_uploads(tmp_p
 
     def publish() -> None:
         try:
-            upload_bundle(
-                bundle,
-                staged_image_root=bundle.parent.parent,
-                bucket="visuals",
-                key="reviews/a",
-                client=cast("S3Client", client),
-            )
+            _upload(bundle, client)
         except Exception as error:
             failures.append(error)
 
@@ -2074,13 +2037,7 @@ def test_upload_bundle_waits_for_all_image_checks_before_propagating_failure(tmp
 
     client = OneFailureS3()
     with pytest.raises(ClientError, match="HeadObject"):
-        upload_bundle(
-            bundle,
-            staged_image_root=bundle.parent.parent,
-            bucket="visuals",
-            key="reviews/a",
-            client=cast("S3Client", client),
-        )
+        _upload(bundle, client)
 
     assert set(client.head_calls) == image_keys
     assert client.events == []

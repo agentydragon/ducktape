@@ -95,6 +95,33 @@ def transaction(
     )
 
 
+def evaluate(
+    transactions: list[Transaction],
+    *,
+    tax_rate: Decimal | None = None,
+    portfolio_view: PortfolioView | None = None,
+    window_days: int = 90,
+    source_issues: list[str] | None = None,
+    spending_account_ids: set[str] | None = None,
+    account_labels: dict[str, str] | None = None,
+    account_history: dict[str, AccountHistory] | None = None,
+) -> SustainabilityView:
+    return sustainability_view(
+        calculate_sustainability(
+            policy(tax_rate=tax_rate),
+            allowance(spending_account_ids=spending_account_ids),
+            transactions,
+            portfolio() if portfolio_view is None else portfolio_view,
+            time_zone=ZoneInfo("America/Los_Angeles"),
+            now=_NOW,
+            window_days=window_days,
+            source_issues=[] if source_issues is None else source_issues,
+            account_labels=account_labels,
+            account_history=account_history,
+        )
+    )
+
+
 def evaluate_account_history(
     transactions: list[Transaction],
     *,
@@ -103,21 +130,26 @@ def evaluate_account_history(
     account_labels: dict[str, str] | None = None,
     window_days: int = 90,
 ) -> SustainabilityView:
-    selected_ids = {"card"} if spending_account_ids is None else spending_account_ids
-    return sustainability_view(
-        calculate_sustainability(
-            policy(tax_rate=Decimal("0.2")),
-            allowance(spending_account_ids=selected_ids),
-            transactions,
-            portfolio(),
-            time_zone=ZoneInfo("America/Los_Angeles"),
-            now=_NOW,
-            window_days=window_days,
-            source_issues=[],
-            account_labels=account_labels,
-            account_history=account_history,
-        )
+    return evaluate(
+        transactions,
+        tax_rate=Decimal("0.2"),
+        account_history=account_history,
+        spending_account_ids=spending_account_ids,
+        account_labels=account_labels,
+        window_days=window_days,
     )
+
+
+def opening(
+    earliest: date, latest: date | None = None, *, source: str = "Synthetic account-opening confirmation."
+) -> AccountOpening:
+    return AccountOpening(
+        earliest=earliest, latest=earliest if latest is None else latest, source=source, as_of=date(2026, 3, 31)
+    )
+
+
+def complete_from(day: date, *, source: str = "Synthetic complete-history confirmation.") -> DocumentedHistory:
+    return DocumentedHistory(complete_from=day, source=source, as_of=date(2026, 3, 31))
 
 
 def portfolio(*, ready: bool = True) -> PortfolioView:
@@ -132,27 +164,19 @@ def portfolio(*, ready: bool = True) -> PortfolioView:
 
 
 def test_total_consumption_includes_precommitment_mandatory_and_pending_once() -> None:
-    result = sustainability_view(
-        calculate_sustainability(
-            policy(tax_rate=Decimal("0.2")),
-            allowance(),
-            [
-                transaction(date(2026, 1, 1), "0", "TRANSFER", key="history"),
-                transaction(date(2026, 3, 1), "100", "RENT", key="rent"),
-                transaction(date(2026, 3, 2), "20", pending=True, key="pending"),
-                transaction(date(2026, 3, 3), "25", replacement="pending", key="posted"),
-                transaction(date(2026, 3, 4), "10", "UNKNOWN", key="unknown"),
-                transaction(date(2026, 3, 5), "5000", "TRANSFER", key="transfer"),
-                transaction(date(2026, 3, 6), "-5", "CONFIRMED REFUND", key="refund"),
-                transaction(date(2026, 3, 7), "-50", key="held-credit"),
-                transaction(date(2026, 4, 1), "900", key="today"),
-            ],
-            portfolio(),
-            time_zone=ZoneInfo("America/Los_Angeles"),
-            now=_NOW,
-            window_days=90,
-            source_issues=[],
-        )
+    result = evaluate(
+        [
+            transaction(date(2026, 1, 1), "0", "TRANSFER", key="history"),
+            transaction(date(2026, 3, 1), "100", "RENT", key="rent"),
+            transaction(date(2026, 3, 2), "20", pending=True, key="pending"),
+            transaction(date(2026, 3, 3), "25", replacement="pending", key="posted"),
+            transaction(date(2026, 3, 4), "10", "UNKNOWN", key="unknown"),
+            transaction(date(2026, 3, 5), "5000", "TRANSFER", key="transfer"),
+            transaction(date(2026, 3, 6), "-5", "CONFIRMED REFUND", key="refund"),
+            transaction(date(2026, 3, 7), "-50", key="held-credit"),
+            transaction(date(2026, 4, 1), "900", key="today"),
+        ],
+        tax_rate=Decimal("0.2"),
     )
     assert result.status == "ready"
     assert result.covered_days == 90
@@ -175,20 +199,11 @@ def test_total_consumption_includes_precommitment_mandatory_and_pending_once() -
 
 
 def test_partial_window_uses_actual_covered_days_and_pacific_instant() -> None:
-    result = sustainability_view(
-        calculate_sustainability(
-            policy(),
-            allowance(),
-            [
-                transaction(date(2026, 3, 22), "10", key="start"),
-                transaction(date(2026, 4, 1), "10", key="cross-midnight", instant=datetime(2026, 4, 1, 6, tzinfo=UTC)),
-            ],
-            portfolio(),
-            time_zone=ZoneInfo("America/Los_Angeles"),
-            now=_NOW,
-            window_days=90,
-            source_issues=[],
-        )
+    result = evaluate(
+        [
+            transaction(date(2026, 3, 22), "10", key="start"),
+            transaction(date(2026, 4, 1), "10", key="cross-midnight", instant=datetime(2026, 4, 1, 6, tzinfo=UTC)),
+        ]
     )
     assert result.covered_days == 10
     assert result.period_end == date(2026, 3, 31)
@@ -203,20 +218,12 @@ def test_partial_window_uses_actual_covered_days_and_pacific_instant() -> None:
 def test_history_starts_at_first_complete_window(covered_days: int) -> None:
     end = date(2026, 3, 31)
     first_day = end - timedelta(days=covered_days - 1)
-    result = sustainability_view(
-        calculate_sustainability(
-            policy(),
-            allowance(),
-            [
-                transaction(first_day, "0", "TRANSFER", key="history"),
-                transaction(first_day + timedelta(days=1), "3000", "RENT", key="rent"),
-            ],
-            portfolio(),
-            time_zone=ZoneInfo("America/Los_Angeles"),
-            now=_NOW,
-            window_days=30,
-            source_issues=[],
-        )
+    result = evaluate(
+        [
+            transaction(first_day, "0", "TRANSFER", key="history"),
+            transaction(first_day + timedelta(days=1), "3000", "RENT", key="rent"),
+        ],
+        window_days=30,
     )
     assert len(result.history) == max(0, covered_days - 29)
     if result.history:
@@ -227,23 +234,15 @@ def test_history_starts_at_first_complete_window(covered_days: int) -> None:
 
 
 def test_history_window_includes_both_endpoints_and_excludes_adjacent_days() -> None:
-    result = sustainability_view(
-        calculate_sustainability(
-            policy(),
-            allowance(),
-            [
-                transaction(date(2026, 1, 1), "0", "TRANSFER", key="history"),
-                transaction(date(2026, 3, 1), "9000", key="before-window"),
-                transaction(date(2026, 3, 2), "10", key="first-in-window"),
-                transaction(date(2026, 3, 31), "20", key="last-in-window"),
-                transaction(date(2026, 4, 1), "9000", key="today"),
-            ],
-            portfolio(),
-            time_zone=ZoneInfo("America/Los_Angeles"),
-            now=_NOW,
-            window_days=30,
-            source_issues=[],
-        )
+    result = evaluate(
+        [
+            transaction(date(2026, 1, 1), "0", "TRANSFER", key="history"),
+            transaction(date(2026, 3, 1), "9000", key="before-window"),
+            transaction(date(2026, 3, 2), "10", key="first-in-window"),
+            transaction(date(2026, 3, 31), "20", key="last-in-window"),
+            transaction(date(2026, 4, 1), "9000", key="today"),
+        ],
+        window_days=30,
     )
     assert result.spending_minor_units == 3000
     assert result.annualized_spending_minor_units == 36_524
@@ -252,18 +251,7 @@ def test_history_window_includes_both_endpoints_and_excludes_adjacent_days() -> 
 
 
 def test_missing_portfolio_preserves_observed_spending_without_showing_rate() -> None:
-    result = sustainability_view(
-        calculate_sustainability(
-            policy(),
-            allowance(),
-            [transaction(date(2026, 1, 1), "10")],
-            portfolio(ready=False),
-            time_zone=ZoneInfo("America/Los_Angeles"),
-            now=_NOW,
-            window_days=90,
-            source_issues=[],
-        )
-    )
+    result = evaluate([transaction(date(2026, 1, 1), "10")], portfolio_view=portfolio(ready=False))
     assert result.status == "unavailable"
     assert result.annualized_spending_minor_units == 4058
     assert result.spending_draw_rate is None
@@ -271,18 +259,7 @@ def test_missing_portfolio_preserves_observed_spending_without_showing_rate() ->
 
 
 def test_stale_spending_does_not_produce_a_funding_estimate() -> None:
-    result = sustainability_view(
-        calculate_sustainability(
-            policy(),
-            allowance(),
-            [transaction(date(2026, 1, 1), "10")],
-            portfolio(),
-            time_zone=ZoneInfo("America/Los_Angeles"),
-            now=_NOW,
-            window_days=90,
-            source_issues=["Spending source is stale."],
-        )
-    )
+    result = evaluate([transaction(date(2026, 1, 1), "10")], source_issues=["Spending source is stale."])
     assert result.status == "unavailable"
     assert result.annualized_spending_minor_units is None
     assert result.spending_draw_rate is None
@@ -290,17 +267,7 @@ def test_stale_spending_does_not_produce_a_funding_estimate() -> None:
 
 def test_opening_and_complete_history_cover_zero_spending_without_transactions() -> None:
     account_id = "synthetic-account-key"
-    evidence = AccountHistory(
-        opening=AccountOpening(
-            earliest=date(2026, 2, 1),
-            latest=date(2026, 2, 1),
-            source="Synthetic account-opening confirmation.",
-            as_of=date(2026, 3, 31),
-        ),
-        coverage=DocumentedHistory(
-            complete_from=date(2026, 2, 1), source="Synthetic complete-history confirmation.", as_of=date(2026, 3, 31)
-        ),
-    )
+    evidence = AccountHistory(opening=opening(date(2026, 2, 1)), coverage=complete_from(date(2026, 2, 1)))
 
     result = evaluate_account_history(
         [],
@@ -319,11 +286,7 @@ def test_opening_and_complete_history_cover_zero_spending_without_transactions()
 
 
 def test_documented_history_alone_covers_an_empty_account() -> None:
-    evidence = AccountHistory(
-        coverage=DocumentedHistory(
-            complete_from=date(2026, 1, 1), source="Synthetic complete-history confirmation.", as_of=date(2026, 3, 31)
-        )
-    )
+    evidence = AccountHistory(coverage=complete_from(date(2026, 1, 1)))
 
     result = evaluate_account_history([], account_history={"card": evidence})
 
@@ -337,17 +300,7 @@ def test_documented_history_alone_covers_an_empty_account() -> None:
 def test_multiple_accounts_combine_transaction_and_documented_coverage() -> None:
     old_account = "synthetic-older-account-key"
     new_account = "synthetic-newer-account-key"
-    evidence = AccountHistory(
-        opening=AccountOpening(
-            earliest=date(2026, 2, 1),
-            latest=date(2026, 2, 1),
-            source="Synthetic account-opening confirmation.",
-            as_of=date(2026, 3, 31),
-        ),
-        coverage=DocumentedHistory(
-            complete_from=date(2026, 2, 1), source="Synthetic complete-history confirmation.", as_of=date(2026, 3, 31)
-        ),
-    )
+    evidence = AccountHistory(opening=opening(date(2026, 2, 1)), coverage=complete_from(date(2026, 2, 1)))
     result = evaluate_account_history(
         [
             transaction(
@@ -371,14 +324,7 @@ def test_multiple_accounts_combine_transaction_and_documented_coverage() -> None
 
 
 def test_future_opening_proves_an_empty_account_was_absent_through_the_report_window() -> None:
-    evidence = AccountHistory(
-        opening=AccountOpening(
-            earliest=date(2026, 7, 1),
-            latest=date(2026, 7, 1),
-            source="Synthetic scheduled-opening confirmation.",
-            as_of=date(2026, 3, 31),
-        )
-    )
+    evidence = AccountHistory(opening=opening(date(2026, 7, 1), source="Synthetic scheduled-opening confirmation."))
 
     result = evaluate_account_history([], account_history={"card": evidence})
 
@@ -389,14 +335,7 @@ def test_future_opening_proves_an_empty_account_was_absent_through_the_report_wi
 
 
 def test_opening_alone_leaves_a_gap_until_first_recorded_transaction() -> None:
-    evidence = AccountHistory(
-        opening=AccountOpening(
-            earliest=date(2026, 2, 1),
-            latest=date(2026, 2, 1),
-            source="Synthetic account-opening confirmation.",
-            as_of=date(2026, 3, 31),
-        )
-    )
+    evidence = AccountHistory(opening=opening(date(2026, 2, 1)))
     result = evaluate_account_history(
         [transaction(date(2026, 3, 1), "10", key="synthetic-first-transaction")], account_history={"card": evidence}
     )
@@ -410,11 +349,8 @@ def test_opening_alone_leaves_a_gap_until_first_recorded_transaction() -> None:
 
 def test_uncertain_opening_bounds_only_prove_absence_before_earliest_date() -> None:
     evidence = AccountHistory(
-        opening=AccountOpening(
-            earliest=date(2026, 2, 1),
-            latest=date(2026, 2, 15),
-            source="Synthetic account-opening record with uncertain date.",
-            as_of=date(2026, 3, 31),
+        opening=opening(
+            date(2026, 2, 1), date(2026, 2, 15), source="Synthetic account-opening record with uncertain date."
         )
     )
     result = evaluate_account_history([], account_history={"card": evidence})
@@ -427,17 +363,7 @@ def test_uncertain_opening_bounds_only_prove_absence_before_earliest_date() -> N
 
 
 def test_history_keeps_covered_windows_nulls_gap_windows_and_resumes_after_full_window() -> None:
-    evidence = AccountHistory(
-        opening=AccountOpening(
-            earliest=date(2026, 2, 1),
-            latest=date(2026, 2, 1),
-            source="Synthetic account-opening confirmation.",
-            as_of=date(2026, 3, 31),
-        ),
-        coverage=DocumentedHistory(
-            complete_from=date(2026, 3, 1), source="Synthetic complete-history confirmation.", as_of=date(2026, 3, 31)
-        ),
-    )
+    evidence = AccountHistory(opening=opening(date(2026, 2, 1)), coverage=complete_from(date(2026, 3, 1)))
     result = evaluate_account_history(
         [transaction(date(2026, 3, 15), "10", key="synthetic-current-history")],
         account_history={"card": evidence},
@@ -459,21 +385,8 @@ def test_earlier_history_rates_survive_an_unavailable_current_suffix() -> None:
     older_account = "synthetic-earlier-history-account-key"
     newer_account = "synthetic-uncovered-current-account-key"
     evidence = {
-        older_account: AccountHistory(
-            coverage=DocumentedHistory(
-                complete_from=date(2026, 1, 1),
-                source="Synthetic complete-history confirmation.",
-                as_of=date(2026, 3, 31),
-            )
-        ),
-        newer_account: AccountHistory(
-            opening=AccountOpening(
-                earliest=date(2026, 2, 1),
-                latest=date(2026, 2, 1),
-                source="Synthetic account-opening confirmation.",
-                as_of=date(2026, 3, 31),
-            )
-        ),
+        older_account: AccountHistory(coverage=complete_from(date(2026, 1, 1))),
+        newer_account: AccountHistory(opening=opening(date(2026, 2, 1))),
     }
     result = evaluate_account_history(
         [transaction(date(2026, 1, 15), "10", key="synthetic-earlier-purchase", account_id=older_account)],
@@ -493,17 +406,7 @@ def test_earlier_history_rates_survive_an_unavailable_current_suffix() -> None:
 
 
 def test_headline_annualizes_only_the_latest_contiguous_coverage_suffix() -> None:
-    evidence = AccountHistory(
-        opening=AccountOpening(
-            earliest=date(2026, 2, 1),
-            latest=date(2026, 2, 1),
-            source="Synthetic account-opening confirmation.",
-            as_of=date(2026, 3, 31),
-        ),
-        coverage=DocumentedHistory(
-            complete_from=date(2026, 3, 1), source="Synthetic complete-history confirmation.", as_of=date(2026, 3, 31)
-        ),
-    )
+    evidence = AccountHistory(opening=opening(date(2026, 2, 1)), coverage=complete_from(date(2026, 3, 1)))
     result = evaluate_account_history(
         [transaction(date(2026, 3, 15), "10", key="synthetic-latest-suffix-purchase")],
         account_history={"card": evidence},
@@ -524,14 +427,7 @@ def test_preopening_transaction_invalidates_rates_but_keeps_spending_and_hides_i
 ) -> None:
     contradictory_account = "synthetic-opening-conflict-key"
     observed_account = "synthetic-observed-account-key"
-    evidence = AccountHistory(
-        opening=AccountOpening(
-            earliest=date(2026, 4, 2),
-            latest=date(2026, 4, 2),
-            source="Synthetic account-opening confirmation.",
-            as_of=date(2026, 3, 31),
-        )
-    )
+    evidence = AccountHistory(opening=opening(date(2026, 4, 2)))
     result = evaluate_account_history(
         [
             transaction(contradiction_day, "20", key="synthetic-opening-conflict", account_id=contradictory_account),
@@ -557,22 +453,14 @@ def test_preopening_transaction_invalidates_rates_but_keeps_spending_and_hides_i
 
 
 def test_shared_account_history_can_describe_an_account_outside_spending() -> None:
-    evidence = AccountHistory(
-        coverage=DocumentedHistory(
-            complete_from=date(2026, 1, 1), source="Synthetic complete history.", as_of=date(2026, 3, 31)
-        )
-    )
+    evidence = AccountHistory(coverage=complete_from(date(2026, 1, 1), source="Synthetic complete history."))
     config = SpendConfiguration(time_zone=ZoneInfo("UTC"), cards=[], account_history={"investment": evidence})
 
     assert config.account_history == {"investment": evidence}
 
 
 def test_legacy_account_history_loads_into_shared_metadata() -> None:
-    evidence = AccountHistory(
-        coverage=DocumentedHistory(
-            complete_from=date(2026, 1, 1), source="Synthetic complete history.", as_of=date(2026, 3, 31)
-        )
-    )
+    evidence = AccountHistory(coverage=complete_from(date(2026, 1, 1), source="Synthetic complete history."))
     history = {"card": evidence}
     sustain = policy().model_dump()
     document = {"time_zone": "UTC", "cards": [], "allowance": allowance(), "sustainability": sustain}

@@ -12,11 +12,10 @@ from more_itertools import one
 from agentplane.app.testing.client import Client
 from agentplane.proto import session_pb2
 from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
+from agentplane.system_tests.driver.action_cli import CLI
 from agentplane.system_tests.driver.agent import WORKING_DIRECTORY, Agent
 from agentplane.system_tests.driver.sandbox import Sandboxes
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
-
-_CLI = "/run/agentplane/environment/bin/agentplane"
 
 
 async def sandbox_cli_denies_create_but_lists_its_identity_session(
@@ -53,7 +52,7 @@ async def sandbox_cli_denies_create_but_lists_its_identity_session(
     )
     create = shlex.join(
         [
-            _CLI,
+            CLI,
             "--json",
             "session-dispatcher",
             "create",
@@ -66,7 +65,7 @@ async def sandbox_cli_denies_create_but_lists_its_identity_session(
             json_format.MessageToJson(spec),
         ]
     )
-    list_sessions = shlex.join([_CLI, "--json", "session-dispatcher", "list"])
+    list_sessions = shlex.join([CLI, "--json", "session-dispatcher", "list"])
     command = "\n".join(
         (
             "set -eu",

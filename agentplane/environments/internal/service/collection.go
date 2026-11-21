@@ -42,9 +42,6 @@ func (s *Service) WatchEnvironments(_ *emptypb.Empty, stream grpc.ServerStreamin
 	if err != nil {
 		return err
 	}
-	if !identity.valid() {
-		return status.Error(codes.Unauthenticated, "effective environment identity is incomplete")
-	}
 	broad := s.broadReader(ctx, identity)
 	if identity.identity == nil && !broad {
 		return status.Error(codes.NotFound, "environment not found")
@@ -268,7 +265,7 @@ func (s *Service) collection(ctx context.Context, caller environmentCaller, broa
 		if err != nil {
 			return nil, watchFailure(ctx, err)
 		}
-		_, _, visible, err := s.revalidateDescriptor(ctx, value, caller, broad)
+		visible, err := s.revalidateDescriptor(ctx, value, caller, broad)
 		if err != nil {
 			return nil, watchFailure(ctx, err)
 		}
@@ -325,7 +322,7 @@ func (s *Service) collectionItem(ctx context.Context, caller environmentCaller, 
 	if err != nil {
 		return nil, "", watchFailure(ctx, err)
 	}
-	_, _, visible, err := s.revalidateDescriptor(ctx, item, caller, broad)
+	visible, err := s.revalidateDescriptor(ctx, item, caller, broad)
 	if err != nil {
 		return nil, "", watchFailure(ctx, err)
 	}

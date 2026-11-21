@@ -38,6 +38,8 @@ from devinfra.pr_visuals.github_comment import (
 )
 from devinfra.pr_visuals.image_storage import ImageSource, download_all, publish_shared_images, read_verified_png
 from devinfra.pr_visuals.metadata import (
+    BASELINE_POINTER_PREFIX,
+    REVIEW_PREFIX,
     BaselineMetadata,
     BaselinePointer,
     ReviewAsset,
@@ -47,11 +49,13 @@ from devinfra.pr_visuals.metadata import (
     ReviewResult,
     ReviewTest,
     ReviewVariant,
+    shared_image_key,
 )
 from devinfra.pr_visuals.pull_request import find_reviewable_pull_request
-from devinfra.pr_visuals.render_common import classification_totals, shared_image_key, test_impact_key
+from devinfra.pr_visuals.render_common import classification_totals, test_impact_key
 from devinfra.pr_visuals.targets import list_ci_failures
 from devinfra.pr_visuals.visual_diff import compare_pngs
+from devinfra.testing.output_records import output_key
 
 if TYPE_CHECKING:
     from types_boto3_s3.client import S3Client
@@ -59,7 +63,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
-REVIEW_PREFIX = "reviews-test-outputs"
 
 
 @dataclass(frozen=True)
@@ -109,8 +112,7 @@ class CollectedAsset:
 
     @property
     def review_filename(self) -> str:
-        identity = json.dumps([self.case_id, self.checkpoint, self.role], ensure_ascii=False, separators=(",", ":"))
-        return f"{hashlib.sha256(identity.encode()).hexdigest()}.png"
+        return f"{output_key(self.case_id, self.checkpoint, self.role)}.png"
 
 
 @dataclass(frozen=True)
@@ -148,8 +150,6 @@ def _collection_issue_message(issue: CollectionIssue) -> str:
     if issue.output is not None:
         checkpoint = "<default>" if issue.output.checkpoint is None else issue.output.checkpoint
         details.extend((f"case {issue.output.case_id!r}", f"checkpoint {checkpoint!r}", f"role {issue.output.role!r}"))
-    if issue.artifact is not None:
-        details.append(f"artifact {issue.artifact!r}")
     if issue.record is not None:
         details.append(f"record {issue.record!r}")
     return issue.message if not details else f"{issue.message}: {', '.join(details)}"
@@ -203,7 +203,7 @@ def _baseline_pointer_key(slug: str) -> str:
     The pointer names the newest devel commit whose immutable review bundle
     carries the target, and PR runs use it when the base bundle misses.
     """
-    return f"baselines/{REVIEW_PREFIX}/{slug}.json"
+    return f"{BASELINE_POINTER_PREFIX}/{slug}.json"
 
 
 @dataclass(frozen=True)
@@ -223,7 +223,12 @@ def _resolve_baseline(slug: str, base_sha: str | None, source: BaselineSource) -
         if body is None:
             return None
         metadata = BaselineMetadata.model_validate_json(body)
-        return metadata if metadata.baseline_eligible else None
+        if not metadata.baseline_eligible:
+            return None
+        # A parent PR's review can include removals relative to its own baseline.
+        # Those entries have no candidate image at the parent commit.
+        metadata.assets = [asset for asset in metadata.assets if asset.classification != "removed"]
+        return metadata
 
     if base_sha is not None and (metadata := metadata_at(base_sha)) is not None:
         return ResolvedBaseline(commit_sha=base_sha, metadata=metadata, fallback=False)
@@ -727,18 +732,7 @@ def upload_bundle(
     prefix = key.strip("/")
     cache_control = "public,max-age=31536000,immutable"
     metadata = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text())
-    digests = {
-        digest
-        for test in metadata.tests
-        for asset in test.assets
-        for digest in (
-            asset.candidate_sha256,
-            asset.baseline_sha256,
-            asset.diff_sha256,
-            *(variant.sha256 for variant in asset.variants),
-        )
-        if digest is not None
-    }
+    digests = {digest for test in metadata.tests for digest in test.image_digests()}
     sources: dict[str, ImageSource] = {}
     for test in candidates or []:
         for asset in test.assets:

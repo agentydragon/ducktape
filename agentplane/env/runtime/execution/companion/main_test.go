@@ -2,6 +2,7 @@ package companion
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/companion/control"
 	controlpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/companion/control/controlpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
+	"github.com/agentydragon/ducktape/agentplane/testing/eventually"
 	"google.golang.org/grpc/codes"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
@@ -30,14 +32,10 @@ func TestCompanionRefusesUnavailableCodexAndKeepsServing(t *testing.T) {
 	}
 	served := make(chan error, 1)
 	go func() {
-		served <- serve(
-			ctx,
-			socket,
-			filepath.Join(dir, "absent-codex"),
-			"ws://127.0.0.1:4501",
-			"127.0.0.1:0",
-			supervisor,
-		)
+		served <- serve(ctx, Config{
+			Socket: socket, CodexBinary: filepath.Join(dir, "absent-codex"),
+			Listen: "ws://127.0.0.1:4501", HealthListen: "127.0.0.1:0",
+		}, supervisor)
 	}()
 	waitForSocket(t, socket)
 	info, err := os.Stat(socket)
@@ -74,7 +72,7 @@ func TestCompanionRefusesUnavailableCodexAndKeepsServing(t *testing.T) {
 
 	for attempt := 1; attempt <= 2; attempt++ {
 		stream, err := client.Claim(ctx, &controlpb.ClaimRequest{
-			Environment: map[string]string{"PATH": "/usr/bin"},
+			Environment: map[string]string{"PATH": "/usr/bin"}, Implementation: "codex",
 		})
 		if err != nil {
 			t.Fatalf("claim %d: %v", attempt, err)
@@ -148,7 +146,12 @@ func TestClaimStreamOwnsExecutorUntilCanceledOrFenced(t *testing.T) {
 		t.Fatal(err)
 	}
 	served := make(chan error, 1)
-	go func() { served <- serve(ctx, socket, binary, "ws://127.0.0.1:4501", "127.0.0.1:0", supervisor) }()
+	go func() {
+		served <- serve(ctx, Config{
+			Socket: socket, Binary: binary, CodexBinary: binary,
+			Listen: "ws://127.0.0.1:4501", HealthListen: "127.0.0.1:0",
+		}, supervisor)
+	}()
 	t.Cleanup(func() {
 		cancel()
 		select {
@@ -194,15 +197,7 @@ func TestClaimStreamOwnsExecutorUntilCanceledOrFenced(t *testing.T) {
 			if err != nil || claim.GetGeneration() == "" {
 				t.Fatalf("claim = %+v, %v", claim, err)
 			}
-			for deadline := time.Now().Add(5 * time.Second); ; {
-				if _, err := os.Stat(ready); err == nil {
-					break
-				}
-				if time.Now().After(deadline) {
-					t.Fatal("executor did not start")
-				}
-				time.Sleep(10 * time.Millisecond)
-			}
+			eventually.PathExists(t, ready, 10*time.Millisecond, 5*time.Second)
 			// A stale fence must not target this successor.
 			if previous != "" {
 				if _, err := inspector.Fence(ctx, &controlpb.FenceRequest{Generation: previous}); err != nil {
@@ -245,43 +240,24 @@ func waitForControl(t *testing.T, client controlpb.CompanionControlClient) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	for {
-		if response, err := client.Inspect(ctx, &controlpb.InspectRequest{}); err == nil && response.GetGeneration() != "" {
-			return
-		}
-		if ctx.Err() != nil {
-			t.Fatalf("companion gRPC service did not become ready: %v", ctx.Err())
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	eventually.Within(t, 5*time.Second, func() (bool, string) {
+		response, err := client.Inspect(ctx, &controlpb.InspectRequest{})
+		return err == nil && response.GetGeneration() != "", fmt.Sprintf("companion gRPC service did not become ready: %v", err)
+	})
 }
 
 func waitForIdle(t *testing.T, client controlpb.CompanionControlClient, previous string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	for {
+	eventually.Within(t, 5*time.Second, func() (bool, string) {
 		current, err := client.Inspect(ctx, &controlpb.InspectRequest{})
-		if err == nil && !current.GetOwned() && current.GetGeneration() != "" && current.GetGeneration() != previous {
-			return
-		}
-		if ctx.Err() != nil {
-			t.Fatalf("generation %s was not fenced: %v", previous, ctx.Err())
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+		idle := err == nil && !current.GetOwned() && current.GetGeneration() != "" && current.GetGeneration() != previous
+		return idle, fmt.Sprintf("generation %s was not fenced: inspect = %+v, %v", previous, current, err)
+	})
 }
 
 func waitForSocket(t *testing.T, path string) {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		if _, err := os.Stat(path); err == nil {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("no companion socket at %s", path)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	eventually.PathExists(t, path, 10*time.Millisecond, 10*time.Second)
 }

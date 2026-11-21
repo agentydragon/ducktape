@@ -3,7 +3,7 @@ use std::fmt;
 
 use analysis::{EffectCell, StatementFacts, analyze_vendor_prune_chunk};
 use anyhow::{Result, bail};
-use binding_targets::{declaration_ids, declaration_name_strings, module_export_name};
+use binding_targets::{declaration_ids, declaration_name_strings, public_export_name};
 use js_ast::{GlobalUseElisions, ParsedGlobalUses, item_var_decl};
 use swc_common::sync::Lrc;
 use swc_common::{BytePos, DUMMY_SP, SourceMap, Spanned};
@@ -172,11 +172,7 @@ fn strip_export_specifiers(
                         kept.push(spec);
                         continue;
                     };
-                    let exported = named_spec
-                        .exported
-                        .as_ref()
-                        .map(module_export_name)
-                        .unwrap_or_else(|| module_export_name(&named_spec.orig));
+                    let exported = public_export_name(named_spec);
                     if swapped.contains(&exported) {
                         let Some(symbol) = symbols.get(&exported) else {
                             unreachable!("swapped names are derived from symbols");
@@ -2031,13 +2027,7 @@ fn export_aliases_from_named(named: &NamedExport) -> BTreeSet<String> {
         .specifiers
         .iter()
         .filter_map(|spec| match spec {
-            ExportSpecifier::Named(named_spec) => Some(
-                named_spec
-                    .exported
-                    .as_ref()
-                    .map(module_export_name)
-                    .unwrap_or_else(|| module_export_name(&named_spec.orig)),
-            ),
+            ExportSpecifier::Named(named_spec) => Some(public_export_name(named_spec)),
             _ => None,
         })
         .collect()
@@ -2420,104 +2410,170 @@ mod tests {
     }
 
     #[test]
-    fn allows_shared_helper_declaration_shapes() {
-        // Each case swaps `oldImpl` out while `keep` still reads the same
-        // helper, differing only in how the helper is declared (one
-        // `item_is_shareable_helper` branch each); the helper stays.
-        for (shape, source, retained) in [
+    fn strips_swapped_island() {
+        // Swapping `swapped` out removes the declarations, side effects and
+        // mutations only that export reaches, and keeps what a residual export
+        // still reads. Each case lists the text that must survive and the text
+        // that must be gone. The first four cases differ only in how the shared
+        // helper is declared (one `item_is_shareable_helper` branch each).
+        let cases: &[(&str, &str, &[&str], &[&str])] = &[
             (
-                "function declaration",
+                "shared function declaration",
                 "function helper(x) { return x; }\nconst oldImpl = () => helper(\"old\");\nconst keep = () => helper(\"keep\");\nexport { oldImpl as swapped, keep };\n",
-                "function helper",
+                &["function helper", "keep"],
+                &["oldImpl"],
             ),
             (
-                "function expression",
+                "shared function expression",
                 "const helper = function(x) { return x; };\nconst oldImpl = () => helper(\"old\");\nconst keep = () => helper(\"keep\");\nexport { oldImpl as swapped, keep };\n",
-                "function",
+                &["function", "keep"],
+                &["oldImpl"],
             ),
             (
-                "intrinsic alias",
+                "shared intrinsic alias",
                 "const assign = Object.assign;\nconst oldImpl = () => assign({}, { old: true });\nconst keep = () => assign({}, { keep: true });\nexport { oldImpl as swapped, keep };\n",
-                "Object.assign",
+                &["Object.assign", "keep"],
+                &["oldImpl"],
             ),
             (
-                "primitive literal",
+                "shared primitive literal",
                 "const preloadRel = \"modulepreload\";\nconst oldImpl = () => preloadRel;\nconst keep = () => preloadRel;\nexport { oldImpl as swapped, keep };\n",
-                "modulepreload",
+                &["modulepreload", "keep"],
+                &["oldImpl"],
             ),
-        ] {
+            (
+                "shared Vite dependency map helper",
+                "const mapDeps = (i, m = mapDeps, d = m.f || (m.f = [\"a.js\", \"b.js\"])) => i.map((i) => d[i]);\n\
+                 const oldImpl = () => mapDeps([0]);\n\
+                 const keep = () => mapDeps([1]);\n\
+                 export { oldImpl as swapped, keep };\n",
+                &["mapDeps"],
+                &["oldImpl"],
+            ),
+            (
+                "shared Vite preload helper cluster",
+                "const rel = \"modulepreload\";\n\
+                 const base = function(path) { return \"/\" + path; };\n\
+                 const seen = {};\n\
+                 const preload = function(load, deps) {\n\
+                     let promise = Promise.resolve();\n\
+                     if (deps && deps.length > 0) {\n\
+                         promise = Promise.allSettled(deps.map((dep) => {\n\
+                             dep = base(dep);\n\
+                             if (dep in seen) return;\n\
+                             seen[dep] = true;\n\
+                             const link = document.createElement(\"link\");\n\
+                             link.rel = rel;\n\
+                         }));\n\
+                     }\n\
+                     function onError(error) { window.dispatchEvent(error); throw error; }\n\
+                     return promise.then(() => load().catch(onError));\n\
+                 };\n\
+                 const oldImpl = () => preload(() => Promise.resolve(\"old\"), [\"old.js\"]);\n\
+                 const keep = () => preload(() => Promise.resolve(\"keep\"), [\"keep.js\"]);\n\
+                 export { oldImpl as swapped, keep };\n",
+                &["modulepreload", "seen"],
+                &["oldImpl"],
+            ),
+            (
+                "side effect touching only the swapped island",
+                "const internals = {};\n\
+                 const oldImpl = () => internals;\n\
+                 if (globalThis.__HOOK__) globalThis.__HOOK__.inject({ internals });\n\
+                 export { oldImpl as swapped };\n\
+                 export const keep = 1;\n",
+                &["export const keep"],
+                &["__HOOK__"],
+            ),
+            (
+                "private registration chain of the swapped island",
+                "const table = {};\n\
+                 const internals = {};\n\
+                 function register(name) { table[name] = internals; }\n\
+                 for (var i = 0; i < 2; i++) register(String(i));\n\
+                 const oldImpl = () => internals;\n\
+                 export { oldImpl as swapped };\n\
+                 export const keep = 1;\n",
+                &["export const keep"],
+                &["register", "table", "internals"],
+            ),
+            (
+                "local `Object.freeze` of a dropped target",
+                "const EMPTY = {};\nObject.freeze(EMPTY);\nconst make = () => EMPTY;\nexport { make as swapped };\n",
+                &[],
+                &["EMPTY", "freeze"],
+            ),
+            (
+                "intrinsic `Object.assign` mutation",
+                "const tag = \"computed\";\nconst decorator = make(tag);\nconst computed = () => decorator;\nObject.assign(computed, decorator);\ncomputed.struct = wrap(decorator);\nexport { computed as swapped };\n",
+                &[],
+                &["computed", "decorator", "Object.assign"],
+            ),
+            (
+                "prototype inheritance initializer",
+                "function Base() {}\nfunction Derived() {}\nvar proto = (Derived.prototype = new Base());\nconst make = () => Derived;\nexport { make as swapped };\n",
+                &[],
+                &["Derived", "prototype", "Base"],
+            ),
+            (
+                "local binding assignment",
+                "let assigned;\nconst source = { value: 1 };\nassigned = source.value;\nconst make = () => assigned;\nexport { make as swapped };\n",
+                &[],
+                &["assigned", "source"],
+            ),
+            (
+                "CommonJS module wrapper",
+                "var module = { exports: {} };\n(function (target) { (function () { var has = {}.hasOwnProperty; function clsx() {} target.exports ? ((clsx.default = clsx), (target.exports = clsx)) : (window.classNames = clsx); })(); })(module);\nvar clsx = module.exports;\nconst make = () => clsx;\nexport { make as swapped };\n",
+                &[],
+                &["module", "clsx", "classNames"],
+            ),
+            (
+                "CommonJS wrapper reading the shared global fallback",
+                "var root = typeof globalThis < \"u\" ? globalThis : typeof window < \"u\" ? window : typeof global < \"u\" ? global : typeof self < \"u\" ? self : {};\n\
+                 var module = { exports: {} };\n\
+                 (function (target) { (function (global, factory) { target.exports = factory(); })(root, function () { function dayjs() {} return dayjs; }); })(module);\n\
+                 var dayjs = module.exports;\n\
+                 const keep = root;\n\
+                 export { dayjs as swapped, keep };\n",
+                &["globalThis", "keep"],
+                &["dayjs", "factory", "module"],
+            ),
+            (
+                "object-iteration prototype mutation",
+                "const define = Object.defineProperty;\nvar methods = { clear: function () { return this.splice(0); } };\nfunction ObservableArray() {}\nObject.entries(methods).forEach(function (entry) { var key = entry[0], value = entry[1]; key !== \"concat\" && define(ObservableArray.prototype, key, value); });\nconst make = () => ObservableArray;\nexport { make as swapped };\n",
+                &[],
+                &["ObservableArray", "Object.entries", "methods"],
+            ),
+            (
+                "object-iteration wrapper mutation",
+                "function define(target, key, value) { Object.defineProperty(target, key, { configurable: true, value }); }\nvar methods = { clear: function () { return this.splice(0); } };\nfunction ObservableArray() {}\nObject.entries(methods).forEach(function (entry) { var key = entry[0], value = entry[1]; key !== \"concat\" && define(ObservableArray.prototype, key, value); });\nconst make = () => ObservableArray;\nexport { make as swapped };\n",
+                &[],
+                &["ObservableArray", "Object.entries", "methods"],
+            ),
+            (
+                "local namespace augmentation",
+                "var ns = {};\n(function (target) { target.reject = wrap(\"reject\"); function resolve() {} target.resolve = wrap(resolve); })(ns || (ns = {}));\nconst make = () => ns;\nexport { make as swapped };\n",
+                &[],
+                &["reject", "resolve", "ns"],
+            ),
+        ];
+        for &(label, source, retained, dropped) in cases {
             let mut module = parse(source);
-            strip_one_chunk(&mut module, &mk_symbols(&["swapped"]), "chunk.js").expect(shape);
+            strip_one_chunk(&mut module, &mk_symbols(&["swapped"]), "chunk.js").expect(label);
             let emitted = emit(&module);
-            assert!(
-                emitted.contains(retained),
-                "{shape}: residual export should keep the shared helper:\n{emitted}",
-            );
-            assert!(
-                emitted.contains("keep"),
-                "{shape}: residual export should remain:\n{emitted}",
-            );
-            assert!(
-                !emitted.contains("oldImpl"),
-                "{shape}: swapped old implementation should be removed:\n{emitted}",
-            );
+            for &text in retained {
+                assert!(
+                    emitted.contains(text),
+                    "{label}: `{text}` should be retained:\n{emitted}",
+                );
+            }
+            for &text in dropped {
+                assert!(
+                    !emitted.contains(text),
+                    "{label}: `{text}` should be dropped:\n{emitted}",
+                );
+            }
         }
-    }
-
-    #[test]
-    fn allows_shared_vite_dependency_map_helper() {
-        let mut module = parse(
-            "const mapDeps = (i, m = mapDeps, d = m.f || (m.f = [\"a.js\", \"b.js\"])) => i.map((i) => d[i]);\n\
-             const oldImpl = () => mapDeps([0]);\n\
-             const keep = () => mapDeps([1]);\n\
-             export { oldImpl as swapped, keep };\n",
-        );
-        strip_one_chunk(&mut module, &mk_symbols(&["swapped"]), "chunk.js").unwrap();
-        let emitted = emit(&module);
-        assert!(
-            emitted.contains("mapDeps"),
-            "residual export should keep the shared runtime helper:\n{emitted}",
-        );
-        assert!(
-            !emitted.contains("oldImpl"),
-            "swapped old implementation should be removed:\n{emitted}",
-        );
-    }
-
-    #[test]
-    fn allows_shared_vite_preload_helper_cluster() {
-        let mut module = parse(
-            "const rel = \"modulepreload\";\n\
-             const base = function(path) { return \"/\" + path; };\n\
-             const seen = {};\n\
-             const preload = function(load, deps) {\n\
-                 let promise = Promise.resolve();\n\
-                 if (deps && deps.length > 0) {\n\
-                     promise = Promise.allSettled(deps.map((dep) => {\n\
-                         dep = base(dep);\n\
-                         if (dep in seen) return;\n\
-                         seen[dep] = true;\n\
-                         const link = document.createElement(\"link\");\n\
-                         link.rel = rel;\n\
-                     }));\n\
-                 }\n\
-                 function onError(error) { window.dispatchEvent(error); throw error; }\n\
-                 return promise.then(() => load().catch(onError));\n\
-             };\n\
-             const oldImpl = () => preload(() => Promise.resolve(\"old\"), [\"old.js\"]);\n\
-             const keep = () => preload(() => Promise.resolve(\"keep\"), [\"keep.js\"]);\n\
-             export { oldImpl as swapped, keep };\n",
-        );
-        strip_one_chunk(&mut module, &mk_symbols(&["swapped"]), "chunk.js").unwrap();
-        let emitted = emit(&module);
-        assert!(
-            emitted.contains("modulepreload") && emitted.contains("seen"),
-            "residual export should keep the shared Vite preload helper cluster:\n{emitted}",
-        );
-        assert!(
-            !emitted.contains("oldImpl"),
-            "swapped old implementation should be removed:\n{emitted}",
-        );
     }
 
     #[test]
@@ -2539,177 +2595,6 @@ mod tests {
         assert!(
             !emitted.contains("oldA") && !emitted.contains("oldB"),
             "swapped package roots should be removed:\n{emitted}",
-        );
-    }
-
-    #[test]
-    fn drops_side_effect_dependent_on_single_swapped_package_island() {
-        let mut module = parse(
-            "const internals = {};\n\
-             const oldImpl = () => internals;\n\
-             if (globalThis.__HOOK__) globalThis.__HOOK__.inject({ internals });\n\
-             export { oldImpl as swapped };\n\
-             export const keep = 1;\n",
-        );
-        strip_one_chunk(&mut module, &mk_symbols(&["swapped"]), "chunk.js").unwrap();
-        let emitted = emit(&module);
-        assert!(
-            !emitted.contains("__HOOK__"),
-            "hard side effect that only touches the swapped island should be dropped:\n{emitted}",
-        );
-        assert!(
-            emitted.contains("export const keep"),
-            "residual export should remain:\n{emitted}",
-        );
-    }
-
-    #[test]
-    fn drops_private_side_effect_chain_for_single_swapped_package_island() {
-        let mut module = parse(
-            "const table = {};\n\
-             const internals = {};\n\
-             function register(name) { table[name] = internals; }\n\
-             for (var i = 0; i < 2; i++) register(String(i));\n\
-             const oldImpl = () => internals;\n\
-             export { oldImpl as swapped };\n\
-             export const keep = 1;\n",
-        );
-        strip_one_chunk(&mut module, &mk_symbols(&["swapped"]), "chunk.js").unwrap();
-        let emitted = emit(&module);
-        assert!(
-            !emitted.contains("register")
-                && !emitted.contains("table")
-                && !emitted.contains("internals"),
-            "private registration chain should be dropped with the swapped island:\n{emitted}",
-        );
-        assert!(
-            emitted.contains("export const keep"),
-            "residual export should remain:\n{emitted}",
-        );
-    }
-
-    #[test]
-    fn drops_local_object_freeze_in_swapped_island() {
-        let mut module = parse(
-            "const EMPTY = {};\nObject.freeze(EMPTY);\nconst make = () => EMPTY;\nexport { make as swapped };\n",
-        );
-        strip_one_chunk(&mut module, &mk_symbols(&["swapped"]), "chunk.js").unwrap();
-        let emitted = emit(&module);
-        assert!(
-            !emitted.contains("EMPTY") && !emitted.contains("freeze"),
-            "local freeze should be dropped with its target:\n{emitted}",
-        );
-    }
-
-    #[test]
-    fn drops_intrinsic_assign_mutation_in_swapped_island() {
-        let mut module = parse(
-            "const tag = \"computed\";\nconst decorator = make(tag);\nconst computed = () => decorator;\nObject.assign(computed, decorator);\ncomputed.struct = wrap(decorator);\nexport { computed as swapped };\n",
-        );
-        strip_one_chunk(&mut module, &mk_symbols(&["swapped"]), "chunk.js").unwrap();
-        let emitted = emit(&module);
-        assert!(
-            !emitted.contains("computed")
-                && !emitted.contains("decorator")
-                && !emitted.contains("Object.assign"),
-            "intrinsic local mutations should be dropped with the swapped target:\n{emitted}",
-        );
-    }
-
-    #[test]
-    fn drops_var_init_prototype_mutation_in_swapped_island() {
-        let mut module = parse(
-            "function Base() {}\nfunction Derived() {}\nvar proto = (Derived.prototype = new Base());\nconst make = () => Derived;\nexport { make as swapped };\n",
-        );
-        strip_one_chunk(&mut module, &mk_symbols(&["swapped"]), "chunk.js").unwrap();
-        let emitted = emit(&module);
-        assert!(
-            !emitted.contains("Derived")
-                && !emitted.contains("prototype")
-                && !emitted.contains("Base"),
-            "prototype inheritance initializer should be dropped with the swapped target:\n{emitted}",
-        );
-    }
-
-    #[test]
-    fn drops_local_binding_write_in_swapped_island() {
-        let mut module = parse(
-            "let assigned;\nconst source = { value: 1 };\nassigned = source.value;\nconst make = () => assigned;\nexport { make as swapped };\n",
-        );
-        strip_one_chunk(&mut module, &mk_symbols(&["swapped"]), "chunk.js").unwrap();
-        let emitted = emit(&module);
-        assert!(
-            !emitted.contains("assigned") && !emitted.contains("source"),
-            "local binding assignment should be dropped with the swapped island:\n{emitted}",
-        );
-    }
-
-    #[test]
-    fn drops_commonjs_module_iife_in_swapped_island() {
-        let mut module = parse(
-            "var module = { exports: {} };\n(function (target) { (function () { var has = {}.hasOwnProperty; function clsx() {} target.exports ? ((clsx.default = clsx), (target.exports = clsx)) : (window.classNames = clsx); })(); })(module);\nvar clsx = module.exports;\nconst make = () => clsx;\nexport { make as swapped };\n",
-        );
-        strip_one_chunk(&mut module, &mk_symbols(&["swapped"]), "chunk.js").unwrap();
-        let emitted = emit(&module);
-        assert!(
-            !emitted.contains("module")
-                && !emitted.contains("clsx")
-                && !emitted.contains("classNames"),
-            "CommonJS module wrapper should be dropped with the swapped island:\n{emitted}",
-        );
-    }
-
-    #[test]
-    fn drops_commonjs_iife_with_shared_global_fallback_dependency() {
-        let mut module = parse(
-            "var root = typeof globalThis < \"u\" ? globalThis : typeof window < \"u\" ? window : typeof global < \"u\" ? global : typeof self < \"u\" ? self : {};\n\
-             var module = { exports: {} };\n\
-             (function (target) { (function (global, factory) { target.exports = factory(); })(root, function () { function dayjs() {} return dayjs; }); })(module);\n\
-             var dayjs = module.exports;\n\
-             const keep = root;\n\
-             export { dayjs as swapped, keep };\n",
-        );
-        strip_one_chunk(&mut module, &mk_symbols(&["swapped"]), "chunk.js").unwrap();
-        let emitted = emit(&module);
-        assert!(
-            emitted.contains("globalThis") && emitted.contains("keep"),
-            "residual global fallback helper should remain:\n{emitted}",
-        );
-        assert!(
-            !emitted.contains("dayjs")
-                && !emitted.contains("factory")
-                && !emitted.contains("module"),
-            "CommonJS wrapper should be dropped even when it reads the shared global fallback:\n{emitted}",
-        );
-    }
-
-    #[test]
-    fn drops_object_iteration_prototype_mutation_in_swapped_island() {
-        let mut module = parse(
-            "const define = Object.defineProperty;\nvar methods = { clear: function () { return this.splice(0); } };\nfunction ObservableArray() {}\nObject.entries(methods).forEach(function (entry) { var key = entry[0], value = entry[1]; key !== \"concat\" && define(ObservableArray.prototype, key, value); });\nconst make = () => ObservableArray;\nexport { make as swapped };\n",
-        );
-        strip_one_chunk(&mut module, &mk_symbols(&["swapped"]), "chunk.js").unwrap();
-        let emitted = emit(&module);
-        assert!(
-            !emitted.contains("ObservableArray")
-                && !emitted.contains("Object.entries")
-                && !emitted.contains("methods"),
-            "object-iteration prototype mutation should be dropped with the swapped target:\n{emitted}",
-        );
-    }
-
-    #[test]
-    fn drops_object_iteration_wrapper_prototype_mutation_in_swapped_island() {
-        let mut module = parse(
-            "function define(target, key, value) { Object.defineProperty(target, key, { configurable: true, value }); }\nvar methods = { clear: function () { return this.splice(0); } };\nfunction ObservableArray() {}\nObject.entries(methods).forEach(function (entry) { var key = entry[0], value = entry[1]; key !== \"concat\" && define(ObservableArray.prototype, key, value); });\nconst make = () => ObservableArray;\nexport { make as swapped };\n",
-        );
-        strip_one_chunk(&mut module, &mk_symbols(&["swapped"]), "chunk.js").unwrap();
-        let emitted = emit(&module);
-        assert!(
-            !emitted.contains("ObservableArray")
-                && !emitted.contains("Object.entries")
-                && !emitted.contains("methods"),
-            "object-iteration wrapper mutation should be dropped with the swapped target:\n{emitted}",
         );
     }
 
@@ -2761,19 +2646,6 @@ mod tests {
         assert!(
             !emitted.contains("oldImpl"),
             "swapped original facade user should be removed:\n{emitted}",
-        );
-    }
-
-    #[test]
-    fn drops_local_namespace_iife_in_swapped_island() {
-        let mut module = parse(
-            "var ns = {};\n(function (target) { target.reject = wrap(\"reject\"); function resolve() {} target.resolve = wrap(resolve); })(ns || (ns = {}));\nconst make = () => ns;\nexport { make as swapped };\n",
-        );
-        strip_one_chunk(&mut module, &mk_symbols(&["swapped"]), "chunk.js").unwrap();
-        let emitted = emit(&module);
-        assert!(
-            !emitted.contains("reject") && !emitted.contains("resolve") && !emitted.contains("ns"),
-            "local namespace augmentation should be dropped with its target:\n{emitted}",
         );
     }
 

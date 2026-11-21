@@ -3,7 +3,6 @@ package dispatcher
 import (
 	"context"
 	"errors"
-	"net"
 	"testing"
 	"time"
 
@@ -19,6 +18,7 @@ import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -35,15 +35,7 @@ import (
 // Identity's own workload would, and opens none. The actor being a privileged Dispatcher caller
 // widens nothing.
 func TestDelegatedIdentityActsOnlyOnItsIdentitysSessions(t *testing.T) {
-	api, err := kubeapiserver.Start()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := api.Stop(); err != nil {
-			t.Error(err)
-		}
-	})
+	api := kubeapiserver.StartForTest(t)
 	const policyNamespace = "test-delegated-identity-policies"
 	owner := workloadauthtesting.NewIdentityWorkload(t, api, caller.Namespace, "delegated-identity-owner", policyNamespace)
 	other := workloadauthtesting.NewIdentityWorkload(t, api, caller.Namespace, "delegated-identity-other", policyNamespace)
@@ -87,18 +79,13 @@ func TestDelegatedIdentityActsOnlyOnItsIdentitysSessions(t *testing.T) {
 		EnvironmentRules: rules, PolicyReady: func() error { return policyError },
 		Hub: hub, WatchLease: 10 * time.Second,
 	})
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
+	serverAddr := grpcserver.Serve(t, server)
 	leaf := ca.Issue(t, actor)
 	clientTLS := &peertls.ClientTLS{
 		CAFile: leaf.CAFile, ServerURI: peertls.SessionDispatcherURI,
 		CertFile: leaf.CertFile, KeyFile: leaf.KeyFile, ClientURI: actor,
 	}
-	connection, err := workloadgrpc.DialDelegated(listener.Addr().String(), "", 10*time.Second, clientTLS, workloadgrpc.ClientInterceptors{})
+	connection, err := workloadgrpc.DialDelegated(serverAddr, "", 10*time.Second, clientTLS, workloadgrpc.ClientInterceptors{})
 	if err != nil {
 		t.Fatal(err)
 	}

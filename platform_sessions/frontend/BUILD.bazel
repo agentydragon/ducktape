@@ -45,10 +45,10 @@ py_test(
     deps = [
         "//:conftest",
         "//devinfra/testing:output_writer",
+        "//testing:asgi",
+        "//testing/frontend_visual:capture",
+        "//testing/frontend_visual:context",
         "//util:playwright",  # keep: pytest plugin
-        "//util/testing:asgi",
-        "//util/testing/frontend_visual:capture",
-        "//util/testing/frontend_visual:context",
         "@pypi//fastapi",
         "@pypi//pillow",
         "@pypi//playwright",

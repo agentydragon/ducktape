@@ -12,7 +12,7 @@ Only inference requests forward provider-native traffic to LiteLLM with one serv
 The forwarded byte body, status, error body, and streamed chunks are not translated. Verified
 identity is attached through LiteLLM's documented `x-litellm-spend-logs-metadata` JSON header
 (the deployed `tana-litellm-proxy` image, `tana/litellm_proxy/BUILD.bazel`, layered on the
-`litellm_upstream` pin in `MODULE.bazel`). That version consumes the header
+`litellm_upstream` pin in `devinfra/bazel/oci.MODULE.bazel`). That version consumes the header
 (`_get_spend_logs_metadata_from_request_headers`) in its common request setup used by both native
 `/v1/messages` and `/v1/responses`, including their streaming paths. The authoritative metadata
 object is:
@@ -61,8 +61,8 @@ errors, returned to callers, or mounted into a runner or harness container. Ingr
 TokenReview or admit Kubernetes bearers.
 
 The `rpc` setting uses the shared listener schema: `listen_address`, serving `tls`, and `auth`
-with `spiffe` roots. Legacy bearer listener settings remain decodable during manifest rollout but
-grant no admission.
+with `spiffe` roots. `spiffe` is the only mode the schema declares, so a bearer entry fails settings
+decoding instead of starting an unauthenticated receiver.
 
 The complete non-secret service settings, including `log_levels`, come from the required YAML file
 named by `AGENTPLANE_LLM_INGRESS_CONFIG_FILE`. Static settings have no per-setting environment or

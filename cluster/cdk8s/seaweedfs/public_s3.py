@@ -40,7 +40,8 @@ from seaweed_s3policybinding_crds.com.seaweedfs.seaweed import (
     S3PolicyBindingSpecSubjectsKind,
 )
 
-from cluster.cdk8s import node_scheduling
+from cluster.cdk8s import disruption_budget, node_scheduling
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -215,15 +216,8 @@ def _gateway(scope: Construct) -> None:
                                 success_threshold=1,
                                 failure_threshold=100,
                             ),
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("500m"),
-                                    "memory": k8s.Quantity.from_string("512Mi"),
-                                },
-                                limits={
-                                    "cpu": k8s.Quantity.from_string("2"),
-                                    "memory": k8s.Quantity.from_string("2Gi"),
-                                },
+                            resources=container_resources(
+                                cpu="500m", memory="512Mi", cpu_limit="2", memory_limit="2Gi"
                             ),
                             security_context=k8s.SecurityContext(
                                 allow_privilege_escalation=False,
@@ -240,6 +234,7 @@ def _gateway(scope: Construct) -> None:
             ),
         ),
     )
+    disruption_budget.add_disruption_budget(scope, "disruption-budget", name=NAME, pods=_PODS)
     k8s.KubeService(
         scope,
         "service",
@@ -285,10 +280,9 @@ def seaweedfs_public_s3(
     kyverno: Kustomization,
     monitoring_crds: Kustomization,
 ) -> Kustomization:
-    name = "seaweedfs-public-s3"
     return flux_kustomization(
         chart,
-        name,
+        "seaweedfs-public-s3",
         directory,
         depends_on=flux_kustomization_depends_on_many(
             # S3Identity, S3Credentials, S3Policy and S3PolicyBinding CRDs

@@ -2,7 +2,7 @@ apiVersion: v1
 kind: Namespace
 metadata:
   labels:
-    goldilocks.fairwinds.com/enabled: "false"
+    goldilocks.fairwinds.com/vpa-update-mode: "off"
   name: roaming-node-controller
 spec: {}
 ---
@@ -93,6 +93,8 @@ kind: Deployment
 metadata:
   annotations:
     description: Taints a roaming node node.kubernetes.io/out-of-service while its kubelet Lease is stale, so DaemonSets and pod GC treat the absent laptop as gone; untaints on the first renewal.
+    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "controller", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "10m", "memory": "64Mi"}, "maxAllowed": {"cpu": "10m", "memory": "80Mi"}, "controlledResources": ["memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
+    goldilocks.fairwinds.com/vpa-update-mode: initial
   labels:
     app.kubernetes.io/name: roaming-node-controller
   name: roaming-node-controller

@@ -43,11 +43,11 @@ go_test(
     embed = [":runtime"],
     visibility = ["//agentplane/egress/sidecar:__pkg__"],
     deps = [
-        "//agentplane/identity/auth/listener",
         "//agentplane/identity/credentials/workloadid",
         "//agentplane/net/httpconnect",
         "//agentplane/net/peertls",
         "//agentplane/net/peertls/testing",
+        "//agentplane/testing/eventually",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//credentials",

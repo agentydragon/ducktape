@@ -1,4 +1,4 @@
-// Shared color utilities for recall and issue types
+// Shared color utilities for recall, issue types and dataset splits
 
 /** Returns Tailwind classes for recall value styling */
 export function recallColorClass(value: number | null | undefined): string {
@@ -52,3 +52,17 @@ export const issueColors: Record<string, IssueColorScheme> = {
     textDark: "text-orange-700 dark:text-orange-300",
   },
 };
+
+/** Returns the Mantine badge color for a dataset split */
+export function splitColor(split: string): string {
+  switch (split) {
+    case "train":
+      return "blue";
+    case "valid":
+      return "green";
+    case "test":
+      return "violet";
+    default:
+      return "gray";
+  }
+}

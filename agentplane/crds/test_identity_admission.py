@@ -1,63 +1,28 @@
 """Exercise the identity and Kubernetes account kinds' schemas, and the PolicyBinding subject that names an
 identity, through Kubernetes admission and CEL."""
 
-from typing import Any, cast
+from typing import Any
 
-import pytest
 import pytest_bazel
-from kubernetes_asyncio import client as k8s_client
-from kubernetes_asyncio.client.exceptions import ApiException
 
-from agentplane.testing.kubernetes_apiserver import kubernetes_apiserver
+from agentplane.crd_group import GROUP, VERSION
+from agentplane.testing.crd_admission import CrdAdmission, crd_namespace
 
-GROUP = "agentplane.allegedly.works"
-VERSION = "v1alpha1"
 NAMESPACE = "identity-admission"
 SERVICE_ACCOUNT = {"namespace": "test-accounts", "name": "test-shared-account"}
 
 
-class Kinds:
-    def __init__(self, api: k8s_client.CustomObjectsApi) -> None:
-        self.api = api
-
-    async def create(self, plural: str, kind: str, name: str, spec: dict[str, Any], **metadata: Any) -> dict[str, Any]:
-        body = {"apiVersion": f"{GROUP}/{VERSION}", "kind": kind, "metadata": {"name": name, **metadata}, "spec": spec}
-        return cast(
-            dict[str, Any], await self.api.create_namespaced_custom_object(GROUP, VERSION, NAMESPACE, plural, body)
-        )
-
-    async def rejects_create(self, plural: str, kind: str, spec: dict[str, Any]) -> None:
-        with pytest.raises(ApiException) as rejected:
-            await self.create(plural, kind, "rejected", spec)
-        assert rejected.value.status == 422, f"{spec}: {rejected.value.body!r}"
-
-    async def replace_status(self, plural: str, obj: dict[str, Any], status: dict[str, Any]) -> dict[str, Any]:
-        return cast(
-            dict[str, Any],
-            await self.api.replace_namespaced_custom_object_status(
-                GROUP, VERSION, NAMESPACE, plural, obj["metadata"]["name"], {**obj, "status": status}
-            ),
-        )
-
-    async def rejects_status(self, plural: str, obj: dict[str, Any], status: dict[str, Any]) -> None:
-        with pytest.raises(ApiException) as rejected:
-            await self.replace_status(plural, obj, status)
-        assert rejected.value.status == 422, f"{status}: {rejected.value.body!r}"
-
-
-async def _identity(kinds: Kinds) -> dict[str, Any]:
-    identity = await kinds.create("identities", "Identity", "test-agent", {"description": "Test agent"})
+async def _identity(identities: CrdAdmission) -> dict[str, Any]:
+    identity = await identities.create("test-agent", {"description": "Test agent"})
     for spec in ({}, {"description": ""}):
-        await kinds.rejects_create("identities", "Identity", spec)
+        await identities.rejects_create(spec)
     return identity
 
 
-async def _role_sets(kinds: Kinds) -> None:
+async def _role_sets(role_sets: CrdAdmission) -> None:
     role_binding = {"type": "role_binding", "role": {"kind": "ClusterRole", "name": "test-reader"}, "namespaces": ["a"]}
     cluster_role_binding = {"type": "cluster_role_binding", "clusterRole": "test-node-reader"}
-    await kinds.create(
-        "kubernetesrolesets",
-        "KubernetesRoleSet",
+    await role_sets.create(
         "test-roles",
         {
             "rules": [
@@ -78,20 +43,13 @@ async def _role_sets(kinds: Kinds) -> None:
         {**cluster_role_binding, "namespaces": ["a"]},
         {"type": "cluster_role_binding"},
     ):
-        await kinds.rejects_create("kubernetesrolesets", "KubernetesRoleSet", {"rules": [rule]})
-    await kinds.rejects_create("kubernetesrolesets", "KubernetesRoleSet", {"rules": []})
+        await role_sets.rejects_create({"rules": [rule]})
+    await role_sets.rejects_create({"rules": []})
 
 
-async def _grants(kinds: Kinds) -> None:
-    await kinds.create(
-        "serviceaccountgrants",
-        "ServiceAccountGrant",
-        "test-standing",
-        {"serviceAccount": SERVICE_ACCOUNT, "roleSets": ["test-roles"]},
-    )
-    grant = await kinds.create(
-        "serviceaccountgrants",
-        "ServiceAccountGrant",
+async def _grants(grants: CrdAdmission) -> None:
+    await grants.create("test-standing", {"serviceAccount": SERVICE_ACCOUNT, "roleSets": ["test-roles"]})
+    grant = await grants.create(
         "test-expiring",
         {"serviceAccount": SERVICE_ACCOUNT, "roleSets": ["test-more-roles"], "expiresAt": "2026-11-05T13:00:00Z"},
     )
@@ -103,9 +61,7 @@ async def _grants(kinds: Kinds) -> None:
         "lastTransitionTime": "2026-11-05T12:00:00Z",
     }
     missing = {"kind": "ClusterRole", "name": "test-reader"}
-    grant = await kinds.replace_status(
-        "serviceaccountgrants", grant, {"conditions": [condition], "missingRoles": [missing]}
-    )
+    grant = await grants.replace_status(grant, {"conditions": [condition], "missingRoles": [missing]})
     assert grant["status"]["missingRoles"] == [missing]
 
     for spec in (
@@ -115,23 +71,17 @@ async def _grants(kinds: Kinds) -> None:
         {"serviceAccount": {k: v for k, v in SERVICE_ACCOUNT.items() if k != "namespace"}, "roleSets": ["test-roles"]},
         {"roleSets": ["test-roles"]},
     ):
-        await kinds.rejects_create("serviceaccountgrants", "ServiceAccountGrant", spec)
+        await grants.rejects_create(spec)
 
 
-async def _managed_service_accounts(kinds: Kinds, identity: dict[str, Any]) -> None:
+async def _managed_service_accounts(accounts: CrdAdmission, identity: dict[str, Any]) -> None:
     owner = {
         "apiVersion": f"{GROUP}/{VERSION}",
         "kind": "Identity",
         "name": identity["metadata"]["name"],
         "uid": identity["metadata"]["uid"],
     }
-    account = await kinds.create(
-        "managedserviceaccounts",
-        "ManagedServiceAccount",
-        "test-agent-extra",
-        {"expiresAt": "2026-11-05T12:34:00Z"},
-        ownerReferences=[owner],
-    )
+    account = await accounts.create("test-agent-extra", {"expiresAt": "2026-11-05T12:34:00Z"}, ownerReferences=[owner])
     created = {"namespace": "test-accounts", "name": "test-agent-extra", "uid": "3b1c0f1e-7a52-4f0c-9d52-2d7a54f0b2a1"}
     collision = {
         "type": "Ready",
@@ -140,23 +90,19 @@ async def _managed_service_accounts(kinds: Kinds, identity: dict[str, Any]) -> N
         "message": "test foreign ServiceAccount",
         "lastTransitionTime": "2026-11-05T12:00:00Z",
     }
-    account = await kinds.replace_status(
-        "managedserviceaccounts", account, {"serviceAccount": created, "conditions": [collision]}
-    )
+    account = await accounts.replace_status(account, {"serviceAccount": created, "conditions": [collision]})
     assert account["status"] == {"serviceAccount": created, "conditions": [collision]}
 
-    await kinds.rejects_status("managedserviceaccounts", account, {"serviceAccount": {**created, "uid": "not-a-uid"}})
+    await accounts.rejects_status(account, {"serviceAccount": {**created, "uid": "not-a-uid"}})
     # An account with no expiry stands until its owner goes.
-    await kinds.create("managedserviceaccounts", "ManagedServiceAccount", "test-standing-extra", {})
+    await accounts.create("test-standing-extra", {})
 
 
-async def _binding_subjects(kinds: Kinds) -> None:
+async def _binding_subjects(bindings: CrdAdmission) -> None:
     service_account: dict[str, Any] = {"namespace": NAMESPACE, "name": "test-workload"}
     identity: dict[str, Any] = {"identity": {"name": "test-agent"}}
     for name, subject in (("test-service-account", service_account), ("test-identity", identity)):
-        created = await kinds.create(
-            "policybindings", "PolicyBinding", name, {"subject": subject, "policySets": ["basic"]}
-        )
+        created = await bindings.create(name, {"subject": subject, "policySets": ["basic"]})
         assert created["spec"]["subject"] == subject
 
     for subject in (
@@ -167,19 +113,16 @@ async def _binding_subjects(kinds: Kinds) -> None:
         {"name": "test-workload"},
         {"identity": {"name": ""}},
     ):
-        await kinds.rejects_create("policybindings", "PolicyBinding", {"subject": subject, "policySets": ["basic"]})
+        await bindings.rejects_create({"subject": subject, "policySets": ["basic"]})
 
 
 async def test_identity_and_kubernetes_account_admission() -> None:
-    async with kubernetes_apiserver() as server:
-        core = k8s_client.CoreV1Api(server.api)
-        await core.create_namespace(k8s_client.V1Namespace(metadata=k8s_client.V1ObjectMeta(name=NAMESPACE)))
-        kinds = Kinds(k8s_client.CustomObjectsApi(server.api))
-        identity = await _identity(kinds)
-        await _role_sets(kinds)
-        await _grants(kinds)
-        await _managed_service_accounts(kinds, identity)
-        await _binding_subjects(kinds)
+    async with crd_namespace(NAMESPACE) as namespace:
+        identity = await _identity(namespace.kind("identities", "Identity"))
+        await _role_sets(namespace.kind("kubernetesrolesets", "KubernetesRoleSet"))
+        await _grants(namespace.kind("serviceaccountgrants", "ServiceAccountGrant"))
+        await _managed_service_accounts(namespace.kind("managedserviceaccounts", "ManagedServiceAccount"), identity)
+        await _binding_subjects(namespace.kind("policybindings", "PolicyBinding"))
 
 
 if __name__ == "__main__":

@@ -18,13 +18,19 @@ py_library(
 )
 
 py_library(
-    name = "constants",
-    srcs = ["constants.py"],
+    name = "examples",
+    srcs = ["examples.py"],
     visibility = ["//props:__subpackages__"],
     deps = [
         "//props/core:ids",
         "//props/core/models:examples",
     ],
+)
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    visibility = ["//props:__subpackages__"],
 )
 
 py_library(
@@ -42,7 +48,7 @@ py_library(
     srcs = ["fake_openai_server.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":constants",
+        ":models",
         "//openai_utils:model",
         "@pypi//fastapi",
         "@pypi//openai",
@@ -58,7 +64,7 @@ py_test(
         "//:conftest",
         "//openai_utils:model",
         "//props:conftest",
-        "//util/testing:asgi",
+        "//testing:asgi",
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

@@ -11,7 +11,7 @@ The rc ownership and RBE execution contract live in
 - Ducktape's workspace `.bazelrc` selects RBE
 - API key from `${{ secrets.BUILDBUDDY_API_KEY }}`
 
-**Claude Code Hooks** (`devinfra/claude/claude_hook/main.rs` and Python hook daemon):
+**Claude Code Hooks** (Rust hook daemon, `devinfra/claude/claude_hook/main.rs`):
 
 - Session start writes a per-session `buildbuddy.bazelrc`
 - The per-session file contributes only a credential scoped to `rbe`

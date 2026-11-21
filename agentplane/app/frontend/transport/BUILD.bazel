@@ -21,8 +21,6 @@ ts_library(
         ":operator_login",
         ":parsed_json",
         "//:node_modules/@bufbuild/protobuf",
-        "//:node_modules/openapi-fetch",
-        "//agentplane/app/frontend:schema",
     ],
 )
 
@@ -98,6 +96,12 @@ agentplane_vitest_test(
         "//:node_modules/vitest",
         "//agentplane/app/frontend/testing:watch",
     ],
+)
+
+ts_library(
+    name = "watch_collection",
+    srcs = ["watch_collection.ts"],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
 )
 
 ts_library(

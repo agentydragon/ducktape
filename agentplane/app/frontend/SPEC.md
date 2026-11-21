@@ -7,6 +7,23 @@ display states remain readable as `unknown (value)`; they do not become an allow
 successful state. Required identities and timestamps, decision verdicts, mutation version checks,
 and nonempty watch frames remain validated.
 
+The MCP servers page shows each available group's tool schema warnings. An unvalidated tool remains
+callable under its usual Action policy, but its arguments are not checked against that input schema.
+
+## Action previews
+
+The expanded Actions pane and receipt details show live Gmail subjects beside recorded thread IDs
+for label changes, and live Tana names beside recorded node IDs for node moves. Lookup is optional.
+The view can render the saved arguments immediately and keep showing them if the lookup fails.
+The page and Web Push worker both use the operator-authenticated Action Service facade.
+
+Calendar approvals can resolve an event or series title, schedule, scope and Google Calendar link
+through the operator facade. A missing preview leaves the request's calendar and event IDs
+visible. Calendar receipts use recorded results, with the complete request and response available
+from Raw.
+[Notification settings](actions/push/README.md) control whether a browser can show these names
+in a notification.
+
 ## Environment identity
 
 The Sandbox Status tab shows the currently requested `spec.identity` name. Only a Sandbox whose
@@ -37,7 +54,14 @@ reconnected watch must reach `CaughtUp` before its observations become current. 
 EnvironmentDown never imply idle. History supplies conversation content and the last completed
 turn's outcome. Materialization never establishes that a harness is running. A Session with no
 History summary appears with its materialization state. History-only records cannot add list
-members. Metadata and History watches refresh the joins without polling.
+members. The App metadata watch refreshes cached metadata; the scoped History watch supplies
+summary snapshots and changes for the visible and open Sessions. Dispatcher updates reselect the
+window without refetching App metadata. A replacement summary watch retains the previous view until
+its snapshot is ready.
+
+The Thread page uses Dispatcher placement to identify the exact Environment before History exists.
+Failed or unknown materialization and its reason are visible and command controls are disabled. Retained History remains visible when available. Missing identity
+is reported as unknown; only an identified Environment absent from a fresh inventory is deleted.
 
 Archiving refuses active turns, pending commands, running setup, harness startup and Unknown.
 The App mutation handler reads Dispatcher `GetSession` on each request before writing the archive

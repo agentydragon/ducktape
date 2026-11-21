@@ -4,7 +4,7 @@
 //! (`RenameLedger::mint`, seeded with the body's binding names); the
 //! minted `original → fresh` renames are submitted into the same ledger
 //! (scope: that plan's `Module`, origin: `ImportInduced`) and applied
-//! from the sealed projection in `lower_single_plan`.
+//! from the sealed projection in `prepare_module_emission`.
 
 use super::import_emit::{
     disambiguate_import_locals, disambiguate_residual_entry_import_locals, import_decl_for_plan,

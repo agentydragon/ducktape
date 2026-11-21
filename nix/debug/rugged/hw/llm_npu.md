@@ -108,36 +108,13 @@ success does not validate this llama.cpp service.
 - **Single chat session** only with `GGML_OPENVINO_STATEFUL_EXECUTION=1`
 - **No `--context-shift`** support
 
-## Nix-native feasibility
+## NPU compiler library in nixpkgs
 
-The working `llama-openvino:server` image is not doing anything exotic at the
-service layer: it runs `llama-server`, passes `/dev/accel` and `/dev/dri`, and
-sets `GGML_OPENVINO_DEVICE=NPU`. That part is easy to move into the NixOS module.
-
-The hard part is the OpenVINO payload. The Intel image uses OpenVINO
-`2026.0.0.20965.c6d6a13a886` from Intel's binary bundle and contains both:
-
-- `libopenvino_intel_npu_plugin.so`
-- `libopenvino_intel_npu_compiler.so`
-
-Nixpkgs OpenVINO was checked at pinned `2025.2.1` and nixpkgs master `2026.2.0`.
-Both provide the NPU plugin and NPU headers, including the Level Zero NPU API
-needed by llama.cpp, but neither provides `libopenvino_intel_npu_compiler.so`.
-
-Practical options:
-
-1. **Pinned OCI service**: easiest and most reproducible short term. Either keep
-   using the locally built image by digest or build/pull a pinned repo image and
-   wire it with `virtualisation.oci-containers`.
-2. **Nix-packaged Intel bundle**: medium effort. Fetch the exact Intel OpenVINO
-   tarball in Nix, expose the runtime libraries including the NPU compiler, and
-   build llama.cpp's OpenVINO backend against that payload.
-3. **Pure nixpkgs OpenVINO**: blocked for NPU until nixpkgs packages the NPU
-   compiler library or OpenVINO no longer needs it for the tested workloads.
-
-Update (2026-09-17): option 2 shipped, via #7127 —
-`nix/packages/{npu-compiler-libs,openvino-npu,llama-cpp-openvino}.nix`. See
-"Current setup" and "Real-hardware status" above for where that stands now.
+Nixpkgs OpenVINO (checked at pinned `2025.2.1` and master `2026.2.0`) provides
+the NPU plugin and the Level Zero NPU headers llama.cpp needs, but not
+`libopenvino_intel_npu_compiler.so`. `nix/packages/{npu-compiler-libs,openvino-npu}.nix`
+supply it (#7127). Plain nixpkgs OpenVINO stays blocked for the NPU until
+nixpkgs packages the compiler library or the tested workloads stop needing it.
 
 ## Dead ends encountered
 

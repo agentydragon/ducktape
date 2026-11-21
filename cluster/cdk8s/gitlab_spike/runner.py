@@ -7,10 +7,14 @@ from python.runfiles import Runfiles
 
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.helm import helm_release, https_helm_repository
+from cluster.cdk8s.namespaces import initial_request_annotations
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
+from cluster.cdk8s.vpa_policy import ContainerPolicy
 
 NAME = "gitlab-spike-runner"
 NAMESPACE = "gitlab-spike-ci"
+_CPU_REQUEST = "100m"
+_MEMORY_LIMIT = "512Mi"
 
 
 def chart(app: App) -> Chart:
@@ -56,6 +60,10 @@ def chart(app: App) -> Chart:
             "gitlabUrl": "http://gitlab-spike-webservice-default.gitlab-spike.svc:8181",
             "concurrent": 2,
             "checkInterval": 5,
+            # Opt in the runner manager Deployment. Peak startup working set was 142Mi.
+            "deploymentAnnotations": initial_request_annotations(
+                ContainerPolicy.cpu_and_memory_requests_only(f"{NAME}-gitlab-runner", memory_floor="160Mi")
+            ),
             "rbac": {"create": True, "clusterWideAccess": False},
             "serviceAccount": {"create": True, "name": NAME},
             "runners": {
@@ -65,7 +73,7 @@ def chart(app: App) -> Chart:
                 ).read_text(),
             },
             "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
-            "resources": {"requests": {"cpu": "100m", "memory": "128Mi"}, "limits": {"memory": "512Mi"}},
+            "resources": {"requests": {"cpu": _CPU_REQUEST, "memory": "128Mi"}, "limits": {"memory": _MEMORY_LIMIT}},
             "securityContext": {
                 "allowPrivilegeEscalation": False,
                 "readOnlyRootFilesystem": False,

@@ -3,12 +3,6 @@ load("//devinfra/python:defs.bzl", "py_library")
 package(default_visibility = ["//agentplane:__subpackages__"])
 
 py_library(
-    name = "transport",
-    srcs = ["transport.py"],
-    deps = ["@pypi//pydantic"],
-)
-
-py_library(
     name = "tagged",
     srcs = ["tagged.py"],
 )
@@ -26,21 +20,5 @@ py_library(
     deps = [
         "//devinfra/testing:undeclared_outputs",
         "@pypi//pytest",
-    ],
-)
-
-test_suite(
-    name = "harness_tests",
-    tests = [
-        "//agentplane/native/claude:test_active_turn",
-        "//agentplane/native/claude:test_connection_loss",
-        "//agentplane/native/claude:test_tools",
-        "//agentplane/native/claude:test_turns",
-        "//agentplane/native/codex:test_active_turn",
-        "//agentplane/native/codex:test_client_user_message_id",
-        "//agentplane/native/codex:test_connection_loss",
-        "//agentplane/native/codex:test_tools",
-        "//agentplane/native/codex:test_turns",
-        "//agentplane/native/testing:test_model_endpoint",
     ],
 )

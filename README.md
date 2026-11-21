@@ -25,11 +25,11 @@ bb run //devinfra/lint:buildifier
 
 ### Lint/Format Exclusions
 
-`path/** rules-lint-ignored=true` in `.gitattributes`, plus `ruff.toml` `exclude` for Python. Other pre-commit gitattributes: `filename-conventions-ignored=true` (skip kebab-case check; default on for `cluster/`, `terraform/`, `tf/` and a few others), `cluster-manifest-ignored=true` (non-manifest YAML under `cluster/k8s/`).
+`path/** rules-lint-ignored=true` in `.gitattributes`, plus `ruff.toml` `exclude` for Python. Other pre-commit gitattributes: `filename-conventions-ignored=true` (skip kebab-case check; default on for `cluster/`, `tf/` and a few others), `cluster-manifest-ignored=true` (non-manifest YAML under `cluster/k8s/`).
 
 ## CI
 
-GitHub Actions run `bazel {build,test}` (including lint) via `bbr` on a BuildBuddy remote runner — bazel-diff selects affected targets on PRs, `//...` on pushes and graph-wide changes — plus non-Bazel jobs (ansible-lint, nix, pre-commit, artifact publishing). See `.github/workflows/`.
+GitHub Actions run `bazel {build,test}` (including lint) via `bb remote` on a BuildBuddy remote runner — bazel-diff selects affected targets on PRs, `//...` on pushes and graph-wide changes — plus non-Bazel jobs (ansible-lint, nix, pre-commit, artifact publishing). See [where Bazel CI runs tests and why](devinfra/ci/README.md#where-bazel-ci-runs-tests) and [the workflows](.github/workflows/).
 
 ## Conventions
 

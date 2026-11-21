@@ -17,65 +17,13 @@ cutover left open.
 
 ## Target: one identity, three credential forms
 
-Operator decision, 2026-11-10, deployed ([rollout record](../docs/sandbox_identity_cutover_2026_11_12/README.md)).
-The Agentplane `Identity` is the one identity source. Each credential
-form below is an explicit, named mapping to one `Identity`:
-
-1. **X.509 SVID over mTLS**, for in-cluster workloads: a `WorkloadCredential` names the Identity.
-2. **OAuth2 access tokens issued by the MCP edge's own authorization server**
-   (`mcp_edge/internal/authserver`, dynamic client registration), for external MCP clients such as claude.ai:
-   a grant's Connection is bound to the Identity.
-3. **Kubernetes' own authentication**, only where a component talks to the Kubernetes API: as
-   itself, through Flux, or as an account by the proxy's impersonation.
-
-**Why (operator, 2026-11-10):** to keep Agentplane identity from being hard-baked to the Kubernetes
-API server. An identity that only a ServiceAccount and TokenReview can carry ties every caller to a
-cluster-hosted Pod; one the Agentplane issuer owns can also act for a central Session with no
-Sandbox, or later an enrolled external machine. The central-Session decoupling did not strictly
-require the cutover, but building it on ServiceAccounts would add a contract the cutover has to undo.
-
-A Kubernetes ServiceAccount TokenReview is not a second identity source for agents.
-
-**Backend services (operator, 2026-11-14: "One auth mode can fire off").** Every first-party
-service-to-service call authenticates its caller by a service SVID over mTLS with verified server
-TLS. This supersedes the 2026-11-10 decision to retain backend ServiceAccount tokens and TokenReview.
-Service SVIDs use SPIFFE paths that resolvers never map to an agent `Identity`; services read
-certificate and trust-bundle files, issued in-cluster by cert-manager from the workload CA. A service
-acting for an agent proves itself with its certificate and names the effective Identity in the typed
-[delegation envelope](../docs/delegated_authorization.md). Its identity never becomes the effective
-caller's grant. Kubernetes authentication remains only toward the Kubernetes API; operators retain
-app OIDC and MCP clients the edge's OAuth tokens.
-
-The [service-SVID authentication contract](../docs/workload_authentication.md#service-authorization-and-attribution)
-is deployed. The App's special Kubernetes bearer, its subjects/audience, ServiceAccount and
-token-request RBAC are retired. Receiver bearer admission, compatibility settings and TokenReview
-RBAC are removed.
-Live smoke-test issuer provisioning remains [frozen](task_freezer.md#live_smoke_operator_token--provision-a-live-test-operator-token);
-live callers supply an operator ID token through `AGENTPLANE_SYSTEM_TEST_TOKEN`.
-No Agentplane receiver admits a Kubernetes bearer.
-
-## What this separates
-
-The former Sandbox-owned ServiceAccount combined the roles below. ServiceAccounts remain for platform
-component identity and Kubernetes API access through explicit grants and impersonation:
-
-| Role                        | Former model                        | Target                                                                    |
-| --------------------------- | ----------------------------------- | ------------------------------------------------------------------------- |
-| Who the agent is            | ServiceAccount name and UID         | `Identity`                                                                |
-| What Agentplane enforces    | `PolicyBinding` to a ServiceAccount | `PolicyBinding` to an `Identity`; Kubernetes rule types leave `PolicySet` |
-| What Kubernetes enforces    | RoleBindings for the Pod's own SA   | `ServiceAccountGrant` on a ServiceAccount in the accounts namespace       |
-| Kubernetes reach            | The Pod's own SA                    | An account the identity has a use rule for, through the proxy; else none  |
-| Execution principal records | ServiceAccount UID                  | Identity name and UID, plus the workload incarnation as provenance        |
-
-Agentplane policy (`PolicySet`, `PolicyBinding`, `EgressCredential`) and the Kubernetes RBAC
-provisioner (`KubernetesRoleSet`, `ServiceAccountGrant`; subject a ServiceAccount) meet only in an
-`EgressCredential` whose source names a ServiceAccount. A workload `PolicyBinding.spec.subject`
-names exactly one `Identity`; component bindings may still name a ServiceAccount. A `PolicySet`
-bound to many identities is the set-of-identities mechanism, and a Flux-rendered binding per
-standing identity is the roster. `PolicySet` keeps `egress`, `action_auto_approve` and
-`session_inbox_access`, so every rule in a set is enforced for every binding of it. The
-impersonation credential keeps the name `EgressCredential`: to the agent it is one more credential
-it may present a placeholder for.
+Deployed (operator decision, 2026-11-10; [rollout record](../docs/sandbox_identity_cutover_2026_11_12/README.md)).
+The Agentplane `Identity` is the one identity source; each credential form is an explicit, named
+mapping to one `Identity`: an X.509 SVID over mTLS for in-cluster workloads
+([workload authentication](../docs/workload_authentication.md)), an OAuth2 access token from the MCP
+edge's own authorization server (`mcp_edge/internal/authserver`, dynamic client registration) for
+external MCP clients ([MCP edge](../mcp_edge/README.md#authority)), and Kubernetes' own authentication
+only toward the Kubernetes API ([agent RBAC](../../cluster/docs/agent_rbac.md#kubernetes-accounts)).
 
 ## Identity lifetime
 
@@ -95,20 +43,13 @@ Session's, its cleanup, and whether it ever needs a Kubernetes account of its ow
 [`SESSION_IDENTITY_PROVISIONING_DESIGN`](task_dag.md#session_identity_provisioning_design--session-scoped-identities);
 open question 7 below is the creator half.
 
-A managed account's `EgressCredential` and one-rule `PolicySet` are emitted by the controller and
-owned by the account, so a temporary account's grants, use bindings, credential and set go with its
-one clock ([Policy Controller SPEC](../policy_controller/SPEC.md#managed-serviceaccounts)).
-
-**Acting as an Identity, and what it implies** (operator, 2026-11-10).
+**Acting as an Identity, and what it implies** (operator, 2026-11-10). Acting in a workload is
+implied for its bound Identity, and explicit lifecycle control needs an explicit grant:
+[environment rules](../docs/adr_environment_rules.md).
 
 - **An Identity is the isolation boundary.** One Session has one Identity, and Sessions sharing an
   Identity have the same access by design; to isolate, use different Identities. An Identity is not
   assumed to be one-to-one with a Sandbox: several may be bound to it.
-- **Acting in a workload is implied for its bound Identity**: exec in a Sandbox or box, reading its
-  files, interacting with Sessions running as that Identity. A harness-hosted Session already
-  executes commands inside the Sandbox it runs in, as that Sandbox's Identity; any Session of
-  Identity I executing in any Sandbox bound to I is the transitive closure of that, and grants
-  nothing I does not already have.
 - **Messaging between Sessions of the same Identity is allowed** without a grant; a send may wake
   the recipient under its existing resume policy. Cross-Identity sends still require
   `session_inbox_access`, whose current targets are Sandboxes and their tags. The inbox owner and
@@ -117,51 +58,18 @@ one clock ([Policy Controller SPEC](../policy_controller/SPEC.md#managed-service
   [`SESSION_ACCESS_GROUPING_DESIGN`](task_dag.md#session_access_grouping_design--access-groups-across-independent-sessions-and-environments).
   Keep that enforcement and preserve component senders. Broader History reads remain held by
   `THREAD_READ_POLICY_DESIGN`.
-- **Explicit lifecycle control needs an explicit grant**: resume, suspend, delete or rebind a
-  Sandbox as a direct request, or bind a Session to an environment. A grant is a `PolicySet` rule bound to a
-  subject, which may be I if someone writes that binding, never implied. Explicit environment
-  rules, saying who may make these requests for which environments, are the mechanism:
-  [the `environment` rule type](../docs/adr_environment_rules.md) admits explicit `resume` and
-  native `bind_session`. The Identity inventory reads already admit Identity callers; the other
-  lifecycle operations remain ServiceAccount/operator-only ([remaining operations](environment_rules.md)), and automatic Identity wake uses the
-  existing target resume policy, outside the rule. Session creation without a binding remains a
-  separate, unresolved design.
 - **Action boxes:** creating one is lifecycle. Today it is granted explicitly, through the Action
   Service's `action_auto_approve` policy on the effective caller. **Open consideration** (operator,
   not decided): an agent creating its own boxes with automatic approval is a deliberate path, so MCP
   clients can run bash and use egress credentials; if needed it can stay a privileged component
   (the MCP edge, acting for the Identity through delegation, under policy) rather than the
   Identity's own SVID being allowed to create boxes directly.
-- Deleting an Identity revokes what a workload acting as it can do, since its credentials stop
-  resolving, but deletes no Sandbox, environment or box. `Sandbox.spec.identity` is a name-based
-  reference: a Sandbox acts as whichever Identity holds that name now, so a recreated same-named
-  Identity becomes its acting identity again, while the Sandbox's credentials, which pin the
-  incarnation's UID, stop working. A `WorkloadCredential`'s Identity `uid` is optional (operator,
-  2026-11-10): a record naming one binds that incarnation and fails closed on a replacement; a
-  record without one follows the live Identity of that name. Pinning is the requester's explicit
-  choice: the Sandbox Controller and the Action Service pin, a Flux-rendered standing record cannot
-  know the UID of an Identity applied beside it and does not.
 
 ## Changing an environment's identity
 
-`Sandbox.spec.identity` may be absent or changed while the environment is suspended or stopped, and
-a start requires one (operator, 2026-11-05). The SVID names the incarnation and verifiers resolve
-the identity through its `WorkloadCredential`, so a newly accepted binding gets a new credential ID.
-A suspended Firecracker launcher whose Identity changed is currently held with its checkpoint
-(`RunnerCredentialMismatch`); safe checkpoint discard and cold start under the new Identity are not
-implemented. An environment may therefore be created unbound and bound by the Session that attaches
-it.
-
-The same-environment invariant becomes "same identity": co-resident Sessions share one SVID, and
-admission refuses a Session whose identity differs. A change is admitted only when no Session of a
-different identity is placed on or attached to the environment (operator, 2026-11-05: never pull
-the identity out from under a harness); `EnvironmentService`, in Dispatcher's process, refuses with
-the Sessions named. A bypass such as `kubectl edit` is caught by Dispatcher's delivery and wake path
-refusing a mismatched Session, so it strands Sessions rather than re-attributing them. Workspace and
-state volumes carry over: the next identity reads whatever the previous one left, including anything
-privileged it wrote there. That is an accepted risk of choosing to change an environment's identity,
-not something the controllers prevent (operator, 2026-11-10); the app shows it when an identity
-change is requested, and the environment's page lists the identities it has run as.
+Deployed: [Environments SPEC § Identity](../environments/SPEC.md#identity) (admission, credentials),
+[EnvironmentService SPEC](../environments/internal/service/SPEC.md#caller-and-object-authorization)
+(rebind) and [Dispatcher SPEC](../session_dispatcher/dispatcher/SPEC.md#session-binding) (retained Sessions).
 
 ## Central Sessions with no environment
 
@@ -171,33 +79,18 @@ names its `Identity` at `CreateSession`; Dispatcher creates a Session-managed Id
 that the caller may use an existing one. Identity callers still cannot call `CreateSession`
 directly; caller-authorized child Sessions remain under `SESSION_SUBAGENT_DELEGATION`.
 
-The central sampler already delegates its History and service calls for the central Session as that
-Identity, while authenticating as its own component ServiceAccount. The remaining Action-backed
-slice is the central code-mode `tools` namespace; the sampler currently reuses the environment-bound
-executor tools separately. When an environment is attached, its Identity must match the Session's,
-and the Sandbox SVID resolves to `Sandbox.spec.identity`; the Sandbox contract and accepted rollout
-are recorded in the [rollout evidence](../docs/sandbox_identity_cutover_2026_11_12/README.md). The
-sampler's egress stays its own, and a Kubernetes account grant is inert until an environment is
-attached.
-
-## Kubernetes execution
-
-No kubeconfig (operator, 2026-11-05): the agent learns how to reach Kubernetes as it learns any
-credential. The rules endpoint lists what its identity may present, and each `EgressCredential`'s
-`description` names the apiserver host, the account and the `kubectl --server <host> --token
-<placeholder>` invocation; the catalog already renders that text (`kubernetes_accounts.py`). Nothing
-in the sandbox holds a real token, and a new grant needs no file to change. Only the local cluster
-is modelled.
+The central sampler already delegates its History and service calls, including the code-mode Action
+`tools` namespace, for the central Session as that Identity, authenticating with its own service
+SVID ([sampler SPEC](../sampler/SPEC.md#action-tools)); executor tools stay environment-bound. When
+an environment is attached, its Identity must match the Session's, and the Sandbox SVID resolves to
+`Sandbox.spec.identity`; the Sandbox contract and accepted rollout are recorded in the
+[rollout evidence](../docs/sandbox_identity_cutover_2026_11_12/README.md). The sampler's egress
+stays its own, and a Kubernetes account grant is inert until an environment is attached.
 
 ## MCP edge
 
-The edge resolves each OAuth grant to its Connection's current exact live Identity, authenticates to
-Action Service as its own component ServiceAccount, and delegates the Identity through the
-[delegated authorization](../docs/delegated_authorization.md) contract with typed Connection/grant
-provenance. Consent or rebind is operator-approved against an eligible live Identity in the policy
-namespace; the edge does not use a static name allowlist. No workload bearer is minted or forwarded.
-This is separate from the retained internal ServiceAccount authentication used by backend services
-calling one another.
+Deployed: [MCP edge § Authority](../mcp_edge/README.md#authority) and
+[Action Service SPEC § Caller admission and Connection authority](../action_service/SPEC.md#caller-admission-and-connection-authority).
 
 ## Operator UI
 
@@ -220,12 +113,11 @@ the operator end them (operator, 2026-11-05):
 
 ## Cutover
 
-**Current contract:** a Session executes as an exact Identity incarnation; workload-facing
-authorization and History reads use that recorded Identity. Platform components continue to
-authenticate as their own ServiceAccounts and retain actor/writer/sender provenance. A component
-acting for a workload names the Identity through
-[delegated authorization](../docs/delegated_authorization.md). Kubernetes access remains a separate
-account capability granted and enforced through egress impersonation.
+Deployed. A Session executes as its recorded Identity incarnation
+([Dispatcher SPEC](../session_dispatcher/dispatcher/SPEC.md#session-binding)); a component acting for a
+workload names the Identity through [delegated authorization](../docs/delegated_authorization.md);
+Kubernetes access is a separate account capability granted through egress impersonation
+([agent RBAC](../../cluster/docs/agent_rbac.md#kubernetes-accounts)).
 
 ## Open questions and tricky bits
 

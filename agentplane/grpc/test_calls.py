@@ -3,15 +3,13 @@
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
 
 import grpc
 import pytest
 import pytest_bazel
-from google.protobuf.empty_pb2 import Empty
 from grpc_health.v1 import health_pb2, health_pb2_grpc
 
-from agentplane.grpc.calls import call_unary, dial
+from agentplane.grpc.calls import dial
 from agentplane.grpc.serving import add_health
 from agentplane.testing.tls import issue_leaf, make_ca
 
@@ -85,18 +83,6 @@ def test_override_requires_a_dns_name_and_tls_credentials(server_name: str) -> N
 def test_override_cannot_be_ignored_on_plaintext_channels() -> None:
     with pytest.raises(ValueError, match="credentials"):
         dial("127.0.0.1:12345", server_name="localhost")
-
-
-async def test_unary_call_omits_bearer_metadata_for_svid_auth() -> None:
-    observed: list[tuple[tuple[str, str], ...]] = []
-
-    async def call(request: Empty, **kwargs: object) -> Empty:
-        observed.append(cast(tuple[tuple[str, str], ...], kwargs["metadata"]))
-        return request
-
-    await call_unary(call, Empty(), token_file=None, timeout_s=1)
-
-    assert observed == [()]
 
 
 if __name__ == "__main__":

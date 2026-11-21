@@ -75,7 +75,7 @@ class EnvironmentService(BaseModel):
 class Settings(BaseModel):
     """Static deployment configuration read from the Controller's required YAML file."""
 
-    config_file_env: ClassVar[str] = "AGENTPLANE_SANDBOX_CONTROLLER_CONFIG_FILE"
+    config_file_env: ClassVar[str] = "AGENTPLANE_ENVIRONMENTS_CONFIG_FILE"
     model_config = ConfigDict(extra="forbid")
 
     runner_gateway_tls: ClientTLS | None = None
@@ -92,7 +92,7 @@ class Settings(BaseModel):
     runner_gateway_target: str = Field(
         min_length=1,
         description="Where the controller quiesces a Sandbox's Runtime through the Environments proxy Service: "
-        "one target, or a template such as `sandbox-controller.{namespace}.svc:8082`.",
+        "one target, or a template such as `environments.{namespace}.svc:8082`.",
     )
     runner_gateway_token_file: Path | None = Field(
         default=None, description="Projected token path; absent when the controller presents its service SVID."

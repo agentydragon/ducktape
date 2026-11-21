@@ -39,7 +39,6 @@ from agentplane.sandboxes.testing.kubernetes import SANDBOX, SandboxCluster
 from agentplane.session_dispatcher.client import SandboxControlClient, SandboxRunner
 from agentplane.session_dispatcher.dispatcher.api.session import session_dispatcher_pb2
 from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient, accepted_session, admitted
-from agentplane.session_dispatcher.testing.gateway_process import GatewayProcess
 from agentplane.testing.scripted_model import ScriptedModel, ShellCall, Text
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -247,6 +246,17 @@ async def _next_model_request(model: ScriptedModel) -> Any:
         return await model.request()
 
 
+async def _submit_input(
+    http: httpx.AsyncClient, thread_id: str | UUID, sandbox_uid: str, *, command_id: str, text: str
+) -> httpx.Response:
+    response = await http.post(
+        f"/upstream/dispatcher/v1/sessions/{thread_id}:submitInput",
+        json={"sandbox": SANDBOX, "sandboxUid": sandbox_uid, "commandId": command_id, "text": text},
+    )
+    assert response.status_code == 200, response.text
+    return response
+
+
 async def _open_thread_with_seed(
     http: httpx.AsyncClient,
     model: ScriptedModel,
@@ -257,11 +267,7 @@ async def _open_thread_with_seed(
     seed_answer: str,
 ) -> str:
     thread_id = await _create(http, spec, uuid4(), sandbox_uid)
-    accepted = await http.post(
-        f"/upstream/dispatcher/v1/sessions/{thread_id}:submitInput",
-        json={"sandbox": SANDBOX, "sandboxUid": sandbox_uid, "commandId": "seed-input", "text": seed_prompt},
-    )
-    assert accepted.status_code == 200, accepted.text
+    await _submit_input(http, thread_id, sandbox_uid, command_id="seed-input", text=seed_prompt)
     request = await _next_model_request(model)
     assert request.user_texts[-1] == seed_prompt
     await model.reply(request, Text(seed_answer))
@@ -278,7 +284,7 @@ async def _open_thread_with_seed(
 
 @pytest.mark.parametrize("stop_mode", ["interrupt", "shutdown", "kill"])
 async def test_stream_recovery_reports_the_content_the_model_receives(
-    app: AppProcess,
+    http: httpx.AsyncClient,
     sandbox_runner: SandboxRunner,
     model: ScriptedModel,
     runner: RunningRunner,
@@ -289,75 +295,55 @@ async def test_stream_recovery_reports_the_content_the_model_receives(
 ) -> None:
     seed_prompt, seed_answer = "Remember the seed prompt", "SEED_ANSWER_FOR_STREAM_RECOVERY"
     partial = "PARTIAL_STREAM_MUST_STAY_UNFINISHED"
-    async with httpx.AsyncClient(
-        base_url=app.url, timeout=60, cookies=app.cookies, headers={"Origin": app.url}
-    ) as http:
-        thread_id = await _open_thread_with_seed(
-            http, model, spec, sandbox_runner.destination.target.uid, seed_prompt=seed_prompt, seed_answer=seed_answer
-        )
-        accepted = await http.post(
-            f"/upstream/dispatcher/v1/sessions/{thread_id}:submitInput",
-            json={
-                "sandbox": SANDBOX,
-                "sandboxUid": sandbox_runner.destination.target.uid,
-                "commandId": "streaming-input",
-                "text": "Start a long answer",
-            },
-        )
-        assert accepted.status_code == 200, accepted.text
-        request = await _next_model_request(model)
-        await model.hold_after_first_delta(request, Text(partial))
-        items, chunks = await _wait_for_folded_items(
-            history,
-            thread_id,
-            lambda rows, payloads: any(_folded_body(payloads, row.item.text_ref) == partial for row in rows.values()),
-        )
-        item_id = next(row.entity_id for row in items.values() if _folded_body(chunks, row.item.text_ref) == partial)
-        assert items[item_id].item.WhichOneof("completion") is None
-        turn_id, before = await _interrupt_and_recover(http, runner, sandbox_runner, thread_id, stop_mode)
-        accepted = await http.post(
-            f"/upstream/dispatcher/v1/sessions/{thread_id}:submitInput",
-            json={
-                "sandbox": SANDBOX,
-                "sandboxUid": sandbox_runner.destination.target.uid,
-                "commandId": "stream-recovery-input",
-                "text": "Continue after recovery",
-            },
-        )
-        assert accepted.status_code == 200, accepted.text
-        request = await _next_model_request(model)
-        recovery_cursor = await _wait_for_conversation_reconciliation(http, runner, thread_id, turn_id, before)
-        items, chunks = await _wait_for_folded_items(
-            history,
-            thread_id,
-            lambda rows, payloads: (
-                rows[item_id].revision_cursor >= recovery_cursor
-                and rows[item_id].item.recovery
-                in {event_pb2.RECOVERY_DISPOSITION_RETAINED, event_pb2.RECOVERY_DISPOSITION_ABSENT}
-            ),
-        )
-        assert _folded_body(chunks, items[item_id].item.text_ref) == partial
-        disposition = items[item_id].item.recovery
-        assert seed_prompt in request.user_texts
-        assert seed_answer in request.assistant_texts
-        assert (partial in request.assistant_texts) == (disposition == event_pb2.RECOVERY_DISPOSITION_RETAINED)
-        await model.reply(request, Text("STREAM_RECOVERY_DONE"))
-        await _stored_events(
-            http,
-            thread_id,
-            until="turn_completed",
-            matches=lambda entries: (
-                any(
-                    entry.event.WhichOneof("observation") == "item_completed"
-                    and entry.event.item_completed.WhichOneof("outcome") == "text"
-                    and entry.event.item_completed.text == "STREAM_RECOVERY_DONE"
-                    for entry in entries
-                )
-                and _turn_completed_for_command(
-                    entries, "stream-recovery-input", status=event_pb2.TURN_STATUS_COMPLETED
-                )
-            ),
-        )
+    sandbox_uid = sandbox_runner.destination.target.uid
+    thread_id = await _open_thread_with_seed(
+        http, model, spec, sandbox_uid, seed_prompt=seed_prompt, seed_answer=seed_answer
+    )
+    await _submit_input(http, thread_id, sandbox_uid, command_id="streaming-input", text="Start a long answer")
+    request = await _next_model_request(model)
+    await model.hold_after_first_delta(request, Text(partial))
+    items, chunks = await _wait_for_folded_items(
+        history,
+        thread_id,
+        lambda rows, payloads: any(_folded_body(payloads, row.item.text_ref) == partial for row in rows.values()),
+    )
+    item_id = next(row.entity_id for row in items.values() if _folded_body(chunks, row.item.text_ref) == partial)
+    assert items[item_id].item.WhichOneof("completion") is None
+    turn_id, before = await _interrupt_and_recover(http, runner, sandbox_runner, thread_id, stop_mode)
+    await _submit_input(
+        http, thread_id, sandbox_uid, command_id="stream-recovery-input", text="Continue after recovery"
+    )
+    request = await _next_model_request(model)
+    recovery_cursor = await _wait_for_conversation_reconciliation(http, runner, thread_id, turn_id, before)
+    items, chunks = await _wait_for_folded_items(
+        history,
+        thread_id,
+        lambda rows, payloads: (
+            rows[item_id].revision_cursor >= recovery_cursor
+            and rows[item_id].item.recovery
+            in {event_pb2.RECOVERY_DISPOSITION_RETAINED, event_pb2.RECOVERY_DISPOSITION_ABSENT}
+        ),
+    )
+    assert _folded_body(chunks, items[item_id].item.text_ref) == partial
+    disposition = items[item_id].item.recovery
+    assert seed_prompt in request.user_texts
+    assert seed_answer in request.assistant_texts
+    assert (partial in request.assistant_texts) == (disposition == event_pb2.RECOVERY_DISPOSITION_RETAINED)
+    await model.reply(request, Text("STREAM_RECOVERY_DONE"))
+    await _stored_events(
+        http,
+        thread_id,
+        until="turn_completed",
+        matches=lambda entries: (
+            any(
+                entry.event.WhichOneof("observation") == "item_completed"
+                and entry.event.item_completed.WhichOneof("outcome") == "text"
+                and entry.event.item_completed.text == "STREAM_RECOVERY_DONE"
+                for entry in entries
+            )
+            and _turn_completed_for_command(entries, "stream-recovery-input", status=event_pb2.TURN_STATUS_COMPLETED)
+        ),
+    )
 
 
 async def _interrupt_and_recover(
@@ -448,7 +434,7 @@ async def _wait_for_conversation_reconciliation(
 
 @pytest.mark.parametrize("stop_mode", ["interrupt", "shutdown", "kill"])
 async def test_tool_recovery_reports_context_without_repeating_side_effects(
-    app: AppProcess,
+    http: httpx.AsyncClient,
     sandbox_runner: SandboxRunner,
     model: ScriptedModel,
     runner: RunningRunner,
@@ -478,98 +464,76 @@ async def test_tool_recovery_reports_context_without_repeating_side_effects(
             event_pb2.RECOVERY_DISPOSITION_REVISED,
         }
     )
-    async with httpx.AsyncClient(
-        base_url=app.url, timeout=60, cookies=app.cookies, headers={"Origin": app.url}
-    ) as http:
-        thread_id = await _open_thread_with_seed(
-            http, model, spec, sandbox_runner.destination.target.uid, seed_prompt=seed_prompt, seed_answer=seed_answer
-        )
-        accepted = await http.post(
-            f"/upstream/dispatcher/v1/sessions/{thread_id}:submitInput",
-            json={
-                "sandbox": SANDBOX,
-                "sandboxUid": sandbox_runner.destination.target.uid,
-                "commandId": "tool-input",
-                "text": "Run the blocking side effect once",
-            },
-        )
-        assert accepted.status_code == 200, accepted.text
-        request = await _next_model_request(model)
-        await model.reply(request, ShellCall("inflight-tool", command))
-        async for attempt in AsyncRetrying(
-            stop=stop_after_delay(30), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
-        ):
-            with attempt:
-                assert ready.exists(), "the shell tool did not reach its controlled blocking point"
-        assert marker.read_text().splitlines() == [token]
-        items, chunks = await _wait_for_folded_items(
-            history,
-            thread_id,
-            lambda rows, payloads: any(
-                row.item.WhichOneof("completion") is None and token in _folded_body(payloads, row.item.arguments_ref)
-                for row in rows.values()
-            ),
-        )
-        incomplete_tools = [
-            row
-            for row in items.values()
-            if row.item.WhichOneof("completion") is None and token in _folded_body(chunks, row.item.arguments_ref)
-        ]
-        assert len(incomplete_tools) == 1
-        assert _folded_body(chunks, incomplete_tools[0].item.output_ref) == ""
+    sandbox_uid = sandbox_runner.destination.target.uid
+    thread_id = await _open_thread_with_seed(
+        http, model, spec, sandbox_uid, seed_prompt=seed_prompt, seed_answer=seed_answer
+    )
+    await _submit_input(http, thread_id, sandbox_uid, command_id="tool-input", text="Run the blocking side effect once")
+    request = await _next_model_request(model)
+    await model.reply(request, ShellCall("inflight-tool", command))
+    async for attempt in AsyncRetrying(
+        stop=stop_after_delay(30), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
+    ):
+        with attempt:
+            assert ready.exists(), "the shell tool did not reach its controlled blocking point"
+    assert marker.read_text().splitlines() == [token]
+    items, chunks = await _wait_for_folded_items(
+        history,
+        thread_id,
+        lambda rows, payloads: any(
+            row.item.WhichOneof("completion") is None and token in _folded_body(payloads, row.item.arguments_ref)
+            for row in rows.values()
+        ),
+    )
+    incomplete_tools = [
+        row
+        for row in items.values()
+        if row.item.WhichOneof("completion") is None and token in _folded_body(chunks, row.item.arguments_ref)
+    ]
+    assert len(incomplete_tools) == 1
+    assert _folded_body(chunks, incomplete_tools[0].item.output_ref) == ""
 
-        item_id = incomplete_tools[0].entity_id
-        turn_id, before = await _interrupt_and_recover(http, runner, sandbox_runner, thread_id, stop_mode)
-        accepted = await http.post(
-            f"/upstream/dispatcher/v1/sessions/{thread_id}:submitInput",
-            json={
-                "sandbox": SANDBOX,
-                "sandboxUid": sandbox_runner.destination.target.uid,
-                "commandId": "tool-recovery-input",
-                "text": recovery_prompt,
-            },
-        )
-        assert accepted.status_code == 200, accepted.text
-        request = await _next_model_request(model)
-        recovery_cursor = await _wait_for_conversation_reconciliation(http, runner, thread_id, turn_id, before)
-        items, chunks = await _wait_for_folded_items(
-            history,
-            thread_id,
-            lambda rows, payloads: (
-                rows[item_id].revision_cursor >= recovery_cursor and rows[item_id].item.recovery in expected
-            ),
-        )
-        recovered = items[item_id]
-        assert not (recovered.item.WhichOneof("completion") == "tool" and recovered.item.tool.succeeded)
-        if stop_mode == "kill":
-            assert recovered.item.WhichOneof("completion") is None
-        assert marker.read_text().splitlines() == [token]
-        assert seed_prompt in request.user_texts
-        assert seed_answer in request.assistant_texts
-        assert ("inflight-tool" in request.tool_calls) == (
-            recovered.item.recovery != event_pb2.RECOVERY_DISPOSITION_ABSENT
-        )
-        recovered_output = _folded_body(chunks, recovered.item.output_ref)
-        # Codex's display history cannot establish the synthetic model output of an
-        # interrupted command. Preserve the observed output without presenting it as retained.
-        if not codex and recovered_output and recovered.item.recovery != event_pb2.RECOVERY_DISPOSITION_ABSENT:
-            assert any(output.contains(recovered_output) for output in request.tool_outputs)
-        assert marker.read_text().splitlines() == [token]
-        await model.reply(request, Text("TOOL_RECOVERY_DONE"))
-        await _stored_events(
-            http,
-            thread_id,
-            until="turn_completed",
-            matches=lambda entries: _turn_completed_for_command(
-                entries, "tool-recovery-input", status=event_pb2.TURN_STATUS_COMPLETED
-            ),
-        )
-        assert marker.read_text().splitlines() == [token]
+    item_id = incomplete_tools[0].entity_id
+    turn_id, before = await _interrupt_and_recover(http, runner, sandbox_runner, thread_id, stop_mode)
+    await _submit_input(http, thread_id, sandbox_uid, command_id="tool-recovery-input", text=recovery_prompt)
+    request = await _next_model_request(model)
+    recovery_cursor = await _wait_for_conversation_reconciliation(http, runner, thread_id, turn_id, before)
+    items, chunks = await _wait_for_folded_items(
+        history,
+        thread_id,
+        lambda rows, payloads: (
+            rows[item_id].revision_cursor >= recovery_cursor and rows[item_id].item.recovery in expected
+        ),
+    )
+    recovered = items[item_id]
+    assert not (recovered.item.WhichOneof("completion") == "tool" and recovered.item.tool.succeeded)
+    if stop_mode == "kill":
+        assert recovered.item.WhichOneof("completion") is None
+    assert marker.read_text().splitlines() == [token]
+    assert seed_prompt in request.user_texts
+    assert seed_answer in request.assistant_texts
+    assert ("inflight-tool" in request.tool_calls) == (recovered.item.recovery != event_pb2.RECOVERY_DISPOSITION_ABSENT)
+    recovered_output = _folded_body(chunks, recovered.item.output_ref)
+    # Codex's display history cannot establish the synthetic model output of an
+    # interrupted command. Preserve the observed output without presenting it as retained.
+    if not codex and recovered_output and recovered.item.recovery != event_pb2.RECOVERY_DISPOSITION_ABSENT:
+        assert any(output.contains(recovered_output) for output in request.tool_outputs)
+    assert marker.read_text().splitlines() == [token]
+    await model.reply(request, Text("TOOL_RECOVERY_DONE"))
+    await _stored_events(
+        http,
+        thread_id,
+        until="turn_completed",
+        matches=lambda entries: _turn_completed_for_command(
+            entries, "tool-recovery-input", status=event_pb2.TURN_STATUS_COMPLETED
+        ),
+    )
+    assert marker.read_text().splitlines() == [token]
 
 
 @pytest.mark.parametrize("stop_mode", ["interrupt", "shutdown", "kill"])
 async def test_resume_after_tool_completion_preserves_the_result_and_does_not_repeat_it(
-    app: AppProcess,
+    http: httpx.AsyncClient,
     sandbox_runner: SandboxRunner,
     model: ScriptedModel,
     runner: RunningRunner,
@@ -588,105 +552,85 @@ async def test_resume_after_tool_completion_preserves_the_result_and_does_not_re
         f"printf '%s\\n' {shlex.quote(token)} >> {shlex.quote(str(marker))}; printf '%s' {shlex.quote(tool_output)}"
     )
     partial = "PARTIAL_AFTER_COMPLETED_TOOL"
-    async with httpx.AsyncClient(
-        base_url=app.url, timeout=60, cookies=app.cookies, headers={"Origin": app.url}
-    ) as http:
-        thread_id = await _open_thread_with_seed(
-            http, model, spec, sandbox_runner.destination.target.uid, seed_prompt=seed_prompt, seed_answer=seed_answer
-        )
-        accepted = await http.post(
-            f"/upstream/dispatcher/v1/sessions/{thread_id}:submitInput",
-            json={
-                "sandbox": SANDBOX,
-                "sandboxUid": sandbox_runner.destination.target.uid,
-                "commandId": "completed-tool-input",
-                "text": "Run one completed tool",
-            },
-        )
-        assert accepted.status_code == 200, accepted.text
-        request = await _next_model_request(model)
-        await model.reply(request, ShellCall("completed-tool", command))
-        continuation = await _next_model_request(model)
-        assert any(result.contains(tool_output) for result in continuation.tool_outputs)
-        assert marker.read_text().splitlines() == [token]
-        await model.hold_after_first_delta(continuation, Text(partial))
-        await _stored_events(
-            http,
-            thread_id,
-            until="text_delta",
-            matches=lambda entries: any(
-                entry.event.WhichOneof("observation") == "text_delta" and entry.event.text_delta.text == partial
-                for entry in entries
-            ),
-        )
-        await _wait_for_folded_items(
+    sandbox_uid = sandbox_runner.destination.target.uid
+    thread_id = await _open_thread_with_seed(
+        http, model, spec, sandbox_uid, seed_prompt=seed_prompt, seed_answer=seed_answer
+    )
+    await _submit_input(http, thread_id, sandbox_uid, command_id="completed-tool-input", text="Run one completed tool")
+    request = await _next_model_request(model)
+    await model.reply(request, ShellCall("completed-tool", command))
+    continuation = await _next_model_request(model)
+    assert any(result.contains(tool_output) for result in continuation.tool_outputs)
+    assert marker.read_text().splitlines() == [token]
+    await model.hold_after_first_delta(continuation, Text(partial))
+    await _stored_events(
+        http,
+        thread_id,
+        until="text_delta",
+        matches=lambda entries: any(
+            entry.event.WhichOneof("observation") == "text_delta" and entry.event.text_delta.text == partial
+            for entry in entries
+        ),
+    )
+    await _wait_for_folded_items(
+        history,
+        thread_id,
+        lambda rows, payloads: (
+            any(
+                row.item.WhichOneof("completion") == "tool"
+                and row.item.tool.succeeded
+                and tool_output in _folded_body(payloads, row.item.output_ref)
+                for row in rows.values()
+            )
+            and any(
+                row.item.WhichOneof("completion") is None and _folded_body(payloads, row.item.text_ref) == partial
+                for row in rows.values()
+            )
+        ),
+    )
+
+    turn_id, before = await _interrupt_and_recover(http, runner, sandbox_runner, thread_id, stop_mode)
+    items, chunks = await _folded_items(history, thread_id)
+    completed_tools = [
+        row
+        for row in items.values()
+        if row.item.WhichOneof("completion") == "tool" and tool_output in _folded_body(chunks, row.item.output_ref)
+    ]
+    assert len(completed_tools) == 1
+    assert completed_tools[0].item.tool.succeeded
+    await _submit_input(http, thread_id, sandbox_uid, command_id="completed-tool-recovery-input", text=recovery_prompt)
+    request = await _next_model_request(model)
+    recovery_cursor = await _wait_for_conversation_reconciliation(http, runner, thread_id, turn_id, before)
+    async with request._exchange as exchange:
+        assert seed_prompt in request.user_texts
+        assert seed_answer in request.assistant_texts
+        items, chunks = await _wait_for_folded_items(
             history,
             thread_id,
             lambda rows, payloads: (
-                any(
-                    row.item.WhichOneof("completion") == "tool"
-                    and row.item.tool.succeeded
-                    and tool_output in _folded_body(payloads, row.item.output_ref)
-                    for row in rows.values()
-                )
-                and any(
-                    row.item.WhichOneof("completion") is None and _folded_body(payloads, row.item.text_ref) == partial
-                    for row in rows.values()
-                )
+                rows[completed_tools[0].entity_id].revision_cursor >= recovery_cursor
+                and rows[completed_tools[0].entity_id].item.recovery
+                in {event_pb2.RECOVERY_DISPOSITION_RETAINED, event_pb2.RECOVERY_DISPOSITION_ABSENT}
             ),
         )
-
-        turn_id, before = await _interrupt_and_recover(http, runner, sandbox_runner, thread_id, stop_mode)
-        items, chunks = await _folded_items(history, thread_id)
-        completed_tools = [
-            row
-            for row in items.values()
-            if row.item.WhichOneof("completion") == "tool" and tool_output in _folded_body(chunks, row.item.output_ref)
-        ]
-        assert len(completed_tools) == 1
-        assert completed_tools[0].item.tool.succeeded
-        accepted = await http.post(
-            f"/upstream/dispatcher/v1/sessions/{thread_id}:submitInput",
-            json={
-                "sandbox": SANDBOX,
-                "sandboxUid": sandbox_runner.destination.target.uid,
-                "commandId": "completed-tool-recovery-input",
-                "text": recovery_prompt,
-            },
-        )
-        assert accepted.status_code == 200, accepted.text
-        request = await _next_model_request(model)
-        recovery_cursor = await _wait_for_conversation_reconciliation(http, runner, thread_id, turn_id, before)
-        async with request._exchange as exchange:
-            assert seed_prompt in request.user_texts
-            assert seed_answer in request.assistant_texts
-            items, chunks = await _wait_for_folded_items(
-                history,
-                thread_id,
-                lambda rows, payloads: (
-                    rows[completed_tools[0].entity_id].revision_cursor >= recovery_cursor
-                    and rows[completed_tools[0].entity_id].item.recovery
-                    in {event_pb2.RECOVERY_DISPOSITION_RETAINED, event_pb2.RECOVERY_DISPOSITION_ABSENT}
-                ),
-            )
-            recovered_tool = items[completed_tools[0].entity_id]
-            assert recovered_tool.item.WhichOneof("completion") == "tool"
-            assert recovered_tool.item.tool.succeeded
-            assert tool_output in _folded_body(chunks, recovered_tool.item.output_ref)
-            assert any(result.contains(tool_output) for result in request.tool_outputs) == (
-                recovered_tool.item.recovery == event_pb2.RECOVERY_DISPOSITION_RETAINED
-            )
-            assert marker.read_text().splitlines() == [token]
-            await exchange.send(*model.stream(request, [Text("COMPLETED_TOOL_RECOVERY_DONE")]))
-        await _stored_events(
-            http,
-            thread_id,
-            until="turn_completed",
-            matches=lambda entries: _turn_completed_for_command(
-                entries, "completed-tool-recovery-input", status=event_pb2.TURN_STATUS_COMPLETED
-            ),
+        recovered_tool = items[completed_tools[0].entity_id]
+        assert recovered_tool.item.WhichOneof("completion") == "tool"
+        assert recovered_tool.item.tool.succeeded
+        assert tool_output in _folded_body(chunks, recovered_tool.item.output_ref)
+        assert any(result.contains(tool_output) for result in request.tool_outputs) == (
+            recovered_tool.item.recovery == event_pb2.RECOVERY_DISPOSITION_RETAINED
         )
         assert marker.read_text().splitlines() == [token]
+        await exchange.send(*model.stream(request, [Text("COMPLETED_TOOL_RECOVERY_DONE")]))
+    await _stored_events(
+        http,
+        thread_id,
+        until="turn_completed",
+        matches=lambda entries: _turn_completed_for_command(
+            entries, "completed-tool-recovery-input", status=event_pb2.TURN_STATUS_COMPLETED
+        ),
+    )
+    assert marker.read_text().splitlines() == [token]
 
 
 async def test_replica_commands_and_history_reads_survive_owner_replica_exit(
@@ -694,8 +638,7 @@ async def test_replica_commands_and_history_reads_survive_owner_replica_exit(
     db_url: str,
     history_service: GoHistoryService,
     sandbox: SandboxCluster,
-    gateway_service: GatewayProcess,
-    app_token_file: Path,
+    gateway_access: GatewayAccess,
     http: httpx.AsyncClient,
     runner: RunningRunner,
     session_dispatcher: SessionDispatcherClient,
@@ -703,11 +646,8 @@ async def test_replica_commands_and_history_reads_survive_owner_replica_exit(
     spec: session_pb2.SessionSpec,
 ) -> None:
     sandboxes = SandboxesAccess(kubeconfig=sandbox.server.kubeconfig, namespace=sandbox.namespace)
-    gateway = GatewayAccess(
-        gateway_service.target, None, gateway_service.client_tls, gateway_service.environment_service.ca
-    )
     async with (
-        app_process(db_url, history_service, sandboxes=sandboxes, gateway=gateway) as survivor,
+        app_process(db_url, history_service, sandboxes=sandboxes, gateway=gateway_access) as survivor,
         httpx.AsyncClient(
             base_url=survivor.url, cookies=survivor.cookies, headers={"Origin": survivor.url}, timeout=60
         ) as survivor_http,
@@ -721,11 +661,7 @@ async def test_replica_commands_and_history_reads_survive_owner_replica_exit(
                 response = await survivor_http.get(f"/upstream/app/v1/threads/{thread}")
                 assert response.status_code == 200, response.text
 
-        first_submit = await survivor_http.post(
-            f"/upstream/dispatcher/v1/sessions/{thread}:submitInput",
-            json={"sandbox": SANDBOX, "sandboxUid": sandbox.uid, "commandId": "input-1", "text": "FIRST_REPLICA_TURN"},
-        )
-        assert first_submit.status_code == 200, first_submit.text
+        await _submit_input(survivor_http, thread, sandbox.uid, command_id="input-1", text="FIRST_REPLICA_TURN")
         await model.reply(await model.request(), Text("FIRST_REPLICA_TURN"))
         first = await _stored_events(
             survivor_http,
@@ -738,11 +674,7 @@ async def test_replica_commands_and_history_reads_survive_owner_replica_exit(
 
         await app.kill()
         assert app.process.returncode == -signal.SIGKILL
-        second_submit = await survivor_http.post(
-            f"/upstream/dispatcher/v1/sessions/{thread}:submitInput",
-            json={"sandbox": SANDBOX, "sandboxUid": sandbox.uid, "commandId": "input-2", "text": "AFTER_OWNER_EXIT"},
-        )
-        assert second_submit.status_code == 200, second_submit.text
+        await _submit_input(survivor_http, thread, sandbox.uid, command_id="input-2", text="AFTER_OWNER_EXIT")
         request = await model.request()
         await model.reply(request, Text("AFTER_OWNER_EXIT"))
         seen = await _stored_events(
@@ -787,16 +719,9 @@ async def test_open_and_inputs_reach_the_runner_while_history_lags(
     opened_cursor = runner.journal_cursor(str(thread_id))
     assert opened_cursor == 0
     async with history.fence_ingress(thread_id):
-        seed_response = await http.post(
-            f"/upstream/dispatcher/v1/sessions/{thread_id}:submitInput",
-            json={
-                "sandbox": SANDBOX,
-                "sandboxUid": sandbox_runner.destination.target.uid,
-                "commandId": "seed-before-archive",
-                "text": "SEED",
-            },
+        seed_response = await _submit_input(
+            http, thread_id, sandbox_runner.destination.target.uid, command_id="seed-before-archive", text="SEED"
         )
-        assert seed_response.status_code == 200, seed_response.text
         seed = await admitted(
             session_dispatcher, ParseDict(seed_response.json()["dispatch"], session_dispatcher_pb2.Dispatch())
         )
@@ -822,16 +747,9 @@ async def test_open_and_inputs_reach_the_runner_while_history_lags(
             with attempt:
                 (summary,) = await sandbox_runner.list_sessions()
                 assert summary.environment_hosted.harness.state == harness_host_pb2.HarnessAttachment.STATE_DETACHED
-        receipt_response = await http.post(
-            f"/upstream/dispatcher/v1/sessions/{thread_id}:submitInput",
-            json={
-                "sandbox": SANDBOX,
-                "sandboxUid": sandbox_runner.destination.target.uid,
-                "commandId": "after-archive-lag",
-                "text": "CONTINUE",
-            },
+        receipt_response = await _submit_input(
+            http, thread_id, sandbox_runner.destination.target.uid, command_id="after-archive-lag", text="CONTINUE"
         )
-        assert receipt_response.status_code == 200, receipt_response.text
         receipt = await admitted(
             session_dispatcher, ParseDict(receipt_response.json()["dispatch"], session_dispatcher_pb2.Dispatch())
         )

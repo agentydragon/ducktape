@@ -12,17 +12,17 @@ in our worker in `haku-sandbox` (`config.type: self_hosted`). Sibling:
 
 ## Provisioned with `ant`, not Terraform
 
-`provision.sh` + `haku.{environment,agent,deployment}.yaml` via `ant`. The
-`modus-agendi/anthropic-claude-managed-agents` provider (v1.1.0 / `main` as of 2026-07-03) always
-sends `config.networking`, which the API rejects for `type = "self_hosted"`
+`provision.sh` + `haku.{environment,agent,deployment}.yaml` via `ant`. The community
+`modus-agendi/anthropic-claude-managed-agents` OpenTofu provider always sends `config.networking`,
+which the API rejects for `type = "self_hosted"`
 (`config.networking: Extra inputs are not permitted`); egress here is ours (`haku-egress-proxy` +
 CCNP). A TF migration (`tf/gitops/haku-self-hosted-agent`, PR #2673) never applied and was
-reverted. Revisit only once the provider makes `networking` optional for `self_hosted`.
+reverted. The provider is dormant and still has no `self_hosted` environment type
+([checked 2026-11-21](../anthropic_hosted/README.md#why-the-terraform-root-was-retired)).
 
 The former shared vault and MCP credentials were deleted 2026-09-30; the `haku-cloud-agent-ids`
 Secret's vault ID is invalid. Reactivation needs a fresh vault passed as
-`HAKU_MANAGED_AGENT_VAULT_ID` to `provision.sh`. Toolset parity with the historical cloud agent is
-enforced by `//haku/runtime/x/managed_agent:test_agent_config_ssot`.
+`HAKU_MANAGED_AGENT_VAULT_ID` to `provision.sh`.
 
 ## Worker
 

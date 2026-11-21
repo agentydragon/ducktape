@@ -20,12 +20,12 @@ from props.db.models import AgentRun, AgentRunStatus, LLMRequest
 from props.llm_proxy import routes
 from props.llm_proxy.app import create_app
 from props.orchestration.agent_credentials import ensure_agent_role
-from props.testing.constants import DEFAULT_TEST_MODEL
 from props.testing.fixtures.runs import FAKE_CRITIC_DIGEST, ensure_fake_agent_definitions
+from props.testing.models import DEFAULT_TEST_MODEL
 
-# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep //props/testing/fixtures:db
-pytest_plugins = ("util.testing.postgres_fixtures", "props.testing.fixtures.db")
+pytest_plugins = ("testing.postgres_fixtures", "props.testing.fixtures.db")
 
 
 class FakeUpstream:
@@ -47,6 +47,11 @@ class FakeUpstream:
 class TimeoutUpstream(FakeUpstream):
     async def post(self, url: str, **kwargs: Any) -> httpx.Response:
         raise httpx.TimeoutException("timed out")
+
+
+class ConnectErrorUpstream(FakeUpstream):
+    async def post(self, url: str, **kwargs: Any) -> httpx.Response:
+        raise httpx.ConnectError("upstream unreachable")
 
 
 def _authorization(username: str, password: str) -> dict[str, str]:
@@ -98,15 +103,24 @@ async def test_async_auth_route_and_logging(synced_db: Database, monkeypatch: py
             )
             assert timeout_response.status_code == 504
 
+            monkeypatch.setattr(routes.httpx, "AsyncClient", ConnectErrorUpstream)
+            connect_error_response = client.post(
+                "/v1/responses",
+                headers=_authorization(credentials.username, credentials.password),
+                json={"model": DEFAULT_TEST_MODEL, "input": "third"},
+            )
+            assert connect_error_response.status_code == 502
+
         async with proxy_db.session() as session:
             requests = (await session.scalars(select(LLMRequest).where(LLMRequest.agent_run_id == run_id))).all()
-            assert len(requests) == 2
+            assert len(requests) == 3
             successful = next(request for request in requests if request.error is None)
             assert successful.input_tokens == 3
             assert successful.output_tokens == 2
             assert successful.request_body["input"] == "hello"
             timed_out = next(request for request in requests if request.error == "Upstream timeout")
             assert timed_out.request_body["input"] == "second"
+            assert any(request.error == "upstream unreachable" for request in requests)
 
 
 if __name__ == "__main__":

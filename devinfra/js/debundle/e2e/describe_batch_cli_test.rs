@@ -1,7 +1,7 @@
 //! A batch uses the same query semantics as separate real CLI invocations.
 
 use debundle_e2e_graph_support::GraphFixture;
-use debundle_e2e_support::{TreeFixture, debundler_path, run_tree_graph_fixture};
+use debundle_e2e_support::{TreeFixture, debundler_path, process, run_tree_graph_fixture};
 use serde_json::{Value, json};
 use std::fs;
 use std::path::Path;
@@ -111,22 +111,14 @@ fn describe_scopes_joint_module_roots_from_tree_config() {
     assert!(run.result.status.success(), "{}", run.result.stderr);
 
     let unit = joint_scope_command(&run, &["describe", "unit:1"]);
-    assert!(
-        unit.status.success(),
-        "{}",
-        String::from_utf8_lossy(&unit.stderr)
-    );
+    process::assert_success(&unit);
     let unit: Value = serde_json::from_slice(&unit.stdout).unwrap();
     assert_eq!(unit["source_unit_ids"], json!(["unit:1"]));
     let logical_id = unit["source_units"][0]["destination"]
         .as_str()
         .expect("source-unit destination key");
     let logical = joint_scope_command(&run, &["describe", logical_id]);
-    assert!(
-        logical.status.success(),
-        "{}",
-        String::from_utf8_lossy(&logical.stderr)
-    );
+    process::assert_success(&logical);
     let logical: Value = serde_json::from_slice(&logical.stdout).unwrap();
     assert_eq!(logical["query"]["kind"], "module");
     assert!(
@@ -140,11 +132,7 @@ fn describe_scopes_joint_module_roots_from_tree_config() {
         .as_str()
         .expect("source-unit atomic group");
     let atomic = joint_scope_command(&run, &["describe", atomic_id]);
-    assert!(
-        atomic.status.success(),
-        "{}",
-        String::from_utf8_lossy(&atomic.stderr)
-    );
+    process::assert_success(&atomic);
     let atomic: Value = serde_json::from_slice(&atomic.stdout).unwrap();
     assert_eq!(atomic["query"]["kind"], "atomic_group");
     assert!(
@@ -162,11 +150,7 @@ fn describe_scopes_joint_module_roots_from_tree_config() {
     assert!(!homes.iter().any(|home| home["name"] == "ForeignCallback"));
 
     let target = joint_scope_command(&run, &["describe", "unit:0"]);
-    assert!(
-        target.status.success(),
-        "{}",
-        String::from_utf8_lossy(&target.stderr)
-    );
+    process::assert_success(&target);
     let target: Value = serde_json::from_slice(&target.stdout).unwrap();
     assert_eq!(target["source_unit_ids"], json!(["unit:0"]));
     let target_homes = target["binding_homes"].as_array().unwrap();
@@ -177,31 +161,19 @@ fn describe_scopes_joint_module_roots_from_tree_config() {
     );
 
     let leaf = joint_scope_command(&run, &["describe", "leaf"]);
-    assert!(
-        leaf.status.success(),
-        "{}",
-        String::from_utf8_lossy(&leaf.stderr)
-    );
+    process::assert_success(&leaf);
     let leaf: Value = serde_json::from_slice(&leaf.stdout).unwrap();
     assert_eq!(leaf["query"]["kind"], "module");
     assert_eq!(leaf["query"]["value"], "left/leaf");
     assert_eq!(leaf["source_unit_ids"], json!(["unit:1"]));
 
     let helper = joint_scope_command(&run, &["describe", "right/helper"]);
-    assert!(
-        helper.status.success(),
-        "{}",
-        String::from_utf8_lossy(&helper.stderr)
-    );
+    process::assert_success(&helper);
     let helper: Value = serde_json::from_slice(&helper.stdout).unwrap();
     assert_eq!(helper["source_unit_ids"], json!(["unit:0"]));
 
     let callback = joint_scope_command(&run, &["describe", "callback"]);
-    assert!(
-        callback.status.success(),
-        "{}",
-        String::from_utf8_lossy(&callback.stderr)
-    );
+    process::assert_success(&callback);
     let callback: Value = serde_json::from_slice(&callback.stdout).unwrap();
     assert_eq!(callback["query"]["kind"], "binding");
     assert!(callback.get("module_proposals").is_none());
@@ -215,11 +187,7 @@ fn describe_scopes_joint_module_roots_from_tree_config() {
     .unwrap();
     let batch_path = batch_path.to_str().unwrap();
     let batch = joint_scope_command(&run, &["describe", "--batch", batch_path]);
-    assert!(
-        batch.status.success(),
-        "{}",
-        String::from_utf8_lossy(&batch.stderr)
-    );
+    process::assert_success(&batch);
     let batch: Value = serde_json::from_slice(&batch.stdout).unwrap();
     assert_eq!(batch["results"].as_array().unwrap().len(), 4);
     assert_eq!(batch["results"][0]["source_unit_ids"], json!(["unit:1"]));
@@ -279,22 +247,14 @@ fn describe_resolves_joint_relations_and_anonymous_claims_across_roots() {
     assert!(run.result.status.success(), "{}", run.result.stderr);
 
     let consumer = joint_scope_command(&run, &["describe", "right/consumer"]);
-    assert!(
-        consumer.status.success(),
-        "{}",
-        String::from_utf8_lossy(&consumer.stderr)
-    );
+    process::assert_success(&consumer);
     let consumer: Value = serde_json::from_slice(&consumer.stdout).unwrap();
     assert_eq!(consumer["query"]["kind"], "module");
     assert_eq!(consumer["query"]["value"], "right/consumer");
     assert_eq!(consumer["source_unit_ids"], json!(["unit:1"]));
 
     let anonymous = joint_scope_command(&run, &["describe", "right/log"]);
-    assert!(
-        anonymous.status.success(),
-        "{}",
-        String::from_utf8_lossy(&anonymous.stderr)
-    );
+    process::assert_success(&anonymous);
     let anonymous: Value = serde_json::from_slice(&anonymous.stdout).unwrap();
     assert_eq!(anonymous["query"]["kind"], "module");
     assert_eq!(anonymous["query"]["value"], "right/log");
@@ -323,11 +283,7 @@ fn describe_accepts_verified_exact_chunk_subtree_with_tree_config() {
     let modules = root.join("modules/home");
     let config = root.join("spec_config.yaml");
     let leaf = joint_scope_command_with_roots(&run, &["describe", "leaf"], &modules, &config);
-    assert!(
-        leaf.status.success(),
-        "{}",
-        String::from_utf8_lossy(&leaf.stderr)
-    );
+    process::assert_success(&leaf);
     let leaf: Value = serde_json::from_slice(&leaf.stdout).unwrap();
     assert_eq!(leaf["query"]["kind"], "module");
     assert_eq!(leaf["query"]["value"], "home/leaf");
@@ -471,11 +427,7 @@ fn ndjson_is_one_complete_report_per_requested_id() {
     let ids = ["seed", "value", "unit:2"];
     let path = batch_file(&fixture, &ids);
     let output = fixture.command(&["describe", "--batch", &path, "--format", "ndjson"]);
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    process::assert_success(&output);
     let lines: Vec<Value> = String::from_utf8(output.stdout)
         .unwrap()
         .lines()
@@ -559,11 +511,7 @@ fn resolved_invocation_replays_the_explicit_batch_file() {
             .env_remove("DEBUNDLE_SOURCE_ROOT"),
     )
     .unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    process::assert_success(&output);
     let replay: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(replay, fixture.json(&["describe", "--batch", &path]));
 }

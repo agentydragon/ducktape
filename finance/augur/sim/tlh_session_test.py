@@ -10,19 +10,17 @@ import pytest_bazel
 from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.product.action_projection import metric_arrays
 from finance.augur.sim.actions import Action, Contribute, DecisionActions, Liquidate, Withdraw
-from finance.augur.sim.books import AccountRef, Book, TlhPortfolioState
+from finance.augur.sim.books import Book, TlhPortfolioState
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, PortfolioId
+from finance.augur.sim.ids import CHECKING, AgentId, AssetId, JurisdictionId, PortfolioId
 from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, Taxable, TransferIncomeCategory, Treasury
-from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.money import Currency
 from finance.augur.sim.observations import Observation
 from finance.augur.sim.results import Executed, Finished, InvalidRequest, Rejected, RejectedAction
 from finance.augur.sim.session import ActionSession
-from finance.augur.sim.tax_authority import TaxAuthority
-from finance.augur.sim.tax_indexation import FixedNominalLaw
-from finance.augur.sim.tax_profile import TaxProfile, compile_profile
+from finance.augur.sim.testing.accounts import ref
+from finance.augur.sim.testing.tax_authority import filer
 from finance.augur.sim.tlh import TlhAssumptions, TlhMarketUpdate, TlhOpeningCohort, TlhPortfolio
 from finance.augur.sim.world import Capture, World
 
@@ -34,12 +32,7 @@ WHOLE_DOLLARS = Currency(code="USD", quantum=Decimal(1))
 OWNER = AgentId("owner")
 OTHER = AgentId("other")
 IRS = AgentId("irs")
-CHECKING = AccountId("checking")
 FEDERAL = JurisdictionId("federal_us")
-
-
-def ref(agent_id: AgentId) -> AccountRef:
-    return AccountRef(agent_id=agent_id, account_id=CHECKING)
 
 
 def assumptions(*, harvest: bool) -> TlhAssumptions:
@@ -100,16 +93,7 @@ def compose(case: Situation, rollout_id: int) -> World:
     for agent_id, balance in ((OWNER, case.cash), (OTHER if case.bystander else IRS, 0)):
         world.declare_account(account=ref(agent_id), opening_balance=balance)
     if case.taxed:
-        world.track(
-            TaxAuthority(
-                compile_profile(
-                    TaxProfile(agent_id=OWNER, jurisdiction_ids=[FEDERAL], tax_authority_agent_id=IRS),
-                    {FEDERAL: load_jurisdiction(FEDERAL)},
-                    currency=WHOLE_DOLLARS,
-                ),
-                indexation=FixedNominalLaw(),
-            )
-        )
+        world.track(filer(OWNER, [FEDERAL], authority=IRS, currency=WHOLE_DOLLARS))
     world.declare_portfolio(
         portfolio_id=MANAGED,
         owner_agent_id=OWNER,
@@ -141,8 +125,7 @@ def session(case: Situation, actor: AgentId = OWNER, *, capture: Capture = "fore
 
 
 def test_managed_opening_is_not_an_ordinary_lot_and_sale_follows_same_month_loss() -> None:
-    live = session(Situation(horizon=1))
-    try:
+    with session(Situation(horizon=1)) as live:
         batch = live.start()
         assert not isinstance(batch, Finished)
         [decision] = batch
@@ -157,8 +140,6 @@ def test_managed_opening_is_not_an_ordinary_lot_and_sale_follows_same_month_loss
             ]
         )
         assert isinstance(result, Finished)
-    finally:
-        live.close()
     [rollout] = result.rollouts
     assert rollout.stop is None
     assert rollout.trace is not None
@@ -181,11 +162,8 @@ def test_managed_opening_is_not_an_ordinary_lot_and_sale_follows_same_month_loss
 
 
 def first_observation(case: Situation) -> Observation:
-    live = session(case)
-    try:
+    with session(case) as live:
         batch = live.start()
-    finally:
-        live.close()
     assert not isinstance(batch, Finished)
     [decision] = batch
     return decision.observation
@@ -206,8 +184,7 @@ def test_an_untaxed_owner_has_no_tax_records() -> None:
 
 
 def test_rejected_contribution_preserves_harvest_and_earlier_withdrawal_without_future_policy_calls() -> None:
-    live = session(Situation(rollouts=2))
-    try:
+    with session(Situation(rollouts=2)) as live:
         first = live.start()
         assert not isinstance(first, Finished)
         second = live.advance(
@@ -236,8 +213,6 @@ def test_rejected_contribution_preserves_harvest_and_earlier_withdrawal_without_
         assert [(row.rollout_id, row.observation.month) for row in second] == [(1, 1)]
         result = live.advance([DecisionActions(1, 1, [])])
         assert isinstance(result, Finished)
-    finally:
-        live.close()
     stopped, alive = result.rollouts
     assert stopped.stop == RejectedAction(month=0, action_index=1)
     assert alive.stop is None
@@ -252,8 +227,7 @@ def test_rejected_contribution_preserves_harvest_and_earlier_withdrawal_without_
 
 @pytest.mark.parametrize("amount", [-1, 101])
 def test_invalid_withdrawal_changes_no_component_state(amount: int) -> None:
-    live = session(Situation(horizon=1, harvest=False))
-    try:
+    with session(Situation(horizon=1, harvest=False)) as live:
         live.start()
         result = live.advance(
             [
@@ -273,8 +247,6 @@ def test_invalid_withdrawal_changes_no_component_state(amount: int) -> None:
             ]
         )
         assert isinstance(result, Finished)
-    finally:
-        live.close()
     [rollout] = result.rollouts
     assert rollout.stop == RejectedAction(month=0, action_index=0)
     [portfolio] = portfolios(rollout.summary.ending_book)
@@ -283,8 +255,7 @@ def test_invalid_withdrawal_changes_no_component_state(amount: int) -> None:
 
 
 def test_another_actors_component_is_neither_observed_nor_redeemable() -> None:
-    live = session(Situation(horizon=1, harvest=False, taxed=False, bystander=True), OTHER)
-    try:
+    with session(Situation(horizon=1, harvest=False, taxed=False, bystander=True), OTHER) as live:
         batch = live.start()
         assert not isinstance(batch, Finished)
         assert batch[0].observation.tlh_portfolios == ()
@@ -296,8 +267,6 @@ def test_another_actors_component_is_neither_observed_nor_redeemable() -> None:
             ]
         )
         assert isinstance(result, Finished)
-    finally:
-        live.close()
     [rollout] = result.rollouts
     assert rollout.stop == RejectedAction(month=0, action_index=0)
     assert portfolios(rollout.summary.ending_book)[0].value == 100
@@ -320,8 +289,7 @@ def test_model_defect_closes_session_instead_of_becoming_a_rejected_action(monke
 @pytest.mark.parametrize("capture", ["summary", "dense", "forensic"])
 @pytest.mark.parametrize("reject", [False, True])
 def test_closing_marks_and_product_projection_do_not_advance_the_model_early(capture: Capture, reject: bool) -> None:
-    live = session(Situation(horizon=1, prices=(1, 2)), capture=capture)
-    try:
+    with session(Situation(horizon=1, prices=(1, 2)), capture=capture) as live:
         live.start()
         actions: list[Action] = (
             [
@@ -334,8 +302,6 @@ def test_closing_marks_and_product_projection_do_not_advance_the_model_early(cap
         )
         result = live.advance([DecisionActions(0, 0, actions)])
         assert isinstance(result, Finished)
-    finally:
-        live.close()
     [rollout] = result.rollouts
     [portfolio] = portfolios(rollout.summary.ending_book)
     assert portfolio.value == (100 if reject else 200)
@@ -358,15 +324,12 @@ def test_managed_subquantum_distribution_keeps_cash_and_interest_character() -> 
         },
         interest_sources=(InterestIncome(character=Treasury()), InterestIncome(character=Taxable())),
     )
-    live = session(case)
-    try:
+    with session(case) as live:
         batch = live.start()
         assert not isinstance(batch, Finished)
         assert batch[0].observation.cash == 2  # round(100 × $0.015), then two $1 tax slices
         result = live.advance([DecisionActions(0, 0, [])])
         assert isinstance(result, Finished)
-    finally:
-        live.close()
     [rollout] = result.rollouts
     assert rollout.trace is not None
     assert rollout.trace.distributions is not None
@@ -383,8 +346,7 @@ def test_managed_subquantum_distribution_keeps_cash_and_interest_character() -> 
 
 
 def test_contribution_is_first_harvested_in_the_next_month() -> None:
-    live = session(Situation(cash=100))
-    try:
+    with session(Situation(cash=100)) as live:
         first = live.start()
         assert not isinstance(first, Finished)
         assert first[0].observation.tlh_portfolios[0].reported_tax_basis == 99
@@ -405,8 +367,6 @@ def test_contribution_is_first_harvested_in_the_next_month() -> None:
         assert second[0].observation.tlh_portfolios[0].reported_tax_basis == 197
         result = live.advance([DecisionActions(0, 1, [])])
         assert isinstance(result, Finished)
-    finally:
-        live.close()
     [rollout] = result.rollouts
     assert rollout.trace is not None
     assert portfolios(rollout.trace.books[1])[0].reported_tax_basis == 199
@@ -414,8 +374,7 @@ def test_contribution_is_first_harvested_in_the_next_month() -> None:
 
 
 def test_a_contribution_into_a_worthless_index_is_rejected_not_parked() -> None:
-    live = session(Situation(cash=10, harvest=False, prices=(1, 0, 0)))
-    try:
+    with session(Situation(cash=10, harvest=False, prices=(1, 0, 0))) as live:
         live.start()
         live.advance([DecisionActions(0, 0, [])])
         result = live.advance(
@@ -436,8 +395,6 @@ def test_a_contribution_into_a_worthless_index_is_rejected_not_parked() -> None:
             ]
         )
         assert isinstance(result, Finished)
-    finally:
-        live.close()
     [rollout] = result.rollouts
     assert rollout.stop == RejectedAction(month=1, action_index=0)
     assert rollout.trace is not None

@@ -11,15 +11,15 @@ Small Talos k8s cluster with GitOps and HTTPS.
 - Secrets: SOPS (age, decrypted by Flux); ESO's Kubernetes provider mirrors a few
   cross-namespace. No Vault (<docs/decisions.md> § "Secrets: SOPS SSOT").
 
-Prerequisites: SSH to Proxmox host `root@atlas`, OVH API credentials
-(`secrets/ovh-credentials.sops.yaml`), `gh auth login` (Flux), direnv in `cluster/` —
-its `.envrc` exports `KUBECONFIG`/`TALOSCONFIG` and provides `talosctl`, `kubectl`,
-`get-passwords` (service credentials).
+Prerequisites (credentials and access): <docs/bootstrap.md#prerequisites>. direnv in
+`cluster/`: its `.envrc` exports `KUBECONFIG`/`TALOSCONFIG` and provides `talosctl`,
+`kubectl`, `get-passwords` (service credentials).
 
 ## Infrastructure
 
 - Network `10.2.0.0/16` (VLAN 4 on Proxmox `vmbr4`): `10.2.0.2` atlas (reachable only
-  from the Proxmox VLAN), `10.2.1.x` control plane, `10.2.2.x` workers (Proxmox).
+  from the Proxmox VLAN). The only cluster node in the Proxmox region is `wyrm2`
+  ([nodes](docs/topology.md#nodes)).
 - Domain `*.allegedly.works`: AWS Route 53, DNS-01, dual LE issuers. Kubeconfig points at
   `api.allegedly.works`.
 - HTTPS: Internet → OVH bare metal:443 → Cilium Envoy → pods.
@@ -45,6 +45,8 @@ GPU: wyrm2 provides `nvidia.com/gpu`; GPU pods need `runtimeClassName: nvidia`
 ## Services
 
 Service inventory: [curated services](docs/topology.md#services).
+Resource sizing and availability: [VPA rollout plan](plans/vpa.md) and
+[current inventory](https://agentydragon.github.io/ducktape/vpa/).
 
 To find checked-in `HTTPRoute` manifests, run this from the repository root.
 
@@ -59,8 +61,8 @@ into a central aw-server (<docs/activitywatch/README.md>).
 ## Storage
 
 All storage is region-local (no cross-site synchronous replication). Curated; SSOT is the
-`StorageClass` manifests (e.g. `generated/{local-path-provisioner,openebs-lvm}/`) plus CSI
-Helm values.
+`StorageClass` manifests (e.g. `generated/seaweedfs-csi/`) plus CSI and Piraeus Helm values
+(`generated/piraeus/`).
 
 Storage-class inventory: [storage](docs/topology.md#storage).
 
@@ -76,18 +78,25 @@ DNS (Route 53) and the public website must keep working and recover with OVH onl
 must not depend on Proxmox-pinned storage (`lvm-proxmox-*`, `local-path-proxmox`) or
 nodes. Full set and checklist: <docs/decisions.md> § "OVH-Only Resilience Invariants".
 
-## In-cluster Terraform (tofu-controller)
+## In-cluster Terraform
 
-`Terraform` CRs (`tf/gitops/*`, infra-drift) run on two custom GHCR images (not Forgejo:
-the Forgejo pull credential is created by one of those CRs):
+Most `tf/gitops/*` roots are Crossplane provider-opentofu `Workspace`s: cdk8s inlines a
+root's HCL into the manifest, so a `.tf` edit regenerates `cluster/generated/**`
+(<docs/crossplane-opentofu-artifact-triggers.md>, `cdk8s/opentofu.py`). The tofu-controller
+runs the `Terraform` CRs: `gitlab-spike` and `home-switch` under `tf/gitops`, and infra-drift.
 
-- `ghcr.io/agentydragon/tofu-controller`: built from an upstream commit with the
-  `ExternalArtifact` source kind (<../third_party/tofu_controller/README.md>), so
-  each module reads its own content-addressed `ArtifactGenerator` artifact
-  (`cdk8s/terraform.py`, <cdk8s/infra_drift/README.md>) and only changed modules replan.
-  Drop once upstream releases flux-iac/tofu-controller#1901.
-- `ghcr.io/agentydragon/tf-runner`: upstream runner with all pinned providers baked in
-  (<tf_runner/README.md>); its protocol must match the controller.
+### tofu-controller
+
+`Terraform` CRs use the upstream tofu-controller chart and
+image, with `ExternalArtifact` enabled. Each module reads its own content-addressed
+`ArtifactGenerator` artifact (`cdk8s/terraform.py`, <cdk8s/infra_drift/README.md>), so
+only changed modules replan. Flux applies the chart release's CRD separately, since Helm
+does not upgrade CRDs from the chart's `crds/` directory.
+
+The controller uses our `ghcr.io/agentydragon/tf-runner`, an upstream runner with all pinned
+providers baked in (<tf_runner/README.md>). Its upstream base must match the controller's
+release and their rollout must be coordinated. Both images come from GHCR, not Forgejo; the
+Forgejo user behind the pull credential is created by an OpenTofu root (`tf/gitops/forgejo-images`).
 
 ## Layout
 

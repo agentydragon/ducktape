@@ -28,10 +28,10 @@ covers how.
   session restart.
 - **`git` shim**: installed only when the active profile enables a `git_shim` flag;
   per flag it blocks `git add -A`/`git add .`, `git stash`, or `git commit --amend`.
-- Installs pre-commit git hooks and writes env vars to `CLAUDE_ENV_FILE`. Hook
-  registration: `.claude/settings.json`. Connectivity probe: not implemented (see
-  <TODO.md>). flux, kustomize, helm come from `@multitool//tools/*`, not the
-  devshell.
+- Writes env vars to `CLAUDE_ENV_FILE`. Only the web profiles install pre-commit
+  git hooks (their `pre-commit setup` background command). Hook registration:
+  `.claude/settings.json`. Connectivity probe: not implemented (see <TODO.md>).
+  flux, kustomize, helm come from `@multitool//tools/*`, not the devshell.
 - **Profile**: `DUCKTAPE_CLAUDE_HOOKS_PROFILE` = path to profile YAML; schema in
   <claude_hook/config.rs>.
 
@@ -55,8 +55,8 @@ session ID (own socket and dir), so:
 - `<session_dir>` = `~/.claude/session-env/<session_id>/` (Claude Code-managed): shim
   dir, session `bazelrc`.
 - `/tmp/claude-hd/<session_id>/`: `d.sock` (hook RPC), `daemon.pid`, `daemon.log`
-  (incl. session start), `daemon.err.log`, `startup_failure.json` (client startup
-  backoff marker).
+  (daemon stdout; unused, the daemon logs to stderr), `daemon.err.log` (daemon stderr,
+  incl. session start), `startup_failure.json` (client startup backoff marker).
 
 ## Claude Code Telemetry
 

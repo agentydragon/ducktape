@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -7,6 +8,7 @@ import { deferred } from "../../../../util/frontend/testing/deferred";
 import { cleanupMounted, renderWithMantine } from "../../../../util/frontend/testing/react";
 import type { CoverageResponse, OverviewResponse } from "../lib/schema";
 import { fetchCoverage } from "../lib/api/client";
+import { createPropsQueryClient } from "../lib/queryClient";
 import { RunModalContext } from "../lib/runModalContext";
 import { toast } from "../lib/toast";
 import OverviewPage from "./OverviewPage";
@@ -24,8 +26,6 @@ vi.mock("../components/stats/DistributionChart", () => ({
   ),
 }));
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-
 function coverage(maxRecall: number): CoverageResponse {
   return {
     examples: [],
@@ -38,15 +38,18 @@ function coverage(maxRecall: number): CoverageResponse {
 
 const initialOverview = { definitions: [], example_counts: {} } as OverviewResponse;
 
+const queryClient = createPropsQueryClient();
 let container: HTMLDivElement;
 
 async function mount(): Promise<void> {
   container = await renderWithMantine(
-    <MemoryRouter>
-      <RunModalContext.Provider value={{ open: () => undefined }}>
-        <OverviewPage initialData={initialOverview} />
-      </RunModalContext.Provider>
-    </MemoryRouter>
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>
+        <RunModalContext.Provider value={{ open: () => undefined }}>
+          <OverviewPage initialData={initialOverview} />
+        </RunModalContext.Provider>
+      </MemoryRouter>
+    </QueryClientProvider>
   );
 }
 
@@ -62,7 +65,10 @@ beforeEach(() => {
   vi.resetAllMocks();
 });
 
-afterEach(cleanupMounted);
+afterEach(async () => {
+  await cleanupMounted();
+  queryClient.clear();
+});
 
 it("clears valid coverage while train loads and after the train request fails", async () => {
   const train = deferred<CoverageResponse>();

@@ -70,9 +70,8 @@ wheel closure.
 
 ### Pin Drift On Persistent Rootfs
 
-**Symptom**: SessionStart crashes during template render, for example
-`'Undefined' object has no attribute '<field>'`. Alternatively, profile YAML
-fields silently no-op and expected env vars are missing.
+**Symptom**: profile YAML fields silently no-op and expected env vars are
+missing.
 
 **Root cause**: `nix profile install "${FLAKE}#devtools"` is add-if-missing,
 not install-or-upgrade. Firecracker microVMs can persist the rootfs across
@@ -90,7 +89,7 @@ in steady state because Nix substitutes unchanged closure paths from cache.
 Diagnose future occurrences with:
 
 ```bash
-# Check daemon error log for profile/schema/template crashes.
+# Check daemon error log for profile/schema crashes.
 tail -100 /tmp/claude-hd/*/daemon.err.log 2>/dev/null
 
 # Inspect the CI artifact pin URLs (IDs match the flake package names).
@@ -105,8 +104,8 @@ claude-hook --version
 
 - `nix profile install` is "add if missing"; pair it with remove or upgrade on
   persistent rootfs when the selected flake output must track the current repo.
-- Schema-level changes to the Rust hook's profile or template handling can
-  break live sessions until the installed `.#devtools` closure catches up.
+- Schema-level changes to the Rust hook's profile handling can break live
+  sessions until the installed `.#devtools` closure catches up.
 - Rust `serde` ignores unknown profile fields by default. Promote a field into
   `ProfileConfig` with a test when the daemon starts consuming it.
 - Put actionable setup output near the end of the script log; the Claude Code

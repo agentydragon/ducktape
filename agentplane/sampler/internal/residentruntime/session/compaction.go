@@ -53,7 +53,7 @@ func (r *Driver) compact(ctx context.Context, owner sessionstore.Owner, model st
 	if err != nil {
 		return err
 	}
-	plan, err := adapter.PrepareCompaction(conversation, session, state, metadata, environmentcontext.Update(nil, environment))
+	plan, err := adapter.PrepareCompaction(conversation, session, metadata, environmentcontext.Update(nil, environment))
 	if err != nil {
 		return err
 	}
@@ -63,7 +63,7 @@ func (r *Driver) compact(ctx context.Context, owner sessionstore.Owner, model st
 	}
 	original := conversation.Context()
 	request := sessionstore.ProviderRequestIntent(sessionstore.PendingIntentCompaction, connection, r.settings.Models[model])
-	policy := runtimeProviderAttemptPolicy(r.settings)
+	policy := runtimeProviderAttemptPolicy(r.settings, r.settings.Models[model])
 	var intentID string
 	var wire []byte
 	if frontier == nil {

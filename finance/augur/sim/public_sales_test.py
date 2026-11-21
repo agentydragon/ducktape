@@ -17,18 +17,14 @@ from finance.augur.sim.books import AccountRef, TaxAccrual
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
-from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath, Series
-from finance.augur.sim.money import USD
 from finance.augur.sim.observations import Decision
 from finance.augur.sim.results import Finished, Rollout
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
-from finance.augur.sim.tax_authority import TaxAuthority
-from finance.augur.sim.tax_indexation import FixedNominalLaw
-from finance.augur.sim.tax_profile import TaxProfile, compile_profile
 from finance.augur.sim.testing.series import level_series
 from finance.augur.sim.testing.session import finish
+from finance.augur.sim.testing.tax_authority import filer
 from finance.augur.sim.world import World
 
 ALICE = AgentId("alice")
@@ -76,7 +72,6 @@ def _situation(prices: np.ndarray, *, quantity: Decimal | int, cost_basis: Decim
 
 def _compose(case: Situation, rollout_id: int) -> World:
     """Alice files federally from a cashless `checking` account; `employer` opens holding exactly the wages it pays."""
-    federal = load_jurisdiction(FEDERAL)
     world = World(
         MarketPath(case.series, rollout_id, rollout_count=case.rollout_count),
         horizon_months=case.horizon_months,
@@ -90,10 +85,7 @@ def _compose(case: Situation, rollout_id: int) -> World:
             account=AccountRef(agent_id=agent_id, account_id=AccountId("checking")),
             opening_balance=int(currency_amount_to_quanta(opening, quantum=QUANTUM)),
         )
-    profile = TaxProfile(
-        agent_id=ALICE, jurisdiction_ids=[FEDERAL], tax_authority_agent_id=IRS, prior_year_tax=Decimal(0)
-    )
-    world.track(TaxAuthority(compile_profile(profile, {FEDERAL: federal}, currency=USD), indexation=FixedNominalLaw()))
+    world.track(filer(ALICE, [FEDERAL], authority=IRS))
     world.declare_pool(
         agent_id=ALICE, account_id=AccountId("checking"), asset_id=AssetId(VTI.symbol), quantity_scale=VTI_SCALE
     )

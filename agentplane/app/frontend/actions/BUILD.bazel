@@ -1,6 +1,7 @@
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("//agentplane/app/frontend:vitest.bzl", "agentplane_vitest_test")
 load("//devinfra/js:ts_library.bzl", "ts_library")
+load("//devinfra/js:vitest.bzl", "check_vitest_specs")
 
 package(default_visibility = ["//agentplane/app:__subpackages__"])
 
@@ -66,7 +67,6 @@ ts_library(
         "//:node_modules/@bufbuild/protobuf",
         "//agentplane/action_service/api/contracts:action_service_pb",
         "//agentplane/action_service/api/contracts:operator_action_service_pb",
-        "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend/transport:client",
         "//agentplane/app/frontend/transport:stream_reader",
         "//agentplane/app/frontend/transport:watch_stream",
@@ -78,7 +78,6 @@ ts_library(
     srcs = ["call.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":action_client",
         ":presentation",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -86,7 +85,6 @@ ts_library(
         "//agentplane/action_service/api/contracts:action_service_pb",
         "//agentplane/app/frontend/actions/rendering:index",
         "//agentplane/app/frontend/connections:service_accounts",
-        "//agentplane/app/frontend/transport:client",
         "//agentplane/app/frontend/ui:raw_switch",
         "//agentplane/app/frontend/ui:text_block",
         "//agentplane/app/frontend/ui:time_ago",
@@ -123,7 +121,6 @@ ts_library(
     ],
     tsconfig = TSCONFIG,
     deps = [
-        ":action_client",
         ":presentation",
         ":requests",
         ":sidebar_css",
@@ -133,7 +130,6 @@ ts_library(
         "//:node_modules/react-router",
         "//agentplane/action_service/api/contracts:action_service_pb",
         "//agentplane/app/frontend/actions/rendering:index",
-        "//agentplane/app/frontend/transport:client",
         "//agentplane/app/frontend/ui:icons",
         "//agentplane/app/frontend/ui:text_block",
         "//util/frontend:resize_handle",
@@ -150,7 +146,6 @@ agentplane_vitest_test(
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//:node_modules/react-router",
         "//:node_modules/vitest",
         "//agentplane/action_service/api/contracts:action_service_pb",
         "//agentplane/app/frontend/actions/testing:harness",
@@ -180,7 +175,6 @@ ts_library(
     srcs = ["detail.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":action_client",
         ":history",
         ":presentation",
         ":requests",
@@ -199,7 +193,6 @@ agentplane_vitest_test(
     name = "detail_test",
     srcs = ["detail.test.tsx"],
     deps = [
-        ":action_client",
         ":detail",
         ":requests",
         ":sidebar",
@@ -305,7 +298,6 @@ agentplane_vitest_test(
     name = "history_test",
     srcs = ["history.test.tsx"],
     deps = [
-        ":action_client",
         ":history",
         ":requests",
         "//:node_modules/@bufbuild/protobuf",
@@ -358,6 +350,19 @@ agentplane_vitest_test(
 )
 
 ts_library(
+    name = "integration_preview_schemas",
+    srcs = ["schemas/integration_previews.ts"],
+    tsconfig = TSCONFIG,
+    deps = ["//:node_modules/zod"],
+)
+
+ts_library(
+    name = "tana_action_titles",
+    srcs = ["schemas/tana_titles.ts"],
+    tsconfig = TSCONFIG,
+)
+
+ts_library(
     name = "notifications",
     srcs = [
         "notifications/command.ts",
@@ -365,10 +370,8 @@ ts_library(
         "notifications/github/create_pull_request.ts",
         "notifications/github/push_files.ts",
         "notifications/github/update_pull_request.ts",
-        "notifications/grocy/get_system_info.ts",
-        "notifications/grocy/products_list.ts",
-        "notifications/grocy/quantity_units_list.ts",
         "notifications/index.ts",
+        "notifications/integration_previews.ts",
         "notifications/kubernetes_admin/events_list.ts",
         "notifications/kubernetes_admin/pods_delete.ts",
         "notifications/kubernetes_admin/pods_exec.ts",
@@ -381,16 +384,17 @@ ts_library(
         "notifications/kubernetes_admin/resources_list.ts",
         "notifications/sandbox/exec.ts",
         "notifications/ssh/exec.ts",
-        "notifications/tana/get_or_create_calendar_node.ts",
         "notifications/types.ts",
     ],
     tsconfig = TSCONFIG,
     deps = [
         ":github_action_schemas",
+        ":integration_preview_schemas",
         ":kubernetes_action_schemas",
         ":presentation",
         ":sandbox_action_schemas",
         ":ssh_action_schemas",
+        ":tana_action_titles",
         "//:node_modules/zod",
         "//agentplane/action_service/api/contracts:action_service_pb",
         "//agentplane/app/frontend/ui:argv_text",
@@ -404,6 +408,8 @@ agentplane_vitest_test(
         ":notifications",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/vitest",
-        "//agentplane/action_service/api/contracts:action_service_pb",
+        "//agentplane/app/frontend/actions/testing:proto_fixtures",
     ],
 )
+
+check_vitest_specs()

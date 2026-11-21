@@ -56,7 +56,7 @@ their heading, never by position — positions change as entries come and go.
 
 Durable Haku Agent/access-profile standing identity; deploy-selected after Agent
 authentication, with the same RBAC as Haku's OIDC and runtime identities.
-Source of truth: <../console/mcp_config.py>, <../../cluster/cdk8s/haku/console_config.py>,
+Source of truth: <../console/identity/config.py>, <../../cluster/cdk8s/haku/console_config.py>,
 Kubernetes RoleBindings under <../../cluster/k8s/>.
 
 ### OIDC group `oidc-ksbx-groups:haku`
@@ -77,10 +77,10 @@ Cluster-wide read-only object/status; logs+configmaps only in infra namespaces v
 per-namespace bindings (no secrets, no app-content namespaces).
 Source of truth: <../../cluster/docs/agent_rbac.md>.
 
-### Kyverno `restrict-agent-gateway-routes`
+### Native admission policy `restrict-agent-gateway-routes`
 
-Agents cannot create public routes even if RBAC ever drifted.
-Source of truth: <../../cluster/cdk8s/kyverno/policies.py>.
+Kubernetes denies Gateway API writes in the agent sandbox namespaces even if RBAC drifts.
+Source of truth: <../../cluster/cdk8s/gateway.py>.
 
 ### Agentplane egress fence
 
@@ -245,11 +245,10 @@ bulk channels.
 ## Invariants — preserve these when changing anything
 
 1. Never add `httproutes`/`gateways` (or `networkpolicies`) to Haku's Role; never weaken the
-   Kyverno route denylist.
+   `restrict-agent-gateway-routes` admission policy.
 2. Every credential for an operator-owned source reflected into `haku-sandbox` is read-only.
    A Haku-owned write credential must be scoped to its surface and named in the canonical base
-   hard-rule inventory; any other write capability requires its own closure-style server (the
-   credential stays behind a console server entry, as with `kubectl-passthrough-mcp` above) and
+   hard-rule inventory; any other write capability requires its own closure-style server and
    an inventory update. In particular, `haku-mail-token` may mutate only the contents of Haku's
    `haku@allegedly.works` mailbox; it grants neither outbound mail nor server administration.
 3. The console renders **no** Haku-authored content. No haku-state credential is reflected into
@@ -285,7 +284,7 @@ bulk channels.
   still work (Haku item `haku-ui-browser-exfil-csp-gap-2026` tracks the initial
   verification).
 - **Gateway `allowedRoutes` still `from: All`** — belt-and-suspenders tightening deferred,
-  fenced meanwhile by the Kyverno `restrict-agent-gateway-routes` policy; see
+  fenced meanwhile by the native `restrict-agent-gateway-routes` policy; see
   `cluster/k8s/TODO.md`.
 - **Tool inputs/outputs flow to the model provider's control plane** regardless of sandbox
   location — inherent to using hosted models; acknowledged in

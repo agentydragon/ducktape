@@ -20,10 +20,10 @@ from devinfra.pr_visuals.publisher import (
     build_bundle,
     target_slug,
 )
-from util.testing.frontend_visual.capture import VisualHarness, VisualPage
-from util.testing.frontend_visual.viewports import Viewport
+from testing.frontend_visual.capture import VisualHarness, VisualPage
+from testing.frontend_visual.viewports import Viewport
 
-pytest_plugins = ("util.testing.frontend_visual.fixtures",)
+pytest_plugins = ("testing.frontend_visual.fixtures",)
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 HEAD_SHA = "0123456789abcdef0123456789abcdef01234567"

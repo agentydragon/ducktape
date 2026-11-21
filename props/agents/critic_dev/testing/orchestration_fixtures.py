@@ -20,6 +20,7 @@ ORCHESTRATION_GRADER_MODEL = "gpt-4.1-mini"
 
 @asynccontextmanager
 async def critic_dev_optimizer(stack: E2EStack, snapshot_slug: SnapshotSlug) -> AsyncIterator[UUID]:
+    """Run the optimizer to completion while a snapshot grader runs in the background; yield its run ID."""
     grader = await stack.registry.start_snapshot_grader(
         image=stack.resolved_images["grader"], snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL
     )

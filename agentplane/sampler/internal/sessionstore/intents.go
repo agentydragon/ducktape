@@ -84,7 +84,7 @@ func (s *Store) begin(ctx context.Context, owner Owner, request IntentPayload, p
 			id, owner.ConversationID, owner.Generation, requestWire); err != nil {
 			return err
 		}
-		return s.publishIntent(ctx, tx, owner, conversation, session, id, request)
+		return s.publishIntent(ctx, tx, conversation, session, id, request)
 	})
 	if err != nil {
 		return "", nil, err
@@ -93,7 +93,7 @@ func (s *Store) begin(ctx context.Context, owner Owner, request IntentPayload, p
 }
 
 // publishIntent follows the caller's admission checks and intent insertion in the same transaction.
-func (s *Store) publishIntent(ctx context.Context, tx *sql.Tx, owner Owner, conversation *Conversation, session *Session,
+func (s *Store) publishIntent(ctx context.Context, tx *sql.Tx, conversation *Conversation, session *Session,
 	id string, request IntentPayload,
 ) error {
 	if err := saveProviderRequest(ctx, tx, id, conversation.ID, request.ProviderRequest); err != nil {
@@ -103,7 +103,7 @@ func (s *Store) publishIntent(ctx context.Context, tx *sql.Tx, owner Owner, conv
 	if err := updateConversation(ctx, tx, conversation); err != nil {
 		return err
 	}
-	return s.recordEvidence(ctx, tx, owner, conversation, session, id, IntentKind(request.Kind).progressKind(), eventpb.ExecutionProgress_PHASE_DISPATCH, request.dispatchEvidence(id))
+	return s.recordEvidence(ctx, tx, conversation, session, id, IntentKind(request.Kind).progressKind(), eventpb.ExecutionProgress_PHASE_DISPATCH, request.dispatchEvidence(id))
 }
 
 func (s *Store) Finish(ctx context.Context, owner Owner, intentID string, result any, records []json.RawMessage, contextTokens *int) error {
@@ -153,7 +153,7 @@ func (s *Store) finish(ctx context.Context, owner Owner, intentID string, result
 		if err != nil {
 			return err
 		}
-		if err := s.recordEvidence(ctx, tx, owner, conversation, session, intentID, intent.Kind.progressKind(), eventpb.ExecutionProgress_PHASE_RESULT, result); err != nil {
+		if err := s.recordEvidence(ctx, tx, conversation, session, intentID, intent.Kind.progressKind(), eventpb.ExecutionProgress_PHASE_RESULT, result); err != nil {
 			return err
 		}
 		if err := appendResult(conversation); err != nil {
@@ -218,10 +218,10 @@ func (s *Store) Reject(ctx context.Context, owner Owner, intentID string, failur
 			if err != nil {
 				return err
 			}
-			if err := s.recordEvidence(ctx, tx, owner, conversation, session, intentID, intent.Kind.progressKind(), eventpb.ExecutionProgress_PHASE_REJECTED, result); err != nil {
+			if err := s.recordEvidence(ctx, tx, conversation, session, intentID, intent.Kind.progressKind(), eventpb.ExecutionProgress_PHASE_REJECTED, result); err != nil {
 				return err
 			}
-			return s.settleFailure(ctx, tx, owner, conversation, session, session.ActiveCommand, failure)
+			return s.settleFailure(ctx, tx, conversation, session, session.ActiveCommand, failure)
 		}
 		outputs, err := settlePendingCalls(conversation, func(call protocol.ToolInvocation) string { return "Not dispatched because the turn failed." })
 		if err != nil {
@@ -246,10 +246,10 @@ func (s *Store) Reject(ctx context.Context, owner Owner, intentID string, failur
 		if err != nil {
 			return err
 		}
-		if err := s.recordEvidence(ctx, tx, owner, conversation, session, intentID, intent.Kind.progressKind(), eventpb.ExecutionProgress_PHASE_REJECTED, result); err != nil {
+		if err := s.recordEvidence(ctx, tx, conversation, session, intentID, intent.Kind.progressKind(), eventpb.ExecutionProgress_PHASE_REJECTED, result); err != nil {
 			return err
 		}
-		return s.settleFailure(ctx, tx, owner, conversation, session, session.ActiveCommand, failure)
+		return s.settleFailure(ctx, tx, conversation, session, session.ActiveCommand, failure)
 	})
 }
 
@@ -320,7 +320,7 @@ func (s *Store) beginCompaction(ctx context.Context, owner Owner, request Intent
 		if err := insertProviderAttempt(ctx, tx, id, owner, requestWire, session, policy, id, nil, 1, policy.Budget); err != nil {
 			return err
 		}
-		return s.publishIntent(ctx, tx, owner, conversation, session, id, request)
+		return s.publishIntent(ctx, tx, conversation, session, id, request)
 	})
 	if err != nil {
 		return "", nil, err
@@ -364,7 +364,7 @@ func (s *Store) FinishCompaction(ctx context.Context, owner Owner, intentID stri
 		if err != nil {
 			return err
 		}
-		sources, err := s.recordEvidenceWithSources(ctx, tx, owner, conversation, session, intentID, intent.Kind.progressKind(), eventpb.ExecutionProgress_PHASE_RESULT, audit)
+		sources, err := s.recordEvidenceWithSources(ctx, tx, conversation, session, intentID, intent.Kind.progressKind(), eventpb.ExecutionProgress_PHASE_RESULT, audit)
 		if err != nil {
 			return err
 		}
@@ -458,7 +458,7 @@ func (s *Store) RecordNested(ctx context.Context, owner Owner, kind IntentKind, 
 		if err != nil {
 			return err
 		}
-		return s.recordEvidence(ctx, tx, owner, conversation, session, id, kind.progressKind(), eventpb.ExecutionProgress_PHASE_DISPATCH, request)
+		return s.recordEvidence(ctx, tx, conversation, session, id, kind.progressKind(), eventpb.ExecutionProgress_PHASE_DISPATCH, request)
 	})
 	return id, err
 }
@@ -487,7 +487,7 @@ func (s *Store) FinishNested(ctx context.Context, owner Owner, intentID string, 
 		if err != nil {
 			return err
 		}
-		return s.recordEvidence(ctx, tx, owner, conversation, session, intentID, intent.Kind.progressKind(), eventpb.ExecutionProgress_PHASE_RESULT, result)
+		return s.recordEvidence(ctx, tx, conversation, session, intentID, intent.Kind.progressKind(), eventpb.ExecutionProgress_PHASE_RESULT, result)
 	})
 }
 

@@ -1,6 +1,8 @@
 apiVersion: v1
 kind: Namespace
 metadata:
+  annotations:
+    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "*", "controlledValues": "RequestsOnly"}]}'
   labels:
     goldilocks.fairwinds.com/vpa-update-mode: auto
     rbac.ducktape.io/agent-readable-logs: "true"
@@ -191,9 +193,9 @@ data:
         conditions:
           - "[STATUS] == 200"
           - "[BODY].flows[0].type == m.login.sso"
-      - name: Ollama
+      - name: TabbyAPI
         group: ai
-        url: http://ollama.ollama.svc.cluster.local:11434/api/tags
+        url: http://tabbyapi.ollama.svc.cluster.local:5000/v1/models
         interval: 60s
         conditions:
           - "[STATUS] == 200"

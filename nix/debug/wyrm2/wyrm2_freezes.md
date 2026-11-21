@@ -60,7 +60,7 @@ running gnome-shell. The freezes come from QXL's broken TTM, not from NVIDIA.
 ## Fix Applied
 
 **Switched from QXL to VirtIO-GPU** (`vga: virtio`) in
-`terraform/nixos-dev-env/main.tf:150`. Eliminates the broken QXL TTM entirely.
+`terraform/nixos-dev-env/main.tf:150` (since removed). Eliminates the broken QXL TTM entirely.
 
 **Initial problem**: Proxmox console showed "Display output not active" with
 virtio-gpu. Root cause: `max_hostmem=16MB` (Proxmox default `memory=16`) was
@@ -111,7 +111,7 @@ Both GPUs were in P8 state during diagnostics (GPU 0: 41W/575W, GPU 1:
 
 Root ports cap at x8 due to CPU lane bifurcation:
 
-```
+```text
 CPU (Raphael/Granite Ridge)
   └── 00:01.0 (Dummy Host Bridge)
        ├── 00:01.1 ──[x8]── 01:00.0 GPU 0 (RTX 5090 ZOTAC)
@@ -130,7 +130,7 @@ Host `lspci` confirms root ports cap at x8, ASPM disabled, target speed 32 GT/s:
 
 Verified correct:
 
-```
+```text
 root=ZFS=rpool/ROOT/pve-1 boot=zfs amd_iommu=on iommu=pt pcie_aspm=off ahci.mobile_lpm_policy=1
 ```
 
@@ -159,7 +159,7 @@ root=ZFS=rpool/ROOT/pve-1 boot=zfs amd_iommu=on iommu=pt pcie_aspm=off ahci.mobi
 
 **Guest kernel cmdline issues (minor):**
 
-```
+```text
 nvidia-drm.modeset=0 ... nvidia-drm.modeset=1   ← contradictory (last wins → 1)
 nvidia.NVreg_OpenRmEnableUnsupportedGpus=1       ← duplicated
 ```
@@ -167,9 +167,9 @@ nvidia.NVreg_OpenRmEnableUnsupportedGpus=1       ← duplicated
 Multiple NixOS config sources adding conflicting params. **Not harmless** —
 `modeset=1` (last wins) defeats the VFIO FLR workaround from
 `wyrm_gpu_lockup.md`. Source: `boot.kernelParams` adds `modeset=0`,
-`hardware.nvidia.modesetting.enable = true` adds `modeset=1`. Fix: set
-`hardware.nvidia.modesetting.enable = false` in
-`nix/nixos/hosts/wyrm2/default.nix`. Still unfixed as of 2026-04-17.
+`hardware.nvidia.modesetting.enable = true` adds `modeset=1`. Resolved: `modeset=1` is now the deliberate, required setting
+(`nix/nixos/hosts/wyrm2/default.nix`, "nvidia-drm modeset HISTORY"), and `boot.kernelParams`
+no longer adds `modeset=0`.
 
 ### Host diagnostics
 
@@ -223,7 +223,7 @@ Multiple NixOS config sources adding conflicting params. **Not harmless** —
 
 ## VM Configuration (VM 110)
 
-```
+```text
 memory: 98304 (96 GiB)
 balloon: 0
 cores: 32
@@ -236,7 +236,7 @@ virtiofs1: code,cache=never         ← changed from cache=auto
 
 ## Host Memory Accounting (for reference)
 
-```
+```text
 Total RAM:           123 GiB
 wyrm2 memfd (Shmem):  96 GiB  (38 GiB RSS, 96 GiB VmLck)
 talos-pve-cp-0 RSS:    3 GiB

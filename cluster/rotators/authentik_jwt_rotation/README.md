@@ -51,8 +51,9 @@ effective Kubernetes RBAC comes from the provider's explicit Authentik
 machine-principal allowlist, not from adding more apiserver issuer entries.
 
 The image bakes `rotate.py` (Python interpreter via `py_image_layer`), the
-`sops` binary, and `git` + `ca-certificates`. The per-deployment YAML list rides
-in as a configMap so adding a rotation needs no image rebuild.
+`sops` binary, `git` + `ca-certificates`, and Node with Prettier (`sops.py`
+formats the encrypted YAML with it). The per-deployment YAML list rides in as a
+configMap so adding a rotation needs no image rebuild.
 
 Deviation from the sibling `attic-jwt-rotation`: that one mints via `atticadm`
 exec inside the attic pod (a different mechanism and namespace) and stays

@@ -10,7 +10,6 @@ import sys
 from collections.abc import AsyncIterator, Callable, Coroutine
 from datetime import UTC, datetime, timedelta
 from importlib import resources
-from itertools import chain
 from typing import Annotated, Any, Literal, cast
 from uuid import UUID
 
@@ -31,7 +30,7 @@ from finance.plaid.db.link_store import (
     StoredLink,
     SyncAlreadyRunningError,
 )
-from finance.plaid.db.products import Product, syncable_products
+from finance.plaid.db.products import Product, merge_products, syncable_products
 from finance.plaid.db.secret_store import K8sSecretStore, SecretStore
 from finance.plaid.db.sync import sync_link, sync_transactions_only
 from finance.plaid.link.webhooks import InvalidPlaidWebhookError, PlaidWebhookVerifier
@@ -213,7 +212,7 @@ class AppState:
             logger.error(
                 "Plaid SDK call failed after its request stopped waiting (exception_type=%s, endpoint=%s)",
                 type(error).__name__,
-                getattr(error, "endpoint", None),
+                error.endpoint if isinstance(error, PlaidClientError) else None,
             )
 
     async def drain_lifespan_operations(self) -> None:
@@ -574,7 +573,7 @@ def create_app(
             raise HTTPException(502, exc.public_detail()) from exc
         return LinkUpdateTokenResponse(
             link_token=result.link_token,
-            products=_merge_products(link.products_requested, requested),
+            products=merge_products(link.products_requested, requested),
             additional_products=additional,
         )
 
@@ -587,11 +586,7 @@ def create_app(
         storage: StorageDep,
         secrets: SecretsDep,
     ) -> LinkSummary:
-        current = await storage.get_link(item_id)
-        if current is None:
-            raise HTTPException(404, f"unknown item_id: {item_id}")
-        products = _merge_products(current.products_requested, body.products)
-        link = await storage.mark_link_update_succeeded(item_id=item_id, products_requested=products)
+        link = await storage.mark_link_update_succeeded(item_id=item_id, products=body.products)
         if link is None:
             raise HTTPException(404, f"unknown item_id: {item_id}")
         if body.sync:
@@ -760,10 +755,6 @@ def _requested_products_for_update(link: StoredLink, body: LinkUpdateTokenReques
     if body.reason == "repair" or body.products is None:
         return link.products_requested
     return [product.value for product in body.products]
-
-
-def _merge_products(*groups: list[str]) -> list[str]:
-    return list(dict.fromkeys(chain.from_iterable(groups)))
 
 
 async def _finish_before_cancellation[T](state: AppState, operation: Coroutine[Any, Any, T]) -> T:

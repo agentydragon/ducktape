@@ -1,5 +1,6 @@
 # gazelle:ignore
 
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
@@ -11,6 +12,11 @@ py_binary(
     name = "derive_qwen38_template",
     main_module = "cluster.cdk8s.ollama.patch_qwen38_template",
     deps = [":patch_qwen38_template"],
+)
+
+sh_binary(
+    name = "stage_tabbyapi_checkpoint",
+    srcs = ["stage_tabbyapi_checkpoint.sh"],
 )
 
 py_test(
@@ -41,12 +47,17 @@ py_library(
     # Clients in other packages read SERVICE.
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        ":tabby",
+        ":tabby_endpoint",
+        "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:namespaces",
+        "//cluster/cdk8s:reflector",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s:volume_claim",
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
         "//cluster/cdk8s/providers/flux:kustomization",
@@ -56,5 +67,48 @@ py_library(
         "@pypi//constructs",
         "@pypi//jinja2",
         "@rules_python//python/runfiles",
+    ],
+)
+
+py_library(
+    name = "tabby",
+    srcs = ["tabby.py"],
+    data = [
+        "tabbyapi-chat-template.jinja",
+        "tabbyapi-config.yml",
+        "tabbyapi_serve.py",
+    ],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":tabby_endpoint",
+        "//cluster/cdk8s:service_ref",
+        "//model_catalog:catalog",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_library(
+    name = "tabby_endpoint",
+    srcs = ["tabby_endpoint.py"],
+    visibility = ["//cluster/cdk8s/litellm:__pkg__"],
+)
+
+py_library(
+    name = "tabbyapi_serve",
+    srcs = ["tabbyapi_serve.py"],
+    deps = ["@pypi//starlette"],
+)
+
+py_test(
+    name = "test_tabbyapi_serve",
+    srcs = ["test_tabbyapi_serve.py"],
+    deps = [
+        ":tabbyapi_serve",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
     ],
 )

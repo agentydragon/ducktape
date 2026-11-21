@@ -1,10 +1,9 @@
 // @vitest-environment happy-dom
-import { MantineProvider } from "@mantine/core";
 import { act } from "react";
-import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
+import { cleanupMounted, renderWithMantine } from "../../../../util/frontend/testing/react";
 import * as sandboxClient from "./client";
 import * as appConfigClient from "../app_config/client";
 import {
@@ -32,13 +31,8 @@ import { serveEventStreams } from "../testing/watch";
 
 const liveSandboxData = vi.hoisted(() => ({ snapshot: null as { environments: EnvironmentDescriptor[] } | null }));
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-const mounted: Array<{ root: ReturnType<typeof createRoot>; container: HTMLDivElement }> = [];
 afterEach(async () => {
-  for (const { root, container } of mounted.splice(0)) {
-    await act(async () => root.unmount());
-    container.remove();
-  }
+  await cleanupMounted();
   liveSandboxData.snapshot = null;
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -89,20 +83,12 @@ async function render(newSandboxDefaults: NewSandboxDefaults = UNSET_DEFAULTS) {
     ...create(GetSandboxFormResponseSchema, { policySets: ["test-basic", "test-packages"] }),
     newSandboxDefaults,
   });
-  const container = document.createElement("div");
-  document.body.append(container);
-  const root = createRoot(container);
-  mounted.push({ root, container });
-  await act(async () =>
-    root.render(
-      <MantineProvider env="test">
-        <MemoryRouter>
-          <SandboxesLiveProvider>
-            <SandboxList onOpen={onOpen} />
-          </SandboxesLiveProvider>
-        </MemoryRouter>
-      </MantineProvider>
-    )
+  const container = await renderWithMantine(
+    <MemoryRouter>
+      <SandboxesLiveProvider>
+        <SandboxList onOpen={onOpen} />
+      </SandboxesLiveProvider>
+    </MemoryRouter>
   );
   await choose(container, "Launch preset", "Test preset");
   return { container, onOpen };
@@ -228,17 +214,7 @@ it("keeps lifecycle actions unavailable until the controller reports a mode", as
     observedState: { operatingMode: OperatingMode.UNSPECIFIED, phase: SandboxPhase.UNSPECIFIED },
   });
   const onAct = vi.fn();
-  const container = document.createElement("div");
-  document.body.append(container);
-  const root = createRoot(container);
-  mounted.push({ root, container });
-  await act(async () =>
-    root.render(
-      <MantineProvider env="test">
-        <SuspendResume sandbox={unknown} onAct={onAct} />
-      </MantineProvider>
-    )
-  );
+  const container = await renderWithMantine(<SuspendResume sandbox={unknown} onAct={onAct} />);
 
   expect(container.querySelector<HTMLButtonElement>('[aria-label="Sandbox mode unavailable"]')?.disabled).toBe(true);
   expect(deletable(unknown)).toBe(false);

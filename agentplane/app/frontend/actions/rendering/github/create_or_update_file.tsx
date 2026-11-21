@@ -1,5 +1,6 @@
 import type { JSX } from "react";
 import { Code, Stack, Text } from "@mantine/core";
+import { fileWritten } from "./receipts";
 
 import { TextBlock } from "../../../ui/text_block";
 import type { ActionPresentation } from "../presentation";
@@ -28,11 +29,13 @@ function FileWriteOptions({ args }: { args: CreateOrUpdateFileArguments }): JSX.
     <Stack gap={2}>
       {args.sha !== undefined && (
         <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-          Replace blob SHA: <Code>{args.sha}</Code>
+          Only if the current file matches <Code>{args.sha}</Code>
         </Text>
       )}
       {args.allow_symlink_write !== undefined && (
-        <Text size="sm">Allow symlink write: {args.allow_symlink_write ? "yes" : "no"}</Text>
+        <Text size="sm">
+          {args.allow_symlink_write ? "May replace the symbolic link target" : "Symbolic links are protected"}
+        </Text>
       )}
     </Stack>
   );
@@ -83,6 +86,6 @@ export const createOrUpdateFilePresentation: ActionPresentation = {
   fallbackLabel: "Create or update a GitHub file",
   label: createOrUpdateFileLabel,
   pane: { collapsed: createOrUpdateFileCollapsed, opened: createOrUpdateFilePane },
-  details: { arguments: createOrUpdateFilePane },
+  details: { arguments: createOrUpdateFilePane, result: fileWritten },
   offersCardDecisionButtons: offersCardDecisionButtonsCreateOrUpdateFile,
 };

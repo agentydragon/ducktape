@@ -1,6 +1,6 @@
 """Test the Habitify MCP server using mcp dev.
 
-Usage: bazel run //x/habitify_mcp:test_mcp_dev -- [--api-key KEY] [--debug]
+Usage: bazel run //x/habitify_mcp:mcp_dev_runner -- [--api-key KEY] [--debug]
 
 Creates a mock server file for the MCP dev command to test tools
 in a debug environment without full Claude Desktop installation.

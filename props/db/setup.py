@@ -1,8 +1,6 @@
-"""Database setup and initialization (RLS policies, views).
+"""Database setup: create the database, run Alembic migrations, recreate from scratch, sync the evaluator password.
 
-Extracted from database.py to separate concerns:
-- database.py: Database class (owns engine + session factory)
-- setup.py: Database schema and security setup (recreate_database, RLS, views)
+RLS policies and views are defined in the Alembic migrations, not here.
 """
 
 from __future__ import annotations
@@ -67,7 +65,7 @@ def recreate_database(engine: Engine) -> None:
     """Recreate database from scratch (drop all + migrate).
 
     This is destructive: drops all existing tables, views, and policies,
-    then runs all migrations from scratch. For tests only.
+    then runs all migrations from scratch.
     """
     logger.info("Recreating database from scratch...")
     _drop_all(engine)
@@ -85,13 +83,12 @@ def ensure_evaluator_role(db_config: DatabaseConfig) -> None:
     password = os.environ.get("PROPS_EVALUATOR_PASSWORD")
     if not password:
         return
-    engine = create_engine(db_config.url, isolation_level="AUTOCOMMIT")
-    try:
+    with ExitStack() as cleanup:
+        engine = create_engine(db_config.url, isolation_level="AUTOCOMMIT")
+        cleanup.callback(engine.dispose)
         with engine.connect() as conn:
             conn.execute(text("ALTER ROLE evaluator PASSWORD :pw"), {"pw": password})
         logger.info("Evaluator role password synced")
-    finally:
-        engine.dispose()
 
 
 def _drop_all(engine: Engine) -> None:

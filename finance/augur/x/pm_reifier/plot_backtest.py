@@ -9,20 +9,20 @@ and a stats panel with formal calibration tests:
     correlation) 95% CIs for mean PIT (H0 = 0.5, calibrated median) and tail-escape rate
     (H0 = 0.20, calibrated tail mass) — the robust "is it miscalibrated?" verdict.
 
-Self-contained; run in the uv env:
+Run in the uv env:
   uv run --no-project --python 3.12 --with matplotlib --with scipy python augur/x/pm_reifier/plot_backtest.py
 """
 
 from __future__ import annotations
 
 import json
-import math
 import pathlib
 import random
 
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
+from calibration import BINS, TAIL_NULL, block_bootstrap_ci, jsd_to_uniform, tail_rate
 from scipy import stats
 
 matplotlib.use("Agg")
@@ -30,45 +30,8 @@ matplotlib.use("Agg")
 HERE = pathlib.Path(__file__).parent
 BT = json.loads((HERE / "results" / "backtest.json").read_text())
 SERIES = ["inflation", "sp500", "crypto:BTC", "home_value:sf_ca", "rent:sf_ca"]
-BINS = 10
 WINDOW = 8
-BLOCK = 4  # months per bootstrap block
-REPS = 4000
-TAIL_NULL = 0.2  # calibrated mass in the two end deciles (PIT ≤ .1 or ≥ .9)
 random.seed(0)
-
-
-def jsd_to_uniform(vals: list[float], bins: int = BINS) -> float | None:
-    if len(vals) < bins:
-        return None
-    counts = [0.0] * bins
-    for u in vals:
-        counts[min(bins - 1, int(u * bins))] += 1
-    n = sum(counts)
-    p = [c / n for c in counts]
-    q = 1.0 / bins
-    m = [(pi + q) / 2 for pi in p]
-    kl = lambda a, b: sum(ai * math.log2(ai / bi) for ai, bi in zip(a, b, strict=True) if ai > 0)  # noqa: E731
-    return 0.5 * kl(p, m) + 0.5 * kl([q] * bins, m)
-
-
-def tail_rate(vals: list[float]) -> float:
-    return sum(1 for u in vals if u <= 0.1 or u >= 0.9) / len(vals)
-
-
-def block_bootstrap_ci(month_pits: list[list[float]], statfn, reps: int = REPS) -> tuple[float, float]:
-    """Moving-block bootstrap CI: resample whole months in length-BLOCK blocks (keeps serial + cross-series dependence)."""
-    nblocks = math.ceil(len(month_pits) / BLOCK)
-    out = []
-    for _ in range(reps):
-        sampled: list[list[float]] = []
-        for _ in range(nblocks):
-            start = random.randint(0, len(month_pits) - BLOCK)
-            sampled += month_pits[start : start + BLOCK]
-        pooled = [p for mm in sampled[: len(month_pits)] for p in mm]
-        out.append(statfn(pooled))
-    out.sort()
-    return out[int(0.025 * reps)], out[int(0.975 * reps)]
 
 
 def main() -> None:
@@ -131,7 +94,7 @@ def main() -> None:
         f"  mean PIT  {np.mean(pooled):.2f}  [{mean_lo:.2f}, {mean_hi:.2f}]\n"
         f"    H0=0.50 {'EXCLUDED → under-predicts' if mean_sig else 'included'}\n"
         f"  tail-esc  {tail_rate(pooled):.2f}  [{tail_lo:.2f}, {tail_hi:.2f}]\n"
-        f"    H0=0.20 {'EXCLUDED → thin-tailed' if tail_sig else 'included'}"
+        f"    H0={TAIL_NULL:.2f} {'EXCLUDED → thin-tailed' if tail_sig else 'included'}"
     )
     sx.text(0.0, 0.98, txt, va="top", ha="left", family="monospace", fontsize=9.5)
 

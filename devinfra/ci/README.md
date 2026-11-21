@@ -2,6 +2,38 @@
 
 CI-side utilities and configuration.
 
+## Where Bazel CI runs tests
+
+GitHub Actions drives [Bazel CI](../../.github/workflows/bazel-ci.yml). A BuildBuddy remote runner
+runs Bazel, and Bazel schedules individual test actions on remote executors. PRs select affected
+targets, while devel pushes and graph-wide changes select the full CI target set. A cached test
+result can satisfy either selection.
+
+| Tests                                                                   | Executor and reason                                                                                                                                                                                                                                                                                                                                 |
+| ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ordinary tests, including the Agentplane Pod, dispatcher and MCP suites | BuildBuddy-managed executors. These tests run without nested hardware virtualization.                                                                                                                                                                                                                                                               |
+| `//agentplane/system_tests/suites:test_vm`                              | Self-hosted `kvm-vm` pool. The cluster runs the BuildBuddy workers as KubeVirt VMs. Each worker exposes `/dev/kvm` to the Docker test action, so the inner KubeVirt guests for the Claude and Codex scenarios boot with hardware acceleration. The test requires KVM. The measured configuration permits recycling the K3s fixture between actions. |
+| `//agentplane/system_tests/suites:test_firecracker`                     | The same hosted pool supplies the KVM device needed to boot Firecracker guests.                                                                                                                                                                                                                                                                     |
+| `//agentplane/system_tests/suites:test_vm_tcg`                          | Managed BuildBuddy with QEMU software emulation. Run explicitly to compare the same VM cases with the hosted KVM suite.                                                                                                                                                                                                                             |
+
+The hosted VM route was faster and had fewer first-attempt failures in paired runs of the same
+source revisions. The [latency report](https://agentydragon.github.io/ducktape/latency/#vm-shadow)
+and [reliability report](https://agentydragon.github.io/ducktape/reliability/#vm-shadow) track
+the sample, uncertainty and follow-up evidence. Test execution time and time spent waiting for a worker
+are separate measurements.
+
+To compare the two [VM targets](../../agentplane/system_tests/suites/BUILD.bazel) on demand,
+run both at the same revision and force fresh test results:
+
+```sh
+bbr test --test_tag_filters= --nocache_test_results --flaky_test_attempts=2 \
+  //agentplane/system_tests/suites:test_vm //agentplane/system_tests/suites:test_vm_tcg
+```
+
+The completed devel experiment recorded pairs in `vm-pair-<run_id>-<run_attempt>` Actions artifacts.
+Version 2 of `pair.json` identifies the executor directories with `required_route` and `shadow_route`.
+Earlier artifacts stored the required managed results under `managed/` and the hosted KVM results under `shadow/`.
+
 ## PR visual review
 
 The publisher moved with its code to <../pr_visuals/README.md>.

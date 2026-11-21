@@ -17,7 +17,7 @@ import yaml
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from mcp.types import ToolAnnotations
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -58,9 +58,6 @@ class SshSettings(BaseModel):
         return targets
 
 
-_SETTINGS = TypeAdapter(SshSettings)
-
-
 class TargetStatus(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -87,7 +84,7 @@ _READ_ONLY = ToolAnnotations(readOnlyHint=True)
 
 def load_settings(path: Path) -> SshSettings:
     with path.open() as stream:
-        return _SETTINGS.validate_python(yaml.safe_load(stream))
+        return SshSettings.model_validate(yaml.safe_load(stream))
 
 
 def _error(kind: str, message: str) -> ToolError:
@@ -176,7 +173,7 @@ def _run_ssh(
     except (OSError, paramiko.SSHException) as error:
         raise _SshFailureError("known_hosts_unavailable", "SSH host-key file could not be loaded") from error
     client.set_missing_host_key_policy(paramiko.RejectPolicy())
-    try:
+    with client:
         try:
             client.connect(
                 target.host,
@@ -208,8 +205,6 @@ def _run_ssh(
         except (TimeoutError, paramiko.SSHException, OSError) as error:
             raise _SshUnknownError from error
         return stdout, stderr, exit_code
-    finally:
-        client.close()
 
 
 def _read_bounded_sync(stream: Any, limit: int) -> tuple[str, bool]:

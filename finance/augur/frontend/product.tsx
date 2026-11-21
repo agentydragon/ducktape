@@ -8,6 +8,7 @@ import {
   fetchProductRollout,
   type fetchAugurDeployment,
 } from "./client";
+import { errorMessage, isAbortError } from "./lib/errors";
 import { fmtQuanta, fmtNumber } from "./lib/format";
 import { rowsFrom } from "./lib/frame";
 import { toastFetchError } from "./lib/toast";
@@ -80,17 +81,6 @@ type ProjectionSnapshot = {
   metricFan: ProjectionSummaryResponse["metric_fan"];
   terminalDistribution: ProjectionSummaryResponse["terminal_distribution"];
 };
-
-function errorMessage(error: unknown): string {
-  if (typeof error === "object" && error !== null && "message" in error && error.message) {
-    return String(error.message);
-  }
-  return String(error);
-}
-
-function isAbortError(error: unknown): boolean {
-  return typeof error === "object" && error !== null && "name" in error && error.name === "AbortError";
-}
 
 function metricOption(value: string): MetricOption {
   const option = METRIC_OPTIONS.find((candidate) => candidate.value === value);
@@ -319,7 +309,7 @@ function RolloutResultsPanel({
 
 // The Product surface: owns the comparison scenario set (Base + variants), fans out one metric-fan
 // request per scenario over a shared seed set, and renders the editor, stat cards, and rollout
-// results. Shared controls (rollout count / seed / model / horizon / scale / currency) are owned by
+// results. Shared controls (rollout count / seed / model / horizon / scale) are owned by
 // the app shell and passed in; this component owns only product-tab state.
 export function ProductProjectionWorkspace({
   sharedControlsSlot,
@@ -586,9 +576,9 @@ export function ProductProjectionWorkspace({
   const selectedRolloutLoading =
     selectedRolloutSeed != null && activeTerminalDisplayResult != null && !selectedDetail && !rolloutError;
 
-  // -- Base + variant operations. Base edits propagate to every variant that doesn't override the
+  // Base + variant operations. Base edits propagate to every variant that doesn't override the
   // touched knob (variants resolve as `{ ...base, ...overrides }`); variant edits write to that
-  // variant's `overrides` only. ----------------------------------------------------------------
+  // variant's `overrides` only.
   const updateBaseInput = (patch: Partial<ProductInput>) =>
     setScenarioSet((previous) => ({
       ...previous,

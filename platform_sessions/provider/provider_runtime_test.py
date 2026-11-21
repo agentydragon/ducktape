@@ -81,21 +81,22 @@ class _FailingStopControl(_Control):
         raise RuntimeError("synthetic listener shutdown failure")
 
 
+@asynccontextmanager
+async def _owner_lifespan(events: list[str]):
+    events.append("owner start")
+    try:
+        yield
+    finally:
+        events.append("owner stop")
+
+
 @pytest.mark.asyncio
 async def test_control_and_owner_remain_open_until_import_drain_completes():
     events: list[str] = []
     service = _Service(events)
     control = _Control(events)
 
-    @asynccontextmanager
-    async def owner_lifespan():
-        events.append("owner start")
-        try:
-            yield
-        finally:
-            events.append("owner stop")
-
-    async with provider_control_lifespan(owner_lifespan(), lambda: service, control, lambda _: None):
+    async with provider_control_lifespan(_owner_lifespan(events), lambda: service, control, lambda _: None):
         events.append("serving")
 
     assert events == [
@@ -118,16 +119,8 @@ async def test_cancellation_does_not_release_owner_or_listener_before_drain():
     service = _BlockedService(events, entered, release)
     control = _Control(events)
 
-    @asynccontextmanager
-    async def owner_lifespan():
-        events.append("owner start")
-        try:
-            yield
-        finally:
-            events.append("owner stop")
-
     async def run_lifespan():
-        async with provider_control_lifespan(owner_lifespan(), lambda: service, control, lambda _: None):
+        async with provider_control_lifespan(_owner_lifespan(events), lambda: service, control, lambda _: None):
             events.append("serving")
 
     task = asyncio.create_task(run_lifespan())
@@ -162,20 +155,11 @@ async def test_ownership_acquisition_failure_prevents_provider_owner_start(tmp_p
     state_dir = tmp_path / "instance-state"
     held_ownership = InstanceOwnership(state_dir / "imports")
     events: list[str] = []
-
-    @asynccontextmanager
-    async def owner_lifespan():
-        events.append("owner start")
-        try:
-            yield
-        finally:
-            events.append("owner stop")
-
     control = _Control(events)
 
     with pytest.raises(Timeout):
         async with provider_control_lifespan(
-            owner_lifespan(),
+            _owner_lifespan(events),
             lambda: create_provider_control_service(object(), [SimpleNamespace(id="member", state_dir=state_dir)]),
             control,
             lambda _: None,
@@ -197,15 +181,9 @@ async def test_service_slot_failure_drains_and_releases_ownership(tmp_path, monk
         lambda _backend, ownership: _ClosingService(events, ownership),
     )
 
-    @asynccontextmanager
-    async def owner_lifespan():
-        events.append("owner start")
-        yield
-        events.append("owner stop")
-
     with pytest.raises(RuntimeError, match="service slot unavailable"):
         async with provider_control_lifespan(
-            owner_lifespan(),
+            _owner_lifespan(events),
             lambda: create_provider_control_service(object(), [SimpleNamespace(id="member", state_dir=state_dir)]),
             _Control(events),
             lambda _service: (_ for _ in ()).throw(RuntimeError("service slot unavailable")),
@@ -225,16 +203,8 @@ async def test_body_failure_still_releases_after_successful_owner_exit(tmp_path)
     service = _ClosingService(events, ownership)
     control = _Control(events)
 
-    @asynccontextmanager
-    async def owner_lifespan():
-        events.append("owner start")
-        try:
-            yield
-        finally:
-            events.append("owner stop")
-
     with pytest.raises(ValueError, match="synthetic body failure"):
-        async with provider_control_lifespan(owner_lifespan(), lambda: service, control, lambda _: None):
+        async with provider_control_lifespan(_owner_lifespan(events), lambda: service, control, lambda _: None):
             raise ValueError("synthetic body failure")
 
     assert events == ["owner start", "control start", "drain", "control stop", "owner stop", "ownership close"]
@@ -249,17 +219,9 @@ async def test_listener_shutdown_failure_retains_ownership(tmp_path):
     ownership = create_instance_ownership([SimpleNamespace(id="member", state_dir=state_dir)])
     service = _ClosingService(events, ownership)
 
-    @asynccontextmanager
-    async def owner_lifespan():
-        events.append("owner start")
-        try:
-            yield
-        finally:
-            events.append("owner stop")
-
     with pytest.raises(RuntimeError, match="listener shutdown failure"):
         async with provider_control_lifespan(
-            owner_lifespan(), lambda: service, _FailingStopControl(events), lambda _: None
+            _owner_lifespan(events), lambda: service, _FailingStopControl(events), lambda _: None
         ):
             pass
 

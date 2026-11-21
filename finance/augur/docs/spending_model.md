@@ -42,11 +42,11 @@ claim after successful execution is a distinct fatal stop. No implicit funding,
 spending cut, payment priority or retry is supplied by the executor. Zero chosen
 consumption is represented by omitting the action, not a zero-valued payment.
 
-Existing configured full-run consumers are a separate migration boundary: they
-raise cash for their assembled claims, pay each in full in observed order, then
-invest surplus and run configured strategies. They have no callable spending API.
-Their cash-band/drift controls remain until those consumers move to explicit
-actions; do not mistake them for the action contract.
+The product API's full-run consumers use the same action contract. Each is an
+`EconomicAgent` whose `decide()` returns the ordered action list: a `CashBandHousehold`
+(<../policy/cash_band_household.py>) sells toward its cash band, pays every due claim in
+full in observed order, then buys; a `ClaimPayer` (<../policy/funding.py>) only pays claims.
+The band and drift controls belong to that household policy, not to the action contract.
 
 ## Reporting and scope
 

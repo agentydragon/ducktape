@@ -6,8 +6,6 @@ import pytest_bazel
 from devinfra.skills.forgejo.scripts import forgejo
 from devinfra.skills.forgejo.scripts.forgejo import Task
 
-# ── timing ───────────────────────────────────────────────────────────────────
-
 
 def _row(**kw):
     base = {
@@ -65,8 +63,6 @@ def test_summarize_groups_by_job_and_reports_dropped_outliers() -> None:
     assert by_name["validate"].n == 1
 
 
-# ── logs ─────────────────────────────────────────────────────────────────────
-
 RUN_HTML = """
 <html>
   <body>
@@ -90,8 +86,8 @@ def test_parse_run_page_extracts_web_ui_endpoint_state() -> None:
     assert state.run_index == "391"
     assert state.attempt == "1"
     assert (
-        state.log_endpoint("https://git.allegedly.works/", 1)
-        == "https://git.allegedly.works/haku/haku-state/actions/runs/391/jobs/1/attempt/1"
+        state.log_endpoint("https://forgejo.example.test/", 1)
+        == "https://forgejo.example.test/haku/haku-state/actions/runs/391/jobs/1/attempt/1"
     )
 
 
@@ -160,9 +156,6 @@ def test_parse_log_response_handles_forgejo_lines() -> None:
             message='Error response from daemon: Get "https://git.allegedly.works/v2/": denied: Access denied',
         )
     ]
-
-
-# ── rerun ────────────────────────────────────────────────────────────────────
 
 
 def test_run_view_lists_jobs_in_route_index_order() -> None:

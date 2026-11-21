@@ -113,7 +113,16 @@ data, scrubs will catch it on read.
 
 ## Files
 
-- `data/` — phase 1 diagnostics (pre-resume state, memory, ZFS, kernel logs)
-- `data-phase2/` — phase 2 (PCIe, fio verify, NVMe health, ZFS DIO config)
-- `collect_pre_resume.sh` — phase 1 collection script
-- `collect_phase2.sh` — phase 2 collection script
+- `data/` — phase 1 output cited above: `01_block_info.txt` (QEMU `info block`),
+  `02_vm_status.txt` (`qm status --verbose`), `03_file_extents.txt` (stat of the
+  scsi4 file), `05_zfs_state.txt` (ZFS state, full `zpool events -v`)
+- `collect_pre_resume.sh` — phase 1 collection script (QEMU block info, VM
+  status, file extents, per-disk stat/du, ZFS state, write test, lsof,
+  memory/process state, kernel logs); writes `/tmp/wyrm2-diag-<ts>/`
+- `collect_phase2.sh` — phase 2 collection script (PCIe/AER, fio verify, NVMe
+  health, ZFS DIO config); writes `/tmp/wyrm2-diag-phase2-<ts>/`
+
+Dumps `04_all_disks.txt`, `06_write_test.txt`, `07_lsof.txt` are in git history:
+`git show f155089cc2:debug/wyrm2_io_error_2026_04_08/data/<file>`.
+`08_memory_procs.txt`, `09_kernel_logs.txt` and all phase 2 output were never
+committed.

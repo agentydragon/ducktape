@@ -3,7 +3,6 @@ package streaming_test
 import (
 	"context"
 	"errors"
-	"net"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -11,6 +10,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -111,6 +111,40 @@ func TestSendWithinReturnsTheCompletedSendsResult(t *testing.T) {
 	}
 }
 
+func TestSendWithinStatusReturnsFailuresAsStatuses(t *testing.T) {
+	const timeoutMessage = "test write deadline expired"
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	blocked := func(*int) error {
+		<-release
+		return nil
+	}
+	canceled, cancel := context.WithCancel(t.Context())
+	cancel()
+	expired, stop := context.WithTimeout(t.Context(), 0)
+	defer stop()
+	sendFailure := status.Error(codes.Unavailable, "transport closing")
+	for _, tc := range []struct {
+		name    string
+		ctx     context.Context
+		timeout time.Duration
+		send    func(*int) error
+		want    *status.Status
+	}{
+		{name: "write timeout", ctx: t.Context(), timeout: 10 * time.Millisecond, send: blocked, want: status.New(codes.DeadlineExceeded, timeoutMessage)},
+		{name: "canceled context", ctx: canceled, timeout: time.Minute, send: blocked, want: status.New(codes.Canceled, context.Canceled.Error())},
+		{name: "expired context", ctx: expired, timeout: time.Minute, send: blocked, want: status.New(codes.DeadlineExceeded, context.DeadlineExceeded.Error())},
+		{name: "send failure", ctx: t.Context(), timeout: time.Minute, send: func(*int) error { return sendFailure }, want: status.Convert(sendFailure)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := streaming.SendWithinStatus(tc.ctx, tc.timeout, tc.send, new(int), timeoutMessage)
+			if got := status.Convert(err); got.Code() != tc.want.Code() || got.Message() != tc.want.Message() {
+				t.Errorf("SendWithinStatus() = %v, want %v", err, tc.want.Err())
+			}
+		})
+	}
+}
+
 func TestRealGRPCFlowControlReleasesBlockedSend(t *testing.T) {
 	for _, tc := range []struct {
 		name          string
@@ -129,10 +163,6 @@ func TestRealGRPCFlowControlReleasesBlockedSend(t *testing.T) {
 }
 
 func testRealGRPCFlowControlReleasesBlockedSend(t *testing.T, cancelClient bool, writeTimeout time.Duration, expectTimeout bool) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	draining, drain := context.WithCancel(t.Context())
 	if writeTimeout <= 0 {
 		writeTimeout = 10 * time.Second
@@ -145,14 +175,10 @@ func testRealGRPCFlowControlReleasesBlockedSend(t *testing.T, cancelClient bool,
 	}
 	server := grpc.NewServer()
 	server.RegisterService(&flowControlServiceDesc, service)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(func() {
-		server.Stop()
-		_ = listener.Close()
-	})
+	serverAddr := grpcserver.Serve(t, server)
 
 	conn, err := grpc.NewClient(
-		listener.Addr().String(),
+		serverAddr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithInitialWindowSize(64<<10),
 		grpc.WithInitialConnWindowSize(64<<10),
@@ -217,11 +243,11 @@ func testRealGRPCFlowControlReleasesBlockedSend(t *testing.T, cancelClient bool,
 			}
 		} else if cancelClient {
 			// Client cancellation may close the transport before the server context wins the SendWithin race.
-			if !errors.Is(err, context.Canceled) && status.Code(err) != codes.Canceled && status.Code(err) != codes.Unavailable {
+			if code := status.Code(err); code != codes.Canceled && code != codes.Unavailable {
 				t.Fatalf("handler error = %v, want cancellation or transport closure after client cancel", err)
 			}
-		} else if !errors.Is(err, context.Canceled) {
-			t.Fatalf("handler error = %v, want context.Canceled after drain", err)
+		} else if status.Code(err) != codes.Canceled {
+			t.Fatalf("handler error = %v, want Canceled after drain", err)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("ending the blocked write did not return the RPC handler")
@@ -287,10 +313,7 @@ func (s *flowControlService) Watch(stream grpc.ServerStream) (err error) {
 	}
 	frame := wrapperspb.Bytes([]byte(strings.Repeat("x", 1<<20)))
 	for {
-		if err := streaming.SendWithin(writeCtx, s.writeTimeout, send, frame); err != nil {
-			if errors.Is(err, streaming.ErrSendTimeout) {
-				return status.Error(codes.DeadlineExceeded, "flow-control write deadline expired")
-			}
+		if err := streaming.SendWithinStatus(writeCtx, s.writeTimeout, send, frame, "flow-control write deadline expired"); err != nil {
 			return err
 		}
 	}

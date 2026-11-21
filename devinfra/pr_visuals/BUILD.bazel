@@ -2,7 +2,7 @@ load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
-load("//util/testing/frontend_visual:py_visual_test.bzl", "py_visual_test")
+load("//testing/frontend_visual:py_visual_test.bzl", "py_visual_test")
 
 # gazelle:exclude test_gallery_visual.py
 
@@ -10,10 +10,7 @@ py_library(
     name = "check_run",
     srcs = ["check_run.py"],
     visibility = ["//:__subpackages__"],
-    deps = [
-        "@pypi//pydantic",
-        "@pypi//pygithub",
-    ],
+    deps = ["@pypi//pygithub"],
 )
 
 py_binary(
@@ -139,6 +136,7 @@ py_library(
         ":targets",
         ":visual_diff",
         "//devinfra/buildbuddy/ci:invocation_ids",
+        "//devinfra/testing:output_records",
         "@pypi//boto3",
         "@pypi//botocore",
         "@pypi//pygithub",
@@ -231,9 +229,9 @@ py_visual_test(
     test_deps = [
         ":metadata",
         ":publisher",
+        "//testing/frontend_visual:capture",
+        "//testing/frontend_visual:viewports",
         "//util:playwright",
-        "//util/testing/frontend_visual:capture",
-        "//util/testing/frontend_visual:viewports",
         "@pypi//pillow",
         "@pypi//playwright",
         "@pypi//pytest",
@@ -393,6 +391,7 @@ py_library(
         ":issue_provenance",
     ],
     deps = [
+        ":check_run",
         ":metadata",
         ":render_common",
         "@pypi//jinja2",
@@ -427,7 +426,7 @@ py_library(
     srcs = ["image_storage.py"],
     deps = [
         ":artifacts",
-        ":render_common",
+        ":metadata",
         "@pypi//botocore",
         "@pypi//pillow",
         "@pypi//types_boto3_s3",

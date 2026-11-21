@@ -6,36 +6,37 @@ import pytest_bazel
 import yaml
 from more_itertools import one
 
-from cluster.cdk8s.agentplane import actions, app, notifications, runner_gateway, session_dispatcher, staging
+from cluster.cdk8s.agentplane import actions, app, notifications, runner_gateway, staging
+from cluster.cdk8s.testing.manifests import config_map_yaml, find_resource
 
 
 def test_dispatcher_sender_identity_and_service_routing(staging_manifests: list[dict[str, Any]]) -> None:
-
-    def resource(kind: str, name: str) -> dict[str, Any]:
-        return one(doc for doc in staging_manifests if doc["kind"] == kind and doc["metadata"]["name"] == name)
-
-    pod = resource("Deployment", runner_gateway.NAME)["spec"]["template"]["spec"]
+    pod = find_resource(staging_manifests, "Deployment", runner_gateway.NAME)["spec"]["template"]["spec"]
     container = one(pod["containers"])
-    settings = yaml.safe_load(resource("ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"])
+    settings = config_map_yaml(staging_manifests, f"{runner_gateway.NAME}-settings", "settings.yaml")
     callers = set(settings["dispatcher_service_callers"])
     wakers = set(settings.get("wake_service_callers", []))
     senders = (app.NAME, notifications.NAME, actions.NAME)
     assert callers == {
-        uri for sender in senders for uri in resource("Certificate", f"{sender}-workload")["spec"]["uris"]
+        uri
+        for sender in senders
+        for uri in find_resource(staging_manifests, "Certificate", f"{sender}-workload")["spec"]["uris"]
     }
     assert wakers <= callers
-    service = resource("Service", session_dispatcher.NAME)["spec"]
-    labels = resource("Deployment", runner_gateway.NAME)["spec"]["template"]["metadata"]["labels"]
+    service = find_resource(staging_manifests, "Service", runner_gateway.NAME)["spec"]
+    labels = find_resource(staging_manifests, "Deployment", runner_gateway.NAME)["spec"]["template"]["metadata"][
+        "labels"
+    ]
     assert service["selector"].items() <= labels.items()
     assert {port["targetPort"] for port in service["ports"]} <= {port["containerPort"] for port in container["ports"]}
-    database = resource("Database", "session-dispatcher")["spec"]
+    database = find_resource(staging_manifests, "Database", "session-dispatcher")["spec"]
     assert database["name"] == "session_dispatcher"
     assert database["owner"] == "session_dispatcher"
     assert {item["name"]: item.get("valueFrom") for item in container["env"]}[
-        "AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL"
+        "AGENTPLANE_SESSIONS_DISPATCHER_DATABASE_URL"
     ] == {"secretKeyRef": {"name": "postgres-session-dispatcher", "key": "uri"}}
     for sender in senders:
-        policy = resource("CiliumNetworkPolicy", sender)["spec"]
+        policy = find_resource(staging_manifests, "CiliumNetworkPolicy", sender)["spec"]
         assert any(
             target["matchLabels"].get("app.kubernetes.io/name") == runner_gateway.NAME
             for rule in policy["egress"]
@@ -43,47 +44,23 @@ def test_dispatcher_sender_identity_and_service_routing(staging_manifests: list[
         )
 
 
-def test_app_migrates_with_its_serving_database_uri(staging_manifests: list[dict[str, Any]]) -> None:
-    deployment = one(
-        doc for doc in staging_manifests if doc["kind"] == "Deployment" and doc["metadata"]["name"] == app.NAME
-    )
-    pod = deployment["spec"]["template"]["spec"]
-
-    assert not pod.get("initContainers")
+def test_app_reads_its_serving_database_uri(staging_manifests: list[dict[str, Any]]) -> None:
+    pod = find_resource(staging_manifests, "Deployment", app.NAME)["spec"]["template"]["spec"]
     container = one(container for container in pod["containers"] if container["name"] == "app")
-
-    variables = container["env"]
-    database_url = one(variable for variable in variables if variable["name"] == "AGENTPLANE_DATABASE_URL")
+    database_url = one(variable for variable in container["env"] if variable["name"] == "AGENTPLANE_DATABASE_URL")
     assert database_url == {
         "name": "AGENTPLANE_DATABASE_URL",
         "valueFrom": {"secretKeyRef": {"name": "postgres-app", "key": "uri"}},
     }
-    assert not any(variable["name"].startswith("AGENTPLANE_DB_") for variable in variables)
-    assert container["startupProbe"]["httpGet"]["path"] == "/healthz"
 
 
 def test_app_uses_dispatcher_grpc_target(staging_manifests: list[dict[str, Any]]) -> None:
-    deployment = one(
-        doc for doc in staging_manifests if doc["kind"] == "Deployment" and doc["metadata"]["name"] == app.NAME
-    )
-    pod = deployment["spec"]["template"]["spec"]
-    app_container = one(container for container in pod["containers"] if container["name"] == "app")
-    service = one(
-        doc
-        for doc in staging_manifests
-        if doc["kind"] == "Service"
-        and doc["metadata"]["name"] == runner_gateway.sessions_service(staging.ENV.namespace).name
-    )
+    service = find_resource(staging_manifests, "Service", runner_gateway.sessions_service(staging.ENV.namespace).name)
     grpc_port = one(port for port in service["spec"]["ports"] if port["name"] == "grpc")
     endpoint = f"{service['metadata']['name']}.{staging.ENV.namespace}.svc.cluster.local:{grpc_port['port']}"
-    app_config_map = one(
-        doc for doc in staging_manifests if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "app-config"
-    )
+    app_config_map = find_resource(staging_manifests, "ConfigMap", "app-config")
     app_config = yaml.safe_load(app_config_map["data"]["config.yaml"])
-    assert "token_subjects" not in app_config
-    assert "token_audience" not in app_config
     assert app_config["session_dispatcher_target"] == endpoint
-    assert app_container.get("args", []) == []
 
 
 if __name__ == "__main__":

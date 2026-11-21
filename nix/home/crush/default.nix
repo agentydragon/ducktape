@@ -1,12 +1,6 @@
 # Crush LLM tool configuration
 # https://charm.land/crush
-{
-  config,
-  pkgs,
-  lib,
-  ...
-}:
-{
+_: {
   # ~/.config/crush/crush.json
   xdg.configFile."crush/crush.json".text = builtins.toJSON {
     "$schema" = "https://charm.land/crush.json";

@@ -2,7 +2,6 @@ package webhook
 
 import (
 	"bytes"
-	"context"
 	"crypto/hmac"
 	"crypto/sha1"
 	"crypto/sha256"
@@ -39,8 +38,6 @@ const (
 	testAppID  = 4242
 	// bodyLimit is the smallest max_body_bytes the settings allow.
 	bodyLimit = 1024
-	// awaitBound only fails a test whose wakeup never comes.
-	awaitBound = 30 * time.Second
 )
 
 func testSettings() settings.Settings {
@@ -613,32 +610,11 @@ func TestUnreachableDatabaseIsUnavailable(t *testing.T) {
 }
 
 func TestNewDeliveryWakesWorkersAndRedeliveryDoesNot(t *testing.T) {
-	const sentinel = "webhook_test_sentinel"
 	r := newRoute(t, nil)
-	signals := testwakeups.ListenWakeups(t, integrationDatabase.URL, wakeup.WorkChannel, sentinel)
-	work, settled := signals[wakeup.WorkChannel], signals[sentinel]
-
-	// The hub applies notifications in the order PostgreSQL delivers them, so once the sentinel's has arrived, every
-	// notification the delivery committed before it has too.
+	observe := testwakeups.Observe(t, r.db, integrationDatabase.URL, wakeup.WorkChannel)
 	wakes := func(d delivery, want receipt) bool {
 		t.Helper()
-		d.post(t, r.URL).expect(t, http.StatusAccepted, want)
-		ctx, cancel := context.WithTimeout(t.Context(), awaitBound)
-		defer cancel()
-		if _, err := r.db.ExecContext(ctx, `SELECT pg_notify($1, '')`, sentinel); err != nil {
-			t.Fatal(err)
-		}
-		select {
-		case <-settled:
-		case <-ctx.Done():
-			t.Fatal("no wakeup from the sentinel")
-		}
-		select {
-		case <-work:
-			return true
-		default:
-			return false
-		}
+		return observe(func() { d.post(t, r.URL).expect(t, http.StatusAccepted, want) })[wakeup.WorkChannel]
 	}
 	d := signedDelivery("issue_comment", issueComment(7, "wakes"))
 	if !wakes(d, receipt{Accepted: true}) {

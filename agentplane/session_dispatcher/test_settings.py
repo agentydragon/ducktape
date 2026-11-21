@@ -29,23 +29,6 @@ def _settings(*, kubernetes_client_qps: float = 0) -> Settings:
     )
 
 
-@pytest.mark.parametrize(
-    ("key", "value"),
-    [
-        ("runner_security", {"mode": "insecure"}),
-        ("runtime_proxy_readers", ["spiffe://agentplane/app"]),
-        ("runtime_proxy_session_callers", ["spiffe://agentplane/sessions"]),
-        ("runtime_proxy_controller_callers", ["spiffe://agentplane/sandbox-controller"]),
-        ("executor_service_callers", ["spiffe://agentplane/central-sampler"]),
-    ],
-)
-def test_dispatcher_rejects_retired_runtime_settings(key: str, value: object) -> None:
-    source = _settings().model_dump(mode="json")
-    source[key] = value
-    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
-        Settings.model_validate(source)
-
-
 @pytest.mark.parametrize("qps", [-1, 0, 25.5])
 def test_gateway_accepts_kubernetes_client_qps_modes(qps: float) -> None:
     assert _settings(kubernetes_client_qps=qps).kubernetes_client_qps == qps
@@ -157,12 +140,12 @@ def test_central_sampler_sessions_svid_is_an_optional_tokenless_caller_mode() ->
         Settings.model_validate(source)
 
 
-def test_service_settings_require_spiffe_listener_authentication() -> None:
+def test_rpc_auth_requires_a_spiffe_method() -> None:
     source = _settings().model_dump(mode="json")
-    source["rpc"]["auth"] = [{"mode": "kubernetes_bearer", "audiences": ["unused"]}]
-    source["dispatcher_service_callers"] = ["spiffe://agentplane/actions"]
-    with pytest.raises(ValidationError, match="does not match any of the expected tags"):
+    source["rpc"]["auth"] = []
+    with pytest.raises(ValidationError) as rejected:
         Settings.model_validate(source)
+    assert [error["loc"] for error in rejected.value.errors()] == [("rpc", "auth")]
 
 
 def test_empty_service_settings_are_omitted_from_deployment_output() -> None:
@@ -225,15 +208,9 @@ def test_static_settings_reject_runtime_inputs_and_legacy_namespace_authority() 
         Settings.model_validate(source)
 
 
-def test_runtime_inputs_are_not_settings_fields() -> None:
-    assert "dispatcher_database_url" not in Settings.model_fields
-    assert Settings.config_file_env == "AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE"
-    assert Settings.dispatcher_database_url_env == "AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL"
-
-
 def test_settings_ignore_static_environment_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("AGENTPLANE_RUNNER_GATEWAY_SANDBOX_NAMESPACE", "environment-value")
-    monkeypatch.setenv("AGENTPLANE_RUNNER_GATEWAY_RPC__LISTEN_ADDRESS", "127.0.0.1:9999")
+    monkeypatch.setenv("AGENTPLANE_SESSIONS_SANDBOX_NAMESPACE", "environment-value")
+    monkeypatch.setenv("AGENTPLANE_SESSIONS_RPC__LISTEN_ADDRESS", "127.0.0.1:9999")
     settings = _settings()
     assert settings.sandbox_namespace == "test-sandboxes"
     assert settings.rpc.listen_address == ":8080"

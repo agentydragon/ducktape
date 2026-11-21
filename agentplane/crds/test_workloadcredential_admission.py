@@ -1,18 +1,12 @@
 """Exercise the WorkloadCredential schema through Kubernetes admission and CEL: the required
 Identity subject, binding union, and transition rule that changes a subject only with a new binding."""
 
-from typing import Any, cast
+from typing import Any
 
-import pytest
 import pytest_bazel
-from kubernetes_asyncio import client as k8s_client
-from kubernetes_asyncio.client.exceptions import ApiException
 
-from agentplane.testing.kubernetes_apiserver import kubernetes_apiserver
+from agentplane.testing.crd_admission import CrdAdmission, crd_namespace
 
-GROUP = "agentplane.allegedly.works"
-VERSION = "v1alpha1"
-PLURAL = "workloadcredentials"
 NAMESPACE = "workload-credential-admission"
 FIRST_POD = "3b1c0f1e-7a52-4f0c-9d52-2d7a54f0b2a1"
 SECOND_POD = "5d0e6c7a-1b2f-4c3d-8e9f-0a1b2c3d4e5f"
@@ -20,49 +14,7 @@ SUBJECT = {"identity": {"name": "test-agent"}}
 OTHER_SUBJECT = {"identity": {"name": "test-other-agent"}}
 
 
-class Records:
-    def __init__(self, api: k8s_client.CustomObjectsApi) -> None:
-        self.api = api
-
-    async def create(self, name: str, spec: dict[str, Any]) -> dict[str, Any]:
-        body = {
-            "apiVersion": f"{GROUP}/{VERSION}",
-            "kind": "WorkloadCredential",
-            "metadata": {"name": name},
-            "spec": spec,
-        }
-        return cast(
-            dict[str, Any], await self.api.create_namespaced_custom_object(GROUP, VERSION, NAMESPACE, PLURAL, body)
-        )
-
-    async def rejects_create(self, spec: dict[str, Any], name: str = "test-rejected") -> None:
-        with pytest.raises(ApiException) as rejected:
-            await self.create(name, spec)
-        assert rejected.value.status == 422, f"{name} {spec}: {rejected.value.body!r}"
-
-    async def replace_spec(self, record: dict[str, Any], spec: dict[str, Any]) -> dict[str, Any]:
-        return cast(
-            dict[str, Any],
-            await self.api.replace_namespaced_custom_object(
-                GROUP, VERSION, NAMESPACE, PLURAL, record["metadata"]["name"], {**record, "spec": spec}
-            ),
-        )
-
-    async def rejects_spec(self, record: dict[str, Any], spec: dict[str, Any]) -> None:
-        with pytest.raises(ApiException) as rejected:
-            await self.replace_spec(record, spec)
-        assert rejected.value.status == 422, f"{spec}: {rejected.value.body!r}"
-
-    async def replace_status(self, record: dict[str, Any], status: dict[str, Any]) -> dict[str, Any]:
-        return cast(
-            dict[str, Any],
-            await self.api.replace_namespaced_custom_object_status(
-                GROUP, VERSION, NAMESPACE, PLURAL, record["metadata"]["name"], {**record, "status": status}
-            ),
-        )
-
-
-async def _unions(records: Records) -> None:
+async def _unions(records: CrdAdmission) -> None:
     identity = {"identity": {"name": "test-agent", "uid": FIRST_POD}}
     # Pinning the Identity's UID is the requester's choice; a record from git names none.
     unpinned_identity = {"identity": {"name": "test-agent"}}
@@ -105,7 +57,7 @@ async def _unions(records: Records) -> None:
     await records.rejects_create({"subject": SUBJECT}, name="a" * 201)
 
 
-async def _transitions(records: Records) -> None:
+async def _transitions(records: CrdAdmission) -> None:
     record = await records.create("test-transitions", {"subject": SUBJECT})
     # A record without a binding is replaced, never re-pointed.
     await records.rejects_spec(record, {"subject": OTHER_SUBJECT})
@@ -135,7 +87,7 @@ async def _transitions(records: Records) -> None:
     assert "binding" not in record["spec"]
 
 
-async def _status(records: Records) -> None:
+async def _status(records: CrdAdmission) -> None:
     record = await records.create("test-status", {"subject": SUBJECT, "binding": {"podUID": FIRST_POD}})
     status = {
         "observedGeneration": 1,
@@ -146,16 +98,12 @@ async def _status(records: Records) -> None:
     }
     record = await records.replace_status(record, status)
     assert record["status"] == status
-    with pytest.raises(ApiException) as rejected:
-        await records.replace_status(record, {**status, "credentialID": "not-hex"})
-    assert rejected.value.status == 422, rejected.value.body
+    await records.rejects_status(record, {**status, "credentialID": "not-hex"})
 
 
 async def test_workload_credential_admission() -> None:
-    async with kubernetes_apiserver() as server:
-        core = k8s_client.CoreV1Api(server.api)
-        await core.create_namespace(k8s_client.V1Namespace(metadata=k8s_client.V1ObjectMeta(name=NAMESPACE)))
-        records = Records(k8s_client.CustomObjectsApi(server.api))
+    async with crd_namespace(NAMESPACE) as namespace:
+        records = namespace.kind("workloadcredentials", "WorkloadCredential")
         await _unions(records)
         await _transitions(records)
         await _status(records)

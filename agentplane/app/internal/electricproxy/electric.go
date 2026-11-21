@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/agentydragon/ducktape/agentplane/app/internal/httpresponse"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/upstream"
 )
 
@@ -102,11 +103,11 @@ func (p *ElectricProxy) entities(w http.ResponseWriter, r *http.Request) {
 	}
 	if subset != nil {
 		if err := checkEntitySubset(*subset); err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
+			httpresponse.WriteDetailError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 	}
-	p.forward(w, r, threadID, "thread_entity", entityColumns, entityWhere,
+	p.forward(w, r, "thread_entity", entityColumns, entityWhere,
 		map[string]string{"1": threadID, "2": epoch}, subset)
 }
 
@@ -119,16 +120,16 @@ func (p *ElectricProxy) chunks(w http.ResponseWriter, r *http.Request) {
 	switch field {
 	case "text", "arguments", "output", "confirmed_input", "command_input":
 	default:
-		writeError(w, http.StatusUnprocessableEntity, "unknown payload field")
+		httpresponse.WriteDetailError(w, http.StatusUnprocessableEntity, "unknown payload field")
 		return
 	}
 	if subset != nil {
 		if err := checkBodySubset(*subset); err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
+			httpresponse.WriteDetailError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 	}
-	p.forward(w, r, threadID, "thread_payload_chunk", chunkColumns, chunkWhere,
+	p.forward(w, r, "thread_payload_chunk", chunkColumns, chunkWhere,
 		map[string]string{"1": threadID, "2": epoch, "3": field}, subset)
 }
 
@@ -140,28 +141,28 @@ func (p *ElectricProxy) prepareShape(w http.ResponseWriter, r *http.Request) (st
 	query := r.URL.Query()
 	epochs := query["projection_epoch"]
 	if len(epochs) != 1 {
-		writeError(w, http.StatusUnprocessableEntity, "projection_epoch is required exactly once")
+		httpresponse.WriteDetailError(w, http.StatusUnprocessableEntity, "projection_epoch is required exactly once")
 		return "", "", nil, false
 	}
 	epoch, found, err := p.store.CurrentEpoch(r.Context(), threadID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "thread scope is unavailable")
+		httpresponse.WriteDetailError(w, http.StatusInternalServerError, "thread scope is unavailable")
 		return "", "", nil, false
 	}
 	if !found || epoch != epochs[0] {
-		writeError(w, http.StatusGone, "the selected thread scope is unavailable")
+		httpresponse.WriteDetailError(w, http.StatusGone, "the selected thread scope is unavailable")
 		return "", "", nil, false
 	}
 	if r.Method == http.MethodGet {
 		return threadID, epochs[0], nil, true
 	}
 	if r.Method != http.MethodPost {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		httpresponse.WriteDetailError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return "", "", nil, false
 	}
 	subset, statusCode, err := decodeSubset(w, r)
 	if err != nil {
-		writeError(w, statusCode, err.Error())
+		httpresponse.WriteDetailError(w, statusCode, err.Error())
 		return "", "", nil, false
 	}
 	return threadID, epochs[0], &subset, true
@@ -170,13 +171,13 @@ func (p *ElectricProxy) prepareShape(w http.ResponseWriter, r *http.Request) (st
 func (p *ElectricProxy) forward(
 	w http.ResponseWriter,
 	r *http.Request,
-	threadID, table, columns, where string,
+	table, columns, where string,
 	pinnedParams map[string]string,
 	subset *SubsetRequest,
 ) {
 	query, err := shapeQuery(r, table, columns, where, pinnedParams)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		httpresponse.WriteDetailError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	var body []byte
@@ -184,7 +185,7 @@ func (p *ElectricProxy) forward(
 	if subset != nil {
 		encoded, err := json.Marshal(subset)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid subset")
+			httpresponse.WriteDetailError(w, http.StatusBadRequest, "invalid subset")
 			return
 		}
 		body = encoded
@@ -209,7 +210,7 @@ func (p *ElectricProxy) forward(
 		ResponseHeaders: responseHeaders, CacheControl: "private, no-cache",
 		OnError: func(w http.ResponseWriter, r *http.Request, _ error) {
 			if r.Context().Err() == nil {
-				writeError(w, http.StatusServiceUnavailable, "thread sync is unavailable")
+				httpresponse.WriteDetailError(w, http.StatusServiceUnavailable, "thread sync is unavailable")
 			}
 		},
 	})
@@ -394,18 +395,8 @@ func decodeSubset(w http.ResponseWriter, r *http.Request) (SubsetRequest, int, e
 func parseThreadID(w http.ResponseWriter, r *http.Request) (string, bool) {
 	threadID := r.PathValue("thread_id")
 	if !threadIDPattern.MatchString(threadID) {
-		writeError(w, http.StatusUnprocessableEntity, "thread_id must be a UUID")
+		httpresponse.WriteDetailError(w, http.StatusUnprocessableEntity, "thread_id must be a UUID")
 		return "", false
 	}
 	return strings.ToLower(threadID), true
-}
-
-func writeError(w http.ResponseWriter, statusCode int, detail string) {
-	writeJSON(w, statusCode, map[string]string{"detail": detail})
-}
-
-func writeJSON(w http.ResponseWriter, statusCode int, value any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-	_ = json.NewEncoder(w).Encode(value)
 }

@@ -2,7 +2,6 @@
 
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from pathlib import Path
 from typing import Self
 from uuid import UUID
 
@@ -10,7 +9,7 @@ import grpc
 from google.protobuf.message import Message
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from agentplane.grpc.calls import bearer, call_unary, dial
+from agentplane.grpc.calls import call_unary, dial
 from agentplane.session_dispatcher.dispatcher.api.session import session_dispatcher_pb2, session_dispatcher_pb2_grpc
 
 # gazelle:include_dep @pypi//protobuf
@@ -19,11 +18,10 @@ from agentplane.session_dispatcher.dispatcher.api.session import session_dispatc
 class SessionDispatcherClient:
     """Keep transport concerns beside the generated stub, not RPC business logic."""
 
-    def __init__(self, channel: grpc.aio.Channel, *, token_file: Path | None, request_timeout_s: float) -> None:
+    def __init__(self, channel: grpc.aio.Channel, *, request_timeout_s: float) -> None:
         self.stub: session_dispatcher_pb2_grpc.SessionDispatcherAsyncStub = (
             session_dispatcher_pb2_grpc.SessionDispatcherStub(channel)
         )
-        self.token_file = token_file
         self.request_timeout_s = request_timeout_s
 
     @classmethod
@@ -32,17 +30,16 @@ class SessionDispatcherClient:
         cls,
         target: str,
         *,
-        token_file: Path | None,
         request_timeout_s: float,
         channel_credentials: grpc.ChannelCredentials | None = None,
         server_name: str | None = None,
     ) -> AsyncIterator[Self]:
         """Own the channel for this client's lifetime; callers select credentials and deadline."""
         async with dial(target, channel_credentials=channel_credentials, server_name=server_name) as channel:
-            yield cls(channel, token_file=token_file, request_timeout_s=request_timeout_s)
+            yield cls(channel, request_timeout_s=request_timeout_s)
 
     async def unary[ResponseT: Message](self, call: Callable[..., Awaitable[ResponseT]], request: Message) -> ResponseT:
-        return await call_unary(call, request, token_file=self.token_file, timeout_s=self.request_timeout_s)
+        return await call_unary(call, request, timeout_s=self.request_timeout_s)
 
     async def submit_input(
         self, session_id: str, command_id: str, sandbox: str, sandbox_uid: str, text: str
@@ -103,7 +100,6 @@ async def admitted(
                 session_id=dispatch.session_id, command_ids=[dispatch.command_id]
             )
         ),
-        metadata=await bearer(dispatcher.token_file),
         timeout=30,
     )
     try:

@@ -137,7 +137,7 @@ Check the runner's checkout and patch list when validating linked-worktree work.
 
 ## B. Reuse PostgreSQL images before retaining live databases broadly
 
-[`util/testing/postgres_fixtures.py`](../../../util/testing/postgres_fixtures.py)
+[`testing/postgres_fixtures.py`](../../../testing/postgres_fixtures.py)
 loads images through the existing digest/daemon-ID cache, starts a fresh
 session container and stops it at teardown. Its migrated templates already
 clone a fresh database for each case. Props uses this fixture plus a migrated

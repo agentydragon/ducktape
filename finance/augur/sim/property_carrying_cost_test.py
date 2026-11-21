@@ -13,7 +13,7 @@ from finance.augur.model.series import LocationId
 from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.fixed_point import rate_to_ppb, round_currency_amount
-from finance.augur.sim.ids import AccountId, AgentId, LiabilityId, PropertyId
+from finance.augur.sim.ids import CHECKING, AgentId, LiabilityId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
@@ -21,6 +21,7 @@ from finance.augur.sim.property import Housing, MortgageFinancing, Parcel, Sched
 from finance.augur.sim.property_tax import PropertyTaxPolicy
 from finance.augur.sim.results import Rollout
 from finance.augur.sim.session import ActionSession
+from finance.augur.sim.testing.accounts import account
 from finance.augur.sim.testing.rollouts import book, cash
 from finance.augur.sim.testing.session import each, finish
 from finance.augur.sim.testing.situs import flat_parcel, property_tax
@@ -28,7 +29,6 @@ from finance.augur.sim.world import World
 
 QUANTUM = Decimal("0.01")
 ALICE, SELLER, BANK = AgentId("alice"), AgentId("seller"), AgentId("bank")
-CHECKING = AccountId("checking")
 
 
 def usd(quanta: Any) -> float:
@@ -39,11 +39,6 @@ def usd(quanta: Any) -> float:
 def cents(value: float) -> float:
     """A derived amount as the engine holds it: exact cents, half away from zero."""
     return float(round_currency_amount(Decimal(str(value)), quantum=QUANTUM))
-
-
-def account(agent_id: AgentId, balance: Decimal | int = 0) -> tuple[AccountRef, int]:
-    """An account and its opening balance."""
-    return AccountRef(agent_id=agent_id, account_id=CHECKING), USD.quanta(balance)
 
 
 def purchase(

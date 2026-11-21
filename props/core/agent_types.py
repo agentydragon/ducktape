@@ -30,11 +30,7 @@ class TargetMetric(StrEnum):
 class AgentType(StrEnum):
     """Types of agents in the system.
 
-    Each agent type has different:
-    - MCP server class attached via MCP-over-HTTP
-    - Handler configuration (run-to-completion vs conversational)
-    - Database access (RLS policies)
-    - Mount requirements
+    Each agent type has its own config model (below) and its own database access (RLS policies).
     """
 
     CRITIC = "critic"

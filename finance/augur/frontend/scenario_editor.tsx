@@ -384,13 +384,7 @@ function KnobCell({
       return wrap(select(propertyOptions(bootstrap), typeof value === "string" ? value : "", (next) => next || null));
     case "sleeveWeights":
       return wrap(
-        <SleeveWeightsControl
-          sleeveWeights={requireSleeveWeights(value)}
-          portfolio={portfolio}
-          compact
-          label={null}
-          onChange={onChange}
-        />
+        <SleeveWeightsControl sleeveWeights={requireSleeveWeights(value)} portfolio={portfolio} onChange={onChange} />
       );
     default: // location
       return wrap(select(locationOptions(bootstrap), typeof value === "string" ? value : "", (next) => next || null));
@@ -590,7 +584,6 @@ function TimelineCell({
     <LifecycleEventsEditor
       events={entry.input.propertyLifecycleEvents ?? []}
       horizonMonths={horizonMonths}
-      showLabel={false}
       className="min-w-[14rem]"
       onChange={(events) =>
         entry.variant == null

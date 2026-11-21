@@ -1,7 +1,9 @@
 package main
 
 import (
+	"io"
 	"net"
+	"os"
 	"testing"
 	"time"
 
@@ -23,6 +25,40 @@ func startBuildBuddyTestServer(t *testing.T, service bbspb.BuildBuddyServiceServ
 	t.Cleanup(server.Stop)
 	t.Setenv("BUILDBUDDY_API_KEY", "test-key")
 	t.Setenv("BUILDBUDDY_URL", "http://"+listener.Addr().String())
+}
+
+// setJSONOutput selects the --json output mode for the test and restores the previous mode afterwards.
+func setJSONOutput(t *testing.T, enabled bool) {
+	t.Helper()
+	previous := jsonOutput
+	jsonOutput = enabled
+	t.Cleanup(func() { jsonOutput = previous })
+}
+
+// captureStdout returns what run wrote to os.Stdout together with run's error, so a test can
+// check that a failed command printed nothing.
+func captureStdout(t *testing.T, run func() error) ([]byte, error) {
+	t.Helper()
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		return nil, err
+	}
+	previousStdout := os.Stdout
+	os.Stdout = writer
+	defer func() {
+		os.Stdout = previousStdout
+		_ = reader.Close()
+	}()
+	runErr := run()
+	if err := writer.Close(); err != nil {
+		return nil, err
+	}
+	os.Stdout = previousStdout
+	output, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, err
+	}
+	return output, runErr
 }
 
 func TestMatchGlob(t *testing.T) {

@@ -1,4 +1,4 @@
-# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep :testing
 """Title projection preserves physical-file ambiguity and index-only gating."""
 
@@ -10,12 +10,12 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
 from ai_session_archive.database import CodexTitleObservationRow, MachineRow, ResticSnapshotRow, SessionRow
-from ai_session_archive.ingest import ArchiveSource, SnapshotIngestor
 from ai_session_archive.models import Harness
 from ai_session_archive.restic import ResticRepository
 from ai_session_archive.source_paths import HarnessRoot
+from ai_session_archive.testing import new_ingestor
 
-pytest_plugins = ["util.testing.postgres_fixtures", "ai_session_archive.testing"]
+pytest_plugins = ["testing.postgres_fixtures", "ai_session_archive.testing"]
 
 
 def test_projection_preserves_paths_and_index_only_ambiguity(postgres_engine: Engine) -> None:
@@ -84,11 +84,8 @@ def test_projection_preserves_paths_and_index_only_ambiguity(postgres_engine: En
                 )
             )
 
-    ingestor = SnapshotIngestor(
-        factory,
-        ArchiveSource(
-            "host", "Host", ResticRepository(binary="unused", environment={}), (HarnessRoot(Harness.CODEX, "/.codex"),)
-        ),
+    ingestor = new_ingestor(
+        factory, ResticRepository(binary="unused", environment={}), HarnessRoot(Harness.CODEX, "/.codex")
     )
     ingestor._codex_metadata.project_titles(allow_index_only=False)
     with factory() as db:

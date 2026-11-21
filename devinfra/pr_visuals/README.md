@@ -47,13 +47,13 @@ The framework-independent record format and identity contract are described in
 Automatic with a shared harness:
 
 - Python browser tests (`py_visual_test`, or `py_test` with a real server):
-  `VisualPage.capture()` from `util.testing.frontend_visual.capture` writes a PNG and
-  registers it; see <../../util/testing/frontend_visual/README.md>.
+  `VisualPage.capture()` from `testing.frontend_visual.capture` writes a PNG and
+  registers it; see <../../testing/frontend_visual/README.md>.
 - Other Python image producers (e.g. GNOME shell captures):
   the `test_outputs` pytest fixture binds each output to its full pytest node ID.
 - Other frameworks and languages can write the same versioned records and payloads
   directly. Python callers can construct `BoundTestOutputs(output_dir, case_id)`
-  and call `publish` with UTF-8 text or bytes or `open` for file-style writes.
+  and call `publish` with UTF-8 text or bytes or `publish_file` with an existing file.
 
 ## Determinism checks
 

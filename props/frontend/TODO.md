@@ -8,7 +8,6 @@
 
 ## Infrastructure
 
-- [ ] Replace client-server polling with WebSocket for live updates
 - [ ] Consolidate active runs display (currently in 2 places)
 - [ ] Launch optimization/improvement runs with live events display
 - [ ] Live events streaming on run detail view

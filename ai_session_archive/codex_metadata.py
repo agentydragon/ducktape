@@ -6,7 +6,7 @@ import hashlib
 import json
 import sqlite3
 import tempfile
-from contextlib import suppress
+from contextlib import closing, suppress
 from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path, PurePosixPath
@@ -136,8 +136,7 @@ def _sqlite_titles(restic: ResticRepository, snapshot_id: str, codex_root: PureP
         with image_file.open("rb") as source:
             if hashlib.file_digest(source, "sha256").hexdigest() != digest:
                 raise ValueError("Codex SQLite image digest disagrees with manifest")
-        database = sqlite3.connect(f"file:{image_file}?mode=ro&immutable=1", uri=True)
-        try:
+        with closing(sqlite3.connect(f"file:{image_file}?mode=ro&immutable=1", uri=True)) as database:
             if database.execute("PRAGMA quick_check").fetchone() != ("ok",):
                 raise ValueError("Codex SQLite image failed quick_check")
             rows = database.execute("SELECT id, rollout_path, name, title, source FROM threads")
@@ -163,8 +162,6 @@ def _sqlite_titles(restic: ResticRepository, snapshot_id: str, codex_root: PureP
                     session_kind=classify_codex_source(source),
                 )
             return titles
-        finally:
-            database.close()
 
 
 def read_codex_titles(

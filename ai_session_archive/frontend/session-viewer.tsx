@@ -18,7 +18,7 @@ import {
 import { useLocation, useNavigate, useParams } from "react-router";
 import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
 
-import { harnessLabel, httpApi, type SessionBrowserApi } from "./api";
+import { errorMessage, harnessLabel, httpApi, uniqueById, type SessionBrowserApi } from "./api";
 import { ArchiveTranscript } from "./transcript";
 import { MachineImportProgressSummary, useMachineImportProgress } from "./import-progress";
 import type { EventRecord } from "./schema";
@@ -89,13 +89,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
     sidebarMaxWidth
   );
   const sidebarWidth = Math.min(storedSidebarPane.size, sidebarMaxWidth);
-  const sidebarPane: PaneSize = {
-    ...storedSidebarPane,
-    size: sidebarWidth,
-    max: sidebarMaxWidth,
-    resize: (size) => storedSidebarPane.resize(Math.min(size, sidebarMaxWidth)),
-    step: (delta) => storedSidebarPane.step(delta),
-  };
+  const sidebarPane: PaneSize = { ...storedSidebarPane, size: sidebarWidth };
   const machinesQuery = useQuery({
     queryKey: ["ai-session-archive", "machines"],
     queryFn: ({ signal }) => api.listMachines(signal),
@@ -131,14 +125,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
     enabled: selectedKinds.length > 0,
   });
   const sessionPages = sessionsQuery.data?.pages ?? [];
-  const sessions = useMemo(
-    () =>
-      mergeById(
-        [],
-        sessionPages.flatMap((page) => page.data)
-      ),
-    [sessionPages]
-  );
+  const sessions = useMemo(() => uniqueById(sessionPages.flatMap((page) => page.data)), [sessionPages]);
   const sessionCursor = sessionPages.at(-1)?.next_cursor ?? null;
   const loadingSessions = selectedKinds.length > 0 && sessionsQuery.isLoading;
   const loadingMoreSessions = sessionsQuery.isFetchingNextPage;
@@ -198,14 +185,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
     enabled: selectedSession !== null && selectedVersionId !== null,
   });
   const eventPages = eventQuery.data?.pages ?? [];
-  const events = useMemo(
-    () =>
-      mergeByOrdinal(
-        [],
-        eventPages.flatMap((page) => page.data)
-      ),
-    [eventPages]
-  );
+  const events = useMemo(() => sortedUniqueByOrdinal(eventPages.flatMap((page) => page.data)), [eventPages]);
   const eventCursor = eventPages.at(-1)?.next_cursor ?? null;
   const loadingEvents = eventQuery.isLoading;
   const loadingEarlierEvents = eventQuery.isFetchingNextPage;
@@ -408,7 +388,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                       </Badge>
                     )}
                   </Group>
-                  <Group className="session-browser-title-row" gap="xs" wrap="nowrap" align="center">
+                  <Group gap="xs" wrap="nowrap" align="center">
                     <Title order={2} size="h4" style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>
                       {selectedSession.title || "Untitled session"}
                     </Title>
@@ -560,15 +540,8 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
   );
 }
 
-function mergeById<T extends { id: string }>(previous: T[], incoming: T[]): T[] {
-  const byId = new Map(previous.map((item) => [item.id, item]));
-  for (const item of incoming) byId.set(item.id, item);
-  return [...byId.values()];
-}
-
-function mergeByOrdinal(previous: EventRecord[], incoming: EventRecord[]): EventRecord[] {
-  const byOrdinal = new Map(previous.map((event) => [event.ordinal, event]));
-  for (const event of incoming) byOrdinal.set(event.ordinal, event);
+function sortedUniqueByOrdinal(events: EventRecord[]): EventRecord[] {
+  const byOrdinal = new Map(events.map((event) => [event.ordinal, event]));
   return [...byOrdinal.values()].sort((left, right) => left.ordinal - right.ordinal);
 }
 
@@ -581,8 +554,4 @@ function formatBytes(bytes: number): string {
     if (value < 1024 || unit === "GB") return `${value.toFixed(value < 10 ? 1 : 0)} ${unit}`;
   }
   return `${bytes} B`;
-}
-
-function errorMessage(reason: unknown, fallback = "Could not load local sessions."): string {
-  return reason instanceof Error ? reason.message : fallback;
 }

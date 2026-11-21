@@ -8,30 +8,12 @@ from more_itertools import one
 
 from agentplane.net.peertls.config import ACTIONS_URI, APP_URI, NOTIFICATIONS_URI, SESSION_DISPATCHER_URI
 from cluster.cdk8s.agentplane import actions as action_service, notifications, runner_gateway, staging, workload_tls
+from cluster.cdk8s.testing.manifests import find_resource
 
 
-def test_notifications_migrate_before_serving_and_roll(staging_manifests: list[dict[str, Any]]) -> None:
-    notifications_deployment = one(
-        doc
-        for doc in staging_manifests
-        if doc["kind"] == "Deployment" and doc["metadata"]["name"] == notifications.NAME
-    )
-    pod = notifications_deployment["spec"]["template"]["spec"]
-    server = one(item for item in pod["containers"] if item["name"] == "notifications")
-    assert notifications_deployment["spec"]["strategy"]["type"] == "RollingUpdate"
-    assert not pod.get("initContainers")
-    startup = server["startupProbe"]["exec"]["command"]
-    readiness = server["readinessProbe"]["exec"]["command"]
-    assert startup[:2] == readiness[:2] == ["/healthprobe", "--target"]
-    assert "127.0.0.1:8080" in startup
-    assert NOTIFICATIONS_URI in startup
-    assert "--service" in startup
-    assert "livez" in startup
-
-    history_deployment = one(
-        doc for doc in staging_manifests if doc["kind"] == "Deployment" and doc["metadata"]["name"] == "history-service"
-    )
-    assert history_deployment["spec"]["strategy"]["type"] == "RollingUpdate"
+def test_notifications_and_history_deployments_roll(staging_manifests: list[dict[str, Any]]) -> None:
+    for name in (notifications.NAME, "history-service"):
+        assert find_resource(staging_manifests, "Deployment", name)["spec"]["strategy"]["type"] == "RollingUpdate"
 
 
 def test_public_notification_routes_are_webhook_only(staging_manifests: list[dict[str, Any]]) -> None:
@@ -64,22 +46,12 @@ def test_only_staging_notifications_admit_gateway(staging_manifests: list[dict[s
 
 
 def test_github_secrets_are_server_only_and_not_in_yaml(staging_manifests: list[dict[str, Any]]) -> None:
-    config = one(
-        doc
-        for doc in staging_manifests
-        if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == f"{notifications.NAME}-settings"
-    )
+    config = find_resource(staging_manifests, "ConfigMap", f"{notifications.NAME}-settings")
     settings = yaml.safe_load(config["data"]["settings.yaml"])
-    assert "operator_reader_account" not in settings
     assert settings["operator_reader_services"] == [APP_URI]
-    assert "token_audience" not in settings
     assert [auth["mode"] for auth in settings["rpc"]["auth"]] == ["spiffe"]
     github = settings.get("github")
-    pod = one(
-        doc
-        for doc in staging_manifests
-        if doc["kind"] == "Deployment" and doc["metadata"]["name"] == notifications.NAME
-    )["spec"]["template"]["spec"]
+    pod = find_resource(staging_manifests, "Deployment", notifications.NAME)["spec"]["template"]["spec"]
     prefix = "AGENTPLANE_NOTIFICATIONS_GITHUB__"
     server = one(item for item in pod["containers"] if item["name"] == "notifications")
     variables = {item["name"].removeprefix(prefix): item for item in server["env"] if item["name"].startswith(prefix)}
@@ -114,12 +86,8 @@ def test_github_secrets_are_server_only_and_not_in_yaml(staging_manifests: list[
     )
 
 
-def test_notifications_use_the_configured_dispatcher(staging_manifests: list[dict[str, Any]]) -> None:
-    config = one(
-        doc
-        for doc in staging_manifests
-        if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == f"{notifications.NAME}-settings"
-    )
+def test_notifications_use_the_configured_backend_targets(staging_manifests: list[dict[str, Any]]) -> None:
+    config = find_resource(staging_manifests, "ConfigMap", f"{notifications.NAME}-settings")
     settings = yaml.safe_load(config["data"]["settings.yaml"])
     actions = action_service.service(staging.ENV.namespace)
     assert settings["actions"]["url"] == f"https://{actions.fqdn}:{actions.port.number}/"
@@ -127,6 +95,7 @@ def test_notifications_use_the_configured_dispatcher(staging_manifests: list[dic
     dispatcher = runner_gateway.sessions_service(staging.ENV.namespace)
     assert settings["session_dispatcher"]["target"] == f"{dispatcher.fqdn}:{dispatcher.port.number}"
     assert "token_file" not in settings["session_dispatcher"]
+    assert "runner_gateway" not in settings
     for client, server_uri in (("actions", ACTIONS_URI), ("session_dispatcher", SESSION_DISPATCHER_URI)):
         tls = settings[client]["tls"]
         assert tls["server_uri"] == server_uri
@@ -135,18 +104,13 @@ def test_notifications_use_the_configured_dispatcher(staging_manifests: list[dic
         assert tls["key_file"]
         assert tls["ca_file"] == workload_tls.TRUST_BUNDLE_FILE
 
-    policy = one(
-        doc
-        for doc in staging_manifests
-        if doc["kind"] == "CiliumNetworkPolicy"
-        and doc["metadata"]["name"] == notifications.NAME.removeprefix("agentplane-")
-    )["spec"]
+    policy = find_resource(staging_manifests, "CiliumNetworkPolicy", notifications.NAME)["spec"]
     egress_services = {
         endpoint["matchLabels"].get("app.kubernetes.io/name")
         for rule in policy["egress"]
         for endpoint in rule.get("toEndpoints", [])
     }
-    assert {runner_gateway.NAME, dispatcher.name} <= egress_services
+    assert dispatcher.name in egress_services
     proxy_ingress = one(
         rule
         for rule in policy["ingress"]

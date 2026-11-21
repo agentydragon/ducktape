@@ -10,8 +10,8 @@ Retrieves the user password from kubectl and connects to Authentik via
 kubectl port-forward. Exits 0 on success, 1 on failure.
 
 Usage:
-    python3 scripts/check-authentik-login.py
-    python3 scripts/check-authentik-login.py --user akadmin --secret-ns authentik --secret-name authentik-admin-password --secret-key AUTHENTIK_BOOTSTRAP_PASSWORD
+    python3 cluster/scripts/check_authentik_login.py
+    python3 cluster/scripts/check_authentik_login.py --user akadmin --secret-ns authentik --secret-name authentik-admin-password --secret-key AUTHENTIK_BOOTSTRAP_PASSWORD
 """
 
 from __future__ import annotations

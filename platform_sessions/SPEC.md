@@ -109,12 +109,10 @@ Completed probes identify whether they were scheduled, manual, verification, sta
 kind of provider check. Explicit `Probe` RPC requests accept only the scheduled and manual sources;
 the other sources describe checks initiated internally by the provider.
 
-The standalone `VerifyCandidate` provider RPC and management HTTP route have been removed. The
-`ImportSession` operation validates the submitted session against the upstream before installing it;
-there is no separate candidate preflight API. This API removal does not invalidate installed
-sessions or require fresh sign-in. Local parsing and request validation happen before dispatch and
-preserve the installed session. Once a provider dispatch may consume or rotate upstream credentials,
-a failed or ambiguous import can require fresh sign-in and import.
+`ImportSession` validates the submitted session against the upstream before installing it; there
+is no separate candidate preflight API. Local parsing and request validation happen before dispatch
+and preserve the installed session. Once a provider dispatch may consume or rotate upstream
+credentials, a failed or ambiguous import can require fresh sign-in and import.
 
 Imports return a single typed result directly. Providers do not write durable import ID or result
 history. An `outcomeUnknown` result, timeout, interrupted response or process crash must never
@@ -149,10 +147,7 @@ their upstream base; the gateway prefixes those paths with the instance proxy ro
 advertise an OpenAPI document path in
 its control information; the gateway fetches the document from that provider over authenticated
 TLS and exposes it with the provider's proxy URL. Provider documents remain in provider images.
-The shared gateway image is built and published by Ducktape CI. New source checkouts no longer
-include the Python in-process service assembly or its owner-login wiring. This source removal does
-not replace an already-built image; a running legacy monolith remains active until deployment
-explicitly moves to provider processes and the Go gateway.
+The shared gateway image is built and published by Ducktape CI.
 
 Provider credentials and the durable operation fence are stored in the `sessions` table of
 `imports/import-operations.sqlite3` below each instance's state directory. Before an exchange that
@@ -161,4 +156,3 @@ Verified replacement credentials and clearing the fence commit in one transactio
 ambiguous exchanges require fresh sign-in and import; potentially consumed credentials are never
 replayed. Session snapshots use a persisted generation timestamp, independent of filesystem
 modification times.
-Existing JSON session files are ignored and require fresh sign-in and import after deployment.

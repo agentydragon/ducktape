@@ -18,8 +18,6 @@ from props.db.models import AgentRun, AgentRunStatus
 from props.db.snapshot_io import fetch_snapshot_to_path
 from props.mako_utils.preprocessor import markdown_heading_preprocessor
 
-logger = logging.getLogger(__name__)
-
 WORKSPACE = Path("/workspace")
 
 
@@ -52,18 +50,14 @@ def get_current_agent_run(session: Session) -> AgentRun:
     return agent_run
 
 
-def fetch_snapshot(dest_dir: Path, db: Database) -> Path:
-    """Fetch snapshot for current critic agent to specified directory.
-
-    Returns the dest_dir path (for template convenience).
-    """
+def fetch_snapshot(dest_dir: Path, db: Database) -> None:
+    """Fetch snapshot for current critic agent to specified directory."""
     with db.session() as session:
         agent_run = get_current_agent_run(session)
         critic_config = agent_run.critic_config()
         snapshot_slug = critic_config.example.snapshot_slug
 
     fetch_snapshot_to_path(snapshot_slug, dest_dir, db)
-    return dest_dir
 
 
 def setup_logging() -> None:
@@ -71,7 +65,7 @@ def setup_logging() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 
-def _make_template_context(db: Database, helpers: dict[str, Any] | None = None) -> dict[str, Any]:
+def _make_template_context(helpers: dict[str, Any] | None = None) -> dict[str, Any]:
     """Create Mako template context with standard helpers.
 
     Available in all templates:
@@ -98,17 +92,12 @@ def _make_template_context(db: Database, helpers: dict[str, Any] | None = None) 
 
     ctx["source_inspection"] = _source_inspection
 
-    def _include(source: str, content: str, *, raw: bool) -> str:
-        if raw:
-            return f'<doc source="{source}">\n{content}\n</doc>'
-        rendered = Template(content, preprocessor=markdown_heading_preprocessor).render(**ctx)
-        return f'<doc source="{source}">\n{rendered}\n</doc>'
-
-    def include_doc(pkg_path: str, *, raw: bool = False) -> str:
+    def include_doc(pkg_path: str) -> str:
         """Include doc from package resources, rendering Mako syntax."""
         pkg, _, p = pkg_path.partition("/")
         content = (importlib.resources.files(pkg) / p).read_text()
-        return _include(pkg_path, content, raw=raw)
+        rendered = Template(content, preprocessor=markdown_heading_preprocessor).render(**ctx)
+        return f'<doc source="{pkg_path}">\n{rendered}\n</doc>'
 
     ctx["include_doc"] = include_doc
 
@@ -118,16 +107,16 @@ def _make_template_context(db: Database, helpers: dict[str, Any] | None = None) 
     return ctx
 
 
-def render_system_prompt(template_path: str, db: Database, helpers: dict[str, Any] | None = None) -> str:
+def render_system_prompt(template_path: str, helpers: dict[str, Any] | None = None) -> str:
     """Render system prompt from package resource, returning as string."""
     package, _, pkg_path = template_path.partition("/")
     resource = importlib.resources.files(package) / pkg_path
     content = resource.read_text()
-    return render_template_string(content, db, helpers)
+    return render_template_string(content, helpers)
 
 
-def render_template_string(content: str, db: Database, helpers: dict[str, Any] | None = None) -> str:
+def render_template_string(content: str, helpers: dict[str, Any] | None = None) -> str:
     """Render a Mako template string with standard helpers."""
-    ctx = _make_template_context(db, helpers)
+    ctx = _make_template_context(helpers)
     result: str = Template(content, preprocessor=markdown_heading_preprocessor).render(**ctx)
     return result

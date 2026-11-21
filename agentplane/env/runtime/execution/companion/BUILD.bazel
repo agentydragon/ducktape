@@ -11,6 +11,7 @@ go_library(
         "//agentplane/env/runtime/execution:__subpackages__",
     ],
     deps = [
+        "//agentplane/env/runtime/execution/codexexecserver",
         "//agentplane/env/runtime/execution/companion/control",
         "//agentplane/env/runtime/execution/companion/control:control_go_proto",
         "//agentplane/env/runtime/supervision",
@@ -37,6 +38,7 @@ pid1_go_test(
         "//agentplane/env/runtime/execution/companion/control",
         "//agentplane/env/runtime/execution/companion/control:control_go_proto",
         "//agentplane/env/runtime/supervision",
+        "//agentplane/testing/eventually",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//health/grpc_health_v1",

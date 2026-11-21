@@ -1,6 +1,6 @@
 # Lint/Format Exclusions
 # This file is the source of truth for files excluded from linting and formatting.
-# devinfra/format/format.py reads these via `git check-attr`.
+# devinfra/precommit/git_hook.py reads these attributes.
 # For Python files, patterns must also be mirrored in ruff.toml exclude.
 # See README.md "Lint/Format Exclusions" section for details.
 
@@ -49,20 +49,16 @@ cluster/k8s/litellm/kustomization.yaml linguist-generated=true
 cluster/k8s/litellm/secrets/kustomization.yaml linguist-generated=true
 cluster/k8s/litellm/keys-tf/kustomization.yaml linguist-generated=true
 cluster/k8s/aiquota/kustomization.yaml linguist-generated=true
-cluster/parked/public-coder-agent/devbox/kustomization.yaml linguist-generated=true
 cluster/k8s/cpap-sync/kustomization.yaml linguist-generated=true
 cluster/k8s/authentik/app/kustomization.yaml linguist-generated=true
 cluster/k8s/clickhouse/cluster/kustomization.yaml linguist-generated=true
 cluster/k8s/clickhouse/operator/kustomization.yaml linguist-generated=true
 cluster/k8s/agentplane-staging/kustomization.yaml linguist-generated=true
-# Agentplane testing's root Kustomization is hand-maintained because Flux image
-# automation updates its inline `images:` pins.
 cluster/k8s/haku/console/kustomization.yaml linguist-generated=true
 cluster/k8s/haku/mailbox/kustomization.yaml linguist-generated=true
 cluster/k8s/ntfy/kustomization.yaml linguist-generated=true
 cluster/k8s/att-gateway-exporter-secrets/kustomization.yaml linguist-generated=true
 cluster/k8s/external-creds/kustomization.yaml linguist-generated=true
-cluster/parked/public-coder-agent/sshpiper/kustomization.yaml linguist-generated=true
 cluster/k8s/langfuse/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/claude-sandbox-secrets/kustomization.yaml linguist-generated=true
 cluster/k8s/tofu-state/kustomization.yaml linguist-generated=true
@@ -83,6 +79,15 @@ cluster/k8s/home-assistant/app/kustomization.yaml linguist-generated=true
 cluster/k8s/haku/forgejo-tea/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/shared-secrets/kustomization.yaml linguist-generated=true
 cluster/k8s/nix-cache/kustomization.yaml linguist-generated=true
+cluster/k8s/host-firewall/kustomization.yaml linguist-generated=true
+cluster/k8s/session-backup/kustomization.yaml linguist-generated=true
+cluster/k8s/forgejo-images/crossplane-forgejo-images/kustomization.yaml linguist-generated=true
+cluster/k8s/litellm/crossplane-keys/kustomization.yaml linguist-generated=true
+cluster/k8s/agents/airlock/kustomization.yaml linguist-generated=true
+cluster/k8s/agents/plaid-mcp/kustomization.yaml linguist-generated=true
+cluster/k8s/buildbuddy-kvm-worker/kustomization.yaml linguist-generated=true
+# Written by the cluster generator beside the Agentplane CRD files.
+agentplane/crds/manifests/kustomization.yaml linguist-generated=true
 # kubeconform schemas of the Agentplane CRDs — `bb run //agentplane/crds:generate_bin`
 # output, pinned by //agentplane/crds:test_generate.
 cluster/schemas/**/*.json linguist-generated=true
@@ -95,13 +100,7 @@ devinfra/claude/web_env/live-dpkg-versions.txt rules-lint-ignored=true
 # Terraform/k8s - kebab-case is conventional in HCL and k8s manifests
 # kebab-case filenames are conventional in HCL and k8s manifests
 cluster/** filename-conventions-ignored=true
-terraform/** filename-conventions-ignored=true
 tf/** filename-conventions-ignored=true
-
-# Archived cluster + tf manifests parked under x/ keep their original
-# kebab-case directory names.
-x/*/cluster/** filename-conventions-ignored=true
-x/*/tf/** filename-conventions-ignored=true
 
 # Logseq page names - dashes are part of the page title
 x/llm/instruct_logseq/pages/** filename-conventions-ignored=true
@@ -109,29 +108,12 @@ x/llm/instruct_logseq/pages/** filename-conventions-ignored=true
 # Blog posts - filenames are published URLs (date-prefixed kebab-case)
 website/posts/** filename-conventions-ignored=true
 
-# Starter k8s manifests Haku copies into haku-state - kebab-case is
-# conventional for k8s manifests (and matches the resource/host names).
-
-# agent-box NixOS host: the host dir name must match the hostname (mkNixos reads
-# ./nix/nixos/hosts/${hostname}), and the host/DNS name agent-box is kebab by
-# k8s/DNS convention. Keep the related Nix host filenames consistent.
-nix/nixos/hosts/agent-box/** filename-conventions-ignored=true
-nix/home/hosts/agent-box/** filename-conventions-ignored=true
-
-# CPAP gateway NixOS host: the directory name intentionally matches the
-# kebab-case Kubernetes/DNS host name used by the VM.
-nix/nixos/hosts/cpap-gateway/** filename-conventions-ignored=true
-
-# Non-K8s YAML under cluster/k8s/ - rules_distroless apt manifests for CronJob
-# images. cluster/validation/cluster.py reads this attribute via `git check-attr`
-# (pygit2) and skips the file from orphan detection + resource parsing.
-cluster/k8s/**/trixie_*.yaml cluster-manifest-ignored=true
+# cluster/validation/cluster.py reads cluster-manifest-ignored via `git check-attr` (pygit2) and skips
+# such files from orphan detection + resource parsing.
 # Parked manifests are retained for possible revival but are not active cluster config.
 cluster/parked/** cluster-manifest-ignored=true
 # The retired Codex pod's manifests are kept beside their source, not active cluster config.
 x/codex_pod_image/deploy/** cluster-manifest-ignored=true
-# rotate.py's token list, mounted via configMapGenerator — not a K8s manifest.
-cluster/k8s/agents/attic-jwt-rotation/rotators.yaml cluster-manifest-ignored=true
 # A strategic-merge patch the tofu-controller image-pins Component applies — not a resource.
 cluster/k8s/tofu-controller-image-pins/helmrelease-image.yaml cluster-manifest-ignored=true
 # Dotfiles/dotdirs follow their own naming conventions
@@ -146,9 +128,6 @@ props/specimens/*/*/code/** rules-lint-ignored=true
 # nix/artifact-pins.json - machine-edited by sync-pins workflow, not worth formatting
 nix/artifact-pins.json rules-lint-ignored=true
 
-# Golden test files - generated artifacts, not source code
-**/golden/*.dxf rules-lint-ignored=true
-
 # TODO: Delete legacy_* roles once all machines switch to Nix home-manager
 ansible/roles/legacy_*/** rules-lint-ignored=true
 tana/export/references/** rules-lint-ignored=true
@@ -159,8 +138,8 @@ cluster/k8s/activitywatch/kustomization.yaml linguist-generated=true
 # Golden vectors the retired Python thread fold generated; internal/threadfold/golden_test.go holds the Go fold to them.
 agentplane/history_service/internal/threadfold/golden.json linguist-generated=true
 
-# Golden vectors the retired Python Notification Service generated; the Go store tests hold the store to them.
-agentplane/notification_service/internal/store/golden.json linguist-generated=true
+# Golden vectors the retired Python Notification Service generated; the Go inbox tests hold the store to them.
+agentplane/notification_service/internal/inbox/golden.json linguist-generated=true
 
 # Golden vectors the Python Action Service generates; test_golden checks the exact output.
 agentplane/action_service/internal/store/golden.json linguist-generated=true
@@ -174,5 +153,4 @@ agentplane/mcp_edge/internal/mcpserver/tools.json linguist-generated=true
 agentplane/action_service/sandbox/golden.json linguist-generated=true
 
 # Tracked unified patches contain diff context that looks like whitespace to diff --check.
-cluster/cdk8s/providers/litellm/*.patch whitespace=-space-before-tab,-blank-at-eol,-blank-at-eof
 third_party/cli_proxy_api/patches/*.patch whitespace=-space-before-tab,-blank-at-eol,-blank-at-eof

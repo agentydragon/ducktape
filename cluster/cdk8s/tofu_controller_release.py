@@ -1,12 +1,8 @@
-"""tofu-controller: its HelmRepository and the HelmRelease, the `Terraform` CRD, and the Flux
-image automation that rolls the controller image.
+"""Upstream tofu-controller chart, its separately managed CRD, and runner image tracking.
 
-The controller image is ours, built from the upstream commit pinned by
-`third_party/tofu_controller`. Its CRD accepts a Flux `ExternalArtifact` as a `Terraform`
-source, so we install that CRD instead of the chart's (the HelmRelease skips CRDs), and a
-post-renderer grants the chart's manager ClusterRole read access to ExternalArtifacts. The
-runner pods' image is ours too (`cluster/tf_runner`: upstream's runner with every provider
-baked in). `PINS_DIR` sets both images in the HelmRelease.
+The pinned CRD comes from the same chart release. Flux applies it separately because Helm
+does not upgrade CRDs in a chart's crds directory. The runner image extends the matching
+upstream release with the cluster's provider mirror; `PINS_DIR` pins it for coordinated rollout.
 
 `values` is an untyped dict: Helm values carry no schema for `cdk8s_import` to ingest.
 """
@@ -18,10 +14,6 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
     HelmReleaseSpecInstallCrds,
     HelmReleaseSpecInstallRemediation,
-    HelmReleaseSpecPostRenderers,
-    HelmReleaseSpecPostRenderersKustomize,
-    HelmReleaseSpecPostRenderersKustomizePatches,
-    HelmReleaseSpecPostRenderersKustomizePatchesTarget,
     HelmReleaseSpecUpgrade,
     HelmReleaseSpecUpgradeCrds,
 )
@@ -40,25 +32,9 @@ PINS_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}-image-pins"
 # GHCR, not the Forgejo registry: the Forgejo pull credential's user is created by a Terraform
 # this controller applies, so a Forgejo-hosted controller or runner could never start on a fresh
 # cluster.
-IMAGE = "ghcr.io/agentydragon/tofu-controller"
 RUNNER_NAME = "tf-runner"
 RUNNER_IMAGE = "ghcr.io/agentydragon/tf-runner"
-_CRD = "ducktape_tofu_controller/infra.contrib.fluxcd.io_terraforms.yaml"
-# The pinned chart predates ExternalArtifact support; the controller reads and watches them.
-_EXTERNAL_ARTIFACT_RBAC_PATCH = """\
-- op: add
-  path: /rules/-
-  value:
-    apiGroups: [source.toolkit.fluxcd.io]
-    resources: [externalartifacts]
-    verbs: [get, list, watch]
-- op: add
-  path: /rules/-
-  value:
-    apiGroups: [source.toolkit.fluxcd.io]
-    resources: [externalartifacts/status]
-    verbs: [get]
-"""
+_CRD = "tofu_controller_crd/file/crds.yaml"
 
 
 def chart(app: App) -> Chart:
@@ -75,37 +51,15 @@ def chart(app: App) -> Chart:
         NAMESPACE,
         repository=https_helm_repository(chart, NAME, NAMESPACE, url="https://flux-iac.github.io/tofu-controller"),
         chart="tofu-controller",
-        version="0.16.5",
+        version="0.17.0",
         interval="15m",
         install=HelmReleaseSpecInstall(
             crds=HelmReleaseSpecInstallCrds.SKIP, remediation=HelmReleaseSpecInstallRemediation(retries=3)
         ),
         upgrade=HelmReleaseSpecUpgrade(crds=HelmReleaseSpecUpgradeCrds.SKIP),
-        post_renderers=[
-            HelmReleaseSpecPostRenderers(
-                kustomize=HelmReleaseSpecPostRenderersKustomize(
-                    patches=[
-                        HelmReleaseSpecPostRenderersKustomizePatches(
-                            target=HelmReleaseSpecPostRenderersKustomizePatchesTarget(
-                                kind="ClusterRole", name="tofu-manager-role"
-                            ),
-                            patch=_EXTERNAL_ARTIFACT_RBAC_PATCH,
-                        ),
-                        # The pinned chart has no feature-gate value; upstream defaults it off.
-                        HelmReleaseSpecPostRenderersKustomizePatches(
-                            target=HelmReleaseSpecPostRenderersKustomizePatchesTarget(kind="Deployment", name=NAME),
-                            patch=(
-                                "- op: add\n"
-                                "  path: /spec/template/spec/containers/0/args/-\n"
-                                "  value: --feature-gates=ExternalArtifact=true\n"
-                            ),
-                        ),
-                    ]
-                )
-            )
-        ],
         values={
-            # Gitops Terraform CRs read the ducktape GitRepository in the Flux namespace.
+            "featureGates": {"externalArtifact": True},
+            # Gitops Terraform CRs read their module's `ExternalArtifact` in `flux.NAMESPACE`, not their own.
             "allowCrossNamespaceRefs": terraform.NAMESPACE != flux.NAMESPACE,
             "runner": {
                 "grpc": {"maxMessageSize": 50},  # MB, default 4 — defense against repo growth
@@ -118,14 +72,13 @@ def chart(app: App) -> Chart:
             "logLevel": "info",
         },
     )
-    for name, image in ((NAME, IMAGE), (RUNNER_NAME, RUNNER_IMAGE)):
-        newest_ci_tag_policy(
+    newest_ci_tag_policy(
+        chart,
+        ImageRepository(
             chart,
-            ImageRepository(
-                chart,
-                f"{name}-image-repository",
-                metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
-                spec=ImageRepositorySpec(image=image, interval="5m"),
-            ),
-        )
+            f"{RUNNER_NAME}-image-repository",
+            metadata=ApiObjectMetadata(name=RUNNER_NAME, namespace=NAMESPACE),
+            spec=ImageRepositorySpec(image=RUNNER_IMAGE, interval="5m"),
+        ),
+    )
     return chart

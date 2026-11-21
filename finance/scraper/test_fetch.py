@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pygit2
@@ -75,6 +76,15 @@ def _remote_last_message(remote: Path) -> str:
 def _remote_commit_count(remote: Path) -> int:
     repo = pygit2.Repository(str(remote))
     return sum(1 for _ in repo.walk(repo.revparse_single("main").peel(pygit2.Commit).id))
+
+
+async def _scrape(
+    remote: Path, sources: list[EvidenceSource], *, http_get: HttpGet, now: datetime = NOW, **kwargs: Any
+) -> int:
+    # depth=0 (full clone): libgit2's local file transport doesn't support shallow fetch.
+    return await run_scrape(
+        str(remote), "main", sources, username="", password="", http_get=http_get, now=now, depth=0, **kwargs
+    )
 
 
 def test_ca_file_honors_ssl_cert_file(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -151,10 +161,7 @@ async def test_run_scrape_clones_writes_and_pushes(tmp_path: Path) -> None:
     remote = tmp_path / "remote.git"
     _seed_remote(remote)
 
-    # depth=0 (full clone): libgit2's local file transport doesn't support shallow fetch.
-    code = await run_scrape(
-        str(remote), "main", [SOURCE], username="", password="", http_get=_constant_get(b"body"), now=NOW, depth=0
-    )
+    code = await _scrape(remote, [SOURCE], http_get=_constant_get(b"body"))
     assert code == 0
     # The fetched file is now committed on the remote's main, with the fetch recorded in the manifest.
     assert _remote_blob(remote, "fred_cpi_us.csv") == b"body"
@@ -166,9 +173,7 @@ async def test_run_scrape_fails_on_any_miss_without_stale_policy(tmp_path: Path)
     remote = tmp_path / "remote.git"
     _seed_remote(remote)
     # No stale_after -> any failed source fails the Job.
-    assert (
-        await run_scrape(str(remote), "main", [SOURCE], username="", password="", http_get=_boom, now=NOW, depth=0) == 1
-    )
+    assert await _scrape(remote, [SOURCE], http_get=_boom) == 1
 
 
 @pytest.mark.parametrize(
@@ -197,15 +202,10 @@ async def test_run_scrape_source_freshness(
         calls.append(url)
         return await http_get(url, user_agent)
 
-    code = await run_scrape(
-        str(remote),
-        "main",
+    code = await _scrape(
+        remote,
         [SOURCE],
-        username="",
-        password="",
         http_get=track_get,
-        now=NOW,
-        depth=0,
         max_age=timedelta(hours=max_age_hours) if max_age_hours is not None else None,
         stale_after=timedelta(hours=72),
     )
@@ -215,8 +215,6 @@ async def test_run_scrape_source_freshness(
     if expected_blob is not None:
         assert _remote_blob(remote, "fred_cpi_us.csv") == expected_blob
 
-
-# ── market mirror pass ──────────────────────────────────────────────────
 
 MANIFOLD_ENTRY = MarketEntry(platform=Platform.MANIFOLD, market_id="m1", deep=True)
 KALSHI_ENTRY = MarketEntry(platform=Platform.KALSHI, market_id="KXT-1")
@@ -244,17 +242,7 @@ async def test_run_scrape_mirrors_markets_and_records_manifest(tmp_path: Path) -
     _seed_remote(remote)
     get, _ = _dispatch_get({SOURCE.upstream_url: b"body", **_MARKET_RESPONSES})
 
-    code = await run_scrape(
-        str(remote),
-        "main",
-        [SOURCE],
-        username="",
-        password="",
-        http_get=get,
-        now=NOW,
-        depth=0,
-        markets=[MANIFOLD_ENTRY, KALSHI_ENTRY],
-    )
+    code = await _scrape(remote, [SOURCE], http_get=get, markets=[MANIFOLD_ENTRY, KALSHI_ENTRY])
     assert code == 0
     assert _remote_blob(remote, "markets/manifold/m1/market.json") == b'{"id":"m1","probability":0.5}'
     assert _remote_blob(remote, "markets/manifold/m1/bets.jsonl") == (
@@ -272,17 +260,7 @@ async def test_run_scrape_appends_bet_gap_to_seeded_history(tmp_path: Path) -> N
     _seed_remote(remote, {"markets/manifold/m1/bets.jsonl": '{"id":"b1","createdTime":1000}\n'})
     get, _ = _dispatch_get({SOURCE.upstream_url: b"body", **_MARKET_RESPONSES})
 
-    code = await run_scrape(
-        str(remote),
-        "main",
-        [SOURCE],
-        username="",
-        password="",
-        http_get=get,
-        now=NOW,
-        depth=0,
-        markets=[MANIFOLD_ENTRY],
-    )
+    code = await _scrape(remote, [SOURCE], http_get=get, markets=[MANIFOLD_ENTRY])
     assert code == 0
     # The API page held b2 (new) then b1 (already stored): exactly one line appended.
     assert _remote_blob(remote, "markets/manifold/m1/bets.jsonl") == (
@@ -298,17 +276,7 @@ async def test_run_scrape_unchanged_markets_skip_the_commit(tmp_path: Path) -> N
     get, _ = _dispatch_get({SOURCE.upstream_url: b"body", **_MARKET_RESPONSES})
 
     async def scrape_once(now: datetime) -> int:
-        return await run_scrape(
-            str(remote),
-            "main",
-            [SOURCE],
-            username="",
-            password="",
-            http_get=get,
-            now=now,
-            depth=0,
-            markets=[MANIFOLD_ENTRY, KALSHI_ENTRY],
-        )
+        return await _scrape(remote, [SOURCE], http_get=get, now=now, markets=[MANIFOLD_ENTRY, KALSHI_ENTRY])
 
     assert await scrape_once(NOW) == 0
     count_after_first = _remote_commit_count(remote)
@@ -324,9 +292,7 @@ async def test_run_scrape_restamps_manifest_after_refresh_floor(tmp_path: Path) 
     remote = tmp_path / "remote.git"
     _seed_with_last_fetched(remote, {KALSHI_ENTRY.provenance_label: NOW - timedelta(hours=21)})
     get, _ = _dispatch_get(_MARKET_RESPONSES)
-    code = await run_scrape(
-        str(remote), "main", [], username="", password="", http_get=get, now=NOW, depth=0, markets=[KALSHI_ENTRY]
-    )
+    code = await _scrape(remote, [], http_get=get, markets=[KALSHI_ENTRY])
     assert code == 0
     manifest = EvidenceManifest.model_validate_json(_remote_blob(remote, EVIDENCE_META_FILENAME))
     assert manifest.last_fetched[KALSHI_ENTRY.provenance_label] == NOW
@@ -363,15 +329,10 @@ async def test_run_scrape_market_freshness(
     else:
         get, calls = _dispatch_get({SOURCE.upstream_url: b"body", **_MARKET_RESPONSES})
 
-    code = await run_scrape(
-        str(remote),
-        "main",
+    code = await _scrape(
+        remote,
         sources,
-        username="",
-        password="",
         http_get=get,
-        now=NOW,
-        depth=0,
         markets=[KALSHI_ENTRY],
         max_age=timedelta(hours=20),
         market_max_age=timedelta(hours=market_max_age_hours) if market_max_age_hours is not None else None,
@@ -383,10 +344,6 @@ async def test_run_scrape_market_freshness(
         assert (SOURCE.upstream_url in calls) is source_called
     if market_called is not None:
         assert (f"{KALSHI_API}/markets/KXT-1" in calls) is market_called
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()
 
 
 def test_every_declared_source_is_fetched_and_written_verbatim(tmp_path: Path) -> None:
@@ -404,3 +361,7 @@ def test_every_declared_source_is_fetched_and_written_verbatim(tmp_path: Path) -
 
     for source in EVIDENCE_SOURCES:
         assert (tmp_path / source.output_filename).read_bytes() == bodies[source.upstream_url]
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

@@ -27,17 +27,18 @@ from python.runfiles import Runfiles
 
 from cluster.cdk8s import pod_policy
 from cluster.cdk8s.cert_manager import cluster_ca
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.home_lan import HOME_LAN
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring.home_switch import MONITORING_PASSWORD
+from cluster.cdk8s.monitoring.namespace import NAMESPACE
 from cluster.cdk8s.node_scheduling import OPTIPLEX
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "mktxp"
-NAMESPACE = "monitoring"
 OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/{NAME}"
 _CONFIG_MAP = f"{NAME}-config"
 _HTTP = Port(name="http", number=49090)
@@ -168,15 +169,8 @@ def _deployment(chart: Chart) -> k8s.KubeDeployment:
                             ports=[_HTTP.k8s_container_port()],
                             liveness_probe=tcp,
                             readiness_probe=tcp,
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("10m"),
-                                    "memory": k8s.Quantity.from_string("64Mi"),
-                                },
-                                limits={
-                                    "cpu": k8s.Quantity.from_string("200m"),
-                                    "memory": k8s.Quantity.from_string("256Mi"),
-                                },
+                            resources=container_resources(
+                                cpu="10m", memory="64Mi", cpu_limit="200m", memory_limit="256Mi"
                             ),
                             volume_mounts=[
                                 k8s.VolumeMount(name="config", mount_path=_CONFIG_DIR, read_only=True),

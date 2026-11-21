@@ -12,7 +12,6 @@
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
-load("//devinfra/js:openapi_js_library.bzl", "openapi_js_library")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//devinfra/js:typed_eslint.bzl", "typed_eslint_test")
@@ -64,7 +63,6 @@ filegroup(
 filegroup(
     name = "typed_lint_program_data",
     srcs = [
-        ":schema",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@electric-sql/client",
         "//:node_modules/@mantine/core",
@@ -81,7 +79,6 @@ filegroup(
         "//:node_modules/@types/node",
         "//:node_modules/date-fns",
         "//:node_modules/happy-dom",
-        "//:node_modules/openapi-fetch",
         "//:node_modules/react-router",
         "//:node_modules/yaml",
         "//:node_modules/zod",
@@ -113,28 +110,16 @@ typed_eslint_test(
         "//agentplane/app/frontend/actions/push/service_worker:typed_lint_tsconfigs",
         "//util/frontend:typed_lint_program_data",
     ],
-    source_data = ["//util/frontend:typed_lint_srcs"],
+    source_data = [
+        "//agentplane/app/frontend/ui:brand_icon_data.ts",
+        "//util/frontend:typed_lint_srcs",
+    ],
     tsconfig = "tsconfig.json",
 )
 
 ts_config(
     name = "tsconfig",
     src = "tsconfig.json",
-)
-
-# Generated Zod modules infer their exported types from the generated schemas; declaration emit
-# needs whole-program inference rather than isolatedDeclarations' authored-type annotations.
-ts_config(
-    name = "tsconfig_generated",
-    src = "tsconfig.generated.json",
-    deps = [":tsconfig"],
-)
-
-# TypeScript types from the app's OpenAPI document: the inventory's models and routes. The bridge's
-# proto-JSON bodies are plain objects there; the runner's shared protocol types them.
-openapi_js_library(
-    name = "schema",
-    schema = "//agentplane/app:openapi_schema",
 )
 
 ts_library(
@@ -203,6 +188,7 @@ ts_library(
     name = "visual_harness_lib",
     testonly = True,
     srcs = [
+        "harness/action_presentations_visual.tsx",
         "harness/disclosure_visual.tsx",
         "harness/harness.tsx",
         "harness/operation_presentation_visual.tsx",
@@ -210,18 +196,22 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":harness_network",
-        ":schema",
         ":visual_rollouts",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
+        "//:node_modules/@tanstack/react-query",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
         "//:node_modules/react",
         "//:node_modules/react-dom",
+        "//:node_modules/react-router",
         "//agentplane/action_service/api/contracts:action_service_pb",
         "//agentplane/action_service/api/contracts:operator_action_service_pb",
         "//agentplane/app:app_service_pb",
         "//agentplane/app/frontend/actions:action_client",
+        "//agentplane/app/frontend/actions:history",
+        "//agentplane/app/frontend/actions:requests",
+        "//agentplane/app/frontend/actions:sidebar",
         "//agentplane/app/frontend/actions/rendering:index",
         "//agentplane/app/frontend/actions/testing:proto_fixtures",
         "//agentplane/app/frontend/connections/testing:fixture",
@@ -239,6 +229,7 @@ ts_library(
         "//agentplane/app/frontend/testing:sandbox",
         "//agentplane/app/frontend/transport:client",
         "//agentplane/app/frontend/transport:live",
+        "//agentplane/app/frontend/transport:query",
         "//agentplane/app/frontend/transport:stream_status",
         "//agentplane/app/frontend/ui:shell_command_view",
         "//agentplane/app/frontend/ui:text_block",
@@ -358,8 +349,10 @@ agentplane_visual_test(
 
 ts_library(
     name = "harness_network",
+    testonly = True,
     srcs = ["harness/network.ts"],
     tsconfig = TSCONFIG,
+    deps = ["//agentplane/app/frontend/sessions/testing:electric_entity"],
 )
 
 agentplane_vitest_test(
@@ -376,6 +369,6 @@ check_vitest_specs()
 agentplane_visual_test(
     name = "visual_actions",
     src = "test_visual_actions.py",
-    shard_count = 4,
+    shard_count = 16,
     title = "Agentplane: action presentations",
 )

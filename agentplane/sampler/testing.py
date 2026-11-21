@@ -2,7 +2,7 @@
 
 import asyncio
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -14,18 +14,18 @@ import grpc
 from pydantic import SecretStr
 from python.runfiles import Runfiles
 from sqlalchemy.engine import make_url
+from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.harness_host import harness_host_pb2, harness_host_pb2_grpc
 from agentplane.native.testing.model_endpoint import ModelEndpoint, ModelExchange
 from agentplane.net.peertls.config import CENTRAL_SAMPLER_URI, GATEWAY_SESSIONS_URI, ClientTLS, ServerTLSListener
 from agentplane.proto import event_pb2, identity_pb2, session_pb2
-from agentplane.sampler.api import sampler_admin_pb2, sampler_admin_pb2_grpc
+from agentplane.sampler.api import sampler_admin_pb2, sampler_admin_pb2_grpc, sampler_pb2
 from agentplane.sampler.settings import AuthConfig, ConnectionConfig, ModelConfig, ResponsesConfig, Settings
 from agentplane.testing.go_process import go_process
 from agentplane.testing.tls import issue_workload_leaf, make_ca
 from util.net import listen_tcp
 
-METADATA = ()
 # The Session `create_request` creates.
 SESSION_ID = "079bd706-77b3-4b71-8c7e-605a7e19324c"
 
@@ -70,10 +70,8 @@ def settings(
     logs: Path,
     *,
     gateway_target: str | None = None,
-    gateway_token_file: Path | None = None,
     gateway_tls: ClientTLS | None = None,
     history_target: str | None = None,
-    history_token_file: Path | None = None,
     history_tls: ClientTLS | None = None,
 ) -> Settings:
     return Settings(
@@ -115,11 +113,9 @@ def settings(
         executor_codex=codex_binary,
         logs=logs,
         history_target=history_target,
-        history_token_file=history_token_file,
         history_tls=history_tls,
         gateway_target=gateway_target,
         gateway_tls=gateway_tls,
-        gateway_token_file=gateway_token_file,
         direct_executor_target=executor_target,
         direct_executor_insecure_localtest=executor_target is not None,
         max_live_sessions=2,
@@ -144,15 +140,8 @@ def create_request(cwd: Path) -> harness_host_pb2.CreateSessionRequest:
     )
 
 
-@dataclass(frozen=True)
-class SamplerEndpoint:
-    target: str
-    channel_credentials: grpc.ChannelCredentials
-    channel: grpc.aio.Channel
-
-
 @asynccontextmanager
-async def go_sampler(config: Settings, directory: Path) -> AsyncIterator[SamplerEndpoint]:
+async def go_sampler(config: Settings, directory: Path) -> AsyncIterator[SamplerTestClient]:
     """Run the Go binary with a verified service-SVID application listener."""
     await asyncio.to_thread(directory.mkdir, parents=True, exist_ok=True)
     binary = Runfiles.CreateOrRaise().root() / "ducktape/agentplane/sampler/cmd/main_bin_/main_bin"
@@ -220,36 +209,70 @@ async def go_sampler(config: Settings, directory: Path) -> AsyncIterator[Sampler
                 f"localhost:{bound.port}", client_credentials, options=(("grpc.ssl_target_name_override", "localhost"),)
             )
             async with channel:
-                yield SamplerEndpoint(f"localhost:{bound.port}", client_credentials, channel)
+                yield SamplerTestClient(
+                    harness_host_pb2_grpc.HarnessHostStub(channel), sampler_admin_pb2_grpc.SamplerAdminStub(channel)
+                )
 
 
 @asynccontextmanager
 async def service(config: Settings) -> AsyncIterator[SamplerTestClient]:
-    directory = config.logs / ("go-sampler-" + uuid4().hex)
-    directory.mkdir(parents=True)
-    async with go_sampler(config, directory) as endpoint:
-        yield SamplerTestClient(
-            harness_host_pb2_grpc.HarnessHostStub(endpoint.channel),
-            sampler_admin_pb2_grpc.SamplerAdminStub(endpoint.channel),
-        )
+    async with go_sampler(config, config.logs / ("go-sampler-" + uuid4().hex)) as stub:
+        yield stub
+
+
+async def follow_until(
+    stub: SamplerTestClient, session_id: str, matches: Callable[[event_pb2.Event], bool], *, timeout_s: float
+) -> list[event_pb2.Event]:
+    """Follow the Session's events through the first one `matches` accepts; return every event seen."""
+    events: list[event_pb2.Event] = []
+    stream = stub.admin.FollowEvents(sampler_admin_pb2.FollowEventsRequest(session_id=session_id, follow=True))
+    try:
+        async with asyncio.timeout(timeout_s):
+            async for frame in stream:
+                events.append(frame.entry.event)
+                if matches(frame.entry.event):
+                    return events
+    finally:
+        stream.cancel()
+    raise AssertionError("event stream ended before a matching event")
 
 
 async def turn_completed(
     stub: SamplerTestClient, session_id: str, turn_id: str, *, timeout_s: float = 15
 ) -> event_pb2.TurnCompleted:
     """Follow the Session's events until `turn_id` completes."""
-    stream = stub.admin.FollowEvents(
-        sampler_admin_pb2.FollowEventsRequest(session_id=session_id, follow=True), metadata=METADATA
+    events = await follow_until(
+        stub,
+        session_id,
+        lambda event: event.HasField("turn_completed") and event.turn_completed.turn_id == turn_id,
+        timeout_s=timeout_s,
     )
-    try:
-        async with asyncio.timeout(timeout_s):
-            async for frame in stream:
-                event = frame.entry.event
-                if event.HasField("turn_completed") and event.turn_completed.turn_id == turn_id:
-                    return event.turn_completed
-    finally:
-        stream.cancel()
-    raise AssertionError(f"event stream ended before {turn_id=} completed")
+    return events[-1].turn_completed
+
+
+async def wait_for_command(
+    stub: SamplerTestClient,
+    session_id: str,
+    command_id: str,
+    outcome: sampler_pb2.CommandOutcome,
+    *,
+    timeout_s: float = 10,
+) -> sampler_admin_pb2.GetCommandResponse:
+    """Poll the command until it records `outcome`."""
+
+    async def read_command() -> sampler_admin_pb2.GetCommandResponse:
+        command = await stub.admin.GetCommand(
+            sampler_admin_pb2.GetCommandRequest(session_id=session_id, command_id=command_id), timeout=10
+        )
+        assert command.outcome == outcome, f"{command_id=} {outcome=} {command=}"
+        return command
+
+    return await AsyncRetrying(
+        stop=stop_after_delay(timeout_s),
+        wait=wait_fixed(0.05),
+        retry=retry_if_exception_type(AssertionError),
+        reraise=True,
+    )(read_command)
 
 
 @dataclass
@@ -263,9 +286,7 @@ async def follow_turn(stub: SamplerTestClient, session_id: str, turn_id: str, *,
     texts: dict[str, str] = {}
     assistant_items: set[str] = set()
     active = False
-    stream = stub.admin.FollowEvents(
-        sampler_admin_pb2.FollowEventsRequest(session_id=session_id, follow=True), metadata=METADATA
-    )
+    stream = stub.admin.FollowEvents(sampler_admin_pb2.FollowEventsRequest(session_id=session_id, follow=True))
     try:
         async with asyncio.timeout(timeout_s):
             async for frame in stream:
@@ -293,7 +314,7 @@ async def submit_input(
 ) -> harness_host_pb2.SubmitInputResponse:
     """Admit one input and return its receipt without following the resulting turn."""
     request = harness_host_pb2.SubmitInputRequest(session_id=session_id, command_id=command_id, text=text)
-    return await stub.harness_host.SubmitInput(request, metadata=METADATA, timeout=timeout_s)
+    return await stub.harness_host.SubmitInput(request, timeout=timeout_s)
 
 
 async def submit(stub: SamplerTestClient, session_id: str, command_id: str, text: str, *, timeout_s: float) -> Turn:

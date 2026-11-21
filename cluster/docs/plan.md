@@ -45,19 +45,19 @@ editing a route.
       including the obsolete Nebula certificate-generation state records.
 - [ ] **Add ReplicationSource for gitea-shared-storage** (and any other
       SeaweedFS-backed PVC holding non-regeneratable state). The named
-      `grocy-{sf,vallejo}` and `tana-mcp` workloads use PVC-to-PVC `rsyncTLS`;
+      `grocy-{sf,vallejo}` workloads use PVC-to-PVC `rsyncTLS`;
       Home Assistant also has a Restic `ReplicationSource` to SeaweedFS.
-      That does not cover Forgejo's shared storage. The Forgejo loss above was
+      That does not cover Forgejo's shared storage. The earlier Forgejo loss was
       survivable only because nothing had been pushed yet, not because we had a
       backup. Destination choice is non-trivial: copying between PVCs on the same
       SeaweedFS cluster doesn't protect against
-      the failure mode we just hit (defeats the grocy/tana pattern when
+      the failure mode we just hit (defeats the grocy pattern when
       the primary is already on SeaweedFS). `local-path-proxmox` was unavailable
       during that incident; reassess it against the current Piraeus storage
       design. Off-cluster object storage (B2 / R2 / OVH Object Storage) remains
       an option and overlaps with the observability-backend decision below.
 - [ ] **Convert PVC backups to snapshot/retention, not Direct rsync.**
-      Current `grocy-{sf,vallejo}` and `tana-mcp` volsync configs use
+      Current `grocy-{sf,vallejo}` volsync configs use
       `copyMethod: Direct` rsync into a single destination PVC. When the
       source PVC ends up empty for any reason — fresh reprovision after a
       node rename, a wipe, accidental delete-and-recreate — the next
@@ -79,9 +79,7 @@ editing a route.
       daily, 4 weekly, 6 monthly) — Restic dedupes so retention is cheap,
       and a source going empty only adds a new snapshot, not destroys
       old ones. Overlaps with the off-cluster object-storage decision in
-      the items above. See
-      <../debug/2026-06-03-ns103711-seaweedfs-data-volume-mount-missing.md>
-      for the close call.
+      the items above.
 - [ ] **Decide whether observability storage stays on SeaweedFS**. Loki,
       Mimir, and Tempo all lost data in the rename. If those backends are
       supposed to survive node-rotation incidents, they should live on
@@ -122,7 +120,7 @@ editing a route.
       after the rotator is available. Separately decide whether bootstrap or session
       startup should make the newly minted token available before the rotator's Git
       commit/push and local re-source cycle.
-- [ ] Decouple wyrm2 from tofu: `module.wyrm2` in the same TF root as the cluster means
+- [ ] Decouple wyrm2 from tofu: `proxmox_virtual_environment_vm.wyrm2` in the same TF root as the cluster means
       any `tofu apply` risks rebooting wyrm2 (the machine running tofu). The `--exclude`
       flag is a workaround but error-prone. Options: separate TF root for wyrm2, or manage
       wyrm2 VM config purely via NixOS/Proxmox API (no terraform). See postmortem
@@ -167,11 +165,10 @@ editing a route.
       decide placement before moving it.
 - [ ] Review Goldilocks VPA memory requests on HIL pods. The grocy-sf scheduling
       incident recorded 97% of HIL worker memory requested despite 65–78% actual use.
-      Source now defines a Kyverno policy that defaults `auto` VPA namespaces to
-      `controlledValues: RequestsOnly` (<../cdk8s/kyverno/policies.py>), so VPA leaves
-      manifest limits unchanged; it does not bound memory requests. Review the workloads
-      whose requests still threaten scheduling and set evidence-based
-      `minAllowed`/`maxAllowed` policies where useful.
+      Source now defaults `auto` VPA namespaces to `controlledValues: RequestsOnly`
+      (<../cdk8s/namespaces.py>), so VPA leaves manifest limits unchanged; it does not
+      bound memory requests. Review the workloads whose requests still threaten scheduling
+      and set evidence-based `minAllowed`/`maxAllowed` policies where useful.
       Decide separately whether noncritical workloads should use `Initial`; consider a
       descheduler only if measured post-right-sizing placement still needs rebalancing.
 - Loki + SeaweedFS S3 (MinIO retired 2026-05; Loki/Tempo/Mimir all point at the
@@ -228,7 +225,7 @@ See <plans/file_sync_evaluation.md>.
 
 ### Kyverno GitOps Enforcement
 
-Deployed in Audit mode (`require-gitops` ClusterPolicy, 3 replicas).
+Deployed in Audit mode (`require-gitops` ValidatingPolicy, 3 admission-controller replicas).
 
 - [ ] Switch to `Enforce` after validation
 - [ ] Generic operator exclusion (skip resources with `ownerReferences`)
@@ -310,10 +307,6 @@ Proxmox-only gap.)
       same OVH nodes as the databases, so losing SeaweedFS loses the backups too.
 - [ ] Verify Proxmox ZFS auto-snapshot schedule covers CNPG data directories
 
-### Velero PVC Backup
-
-Scheduled backups of PVCs (Forgejo, Loki, Postgres). No backup strategy currently.
-
 ### CiliumNetworkPolicy Rollout
 
 Most services lack network policies. Goal: default-deny per namespace.
@@ -325,38 +318,6 @@ Most services lack network policies. Goal: default-deny per namespace.
 **Priority 3 -- Remaining**:
 
 - [ ] Cert-Manager, Metrics Server, ESO webhook, Props, Nix cache
-
-### Scoped Historical Logs for `claude-sandbox`
-
-Agents in `claude-sandbox` can't reach Loki — the `ingress` CNP in `loki` only allows
-grafana/alloy/gatus/authentik, and Loki runs `auth_enabled: false` so the
-CNP is the entire access boundary. Without log access, post-mortems on dead pods
-(e.g. the 2026-05-24 `tana-mcp` livenessProbe kill) are limited to metrics +
-kubelet's short-lived previous-container buffer.
-
-Options, from cheapest to cleanest:
-
-- **A. Allowlist `claude-sandbox` on the `ingress` CNP in `loki`.** ~5 lines. Grants full
-  cluster Loki read; scoping relies on the agent querying only namespaces it has
-  business in (same trust model as `namespace-diagnostics-reader`).
-- **B. `loki-agent-proxy` deployment in `monitoring`.** nginx + njs/Lua that
-  rewrites incoming LogQL `query` params to inject `{namespace=~"<allowlist>"}`
-  before forwarding to `loki-read:3100`. CNP grants `claude-sandbox` → proxy only,
-  not Loki directly. Real per-namespace scoping. Mirrors existing precedent
-  (`tana-mcp` nginx whitelisting `/mcp` + `/health`, `activitywatch`'s `readonly`
-  proxy whitelisting `GET/POST /api/0/query`). Natural allowlist: the
-  `namespace-diagnostics-reader` and `logs-configmaps-reader` binding sets in
-  <agent_rbac.md>.
-- **C. Loki multi-tenancy.** Set `auth_enabled: true`, route per-namespace logs to
-  per-namespace tenants via Alloy, grant tenant IDs. Touches every log
-  producer; almost certainly overkill.
-
-Grafana isn't a useful proxy here: OSS Grafana's Loki datasource has no
-label-level access controls (TeamLBAC is Enterprise-only), so routing through
-Grafana shifts the trust boundary without actually scoping access.
-
-Recommendation: **B** when log access starts mattering for routine triage; **A**
-as a stop-gap if the trust-the-agent model is acceptable.
 
 ### Pod Security Standards
 
@@ -401,13 +362,6 @@ fault can cascade.
 
 VPA deployed (`generated/vpa/`). Goldilocks auto-creates VPAs cluster-wide.
 Default mode "Off" (recommendation-only). Enable per namespace.
-
-**TODO**: Require explicit `goldilocks.fairwinds.com/vpa-resource-policy` annotations
-on all namespaces/deployments that use `updateMode: auto`. Without a policy:
-
-- VPA can recommend absurdly low CPU (e.g., 15m) that causes throttling.
-  Consider a Kyverno policy to enforce this cluster-wide. See airlock namespace
-  for working example (JSON format required, not YAML).
 
 CPU limits policy for cold-start-heavy workloads:
 <decisions.md> § "CPU limits policy (VPA)".
@@ -471,12 +425,9 @@ CNPG is 2-instance primary+standby. Low priority -- survives single-node failure
 
 - `BackendTLSPolicy` for internal HTTPS (blocked on [cilium#31352](https://github.com/cilium/cilium/issues/31352))
 - Nix cache signing key -> GitOps Terraform writing a SOPS secret
-- RWX shared storage: Longhorn NFS export (try first), NFS on Proxmox, JuiceFS, SeaweedFS
+- RWX shared storage: the longer-term goal in <plans/piraeus_production.md>
 
 ## Related Documentation
 
 - <bootstrap.md>
 - <troubleshooting.md>
-- <lessons_learned/2025_11_28_eso_password_generator_desync.md>
-
-**Monthly Cost**: OVH Kimsufi bare metal (3× KS-5 + 2× KS-GAME, HIL); refresh figure (was ~EUR64/mo on the retired Hetzner CPX31 fleet).

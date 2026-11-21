@@ -90,7 +90,7 @@ behavior and callers. Check a complete `{unit_id, module}` map with
 `modules apply --assignments changes.json --dry-run`, then apply the same
 assignments without `--dry-run`. Exact apply preserves existing selector entries
 and their metadata, including grouped source matches and anonymous statements.
-The [CLI guide](cli.md#applying-explicit-assignments-modules-apply-assignments)
+The [CLI guide](cli.md#applying-explicit-assignments-modules-apply---assignments)
 defines the batch and validation contract.
 
 ## Workflow: proposing residual modules
@@ -290,7 +290,7 @@ It preserves selectors and metadata on existing claims, including grouped
 `source_matches` and annotations. Reviewed `--selector-overrides` can provide a
 source-backed selector for a newly claimed binding when synthesis is not the
 right anchor. Preview with `--dry-run`; preview and write share the same
-selector-resolution and complete assignment validation. See the [CLI guide](cli.md#applying-explicit-assignments-modules-apply-assignments).
+selector-resolution and complete assignment validation. See the [CLI guide](cli.md#applying-explicit-assignments-modules-apply---assignments).
 
 Both `modules apply` and `modules merge` consolidate compatible source-match
 records in their destinations when the template bytes, identifier policy and
@@ -421,7 +421,7 @@ imports only (`lowering/imports/imports_runtime.rs`).
 
 Module YAMLs, binding annotations, and `anonymous_statements:` entries accept
 optional `comment:` and `note:` strings; the config's `host_behavior` block
-accepts `note:` only, for the audited executable's identity (<SPEC.md> § Host
+accepts `note:` only, for the audited executable's identity (<../SPEC.md> § Host
 behavior). `comment:` survives rebuilds and emits
 into generated JS: a module comment at the top of its file, a binding comment
 above its declaring statement, and an anonymous-statement comment above its matched

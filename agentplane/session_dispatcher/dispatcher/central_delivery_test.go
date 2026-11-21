@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/x509"
 	"errors"
-	"net"
 	"os"
 	"path/filepath"
 	"testing"
@@ -20,6 +19,7 @@ import (
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/placement"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -87,15 +87,9 @@ func (s *centralFixture) ChangeReasoningEffort(_ context.Context, r *harnesshost
 
 func serveDeliveryHost(t *testing.T, fixture *centralFixture) string {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := grpc.NewServer()
-	harnesshostpb.RegisterHarnessHostServer(server, fixture)
-	go server.Serve(listener)
-	t.Cleanup(server.Stop)
-	return listener.Addr().String()
+	return grpcserver.ServeRegistered(t, func(server *grpc.Server) {
+		harnesshostpb.RegisterHarnessHostServer(server, fixture)
+	})
 }
 
 func TestSessionDeliveryTargetsAndCommands(t *testing.T) {
@@ -107,6 +101,10 @@ func TestSessionDeliveryTargetsAndCommands(t *testing.T) {
 				t.Fatal(err)
 			}
 			sandbox := SandboxSnapshot{Name: "test-executor", Namespace: "test", UID: "test-sandbox-uid", Incarnation: "test-pod-uid", Blocker: "sandbox_not_ready"}
+			if kind == placement.CentralSampler {
+				// Logical admission does not need an execution Pod; its first open fences the incarnation.
+				sandbox.Incarnation, sandbox.Blocker = "", "sandbox_suspended"
+			}
 			execution := store.SessionExecution{Identity: &identitypb.Identity{Name: "test-identity", Uid: "00000000-0000-4000-8000-00000000a008"}}
 			spec := &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: sandbox.Name, Uid: sandbox.UID}}}}}
 			if kind == placement.EnvironmentHosted {
@@ -211,19 +209,14 @@ func TestCentralHarnessHostClientUsesSessionsSVIDWithoutBearerMetadata(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	server := grpc.NewServer(grpc.Creds(credentials.NewTLS(serverTLS)))
 	fixture := &centralFixture{}
 	harnesshostpb.RegisterHarnessHostServer(server, fixture)
-	go server.Serve(listener)
-	t.Cleanup(server.Stop)
+	serverAddr := grpcserver.Serve(t, server)
 
 	caller := ca.Issue(t, peertls.SessionsURI)
 	runtime := &HarnessHostClient{Timeout: time.Second}
-	target := harnessHostTarget{address: listener.Addr().String(), tls: &peertls.ClientTLS{
+	target := harnessHostTarget{address: serverAddr, tls: &peertls.ClientTLS{
 		CAFile: ca.RootFile, ServerURI: peertls.CentralSamplerURI,
 		CertFile: caller.CertFile, KeyFile: caller.KeyFile, ClientURI: peertls.SessionsURI,
 	}}
@@ -281,19 +274,14 @@ func TestHarnessHostClientUsesSessionsSVIDWithoutBearerMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	server := grpc.NewServer(grpc.Creds(credentials.NewTLS(serverTLS)))
 	fixture := &proxyRuntimeFixture{}
 	harnesshostpb.RegisterHarnessHostServer(server, fixture)
-	go server.Serve(listener)
-	t.Cleanup(server.Stop)
+	serverAddr := grpcserver.Serve(t, server)
 
 	caller := ca.Issue(t, peertls.SessionsURI)
 	runtime := &HarnessHostClient{
-		Namespace: "agentplane", Timeout: time.Second, TargetTemplate: listener.Addr().String(),
+		Namespace: "agentplane", Timeout: time.Second, TargetTemplate: serverAddr,
 		GatewayTLS: &peertls.ClientTLS{
 			CAFile: ca.RootFile, ServerURI: peertls.SessionDispatcherURI,
 			CertFile: caller.CertFile, KeyFile: caller.KeyFile, ClientURI: peertls.SessionsURI,

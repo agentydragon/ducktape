@@ -6,7 +6,6 @@ import { afterEach, vi } from "vitest";
 import { create, fromJson, type JsonObject } from "@bufbuild/protobuf";
 import { TimestampSchema, ValueSchema } from "@bufbuild/protobuf/wkt";
 
-import { api } from "../../transport/client";
 import { createAppQueryClient } from "../../transport/query";
 import {
   ActionRequestSchema,
@@ -22,6 +21,7 @@ import {
   type ListActionRequestHistoryResponse,
 } from "../../../../action_service/api/contracts/action_service_pb";
 import type { McpServerLinkage } from "../../../../action_service/api/contracts/operator_action_service_pb";
+import { parseCallToolResult, type CallToolResult } from "../call_tool_result";
 import {
   actionGroupUpsertProtoJson,
   actionGroupsSnapshotCompleteProtoJson,
@@ -42,8 +42,6 @@ import {
 } from "./proto_fixtures";
 
 /** Shared fixtures, stand-ins for the network, and mounting for the Action views' suites. */
-
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 export const DECISION_NOTE = "test decision note";
 export const ACTION_REQUEST_WATCH = "/upstream/actions/v1/action-requests:watch?state=ACTION_STATE_DECISION_PENDING";
@@ -149,6 +147,13 @@ export function sshExec(state: ActionState, returned: Record<string, unknown> = 
     });
   }
   return row;
+}
+
+/** `value` as a `CallToolResult`, throwing for a fixture that is not one. */
+export function toolResult(value: unknown): CallToolResult {
+  const result = parseCallToolResult(value);
+  if (result === null) throw new Error("the fixture is not a CallToolResult");
+  return result;
 }
 
 const mounted: Array<{ root: ReturnType<typeof createRoot>; container: HTMLDivElement; queryClient: QueryClient }> = [];
@@ -501,8 +506,6 @@ export interface Sent {
   body: unknown;
 }
 
-const ejects: (() => void)[] = [];
-
 /** Answers the app's API in place of the network until the test ends, recording what was sent. An
  * answer is a JSON body or a ready `Response`; `undefined` fails the request as unexpected. */
 export function answerApi(answer: (sent: Sent) => unknown): Sent[] {
@@ -512,24 +515,6 @@ export function answerApi(answer: (sent: Sent) => unknown): Sent[] {
     return answer(entry);
   };
   installActionFetch();
-  const middleware = {
-    async onRequest({ request }: { request: Request }) {
-      const url = new URL(request.url, "https://app.invalid");
-      const text = await request.text();
-      const entry = {
-        method: request.method,
-        path: url.pathname,
-        query: url.searchParams,
-        body: text ? (JSON.parse(text) as unknown) : undefined,
-      };
-      sent.push(entry);
-      const answered = await answer(entry);
-      if (answered === undefined) throw new Error(`unexpected ${entry.method} ${entry.path}`);
-      return answered instanceof Response ? answered : Response.json(answered);
-    },
-  };
-  api.use(middleware);
-  ejects.push(() => api.eject(middleware));
   return sent;
 }
 
@@ -565,7 +550,6 @@ afterEach(async () => {
     item.queryClient.clear();
     item.container.remove();
   }
-  for (const eject of ejects.splice(0)) eject();
   for (const watch of TestNdjsonWatch.opened.values()) watch.close();
   TestNdjsonWatch.reset();
   actionAnswer = () => undefined;

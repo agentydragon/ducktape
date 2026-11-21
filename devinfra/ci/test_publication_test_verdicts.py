@@ -3,7 +3,6 @@ import json
 import os
 import threading
 from collections.abc import Callable
-from functools import partial
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
@@ -12,7 +11,7 @@ import pytest
 import pytest_bazel
 from python.runfiles import Runfiles
 
-from devinfra.buildbuddy.ci.bes import BuildBuddyError, Invocation, Output, TestSummary, read
+from devinfra.buildbuddy.ci.bes import BuildBuddyError, Invocation, Output, TestSummary
 from devinfra.buildbuddy.ci.invocation_ids import invocation_id
 from devinfra.ci import publication_evidence
 from devinfra.ci.publication_test_verdicts import TestEvidence, verify
@@ -32,7 +31,6 @@ def push_sweep(summaries: list[TestSummary], *, finished: bool = True) -> Invoca
     """bazel-ci's own `//...` test invocation of SOURCE, as the planners read it back."""
     return Invocation(
         outputs=[],
-        test_status={s.label: s.status for s in summaries},
         test_summaries=summaries,
         finished=finished,
         successful=all(s.status == "PASSED" for s in summaries),
@@ -111,6 +109,17 @@ def test_a_verified_successful_sweep_can_supply_a_passing_verdict(summaries: lis
     assert not evidence.already_failed("//a:test")[0]
 
 
+def test_custom_publication_configuration_keeps_its_test_gate() -> None:
+    candidate = publication_evidence.TestGateCandidate("optimized", "//a:test", uses_default_config=False)
+    passing = publication_evidence.PublicationEvidence(None, evidence_for(push_sweep([summary("//a:test", "PASSED")])))
+    assert passing.test_gates([candidate], action="released") == (set(), set())
+    default_config = dataclasses.replace(candidate, uses_default_config=True)
+    assert passing.test_gates([default_config], action="released") == ({"//a:test"}, set())
+
+    failing = publication_evidence.PublicationEvidence(None, evidence_for(push_sweep([summary("//a:test", "FAILED")])))
+    assert failing.test_gates([candidate], action="released") == (set(), {"//a:test"})
+
+
 def test_passing_tests_from_a_failed_sweep_are_not_reused() -> None:
     evidence = evidence_for(push_sweep([summary("//a:test", "PASSED"), summary("//b:test", "FAILED")]))
     assert not evidence.is_covered("//a:test")[0]
@@ -158,7 +167,6 @@ def test_loading_keeps_exact_test_evidence_separate_from_merged_outputs(monkeypa
     )
     assert calls == [TEST_INVOCATION_ID, "unreadable", "build"]
     assert evidence.outputs is not None
-    assert evidence.outputs.test_status["//a:test"] == "PASSED"
     assert evidence.tests.already_failed("//a:test")[0]
     assert not evidence.tests.is_covered("//a:test")[0]
 
@@ -168,11 +176,9 @@ def test_build_outputs_and_race_test_verdicts_are_loaded_separately(monkeypatch:
     monkeypatch.setenv("GITHUB_RUN_ID", RUN_ID)
     monkeypatch.setenv("GITHUB_RUN_ATTEMPT", ATTEMPT)
     monkeypatch.setenv("GITHUB_EVENT_NAME", "push")
-    normal = Output(
-        label="//app:binary", path="bin/app", uri="normal-uri", digest="normal", size=10, output_group="default"
-    )
+    normal = Output(label="//app:binary", path="bin/app", uri="normal-uri", digest="normal", output_group="default")
     instrumented = dataclasses.replace(normal, uri="race-uri", digest="race")
-    build = Invocation(outputs=[normal], test_status={})
+    build = Invocation(outputs=[normal])
     tests = dataclasses.replace(push_sweep([summary("//a:test", "PASSED")]), outputs=[instrumented])
     calls = []
 
@@ -223,12 +229,11 @@ def retry_run() -> dict[str, Invocation]:
         "retry": retry,
         "runner": Invocation(
             outputs=[],
-            test_status={},
             invocation_id="runner",
             finished=True,
             child_invocation_ids=("query", TEST_INVOCATION_ID, "retry", "build"),
         ),
-        "build": Invocation(outputs=[], test_status={}, command="build", invocation_id="build"),
+        "build": Invocation(outputs=[], command="build", invocation_id="build"),
     }
 
 
@@ -409,9 +414,7 @@ def test_publication_reads_retry_evidence_through_the_real_go_exporter(
         thread = threading.Thread(target=server.serve_forever)
         thread.start()
         try:
-            monkeypatch.setattr(
-                publication_evidence, "read", partial(read, base_url=f"http://127.0.0.1:{server.server_port}")
-            )
+            monkeypatch.setenv("BUILDBUDDY_URL", f"http://127.0.0.1:{server.server_port}")
             evidence = publication_evidence.load(
                 ["build"], test_invocation_id=TEST_INVOCATION_ID, source_commit=SOURCE, rbe_container_image=RBE_IMAGE
             ).tests

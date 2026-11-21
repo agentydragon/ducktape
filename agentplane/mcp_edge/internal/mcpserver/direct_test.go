@@ -167,6 +167,22 @@ func TestInvalidDirectToolMetadataFailsWithASanitizedRetryableResponse(t *testin
 	}
 }
 
+func TestUnvalidatedDirectToolUsesACompatibleSchema(t *testing.T) {
+	group := proto.Clone(directCatalog.ActionGroups[0]).(*pb.ActionGroup)
+	group.Actions[0].InputSchema = &structpb.Struct{Fields: map[string]*structpb.Value{"type": structpb.NewStringValue("invalid")}}
+	group.Actions[0].InputSchemaValidation = &pb.InputSchemaValidation{Status: pb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_NOT_ENFORCED, Reason: pb.InputSchemaValidationReason_INPUT_SCHEMA_VALIDATION_REASON_SCHEMA_COMPILE_FAILED, Detail: new("Agentplane cannot validate arguments")}
+	tool := (&tools{}).directTool(group, group.Actions[0])
+	if !strings.Contains(tool.Description, "Agentplane cannot validate arguments") || !strings.Contains(tool.Description, "does not validate arguments") {
+		t.Fatalf("description = %q", tool.Description)
+	}
+	server := mcp.NewServer(&mcp.Implementation{Name: "test"}, nil)
+	if err := addDirectTool(server, tool, func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return &mcp.CallToolResult{}, nil
+	}); err != nil {
+		t.Fatalf("fallback schema could not be registered: %v", err)
+	}
+}
+
 func TestDirectToolCatalogIsCompleteThroughTheSDKClient(t *testing.T) {
 	group := &pb.ActionGroup{Key: "test-mcp", Title: "Test MCP", Available: true}
 	for i := range mcp.DefaultPageSize + 1 {

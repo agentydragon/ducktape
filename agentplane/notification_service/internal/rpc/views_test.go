@@ -4,7 +4,6 @@ import (
 	"testing"
 	"time"
 
-	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 
@@ -13,14 +12,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
-
-func TestInboxViewOmitsMissingLegacyDestination(t *testing.T) {
-	view := inboxView(inboxstore.Inbox{SessionID: "session-without-sandbox"})
-	if view.GetSessionId() != "session-without-sandbox" || view.DestinationRef != nil {
-		t.Fatalf("inbox view = %v; want Session ID and no destination", view)
-	}
-}
 
 func TestMergeabilitySelectorAndIdentityMapThroughTheAPI(t *testing.T) {
 	filter := &notificationspb.GitHubEventFilter{Event: notificationspb.GitHubEventName_GITHUB_EVENT_NAME_MERGEABILITY_CHANGED}
@@ -37,8 +30,7 @@ func TestMergeabilitySelectorAndIdentityMapThroughTheAPI(t *testing.T) {
 	}
 	github := parsed.(sourceadapter.GitHubSource)
 	if err := (sourceadapter.Subscribe{
-		DestinationRef: model.DestinationRef{Namespace: "test-ns", Name: "test-sandbox", UID: "test-uid"},
-		SessionID:      "test-session", IdempotencyKey: "mergeability", Source: github, LifetimeDays: 1,
+		SessionID: "test-session", IdempotencyKey: "mergeability", Source: github, LifetimeDays: 1,
 	}).Validate(); err != nil {
 		t.Fatalf("selector was refused: %v", err)
 	}
@@ -128,64 +120,47 @@ func TestGitHubObservationIdentityViewRoundTrips(t *testing.T) {
 }
 
 func TestGitHubRefreshStatusViewsSeparateCheckRunsCommitStatusesAndReviews(t *testing.T) {
-	lastSuccess := time.Date(2026, 10, 27, 10, 0, 0, 0, time.UTC)
-	errorSince := lastSuccess.Add(time.Minute)
-	errorObserved := errorSince.Add(time.Second)
-	retryAt := errorObserved.Add(time.Minute)
-	refreshingUntil := retryAt.Add(time.Minute)
-	statusesLastSuccess := lastSuccess.Add(time.Hour)
-	statusesErrorSince := statusesLastSuccess.Add(time.Minute)
-	statusesErrorObserved := statusesErrorSince.Add(time.Second)
-	statusesRetryAt := statusesErrorObserved.Add(time.Minute)
-	statusesRefreshingUntil := statusesRetryAt.Add(time.Minute)
-	reviewsLastSuccess := statusesLastSuccess.Add(time.Hour)
-	reviewsErrorSince := reviewsLastSuccess.Add(time.Minute)
-	reviewsErrorObserved := reviewsErrorSince.Add(time.Second)
-	reviewsRetryAt := reviewsErrorObserved.Add(time.Minute)
-	reviewsRefreshingUntil := reviewsRetryAt.Add(time.Minute)
+	resources := []struct {
+		name     string
+		kind     model.SourceFailureKind
+		wantKind notificationspb.SourceFailureKind
+	}{
+		{"check runs", model.FailureRateLimited, notificationspb.SourceFailureKind_SOURCE_FAILURE_KIND_RATE_LIMITED},
+		{"commit statuses", model.FailureAccessDenied, notificationspb.SourceFailureKind_SOURCE_FAILURE_KIND_ACCESS_DENIED},
+		{"reviews", model.FailureUnavailable, notificationspb.SourceFailureKind_SOURCE_FAILURE_KIND_UNAVAILABLE},
+	}
+	statuses := make([]*githubstate.RefreshStatus, len(resources))
+	want := make([]*notificationspb.GitHubRefreshStatus, len(resources))
+	for i, resource := range resources {
+		// Each resource has times and a failure of its own, so a view built from another resource's status differs.
+		lastSuccess := time.Date(2026, 10, 27, 10+i, 0, 0, 0, time.UTC)
+		errorSince := lastSuccess.Add(time.Minute)
+		errorObserved := errorSince.Add(time.Second)
+		retryAt := errorObserved.Add(time.Minute)
+		refreshingUntil := retryAt.Add(time.Minute)
+		message := resource.name + " failed"
+		statuses[i] = &githubstate.RefreshStatus{
+			LastSuccessAt:   &lastSuccess,
+			Failure:         &model.SourceFailure{Kind: resource.kind, Message: message, Since: errorSince, ObservedAt: errorObserved},
+			RetryAt:         &retryAt,
+			RefreshingUntil: &refreshingUntil,
+		}
+		want[i] = &notificationspb.GitHubRefreshStatus{
+			LastSuccessAt: timestamppb.New(lastSuccess), ErrorKind: resource.wantKind.Enum(), Error: proto.String(message),
+			ErrorSince: timestamppb.New(errorSince), ErrorObservedAt: timestamppb.New(errorObserved),
+			RetryAt: timestamppb.New(retryAt), RefreshingUntil: timestamppb.New(refreshingUntil),
+		}
+	}
 	status, err := githubStatusView(&githubstate.Status{
-		Subject: githubstate.SubjectStatus{Key: githubstate.SubjectKey{RepositoryID: 22, Kind: "pull_request", Key: "7"}},
-		CheckRuns: &githubstate.RefreshStatus{
-			LastSuccessAt: &lastSuccess,
-			Failure: &model.SourceFailure{
-				Kind: model.FailureRateLimited, Message: "rate limited", Since: errorSince, ObservedAt: errorObserved,
-			},
-			RetryAt: &retryAt, RefreshingUntil: &refreshingUntil,
-		},
-		CommitStatuses: &githubstate.RefreshStatus{
-			LastSuccessAt: &statusesLastSuccess,
-			Failure: &model.SourceFailure{
-				Kind: model.FailureAccessDenied, Message: "statuses denied", Since: statusesErrorSince, ObservedAt: statusesErrorObserved,
-			},
-			RetryAt: &statusesRetryAt, RefreshingUntil: &statusesRefreshingUntil,
-		},
-		Reviews: &githubstate.RefreshStatus{
-			LastSuccessAt: &reviewsLastSuccess,
-			Failure: &model.SourceFailure{
-				Kind: model.FailureUnavailable, Message: "reviews unavailable", Since: reviewsErrorSince, ObservedAt: reviewsErrorObserved,
-			},
-			RetryAt: &reviewsRetryAt, RefreshingUntil: &reviewsRefreshingUntil,
-		},
+		Subject:   githubstate.SubjectStatus{Key: githubstate.SubjectKey{RepositoryID: 22, Kind: "pull_request", Key: "7"}},
+		CheckRuns: statuses[0], CommitStatuses: statuses[1], Reviews: statuses[2],
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if status.GetCheckRuns() == nil || status.GetCheckRuns().GetErrorKind() != notificationspb.SourceFailureKind_SOURCE_FAILURE_KIND_RATE_LIMITED ||
-		status.GetCheckRuns().GetError() != "rate limited" || status.GetCheckRuns().GetLastSuccessAt().AsTime() != lastSuccess ||
-		status.GetCheckRuns().GetErrorSince().AsTime() != errorSince || status.GetCheckRuns().GetErrorObservedAt().AsTime() != errorObserved ||
-		status.GetCheckRuns().GetRetryAt().AsTime() != retryAt || status.GetCheckRuns().GetRefreshingUntil().AsTime() != refreshingUntil {
-		t.Errorf("check-run refresh view = %v", status.GetCheckRuns())
-	}
-	if status.GetCommitStatuses() == nil || status.GetCommitStatuses().GetErrorKind() != notificationspb.SourceFailureKind_SOURCE_FAILURE_KIND_ACCESS_DENIED ||
-		status.GetCommitStatuses().GetError() != "statuses denied" || status.GetCommitStatuses().GetLastSuccessAt().AsTime() != statusesLastSuccess ||
-		status.GetCommitStatuses().GetErrorSince().AsTime() != statusesErrorSince || status.GetCommitStatuses().GetErrorObservedAt().AsTime() != statusesErrorObserved ||
-		status.GetCommitStatuses().GetRetryAt().AsTime() != statusesRetryAt || status.GetCommitStatuses().GetRefreshingUntil().AsTime() != statusesRefreshingUntil {
-		t.Errorf("commit-status refresh view = %v", status.GetCommitStatuses())
-	}
-	if status.GetReviews() == nil || status.GetReviews().GetErrorKind() != notificationspb.SourceFailureKind_SOURCE_FAILURE_KIND_UNAVAILABLE ||
-		status.GetReviews().GetError() != "reviews unavailable" || status.GetReviews().GetLastSuccessAt().AsTime() != reviewsLastSuccess ||
-		status.GetReviews().GetErrorSince().AsTime() != reviewsErrorSince || status.GetReviews().GetErrorObservedAt().AsTime() != reviewsErrorObserved ||
-		status.GetReviews().GetRetryAt().AsTime() != reviewsRetryAt || status.GetReviews().GetRefreshingUntil().AsTime() != reviewsRefreshingUntil {
-		t.Errorf("review refresh view = %v", status.GetReviews())
+	for i, got := range []*notificationspb.GitHubRefreshStatus{status.GetCheckRuns(), status.GetCommitStatuses(), status.GetReviews()} {
+		if !proto.Equal(got, want[i]) {
+			t.Errorf("%s refresh view = %v, want %v", resources[i].name, got, want[i])
+		}
 	}
 }

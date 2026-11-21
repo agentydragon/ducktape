@@ -51,7 +51,6 @@ go_test(
     embed = [":session_delegation"],
     deps = [
         "//agentplane/action_service/api/contracts:action_service_go_proto",
-        "//agentplane/action_service/internal/admission/catalog",
         "//agentplane/action_service/internal/store",
         "//agentplane/action_service/internal/worker",
         "//agentplane/environments/v1:environment_service_go_proto",
@@ -65,6 +64,7 @@ go_test(
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:identity_go_proto",
         "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_go_proto",
+        "//agentplane/testing/grpcserver",
         "@com_github_google_uuid//:uuid",
         "@org_golang_google_genproto_googleapis_rpc//code",
         "@org_golang_google_genproto_googleapis_rpc//status",
@@ -73,6 +73,7 @@ go_test(
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//protoadapt",
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
@@ -88,7 +89,6 @@ go_test(
     tags = ["requires_docker"],
     deps = [
         "//agentplane/action_service/api/contracts:action_service_go_proto",
-        "//agentplane/action_service/internal/admission/catalog",
         "//agentplane/action_service/internal/store",
         "//agentplane/action_service/session_delegation/contract",
         "//agentplane/environments/access",
@@ -106,6 +106,7 @@ go_test(
         "//agentplane/session_dispatcher/dispatcher",
         "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_go_proto",
         "//agentplane/session_dispatcher/migrations",
+        "//agentplane/testing/grpcserver",
         "//agentplane/testing/kubeapiserver",
         "//agentplane/testing/postgres",
         "@com_github_google_uuid//:uuid",

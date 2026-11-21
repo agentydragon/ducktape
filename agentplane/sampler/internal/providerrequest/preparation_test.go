@@ -10,6 +10,7 @@ import (
 	samplersettings "github.com/agentydragon/ducktape/agentplane/sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/anthropic"
+	"github.com/agentydragon/ducktape/agentplane/sampler/providers/chatcompletions"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/responses"
 )
 
@@ -34,6 +35,7 @@ func (m memoryContent) GetContent(id content.ContentID) (content.StoredContent, 
 
 func TestPreparationFreezesAuthoredPrefixAcrossRequests(t *testing.T) {
 	configs := []samplersettings.ModelConfig{
+		{API: protocol.APIStyleChatCompletions, ProviderModel: "fixture-model", ExecEncoding: protocol.ExecEncodingJSON},
 		{API: protocol.APIStyleResponses, ProviderModel: "fixture-model", ExecEncoding: protocol.ExecEncodingJSON, Responses: responses.Config{Dialect: responses.DialectLite}},
 		{API: protocol.APIStyleResponses, ProviderModel: "fixture-model", ExecEncoding: protocol.ExecEncodingJSON, Responses: responses.Config{Dialect: responses.DialectStandard}},
 		{API: protocol.APIStyleAnthropicMessages, ProviderModel: "fixture-model", ExecEncoding: protocol.ExecEncodingJSON, AnthropicMessages: &anthropic.Config{MaxTokens: 1024}},
@@ -131,5 +133,105 @@ func TestAnthropicCompactionCarriesCompleteNativeContext(t *testing.T) {
 	}
 	if len(body.Messages) != 1 || string(body.Messages[0]) != string(native) {
 		t.Fatal("preparation mutated the compaction input")
+	}
+}
+
+func TestChatCompactionUpgradesLegacySamplingProfileForNewRequests(t *testing.T) {
+	memory := memoryContent{}
+	config := samplersettings.ModelConfig{
+		API: protocol.APIStyleChatCompletions, ProviderModel: "fixture-model", ExecEncoding: protocol.ExecEncodingJSON,
+	}
+	preparation := Preparation{ModelConfig: config}
+	snapshot := Snapshot{API: config.API}
+	first, err := Prepare(memory, snapshot, preparation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile, err := memory.GetContent(first.ProfileID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var settings map[string]json.RawMessage
+	if err := json.Unmarshal(profile.Payload, &settings); err != nil {
+		t.Fatal(err)
+	}
+	delete(settings, "stream_options")
+	raw, err := json.Marshal(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyID, err := memory.PutContent(profile.Kind, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot.PreviousProfileID = legacyID
+	snapshot.PreviousFirstID = first.PrefixIDs[0]
+	upgraded, err := Prepare(memory, snapshot, preparation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if upgraded.ProfileID != first.ProfileID || upgraded.PrefixIDs[0] != first.PrefixIDs[0] {
+		t.Fatal("upgrade did not preserve the original instructions and tools")
+	}
+	legacy, err := Render(memory, config.API, legacyID, first.PrefixIDs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(legacy), "stream_options") {
+		t.Fatal("upgrade rewrote a previously committed request")
+	}
+}
+
+func TestChatEffortUpdatesNewRequestsWithoutChangingRetainedRequests(t *testing.T) {
+	memory := memoryContent{}
+	config := samplersettings.ModelConfig{API: protocol.APIStyleChatCompletions, ProviderModel: "fixture-model", ExecEncoding: protocol.ExecEncodingJSON, ChatCompaction: &chatcompletions.CompactionConfig{MaxTokens: 100, KeepRecentTurns: 1}}
+	snapshot := Snapshot{API: config.API}
+	preparation := Preparation{ModelConfig: config, SessionEffort: "medium"}
+	first, err := Prepare(memory, snapshot, preparation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot.PreviousProfileID, snapshot.PreviousFirstID = first.ProfileID, first.PrefixIDs[0]
+	preparation.SessionEffort = "low"
+	next, err := Prepare(memory, snapshot, preparation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	preparation.Compaction = true
+	compact, err := Prepare(memory, snapshot, preparation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	preparation.Compaction = false
+	preparation.SessionEffort = ""
+	reset, err := Prepare(memory, snapshot, preparation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name   string
+		recipe Recipe
+		want   string
+	}{{"retained", first, "medium"}, {"next", next, "low"}, {"compaction", compact, "low"}, {"default", reset, ""}} {
+		t.Run(test.name, func(t *testing.T) {
+			wire, err := Render(memory, config.API, test.recipe.ProfileID, test.recipe.PrefixIDs)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var request map[string]json.RawMessage
+			if err := json.Unmarshal(wire, &request); err != nil {
+				t.Fatal(err)
+			}
+			if test.want == "" {
+				if _, ok := request["reasoning_effort"]; ok {
+					t.Fatalf("unexpected effort: %s", wire)
+				}
+				return
+			}
+			var got string
+			if err := json.Unmarshal(request["reasoning_effort"], &got); err != nil || got != test.want {
+				t.Fatalf("effort = %q, error = %v; want %q", got, err, test.want)
+			}
+		})
 	}
 }

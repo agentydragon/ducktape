@@ -25,6 +25,3 @@ py_test(
         "@pypi//pyyaml",
     ],
 )
-
-# NOTE: Rust linting uses --config=rust-check (clippy + rustfmt)
-# Run: bazel build --config=rust-check //finance/worthy/...

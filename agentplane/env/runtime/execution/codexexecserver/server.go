@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"net"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -24,6 +25,9 @@ import (
 )
 
 const (
+	ImplementationNative = "native"
+	ImplementationCodex  = "codex"
+
 	healthInterval     = 5 * time.Second
 	healthDeadline     = 3 * time.Second
 	healthFailureLimit = 3
@@ -45,13 +49,13 @@ type Readiness struct {
 
 // Resolve supplies defaults for omitted windows and rejects invalid direct Go configuration.
 func (r Readiness) Resolve() (Readiness, error) {
-	if err := resolveDuration("Codex exec-server readiness timeout", &r.Timeout, 20*time.Second); err != nil {
+	if err := resolveDuration("execution backend readiness timeout", &r.Timeout, 20*time.Second); err != nil {
 		return Readiness{}, err
 	}
-	if err := resolveDuration("Codex exec-server readiness probe timeout", &r.ProbeTimeout, 2*time.Second); err != nil {
+	if err := resolveDuration("execution backend readiness probe timeout", &r.ProbeTimeout, 2*time.Second); err != nil {
 		return Readiness{}, err
 	}
-	if err := resolveDuration("Codex exec-server readiness probe interval", &r.ProbeInterval, 100*time.Millisecond); err != nil {
+	if err := resolveDuration("execution backend readiness probe interval", &r.ProbeInterval, 100*time.Millisecond); err != nil {
 		return Readiness{}, err
 	}
 	return r, nil
@@ -76,26 +80,63 @@ var ErrExecutionBackendLost = errors.New("execution backend lost")
 // lease. It is a more specific diagnostic for Pod backends.
 var ErrContainerOwnershipLost = errors.New("executor container ownership connection lost")
 
-// Config selects local systemd supervision or ownership of the Pod executor container.
+const (
+	PlacementDirect  = "direct"
+	PlacementSystemd = "systemd"
+)
+
+type Owner string
+
+const (
+	OwnerCompanion Owner = "companion"
+	OwnerSystemd   Owner = "systemd"
+)
+
+// Config describes the executor's process owner separately from command placement.
 type Config struct {
-	URL             string
-	ContainerSocket string
-	Launcher        *supervision.SystemdLauncher
-	Readiness       Readiness
+	Owner            Owner
+	URL              string
+	Implementation   string
+	Placement        string
+	WorkloadLauncher *supervision.SystemdLauncher
+	LimitsJSON       string
+	ContainerSocket  string
+	Launcher         *supervision.SystemdLauncher
+	Readiness        Readiness
 }
 
 func (c Config) Validate(harnessLauncher *supervision.SystemdLauncher) error {
+	if c.Placement != PlacementDirect && c.Placement != PlacementSystemd {
+		return errors.New("unknown command placement")
+	}
+	if c.Placement == PlacementSystemd {
+		if c.Implementation == ImplementationCodex || c.Owner != OwnerSystemd || c.WorkloadLauncher == nil {
+			return errors.New("systemd command placement requires a native executor with a systemd owner and workload limits")
+		}
+	} else if c.WorkloadLauncher != nil {
+		return errors.New("workload launcher requires systemd command placement")
+	}
+	if _, err := ResolveImplementation(c.Implementation); err != nil {
+		return err
+	}
 	if err := ValidateURL(c.URL); err != nil {
 		return err
 	}
 	if _, err := c.Readiness.Resolve(); err != nil {
 		return err
 	}
-	if c.ContainerSocket != "" {
+	switch c.Owner {
+	case OwnerCompanion:
 		if !filepath.IsAbs(c.ContainerSocket) || c.Launcher != nil || harnessLauncher != nil {
-			return errors.New("container executor requires an absolute control socket and container-owned limits")
+			return errors.New("companion executor requires an absolute ownership socket and separate process supervision")
 		}
 		return nil
+	case OwnerSystemd:
+		if c.ContainerSocket != "" {
+			return errors.New("systemd executor cannot use a companion socket")
+		}
+	default:
+		return errors.New("executor requires an explicit owner")
 	}
 	if harnessLauncher == nil || c.Launcher == nil {
 		return errors.New("supervised executor requires distinct workload and executor launchers with explicit leaf limits")
@@ -114,12 +155,44 @@ func (c Config) Validate(harnessLauncher *supervision.SystemdLauncher) error {
 	return nil
 }
 
+// ResolveImplementation defaults an unspecified implementation to the native executor.
+func ResolveImplementation(value string) (string, error) {
+	switch value {
+	case "", ImplementationNative:
+		return ImplementationNative, nil
+	case ImplementationCodex:
+		return ImplementationCodex, nil
+	default:
+		return "", fmt.Errorf("unknown execution backend implementation %q", value)
+	}
+}
+
+// Command builds the supervised process command for the selected execution implementation.
+func Command(implementation, binary, endpoint, limitsJSON string) ([]string, error) {
+	implementation, err := ResolveImplementation(implementation)
+	if err != nil {
+		return nil, err
+	}
+	if implementation == ImplementationCodex {
+		if limitsJSON != "" {
+			return nil, errors.New("execution limits are configurable only for the native implementation")
+		}
+		return []string{binary, "exec-server", "--listen", endpoint}, nil
+	}
+	command := []string{binary, "serve", "--listen", endpoint}
+	if limitsJSON != "" {
+		command = append(command, "--limits-json", limitsJSON)
+	}
+	return command, nil
+}
+
 type NativeConfig struct {
-	Config      Config
-	Binary      string
-	StateDir    string
-	Environment map[string]string
-	Supervisor  *supervision.Supervisor
+	Config            Config
+	Binary            string
+	StateDir          string
+	Environment       map[string]string
+	Supervisor        *supervision.Supervisor
+	CommandSupervisor *supervision.Supervisor
 	// LaunchProcess binds an embedded native executor to Runtime's process
 	// controller.
 	LaunchProcess func(context.Context, supervision.ProcessConfig) (*supervision.ManagedProcess, error)
@@ -134,7 +207,7 @@ type nativeProcess interface {
 	ExitDescription() string
 }
 
-// NativeStart creates the platform-specific launch adapter used by the exec-server lifecycle.
+// NativeStart creates the platform-specific launch adapter used by the execution backend lifecycle.
 func NativeStart(config NativeConfig) Start {
 	return func(ctx context.Context) (*supervision.Instance, error) {
 		env := maps.Clone(config.Environment)
@@ -144,14 +217,42 @@ func NativeStart(config NativeConfig) Start {
 		for _, name := range []string{"OPENAI_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_BASE_URL", "CODEX_HOME"} {
 			delete(env, name)
 		}
-		if config.Config.ContainerSocket != "" {
-			return claimContainer(ctx, config.Config.ContainerSocket, env)
+		switch config.Config.Owner {
+		case OwnerCompanion:
+			return claimContainer(ctx, config.Config.ContainerSocket, env, config.Config.Implementation, config.Config.LimitsJSON)
+		case OwnerSystemd:
+		default:
+			return nil, errors.New("execution backend requires an explicit owner")
 		}
 		if config.Supervisor == nil && config.LaunchProcess == nil {
-			return nil, errors.New("Codex exec-server supervisor is not configured")
+			return nil, errors.New("execution backend supervisor is not configured")
 		}
+		command, err := Command(config.Config.Implementation, config.Binary, config.Config.URL, config.Config.LimitsJSON)
+		if err != nil {
+			return nil, err
+		}
+		var commandListener *net.UnixListener
+		if config.Config.Placement == PlacementSystemd {
+			if config.CommandSupervisor == nil {
+				return nil, errors.New("systemd placement requires command supervisor")
+			}
+			if err := config.CommandSupervisor.WaitCommandScope(ctx); err != nil {
+				return nil, fmt.Errorf("command scope readiness: %w", err)
+			}
+			commandListener, err = supervision.ListenCommandSocket("/run/agentplane-environment-runtime-lifetime/execution-commands.sock")
+			if err != nil {
+				return nil, err
+			}
+			command = append(command, "--command-socket", commandListener.Addr().String())
+		}
+		launched := false
+		defer func() {
+			if !launched && commandListener != nil {
+				_ = commandListener.Close()
+			}
+		}()
 		processConfig := supervision.ProcessConfig{
-			Command:      []string{config.Binary, "exec-server", "--listen", config.Config.URL},
+			Command:      command,
 			Dir:          config.StateDir,
 			Env:          env,
 			StopGrace:    executorStopGrace,
@@ -174,28 +275,62 @@ func NativeStart(config NativeConfig) Start {
 			}
 			process = native
 		}
+		done := make(chan error, 1)
+		var stopCommands context.CancelFunc
+		var commandsDone chan struct{}
+		var commandsErr error
+		if commandListener != nil {
+			var bridgeCtx context.Context
+			bridgeCtx, stopCommands = context.WithCancel(context.Background())
+			commandsDone = make(chan struct{})
+			go func() {
+				commandsErr = supervision.ServeCommands(bridgeCtx, commandListener, config.CommandSupervisor, config.Binary, process.PID)
+				close(commandsDone)
+				if bridgeCtx.Err() == nil {
+					select {
+					case done <- errors.Join(ErrExecutionBackendLost, errors.New("command supervision stopped"), commandsErr):
+					default:
+					}
+				}
+			}()
+		}
+
+		launched = true
 		go func() { _, _ = io.Copy(io.Discard, process.Stdout()) }()
 		go func() {
 			buffer := make([]byte, 4096)
 			for {
 				n, err := process.Stderr().Read(buffer)
 				if n > 0 {
-					zap.L().Info("Codex exec-server stderr", zap.String("text", string(buffer[:n])))
+					zap.L().Info("execution backend stderr", zap.String("text", string(buffer[:n])))
 				}
 				if err != nil {
 					return
 				}
 			}
 		}()
-		done := make(chan error, 1)
 		go func() {
 			code, err := process.Wait(context.Background())
-			done <- errors.Join(ErrExecutionBackendLost, fmt.Errorf("Codex exec-server exited: code=%d; %s", code, process.ExitDescription()), err)
+			select {
+			case done <- errors.Join(ErrExecutionBackendLost, fmt.Errorf("execution backend exited: code=%d; %s", code, process.ExitDescription()), err):
+			default:
+			}
 		}()
-		return &supervision.Instance{
-			PID: process.PID(), Done: done,
-			Stop: process.Stop,
-		}, nil
+		stop := func(ctx context.Context) error {
+			err := process.Stop(ctx)
+			if stopCommands != nil {
+				stopCommands()
+				_ = commandListener.Close()
+				select {
+				case <-commandsDone:
+					err = errors.Join(err, commandsErr)
+				case <-ctx.Done():
+					err = errors.Join(err, ctx.Err())
+				}
+			}
+			return err
+		}
+		return &supervision.Instance{PID: process.PID(), Done: done, Stop: stop}, nil
 	}
 }
 
@@ -203,8 +338,8 @@ func ProbeAt(endpoint string) Probe {
 	return func(ctx context.Context) error { return probe(ctx, endpoint) }
 }
 
-// Monitor bounds dispatcher liveness for the embedded service lifetime.
-func Monitor(ctx context.Context, endpoint string) error {
+// Monitor bounds backend liveness for the embedded service lifetime; label names the probed surface in the loss error.
+func Monitor(ctx context.Context, label string, check Probe) error {
 	ticker := time.NewTicker(healthInterval)
 	defer ticker.Stop()
 	failures := 0
@@ -215,7 +350,7 @@ func Monitor(ctx context.Context, endpoint string) error {
 		case <-ticker.C:
 		}
 		attempt, cancel := context.WithTimeout(ctx, healthDeadline)
-		err := probe(attempt, endpoint)
+		err := check(attempt)
 		cancel()
 		if ctx.Err() != nil {
 			return nil
@@ -226,7 +361,7 @@ func Monitor(ctx context.Context, endpoint string) error {
 		}
 		failures++
 		if failures >= healthFailureLimit {
-			return errors.Join(ErrExecutionBackendLost, fmt.Errorf("execution backend stopped responding: %w", err))
+			return errors.Join(ErrExecutionBackendLost, fmt.Errorf("%s: %w", label, err))
 		}
 	}
 }
@@ -297,7 +432,9 @@ func probe(ctx context.Context, endpoint string) error {
 
 type Refusal struct{ Reason string }
 
-func (r Refusal) Error() string { return "executor companion refused to start Codex: " + r.Reason }
+func (r Refusal) Error() string {
+	return "executor companion refused to start the backend: " + r.Reason
+}
 
 // FenceContainer waits for an idle generation at startup, or proof that the
 // specified previous owner's generation was fenced during shutdown.
@@ -335,7 +472,7 @@ func FenceContainer(ctx context.Context, socket, previous string) error {
 	})
 }
 
-func claimContainer(ctx context.Context, socket string, env map[string]string) (*supervision.Instance, error) {
+func claimContainer(ctx context.Context, socket string, env map[string]string, implementation, limitsJSON string) (*supervision.Instance, error) {
 	connection, err := executorcontrol.Dial(socket)
 	if err != nil {
 		return nil, err
@@ -343,7 +480,7 @@ func claimContainer(ctx context.Context, socket string, env map[string]string) (
 	// The handshake is bounded by ctx; the established stream lives until Stop.
 	leaseCtx, cancelLease := context.WithCancel(context.Background())
 	stopHandshake := context.AfterFunc(ctx, cancelLease)
-	stream, err := controlpb.NewCompanionControlClient(connection).Claim(leaseCtx, &controlpb.ClaimRequest{Environment: env})
+	stream, err := controlpb.NewCompanionControlClient(connection).Claim(leaseCtx, &controlpb.ClaimRequest{Environment: env, Implementation: implementation, LimitsJson: limitsJSON})
 	var claim *controlpb.ClaimResponse
 	if err == nil {
 		claim, err = stream.Recv()

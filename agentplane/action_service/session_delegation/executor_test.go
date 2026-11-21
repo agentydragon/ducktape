@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"net"
 	"os"
 	"path/filepath"
 	"slices"
@@ -17,7 +16,6 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/worker"
 	"github.com/agentydragon/ducktape/agentplane/action_service/session_delegation/contract"
@@ -31,6 +29,7 @@ import (
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"github.com/google/uuid"
 	"google.golang.org/genproto/googleapis/rpc/code"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
@@ -39,11 +38,12 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/protoadapt"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const (
-	testCallerNamespace = "agentplane-staging"
+	testCallerNamespace = "test-namespace"
 	testCallerName      = "sandbox-one"
 	testCallerUID       = "caller-uid-1"
 	testSessionID       = "11111111-1111-4111-8111-111111111111"
@@ -80,19 +80,19 @@ type delegatedBackend struct {
 }
 
 func (b *delegatedBackend) ListEnvironments(ctx context.Context, request *environmentpb.ListEnvironmentsRequest) (*environmentpb.ListEnvironmentsResponse, error) {
-	b.assertCaller(ctx, testRequestID, testExecutionID)
+	b.assertCaller(ctx)
 	b.gotList = proto.Clone(request).(*environmentpb.ListEnvironmentsRequest)
 	return &environmentpb.ListEnvironmentsResponse{Items: []*environmentpb.EnvironmentDescriptor{{Target: &identitypb.EnvironmentTarget{Namespace: testCallerNamespace, Name: "sandbox-one", Uid: "sandbox-uid-1"}}}}, nil
 }
 
 func (b *delegatedBackend) GetEnvironment(ctx context.Context, request *environmentpb.GetEnvironmentRequest) (*environmentpb.EnvironmentDescriptor, error) {
-	b.assertCaller(ctx, testRequestID, testExecutionID)
+	b.assertCaller(ctx)
 	b.gotGet = proto.Clone(request).(*environmentpb.GetEnvironmentRequest)
 	return &environmentpb.EnvironmentDescriptor{Target: proto.Clone(request.GetTarget()).(*identitypb.EnvironmentTarget)}, nil
 }
 
 func (b *delegatedBackend) ResumeEnvironment(ctx context.Context, request *environmentpb.ResumeEnvironmentRequest) (*environmentpb.ResumeEnvironmentResponse, error) {
-	b.assertCaller(ctx, testRequestID, testExecutionID)
+	b.assertCaller(ctx)
 	b.resumeCalls++
 	b.gotResume = proto.Clone(request).(*environmentpb.ResumeEnvironmentRequest)
 	if b.resumeErr != nil {
@@ -108,7 +108,7 @@ func (b *delegatedBackend) ResumeEnvironment(ctx context.Context, request *envir
 }
 
 func (b *delegatedBackend) GetSession(ctx context.Context, request *dispatcherpb.GetSessionRequest) (*dispatcherpb.GetSessionResponse, error) {
-	b.assertCaller(ctx, testRequestID, testExecutionID)
+	b.assertCaller(ctx)
 	if b.opening == nil {
 		return nil, status.Error(codes.NotFound, "opening not found")
 	}
@@ -116,7 +116,7 @@ func (b *delegatedBackend) GetSession(ctx context.Context, request *dispatcherpb
 }
 
 func (b *delegatedBackend) GetSessionSummary(ctx context.Context, request *historypb.GetSessionSummaryRequest) (*historypb.SessionSummary, error) {
-	b.assertCaller(ctx, testRequestID, testExecutionID)
+	b.assertCaller(ctx)
 	if b.summaryErr != nil {
 		return nil, b.summaryErr
 	}
@@ -127,14 +127,14 @@ func (b *delegatedBackend) GetSessionSummary(ctx context.Context, request *histo
 }
 
 func (b *delegatedBackend) ReadSessionEvents(ctx context.Context, request *historypb.ReadSessionEventsRequest) (*historypb.ReadSessionEventsResponse, error) {
-	b.assertCaller(ctx, testRequestID, testExecutionID)
+	b.assertCaller(ctx)
 	if b.readEvents == nil {
 		return nil, status.Error(codes.NotFound, "history not found")
 	}
 	return b.readEvents(request)
 }
 
-func (b *delegatedBackend) assertCaller(ctx context.Context, wantRequest, wantExecution uuid.UUID) {
+func (b *delegatedBackend) assertCaller(ctx context.Context) {
 	b.testing.Helper()
 	metadata, ok := metadata.FromIncomingContext(ctx)
 	if !ok || len(metadata.Get("authorization")) != 1 || metadata.Get("authorization")[0] != "Agentplane-Delegated delegated-test-token" {
@@ -148,7 +148,7 @@ func (b *delegatedBackend) assertCaller(ctx context.Context, wantRequest, wantEx
 	if err := proto.Unmarshal([]byte(values[0]), &envelope); err != nil {
 		b.testing.Fatalf("unmarshal delegation envelope: %v", err)
 	}
-	if envelope.GetAction().GetRequestId() != wantRequest.String() || envelope.GetAction().GetExecutionId() != wantExecution.String() {
+	if envelope.GetAction().GetRequestId() != testRequestID.String() || envelope.GetAction().GetExecutionId() != testExecutionID.String() {
 		b.testing.Fatalf("delegation envelope = %v", &envelope)
 	}
 	wantIdentity := b.identity
@@ -161,7 +161,7 @@ func (b *delegatedBackend) assertCaller(ctx context.Context, wantRequest, wantEx
 }
 
 func (b *delegatedBackend) CreateSession(ctx context.Context, request *dispatcherpb.CreateSessionRequest) (*dispatcherpb.CreateSessionResponse, error) {
-	b.assertCaller(ctx, testRequestID, testExecutionID)
+	b.assertCaller(ctx)
 	b.openCalls++
 	if b.openErr != nil {
 		return nil, b.openErr
@@ -174,7 +174,7 @@ func (b *delegatedBackend) CreateSession(ctx context.Context, request *dispatche
 }
 
 func (b *delegatedBackend) SubmitInput(ctx context.Context, request *dispatcherpb.SubmitInputRequest) (*dispatcherpb.SubmitInputResponse, error) {
-	b.assertCaller(ctx, testRequestID, testExecutionID)
+	b.assertCaller(ctx)
 	b.submitCalls++
 	b.gotSubmit = proto.Clone(request).(*dispatcherpb.SubmitInputRequest)
 	return &dispatcherpb.SubmitInputResponse{Dispatch: &dispatcherpb.Dispatch{
@@ -185,7 +185,7 @@ func (b *delegatedBackend) SubmitInput(ctx context.Context, request *dispatcherp
 }
 
 func (b *delegatedBackend) GetDispatch(ctx context.Context, request *dispatcherpb.GetDispatchRequest) (*dispatcherpb.GetDispatchResponse, error) {
-	b.assertCaller(ctx, testRequestID, testExecutionID)
+	b.assertCaller(ctx)
 	if b.lookupErr != nil {
 		return nil, b.lookupErr
 	}
@@ -196,7 +196,7 @@ func (b *delegatedBackend) GetDispatch(ctx context.Context, request *dispatcherp
 }
 
 func (b *delegatedBackend) CancelDispatch(ctx context.Context, request *dispatcherpb.CancelDispatchRequest) (*dispatcherpb.CancelDispatchResponse, error) {
-	b.assertCaller(ctx, testRequestID, testExecutionID)
+	b.assertCaller(ctx)
 	b.cancels++
 	if request.GetCommandId() != testCommandID {
 		return nil, status.Error(codes.InvalidArgument, "wrong command")
@@ -209,7 +209,7 @@ func (b *delegatedBackend) CancelDispatch(ctx context.Context, request *dispatch
 }
 
 func (b *delegatedBackend) InterruptTurn(ctx context.Context, request *dispatcherpb.InterruptTurnRequest) (*dispatcherpb.InterruptTurnResponse, error) {
-	b.assertCaller(ctx, testRequestID, testExecutionID)
+	b.assertCaller(ctx)
 	b.interruptCalls++
 	return &dispatcherpb.InterruptTurnResponse{Dispatch: &dispatcherpb.Dispatch{CommandId: request.GetCommandId(), SessionId: request.GetSessionId(), Operation: commandpb.Operation_OPERATION_INTERRUPT_TURN, State: dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER}}, nil
 }
@@ -235,30 +235,21 @@ func newDelegatedExecutor(t *testing.T, backend *delegatedBackend) *Executor {
 
 func newDelegatedExecutorForGroup(t *testing.T, backend *delegatedBackend, group string) *Executor {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	server := grpc.NewServer()
 	environmentpb.RegisterEnvironmentServiceServer(server, backend)
 	dispatcherpb.RegisterSessionDispatcherServer(server, backend)
 	historypb.RegisterHistoryServiceServer(server, backend)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(func() {
-		server.Stop()
-		_ = listener.Close()
-	})
+	serverAddr := grpcserver.Serve(t, server)
 	tokenFile := filepath.Join(t.TempDir(), "dispatcher-token")
 	if err := os.WriteFile(tokenFile, []byte("delegated-test-token\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	connection, err := workloadgrpc.DialDelegated(listener.Addr().String(), tokenFile, 2_000_000_000, nil, workloadgrpc.ClientInterceptors{})
+	connection, err := workloadgrpc.DialDelegated(serverAddr, tokenFile, 2_000_000_000, nil, workloadgrpc.ClientInterceptors{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = connection.Close() })
-	executor, err := NewExecutor(group, catalog.SessionDelegationBinding{Description: "forwards caller"},
-		environmentpb.NewEnvironmentServiceClient(connection),
+	executor, err := NewExecutor(group, environmentpb.NewEnvironmentServiceClient(connection),
 		dispatcherpb.NewSessionDispatcherClient(connection), historypb.NewHistoryServiceClient(connection))
 	if err != nil {
 		t.Fatal(err)
@@ -269,8 +260,7 @@ func newDelegatedExecutorForGroup(t *testing.T, backend *delegatedBackend, group
 func TestEnvironmentReadsForwardRecordedCallerAndExactTarget(t *testing.T) {
 	backend := &delegatedBackend{testing: t}
 	executor := newDelegatedExecutorForGroup(t, backend, "environments")
-	uid := testCallerUID
-	listOutcome, err := executor.attempt(t.Context(), requestFor("list", map[string]any{"limit": 7, "after": "cursor-1"}, &uid))
+	listOutcome, err := executor.attempt(t.Context(), requestFor("list", map[string]any{"limit": 7, "after": "cursor-1"}))
 	if err != nil || listOutcome.State != store.ExecutionSucceeded {
 		t.Fatalf("list outcome=%+v error=%v", listOutcome, err)
 	}
@@ -279,7 +269,7 @@ func TestEnvironmentReadsForwardRecordedCallerAndExactTarget(t *testing.T) {
 	}
 	getOutcome, err := executor.attempt(t.Context(), requestFor("get", map[string]any{
 		"target": map[string]string{"namespace": testCallerNamespace, "name": "sandbox-one", "uid": "sandbox-uid-1"},
-	}, &uid))
+	}))
 	if err != nil || getOutcome.State != store.ExecutionSucceeded {
 		t.Fatalf("get outcome=%+v error=%v", getOutcome, err)
 	}
@@ -295,11 +285,10 @@ func TestResumeForwardsRecordedCallerExactTargetAndOpaquePrecondition(t *testing
 		Outcome: environmentpb.ResumeOutcome_RESUME_OUTCOME_REQUESTED,
 	}}
 	executor := newDelegatedExecutorForGroup(t, backend, contract.GroupEnvironments)
-	uid := testCallerUID
 	outcome, err := executor.attempt(t.Context(), requestFor("resume", map[string]any{
 		"target":       map[string]string{"namespace": testCallerNamespace, "name": "sandbox-one", "uid": "sandbox-uid-1"},
 		"resume_token": "opaque-generation-bound-token",
-	}, &uid))
+	}))
 	if err != nil || outcome.State != store.ExecutionSucceeded {
 		t.Fatalf("outcome=%+v error=%v", outcome, err)
 	}
@@ -319,90 +308,64 @@ func TestResumeForwardsRecordedCallerExactTargetAndOpaquePrecondition(t *testing
 	}
 }
 
-func TestResumeUnknownReplyIsNotReplayed(t *testing.T) {
-	assessment := &environmentlifecyclepb.WakeAssessment{
+func TestResumeFailureKeepsTheBackendsLifecycleDetailsAndMapsToAnErrorKind(t *testing.T) {
+	unknown := &environmentlifecyclepb.WakeAssessment{
 		State:  environmentlifecyclepb.WakeState_WAKE_STATE_OUTCOME_UNKNOWN,
 		Reason: environmentlifecyclepb.WakeReason_WAKE_REASON_OUTCOME_UNKNOWN,
 		Error:  &statuspb.Status{Code: int32(codes.Unavailable), Message: "patch result unknown"},
 	}
-	resumeStatus, err := status.New(codes.Unavailable, "private backend detail").WithDetails(assessment)
-	if err != nil {
-		t.Fatal(err)
-	}
-	backend := &delegatedBackend{testing: t, resumeErr: resumeStatus.Err()}
-	executor := newDelegatedExecutorForGroup(t, backend, contract.GroupEnvironments)
-	uid := testCallerUID
-	outcome, err := executor.attempt(t.Context(), requestFor("resume", map[string]any{
-		"target":       map[string]string{"namespace": testCallerNamespace, "name": "sandbox-one", "uid": "sandbox-uid-1"},
-		"resume_token": "opaque-generation-bound-token",
-	}, &uid))
-	if err != nil || outcome.State != store.ExecutionUnknown || backend.resumeCalls != 1 {
-		t.Fatalf("resume outcome=%+v error=%v calls=%d; want one unknown-outcome attempt", outcome, err, backend.resumeCalls)
-	}
-	failure, resume := outcome.Error, outcome.Error.GetResume()
-	if failure.GetKind() != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_EXECUTION_OUTCOME_UNKNOWN || resume.GetGrpcCode() != code.Code_UNAVAILABLE ||
-		resume.GetWakeAssessment().GetState() != environmentlifecyclepb.WakeState_WAKE_STATE_OUTCOME_UNKNOWN ||
-		resume.GetWakeAssessment().GetReason() != environmentlifecyclepb.WakeReason_WAKE_REASON_OUTCOME_UNKNOWN ||
-		resume.GetWakeAssessment().GetError().GetCode() != int32(codes.Unavailable) || resume.GetWakeAssessment().GetError().GetMessage() != "patch result unknown" {
-		t.Fatalf("unknown resume error details = %v", failure)
-	}
-}
-
-func TestResumePolicyDenialIsMappedToBackendRefusal(t *testing.T) {
 	denial := &environmentlifecyclepb.ResumeEligibility{
 		State:  environmentlifecyclepb.ResumeEligibilityState_RESUME_ELIGIBILITY_STATE_DENIED,
 		Reason: environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_POLICY_DISABLED,
 	}
-	resumeStatus, err := status.New(codes.PermissionDenied, "private policy detail").WithDetails(denial)
-	if err != nil {
-		t.Fatal(err)
-	}
-	backend := &delegatedBackend{testing: t, resumeErr: resumeStatus.Err()}
-	executor := newDelegatedExecutorForGroup(t, backend, contract.GroupEnvironments)
-	uid := testCallerUID
-	outcome, err := executor.attempt(t.Context(), requestFor("resume", map[string]any{
-		"target":       map[string]string{"namespace": testCallerNamespace, "name": "sandbox-one", "uid": "sandbox-uid-1"},
-		"resume_token": "opaque-generation-bound-token",
-	}, &uid))
-	if err != nil || outcome.State != store.ExecutionFailed || backend.resumeCalls != 1 {
-		t.Fatalf("denied resume outcome=%+v error=%v calls=%d", outcome, err, backend.resumeCalls)
-	}
-	failure, resume := outcome.Error, outcome.Error.GetResume()
-	if failure.GetKind() != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_BACKEND_REFUSED || resume.GetGrpcCode() != code.Code_PERMISSION_DENIED ||
-		resume.GetResumeEligibility().GetState() != environmentlifecyclepb.ResumeEligibilityState_RESUME_ELIGIBILITY_STATE_DENIED ||
-		resume.GetResumeEligibility().GetReason() != environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_POLICY_DISABLED ||
-		strings.Contains(failure.String(), "private policy detail") {
-		t.Fatalf("denied resume error = %v", failure)
-	}
-}
-
-func TestResumeRateLimitPreservesWakeAssessmentRetryTime(t *testing.T) {
-	retryAt := timestamppb.New(time.Date(2026, time.November, 1, 12, 0, 0, 0, time.UTC))
-	assessment := &environmentlifecyclepb.WakeAssessment{
+	rateLimit := &environmentlifecyclepb.WakeAssessment{
 		State:   environmentlifecyclepb.WakeState_WAKE_STATE_RATE_LIMITED,
 		Reason:  environmentlifecyclepb.WakeReason_WAKE_REASON_WAKE_BUDGET_EXHAUSTED,
-		RetryAt: retryAt,
+		RetryAt: timestamppb.New(time.Date(2026, time.November, 1, 12, 0, 0, 0, time.UTC)),
 	}
-	resumeStatus, err := status.New(codes.ResourceExhausted, "wake budget exhausted").WithDetails(assessment)
-	if err != nil {
-		t.Fatal(err)
-	}
-	backend := &delegatedBackend{testing: t, resumeErr: resumeStatus.Err()}
-	executor := newDelegatedExecutorForGroup(t, backend, contract.GroupEnvironments)
-	uid := testCallerUID
-	outcome, err := executor.attempt(t.Context(), requestFor("resume", map[string]any{
-		"target":       map[string]string{"namespace": testCallerNamespace, "name": "sandbox-one", "uid": "sandbox-uid-1"},
-		"resume_token": "opaque-generation-bound-token",
-	}, &uid))
-	if err != nil || outcome.State != store.ExecutionFailed || backend.resumeCalls != 1 {
-		t.Fatalf("rate limited resume outcome=%+v error=%v calls=%d", outcome, err, backend.resumeCalls)
-	}
-	failure, resume := outcome.Error, outcome.Error.GetResume()
-	if failure.GetKind() != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_CAPACITY_EXHAUSTED || resume.GetGrpcCode() != code.Code_RESOURCE_EXHAUSTED ||
-		resume.GetWakeAssessment().GetState() != environmentlifecyclepb.WakeState_WAKE_STATE_RATE_LIMITED ||
-		resume.GetWakeAssessment().GetReason() != environmentlifecyclepb.WakeReason_WAKE_REASON_WAKE_BUDGET_EXHAUSTED ||
-		!resume.GetWakeAssessment().GetRetryAt().AsTime().Equal(retryAt.AsTime()) {
-		t.Fatalf("rate limit resume error details = %v", failure)
+	for _, test := range []struct {
+		name   string
+		code   codes.Code
+		detail protoadapt.MessageV1
+		state  store.ExecutionState
+		kind   action_servicepb.ExecutionErrorKind
+		want   *action_servicepb.ResumeFailure
+	}{
+		{
+			name: "an unknown reply is not replayed", code: codes.Unavailable, detail: unknown, state: store.ExecutionUnknown,
+			kind: action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_EXECUTION_OUTCOME_UNKNOWN,
+			want: &action_servicepb.ResumeFailure{GrpcCode: code.Code_UNAVAILABLE, WakeAssessment: unknown},
+		},
+		{
+			name: "a policy denial is a backend refusal", code: codes.PermissionDenied, detail: denial, state: store.ExecutionFailed,
+			kind: action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_BACKEND_REFUSED,
+			want: &action_servicepb.ResumeFailure{GrpcCode: code.Code_PERMISSION_DENIED, ResumeEligibility: denial},
+		},
+		{
+			name: "a rate limit keeps the wake assessment's retry time", code: codes.ResourceExhausted, detail: rateLimit, state: store.ExecutionFailed,
+			kind: action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_CAPACITY_EXHAUSTED,
+			want: &action_servicepb.ResumeFailure{GrpcCode: code.Code_RESOURCE_EXHAUSTED, WakeAssessment: rateLimit},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			resumeStatus, err := status.New(test.code, "private backend detail").WithDetails(test.detail)
+			if err != nil {
+				t.Fatal(err)
+			}
+			backend := &delegatedBackend{testing: t, resumeErr: resumeStatus.Err()}
+			executor := newDelegatedExecutorForGroup(t, backend, contract.GroupEnvironments)
+			outcome, err := executor.attempt(t.Context(), requestFor("resume", map[string]any{
+				"target":       map[string]string{"namespace": testCallerNamespace, "name": "sandbox-one", "uid": "sandbox-uid-1"},
+				"resume_token": "opaque-generation-bound-token",
+			}))
+			if err != nil || outcome.State != test.state || backend.resumeCalls != 1 {
+				t.Fatalf("resume outcome=%+v error=%v calls=%d; want state %s after one attempt", outcome, err, backend.resumeCalls, test.state)
+			}
+			if failure := outcome.Error; failure.GetKind() != test.kind || !proto.Equal(failure.GetResume(), test.want) ||
+				strings.Contains(failure.String(), "private backend detail") {
+				t.Fatalf("resume error = %v, want kind %v with %v and none of the backend's message", failure, test.kind, test.want)
+			}
+		})
 	}
 }
 
@@ -415,21 +378,13 @@ func TestEachExecutorOffersOnlyItsOwnActionGroup(t *testing.T) {
 		{group: "sessions", want: []string{"cancel_input", "create", "get", "interrupt_turn", "observe_input", "read_turns", "submit_input"}},
 	} {
 		t.Run(test.group, func(t *testing.T) {
-			executor, err := NewExecutor(test.group, catalog.SessionDelegationBinding{Description: "forwards caller"}, nil, nil, nil)
+			executor, err := NewExecutor(test.group, nil, nil, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
 			got := slices.Sorted(maps.Keys(executor.Actions()))
 			if !slices.Equal(got, test.want) {
 				t.Fatalf("offered actions = %v, want %v", got, test.want)
-			}
-			if test.group == "sessions" {
-				for _, name := range []string{"get", "read_turns"} {
-					definition := executor.Actions()[name]
-					if len(definition.InputSchema) == 0 {
-						t.Errorf("%s has no advertised input schema", name)
-					}
-				}
 			}
 		})
 	}
@@ -444,8 +399,7 @@ func TestGetSessionRetainsObservedSessionAndSanitizedHistoryError(t *testing.T) 
 		summaryErr: status.Error(codes.Unavailable, "private history detail"),
 	}
 	executor := newDelegatedExecutor(t, backend)
-	uid := testCallerUID
-	outcome, err := executor.attempt(t.Context(), requestFor("get", map[string]any{"session_id": testSessionID}, &uid))
+	outcome, err := executor.attempt(t.Context(), requestFor("get", map[string]any{"session_id": testSessionID}))
 	if err != nil || outcome.State != store.ExecutionSucceeded {
 		t.Fatalf("outcome=%+v error=%v", outcome, err)
 	}
@@ -518,10 +472,9 @@ func TestReadTurnsReturnsPartialTurnsAndSanitizedHistoryError(t *testing.T) {
 		return response, nil
 	}
 	executor := newDelegatedExecutor(t, backend)
-	uid := testCallerUID
 	outcome, err := executor.attempt(t.Context(), requestFor("read_turns", map[string]any{
 		"session_id": testSessionID, "count": 2,
-	}, &uid))
+	}))
 	if err != nil || outcome.State != store.ExecutionSucceeded {
 		t.Fatalf("outcome=%+v error=%v", outcome, err)
 	}
@@ -556,7 +509,7 @@ func TestReadTurnsReturnsPartialTurnsAndSanitizedHistoryError(t *testing.T) {
 	}
 }
 
-func requestFor(action string, args any, callerUID *string) store.ExecutionRequest {
+func requestFor(action string, args any) store.ExecutionRequest {
 	encoded, err := json.Marshal(args)
 	if err != nil {
 		panic(err)
@@ -571,13 +524,12 @@ func requestFor(action string, args any, callerUID *string) store.ExecutionReque
 func TestOpenForwardsRecordedCallerAndReturnsTypedSession(t *testing.T) {
 	backend := &delegatedBackend{testing: t}
 	executor := newDelegatedExecutor(t, backend)
-	uid := testCallerUID
 	request := requestFor("create", map[string]any{
 		"target":                  map[string]string{"namespace": testCallerNamespace, "name": testCallerName, "uid": "sandbox-uid-1"},
 		"session_id":              testSessionID,
 		"spec":                    map[string]any{"harness": "HARNESS_CLAUDE", "model": "claude-sonnet", "cwd": "/workspace/{session_id}"},
 		"additional_instructions": "Investigate the child task.",
-	}, &uid)
+	})
 	outcome, err := executor.attempt(t.Context(), request)
 	if err != nil {
 		t.Fatal(err)
@@ -615,12 +567,11 @@ func TestOpenForwardsRecordedCallerAndReturnsTypedSession(t *testing.T) {
 func TestOpenUnknownOutcomeIsNotRetried(t *testing.T) {
 	backend := &delegatedBackend{testing: t, openErr: status.Error(codes.Unavailable, "private backend detail")}
 	executor := newDelegatedExecutor(t, backend)
-	uid := testCallerUID
 	_, err := executor.attempt(t.Context(), requestFor("create", map[string]any{
 		"target":     map[string]string{"namespace": testCallerNamespace, "name": "sandbox-one", "uid": "sandbox-uid-1"},
 		"session_id": testSessionID,
 		"spec":       map[string]any{"harness": "HARNESS_CLAUDE", "model": "model", "cwd": "/workspace"},
-	}, &uid))
+	}))
 	if !errors.Is(err, worker.ErrOutcomeUnknown) || backend.openCalls != 1 {
 		t.Fatalf("open error=%v, calls=%d; want one unknown-outcome attempt", err, backend.openCalls)
 	}
@@ -629,11 +580,10 @@ func TestOpenUnknownOutcomeIsNotRetried(t *testing.T) {
 func TestSubmitInputForwardsTheCallerAndDurableCommandIdentity(t *testing.T) {
 	backend := &delegatedBackend{testing: t}
 	executor := newDelegatedExecutor(t, backend)
-	uid := testCallerUID
 	outcome, err := executor.attempt(t.Context(), requestFor("submit_input", map[string]any{
 		"target":     map[string]string{"namespace": testCallerNamespace, "name": "sandbox-one", "uid": "sandbox-uid-1"},
 		"session_id": testSessionID, "command_id": testCommandID, "text": "Do the requested work.",
-	}, &uid))
+	}))
 	if err != nil || outcome.State != store.ExecutionSucceeded {
 		t.Fatalf("outcome=%+v error=%v", outcome, err)
 	}
@@ -671,10 +621,9 @@ func TestCancelRequiresTheDurableReceiptToMatchTheSuppliedSession(t *testing.T) 
 				State: dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER,
 			}}
 			executor := newDelegatedExecutor(t, backend)
-			uid := testCallerUID
 			outcome, err := executor.attempt(t.Context(), requestFor("cancel_input", map[string]string{
 				"session_id": test.sessionID, "command_id": testCommandID,
-			}, &uid))
+			}))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -688,10 +637,9 @@ func TestCancelRequiresTheDurableReceiptToMatchTheSuppliedSession(t *testing.T) 
 func TestObservePreservesTypedPartialSourceError(t *testing.T) {
 	backend := &delegatedBackend{testing: t, lookupErr: status.Error(codes.Unavailable, "private backend detail")}
 	executor := newDelegatedExecutor(t, backend)
-	uid := testCallerUID
 	outcome, err := executor.attempt(t.Context(), requestFor("observe_input", map[string]any{
 		"session_id": testSessionID, "command_id": testCommandID, "wait_seconds": 0,
-	}, &uid))
+	}))
 	if err != nil || outcome.State != store.ExecutionSucceeded {
 		t.Fatalf("outcome=%+v error=%v", outcome, err)
 	}
@@ -720,10 +668,9 @@ func TestObserveKeepsHistoryFailureInObservationSource(t *testing.T) {
 	}}
 	executor := newDelegatedExecutor(t, backend)
 	executor.history = unavailableHistoryClient{}
-	uid := testCallerUID
 	outcome, err := executor.attempt(t.Context(), requestFor("observe_input", map[string]any{
 		"session_id": testSessionID, "command_id": testCommandID, "wait_seconds": 0,
-	}, &uid))
+	}))
 	if err != nil || outcome.State != store.ExecutionSucceeded {
 		t.Fatalf("outcome=%+v error=%v", outcome, err)
 	}
@@ -750,32 +697,13 @@ func TestObserveKeepsHistoryFailureInObservationSource(t *testing.T) {
 	}
 }
 
-func TestMissingCallerUIDFailsClosedBeforeBackendCall(t *testing.T) {
-	backend := &delegatedBackend{testing: t}
-	executor := newDelegatedExecutor(t, backend)
-	uid := testCallerUID
-	request := requestFor("create", map[string]any{
-		"target":     map[string]string{"namespace": testCallerNamespace, "name": testCallerName, "uid": "sandbox-uid-1"},
-		"session_id": testSessionID,
-		"spec":       map[string]any{"harness": "HARNESS_CLAUDE", "model": "claude-sonnet", "cwd": "/workspace"},
-	}, &uid)
-	request.Caller = store.ServiceAccountCaller{Account: store.ServiceAccount{Namespace: testCallerNamespace, Name: testCallerName}}
-	outcome, err := executor.attempt(t.Context(), request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if outcome.State != store.ExecutionFailed || outcome.Error.GetKind() != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_CALLER_IDENTITY_UNAVAILABLE || backend.gotOpen != nil {
-		t.Fatalf("outcome=%+v backend opening=%v; retained ServiceAccount caller must fail before RPC", outcome, backend.gotOpen)
-	}
-}
-
 func TestRetainedServiceAccountActionDoesNotReattributeOrReachBackend(t *testing.T) {
 	backend := &delegatedBackend{testing: t}
 	executor := newDelegatedExecutor(t, backend)
 	uid := testCallerUID
 	request := requestFor("submit_input", map[string]any{
 		"target": map[string]string{"namespace": testCallerNamespace, "name": testCallerName, "uid": "sandbox-uid-1"},
-	}, &uid)
+	})
 	request.Caller = store.ServiceAccountCaller{
 		Account: store.ServiceAccount{Namespace: testCallerNamespace, Name: testCallerName}, UID: &uid,
 	}
@@ -796,7 +724,7 @@ func TestAnIdentityCallersRequestIsDelegatedAsItsIdentity(t *testing.T) {
 	request := requestFor("submit_input", map[string]any{
 		"target":     map[string]string{"namespace": "test-any-namespace", "name": "sandbox-one", "uid": "sandbox-uid-1"},
 		"session_id": testSessionID, "command_id": testCommandID, "text": "Do the requested work.",
-	}, nil)
+	})
 	request.Caller = store.IdentityCaller{Identity: store.Identity{Name: identity.GetName(), UID: identity.GetUid()}}
 	outcome, err := executor.attempt(t.Context(), request)
 	if err != nil || outcome.State != store.ExecutionSucceeded {

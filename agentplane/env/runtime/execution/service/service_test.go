@@ -18,7 +18,12 @@ import (
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/coder/websocket"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
@@ -27,7 +32,7 @@ func TestSystemdExecutionRequiresReconciledRuntimeScope(t *testing.T) {
 	config := Config{
 		Namespace: "test-namespace", SandboxName: "test-sandbox", SandboxUID: "test-sandbox-uid",
 		IncarnationUID: "test-incarnation", StateDir: "/state/execution",
-		Binary: "/bin/codex", WorkingDirectory: "/state", ExecutorURL: "ws://127.0.0.1:4501", Backend: "systemd",
+		Binary: "/bin/codex", WorkingDirectory: "/state", ExecutorURL: "ws://127.0.0.1:4501", Owner: codexexecserver.OwnerSystemd, Placement: codexexecserver.PlacementDirect,
 	}
 	if err := RunEmbedded(t.Context(), config, func(executorpb.ExecutorServer, context.Context) { t.Error("unowned execution became ready") }); err == nil {
 		t.Fatal("systemd execution accepted without Runtime scope and host")
@@ -38,7 +43,7 @@ func TestExecutionConfigResolvesCompatibleReadinessDefaultsAndRejectsInvalidWind
 	config := Config{
 		Namespace: "test-namespace", SandboxName: "test-sandbox", SandboxUID: "test-sandbox-uid",
 		IncarnationUID: "test-incarnation", StateDir: "/state/execution",
-		ContainerSocket: "/run/executor.sock", ExecutorURL: "ws://127.0.0.1:4501", Backend: "companion",
+		ContainerSocket: "/run/executor.sock", ExecutorURL: "ws://127.0.0.1:4501", Owner: codexexecserver.OwnerCompanion, Placement: codexexecserver.PlacementDirect,
 	}
 	resolved, err := config.Resolve()
 	if err != nil {
@@ -84,7 +89,7 @@ func TestRunReturnsFencedBackendLossOnlyAfterCleanupFence(t *testing.T) {
 			config := Config{
 				Namespace: "test-namespace", SandboxName: "test-sandbox", SandboxUID: "test-sandbox-uid",
 				IncarnationUID: "test-incarnation", StateDir: stateDir,
-				ContainerSocket: filepath.Join(t.TempDir(), "companion.sock"), ExecutorURL: endpoint, Backend: "companion",
+				ContainerSocket: filepath.Join(t.TempDir(), "companion.sock"), ExecutorURL: endpoint, Owner: codexexecserver.OwnerCompanion, Placement: codexexecserver.PlacementDirect,
 			}
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
@@ -143,7 +148,7 @@ func TestEmbeddedServicePublishesDirectAdapter(t *testing.T) {
 	config := Config{
 		Namespace: "test-namespace", SandboxName: "test-sandbox", SandboxUID: "test-sandbox-uid",
 		IncarnationUID: "test-incarnation", StateDir: t.TempDir(),
-		ExecutorURL: endpoint, Backend: "companion", ContainerSocket: filepath.Join(t.TempDir(), "companion.sock"),
+		ExecutorURL: endpoint, Owner: codexexecserver.OwnerCompanion, Placement: codexexecserver.PlacementDirect, ContainerSocket: filepath.Join(t.TempDir(), "companion.sock"),
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -177,7 +182,7 @@ func TestEmbeddedServicePublishesDirectAdapter(t *testing.T) {
 
 func TestEmbeddedBackendLossDuringReadinessKeepsFenceEvidence(t *testing.T) {
 	attempted := make(chan struct{}, 1)
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+	server := testServer(t, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		attempted <- struct{}{}
 		connection, err := websocket.Accept(writer, request, nil)
 		if err != nil {
@@ -246,7 +251,7 @@ func TestConfiguredReadinessControlsEmbeddedBackendProbes(t *testing.T) {
 	releaseFirstProbe := make(chan struct{})
 	var releaseFirst sync.Once
 	t.Cleanup(func() { releaseFirst.Do(func() { close(releaseFirstProbe) }) })
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+	server := testServer(t, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		probe := probes.Add(1)
 		probeTimes <- time.Now()
 		connection, err := websocket.Accept(writer, request, nil)
@@ -346,7 +351,7 @@ func TestConfiguredReadinessControlsEmbeddedBackendProbes(t *testing.T) {
 
 func TestConfiguredReadinessDeadlineAndCancellationFenceBackend(t *testing.T) {
 	t.Run("deadline", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		server := testServer(t, http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 			writer.WriteHeader(http.StatusServiceUnavailable)
 		}))
 		t.Cleanup(server.Close)
@@ -394,7 +399,7 @@ func TestConfiguredReadinessDeadlineAndCancellationFenceBackend(t *testing.T) {
 
 	t.Run("caller cancellation", func(t *testing.T) {
 		attempted := make(chan struct{}, 1)
-		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		server := testServer(t, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 			attempted <- struct{}{}
 			connection, err := websocket.Accept(writer, request, nil)
 			if err != nil {
@@ -449,9 +454,62 @@ func TestConfiguredReadinessDeadlineAndCancellationFenceBackend(t *testing.T) {
 	})
 }
 
+func TestTypedReadinessIsRequiredBeforePublishing(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer c.CloseNow()
+		for {
+			_, payload, err := c.Read(r.Context())
+			if err != nil {
+				return
+			}
+			response := ""
+			switch {
+			case strings.Contains(string(payload), `"id":1`):
+				response = `{"id":1,"result":{"sessionId":"health"}}`
+			case strings.Contains(string(payload), `"id":2`):
+				response = `{"id":2,"result":{"status":"ready"}}`
+			}
+			if response != "" {
+				if c.Write(r.Context(), websocket.MessageText, []byte(response)) != nil {
+					return
+				}
+			}
+		}
+	}))
+	defer server.Close()
+	cfg := Config{ExecutorURL: "ws" + strings.TrimPrefix(server.URL, "http"), Readiness: codexexecserver.Readiness{Timeout: 200 * time.Millisecond, ProbeTimeout: 100 * time.Millisecond, ProbeInterval: 10 * time.Millisecond}}
+	ready := false
+	err := runWithReady(t.Context(), cfg, func(context.Context) (*supervision.Instance, error) {
+		return &supervision.Instance{Done: make(chan error), Stop: func(context.Context) error { return nil }}, nil
+	}, func(executorpb.ExecutorServer, context.Context) { ready = true })
+	if ready || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("ready=%v, err=%v; want typed health timeout", ready, err)
+	}
+}
+
+func testServer(t *testing.T, ws http.Handler) *httptest.Server {
+	t.Helper()
+	rpc := grpc.NewServer()
+	h := health.NewServer()
+	h.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
+	healthpb.RegisterHealthServer(rpc, h)
+	t.Cleanup(rpc.Stop)
+	return httptest.NewServer(h2c.NewHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc") {
+			rpc.ServeHTTP(w, r)
+			return
+		}
+		ws.ServeHTTP(w, r)
+	}), &http2.Server{}))
+}
+
 func testExecutorEndpoint(t *testing.T) string {
 	t.Helper()
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+	server := testServer(t, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		connection, err := websocket.Accept(writer, request, nil)
 		if err != nil {
 			return
@@ -494,10 +552,12 @@ func TestAdmissionRejectsForeignOrStaleScopeBeforeEffect(t *testing.T) {
 		{"current", func(*executorpb.ExecutionScope) {}, codes.OK},
 		{"namespace", func(s *executorpb.ExecutionScope) { s.Destination.Owner.Namespace = "another-namespace" }, codes.PermissionDenied},
 		{"owner", func(s *executorpb.ExecutionScope) { s.Destination.Owner.Name = "another-owner" }, codes.PermissionDenied},
+		{"missing-target", func(s *executorpb.ExecutionScope) { s.Destination.Target = nil }, codes.PermissionDenied},
 		{"sandbox", func(s *executorpb.ExecutionScope) { s.Destination.Target.Name = "another-sandbox" }, codes.PermissionDenied},
 		{"uid", func(s *executorpb.ExecutionScope) { s.Destination.Target.Uid = "another-uid" }, codes.PermissionDenied},
 		{"incarnation", func(s *executorpb.ExecutionScope) { s.ExpectedIncarnationUid = "old-incarnation" }, codes.FailedPrecondition},
 		{"session", func(s *executorpb.ExecutionScope) { s.SessionId = "" }, codes.InvalidArgument},
+		{"session-too-long", func(s *executorpb.ExecutionScope) { s.SessionId = strings.Repeat("x", 129) }, codes.InvalidArgument},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			candidate := proto.Clone(scope).(*executorpb.ExecutionScope)
@@ -506,6 +566,9 @@ func TestAdmissionRejectsForeignOrStaleScopeBeforeEffect(t *testing.T) {
 			err := config.admit(t.Context(), candidate, true, func(context.Context) error { accepted = true; return nil })
 			if status.Code(err) != test.code || accepted != (test.code == codes.OK) {
 				t.Fatalf("admission: accepted=%v error=%v, want %s", accepted, err, test.code)
+			}
+			if test.code == codes.FailedPrecondition && len(status.Convert(err).Details()) != 0 {
+				t.Fatalf("embedded admission carried status details: %v", status.Convert(err).Details())
 			}
 		})
 	}

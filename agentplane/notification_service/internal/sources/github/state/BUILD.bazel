@@ -19,7 +19,6 @@ go_library(
         "//agentplane/notification_service/internal/sources/github/model",
         "//agentplane/notification_service/internal/sources/github/publication",
         "//agentplane/notification_service/internal/sources/github/storagecodec",
-        "//agentplane/notification_service/internal/storagecodec",
         "//agentplane/notification_service/internal/transaction",
         "//agentplane/notification_service/model",
         "//agentplane/postgres/lease",

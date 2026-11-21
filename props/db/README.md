@@ -10,7 +10,7 @@ Tests never touch production data: they run against their own databases.
 
 - **Purpose**: Real evaluation results, persistent storage
 - **DO NOT DROP/RECREATE**: Contains valuable data
-- **Connection**: Uses standard `PG*` environment variables (set by devenv)
+- **Connection**: Uses standard `PG*` environment variables (set by `props/.envrc`)
 
 ### Test Databases: `props_test_<test id>`
 
@@ -32,7 +32,7 @@ Tests never touch production data: they run against their own databases.
 2. **Initialize database**:
 
    ```bash
-   # Create database, schema, RLS policies, and sync specimens
+   # Create database, schema, and RLS policies (does not sync specimens)
    props db recreate --yes
    ```
 
@@ -40,12 +40,11 @@ Tests never touch production data: they run against their own databases.
    - Creates the `eval_results` database
    - Runs Alembic migrations to create schema
    - Sets up the `agent_base` role and RLS policies
-   - Syncs specimen data from the specimens repository
 
-   For incremental updates (without dropping tables):
+   To load or update a specimen without dropping tables:
 
    ```bash
-   props sync
+   props db sync-specimen --code-tar <specimen_code.tar> --data-yaml <specimen_data.yaml>
    ```
 
 ## Run startup status and upgrades

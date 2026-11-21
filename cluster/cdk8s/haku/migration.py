@@ -34,6 +34,7 @@ from constructs import Construct
 from cluster.cdk8s import node_scheduling, pod_policy
 from cluster.cdk8s.forgejo_registry.pull_credentials import forgejo_images_creds_secret_ref
 from cluster.cdk8s.haku import console
+from cluster.cdk8s.haku.database import NAMESPACE
 
 NAME = "migration"
 _POD_LABEL = "haku-console-migration"
@@ -44,7 +45,7 @@ class Migration(Construct):
 
     def __init__(self, scope: Construct, id: str) -> None:
         super().__init__(scope, id)
-        namespace = console.NAMESPACE
+        namespace = NAMESPACE
         # No Kubernetes API work: separate from the API ServiceAccount, which can manage
         # narrowly scoped sandbox claims.
         service_account = ServiceAccount(

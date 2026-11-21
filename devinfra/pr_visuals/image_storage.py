@@ -16,7 +16,7 @@ from botocore.exceptions import ClientError
 from PIL import Image, UnidentifiedImageError
 
 from devinfra.pr_visuals.artifacts import Download, Runner, download_blobs
-from devinfra.pr_visuals.render_common import shared_image_key
+from devinfra.pr_visuals.metadata import shared_image_key
 
 if TYPE_CHECKING:
     from types_boto3_s3.client import S3Client

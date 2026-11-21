@@ -2,7 +2,6 @@
 # gazelle:resolve py flux_imagerepository_crds //cluster/cdk8s/providers/flux:imagerepository
 # gazelle:resolve py flux_imageupdateautomation_crds //cluster/cdk8s/providers/flux:imageupdateautomation
 # gazelle:resolve py flux_receiver_crds //cluster/cdk8s/providers/flux:receiver
-# gazelle:resolve py cilium_envoyconfig_crds //cluster/cdk8s/providers/cilium:ciliumenvoyconfig
 
 # gazelle:resolve py cnpg_database_crds //cluster/cdk8s/providers/cnpg:database
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
@@ -26,17 +25,18 @@ py_library(
     name = "app",
     srcs = ["app.py"],
     deps = [
+        "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:namespaces",
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s:vpa_policy",
         "//cluster/cdk8s/cnpg:cluster",
-        "//cluster/cdk8s/providers/cilium:ciliumenvoyconfig",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "@pypi//cdk8s",
-        "@pypi//constructs",
     ],
 )
 
@@ -124,7 +124,9 @@ py_library(
     deps = [
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:helm",
+        "//cluster/cdk8s:namespaces",
         "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:vpa_policy",
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "@pypi//cdk8s",
@@ -170,6 +172,7 @@ py_library(
     ],
     deps = [
         ":app",
+        "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:pod_policy",
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
         "//cluster/cdk8s/providers/cilium:network_policy",

@@ -5,8 +5,6 @@ tokens on self-chosen prizes. Credits → tokens is one-way (casino or explicit 
 winnings are never re-gambled. React PWA installable on Windows (Edge/Chrome) and iPhone
 (Safari → Add to Home Screen). Lives at <https://casino.allegedly.works>.
 
-Staged API change: [action result discriminator rollout](docs/action_result_discriminators.md).
-
 ## Layout
 
 - `app.py`: FastAPI REST + thin WebSocket fan-out, serves the frontend
@@ -48,6 +46,7 @@ are whole integers.
 - `credit_state`: streak + daily bonus (Pacific days, append-only)
 - `sessions`: completed study sessions; in-progress ones exist only client-side
 - `prizes`, `prize_log` (append-only redemptions)
+- `changelog_acks`: per-user cursor into the in-app changelog (`changelog.py`)
 - `ledger_events`: append-only audit of every server action, keyed by `client_action_id`
 - `game_events`: casino settlements
 - `rng_action_audits`, `rng_call_audits`: seed context and per-call parameters/results for replay
@@ -60,7 +59,7 @@ are whole integers.
 after each successful action and on each `/ws` `{"type":"state_changed"}` broadcast (sent to all
 of the user's tabs). Mutations are `POST /actions/*` (sessions, convert, prizes, changelog ack,
 import/reset) and `POST /casino/{slots,roulette,blackjack}/*`; reads include `/casino/stats`,
-`/admin/casino/stats?user=`, `/game-events`, `/ledger-events`, `/me`, `/healthz`.
+`/admin/casino/stats?user=`, `/me`, `/healthz`.
 
 - Active timers live in client `localStorage`; completion and backfill actions create session rows,
   and `/actions/import` can also restore them.
@@ -68,7 +67,8 @@ import/reset) and `POST /casino/{slots,roulette,blackjack}/*`; reads include `/c
   without replaying the mutation.
 - Historical rows keep their literals: `game_events` before 2026-05-07 have
   `source="client_reported"` (`server_resolved` after), pre-cutover `ledger_events` have
-  `source="legacy_client_sync"`; both stay in `events.py` so old rows deserialize.
+  `source="legacy_client_sync"`; both stay in `models.py` (`GameEventSource`, `LedgerEventSource`)
+  so old rows deserialize. Do not write a migration that rewrites them.
 - Casino RNG is a deterministic HMAC-SHA256 stream; the DB stores seed material and each call's
   parameters/result, while the versioned `STUDY_CASINO_RNG_SECRET` stays outside it and is
   needed to replay.

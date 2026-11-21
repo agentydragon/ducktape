@@ -22,10 +22,9 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
-    select,
 )
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP, UUID as PG_UUID
-from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeDecorator
 
 from openai_utils.api_shape import LLMApiShape
@@ -37,7 +36,7 @@ from props.db.snapshots import LocationAnchor
 from util.sqlalchemy_types import StrEnumColumn, StringBackedStrEnumColumn
 
 # Kept in sync with LLMApiShape so constraints accept each supported API shape.
-_LLM_API_SHAPES_SQL = ", ".join(f"'{shape.value}'" for shape in LLMApiShape)
+_LLM_API_SHAPES_SQL = ", ".join(f"'{shape}'" for shape in LLMApiShape)
 
 # Reusable SQLAlchemy Enum type for ExampleKind
 # Use this instead of mapped_column(String) for proper Python enum conversion
@@ -195,13 +194,6 @@ class Snapshot(Base):
         back_populates="snapshot_obj", cascade="all, delete-orphan"
     )
 
-    @classmethod
-    def get(cls, slug: SnapshotSlug) -> Snapshot | None:
-        session = Session.object_session(cls)
-        if session is None:
-            raise RuntimeError("Model not bound to session")
-        return session.execute(select(cls).where(cls.slug == slug)).scalar_one_or_none()
-
 
 class TruePositive(Base):
     """Expected finding; critic_scopes_expected_to_recall supplies its recall scopes."""
@@ -225,15 +217,6 @@ class TruePositive(Base):
     occurrences: Mapped[list[TruePositiveOccurrenceORM]] = relationship(
         back_populates="true_positive", cascade="all, delete-orphan"
     )
-
-    @classmethod
-    def get(cls, snapshot_slug: SnapshotSlug, tp_id: str) -> TruePositive | None:
-        session = Session.object_session(cls)
-        if session is None:
-            raise RuntimeError("Model not bound to session")
-        return session.execute(
-            select(cls).where(cls.snapshot_slug == snapshot_slug, cls.tp_id == tp_id)
-        ).scalar_one_or_none()
 
 
 class FalsePositive(Base):
@@ -259,15 +242,6 @@ class FalsePositive(Base):
     occurrences: Mapped[list[FalsePositiveOccurrenceORM]] = relationship(
         back_populates="false_positive", cascade="all, delete-orphan"
     )
-
-    @classmethod
-    def get(cls, snapshot_slug: SnapshotSlug, fp_id: str) -> FalsePositive | None:
-        session = Session.object_session(cls)
-        if session is None:
-            raise RuntimeError("Model not bound to session")
-        return session.execute(
-            select(cls).where(cls.snapshot_slug == snapshot_slug, cls.fp_id == fp_id)
-        ).scalar_one_or_none()
 
 
 class TruePositiveOccurrenceORM(Base):
@@ -781,10 +755,7 @@ class LLMRunCost(Base):
     """Proxy-logged token usage and costs aggregated by (agent_run_id, model)."""
 
     __tablename__ = "llm_run_costs"
-    __table_args__ = {"info": {"is_view": True}, "extend_existing": True}  # noqa: RUF012
-
-    # Tell SQLAlchemy NOT to create this as a table
-    __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
+    __table_args__ = ({"info": {"is_view": True}, "extend_existing": True},)
 
     agent_run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
     model: Mapped[str] = mapped_column(String, primary_key=True)
@@ -802,8 +773,7 @@ class AgentRunBudgetStatus(Base):
     """
 
     __tablename__ = "agent_run_budget_status"
-    __table_args__ = {"info": {"is_view": True}, "extend_existing": True}  # noqa: RUF012
-    __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
+    __table_args__ = ({"info": {"is_view": True}, "extend_existing": True},)
 
     agent_run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
     budget_usd: Mapped[float] = mapped_column(nullable=False)
@@ -819,8 +789,7 @@ class TpOccurrenceCredit(Base):
     """
 
     __tablename__ = "tp_occurrence_credits"
-    __table_args__ = {"info": {"is_view": True}, "extend_existing": True}  # noqa: RUF012
-    __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
+    __table_args__ = ({"info": {"is_view": True}, "extend_existing": True},)
 
     critic_run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
     tp_id: Mapped[str] = mapped_column(String, primary_key=True)
@@ -842,8 +811,7 @@ class RecallByRun(Base):
     """Includes in-progress and terminal runs; zero missing_grading_edges means grading is complete."""
 
     __tablename__ = "recall_by_run"
-    __table_args__ = {"info": {"is_view": True}, "extend_existing": True}  # noqa: RUF012
-    __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
+    __table_args__ = ({"info": {"is_view": True}, "extend_existing": True},)
 
     critic_run_id: Mapped[UUID] = mapped_column(primary_key=True)
 
@@ -874,8 +842,7 @@ class RecallByDefinitionExample(Base):
     """
 
     __tablename__ = "recall_by_definition_example"
-    __table_args__ = {"info": {"is_view": True}, "extend_existing": True}  # noqa: RUF012
-    __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
+    __table_args__ = ({"info": {"is_view": True}, "extend_existing": True},)
 
     critic_image_digest: Mapped[str] = mapped_column(String, primary_key=True)
     critic_model: Mapped[str] = mapped_column(String, primary_key=True)
@@ -903,8 +870,7 @@ class RecallByDefinitionSplitKind(Base):
     """
 
     __tablename__ = "recall_by_definition_split_kind"
-    __table_args__ = {"info": {"is_view": True}, "extend_existing": True}  # noqa: RUF012
-    __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
+    __table_args__ = ({"info": {"is_view": True}, "extend_existing": True},)
 
     split: Mapped[Split] = mapped_column(primary_key=True)
     example_kind: Mapped[ExampleKind] = mapped_column(EXAMPLE_KIND_ENUM_TYPE, primary_key=True)
@@ -935,8 +901,7 @@ class RecallByExample(Base):
     """
 
     __tablename__ = "recall_by_example"
-    __table_args__ = {"info": {"is_view": True}, "extend_existing": True}  # noqa: RUF012
-    __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
+    __table_args__ = ({"info": {"is_view": True}, "extend_existing": True},)
 
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
     example_kind: Mapped[ExampleKind] = mapped_column(EXAMPLE_KIND_ENUM_TYPE, primary_key=True)
@@ -965,8 +930,7 @@ class ParetoFrontierByExample(Base):
     """
 
     __tablename__ = "pareto_frontier_by_example"
-    __table_args__ = {"info": {"is_view": True}, "extend_existing": True}  # noqa: RUF012
-    __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
+    __table_args__ = ({"info": {"is_view": True}, "extend_existing": True},)
 
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
     split: Mapped[Split] = mapped_column(primary_key=True)
@@ -983,8 +947,7 @@ class OccurrenceStatistics(Base):
     """Per-occurrence/run statistics: credit_stats.n is critic run count, .mean is average credit."""
 
     __tablename__ = "occurrence_statistics"
-    __table_args__ = {"info": {"is_view": True}, "extend_existing": True}  # noqa: RUF012
-    __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
+    __table_args__ = ({"info": {"is_view": True}, "extend_existing": True},)
 
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
     split: Mapped[Split] = mapped_column(primary_key=True)
@@ -1010,7 +973,6 @@ class LLMRequestCost(Base):
             "comment": "Per-request LLM cost (joins llm_requests with model_metadata pricing).",
         },
     )
-    __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
     agent_run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
@@ -1032,7 +994,6 @@ class ValidationRecallByDefinition(Base):
             "comment": "Aggregated validation recall by (definition, model) over full-snapshot validation examples.",
         },
     )
-    __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
 
     critic_image_digest: Mapped[str] = mapped_column(String, primary_key=True)
     critic_model: Mapped[str] = mapped_column(String, primary_key=True)

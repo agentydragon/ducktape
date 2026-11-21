@@ -276,6 +276,78 @@ and retained entries are O(N), insertion/query are O(log N), and the combined
 census keeps its O(N log N) expected preparation bound. Unsupported uses retain
 ordinary flow; this recognizer is not complete path-sensitive analysis.
 
+### Guarded non-function property-write origins
+
+A separate exact-use certificate can narrow the value source for a simple
+static property assignment such as `receiver.type = value`. It recognizes only
+an assignment that is the final term of a pure `&&` chain containing
+`typeof value != "function"` or `typeof value !== "function"`. Other accepted
+prefix terms are limited to identifier-versus-`null` and `typeof identifier`
+versus string-literal inequalities; they cannot call user code or rebind a
+local. The assignment receiver, RHS value, and every identifier read by the
+guards must resolve to unique bindings owned by the same synchronous function,
+with no capture or dynamic scope. Unsupported syntax keeps ordinary flow.
+
+The certificate is keyed by the exact RHS span and resolved binding. It removes
+only known Function and Class allocation origins from that one transfer (a
+class expression also has JavaScript `typeof` value `"function"`);
+unknown/Top, Proxy and every other known origin remain. It does not narrow the
+binding or later reads. If the same source use already has a guarded snapshot
+projection, that projection is evaluated first and the non-function filter is
+applied to its result. Both paths use the ordinary read and retain the same
+dependency subscriptions. This is a source-value refinement only: property
+writes, calls and their effects remain in the usual analyses, and the
+certificate proves neither purity nor successful completion.
+
+The census and certificate storage reuse the existing per-function AST pass.
+It inspects only conjunction nodes whose direct RHS is the candidate
+assignment, then walks preceding terms iteratively from right to left and
+stops at the first unsupported term. Thus a long chain with an earlier write
+does not cause every later assignment to rescan and store the whole prefix.
+The origin table precomputes a bitmap of Function/Class origins once. A
+certified read first checks whether its value bitmap intersects that set; a
+disjoint value retains its shared bitmap, while an intersecting value uses the
+bitmap difference and preserves its independent unknown bit. These bounds
+cover this certificate work, not the total source-flow solve.
+
+### Scalar local overwrites in comma expressions
+
+The same exact-use non-function filter also applies after a definite primitive
+overwrite within one comma expression. For example,
+`(fallback = "" + fallback, value = condition ? "" + value : fallback, box.value = value)`
+cannot store a Function/Class origin through the final `value` read, even if
+the function's joined parameter facts contain functions from earlier calls.
+
+The census examines sequence terms in evaluation order, starting with no known
+scalar locals. Before inspecting a term's reads, it invalidates every tracked
+local written anywhere in that term, including conditional and nested writes.
+After the term, only an unconditional simple local assignment can establish a
+new scalar fact. Its RHS must be a primitive literal, untagged template, unary
+or non-short-circuit binary operation, already certified scalar local, or a
+conditional whose two result arms both meet those conditions. Calls, member
+reads, short-circuit expressions and unsupported forms do not establish facts.
+Facts do not carry beyond the enclosing sequence.
+
+Every binding used in a sequence's proof must be a unique, uncaptured local of
+the same synchronous function. Dynamic scope, nested dynamic scope, `arguments`
+use, async functions and generators decline this certificate. The existing
+census treats references in nested functions and class initialization as capture
+barriers. This also prevents coercion or getters from changing a certified local
+through a closure. Their ordinary effects and possible exceptions remain.
+
+The proof is induction over sequence terms: a later term is reached only after
+earlier assignments complete normally; their allowed RHS results are primitive.
+An uninvalidated, uncaptured local cannot change during the current term, so
+its certified reads cannot contain Function/Class values. A completed scalar
+assignment establishes the invariant for the next term. The proof narrows only
+those reads, retaining Top, Proxy, other origins, ordinary reads and their
+dependencies; it does not narrow the binding's joined set or prove purity.
+
+Only outermost sequences within each function are scanned. Each disjoint term
+is visited a bounded number of times, and proof bindings are shared by the
+sequence rather than copied into every use. Collection is O(N) apart from set
+operations, and preparation retains the census's O(N log N) expected bound.
+
 ## Native premises
 
 Native premises are flags, not judgments. `facts/abstract_domain/integrity.rs`

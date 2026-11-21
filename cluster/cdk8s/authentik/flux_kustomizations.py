@@ -12,10 +12,9 @@ from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomizatio
 def authentik(
     chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, cnpg: Kustomization, monitoring_crds: Kustomization
 ) -> Kustomization:
-    name = "authentik"
     return flux_kustomization(
         chart,
-        name,
+        "authentik",
         artifact,
         interval="10m0s",
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,

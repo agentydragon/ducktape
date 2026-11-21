@@ -50,8 +50,8 @@ wrote no Langfuse trace:
 - The bridge returns before the native Responses logging update.
 - The inner chat call consumes the OTel emit-once guard.
 
-No current route uses the bridge. Retest with a unique marker in the request if one is
-added.
+The TabbyAPI routes use the bridge (`config.py` sets `use_chat_completions_api` for them).
+Retest with a unique marker in the request before relying on their Responses traces.
 
 ## Content capture and its storage cost
 

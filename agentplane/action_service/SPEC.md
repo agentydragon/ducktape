@@ -24,7 +24,7 @@ The database URL comes only from `AGENTPLANE_ACTIONS_DATABASE_URL`; the VAPID ke
 `AGENTPLANE_ACTIONS_WEB_PUSH__PRIVATE_KEY_PEM`. MCP OAuth client IDs may use `client_id_file` to
 read an existing projected Secret instead of a literal `client_id`. A server selects exactly one
 of those sources or shared CIMD. Startup reads these inputs and validates the effective configuration
-before serving. Projected bearer tokens and OAuth client-secret files retain their existing lifetimes.
+before serving.
 
 ## Metrics
 
@@ -47,12 +47,10 @@ The service applies Goose migrations before opening listeners or starting worker
 the environment's rolling deployment profile, and a startup probe waits for migration and service
 initialization before normal health checks begin. Goose serializes concurrent starts with its
 PostgreSQL session lock. Schema changes must remain compatible with old and new replicas during a
-roll. Version 7 creates the typed schema for a fresh database or adopts a complete version 6
-schema without rewriting data. Version 8 adds nullable caller UID provenance without rewriting
-requests; NULL means the caller incarnation is unknown. During a rolling update, older writers may
-still insert NULL; new readers preserve it as unknown. Older and incomplete schemas are rejected;
-existing Goose history remains intact. A database created at version 8 requires a version-8-aware
-rollback image or a coordinated restore.
+roll. Version 10 creates the typed schema for a fresh database or adopts a completed version 9
+schema without rewriting data. Older and incomplete schemas are rejected; existing Goose history
+remains intact. A database created at version 10 requires a version-10-aware rollback image or a
+coordinated restore.
 
 Version 12 adds nullable delegated actor snapshots and typed Session or Connection/grant UUID
 columns. It does not backfill or refuse existing receipts. Absence denotes a direct call or an
@@ -77,6 +75,16 @@ lowers those maxima. Both profiles derive from the same typed input contract.
 
 Go and Python Sandbox Action names are generated from a shared JSON Schema enum. Externally
 supplied MCP schemas and policy-authored argument schemas retain their own JSON Schema contracts.
+The Action Service compiles `pattern` and `patternProperties` in Unicode-aware ECMAScript mode.
+An MCP tool whose input schema is a JSON object but cannot be compiled remains available with an
+input schema warning: Agentplane forwards object arguments without checking that tool schema at
+admission or execution. The backend may validate them. Policy schemas and built-in input contracts
+remain enforced. Action reads report a typed input-schema validation status: enforced, not enforced
+with a compile-failed reason, or unknown. Missing status means unknown. Group inspection and the MCP
+servers page derive warnings from this status. Warnings clear when discovery observes a usable schema.
+If a compiled pattern exceeds the evaluation budget or the matcher fails, Action Service refuses the
+schema check. Admission returns `UNAVAILABLE` and execution records `INTERNAL` before contacting the
+backend. An evaluation failure during compilation makes the MCP tool unavailable.
 
 ## Caller admission and Connection authority
 
@@ -86,10 +94,10 @@ a live PolicyBinding. Owned workloads retain their existing incarnation checks; 
 requires no Sandbox or Pod. Service certificates supply no workload, ServiceAccount or Pod proof.
 Kubernetes bearer tokens are refused, including valid tokens for the former audience. No TokenReview
 client is constructed for receiver admission. `reader_accounts` and `connection_delegation_actor` are
-not accepted receiver settings. Listener `kubernetes_bearer` entries remain decodable but grant no
-admission.
+not accepted receiver settings. The shared listener schema has one authentication mode, `spiffe`, and
+refuses any other mode while decoding, so a `kubernetes_bearer` entry stops startup rather than
+granting nothing.
 Operator RPCs retain their separately verified OIDC contract and explicit service-plus-OIDC exception.
-Linkage callbacks retain their single-use state authorization.
 
 The Gate admits only explicitly listed full gRPC method names; any other method is denied before
 its handler runs. ActionService methods use workload admission, while OperatorActionService,
@@ -97,6 +105,36 @@ WebPushService and the MCP Edge's explicitly supplied ConnectionService methods 
 Health methods remain public. Linkage methods remain bearer-free because the callback verifies its
 single-use state itself and the client metadata document is public. A new RPC stays denied until it
 is assigned an explicit boundary.
+
+Operator integration summaries use only the saved request UUID. Gmail reads thread subjects for
+recorded thread reads, relabeling, draft replies and search results. Its resource summary reads
+draft and message subjects, label names and filter rules. For message and thread receipts, Gmail
+resolves label IDs in the successful saved result after verifying that the current mailbox
+contains the exact message or thread. Draft replacements and deletions, label changes and filter
+deletions look up the target only while approval is pending. Tana reads node and
+workspace names for supported Actions using an allowlist of recorded ID fields. Tana's
+`list_workspaces` has no filter, so the service returns only the workspace named in the saved
+request. The service uses fixed read tools and tries up to eight distinct IDs within its shared
+two-second lookup budget. It omits unavailable results. These reads create no Action request,
+Decision or Execution. Provider metadata can change later. The original IDs stay on the receipt.
+
+`GetGoogleCalendarEventPreview` takes the UUID of a pending Calendar Action. For an explicit
+calendar ID it requests `list_events` with a one-event limit and returns only the page's calendar
+title and requested ID. A get, update, delete or list-instances request also looks up its event or
+series with one `get_event`, projecting identity, title, provider link, time and scope. Both reads
+use the execution credential and share a two-second budget. IDs come from the stored arguments.
+An unavailable preview leaves the recorded ID visible. Receipts use recorded data, including the
+calendar title that `list_events` returns.
+
+`GetGrocyReferenceSummaries` resolves exact numeric references from pending Grocy SF requests.
+It reads only the types and fields defined for each supported tool, using `entities_get` and
+`stock_entries_list` within the same two-second lookup budget. Product edit and shopping-item
+edit or remove previews include current values for the referenced records. The Grocy server
+resolves shopping-item names from the exact linked product, list and unit during the item read.
+The preview reads up to 32 product-edit items and batches exact IDs by entity type. For those
+product edits it resolves an old linked name only if the Action changes or clears that field.
+Name-only product requests show the supplied name and proposed fields. Once a request leaves
+pending review, the UI uses the names and identifiers in its saved inputs and result.
 
 An external MCP
 bearer is resolved by the edge to an active grant and Connection bound to an exact live Identity;
@@ -170,12 +208,10 @@ caller-authored event actors record their verified UID when known.
 
 A `PolicySet` holds typed policies as `action_auto_approve` rules; a `PolicyBinding` joins either
 an Identity or a namespaced ServiceAccount subject to sets by name, optionally until `expiresAt`.
-Workload and MCP Connection bindings name Identities; direct component callers may use labeled,
-configured ServiceAccount subjects. Both are namespaced Kubernetes objects the service watches in its
-configured policy namespace. Labeled caller ServiceAccounts are
-watched independently in configured caller namespaces, so a binding can target an account outside
-the policy namespace. The service reads `spec` only. A set with a rule that does not parse
-contributes nothing; a set a binding names that is missing or refused does not stop its other sets
+Both are namespaced Kubernetes objects the service watches in its configured policy namespace.
+Every caller is an Identity: workload and MCP Connection bindings name Identities, and a
+ServiceAccount subject admits no caller. The service reads `spec` only. A set with a rule that does
+not parse contributes nothing; a set a binding names that is missing or refused does not stop its other sets
 from granting. The service reports which in the binding's `ActionsReady` condition, beside the other
 readers' conditions, and never judges a binding's `expiresAt`: the Policy Controller deletes an
 expired binding.
@@ -199,10 +235,12 @@ Policies are evaluated once, at admission, against the objects as the service ho
 the caller's bindings, whose subject is matched from the verified direct caller or the effective
 Identity on a delegated MCP request, and never from an untrusted request field; the existing valid
 sets they name; and the first `action_auto_approve` policy that matches. A match
-auto-approves with an Execution; no match leaves the request on the human path; until the watch
-has synced, every caller is human-only. A later edit, expiry or deletion changes the next Action's
-Decision, not this one's; dispatch re-checks only caller authority. The Decision records the
-bindings with their resource versions, the sets with their generations, and the matching policy.
+auto-approves with an Execution. No match leaves the request on the human path. A pattern
+evaluation failure stops the policy chain and leaves the request on the human path, or refuses a
+`decided_only` request before persistence. Until the watch has synced, every caller is human-only.
+A later edit, expiry or deletion changes the next Action's Decision. Dispatch re-checks only caller
+authority. The Decision records bindings with their resource versions, sets with their generations,
+and the matching policy.
 A Decision names exactly one decider: an operator, with the operator's note, or a policy, with its reason code,
 description and evidence. A reason code this release does not name reads as `REASON_CODE_UNKNOWN`.
 The request is persisted only once evaluation has finished, together with any auto-decision, so a
@@ -319,10 +357,12 @@ and Connection state; the Action Service separately authenticates the workload i
 its core calls. Operator bearers, unexchanged credential placeholders, and caller-supplied
 identity/policy claims cannot acquire this authority. An Origin header does not grant authority or
 categorically disqualify a caller. Browser cookies are not authentication on this endpoint.
-Clients may use DCR registration or HTTPS Client ID Metadata Documents (CIMD).
-Neither registration nor metadata discovery is authority. Consent binds one eligible Identity and
-named Connection to the validated authorization interaction and approving operator; upstream
-issuer/subject must match the explicit operator mapping before token issuance.
+Clients may use DCR registration or HTTPS Client ID Metadata Documents (CIMD). The edge's
+authorization server metadata advertises CIMD support and public-client token authentication
+(`none`); Claude requires both before it selects CIMD. Neither registration nor metadata discovery
+is authority. Consent binds one eligible Identity and named Connection to the validated
+authorization interaction and approving operator; upstream issuer/subject must match the explicit
+operator mapping before token issuance.
 One consent permits at most one token family. Ambiguous post-claim issuance requires fresh
 authorization.
 
@@ -330,7 +370,7 @@ Refresh and bearer admission resolve current canonical grant validity and the cu
 binding. External receipts and idempotency are scoped to the delegated Identity incarnation.
 Connections retain their grant history; accepted Actions retain their submitting caller
 independently of later Connection changes.
-In-cluster Actions RPCs use live ServiceAccount authentication for component calls and SVID
+In-cluster Actions RPCs use exact service SPIFFE ID authentication for component calls and SVID
 Identity authentication or delegated Identity authority for workload calls; workload tokens
 do not authenticate to `/mcp`. Neither path accepts operator credentials as a caller bypass. OAuth protocol state is durable across replacement and replicas. Recoverable upstream refresh
 tokens are stored in the service database; issued opaque token values are stored only as hashes. Enabling these contracts does not imply deployed client acceptance.
@@ -414,9 +454,8 @@ caller grants. Submitted input follows the separate backend wake-on-send policy.
 MCP Edge names direct tools `<group>__<action>` (for example `sessions__submit_input`) while the
 Action catalog retains the reviewed group/action pair. Successful output is structured JSON from
 the owning protobuf or typed Session projection; source-specific partial and unavailable facts stay
-explicit. Existing ServiceAccount and Sandbox PolicyBindings are not rewritten; an Action is
-auto-approved only where a PolicySet already bound to the caller applies. Resume also requires the
-backend's current target policy.
+explicit. An Action is auto-approved only where a PolicySet already bound to the caller applies.
+Resume also requires the backend's current target policy.
 
 ## Optional MCP backends
 

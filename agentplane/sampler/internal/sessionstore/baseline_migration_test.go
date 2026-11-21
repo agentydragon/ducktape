@@ -5,7 +5,6 @@ import (
 	"sync"
 	"testing"
 
-	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionconfig"
 	"github.com/agentydragon/ducktape/agentplane/sampler/migrations"
 	"github.com/google/uuid"
@@ -48,12 +47,7 @@ func TestMigrationDeletesRetainedPreIdentitySamplerSessions(t *testing.T) {
 	missingIdentity := openSessionForStore(t, store, "")
 	retiredPrincipal := openSessionForStore(t, store, "")
 	for _, session := range []*Session{retained, missingIdentity, retiredPrincipal} {
-		if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{
-			CommandId: uuid.NewString(),
-			Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "fixture input"}},
-		}, "fixture-account", nil); err != nil {
-			t.Fatal(err)
-		}
+		admitInput(t, store, session.ID, uuid.NewString(), "fixture input")
 		if _, err := store.DB().ExecContext(t.Context(), `INSERT INTO sampler_export_checkpoint(session_id,destination,cursor)
 			VALUES($1,'fixture-history',1)`, session.ID); err != nil {
 			t.Fatal(err)
@@ -202,7 +196,13 @@ func TestSamplerBaselineConcurrentFreshCreation(t *testing.T) {
 
 func removeServiceOwnerMigration(t *testing.T, db *sql.DB) {
 	t.Helper()
+	// Fixtures replay from before version 18. Undo any later schema changes as
+	// well so Goose sees a contiguous predecessor history.
+	migrationExec(t, db, `ALTER TABLE sampler_conversation DROP CONSTRAINT sampler_conversation_api_check,
+		ADD CONSTRAINT sampler_conversation_api_check CHECK (api IN ('responses', 'anthropic_messages'));
+		ALTER TABLE sampler_context DROP CONSTRAINT sampler_context_api_check,
+		ADD CONSTRAINT sampler_context_api_check CHECK (api IN ('responses', 'anthropic_messages'))`)
 	migrationExec(t, db, `ALTER TABLE sampler_session DROP CONSTRAINT sampler_session_owner_kind`)
 	migrationExec(t, db, `ALTER TABLE sampler_session DROP COLUMN service_spiffe_id`)
-	migrationExec(t, db, `DELETE FROM central_sampler_goose_version WHERE version_id=18`)
+	migrationExec(t, db, `DELETE FROM central_sampler_goose_version WHERE version_id>=18`)
 }

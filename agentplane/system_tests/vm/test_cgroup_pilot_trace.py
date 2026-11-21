@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import os
 import subprocess
-import tarfile
 from pathlib import Path
 
 import pytest_bazel
 from python.runfiles import Runfiles
+
+from agentplane.system_tests.vm import guest_busybox
 
 _HEADER = "# tracer: function_graph\n# CPU  DURATION                  FUNCTION CALLS\n"
 _ROOT = " 0)               |  cgroup_subtree_control_write() {\n"
@@ -30,13 +31,7 @@ def _parse(tmp_path: Path, trace: str, *, integrity: str = "clean", writer_pid: 
     script = runfiles.Rlocation(os.environ["CGROUP_PILOT_TRACE_AWK_RLOCATION"])
     assert busybox_tar is not None
     assert script is not None
-    busybox = tmp_path / "busybox"
-    with tarfile.open(busybox_tar) as archive:
-        member = next(member for member in archive if member.name.endswith("bin/busybox"))
-        member_data = archive.extractfile(member)
-        assert member_data is not None
-        busybox.write_bytes(member_data.read())
-    busybox.chmod(0o755)
+    busybox = guest_busybox.extract(busybox_tar, tmp_path)
     source = tmp_path / "trace"
     source.write_text(trace)
     command = [str(busybox), "awk", "-v", f"integrity={integrity}"]

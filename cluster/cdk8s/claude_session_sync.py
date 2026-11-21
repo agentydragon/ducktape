@@ -16,16 +16,19 @@ from cdk8s_plus_34 import k8s
 from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecPostgresql
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
-from cluster.cdk8s import cilium, namespaces, node_scheduling, pod_policy
+from cluster.cdk8s import cilium, disruption_budget, namespaces, node_scheduling, pod_policy
 from cluster.cdk8s.cnpg import backup, cluster
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
-from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.namespaces import Vpa, VpaProfile
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.volume_claim import volume_claim
+from cluster.cdk8s.vpa_policy import ContainerPolicy
 from devinfra.claude.session_export.settings import ControlSettings, WebSettings
 from util.settings_contract import env_name
 
@@ -95,15 +98,8 @@ def _data_claim(chart: Chart) -> None:
     # The OAuth credential the sync refreshes in place. Refresh tokens rotate, so this Deployment is the
     # credential's one owner (Recreate strategy, one replica); losing the file means pairing again.
     # One small file: two DRBD copies, following the Pod onto its node.
-    k8s.KubePersistentVolumeClaim(
-        chart,
-        "data",
-        metadata=k8s.ObjectMeta(name=_DATA_CLAIM, namespace=NAMESPACE),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="piraeus-ssd-2-autodiskful",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("64Mi")}),
-        ),
+    volume_claim(
+        chart, "data", name=_DATA_CLAIM, namespace=NAMESPACE, storage_class="piraeus-ssd-2-autodiskful", size="64Mi"
     )
 
 
@@ -137,7 +133,13 @@ def _deployment(
         chart,
         workload_id,
         metadata=k8s.ObjectMeta(
-            name=name, namespace=NAMESPACE, labels=labels, annotations={"description": description}
+            name=name,
+            namespace=NAMESPACE,
+            labels=labels,
+            annotations={
+                "description": description,
+                **namespaces.initial_request_annotations(ContainerPolicy.cpu_and_memory_requests_only(container)),
+            },
         ),
         spec=k8s.DeploymentSpec(
             replicas=replicas,
@@ -160,14 +162,8 @@ def _deployment(
                             env=env,
                             readiness_probe=_healthz(service, initial_delay_seconds=5, period_seconds=10),
                             liveness_probe=_healthz(service, initial_delay_seconds=30, period_seconds=20),
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("50m"),
-                                    "memory": k8s.Quantity.from_string("256Mi"),
-                                },
-                                # A page of 500 events, three sessions at once; one event alone reaches 10 MB.
-                                limits={"memory": k8s.Quantity.from_string("1Gi")},
-                            ),
+                            # A page of 500 events, three sessions at once; one event alone reaches 10 MB.
+                            resources=container_resources(cpu="50m", memory="256Mi", memory_limit="1Gi"),
                             # The aspect py_binary launcher materializes its venv under the image runfiles
                             # directory at startup, so the root filesystem stays writable.
                             security_context=k8s.SecurityContext(read_only_root_filesystem=False),
@@ -206,6 +202,10 @@ def _web_deployment(chart: Chart) -> None:
             *(_OIDC.key(env_name(WebSettings, field)).env_var(env_name(WebSettings, field)) for field in _OIDC_FIELDS),
         ],
     )
+
+
+def _web_disruption_budget(chart: Chart) -> None:
+    disruption_budget.add_disruption_budget(chart, "web-disruption-budget", name=NAME, pods=WEB_SERVICE.pods)
 
 
 def _control_deployment(chart: Chart) -> None:
@@ -311,14 +311,15 @@ def chart(app: App) -> Chart:
         chart,
         "namespace",
         name=NAMESPACE,
-        # An eviction to resize the pod would interrupt a token refresh.
-        vpa=Vpa.DISABLED,
+        # Opt in the app Deployments at admission. An eviction would interrupt a token refresh.
+        vpa=VpaProfile.requests_only(Vpa.RECOMMEND),
         labels={"name": NAMESPACE},
     )
     pull_credentials.forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
     _database(chart)
     _data_claim(chart)
     _web_deployment(chart)
+    _web_disruption_budget(chart)
     _control_deployment(chart)
     _service_and_route(chart)
     _network_policies(chart)

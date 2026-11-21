@@ -25,13 +25,11 @@ def _filesystem_unavailable(mount: str) -> str:
     return _worker_max(f"100 * (1 - {_guest_filesystem('avail', mount)} / {_guest_filesystem('size', mount)})")
 
 
-def _series_fields(
-    unit: str = "short", min_val: float = 0, max_val: float | None = None
-) -> dashboard.FieldConfigSource:
+def _series_fields(unit: str = "short", max_val: float | None = None) -> dashboard.FieldConfigSource:
     return dashboard.FieldConfigSource(
         defaults=dashboard.FieldConfig(
             unit=unit,
-            min_val=min_val,
+            min_val=0,
             max_val=max_val,
             color=dashboard.FieldColor(mode=dashboard.FieldColorModeId.PALETTE_CLASSIC),
             custom=line_style(draw_style=None),

@@ -11,13 +11,20 @@ import type { ActionIdentity } from "../../../../action_service/api/contracts/ac
 import { JsonBlock } from "../../ui/text_block";
 import { renderPreview } from "./entry";
 import type { ActionOutcome, ActionPresentation } from "./presentation";
-import { renderResultPreview } from "./result_entry";
+import { renderResultPreview, type ResultPreviewContext } from "./result_entry";
 import { kubernetesAdminRenderers } from "./kubernetes_admin/index";
 import { githubRenderers } from "./github/index";
+import { homeAssistantOrganizationRenderers } from "./home_assistant/organization";
+import { homeAssistantOperationsRenderers } from "./home_assistant/operations";
+import { homeAssistantHistoryRenderers } from "./home_assistant/history";
 import { gmailRenderers } from "./gmail";
+import { googleCalendarRenderers } from "./google_calendar";
+import { homeAssistantRenderers } from "./home_assistant";
 import { grocyRenderers } from "./grocy";
 import { tanaRenderers } from "./tana";
 import { sandboxRenderers } from "./sandbox";
+import { orchestrationRenderers } from "./orchestration";
+import { environmentRenderers, sessionRenderers } from "./session_delegation";
 import { sshRenderers } from "./ssh/index";
 
 // Maps avoid prototype-key lookups for group and Action names.
@@ -25,9 +32,22 @@ export const ACTION_RENDERERS: ReadonlyMap<string, ReadonlyMap<string, ActionPre
   ["kubernetes_admin", kubernetesAdminRenderers],
   ["github", githubRenderers],
   ["gmail", gmailRenderers],
+  ["google_calendar", googleCalendarRenderers],
+  [
+    "home_assistant",
+    new Map([
+      ...homeAssistantRenderers,
+      ...homeAssistantHistoryRenderers,
+      ...homeAssistantOrganizationRenderers,
+      ...homeAssistantOperationsRenderers,
+    ]),
+  ],
   ["grocy_sf", grocyRenderers],
   ["tana", tanaRenderers],
   ["sandbox", sandboxRenderers],
+  ["environments", environmentRenderers],
+  ["sessions", sessionRenderers],
+  ["orchestration_v1", orchestrationRenderers],
   ["ssh", sshRenderers],
 ]);
 
@@ -53,16 +73,24 @@ export function renderActionLabel(action: ActionIdentity, args: unknown): ReactN
 }
 
 /** An Action's collapsed-pane summary; `undefined` uses the host fallback and `null` suppresses it. */
-export function renderPaneCollapsed(action: ActionIdentity, args: unknown): ReactNode | null | undefined {
+export function renderPaneCollapsed(
+  action: ActionIdentity,
+  args: unknown,
+  requestId?: string
+): ReactNode | null | undefined {
   const preview = presentation(action)?.pane?.collapsed;
-  return preview === undefined || preview === null ? preview : renderPreview(preview, args);
+  return preview === undefined || preview === null ? preview : renderPreview(preview, args, requestId);
 }
 
 /** An Action's opened-pane view; `undefined` uses the generic argument view and `null` suppresses it. */
-export function renderPaneOpened(action: ActionIdentity, args: unknown): ReactNode | null | undefined {
+export function renderPaneOpened(
+  action: ActionIdentity,
+  args: unknown,
+  requestId?: string
+): ReactNode | null | undefined {
   const preview = presentation(action)?.pane?.opened;
   if (preview === undefined || preview === null) return preview;
-  const rendered = renderPreview(preview, args);
+  const rendered = renderPreview(preview, args, requestId);
   return rendered === undefined ? recordedDataFallback(args) : rendered;
 }
 
@@ -73,10 +101,16 @@ export function shouldRenderPaneRequestTitle(action: ActionIdentity, args: unkno
 }
 
 /** The pretty argument view on the full details page; Raw remains the host's shared exact-JSON view. */
-export function renderDetailsArguments(action: ActionIdentity, args: unknown): ReactNode | null | undefined {
-  const preview = presentation(action)?.details?.arguments;
+export function renderDetailsArguments(
+  action: ActionIdentity,
+  args: unknown,
+  requestId?: string,
+  pending = false
+): ReactNode | null | undefined {
+  const details = presentation(action)?.details;
+  const preview = details?.arguments;
   if (preview === undefined || preview === null) return preview;
-  const rendered = renderPreview(preview, args);
+  const rendered = renderPreview(preview, args, details?.pendingPreviewOnly && !pending ? undefined : requestId);
   return rendered === undefined ? recordedDataFallback(args) : rendered;
 }
 
@@ -90,7 +124,8 @@ export interface RenderedActionCall {
 export function renderActionCall(
   action: ActionIdentity,
   args: unknown,
-  result?: CallToolResult
+  result?: CallToolResult,
+  requestId?: string
 ): RenderedActionCall | null | undefined {
   const preview = presentation(action)?.call;
   if (!preview) return undefined;
@@ -98,7 +133,7 @@ export function renderActionCall(
   if (!parsedArgs.success) return undefined;
 
   if (result === undefined || result.isError) {
-    return { content: preview.render(parsedArgs.data as never, undefined), includesResult: false };
+    return { content: preview.render(parsedArgs.data as never, undefined, requestId), includesResult: false };
   }
 
   const value = toolValue(result);
@@ -106,19 +141,32 @@ export function renderActionCall(
   const parsedResult = preview.resultSchema.safeParse(value);
   if (!parsedResult.success) return undefined;
   return {
-    content: preview.render(parsedArgs.data as never, parsedResult.data as never),
+    content: preview.render(parsedArgs.data as never, parsedResult.data as never, requestId),
     includesResult: true,
   };
 }
 
 /** An MCP result's action-specific view; `undefined` asks the host to render the whole MCP envelope. */
-export function renderDetailsResult(action: ActionIdentity, result: CallToolResult): ReactNode | null | undefined {
+export function renderDetailsResult(
+  action: ActionIdentity,
+  result: CallToolResult,
+  context?: ResultPreviewContext
+): ReactNode | null | undefined {
+  const details = presentation(action)?.details;
+  if (details?.result === null) return null;
   if (result.isError) return undefined;
-  const preview = presentation(action)?.details?.result;
-  if (preview === undefined || preview === null) return preview;
+  if (details?.envelopeResult) {
+    const rendered = renderResultPreview(details.envelopeResult, result, context);
+    if (rendered !== undefined) return rendered;
+  }
   const value = toolValue(result);
+  if (result.content.length === 0 && value == null && details?.emptyResult !== undefined) {
+    return details.emptyResult;
+  }
+  const preview = details?.result;
+  if (preview === undefined) return undefined;
   if (value === undefined || !toolContentRestatesValue(result, value)) return undefined;
-  return renderResultPreview(preview, value);
+  return renderResultPreview(preview, value, context);
 }
 
 /** Whether this invocation gets card decision buttons; independent of the presentation chosen. */

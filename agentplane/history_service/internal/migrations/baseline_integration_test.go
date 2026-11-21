@@ -8,18 +8,14 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/storage"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 )
 
 func baselineDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := sql.Open("postgres", migrationDatabase.Clone(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	return db
+	return postgres.Open(t, migrationDatabase.Clone(t))
 }
 
 func execute(t *testing.T, db *sql.DB, query string, args ...any) {
@@ -32,7 +28,7 @@ func execute(t *testing.T, db *sql.DB, query string, args ...any) {
 // rollbackServiceWriterMigration restores the version-18 schema for tests that exercise its baseline adoption.
 func rollbackServiceWriterMigration(t *testing.T, db *sql.DB) {
 	t.Helper()
-	if count(t, db, `SELECT count(*) FROM session_history WHERE writer_service_uri IS NOT NULL`) != 0 {
+	if postgres.Count(t, db, `SELECT count(*) FROM session_history WHERE writer_service_uri IS NOT NULL`) != 0 {
 		t.Fatal("cannot roll back service-writer migration with service-owned Sessions")
 	}
 	execute(t, db, `ALTER TABLE session_history DROP CONSTRAINT history_writer_service_uri_valid`)
@@ -41,15 +37,6 @@ func rollbackServiceWriterMigration(t *testing.T, db *sql.DB) {
 		CHECK (writer_uid IS NULL OR writer_identity_uid IS NULL)`)
 	execute(t, db, `ALTER TABLE session_history DROP COLUMN writer_service_uri`)
 	execute(t, db, `DELETE FROM history_service_goose_version WHERE version_id=19`)
-}
-
-func count(t *testing.T, db *sql.DB, query string, args ...any) int {
-	t.Helper()
-	var n int
-	if err := db.QueryRowContext(t.Context(), query, args...).Scan(&n); err != nil {
-		t.Fatal(err)
-	}
-	return n
 }
 
 func TestHistoryBaselineCreatesUsableHistory(t *testing.T) {
@@ -75,13 +62,13 @@ func TestHistoryBaselineCreatesUsableHistory(t *testing.T) {
 	if len(page.Entries) != 1 || !proto.Equal(page.Entries[0], entry) {
 		t.Fatal("fresh baseline cannot read appended history")
 	}
-	if count(t, db, `SELECT count(*) FROM session_fold_pending WHERE session_id=$1`, id) != 1 {
+	if postgres.Count(t, db, `SELECT count(*) FROM session_fold_pending WHERE session_id=$1`, id) != 1 {
 		t.Fatal("fold trigger did not queue history")
 	}
-	if count(t, db, `SELECT count(*) FROM history_service_goose_version WHERE version_id=18 AND is_applied`) != 1 {
+	if postgres.Count(t, db, `SELECT count(*) FROM history_service_goose_version WHERE version_id=18 AND is_applied`) != 1 {
 		t.Fatal("baseline not recorded")
 	}
-	if count(t, db, `SELECT count(*) FROM history_service_goose_version WHERE version_id=19 AND is_applied`) != 1 {
+	if postgres.Count(t, db, `SELECT count(*) FROM history_service_goose_version WHERE version_id=19 AND is_applied`) != 1 {
 		t.Fatal("service-writer migration not recorded")
 	}
 }
@@ -106,19 +93,19 @@ func TestHistoryBaselineAdoptsCompletedRewriteWithoutRecreatingTables(t *testing
 			t.Fatal(err)
 		}
 	}
-	if count(t, db, `SELECT count(*) FROM history_service_goose_version WHERE version_id BETWEEN 1 AND 18 AND is_applied`) != 18 {
+	if postgres.Count(t, db, `SELECT count(*) FROM history_service_goose_version WHERE version_id BETWEEN 1 AND 18 AND is_applied`) != 18 {
 		t.Fatal("adoption rewrote Goose history")
 	}
-	if count(t, db, `SELECT count(*) FROM history_service_goose_version WHERE version_id=19 AND is_applied`) != 1 {
+	if postgres.Count(t, db, `SELECT count(*) FROM history_service_goose_version WHERE version_id=19 AND is_applied`) != 1 {
 		t.Fatal("adoption did not apply the service-writer migration")
 	}
-	if count(t, db, `SELECT count(*) FROM pg_class WHERE oid=$1 AND relname='session_event_block'`, relation) != 1 {
+	if postgres.Count(t, db, `SELECT count(*) FROM pg_class WHERE oid=$1 AND relname='session_event_block'`, relation) != 1 {
 		t.Fatal("adoption recreated blocks")
 	}
-	if count(t, db, `SELECT count(*) FROM session_event WHERE session_id=$1 AND cursor=3 AND payload=$2`, id, []byte("fixture retained event")) != 1 {
+	if postgres.Count(t, db, `SELECT count(*) FROM session_event WHERE session_id=$1 AND cursor=3 AND payload=$2`, id, []byte("fixture retained event")) != 1 {
 		t.Fatal("adoption changed event bytes")
 	}
-	if count(t, db, `SELECT count(*) FROM session_history WHERE id=$1 AND last_cursor=3 AND source_id='fixture-source'`, id) != 1 {
+	if postgres.Count(t, db, `SELECT count(*) FROM session_history WHERE id=$1 AND last_cursor=3 AND source_id='fixture-source'`, id) != 1 {
 		t.Fatal("adoption changed session watermark")
 	}
 }
@@ -164,7 +151,7 @@ func TestHistoryBaselineSerializesConcurrentCreation(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if count(t, db, `SELECT count(*) FROM history_service_goose_version WHERE version_id=18 AND is_applied`) != 1 {
+	if postgres.Count(t, db, `SELECT count(*) FROM history_service_goose_version WHERE version_id=18 AND is_applied`) != 1 {
 		t.Fatal("baseline recorded more than once")
 	}
 }

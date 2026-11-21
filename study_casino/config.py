@@ -61,7 +61,8 @@ class Settings(BaseSettings):
         default_factory=frozenset,
         description=(
             "Comma-separated list of usernames with admin privileges. Admins can "
-            "manage prize catalogs for other users via `/admin/*`."
+            "manage prize catalogs, their own and other users', via `POST /actions/prize/*` "
+            "(`target_user`); `/admin/*` is read-only."
         ),
     )
     rng_secret: str | None = Field(

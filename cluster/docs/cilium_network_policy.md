@@ -153,7 +153,7 @@ Allowing `host`/`remote-node`:443 alone completes TLS but returns HTTP 403
 pod policy, so the same request can succeed there (#9495).
 
 Keep public-origin Agentplane egress rules in sync with the shared backend
-Cilium grants in `agentplane/egress_staging_credentials.py`. Reference the Service's selector and
+Cilium grants in `cluster/cdk8s/agentplane/egress_staging_credentials.py`. Reference the Service's selector and
 **target** port: ActivityWatch's read Service maps 5600 to 5603, and Grocy's public
 route targets Authentik on 9000. The proxy's application policy continues to scope
 hosts, paths, methods and credentials. Validate HTTP from a restricted source pod;

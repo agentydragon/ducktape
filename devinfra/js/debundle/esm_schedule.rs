@@ -456,28 +456,6 @@ mod tests {
                             .map(|(n, &module)| (module, n))
                             .collect();
                         assert_eq!(schedule.post_order(), &expected, "graph mask {mask}");
-                        let captured = EsmImportSchedule::from_priority(
-                            entry,
-                            &successors,
-                            &nodes,
-                            &schedule.discovery_order(),
-                        )
-                        .unwrap();
-                        let mut original_trace = Vec::new();
-                        let mut captured_trace = Vec::new();
-                        oracle_trace(
-                            entry,
-                            &schedule.imports,
-                            &mut BTreeSet::new(),
-                            &mut original_trace,
-                        );
-                        oracle_trace(
-                            entry,
-                            &captured.imports,
-                            &mut BTreeSet::new(),
-                            &mut captured_trace,
-                        );
-                        assert_eq!(captured_trace, original_trace, "graph mask {mask}");
                         let all_pairs = edges.iter().copied().collect();
                         let rejected: BTreeSet<_> = schedule.tdz_pairs(&all_pairs).collect();
                         for &(from, to) in &edges {

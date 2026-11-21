@@ -7,11 +7,10 @@ import {
 } from "../../../history_service/api/history/history_service_pb";
 
 import { create, type MessageInitShape } from "@bufbuild/protobuf";
-import { MantineProvider } from "@mantine/core";
 import { act } from "react";
-import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { cleanupMounted, mountWithMantine, renderWithMantine } from "../../../../util/frontend/testing/react";
 import { Operation } from "../../../proto/command_pb";
 import { EventSchema, ItemKind, RecoveryDisposition, TurnStatus } from "../../../proto/event_pb";
 import { RetainedDisclosureProvider } from "../../../../util/frontend/transcript/retained_disclosures";
@@ -20,41 +19,24 @@ import { testItem } from "./testing/entity";
 import { badgeLabels, entity, reference, serving, toggle } from "./testing/state";
 import { ThreadSyncContext } from "./thread_sync";
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-const mounted: Array<{ root: ReturnType<typeof createRoot>; container: HTMLDivElement }> = [];
+afterEach(cleanupMounted);
 
-afterEach(async () => {
-  for (const { root, container } of mounted.splice(0)) {
-    await act(async () => root.unmount());
-    container.remove();
-  }
-});
-
-async function renderCard(
+function renderCard(
   card: ThreadEntity,
   bodies: Record<string, string>,
   live = false,
   stopped: ReadonlyMap<string, () => void> = new Map()
 ): Promise<HTMLDivElement> {
-  const container = document.createElement("div");
-  document.body.append(container);
-  const root = createRoot(container);
-  mounted.push({ root, container });
-  await act(async () =>
-    root.render(
-      <MantineProvider env="test">
-        <ThreadSyncContext.Provider value={serving(new Map(Object.entries(bodies)), stopped)}>
-          <RetainedDisclosureProvider>
-            {/* The history's row carries the anchor; a card renders inside it. */}
-            <div data-thread-anchor={card.cursor.toString()}>
-              <EntityCard threadId="test-thread" entity={card} live={live} />
-            </div>
-          </RetainedDisclosureProvider>
-        </ThreadSyncContext.Provider>
-      </MantineProvider>
-    )
+  return renderWithMantine(
+    <ThreadSyncContext.Provider value={serving(new Map(Object.entries(bodies)), stopped)}>
+      <RetainedDisclosureProvider>
+        {/* The history's row carries the anchor; a card renders inside it. */}
+        <div data-thread-anchor={card.cursor.toString()}>
+          <EntityCard threadId="test-thread" entity={card} live={live} />
+        </div>
+      </RetainedDisclosureProvider>
+    </ThreadSyncContext.Provider>
   );
-  return container;
 }
 
 type Observation = MessageInitShape<typeof EventSchema>["observation"];
@@ -514,34 +496,25 @@ describe("tool call rows", () => {
   });
 
   it("keeps a call's open state and Raw where the reader left them when its row leaves the DOM", async () => {
-    const container = document.createElement("div");
-    document.body.append(container);
-    const root = createRoot(container);
-    mounted.push({ root, container });
     const bodies = new Map([
       ["test-tool:arguments", JSON.stringify({ command: "ls" })],
       ["test-tool:output", "test-output"],
     ]);
     // One provider throughout, as the thread has: only the row mounts and unmounts.
-    const show = (visible: boolean) =>
-      act(async () =>
-        root.render(
-          <MantineProvider env="test">
-            <ThreadSyncContext.Provider value={serving(bodies)}>
-              <RetainedDisclosureProvider>
-                {visible && <EntityCard threadId="test-thread" entity={toolEntity("Bash")} live={false} />}
-              </RetainedDisclosureProvider>
-            </ThreadSyncContext.Provider>
-          </MantineProvider>
-        )
-      );
-    await show(true);
+    const show = (visible: boolean) => (
+      <ThreadSyncContext.Provider value={serving(bodies)}>
+        <RetainedDisclosureProvider>
+          {visible && <EntityCard threadId="test-thread" entity={toolEntity("Bash")} live={false} />}
+        </RetainedDisclosureProvider>
+      </ThreadSyncContext.Provider>
+    );
+    const { container, rerender } = await mountWithMantine(show(true));
     await toggle(container.querySelector(".ui-disclosure-summary")!);
     await act(async () => container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
 
-    await show(false);
+    await rerender(show(false));
     expect(container.querySelector(".ui-disclosure")).toBeNull();
-    await show(true);
+    await rerender(show(true));
     expect(container.querySelector(".ui-disclosure-summary")?.getAttribute("aria-expanded")).toBe("true");
     expect(container.querySelector<HTMLInputElement>('input[type="checkbox"]')?.checked).toBe(true);
   });

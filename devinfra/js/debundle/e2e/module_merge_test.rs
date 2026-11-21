@@ -3,13 +3,12 @@
 use debundle_e2e_graph_support::GraphFixture;
 use std::fs;
 
-use debundle_e2e_support::write_text_file;
+use debundle_e2e_support::{process, write_text_file};
 use serde_yaml::Value;
 use std::collections::BTreeSet;
 
 fn write_merge_import_order(
     fixture: &GraphFixture,
-    name: &str,
     final_modules: &[&str],
     appended_modules: &[&str],
 ) -> std::path::PathBuf {
@@ -18,7 +17,7 @@ fn write_merge_import_order(
         .map(|path| path.to_ascii_lowercase())
         .collect();
     fixture.write_import_order(
-        name,
+        "merge-import-order.json",
         &final_modules,
         &appended_modules
             .iter()
@@ -79,12 +78,8 @@ fn merge_batch_preserves_exact_filenames_claims_and_runtime() {
           {"target":"models/Beta.yaml","sources":["old-b.yaml"]}
         ]"#,
     );
-    let import_order = write_merge_import_order(
-        &fixture,
-        "merge-import-order.json",
-        &["models/Alpha", "models/Beta"],
-        &["models/Beta"],
-    );
+    let import_order =
+        write_merge_import_order(&fixture, &["models/Alpha", "models/Beta"], &["models/Beta"]);
     let args = [
         "modules",
         "merge",
@@ -163,12 +158,8 @@ fn merge_batch_gate_failure_leaves_every_target_and_source_unchanged() {
       {"target":"a.yaml","sources":["b.yaml"]}
     ]"#,
     );
-    let import_order = write_merge_import_order(
-        &fixture,
-        "merge-import-order.json",
-        &["a", "models/Middle"],
-        &["models/Middle"],
-    );
+    let import_order =
+        write_merge_import_order(&fixture, &["a", "models/Middle"], &["models/Middle"]);
     fixture.assert_rejected_unchanged(
         &[
             "modules",
@@ -259,12 +250,7 @@ fn merge_batch_allows_case_only_relocation() {
       {"target":"models/Beta.yaml","sources":["b.yaml"]}
     ]"#,
     );
-    let import_order = write_merge_import_order(
-        &fixture,
-        "merge-import-order.json",
-        &["A", "models/Beta"],
-        &["models/Beta"],
-    );
+    let import_order = write_merge_import_order(&fixture, &["A", "models/Beta"], &["models/Beta"]);
     fixture.assert_success(&[
         "modules",
         "merge",
@@ -419,20 +405,12 @@ fn merge_preserves_claims_metadata_and_runtime_with_or_without_target_comments()
         let mut preview = args.to_vec();
         preview.push("--dry-run");
         let out = fixture.command(&preview);
-        assert!(
-            out.status.success(),
-            "{}",
-            String::from_utf8_lossy(&out.stderr)
-        );
+        process::assert_success(&out);
         for (path, bytes) in paths.iter().zip(before) {
             assert_eq!(fs::read(fixture.modules.join(path)).unwrap(), bytes);
         }
         let out = fixture.command(&args);
-        assert!(
-            out.status.success(),
-            "{}",
-            String::from_utf8_lossy(&out.stderr)
-        );
+        process::assert_success(&out);
         let doc: Value =
             serde_yaml::from_slice(&fs::read(fixture.modules.join("ui/target.yaml")).unwrap())
                 .unwrap();

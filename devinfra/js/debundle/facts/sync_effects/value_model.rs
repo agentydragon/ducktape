@@ -462,7 +462,7 @@ impl ProviderScopeId {
     pub(super) fn fresh() -> Option<Self> {
         use std::sync::atomic::{AtomicU64, Ordering};
         static NEXT: AtomicU64 = AtomicU64::new(0);
-        NEXT.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
+        NEXT.try_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
             next.checked_add(1)
         })
         .ok()

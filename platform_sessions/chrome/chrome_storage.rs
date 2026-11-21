@@ -172,48 +172,17 @@ mod tests {
     }
 
     #[test]
-    fn iterates_a_real_copied_leveldb() {
-        let root = std::path::PathBuf::from(std::env::var_os("TEST_TMPDIR").unwrap());
-        let path = root.join("chrome-local-storage");
-        let mut db = DB::open(&path, Options::default()).unwrap();
-        let mut key = ORIGIN.to_vec();
-        key.push(1);
-        key.extend_from_slice(format!("{LEGACY_KEY_PREFIX}openid").as_bytes());
-        db.put(&key, b"\x01{\"body\":{}}").unwrap();
-        db.put(b"_https://other.example\0\x01key", b"\x01private")
-            .unwrap();
-        let mut unrelated = ORIGIN.to_vec();
-        unrelated.extend_from_slice(b"\x01unrelated");
-        db.put(&unrelated, b"\x01other-secret").unwrap();
-        drop(db);
-        let mut db = open_snapshot(&path).unwrap();
-        let mut iter = db.new_iter().unwrap();
-        let mut found = Vec::new();
-        while iter.advance() {
-            let (key, value) = iter.current().unwrap();
-            if let Some(entry) = read_entry(
-                &key,
-                &value,
-                ORIGIN,
-                &[SDK_KEY.into()],
-                &[LEGACY_KEY_PREFIX.into()],
-            )
-            .unwrap()
-            {
-                found.push(entry);
-            }
-        }
-        assert_eq!(found.len(), 1);
-        assert_eq!(found[0].1, r#"{"body":{}}"#);
-    }
-
-    #[test]
-    fn cli_only_exports_requested_origin_and_keys() {
+    fn cli_only_exports_requested_origin_keys_and_prefixes() {
         let root = PathBuf::from(std::env::var_os("TEST_TMPDIR").unwrap());
         let path = root.join("cli-storage");
         let mut db = DB::open(&path, Options::default()).unwrap();
         db.put(b"_https://example.com\0\x01session", b"\x01selected")
             .unwrap();
+        db.put(
+            b"_https://example.com\0\x01legacy:auth:openid",
+            b"\x01{\"body\":{}}",
+        )
+        .unwrap();
         db.put(b"_https://example.com\0\x01unrelated", b"\x01private")
             .unwrap();
         db.put(b"_https://other.example\0\x01session", b"\x01private")
@@ -223,7 +192,13 @@ mod tests {
             .join("_main/platform_sessions/chrome/chrome_storage");
         let output = std::process::Command::new(binary)
             .arg(path)
-            .args(["https://example.com", "--key", "session"])
+            .args([
+                "https://example.com",
+                "--key",
+                "session",
+                "--prefix",
+                "legacy:auth:",
+            ])
             .output()
             .unwrap();
         assert!(
@@ -234,7 +209,10 @@ mod tests {
         let values: BTreeMap<String, String> = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(
             values,
-            BTreeMap::from([("session".into(), "selected".into())])
+            BTreeMap::from([
+                ("session".into(), "selected".into()),
+                ("legacy:auth:openid".into(), r#"{"body":{}}"#.into()),
+            ])
         );
     }
 }

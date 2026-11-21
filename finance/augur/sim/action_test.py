@@ -8,7 +8,6 @@ import pytest
 import pytest_bazel
 
 from finance.augur.sim.actions import Action, ClaimId, Consume, DecisionActions, PayClaim, Transfer
-from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.claims import ObligationType
 from finance.augur.sim.ids import AccountId, AgentId
@@ -18,6 +17,7 @@ from finance.augur.sim.money import USD
 from finance.augur.sim.results import Executed, Finished, RejectedAction, Rollout, UnpaidClaims
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.session import ActionSession
+from finance.augur.sim.testing.bills import biller
 from finance.augur.sim.world import World
 
 ROLLOUT_COUNT = 2
@@ -46,16 +46,13 @@ def compose(rollout_id: int, *, obligation_id: str = "one-cent-bill") -> World:
         deduction_category=None,
     )
     world.track(
-        Biller(
+        biller(
             schedule=Once(month=0),
             obligation_id=obligation_id,
             obligation_type=ObligationType.OUTSIDE_RENT,
             from_account=ALICE,
             to_account=WORLD,
             amount_due=USD.quanta(Decimal("0.01")),
-            property_id=None,
-            deduction_category=None,
-            deductible_fraction_ppb=1_000_000_000,
         )
     )
     return world
@@ -77,10 +74,9 @@ def consume(amount: int, cause: str = "chosen-spend") -> Action:
 
 
 def run(ids: list[int]) -> tuple[list[Rollout], dict[int, list[tuple[int, int]]]]:
-    live = session(ids)
     observed: dict[int, list[tuple[int, int]]] = {id_: [] for id_ in ids}
     memory = dict.fromkeys(ids, 0)
-    try:
+    with session(ids) as live:
         batch = live.start()
         while not isinstance(batch, Finished):
             responses = []
@@ -110,8 +106,6 @@ def run(ids: list[int]) -> tuple[list[Rollout], dict[int, list[tuple[int, int]]]
                 responses.append(DecisionActions(decision.rollout_id, observation.month, actions))
             batch = live.advance(responses)
         return batch.rollouts, observed
-    finally:
-        live.close()
 
 
 def test_current_facts_receipt_memory_and_original_replay() -> None:
@@ -317,6 +311,13 @@ def test_extraction_error_and_explicit_close_release_the_session() -> None:
     closed.close()
     with pytest.raises(ValueError, match="finished, aborted or closed"):
         closed.start()
+
+
+def test_leaving_the_with_block_closes_the_session() -> None:
+    with session([0]) as scoped:
+        scoped.start()
+    with pytest.raises(ValueError, match="finished, aborted or closed"):
+        scoped.advance([])
 
 
 if __name__ == "__main__":

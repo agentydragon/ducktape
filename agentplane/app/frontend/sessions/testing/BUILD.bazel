@@ -48,7 +48,6 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app:app_service_pb",
-        "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend/sessions:client",
         "//agentplane/app/frontend/sessions:thread_sync",
         "//agentplane/harness_host:harness_host_pb",

@@ -3,11 +3,9 @@ package fanout
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"os"
 	"reflect"
 	"testing"
-	"time"
 
 	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
@@ -21,49 +19,22 @@ import (
 
 var fanoutIntegrationDatabase *postgres.Database
 
-type (
-	Claim        = inboxstore.Claim
-	Entry        = inboxstore.Entry
-	Inbox        = inboxstore.Inbox
-	InboxPage    = inboxstore.InboxPage
-	Subscription = inboxstore.Subscription
-)
-
-var (
-	ErrClaimLost            = inboxstore.ErrClaimLost
-	ErrIdempotencyKeyReused = inboxstore.ErrIdempotencyKeyReused
-)
-
 func TestMain(m *testing.M) {
-	os.Exit(postgres.RunIntegrationTests(
-		migrations.Up,
-		func(database *postgres.Database) int {
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-			defer cancel()
-			if err := database.PrepareCloneTemplate(ctx); err != nil {
-				fmt.Fprintln(os.Stderr, "prepare pristine PostgreSQL clone template:", err)
-				return 1
-			}
-			fanoutIntegrationDatabase = database
-			return m.Run()
-		},
-	))
+	os.Exit(postgres.RunIntegrationTestsWithCloneTemplate(m, migrations.Up, &fanoutIntegrationDatabase))
 }
 
 func defaultQuotas() inboxstore.Quotas {
 	return inboxstore.Quotas{InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000}
 }
 
-// fixture is a public Store over the integration database. Each test uses a unique owner; tests that need an
-// otherwise empty database use newIsolatedFixture.
+// fixture is a public Store over the integration database. Each test uses a unique Identity. newFixture gives
+// a test a database of its own; newSharedFixture gives several fixtures the same one.
 type fixture struct {
 	*inboxstore.Store
 	db          *sql.DB
 	databaseURL string
 	runner      *transaction.Runner
-	owner       model.ServiceAccount
 	identity    model.Identity
-	sandboxUID  string
 	sessionID   string
 }
 
@@ -72,11 +43,6 @@ func newFixture(t *testing.T, quotas inboxstore.Quotas) fixture {
 	databaseURL := fanoutIntegrationDatabase.Clone(t)
 	db := postgres.Open(t, databaseURL)
 	return fixtureForDatabase(t, db, databaseURL, quotas)
-}
-
-func newIsolatedFixture(t *testing.T, quotas inboxstore.Quotas) fixture {
-	t.Helper()
-	return newFixture(t, quotas)
 }
 
 func newSharedFixture(t *testing.T, quotas inboxstore.Quotas) fixture {
@@ -89,14 +55,10 @@ func fixtureForDatabase(t *testing.T, db *sql.DB, databaseURL string, quotas inb
 	t.Helper()
 	runner := transaction.New(db)
 	return fixture{
-		Store: inboxstore.New(db, runner, quotas), db: db, databaseURL: databaseURL, runner: runner, owner: newOwner(),
-		identity:   model.Identity{Name: "identity-" + uuid.NewString(), UID: uuid.NewString()},
-		sandboxUID: testSandboxUID, sessionID: uuid.NewString(),
+		Store: inboxstore.New(db, runner, quotas), db: db, databaseURL: databaseURL, runner: runner,
+		identity:  model.Identity{Name: "identity-" + uuid.NewString(), UID: uuid.NewString()},
+		sessionID: uuid.NewString(),
 	}
-}
-
-func newOwner() model.ServiceAccount {
-	return model.ServiceAccount{Namespace: "test-namespace", Name: "owner-" + uuid.NewString()}
 }
 
 func (f fixture) exec(t *testing.T, query string, args ...any) {
@@ -115,28 +77,24 @@ func (f fixture) transaction(ctx context.Context, run func(transaction.Tx) error
 	return f.runner.Run(ctx, run)
 }
 
-func (f fixture) insertInbox(t *testing.T, key string, ref model.DestinationRef, sessionID string) uuid.UUID {
+func (f fixture) insertInbox(t *testing.T, sessionID string) uuid.UUID {
 	t.Helper()
 	id := uuid.New()
 	f.exec(t, `
-		INSERT INTO inbox (id, owner_namespace, owner_name, destination_key,
-			destination_namespace, destination_name, destination_uid, session_id,
+		INSERT INTO inbox (id, session_id,
 			last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until,
 			owner_identity_name, owner_identity_uid)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, 0, 0, 0, false, now(), now(), now(), $9, $10)`,
-		id, ref.Namespace, ref.Name, key, ref.Namespace, ref.Name, ref.UID, sessionID, f.identity.Name, f.identity.UID)
+		VALUES ($1, $2, 0, 0, 0, 0, false, now(), now(), now(), $3, $4)`,
+		id, sessionID, f.identity.Name, f.identity.UID)
 	return id
 }
 
-const testSandboxUID = "test-uid"
-
 func (f fixture) incarnation() inboxstore.Owner {
-	return inboxstore.Owner{Identity: f.identity, SandboxUID: f.sandboxUID}
+	return inboxstore.Owner{Identity: f.identity}
 }
 
 func (f fixture) body(key string) sourceadapter.Subscribe {
 	body := sourceadapter.Subscribe{
-		DestinationRef: model.DestinationRef{Namespace: f.owner.Namespace, Name: f.owner.Name, UID: f.sandboxUID},
 		SessionID:      f.sessionID,
 		IdempotencyKey: key,
 		Source:         sourceadapter.WrapActionsSource(model.ActionsSource{RequestID: uuid.New()}),
@@ -147,9 +105,7 @@ func (f fixture) body(key string) sourceadapter.Subscribe {
 
 func (f fixture) subscribe(t *testing.T, creation sourceadapter.Subscribe) inboxstore.Subscription {
 	t.Helper()
-	owner := f.incarnation()
-	owner.SandboxUID = creation.DestinationRef.UID
-	subscription, err := f.Store.Subscribe(t.Context(), owner, creation, sourceadapter.ActionsAuthorization{})
+	subscription, err := f.Store.Subscribe(t.Context(), f.incarnation(), creation, sourceadapter.ActionsAuthorization{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,15 +148,6 @@ func (f fixture) read(t *testing.T, inboxID uuid.UUID, after int64) inboxstore.I
 	return page
 }
 
-func (f fixture) acknowledge(t *testing.T, inboxID uuid.UUID, through int64) inboxstore.Inbox {
-	t.Helper()
-	inbox, err := f.Acknowledge(t.Context(), f.incarnation(), inboxID, through)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return inbox
-}
-
 func (f fixture) appendEvent(ctx context.Context, inboxID, subscriptionID uuid.UUID, event sourceadapter.EventIdentity, payload []byte) error {
 	return f.transaction(ctx, func(tx transaction.Tx) error {
 		if _, err := tx.ExecContext(ctx, `SELECT 1 FROM inbox WHERE id = $1 FOR UPDATE`, inboxID); err != nil {
@@ -222,7 +169,3 @@ func requireEqual(t *testing.T, got, want any) {
 }
 
 func ptr[T any](value T) *T { return &value }
-
-func payloadOf(event sourceadapter.ActionsEvent) string {
-	return fmt.Sprintf(`{"sequence": %d, "state": "decision_pending", "at": "2026-01-01T00:00:00Z", "actor": null}`, event.Sequence)
-}

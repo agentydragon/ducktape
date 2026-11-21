@@ -6,7 +6,8 @@ import asyncio
 import json
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -108,6 +109,23 @@ async def sync_all(
     return run_ids
 
 
+@asynccontextmanager
+async def _sync_run(
+    storage: PlaidLinkStorage, *, item_id: str, trigger: str, configured_windows: dict[str, int | str]
+) -> AsyncIterator[UUID]:
+    run_id = await storage.begin_sync_run(trigger=trigger, item_id=item_id, configured_windows=configured_windows)
+    try:
+        yield run_id
+    except asyncio.CancelledError:
+        await storage.finish_sync_run(run_id, status="failed", error_summary="sync task was cancelled")
+        raise
+    except Exception as exc:
+        await storage.finish_sync_run(run_id, status="failed", error_summary=f"{type(exc).__name__}: {exc}")
+        raise
+    else:
+        await storage.finish_sync_run(run_id, status="succeeded")
+
+
 async def sync_link(
     *,
     api: PlaidClient,
@@ -119,10 +137,9 @@ async def sync_link(
     webhook_url: str | None = None,
 ) -> UUID:
     sync_windows = windows or SyncWindows()
-    run_id = await storage.begin_sync_run(
-        trigger=trigger, item_id=link.item_id, configured_windows=sync_windows.as_dict()
-    )
-    try:
+    async with _sync_run(
+        storage, trigger=trigger, item_id=link.item_id, configured_windows=sync_windows.as_dict()
+    ) as run_id:
         await _sync_link_inner(
             api=api,
             storage=storage,
@@ -132,37 +149,20 @@ async def sync_link(
             windows=sync_windows,
             webhook_url=webhook_url,
         )
-    except asyncio.CancelledError:
-        await storage.finish_sync_run(run_id, status="failed", error_summary="sync task was cancelled")
-        raise
-    except Exception as exc:
-        await storage.finish_sync_run(run_id, status="failed", error_summary=f"{type(exc).__name__}: {exc}")
-        raise
-    await storage.finish_sync_run(run_id, status="succeeded")
     return run_id
 
 
 async def sync_transactions_only(
     *, api: PlaidClient, storage: PlaidLinkStorage, secrets: SecretStore, link: StoredLink, trigger: str = "webhook"
 ) -> UUID:
-    run_id = await storage.begin_sync_run(
-        trigger=trigger, item_id=link.item_id, configured_windows={"transactions": "cursor"}
-    )
-    try:
+    async with _sync_run(
+        storage, trigger=trigger, item_id=link.item_id, configured_windows={"transactions": "cursor"}
+    ) as run_id:
         access_token = await secrets.read_access_token(link.access_token_secret)
         captured_at = datetime.now(UTC)
-        accounts_payload = (
-            await _call(
-                storage,
-                run_id,
-                "accounts/get",
-                api.sdk.accounts_get,
-                AccountsGetRequest(access_token=access_token),
-                link.item_id,
-                response_model=AccountsGetResponse,
-            )
-        ).response
-        await storage.apply_accounts(item_id=link.item_id, accounts=accounts_payload.accounts, captured_at=captured_at)
+        await _refresh_accounts(
+            api, storage, run_id, item_id=link.item_id, access_token=access_token, captured_at=captured_at
+        )
         await _sync_transactions_inner(
             api=api,
             storage=storage,
@@ -172,14 +172,22 @@ async def sync_transactions_only(
             cursor=link.transactions_cursor,
             captured_at=captured_at,
         )
-    except asyncio.CancelledError:
-        await storage.finish_sync_run(run_id, status="failed", error_summary="sync task was cancelled")
-        raise
-    except Exception as exc:
-        await storage.finish_sync_run(run_id, status="failed", error_summary=f"{type(exc).__name__}: {exc}")
-        raise
-    await storage.finish_sync_run(run_id, status="succeeded")
     return run_id
+
+
+async def _refresh_accounts(
+    api: PlaidClient, storage: PlaidLinkStorage, run_id: UUID, *, item_id: str, access_token: str, captured_at: datetime
+) -> None:
+    result = await _call(
+        storage,
+        run_id,
+        "accounts/get",
+        api.sdk.accounts_get,
+        AccountsGetRequest(access_token=access_token),
+        item_id,
+        response_model=AccountsGetResponse,
+    )
+    await storage.apply_accounts(item_id=item_id, accounts=result.response.accounts, captured_at=captured_at)
 
 
 async def _sync_link_inner(
@@ -234,18 +242,9 @@ async def _sync_link_inner(
             response_model=ItemWebhookUpdateResponse,
         )
 
-    accounts_payload = (
-        await _call(
-            storage,
-            run_id,
-            "accounts/get",
-            api.sdk.accounts_get,
-            AccountsGetRequest(access_token=access_token),
-            link.item_id,
-            response_model=AccountsGetResponse,
-        )
-    ).response
-    await storage.apply_accounts(item_id=link.item_id, accounts=accounts_payload.accounts, captured_at=captured_at)
+    await _refresh_accounts(
+        api, storage, run_id, item_id=link.item_id, access_token=access_token, captured_at=captured_at
+    )
 
     if Product.TRANSACTIONS.value in link.products_requested:
         await _sync_transactions_inner(

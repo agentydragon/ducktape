@@ -25,9 +25,8 @@ import typer
 import yaml
 
 from cluster.rotators.forgejo_token_rotation.config import Config, Rotation, TeaSecretOutput
-from cluster.rotators.sops import encrypt_sops_file
+from cluster.rotators.sops import write_sops_yaml
 from cluster.rotators.sops_stamps import unencrypted_stamps
-from devinfra.prettier_cli import prettier_format_yaml_in_place
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +45,6 @@ class RotatedToken:
     credentials: ForgejoCredentials
     token_id: int | None
     token_name: str
-    token_last_eight: str
 
 
 def read_credentials(rotation: Rotation) -> ForgejoCredentials:
@@ -201,10 +199,7 @@ def write_raw_token_sops_file(
         "url": creds.tea_url,
         rotation.token_field: token,
     }
-    rotation.sops_file.parent.mkdir(parents=True, exist_ok=True)
-    rotation.sops_file.write_text(yaml.safe_dump(stamps, sort_keys=False, width=2**31))
-    encrypt_sops_file(rotation.sops_file)
-    prettier_format_yaml_in_place(rotation.sops_file)
+    write_sops_yaml(path=rotation.sops_file, document=stamps)
 
 
 def build_secret_manifest(
@@ -237,14 +232,9 @@ def build_secret_manifest(
 def write_tea_secret(rotation: Rotation, creds: ForgejoCredentials, token_data: dict[str, Any]) -> None:
     if rotation.tea_secret is None:
         return
-    rotation.tea_secret.path.parent.mkdir(parents=True, exist_ok=True)
-    rotation.tea_secret.path.write_text(
-        yaml.safe_dump(
-            build_secret_manifest(rotation.tea_secret, rotation, creds, token_data), sort_keys=False, width=2**31
-        )
+    write_sops_yaml(
+        path=rotation.tea_secret.path, document=build_secret_manifest(rotation.tea_secret, rotation, creds, token_data)
     )
-    encrypt_sops_file(rotation.tea_secret.path)
-    prettier_format_yaml_in_place(rotation.tea_secret.path)
 
 
 def rotate_one(client: httpx.Client, rotation: Rotation) -> RotatedToken | None:
@@ -262,11 +252,7 @@ def rotate_one(client: httpx.Client, rotation: Rotation) -> RotatedToken | None:
     write_raw_token_sops_file(rotation, creds, token_data, now)
     write_tea_secret(rotation, creds, token_data)
     return RotatedToken(
-        rotation=rotation,
-        credentials=creds,
-        token_id=token_data.get("id"),
-        token_name=token_data["name"],
-        token_last_eight=token_data.get("token_last_eight") or token_data["sha1"][-8:],
+        rotation=rotation, credentials=creds, token_id=token_data.get("id"), token_name=token_data["name"]
     )
 
 

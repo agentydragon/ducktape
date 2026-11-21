@@ -13,6 +13,7 @@ go_library(
     deps = [
         "//agentplane/env/runtime/codexappserver",
         "//agentplane/env/runtime/execution/codexexecserver",
+        "//agentplane/env/runtime/execution/settings",
         "//agentplane/env/runtime/harness",
         "//agentplane/env/runtime/session",
         "//agentplane/env/runtime/supervision",
@@ -39,6 +40,7 @@ go_test(
     deps = [
         "//agentplane/env/runtime/codexappserver",
         "//agentplane/env/runtime/execution/codexexecserver",
+        "//agentplane/env/runtime/supervision",
         "@io_bazel_rules_go//go/runfiles",
         "@org_uber_go_zap//zapcore",
     ],

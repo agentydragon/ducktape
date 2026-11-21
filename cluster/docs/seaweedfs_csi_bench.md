@@ -7,8 +7,7 @@ FUSE-backed) was stood up to evaluate whether `seaweedfs-ovh` is suitable
 storage for a Chromium-profile workload (`tana-mcp`'s `~/.config/tana`,
 ~200 MB, heavy small writes + sync from SQLite/IndexedDB).
 
-The companion install lives at <../generated/seaweedfs-csi/>; see
-<seaweedfs_trial_baseline.md> for SeaweedFS hardware/topology.
+The companion install lives at <../generated/seaweedfs-csi/>.
 
 ## Test setup (2026-05-23)
 
@@ -16,7 +15,7 @@ Both PVCs bound to the same OVH kimsufi worker (`talos-kimsufi-worker-1`),
 so the only variable is the storage class. Identical `fio` jobs against
 each, run in `swfs-bench` namespace.
 
-Hardware (per <seaweedfs_trial_baseline.md>): OVH KS-5 dedicated server,
+Hardware: OVH KS-5 dedicated server,
 Intel Xeon E3-1270 v6 (4c/8t), 32 GB RAM, 2× 2 TB SATA spinning HDD in
 JBOD. Talos uses `/dev/sda` for system; user data (both the local-path
 hostpath and the SeaweedFS volume server) lives on `/dev/sdb`, XFS,

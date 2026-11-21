@@ -663,11 +663,7 @@ fn vendor_prune_policy_records_static_object_local_effects() {
     let default_facts = analyze_facts(&module);
     assert!(default_facts[1].local_effects.is_empty());
 
-    let hints = AnalysisInputs {
-        local_effect_policy: LocalEffectPolicy::VendorPrune,
-        ..AnalysisInputs::default()
-    };
-    let vendor_facts = analyze_facts_with_hints(&module, &hints);
+    let vendor_facts = analyze_facts_with_policy(&module, LocalEffectPolicy::VendorPrune);
     assert_eq!(
         vendor_facts[1].local_effects,
         BTreeSet::from([test_id("EMPTY")])
@@ -675,10 +671,9 @@ fn vendor_prune_policy_records_static_object_local_effects() {
     assert!(vendor_facts[1].purity.is_pure());
 }
 
-/// Analyze under `LocalEffectPolicy::LocalPropertyWrites`.
-fn analyze_facts_with_property_writes(module: &Module) -> Vec<StatementFacts> {
+fn analyze_facts_with_policy(module: &Module, policy: LocalEffectPolicy) -> Vec<StatementFacts> {
     let hints = AnalysisInputs {
-        local_effect_policy: LocalEffectPolicy::LocalPropertyWrites,
+        local_effect_policy: policy,
         ..AnalysisInputs::default()
     };
     analyze_facts_with_hints(module, &hints)
@@ -692,7 +687,7 @@ fn local_property_writes_policy_handles_comma_sequences_and_nested_paths() {
         r#"function C() { return 1; } function D() { return 2; }
 (C.displayName = "C", D.propTypes.id = 1);"#,
     );
-    let facts = analyze_facts_with_property_writes(&module);
+    let facts = analyze_facts_with_policy(&module, LocalEffectPolicy::LocalPropertyWrites);
     assert_eq!(
         facts[2].local_effects,
         BTreeSet::from([test_id("C"), test_id("D")])
@@ -718,7 +713,7 @@ C[key] = 1;
 C.__proto__.hack = 1;
 ext.tag = "t";"#,
     );
-    let facts = analyze_facts_with_property_writes(&module);
+    let facts = analyze_facts_with_policy(&module, LocalEffectPolicy::LocalPropertyWrites);
     for (ordinal, label) in [
         (3, "compound assignment"),
         (4, "impure RHS"),
@@ -742,7 +737,7 @@ fn local_property_writes_policy_admits_string_literal_computed_key() {
     // A string-literal computed key (`C["k"]`) is a static name —
     // same admission as the vendor recognizers' `static_member_name`.
     let module = parse(r#"function C() { return 1; } C["k"] = 1;"#);
-    let facts = analyze_facts_with_property_writes(&module);
+    let facts = analyze_facts_with_policy(&module, LocalEffectPolicy::LocalPropertyWrites);
     assert_eq!(facts[1].local_effects, BTreeSet::from([test_id("C")]));
     assert!(facts[1].purity.is_pure());
 }
@@ -757,11 +752,7 @@ assign(target, { deep: true });"#,
     let default_facts = analyze_facts(&module);
     assert!(default_facts[2].local_effects.is_empty());
 
-    let hints = AnalysisInputs {
-        local_effect_policy: LocalEffectPolicy::VendorPrune,
-        ..AnalysisInputs::default()
-    };
-    let vendor_facts = analyze_facts_with_hints(&module, &hints);
+    let vendor_facts = analyze_facts_with_policy(&module, LocalEffectPolicy::VendorPrune);
     assert_eq!(
         vendor_facts[2].local_effects,
         BTreeSet::from([test_id("target")])
@@ -777,11 +768,7 @@ fn vendor_prune_policy_records_var_init_local_effects() {
     let default_facts = analyze_facts(&module);
     assert!(default_facts[2].local_effects.is_empty());
 
-    let hints = AnalysisInputs {
-        local_effect_policy: LocalEffectPolicy::VendorPrune,
-        ..AnalysisInputs::default()
-    };
-    let vendor_facts = analyze_facts_with_hints(&module, &hints);
+    let vendor_facts = analyze_facts_with_policy(&module, LocalEffectPolicy::VendorPrune);
     assert_eq!(
         vendor_facts[2].local_effects,
         BTreeSet::from([test_id("Derived")])
@@ -806,11 +793,7 @@ Object.entries(methods).forEach(function (entry) {
     let default_facts = analyze_facts(&module);
     assert!(default_facts[3].local_effects.is_empty());
 
-    let hints = AnalysisInputs {
-        local_effect_policy: LocalEffectPolicy::VendorPrune,
-        ..AnalysisInputs::default()
-    };
-    let vendor_facts = analyze_facts_with_hints(&module, &hints);
+    let vendor_facts = analyze_facts_with_policy(&module, LocalEffectPolicy::VendorPrune);
     assert_eq!(
         vendor_facts[3].local_effects,
         BTreeSet::from([test_id("ObservableArray")])
@@ -833,11 +816,7 @@ Object.entries(methods).forEach(function (entry) {
   key !== "concat" && define(ObservableArray.prototype, key, value);
 });"#,
     );
-    let hints = AnalysisInputs {
-        local_effect_policy: LocalEffectPolicy::VendorPrune,
-        ..AnalysisInputs::default()
-    };
-    let facts = analyze_facts_with_hints(&module, &hints);
+    let facts = analyze_facts_with_policy(&module, LocalEffectPolicy::VendorPrune);
     assert_eq!(
         facts[3].local_effects,
         BTreeSet::from([test_id("ObservableArray")])
@@ -853,11 +832,7 @@ Object.entries(methods).forEach(function (entry) {
   sideEffect(entry);
 });"#,
     );
-    let hints = AnalysisInputs {
-        local_effect_policy: LocalEffectPolicy::VendorPrune,
-        ..AnalysisInputs::default()
-    };
-    let facts = analyze_facts_with_hints(&module, &hints);
+    let facts = analyze_facts_with_policy(&module, LocalEffectPolicy::VendorPrune);
     assert!(facts[1].local_effects.is_empty());
     assert!(!facts[1].purity.is_pure());
 }
@@ -872,11 +847,7 @@ fn vendor_prune_policy_records_namespace_iife_local_effects() {
   target.resolve = resolve;
 })(ns || (ns = {}));"#,
     );
-    let hints = AnalysisInputs {
-        local_effect_policy: LocalEffectPolicy::VendorPrune,
-        ..AnalysisInputs::default()
-    };
-    let facts = analyze_facts_with_hints(&module, &hints);
+    let facts = analyze_facts_with_policy(&module, LocalEffectPolicy::VendorPrune);
     assert_eq!(facts[1].local_effects, BTreeSet::from([test_id("ns")]));
     assert!(facts[1].purity.is_pure());
     assert!(facts[1].reads.lazy.contains(&test_id("wrap")));
@@ -901,11 +872,7 @@ push(tasks, task);
   };
 })(scheduler);"#,
     );
-    let hints = AnalysisInputs {
-        local_effect_policy: LocalEffectPolicy::VendorPrune,
-        ..AnalysisInputs::default()
-    };
-    let facts = analyze_facts_with_hints(&module, &hints);
+    let facts = analyze_facts_with_policy(&module, LocalEffectPolicy::VendorPrune);
     assert_eq!(
         facts[1].local_effects,
         BTreeSet::from([test_id("scheduler")])
@@ -915,11 +882,7 @@ push(tasks, task);
 #[test]
 fn vendor_prune_policy_records_local_binding_writes() {
     let module = parse("let assigned;\nconst source = { value: 1 };\nassigned = source.value;");
-    let hints = AnalysisInputs {
-        local_effect_policy: LocalEffectPolicy::VendorPrune,
-        ..AnalysisInputs::default()
-    };
-    let facts = analyze_facts_with_hints(&module, &hints);
+    let facts = analyze_facts_with_policy(&module, LocalEffectPolicy::VendorPrune);
     assert_eq!(
         facts[2].local_effects,
         BTreeSet::from([test_id("assigned")])
@@ -930,11 +893,7 @@ fn vendor_prune_policy_records_local_binding_writes() {
 #[test]
 fn vendor_prune_policy_ignores_undeclared_binding_writes() {
     let module = parse("const source = { value: 1 };\nexternal = source.value;");
-    let hints = AnalysisInputs {
-        local_effect_policy: LocalEffectPolicy::VendorPrune,
-        ..AnalysisInputs::default()
-    };
-    let facts = analyze_facts_with_hints(&module, &hints);
+    let facts = analyze_facts_with_policy(&module, LocalEffectPolicy::VendorPrune);
     assert!(facts[1].local_effects.is_empty());
     assert!(!facts[1].purity.is_pure());
 }
@@ -951,11 +910,7 @@ target.exports ? ((clsx.default = clsx), (target.exports = clsx)) : (window.clas
   })();
 })(module);"#,
     );
-    let hints = AnalysisInputs {
-        local_effect_policy: LocalEffectPolicy::VendorPrune,
-        ..AnalysisInputs::default()
-    };
-    let facts = analyze_facts_with_hints(&module, &hints);
+    let facts = analyze_facts_with_policy(&module, LocalEffectPolicy::VendorPrune);
     assert_eq!(facts[1].local_effects, BTreeSet::from([test_id("module")]));
     assert!(facts[1].purity.is_pure());
 }
@@ -1124,8 +1079,6 @@ fn plain_array_written_through_a_callback_argument_stays_a_fallback_root() {
     );
 }
 
-// --- has_side_effect refinement ------------------------------------------
-
 fn has_side_effect_for(src: &str) -> Vec<bool> {
     let module = parse(src);
     analyze_facts(&module)
@@ -1191,8 +1144,6 @@ fn multi_declarator_var_decl_is_side_effecting_if_any_init_is() {
     );
 }
 
-// --- Comma-list splitter -------------------------------------------------
-
 fn statement_kinds(source: &str) -> Vec<StatementKind> {
     let module = parse(source);
     analyze_facts(&module).into_iter().map(|f| f.kind).collect()
@@ -1212,8 +1163,6 @@ fn non_var_decl_statements_are_not_split() {
         ]
     );
 }
-
-// --- Comma-list source locations -----------------------------------------
 
 #[test]
 fn split_comma_list_assigns_per_declarator_source_ranges() {

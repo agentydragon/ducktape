@@ -5,8 +5,6 @@ import { afterEach, vi } from "vitest";
 
 const mounted: Array<{ root: ReturnType<typeof createRoot>; container: HTMLDivElement }> = [];
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-
 export interface Sent {
   method: string;
   path: string;

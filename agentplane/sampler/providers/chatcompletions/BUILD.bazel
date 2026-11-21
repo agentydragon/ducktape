@@ -1,0 +1,28 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "chatcompletions",
+    srcs = [
+        "compaction.go",
+        "context.go",
+        "stored.go",
+        "stream.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/sampler/providers/chatcompletions",
+    visibility = ["//agentplane/sampler:__subpackages__"],
+    deps = [
+        "//agentplane/proto:event_go_proto",
+        "//agentplane/sampler/internal/content",
+        "//agentplane/sampler/internal/providerio",
+        "//agentplane/sampler/protocol",
+    ],
+)
+
+go_test(
+    name = "chatcompletions_test",
+    srcs = ["chatcompletions_test.go"],
+    embed = [":chatcompletions"],
+    deps = [
+        "//agentplane/sampler/protocol",
+    ],
+)

@@ -298,7 +298,12 @@ function LoadedRunContent({
   const agentType = getAgentType(run);
   const reportedIssues = getReportedIssues(run);
   const aggregateEdges = getAggregatedEdges(run);
+  const shownEdges = agentType === "critic" ? aggregateEdges : getGradingEdges(run);
   const gradingSummary = computeGradingSummary(run);
+  const logTabs: { tab: LogTab; label: string }[] = [
+    { tab: "llm", label: `LLM Requests (${run.llm_call_count})` },
+    { tab: "logs", label: "Logs" },
+  ];
 
   return (
     <>
@@ -439,34 +444,15 @@ function LoadedRunContent({
         </div>
       ) : null}
 
-      {agentType === "critic" && aggregateEdges.length > 0 ? (
+      {shownEdges.length > 0 ? (
         <div className="px-4 py-2 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
           <GradingEdges
-            edges={aggregateEdges}
-            missedOccurrences={[]}
-            totalCredit={gradingSummary?.total_credit}
-            recallDenominator={undefined}
-            defaultOpen={aggregateEdges.filter((edge) => edge.target.credit > 0).length < 10}
+            edges={shownEdges}
+            defaultOpen={shownEdges.filter((edge) => edge.target.credit > 0).length < 10}
             runId={run.agent_run_id}
             snapshotSlug={getSnapshotSlug(run)}
           />
         </div>
-      ) : agentType === "grader" ? (
-        (() => {
-          const gradingEdges = getGradingEdges(run);
-          if (gradingEdges.length === 0) return null;
-          return (
-            <div className="px-4 py-2 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
-              <GradingEdges
-                edges={gradingEdges}
-                missedOccurrences={[]}
-                defaultOpen={gradingEdges.filter((edge) => edge.target.credit > 0).length < 10}
-                runId={run.agent_run_id}
-                snapshotSlug={getSnapshotSlug(run)}
-              />
-            </div>
-          );
-        })()
       ) : null}
 
       {agentType === "critic" && reportedIssues.length > 0 && (snapshotDetail || loadingSnapshot) ? (
@@ -504,34 +490,21 @@ function LoadedRunContent({
         <div className="px-4 py-3 bg-gray-100 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-700 flex items-center gap-4">
           <h3 className="text-md font-medium">Logs &amp; LLM Requests</h3>
           <div className="flex gap-1">
-            <Button
-              unstyled
-              className={`px-3 py-1 text-sm rounded ${
-                activeLogTab === "llm"
-                  ? "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300"
-                  : "bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-300 dark:hover:bg-gray-500"
-              }`}
-              type="button"
-              onClick={() => {
-                setActiveLogTab("llm");
-              }}
-            >
-              LLM Requests ({run.llm_call_count})
-            </Button>
-            <Button
-              unstyled
-              className={`px-3 py-1 text-sm rounded ${
-                activeLogTab === "logs"
-                  ? "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300"
-                  : "bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-300 dark:hover:bg-gray-500"
-              }`}
-              type="button"
-              onClick={() => {
-                setActiveLogTab("logs");
-              }}
-            >
-              Logs
-            </Button>
+            {logTabs.map(({ tab, label }) => (
+              <Button
+                key={tab}
+                unstyled
+                className={`px-3 py-1 text-sm rounded ${
+                  activeLogTab === tab
+                    ? "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300"
+                    : "bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-300 dark:hover:bg-gray-500"
+                }`}
+                type="button"
+                onClick={() => setActiveLogTab(tab)}
+              >
+                {label}
+              </Button>
+            ))}
           </div>
         </div>
 

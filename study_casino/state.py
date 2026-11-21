@@ -29,7 +29,7 @@ class BalanceRead(BaseModel):
 
 class CreditStateRead(BaseModel):
     """Read-only streak/daily-bonus state derived server-side — the frontend
-    only displays it (see plans/credit_system_v2.md)."""
+    only displays it."""
 
     model_config = ConfigDict(extra="forbid")
 

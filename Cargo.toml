@@ -67,18 +67,18 @@ clap = { version = "^4.6.6", features = ["derive", "env"] }
 nix = { version = "^0.31.3", features = ["signal", "process", "fs"] }
 # claude-hook (Rust hook daemon)
 axum = { version = "^0.8.9", features = ["json"] }
-tower = "^0.5.3"
 tempfile = "^3.27.0"
 bytes = "^1.12.1"
 parking_lot = "^0.12.5"
 libc = "^0.2.172"
 jsonwebtoken = "^11.0.0"
-# x/twenty_questions_frameworks/rig
 anyhow = "^1.0"
-object_store = { version = "^0.14.1", features = ["aws"] }
-sea-orm = { version = "2.0.3", default-features = false, features = ["macros", "runtime-tokio-rustls", "sqlx-postgres", "with-json"] }
 sha2 = "^0.11.0"
 ring = "^0.17.14"
+# x/loom/wayback/cache
+object_store = { version = "^0.14.1", features = ["aws"] }
+sea-orm = { version = "2.0.3", default-features = false, features = ["macros", "runtime-tokio-rustls", "sqlx-postgres", "with-json"] }
+# skills/info_gathering/evals/twenty_questions/x/rig
 # rig-core's default `reqwest-rustls` feature pulls aws-lc-rs → aws-lc-sys (needs cmake).
 # Use native-tls instead (system OpenSSL on Linux, no cmake required).
 rig = { version = "^0.42.0", default-features = false, features = ["agent", "derive", "native-tls"] }

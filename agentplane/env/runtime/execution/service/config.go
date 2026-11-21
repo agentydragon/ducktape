@@ -1,4 +1,4 @@
-// Package service owns Runtime's embedded execution adapter and native backend.
+// Package service owns Runtime's embedded execution adapter and supervised backend.
 package service
 
 import (
@@ -13,18 +13,23 @@ import (
 // Config is immutable for a service lifetime. The environment owner supplies it;
 // a different incarnation requires stopping and fencing this service first.
 type Config struct {
-	Namespace        string
-	SandboxName      string
-	SandboxUID       string
-	IncarnationUID   string
-	WorkingDirectory string
-	StateDir         string
-	Binary           string
-	ContainerSocket  string
-	ExecutorURL      string
-	Environment      map[string]string
-	Backend          string
-	Readiness        codexexecserver.Readiness
+	Namespace         string
+	SandboxName       string
+	SandboxUID        string
+	IncarnationUID    string
+	WorkingDirectory  string
+	StateDir          string
+	Binary            string
+	CodexBinary       string
+	ContainerSocket   string
+	ExecutorURL       string
+	Implementation    string
+	Placement         string
+	CommandSupervisor *supervision.Supervisor
+	LimitsJSON        string
+	Environment       map[string]string
+	Owner             codexexecserver.Owner
+	Readiness         codexexecserver.Readiness
 	// ProcessHost binds native systemd work to Runtime's process finalizers.
 	ProcessHost       *supervision.Host
 	Supervisor        *supervision.Supervisor
@@ -39,6 +44,10 @@ func (c Config) Resolve() (Config, error) {
 		return Config{}, err
 	}
 	c.Readiness = readiness
+	c.Implementation, err = codexexecserver.ResolveImplementation(c.Implementation)
+	if err != nil {
+		return Config{}, err
+	}
 	if err := c.validate(); err != nil {
 		return Config{}, err
 	}
@@ -51,31 +60,49 @@ func (c Config) Validate() error {
 }
 
 func (c Config) validate() error {
+	if c.Placement != codexexecserver.PlacementDirect && c.Placement != codexexecserver.PlacementSystemd {
+		return errors.New("unknown command placement")
+	}
+	if c.Placement == codexexecserver.PlacementSystemd {
+		if c.Owner != codexexecserver.OwnerSystemd || c.Implementation != codexexecserver.ImplementationNative || c.CommandSupervisor == nil {
+			return errors.New("systemd command placement requires a native executor with a systemd owner and command supervisor")
+		}
+	} else if c.CommandSupervisor != nil {
+		return errors.New("command supervisor requires systemd command placement")
+	}
 	if c.Namespace == "" || c.SandboxName == "" || c.SandboxUID == "" || c.IncarnationUID == "" {
 		return errors.New("execution configuration requires Sandbox namespace, name, UID and incarnation UID")
 	}
 	if !filepath.IsAbs(c.StateDir) {
 		return errors.New("execution state directory must be absolute")
 	}
+	if c.Implementation == codexexecserver.ImplementationCodex && c.LimitsJSON != "" {
+		return errors.New("execution limits are configurable only for the native implementation")
+	}
 	if err := codexexecserver.ValidateURL(c.ExecutorURL); err != nil {
 		return err
 	}
-	if c.Backend != "companion" {
-		if !filepath.IsAbs(c.Binary) || !filepath.IsAbs(c.WorkingDirectory) || c.ContainerSocket != "" {
-			return errors.New("direct execution requires absolute binary and working directory and no companion socket")
-		}
-	}
-	switch c.Backend {
-	case "companion":
-		if !filepath.IsAbs(c.ContainerSocket) || c.Supervisor != nil || c.Binary != "" || c.WorkingDirectory != "" {
+	switch c.Owner {
+	case codexexecserver.OwnerCompanion:
+		if !filepath.IsAbs(c.ContainerSocket) || c.Supervisor != nil || c.Binary != "" || c.CodexBinary != "" || c.WorkingDirectory != "" {
 			return errors.New("companion execution requires an absolute ownership socket; its process configuration belongs to the companion")
 		}
-	case "systemd":
+	case codexexecserver.OwnerSystemd:
+		if !filepath.IsAbs(c.binary()) || !filepath.IsAbs(c.WorkingDirectory) || c.ContainerSocket != "" {
+			return errors.New("systemd executor requires an absolute binary and working directory and no companion socket")
+		}
 		if c.Supervisor == nil || c.ProcessHost == nil {
 			return errors.New("systemd execution requires Runtime's reconciled scope and process host")
 		}
 	default:
-		return fmt.Errorf("unknown execution backend %q", c.Backend)
+		return fmt.Errorf("unknown executor owner %q", c.Owner)
 	}
 	return nil
+}
+
+func (c Config) binary() string {
+	if c.Implementation == codexexecserver.ImplementationCodex {
+		return c.CodexBinary
+	}
+	return c.Binary
 }

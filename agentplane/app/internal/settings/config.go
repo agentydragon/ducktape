@@ -54,8 +54,6 @@ type Config struct {
 	SessionDispatcherRequestTimeoutSecs float64                    `mapstructure:"session_dispatcher_request_timeout_s"`
 	HistoryServiceTokenFile             string                     `mapstructure:"history_service_token_file"`
 	HistoryServiceRequestTimeoutSeconds float64                    `mapstructure:"history_service_request_timeout_s"`
-	RunnerGatewayRequestTimeoutSeconds  float64                    `mapstructure:"runner_gateway_request_timeout_s"`
-	RunnerGatewayLifecycleTimeoutSecs   float64                    `mapstructure:"runner_gateway_lifecycle_timeout_s"`
 	LogLevels                           map[string]string          `mapstructure:"log_levels"`
 	ListenAddress                       string                     `mapstructure:"listen_address"`
 	Kubeconfig                          string                     `mapstructure:"kubeconfig"`
@@ -64,7 +62,13 @@ type Config struct {
 	EgressAdminTokenFile                string                     `mapstructure:"egress_admin_token_file"`
 	EgressAdminTimeoutSeconds           float64                    `mapstructure:"egress_admin_timeout"`
 	ShutdownTimeoutSeconds              int                        `mapstructure:"shutdown_timeout"`
-	sandboxPresetOrder                  []string
+	// RunnerGateway timeouts are unused: the app health-probes runner_gateway_target and opens no
+	// Runtime-proxy call, so nothing reads either value. The renderer no longer writes them; they stay
+	// accepted, unset and unvalidated so an already-deployed settings file still loads on rollback.
+	// CLEANUP(added 2026-11-20): delete these two fields once no deployed settings file names them.
+	RunnerGatewayRequestTimeoutSeconds float64 `mapstructure:"runner_gateway_request_timeout_s"`
+	RunnerGatewayLifecycleTimeoutSecs  float64 `mapstructure:"runner_gateway_lifecycle_timeout_s"`
+	sandboxPresetOrder                 []string
 }
 
 // EnvironmentServicePeer is an optional dedicated EnvironmentService route. Its SVID is required
@@ -118,7 +122,7 @@ type SandboxPreset struct {
 // NewSandboxDefaults are the operator-configured starting lifecycle policies for the create form.
 type NewSandboxDefaults struct {
 	WakeOnSend              bool   `mapstructure:"wake_on_send" json:"wake_on_send"`
-	IdleSuspendAfterSeconds *int64 `mapstructure:"idle_suspend_after_seconds" json:"idle_suspend_after_seconds" nullable:"true" minimum:"60"`
+	IdleSuspendAfterSeconds *int64 `mapstructure:"idle_suspend_after_seconds" json:"idle_suspend_after_seconds"`
 }
 
 type ActionFederationConfig struct {
@@ -138,28 +142,8 @@ type OperatorOIDCConfig struct {
 	TokenProfile string `mapstructure:"token_profile" json:"token_profile"`
 }
 
-type SessionDefaultsView struct {
-	Harness         string  `json:"harness"`
-	Model           string  `json:"model"`
-	CWD             string  `json:"cwd"`
-	ReasoningEffort *string `json:"reasoning_effort"`
-	Instructions    string  `json:"instructions"`
-	SetupScript     string  `json:"setup_script"`
-}
-
-type SandboxPresetView struct {
-	Name            string              `json:"name"`
-	Title           string              `json:"title"`
-	Template        string              `json:"template"`
-	PolicySets      []string            `json:"policy_sets" nullable:"false"`
-	InboxTags       []string            `json:"inbox_tags" nullable:"false"`
-	SessionDefaults SessionDefaultsView `json:"session_defaults"`
-	Bootstrap       string              `json:"bootstrap"`
-}
-
-// PresetViews returns the browser-visible Sandbox presets with the ThreadPreset resolved into the
-// same complete SessionDefaults object used when a thread is opened.
-func (c Config) PresetViews() []SandboxPresetView {
+// SandboxPresetNames lists the Sandbox presets in settings-file order, then any others by name.
+func (c Config) SandboxPresetNames() []string {
 	names := make([]string, 0, len(c.SandboxPresets))
 	seen := make(map[string]struct{}, len(c.SandboxPresets))
 	for _, name := range c.sandboxPresetOrder {
@@ -179,29 +163,7 @@ func (c Config) PresetViews() []SandboxPresetView {
 		}
 	}
 	sort.Strings(remaining)
-	names = append(names, remaining...)
-	views := make([]SandboxPresetView, 0, len(names))
-	for _, name := range names {
-		preset := c.SandboxPresets[name]
-		thread := c.ThreadPresets[preset.ThreadPreset]
-		views = append(views, SandboxPresetView{
-			Name: name, Title: preset.Title, Template: preset.Template,
-			PolicySets: nonNilStrings(preset.PolicySets), InboxTags: nonNilStrings(preset.InboxTags),
-			SessionDefaults: SessionDefaultsView{
-				Harness: thread.Harness, Model: thread.Model, CWD: thread.CWD,
-				ReasoningEffort: thread.ReasoningEffort, Instructions: thread.Instructions, SetupScript: thread.SetupScript,
-			},
-			Bootstrap: preset.Bootstrap,
-		})
-	}
-	return views
-}
-
-func nonNilStrings(values []string) []string {
-	if values == nil {
-		return []string{}
-	}
-	return values
+	return append(names, remaining...)
 }
 
 func defaultConfig() Config {
@@ -212,19 +174,11 @@ func defaultConfig() Config {
 			LoginTokenProfile: "authentik",
 			Target:            OperatorOIDCConfig{TokenProfile: "authentik"},
 		},
-		NotificationsTokenFile:              "/var/run/secrets/agentplane-notifications/token",
 		NotificationsRequestTimeoutSeconds:  5,
-		RunnerGatewayTokenFile:              "/var/run/secrets/agentplane-runner-gateway/token",
-		SessionDispatcherTokenFile:          "/var/run/secrets/agentplane-session-dispatcher/token",
-		PolicyServiceTokenFile:              "/var/run/secrets/agentplane-policy/token",
 		SessionDispatcherRequestTimeoutSecs: 20,
-		HistoryServiceTokenFile:             "/var/run/secrets/agentplane-history-service/token",
 		HistoryServiceRequestTimeoutSeconds: 20,
-		RunnerGatewayRequestTimeoutSeconds:  20,
-		RunnerGatewayLifecycleTimeoutSecs:   310,
 		LogLevels:                           map[string]string{},
 		ListenAddress:                       "127.0.0.1:8080",
-		EgressAdminTokenFile:                "/var/run/secrets/agentplane-egress-admin/token",
 		EgressAdminTimeoutSeconds:           5,
 		ShutdownTimeoutSeconds:              5,
 	}
@@ -255,7 +209,6 @@ func Load() (Config, error) {
 		}
 	}
 	sandboxPresetOrder = yamlMappingKeys(contents, "sandbox_presets")
-	c.clearImplicitServiceTokensForSVID(rawSettings)
 	c.DatabaseURL = os.Getenv("AGENTPLANE_DATABASE_URL")
 	if c.LogLevels == nil {
 		c.LogLevels = map[string]string{}
@@ -345,19 +298,6 @@ func (c *Config) applyDefaults(raw map[string]any) {
 			langfuse.SessionMetadataKey = "attributes.litellm.metadata.spend_logs_metadata.agentplane.session_id"
 		}
 	}
-	if c.Models.Models == nil {
-		c.Models.Models = []runtimeconfig.ModelOption{}
-	}
-	for i := range c.Models.Models {
-		if c.Models.Models[i].ReasoningEfforts == nil {
-			c.Models.Models[i].ReasoningEfforts = []string{}
-		}
-	}
-	for harness, models := range c.Models.Harnesses {
-		if models == nil {
-			c.Models.Harnesses[harness] = []string{}
-		}
-	}
 	threadPresets, _ := rawSection(raw, "thread_presets")
 	for name, preset := range c.ThreadPresets {
 		fields := rawMap(threadPresets)[name]
@@ -371,15 +311,6 @@ func (c *Config) applyDefaults(raw map[string]any) {
 			preset.SetupScript = ""
 		}
 		c.ThreadPresets[name] = preset
-	}
-	for name, preset := range c.SandboxPresets {
-		if preset.PolicySets == nil {
-			preset.PolicySets = []string{}
-		}
-		if preset.InboxTags == nil {
-			preset.InboxTags = []string{}
-		}
-		c.SandboxPresets[name] = preset
 	}
 }
 
@@ -456,8 +387,6 @@ func (c Config) validate() error {
 		"notifications_request_timeout_s":      c.NotificationsRequestTimeoutSeconds,
 		"session_dispatcher_request_timeout_s": c.SessionDispatcherRequestTimeoutSecs,
 		"history_service_request_timeout_s":    c.HistoryServiceRequestTimeoutSeconds,
-		"runner_gateway_request_timeout_s":     c.RunnerGatewayRequestTimeoutSeconds,
-		"runner_gateway_lifecycle_timeout_s":   c.RunnerGatewayLifecycleTimeoutSecs,
 		"egress_admin_timeout":                 c.EgressAdminTimeoutSeconds,
 	} {
 		if value <= 0 || math.IsNaN(value) || math.IsInf(value, 0) {
@@ -505,27 +434,6 @@ func (c Config) validate() error {
 		return errors.New("action_federation.token_endpoint must be null in direct mode")
 	}
 	return validateCatalog(c.Models, c.ThreadPresets, c.SandboxPresets)
-}
-
-// clearImplicitServiceTokensForSVID preserves legacy default token paths while allowing an
-// SVID-configured caller to omit its former projected token-file setting entirely.
-func (c *Config) clearImplicitServiceTokensForSVID(raw map[string]any) {
-	for _, caller := range []struct {
-		field string
-		tls   *peertls.ClientTLS
-		value *string
-	}{
-		{"session_dispatcher_token_file", c.SessionDispatcherTLS, &c.SessionDispatcherTokenFile},
-		{"runner_gateway_token_file", c.RunnerGatewayTLS, &c.RunnerGatewayTokenFile},
-		{"history_service_token_file", c.HistoryServiceTLS, &c.HistoryServiceTokenFile},
-		{"policy_service_token_file", c.PolicyServiceTLS, &c.PolicyServiceTokenFile},
-		{"egress_admin_token_file", c.EgressAdminTLS, &c.EgressAdminTokenFile},
-		{"notifications_token_file", c.NotificationsTLS, &c.NotificationsTokenFile},
-	} {
-		if caller.tls != nil && caller.tls.UsesSVID() && !rawHasKey(raw, caller.field) {
-			*caller.value = ""
-		}
-	}
 }
 
 func validateAppServiceCaller(name string, tls *peertls.ClientTLS, tokenFile string, serverURIs []string) error {

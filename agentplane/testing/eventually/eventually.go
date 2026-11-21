@@ -3,6 +3,7 @@ package eventually
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
@@ -37,5 +38,18 @@ func Within(t testing.TB, bound time.Duration, condition func() (bool, string)) 
 			t.Fatal(state)
 		case <-time.After(5 * time.Millisecond):
 		}
+	}
+}
+
+// PathExists polls until stat succeeds and reports the last stat error if the wait fails.
+func PathExists(t testing.TB, path string, interval, timeout time.Duration) {
+	t.Helper()
+	var statErr error
+	err := wait.PollUntilContextTimeout(t.Context(), interval, timeout, true, func(context.Context) (bool, error) {
+		_, statErr = os.Stat(path)
+		return statErr == nil, nil
+	})
+	if err != nil {
+		t.Fatalf("waiting for %s: %v (last stat: %v)", path, err, statErr)
 	}
 }

@@ -51,8 +51,6 @@ def run_text_demo() -> None:
         print(it)
 
 
-# ---------- Tools demo ----------
-
 TOOLS = [
     {
         "name": "echo",

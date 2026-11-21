@@ -28,8 +28,6 @@ py_test(
     name = "test_persistence",
     size = "medium",
     srcs = ["test_persistence.py"],
-    data = [
-    ],
     requires_docker = True,
     deps = [
         ":persistence",
@@ -39,12 +37,6 @@ py_test(
         "@pypi//pytest_bazel",
         ":conftest",
     ],
-)
-
-py_library(
-    name = "constants",
-    srcs = ["constants.py"],
-    visibility = ["//:__subpackages__"],
 )
 
 py_library(
@@ -61,8 +53,8 @@ py_library(
     visibility = ["//mcp_infra:__subpackages__"],
     deps = [
         "//mcp_infra/testing:fixtures",
+        "//testing:postgres_fixtures",
         "//util:db_url",
-        "//util/testing:postgres_fixtures",
         "@pypi//pytest",
     ],
 )

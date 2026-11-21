@@ -146,7 +146,7 @@ So there is no clean rate to compute — treat it as one long-standing flaky-GPU
    **[TODO]** retire `nix/nixos/modules/gpu-monitor.nix` + `ducktape.gpuMonitor.enable` on
    wyrm2 once Mimir coverage is confirmed (don't lose the local CSV before then).
 2. **[DONE for k8s nodes] Ship the node journals/logs to Loki** (see `cluster/k8s/TODO.md`):
-   NixOS nodes via the `promtail-journal` HelmRelease (journal scrape, `node-vendor=nixos`);
+   NixOS nodes via the `alloy-journal` HelmRelease (journal scrape, `node-vendor=nixos`);
    Talos nodes via `machine.logging` → the `vector-talos-logs` DaemonSet. So `Xid`/`fallen off
 the bus` on wyrm2 now lands in Loki with cluster retention. **[TODO]** atlas host journal
    (off-cluster PVE host — host-level shipper over Nebula; see `cluster/k8s/TODO.md`).

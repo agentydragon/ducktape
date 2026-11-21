@@ -21,7 +21,8 @@ from cluster.cdk8s.fleet_rules import (
     resolved_references,
     unused_waivers,
 )
-from cluster.cdk8s.namespaces import VPA_RESOURCE_POLICY_ANNOTATION, VPA_UPDATE_MODE_LABEL
+from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL
+from cluster.cdk8s.vpa_policy import VPA_RESOURCE_POLICY_ANNOTATION
 
 _HARDENED = {"securityContext": {"seccompProfile": {"type": "RuntimeDefault"}}}
 _RESOURCES = {"requests": {"cpu": "10m", "memory": "16Mi"}, "limits": {"cpu": "100m", "memory": "64Mi"}}

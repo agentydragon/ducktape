@@ -3,8 +3,6 @@ package residentruntime
 import (
 	"bytes"
 	"database/sql"
-	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -20,8 +18,6 @@ import (
 
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/sampler/api/samplerpb"
-	samplersettings "github.com/agentydragon/ducktape/agentplane/sampler/internal/settings"
-	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/responses"
 )
 
@@ -44,109 +40,13 @@ func seedProviderCompactionCommand(t *testing.T, store *sessionstore.Store, sess
 	}
 }
 
-func providerCompactionRuntime(t *testing.T, store *sessionstore.Store, server *httptest.Server) *Runtime {
-	t.Helper()
-	manager, _ := newFakeCodeModeManager(t)
-	settings := samplersettings.Settings{
-		MaxLiveSessions: 1, RPCTimeoutSeconds: 5, LeaseSeconds: 60,
-		Connections: map[string]samplersettings.ConnectionConfig{
-			"provider": {BaseURL: server.URL, Auth: samplersettings.AuthConfig{Type: samplersettings.AuthTypeBearer, Credential: "fixture-credential"}},
-		},
-		Models: map[string]samplersettings.ModelConfig{
-			"fixture-model": {
-				Connection: "provider", ProviderModel: "fixture-model", API: protocol.APIStyleResponses,
-				Responses: responses.Config{Dialect: responses.DialectLite}, ExecEncoding: protocol.ExecEncodingFreeform,
-			},
-		},
-	}
-	return New(store, settings, manager)
-}
-
-func receiveCompactionProviderRequest(t *testing.T, requests <-chan []byte) []byte {
-	t.Helper()
-	select {
-	case body := <-requests:
-		return body
-	case <-time.After(10 * time.Second):
-		t.Fatal("runtime did not dispatch the provider request")
-		return nil
-	}
-}
-
-func waitCompactionProviderAttemptStatus(t *testing.T, store *sessionstore.Store, commandID string, attemptNo int, want string) string {
-	t.Helper()
-	deadline := time.NewTimer(10 * time.Second)
-	defer deadline.Stop()
-	ticker := time.NewTicker(10 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		var id, status string
-		err := store.DB().QueryRowContext(t.Context(), `SELECT id,COALESCE(result->>'status','') FROM sampler_intent
-			WHERE provider_command_id=$1 AND provider_attempt_no=$2`, commandID, attemptNo).Scan(&id, &status)
-		if err == nil && status == want {
-			return id
-		}
-		if err != nil && err != sql.ErrNoRows {
-			t.Fatal(err)
-		}
-		select {
-		case <-deadline.C:
-			t.Fatalf("provider attempt %d for command %q did not reach status %q (last status %q, err %v)", attemptNo, commandID, want, status, err)
-		case <-ticker.C:
-		}
-	}
-}
-
-func waitCompactionCommandOutcome(t *testing.T, store *sessionstore.Store, sessionID, commandID string, want samplerpb.CommandOutcome) *samplerpb.GetCommandResponse {
-	t.Helper()
-	deadline := time.NewTimer(10 * time.Second)
-	defer deadline.Stop()
-	ticker := time.NewTicker(10 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		command, err := store.GetCommand(t.Context(), sessionID, commandID)
-		if err == nil && command.GetOutcome() == want {
-			return command
-		}
-		if err != nil {
-			t.Fatal(err)
-		}
-		select {
-		case <-deadline.C:
-			t.Fatalf("command %q outcome=%v, want %v", commandID, command.GetOutcome(), want)
-		case <-ticker.C:
-		}
-	}
-}
-
-func writeProviderEvent(w http.ResponseWriter, event any) error {
-	wire, err := json.Marshal(event)
-	if err != nil {
-		return err
-	}
-	_, err = fmt.Fprintf(w, "data: %s\n\n", wire)
-	return err
-}
-
 func writeProviderCompactionSuccess(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "text/event-stream")
 	item := responses.Item{Type: responses.ItemCompaction, ID: "compact-result", EncryptedContent: "opaque-compact-summary"}
-	if err := writeProviderEvent(w, map[string]any{"type": responses.EventOutputItemDone, "item": item}); err != nil {
+	if err := writeSamplingEvent(w, map[string]any{"type": responses.EventOutputItemDone, "item": item}); err != nil {
 		return err
 	}
-	return writeProviderEvent(w, map[string]any{"type": responses.EventCompleted, "response": map[string]any{"id": "compact-response", "status": "completed"}})
-}
-
-func writeProviderAssistantSuccess(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "text/event-stream")
-	item := responses.Item{
-		Type: responses.ItemMessage, ID: "assistant-result", Role: "assistant",
-		Content: json.RawMessage(`[{"type":"output_text","text":"usable after compaction failure"}]`),
-	}
-	if err := writeProviderEvent(w, map[string]any{"type": responses.EventOutputItemDone, "item": item}); err != nil {
-		return err
-	}
-	return writeProviderEvent(w, map[string]any{"type": responses.EventCompleted, "response": map[string]any{"id": "assistant-response", "status": "completed"}})
+	return writeSamplingEvent(w, map[string]any{"type": responses.EventCompleted, "response": map[string]any{"id": "compact-response", "status": "completed"}})
 }
 
 type compactionAttempt struct {
@@ -201,23 +101,19 @@ func TestRuntimeCompactionRetriesFrozenProviderRequestAndPersistsOnce(t *testing
 			t.Errorf("write provider response: %v", err)
 		}
 	}))
-	defer server.Close()
-	runtime := providerCompactionRuntime(t, store, server)
-	cancel, done := startRuntimeForTest(t, runtime)
-	defer cancel()
+	t.Cleanup(server.Close)
+	runtime, stop := startProviderSamplingRuntime(t, store, providerSamplingSettings(server.URL, 1))
 	runtime.Wake(session.ID)
 
-	firstBody := receiveCompactionProviderRequest(t, requests)
-	firstIntentID := waitCompactionProviderAttemptStatus(t, store, commandID, 1, string(sessionstore.IntentResultAbandoned))
-	if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_intent SET provider_retry_not_before=clock_timestamp()-interval '1 millisecond' WHERE id=$1`, firstIntentID); err != nil {
-		t.Fatal(err)
-	}
+	firstBody := receiveProviderRequest(t, requests)
+	firstIntentID := waitProviderAttemptStatus(t, store, sessionstore.IntentCompaction, commandID, 1, string(sessionstore.IntentResultAbandoned))
+	setProviderRetryDueNow(t, store, firstIntentID)
 	runtime.Wake(session.ID)
-	secondBody := receiveCompactionProviderRequest(t, requests)
+	secondBody := receiveProviderRequest(t, requests)
 	if !bytes.Equal(firstBody, secondBody) {
 		t.Fatalf("retry changed frozen compaction request body\nfirst:  %s\nsecond: %s", firstBody, secondBody)
 	}
-	waitCompactionCommandOutcome(t, store, session.ID, commandID, samplerpb.CommandOutcome_COMMAND_OUTCOME_APPLIED)
+	waitProviderCommandOutcome(t, store, session.ID, commandID, samplerpb.CommandOutcome_COMMAND_OUTCOME_APPLIED)
 
 	attempts := compactionAttempts(t, store, commandID)
 	if len(attempts) != 2 {
@@ -253,8 +149,7 @@ func TestRuntimeCompactionRetriesFrozenProviderRequestAndPersistsOnce(t *testing
 	if compactions != 1 {
 		t.Fatalf("active context contains %d copies of the successful summary: %+v", compactions, items)
 	}
-	cancel()
-	waitRuntimeDone(t, done)
+	stop()
 }
 
 func TestRuntimePermanentCompactionFailureLeavesNextInputUsable(t *testing.T) {
@@ -275,18 +170,16 @@ func TestRuntimePermanentCompactionFailureLeavesNextInputUsable(t *testing.T) {
 			http.Error(w, "invalid compaction route", http.StatusBadRequest)
 			return
 		}
-		if err := writeProviderAssistantSuccess(w); err != nil {
+		if err := writeSamplingSuccess(w, "assistant-response", "usable after compaction failure"); err != nil {
 			t.Errorf("write provider response: %v", err)
 		}
 	}))
-	defer server.Close()
-	runtime := providerCompactionRuntime(t, store, server)
-	cancel, done := startRuntimeForTest(t, runtime)
-	defer cancel()
+	t.Cleanup(server.Close)
+	runtime, stop := startProviderSamplingRuntime(t, store, providerSamplingSettings(server.URL, 1))
 	runtime.Wake(session.ID)
-	_ = receiveCompactionProviderRequest(t, requests)
-	waitCompactionProviderAttemptStatus(t, store, compactCommandID, 1, string(sessionstore.IntentResultAbandoned))
-	failed := waitCompactionCommandOutcome(t, store, session.ID, compactCommandID, samplerpb.CommandOutcome_COMMAND_OUTCOME_FAILED)
+	_ = receiveProviderRequest(t, requests)
+	waitProviderAttemptStatus(t, store, sessionstore.IntentCompaction, compactCommandID, 1, string(sessionstore.IntentResultAbandoned))
+	failed := waitProviderCommandOutcome(t, store, session.ID, compactCommandID, samplerpb.CommandOutcome_COMMAND_OUTCOME_FAILED)
 	if failed.GetFailureReason() == "" {
 		t.Fatal("failed compaction did not retain a failure reason")
 	}
@@ -303,17 +196,13 @@ func TestRuntimePermanentCompactionFailureLeavesNextInputUsable(t *testing.T) {
 	}
 
 	const inputCommandID = "input-after-permanent-compact-failure"
-	if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{
-		CommandId: inputCommandID, Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "usable after compaction failure"}},
-	}, "fixture-account", nil); err != nil {
-		t.Fatalf("admit input after failed compaction: %v", err)
-	}
+	runtimetesting.AdmitInput(t, store, session.ID, inputCommandID, "usable after compaction failure")
 	runtime.Wake(session.ID)
-	inputBody := receiveCompactionProviderRequest(t, requests)
+	inputBody := receiveProviderRequest(t, requests)
 	if !strings.Contains(string(inputBody), "usable after compaction failure") {
 		t.Fatalf("next provider request omitted the newly admitted input: %s", inputBody)
 	}
-	waitCompactionCommandOutcome(t, store, session.ID, inputCommandID, samplerpb.CommandOutcome_COMMAND_OUTCOME_APPLIED)
+	waitProviderCommandOutcome(t, store, session.ID, inputCommandID, samplerpb.CommandOutcome_COMMAND_OUTCOME_APPLIED)
 	sessionState, err = store.GetSession(t.Context(), session.ID, "")
 	if err != nil || sessionState.Blocked {
 		t.Fatalf("Session was not usable after next input: state=%+v err=%v", sessionState, err)
@@ -321,8 +210,7 @@ func TestRuntimePermanentCompactionFailureLeavesNextInputUsable(t *testing.T) {
 	if got := count.Load(); got != 2 {
 		t.Fatalf("provider requests=%d, want failed compaction plus one next-input sample", got)
 	}
-	cancel()
-	waitRuntimeDone(t, done)
+	stop()
 }
 
 func runtimeOwner(t *testing.T, runtime *Runtime, sessionID string) sessionstore.Owner {

@@ -12,14 +12,12 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python_gazelle_plugin//manifest:defs.bzl", "gazelle_python_manifest")
 load("@rules_python_gazelle_plugin//modules_mapping:def.bzl", "modules_mapping")
 load("//devinfra:filter_wheels.bzl", "filter_system_packages")
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library")
 
 exports_files([
     "image_pins.json",
     "lockfile.json",
 ])
-
-# === Gazelle (Python BUILD file generator) ===
 
 # Extract import metadata from wheels for Gazelle's Python import resolution
 modules_mapping(
@@ -66,16 +64,6 @@ py_library(
     name = "prettier_cli",
     srcs = ["prettier_cli.py"],
     visibility = ["//visibility:public"],
-)
-
-py_test(
-    name = "test_prettier_cli",
-    srcs = ["test_prettier_cli.py"],
-    deps = [
-        ":prettier_cli",
-        "//:conftest",
-        "@pypi//pytest_bazel",
-    ],
 )
 
 pkg_tar(

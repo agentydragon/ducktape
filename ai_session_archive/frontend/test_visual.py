@@ -6,10 +6,10 @@ import pytest
 import pytest_bazel
 from playwright.async_api import expect
 
-from util.testing.frontend_visual.capture import VisualHarness
-from util.testing.frontend_visual.viewports import Viewport
+from testing.frontend_visual.capture import VisualHarness
+from testing.frontend_visual.viewports import Viewport
 
-pytest_plugins = ("util.testing.frontend_visual.fixtures",)
+pytest_plugins = ("testing.frontend_visual.fixtures",)
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
@@ -21,7 +21,6 @@ async def test_session_list_and_compact_import_progress(visual: VisualHarness) -
         await expect(progress).to_contain_text("ThinkPad")
         await expect(progress).to_contain_text("Atlas")
         await expect(progress).to_contain_text("Rugged")
-        await expect(progress).to_contain_text("ThinkPad")
         await expect(progress).to_contain_text("72/198 snapshots remaining")
         await expect(progress).to_contain_text("Complete fixture machine")
         await expect(progress.get_by_role("status", name="Complete fixture machine synced")).to_be_visible()
@@ -325,8 +324,9 @@ async def test_codex_work_steps(visual: VisualHarness, width: int) -> None:
         await view.capture(name="steps")
 
         tool = history.locator('[data-activity-step="tool"]').filter(has_text="run_checks")
+        output = tool.get_by_role("region", name="Output", exact=True)
         await tool.get_by_role("button", name=re.compile("run_checks")).click()
-        await tool.get_by_role("region", name="Output", exact=True).scroll_into_view_if_needed()
+        await output.scroll_into_view_if_needed()
         await expect(tool).to_contain_text("PASS check 01")
         await expect(tool.locator('[data-clamped="true"]')).to_have_count(1)
         await tool.scroll_into_view_if_needed()
@@ -334,6 +334,14 @@ async def test_codex_work_steps(visual: VisualHarness, width: int) -> None:
         await view.capture(name="tool_output")
         await tool.get_by_role("button", name="Show all 48 lines", exact=True).click()
         await expect(tool.locator('[data-clamped="true"]')).to_have_count(0)
+        # CodeMirror measures only the lines it draws and its estimate for the rest is off for wrapped lines, so
+        # the output keeps changing height as scrolling draws them. `data-layout-settled` does not wait for that,
+        # and a scroll computed early lands elsewhere than a late one. Draw every line first, then scroll back so
+        # the raw records opened next start out of view.
+        await output.evaluate("element => element.scrollIntoView({ block: 'end' })")
+        await expect(output).to_contain_text("PASS check 48")
+        await output.evaluate("element => element.scrollIntoView({ block: 'start' })")
+        await expect(history).to_have_attribute("data-layout-settled", "true")
         await tool.hover()
         await tool.get_by_role("button", name="Raw JSONL record", exact=True).click()
         await expect(tool.get_by_role("region", name="Raw JSONL record")).to_have_count(2)
@@ -367,10 +375,6 @@ async def test_claude_attachment_widgets(visual: VisualHarness, width: int) -> N
         await view.capture(name="expanded")
 
 
-if __name__ == "__main__":
-    pytest_bazel.main()
-
-
 @pytest.mark.parametrize(
     "viewport", [Viewport(width=1440, height=1000), Viewport(width=390, height=844)], ids=["desktop", "mobile"]
 )
@@ -398,3 +402,7 @@ async def test_session_kind_filters(visual: VisualHarness, viewport: Viewport) -
         await expect(sidebar.get_by_role("link", name="Inspect a local transcript")).to_be_visible()
         await expect(sidebar.get_by_role("button", name="Refresh session list")).to_be_enabled()
         await view.capture(name="all_kinds", target=page.locator("#root"))
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

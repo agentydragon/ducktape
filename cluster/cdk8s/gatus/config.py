@@ -28,7 +28,7 @@ from cluster.cdk8s.litellm import proxy as litellm_proxy
 from cluster.cdk8s.matrix import matrix
 from cluster.cdk8s.monitoring import grafana_instance, loki, mimir
 from cluster.cdk8s.nix_cache import attic
-from cluster.cdk8s.ollama import app as ollama_app
+from cluster.cdk8s.ollama import tabby
 from cluster.cdk8s.service_ref import ServiceRef
 from model_catalog.catalog import OLLAMA_GPT_OSS_20B_128K
 
@@ -118,9 +118,9 @@ def _endpoints() -> list[Endpoint]:
             conditions=[_STATUS_OK, "[BODY].flows[0].type == m.login.sso"],
         ),
         Endpoint(
-            name="Ollama",
+            name="TabbyAPI",
             group=Group.AI,
-            url=f"{_in_cluster(ollama_app.SERVICE)}/api/tags",
+            url=f"{_in_cluster(tabby.SERVICE)}{tabby.MODELS_PATH}",
             interval="60s",
             conditions=[_STATUS_OK],
         ),

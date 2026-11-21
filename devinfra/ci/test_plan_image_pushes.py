@@ -26,17 +26,17 @@ def image(name: str = "airlock", target: str = "//airlock:image", test: str | No
 
 
 def digest_output(label: str, path: str, uri: str = "bytestream://h/blobs/x/72") -> Output:
-    return Output(label=label, path=path, uri=uri, digest="ignored", size=72, output_group="default")
+    return Output(label=label, path=path, uri=uri, digest="ignored", output_group="default")
 
 
 def invocation(*outputs: Output) -> Invocation:
-    return Invocation(outputs=list(outputs), test_status={})
+    return Invocation(outputs=list(outputs))
 
 
 class FakeCrane(Crane):
     """Registry stub: repo -> {tag: digest}. A repo with no `latest` was never pushed.
 
-    A real `Crane` with the subprocess replaced, as `util/test_crane.py` does — the
+    A real `Crane` with the subprocess replaced, as `devinfra/oci/test_crane.py` does — the
     binary is never resolved because nothing reaches `_run`.
     """
 
@@ -141,8 +141,8 @@ def test_an_image_whose_gate_push_ci_already_failed_gets_no_job() -> None:
 def test_the_matrix_serializes_the_registry_as_the_name_the_workflow_compares() -> None:
     """`push-images.yml` gates its credential step on `matrix.registry == 'forgejo'`,
     so the enum must reach GitHub as its bare value, not its member name."""
-    forgejo = Image(name="osm-mcp", target="//third_party/osmmcp:image", test=None, registry=Registry.FORGEJO)
-    decision = decide(forgejo, {"osm-mcp": "sha256:new"}, FakeCrane({}))
+    forgejo = Image(name="example", target="//example:image", test=None, registry=Registry.FORGEJO)
+    decision = decide(forgejo, {"example": "sha256:new"}, FakeCrane({}))
     assert json.loads(json.dumps(matrix_include([decision])))[0]["registry"] == "forgejo"
 
 

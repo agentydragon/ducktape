@@ -10,9 +10,6 @@
   ...
 }:
 let
-  solarizedLightScheme = solarizedLight;
-  solarizedDarkScheme = solarizedDark;
-
   # Theme switching scripts - wrappers around gterm-theme.
   # Installed to PATH via home.packages; called by Night Theme Switcher
   # extension on sunrise/sunset and available for manual use.
@@ -183,13 +180,13 @@ in
             visibleName = "Solarized Light";
             default = true;
             colors = {
-              foregroundColor = "#${solarizedLightScheme.palette.base05}";
-              backgroundColor = "#${solarizedLightScheme.palette.base07}";
-              boldColor = "#${solarizedLightScheme.palette.base04}";
-              palette = mkTerminalPalette solarizedLightScheme;
+              foregroundColor = "#${solarizedLight.palette.base05}";
+              backgroundColor = "#${solarizedLight.palette.base07}";
+              boldColor = "#${solarizedLight.palette.base04}";
+              palette = mkTerminalPalette solarizedLight;
               cursor = {
-                foreground = "#${solarizedLightScheme.palette.base07}";
-                background = "#${solarizedLightScheme.palette.base05}";
+                foreground = "#${solarizedLight.palette.base07}";
+                background = "#${solarizedLight.palette.base05}";
               };
             };
           };
@@ -198,13 +195,13 @@ in
           "5083e06b-024e-46be-9cd2-892b814f1fc8" = {
             visibleName = "Solarized Dark";
             colors = {
-              foregroundColor = "#${solarizedDarkScheme.palette.base05}";
-              backgroundColor = "#${solarizedDarkScheme.palette.base00}";
-              boldColor = "#${solarizedDarkScheme.palette.base06}";
-              palette = mkTerminalPalette solarizedDarkScheme;
+              foregroundColor = "#${solarizedDark.palette.base05}";
+              backgroundColor = "#${solarizedDark.palette.base00}";
+              boldColor = "#${solarizedDark.palette.base06}";
+              palette = mkTerminalPalette solarizedDark;
               cursor = {
-                foreground = "#${solarizedDarkScheme.palette.base00}";
-                background = "#${solarizedDarkScheme.palette.base05}";
+                foreground = "#${solarizedDark.palette.base00}";
+                background = "#${solarizedDark.palette.base05}";
               };
             };
           };

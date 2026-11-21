@@ -20,7 +20,7 @@ let
       fromPath = spec.store_path;
       # The closure is input-addressed (regular nix-build output, not CA);
       # the daemon verifies the cache's signature against trusted-public-keys
-      # (`gaffer:Z8sM…` per nix/nixos/modules/attic-substituter.nix).
+      # (the `gaffer:` entry of nix/attic-pubkeys.json).
       inputAddressed = true;
     };
 in

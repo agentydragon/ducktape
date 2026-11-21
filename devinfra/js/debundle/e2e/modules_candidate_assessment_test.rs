@@ -10,12 +10,7 @@ use debundle_e2e_support::*;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 
-fn residual_apply_request(
-    staged: &TreeStaged,
-    binding: &str,
-    destination: &str,
-    _readable: &str,
-) -> Value {
+fn residual_apply_request(staged: &TreeStaged, binding: &str, destination: &str) -> Value {
     json!({
         "unit_id": source_unit_for_binding(staged, binding),
         "module": destination,
@@ -59,6 +54,18 @@ fn apply_with_import_order(
     StagedInvocation::tree_command(&args, outputs)
 }
 
+/// Assert that the command was refused with exit status 1 and return its stderr.
+#[track_caller]
+fn assert_refused(invocation: &StagedInvocation) -> &str {
+    assert_eq!(
+        invocation.result.status.code(),
+        Some(1),
+        "{}",
+        invocation.result.stderr
+    );
+    &invocation.result.stderr
+}
+
 #[test]
 fn modules_apply_assessment_matches_the_selected_residual_candidate() {
     let staged = staged_tree(
@@ -78,7 +85,7 @@ fn modules_apply_assessment_matches_the_selected_residual_candidate() {
     let baseline_report = read_effect_report(&baseline.output_root());
     assert_eq!(baseline_report["swapped_pairs"], 0, "{baseline_report:#}");
 
-    let request = residual_apply_request(&staged, "second", "a_earlier", "second");
+    let request = residual_apply_request(&staged, "second", "a_earlier");
     assert_eq!(
         request["unit_id"],
         source_unit_for_binding(&staged, "second")
@@ -148,7 +155,7 @@ fn modules_apply_assessment_accepts_a_closed_no_swap_candidate() {
         )],
         &[("empty.yaml", "members: []\n")],
     );
-    let request = residual_apply_request(&staged, "only", "new_module", "only");
+    let request = residual_apply_request(&staged, "only", "new_module");
     let batch = staged.root().join("apply.json");
     fs::write(&batch, serde_json::to_vec(&json!([request])).unwrap()).unwrap();
     let import_order = write_import_order(&staged, "apply-import-order.json", &["new_module"]);
@@ -202,7 +209,7 @@ fn modules_apply_assessment_refuses_stale_and_partial_inputs_before_writes() {
             "members: [{selector: {binding: {name: first}}}]\n",
         )],
     );
-    let request = residual_apply_request(&staged, "second", "a_earlier", "second");
+    let request = residual_apply_request(&staged, "second", "a_earlier");
     let batch = staged.root().join("apply.json");
     fs::write(&batch, serde_json::to_vec(&json!([request])).unwrap()).unwrap();
     let import_order = write_import_order(&staged, "apply-import-order.json", &["a_earlier"]);
@@ -218,16 +225,10 @@ fn modules_apply_assessment_refuses_stale_and_partial_inputs_before_writes() {
         true,
         false,
     );
-    assert_eq!(
-        stale.result.status.code(),
-        Some(1),
-        "{}",
-        stale.result.stderr
-    );
+    let stderr = assert_refused(&stale);
     assert!(
-        stale.result.stderr.contains("projection") || stale.result.stderr.contains("analysis"),
-        "expected staged projection refusal:\n{}",
-        stale.result.stderr
+        stderr.contains("projection") || stderr.contains("analysis"),
+        "expected staged projection refusal:\n{stderr}"
     );
     assert_eq!(module_snapshot(&staged.modules), before);
 
@@ -240,12 +241,7 @@ fn modules_apply_assessment_refuses_stale_and_partial_inputs_before_writes() {
         false,
         false,
     );
-    assert_eq!(
-        partial.result.status.code(),
-        Some(1),
-        "{}",
-        partial.result.stderr
-    );
+    assert_refused(&partial);
     assert_eq!(module_snapshot(&staged.modules), before);
 
     let not_dry = apply_with_import_order(
@@ -257,12 +253,7 @@ fn modules_apply_assessment_refuses_stale_and_partial_inputs_before_writes() {
         true,
         false,
     );
-    assert_eq!(
-        not_dry.result.status.code(),
-        Some(1),
-        "{}",
-        not_dry.result.stderr
-    );
+    assert_refused(&not_dry);
     assert_eq!(module_snapshot(&staged.modules), before);
 
     let scoped = staged_tree_with_module_roots(
@@ -278,8 +269,7 @@ fn modules_apply_assessment_refuses_stale_and_partial_inputs_before_writes() {
             "members: [{selector: {binding: {name: first}}}]\n",
         )],
     );
-    let scoped_request =
-        residual_apply_request(&scoped, "second", "chunks/main/a_earlier", "second");
+    let scoped_request = residual_apply_request(&scoped, "second", "chunks/main/a_earlier");
     let scoped_batch = scoped.root().join("apply.json");
     fs::write(
         &scoped_batch,
@@ -311,20 +301,8 @@ fn modules_apply_assessment_refuses_stale_and_partial_inputs_before_writes() {
         true,
         false,
     );
-    assert_eq!(
-        scoped_refused.result.status.code(),
-        Some(1),
-        "{}",
-        scoped_refused.result.stderr
-    );
-    assert!(
-        scoped_refused
-            .result
-            .stderr
-            .contains("one full-tree module root"),
-        "{}",
-        scoped_refused.result.stderr
-    );
+    let stderr = assert_refused(&scoped_refused);
+    assert!(stderr.contains("one full-tree module root"), "{stderr}");
     assert_eq!(module_snapshot(&scoped.modules), scoped_before);
 }
 
@@ -334,7 +312,7 @@ fn modules_apply_assessment_inputs_are_explicit_but_ambient_defaults_are_ignored
         &[("main", "function value() { return \"value\"; }\n")],
         &[("empty.yaml", "members: []\n")],
     );
-    let request = residual_apply_request(&staged, "value", "new_module", "value");
+    let request = residual_apply_request(&staged, "value", "new_module");
     let batch = staged.root().join("apply.json");
     fs::write(&batch, serde_json::to_vec(&json!([request])).unwrap()).unwrap();
     let import_order = write_import_order(&staged, "apply-import-order.json", &["new_module"]);
@@ -519,16 +497,10 @@ fn modules_delete_requested_assessment_refuses_stale_artifacts_before_yaml_write
     let foreign = foreign_analysis_tree();
     let before = module_snapshot(&staged.modules);
     let result = staged.delete("a_earlier", true, Some(&foreign.artifact), true);
-    assert_eq!(
-        result.result.status.code(),
-        Some(1),
-        "{}",
-        result.result.stderr
-    );
+    let stderr = assert_refused(&result);
     assert!(
-        result.result.stderr.contains("projection") || result.result.stderr.contains("analysis"),
-        "{}\nexpected staged projection/artifact mismatch",
-        result.result.stderr
+        stderr.contains("projection") || stderr.contains("analysis"),
+        "{stderr}\nexpected staged projection/artifact mismatch"
     );
     assert_eq!(module_snapshot(&staged.modules), before);
 }
@@ -539,17 +511,10 @@ fn modules_merge_requested_assessment_refuses_stale_artifacts_before_yaml_writes
     let foreign = foreign_analysis_tree();
     let before = module_snapshot(&staged.modules);
     let result = staged.merge("z_later", "a_earlier", Some(&foreign.artifact), true);
-    assert_eq!(
-        result.result.status.code(),
-        Some(1),
-        "{}",
-        result.result.stderr
-    );
+    let stderr = assert_refused(&result);
     assert!(
-        result.result.stderr.contains("projection") || result.result.stderr.contains("analysis"),
-        "{}
-expected staged projection/artifact mismatch",
-        result.result.stderr
+        stderr.contains("projection") || stderr.contains("analysis"),
+        "{stderr}\nexpected staged projection/artifact mismatch"
     );
     assert_eq!(module_snapshot(&staged.modules), before);
 }
@@ -671,33 +636,16 @@ fn modules_apply_assessment_refuses_stale_or_partial_context_before_writes() {
         true,
         false,
     );
-    assert_eq!(
-        stale.result.status.code(),
-        Some(1),
-        "{}",
-        stale.result.stderr
-    );
+    let stderr = assert_refused(&stale);
     assert!(
-        stale.result.stderr.contains("projection")
-            || stale.result.stderr.contains("analysis")
-            || stale.result.stderr.contains("source"),
-        "expected staged input mismatch:\n{}",
-        stale.result.stderr
+        stderr.contains("projection") || stderr.contains("analysis") || stderr.contains("source"),
+        "expected staged input mismatch:\n{stderr}"
     );
     assert_eq!(module_snapshot(&staged.modules), before);
 
     let partial = apply_with_import_order(&staged, &batch, &import_order, None, true, false, true);
-    assert_eq!(
-        partial.result.status.code(),
-        Some(1),
-        "{}",
-        partial.result.stderr
-    );
-    assert!(
-        partial.result.stderr.contains("require --analysis"),
-        "{}",
-        partial.result.stderr
-    );
+    let stderr = assert_refused(&partial);
+    assert!(stderr.contains("require --analysis"), "{stderr}");
     assert_eq!(module_snapshot(&staged.modules), before);
 
     let env_defaults = {
@@ -823,16 +771,7 @@ fn modules_apply_assessment_refuses_scoped_tree_before_writes() {
         true,
         false,
     );
-    assert_eq!(
-        result.result.status.code(),
-        Some(1),
-        "{}",
-        result.result.stderr
-    );
-    assert!(
-        result.result.stderr.contains("one full-tree module root"),
-        "{}",
-        result.result.stderr
-    );
+    let stderr = assert_refused(&result);
+    assert!(stderr.contains("one full-tree module root"), "{stderr}");
     assert_eq!(module_snapshot(&staged.modules), before);
 }

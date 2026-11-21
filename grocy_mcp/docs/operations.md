@@ -12,7 +12,7 @@
 
 ## Refresh the OpenAPI spec
 
-`@grocy_openapi_spec` (`http_file` in `MODULE.bazel`) fetches
+`@grocy_openapi_spec` (`http_file` in <../../devinfra/bazel/artifacts.MODULE.bazel>) fetches
 `https://raw.githubusercontent.com/grocy/grocy/<tag>/grocy.openapi.json`. On a new Grocy release,
 bump its `urls` and `sha256` (`curl -sSfL <url> | sha256sum`), then run
 `bbr test //grocy_mcp:test_server`, which catches spec quirks FastMCP rejects (e.g. empty enums).

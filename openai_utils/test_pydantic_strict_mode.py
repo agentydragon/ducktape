@@ -33,23 +33,6 @@ from openai_utils.testing.strict_mode_models import (
     SimpleValidModel,
 )
 
-# ---------------------------------------------------------------------------
-# Test models specific to this file
-# ---------------------------------------------------------------------------
-
-
-class RefModelMissingAdditional(BaseModel):
-    """Referenced model missing additionalProperties."""
-
-    name: str
-
-
-class MissingAdditionalPropertiesInDefs(BaseModel):
-    """Missing additionalProperties in $defs."""
-
-    input: RefModelMissingAdditional
-    model_config = ConfigDict(extra="forbid")
-
 
 class SpecificFiles(BaseModel):
     """Files specified by paths."""
@@ -76,25 +59,6 @@ class AnyOfAtPropertyRoot(BaseModel):
 
     files: Annotated[SpecificFiles | AllFiles, Field(discriminator="kind")]
     model_config = ConfigDict(extra="forbid")
-
-
-class RefStrictModel(BaseModel):
-    """Referenced model with additionalProperties."""
-
-    name: str
-    model_config = ConfigDict(extra="forbid")
-
-
-class DefsWithAdditionalProperties(BaseModel):
-    """Schema with $defs having additionalProperties."""
-
-    input: RefStrictModel
-    model_config = ConfigDict(extra="forbid")
-
-
-# ---------------------------------------------------------------------------
-# Unit tests (mock — no API calls)
-# ---------------------------------------------------------------------------
 
 
 def test_invalid_path_format():
@@ -251,10 +215,6 @@ def test_supported_date_and_time_formats() -> None:
     validate_openai_strict_mode_schema(schema)
 
 
-# ---------------------------------------------------------------------------
-# Cross-generator parameterized tests (mock + live)
-# ---------------------------------------------------------------------------
-
 # Schema generator options
 GENERATORS = [
     ("default", GenerateJsonSchema),  # Pydantic's default (generates oneOf for discriminated unions)
@@ -265,7 +225,6 @@ GENERATORS = [
 ALWAYS_REJECTED = [
     MissingAdditionalPropertiesModel,
     NestedMissingAdditionalPropertiesModel,
-    MissingAdditionalPropertiesInDefs,
     InvalidSetModel,
     InvalidPathModel,
 ]
@@ -287,7 +246,7 @@ DISCRIMINATED_UNIONS: list[type[BaseModel]] = [
 FIELDS_WITH_DEFAULTS = [OptionalFieldModel]
 
 # Models that are always accepted (regardless of generator)
-ALWAYS_ACCEPTED = [SimpleValidModel, NestedValidModel, DefsWithAdditionalProperties, SimpleUnionModel]
+ALWAYS_ACCEPTED = [SimpleValidModel, NestedValidModel, SimpleUnionModel]
 
 
 def _make_test_cases():

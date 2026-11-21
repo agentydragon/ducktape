@@ -296,7 +296,6 @@ export function SessionViewer(): JSX.Element {
               ) : (
                 <TranscriptView
                   selectedSession={selectedSession}
-                  selectedId={selectedSession.id}
                   events={transcriptHistory.events}
                   loadingEvents={transcriptHistory.loadingEvents}
                   eventError={transcriptHistory.eventError}

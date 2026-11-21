@@ -18,12 +18,20 @@ import boto3
 from botocore.exceptions import ClientError
 from github import Auth, Github
 
-from devinfra.pr_visuals.metadata import BaselinePointer, ReviewBundleMetadata, ReviewTest
+from devinfra.pr_visuals.metadata import (
+    BASELINE_POINTER_PREFIX,
+    REVIEW_PREFIX,
+    SHARED_IMAGE_PREFIX,
+    BaselinePointer,
+    ReviewBundleMetadata,
+    ReviewTest,
+    shared_image_key,
+)
 
 FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
-ASSET_KEY = re.compile(r"^assets/([0-9a-f]{64})\.png$")
-BUNDLE_KEY = re.compile(r"^(reviews-test-outputs)/([0-9a-f]{40})/(.+)$")
-POINTER_KEY = re.compile(r"^baselines/reviews-test-outputs/([^/]+)\.json$")
+ASSET_KEY = re.compile(re.escape(SHARED_IMAGE_PREFIX) + r"/([0-9a-f]{64})\.png")
+BUNDLE_KEY = re.compile(re.escape(REVIEW_PREFIX) + r"/([0-9a-f]{40})/(.+)")
+POINTER_KEY = re.compile(re.escape(BASELINE_POINTER_PREFIX) + r"/([^/]+)\.json")
 CLOSED_PR_GRACE = timedelta(hours=8)
 DEFAULT_RETENTION = timedelta(days=3)
 ACTIVE_RUN_STATUSES = ("queued", "in_progress", "requested", "waiting", "pending")
@@ -78,13 +86,7 @@ def _metadata_refs(tests: Iterable[ReviewTest], context: str) -> tuple[set[str],
         for sha in (test.base_sha, test.merge_base_sha):
             if sha is not None:
                 dependencies.add(_validate_sha(sha, context))
-        for asset in test.assets:
-            digests.update(
-                digest
-                for digest in (asset.candidate_sha256, asset.baseline_sha256, asset.diff_sha256)
-                if digest is not None
-            )
-            digests.update(variant.sha256 for variant in asset.variants)
+        digests.update(test.image_digests())
     return dependencies, digests
 
 
@@ -170,18 +172,18 @@ def build_retention_report(
             blockers.append(f"duplicate listed object key: {stored.key}")
         by_key[stored.key] = stored
         if match := BUNDLE_KEY.fullmatch(stored.key):
-            root, sha, _ = match.groups()
-            prefix = f"{root}/{sha}/"
+            sha, relative_path = match.groups()
+            prefix = f"{REVIEW_PREFIX}/{sha}/"
             bundles_by_prefix[prefix].append(stored)
-            target_dir_match = re.match(r"tests/([^/]+)/", match.group(3))
+            target_dir_match = re.match(r"tests/([^/]+)/", relative_path)
             if target_dir_match is not None:
                 target_dirs_by_prefix[prefix].add(target_dir_match.group(1))
-            if re.fullmatch(r"tests/[^/]+/metadata\.json", match.group(3)):
+            if re.fullmatch(r"tests/[^/]+/metadata\.json", relative_path):
                 target_metadata_by_prefix[prefix].append(stored.key)
-        elif stored.key.startswith(("commits/", "reviews/", "reviews-test-outputs/")):
+        elif stored.key.startswith(("commits/", "reviews/", f"{REVIEW_PREFIX}/")):
             unknown_keys.append(stored.key)
             blockers.append(f"unrecognized bundle key: {stored.key}")
-        elif stored.key.startswith("assets/"):
+        elif stored.key.startswith(f"{SHARED_IMAGE_PREFIX}/"):
             if match := ASSET_KEY.fullmatch(stored.key):
                 assets.append((stored, match.group(1)))
             else:
@@ -325,10 +327,8 @@ def build_retention_report(
         if missing_slugs:
             blockers.append(f"baseline pointer for {sha} has no retained target metadata: {sorted(missing_slugs)}")
 
-    missing_referenced_assets = sorted(digest for digest in referenced_digests if f"assets/{digest}.png" not in by_key)
-    blockers.extend(
-        f"retained metadata references missing shared image assets/{digest}.png" for digest in missing_referenced_assets
-    )
+    missing_asset_keys = sorted(key for key in map(shared_image_key, referenced_digests) if key not in by_key)
+    blockers.extend(f"retained metadata references missing shared image {key}" for key in missing_asset_keys)
     bundles = [bundle for group in bundles_by_sha.values() for bundle in group]
     bundle_candidates = [bundle for bundle in bundles if bundle.sha not in retained_shas and bundle.newest < cutoff]
     bundle_retained = [bundle for bundle in bundles if bundle not in bundle_candidates]

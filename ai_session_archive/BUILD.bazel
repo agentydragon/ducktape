@@ -5,7 +5,7 @@ load("@rules_oci//oci:defs.bzl", "oci_image")
 load("//devinfra/oci:defs.bzl", "oci_layout_py")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
-load("//util/testing:postgres_exec_properties.bzl", "POSTGRES_IMAGE_EXEC_PROPERTIES")
+load("//testing:postgres_exec_properties.bzl", "POSTGRES_IMAGE_EXEC_PROPERTIES")
 
 py_library(
     name = "models",
@@ -50,30 +50,6 @@ py_binary(
     deps = [":migrate_cli"],
 )
 
-aspect_py_binary(
-    name = "migrate_image_bin",
-    main = "migrate_cli.py",
-    deps = [":migrate_cli"],
-)
-
-py_image_layer(
-    name = "migrate_image_layers",
-    binary = ":migrate_image_bin",
-    group = "1000",
-    owner = "1000",
-)
-
-oci_image(
-    name = "migrate_image",
-    base = "@debian_trixie_slim_linux_amd64",
-    entrypoint = py_image_entrypoint("migrate_image_bin"),
-    env = py_image_env(binary_name = "migrate_image_bin"),
-    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
-    tars = [":migrate_image_layers"],
-    user = "1000:1000",
-    visibility = ["//visibility:public"],
-)
-
 py_test(
     name = "test_database_migrate",
     size = "medium",
@@ -84,8 +60,8 @@ py_test(
         ":database",
         ":database_migrate",
         "//:conftest",
-        "//util/testing:postgres",
-        "//util/testing:postgres_fixtures",
+        "//testing:postgres",
+        "//testing:postgres_fixtures",
         "@pypi//alembic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -97,6 +73,7 @@ py_library(
     name = "restic",
     srcs = ["restic.py"],
     visibility = ["//visibility:public"],
+    deps = ["@rules_python//python/runfiles"],
 )
 
 py_library(
@@ -133,7 +110,7 @@ py_test(
         ":progress_queries",
         ":testing",
         "//:conftest",
-        "//util/testing:postgres_fixtures",
+        "//testing:postgres_fixtures",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
@@ -251,9 +228,9 @@ py_test(
         "//:conftest",
         "//ai_session_archive:ingest_test_image",
         "//devinfra/oci",
-        "//util/testing:container_logs",
-        "//util/testing:postgres",
-        "//util/testing:postgres_fixtures",
+        "//testing:container_logs",
+        "//testing:postgres",
+        "//testing:postgres_fixtures",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@pypi//testcontainers",
@@ -266,8 +243,10 @@ py_library(
     srcs = ["testing.py"],
     deps = [
         ":database_migrate",
+        ":ingest",
         ":restic",
-        "//util/testing:postgres",
+        ":source_paths",
+        "//testing:postgres",
         "@pypi//pytest",
         "@pypi//sqlalchemy",
     ],
@@ -301,7 +280,6 @@ py_test(
     requires_docker = True,
     deps = [
         ":database",
-        ":ingest",
         ":models",
         ":queries",
         ":record_json",
@@ -310,11 +288,10 @@ py_test(
         ":usage_observations",
         ":version_queries",
         ":web",
-        ":web_settings",
+        ":web_testing",
         "//:conftest",
-        "//util/testing:postgres_fixtures",
+        "//testing:postgres_fixtures",
         "@pypi//fastapi",
-        "@pypi//itsdangerous",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
@@ -341,7 +318,6 @@ py_test(
     requires_docker = True,
     deps = [
         ":database",
-        ":ingest",
         ":models",
         ":queries",
         ":session_kind_projection",
@@ -349,7 +325,7 @@ py_test(
         ":testing",
         ":version_queries",
         "//:conftest",
-        "//util/testing:postgres_fixtures",
+        "//testing:postgres_fixtures",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
@@ -364,14 +340,13 @@ py_test(
     requires_docker = True,
     deps = [
         ":database",
-        ":ingest",
         ":models",
         ":queries",
         ":source_paths",
         ":testing",
         ":version_queries",
         "//:conftest",
-        "//util/testing:postgres_fixtures",
+        "//testing:postgres_fixtures",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
@@ -386,14 +361,13 @@ py_test(
     requires_docker = True,
     deps = [
         ":database",
-        ":ingest",
         ":models",
         ":queries",
         ":source_paths",
         ":testing",
         ":version_queries",
         "//:conftest",
-        "//util/testing:postgres_fixtures",
+        "//testing:postgres_fixtures",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
@@ -408,12 +382,11 @@ py_test(
     requires_docker = True,
     deps = [
         ":database",
-        ":ingest",
         ":models",
         ":source_paths",
         ":testing",
         "//:conftest",
-        "//util/testing:postgres_fixtures",
+        "//testing:postgres_fixtures",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
@@ -434,27 +407,7 @@ py_test(
         ":source_paths",
         ":testing",
         "//:conftest",
-        "//util/testing:postgres_fixtures",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_codex_title_conflict",
-    size = "medium",
-    srcs = ["test_codex_title_conflict.py"],
-    data = ["//third_party/restic"],
-    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
-    requires_docker = True,
-    deps = [
-        ":database",
-        ":ingest",
-        ":models",
-        ":source_paths",
-        ":testing",
-        "//:conftest",
-        "//util/testing:postgres_fixtures",
+        "//testing:postgres_fixtures",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
@@ -474,7 +427,7 @@ py_test(
         ":source_paths",
         ":testing",
         "//:conftest",
-        "//util/testing:postgres_fixtures",
+        "//testing:postgres_fixtures",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
@@ -488,13 +441,12 @@ py_test(
     requires_docker = True,
     deps = [
         ":database",
-        ":ingest",
         ":models",
         ":restic",
         ":source_paths",
         ":testing",
         "//:conftest",
-        "//util/testing:postgres_fixtures",
+        "//testing:postgres_fixtures",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
@@ -591,16 +543,25 @@ oci_image(
     visibility = ["//visibility:public"],
 )
 
+py_library(
+    name = "web_testing",
+    testonly = True,
+    srcs = ["web_testing.py"],
+    deps = [
+        ":web_settings",
+        "@pypi//itsdangerous",
+    ],
+)
+
 py_test(
     name = "test_web",
     srcs = ["test_web.py"],
     deps = [
         ":database",
         ":web",
-        ":web_settings",
+        ":web_testing",
         "//:conftest",
         "@pypi//fastapi",
-        "@pypi//itsdangerous",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
@@ -615,44 +576,17 @@ py_test(
         ":web",
         ":web_main",
         ":web_settings",
+        ":web_testing",
         "//:conftest",
         "//devinfra/testing:output_writer",
         "//devinfra/testing:undeclared_outputs",
-        "//util/testing:asgi",
-        "//util/testing/frontend_visual:capture",
-        "//util/testing/frontend_visual:context",
-        "//util/testing/frontend_visual:fixtures",
+        "//testing:asgi",
+        "//testing/frontend_visual:capture",
+        "//testing/frontend_visual:context",
+        "//testing/frontend_visual:fixtures",
         "@pypi//httpx",
-        "@pypi//itsdangerous",
         "@pypi//playwright",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "codex_titles_testing",
-    testonly = True,
-    srcs = ["codex_titles_testing.py"],
-)
-
-py_test(
-    name = "test_codex_title_rename",
-    size = "medium",
-    srcs = ["test_codex_title_rename.py"],
-    data = ["//third_party/restic"],
-    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
-    requires_docker = True,
-    deps = [
-        ":codex_titles_testing",
-        ":database",
-        ":ingest",
-        ":models",
-        ":source_paths",
-        ":testing",
-        "//:conftest",
-        "//util/testing:postgres_fixtures",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
@@ -666,36 +600,13 @@ py_test(
     exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
-        ":codex_titles_testing",
         ":database",
-        ":ingest",
-        ":models",
-        ":source_paths",
-        ":testing",
-        "//:conftest",
-        "//util/testing:postgres_fixtures",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_codex_title_retry",
-    size = "medium",
-    srcs = ["test_codex_title_retry.py"],
-    data = ["//third_party/restic"],
-    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
-    requires_docker = True,
-    deps = [
-        ":codex_titles_testing",
-        ":database",
-        ":ingest",
         ":models",
         ":restic",
         ":source_paths",
         ":testing",
         "//:conftest",
-        "//util/testing:postgres_fixtures",
+        "//testing:postgres_fixtures",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
@@ -709,13 +620,12 @@ py_test(
     requires_docker = True,
     deps = [
         ":database",
-        ":ingest",
         ":models",
         ":restic",
         ":source_paths",
         ":testing",
         "//:conftest",
-        "//util/testing:postgres_fixtures",
+        "//testing:postgres_fixtures",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
@@ -735,13 +645,12 @@ py_test(
     requires_docker = True,
     deps = [
         ":database",
-        ":ingest",
         ":models",
         ":session_projection",
         ":source_paths",
         ":testing",
         "//:conftest",
-        "//util/testing:postgres_fixtures",
+        "//testing:postgres_fixtures",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
@@ -773,7 +682,7 @@ py_test(
         ":database",
         ":testing",
         "//:conftest",
-        "//util/testing:postgres_fixtures",
+        "//testing:postgres_fixtures",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
@@ -799,7 +708,7 @@ py_test(
         ":version_queries",
         "//:conftest",
         "//devinfra/testing:undeclared_outputs",
-        "//util/testing:postgres_fixtures",
+        "//testing:postgres_fixtures",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",

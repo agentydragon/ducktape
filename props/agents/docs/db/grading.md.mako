@@ -36,8 +36,6 @@ Not all occurrences are matchable from all critique issues. The `match_file_rest
 
 The `grading_pending` view automatically enforces this - it only shows (issue, occurrence) pairs where the critique's files overlap.
 
-${describe_relation("matchable_occurrences")}
-
 ## Issue Clustering
 
 After grading is complete, issues with no positive match (credit=0 for all GT) need clustering. Clusters group independent reports of the same novel finding across critic runs.

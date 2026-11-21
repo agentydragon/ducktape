@@ -31,7 +31,7 @@ from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.action_service.sandbox.contract.actions import Action
 from agentplane.app.action_federation_settings import ExchangeFederationSettings
 from agentplane.app.settings import Settings
-from agentplane.env.config import GuestResources, ResourceLimits
+from agentplane.env.config import Executor, GuestResources, ResourceLimits, SystemdExecutorOwner
 from agentplane.identity.operator.settings import OperatorOidcSettings
 from agentplane.llm_ingress.models import AttributionConfig, AttributionField, AttributionJsonHeader, VerifiedClaim
 from agentplane.net.peertls.config import ACTIONS_URI, CENTRAL_SAMPLER_URI, LLM_INGRESS_URI, TLS
@@ -44,6 +44,7 @@ from agentplane.sampler.settings import (
     AnthropicPromptCacheConfig,
     AnthropicThinkingConfig,
     AuthConfig,
+    ChatCompactionConfig,
     ConnectionConfig,
     ModelConfig,
     ResponsesConfig,
@@ -63,6 +64,7 @@ from cluster.cdk8s.agentplane import (
     app_settings,
     command_sandbox,
     electric,
+    environment_firecracker,
     environment_vm,
     kubernetes_account_ref,
     llm_ingress,
@@ -113,7 +115,12 @@ from cluster.cdk8s.agentplane.generation import ManifestLayout
 from cluster.cdk8s.agentplane.kubernetes_account_ref import shared_diagnostics
 from cluster.cdk8s.agentplane.kubernetes_accounts import KubernetesAccount, KubernetesAccounts
 from cluster.cdk8s.agentplane.kubernetes_grants import KubernetesGrant
-from cluster.cdk8s.agentplane.model_selections import STAGING_APP_MODELS, model_configs
+from cluster.cdk8s.agentplane.model_selections import (
+    QWEN_CHAT_CANARY_ROUTE,
+    STAGING_APP_MODELS,
+    chat_completions_id,
+    model_configs,
+)
 from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE, kubernetes_accounts_namespace
 from cluster.cdk8s.agentplane.sandbox_pod import SECRET_NAME as SANDBOX_SECRET_NAME, TOOL_CONFIG_GRANT
 from cluster.cdk8s.cnpg import cluster
@@ -123,7 +130,7 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomiza
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME as REGISTRY_SECRET_NAME
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
-from cluster.cdk8s.haku import ui_egress as haku_ui_egress
+from cluster.cdk8s.haku import namespace as haku_namespace, ui_egress as haku_ui_egress
 from cluster.cdk8s.haku_ci import egress_gateway, runner
 from cluster.cdk8s.litellm.secrets import ANTHROPIC_API_KEY
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
@@ -134,7 +141,7 @@ from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSec
 from cluster.cdk8s.public_coder import egress as public_coder_egress
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.ssh_mcp.config import BEARER_SECRET_KEY, BEARER_SECRET_NAME, MCP_URL
-from model_catalog.catalog import Provider
+from model_catalog.catalog import TABBYAPI_QWEN_ABLITERATED, Provider
 
 _HOSTNAME = "agentplane-staging.allegedly.works"
 _ACTIONS_HOSTNAME = "agentplane-actions-staging.allegedly.works"
@@ -174,7 +181,7 @@ _ANTHROPIC_MESSAGES = AnthropicMessagesConfig(
 )
 
 
-# Separate harness and executor caps leave 1 GiB below the service high watermark.
+# Separate harness, executor, and command caps leave 1 GiB below the service high watermark.
 # The outer service cap leaves 1 GiB for guest services and kernel work.
 STAGING_VM_RESOURCES = GuestResources(
     guest_memory_bytes=8_589_934_592,
@@ -204,8 +211,17 @@ STAGING_VM_RESOURCES = GuestResources(
     ),
     executor=ResourceLimits(
         cpu_quota_micros=100_000,
-        memory_max_bytes=3_221_225_472,
-        pids_max=512,
+        memory_max_bytes=1_073_741_824,
+        pids_max=128,
+        read_bps=52_428_800,
+        write_bps=20_971_520,
+        read_iops=1000,
+        write_iops=500,
+    ),
+    executor_workload=ResourceLimits(
+        cpu_quota_micros=100_000,
+        memory_max_bytes=2_147_483_648,
+        pids_max=384,
         read_bps=52_428_800,
         write_bps=20_971_520,
         read_iops=1000,
@@ -238,8 +254,8 @@ _CONNECTION_SERVICE = mcp_edge.tls_service(STAGING_NAMESPACE)
 POD_TEMPLATE = "environment-tools"
 _RUNTIME_CATALOG = runtime_catalog(
     STAGING_APP_MODELS,
-    templates=(POD_TEMPLATE, environment_vm.NAME),
-    workspace_root_enforced_templates=(environment_vm.NAME,),
+    templates=(POD_TEMPLATE, environment_vm.NAME, environment_firecracker.NAME),
+    workspace_root_enforced_templates=(environment_vm.NAME, environment_firecracker.NAME),
     central_sampler_enabled=True,
 )
 _ENVIRONMENT_TOOLS_IMAGE = "git.allegedly.works/ducktape-ci/environment-tools"
@@ -287,6 +303,35 @@ _MCP_SERVERS = {
         redirect_uri=f"https://{_HOSTNAME}/mcp-linkage/callback",
     ),
 }
+# One mount per static-bearer MCP backend: the Action Service mounts the Secret in `mount_dir`, and its
+# group's `bearer_file` names `path` there.
+_SSH_MCP_MOUNT = BearerMcpMount(name="ssh-mcp", secret_name=_SSH_MCP_BEARER_SECRET, secret_key=BEARER_SECRET_KEY)
+_HA_MCP_MOUNT = BearerMcpMount(name="ha-mcp", secret_name=_HA_MCP_BEARER_SECRET, secret_key="bearer-token")
+# The Secret's own key is `token` (it's a Tana personal access token, not a
+# bearer minted for this purpose); renamed at mount time to the same
+# `bearer-token` file name every other static-bearer group uses.
+_TANA_MCP_MOUNT = BearerMcpMount(
+    name="tana-mcp", secret_name=_TANA_MCP_BEARER_SECRET, secret_key="token", optional=True
+)
+# One mount, shared by both the gmail and google_calendar ActionGroups -- one pod,
+# one caller-facing bearer.
+_GOOGLE_MCP_MOUNT = BearerMcpMount(name="google-mcp", secret_name=_GOOGLE_MCP_BEARER_SECRET, secret_key="bearer-token")
+
+
+def _static_bearer_group(
+    mount: BearerMcpMount, *, title: str, description: str, executor_description: str, url: str
+) -> ActionGroup:
+    return ActionGroup(
+        title=title,
+        description=description,
+        executor=McpExecutorBinding(
+            kind="mcp",
+            description=executor_description,
+            config={"transport": "streamable-http", "url": url, "auth": "static_bearer", "bearer_file": mount.path},
+        ),
+    )
+
+
 _ACTION_GROUPS = {
     "github": ActionGroup(
         title="GitHub MCP",
@@ -350,75 +395,40 @@ _ACTION_GROUPS = {
         # auto-approves them for the Connection's claude-ai account.
         direct_tools=frozenset(action.value for action in Action),
     ),
-    "ssh": ActionGroup(
+    "ssh": _static_bearer_group(
+        _SSH_MCP_MOUNT,
         title="SSH",
         description="SSH commands on configured targets; every Action remains subject to operator approval.",
-        executor=McpExecutorBinding(
-            kind="mcp",
-            description="SSH MCP backend (ssh-mcp); Agentplane retains approval and execution authority.",
-            config={
-                "transport": "streamable-http",
-                "url": MCP_URL,
-                "auth": "static_bearer",
-                "bearer_file": "/run/secrets/ssh-mcp/bearer-token",
-            },
-        ),
+        executor_description="SSH MCP backend (ssh-mcp); Agentplane retains approval and execution authority.",
+        url=MCP_URL,
     ),
-    "home_assistant": ActionGroup(
+    "home_assistant": _static_bearer_group(
+        _HA_MCP_MOUNT,
         title="Home Assistant MCP",
         description="Home Assistant tools; every Action remains subject to operator approval.",
-        executor=McpExecutorBinding(
-            kind="mcp",
-            description="Home Assistant MCP backend (ha-mcp).",
-            config={
-                "transport": "streamable-http",
-                "url": _HOME_ASSISTANT_MCP_URL,
-                "auth": "static_bearer",
-                "bearer_file": "/run/secrets/ha-mcp/bearer-token",
-            },
-        ),
+        executor_description="Home Assistant MCP backend (ha-mcp).",
+        url=_HOME_ASSISTANT_MCP_URL,
     ),
-    "tana": ActionGroup(
+    "tana": _static_bearer_group(
+        _TANA_MCP_MOUNT,
         title="Tana MCP",
         description="Tana read/write tools; every Action remains subject to operator approval.",
-        executor=McpExecutorBinding(
-            kind="mcp",
-            description="Tana MCP backend (tana-mcp).",
-            config={
-                "transport": "streamable-http",
-                "url": _TANA_MCP_URL,
-                "auth": "static_bearer",
-                "bearer_file": "/run/secrets/tana-mcp/bearer-token",
-            },
-        ),
+        executor_description="Tana MCP backend (tana-mcp).",
+        url=_TANA_MCP_URL,
     ),
-    "gmail": ActionGroup(
+    "gmail": _static_bearer_group(
+        _GOOGLE_MCP_MOUNT,
         title="Gmail",
         description="Gmail read/write tools; every Action remains subject to operator approval.",
-        executor=McpExecutorBinding(
-            kind="mcp",
-            description="Gmail MCP backend (google-mcp), on a write-scoped Google credential.",
-            config={
-                "transport": "streamable-http",
-                "url": _GMAIL_MCP_URL,
-                "auth": "static_bearer",
-                "bearer_file": "/run/secrets/google-mcp/bearer-token",
-            },
-        ),
+        executor_description="Gmail MCP backend (google-mcp), on a write-scoped Google credential.",
+        url=_GMAIL_MCP_URL,
     ),
-    "google_calendar": ActionGroup(
+    "google_calendar": _static_bearer_group(
+        _GOOGLE_MCP_MOUNT,
         title="Google Calendar",
         description="Google Calendar read/write tools; every Action remains subject to operator approval.",
-        executor=McpExecutorBinding(
-            kind="mcp",
-            description="Google Calendar MCP backend (google-mcp), on a write-scoped Google credential.",
-            config={
-                "transport": "streamable-http",
-                "url": _CALENDAR_MCP_URL,
-                "auth": "static_bearer",
-                "bearer_file": "/run/secrets/google-mcp/bearer-token",
-            },
-        ),
+        executor_description="Google Calendar MCP backend (google-mcp), on a write-scoped Google credential.",
+        url=_CALENDAR_MCP_URL,
     ),
 }
 
@@ -438,9 +448,8 @@ def _app_config(*, identity_catalog: bool) -> Settings:
     return staging_config.config(
         namespace=STAGING_NAMESPACE,
         sandbox_template=POD_TEMPLATE,
-        models=STAGING_APP_MODELS,
+        firecracker_template=environment_firecracker.NAME,
         runtime=_RUNTIME_CATALOG,
-        central_sampler_enabled=True,
         action_federation=_ACTION_FEDERATION,
         connection_service_url=AnyHttpUrl(f"https://{_CONNECTION_SERVICE.fqdn}:{_CONNECTION_SERVICE.port.number}"),
         app_origin=f"https://{_HOSTNAME}",
@@ -451,6 +460,17 @@ def _app_config(*, identity_catalog: bool) -> Settings:
 
 
 _APP_CONFIG = _app_config(identity_catalog=False)
+
+# The verified caller fields LiteLLM records as each request's spend-log metadata, sent both as one JSON
+# header and as W3C baggage under `litellm.metadata.spend_logs_metadata.`.
+_SPEND_LOGS_FIELDS = {
+    "agentplane.namespace": VerifiedClaim.NAMESPACE,
+    "agentplane.service_account": VerifiedClaim.SERVICE_ACCOUNT,
+    "agentplane.pod_name": VerifiedClaim.POD_NAME,
+    "agentplane.pod_uid": VerifiedClaim.POD_UID,
+    "agentplane.identity": VerifiedClaim.IDENTITY,
+    "agentplane.identity_uid": VerifiedClaim.IDENTITY_UID,
+}
 
 
 ENV = Environment(
@@ -467,6 +487,20 @@ ENV = Environment(
         pdb_min_available=1,
     ),
     runtime_catalog=_RUNTIME_CATALOG,
+    hostname_spread_services=frozenset(
+        {
+            "actions",
+            "app",
+            "environments",
+            "frontend",
+            "history-service",
+            "llm-ingress",
+            "mcp-edge",
+            "notifications",
+            "policy-controller",
+            "sessions",
+        }
+    ),
     # Every launch also acts as the shared diagnostics account.
     # CLEANUP(added 2026-11-09): render the identity catalog here, in the staging cutover PR, which also
     #   removes the ServiceAccount-subject rendering and this switch.
@@ -492,6 +526,7 @@ ENV = Environment(
                 else ModelConfig(
                     connection="llm-ingress",
                     provider_model=route.id,
+                    response_header_timeout_seconds=360 if route == QWEN_CHAT_CANARY_ROUTE else None,
                     api="responses",
                     responses=(_LITE_RESPONSES if route.upstream.provider == Provider.CHATGPT else _STANDARD_RESPONSES),
                     exec_encoding="freeform" if route.upstream.provider == Provider.CHATGPT else "json",
@@ -499,6 +534,22 @@ ENV = Environment(
                 )
             )
             for route in STAGING_APP_MODELS.central_sampler
+        }
+        | {
+            chat_completions_id(route): ModelConfig(
+                connection="llm-ingress",
+                provider_model=route.id,
+                response_header_timeout_seconds=360
+                if route in (QWEN_CHAT_CANARY_ROUTE, TABBYAPI_QWEN_ABLITERATED)
+                else None,
+                api="chat_completions",
+                exec_encoding="json",
+                reasoning_efforts={"", *route.reasoning_efforts},
+                chat_compaction=ChatCompactionConfig(
+                    max_tokens=8_192, keep_recent_turns=2, auto_compact_tokens=192 * 1024
+                ),
+            )
+            for route in STAGING_APP_MODELS.central_sampler_chat
         },
         connections={
             "llm-ingress": ConnectionConfig(
@@ -538,37 +589,12 @@ ENV = Environment(
             json_headers=[
                 AttributionJsonHeader(
                     name="x-litellm-spend-logs-metadata",
-                    fields=[
-                        AttributionField(key="agentplane.namespace", source=VerifiedClaim.NAMESPACE),
-                        AttributionField(key="agentplane.service_account", source=VerifiedClaim.SERVICE_ACCOUNT),
-                        AttributionField(key="agentplane.pod_name", source=VerifiedClaim.POD_NAME),
-                        AttributionField(key="agentplane.pod_uid", source=VerifiedClaim.POD_UID),
-                        AttributionField(key="agentplane.identity", source=VerifiedClaim.IDENTITY),
-                        AttributionField(key="agentplane.identity_uid", source=VerifiedClaim.IDENTITY_UID),
-                    ],
+                    fields=[AttributionField(key=key, source=source) for key, source in _SPEND_LOGS_FIELDS.items()],
                 )
             ],
             baggage=[
-                AttributionField(
-                    key="litellm.metadata.spend_logs_metadata.agentplane.namespace", source=VerifiedClaim.NAMESPACE
-                ),
-                AttributionField(
-                    key="litellm.metadata.spend_logs_metadata.agentplane.service_account",
-                    source=VerifiedClaim.SERVICE_ACCOUNT,
-                ),
-                AttributionField(
-                    key="litellm.metadata.spend_logs_metadata.agentplane.pod_name", source=VerifiedClaim.POD_NAME
-                ),
-                AttributionField(
-                    key="litellm.metadata.spend_logs_metadata.agentplane.pod_uid", source=VerifiedClaim.POD_UID
-                ),
-                AttributionField(
-                    key="litellm.metadata.spend_logs_metadata.agentplane.identity", source=VerifiedClaim.IDENTITY
-                ),
-                AttributionField(
-                    key="litellm.metadata.spend_logs_metadata.agentplane.identity_uid",
-                    source=VerifiedClaim.IDENTITY_UID,
-                ),
+                AttributionField(key=f"litellm.metadata.spend_logs_metadata.{key}", source=source)
+                for key, source in _SPEND_LOGS_FIELDS.items()
             ],
         ),
     ),
@@ -585,8 +611,8 @@ ENV = Environment(
         ),
         traffic_distribution="PreferClose",
         zones=node_scheduling.HOME_AND_OVH_ZONES,
-        external_workload_namespaces=(public_coder_egress.NAMESPACE, haku_ui_egress.NAMESPACE, runner.NAMESPACE),
-        standing_workload_namespaces=(haku_ui_egress.NAMESPACE, runner.NAMESPACE),
+        external_workload_namespaces=(public_coder_egress.NAMESPACE, haku_namespace.NAMESPACE, runner.NAMESPACE),
+        standing_workload_namespaces=(haku_namespace.NAMESPACE, runner.NAMESPACE),
     ),
     app=AppProps(
         config=_APP_CONFIG,
@@ -599,7 +625,7 @@ ENV = Environment(
         central_sampler_session_delegation=True,
         hostname=_ACTIONS_HOSTNAME,
         operator_oidc=_FEDERATION_TARGET,
-        caller_service_account_namespaces=frozenset({STAGING_NAMESPACE, haku_ui_egress.NAMESPACE}),
+        caller_service_account_namespaces=frozenset({STAGING_NAMESPACE, haku_namespace.NAMESPACE}),
         mcp_servers=_MCP_SERVERS,
         action_groups=_ACTION_GROUPS,
         mcp_client_metadata=McpClientMetadataSettings(
@@ -613,17 +639,7 @@ ENV = Environment(
         ),
         oauth_secret_items=(),
         github_mcp_client_secret_name=_GITHUB_MCP_CLIENT_SECRET,
-        bearer_mcp_mounts=[
-            BearerMcpMount(name="ssh-mcp", secret_name=_SSH_MCP_BEARER_SECRET, secret_key=BEARER_SECRET_KEY),
-            BearerMcpMount(name="ha-mcp", secret_name=_HA_MCP_BEARER_SECRET, secret_key="bearer-token"),
-            # The Secret's own key is `token` (it's a Tana personal access token, not a
-            # bearer minted for this purpose); renamed at mount time to the same
-            # `bearer-token` file name every other static-bearer group uses.
-            BearerMcpMount(name="tana-mcp", secret_name=_TANA_MCP_BEARER_SECRET, secret_key="token", optional=True),
-            # One mount, shared by both the gmail and google_calendar ActionGroups -- one pod,
-            # one caller-facing bearer.
-            BearerMcpMount(name="google-mcp", secret_name=_GOOGLE_MCP_BEARER_SECRET, secret_key="bearer-token"),
-        ],
+        bearer_mcp_mounts=[_SSH_MCP_MOUNT, _HA_MCP_MOUNT, _TANA_MCP_MOUNT, _GOOGLE_MCP_MOUNT],
         extra_egress=[
             EgressRule.to_fqdns(*_WEB_PUSH_ALLOWED_HOSTS),
             EgressRule.to_endpoints(cilium.endpoint_labels("ssh-mcp", "ssh-mcp"), 8080),
@@ -686,14 +702,10 @@ ENV = Environment(
         extra_egress=(cilium.egress_via_gateway("auth.allegedly.works"), EgressRule.to_fqdns("claude.ai")),
     ),
     vm_sandboxes=True,
+    firecracker_sandboxes=True,
     vm_storage_class="piraeus-ssd-2-autodiskful",
     vm_resources=STAGING_VM_RESOURCES,
-    wake_caller_accounts=frozenset(
-        {
-            ServiceAccountRef(namespace=STAGING_NAMESPACE, name=app_component.NAME),
-            ServiceAccountRef(namespace=STAGING_NAMESPACE, name=notifications.NAME),
-        }
-    ),
+    vm_executor=Executor(url="ws://127.0.0.1:4501", owner=SystemdExecutorOwner(), placement="systemd"),
 )
 
 
@@ -1117,36 +1129,18 @@ def agentplane_staging(
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         health_checks=[
             *health_checks,
-            *[
+            *(
                 KustomizationSpecHealthChecks(
-                    api_version="external-secrets.io/v1",
-                    kind="ExternalSecret",
-                    name=name,
-                    namespace=ENV.egress.credentials_namespace,
+                    api_version="external-secrets.io/v1", kind="ExternalSecret", name=name, namespace=namespace
                 )
-                for name in (
-                    public_coder_egress.CLICKHOUSE_CREDENTIAL,
-                    public_coder_egress.MATRIX_CREDENTIAL,
-                    public_coder_egress.BRAVE_CREDENTIAL,
+                for namespace, name in (
+                    (ENV.egress.credentials_namespace, public_coder_egress.CLICKHOUSE_CREDENTIAL),
+                    (ENV.egress.credentials_namespace, public_coder_egress.MATRIX_CREDENTIAL),
+                    (ENV.egress.credentials_namespace, public_coder_egress.BRAVE_CREDENTIAL),
+                    (STAGING_NAMESPACE, _LITELLM_KEY_SECRET),
+                    (STAGING_NAMESPACE, _ANTHROPIC_API_KEY_SECRET),
+                    (STAGING_NAMESPACE, _OIDC_SESSION_SECRET),
                 )
-            ],
-            KustomizationSpecHealthChecks(
-                api_version="external-secrets.io/v1",
-                kind="ExternalSecret",
-                name=_LITELLM_KEY_SECRET,
-                namespace=STAGING_NAMESPACE,
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="external-secrets.io/v1",
-                kind="ExternalSecret",
-                name=_ANTHROPIC_API_KEY_SECRET,
-                namespace=STAGING_NAMESPACE,
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="external-secrets.io/v1",
-                kind="ExternalSecret",
-                name=_OIDC_SESSION_SECRET,
-                namespace=STAGING_NAMESPACE,
             ),
         ],
         health_check_exprs=[

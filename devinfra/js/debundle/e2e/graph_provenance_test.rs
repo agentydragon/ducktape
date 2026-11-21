@@ -7,7 +7,7 @@ use std::process::Command;
 
 use debundle_e2e_support::{
     FixtureOpts, Member, TreeFixture, assert_entry_output, assert_node_output, debundler_path,
-    logical_module, node_module_evaluation_order, read_tree, run_fixture_with_graphs,
+    logical_module, node_module_evaluation_order, process, read_tree, run_fixture_with_graphs,
     run_tree_graph_fixture, tree_spec_args, unassigned_mode_inline,
 };
 use tempfile::TempDir;
@@ -16,12 +16,17 @@ fn stderr(output: &std::process::Output) -> String {
     String::from_utf8_lossy(&output.stderr).into_owned()
 }
 
-fn assert_mismatch(fixture: &GraphFixture, expected: &str) -> serde_json::Value {
-    let output = fixture.command(&["coverage", "--format", "json"]);
-    assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
+fn assert_graph_mismatch(output: &std::process::Output, expected: &str) -> serde_json::Value {
+    assert_eq!(output.status.code(), Some(1), "{}", stderr(output));
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(json["kind"], "graph_compatibility");
     assert_eq!(json["mismatch"]["reason"], expected);
+    json
+}
+
+fn assert_mismatch(fixture: &GraphFixture, expected: &str) -> serde_json::Value {
+    let output = fixture.command(&["coverage", "--format", "json"]);
+    let json = assert_graph_mismatch(&output, expected);
     assert!(json["mismatch"]["regenerate_command"].is_array());
     json
 }
@@ -73,11 +78,7 @@ impl AliasGraphFixture {
                 .arg(&out_root),
         )
         .unwrap();
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
+        process::assert_success(&output);
 
         Self {
             graph: out_root.join("reports/tree/provider/dependency_graph.json.gz"),
@@ -118,26 +119,9 @@ impl AliasGraphFixture {
     }
 }
 
-fn assert_success(output: &std::process::Output) {
-    assert!(
-        output.status.success(),
-        "status={:?}\nstdout={}\nstderr={}",
-        output.status.code(),
-        String::from_utf8_lossy(&output.stdout),
-        stderr(output)
-    );
-}
-
 fn query_json(output: &std::process::Output) -> serde_json::Value {
-    assert_success(output);
+    process::assert_success(output);
     serde_json::from_slice(&output.stdout).unwrap()
-}
-
-fn assert_graph_mismatch(output: &std::process::Output, expected: &str) {
-    assert_eq!(output.status.code(), Some(1), "{}", stderr(output));
-    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(json["kind"], "graph_compatibility");
-    assert_eq!(json["mismatch"]["reason"], expected);
 }
 
 #[test]
@@ -187,11 +171,11 @@ fn aliased_chunk_sources_use_the_verified_physical_input_for_queries() {
             "--tree-config",
             config.to_str().unwrap(),
         ]);
-        assert_success(&fixture.command(&args, Some(&fixture.source_root), None));
+        process::assert_success(&fixture.command(&args, Some(&fixture.source_root), None));
         assert_eq!(read_tree(&fixture.modules), before);
         assert_eq!(fs::read(&config).unwrap(), config_before);
     }
-    assert_success(&fixture.command(
+    process::assert_success(&fixture.command(
         &[
             "modules",
             "apply",
@@ -212,7 +196,7 @@ fn aliased_chunk_sources_use_the_verified_physical_input_for_queries() {
             .arg(&out_root),
     )
     .unwrap();
-    assert_success(&materialized);
+    process::assert_success(&materialized);
     assert_node_output(&out_root.join("app/provider/entry.js"), "42\n", "");
 }
 
@@ -233,7 +217,7 @@ fn aliased_source_match_remains_resolvable_by_the_graph_edit_gate() {
         None,
         None,
     );
-    assert_success(&output);
+    process::assert_success(&output);
     assert!(fixture.modules.join("next.yaml").is_file());
 
     assert_graph_mismatch(
@@ -387,25 +371,16 @@ fn flat_graph_unit_inspection_checks_source_without_module_tree_scope() {
                 .any(|id| id.as_str() == Some(unit.as_str())))
     );
 
-    let output = inspect("answer", &source_root);
-    assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
-    let rejection: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(rejection["mismatch"]["reason"], "module_scope");
+    assert_graph_mismatch(&inspect("answer", &source_root), "module_scope");
 
     let wrong_root = TempDir::new().unwrap();
     let wrong_source = wrong_root.path().join(format!("{}.js", fixture.chunk_id));
     fs::create_dir_all(wrong_source.parent().unwrap()).unwrap();
     fs::copy(&source, wrong_source).unwrap();
-    let output = inspect(&unit, wrong_root.path());
-    assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
-    let rejection: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(rejection["mismatch"]["reason"], "selector_source_root");
+    assert_graph_mismatch(&inspect(&unit, wrong_root.path()), "selector_source_root");
 
     fs::write(&source, "const answer = 43; console.log(answer);\n").unwrap();
-    let output = inspect(&unit, &source_root);
-    assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
-    let rejection: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(rejection["mismatch"]["reason"], "file");
+    assert_graph_mismatch(&inspect(&unit, &source_root), "file");
 }
 
 #[test]
@@ -436,9 +411,7 @@ fn selector_root_must_resolve_to_analyzed_source_file() {
         "--format",
         "json",
     ]);
-    assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
-    let rejection: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(rejection["mismatch"]["reason"], "selector_source_root");
+    assert_graph_mismatch(&output, "selector_source_root");
 }
 
 #[test]
@@ -452,9 +425,7 @@ fn fallback_source_search_cannot_shadow_analyzed_file() {
             .env_remove("DEBUNDLE_SOURCE_ROOT"),
     )
     .unwrap_or_else(|err| panic!("{err}"));
-    assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
-    let rejection: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(rejection["mismatch"]["reason"], "selector_source_root");
+    assert_graph_mismatch(&output, "selector_source_root");
 }
 
 #[test]
@@ -469,15 +440,13 @@ fn existing_added_and_deleted_yaml_reject_before_edit() {
         }
         let before = fs::read(fixture.modules.join("b.yaml")).unwrap();
         let output = fixture.command(&["bindings", "assign", "beta:a"]);
-        assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
-        let rejection: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(
-            rejection["mismatch"]["reason"],
+        assert_graph_mismatch(
+            &output,
             if mutation == "existing" {
                 "file"
             } else {
                 "yaml_membership"
-            }
+            },
         );
         assert_eq!(fs::read(fixture.modules.join("b.yaml")).unwrap(), before);
     }
@@ -542,9 +511,7 @@ fn provider_chunk_analysis_option_invalidates_consumer_graph() {
             .args(["--format", "json"]),
     )
     .unwrap();
-    assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
-    let rejection: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(rejection["mismatch"]["reason"], "file");
+    assert_graph_mismatch(&output, "file");
 }
 
 #[test]
@@ -614,9 +581,7 @@ fn wrong_chunk_scope_with_same_binding_is_rejected() {
             .arg("json"),
     )
     .unwrap();
-    assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
-    let rejection: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(rejection["mismatch"]["reason"], "module_scope");
+    let rejection = assert_graph_mismatch(&output, "module_scope");
     assert_eq!(rejection["mismatch"]["chunk_id"], "main");
     assert_eq!(rejection["mismatch"]["actual"], wrong.to_str().unwrap());
 }
@@ -697,9 +662,7 @@ fn relocated_mismatch_recipe_rebuilds_after_original_inputs_are_removed() {
         ]),
     )
     .unwrap();
-    assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
-    let rejection: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(rejection["mismatch"]["reason"], "file");
+    let rejection = assert_graph_mismatch(&output, "file");
     let command = rejection["mismatch"]["regenerate_command"]
         .as_array()
         .unwrap()
@@ -753,9 +716,7 @@ fn source_only_relocation_keeps_spec_paths_in_regeneration_recipe() {
         ]),
     )
     .unwrap();
-    assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
-    let rejection: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(rejection["mismatch"]["reason"], "file");
+    let rejection = assert_graph_mismatch(&output, "file");
     let argv = rejection["mismatch"]["regenerate_command"]
         .as_array()
         .unwrap();

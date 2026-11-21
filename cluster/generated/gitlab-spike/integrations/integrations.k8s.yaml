@@ -137,6 +137,9 @@ spec:
   values:
     checkInterval: 5
     concurrent: 2
+    deploymentAnnotations:
+      goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "gitlab-spike-runner-gitlab-runner", "controlledValues": "RequestsOnly", "minAllowed": {"memory": "160Mi"}, "controlledResources": ["cpu", "memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
+      goldilocks.fairwinds.com/vpa-update-mode: initial
     gitlabUrl: http://gitlab-spike-webservice-default.gitlab-spike.svc:8181
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh

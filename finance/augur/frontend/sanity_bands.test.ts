@@ -1,5 +1,5 @@
 // Unit tests for the calibration "Reasonableness bands" panel's pure presentation logic.
-// Runs under vitest (the repo's TS unit-test runner); see //augur/frontend:sanity_bands_test.
+// Runs under vitest (the repo's TS unit-test runner); see //finance/augur/frontend:sanity_bands_test.
 
 import { test, expect } from "vitest";
 

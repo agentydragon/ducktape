@@ -20,6 +20,32 @@ Surprises met while validating debundle changes and authoring specs.
   a fixture record each subprocess (`recorded_run`, diagnostics created first)
   so a timeout leaves a `.started.json` without its `.result.json`.
 - Cumulative lazy-download time is not the input-fetch stage duration.
+- A benchmark of recompiles after an analysis-only edit needs engine outputs
+  that differ per arm. An unused `--cfg` changes the action key but not the
+  `.rmeta`/`.rlib` bytes, so later arms reuse earlier arms' downstream outputs.
+  Append a unique `pub const` to the analysis crate's `lib.rs` for each arm and
+  compare the output digests with `bb execution get`.
+- Compiler self-profile: on each profiled `rust_library` set
+  `rustc_env = {"RUSTC_BOOTSTRAP": "1"}` (the pinned compiler is stable) and
+  `zself_profile_events = "@rules_rust//rust/settings:zself_profile_events"`,
+  then build with `--output_groups=+self_profile` and
+  `--@rules_rust//rust/settings:zself_profile_events=//devinfra/js/debundle@`.
+  Read the traces with `measureme` (`summarize`, `crox`); summed events across
+  threads exceed wall time. Do not add `-Ztime-passes`: its plain stderr breaks
+  rules_rust's metadata wrapper.
+- Low BuildBuddy queue time does not exclude waiting for admission inside
+  Bazel: client action-processing intervals can sit at the `--jobs` cap
+  (`devinfra/bazel/rbe.bazelrc`) while leaf Rust test compiles and Clippy hold
+  many slots and critical-path metadata actions wait. Unmeasured for
+  compile-heavy Rust changes: whether earlier admission of prerequisite
+  compilation shortens feedback without raising concurrent fresh
+  browser/Docker/VM tests; vary compile and test concurrency separately.
+- Analysis-only edits skip recompiling `:artifact` and the selector solver
+  crates because neither depends on `:analysis`; their shared types live in
+  `:source_identity` and `:analysis_model`. The CLI library compiles without
+  waiting for the generated analysis identity, which `main.rs` and
+  `analyze_main.rs` pass in. Importing `analysis` or the identity into those
+  crates restores the recompiles and the wait.
 
 ## Analysis reuse
 

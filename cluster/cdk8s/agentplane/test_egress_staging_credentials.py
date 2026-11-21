@@ -6,6 +6,7 @@ from cdk8s import Chart, Testing as Cdk8sTesting
 from cluster.cdk8s.agentplane.egress_credentials import STAGING_CREDENTIALS_NAMESPACE
 from cluster.cdk8s.agentplane.egress_staging_credentials import add_staging_egress_credentials
 from cluster.cdk8s.clickhouse import client as clickhouse
+from cluster.cdk8s.testing.manifests import find_resource
 
 
 def _staging_credentials_resources(chart: Chart) -> list[dict]:
@@ -17,7 +18,7 @@ def _staging_credentials_resources(chart: Chart) -> list[dict]:
 
 def test_forgejo_password_has_one_reader_and_exact_source_access(scratch_chart: Chart) -> None:
     objects = _staging_credentials_resources(scratch_chart)
-    binding = next(obj for obj in objects if obj["kind"] == "RoleBinding")
+    binding = find_resource(objects, "RoleBinding", "agentplane-staging-forgejo-reader")
     assert binding["subjects"] == [
         {
             "apiGroup": "",
@@ -27,13 +28,12 @@ def test_forgejo_password_has_one_reader_and_exact_source_access(scratch_chart: 
         }
     ]
 
-    source_role = next(
-        obj for obj in objects if obj["kind"] == "Role" and obj["metadata"]["namespace"] == "haku-sandbox"
-    )
+    source_role = find_resource(objects, "Role", "agentplane-staging-forgejo-reader")
+    assert source_role["metadata"]["namespace"] == "haku-sandbox"
     assert source_role["rules"] == [
         {"apiGroups": [""], "resources": ["secrets"], "resourceNames": ["haku-forgejo-git"], "verbs": ["get"]}
     ]
-    store = next(obj for obj in objects if obj["kind"] == "ClusterSecretStore")
+    store = find_resource(objects, "ClusterSecretStore", "kubernetes-agentplane-staging-forgejo-secret-store")
     assert store["spec"]["conditions"] == [{"namespaces": [STAGING_CREDENTIALS_NAMESPACE]}]
     provider = store["spec"]["provider"]["kubernetes"]
     assert provider["remoteNamespace"] == "haku-sandbox"
@@ -46,24 +46,14 @@ def test_clickhouse_history_password_has_one_exact_source_reader(scratch_chart: 
     role_name = "agentplane-staging-aiquota-history-clickhouse-reader"
     store_name = "kubernetes-agentplane-staging-aiquota-history-clickhouse-secret-store"
 
-    source_role = next(
-        resource
-        for resource in objects
-        if resource["kind"] == "Role"
-        and resource["metadata"]["namespace"] == clickhouse.NAMESPACE
-        and resource["metadata"]["name"] == role_name
-    )
+    source_role = find_resource(objects, "Role", role_name)
+    assert source_role["metadata"]["namespace"] == clickhouse.NAMESPACE
     assert source_role["rules"] == [
         {"apiGroups": [""], "resources": ["secrets"], "resourceNames": [secret], "verbs": ["get"]}
     ]
 
-    source_binding = next(
-        resource
-        for resource in objects
-        if resource["kind"] == "RoleBinding"
-        and resource["metadata"]["namespace"] == clickhouse.NAMESPACE
-        and resource["metadata"]["name"] == role_name
-    )
+    source_binding = find_resource(objects, "RoleBinding", role_name)
+    assert source_binding["metadata"]["namespace"] == clickhouse.NAMESPACE
     assert source_binding["roleRef"]["name"] == role_name
     assert source_binding["subjects"] == [
         {
@@ -74,23 +64,14 @@ def test_clickhouse_history_password_has_one_exact_source_reader(scratch_chart: 
         }
     ]
 
-    store = next(
-        resource
-        for resource in objects
-        if resource["kind"] == "ClusterSecretStore" and resource["metadata"]["name"] == store_name
-    )
+    store = find_resource(objects, "ClusterSecretStore", store_name)
     assert store["spec"]["conditions"] == [{"namespaces": [STAGING_CREDENTIALS_NAMESPACE]}]
     provider = store["spec"]["provider"]["kubernetes"]
     assert provider["remoteNamespace"] == clickhouse.NAMESPACE
     assert provider["auth"]["serviceAccount"] == {"name": "external-creds-reader"}
 
-    external_secret = next(
-        resource
-        for resource in objects
-        if resource["kind"] == "ExternalSecret"
-        and resource["metadata"]["namespace"] == STAGING_CREDENTIALS_NAMESPACE
-        and resource["metadata"]["name"] == secret
-    )
+    external_secret = find_resource(objects, "ExternalSecret", secret)
+    assert external_secret["metadata"]["namespace"] == STAGING_CREDENTIALS_NAMESPACE
     assert external_secret["spec"]["secretStoreRef"] == {"kind": "ClusterSecretStore", "name": store_name}
     assert external_secret["spec"]["data"] == [
         {"secretKey": clickhouse.PASSWORD_KEY, "remoteRef": {"key": secret, "property": clickhouse.PASSWORD_KEY}}
@@ -99,14 +80,12 @@ def test_clickhouse_history_password_has_one_exact_source_reader(scratch_chart: 
 
 def test_thrive_read_has_scoped_bearer_and_get_rules(scratch_chart: Chart) -> None:
     objects = _staging_credentials_resources(scratch_chart)
-    credential = next(
-        obj for obj in objects if obj["kind"] == "EgressCredential" and obj["metadata"]["name"] == "thrive-read"
-    )
+    credential = find_resource(objects, "EgressCredential", "thrive-read")
     assert credential["spec"]["source"] == {
         "secretRef": {"name": "platform-sessions-thrive-read-bearer", "key": "token"}
     }
     assert credential["spec"]["targets"] == [{"header": "Authorization", "method": "schemeToken", "scheme": "Bearer"}]
-    policy = next(obj for obj in objects if obj["kind"] == "PolicySet" and obj["metadata"]["name"] == "thrive-read")
+    policy = find_resource(objects, "PolicySet", "thrive-read")
     rules = policy["spec"]["rules"]
     assert [rule["methods"] for rule in rules] == [["GET"]]
     assert rules[0]["hosts"] == ["platform-sessions.allegedly.works"]
@@ -122,28 +101,18 @@ def test_thrive_read_has_scoped_bearer_and_get_rules(scratch_chart: Chart) -> No
 
 def test_quest_bearer_has_its_own_secret_and_network_access(scratch_chart: Chart) -> None:
     objects = _staging_credentials_resources(scratch_chart)
-    credential = next(
-        obj
-        for obj in objects
-        if obj["kind"] == "EgressCredential" and obj["metadata"]["name"] == "quest-scheduler-read"
-    )
+    credential = find_resource(objects, "EgressCredential", "quest-scheduler-read")
     assert credential["spec"]["source"] == {
         "secretRef": {"name": "platform-sessions-quest-scheduler-bearer", "key": "token"}
     }
     assert credential["spec"]["targets"] == [{"header": "Authorization", "method": "schemeToken", "scheme": "Bearer"}]
-    policy = next(
-        obj for obj in objects if obj["kind"] == "PolicySet" and obj["metadata"]["name"] == "quest-scheduler-read"
-    )
+    policy = find_resource(objects, "PolicySet", "quest-scheduler-read")
     rules = policy["spec"]["rules"]
     assert [rule["methods"] for rule in rules] == [["GET"], ["POST"]]
     assert all(rule["hosts"] == ["platform-sessions.allegedly.works"] for rule in rules)
     assert all(rule["paths"] for rule in rules)
     assert all(path.startswith("/proxy/quest-scheduler/") for rule in rules for path in rule["paths"])
-    network = next(
-        obj
-        for obj in objects
-        if obj["kind"] == "CiliumNetworkPolicy" and obj["metadata"]["name"] == "egress-staging-credentials"
-    )
+    network = find_resource(objects, "CiliumNetworkPolicy", "egress-staging-credentials")
     assert {
         "toEndpoints": [
             {

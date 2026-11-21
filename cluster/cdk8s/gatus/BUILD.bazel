@@ -5,10 +5,7 @@ py_library(
     name = "sso",
     srcs = ["sso.py"],
     data = ["//tf/gitops/gatus-sso:inline_source"],
-    visibility = [
-        "//cluster/cdk8s:__pkg__",
-        "//cluster/cdk8s/authentik:__pkg__",
-    ],
+    visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:opentofu",
@@ -39,7 +36,7 @@ py_library(
         "//cluster/cdk8s/monitoring:loki",
         "//cluster/cdk8s/monitoring:mimir",
         "//cluster/cdk8s/nix_cache:attic",
-        "//cluster/cdk8s/ollama:app",
+        "//cluster/cdk8s/ollama:tabby",
         "//model_catalog:catalog",
         "@pypi//pydantic",
     ],

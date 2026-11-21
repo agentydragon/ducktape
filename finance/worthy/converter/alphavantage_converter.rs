@@ -27,7 +27,6 @@ impl Converter for AlphaVantageConverter {
         let AlphaVantageConverterConfig { api_key } = config;
         let client = Client::new(api_key);
 
-        //let rates = Vec::new();
         let currencies: Vec<&str> = denominations
             .iter()
             .filter_map(|d| match d {
@@ -53,7 +52,6 @@ impl Converter for AlphaVantageConverter {
                 trace!("{stock} {entry:?}");
 
                 rates.push(ExchangeRate {
-                    //timestamp: entry.date.timestamp,
                     from: Denomination::Stock {
                         stock: stock.clone(),
                     },

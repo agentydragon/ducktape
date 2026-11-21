@@ -21,7 +21,7 @@ apiVersion: v1
 kind: Namespace
 metadata:
   labels:
-    goldilocks.fairwinds.com/enabled: "false"
+    goldilocks.fairwinds.com/vpa-update-mode: "off"
   name: loki-read-proxy
 spec: {}
 ---
@@ -30,6 +30,8 @@ kind: Deployment
 metadata:
   annotations:
     description: Read-only namespace-filtering Loki query proxy for agents. Exposes only GET query/query_range and requires an exact namespace matcher in every query; Loki itself is auth_enabled:false, so agents must never reach it directly. A request with a Kubernetes bearer token is authorized by that token's RBAC (SelfSubjectAccessReview for get pods/log in the namespace); an anonymous request by the static NAMESPACE_ALLOWLIST, fenced by the CiliumNetworkPolicy next to it.
+    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "proxy", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "50m", "memory": "128Mi"}, "maxAllowed": {"cpu": "50m", "memory": "160Mi"}, "controlledResources": ["memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
+    goldilocks.fairwinds.com/vpa-update-mode: initial
   labels:
     app.kubernetes.io/name: loki-read-proxy
   name: loki-read-proxy

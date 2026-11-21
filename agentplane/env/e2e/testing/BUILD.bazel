@@ -10,7 +10,10 @@ package(
 py_library(
     name = "config",
     srcs = ["config.py"],
-    deps = ["//agentplane/sandboxes/testing:identity"],
+    deps = [
+        "//agentplane/env:config",
+        "//agentplane/sandboxes/testing:identity",
+    ],
 )
 
 py_library(
@@ -68,10 +71,8 @@ py_library(
         ":driver",
         ":failure_journal",
         ":gateway",
-        ":history_tunnel",
         ":launches",
         ":process",
-        "//agentplane/env:config",
         "//agentplane/history_service/testing:go_service",
         "//agentplane/native/claude/testing:messages",
         "//agentplane/native/codex/testing:responses",
@@ -107,9 +108,8 @@ py_library(
     deps = [
         ":config",
         ":gateway",
-        ":history_tunnel",
+        ":history_ingress",
         ":process",
-        "//agentplane/env:config",
         "//agentplane/env/runtime/control:environment_runtime_pb2_grpc",
         "//agentplane/grpc:calls",
         "//agentplane/harness_host:harness_host_pb2",
@@ -150,18 +150,17 @@ py_library(
     srcs = ["process_fixtures.py"],
     deps = [
         ":gateway",
-        ":history_tunnel",
+        ":history_ingress",
         ":launches",
         ":model_config",
-        "//agentplane/env:config",
         "//agentplane/history_service/testing:go_service",
         "//agentplane/native/claude/testing:messages",
         "//agentplane/native/codex/testing:responses",
         "//agentplane/proto:session_pb2",
         "//devinfra/oci",
+        "//testing:container_logs",
         "//third_party/containers:debian_slim",
         "//third_party/containers:ryuk",
-        "//util/testing:container_logs",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//testcontainers",
@@ -192,11 +191,6 @@ py_library(
 )
 
 py_library(
-    name = "history_tunnel",
-    srcs = ["history_tunnel.py"],
-)
-
-py_library(
     name = "claude_transcript",
     srcs = ["claude_transcript.py"],
     deps = [
@@ -224,7 +218,7 @@ py_library(
     deps = [
         ":config",
         ":gateway",
-        ":history_tunnel",
+        ":history_ingress",
         ":process",
         "//agentplane/env:config",
         "//agentplane/environments/testing:process",
@@ -233,5 +227,14 @@ py_library(
         "//agentplane/sandboxes/testing:kubernetes",
         "//agentplane/session_dispatcher:client",
         "//agentplane/testing:kubernetes_apiserver",
+    ],
+)
+
+py_library(
+    name = "history_ingress",
+    srcs = ["history_ingress.py"],
+    deps = [
+        "//agentplane/env:config",
+        "//agentplane/net/peertls:config",
     ],
 )

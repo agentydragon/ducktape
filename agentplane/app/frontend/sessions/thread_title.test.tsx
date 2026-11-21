@@ -1,10 +1,9 @@
 // @vitest-environment happy-dom
-import { MantineProvider } from "@mantine/core";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 import { act } from "react";
-import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
+import { cleanupMounted, mountWithMantine } from "../../../../util/frontend/testing/react";
 import type { ThreadView } from "./client";
 import { ThreadTitle } from "./thread_title";
 import { threadView } from "./testing/state";
@@ -15,7 +14,6 @@ const fetchMock = vi.hoisted(() => {
   return fetch;
 });
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const CREATED_AT = "2026-01-01T00:00:00Z";
 const THREAD: ThreadView = threadView({
   metadata: {
@@ -25,7 +23,6 @@ const THREAD: ThreadView = threadView({
   },
   summary: { sandbox: { name: "title-test" } },
 });
-let root: ReturnType<typeof createRoot>;
 let container: HTMLDivElement;
 beforeEach(() => {
   vi.stubGlobal("fetch", fetchMock);
@@ -39,8 +36,7 @@ beforeEach(() => {
   });
 });
 afterEach(async () => {
-  await act(async () => root.unmount());
-  container.remove();
+  await cleanupMounted();
   vi.clearAllMocks();
   vi.unstubAllGlobals();
 });
@@ -51,18 +47,12 @@ async function render(thread: ThreadView | null): Promise<{
   rerender: (next: ThreadView) => Promise<void>;
 }> {
   const onRenamed = vi.fn();
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-  const rerender = async (next: ThreadView | null): Promise<void> =>
-    act(async () =>
-      root.render(
-        <MantineProvider env="test">
-          <ThreadTitle threadId={THREAD.metadata.threadId} thread={next} onRenamed={onRenamed} onError={() => {}} />
-        </MantineProvider>
-      )
-    );
-  await rerender(thread);
+  const view = (next: ThreadView | null) => (
+    <ThreadTitle threadId={THREAD.metadata.threadId} thread={next} onRenamed={onRenamed} onError={() => {}} />
+  );
+  const mounted = await mountWithMantine(view(thread));
+  container = mounted.container;
+  const rerender = (next: ThreadView | null): Promise<void> => mounted.rerender(view(next));
   return { input: container.querySelector<HTMLInputElement>('input[aria-label="Thread name"]')!, onRenamed, rerender };
 }
 

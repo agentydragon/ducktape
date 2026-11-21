@@ -7,7 +7,7 @@ a real LLM proxy, which forwards to this fake upstream.
 Requests are routed by the `model` field in the request body to the
 corresponding mock in the dict.
 
-Serve `create_app()` with `util.testing.asgi.bind_http_server()` and call
+Serve `create_app()` with `testing.asgi.bind_http_server()` and call
 `check_errors()` after the serving context exits so mock exceptions fail the test
 after server cleanup.
 """
@@ -41,7 +41,7 @@ from openai_utils.model import (
     ResponsesResult,
     ResponseUsage,
 )
-from props.testing.constants import DEFAULT_TEST_MODEL
+from props.testing.models import DEFAULT_TEST_MODEL
 
 logger = logging.getLogger(__name__)
 

@@ -1,8 +1,3 @@
-# ============================================================================
-# haku-console operator browser login (retires the forward-auth proxy outpost).
-# This provider serves the operator session cookie; the Console MCP OAuth provider and endpoint
-# have been retired.
-
 resource "authentik_group" "haku_console_access" {
   name  = "haku-console-access"
   users = [data.authentik_user.agentydragon.pk]

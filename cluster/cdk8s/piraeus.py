@@ -21,7 +21,7 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, oci_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import mimir
-from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.namespaces import PRIVILEGED_POD_SECURITY, Vpa
 
 NAMESPACE = "piraeus-datastore"
 OPERATOR_OUTPUT_DIR = f"{GENERATED_ROOT}/piraeus/operator"
@@ -44,6 +44,7 @@ _FIRST_NODE_THIN_POOL = "data"
 _FIRST_NODE_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "kubernetes.io/hostname": "ovh-ns1001419"}
 _FIRST_NODE_DATA_DEVICE = "/dev/disk/by-id/nvme-WDC_CL_SN720_SDAQNTW-512G-2000_1951A3449505"
 _HDD_VOLUME_GROUP = "piraeus_hdd"
+_VOLUME_GROUPS = {"ssd": _FIRST_NODE_VOLUME_GROUP, "hdd": _HDD_VOLUME_GROUP}
 _HDD_FIRST_NODE_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "kubernetes.io/hostname": "ovh-ns103656"}
 _HDD_FIRST_NODE_DATA_DEVICE = "/dev/disk/by-id/ata-HGST_HUS726020ALA610_K5H8UMLA"
 _HDD_NEXT_NODE_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "kubernetes.io/hostname": "ovh-ns103711"}
@@ -200,17 +201,7 @@ def _auto_diskful_storage_class(name: str, pool: str, reclaim_policy: str) -> di
 def operator_chart(app: App) -> Chart:
     """Install the pinned operator and its CRDs before the separate cluster chart."""
     chart = Chart(app, "piraeus-operator", disable_resource_name_hashes=True)
-    namespaces.namespace(
-        chart,
-        "namespace",
-        name=NAMESPACE,
-        vpa=Vpa.RECOMMEND,
-        labels={
-            "pod-security.kubernetes.io/enforce": "privileged",
-            "pod-security.kubernetes.io/audit": "privileged",
-            "pod-security.kubernetes.io/warn": "privileged",
-        },
-    )
+    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.RECOMMEND, labels=PRIVILEGED_POD_SECURITY)
     repository = oci_helm_repository(
         chart, "piraeus-operator", "flux-system", url="oci://ghcr.io/piraeusdatastore/piraeus-operator"
     )
@@ -386,88 +377,27 @@ def cluster_chart(app: App) -> Chart:
         thin_pool=_FIRST_NODE_THIN_POOL,
         storage_pool="ssd",
     )
-    piraeus_metrics.add_thin_pool_monitoring(
-        Construct(chart, "next-node-metrics"),
-        namespace=NAMESPACE,
-        node_selector=_NEXT_NODE_SELECTOR,
-        volume_group=_FIRST_NODE_VOLUME_GROUP,
-        thin_pool=_FIRST_NODE_THIN_POOL,
-        storage_pool="ssd",
-        name="piraeus-lvm-metrics-ovh-ns104952",
-    )
-    piraeus_metrics.add_thin_pool_monitoring(
-        Construct(chart, "third-node-metrics"),
-        namespace=NAMESPACE,
-        node_selector=_THIRD_NODE_SELECTOR,
-        volume_group=_FIRST_NODE_VOLUME_GROUP,
-        thin_pool=_FIRST_NODE_THIN_POOL,
-        storage_pool="ssd",
-        name="piraeus-lvm-metrics-ovh-ns104963",
-    )
-    piraeus_metrics.add_thin_pool_monitoring(
-        Construct(chart, "hdd-first-node-metrics"),
-        namespace=NAMESPACE,
-        node_selector=_HDD_FIRST_NODE_SELECTOR,
-        volume_group=_HDD_VOLUME_GROUP,
-        thin_pool=_FIRST_NODE_THIN_POOL,
-        storage_pool="hdd",
-        name="piraeus-lvm-metrics-ovh-ns103656",
-    )
-    piraeus_metrics.add_thin_pool_monitoring(
-        Construct(chart, "hdd-next-node-metrics"),
-        namespace=NAMESPACE,
-        node_selector=_HDD_NEXT_NODE_SELECTOR,
-        volume_group=_HDD_VOLUME_GROUP,
-        thin_pool=_FIRST_NODE_THIN_POOL,
-        storage_pool="hdd",
-        name="piraeus-lvm-metrics-ovh-ns103711",
-    )
-    piraeus_metrics.add_thin_pool_monitoring(
-        Construct(chart, "hdd-last-node-metrics"),
-        namespace=NAMESPACE,
-        node_selector=_HDD_LAST_NODE_SELECTOR,
-        volume_group=_HDD_VOLUME_GROUP,
-        thin_pool=_FIRST_NODE_THIN_POOL,
-        storage_pool="hdd",
-        name="piraeus-lvm-metrics-ovh-ns102453",
-    )
-    piraeus_metrics.add_thin_pool_monitoring(
-        Construct(chart, "optiplex-metrics"),
-        namespace=NAMESPACE,
-        node_selector=_OPTIPLEX_SELECTOR,
-        volume_group=_FIRST_NODE_VOLUME_GROUP,
-        thin_pool=_FIRST_NODE_THIN_POOL,
-        storage_pool="ssd",
-        name="piraeus-lvm-metrics-optiplex",
-    )
-    piraeus_metrics.add_thin_pool_monitoring(
-        Construct(chart, "wyrm2-ssd-metrics"),
-        namespace=NAMESPACE,
-        node_selector=_WYRM2_SELECTOR,
-        volume_group=_FIRST_NODE_VOLUME_GROUP,
-        thin_pool=_FIRST_NODE_THIN_POOL,
-        storage_pool="ssd",
-        name="piraeus-lvm-metrics-wyrm2-ssd",
-    )
-    piraeus_metrics.add_thin_pool_monitoring(
-        Construct(chart, "wyrm2-hdd-metrics"),
-        namespace=NAMESPACE,
-        node_selector=_WYRM2_SELECTOR,
-        volume_group=_HDD_VOLUME_GROUP,
-        thin_pool=_FIRST_NODE_THIN_POOL,
-        storage_pool="hdd",
-        name="piraeus-lvm-metrics-wyrm2-hdd",
-    )
-    piraeus_metrics.add_thin_pool_monitoring(
-        Construct(chart, "rugged-metrics"),
-        namespace=NAMESPACE,
-        node_selector=_RUGGED_SELECTOR,
-        volume_group=_FIRST_NODE_VOLUME_GROUP,
-        thin_pool=_FIRST_NODE_THIN_POOL,
-        storage_pool="ssd",
-        name="piraeus-lvm-metrics-rugged",
-        only_when_node_ready="rugged",
-    )
+    for monitor_id, node_selector, storage_pool, name, ready_node in (
+        ("next-node-metrics", _NEXT_NODE_SELECTOR, "ssd", "piraeus-lvm-metrics-ovh-ns104952", None),
+        ("third-node-metrics", _THIRD_NODE_SELECTOR, "ssd", "piraeus-lvm-metrics-ovh-ns104963", None),
+        ("hdd-first-node-metrics", _HDD_FIRST_NODE_SELECTOR, "hdd", "piraeus-lvm-metrics-ovh-ns103656", None),
+        ("hdd-next-node-metrics", _HDD_NEXT_NODE_SELECTOR, "hdd", "piraeus-lvm-metrics-ovh-ns103711", None),
+        ("hdd-last-node-metrics", _HDD_LAST_NODE_SELECTOR, "hdd", "piraeus-lvm-metrics-ovh-ns102453", None),
+        ("optiplex-metrics", _OPTIPLEX_SELECTOR, "ssd", "piraeus-lvm-metrics-optiplex", None),
+        ("wyrm2-ssd-metrics", _WYRM2_SELECTOR, "ssd", "piraeus-lvm-metrics-wyrm2-ssd", None),
+        ("wyrm2-hdd-metrics", _WYRM2_SELECTOR, "hdd", "piraeus-lvm-metrics-wyrm2-hdd", None),
+        ("rugged-metrics", _RUGGED_SELECTOR, "ssd", "piraeus-lvm-metrics-rugged", "rugged"),
+    ):
+        piraeus_metrics.add_thin_pool_monitoring(
+            Construct(chart, monitor_id),
+            namespace=NAMESPACE,
+            node_selector=node_selector,
+            volume_group=_VOLUME_GROUPS[storage_pool],
+            thin_pool=_FIRST_NODE_THIN_POOL,
+            storage_pool=storage_pool,
+            name=name,
+            only_when_node_ready=ready_node,
+        )
     repository = oci_helm_repository(
         chart, "piraeus-charts", "flux-system", url="oci://ghcr.io/piraeusdatastore/helm-charts"
     )

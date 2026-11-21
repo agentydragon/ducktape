@@ -11,7 +11,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 
-	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
 	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/client"
@@ -60,7 +59,7 @@ func TestCreateSubscriptionFollowsAnActionRequestAndAnAgentFindsItsInbox(t *test
 	}
 	inbox := inboxes.GetInboxes()[0]
 	if inbox.GetId() != subscription.GetInboxId() || inbox.GetSessionId() != testSession ||
-		inbox.GetDestinationRef() != nil || inbox.GetLastCursor() != 0 || inbox.GetRetired() {
+		inbox.GetLastCursor() != 0 || inbox.GetRetired() {
 		t.Errorf("inbox = %v", inbox)
 	}
 }
@@ -227,7 +226,7 @@ func TestSessionWithoutPlacementCanSubscribeReadAndAcknowledge(t *testing.T) {
 		t.Fatal(err)
 	}
 	page, err := server.client.ReadInbox(bearing(t, identityCaller), &notificationspb.ReadInboxRequest{SessionId: testSession})
-	if err != nil || page.GetInbox().GetId() != created.GetSubscription().GetInboxId() || page.GetInbox().GetDestinationRef() != nil {
+	if err != nil || page.GetInbox().GetId() != created.GetSubscription().GetInboxId() {
 		t.Fatalf("unplaced Session inbox = %v, %v", page, err)
 	}
 	if _, err := server.client.AcknowledgeInbox(bearing(t, identityCaller), &notificationspb.AcknowledgeInboxRequest{SessionId: testSession}); err != nil {
@@ -623,43 +622,6 @@ func TestRetiredInboxAddressIsRejectedEvenWithSessionID(t *testing.T) {
 	page, err := server.client.ReadInbox(ctx, &notificationspb.ReadInboxRequest{SessionId: testSession})
 	if err != nil || page.GetInbox().GetAcknowledged() != 0 || page.GetInbox().GetRetired() || len(page.GetEntries()) != 1 {
 		t.Fatalf("rejected requests changed inbox: %v, %v", page, err)
-	}
-}
-
-func TestRecreatedServiceAccountCannotAccessOrModifyOriginalInbox(t *testing.T) {
-	s := newServer(t)
-	subscription := s.subscribe(t, "original-account")
-	s.record(t, subscription, 1)
-	account := auth.Account{Namespace: testNamespace, Name: sandboxName}
-	if err := kube.RecreateServiceAccount(t.Context(), account); err != nil {
-		t.Fatal(err)
-	}
-	// Refresh the shared token for subsequent tests; the Session still records its original UID.
-	var err error
-	sandboxToken, err = kube.WorkloadToken(t.Context(), account, testAudience)
-	if err != nil {
-		t.Fatal(err)
-	}
-	inboxes, err := s.client.ListInboxes(bearing(t, sandboxToken), &notificationspb.ListInboxesRequest{})
-	requireCode(t, err, codes.Unauthenticated)
-	if err == nil && len(inboxes.GetInboxes()) != 0 {
-		t.Fatalf("replacement inboxes = %v, %v", inboxes, err)
-	}
-	_, err = s.client.ReadInbox(bearing(t, sandboxToken), &notificationspb.ReadInboxRequest{SessionId: testSession})
-	requireCode(t, err, codes.Unauthenticated)
-	_, err = s.client.GetInbox(bearing(t, sandboxToken), &notificationspb.GetInboxRequest{SessionId: testSession})
-	requireCode(t, err, codes.Unauthenticated)
-	_, err = s.client.AcknowledgeInbox(bearing(t, sandboxToken), &notificationspb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: 1})
-	requireCode(t, err, codes.Unauthenticated)
-	_, err = s.client.RetireInbox(bearing(t, sandboxToken), &notificationspb.RetireInboxRequest{SessionId: testSession})
-	requireCode(t, err, codes.Unauthenticated)
-	_, err = s.client.CancelSubscription(bearing(t, sandboxToken), &notificationspb.CancelSubscriptionRequest{SubscriptionId: subscription.GetId()})
-	requireCode(t, err, codes.Unauthenticated)
-	_, err = s.client.CreateSubscription(bearing(t, sandboxToken), createRequest("replacement-account"))
-	requireCode(t, err, codes.Unauthenticated)
-	page, err := s.client.ReadInbox(bearing(t, operatorCaller), &notificationspb.ReadInboxRequest{SessionId: testSession})
-	if err != nil || len(page.GetEntries()) != 1 || page.GetInbox().GetAcknowledged() != 0 || page.GetInbox().GetRetired() {
-		t.Fatalf("retained operator view = %v, %v", page, err)
 	}
 }
 

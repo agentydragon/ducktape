@@ -19,6 +19,14 @@ from platform_sessions.provider.probe_support import (
 )
 
 
+class Reporter:
+    def __init__(self):
+        self.completions = []
+
+    def completed(self, outcome, source, *, completed_at=None):
+        self.completions.append((outcome, source, completed_at))
+
+
 def test_probe_source_examples():
     files = runfiles.Create()
     assert files is not None
@@ -52,13 +60,6 @@ def test_classified_probe_outcome_examples():
 
 
 def test_recorder_keeps_reporter_contract_and_exact_completion_time():
-    class Reporter:
-        def __init__(self):
-            self.completions = []
-
-        def completed(self, outcome, source, *, completed_at=None):
-            self.completions.append((outcome, source, completed_at))
-
     reporter = Reporter()
     observed = []
     recorder = ProbeRecorder(reporter, lambda outcome, when: observed.append((outcome, when)))
@@ -74,13 +75,6 @@ def test_recorder_keeps_reporter_contract_and_exact_completion_time():
 
 
 def test_recorder_serializes_concurrent_completions():
-    class Reporter:
-        def __init__(self):
-            self.completions = []
-
-        def completed(self, outcome, source, *, completed_at=None):
-            self.completions.append((outcome, source, completed_at))
-
     reporter = Reporter()
     recorder = ProbeRecorder(reporter)
     with ThreadPoolExecutor(max_workers=8) as executor:

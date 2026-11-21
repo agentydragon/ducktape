@@ -1,8 +1,10 @@
 apiVersion: v1
 kind: Namespace
 metadata:
+  annotations:
+    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "cert-manager-controller", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "10m", "memory": "112Mi"}, "maxAllowed": {"cpu": "10m", "memory": "128Mi"}, "controlledResources": ["memory"]}, {"containerName": "cert-manager-cainjector", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "10m", "memory": "224Mi"}, "maxAllowed": {"cpu": "10m", "memory": "512Mi"}, "controlledResources": ["memory"]}, {"containerName": "cert-manager-webhook", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "10m", "memory": "64Mi"}, "maxAllowed": {"cpu": "10m", "memory": "128Mi"}, "controlledResources": ["memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
   labels:
-    goldilocks.fairwinds.com/vpa-update-mode: "off"
+    goldilocks.fairwinds.com/vpa-update-mode: initial
     rbac.ducktape.io/agent-readable-logs: "true"
   name: cert-manager
 spec: {}
@@ -35,8 +37,104 @@ spec:
     remediation:
       retries: 3
   interval: 30m
+  postRenderers:
+    - kustomize:
+        patches:
+          - patch: |
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: cert-manager
+                namespace: cert-manager
+              spec:
+                template:
+                  spec:
+                    containers:
+                      - name: cert-manager-controller
+                        readinessProbe:
+                          httpGet:
+                            path: /livez
+                            port: http-healthz
+            target:
+              kind: Deployment
+              name: cert-manager
+              namespace: cert-manager
+          - patch: |
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: cert-manager-cainjector
+                namespace: cert-manager
+              spec:
+                template:
+                  spec:
+                    containers:
+                      - name: cert-manager-cainjector
+                        readinessProbe:
+                          tcpSocket:
+                            port: http-metrics
+            target:
+              kind: Deployment
+              name: cert-manager-cainjector
+              namespace: cert-manager
+          - patch: |
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: cert-manager-cainjector
+                namespace: cert-manager
+                annotations:
+                  goldilocks.fairwinds.com/vpa-update-mode: auto
+            target:
+              kind: Deployment
+              name: cert-manager-cainjector
+              namespace: cert-manager
+          - patch: |
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: cert-manager
+                namespace: cert-manager
+                annotations:
+                  goldilocks.fairwinds.com/vpa-update-mode: auto
+            target:
+              kind: Deployment
+              name: cert-manager
+              namespace: cert-manager
+          - patch: |
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: cert-manager-webhook
+                namespace: cert-manager
+                annotations:
+                  goldilocks.fairwinds.com/vpa-update-mode: auto
+            target:
+              kind: Deployment
+              name: cert-manager-webhook
+              namespace: cert-manager
   values:
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app.kubernetes.io/component: controller
+                app.kubernetes.io/instance: cert-manager
+            topologyKey: kubernetes.io/hostname
     cainjector:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/component: cainjector
+                  app.kubernetes.io/instance: cert-manager
+              topologyKey: kubernetes.io/hostname
+      podDisruptionBudget:
+        enabled: true
+        minAvailable: 1
+      replicaCount: 2
       resources:
         limits:
           cpu: 100m
@@ -62,10 +160,14 @@ spec:
     ingressShim:
       defaultIssuerKind: ClusterIssuer
       defaultIssuerName: letsencrypt-prod
+    podDisruptionBudget:
+      enabled: true
+      minAvailable: 1
     prometheus:
       enabled: true
       servicemonitor:
         enabled: false
+    replicaCount: 2
     resources:
       limits:
         cpu: 100m
@@ -78,8 +180,20 @@ spec:
         key: node-role.kubernetes.io/control-plane
         operator: Exists
     webhook:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/component: webhook
+                  app.kubernetes.io/instance: cert-manager
+              topologyKey: kubernetes.io/hostname
       extraArgs:
         - --dynamic-serving-dns-names=cert-manager-webhook,cert-manager-webhook.cert-manager,cert-manager-webhook.cert-manager.svc,cert-manager-webhook.cert-manager.svc.cluster.local
+      podDisruptionBudget:
+        enabled: true
+        minAvailable: 2
+      replicaCount: 3
       resources:
         limits:
           cpu: 100m

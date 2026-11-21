@@ -7,13 +7,11 @@ assembled during cdk8s synthesis. The Workspace carries the desired OpenTofu sou
 itself. Flux applies a changed Workspace spec, and provider-opentofu reconciles it.
 There is no need for an artifact-URL bridge, XRD, Composition, or function for this case.
 
-The existing Crossplane OpenTofu roots are `tf/gitops/forgejo-agentydragon` and
-`tf/gitops/route53-domain-delegation`. Both appear suitable for Inline. LiteLLM keys
-are now native Crossplane LiteLLM resources, not OpenTofu Workspaces.
-
-Both existing Workspaces render Inline HCL from their roots through cdk8s. The
-`inline_source` filegroups package their `.tf` files as Bazel runfiles, so source edits
-are inputs to manifest synthesis and its parity check.
+Every Crossplane OpenTofu Workspace is Inline. `gitops_workspace` in
+<cluster/cdk8s/opentofu.py> renders each from a `tf/gitops/<root>` directory through
+cdk8s. A root's `inline_source` filegroup packages its `.tf` files as Bazel runfiles, so
+source edits are inputs to manifest synthesis and its parity check. LiteLLM keys are
+native Crossplane LiteLLM resources, not OpenTofu Workspaces.
 
 ## Source-change path
 
@@ -65,7 +63,7 @@ The current root survey found no actual local module calls or Terraform file-rea
 functions. Forgejo's public keys are already embedded in HCL; Route 53's variables
 are supplied by its Workspace. `gitlab-spike` mixes HCL with `versions.tf.json` and
 needs a separate assembly decision. Remote remains an option when a root actually
-needs a file tree; there is no demonstrated need for it in the two current Workspaces.
+needs a file tree; no Workspace does.
 
 A Composition remains useful for a higher-level infrastructure API whose inputs
 produce an Inline Workspace. It is unnecessary solely to trigger a directly
@@ -118,40 +116,14 @@ provides the publishing mechanism.
 - Running OpenTofu in CI changes the execution and credential boundary; it does not
   make the in-cluster Crossplane Workspace source-driven.
 
-## Withdrawing the artifact canary
+## Gotcha: Remote-to-Inline switch
 
-The output-only `crossplane-source-update-canary` is being removed, including its
-Terraform root, XR, XRD, Composition, root artifact, provider-kubernetes installation,
-Composition function, runtime configuration, and dedicated artifact-reader RBAC.
-The unmerged Go-template follow-up is closed.
-
-First merge and reconcile the pruning-enablement PR: the provider installation's
-Kustomization previously had `prune: false`. Then merge the stacked removal. Confirm
-that the XR and composed Objects/Workspace are gone and package teardown completes.
-The Workspace's orphan policy preserves its PostgreSQL state; do not delete the
-shared state database or either live root's state. No canary-created external
-infrastructure exists. The OpenTofu and LiteLLM providers remain installed.
-
-After the separate Inline migration merges, verify both existing Workspaces report
-`Synced=True` and `Ready=True`, retain their state identities, and expose the expected
-non-sensitive outputs. A later harmless source edit can exercise the update path;
-Route 53 registration and delegation must not be changed just to test triggering.
-
-### One-time Remote-to-Inline cutover
-
-provider-opentofu v1.1.10 writes Inline source to `main.tf` in the existing per-UID
-working directory. It does not remove the old Remote root's other `.tf` files. An
-existing warm runtime may therefore report duplicate declarations after the source
-mode changes. Once Flux has applied **both** Inline Workspace specs, restart the
-OpenTofu provider deployment to discard its ephemeral container filesystem, then
-confirm both Workspaces reconcile from the retained PostgreSQL backend. The deployed
-provider has no persistent volume mounted for `/tofu`. Do not delete or recreate the
-Workspaces, change their external names, or remove backend state to clear this cache.
-
-A restart before both spec changes is insufficient: a still-Remote Workspace could
-repopulate its directory. This is a one-time migration step, not part of future
-source-change delivery. A cold provider runtime writes the complete Inline module
-without requiring a repository download.
+provider-opentofu v1.1.10 writes Inline source to `main.tf` in the Workspace's existing
+per-UID working directory and keeps the old Remote root's other `.tf` files, so a warm
+runtime can report duplicate declarations. Restart the provider Deployment (`/tofu` has
+no persistent volume) only after every affected Workspace is Inline: a still-Remote one
+could repopulate its directory. Never delete or recreate Workspaces, change external
+names, or remove backend state to clear it.
 
 ## Kubernetes identities for migrated roots
 
@@ -161,7 +133,9 @@ ServiceAccount in `crossplane-system`. A ProviderConfig selects that root's kube
 RoleBindings grant that identity only its declared Secret reads and writes. No static
 ServiceAccount token Secret is created. Secret creation is namespace-wide because
 Kubernetes RBAC cannot restrict `create` by `resourceNames`; updates, reads and deletes
-are restricted to the output Secret names.
+are restricted to the output Secret names. `forgejo-agentydragon` sets no
+`kubernetes_identity`, so its Secret data source runs as the provider Pod's own
+ServiceAccount.
 
 This scopes normal Kubernetes provider requests, not arbitrary Terraform execution.
 All Workspaces still run in the same provider process, whose package-generated role

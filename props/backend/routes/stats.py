@@ -308,9 +308,6 @@ def get_example_detail(
         )
 
 
-# --- Occurrence stats ---
-
-
 class OccurrenceStatsRow(BaseModel):
     snapshot_slug: SnapshotSlug
     split: Split
@@ -383,9 +380,6 @@ def get_occurrences(
         ]
 
         return OccurrenceStatsResponse(occurrences=occurrences, total=total)
-
-
-# --- Coverage heatmap ---
 
 
 class CoverageExample(BaseModel):

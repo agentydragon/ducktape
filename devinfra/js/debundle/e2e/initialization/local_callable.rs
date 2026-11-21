@@ -19,6 +19,40 @@ fn expect_local_factory_late_read_conflict(source: &str) {
     );
 }
 
+fn expect_dynamic_and_later_conflict(source: &str) {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("values/dynamic", &[Member::new("dynamic")]),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        )
+        .with_import_order(&["values/dynamic", "values/later", "residual"]),
+        &["values/dynamic", "values/later"],
+        &[],
+    );
+}
+
+fn assert_dynamic_and_later_split(
+    fixture: &Fixture,
+    dynamic_exports: &[&str],
+    later_exports: &[&str],
+) {
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/values/dynamic.js",
+        dynamic_exports,
+        &["later"],
+    );
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/values/later.js",
+        later_exports,
+        &["dynamic"],
+    );
+}
+
 #[test]
 fn unpublished_constructor_result_with_enum_array_stays_deferred() {
     let fixture = run_fixture(FixtureOpts::new(
@@ -55,18 +89,7 @@ console.log(command.run(), command.weight, command.record.constraints.length);
         ],
     ));
 
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/values/dynamic.js",
-        &["command"],
-        &["later"],
-    );
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/values/later.js",
-        &["later"],
-        &["dynamic"],
-    );
+    assert_dynamic_and_later_split(&fixture, &["command"], &["later"]);
     assert_module_source(
         &fixture.out_root,
         "static/app/modules/values/dynamic.js",
@@ -201,18 +224,7 @@ console.log(later);
         ],
     ));
 
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/values/dynamic.js",
-        &["dynamic"],
-        &["later"],
-    );
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/values/later.js",
-        &["later"],
-        &["dynamic"],
-    );
+    assert_dynamic_and_later_split(&fixture, &["dynamic"], &["later"]);
     assert_module_source(
         &fixture.out_root,
         "static/app/modules/values/later.js",
@@ -254,18 +266,7 @@ console.log(command.run(), command.weight);
         ],
     ));
 
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/values/dynamic.js",
-        &["command"],
-        &["later"],
-    );
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/values/later.js",
-        &["later"],
-        &["dynamic"],
-    );
+    assert_dynamic_and_later_split(&fixture, &["command"], &["later"]);
     assert_module_source(
         &fixture.out_root,
         "static/app/modules/values/dynamic.js",
@@ -417,18 +418,7 @@ console.log(holder.read());
         ],
     ));
 
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/values/dynamic.js",
-        &["dynamic"],
-        &["later"],
-    );
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/values/later.js",
-        &["later", "holder"],
-        &["dynamic"],
-    );
+    assert_dynamic_and_later_split(&fixture, &["dynamic"], &["later", "holder"]);
     assert_module_source(
         &fixture.out_root,
         "static/app/modules/values/later.js",
@@ -619,18 +609,7 @@ console.log(wrapped());
             .build()]),
     );
 
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/values/dynamic.js",
-        &["dynamic"],
-        &["later"],
-    );
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/values/later.js",
-        &["later", "wrapped"],
-        &["dynamic"],
-    );
+    assert_dynamic_and_later_split(&fixture, &["dynamic"], &["later", "wrapped"]);
     assert_preserved_entry_output(&fixture, "1\n1\n");
 }
 
@@ -709,9 +688,8 @@ console.log(later);
 
 #[test]
 fn callback_escaped_after_unknown_call_remains_a_possible_accessor() {
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            r#"new globalThis.Date();
+    expect_dynamic_and_later_conflict(
+        r#"new globalThis.Date();
 globalThis.callback = readLater;
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
@@ -720,22 +698,13 @@ const dynamic = ((object) => {
 const later = dynamic;
 function readLater() { later; }
 "#,
-            vec![
-                logical_module("values/dynamic", &[Member::new("dynamic")]),
-                logical_module("values/later", &[Member::new("later")]),
-            ],
-        )
-        .with_import_order(&["values/dynamic", "values/later", "residual"]),
-        &["values/dynamic", "values/later"],
-        &[],
     );
 }
 
 #[test]
 fn callback_at_active_call_site_remains_reachable_after_nested_unknown_call() {
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            r#"const target = { set x(value) { value(); } };
+    expect_dynamic_and_later_conflict(
+        r#"const target = { set x(value) { value(); } };
 function exposeArgument() {
   consume(arguments);
   target.x = arguments[0];
@@ -744,22 +713,13 @@ const dynamic = (exposeArgument(readLater), 1);
 var later = dynamic;
 function readLater() { return later; }
 "#,
-            vec![
-                logical_module("values/dynamic", &[Member::new("dynamic")]),
-                logical_module("values/later", &[Member::new("later")]),
-            ],
-        )
-        .with_import_order(&["values/dynamic", "values/later", "residual"]),
-        &["values/dynamic", "values/later"],
-        &[],
     );
 }
 
 #[test]
 fn implicit_arguments_object_keeps_passed_local_callables_reachable() {
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            r#"function exposeArgument(callback) { consume(arguments); }
+    expect_dynamic_and_later_conflict(
+        r#"function exposeArgument(callback) { consume(arguments); }
 exposeArgument(readLater);
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
@@ -768,14 +728,6 @@ const dynamic = ((object) => {
 const later = dynamic;
 function readLater() { return later; }
 "#,
-            vec![
-                logical_module("values/dynamic", &[Member::new("dynamic")]),
-                logical_module("values/later", &[Member::new("later")]),
-            ],
-        )
-        .with_import_order(&["values/dynamic", "values/later", "residual"]),
-        &["values/dynamic", "values/later"],
-        &[],
     );
 }
 
@@ -836,9 +788,8 @@ function readLater() { later; }
 
 #[test]
 fn unsupported_top_level_escape_keeps_later_local_callables_reachable() {
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            r#"foreignTag`${readLater}`;
+    expect_dynamic_and_later_conflict(
+        r#"foreignTag`${readLater}`;
 new globalThis.Date();
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
@@ -847,22 +798,13 @@ const dynamic = ((object) => {
 const later = dynamic;
 function readLater() { return later; }
 "#,
-            vec![
-                logical_module("values/dynamic", &[Member::new("dynamic")]),
-                logical_module("values/later", &[Member::new("later")]),
-            ],
-        )
-        .with_import_order(&["values/dynamic", "values/later", "residual"]),
-        &["values/dynamic", "values/later"],
-        &[],
     );
 }
 
 #[test]
 fn unsupported_callable_body_keeps_later_local_callables_reachable() {
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            r#"function opaqueAccessor() { foreignTag`${readLater}`; }
+    expect_dynamic_and_later_conflict(
+        r#"function opaqueAccessor() { foreignTag`${readLater}`; }
 opaqueAccessor();
 new globalThis.Date();
 const dynamic = ((object) => {
@@ -872,22 +814,13 @@ const dynamic = ((object) => {
 const later = dynamic;
 function readLater() { return later; }
 "#,
-            vec![
-                logical_module("values/dynamic", &[Member::new("dynamic")]),
-                logical_module("values/later", &[Member::new("later")]),
-            ],
-        )
-        .with_import_order(&["values/dynamic", "values/later", "residual"]),
-        &["values/dynamic", "values/later"],
-        &[],
     );
 }
 
 #[test]
 fn passing_this_to_unknown_code_keeps_local_object_reachable() {
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            r#"const receiver = {
+    expect_dynamic_and_later_conflict(
+        r#"const receiver = {
   inspectReceiver() { consume(this); },
   readLater,
 };
@@ -899,14 +832,6 @@ const dynamic = ((object) => {
 const later = dynamic;
 function readLater() { return later; }
 "#,
-            vec![
-                logical_module("values/dynamic", &[Member::new("dynamic")]),
-                logical_module("values/later", &[Member::new("later")]),
-            ],
-        )
-        .with_import_order(&["values/dynamic", "values/later", "residual"]),
-        &["values/dynamic", "values/later"],
-        &[],
     );
 }
 
@@ -926,18 +851,7 @@ var later = dynamic;
 console.log(dynamic);
 "#;
 
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            source,
-            vec![
-                logical_module("values/dynamic", &[Member::new("dynamic")]),
-                logical_module("values/later", &[Member::new("later")]),
-            ],
-        )
-        .with_import_order(&["values/dynamic", "values/later", "residual"]),
-        &["values/dynamic", "values/later"],
-        &[],
-    );
+    expect_dynamic_and_later_conflict(source);
 
     let fixture = run_fixture(
         FixtureOpts::new(

@@ -3,7 +3,6 @@ use exchange_rate::ExchangeRate;
 use log::{trace, warn};
 use petgraph::{
     algo::FloatMeasure,
-    // algo::bellman_ford,
     prelude::*,
     visit::{IntoEdges, IntoNodeIdentifiers, NodeCount, NodeIndexable},
 };
@@ -92,7 +91,6 @@ where
             let w = *edge.weight();
             if distance[ix(i)] + w < distance[ix(j)] {
                 warn!("neg cycle, detected from {i:?} to {j:?}, weight={w:?}");
-                //break true;
             }
         }
     }
@@ -143,8 +141,6 @@ pub fn in_common_currency(
         .collect();
     trace!("{conversion_tuples:?}");
     g.extend_with_edges(&conversion_tuples);
-
-    // println!("{:?}", petgraph::dot::Dot::with_config(&g, &[]));
 
     // TODO: from config
     let start = denomination_to_node[base];

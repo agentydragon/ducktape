@@ -41,7 +41,7 @@ The LLM proxy at `OPENAI_BASE_URL` authenticates with `OPENAI_API_KEY` and logs 
 | Capability | Critic | Grader | Critic developer (you) |
 |------------|--------|--------|------------------------|
 | PostgreSQL (RLS-scoped) | Yes | Yes | Yes |
-| LLM proxy (`/v1/responses`, `/v1/chat/completions`) | Yes | Yes | Yes |
+| LLM proxy (`/v1/responses`, `/v1/chat/completions`, `/v1/messages`) | Yes | Yes | Yes |
 | Runs API (`/api/runs/critic`) | No | No | Yes |
 | Registry proxy (`/v2/*`) | No | No | Yes |
 
@@ -122,7 +122,7 @@ crane push /tmp/image.tar $REGISTRY/critic@$DIGEST --insecure
 echo "Created image: critic@$DIGEST"
 ```
 
-Use this digest as `definition_id` when calling `run_critic`.
+Use this digest as `definition_id` when calling `start_critic`.
 
 ${include_doc("props/agents/critic_dev/built_in_critic.md.mako")}
 
@@ -134,22 +134,24 @@ After pushing a custom image, run and evaluate it:
 1. Build image:  crane mutate ... --append ... --label org.opencontainers.image.title="my-name" -o /tmp/image.tar --insecure
 2. Get digest:   DIGEST=$(crane digest --tarball /tmp/image.tar)
 3. Push:         crane push /tmp/image.tar $REGISTRY/critic@$DIGEST --insecure
-4. Run:          run_critic(definition_id=$DIGEST, example=..., timeout_seconds=120, budget_usd=0.5)
-5. Grade:        wait_until_graded_tool(critic_run_id=..., timeout_seconds=300)
-6. Check recall: SELECT * FROM recall_by_definition_split_kind WHERE critic_image_digest = '$DIGEST';
+4. Run:          start_critic(definition_id=$DIGEST, example=..., critic_model=..., timeout_seconds=120, budget_usd=0.5)
+5. Wait:         wait_until_critic_completed(critic_run_id=..., timeout_seconds=300)
+6. Grade:        wait_until_graded_tool(critic_run_id=..., timeout_seconds=300)
+7. Check recall: SELECT * FROM recall_by_definition_split_kind WHERE critic_image_digest = '$DIGEST';
 ```
 
-`run_critic` **blocks until the critic container exits** (typically minutes per call). `wait_until_graded_tool` polls the database until grading is complete.
+`start_critic` returns immediately; `wait_until_critic_completed` **blocks until the critic container exits** (typically minutes per call). `wait_until_graded_tool` polls the database until grading is complete.
 
-Read `props.agents.critic_dev.loop` to see exact tool argument types and return types. Read `props.agents.critic_dev.eval_client` for the underlying REST API if you want to call it directly from Python (e.g., to run multiple critics in parallel).
+Read `props.agents.critic_dev.loop` to see exact tool argument types and return types. Read `start_critic` in that module for the underlying REST API if you want to call it directly from Python (e.g., to run multiple critics in parallel).
 
 ### Constructing examples
 
 Query the `examples` table to find available examples:
 
 ```sql
-SELECT snapshot_slug, example_kind, files_hash, n_recall_denominator
-FROM examples WHERE split = 'train' ORDER BY n_recall_denominator;
+SELECT e.snapshot_slug, e.example_kind, e.files_hash, e.recall_denominator
+FROM examples e JOIN snapshots s ON e.snapshot_slug = s.slug
+WHERE s.split = 'train' ORDER BY e.recall_denominator;
 ```
 
 Read `props.core.models.examples` for the `ExampleSpec` discriminated union (whole_snapshot vs file_set).
@@ -166,7 +168,7 @@ proxies use their own environment variables:
 | `/api/runs/*` | Agent run management | No (admin) |
 | `/api/gt/*` | Ground truth management | No (admin) |
 
-Use `OPENAI_BASE_URL` for LLM calls (`/v1/responses`, `/v1/chat/completions`).
+Use `OPENAI_BASE_URL` for LLM calls (`/v1/responses`, `/v1/chat/completions`, `/v1/messages`).
 Use `PROPS_REGISTRY_URL` as the registry host for all `crane` and `/v2/`
 operations. Do not derive the registry from `PROPS_BACKEND_URL`.
 

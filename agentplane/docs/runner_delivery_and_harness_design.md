@@ -52,11 +52,12 @@ service boundaries rather than a Dispatcher dependency:
 - **Dispatcher has no direct History dependency to remove.** Its current routing, queue recovery,
   admission and delivery result paths use the requested Sandbox, Kubernetes state, delivery leases and Runner
   RPCs. No Dispatcher History client or call exists in the audited implementation.
-- **The app uses History for retained Thread data.** `EventLogStore` reads archived events and
-  observations and validates the History Service's committed prefix; summaries come from the History
-  fold. Opening a Thread does not wait for History to observe the Session because the runner pushes
-  its journal asynchronously. Sending input uses Dispatcher; the runner owns native readiness.
-  Live `GetStatus` supplies Sandbox diagnostics and archive safety without waking a Sandbox.
+- **The app uses History for retained Thread data.** The browser reads archived events,
+  observations and summaries through the History facade under `/upstream/history/v1/`, which the app
+  forwards to History over gRPC. Opening a Thread does not wait for History to observe the Session
+  because the runner pushes its journal asynchronously. Sending input uses Dispatcher; the runner
+  owns native readiness. `EnvironmentService.GetRuntimeDiagnostics` supplies live Sandbox
+  diagnostics without waking a Sandbox; the archive guard reads Dispatcher Session activity.
 - **Notifications uses History to reconcile command outcomes.** It reads the Session journal's
   committed watermark and entries to checkpoint receipts and confirm whether a command reached the
   runner journal. This is an outcome dependency of Notification, not Dispatcher routing. A
@@ -73,9 +74,10 @@ service boundaries rather than a Dispatcher dependency:
 There are two different Session inventories:
 
 - Runner `ListSessions` asks the current runner's `retained.Store` for persisted records and reports
-  them with the current harness, setup, launch and activity state. The current
-  production callers are the app and Notification, through the stable `runner-gateway` Service with
-  expected Sandbox UID and owner. Dispatcher does not call the list RPC: an identical logical `CreateSession`
+  them with the current harness, setup, launch and activity state. Outside tests only the Runtime
+  proxy calls it, forwarding the read
+  ([`harness_host_proxy.go`](../environments/runtimeproxy/harness_host_proxy.go)); the app and
+  Notification do not. Dispatcher does not call the list RPC: an identical logical `CreateSession`
   retry returns its existing Session record without rediscovering a live runner attachment; a
   conflicting placement, spec or setup returns `ALREADY_EXISTS`. Runner test drivers use the read
   for lifecycle assertions.
@@ -85,32 +87,29 @@ There are two different Session inventories:
   Session is present in the current runner incarnation. See the
   [History README](../history_service/README.md).
 
-| Consumer                                                | Fact it needs                                                                                            | Present authority and disposition to review                                                                                                                                                                           |
-| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| App Thread table, Sandbox filter/search and Thread view | Retained Thread identity, Sandbox association and folded display state, including after Sandbox deletion | History `FindSessions`/summaries through `ThreadStore` and `Summaries`; keep as retained inventory. `ContentStore` uses summary scope for retained evidence, not live presence.                                       |
-| App archive safety                                      | Whether this Session has unfinished work in the current ready runner                                     | `api.py` reads `Runner.GetStatus` and checks the Session's `busy` flag. An idle process does not block archive; a Pod whose runner cannot be checked does.                                                            |
-| Notification subscription                               | Session membership in the requested UID/owner Sandbox at subscription time                               | `Service.subscribe` validates namespace, UID and owner, then calls live `ListSessions`; preserve an equivalent preflight or explicitly revise offline subscription semantics. This read alone is not send permission. |
-| Notification outcome reconciliation                     | Durable command journal watermark and entries                                                            | History `ReadSessionEvents` is evidence of runner admission/confirmation after an attempt, not destination inventory; its separate outcome design remains open.                                                       |
+| Consumer                                                | Fact it needs                                                                                            | Present authority and disposition to review                                                                                                                                                                                                                                         |
+| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| App Thread table, Sandbox filter/search and Thread view | Retained Thread identity, Sandbox association and folded display state, including after Sandbox deletion | App `thread` rows (`app/internal/threads`) hold titles and archive state; Dispatcher Session records give membership and Environment grouping; History summaries give folded display state. Keep History as retained inventory.                                                     |
+| App archive safety                                      | Whether this Session has unfinished work in the current ready runner                                     | `ArchiveThread` reads Dispatcher `GetSession` activity and refuses an active turn, a pending command, running setup or a starting harness. An idle process does not block archive; activity that cannot be observed does, unless the environment is confirmed suspended or deleted. |
+| Notification subscription                               | The Session's recorded execution Identity at subscription time                                           | `subscribe` reads Dispatcher `GetSession` and requires the recorded Identity to be the caller's. It reads no runner, so a suspended Sandbox does not block it. This read alone is not send permission.                                                                              |
+| Notification outcome reconciliation                     | Durable command journal watermark and entries                                                            | History `ReadSessionEvents` is evidence of runner admission/confirmation after an attempt, not destination inventory; its separate outcome design remains open.                                                                                                                     |
 
 The app's History reads are appropriate for retained views. No History inventory read can stand in for
-current live decisions. A narrower runner state or membership API could replace broad
-`ListSessions` only after each caller's required fields, identity fence and unavailable-runner behavior
-are preserved. The current app and Notification callers still require the live read.
+current live decisions.
 
 ## Destination checks and authority
 
 Notification subscription creation currently checks distinct things. It authenticates the caller,
-verifies that the destination namespace is configured, reads the current Sandbox from Kubernetes,
-checks the requested UID and owner ServiceAccount, then calls live `ListSessions` to check Session
-membership. Separately, it checks source access through the Action Service or GitHub client before
+reads the Session from Dispatcher `GetSession` and requires its recorded execution Identity to be
+the caller's. Separately, it checks source access through the Action Service or GitHub client before
 storing the subscription. These are subscription/source checks; they do not by themselves define a
 separate per-message send grant. See
-[`notification_service/internal/rpc/notifications.go`](../notification_service/internal/rpc/notifications.go).
+[`notification_service/internal/rpc/subscribe.go`](../notification_service/internal/rpc/subscribe.go).
 
 When a notification is delivered, the service submits a command to Dispatcher. Dispatcher checks
 its caller account, resolves the Sandbox and stores its UID with the opening or command; its worker
 checks that the watched Sandbox still has that UID and that it owns the Sandbox's delivery Lease
-before continuing. The Go `RuntimeProxyClient` sends the Sandbox name and UID to the proxy with
+before continuing. The Go `HarnessHostClient` sends the Sandbox name and UID to the proxy with
 expected-identity metadata. The proxy authenticates its caller and requires exact Sandbox UID and
 owner metadata, then resolves and checks the live Sandbox and ready Pod.
 The stable `runner-gateway` Service may route to any replica. Each replica can serve only with its
@@ -125,12 +124,12 @@ revalidated, including replacement between the Dispatcher check and proxy resolu
 
 The current path has different authority at each step:
 
-| Boundary                             | Current check                                                                                                                                                                                                                                                                                                           | Gap the decision must close                                                                                                                                                                                                                                                        |
-| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Notification subscription and worker | Caller/source access; configured namespace; live Sandbox UID and owner; live membership at creation. The worker rechecks UID and owner before sending and supplies the stored UID to Dispatcher.                                                                                                                        | A source-read subscription is not a durable grant to send or wake after owner/grant revocation. Dispatcher authenticates the Notification service account, not the originating user.                                                                                               |
-| App command and diagnostics          | The app resolves a retained Thread from History; live diagnostic reads carry expected UID and owner.                                                                                                                                                                                                                    | Retained association and a live preflight do not authorize a future command after replacement or revocation. App and Notification need the same reviewed send contract.                                                                                                            |
-| Dispatcher admission and wake        | Dispatcher retains row attribution and the expected Sandbox UID with queued work. Before automatic resume, the shared lifecycle manager rechecks the live target UID and retained caller policy, or the exact service-SVID broker selected by Action proof. `wakeOnSend` gates both paths; requested stops stay sticky. | Dispatcher admission and retained attribution do not grant wake authority. `wake_callers` and `wake_service_callers` permit automatic wake only; explicit operator resume uses the separate direct Pod-bound `operator_callers` grant. A requested wake does not assert readiness. |
-| Gateway proxy and runner             | Runtime Session creation and command proxy calls require a Pod-bound Gateway/Dispatcher ServiceAccount token; general proxy callers have diagnostics only. UID and owner headers fence the exact Sandbox and ready Pod. Runtime rejects an unknown Session.                                                             | Dispatcher carries the watched UID into proxy calls, rejecting a same-name replacement. The shared workload credential authenticates delivery, not a per-destination sender grant; execution-time authority remains this decision's separate boundary.                             |
+| Boundary                             | Current check                                                                                                                                                                                                                                                                                                           | Gap the decision must close                                                                                                                                                                                                                            |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Notification subscription and worker | Caller/source access; the Session's recorded Identity must be the caller's at creation. The worker rechecks the recorded Identity and that the Session is placed before sending, then submits by Session ID.                                                                                                            | A source-read subscription is not a durable grant to send or wake after owner/grant revocation. Dispatcher authenticates the Notification service account, not the originating user.                                                                   |
+| App command and diagnostics          | The app resolves a retained Thread from History; live diagnostic reads carry expected UID and owner.                                                                                                                                                                                                                    | Retained association and a live preflight do not authorize a future command after replacement or revocation. App and Notification need the same reviewed send contract.                                                                                |
+| Dispatcher admission and wake        | Dispatcher retains row attribution and the expected Sandbox UID with queued work. Before automatic resume, the shared lifecycle manager rechecks the live target UID and retained caller policy, or the exact service-SVID broker selected by Action proof. `wakeOnSend` gates both paths; requested stops stay sticky. | Dispatcher admission and retained attribution do not grant wake authority. `wake_service_callers` permits automatic wake only; explicit operator resume uses the separate `service_operators` grant. A requested wake does not assert readiness.       |
+| Gateway proxy and runner             | Runtime Session creation and command proxy calls require a Pod-bound Gateway/Dispatcher ServiceAccount token; general proxy callers have diagnostics only. UID and owner headers fence the exact Sandbox and ready Pod. Runtime rejects an unknown Session.                                                             | Dispatcher carries the watched UID into proxy calls, rejecting a same-name replacement. The shared workload credential authenticates delivery, not a per-destination sender grant; execution-time authority remains this decision's separate boundary. |
 
 The app's live Runner inventory still uses the identity-fenced per-Sandbox proxy. Explicit Sandbox
 resume now calls the Runner Gateway's `EnvironmentService`, which checks the operator's
@@ -544,60 +543,7 @@ not wake a Sandbox. Identify any retained snapshot as stale. Status fields and e
 provisional information model and may change; clients must not use them to authorize, route or
 coordinate lifecycle operations. The runner remains authoritative at execution boundaries.
 
-### Scope and acceptance
-
-V1 covers admission-before-startup, runner-managed readiness/reconciliation, exact-turn interruption,
-removal of explicit harness lifecycle controls, and Sandbox-page introspection. Validate both Claude
-and Codex for concurrent sends, startup failure, caller disconnect/retry, runner restart, ambiguous
-native outcomes, stale interrupts and turn-transition races. Prove context retention with a follow-up
-input after restart. Cover send/quiesce races and identity/wake denial boundaries. Review desktop and
-phone screenshots of Sandbox diagnostics and the updated Session controls. Archive checks unfinished
-Session work rather than harness process existence; an idle live Session can be archived without a
-shutdown button.
-
-**V2, deferred:** idle Claude process reclamation to reduce memory. Measure idle RAM and define safe
-eligibility and thresholds first. Reaping must not end active turns, pending commands, dependent
-children, background work or another hosted Session. Startup on send provides the recovery path;
-V1 does not implement automatic idle reaping or depend on it. Shared-process placement and store
-concurrency remain separate decisions.
-
 ### Rollout and rollback
-
-The implementation changes protocol and callers together; publish a staging image-promotion hold
-before merging it. Testing receives the release first. The held staging image families are the app,
-Gateway/Dispatcher, Notification and History services (with migrations embedded in those images), `runner`,
-`environment-tools` and the runner VM. Testing acceptance must identify the exact tested tags rather
-than assuming every image shares a build SHA.
-
-1. Validate the release on fresh Claude and Codex Sessions in testing, including Pod and VM paths.
-   Test retained state created by the old runner as well as new state. Cover automatic startup on
-   input, context retention, startup failure, interruption, retry/reconnect and suspend/wake. Review
-   Sandbox diagnostics and the controls on desktop and phone.
-2. Inventory staging Sessions, pending Dispatches, historical receipts, journals/native histories,
-   workspace and state volumes. Settle outstanding old stop commands before removing their wire
-   variant; keep settled historical receipt readers. Hold Sandbox starts and automatic wake through
-   cutover so no old runner can execute work against the changing service stack. Preserve admitted work and
-   all person-authored data. Back up at a consistent boundary and verify restore in isolation before
-   any persistent-format migration; do not restore an old snapshot over post-cutover writes.
-3. Keep staging Sandbox starts disabled, quiesce any remaining runners with the old stack, and verify
-   no runner workloads remain. The operator suspended all four staging Sandboxes and agreed to hold
-   new starts (2026-10-17); recheck this condition immediately before cutover. Testing Sandboxes may
-   be deleted/recreated under the operator's authorization. Staging Sandbox CRs, UIDs and retained
-   PVCs must survive.
-4. With zero staging runner workloads and starts held, promote the exact tested service and template
-   tags together through GitOps and restore their Flux Image Automation markers in the same PR
-   (operator, 2026-10-17). Flux manages the pins once that promotion merges. Normal Deployment
-   rollouts are sufficient; no separate service stop or Flux suspension is needed (operator,
-   2026-10-17). Upgrade every template, including suspended-only and VM templates. Verify all new
-   service replicas, image revisions and migration gates, and wait for old service Pods to disappear
-   before allowing any Sandbox start. If runners reappear, stop promotion and quiesce them first;
-   updating a template alone does not upgrade a running Sandbox.
-5. Activate retained Sessions with the new runner and verify native continuation, reconciliation,
-   unchanged archived history and retained storage. Testing's follow-up model turns prove context
-   recall on both harnesses. Check exact-turn rejection and process/Session status. Keep the rollout
-   incomplete until behavior is observed, not just Flux or Deployment readiness. Record the actual
-   deployed revisions as Flux continues managing the pins. The human staging UI drive follows
-   lifecycle rollout; record operator-reported acceptance separately from automated coverage.
 
 **Lifecycle rollout accepted (2026-10-17 PDT).** Implementation #10950, promotion #10961
 and explicit Claude `bypassPermissions` #10965 are deployed. Flux Image Automation owns all service

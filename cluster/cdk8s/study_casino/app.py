@@ -30,9 +30,19 @@ from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRouteSpecRulesBackendRefs,
     HttpRouteSpecRulesFiltersResponseHeaderModifierSet,
 )
+from vpa_crds.io.k8s.autoscaling import (
+    VerticalPodAutoscaler,
+    VerticalPodAutoscalerSpec,
+    VerticalPodAutoscalerSpecResourcePolicy,
+    VerticalPodAutoscalerSpecResourcePolicyContainerPolicies,
+    VerticalPodAutoscalerSpecResourcePolicyContainerPoliciesMinAllowed,
+    VerticalPodAutoscalerSpecTargetRef,
+    VerticalPodAutoscalerSpecUpdatePolicy,
+)
 
 from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.cnpg import backup, cluster
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
 from cluster.cdk8s.flux import (
     ConfigMapArgs,
@@ -52,6 +62,8 @@ from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 OUTPUT_DIR = f"{GENERATED_ROOT}/study-casino"
+VPA_NAME = "study-casino-vpa"
+VPA_OUTPUT_DIR = f"{GENERATED_ROOT}/{VPA_NAME}"
 PINS_DIR = f"{HAND_WRITTEN_ROOT}/study-casino-image-pins"
 _NAME = "study-casino"
 _NAMESPACE = "study-casino"
@@ -90,7 +102,7 @@ def _namespace(scope: Construct) -> None:
         scope,
         "namespace",
         name=_NAMESPACE,
-        # Single-pod personal app; opt out of Goldilocks/VPA recommendations.
+        # The app has an explicit VPA. Keep the database and provisioning Job out of Goldilocks.
         vpa=Vpa.DISABLED,
         labels={"name": _NAMESPACE},
     )
@@ -192,13 +204,7 @@ def _readonly_provisioner(scope: Construct) -> None:
                         k8s.Container(
                             name="psql",
                             image="ghcr.io/cloudnative-pg/postgresql:18.6",
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("10m"),
-                                    "memory": k8s.Quantity.from_string("32Mi"),
-                                },
-                                limits={"memory": k8s.Quantity.from_string("128Mi")},
-                            ),
+                            resources=container_resources(cpu="10m", memory="32Mi", memory_limit="128Mi"),
                             command=["/bin/bash", "-c"],
                             args=[_PROVISIONER_SCRIPT],
                             termination_message_policy="FallbackToLogsOnError",
@@ -298,13 +304,7 @@ def _deployment(scope: Construct) -> None:
                                     name="public-web-pki", mount_path="/var/run/public-web-pki", read_only=True
                                 )
                             ],
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "memory": k8s.Quantity.from_string("64Mi"),
-                                    "cpu": k8s.Quantity.from_string("25m"),
-                                },
-                                limits={"memory": k8s.Quantity.from_string("256Mi")},
-                            ),
+                            resources=container_resources(cpu="25m", memory="64Mi", memory_limit="256Mi"),
                             readiness_probe=_probe(3, 10),
                             liveness_probe=_probe(15, 20),
                         )
@@ -380,6 +380,35 @@ def chart(app: App) -> Chart:
                 kind="Group", name="oidc-ksbx-groups:kubectl-sandbox-users", api_group="rbac.authorization.k8s.io"
             )
         ],
+    )
+    return chart
+
+
+def vpa_chart(app: App) -> Chart:
+    chart = Chart(app, VPA_NAME, disable_resource_name_hashes=True)
+    VerticalPodAutoscaler(
+        chart,
+        _NAME,
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
+        spec=VerticalPodAutoscalerSpec(
+            target_ref=VerticalPodAutoscalerSpecTargetRef(api_version="apps/v1", kind="Deployment", name=_NAME),
+            update_policy=VerticalPodAutoscalerSpecUpdatePolicy(update_mode="Initial"),
+            resource_policy=VerticalPodAutoscalerSpecResourcePolicy(
+                container_policies=[
+                    VerticalPodAutoscalerSpecResourcePolicyContainerPolicies(
+                        container_name="app",
+                        controlled_resources=["cpu", "memory"],
+                        controlled_values="RequestsOnly",
+                        min_allowed={
+                            "memory": VerticalPodAutoscalerSpecResourcePolicyContainerPoliciesMinAllowed.from_string(
+                                "224Mi"
+                            )
+                        },
+                    ),
+                    VerticalPodAutoscalerSpecResourcePolicyContainerPolicies(container_name="*", mode="Off"),
+                ]
+            ),
+        ),
     )
     return chart
 

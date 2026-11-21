@@ -1,0 +1,9 @@
+{
+  "name": "debundle-cases-adapter",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "acorn": "8.19.0",
+    "yaml": "2.8.1"
+  }
+}

@@ -14,33 +14,14 @@ import (
 // dispatches Executions.
 func observeWakeups(t *testing.T, f fixture) func(name string, wantUpdate, wantDispatch bool, step func()) {
 	t.Helper()
-	const sentinel = "action_store_test_sentinel"
-	signals := testwakeups.ListenWakeups(t, f.url, UpdatesChannel, DispatchChannel, sentinel)
-	updates, dispatches, settled := signals[UpdatesChannel], signals[DispatchChannel], signals[sentinel]
-
-	pending := func(signal <-chan struct{}) bool {
-		select {
-		case <-signal:
-			return true
-		default:
-			return false
-		}
-	}
+	observe := testwakeups.Observe(t, f.db, f.url, UpdatesChannel, DispatchChannel)
 	return func(name string, wantUpdate, wantDispatch bool, step func()) {
 		t.Helper()
-		step()
-		// The hub applies notifications in the order PostgreSQL delivers them, so once the sentinel's has
-		// arrived, every notification the step committed before it has too.
-		f.exec(t, "SELECT pg_notify($1, '')", sentinel)
-		select {
-		case <-settled:
-		case <-time.After(awaitBound):
-			t.Fatal("no wakeup from the sentinel")
-		}
-		if got := pending(updates); got != wantUpdate {
+		woken := observe(step)
+		if got := woken[UpdatesChannel]; got != wantUpdate {
 			t.Errorf("%s woke followers = %v, want %v", name, got, wantUpdate)
 		}
-		if got := pending(dispatches); got != wantDispatch {
+		if got := woken[DispatchChannel]; got != wantDispatch {
 			t.Errorf("%s woke dispatchers = %v, want %v", name, got, wantDispatch)
 		}
 	}

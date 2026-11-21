@@ -18,9 +18,8 @@ from finance.augur.model.series import HomeValueKey, LocationId
 from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.fixed_point import rate_to_ppb
-from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, LiabilityId, PropertyId
+from finance.augur.sim.ids import CHECKING, AgentId, JurisdictionId, LiabilityId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
-from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.property import (
@@ -36,13 +35,12 @@ from finance.augur.sim.property_tax import PropertyTaxPolicy
 from finance.augur.sim.results import Rollout
 from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
-from finance.augur.sim.tax_authority import TaxAuthority
-from finance.augur.sim.tax_indexation import FixedNominalLaw
-from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
+from finance.augur.sim.testing.accounts import account
 from finance.augur.sim.testing.rollouts import book
 from finance.augur.sim.testing.series import level_series
 from finance.augur.sim.testing.session import each, finish
 from finance.augur.sim.testing.situs import UNTAXED, flat_parcel, property_tax
+from finance.augur.sim.testing.tax_authority import filer
 from finance.augur.sim.world import World
 
 QUANTA_PER_UNIT = 100
@@ -54,7 +52,6 @@ ALICE, SELLER, LENDER, TENANT, COUNTY, IRS = (
     AgentId("county"),
     AgentId("irs"),
 )
-CHECKING = AccountId("checking")
 FEDERAL, CALIFORNIA = JurisdictionId("federal_us"), JurisdictionId("california")
 
 LOCATION_ID = LocationId("loc")
@@ -79,11 +76,6 @@ PARCELS = {
     HOME_LOCATION_ID: flat_parcel(Decimal("0.012")),
     RENTAL_LOCATION_ID: flat_parcel(Decimal("0.024")),
 }
-
-
-def account(agent_id: AgentId, balance: Decimal | int = 0) -> tuple[AccountRef, int]:
-    """An account and its opening balance."""
-    return AccountRef(agent_id=agent_id, account_id=CHECKING), USD.quanta(balance)
 
 
 def financing(
@@ -161,28 +153,13 @@ def compose(case: Situation) -> World:
         rollout_count=1,
         horizon_months=case.horizon_months,
     )
-    jurisdictions = {id_: load_jurisdiction(id_) for id_ in case.jurisdiction_ids}
     world = World(
         MarketPath(series, 0, rollout_count=1), horizon_months=case.horizon_months, income_sources=(ORDINARY_INCOME,)
     )
     for opened, balance in case.accounts:
         world.declare_account(account=opened, opening_balance=balance)
     if case.jurisdiction_ids:
-        world.track(
-            TaxAuthority(
-                compile_profile(
-                    TaxProfile(
-                        agent_id=ALICE,
-                        filing_status=FilingStatus.SINGLE,
-                        jurisdiction_ids=list(case.jurisdiction_ids),
-                        tax_authority_agent_id=IRS,
-                    ),
-                    jurisdictions,
-                    currency=USD,
-                ),
-                indexation=FixedNominalLaw(),
-            )
-        )
+        world.track(filer(ALICE, case.jurisdiction_ids, authority=IRS))
     world.declare_housing(case.housing, case.tax_policies)
     if case.rent is not None:
         world.declare_flow(

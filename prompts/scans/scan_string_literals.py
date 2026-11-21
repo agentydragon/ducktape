@@ -9,8 +9,9 @@ This script extracts:
 The histogram is sorted by frequency (most common first) and includes file locations
 for each occurrence.
 
-Usage:
-    python scan_string_literals.py [directory]
+Usage (from the repository root):
+    python -m prompts.scans.scan_string_literals [directory]
+    bb run //prompts/scans:scan_string_literals_bin -- [directory]
 
 Output:
     JSON with:

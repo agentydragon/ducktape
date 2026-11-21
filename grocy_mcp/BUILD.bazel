@@ -3,8 +3,6 @@ load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
-# ── Build-time spec fixup ────────────────────────────────────────────────────
-
 py_library(
     name = "fix_openapi_spec",
     srcs = ["fix_openapi_spec.py"],
@@ -23,8 +21,6 @@ genrule(
     cmd = "$(execpath :fix_openapi_spec_bin) $(SRCS) $@",
     tools = [":fix_openapi_spec_bin"],
 )
-
-# ── Libraries ────────────────────────────────────────────────────────────────
 
 py_library(
     name = "grocy_types",
@@ -102,8 +98,6 @@ py_binary(
     deps = [":server"],
 )
 
-# ── Tests ────────────────────────────────────────────────────────────────────
-
 py_library(
     name = "grocy_container",
     srcs = ["grocy_container.py"],
@@ -125,11 +119,9 @@ py_library(
     visibility = ["//grocy_mcp:__subpackages__"],
     deps = [
         ":grocy_container",
-        "//devinfra/oci",
-        "//third_party/containers:grocy",
-        "//util/testing:container_logs",
-        "@pypi//opentelemetry_api",
+        "//testing:container_logs",
         "@pypi//pytest",
+        "@pypi//testcontainers",
     ],
 )
 
@@ -139,7 +131,7 @@ py_library(
     srcs = ["conftest.py"],
     deps = [
         ":grocy_fixtures",
-        "//util/testing:otel_tracing",
+        "//testing:otel_tracing",
         "@pypi//opentelemetry_api",
         "@pypi//pytest",
     ],
@@ -234,7 +226,7 @@ py_test(
         ":mcp_types",
         ":request_scoped_openapi",
         "//:conftest",
-        "//grocy_mcp/testing:helpers",
+        "//grocy_mcp/testing:results",
         "@pypi//fastmcp_slim",
         "@pypi//httpx",
         "@pypi//httpx2",
@@ -271,9 +263,9 @@ py_test(
         ":mcp_types",
         ":request_scoped_openapi",
         ":server",
-        ":tool_metadata",
         "//:conftest",
-        "//grocy_mcp/testing:helpers",
+        "//grocy_mcp/testing:ref_data",
+        "//grocy_mcp/testing:results",
         "@pypi//fastmcp_slim",
         "@pypi//httpx",
         "@pypi//opentelemetry_api",
@@ -281,8 +273,6 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
-
-# ── OCI image ────────────────────────────────────────────────────────────────
 
 aspect_py_binary(
     name = "server_bin",

@@ -2,9 +2,6 @@ import type { AgentRunStatus } from "./schema";
 
 // Shared status utilities for agent runs
 
-// Re-export for convenience
-export type { AgentRunStatus };
-
 /** Returns Tailwind classes for status badge styling */
 export function getStatusColor(status: AgentRunStatus): string {
   switch (status) {

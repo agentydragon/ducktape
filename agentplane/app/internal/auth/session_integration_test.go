@@ -3,24 +3,19 @@ package auth
 import (
 	"context"
 	"database/sql"
-	"net/url"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/app/internal/auth/session"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
-	_ "github.com/lib/pq"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 )
 
 func integrationDB(t *testing.T) (*session.Store, *sql.DB, string) {
 	t.Helper()
 	dsn := integrationDatabase.Clone(t)
-	db, err := sql.Open("postgres", dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := postgres.Open(t, dsn)
 	return session.NewStore(db, time.Minute, 0), db, dsn
 }
 
@@ -31,13 +26,7 @@ func integrationStore(t *testing.T) *session.Store {
 
 func integrationHub(t *testing.T, dsn string) *wakeups.Hub {
 	t.Helper()
-	target, err := url.Parse(dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	query := target.Query()
-	query.Set("application_name", "agentplane-auth-test")
-	target.RawQuery = query.Encode()
+	target := postgres.URLWithApplicationName(t, dsn, "agentplane-auth-test")
 	hub, err := wakeups.Listen(t.Context(), target.String(), session.SessionUpdatesChannel)
 	if err != nil {
 		t.Fatal(err)

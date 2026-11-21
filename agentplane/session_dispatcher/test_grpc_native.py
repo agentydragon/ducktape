@@ -154,9 +154,7 @@ async def create_session(
     return await inspect(runner, str(session_id))
 
 
-async def rejected_opening(
-    dispatcher: SessionDispatcherClient, destination: SandboxDestination, spec: session_pb2.SessionSpec
-) -> None:
+async def rejected_opening(dispatcher: SessionDispatcherClient, spec: session_pb2.SessionSpec) -> None:
     session_id = str(uuid4())
     await dispatcher.unary(
         dispatcher.stub.CreateSession, session_dispatcher_pb2.CreateSessionRequest(session_id=session_id, spec=spec)
@@ -372,7 +370,7 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
     invalid_spec.model = ""
     invalid_spec.placement.environment_hosted.environment.name = sandbox.destination.target.name
     invalid_spec.placement.environment_hosted.environment.uid = sandbox.destination.target.uid
-    await rejected_opening(session_dispatcher, sandbox.destination, invalid_spec)
+    await rejected_opening(session_dispatcher, invalid_spec)
     assert [summary.session_id for summary in await destination.list_sessions()] == [session]
     assert bootstrap_marker.read_text() == "B"
     assert setup_marker.read_text() == "S"

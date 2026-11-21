@@ -3,6 +3,11 @@ ciphertext for values nothing outside the cluster needs to know: an ESO `Passwor
 generator immediately consumed by a matching `ExternalSecret`. Two idioms share the
 generator half: a single opaque secret (`mint_bearer_secret`) and a multi-field DB role
 credential (`mint_db_role_secret`).
+
+A `Password` generator is stateless: every refresh mints a new value, so these Secrets are
+created once (`CREATED_ONCE`) or refreshed yearly (`8760h`). A value minted elsewhere (an
+Authentik OIDC client secret, created by Terraform) is read from there, never generated
+again: a second copy diverges at the first refresh.
 """
 
 from __future__ import annotations
@@ -102,15 +107,13 @@ def mint_db_role_secret(
     host: str,
     port: int,
     database: str,
-    url_scheme: str = "postgresql",
     url_key: str = "DATABASE_URL",
-    include_host_fields: bool = True,
     secret_type: str | None = "kubernetes.io/basic-auth",
     target_annotations: dict[str, str] | None = None,
 ) -> None:
     """Mints `name` as a DB role credential: an ESO `Password` generator feeding a
-    multi-field `ExternalSecret` template -- `username`/`password`, optionally `host`/
-    `port`/`dbname`, plus a `{url_scheme}://...` connection string under `url_key`. The
+    multi-field `ExternalSecret` template -- `username`/`password`/`host`/`port`/`dbname`,
+    plus a `postgresql://...` connection string under `url_key`. The
     generator's own object is always `f"{name}-generator"`, distinct from the target
     Secret's name (unlike `mint_bearer_secret`, every DB role site already used this
     naming). `target_annotations` land on the generated Secret's own metadata, which always
@@ -121,10 +124,6 @@ def mint_db_role_secret(
     generator = password_generator(
         scope, f"{id}-generator", name=f"{name}-generator", namespace=namespace, length=40, digits=8
     )
-    data = {"username": role, "password": "{{ .password }}"}
-    if include_host_fields:
-        data |= {"host": host, "port": str(port), "dbname": database}
-    data[url_key] = f"{url_scheme}://{role}:{{{{ .password }}}}@{host}:{port}/{database}"
     ExternalSecret(
         scope,
         id,
@@ -133,7 +132,14 @@ def mint_db_role_secret(
         data_from=[DataFrom.from_password_generator(generator)],
         template=ExternalSecretSpecTargetTemplate(
             type=secret_type,
-            data=data,
+            data={
+                "username": role,
+                "password": "{{ .password }}",
+                "host": host,
+                "port": str(port),
+                "dbname": database,
+                url_key: f"postgresql://{role}:{{{{ .password }}}}@{host}:{port}/{database}",
+            },
             metadata=ExternalSecretSpecTargetTemplateMetadata(
                 labels={"cnpg.io/reload": "true"}, annotations=target_annotations
             ),

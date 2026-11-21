@@ -16,7 +16,6 @@ from kubernetes_asyncio import client as k8s_client
 
 from agentplane import sandbox_resource
 from agentplane.crd_group import GROUP, VERSION
-from agentplane.egress.resources import CREDENTIALS_PLURAL
 from agentplane.policy_sets import FLUX_KUSTOMIZATION_LABEL, POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.sandbox_resource import OperatingMode
 from agentplane.subjects import ServiceAccountRef
@@ -74,19 +73,6 @@ class SandboxNamespace:
         """The ServiceAccount of this name here, which a Sandbox of the name runs as."""
         return ServiceAccountRef(namespace=self.name, name=name)
 
-    async def read(self, plural: str, name: str) -> dict[str, Any]:
-        return await self.custom_objects.get_namespaced_custom_object(GROUP, VERSION, self.name, plural, name)
-
-    async def objects(self, plural: str) -> list[dict[str, Any]]:
-        listed = await self.custom_objects.list_namespaced_custom_object(GROUP, VERSION, self.name, plural)
-        return cast(list[dict[str, Any]], listed["items"])
-
-    async def names(self, plural: str) -> set[str]:
-        return {item["metadata"]["name"] for item in await self.objects(plural)}
-
-    async def pods(self) -> list[k8s_client.V1Pod]:
-        return cast(list[k8s_client.V1Pod], (await self.core_v1.list_namespaced_pod(self.name)).items)
-
     async def patch(self, plural: str, name: str, body: dict[str, Any]) -> dict[str, Any]:
         """A merge patch of the object; its `status` is the status subresource's, which this leaves alone."""
         return cast(
@@ -103,11 +89,6 @@ class SandboxNamespace:
             await self.custom_objects.patch_namespaced_custom_object_status(
                 GROUP, VERSION, self.name, plural, name, {"status": status}, _content_type=_MERGE_PATCH
             ),
-        )
-
-    async def delete(self, plural: str, name: str) -> None:
-        await self.custom_objects.delete_namespaced_custom_object(
-            GROUP, VERSION, self.name, plural, name, body=k8s_client.V1DeleteOptions()
         )
 
     async def _create(self, plural: str, kind: str, name: str, spec: dict[str, Any], **metadata: Any) -> dict[str, Any]:
@@ -149,30 +130,25 @@ class SandboxNamespace:
             return str(uuid4())
         return str(pod.metadata.uid)
 
-    async def pod(
-        self,
-        name: str,
-        *,
-        phase: str,
-        ready: bool,
-        ip: str | None,
-        waiting_reason: str | None = None,
-        owner: dict[str, Any] | None = None,
-    ) -> k8s_client.V1Pod:
-        """A runner Pod as the kubelet reports it: running and ready, or held up by `waiting_reason`.
-        An `owner` Sandbox controls it, and its Pod runs as that Sandbox's ServiceAccount."""
+    async def runner(self, name: str) -> tuple[dict[str, Any], k8s_client.V1Pod]:
+        """A Ready Sandbox and the running, ready Pod it controls, as its controller leaves them. The Pod runs as
+        the Sandbox's ServiceAccount."""
+        owner = await self._create(
+            sandbox_resource.SANDBOXES_PLURAL,
+            sandbox_resource.SANDBOX_KIND,
+            name,
+            {"template": TEMPLATE, "running": True},
+        )
         await self.core_v1.create_namespaced_pod(
             self.name,
             k8s_client.V1Pod(
                 metadata=k8s_client.V1ObjectMeta(
                     name=name,
-                    owner_references=None
-                    if owner is None
-                    else [
+                    owner_references=[
                         k8s_client.V1OwnerReference(
                             api_version=sandbox_resource.SANDBOX_API_VERSION,
                             kind=sandbox_resource.SANDBOX_KIND,
-                            name=owner["metadata"]["name"],
+                            name=name,
                             uid=owner["metadata"]["uid"],
                             controller=True,
                         )
@@ -181,46 +157,31 @@ class SandboxNamespace:
                 spec=k8s_client.V1PodSpec(
                     containers=[k8s_client.V1Container(name="environment-runtime", image=RUNNER_IMAGE)],
                     node_name="test-node",
-                    service_account_name=None if owner is None else owner["metadata"]["name"],
+                    service_account_name=name,
                 ),
             ),
         )
-        state = (
-            {"running": {}}
-            if waiting_reason is None
-            else {"waiting": {"reason": waiting_reason, "message": f"{waiting_reason} on {name}"}}
-        )
-        return await self.core_v1.patch_namespaced_pod_status(
+        running = await self.core_v1.patch_namespaced_pod_status(
             name,
             self.name,
             {
                 "status": {
-                    "phase": phase,
-                    **({"podIP": ip} if ip is not None else {}),
-                    "conditions": [{"type": "Ready", "status": "True" if ready else "False"}],
+                    "phase": "Running",
+                    "podIP": "127.0.0.1",
+                    "conditions": [{"type": "Ready", "status": "True"}],
                     "containerStatuses": [
                         {
                             "name": "environment-runtime",
                             "image": RUNNER_IMAGE,
                             "imageID": "",
-                            "ready": ready,
+                            "ready": True,
                             "restartCount": 0,
-                            "state": state,
+                            "state": {"running": {}},
                         }
                     ],
                 }
             },
         )
-
-    async def runner(self, name: str) -> tuple[dict[str, Any], k8s_client.V1Pod]:
-        """A Ready Sandbox and the running Pod it controls, as its controller leaves them."""
-        owner = await self._create(
-            sandbox_resource.SANDBOXES_PLURAL,
-            sandbox_resource.SANDBOX_KIND,
-            name,
-            {"template": TEMPLATE, "running": True},
-        )
-        running = await self.pod(name, phase="Running", ready=True, ip="127.0.0.1", owner=owner)
         raw = await self.patch_status(
             sandbox_resource.SANDBOXES_PLURAL,
             name,
@@ -232,26 +193,10 @@ class SandboxNamespace:
         )
         return raw, running
 
-    async def policy_set(self, name: str, rules: list[dict[str, Any]]) -> dict[str, Any]:
-        """A PolicySet holding these rules as given, each with its own `type`."""
-        return await self._create(POLICY_SETS_PLURAL, "PolicySet", name, {"rules": rules})
-
     async def egress_policy_set(self, name: str, rules: list[dict[str, Any]]) -> dict[str, Any]:
         """A PolicySet holding only `egress` rules, given without their `type`."""
-        return await self.policy_set(name, [{"type": "egress", **rule} for rule in rules])
-
-    async def action_policy_set(self, name: str, policies: list[dict[str, Any]]) -> dict[str, Any]:
-        """A PolicySet holding one `action_auto_approve` rule per policy."""
-        return await self.policy_set(name, [{"type": "action_auto_approve", "policy": policy} for policy in policies])
-
-    async def egress_credential(
-        self, name: str, *, source: dict[str, Any], description: str, targets: list[dict[str, Any]]
-    ) -> dict[str, Any]:
         return await self._create(
-            CREDENTIALS_PLURAL,
-            "EgressCredential",
-            name,
-            {"source": source, "description": description, "targets": targets},
+            POLICY_SETS_PLURAL, "PolicySet", name, {"rules": [{"type": "egress", **rule} for rule in rules]}
         )
 
     async def policy_binding(

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 
 	goSystemd "github.com/coreos/go-systemd/v22/dbus"
@@ -49,16 +50,19 @@ type StartHandle struct {
 	startOnce   sync.Once
 	startErr    error
 
-	exitDone chan struct{}
-	exitMu   sync.Mutex
-	exitCode int
-	exitErr  error
-	exitOnce sync.Once
+	exitDone      chan struct{}
+	exitMu        sync.Mutex
+	exitCode      int
+	exitOOMKilled bool
+	exitErr       error
+	exitOnce      sync.Once
 
-	cleanupDone chan struct{}
-	cleanupMu   sync.Mutex
-	cleanupErr  error
-	cleanupOnce sync.Once
+	cleanupRequest   chan struct{}
+	cleanupRequested sync.Once
+	cleanupDone      chan struct{}
+	cleanupMu        sync.Mutex
+	cleanupErr       error
+	cleanupOnce      sync.Once
 
 	closeStdinOnce sync.Once
 	closeStdinErr  error
@@ -75,17 +79,18 @@ type StartHandle struct {
 
 func newStartHandle(backend *Backend, conn *goSystemd.Conn, cancel context.CancelFunc, name string, stdin, stdout, stderr *os.File) *StartHandle {
 	return &StartHandle{
-		backend:     backend,
-		conn:        conn,
-		cancel:      cancel,
-		name:        name,
-		stdin:       stdin,
-		stdout:      stdout,
-		stderr:      stderr,
-		requestDone: make(chan struct{}),
-		startDone:   make(chan struct{}),
-		exitDone:    make(chan struct{}),
-		cleanupDone: make(chan struct{}),
+		backend:        backend,
+		conn:           conn,
+		cancel:         cancel,
+		name:           name,
+		stdin:          stdin,
+		stdout:         stdout,
+		stderr:         stderr,
+		requestDone:    make(chan struct{}),
+		startDone:      make(chan struct{}),
+		exitDone:       make(chan struct{}),
+		cleanupRequest: make(chan struct{}),
+		cleanupDone:    make(chan struct{}),
 	}
 }
 
@@ -101,15 +106,6 @@ func (h *StartHandle) PID() int {
 func (h *StartHandle) Stdin() *os.File   { return h.stdin }
 func (h *StartHandle) Stdout() io.Reader { return h.stdout }
 func (h *StartHandle) Stderr() io.Reader { return h.stderr }
-
-func (h *StartHandle) StartState() StartState {
-	h.observationMu.Lock()
-	defer h.observationMu.Unlock()
-	return h.observation.StartState
-}
-
-func (h *StartHandle) Accepted() bool    { return h.StartState() == StartAccepted }
-func (h *StartHandle) Unconfirmed() bool { return h.StartState() == StartUnconfirmed }
 
 // Observe subscribes to manager evidence and replays the latest observation.
 func (h *StartHandle) Observe(sink func(Observation)) {
@@ -185,9 +181,6 @@ func (h *StartHandle) observeExit(code int, observed bool, err error) {
 // WaitStarted observes the start job and process identity. Cancellation stops
 // this observation only; the handle remains owned and must still be stopped.
 func (h *StartHandle) WaitStarted(ctx context.Context) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	select {
 	case <-h.startDone:
 		h.stateMu.Lock()
@@ -222,8 +215,7 @@ func (h *StartHandle) cancelStart() {
 	}
 }
 
-func (h *StartHandle) runStart(ctx context.Context, properties []goSystemd.Property, stdinReader, stdoutWriter, stderrWriter *os.File) {
-	defer closeFiles(stdinReader, stdoutWriter, stderrWriter)
+func (h *StartHandle) runStart(ctx context.Context, properties []goSystemd.Property, child [3]*os.File) {
 	h.observeStart(StartSubmitted, nil)
 	launchCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	h.setStartCancel(cancel)
@@ -235,6 +227,11 @@ func (h *StartHandle) runStart(ctx context.Context, properties []goSystemd.Prope
 		}
 	}
 	job, err := start(launchCtx, h.conn, h.name, properties, completion)
+	if err == nil {
+		closeFiles(child[:]...)
+	} else {
+		defer closeFiles(child[:]...)
+	}
 	cancel()
 	h.setStartCancel(nil)
 	h.stateMu.Lock()
@@ -311,16 +308,23 @@ func (h *StartHandle) closeOwnedStreams() {
 }
 
 func (h *StartHandle) CloseStdin() error {
+	if h.stdin == nil {
+		return nil
+	}
 	h.closeStdinOnce.Do(func() { h.closeStdinErr = h.stdin.Close() })
 	return h.closeStdinErr
+}
+
+// OOMKilled reports retained manager evidence for the leader exit.
+func (h *StartHandle) OOMKilled() bool {
+	h.exitMu.Lock()
+	defer h.exitMu.Unlock()
+	return h.exitOOMKilled
 }
 
 // Wait returns exit evidence as soon as it is observed. The cgroup fence and
 // stream/connection teardown continue independently; Stop waits for that cleanup.
 func (h *StartHandle) Wait(ctx context.Context) (int, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	select {
 	case <-h.exitDone:
 		return h.exitResult()
@@ -340,10 +344,11 @@ func (h *StartHandle) exitResult() (int, error) {
 	return h.exitCode, h.exitErr
 }
 
-func (h *StartHandle) recordExit(code int, err error) {
+func (h *StartHandle) recordExit(code int, err error, oomKilled bool) {
 	h.exitOnce.Do(func() {
 		h.exitMu.Lock()
 		h.exitCode = code
+		h.exitOOMKilled = oomKilled
 		h.exitErr = err
 		close(h.exitDone)
 		h.exitMu.Unlock()
@@ -351,9 +356,6 @@ func (h *StartHandle) recordExit(code int, err error) {
 }
 
 func (h *StartHandle) waitFenced(ctx context.Context) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	select {
 	case <-h.cleanupDone:
 		h.cleanupMu.Lock()
@@ -373,7 +375,7 @@ func (h *StartHandle) waitFenced(ctx context.Context) error {
 
 func (h *StartHandle) completeWith(code int, err error) {
 	h.cleanupOnce.Do(func() {
-		h.recordExit(code, err)
+		h.recordExit(code, err, false)
 		h.cleanupMu.Lock()
 		h.cleanupErr = err
 		close(h.cleanupDone)
@@ -385,15 +387,13 @@ func (h *StartHandle) completeWith(code int, err error) {
 // waits for the reaper's unit and cgroup fence. A failed/canceled wait leaves
 // the handle available for a later retry.
 func (h *StartHandle) Stop(ctx context.Context) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	select {
 	case <-h.cleanupDone:
 		return h.waitFenced(ctx)
 	default:
 	}
 	_ = h.CloseStdin()
+	h.cleanupRequested.Do(func() { close(h.cleanupRequest) })
 	h.cancelStart()
 	select {
 	case <-h.requestDone:
@@ -475,9 +475,6 @@ func (h *StartHandle) fenceUntilCertain() error {
 }
 
 func (h *StartHandle) fenceUntilCertainContext(ctx context.Context) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	conn := h.conn
 	cancelConnection := func() {}
 	defer func() {
@@ -628,6 +625,7 @@ func systemdStopTimeout(grace time.Duration) uint64 {
 func (h *StartHandle) reap() {
 	code := -1
 	statusObserved := false
+	oomKilled := false
 	var observationErr error
 	readConn := h.conn
 	var readConnCancel context.CancelFunc
@@ -676,10 +674,15 @@ func (h *StartHandle) reap() {
 			break
 		}
 		code, statusObserved, observationErr = nativeExitStatus(props, h.invocationID)
+		commandOOM := h.backend.config.RetainUntilStop && props.Result == "oom-kill"
+		if commandOOM && !statusObserved && observationErr == nil {
+			code, statusObserved, observationErr = commandOOMExitStatus(props, h.group, GroupEmpty)
+		}
 		if statusObserved || observationErr != nil {
+			oomKilled = props.Result == "oom-kill"
 			break
 		}
-		if props.ExecMainPID == 0 {
+		if props.ExecMainPID == 0 && !commandOOM {
 			observationErr = errors.New("native systemd invocation lost its process exit status")
 			break
 		}
@@ -691,7 +694,10 @@ func (h *StartHandle) reap() {
 		// Publish the manager observation before releasing waiters; cleanup and
 		// stream/connection teardown remain tracked by cleanupDone.
 		h.observeExit(code, true, observationErr)
-		h.recordExit(code, observationErr)
+		h.recordExit(code, observationErr, oomKilled)
+		if h.backend.config.RetainUntilStop {
+			h.waitForCommandCleanup()
+		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	if unit, err := Read(ctx, h.conn, h.name); err == nil && unit.ControlGroup != "" {
@@ -706,6 +712,26 @@ func (h *StartHandle) reap() {
 	_ = h.CloseStdin()
 	h.release()
 	h.completeWith(code, errors.Join(observationErr, fenceErr))
+}
+
+// A command cgroup may outlive its leader. Wait for a stop request or
+// natural emptiness so background work stays alive without pinning empty units.
+func (h *StartHandle) waitForCommandCleanup() {
+	h.stateMu.Lock()
+	group := h.group
+	h.stateMu.Unlock()
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		if empty, err := GroupEmpty(group); err == nil && empty {
+			return
+		}
+		select {
+		case <-h.cleanupRequest:
+			return
+		case <-ticker.C:
+		}
+	}
 }
 
 func (h *StartHandle) readSnapshotOn(ctx context.Context, conn *goSystemd.Conn) (UnitSnapshot, error) {
@@ -730,6 +756,22 @@ func nativeExitStatus(unit UnitSnapshot, invocationID string) (int, bool, error)
 		code += 128
 	}
 	return code, true, nil
+}
+
+// PID 1 can finish an OOM stop before consuming the leader's SIGCHLD.
+// The caller must first verify the invocation and check for a raw exit code.
+func commandOOMExitStatus(unit UnitSnapshot, group string, groupEmpty func(string) (bool, error)) (int, bool, error) {
+	if unit.Result != "oom-kill" || !unit.Stopped() || unit.JobID != 0 {
+		return -1, false, nil
+	}
+	empty, err := groupEmpty(group)
+	if err != nil {
+		return -1, false, fmt.Errorf("inspect systemd command OOM domain: %w", err)
+	}
+	if !empty {
+		return -1, false, nil
+	}
+	return 128 + int(syscall.SIGKILL), true, nil
 }
 
 func (h *StartHandle) waitChangeOn(conn *goSystemd.Conn) bool {

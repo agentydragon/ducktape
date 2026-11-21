@@ -31,6 +31,7 @@ from external_secrets_crds.io.external_secrets import (
 from cluster.cdk8s import api_resource, external_creds, namespaces, node_scheduling
 from cluster.cdk8s.cnpg import cluster
 from cluster.cdk8s.config_format import yaml_config
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.kubernetes_store import secret_store
 from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.forgejo_registry import pull_credentials
@@ -42,6 +43,7 @@ from cluster.cdk8s.nix_cache import ci_token
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.volume_claim import volume_claim
 from cluster.rotators.attic_jwt_rotation.config import (
     Config,
     KubernetesDestination,
@@ -248,15 +250,8 @@ def _local_server(scope: Construct) -> None:
             },
         ),
     )
-    k8s.KubePersistentVolumeClaim(
-        scope,
-        "local-storage",
-        metadata=k8s.ObjectMeta(name=_NEXT_STORAGE, namespace=NAMESPACE),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="piraeus-hdd-2",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("100Gi")}),
-        ),
+    volume_claim(
+        scope, "local-storage", name=_NEXT_STORAGE, namespace=NAMESPACE, storage_class="piraeus-hdd-2", size="100Gi"
     )
     k8s.KubeDeployment(
         scope,
@@ -301,13 +296,7 @@ def _local_server(scope: Construct) -> None:
                             ],
                             args=["-f", "/config/server.toml", "--mode", "monolithic"],
                             ports=[SERVICE.port.k8s_container_port()],
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("50m"),
-                                    "memory": k8s.Quantity.from_string("1280Mi"),
-                                },
-                                limits={"memory": k8s.Quantity.from_string("8Gi")},
-                            ),
+                            resources=container_resources(cpu="50m", memory="1280Mi", memory_limit="8Gi"),
                             volume_mounts=[
                                 k8s.VolumeMount(name="config", mount_path="/config", read_only=True),
                                 k8s.VolumeMount(name="tmp", mount_path="/tmp"),
@@ -382,13 +371,7 @@ def _local_server(scope: Construct) -> None:
                             security_context=k8s.SecurityContext(
                                 allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
                             ),
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("100m"),
-                                    "memory": k8s.Quantity.from_string("128Mi"),
-                                },
-                                limits={"memory": k8s.Quantity.from_string("256Mi")},
-                            ),
+                            resources=container_resources(cpu="100m", memory="128Mi", memory_limit="256Mi"),
                             env=[k8s.EnvVar(name="SSL_CERT_FILE", value="/var/run/public-web-pki/ca-certificates.crt")],
                             volume_mounts=[
                                 k8s.VolumeMount(name="cache-keys", mount_path="/secrets/cache-keys", read_only=True),
@@ -417,36 +400,19 @@ def _local_server(scope: Construct) -> None:
 def _rotation(scope: Construct) -> None:
     # Flux owns the Secret's identity; only the rotator owns its data. Omitting
     # data and using Merge preserve rotator-owned fields on Flux reconciles.
-    k8s.KubeSecret(
-        scope,
-        "ci-writer-token",
-        metadata=k8s.ObjectMeta(
-            name=ci_token.WRITER.name,
-            namespace=ci_token.WRITER.namespace,
-            annotations={"kustomize.toolkit.fluxcd.io/ssa": "Merge"},
-        ),
-        type="Opaque",
-    )
-    k8s.KubeSecret(
-        scope,
-        "ci-reader-token",
-        metadata=k8s.ObjectMeta(
-            name=ci_token.READER.name,
-            namespace=ci_token.READER.namespace,
-            annotations={"kustomize.toolkit.fluxcd.io/ssa": "Merge"},
-        ),
-        type="Opaque",
-    )
-    k8s.KubeSecret(
-        scope,
-        "gaffer-ci-writer-token",
-        metadata=k8s.ObjectMeta(
-            name=ci_token.GAFFER_WRITER.name,
-            namespace=ci_token.GAFFER_WRITER.namespace,
-            annotations={"kustomize.toolkit.fluxcd.io/ssa": "Merge"},
-        ),
-        type="Opaque",
-    )
+    for construct_id, token in (
+        ("ci-writer-token", ci_token.WRITER),
+        ("ci-reader-token", ci_token.READER),
+        ("gaffer-ci-writer-token", ci_token.GAFFER_WRITER),
+    ):
+        k8s.KubeSecret(
+            scope,
+            construct_id,
+            metadata=k8s.ObjectMeta(
+                name=token.name, namespace=token.namespace, annotations={"kustomize.toolkit.fluxcd.io/ssa": "Merge"}
+            ),
+            type="Opaque",
+        )
     notification_role = ClusterRole(
         scope,
         "ci-token-notification",
@@ -587,13 +553,7 @@ def _rotation(scope: Construct) -> None:
                                             name="public-web-pki", mount_path="/var/run/public-web-pki", read_only=True
                                         ),
                                     ],
-                                    resources=k8s.ResourceRequirements(
-                                        requests={
-                                            "cpu": k8s.Quantity.from_string("100m"),
-                                            "memory": k8s.Quantity.from_string("256Mi"),
-                                        },
-                                        limits={"memory": k8s.Quantity.from_string("512Mi")},
-                                    ),
+                                    resources=container_resources(cpu="100m", memory="256Mi", memory_limit="512Mi"),
                                 )
                             ],
                         )

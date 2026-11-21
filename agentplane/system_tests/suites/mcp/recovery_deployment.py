@@ -23,7 +23,6 @@ def render() -> RenderedFixture:
     )
     env = fixture_chart.environment(
         runtime=SandboxRuntime.POD,
-        platform_callers=fixture_chart.NATIVE_CALLERS,
         routes=routes,
         app=None,
         central_sampler=central_sampler_props,

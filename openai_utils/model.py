@@ -20,10 +20,6 @@ from openai_utils.api_shape import LLMApiShape
 from openai_utils.errors import translate_context_length
 from openai_utils.types import ReasoningEffort, ReasoningParams, build_reasoning_params
 
-# ------------------------------
-# Usage types (wrapped from OpenAI SDK)
-# ------------------------------
-
 
 class InputTokensDetails(BaseModel):
     """Provider-reported input counts; None means unreported."""
@@ -59,11 +55,6 @@ class ResponseUsage(BaseModel):
     @classmethod
     def from_sdk(cls, sdk_usage: sdk_usage_types.ResponseUsage) -> Self:
         return cls.model_validate(sdk_usage.model_dump(exclude_unset=True))
-
-
-# ------------------------------
-# Typed, tolerant input items we compose into Responses API "input"
-# ------------------------------
 
 
 class InputTextPart(BaseModel):
@@ -146,11 +137,8 @@ class ReasoningOutputTextItem(BaseModel):
     this as a distinct type (rather than widening ReasoningContentItem) so the
     OpenAI-standard model stays strict.
 
-    TODO: this is a workaround for a LiteLLM bridge mislabel. Prefer a real fix:
-    a LiteLLM config/version that emits "reasoning_text", or have props speak
-    chat/completions directly (it is currently Responses-API-only, see
-    props/backend/routes/llm.py) so reasoning doesn't round-trip through the
-    lossy Responses bridge at all. Track in props/TODO.md.
+    TODO: this is a workaround for a LiteLLM bridge mislabel. The real fix is a
+    LiteLLM config/version that emits "reasoning_text".
     """
 
     text: str
@@ -236,11 +224,6 @@ class ResponsesRequest(BaseModel):
 
     # Allow unknown fields for forward-compat (timeouts, metadata, etc.)
     model_config = ConfigDict(extra="allow")
-
-
-# ------------------------------
-# Structured response types (our layer)
-# ------------------------------
 
 
 class OutputText(BaseModel):

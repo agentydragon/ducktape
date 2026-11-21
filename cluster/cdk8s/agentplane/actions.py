@@ -5,7 +5,6 @@ an environment with the orchestration_v1 group. Staging's policy sets are added 
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, Duration, Size
@@ -47,14 +46,7 @@ from agentplane.net.peertls.config import (
 )
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling
-from cluster.cdk8s.agentplane import (
-    central_sampler,
-    database,
-    environment_service,
-    notifications,
-    session_dispatcher,
-    workload_tls,
-)
+from cluster.cdk8s.agentplane import central_sampler, database, notifications, workload_tls
 from cluster.cdk8s.agentplane.environment import Environment, OrchestrationProps, SessionDelegationProps
 from cluster.cdk8s.agentplane.service_workload import ServiceWorkload, add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
@@ -307,7 +299,6 @@ class Actions(Construct):
         image_pull_policy: ImagePullPolicy = ImagePullPolicy.ALWAYS,
         memory_request: Size = _DEFAULT_MEMORY_REQUEST,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
-        container_env: Mapping[str, EnvValue] | None = None,
     ) -> None:
         """`history` and `dispatcher` serve orchestration_v1 directly and session_delegation with forwarded
         caller identity, when those groups are configured."""
@@ -317,7 +308,6 @@ class Actions(Construct):
         self.history = history
         self.dispatcher = dispatcher
         self.environment_service_endpoint = environment_service_endpoint
-        self.container_env = container_env or {}
         self.placement = placement
         self.registry_secret_name = registry_secret_name
         self.image_pull_policy = image_pull_policy
@@ -517,7 +507,7 @@ class Actions(Construct):
         )
         if self.env.actions.orchestration_v1 is not None:
             # The EnvironmentService creates Sandboxes; Actions reads the exact created UID and
-            # writes launcher grants, which `_add_launcher_admission` limits to that shape.
+            # writes launcher grants, which `add_launcher_admission` limits to that shape.
             rules_by_namespace[namespace].append(
                 RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get"])
             )
@@ -566,7 +556,7 @@ class Actions(Construct):
                 .key("private-key-pem")
                 .env_value(self, "web-push-secret")
             )
-        return env | dict(self.container_env)
+        return env
 
     def _reload_secrets(self) -> list[str]:
         """The Secrets `_container_env` and `_add_workload` wire in, so rotating any rolls the Deployment."""
@@ -668,7 +658,7 @@ class Actions(Construct):
             )
             # Its own directory: a subPath file cannot be mounted inside the read-only
             # settings volume (runc: "not a directory").
-            container.mount(f"/run/secrets/{mount.name}", bearer_volume, read_only=True)
+            container.mount(mount.mount_dir, bearer_volume, read_only=True)
         return workload
 
     def _add_network_policy(self) -> None:
@@ -676,14 +666,13 @@ class Actions(Construct):
         NetworkPolicy(
             self,
             "networkpolicy",
-            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=namespace),
+            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
             endpoint_selector=self.service.pods.selector,
             ingress=[
                 notifications.service(namespace).pods.admit(self.service.pod_port),
                 # egress.py and app.py import this module, so their Pods are named here.
                 IngressRule.from_endpoints(cilium.endpoint_labels(namespace, "egress"), ports=[self.service.pod_port]),
                 IngressRule.from_endpoints(cilium.endpoint_labels(namespace, "app"), ports=[self.service.pod_port]),
-                # The staged edge has no Pods until the Connection/MCP traffic cutover.
                 IngressRule.from_endpoints(
                     cilium.endpoint_labels(namespace, "mcp-edge"), ports=[self.service.pod_port]
                 ),
@@ -698,17 +687,12 @@ class Actions(Construct):
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 database.egress(namespace),
                 *(
-                    [
-                        # Retain old destinations until draining Pods and supported rollback callers are gone.
-                        session_dispatcher.service(namespace).egress(),
-                        self.dispatcher.egress(),
-                        self.history.egress(),
-                    ]
+                    [self.dispatcher.egress(), self.history.egress()]
                     if self.env.actions.orchestration_v1 is not None or self.env.actions.session_delegation is not None
                     else []
                 ),
                 *(
-                    [environment_service.service(namespace).egress(), self.environment_service_endpoint.egress()]
+                    [self.environment_service_endpoint.egress()]
                     if self.environment_service_endpoint is not None
                     and (
                         self.env.actions.orchestration_v1 is not None or self.env.actions.session_delegation is not None

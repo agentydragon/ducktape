@@ -24,24 +24,12 @@ func (c *Coordinator) recordMergeability(ctx context.Context, tx transaction.Tx,
 	if subject.Kind != "pull_request" {
 		return 0, false, nil
 	}
-	var creationProto sql.Null[[]byte]
-	var sourceProvider sql.NullString
-	var idempotencyKey string
 	var after int64
 	var initialized bool
-	if err := tx.QueryRowContext(ctx, `SELECT creation_proto, source_provider, idempotency_key,
-		github_mergeability_after_sequence, github_mergeability_initialized
-		FROM subscription WHERE id = $1`, subscriptionID).
-		Scan(&creationProto, &sourceProvider, &idempotencyKey, &after, &initialized); err != nil {
-		return 0, false, err
-	}
-	body, err := sourceadapter.DecodeStoredSubscriptionCreation(subscriptionID, creationProto, sourceProvider, idempotencyKey)
+	source, err := githubSourceOf(ctx, tx, subscriptionID,
+		"github_mergeability_after_sequence, github_mergeability_initialized", &after, &initialized)
 	if err != nil {
 		return 0, false, err
-	}
-	source, ok := body.Source.(sourceadapter.GitHubSource)
-	if !ok {
-		return 0, false, errors.New("mergeability recording needs a GitHub subscription")
 	}
 	selected := false
 	for _, filter := range source.Filters() {

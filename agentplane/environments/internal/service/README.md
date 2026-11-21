@@ -2,7 +2,7 @@
 
 `EnvironmentService` owns managed Sandbox creation, template listing, discovery, watches, and
 separately authorized lifecycle and policy mutations. It is a separate gRPC service from the Session Dispatcher,
-served by every Sandbox Controller replica on its independent listener at `sandbox-controller:8082`. Its public contract is defined in
+served by every Sandbox Controller replica on its independent listener at `environments:8082`. Its public contract is defined in
 [`agentplane/environments/v1/environment_service.proto`](../../v1/environment_service.proto).
 Its discovery and resume method paths are:
 
@@ -66,19 +66,9 @@ service wake budgets by exact SPIFFE ID.
 
 Call `EnvironmentService.ResumeEnvironment` explicitly, then observe the same target again.
 `REQUESTED` confirms acceptance of desired running state, not readiness; no Session or input is
-opened or replayed.
-
-The CLI exposes `agentplane environments list` and
-`agentplane environments get NAMESPACE NAME UID`, and
-`agentplane environments resume NAMESPACE NAME UID --resume-token TOKEN`; all use
-`AGENTPLANE_ENVIRONMENTS_URL` with an optional `AGENTPLANE_ENVIRONMENTS_CREDENTIAL` bearer when a
-dedicated EnvironmentService route is configured. Otherwise they retain the compatibility behavior
-of using `AGENTPLANE_SESSIONS_URL` and its optional `AGENTPLANE_SESSIONS_CREDENTIAL` bearer. A
-dedicated environments credential is never sent to the Sessions endpoint, and a Sessions credential
-is never sent to a dedicated environments endpoint. Workload SVID routes need no bearer.
-
-The resume response reports acceptance, not readiness. Reconcile an uncertain reply before taking
-another action; wait adapters for the CLI and Action/MCP surfaces remain separate work.
+opened or replayed. Reconcile an uncertain reply before taking another action. The
+`agentplane environments` commands and their endpoint and credential selection are in the
+[Agent CLI](../../../docs/agent_cli.md#commands).
 
 For a child Session, choose a separate path under the configured root, such as
 `/state/workspaces/ci-latency-2026-10-31`. The Runner creates missing cwd directories while materializing
@@ -98,16 +88,7 @@ wake generation and a token only while an explicit rule authorizes resume. A del
 effective Identity.
 An idle stream stays open while its credential remains valid and closes when revalidation fails.
 
-Direct service SVIDs have independent, exact-SPIFFE-ID grants through
-`service_readers`, `service_managers`,
-`service_launchers`, and `service_operators`. Service operators may
-explicitly resume, including a requested stop; delegated callers never inherit those roles.
-`service_delegation` admits a service actor only for configured read methods and
-`ResumeEnvironment`, using the live effective Identity and its explicit resume grants. Delegation
-never supplies operator authority or waives the resume token. This service's `wake_service_callers`
-list grants automatic broker eligibility for EnvironmentService assessments only. Dispatcher has a
-separate list and owns service wake budgets keyed by exact SPIFFE ID. Create receipts retain the
-typed service actor separately from the Action origin.
+Service SVID role grants and delegation: [SPEC.md](SPEC.md#resume-and-ownership).
 
 The implementation is internal to Environments. Consumer tests use the wire interface through
 `environments/testing/servicefixture`; production consumers use gRPC. Explicit resume is internal at `environments/internal/resume`; automatic wake execution and its

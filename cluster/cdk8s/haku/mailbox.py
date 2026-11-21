@@ -22,6 +22,7 @@ from cilium_crds.io.cilium import (
 from cluster.cdk8s import cilium, gateway, namespaces, node_scheduling
 from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
 from cluster.cdk8s.cnpg import backup, cluster
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions
 from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.haku import namespace
@@ -79,14 +80,8 @@ INGRESS_CONFIG_MAP = ConfigMapArgs(name=_INGRESS_NAME, namespace=NAMESPACE, file
 SOPS_FILES = ("haku-mailbox-admin.sops.yaml", "haku-mail-token.sops.yaml")
 
 
-def _quantities(values: dict[str, str]) -> dict[str, k8s.Quantity]:
-    return {key: k8s.Quantity.from_string(value) for key, value in values.items()}
-
-
 def _stalwart_resources() -> k8s.ResourceRequirements:
-    return k8s.ResourceRequirements(
-        requests=_quantities({"cpu": "100m", "memory": "256Mi"}), limits=_quantities({"cpu": "1", "memory": "1Gi"})
-    )
+    return container_resources(cpu="100m", memory="256Mi", cpu_limit="1", memory_limit="1Gi")
 
 
 def _stalwart_mounts() -> list[k8s.VolumeMount]:
@@ -146,7 +141,7 @@ def _add_deployment(chart: Chart) -> None:
                     automount_service_account_token=False,
                     # OVH-only resilience: inbound mail must not depend on Proxmox, and the CNPG
                     # store is pinned to hil-ovh -- co-locate with it (same pin as other
-                    # OVH-pinned apps, e.g. paperless).
+                    # OVH-pinned apps).
                     node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                     security_context=k8s.PodSecurityContext(
                         run_as_non_root=True,
@@ -316,10 +311,7 @@ def _add_smtp_ingress(chart: Chart) -> None:
                                 k8s.VolumeMount(name="tmp", mount_path="/tmp"),
                                 k8s.VolumeMount(name="cache", mount_path="/var/cache/nginx"),
                             ],
-                            resources=k8s.ResourceRequirements(
-                                requests=_quantities({"cpu": "10m", "memory": "16Mi"}),
-                                limits=_quantities({"memory": "64Mi"}),
-                            ),
+                            resources=container_resources(cpu="10m", memory="16Mi", memory_limit="64Mi"),
                             security_context=k8s.SecurityContext(
                                 allow_privilege_escalation=False,
                                 capabilities=k8s.Capabilities(drop=["ALL"]),
@@ -460,10 +452,9 @@ def chart(app: App) -> Chart:
         listener=None,
     )
     # Mirror the rotator-published mailbox JWT into haku-sandbox, where Haku reads it to
-    # authenticate to its mailbox over JMAP (haku-state/sources/mailbox.md). Same ESO pattern as the
-    # grocy-sf token (haku/managed-agent/grocy-token-eso.yaml): it sources the flux-system Secret
-    # the rotator writes (k8s_secret output) and refreshes continuously, so the rotated token
-    # propagates without any rotator-side distribution config.
+    # authenticate to its mailbox over JMAP (haku-state/sources/mailbox.md). It sources the
+    # flux-system Secret the rotator writes (k8s_secret output) and refreshes continuously, so
+    # the rotated token propagates without any rotator-side distribution config.
     ClusterExternalSecret(
         chart,
         "mail-token",

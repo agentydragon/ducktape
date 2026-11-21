@@ -144,9 +144,8 @@ func (w *world) serve(rw http.ResponseWriter, r *http.Request, path string) bool
 }
 
 var (
-	testDestination = model.DestinationRef{Namespace: "test", Name: "sandbox", UID: "uid"}
-	// testIncarnation owns the inbox for the exact destination Sandbox.
-	testIncarnation = inboxstore.Owner{Identity: model.Identity{Name: "test-identity", UID: "test-identity-uid"}, SandboxUID: testDestination.UID}
+	// testIncarnation owns the Sessions' inboxes as an Identity incarnation.
+	testIncarnation = inboxstore.Owner{Identity: model.Identity{Name: "test-identity", UID: "test-identity-uid"}}
 	// baseAccess is the access to the repository the tests follow.
 	baseAccess = githubstate.AccessKey{AppID: fixture.AppID, InstallationID: baseInstallation, RepositoryID: baseRepository}
 	forkAccess = githubstate.AccessKey{AppID: fixture.AppID, InstallationID: forkInstallation, RepositoryID: forkRepository}
@@ -224,7 +223,7 @@ func (h *harness) follow(source githubmodel.Source, key string) inboxstore.Subsc
 		h.t.Fatal(err)
 	}
 	subscription, err := h.store.Subscribe(h.t.Context(), testIncarnation, sourceadapter.Subscribe{
-		DestinationRef: testDestination, SessionID: "session", IdempotencyKey: key, Source: sourceadapter.WrapGitHubSource(source), LifetimeDays: 7,
+		SessionID: "session", IdempotencyKey: key, Source: sourceadapter.WrapGitHubSource(source), LifetimeDays: 7,
 	}, sourceadapter.GitHubAuthorization{Access: access})
 	if err != nil {
 		h.t.Fatal(err)

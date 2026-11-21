@@ -23,6 +23,14 @@ import {
 import {
   DecideActionRequestRequestSchema,
   DecideActionRequestResponseSchema,
+  GetGmailResourceSummariesResponseSchema,
+  type GetGmailResourceSummariesResponse,
+  GetGmailThreadSummariesResponseSchema,
+  GetGoogleCalendarEventPreviewResponseSchema,
+  type GetGoogleCalendarEventPreviewResponse,
+  GetGrocyReferenceSummariesResponseSchema,
+  type GrocyReferenceSummary,
+  GetTanaNodeSummariesResponseSchema,
 } from "../../../action_service/api/contracts/operator_action_service_pb";
 
 const ACTIONS_PATH = "/upstream/actions";
@@ -120,6 +128,71 @@ export async function getAction(requestId: string): Promise<ActionRequest> {
     await fetchText(`${ACTIONS_PATH}/v1/action-requests/${encodeURIComponent(requestId)}`)
   );
   return validateActionRequest(required(response.actionRequest, "request"));
+}
+
+/** Live display metadata for a saved receipt. These optional reads never redirect to login. */
+export async function getIntegrationPreviewNames(
+  kind: "gmail" | "tana",
+  requestId: string,
+  signal?: AbortSignal
+): Promise<ReadonlyMap<string, string>> {
+  const timeout = AbortSignal.timeout(3000);
+  const path = `${ACTIONS_PATH}/v1/operator/action-requests/${encodeURIComponent(requestId)}`;
+  const options = { signal: signal ? AbortSignal.any([signal, timeout]) : timeout, cache: "no-store" } as const;
+  if (kind === "gmail") {
+    const { threads } = fromJsonString(
+      GetGmailThreadSummariesResponseSchema,
+      await fetchText(`${path}/gmail-thread-summaries`, options, fetch)
+    );
+    return new Map(threads.map(({ threadId, subject }) => [threadId, subject]));
+  }
+  const { nodes, workspace } = fromJsonString(
+    GetTanaNodeSummariesResponseSchema,
+    await fetchText(`${path}/tana-node-summaries`, options, fetch)
+  );
+  const names = new Map(nodes.map(({ nodeId, name }) => [nodeId, name]));
+  if (workspace !== undefined) names.set(workspace.workspaceId, workspace.name);
+  return names;
+}
+
+export async function getGoogleCalendarPreview(
+  requestId: string,
+  signal: AbortSignal
+): Promise<GetGoogleCalendarEventPreviewResponse> {
+  const path = `${ACTIONS_PATH}/v1/operator/action-requests/${encodeURIComponent(requestId)}`;
+  return fromJsonString(
+    GetGoogleCalendarEventPreviewResponseSchema,
+    await fetchText(
+      `${path}/google-calendar-event-preview`,
+      { signal: AbortSignal.any([signal, AbortSignal.timeout(3000)]), cache: "no-store" },
+      fetch
+    )
+  );
+}
+
+export async function getGmailResourceSummaries(
+  requestId: string,
+  signal: AbortSignal
+): Promise<GetGmailResourceSummariesResponse> {
+  const path = `${ACTIONS_PATH}/v1/operator/action-requests/${encodeURIComponent(requestId)}/gmail-resource-summaries`;
+  return fromJsonString(
+    GetGmailResourceSummariesResponseSchema,
+    await fetchText(path, { signal: AbortSignal.any([signal, AbortSignal.timeout(3000)]), cache: "no-store" }, fetch)
+  );
+}
+
+export async function getGrocyReferenceSummaries(
+  requestId: string,
+  signal: AbortSignal
+): Promise<ReadonlyMap<string, GrocyReferenceSummary>> {
+  const timeout = AbortSignal.timeout(3000);
+  const path = `${ACTIONS_PATH}/v1/operator/action-requests/${encodeURIComponent(requestId)}`;
+  const options = { signal: AbortSignal.any([signal, timeout]), cache: "no-store" } as const;
+  const { references } = fromJsonString(
+    GetGrocyReferenceSummariesResponseSchema,
+    await fetchText(`${path}/grocy-reference-summaries`, options, fetch)
+  );
+  return new Map(references.map((summary) => [summary.key, summary]));
 }
 
 export async function actionHistory(

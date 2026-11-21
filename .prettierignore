@@ -1,7 +1,3 @@
-# HTML fragments that are intentionally incomplete
-finance/worthy/worthy/index_head.html
-finance/worthy/worthy/index_tail.html
-
 # Jinja2 templates - prettier mangles block/variable tag formatting
 **/*.j2
 
@@ -30,7 +26,6 @@ cluster/k8s/flux/flux-system/**
 cluster/k8s/**/*.k8s.yaml
 cluster/parked/**/*.k8s.yaml
 cluster/generated/**
-cluster/k8s/ssh-mcp/flux-kustomization.yaml
 cluster/k8s/ssh-mcp/kustomization.yaml
 
 # The retired Python thread fold generated these golden vectors; internal/threadfold/golden_test.go holds the Go fold to them.
@@ -74,7 +69,6 @@ cluster/k8s/kustomization.yaml
 
 # Helm chart templates - Go/Jinja templating, not valid YAML
 cluster/charts/**/templates/**
-cluster/k8s/*-chart/templates/**
 # Vendored Browsertrix chart contains both Helm and runtime Jinja templates.
 cluster/charts/browsertrix/**
 
@@ -84,7 +78,6 @@ props/specimens/*/*/code/**
 # Lock files - managed by package managers
 **/pnpm-lock.yaml
 **/package-lock.json
-**/uv.lock
 
 # SOPS-encrypted files - prettier reformats the long encrypted blob, and the
 # attic-jwt-rotation CronJob writes these directly from inside the cluster

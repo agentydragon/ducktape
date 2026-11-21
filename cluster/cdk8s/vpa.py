@@ -4,7 +4,14 @@ goldilocks directory's release also uses)."""
 from __future__ import annotations
 
 from cdk8s import App, Chart
+from flux_helm.io.fluxcd.toolkit.helm import (
+    HelmReleaseSpecPostRenderers,
+    HelmReleaseSpecPostRenderersKustomize,
+    HelmReleaseSpecPostRenderersKustomizePatches,
+    HelmReleaseSpecPostRenderersKustomizePatchesTarget,
+)
 
+from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository_source_ref, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
@@ -13,8 +20,29 @@ NAMESPACE = "kube-system"
 OUTPUT_DIR = f"{GENERATED_ROOT}/vpa"
 _REPOSITORY_NAME = "fairwinds-stable"
 _REPOSITORY_NAMESPACE = "flux-system"
+_ADMISSION_DEPLOYMENT = f"{NAME}-admission-controller"
 # Goldilocks installs from this repository too, from its own chart.
 REPOSITORY_SOURCE_REF = helm_repository_source_ref(_REPOSITORY_NAME, _REPOSITORY_NAMESPACE)
+
+# The chart's metrics readiness can succeed before TLS is ready. Wait for the admission listener,
+# which opens after cache sync and certificate loading.
+_ADMISSION_STARTUP_PATCH = f"""\
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {_ADMISSION_DEPLOYMENT}
+  namespace: {NAMESPACE}
+spec:
+  template:
+    spec:
+      containers:
+        - name: {NAME}
+          startupProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
+"""
 
 
 def _component(*, memory_request: str, memory_limit: str, **extra: object) -> dict[str, object]:
@@ -42,6 +70,20 @@ def chart(app: App) -> Chart:
         interval="30m",
         chart_interval="12h",
         install=RETRY_FAILED_INSTALL,
+        post_renderers=[
+            HelmReleaseSpecPostRenderers(
+                kustomize=HelmReleaseSpecPostRenderersKustomize(
+                    patches=[
+                        HelmReleaseSpecPostRenderersKustomizePatches(
+                            target=HelmReleaseSpecPostRenderersKustomizePatchesTarget(
+                                kind="Deployment", name=_ADMISSION_DEPLOYMENT, namespace=NAMESPACE
+                            ),
+                            patch=_ADMISSION_STARTUP_PATCH,
+                        )
+                    ]
+                )
+            )
+        ],
         values={
             "recommender": _component(
                 memory_request="256Mi",
@@ -50,7 +92,19 @@ def chart(app: App) -> Chart:
                 extraArgs={"recommender-interval": "15m"},
             ),
             "updater": _component(memory_request="128Mi", memory_limit="256Mi"),
-            "admissionController": _component(memory_request="128Mi", memory_limit="256Mi"),
+            "admissionController": _component(
+                memory_request="128Mi",
+                memory_limit="256Mi",
+                replicaCount=3,
+                podDisruptionBudget={"minAvailable": 2},
+                affinity=node_scheduling.one_per_host(
+                    {
+                        "app.kubernetes.io/component": "admission-controller",
+                        "app.kubernetes.io/instance": NAME,
+                        "app.kubernetes.io/name": NAME,
+                    }
+                ),
+            ),
         },
     )
     return chart

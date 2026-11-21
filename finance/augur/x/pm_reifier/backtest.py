@@ -13,10 +13,10 @@ Plot: uv run --no-project --python 3.12 --with matplotlib python augur/x/pm_reif
 from __future__ import annotations
 
 import json
-import math
 from concurrent.futures import ThreadPoolExecutor
 
 import kernel
+from calibration import jsd_to_uniform
 from run_spike import CODING, RESULTS, quota
 
 from finance.augur.x.pm_reifier.evidence_series import monthly_levels_by_wire
@@ -28,7 +28,6 @@ N_HIST = 24  # months of history shown each step
 N_OPTIONS = 24  # weighted joint options requested per step
 TEMP = 1.0
 CONCURRENCY = 4
-PIT_BINS = 10
 
 
 def m_index(ym: str) -> int:
@@ -68,24 +67,6 @@ def step(args: tuple[int, list[tuple[str, dict[str, float]]], dict[str, float]])
                 if p is not None:
                     pits[s] = p
     return {"month": next_label, "n_options": len(options), "pits": pits, "tokens": usage.get("total_tokens", 0)}
-
-
-def jsd_to_uniform(pit_values: list[float], bins: int = PIT_BINS) -> float | None:
-    """Jensen-Shannon divergence (bits) between the PIT histogram and Uniform[0,1]; 0 = calibrated."""
-    if len(pit_values) < bins:
-        return None
-    counts = [0.0] * bins
-    for u in pit_values:
-        counts[min(bins - 1, int(u * bins))] += 1
-    n = sum(counts)
-    p = [c / n for c in counts]
-    q = 1.0 / bins
-    m = [(pi + q) / 2 for pi in p]
-
-    def _kl(a: list[float], b: list[float]) -> float:
-        return sum(ai * math.log2(ai / bi) for ai, bi in zip(a, b, strict=True) if ai > 0)
-
-    return 0.5 * _kl(p, m) + 0.5 * _kl([q] * bins, m)
 
 
 def main() -> None:

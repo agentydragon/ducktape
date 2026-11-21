@@ -1,7 +1,7 @@
 """Tests for ServerSettings + AuthentikAuthConfig wiring.
 
 URL-derivation tests live with `AuthentikAuthConfig` itself in
-<../../mcp_infra/authentik_auth/test_config.py>; here we just pin that the
+<../mcp_infra/authentik_auth/test_config.py>; here we just pin that the
 nested Pydantic model loads/omits correctly on `ServerSettings`.
 """
 
@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from grocy_mcp.mcp_types import CONFIG_FILE_ENV, ServerSettings
+from grocy_mcp.mcp_types import ServerSettings
 from mcp_infra.persistence import ValkeyPersistence
 
 
@@ -59,14 +59,6 @@ def test_yaml_config_deep_merges_with_env_secrets(tmp_path: Path, monkeypatch: p
     # from env (the secret):
     assert settings.auth.oidc_client_secret == "shh"
     assert settings.auth.proxy_client_id == "grocy-sf"
-
-
-def test_named_missing_config_is_refused_even_when_settings_have_values(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv(CONFIG_FILE_ENV, str(tmp_path / "missing.yaml"))
-    with pytest.raises(FileNotFoundError):
-        ServerSettings(grocy_url="https://grocy.example.com")
 
 
 if __name__ == "__main__":

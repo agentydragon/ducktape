@@ -1,16 +1,20 @@
 """The GitHub event collector and database migrations."""
 
 from cdk8s import ApiObjectMetadata, App, Chart, Size
-from cdk8s_plus_34 import Cpu, k8s
+from cdk8s_plus_34 import k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 from python.runfiles import Runfiles
 
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.cdviz import config, timescale
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
+from cluster.cdk8s.namespaces import initial_request_annotations
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
+from cluster.cdk8s.volume_claim import volume_claim
+from cluster.cdk8s.vpa_policy import ContainerPolicy
 
 OUTPUT_DIR = f"{config.OUTPUT_DIR}/app"
 IMAGE = (
@@ -21,13 +25,7 @@ MIGRATION_IMAGE = (
 )
 _DATA = "/var/lib/cdviz"
 _CONFIG = "/etc/cdviz"
-_MIGRATION_RESOURCES = k8s.ResourceRequirements(
-    requests={
-        "cpu": k8s.Quantity.from_string(Cpu.millis(100).amount),
-        "memory": k8s.Quantity.from_string(Size.mebibytes(128).as_string()),
-    },
-    limits={"memory": k8s.Quantity.from_string(Size.mebibytes(256).as_string())},
-)
+_MIGRATION_RESOURCES = container_resources(cpu="100m", memory="128Mi", memory_limit="256Mi")
 
 
 def _database_env() -> list[k8s.EnvVar]:
@@ -58,22 +56,24 @@ def chart(app: App) -> Chart:
         metadata=k8s.ObjectMeta(name="collector-config", namespace=config.NAMESPACE),
         data={name: (root / name).read_text() for name in files},
     )
-    k8s.KubePersistentVolumeClaim(
+    volume_claim(
         chart,
         "spool",
-        metadata=k8s.ObjectMeta(name="collector-spool", namespace=config.NAMESPACE),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="seaweedfs-ovh-ssd",
-            resources=k8s.VolumeResourceRequirements(
-                requests={"storage": k8s.Quantity.from_string(Size.gibibytes(1).as_string())}
-            ),
-        ),
+        name="collector-spool",
+        namespace=config.NAMESPACE,
+        storage_class="seaweedfs-ovh-ssd",
+        size=Size.gibibytes(1).as_string(),
     )
     deployment = k8s.KubeDeployment(
         chart,
         "deployment",
-        metadata=k8s.ObjectMeta(name=config.COLLECTOR.name, namespace=config.NAMESPACE),
+        metadata=k8s.ObjectMeta(
+            name=config.COLLECTOR.name,
+            namespace=config.NAMESPACE,
+            annotations=initial_request_annotations(
+                ContainerPolicy.cpu_and_memory_requests_only(config.COLLECTOR.name)
+            ),
+        ),
         spec=k8s.DeploymentSpec(
             replicas=1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
@@ -115,7 +115,7 @@ def chart(app: App) -> Chart:
                     ],
                     containers=[
                         k8s.Container(
-                            name="collector",
+                            name=config.COLLECTOR.name,
                             image=IMAGE,
                             security_context=k8s.SecurityContext(read_only_root_filesystem=True),
                             args=["connect", "--config", f"{_CONFIG}/collector.toml"],
@@ -130,13 +130,7 @@ def chart(app: App) -> Chart:
                                     path="/readyz", port=k8s.IntOrString.from_number(config.COLLECTOR.port.number)
                                 )
                             ),
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string(Cpu.millis(100).amount),
-                                    "memory": k8s.Quantity.from_string(Size.mebibytes(128).as_string()),
-                                },
-                                limits={"memory": k8s.Quantity.from_string(Size.mebibytes(512).as_string())},
-                            ),
+                            resources=container_resources(cpu="100m", memory="128Mi", memory_limit="512Mi"),
                             volume_mounts=[
                                 k8s.VolumeMount(name="config", mount_path=_CONFIG, read_only=True),
                                 k8s.VolumeMount(name="spool", mount_path=_DATA),
@@ -235,13 +229,7 @@ def chart(app: App) -> Chart:
                                     ],
                                     env=_database_env(),
                                     security_context=k8s.SecurityContext(read_only_root_filesystem=True),
-                                    resources=k8s.ResourceRequirements(
-                                        requests={
-                                            "cpu": k8s.Quantity.from_string(Cpu.millis(50).amount),
-                                            "memory": k8s.Quantity.from_string(Size.mebibytes(64).as_string()),
-                                        },
-                                        limits={"memory": k8s.Quantity.from_string(Size.mebibytes(128).as_string())},
-                                    ),
+                                    resources=container_resources(cpu="50m", memory="64Mi", memory_limit="128Mi"),
                                 )
                             ],
                         ),

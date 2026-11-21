@@ -148,11 +148,6 @@ spec:
       name: agentplane-runner-disk
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
-      filter: req.package.name == 'agentplane-runner-gateway'
-      kind: ImageRepository
-      name: agentplane-runner-gateway
-      namespace: flux-system
-    - apiVersion: image.toolkit.fluxcd.io/v1
       filter: req.package.name == 'agentplane-sandbox'
       kind: ImageRepository
       name: agentplane-sandbox
@@ -163,11 +158,6 @@ spec:
       name: agentplane-sandbox-build
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
-      filter: req.package.name == 'agentplane-sandbox-controller'
-      kind: ImageRepository
-      name: agentplane-sandbox-controller
-      namespace: flux-system
-    - apiVersion: image.toolkit.fluxcd.io/v1
       filter: req.package.name == 'agentplane-sessions'
       kind: ImageRepository
       name: agentplane-sessions
@@ -176,11 +166,6 @@ spec:
       filter: req.package.name == 'ai-session-archive-importer'
       kind: ImageRepository
       name: ai-session-archive-importer
-      namespace: flux-system
-    - apiVersion: image.toolkit.fluxcd.io/v1
-      filter: req.package.name == 'ai-session-archive-migrator'
-      kind: ImageRepository
-      name: ai-session-archive-migrator
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
       filter: req.package.name == 'ai-session-archive-web'
@@ -311,11 +296,6 @@ spec:
       filter: req.package.name == 'mcp-oauth-facade'
       kind: ImageRepository
       name: mcp-oauth-facade
-      namespace: flux-system
-    - apiVersion: image.toolkit.fluxcd.io/v1
-      filter: req.package.name == 'osm-mcp'
-      kind: ImageRepository
-      name: osm-mcp
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
       filter: req.package.name == 'plaid-mcp-server'

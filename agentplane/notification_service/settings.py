@@ -11,7 +11,6 @@ from agentplane.net.peertls.config import (
     ACTIONS_URI,
     HISTORY_SERVICE_URI,
     NOTIFICATIONS_URI,
-    SANDBOX_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
     ClientTLS,
     ServiceSPIFFEID,
@@ -76,25 +75,6 @@ class GitHubSettings(BaseModel):
     )
 
 
-class RunnerGatewaySettings(BaseModel):
-    tls: ClientTLS | None = None
-    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
-    control_target: str = Field(
-        description="Environments Runtime proxy target, typically `sandbox-controller.{namespace}.svc:8082`; "
-        "the proxy routes each Runtime call using the Sandbox identity."
-    )
-    request_timeout_s: PositiveSeconds = 5
-    token_file: Path | None = Field(
-        default=None,
-        description="Path to the rotating projected token for the Runner Gateway when caller SVID TLS is not configured.",
-    )
-
-    @model_validator(mode="after")
-    def caller_authentication(self) -> Self:
-        validate_outbound_caller(self.tls, self.token_file, (SESSION_DISPATCHER_URI, SANDBOX_CONTROLLER_URI))
-        return self
-
-
 class HistoryServiceSettings(BaseModel):
     tls: ClientTLS | None = None
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
@@ -148,9 +128,7 @@ class NoticeDebounceSettings(BaseModel):
 class QuotaSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    inboxes_per_account: int = Field(
-        default=64, ge=1, description="Maximum retained inboxes per owning ServiceAccount and Sandbox incarnation."
-    )
+    inboxes_per_account: int = Field(default=64, ge=1, description="Maximum retained inboxes per owning Identity.")
     active_subscriptions_per_inbox: int = Field(
         default=64, ge=1, description="Maximum non-cancelled, unexpired subscriptions per inbox."
     )
@@ -169,7 +147,6 @@ class Settings(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
     namespace: str = Field(description="Workload credential, Identity and destination Sandbox namespace.")
     actions: ActionsSettings
-    runner_gateway: RunnerGatewaySettings
     session_dispatcher: SessionDispatcherSettings
     history_service: HistoryServiceSettings
     operator_reader_services: list[ServiceSPIFFEID] = Field(
@@ -190,7 +167,7 @@ class Settings(BaseModel):
         ),
     )
     unavailable_destination_retry_s: PositiveSeconds = Field(
-        default=30, le=3600, description="Seconds between checks of an unavailable UID-pinned Sandbox."
+        default=30, le=3600, description="Seconds before delivery retries after a Dispatcher or History NotFound."
     )
     request_timeout_s: PositiveSeconds = Field(
         default=15, description="Bounds a call's backend work and each write to a watch stream."

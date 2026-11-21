@@ -12,7 +12,7 @@
 # Runtime configuration, launch data and egress trust arrive on read-only ConfigMap disks. Runtime
 # TLS credentials and its trust bundle arrive on read-only virtiofs mounts.
 #
-# Runtime, Runtime, Execution service and the `agentplane` command are not in this closure.
+# Runtime, Execution service and the `agentplane` command are not in this closure.
 # They arrive on the read-only runtime disk (//agentplane/env/images:disk_image), a second
 # containerDisk mounted at /run/agentplane/environment, so a service release republishes that small
 # disk and not this guest. The harnesses and tools stay here.
@@ -138,7 +138,7 @@ let
   # for these units, would show.
   consoleAutologinIs =
     autologin:
-    "${pkgs.jq}/bin/jq 'if (.environment.kind == \"vm\" and .environment.console_autologin == true) == ${lib.boolToString autologin} then empty else (\"\" | halt_error(1)) end' ${runtimeConfigFile}";
+    "${pkgs.jq}/bin/jq 'if (.environment.supervision == \"systemd\" and .environment.console_autologin == true) == ${lib.boolToString autologin} then empty else (\"\" | halt_error(1)) end' ${runtimeConfigFile}";
   applyRunnerResourceLimits = pkgs.writeShellScript "agentplane-runner-resource-limits" (
     builtins.readFile ./systemd/apply-resource-limits
   );
@@ -154,6 +154,7 @@ let
         "agentplane.slice"
         "agentplane-workloads.slice"
         "agentplane-executors.slice"
+        "agentplane-commands.slice"
       ]
   );
 in

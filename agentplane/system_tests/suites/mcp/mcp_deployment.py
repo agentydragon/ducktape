@@ -34,7 +34,6 @@ def render_mcp_fixture(
     actions_props = mcp_fixture_chart.mcp_actions_props(actions_props, MCP_PLACEHOLDERS)
     env = fixture_chart.environment(
         runtime=SandboxRuntime.POD,
-        platform_callers=fixture_chart.APP_CALLERS,
         routes=routes,
         app=app_props,
         central_sampler=central_sampler,

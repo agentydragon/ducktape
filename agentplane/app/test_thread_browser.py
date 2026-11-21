@@ -36,7 +36,7 @@ from agentplane.app.frontend.testing.history_interactions import frames, holding
 from agentplane.app.testing import thread_view_marks
 from agentplane.app.testing.browser_certificate import BrowserCertificate
 from agentplane.app.testing.history import SessionHistory
-from agentplane.app.testing.http2_proxy import http2_proxy
+from agentplane.app.testing.http2_proxy import Ingress, http2_proxy
 from agentplane.app.testing.replication_process import GatewayAccess, SandboxesAccess, app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
 from agentplane.app.testing.thread_browser import (
@@ -76,8 +76,8 @@ from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from agentplane.testing.tls import issue_workload_leaf, make_ca
 from devinfra.testing.output_writer import BoundTestOutputs
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
-from util.testing.frontend_visual.capture import VisualPage
-from util.testing.frontend_visual.viewports import DESKTOP, MOBILE, SMALL_MOBILE, Viewport
+from testing.frontend_visual.capture import VisualPage
+from testing.frontend_visual.viewports import DESKTOP, MOBILE, SMALL_MOBILE, Viewport
 
 
 @asynccontextmanager
@@ -315,6 +315,7 @@ async def test_environment_identity_change_obeys_real_gateway_and_kubernetes_adm
             electric_url=electric.url,
             config={
                 "policy_service_target": f"127.0.0.1:{policy_port}",
+                "policy_service_token_file": "",
                 "policy_service_tls": ClientTLS(
                     ca_file=policy_ca_file,
                     server_uri=POLICY_CONTROLLER_URI,
@@ -414,7 +415,11 @@ async def _seed_navigation_threads(
     return threads, sources
 
 
-async def test_switching_threads_starts_at_each_threads_tail(
+type Navigation = tuple[list[UUID], list[ReplicationSource], Ingress]
+
+
+@pytest.fixture
+async def navigation(
     page: Page,
     db_url: str,
     store: ThreadHTTP,
@@ -425,8 +430,9 @@ async def test_switching_threads_starts_at_each_threads_tail(
     sandbox: SandboxCluster,
     gateway_access: GatewayAccess,
     session_dispatcher: SessionDispatcherClient,
-) -> None:
-    threads, _ = await _seed_navigation_threads(event_logs, history, store, session_dispatcher, sandbox)
+) -> AsyncIterator[Navigation]:
+    """The seeded navigation threads and their sources, with `page` logged in to the app's ingress."""
+    threads, sources = await _seed_navigation_threads(event_logs, history, store, session_dispatcher, sandbox)
     async with (
         app_process(
             db_url,
@@ -440,65 +446,46 @@ async def test_switching_threads_starts_at_each_threads_tail(
         http2_proxy(app.url, certificate) as ingress,
     ):
         await app.login(page)
-        await page.goto(f"{ingress.url}/#/threads/{threads[0]}")
-        await page.get_by_text("Thread 0 message 129", exact=True).wait_for(state="visible")
-        await page.get_by_role("region", name="Thread history", exact=True).hover()
-        # The eager initial load holds message 40 (well up from the tail) but not the thread's start;
-        # scrolling all the way up lands at the top of what's already loaded -- mounting message 40 --
-        # and, being within a screen of that top, triggers the fetch for the page before it.
-        async with page.expect_request(
-            lambda request: request.method == "POST" and "entity_index < $1" in (request.post_data or "")
-        ):
-            await page.mouse.wheel(0, -10_000)
-        await expect(page.get_by_text("Thread 0 message 40", exact=True)).to_be_visible()
-        for number in (1, 0):
-            async with page.expect_request(f"**/upstream/history/v1/sessions/{threads[number]}/entities"):
-                await page.locator(
-                    ".agentplane-thread-list-row-name", has_text=f"Test navigation thread {number}"
-                ).click()
-            await expect(page.get_by_role("textbox", name="Thread name", exact=True)).to_have_value(
-                f"Test navigation thread {number}"
-            )
-            await page.get_by_text(f"Thread {number} message 129", exact=True).wait_for(state="visible")
-        await page.screenshot(path=undeclared_outputs_dir() / "thread-navigation.png")
+        yield threads, sources, ingress
+
+
+async def test_switching_threads_starts_at_each_threads_tail(page: Page, navigation: Navigation) -> None:
+    threads, _, ingress = navigation
+    await page.goto(f"{ingress.url}/#/threads/{threads[0]}")
+    await page.get_by_text("Thread 0 message 129", exact=True).wait_for(state="visible")
+    await page.get_by_role("region", name="Thread history", exact=True).hover()
+    # The eager initial load holds message 40 (well up from the tail) but not the thread's start;
+    # scrolling all the way up lands at the top of what's already loaded -- mounting message 40 --
+    # and, being within a screen of that top, triggers the fetch for the page before it.
+    async with page.expect_request(
+        lambda request: request.method == "POST" and "entity_index < $1" in (request.post_data or "")
+    ):
+        await page.mouse.wheel(0, -10_000)
+    await expect(page.get_by_text("Thread 0 message 40", exact=True)).to_be_visible()
+    for number in (1, 0):
+        async with page.expect_request(f"**/upstream/history/v1/sessions/{threads[number]}/entities"):
+            await page.locator(".agentplane-thread-list-row-name", has_text=f"Test navigation thread {number}").click()
+        await expect(page.get_by_role("textbox", name="Thread name", exact=True)).to_have_value(
+            f"Test navigation thread {number}"
+        )
+        await page.get_by_text(f"Thread {number} message 129", exact=True).wait_for(state="visible")
+    await page.screenshot(path=undeclared_outputs_dir() / "thread-navigation.png")
 
 
 async def test_returning_to_a_thread_lays_its_rows_out_at_the_heights_they_had(
-    page: Page,
-    db_url: str,
-    store: ThreadHTTP,
-    event_logs: SessionHistory,
-    history: History,
-    electric: ElectricService,
-    certificate: BrowserCertificate,
-    sandbox: SandboxCluster,
-    gateway_access: GatewayAccess,
-    session_dispatcher: SessionDispatcherClient,
+    page: Page, navigation: Navigation
 ) -> None:
     """The history lays an unmeasured row out at a flat guess; one it has read before, at the height
     it read. Rows read on a thread's first visit are laid out at those heights on the return."""
-    threads, _ = await _seed_navigation_threads(event_logs, history, store, session_dispatcher, sandbox)
-    async with (
-        app_process(
-            db_url,
-            history=event_logs.history.service,
-            sandboxes=SandboxesAccess(kubeconfig=sandbox.server.kubeconfig, namespace=sandbox.namespace),
-            gateway=gateway_access,
-            browser_login=True,
-            certificate=certificate,
-            electric_url=electric.url,
-        ) as app,
-        http2_proxy(app.url, certificate) as ingress,
-    ):
-        await app.login(page)
-        await page.goto(f"{ingress.url}/#/threads/{threads[0]}")
-        await expect(page.get_by_text("Thread 0 message 129", exact=True)).to_be_visible(timeout=30_000)
-        for number in (1, 0):
-            await page.locator(".agentplane-thread-list-row-name", has_text=f"Test navigation thread {number}").click()
-            await expect(page.get_by_text(f"Thread {number} message 129", exact=True)).to_be_visible(timeout=30_000)
-        remembered = [entry.error for entry in await thread_view_marks.estimate_errors(page) if entry.remembered]
-        assert remembered, "no row on the return was laid out from what the first visit read"
-        assert max(abs(error) for error in remembered) <= 2, remembered
+    threads, _, ingress = navigation
+    await page.goto(f"{ingress.url}/#/threads/{threads[0]}")
+    await expect(page.get_by_text("Thread 0 message 129", exact=True)).to_be_visible(timeout=30_000)
+    for number in (1, 0):
+        await page.locator(".agentplane-thread-list-row-name", has_text=f"Test navigation thread {number}").click()
+        await expect(page.get_by_text(f"Thread {number} message 129", exact=True)).to_be_visible(timeout=30_000)
+    remembered = [entry.error for entry in await thread_view_marks.estimate_errors(page) if entry.remembered]
+    assert remembered, "no row on the return was laid out from what the first visit read"
+    assert max(abs(error) for error in remembered) <= 2, remembered
 
 
 def _older_page_bound(request: Request) -> int | None:
@@ -528,120 +515,96 @@ def _bodies_read(requests: list[Request]) -> int:
 
 
 async def test_returning_to_a_thread_reads_only_what_changed_while_the_reader_was_away(
-    page: Page,
-    db_url: str,
-    store: ThreadHTTP,
-    event_logs: SessionHistory,
-    history: History,
-    electric: ElectricService,
-    certificate: BrowserCertificate,
-    sandbox: SandboxCluster,
-    gateway_access: GatewayAccess,
-    session_dispatcher: SessionDispatcherClient,
+    page: Page, navigation: Navigation, history: History
 ) -> None:
-    threads, sources = await _seed_navigation_threads(event_logs, history, store, session_dispatcher, sandbox)
-    async with (
-        app_process(
-            db_url,
-            history=event_logs.history.service,
-            sandboxes=SandboxesAccess(kubeconfig=sandbox.server.kubeconfig, namespace=sandbox.namespace),
-            gateway=gateway_access,
-            browser_login=True,
-            certificate=certificate,
-            electric_url=electric.url,
-        ) as app,
-        http2_proxy(app.url, certificate) as ingress,
-    ):
-        await app.login(page)
-        requests: list[Request] = []
-        chunks_read = asyncio.Event()
+    threads, sources, ingress = navigation
+    requests: list[Request] = []
+    chunks_read = asyncio.Event()
 
-        def of(thread: UUID, since: int = 0) -> list[Request]:
-            return [request for request in requests[since:] if f"/threads/{thread}/sync/" in request.url]
+    def of(thread: UUID, since: int = 0) -> list[Request]:
+        return [request for request in requests[since:] if f"/threads/{thread}/sync/" in request.url]
 
-        # Playwright cannot register a builtin method such as `list.append` as a handler.
-        def record(request: Request) -> None:
-            requests.append(request)
-            if "/sync/chunks/" in request.url:
-                chunks_read.set()
+    # Playwright cannot register a builtin method such as `list.append` as a handler.
+    def record(request: Request) -> None:
+        requests.append(request)
+        if "/sync/chunks/" in request.url:
+            chunks_read.set()
 
-        page.on("request", record)
+    page.on("request", record)
 
-        async def open_thread(number: int) -> None:
-            async with page.expect_request(f"**/upstream/history/v1/sessions/{threads[number]}/entities"):
-                await page.locator(
-                    ".agentplane-thread-list-row-name", has_text=f"Test navigation thread {number}"
-                ).click()
+    async def open_thread(number: int) -> None:
+        async with page.expect_request(f"**/upstream/history/v1/sessions/{threads[number]}/entities"):
+            await page.locator(".agentplane-thread-list-row-name", has_text=f"Test navigation thread {number}").click()
 
-        region = page.get_by_role("region", name="Thread history", exact=True)
-        # A short viewport mounts few of the window's rows, whose bodies a reader's view reads on mounting.
-        await page.set_viewport_size({**DESKTOP.size, "height": 300})
-        await page.goto(f"{ingress.url}/#/threads/{threads[0]}")
-        await expect_projected_cursor(page, sources[0].entries[-1].cursor)
-        await expect(page.get_by_text("Thread 0 message 129", exact=True)).to_be_visible()
-        # Before the reader scrolls: the window reads the bodies of every row it holds (its 90 rows are messages),
-        # not only those the view mounted.
-        async with asyncio.timeout(30):
-            while _bodies_read(of(threads[0])) < 60:
-                await chunks_read.wait()
-                chunks_read.clear()
-        await page.set_viewport_size(DESKTOP.size)
-        await region.hover()
-        async with page.expect_request(lambda request: _older_page_bound(request) is not None):
-            await page.mouse.wheel(0, -10_000)
-        await expect(page.get_by_text("Thread 0 message 40", exact=True)).to_be_visible()
-        # The older page's rows are read ahead like the first window's: leave once the reader holds every body
-        # of the window, the first window's 90 and the page's 30.
-        while True:
+    region = page.get_by_role("region", name="Thread history", exact=True)
+    # A short viewport mounts few of the window's rows, whose bodies a reader's view reads on mounting.
+    await page.set_viewport_size({**DESKTOP.size, "height": 300})
+    await page.goto(f"{ingress.url}/#/threads/{threads[0]}")
+    await expect_projected_cursor(page, sources[0].entries[-1].cursor)
+    await expect(page.get_by_text("Thread 0 message 129", exact=True)).to_be_visible()
+    # Before the reader scrolls: the window reads the bodies of every row it holds (its 90 rows are messages),
+    # not only those the view mounted.
+    async with asyncio.timeout(30):
+        while _bodies_read(of(threads[0])) < 60:
+            await chunks_read.wait()
             chunks_read.clear()
-            if _bodies_read(of(threads[0])) >= 120:
-                break
-            async with asyncio.timeout(30):
-                await chunks_read.wait()
-        first_visit = of(threads[0])
-        held_down_to = min(bound for request in first_visit if (bound := _older_page_bound(request)) is not None)
-        (handle,) = _entity_handles(first_visit)
+    await page.set_viewport_size(DESKTOP.size)
+    await region.hover()
+    async with page.expect_request(lambda request: _older_page_bound(request) is not None):
+        await page.mouse.wheel(0, -10_000)
+    await expect(page.get_by_text("Thread 0 message 40", exact=True)).to_be_visible()
+    # The older page's rows are read ahead like the first window's: leave once the reader holds every body
+    # of the window, the first window's 90 and the page's 30.
+    while True:
+        chunks_read.clear()
+        if _bodies_read(of(threads[0])) >= 120:
+            break
+        async with asyncio.timeout(30):
+            await chunks_read.wait()
+    first_visit = of(threads[0])
+    held_down_to = min(bound for request in first_visit if (bound := _older_page_bound(request)) is not None)
+    (handle,) = _entity_handles(first_visit)
 
-        await open_thread(1)
-        await expect(page.get_by_text("Thread 1 message 129", exact=True)).to_be_visible()
-        # A message lands in the thread while the reader is elsewhere.
-        source = sources[0]
-        source.append(
-            event_pb2.Event(
-                item_started=event_pb2.ItemStarted(
-                    item_id="test-navigation-item-away", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT
-                )
+    await open_thread(1)
+    await expect(page.get_by_text("Thread 1 message 129", exact=True)).to_be_visible()
+    # A message lands in the thread while the reader is elsewhere.
+    source = sources[0]
+    source.append(
+        event_pb2.Event(
+            item_started=event_pb2.ItemStarted(
+                item_id="test-navigation-item-away", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT
             )
         )
-        source.append(
-            event_pb2.Event(
-                item_completed=event_pb2.ItemCompleted(
-                    item_id="test-navigation-item-away", text="Thread 0 message while away"
-                )
+    )
+    source.append(
+        event_pb2.Event(
+            item_completed=event_pb2.ItemCompleted(
+                item_id="test-navigation-item-away", text="Thread 0 message while away"
             )
         )
-        await history.record(threads[0], source.entries[-2:])
+    )
+    await history.record(threads[0], source.entries[-2:])
 
-        mark = len(requests)
-        await open_thread(0)
-        await expect(page.get_by_text("Thread 0 message while away", exact=True)).to_be_visible(timeout=30_000)
-        await page.screenshot(path=undeclared_outputs_dir() / "thread-returned-to.png")
-        returned = of(threads[0], mark)
-        # No row is read again: the thread's log is followed on from where the reader left it.
-        assert not [request for request in returned if request.method == "POST" and "/sync/entities?" in request.url]
-        (read, *_) = [request for request in returned if "/sync/entities?" in request.url]
-        query = parse_qs(urlsplit(read.url).query)
-        assert (query["handle"], query["offset"][0] not in {"now", "-1"}) == ([handle], True)
-        # Nor is a body already held: the one read is the message that arrived.
-        assert _bodies_read(returned) <= 1
+    mark = len(requests)
+    await open_thread(0)
+    await expect(page.get_by_text("Thread 0 message while away", exact=True)).to_be_visible(timeout=30_000)
+    await page.screenshot(path=undeclared_outputs_dir() / "thread-returned-to.png")
+    returned = of(threads[0], mark)
+    # No row is read again: the thread's log is followed on from where the reader left it.
+    assert not [request for request in returned if request.method == "POST" and "/sync/entities?" in request.url]
+    (read, *_) = [request for request in returned if "/sync/entities?" in request.url]
+    query = parse_qs(urlsplit(read.url).query)
+    assert (query["handle"], query["offset"][0] not in {"now", "-1"}) == ([handle], True)
+    # Nor is a body already held: the one read is the message that arrived.
+    assert _bodies_read(returned) <= 1
 
-        # The pages loaded before the reader left are still held: the next one is the page before them.
-        await region.hover()
-        async with page.expect_request(lambda request: _older_page_bound(request) is not None) as older:
-            await page.mouse.wheel(0, -10_000)
-        next_page = _older_page_bound(await older.value)
-        assert next_page is not None
-        assert next_page < held_down_to
+    # The pages loaded before the reader left are still held: the next one is the page before them.
+    await region.hover()
+    async with page.expect_request(lambda request: _older_page_bound(request) is not None) as older:
+        await page.mouse.wheel(0, -10_000)
+    next_page = _older_page_bound(await older.value)
+    assert next_page is not None
+    assert next_page < held_down_to
 
 
 async def test_projection_epoch_replacement_retires_old_requests_and_preserves_draft(
@@ -760,7 +723,6 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
     db_url: str,
     store: ThreadHTTP,
     event_logs: SessionHistory,
-    content: SessionHistory,
     history: History,
     history_service: GoHistoryService,
     electric: ElectricService,
@@ -937,12 +899,7 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
         await page.context.set_offline(True)
         await ingress.drop_connections()
         source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text=" after reconnect")))
-        async with asyncio.timeout(10):
-            while True:
-                scope = await content.session_summary(thread)
-                if scope is not None and scope.folded_through >= source.entries[-1].cursor:
-                    break
-                await asyncio.sleep(0.01)
+        await history_service.folded(thread, source.entries[-1].cursor)
         # Whether or not the delta beat the drop, nothing shown is withdrawn.
         await expect(page.get_by_text("Projected browser prefix and streamed suffix", exact=False)).to_have_count(1)
         await page.context.set_offline(False)
@@ -1112,6 +1069,27 @@ async def test_browser_replays_streams_and_reloads_one_exact_thread(thread_brows
     await expect(page.get_by_role("button", name="Interrupt", exact=True)).to_be_disabled()
     (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
     assert await thread_browser.event_logs.events(thread.id, limit=100) == source.entries
+
+
+async def test_history_updates_do_not_reload_thread_metadata(thread_browser: ThreadBrowser) -> None:
+    page, source = thread_browser.page, thread_browser.source
+    await thread_browser.start_replay()
+    await expect(page.locator("nav.agentplane-sidebar").get_by_text("Browser thread", exact=True)).to_be_visible()
+    reads: list[str] = []
+
+    def observe(request: Request) -> None:
+        path = urlsplit(request.url).path
+        if path in ("/upstream/app/v1/threads", "/upstream/history/v1/sessions:batchGetSummaries"):
+            reads.append(path)
+
+    page.on("request", observe)
+    text = "Test retained prefix"
+    for suffix in (" first", " second", " third"):
+        source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-browser-item", text=suffix)))
+        text += suffix
+        await expect(page.get_by_text(text, exact=True)).to_be_visible()
+    assert reads == []
+    page.remove_listener("request", observe)
 
 
 async def test_sidebar_receives_rename_and_archive_from_another_app_replica(thread_browser: ThreadBrowser) -> None:
@@ -1791,16 +1769,7 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
     await composer.press("Enter")
     async with asyncio.timeout(15):
         command = await source.runner.commands.get()
-    source.append(
-        event_pb2.Event(
-            harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
-                harness_message_id="test-error-input",
-                origin_command_ids=[command.command_id],
-                text=command.submit_input.text,
-                turn_id="test-browser-turn",
-            )
-        )
-    )
+    source.confirm_input(command, message_id="test-error-input")
     partial = "".join(f"\n\nTest partial paragraph {number}" for number in range(30))
     source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-browser-item", text=partial)))
     await expect(page.get_by_text("Test partial paragraph 29", exact=True)).to_have_count(1)
@@ -1867,16 +1836,7 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
     assert following.command_id != command.command_id
     assert following.submit_input.text == "Test distinct input after the failed turn"
     source.append(event_pb2.Event(turn_started=event_pb2.TurnStarted(turn_id="test-following-turn")))
-    source.append(
-        event_pb2.Event(
-            harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
-                harness_message_id="test-following-input",
-                origin_command_ids=[following.command_id],
-                text=following.submit_input.text,
-                turn_id="test-following-turn",
-            )
-        )
-    )
+    source.confirm_input(following, message_id="test-following-input", turn_id="test-following-turn")
     source.append(
         event_pb2.Event(
             item_started=event_pb2.ItemStarted(item_id="test-following-reply", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
@@ -1969,16 +1929,7 @@ async def test_browser_sends_a_command_and_transitions_its_message_to_confirmed_
     assert command.HasField("submit_input")
     assert command.submit_input.text == "Test input from the real browser"
     await expect_pending_message_bubble(page, command.submit_input.text)
-    source.append(
-        event_pb2.Event(
-            harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
-                harness_message_id="test-confirmed-message",
-                origin_command_ids=[command.command_id],
-                text=command.submit_input.text,
-                turn_id="test-browser-turn",
-            )
-        )
-    )
+    source.confirm_input(command, message_id="test-confirmed-message")
     await expect(page.locator(".transcript-user-bubble .transcript-verbatim")).to_have_text(command.submit_input.text)
     await expect(page.locator('.transcript-user-bubble[data-message-phase="pending"]')).to_have_count(0)
     await expect(composer).to_have_value("")
@@ -2252,16 +2203,7 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
         await expect(pending).to_have_count(0)
         await expect(pending.locator('[data-stage="local"]')).to_have_count(0)
         await expect(page.get_by_role("button", name="Retry", exact=True)).to_have_count(0)
-        source.append(
-            event_pb2.Event(
-                harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
-                    harness_message_id="test-input-recovered-from-unobserved-admission",
-                    origin_command_ids=[command.command_id],
-                    text=command.submit_input.text,
-                    turn_id="test-browser-turn",
-                )
-            )
-        )
+        source.confirm_input(command, message_id="test-input-recovered-from-unobserved-admission")
         await expect(page.locator(".transcript-user-bubble .transcript-verbatim")).to_have_text(
             command.submit_input.text
         )
@@ -2307,16 +2249,7 @@ async def test_http_admission_ahead_of_replay_does_not_skip_earlier_events(threa
         page.get_by_text("Test retained prefix and preceding delta A and preceding delta B", exact=True)
     ).to_have_count(1)
     await expect_pending_message_bubble(page, command.submit_input.text)
-    source.append(
-        event_pb2.Event(
-            harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
-                harness_message_id="test-input-after-replay-catch-up",
-                origin_command_ids=[command.command_id],
-                text=command.submit_input.text,
-                turn_id="test-browser-turn",
-            )
-        )
-    )
+    source.confirm_input(command, message_id="test-input-after-replay-catch-up")
     await expect(page.locator(".transcript-user-bubble .transcript-verbatim")).to_have_text(command.submit_input.text)
     await expect(pending).to_have_count(0)
     assert source.runner.commands.empty()
@@ -2384,16 +2317,7 @@ async def test_electric_reconnects_unconfirmed_command_without_reloading(thread_
             page.get_by_text("Test retained prefix and disconnected delta A and disconnected delta B", exact=True)
         ).to_have_count(1)
         await expect_pending_message_bubble(page, command.submit_input.text)
-        source.append(
-            event_pb2.Event(
-                harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
-                    harness_message_id="test-input-after-electric-reconnect",
-                    origin_command_ids=[command.command_id],
-                    text=command.submit_input.text,
-                    turn_id="test-browser-turn",
-                )
-            )
-        )
+        source.confirm_input(command, message_id="test-input-after-electric-reconnect")
         await expect(page.locator(".transcript-user-bubble .transcript-verbatim")).to_have_text(
             command.submit_input.text
         )
@@ -2450,16 +2374,7 @@ async def test_terminal_shape_error_keeps_rows_and_follows_on_from_where_it_stop
         await expect(page.get_by_text("Thread synchronization stopped:", exact=False)).to_have_count(0)
         await expect(page.get_by_text("Test retained prefix", exact=True)).to_have_count(1)
         await expect_pending_message_bubble(page, command.submit_input.text)
-        source.append(
-            event_pb2.Event(
-                harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
-                    harness_message_id="test-command-after-terminal-shape-refresh",
-                    origin_command_ids=[command.command_id],
-                    text=command.submit_input.text,
-                    turn_id="test-browser-turn",
-                )
-            )
-        )
+        source.confirm_input(command, message_id="test-command-after-terminal-shape-refresh")
         await expect(page.locator(".transcript-user-bubble .transcript-verbatim")).to_have_text(
             command.submit_input.text
         )

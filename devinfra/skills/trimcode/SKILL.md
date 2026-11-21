@@ -20,6 +20,12 @@ their consequences explicit rather than presenting them as equivalent.
 
 ## Understand and search
 
+Before ranking candidates, read the repository's `TODO.md` or equivalent if present. For each
+candidate, search by feature and path in the owning component's TODOs, README, plans, and decision
+records. Honor decisions to keep, defer, or reject a change. Report any pending design choice,
+trial, or migration as a gate to implementation. Revisit settled findings when the recorded
+condition is met, relevant evidence changes, or the user reopens them.
+
 Read the repository's instructions, goals, public interfaces, and relevant tests
 and operational constraints. Map the main components and their dependencies;
 inspect representative code across the requested scope, including large or

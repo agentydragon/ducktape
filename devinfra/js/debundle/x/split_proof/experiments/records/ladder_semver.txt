@@ -1,0 +1,3 @@
+$ node prove.mjs Semver.lean --ladder "decide;decide +kernel;native_decide"   # 59 statements, 4 modules
+decide             failed: maximum recursion depth has been reached    5.5 s
+decide +kernel     proved                                             16.6 s  [propext, Classical.choice, Quot.sound]

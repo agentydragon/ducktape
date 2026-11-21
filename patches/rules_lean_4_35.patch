@@ -1,0 +1,21 @@
+diff --git a/lean/private/known_lean_versions.bzl b/lean/private/known_lean_versions.bzl
+--- a/lean/private/known_lean_versions.bzl
++++ b/lean/private/known_lean_versions.bzl
+@@ -16,2 +16,6 @@
+ KNOWN_LEAN_VERSIONS = {
++    "v4.35.0": {
++        "linux_x86_64": "c8531faaa4a93d5a4dae0c742cbc1bd42a2993594d02f93a9d629ebf299fb2c8",
++        "linux_aarch64": "ffdfdbe00c975e3f31880fcb636135f6bec806d569583dcb280f5a68b6873e05",
++    },
+     "v4.29.1": {
+diff --git a/lean/lake.bzl b/lean/lake.bzl
+--- a/lean/lake.bzl
++++ b/lean/lake.bzl
+@@ -95,6 +95,3 @@
+     if not sha:
+-        # buildifier: disable=print
+-        print("rules_lean: WARNING — no pinned sha256 for Lean %s on %s; downloading unverified. " %
+-              (version, platform) +
+-              "Add an entry to known_lean_versions.bzl for hermetic builds.")
++        fail("rules_lean: no pinned sha256 for Lean %s on %s" % (version, platform))
+     rctx.download_and_extract(

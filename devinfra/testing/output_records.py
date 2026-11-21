@@ -13,7 +13,6 @@ SCHEMA: Literal["ducktape.test-output.v1"] = "ducktape.test-output.v1"
 TEST_OUTPUTS_DIR = "test-outputs"
 RECORDS_DIR = "records"
 FILES_DIR = "files"
-LOCKS_DIR = ".locks"
 
 _SAFE_SUFFIX = re.compile(r"[A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)*\Z")
 

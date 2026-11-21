@@ -22,7 +22,6 @@ from agentplane.net.peertls.config import SESSION_DISPATCHER_URI, ClientTLS
 from agentplane.proto import session_pb2
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
 from agentplane.session_dispatcher.dispatcher.api.session import session_dispatcher_pb2, session_dispatcher_pb2_grpc
-from agentplane.session_dispatcher.testing.gateway_process import GatewayProcess
 from agentplane.testing.tls import issue_workload_leaf, make_ca
 
 # gazelle:include_dep //agentplane/app:integration_fixtures
@@ -224,8 +223,7 @@ async def test_another_replica_logout_ends_only_its_sessions_stream(
     db_url: str,
     history_service: GoHistoryService,
     sandbox: SandboxCluster,
-    gateway_service: GatewayProcess,
-    app_token_file: Path,
+    gateway_access: GatewayAccess,
     app_config: dict[str, object],
 ) -> None:
     async with (
@@ -233,9 +231,7 @@ async def test_another_replica_logout_ends_only_its_sessions_stream(
             db_url,
             history_service,
             sandboxes=SandboxesAccess(sandbox.server.kubeconfig, sandbox.namespace),
-            gateway=GatewayAccess(
-                gateway_service.target, None, gateway_service.client_tls, gateway_service.environment_service.ca
-            ),
+            gateway=gateway_access,
             config=app_config,
         ) as replica,
         httpx.AsyncClient(base_url=replica.url, headers={"Origin": replica.url}) as other,

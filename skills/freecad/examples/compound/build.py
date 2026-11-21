@@ -13,7 +13,7 @@ Output directory is read from OUTDIR env var (default: current directory).
 
 Usage:
   Xvfb :99 -screen 0 1024x768x24 -nolisten tcp &
-  DISPLAY=:99 OUTDIR=/tmp/out /opt/FreeCAD.AppImage freecad build_compound.py
+  DISPLAY=:99 OUTDIR=/tmp/out /opt/FreeCAD.AppImage freecad build.py
 """
 
 import os
@@ -234,9 +234,6 @@ def _main() -> None:
 
     def _edge_midy(e):
         return (e.Vertexes[0].Point.y + e.Vertexes[1].Point.y) / 2
-
-    def _edge_miny(e):
-        return min(e.Vertexes[0].Point.y, e.Vertexes[1].Point.y)
 
     def _edge_minx(e):
         return min(e.Vertexes[0].Point.x, e.Vertexes[1].Point.x)

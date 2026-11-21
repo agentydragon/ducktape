@@ -1,4 +1,4 @@
-"""Golden-file test: build_compound.py -> export_page.py -> DXF/SVG/PDF via AppImage."""
+"""Golden-file test: build.py -> export_page.py -> DXF/SVG/PDF."""
 
 from pathlib import Path
 
@@ -6,8 +6,7 @@ import pytest
 import pytest_bazel
 from python.runfiles import Runfiles
 
-from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
-from skills.freecad.conftest import assert_run_ok, copy_outputs
+from skills.freecad.conftest import Stage, StageRunner
 from skills.freecad.testing.compare import assert_dxf_equal, assert_pdf_equal, assert_svg_equal
 
 # The scripts below are driven by runfiles path; gazelle cannot see the dependency.
@@ -22,25 +21,11 @@ _GOLDEN_PDF = "ducktape/skills/freecad/examples/compound/drawing.pdf"
 
 
 @pytest.fixture(scope="module")
-def compound_outputs(runfiles: Runfiles, tmp_path_factory: pytest.TempPathFactory, freecad_gui) -> Path:
+def compound_outputs(stage_runner: StageRunner) -> Path:
     """Build compound shape and export all formats."""
-    out_dir = tmp_path_factory.mktemp("compound")
-    uo = undeclared_outputs_dir() / "compound"
-    uo.mkdir(parents=True, exist_ok=True)
-
-    runfiles_root = runfiles.root()
-    result = freecad_gui(runfiles_root / _BUILD_SCRIPT, outdir=out_dir)
-    assert_run_ok(result, "build_compound.py", uo, "build_compound")
-
-    fcstd = out_dir / "compound.FCStd"
-    assert fcstd.exists(), "compound.FCStd not produced — see build_compound.stderr in test outputs"
-
-    result2 = freecad_gui(runfiles_root / _EXPORT_SCRIPT, outdir=out_dir, env={"INPUT": str(fcstd)})
-    assert_run_ok(result2, "export_page.py", uo, "export_page")
-
-    copy_outputs(out_dir, uo)
-
-    return out_dir
+    return stage_runner.run(
+        "compound", Stage(_BUILD_SCRIPT, "build_compound"), Stage(_EXPORT_SCRIPT, "export_page"), fcstd="compound.FCStd"
+    )
 
 
 def test_dxf_golden(runfiles: Runfiles, compound_outputs: Path) -> None:

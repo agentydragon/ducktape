@@ -15,9 +15,7 @@ The PE protocol carries 10 conceptually-parallel channels per issuer:
 | `forced_recovery_cashout_usd` | float   | Dollar recovery for the remaining position   |
 | `company_valuation_usd`       | float   | Company market cap `V(t)` (0 == channel off) |
 
-Producers used to emit these as 8 separate level series + 1 event series +
-a separate typed protocol frame, validated together at sim compile time.
-The all-or-nothing invariant is now expressed by the schema of one wide
+The channels are all-or-nothing, expressed by the schema of one wide
 polars DataFrame: every channel is a required column, and producers must
 go through `PrivateEquityBundle.from_issuer_arrays` which keyword-only
 requires every channel matrix. Missing any one is a `TypeError`, not a
@@ -90,16 +88,9 @@ PRIVATE_EQUITY_BUNDLE_SCHEMA = pl.Schema(
 PRIVATE_EQUITY_BUNDLE_FRAME = FrameSpec("private_equity_bundle", PRIVATE_EQUITY_BUNDLE_SCHEMA)
 
 # Columns exposed for per-issuer matrix views.
-_FLOAT_COLUMNS = {
-    "mark_usd_per_unit",
-    "sale_capacity_fraction",
-    "eligible_fraction",
-    "forced_sale_fraction",
-    "forced_recovery_cashout_usd",
-    "company_valuation_usd",
-}
-_INT_COLUMNS = {"regime_code", "event_kind_code"}
-_BOOL_COLUMNS = {"sale_opportunity_active", "liquidity_blocked"}
+_FLOAT_COLUMNS = frozenset(PrivateEquityFloatChannel)
+_INT_COLUMNS = frozenset(PrivateEquityIntChannel)
+_BOOL_COLUMNS = frozenset(PrivateEquityBoolChannel)
 
 type FloatMatrix = npt.NDArray[np.float64]
 type IntMatrix = npt.NDArray[np.int64]

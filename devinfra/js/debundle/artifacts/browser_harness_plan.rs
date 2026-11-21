@@ -61,18 +61,15 @@ impl BrowserHarnessPlan {
         let source_html = fs::read_to_string(&source_html_path)
             .with_context(|| format!("reading {}", source_html_path.display()))?;
         let html_entries = collect_html_entries(&source_html)?;
-        let script_entries = html_entries.module_scripts;
         let preload_entries = html_entries
             .module_preloads
             .into_iter()
-            .filter(|entry| is_external_url(&entry.path) || entry.path.ends_with(".js"))
+            .filter(|path| is_external_url(path) || path.ends_with(".js"))
             .collect::<Vec<_>>();
         let mut entry_scripts = Vec::<String>::new();
-        for entry in &script_entries {
-            if (is_external_url(&entry.path) || entry.path.ends_with(".js"))
-                && !entry_scripts.contains(&entry.path)
-            {
-                entry_scripts.push(entry.path.clone());
+        for path in html_entries.module_scripts {
+            if (is_external_url(&path) || path.ends_with(".js")) && !entry_scripts.contains(&path) {
+                entry_scripts.push(path);
             }
         }
         if entry_scripts.is_empty() {
@@ -81,10 +78,7 @@ impl BrowserHarnessPlan {
                 source_html_path.display()
             );
         }
-        for path in entry_scripts
-            .iter()
-            .chain(preload_entries.iter().map(|entry| &entry.path))
-        {
+        for path in entry_scripts.iter().chain(&preload_entries) {
             if is_external_url(path) {
                 continue;
             }
@@ -122,10 +116,7 @@ impl BrowserHarnessPlan {
             index_html,
             bootstrap,
             entry_scripts,
-            module_preloads: preload_entries
-                .into_iter()
-                .map(|entry| entry.path)
-                .collect(),
+            module_preloads: preload_entries,
         })
     }
 }
@@ -182,15 +173,10 @@ struct EntryPoints {
     html: Option<String>,
 }
 
-#[derive(Debug, Clone)]
-struct HtmlEntry {
-    path: String,
-}
-
 #[derive(Debug, Clone, Default)]
 struct HtmlEntries {
-    module_scripts: Vec<HtmlEntry>,
-    module_preloads: Vec<HtmlEntry>,
+    module_scripts: Vec<String>,
+    module_preloads: Vec<String>,
 }
 
 fn build_bootstrap(
@@ -351,9 +337,10 @@ fn collect_html_entries(html: &str) -> Result<HtmlEntries> {
                         let src = element
                             .get_attribute("src")
                             .context("script tag missing src")?;
-                        entries.borrow_mut().module_scripts.push(HtmlEntry {
-                            path: normalize_url_path(&src)?,
-                        });
+                        entries
+                            .borrow_mut()
+                            .module_scripts
+                            .push(normalize_url_path(&src)?);
                     }
                     Ok(())
                 }
@@ -365,9 +352,10 @@ fn collect_html_entries(html: &str) -> Result<HtmlEntries> {
                         let href = element
                             .get_attribute("href")
                             .context("preload tag missing href")?;
-                        entries.borrow_mut().module_preloads.push(HtmlEntry {
-                            path: normalize_url_path(&href)?,
-                        });
+                        entries
+                            .borrow_mut()
+                            .module_preloads
+                            .push(normalize_url_path(&href)?);
                     }
                     Ok(())
                 }

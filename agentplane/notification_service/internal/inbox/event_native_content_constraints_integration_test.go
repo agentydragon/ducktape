@@ -14,13 +14,23 @@ func TestFinalSchemaStoresNativeContentWithoutLegacyColumns(t *testing.T) {
 	subscription := f.subscribe(t, f.body("native-content-final-schema"))
 	event := sourceadapter.WrapActionsEvent(model.ActionsEvent{RequestID: uuid.New(), Sequence: 1})
 	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, entryPayloadForTest(t, event))
+	// The last six are the Sandbox-derived key, destination and owner columns migration 22 retired: an
+	// inbox is keyed by its Session ID alone, so nothing stores what they carried.
 	for _, column := range []struct{ table, name string }{
-		{"inbox", "destination_ref"}, {"subscription", "creation"}, {"entry", "event"},
+		{"inbox", "destination_ref"},
+		{"subscription", "creation"},
+		{"entry", "event"},
+		{"inbox", "destination_key"},
+		{"inbox", "destination_namespace"},
+		{"inbox", "destination_name"},
+		{"inbox", "destination_uid"},
+		{"inbox", "owner_namespace"},
+		{"inbox", "owner_name"},
 	} {
 		assertColumnExists(t, f.db, column.table, column.name, false)
 	}
 	for _, column := range []struct{ table, name string }{
-		{"inbox", "destination_namespace"}, {"subscription", "creation_proto"}, {"entry", "identity_provider"}, {"entry", "action_at"},
+		{"subscription", "creation_proto"}, {"entry", "identity_provider"}, {"entry", "action_at"},
 	} {
 		assertColumnExists(t, f.db, column.table, column.name, true)
 	}

@@ -38,11 +38,10 @@ bazel run //skills/info_gathering/evals/twenty_questions/x:compare_results_bin -
 ## Shared Infrastructure
 
 - `shared/variants.py` — Variant definitions
-- `shared/result_types.py` — Pydantic models for results
-- `shared/output.py` — File output helpers
+- `../result_types.py` — Pydantic models for results
 - `shared/cli.py` — Common CLI argument parsing
-- `shared/prompts.py` — Prompt loading (references original files via Bazel runfiles)
-- `shared/docker_exec.py` — Lightweight Docker scratch container
+- `../prompts.py` — Prompt loading (references original files via Bazel runfiles)
+- `skills/eval_infra/docker_exec.py` — Lightweight Docker scratch container
 
 Prompts are not duplicated — they reference the originals at:
 

@@ -14,15 +14,16 @@ from more_itertools import one
 
 from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.policy.cash_band_household import CashBandHousehold, Reinvest, SecuritySleeve
-from finance.augur.sim.bills import Biller
-from finance.augur.sim.books import AccountRef, Book
+from finance.augur.sim.books import Book
 from finance.augur.sim.capture import FinancialCapture, FinancialOutput
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta
 from finance.augur.sim.holdings import Disposition
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
+from finance.augur.sim.ids import CHECKING, AgentId, AssetId, LotId
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.schedule import Recurring
+from finance.augur.sim.testing.accounts import ref
+from finance.augur.sim.testing.bills import biller
 from finance.augur.sim.testing.series import level_series
 from finance.augur.sim.world import World
 
@@ -32,7 +33,6 @@ HORIZON = 4
 PRICE = Decimal(100)
 ALICE = AgentId("alice")
 LANDLORD = AgentId("landlord")
-CHECKING = AccountId("checking")
 # Weights default equal against a 9:1 holding, so stock is the overweight sleeve and every
 # raise has to come out of it first.
 STOCK_UNITS, BOND_UNITS = 900, 100
@@ -40,10 +40,6 @@ QUANTA_PER_UNIT = 100
 FULL_DRIFT = 250_000_000  # A 25% drift band, in parts per billion.
 REINVEST = Reinvest(rebalance_tolerance_ppb=None)
 REBALANCE = Reinvest(rebalance_tolerance_ppb=FULL_DRIFT)
-
-
-def ref(agent_id: AgentId) -> AccountRef:
-    return AccountRef(agent_id=agent_id, account_id=CHECKING)
 
 
 @dataclass(frozen=True)
@@ -99,16 +95,13 @@ def compose(case: Situation) -> World:
     if case.rent:
         start, end = case.rent_months
         world.track(
-            Biller(
+            biller(
                 schedule=Recurring(start_month=start, end_month=end),
                 obligation_id="rent",
                 obligation_type="rent",
                 from_account=ref(ALICE),
                 to_account=ref(LANDLORD),
                 amount_due=USD.quanta(case.rent),
-                property_id=None,
-                deduction_category=None,
-                deductible_fraction_ppb=1_000_000_000,
             )
         )
     if case.income:

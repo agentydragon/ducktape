@@ -18,9 +18,9 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import grafana_helmrepository, loki, mimir, tempo
+from cluster.cdk8s.monitoring.namespace import NAMESPACE
 
 _NAME = "alloy"
-NAMESPACE = "monitoring"
 OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/alloy"
 _OTLP_GRPC_PORT = telemetry.OTLP_GRPC_PORT
 _OTLP_HTTP_PORT = telemetry.OTLP_HTTP_PORT

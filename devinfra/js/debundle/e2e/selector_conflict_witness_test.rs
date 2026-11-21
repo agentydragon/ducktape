@@ -2,6 +2,7 @@
 //! groups. These fixtures drive the real CLI with small synthetic JavaScript.
 
 use debundle_e2e_graph_support::GraphFixture;
+use debundle_e2e_support::saved_analysis::assert_ok;
 use debundle_e2e_support::{
     BindingGroup, FixtureOpts, Member, find_outcome, logical_module,
     logical_module_with_binding_groups, outcomes, read_selector_outcomes,
@@ -369,11 +370,7 @@ fn source_only_validate_preserves_the_serialized_witness() {
     );
     let source_only =
         run_source_only_validate(&tree.modules, &tree.source_path(), &["--format", "json"]);
-    assert!(
-        source_only.status.success(),
-        "stderr: {}",
-        source_only.stderr
-    );
+    assert_ok(&source_only, "source-only validate");
     let source_report: Value = serde_json::from_str(&source_only.stdout).unwrap_or_else(|error| {
         panic!("invalid source-only JSON ({error}): {}", source_only.stdout)
     });

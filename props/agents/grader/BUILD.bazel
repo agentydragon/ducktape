@@ -18,7 +18,7 @@ load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env", "py_p
 load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 load("//props:py_test.bzl", "py_test")
 load("//props/testing:exec_properties.bzl", "CONTAINER_E2E_EXEC_PROPERTIES")
-load("//util/testing:postgres_exec_properties.bzl", "POSTGRES_IMAGE_EXEC_PROPERTIES")
+load("//testing:postgres_exec_properties.bzl", "POSTGRES_IMAGE_EXEC_PROPERTIES")
 
 exports_files(
     ["prompt.md.mako"],
@@ -35,10 +35,6 @@ py_library(
         "@pypi//pydantic",
     ],
 )
-
-# =============================================================================
-# In-container agent main entry point (snapshot grader)
-# =============================================================================
 
 py_library(
     name = "main",
@@ -111,10 +107,6 @@ py_python3_symlink(
     binary_name = "grader_bin",
 )
 
-# =============================================================================
-# Library targets
-# =============================================================================
-
 py_library(
     name = "drift_handler",
     srcs = ["drift_handler.py"],
@@ -140,15 +132,10 @@ py_library(
     ],
 )
 
-# =============================================================================
-# Tests
-# =============================================================================
-
 py_test(
     name = "test_notification_middleware",
     srcs = ["test_notification_middleware.py"],
     deps = [
-        ":conftest",
         ":notification_middleware",
         "//:conftest",
         "//props:conftest",
@@ -169,7 +156,6 @@ py_test(
     exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
-        ":conftest",
         "//:conftest",
         "//props:conftest",
         "//props/db:models",
@@ -177,7 +163,7 @@ py_test(
         "//props/testing/fixtures:db",
         "//props/testing/fixtures:ground_truth",
         "//props/testing/fixtures:runs",
-        "//util/testing:postgres_fixtures",
+        "//testing:postgres_fixtures",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
@@ -194,12 +180,11 @@ py_test(
     exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
-        ":conftest",
         "//:conftest",
         "//props:conftest",
         "//props/testing/fixtures:db",
         "//props/testing/fixtures:runs",
-        "//util/testing:postgres_fixtures",
+        "//testing:postgres_fixtures",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
@@ -216,19 +201,17 @@ py_test(
     exec_properties = CONTAINER_E2E_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
-        ":conftest",
         ":drift_handler",
         ":tools",
         "//:conftest",
         "//openai_utils/testing:responses",
         "//props:conftest",
-        "//props/agents/grader/testing:e2e_pytest_plugins",
         "//props/agents/grader/testing:mocks",
+        "//props/agents/testing:e2e_pytest_plugins",
         "//props/db:database",
         "//props/db:models",
-        "//props/db:snapshots",
         "//props/testing:assertions",
-        "//props/testing:constants",
+        "//props/testing:models",
         "//props/testing/fixtures:runs",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
@@ -245,19 +228,17 @@ py_test(
     exec_properties = CONTAINER_E2E_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
-        ":conftest",
         ":drift_handler",
         ":tools",
         "//:conftest",
         "//openai_utils/testing:responses",
         "//props:conftest",
-        "//props/agents/grader/testing:e2e_pytest_plugins",
         "//props/agents/grader/testing:mocks",
+        "//props/agents/testing:e2e_pytest_plugins",
         "//props/db:database",
         "//props/db:models",
-        "//props/db:snapshots",
         "//props/testing:assertions",
-        "//props/testing:constants",
+        "//props/testing:models",
         "//props/testing/fixtures:runs",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
@@ -275,19 +256,17 @@ py_test(
     exec_properties = CONTAINER_E2E_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
-        ":conftest",
         ":drift_handler",
         ":tools",
         "//:conftest",
         "//openai_utils/testing:responses",
         "//props:conftest",
-        "//props/agents/grader/testing:e2e_pytest_plugins",
         "//props/agents/grader/testing:mocks",
+        "//props/agents/testing:e2e_pytest_plugins",
         "//props/db:database",
         "//props/db:models",
-        "//props/db:snapshots",
         "//props/testing:assertions",
-        "//props/testing:constants",
+        "//props/testing:models",
         "//props/testing/fixtures:runs",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
@@ -304,25 +283,19 @@ py_test(
     exec_properties = CONTAINER_E2E_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
-        ":conftest",
         "//:conftest",
         "//openai_utils/testing:responses",
         "//props:conftest",
-        "//props/agents/grader/testing:e2e_pytest_plugins",
         "//props/agents/grader/testing:mocks",
+        "//props/agents/testing:e2e_pytest_plugins",
         "//props/db:database",
         "//props/db:models",
-        "//props/db:snapshots",
-        "//props/testing:constants",
+        "//props/testing:models",
         "//props/testing/fixtures:runs",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
     ],
 )
-
-# =============================================================================
-# Container image (snapshot grader)
-# =============================================================================
 
 oci_image(
     name = "image",
@@ -352,17 +325,23 @@ oci_push(
     repository = "localhost:8000/grader",
 )
 
-py_library(
-    name = "conftest",
-    testonly = True,
-    srcs = ["conftest.py"],
-    visibility = ["//props:__subpackages__"],
+py_test(
+    name = "test_grader_tools",
+    size = "medium",
+    srcs = ["test_grader_tools.py"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
+    requires_docker = True,
     deps = [
-        "//props/core/models:examples",
-        "//props/db:database",
+        ":main",
+        ":tools",
+        "//:conftest",
+        "//props:conftest",
         "//props/db:models",
+        "//props/db:snapshots",
+        "//props/testing/fixtures:db",
+        "//props/testing/fixtures:ground_truth",
         "//props/testing/fixtures:runs",
-        "@pypi//pytest",
-        "@pypi//sqlalchemy",
+        "//testing:postgres_fixtures",
+        "@pypi//pytest_bazel",
     ],
 )

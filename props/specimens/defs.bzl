@@ -95,7 +95,7 @@ def specimen_targets(name, slug, split, code_srcs, code_strip_prefix = "", test_
     Args:
         name: Base name for generated targets (typically "specimen")
         slug: Specimen slug in format "{repo}/{date}" (e.g., "ducktape/2026-01-17-00")
-        split: Dataset split (e.g., "train", "test", "val")
+        split: Dataset split ("train", "valid" or "test")
         code_srcs: Label list for code files. For local specimens, pass glob(["code/**/*"]).
             For remote-VCS specimens, pass the http_archive filegroup label.
         code_strip_prefix: Override strip prefix for code tar. If empty, uses
@@ -157,7 +157,7 @@ def specimen_targets(name, slug, split, code_srcs, code_strip_prefix = "", test_
             "//props/db/sync",
             "//props/testing/fixtures:db",
             "//devinfra/oci:oci",
-            "//util/testing:postgres_fixtures",
+            "//testing:postgres_fixtures",
             "@pypi//pytest",
             "@pypi//pytest_bazel",
             "@pypi//sqlalchemy",

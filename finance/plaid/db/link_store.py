@@ -6,7 +6,6 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
-from itertools import chain
 from pathlib import Path
 from typing import Any, cast
 from uuid import UUID, uuid4
@@ -38,6 +37,7 @@ from finance.plaid.db.models import (
     async_session_factory,
     utcnow,
 )
+from finance.plaid.db.products import merge_products
 from finance.plaid.models import AccountDeletionPreview, AccountInventory, ItemInventory
 from finance.plaid.payloads import (
     PlaidAccount,
@@ -257,18 +257,18 @@ class PlaidLinkStorage:
                 await _notify_spend_changed(session)
             await session.commit()
 
-    async def mark_link_update_succeeded(self, *, item_id: str, products_requested: list[str]) -> StoredLink | None:
+    async def mark_link_update_succeeded(self, *, item_id: str, products: list[str]) -> StoredLink | None:
         async with self._session_factory() as session:
-            row = await session.get(LinkRow, item_id)
+            row = await session.get(LinkRow, item_id, with_for_update=True)
             if row is None:
                 return None
+            requested = merge_products(row.products_requested, products)
+            authorized = merge_products(row.products_authorized, requested)
             changed = (
-                row.status != "active"
-                or list(row.products_requested) != products_requested
-                or list(row.products_authorized) != _merge_products(list(row.products_authorized), products_requested)
+                row.status != "active" or row.products_requested != requested or row.products_authorized != authorized
             )
-            row.products_requested = products_requested
-            row.products_authorized = _merge_products(list(row.products_authorized), products_requested)
+            row.products_requested = requested
+            row.products_authorized = authorized
             row.status = "active"
             row.updated_at = utcnow()
             if changed:
@@ -1147,7 +1147,3 @@ async def _build_account_deletion_preview(
 
 def _validated_payload[PayloadT: BaseModel](model_type: type[PayloadT], value: PayloadT | dict[str, Any]) -> PayloadT:
     return cast(PayloadT, model_type.model_validate(value))
-
-
-def _merge_products(*groups: list[str]) -> list[str]:
-    return list(dict.fromkeys(chain.from_iterable(groups)))

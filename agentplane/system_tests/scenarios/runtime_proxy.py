@@ -20,15 +20,15 @@ from agentplane.session_dispatcher.api import (
     SANDBOX_UID_HEADER,
 )
 from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.dispatcher_transport import forward
 from agentplane.system_tests.driver.native_auth import RUNTIME_PROXY_TEST_READER_SECRET
-from agentplane.system_tests.driver.port_forward import PortForward, async_port_forward
 from agentplane.system_tests.driver.tls import service_svid_credentials
 
 # gazelle:include_dep @pypi//protobuf
 
 
 async def environments_forwards_runtime_reads_and_refuses_stale_incarnations(
-    cluster: Cluster, client: Client, sandbox: environment_service_pb2.EnvironmentDescriptor, *, service: str
+    cluster: Cluster, client: Client, sandbox: environment_service_pb2.EnvironmentDescriptor
 ) -> None:
     target = sandbox.target
     assert sandbox.kubernetes_diagnostics.HasField("pod")
@@ -41,34 +41,24 @@ async def environments_forwards_runtime_reads_and_refuses_stale_incarnations(
         (SANDBOX_OWNER_NAME_HEADER, target.name),
     )
     async with (
-        async_port_forward(
-            PortForward(
-                cluster.command("port-forward"),
-                resource=f"service/{service}",
-                local_address="127.0.0.1",
-                local_port=None,
-                remote_port=8082,
-                readiness_timeout_s=30,
-            )
-        ) as address,
+        forward(cluster, "service/environments", remote_port=8082) as address,
         dial(
             address,
             channel_credentials=await service_svid_credentials(cluster, RUNTIME_PROXY_TEST_READER_SECRET),
-            server_name=f"sandbox-controller.{cluster.namespace}.svc.cluster.local",
+            server_name=f"environments.{cluster.namespace}.svc.cluster.local",
         ) as runtime_channel,
         dial(
             address,
             channel_credentials=await service_svid_credentials(cluster, "app-workload-tls"),
-            server_name=f"sandbox-controller.{cluster.namespace}.svc.cluster.local",
+            server_name=f"environments.{cluster.namespace}.svc.cluster.local",
         ) as channel,
     ):
-        # A watch starts from the same exact environment after its transport reconnects,
-        # independently of which public Service selected the receiver.
+        # A watch starts from the same exact environment after its transport reconnects.
         for _ in range(2):
             async with dial(
                 address,
                 channel_credentials=await service_svid_credentials(cluster, "app-workload-tls"),
-                server_name=f"sandbox-controller.{cluster.namespace}.svc.cluster.local",
+                server_name=f"environments.{cluster.namespace}.svc.cluster.local",
             ) as watch_channel:
                 watch = environment_service_pb2_grpc.EnvironmentServiceStub(watch_channel).WatchEnvironment(
                     environment_service_pb2.WatchEnvironmentRequest(target=target), timeout=15

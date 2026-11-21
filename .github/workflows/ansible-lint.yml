@@ -1,4 +1,4 @@
-# Ansible-lint reusable workflow
+# Ansible-lint
 #
 # Full ansible validation with dependencies
 name: Ansible-lint
@@ -6,15 +6,12 @@ name: Ansible-lint
 on:
   push:
     branches: [main, devel]
-    paths:
+    paths: &ansible_paths
       - "ansible/**"
       - ".ansible-lint.yaml"
       - ".github/workflows/ansible-lint.yml"
   pull_request:
-    paths:
-      - "ansible/**"
-      - ".ansible-lint.yaml"
-      - ".github/workflows/ansible-lint.yml"
+    paths: *ansible_paths
   workflow_dispatch:
 
 jobs:
@@ -41,7 +38,6 @@ jobs:
           restore-keys: ansible-roles-${{ runner.os }}-
 
       # Use full 'ansible' package for bundled collections (avoids Galaxy API for collections).
-      # Galaxy has known reliability issues - see pre-commit.yml for details.
       - name: Install ansible and ansible-lint
         run: pip install "ansible>=10" ansible-lint
 

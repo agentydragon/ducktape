@@ -1,4 +1,4 @@
-# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep :testing
 import base64
 from datetime import timedelta
@@ -17,19 +17,18 @@ from ai_session_archive.database import (
     SessionRow,
     SnapshotFileRow,
 )
-from ai_session_archive.ingest import ArchiveSource, SnapshotIngestor
 from ai_session_archive.models import Harness
 from ai_session_archive.queries import get_session, list_sessions
 from ai_session_archive.session_kind_projection import project_missing_session_kinds
 from ai_session_archive.source_paths import HarnessRoot
-from ai_session_archive.testing import _backup, _new_repository
+from ai_session_archive.testing import backup, new_ingestor, new_repository
 from ai_session_archive.version_queries import list_events, list_versions
 
-pytest_plugins = ["util.testing.postgres_fixtures", "ai_session_archive.testing"]
+pytest_plugins = ["testing.postgres_fixtures", "ai_session_archive.testing"]
 
 
 def test_initial_import_preserves_records_and_provenance(tmp_path: Path, postgres_engine: Engine) -> None:
-    repository, env = _new_repository(tmp_path)
+    repository, env = new_repository(tmp_path)
     archive_home = tmp_path / "home"
     claude_root = archive_home / ".claude"
     codex_root = archive_home / ".codex"
@@ -56,17 +55,17 @@ def test_initial_import_preserves_records_and_provenance(tmp_path: Path, postgre
         b'{"type":"session_meta","payload":{"id":"archived-session","cwd":"/repo","source":"cli"}}\n["scalar",1]\n'
     )
 
-    _backup(env, Path(".claude"), Path(".codex"), cwd=archive_home)
+    backup(env, Path(".claude"), Path(".codex"), cwd=archive_home)
     initial_snapshot = repository.list_snapshots()[0]
 
     factory = sessionmaker(postgres_engine, expire_on_commit=False)
-    source = ArchiveSource(
+    ingestor = new_ingestor(
+        factory,
+        repository,
+        HarnessRoot(Harness.CLAUDE, "/.claude"),
+        HarnessRoot(Harness.CODEX, "/.codex"),
         machine_id="archive-test",
-        display_name="Archive test host",
-        restic=repository,
-        roots=(HarnessRoot(Harness.CLAUDE, "/.claude"), HarnessRoot(Harness.CODEX, "/.codex")),
     )
-    ingestor = SnapshotIngestor(factory, source)
     report = ingestor.ingest()
     assert report.files_failed == 0
     assert report.snapshots_incomplete == 0
@@ -113,7 +112,7 @@ def test_initial_import_preserves_records_and_provenance(tmp_path: Path, postgre
         )
         for row in db.scalars(select(SessionRow).where(SessionRow.machine_id == "archive-test")):
             row.session_kind = None
-    project_missing_session_kinds(factory, source.machine_id)
+    project_missing_session_kinds(factory, "archive-test")
 
     with factory() as db:
         summaries = list_sessions(db, machine_id="archive-test", harness=Harness.CLAUDE, cursor=None, limit=100).data

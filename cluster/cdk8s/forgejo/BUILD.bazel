@@ -10,7 +10,8 @@ py_library(
     deps = [
         ":cache",
         ":db",
-        "//cluster/cdk8s:flux",
+        ":namespace",
+        "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:helm",
@@ -18,8 +19,8 @@ py_library(
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s:volume_claim",
         "//cluster/cdk8s/external_secrets:minted_secret",
-        "//cluster/cdk8s/providers/cilium:ciliumenvoyconfig",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
@@ -66,10 +67,9 @@ py_library(
     srcs = ["db.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
-        "//cluster/cdk8s:flux",
+        ":namespace",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s/cnpg:backup",
         "//cluster/cdk8s/cnpg:cluster",
@@ -83,7 +83,6 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:generation",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
@@ -95,9 +94,7 @@ py_library(
     srcs = ["gitops_modules.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
-        "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
-        "@pypi//cdk8s",
     ],
 )
 

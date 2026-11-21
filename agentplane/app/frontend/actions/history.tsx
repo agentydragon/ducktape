@@ -152,11 +152,11 @@ export function ActionHistoryCard({
   const prettyResult = mcp
     ? call === null
       ? undefined
-      : renderDetailsResult(action, call)
+      : renderDetailsResult(action, call, { requestId: request.id, arguments: args })
     : hasResult
       ? renderNativeDetailsResult(action, result)
       : undefined;
-  const combinedCall = renderActionCall(action, args, call ?? undefined);
+  const combinedCall = renderActionCall(action, args, call ?? undefined, request.id);
   const actionOutcome = call === null ? undefined : renderActionOutcome(action, call);
   const toolError = request.state === ActionState.SUCCEEDED && call?.isError === true;
   const decisionLabel =
@@ -478,7 +478,7 @@ function ActionHistoryRequests({
   );
 }
 
-export function ActionHistory({ embedded = false }: { embedded?: boolean }): JSX.Element {
+export function ActionHistory(): JSX.Element {
   const [searchParams, setSearchParams] = useSearchParams();
   const filter = searchParams.get("history_filter") === "all" ? "all" : "not-auto-allowed";
   function setFilter(value: string): void {
@@ -491,16 +491,9 @@ export function ActionHistory({ embedded = false }: { embedded?: boolean }): JSX
   }
   return (
     <Stack>
-      {embedded && (
-        <Text fw={700} size="lg">
-          History
-        </Text>
-      )}
-      {!embedded && (
-        <Text c="dimmed" size="sm">
-          Denied and terminal ActionRequests, kept as durable receipts.
-        </Text>
-      )}
+      <Text fw={700} size="lg">
+        History
+      </Text>
       <SegmentedControl
         aria-label="Action history filter"
         value={filter}

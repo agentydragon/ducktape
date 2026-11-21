@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { COLORS } from "./shared.jsx";
 import { casinoSync, useSyncRejection, useSyncStatus } from "./sync.js";

@@ -1,10 +1,24 @@
 apiVersion: v1
 kind: Namespace
 metadata:
+  annotations:
+    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "crossplane", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "100m", "memory": "256Mi"}, "maxAllowed": {"cpu": "100m"}, "controlledResources": ["memory"]}, {"containerName": "package-runtime", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "15m", "memory": "128Mi"}, "maxAllowed": {"cpu": "500m", "memory": "2Gi"}, "controlledResources": ["cpu", "memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
   labels:
-    goldilocks.fairwinds.com/vpa-update-mode: "off"
+    goldilocks.fairwinds.com/vpa-update-mode: initial
   name: crossplane-system
 spec: {}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: crossplane
+  namespace: crossplane-system
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: crossplane
+      release: crossplane
 ---
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
@@ -34,4 +48,63 @@ spec:
     remediation:
       retries: 3
   interval: 30m
-  values: {}
+  postRenderers:
+    - kustomize:
+        patches:
+          - patch: |
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: crossplane
+                annotations:
+                  goldilocks.fairwinds.com/vpa-update-mode: auto
+              spec:
+                template:
+                  spec:
+                    containers:
+                      - name: crossplane
+                        readinessProbe:
+                          httpGet:
+                            path: /readyz
+                            port: readyz
+                          periodSeconds: 5
+                          timeoutSeconds: 2
+            target:
+              kind: Deployment
+              name: crossplane
+  values:
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: topology.kubernetes.io/zone
+                  operator: In
+                  values:
+                    - hil-ovh
+                    - home-lan
+                    - atlas
+    leaderElection: true
+    replicas: 3
+    topologySpreadConstraints:
+      - labelSelector:
+          matchLabels:
+            app: crossplane
+            release: crossplane
+        matchLabelKeys:
+          - pod-template-hash
+        maxSkew: 1
+        nodeTaintsPolicy: Honor
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: DoNotSchedule
+      - labelSelector:
+          matchLabels:
+            app: crossplane
+            release: crossplane
+        matchLabelKeys:
+          - pod-template-hash
+        maxSkew: 1
+        minDomains: 1
+        nodeTaintsPolicy: Honor
+        topologyKey: topology.kubernetes.io/zone
+        whenUnsatisfiable: DoNotSchedule

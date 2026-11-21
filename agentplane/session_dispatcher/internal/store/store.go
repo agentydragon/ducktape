@@ -67,26 +67,12 @@ func accountOfIdentity(identity *identitypb.ServiceAccountIdentity) auth.Account
 	return auth.Account{Namespace: identity.GetAccount().GetNamespace(), Name: identity.GetAccount().GetName()}
 }
 
-func sameServiceAccountIdentity(left, right *identitypb.ServiceAccountIdentity) bool {
-	if left == nil || right == nil {
-		return left == right
-	}
-	return sameServiceAccount(left.GetAccount(), right.GetAccount()) && left.GetUid() == right.GetUid()
-}
-
 // SameIdentity compares Identity incarnations, nil meaning none.
 func SameIdentity(left, right *identitypb.Identity) bool {
 	if left == nil || right == nil {
 		return left == right
 	}
 	return left.GetName() == right.GetName() && left.GetUid() == right.GetUid()
-}
-
-func sameServiceAccount(left, right *identitypb.ServiceAccount) bool {
-	if left == nil || right == nil {
-		return left == right
-	}
-	return left.GetNamespace() == right.GetNamespace() && left.GetName() == right.GetName()
 }
 
 type PodIdentity struct {
@@ -746,7 +732,7 @@ func scanDispatch(row interface{ Scan(...any) error }) (*Dispatch, error) {
 }
 
 // EnqueueForCaller applies the Session's retained owner and target binding in the same transaction
-// that appends a command, including for Pod-bound privileged backends.
+// that appends a command, including for privileged service callers.
 func (s *Store) EnqueueForCaller(ctx context.Context, sessionID, sandboxName, sandboxUID string, command *commandpb.Command, wakeCaller *auth.Account, caller Caller) (*Dispatch, error) {
 	return s.enqueue(ctx, sessionID, sandboxName, sandboxUID, command, wakeCaller, caller)
 }
@@ -810,7 +796,7 @@ func (s *Store) enqueue(ctx context.Context, sessionID, sandboxName, sandboxUID 
 		if !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
-		if session.Placement.RequiresReadyExecutor() && (session.State == SessionFailedState || session.State == SessionUnknownState) {
+		if session.State == SessionFailedState || session.State == SessionUnknownState {
 			return ErrSessionUnconfirmed
 		}
 		var count int
@@ -1414,7 +1400,7 @@ func (s *Store) SettleSession(ctx context.Context, id string, owner SessionOwner
 	return s.settleSession(ctx, id, owner, from, to, reason, false)
 }
 
-// RejectSession records a proven native rejection and fails only commands that have
+// RejectSession records a proven placement-owner rejection and fails only commands that have
 // not left the queue. An older FAILED row alone cannot supply this evidence.
 func (s *Store) RejectSession(ctx context.Context, id string, owner SessionOwner, from []string, reason string) (*Session, error) {
 	return s.settleSession(ctx, id, owner, from, SessionFailedState, reason, true)

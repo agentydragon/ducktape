@@ -7,14 +7,14 @@ use analysis::{DependencyGraphReport, ModuleDestinationKind, StatementKind};
 use anonymous_resolution::{resolve_source_claims, resolve_source_file};
 use anyhow::{Context, Result, anyhow, bail};
 use peel::assignment::{AssignmentProblem, SourceUnitAssignment, accepted};
-use spec::{AnonymousStatement, LogicalModule, ModulePath, is_residual_namespace_path};
+use spec::{LogicalModule, ModulePath, is_residual_namespace_path};
 use spec_modules::{coalesce_source_match_claims, module_path_from_file};
 use spec_tree::ModuleTreeScope;
 
 use crate::binding::{
     BindingIdentity, BindingLabel, ModuleDocs, apply_doc_changes, binding_effective_name,
     binding_matches_in_doc, canonical_module_path, insert_annotation, load_module_docs,
-    member_effective_name, source_match_readable, take_members, take_source_match_bindings,
+    member_effective_name, source_match_readable, take_indexed, take_source_match_bindings,
 };
 use crate::candidate_assessment::ResolvedCandidateEffectAssessment;
 use crate::edit_gate::{
@@ -344,13 +344,7 @@ pub fn run_source_unit_apply(
                         .get_mut(source_unit_id)
                         .and_then(|selectors| selectors.remove(&runtime))
                     {
-                        provided_selectors.push((
-                            source.clone(),
-                            destination.clone(),
-                            runtime,
-                            readable,
-                            selector,
-                        ));
+                        provided_selectors.push((destination.clone(), runtime, readable, selector));
                     } else {
                         anyhow::ensure!(
                             fresh_bindings
@@ -464,7 +458,7 @@ pub fn run_source_unit_apply(
                 .extend(statements);
         }
     }
-    for (source, destination, runtime, readable, selector) in provided_selectors {
+    for (destination, runtime, readable, selector) in provided_selectors {
         let doc = ensure_source_unit_destination(&mut docs, modules_root, &destination);
         match selector {
             SelectorOverride::SourceMatch(claim) => {
@@ -480,7 +474,6 @@ pub fn run_source_unit_apply(
                     binding.local() != runtime || readable == runtime,
                     "source_match override for {runtime:?} retains its capture local; use a neutral selector-local name"
                 );
-                let _ = source;
                 doc.source_matches.push(claim);
             }
             SelectorOverride::Relational(selector) => {
@@ -491,7 +484,6 @@ pub fn run_source_unit_apply(
                     name: Some(readable),
                     selector: *selector,
                 });
-                let _ = source;
             }
         }
     }
@@ -502,7 +494,7 @@ pub fn run_source_unit_apply(
             SourceUnitClaimSlot::Member(index) => Some((movement.source_module.clone(), index)),
             _ => None,
         });
-    let mut pulled_members = take_members(&mut docs, moved_members);
+    let mut pulled_members = take_indexed(&mut docs, moved_members, |doc| &mut doc.members);
     let moved_source_match_bindings =
         planned_moves
             .iter()
@@ -520,7 +512,9 @@ pub fn run_source_unit_apply(
             SourceUnitClaimSlot::Anonymous(index) => Some((movement.source_module.clone(), index)),
             _ => None,
         });
-    let mut pulled_anonymous = take_anonymous_statements(&mut docs, moved_anonymous);
+    let mut pulled_anonymous = take_indexed(&mut docs, moved_anonymous, |doc| {
+        &mut doc.anonymous_statements
+    });
 
     let mut destination_claims = BTreeMap::<(String, String, usize), usize>::new();
     let mut moved_names_by_destination = BTreeMap::<String, BTreeSet<String>>::new();
@@ -744,8 +738,7 @@ fn source_unit_claim_locations(
             "projected member claims do not match module {}",
             module.path.display()
         );
-        for member_index in 0..doc.members.len() {
-            let projected_member = &projected.members[member_index];
+        for (member_index, projected_member) in projected.members.iter().enumerate() {
             if matches!(projected_member.kind, ProjectedBindingKind::ImportSpecifier) {
                 continue;
             }
@@ -896,31 +889,6 @@ fn check_graph_source_unit_destinations(
         );
     }
     Ok(())
-}
-
-fn take_anonymous_statements(
-    docs: &mut ModuleDocs,
-    identities: impl IntoIterator<Item = (String, usize)>,
-) -> BTreeMap<(String, usize), AnonymousStatement> {
-    let mut by_module: BTreeMap<String, BTreeSet<usize>> = BTreeMap::new();
-    for (module, index) in identities {
-        by_module.entry(module).or_default().insert(index);
-    }
-    let mut taken = BTreeMap::new();
-    for (module, indices) in by_module {
-        let (_, doc) = docs.get_mut(&module).expect("resolved module is loaded");
-        for (index, statement) in std::mem::take(&mut doc.anonymous_statements)
-            .into_iter()
-            .enumerate()
-        {
-            if indices.contains(&index) {
-                taken.insert((module.clone(), index), statement);
-            } else {
-                doc.anonymous_statements.push(statement);
-            }
-        }
-    }
-    taken
 }
 
 fn ensure_source_unit_destination<'a>(

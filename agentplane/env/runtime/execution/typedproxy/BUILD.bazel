@@ -1,0 +1,34 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane:__subpackages__"])
+
+go_library(
+    name = "typedproxy",
+    srcs = ["proxy.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/typedproxy",
+    deps = [
+        "//agentplane/env/runtime/execution:executor_go_proto",
+        "//agentplane/grpc/streaming",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+    ],
+)
+
+go_test(
+    name = "typedproxy_test",
+    srcs = ["proxy_test.go"],
+    embed = [":typedproxy"],
+    race = "on",
+    deps = [
+        "//agentplane/env/runtime/execution:executor_go_proto",
+        "//agentplane/env/runtime/execution/native",
+        "//agentplane/env/runtime/execution/typedbackend",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_grpc//test/bufconn",
+    ],
+)

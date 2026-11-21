@@ -22,6 +22,7 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 from pydantic import AnyHttpUrl
 
+from agentplane.crd_group import GROUP
 from agentplane.identity.auth.listener import TLS, Listener, SPIFFEAuth
 from agentplane.llm_ingress.settings import Settings
 from agentplane.net.peertls.config import CENTRAL_SAMPLER_URI, LLM_INGRESS_URI
@@ -158,16 +159,12 @@ class LlmIngress(Construct):
             "sandbox-reader-role",
             metadata=ApiObjectMetadata(name=reader_role_name, namespace=env.namespace),
             rules=[
-                RolePolicyRule(
-                    resources=[custom_resource("agentplane.allegedly.works", "sandboxes")], verbs=["get", "list"]
-                ),
+                RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list"]),
                 RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["get"]),
                 # A caller's SVID names its WorkloadCredential, read live on every request.
-                RolePolicyRule(
-                    resources=[custom_resource("agentplane.allegedly.works", "workloadcredentials")], verbs=["get"]
-                ),
+                RolePolicyRule(resources=[custom_resource(GROUP, "workloadcredentials")], verbs=["get"]),
                 # An Identity caller's SVID names its Identity, read live in the policy namespace.
-                RolePolicyRule(resources=[custom_resource("agentplane.allegedly.works", "identities")], verbs=["get"]),
+                RolePolicyRule(resources=[custom_resource(GROUP, "identities")], verbs=["get"]),
             ],
         )
         RoleBinding(
@@ -224,7 +221,7 @@ class LlmIngress(Construct):
         NetworkPolicy(
             self,
             "networkpolicy",
-            metadata=ApiObjectMetadata(name=_NAME.removeprefix("agentplane-"), namespace=self.env.namespace),
+            metadata=ApiObjectMetadata(name=_NAME, namespace=self.env.namespace),
             endpoint_selector=self.service.pods.selector,
             ingress=[
                 # egress.py imports this module, so the proxy's Pods are named here.

@@ -22,11 +22,11 @@ from agentplane.app.frontend.testing.visual_assertions import (
     _open_standalone_reasoning,
 )
 from agentplane.app.frontend.testing.visual_fixtures import DESKTOP_AND_MOBILE, MOBILE_ONLY
-from util.testing.frontend_visual.capture import VisualPage
-from util.testing.frontend_visual.page_capture import wait_for_stable
-from util.testing.frontend_visual.viewports import MOBILE_TOUCH, SMALL_MOBILE, Viewport
+from testing.frontend_visual.capture import VisualPage
+from testing.frontend_visual.page_capture import wait_for_stable
+from testing.frontend_visual.viewports import MOBILE_TOUCH, SMALL_MOBILE, Viewport
 
-pytest_plugins = ("util.testing.frontend_visual.fixtures", "agentplane.app.frontend.testing.visual_fixtures")
+pytest_plugins = ("testing.frontend_visual.fixtures", "agentplane.app.frontend.testing.visual_fixtures")
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
@@ -54,6 +54,62 @@ async def test_dispatcher_sessions_without_history(view: VisualPage, app: Agentp
     await expect(navigation.get_by_text("Session materialization failed", exact=True)).to_be_visible()
     await view.check(context="Dispatcher Sessions visible before History recording")
     await view.capture(target=navigation)
+
+
+async def test_failed_materialization_without_history(view: VisualPage, app: AgentplaneFixture) -> None:
+    thread_id = "10000000-0000-4000-8000-000000000032"
+    await app.add_session(
+        {
+            "sessionId": thread_id,
+            "createdAt": "2026-01-01T12:00:00Z",
+            "placement": {
+                "centralSamplerV1": {
+                    "executorEnvironment": {"name": "ready-sandbox", "uid": "0f9c1d2e-0000-4000-8000-00000000a1b2"}
+                }
+            },
+            "status": {
+                "materialization": "SESSION_MATERIALIZATION_FAILED",
+                "requiredEnvironment": "REQUIRED_ENVIRONMENT_AVAILABLE",
+                "reason": "invalid model",
+            },
+        }
+    )
+    await app.mount_thread(thread_id)
+    await expect(view.page.get_by_role("alert").filter(has_text="invalid model")).to_be_visible()
+    await expect(view.page.get_by_text("Sandbox no longer exists", exact=False)).to_have_count(0)
+    await expect(view.page.get_by_text("Thread sync failed", exact=False)).to_have_count(0)
+    await view.capture()
+
+
+@pytest.mark.parametrize("retained", [False, True], ids=["without-history", "with-history"])
+async def test_unknown_materialization(view: VisualPage, app: AgentplaneFixture, retained: bool) -> None:
+    thread_id = IDLE_THREAD if retained else "10000000-0000-4000-8000-000000000033"
+    await app.add_session(
+        {
+            "sessionId": thread_id,
+            "createdAt": "2026-01-01T12:00:00Z",
+            "placement": {
+                "centralSamplerV1": {
+                    "executorEnvironment": {"name": "ready-sandbox", "uid": "0f9c1d2e-0000-4000-8000-00000000a1b2"}
+                }
+            },
+            "status": {
+                "materialization": "SESSION_MATERIALIZATION_UNKNOWN",
+                "requiredEnvironment": "REQUIRED_ENVIRONMENT_AVAILABLE",
+                "reason": "reservation outcome unknown",
+            },
+        }
+    )
+    await app.mount_thread(thread_id)
+    await expect(view.page.get_by_role("alert").filter(has_text="reservation outcome unknown")).to_be_visible()
+    await expect(view.page.get_by_text("Sandbox no longer exists", exact=False)).to_have_count(0)
+    if retained:
+        await expect(view.page.get_by_text("I found the project files and the relevant tests.")).to_be_visible()
+        await expect(view.page.get_by_role("textbox", name="Message")).to_be_disabled()
+    else:
+        await expect(view.page.get_by_role("textbox", name="Message")).to_have_count(0)
+    await view.check(context="Unconfirmed materialization and retained History readiness")
+    await view.capture()
 
 
 async def test_dispatcher_activity_overrides_history_and_blocks_archive(

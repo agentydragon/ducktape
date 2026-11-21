@@ -1705,74 +1705,11 @@ impl Visit for SelectedCallables {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use artifact::reports::{ChunkAnalysisReport, ChunkFileRecord};
-    use artifact::{
-        ChunkArtifact, ChunkBundle, ChunkMetadata, FileMetadata, FileRole, JsChunk, JsFile,
-        JsFileBody,
-    };
+    use crate::test_support::{collect_test_program_summary, test_bundle};
+    use artifact::reports::ChunkFileRecord;
+    use artifact::{ChunkBundle, FileMetadata, FileRole, JsFile, JsFileBody};
     use program_analysis::analyze_program_shallow;
-    use source_identity::ChunkTable;
     use spec::ChunkExportPurity;
-
-    fn test_bundle(chunks: &[(&str, &str)]) -> ChunkBundle {
-        let mut chunk_table = ChunkTable::default();
-        let mut chunk_artifacts = Vec::new();
-        for (chunk_name, source) in chunks {
-            let chunk_id = chunk_table.intern((*chunk_name).to_string());
-            let entry_file = format!(
-                "{}.js",
-                chunk_name
-                    .rsplit('/')
-                    .next()
-                    .expect("test chunk names are non-empty")
-            );
-            let source_path = format!("{chunk_name}.js");
-            let parsed = js_ast::parse_js_module(&format!("{chunk_name}/{entry_file}"), source)
-                .expect("test source parses");
-            let analysis = analyze_program_shallow(&parsed);
-            chunk_artifacts.push(ChunkArtifact {
-                chunk_id,
-                js: JsChunk {
-                    entry_file: entry_file.clone(),
-                    files: vec![JsFile {
-                        path: entry_file.clone(),
-                        body: JsFileBody::Ast(parsed),
-                        header_lines: Vec::new(),
-                        binding_comments: BTreeMap::new(),
-                        leading_item_comments: BTreeMap::new(),
-                        metadata: FileMetadata {
-                            chunk_id: (*chunk_name).to_string(),
-                            chunk_file: entry_file.clone(),
-                            role: FileRole::Entry,
-                            source_path: source_path.clone(),
-                        },
-                    }],
-                    metadata: ChunkMetadata {
-                        source_path: source_path.clone(),
-                    },
-                },
-                analysis: ChunkAnalysisReport {
-                    chunk_id: (*chunk_name).to_string(),
-                    source_path,
-                    entry_file: entry_file.clone(),
-                    counts: Default::default(),
-                    files: vec![ChunkFileRecord {
-                        file: entry_file,
-                        role: FileRole::Entry,
-                    }],
-                    imports: analysis.imports,
-                    export_aliases: analysis.export_aliases,
-                    unresolved_exports: Vec::new(),
-                    kept_top_level_declarations: Vec::new(),
-                    runtime_facts: analysis.runtime_facts,
-                },
-            });
-        }
-        ChunkBundle {
-            chunks: chunk_artifacts,
-            chunk_table,
-        }
-    }
 
     fn add_non_entry_file(artifact: &mut ChunkBundle, chunk_name: &str, path: &str, source: &str) {
         let chunk_id = artifact.chunk_table.get(chunk_name).expect("test chunk");
@@ -1798,37 +1735,6 @@ mod tests {
             file: path.to_string(),
             role: FileRole::Module,
         });
-    }
-
-    fn collect_test_program_summary(
-        artifact: &ChunkBundle,
-        export_purity_assertions: &BTreeMap<String, ChunkExportPurity>,
-    ) -> ProgramSummary {
-        let indexes = ArtifactIndexes::build(artifact).expect("build indexes");
-        let no_options = BTreeMap::new();
-        let host_behavior = spec::HostBehavior::default();
-        collect_program_summary(
-            artifact,
-            &indexes,
-            &AnalysisProjection::new(
-                &no_options,
-                export_purity_assertions,
-                &host_behavior,
-                None,
-                BTreeMap::new(),
-                analysis_projection::AnalysisSourceSites::default(),
-                BTreeMap::new(),
-            )
-            .expect("empty projection is valid"),
-            ProgramSummaryOptions {
-                graph_provenance: None,
-                vendor_plan: None,
-                replacement_packages: &BTreeMap::new(),
-            },
-            None,
-            &analysis::diagnostics::Diagnostics::default(),
-        )
-        .expect("program summary analysis succeeds")
     }
 
     #[test]

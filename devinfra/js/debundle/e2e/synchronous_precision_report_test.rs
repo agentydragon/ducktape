@@ -26,6 +26,20 @@ fn assert_reason(execution: &Value, expected: Value) -> &Value {
         .unwrap_or_else(|| panic!("missing {expected} in {execution}"))
 }
 
+#[track_caller]
+fn assert_init_order_edge(graph: &DependencyGraphReport, from: &str, to: &str) {
+    let (source, target) = (
+        source_unit_for_binding(graph, from),
+        source_unit_for_binding(graph, to),
+    );
+    assert!(
+        graph.edges.iter().any(|edge| {
+            edge.source == source && edge.target == target && edge.constrains_init_order
+        }),
+        "no init-order edge from `{from}` to `{to}`"
+    );
+}
+
 #[test]
 fn complete_execution_has_no_precision_loss() {
     let fixture = run_fixture_with_graphs(
@@ -305,11 +319,7 @@ console.log(observed, Object.keys(coerced)[0]);
         &execution_from_graph(&graph, "observed"),
         serde_json::json!({"code": "unsupported_operation", "operation": "member_read"}),
     );
-    let observed = source_unit_for_binding(&graph, "observed");
-    let state = source_unit_for_binding(&graph, "state");
-    assert!(graph.edges.iter().any(|edge| {
-        edge.source == observed && edge.target == state && edge.constrains_init_order
-    }));
+    assert_init_order_edge(&graph, "observed", "state");
     let coerced = source_unit_for_binding(&graph, "coerced");
     let node = graph.nodes.iter().find(|node| node.id == coerced).unwrap();
     assert_eq!(
@@ -334,11 +344,7 @@ fn skipped_operation_events_preserve_same_owner_getter_effects() {
             &report,
             serde_json::json!({"code": "unsupported_operation", "operation": "member_read"}),
         );
-        let selected = source_unit_for_binding(&graph, "selected");
-        let state = source_unit_for_binding(&graph, "state");
-        assert!(graph.edges.iter().any(|edge| {
-            edge.source == selected && edge.target == state && edge.constrains_init_order
-        }));
+        assert_init_order_edge(&graph, "selected", "state");
     }
 }
 
@@ -502,34 +508,6 @@ fn unsupported_coercion_reports_its_operation() {
 }
 
 #[test]
-fn acyclic_call_chain_reports_the_actual_depth_bound() {
-    let mut source = String::new();
-    for index in 0..66 {
-        source.push_str(&format!(
-            "function step{index}() {{ return step{}(); }}\n",
-            index + 1
-        ));
-    }
-    source.push_str(
-        "function step66() { return 3; }\nconst result = step0();\nconsole.log(result);\n",
-    );
-    let fixture =
-        run_fixture_with_graphs(FixtureOpts::new(&source, vec![]).with_import_order(&["residual"]));
-    assert_entry_output(&fixture, "3\n");
-    let result = execution(&fixture, "result");
-    let loss = assert_reason(
-        &result,
-        serde_json::json!({
-            "code": "invocation_depth_limit", "limit": 64
-        }),
-    );
-    // The truncated chain calls only local functions.
-    assert_eq!(loss["reach"], serde_json::json!({"kind": "bounded"}));
-    assert_eq!(loss["statement_ordinal"], 64);
-    assert_eq!(loss["source_location"]["start_line"], 65);
-}
-
-#[test]
 fn single_call_root_depth_limit_does_not_invent_a_caller_remainder() {
     let mut source = String::new();
     for index in 0..66 {
@@ -549,6 +527,7 @@ fn single_call_root_depth_limit_does_not_invent_a_caller_remainder() {
         &result,
         serde_json::json!({"code": "invocation_depth_limit", "limit": 64}),
     );
+    // The truncated chain calls only local functions.
     assert_eq!(
         loss["reach"],
         serde_json::json!({"kind": "bounded"}),
@@ -1425,11 +1404,7 @@ fn external_root_getter_keeps_published_source_callbacks_at_the_read() {
             &execution_from_graph(&graph, "observed"),
             serde_json::json!({"code": "unsupported_operation", "operation": "member_read"}),
         );
-        let observed = source_unit_for_binding(&graph, "observed");
-        let state = source_unit_for_binding(&graph, "state");
-        assert!(graph.edges.iter().any(|edge| {
-            edge.source == observed && edge.target == state && edge.constrains_init_order
-        }));
+        assert_init_order_edge(&graph, "observed", "state");
     }
 }
 
@@ -1481,16 +1456,12 @@ fn skipped_reach_keeps_distinct_captures_and_later_prefix_references() {
         if readers == ["observed"] {
             assert_eq!(execution_from_graph(&graph, "before")["complete"], true);
         }
-        let state = source_unit_for_binding(&graph, "state");
         for reader in readers {
             assert_reason(
                 &execution_from_graph(&graph, reader),
                 serde_json::json!({"code": "unsupported_operation", "operation": "member_read"}),
             );
-            let reader = source_unit_for_binding(&graph, reader);
-            assert!(graph.edges.iter().any(|edge| {
-                edge.source == reader && edge.target == state && edge.constrains_init_order
-            }));
+            assert_init_order_edge(&graph, reader, "state");
         }
     }
 }
@@ -1588,11 +1559,7 @@ fn completed_owner_publication_retains_final_value_and_export_capabilities() {
         );
         assert_preserved_entry_output(&fixture, "undefined\n");
         let graph = fixture.dependency_graph();
-        let observed = source_unit_for_binding(&graph, "observed");
-        let state = source_unit_for_binding(&graph, "state");
-        assert!(graph.edges.iter().any(|edge| {
-            edge.source == observed && edge.target == state && edge.constrains_init_order
-        }));
+        assert_init_order_edge(&graph, "observed", "state");
         assert_eq!(
             graph
                 .nodes

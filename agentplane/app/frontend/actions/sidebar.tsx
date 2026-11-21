@@ -51,7 +51,7 @@ function usePendingRequests(): ActionRequest[] {
 
 /** One row per pending request: expandable preview where it adds something, decision buttons where eligible,
     details link. */
-function PendingActionList({
+export function PendingActionList({
   pending,
   onNavigate,
 }: {
@@ -72,8 +72,8 @@ function PendingActionList({
         // A card without an expanded version shows all it has at once.
         const unclamped = expanded || !expands;
         const actionLabel = renderActionLabel(action, args);
-        const collapsedPreview = renderPaneCollapsed(action, args);
-        const openedPreview = renderPaneOpened(action, args);
+        const collapsedPreview = renderPaneCollapsed(action, args, request.id);
+        const openedPreview = renderPaneOpened(action, args, request.id);
         const showRequestTitle = shouldRenderPaneRequestTitle(action, args, request.title);
         const decision = actionOffersCardDecisionButtons(action, args) ? (
           <ActionDecisionButtons

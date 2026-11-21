@@ -26,6 +26,7 @@
 //! many.
 
 use analysis_model::DepKind;
+use command_output::infallible;
 use graph_provenance::CurrentRoots;
 use source_identity::{SourceUnitId, SourceUnitOrdinal};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -445,11 +446,8 @@ fn run_diagnose(
         traces: returned,
     };
     let format = peel::OutputFormat::resolve(args.format);
-    command_output::write_report(&report, format, output, |report, out| {
-        render_diagnose_text(report, out);
-        Ok(())
-    })
-    .context("writing gate diagnose output")
+    command_output::write_report(&report, format, output, infallible(render_diagnose_text))
+        .context("writing gate diagnose output")
 }
 
 fn diagnose_binding(
@@ -523,25 +521,28 @@ fn diagnose_binding(
             unreachable!("filtered promoted report role")
         };
 
+        let trace = |coverage, matched_contract, code, witness| GateDiagnoseTrace {
+            ownership_target: GateDiagnoseOwnershipTarget {
+                binding: args.binding.clone(),
+                source_unit: target.id.clone(),
+                module: target_module,
+            },
+            constraining_dependency: dependency_report(edge, callee_source_unit),
+            call_site_source_location: call_site.source_location.clone(),
+            coverage,
+            matched_contract,
+            first_rejected_guard: GateDiagnoseGuard { code, witness },
+        };
+
         if call_site.callback_factory_barriers.is_empty() {
-            let trace = GateDiagnoseTrace {
-                ownership_target: GateDiagnoseOwnershipTarget {
-                    binding: args.binding.clone(),
-                    source_unit: target.id.clone(),
-                    module: target_module,
-                },
-                constraining_dependency: dependency_report(edge, callee_source_unit),
-                call_site_source_location: call_site.source_location.clone(),
-                coverage: GateDiagnoseCoverage::InconclusiveNoSupportedCallbackFactoryBarrier,
-                matched_contract: None,
-                first_rejected_guard: GateDiagnoseGuard {
-                    code: GateDiagnoseGuardCode::NoSupportedCallbackFactoryBarrier,
-                    witness: None,
-                },
-            };
             total_count += 1;
             if limit.is_none_or(|limit| traces.len() < limit) {
-                traces.push(trace);
+                traces.push(trace(
+                    GateDiagnoseCoverage::InconclusiveNoSupportedCallbackFactoryBarrier,
+                    None,
+                    GateDiagnoseGuardCode::NoSupportedCallbackFactoryBarrier,
+                    None,
+                ));
             }
             continue;
         }
@@ -549,21 +550,12 @@ fn diagnose_binding(
         if call_site.callback_factory_barriers.len() != 1 {
             total_count += 1;
             if limit.is_none_or(|limit| traces.len() < limit) {
-                traces.push(GateDiagnoseTrace {
-                    ownership_target: GateDiagnoseOwnershipTarget {
-                        binding: args.binding.clone(),
-                        source_unit: target.id.clone(),
-                        module: target_module,
-                    },
-                    constraining_dependency: dependency_report(edge, callee_source_unit),
-                    call_site_source_location: call_site.source_location.clone(),
-                    coverage: GateDiagnoseCoverage::InconclusiveAmbiguousCallbackFactoryBarrierLink,
-                    matched_contract: None,
-                    first_rejected_guard: GateDiagnoseGuard {
-                        code: GateDiagnoseGuardCode::AmbiguousCallbackFactoryBarrierLink,
-                        witness: None,
-                    },
-                });
+                traces.push(trace(
+                    GateDiagnoseCoverage::InconclusiveAmbiguousCallbackFactoryBarrierLink,
+                    None,
+                    GateDiagnoseGuardCode::AmbiguousCallbackFactoryBarrierLink,
+                    None,
+                ));
             }
             continue;
         }
@@ -595,54 +587,30 @@ fn diagnose_binding(
             continue;
         }
         if callback_link.is_none() {
-            traces.push(GateDiagnoseTrace {
-                ownership_target: GateDiagnoseOwnershipTarget {
-                    binding: args.binding.clone(),
-                    source_unit: target.id.clone(),
-                    module: target_module,
-                },
-                constraining_dependency: dependency_report(edge, callee_source_unit),
-                call_site_source_location: call_site.source_location.clone(),
-                coverage: GateDiagnoseCoverage::InconclusiveUnresolvedCallbackArgumentSource,
-                matched_contract: None,
-                first_rejected_guard: GateDiagnoseGuard {
-                    code: GateDiagnoseGuardCode::CallbackArgumentSourceUnresolved,
-                    witness: None,
-                },
-            });
+            traces.push(trace(
+                GateDiagnoseCoverage::InconclusiveUnresolvedCallbackArgumentSource,
+                None,
+                GateDiagnoseGuardCode::CallbackArgumentSourceUnresolved,
+                None,
+            ));
             continue;
         }
         if callback_link == Some(false) {
-            traces.push(GateDiagnoseTrace {
-                ownership_target: GateDiagnoseOwnershipTarget {
-                    binding: args.binding.clone(),
-                    source_unit: target.id.clone(),
-                    module: target_module,
-                },
-                constraining_dependency: dependency_report(edge, callee_source_unit),
-                call_site_source_location: call_site.source_location.clone(),
-                coverage: GateDiagnoseCoverage::InconclusiveCallbackArgumentSourceMismatch,
-                matched_contract: None,
-                first_rejected_guard: GateDiagnoseGuard {
-                    code: GateDiagnoseGuardCode::CallbackArgumentSourceMismatch,
-                    witness: None,
-                },
-            });
+            traces.push(trace(
+                GateDiagnoseCoverage::InconclusiveCallbackArgumentSourceMismatch,
+                None,
+                GateDiagnoseGuardCode::CallbackArgumentSourceMismatch,
+                None,
+            ));
             continue;
         }
         let (coverage, code, witness) = diagnose_barrier_witness(barrier, args, inspection_roots)?;
-        traces.push(GateDiagnoseTrace {
-            ownership_target: GateDiagnoseOwnershipTarget {
-                binding: args.binding.clone(),
-                source_unit: target.id.clone(),
-                module: target_module,
-            },
-            constraining_dependency: dependency_report(edge, callee_source_unit),
-            call_site_source_location: call_site.source_location.clone(),
+        traces.push(trace(
             coverage,
-            matched_contract: Some(barrier.contract.clone()),
-            first_rejected_guard: GateDiagnoseGuard { code, witness },
-        });
+            Some(barrier.contract.clone()),
+            code,
+            witness,
+        ));
     }
     Ok((traces, total_count, has_supported_witness))
 }
@@ -933,11 +901,8 @@ fn run_list(args: GateListArgs, output: &mut dyn std::io::Write) -> Result<()> {
     if command_output::write_ndjson_list(&report.blocking_sccs, format, output)? {
         return Ok(());
     }
-    command_output::write_report(&report, format, output, |report, out| {
-        render_list_text(report, out);
-        Ok(())
-    })
-    .context("writing gate list output")
+    command_output::write_report(&report, format, output, infallible(render_list_text))
+        .context("writing gate list output")
 }
 
 fn render_list_text(report: &GateListReport, out: &mut String) {
@@ -1019,11 +984,8 @@ fn run_describe(
         sequenced_source_inspections,
     };
     let format = peel::OutputFormat::resolve(args.format);
-    command_output::write_report(&report, format, output, |report, out| {
-        render_describe_text(report, out);
-        Ok(())
-    })
-    .context("writing gate describe output")
+    command_output::write_report(&report, format, output, infallible(render_describe_text))
+        .context("writing gate describe output")
 }
 
 fn render_describe_text(report: &GateDescribeReport, out: &mut String) {
@@ -1097,11 +1059,8 @@ fn run_cut(args: GateCutArgs, output: &mut dyn std::io::Write) -> Result<()> {
     if command_output::write_ndjson_list(&report.cut, format, output)? {
         return Ok(());
     }
-    command_output::write_report(&report, format, output, |report, out| {
-        render_cut_text(report, out);
-        Ok(())
-    })
-    .context("writing gate cut output")
+    command_output::write_report(&report, format, output, infallible(render_cut_text))
+        .context("writing gate cut output")
 }
 
 fn render_cut_text(report: &GateCutReport, out: &mut String) {

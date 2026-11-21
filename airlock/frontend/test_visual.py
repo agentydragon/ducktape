@@ -7,10 +7,10 @@ import pytest
 import pytest_asyncio
 import pytest_bazel
 
-from util.testing.frontend_visual.capture import VisualHarness, VisualPage
-from util.testing.frontend_visual.viewports import Viewport
+from testing.frontend_visual.capture import VisualHarness, VisualPage
+from testing.frontend_visual.viewports import Viewport
 
-pytest_plugins = ("util.testing.frontend_visual.fixtures",)
+pytest_plugins = ("testing.frontend_visual.fixtures",)
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
@@ -18,7 +18,7 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")
 async def view(
     visual: VisualHarness, viewport: Viewport, color_scheme: Literal["light", "dark"]
 ) -> AsyncIterator[VisualPage]:
-    async with visual.open(query={"page": "OAuthPage"}, viewport=viewport, color_scheme=color_scheme) as view:
+    async with visual.open(viewport=viewport, color_scheme=color_scheme) as view:
         yield view
 
 

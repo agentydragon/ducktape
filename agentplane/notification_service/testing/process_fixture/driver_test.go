@@ -92,15 +92,7 @@ func TestProductionNotificationProcessListsOwnedSubscription(t *testing.T) {
 	})
 	databaseURL := database.Clone(t)
 
-	apiServer, err := kubeapiserver.Start()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := apiServer.Stop(); err != nil {
-			t.Errorf("stop envtest API server: %v", err)
-		}
-	})
+	apiServer := kubeapiserver.StartForTest(t)
 
 	workload := workloadauthtesting.NewIdentityWorkload(t, apiServer, testNamespace, "notification-owner", testNamespace)
 	sandbox := workload.Sandbox.DeepCopy()
@@ -275,7 +267,6 @@ func TestNotificationProcessDriver(t *testing.T) {
 		},
 	}
 	c.Actions = actionPeer{URL: "http://127.0.0.1:1", TokenFile: input.PeerTokenFile, RequestTimeoutSeconds: 5}
-	c.RunnerGateway = runnerGateway{ControlTarget: "127.0.0.1:1", TokenFile: input.PeerTokenFile, RequestTimeoutSeconds: 5}
 	c.HistoryService = peer{Target: "127.0.0.1:1", TokenFile: input.PeerTokenFile, RequestTimeoutSeconds: 5}
 	c.SessionDispatcher = peer{Target: "127.0.0.1:1", TokenFile: input.PeerTokenFile, RequestTimeoutSeconds: 5}
 	if err := c.validate(); err != nil {
@@ -288,12 +279,8 @@ func TestNotificationProcessDriver(t *testing.T) {
 		requestID := uuid.New()
 		idempotencyKey := "notification-process-" + uuid.NewString()
 		created, err := inboxstore.New(db, transaction.New(db), c.Quotas).Subscribe(t.Context(), inboxstore.Owner{
-			Identity:   model.Identity{Name: input.SeedSubscription.IdentityName, UID: input.SeedSubscription.IdentityUID},
-			SandboxUID: input.SeedSubscription.SandboxUID,
+			Identity: model.Identity{Name: input.SeedSubscription.IdentityName, UID: input.SeedSubscription.IdentityUID},
 		}, sourceadapter.Subscribe{
-			DestinationRef: model.DestinationRef{
-				Namespace: input.Namespace, Name: input.SeedSubscription.SandboxName, UID: input.SeedSubscription.SandboxUID,
-			},
 			SessionID:      "notification-process-" + uuid.NewString(),
 			IdempotencyKey: idempotencyKey,
 			Source:         sourceadapter.WrapActionsSource(model.ActionsSource{RequestID: requestID}),

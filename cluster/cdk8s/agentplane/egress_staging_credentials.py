@@ -106,12 +106,11 @@ def add_staging_egress_credentials(scope: Construct, *, namespace: str, credenti
     _quest_scheduler_read(construct, namespace=namespace)
     _thrive_read(construct, namespace=namespace)
     _haku_mailbox(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
-    _buildbuddy(construct, namespace=namespace, credentials_namespace=credentials_namespace)
+    _buildbuddy(construct, credentials_namespace=credentials_namespace)
     _plaid_pgweb(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     inference_credentials(construct, reader=reader, credentials_namespace=credentials_namespace)
     add_gateway_resources(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     # Keep these grants in sync with the egress PolicySets in the named functions below.
-    # Local Gateways check the selected backend's identity/target port, even for a public hostname.
     NetworkPolicy(
         construct,
         "networkpolicy-egress-staging-credentials",
@@ -502,7 +501,6 @@ def _activitywatch_read(
     )
     credential = "activitywatch-read"
     host = "activitywatch-read.allegedly.works"
-    # Keep this policy in sync with its backend grant in add_staging_egress_credentials.
     _present(
         scope,
         ACTIVITYWATCH_READ_POLICY,
@@ -571,7 +569,6 @@ def _aiquota_read(scope: Construct, *, reader: ServiceAccount, namespace: str, c
         key=clickhouse.PASSWORD_KEY,
         target=_BASIC_PASSWORD,
     )
-    # Keep this policy in sync with its backend grants in add_staging_egress_credentials.
     PolicySet(
         scope,
         f"egresspolicy-{AIQUOTA_READ_POLICY}",
@@ -715,7 +712,6 @@ def _haku_mailbox(scope: Construct, *, reader: ServiceAccount, namespace: str, c
     )
     credential = "haku-mailbox"
     host = "haku-mailbox.allegedly.works"
-    # Keep this policy in sync with its backend grant in add_staging_egress_credentials.
     _present(
         scope,
         HAKU_MAILBOX_POLICY,
@@ -741,7 +737,7 @@ def _haku_mailbox(scope: Construct, *, reader: ServiceAccount, namespace: str, c
     )
 
 
-def _buildbuddy(scope: Construct, *, namespace: str, credentials_namespace: str) -> None:
+def _buildbuddy(scope: Construct, *, credentials_namespace: str) -> None:
     # The shared BuildBuddy API key lives in external-creds; this environment's ExternalSecret
     # copies it into the isolated namespace the shared egress credential reads.
     credential_external_secret(

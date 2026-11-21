@@ -8,8 +8,8 @@ import pytest
 from sqlalchemy import create_engine
 
 from study_casino.store import _run_alembic_migrations
-from util.testing.postgres import DatabaseClones, DatabaseNames, PostgresDatabaseTemplate, create_temporary_database
-from util.testing.postgres_fixtures import (
+from testing.postgres import DatabaseClones, DatabaseNames, PostgresDatabaseTemplate, create_temporary_database
+from testing.postgres_fixtures import (
     database_clones,
     database_names,
     postgres_admin_url,

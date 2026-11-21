@@ -17,8 +17,7 @@ composes it into the runtime configuration. The [protocol contract](../SPEC.md) 
 
 1. The template writes `environment-runtime.json`: endpoints, paths, providers, environment declarations,
    platform instructions and isolation policy. `environment_sandbox.py` writes Pod configuration;
-   `environment_vm.py` writes VM configuration using the same schema.
-   The process environment field is `environment_runtime_environment` after the direct cutover.
+   `environment_guest.py` writes VM configuration using the same schema.
 2. The image supplies only explicitly inherited environment names. Provider `token_env` fields
    name Environment Runtime variables containing credential placeholders; tokens are not serialized in the file.
 3. The Sandbox Controller supplies `launch.json`: namespace, name, UID and optional bootstrap source.
@@ -40,24 +39,24 @@ Environment Runtime environment changes or state ownership begins.
 
 ## File fields
 
-`environment-runtime.json` is a strict JSON object with `version: 2`.
+`environment-runtime.json` is a strict JSON object with `version: 3`.
 
-| Field                             | Meaning                                                                                                                                        |
-| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `session_reconcile_concurrency`   | Optional positive count of concurrent Session COSI reconciliations; defaults to `16` and does not limit Session admission.                     |
-| `state_dir`                       | Required absolute persistent state path; deployed as `/state`.                                                                                 |
-| `initialization_cwd`              | Required absolute bootstrap working directory.                                                                                                 |
-| `workspace_root`                  | Optional absolute directory constraining Session working directories. Omission permits requested absolute paths directly.                      |
-| `control`                         | Required Environment Runtime listener with `listen_address` (`host:port`) and explicit `security` (`mtls` or `insecure`).                      |
-| `ingress`                         | Required History ingress endpoint with `target` (`host:port`) and `bearer`; it remains independent of Environment Runtime control.             |
-| `model_config_target`             | Local sidecar gRPC `host:port` for Claude model budgets; the sidecar supplies SVID authentication. Without it, Claude Session admission fails. |
-| `platform_instructions`           | Required deployment-wide Session guidance, rendered from the shared `session_instructions/platform_instructions.j2`.                           |
-| `environment_runtime_environment` | Optional `inherit` names and `values` map applied to Environment Runtime itself.                                                               |
-| `harness_environment`             | Required `inherit` names and `values` map defining the native process environment.                                                             |
-| `claude`, `codex`                 | Optional provider objects: absolute `binary`, HTTP(S) `base_url`, and `token_env`. An omitted provider is disabled.                            |
-| `environment`                     | Required tagged Pod or VM policy, including the optional executor.                                                                             |
-| `codex_readiness`                 | Optional independent Codex executor and app-server readiness windows in positive integer milliseconds.                                         |
-| `debug_checkpoint`                | Optional test-only object containing nonempty `name` and `command_id`.                                                                         |
+| Field                             | Meaning                                                                                                                                                                                                                                     |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `session_reconcile_concurrency`   | Optional positive count of concurrent Session COSI reconciliations; defaults to `16` and does not limit Session admission.                                                                                                                  |
+| `state_dir`                       | Required absolute persistent state path; deployed as `/state`.                                                                                                                                                                              |
+| `initialization_cwd`              | Required absolute bootstrap working directory.                                                                                                                                                                                              |
+| `workspace_root`                  | Optional absolute directory constraining Session working directories. Omission permits requested absolute paths directly.                                                                                                                   |
+| `control`                         | Required Environment Runtime listener with `listen_address` (`host:port`) and explicit `security` (`mtls` or `insecure`).                                                                                                                   |
+| `ingress`                         | Required History ingress endpoint: `target` (`host:port`) plus exactly one credential, `bearer` or `svid` (`server_uri` and sidecar `proxy_address`). Deployed Sandboxes use `svid`; it remains independent of Environment Runtime control. |
+| `model_config_target`             | Local sidecar gRPC `host:port` for Claude model budgets; the sidecar supplies SVID authentication. Without it, Claude Session admission fails.                                                                                              |
+| `platform_instructions`           | Required deployment-wide Session guidance, rendered from the shared `session_instructions/platform_instructions.j2`.                                                                                                                        |
+| `environment_runtime_environment` | Optional `inherit` names and `values` map applied to Environment Runtime itself.                                                                                                                                                            |
+| `harness_environment`             | Required `inherit` names and `values` map defining the native process environment.                                                                                                                                                          |
+| `claude`, `codex`                 | Optional provider objects: absolute `binary`, HTTP(S) `base_url`, and `token_env`. An omitted provider is disabled.                                                                                                                         |
+| `environment`                     | Required tagged Pod or VM policy, including the optional executor.                                                                                                                                                                          |
+| `codex_readiness`                 | Optional independent Codex executor and app-server readiness windows in positive integer milliseconds.                                                                                                                                      |
+| `debug_checkpoint`                | Optional test-only object containing nonempty `name` and `command_id`.                                                                                                                                                                      |
 
 `codex.turn_diff_notifications` is an optional boolean, disabled when omitted or `false`.
 Set it to `true` to receive and retain Codex's aggregate `turn/diff/updated` notifications
@@ -114,11 +113,14 @@ This serves plaintext without peer authentication. An insecure configuration con
 block is rejected. Environments selects the same mode through its Runtime proxy `runner_security`. Sandbox,
 incarnation and boot-ID fencing still apply; that metadata is not an authenticated identity.
 Sandbox Controller provisioning continues to require cert-manager-issued credentials in every
-cluster/k3s stack. Environment Runtime control has no bearer credential; `ingress.bearer` remains scoped to History ingress.
+cluster/k3s stack. Environment Runtime control has no bearer credential. Its History endpoint
+takes either a `bearer` or an `svid`; `cluster/cdk8s/agentplane/environment_sandbox.py` renders the
+`svid` form with a sidecar `proxy_address`, while `cluster/k8s` staging selects that same SVID route,
+so a Sandbox dials History through the sidecar over TLS with no bearer.
 
 The control listener serves the standard gRPC health API and reports `SERVING` once local Environment Runtime
 startup completes, before a state watch connects. The Controller starts observe-only
-`Environment Runtime.WatchState` with the Sandbox UID and current workload Pod UID.
+`EnvironmentRuntime.WatchState` with the Sandbox UID and current workload Pod UID.
 The Environment Runtime adopts that incarnation before sending facts, then sends changed state and a ten-second
 heartbeat. Environments proxy replicas watch the accepted binding without replacing it; the retired
 Gateway SVID has no Runtime admission. Unary calls and executor streams carry the Sandbox UID, incarnation UID and Environment Runtime boot ID.
@@ -127,27 +129,47 @@ connection per server stream. Typed unary process and file calls use the returne
 The adapter retains the existing per-Environment Runtime open-connection and per-native-frame limits, without adding
 persistence, operation receipts or execution configuration.
 
-`environment` has exactly one discriminator, `kind`:
+`environment.supervision` selects how Runtime supervises local children.
 
-- `kind: "pod"`: required `supervision` (`pid1` for a private container PID namespace),
-  plus optional `executor` with loopback `url` and absolute ownership `socket`.
-  Kubernetes owns the container resource limits.
-- `kind: "vm"`: required `resources`, non-root `agent_uid`/`agent_gid`, absolute `block_devices`,
-  optional `console_autologin` (false when omitted), and optional `executor` with loopback `url`.
-  Systemd owns containment; both native service slices use the VM identity and block devices.
+- `"pid1"` uses the Runtime process as PID 1 in its private PID namespace. Kubernetes owns
+  the container resource limits.
+- `"systemd"` requires `resources`, non-root `agent_uid` and `agent_gid`, and absolute
+  `block_devices`. `console_autologin` defaults to false.
+
+Both supervision modes support an optional `executor` with required loopback `url`, `owner` and
+`placement`. The `owner` starts and fences the executor service process. `placement` controls
+where that executor runs native commands.
+
+| Owner                                       | Required settings                                                                          | Allowed placement                                    |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
+| `{"kind": "companion", "socket": "/run/…"}` | PID 1 Runtime supervision and an absolute ownership socket to the separate companion PID 1 | `direct`                                             |
+| `{"kind": "systemd"}`                       | systemd Runtime supervision and the guest's `resources.executor` budget                    | `direct` or `systemd` with the native implementation |
+
+`placement: "direct"` runs commands in the executor process domain. `placement: "systemd"` runs
+native commands in separate transient units under the shared `agentplane-commands.slice`.
 
 The VM `resources` object contains `guest_memory_bytes`, `guest_vcpu_count`, `os_reserve_bytes`,
 `service_memory_high_bytes`, `service_memory_max_bytes`, `service_cpu_quota_micros`,
-`service_pids_max`, and `aggregate`/`process` harness budgets. Its optional `executor` budget must be supplied together with
-the VM executor endpoint. Each budget contains `memory_max_bytes`, `cpu_quota_micros` per fixed
+`service_pids_max`, and `aggregate`/`process` harness budgets. Supply the `executor` budget with
+the VM executor endpoint and the `executor_workload` budget with `systemd` placement. The workload
+budget covers all executor command units collectively. Each budget contains `memory_max_bytes`, `cpu_quota_micros` per fixed
 100,000 µs period, `pids_max`, `read_bps`, `write_bps`, `read_iops` and `write_iops`. Environment Runtime derives
 cgroup limits from these budgets; the document contains each budget once. Process memory/CPU/PID
-ceilings must fit the aggregate; harness and executor caps must fit the enclosing service.
+ceilings must fit the harness aggregate. The harness, executor and executor workload caps together must fit
+the enclosing memory high threshold and leave PID headroom for Runtime and supervisors. Each CPU quota must
+fit the enclosing service quota.
 
 Omitting `environment.executor` selects local tools. An executor requires Codex, and its endpoint
 must be `ws://127.0.0.1:<nonzero port>`. `CODEX_EXEC_SERVER_URL` belongs to Environment Runtime and is rejected in
 the harness environment. Lifecycle, recovery and scope are documented in
 [Codex executor isolation](../execution/docs/codex_executor.md).
+
+Version 3 replaces `environment.kind` with explicit `environment.supervision`, moves
+the companion socket under `executor.owner`, and requires `owner` and `placement` for
+every configured executor. Version 2 and version 3 readers reject the other wire version.
+Deploy the matching runner disk, KubeVirt root, Firecracker boot image, and ConfigMaps in one cutover.
+The guest roots consume `environment.supervision` in their boot settings and supply
+`agentplane-commands.slice`.
 
 ## Shared layout
 
@@ -202,8 +224,7 @@ available peak memory before releasing a native service.
 See [supervision](../supervision/docs/supervision.md) for the unit hierarchy and startup fence.
 
 `/run/agentplane/config/environment-runtime.env` supplies the VM systemd unit's Environment Runtime-only OpenTelemetry
-settings. Pod templates set the corresponding container environment directly. The Go guest loader
-has been removed; the common file explicitly supplies proxy, trust, tool paths and identities.
+settings. Pod templates set the corresponding container environment directly.
 
 ## Provider, Session and telemetry settings
 

@@ -1,0 +1,20 @@
+// Shared browser labels and notification titles for Tana tools without provider data in push.
+export const tanaTitles: ReadonlyMap<string, string> = new Map([
+  ["read_node", "Read Tana node"],
+  ["get_children", "List Tana child nodes"],
+  ["open_node", "Open Tana node"],
+  ["list_workspaces", "List Tana workspaces"],
+  ["list_tags", "List Tana tags"],
+  ["get_tag_schema", "View Tana tag schema"],
+  ["edit_node", "Edit Tana node"],
+  ["trash_node", "Move Tana node to trash"],
+  ["check_node", "Complete Tana node"],
+  ["uncheck_node", "Reopen Tana node"],
+  ["tag", "Change Tana tags"],
+  ["set_tag_checkbox", "Configure Tana tag checkbox"],
+  ["create_tag", "Create Tana tag"],
+  ["add_field_to_tag", "Add a field to a Tana tag"],
+  ["set_field_content", "Change Tana field content"],
+  ["set_field_option", "Change Tana field option"],
+  ["import_tana_paste", "Import Tana Paste"],
+]);

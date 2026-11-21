@@ -1,11 +1,11 @@
 # Nebula: stale tunnels after a lighthouse reboot
 
-After **both** Nebula lighthouses reboot (e.g. recovering from an OOM), non-lighthouse
+After **all** Nebula lighthouses reboot (e.g. recovering from an OOM), non-lighthouse
 peers can get stuck believing their lighthouse tunnels are still alive: they keep
 sending packets encrypted with stale session keys that the restarted lighthouses
 silently drop, and never re-handshake. The mesh stays dead until each peer's Nebula is
-restarted. This caused a ~3h cluster outage on 2026-03-30 (initially blamed on
-Cilium/etcd).
+restarted. This caused a ~3h cluster outage on 2026-03-30, when both lighthouses of the
+time rebooted (initially blamed on Cilium/etcd).
 
 ## Spot it
 
@@ -17,6 +17,8 @@ peer:
   up) with **no** `Handshake message sent` to the lighthouses
 - `Failed to decrypt lighthouse packet` / `Failed to decrypt test packet` confirm
   stale session keys
+- `nebula1` TX dropped counter climbing (billions of packets in the 2026-03-30 outage)
+- `Refusing to handshake with myself` (NAT hairpin) is unrelated noise
 
 The tell: tunnels reported alive, zero handshakes, decrypt failures — the peer isn't
 even trying to re-handshake.
@@ -50,6 +52,6 @@ analysis, hypotheses, and the diagnostic log-message table live in
 
 ## Prevention
 
-Avoid rebooting both lighthouses at once when possible. Open defense-in-depth idea
+Avoid rebooting all lighthouses at once when possible. Open defense-in-depth idea
 (tracked in the debug note above): a watchdog that pings lighthouse Nebula IPs and
 restarts Nebula if unreachable for >60s.

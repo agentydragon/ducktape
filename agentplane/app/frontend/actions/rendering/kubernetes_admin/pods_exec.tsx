@@ -4,12 +4,13 @@ import { z } from "zod";
 
 import { type ActionPresentation, expandsForRejectedArguments } from "../presentation";
 import { argvText } from "../../../ui/argv_text";
-import { ShellCommandView, ShellCommandSummary, OutputBlock } from "../../../ui/shell_command_view";
+import { ShellCommandView, ShellCommandSummary } from "../../../ui/shell_command_view";
 
 import { definePreview, type ArgumentsPreview } from "../entry";
-import { defineResultPreview, type ResultPreview, type ResultPreviewProps } from "../result_entry";
+import type { ResultPreview } from "../result_entry";
 import { podsExecNotes } from "../../schemas/kubernetes_admin/pods_exec";
 import { kubernetesTarget } from "../../schemas/kubernetes_admin/target";
+import { kubernetesTextResult } from "./text_result";
 
 const podsExecArguments = z.strictObject({
   name: z.string().min(1),
@@ -36,11 +37,11 @@ function Opened({ args }: { args: PodsExecArguments }): JSX.Element {
   return <ShellCommandView argv={args.command} notes={podsExecNotes(args)} releaseWhenFar surface="framed" />;
 }
 
-function PodExecOutput({ result }: ResultPreviewProps<string>): JSX.Element {
-  return <OutputBlock name="Output" text={result} raw releaseWhenFar surface="framed" />;
-}
-
-const podExecOutput: ResultPreview = defineResultPreview(z.string(), PodExecOutput);
+const podExecOutput = kubernetesTextResult(
+  "Output",
+  "The provider reported no command output.",
+  /^The executed command in pod \S+ in namespace \S+ has not produced any output$/
+);
 
 /** These are action-owned DOM renderers; the target is already in the action title. */
 export const podsExecCollapsed: ArgumentsPreview = definePreview(podsExecArguments, Collapsed);
@@ -63,14 +64,18 @@ function PodsDeleteLabel({ args }: { args: z.infer<typeof podsDeleteArguments> }
 }
 
 export const podsDeleteLabel: ArgumentsPreview = definePreview(podsDeleteArguments, PodsDeleteLabel);
-// Direct previews preserve null as the slot suppression signal after schema validation.
-export const podsDeletePane: ArgumentsPreview = { schema: podsDeleteArguments, render: () => null };
+export const podsDeletePane: ArgumentsPreview = definePreview(podsDeleteArguments, () => (
+  <Text size="sm">
+    For a Pod managed by the Kubernetes MCP server, this can also remove matching Services and OpenShift Routes.
+  </Text>
+));
 const podsDeleteResultPreview: ResultPreview = { schema: podsDeleteResult, render: () => null };
 
 export const podsDeletePresentation: ActionPresentation = {
   outcome: (value) =>
     podsDeleteResult.safeParse(value).success ? { label: "Deletion accepted", failed: false } : undefined,
   label: podsDeleteLabel,
+  pane: { collapsed: podsDeletePane },
   details: {
     arguments: podsDeletePane,
     result: podsDeleteResultPreview,
@@ -82,5 +87,5 @@ export const podsDeletePresentation: ActionPresentation = {
 export const podsExecPresentation: ActionPresentation = {
   label: podsExecLabel,
   pane: { collapsed: podsExecCollapsed, opened: podsExecPane },
-  details: { arguments: podsExecPane, result: podExecOutput },
+  details: { arguments: podsExecPane, envelopeResult: podExecOutput },
 };

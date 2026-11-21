@@ -1,4 +1,4 @@
-//! Module parsing JSON output of worthy2.
+//! Module parsing JSON output of worthy.
 
 use chrono::prelude::*;
 use rust_decimal::prelude::*;

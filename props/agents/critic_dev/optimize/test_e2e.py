@@ -12,7 +12,6 @@ The test stack is:
 Tests verify:
 - Prompt optimizer can run in container and use tools
 - Database access works from container
-- CLI helpers work in container context
 
 Note: Grading is handled by snapshot graders (not tested here).
 """
@@ -30,37 +29,19 @@ from props.agents.critic_dev.testing.orchestration_fixtures import (
     ORCHESTRATION_CRITIC_MODEL,
     ORCHESTRATION_GRADER_MODEL,
     ORCHESTRATION_OPTIMIZER_MODEL,
+    critic_dev_optimizer,
 )
 from props.agents.grader.testing.mocks import GraderMock
 from props.agents.grader.tools import ClusterMemberSpec
-from props.core.agent_types import AgentType, TargetMetric
-from props.core.eval_api_models import CriticRunStatus, GradingStatusResponse, RunCriticRequest, StartCriticResponse
+from props.core.agent_types import AgentType
 from props.core.ids import DefinitionId
-from props.core.models.examples import ExampleKind, WholeSnapshotExample
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus
 
-# gazelle:include_dep //util/testing:postgres_fixtures
-# gazelle:include_dep //props/testing/fixtures:db
-# gazelle:include_dep //props/testing/fixtures:runs
-# gazelle:include_dep //mcp_infra/testing:fixtures
-# gazelle:include_dep //props/testing/fixtures:e2e_infra
-# gazelle:include_dep //props/testing/fixtures:e2e_container
-pytest_plugins = (
-    "util.testing.postgres_fixtures",
-    "props.testing.fixtures.db",
-    "props.testing.fixtures.runs",
-    "mcp_infra.testing.fixtures",
-    "props.testing.fixtures.e2e_infra",
-    "props.testing.fixtures.e2e_container",
-)
+# gazelle:include_dep //props/agents/testing:e2e_pytest_plugins
+pytest_plugins = ("props.agents.testing.e2e_pytest_plugins",)
 
 logger = logging.getLogger(__name__)
-
-
-# =============================================================================
-# Multi-Model Orchestration Tests
-# =============================================================================
 
 
 async def test_optimizer_orchestrates_critic(
@@ -69,12 +50,12 @@ async def test_optimizer_orchestrates_critic(
     """Test optimizer can orchestrate critic runs with simulated grading.
 
     This e2e test verifies the full orchestration flow:
-    1. Optimizer container starts with DirectToolProvider tools
-    2. Optimizer calls run_critic tool (REST API to backend)
+    1. Optimizer container starts with its direct tools
+    2. Optimizer calls start_critic (REST API to backend)
     3. Registry spawns critic container with different model
     4. Critic runs, submits issues, completes
     5. Background snapshot grader processes edges
-    6. Optimizer's wait_until_graded_tool returns (polls database directly)
+    6. Optimizer's wait_until_graded returns (polls database directly)
     7. Optimizer reports success
 
     Uses multi-model FakeOpenAIServer to route optimizer and critic to different mocks.
@@ -89,34 +70,11 @@ async def test_optimizer_orchestrates_critic(
     def optimizer_mock(m: CriticDevMock) -> PlayGen:
         yield None  # First request (system message)
 
-        # Start critic (non-blocking, returns immediately with critic_run_id)
-        example = WholeSnapshotExample(kind=ExampleKind.WHOLE_SNAPSHOT, snapshot_slug=snapshot_slug)
-        start_response: StartCriticResponse = yield from m.start_critic_roundtrip(
-            RunCriticRequest(
-                definition_id=DefinitionId(digests["critic"]),
-                example=example,
-                timeout_seconds=120,
-                budget_usd=1.0,
-                critic_model=ORCHESTRATION_CRITIC_MODEL,
-            )
+        yield from m.evaluate_critic_roundtrip(
+            definition_id=DefinitionId(digests["critic"]),
+            snapshot_slug=snapshot_slug,
+            critic_model=ORCHESTRATION_CRITIC_MODEL,
         )
-        critic_run_id = start_response.critic_run_id
-        logger.info(f"Orchestration optimizer got critic_run_id: {critic_run_id}")
-
-        # Wait for critic container to finish
-        completed: CriticRunStatus = yield from m.wait_until_critic_completed_roundtrip(
-            critic_run_id, timeout_seconds=120
-        )
-        logger.info(f"Critic completed: status={completed.status}")
-
-        # Wait for grading (polls database directly inside container)
-        grading_response: GradingStatusResponse = yield from m.wait_until_graded_roundtrip(
-            critic_run_id, timeout_seconds=60
-        )
-        total_credit = grading_response.total_credit or 0.0
-        max_credit = grading_response.max_credit or 0
-        recall = total_credit / max_credit if max_credit > 0 else 0.0
-        logger.info(f"Orchestration optimizer got grading: total_credit={total_credit}, recall={recall:.2%}")
 
         # Report success
         yield m.report_success()
@@ -165,23 +123,7 @@ async def test_optimizer_orchestrates_critic(
     }
     async with e2e_stack(mocks, images=[critic_dev_optimize_image, critic_image, grader_image]) as stack:
         digests.update(stack.image_digests)
-        # Start snapshot grader in background - it will sleep until there's drift
-        grader_handle = await stack.registry.start_snapshot_grader(
-            image=stack.resolved_images["grader"], snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL
-        )
-
-        async with grader_handle:
-            # Run critic-dev optimizer - this triggers the full orchestration
-            # The snapshot grader running in background will process edges when critic completes
-            run_id = await stack.registry.run_critic_dev_optimize(
-                image=stack.resolved_images["critic_dev_optimize"],
-                budget=1.0,
-                optimizer_model=ORCHESTRATION_OPTIMIZER_MODEL,
-                critic_model=ORCHESTRATION_CRITIC_MODEL,
-                target_metric=TargetMetric.WHOLE_REPO,
-                timeout_seconds=120,
-            )
-
+        async with critic_dev_optimizer(stack, snapshot_slug) as run_id:
             logger.info(f"Orchestration test: critic-dev optimizer completed with run_id={run_id}")
 
             # Verify optimizer run status
@@ -189,7 +131,7 @@ async def test_optimizer_orchestrates_critic(
                 optimizer_run = session.get(AgentRun, run_id)
                 assert optimizer_run is not None, "Optimizer run not found in database"
                 assert optimizer_run.status == AgentRunStatus.EXITED, (
-                    f"Expected optimizer status COMPLETED, got {optimizer_run.status}"
+                    f"Expected optimizer status EXITED, got {optimizer_run.status}"
                 )
 
             # Verify a critic run was created and completed
@@ -204,7 +146,7 @@ async def test_optimizer_orchestrates_critic(
                 )
                 assert len(critic_runs) >= 1, "Expected at least one critic run spawned by optimizer"
                 for cr in critic_runs:
-                    assert cr.status == AgentRunStatus.EXITED, f"Critic run {cr.agent_run_id} should be COMPLETED"
+                    assert cr.status == AgentRunStatus.EXITED, f"Critic run {cr.agent_run_id} should be EXITED"
 
 
 if __name__ == "__main__":

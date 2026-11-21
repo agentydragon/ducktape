@@ -66,14 +66,7 @@ fn assert_refused_fixtures(
     stdout: &str,
 ) {
     let rejected = run_rejection_fixture_with_graphs(rejected_options);
-    assert!(rejected.atomic_group_conflicts().iter().any(|conflict| {
-        let claims = conflict["claims"].as_array().expect("conflict claims");
-        ["values/native", "values/later"].iter().all(|module| {
-            claims
-                .iter()
-                .any(|claim| claim["module"].as_str() == Some(*module))
-        })
-    }));
+    rejected.assert_atomic_conflict(&["values/native", "values/later"], &[]);
     let graph = serde_json::to_value(rejected.dependency_graph()).unwrap();
     let node = graph["nodes"]
         .as_array()

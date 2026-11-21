@@ -18,7 +18,7 @@ def _config(*, pat: str | None) -> ResignerConfig:
         secret_namespace="test",
         secret_name="refresh-token",
         secret_key="refresh_token",
-        fetch_custom_token_url="https://app.tana.inc/functions/fetchCustomToken",
+        fetch_custom_token_url="https://tana.invalid/functions/fetchCustomToken",
         tana_health_url="http://127.0.0.1:8262/health",
         tana_mcp_url="http://127.0.0.1:8262/mcp",
         reseed_url="http://127.0.0.1:9090/reseed",

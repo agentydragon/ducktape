@@ -16,11 +16,10 @@ from more_itertools import one
 from finance.augur.model.series import SecurityKey, SecuritySymbol
 from finance.augur.policy.cash_band_household import CashBandHousehold, CpiIndexed, Reinvest, SecuritySleeve
 from finance.augur.sim.actions import LotSale, Sell
-from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef, Book, SecurityLotState
 from finance.augur.sim.capture import FinancialCapture, FinancialOutput
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE, quantity_scale_for_asset
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
+from finance.augur.sim.ids import CHECKING, AccountId, AgentId, AssetId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME, InterestIncome, Taxable
 from finance.augur.sim.jurisdictions import HYPOTHETICAL_FLAT_TAX, flat_income_tax
 from finance.augur.sim.market_path import Amount, IndexedAmount, MarketPath, Series
@@ -29,6 +28,8 @@ from finance.augur.sim.schedule import Once, Recurring, Schedule
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import TaxProfile, compile_profile
+from finance.augur.sim.testing.accounts import account, ref
+from finance.augur.sim.testing.bills import biller
 from finance.augur.sim.testing.scripted import Scripted
 from finance.augur.sim.world import World
 
@@ -37,18 +38,8 @@ SECOND = SecurityKey(symbol=SecuritySymbol("second"))
 SCALE = quantity_scale_for_asset(STOCK)
 ALICE = AgentId("alice")
 WORLD = AgentId("world")
-CHECKING = AccountId("checking")
 BROKERAGE = AccountId("brokerage")
 TAX = flat_income_tax(HYPOTHETICAL_FLAT_TAX, ordinary_rate=Decimal("0.20"), ltcg_rate=Decimal("0.10"))
-
-
-def ref(agent_id: AgentId, account_id: AccountId = CHECKING) -> AccountRef:
-    return AccountRef(agent_id=agent_id, account_id=account_id)
-
-
-def account(agent_id: AgentId, account_id: AccountId = CHECKING, balance: Decimal | int = 0) -> tuple[AccountRef, int]:
-    """An account and its opening balance."""
-    return ref(agent_id, account_id), USD.quanta(balance)
 
 
 def flat(asset: SecurityKey, price: Decimal | int, *, snapshots: int) -> Series:
@@ -189,16 +180,13 @@ def compose(case: Situation, rollout_id: int) -> World:
         )
     for bill in case.claims:
         world.track(
-            Biller(
+            biller(
                 schedule=bill.schedule,
                 obligation_id=bill.obligation_id,
                 obligation_type="cash_spend",
                 from_account=ref(ALICE),
                 to_account=ref(WORLD),
                 amount_due=bill.amount_due,
-                property_id=None,
-                deduction_category=None,
-                deductible_fraction_ppb=1_000_000_000,
             )
         )
     world.track(Scripted(case.funding(), case.sales))
@@ -369,7 +357,11 @@ def test_fifo_across_two_purchase_dates_preserves_basis_and_tax_character() -> N
                     values=(USD.quanta(100), USD.quanta(150)) + (USD.quanta(200),) * 12,
                 ),
             ),
-            accounts=(account(ALICE, balance=200), account(WORLD, balance=300), account(ALICE, AccountId("proceeds"))),
+            accounts=(
+                account(ALICE, balance=200),
+                account(WORLD, balance=300),
+                account(ALICE, account_id=AccountId("proceeds")),
+            ),
             lots=(),
             claims=(),
             transfers=(Contribution("later", month=1, amount=300),),

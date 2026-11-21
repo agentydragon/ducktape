@@ -64,7 +64,7 @@ class Namespace(Construct):
             self,
             "namespace",
             name=env.namespace,
-            # Runner Pods are Sandbox-owned, not Deployments; nothing here is VPA-managed.
+            # Runner Pods are Sandbox-owned, not Deployments. Static staging services opt in separately.
             vpa=Vpa.DISABLED,
             # Standing agent access to metadata and logs (Kyverno-generated bindings).
             # Environment-specific write access is layered on by its chart.
@@ -134,9 +134,7 @@ def environment_chart(
             history_service.service(env.namespace),
             llm_ingress.service(env.namespace),
             notifications.service(env.namespace),
-            runner_gateway.service(env.namespace),
             runner_gateway.sessions_service(env.namespace),
-            environment_service.service(env.namespace),
             environment_service.environments_service(env.namespace),
             actions.service(env.namespace),
         ],
@@ -147,7 +145,7 @@ def environment_chart(
     notifications_caller = {
         ServiceAccountRef(namespace=env.namespace, name=notifications.NAME): notifications.service(env.namespace).pods
     }
-    runner_gateway_workload.add_stable_services(chart, env)
+    runner_gateway_workload.add_service(chart, env)
     history_service.HistoryService(
         chart,
         "history-service",
@@ -159,11 +157,7 @@ def environment_chart(
         | notifications_caller
         | actions.orchestration_callers(env)
         | actions.session_delegation_callers(env),
-        delegation_actor=(
-            ServiceAccountRef(namespace=env.namespace, name=actions.NAME)
-            if env.actions.orchestration_v1 is not None or env.actions.session_delegation is not None
-            else None
-        ),
+        delegation_actor=sandbox_controller.action_delegation_actor(env),
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,
     ).add_platform_resources()
@@ -208,7 +202,7 @@ def environment_chart(
             runner_scope,
             "launcher-relay",
             namespace=env.namespace,
-            runner_pod=runner_template.spec["pod"],
+            template_name=environment_template_name,
             settings_config_map=relay_settings,
         )
         state_volume = runner_template.spec["stateVolume"]
@@ -272,7 +266,6 @@ def environment_chart(
         "sandbox-controller",
         env,
         environments_image="git.allegedly.works/ducktape-ci/agentplane-environments:unset",
-        gateway_control_target=environment_service.control_target(env.namespace),
         authority=sandbox_controller.environment_service_authority(
             env,
             launchers=environment_launchers,
@@ -307,8 +300,6 @@ def environment_chart(
         env,
         database_url=notifications_database_url,
         actions=actions.service(env.namespace),
-        gateway=runner_gateway.service(env.namespace),
-        gateway_control_target=environment_service.control_target(env.namespace),
         history=history_service.service(env.namespace),
         dispatcher=runner_gateway.sessions_service(env.namespace),
         callers=[app_component.service(env.namespace).pods],

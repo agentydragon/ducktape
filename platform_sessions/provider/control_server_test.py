@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import datetime
 import ipaddress
-import socket
 from collections.abc import Callable
 
 import grpc
@@ -17,6 +16,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import NameOID
 
 from platform_sessions.provider.control_server import SecureControlServer
+from util.net import listen_tcp
 
 _SERVICE = "platform_sessions.provider.SessionProviderControl"
 _TOKEN = "synthetic-control-token-with-at-least-32-chars"
@@ -169,18 +169,16 @@ async def test_secure_server_rejects_bind_conflicts(tmp_path) -> None:
         del context
         return request
 
-    reservation = socket.socket()
-    reservation.bind(("127.0.0.1", 0))
-    reservation.listen()
-    address = f"127.0.0.1:{reservation.getsockname()[1]}"
-    server = _server(token_file, certificate, private_key, handler=handle, bind_address=address)
-    try:
-        with pytest.raises(OSError, match="could not bind TLS"):
-            await server.start()
-        assert server._state == "stopped"
-    finally:
-        reservation.close()
-        await server.stop()
+    with listen_tcp() as reservation:
+        server = _server(
+            token_file, certificate, private_key, handler=handle, bind_address=f"{reservation.host}:{reservation.port}"
+        )
+        try:
+            with pytest.raises(OSError, match="could not bind TLS"):
+                await server.start()
+            assert server._state == "stopped"
+        finally:
+            await server.stop()
 
 
 def test_secure_server_requires_certificate_and_valid_time_bounds(tmp_path) -> None:

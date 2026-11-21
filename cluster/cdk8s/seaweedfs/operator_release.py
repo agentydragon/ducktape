@@ -60,5 +60,4 @@ def chart(app: App) -> Chart:
 
 
 def seaweedfs_operator(chart: Chart, directory: RenderedDirectory) -> Kustomization:
-    name = "seaweedfs-operator"
-    return flux_kustomization(chart, name, directory, suspend=False, timeout="5m")
+    return flux_kustomization(chart, "seaweedfs-operator", directory, suspend=False, timeout="5m")

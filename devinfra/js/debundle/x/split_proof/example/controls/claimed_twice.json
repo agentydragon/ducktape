@@ -1,0 +1,11 @@
+{
+  "why": "Statement 8 (label) is picked by two modules. The spec does not say where it goes.",
+  "fails": "Faithful",
+  "entry": "main.mjs",
+  "modules": {
+    "utils.mjs": ["PI", "square", "area", "isEven", "isOdd", "label"],
+    "registry.mjs": ["registry", "register"],
+    "plugins.mjs": ["#7", "label", "#9"],
+    "main.mjs": ["#10", "#11"]
+  }
+}

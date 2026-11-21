@@ -1,4 +1,10 @@
 import type { ActionPresentation } from "../presentation";
+import { workflowRenderers } from "./workflows";
+import { githubMetadataRenderers } from "./metadata";
+import { discoveryRenderers } from "./discovery";
+import { repositoryRenderers } from "./repository_reads";
+import { issueRenderers } from "./issues";
+import { reviewRenderers } from "./reviews";
 import { createBranchPresentation } from "./create_branch";
 import { createOrUpdateFilePresentation } from "./create_or_update_file";
 import { createPullRequestPresentation } from "./create_pull_request";
@@ -8,7 +14,13 @@ import { searchPullRequestsPresentation } from "./search_pull_requests";
 import { updatePullRequestPresentation } from "./update_pull_request";
 import { updatePullRequestBranchPresentation } from "./update_pull_request_branch";
 
-export const githubRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
+export const githubRenderers: ReadonlyMap<string, ActionPresentation> = new Map<string, ActionPresentation>([
+  ...issueRenderers,
+  ...reviewRenderers,
+  ...repositoryRenderers,
+  ...discoveryRenderers,
+  ...workflowRenderers,
+  ...githubMetadataRenderers,
   ["create_or_update_file", createOrUpdateFilePresentation],
   ["push_files", pushFilesPresentation],
   ["delete_file", deleteFilePresentation],

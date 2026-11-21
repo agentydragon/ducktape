@@ -3,8 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"io"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -23,7 +21,6 @@ import (
 type targetTestServer struct {
 	bbspb.UnimplementedBuildBuddyServiceServer
 	t             *testing.T
-	searchResult  *invocationpb.SearchInvocationResponse
 	pageTokens    []string
 	pages         map[string]*targetpb.GetTargetHistoryResponse
 	statsRequests []*targetpb.GetTargetStatsRequest
@@ -32,7 +29,9 @@ type targetTestServer struct {
 }
 
 func (s *targetTestServer) SearchInvocation(context.Context, *invocationpb.SearchInvocationRequest) (*invocationpb.SearchInvocationResponse, error) {
-	return s.searchResult, nil
+	return &invocationpb.SearchInvocationResponse{
+		Invocation: []*invocationpb.Invocation{{Acl: &aclpb.ACL{GroupId: "test-group"}}},
+	}, nil
 }
 
 func (s *targetTestServer) GetTargetHistory(_ context.Context, req *targetpb.GetTargetHistoryRequest) (*targetpb.GetTargetHistoryResponse, error) {
@@ -161,9 +160,6 @@ func TestTargetHistoryPaginatesMergesAndFiltersBothOutputModes(t *testing.T) {
 			],"nextPageToken":"page-4"}`)
 			service := &targetTestServer{
 				t: t,
-				searchResult: &invocationpb.SearchInvocationResponse{
-					Invocation: []*invocationpb.Invocation{{Acl: &aclpb.ACL{GroupId: "test-group"}}},
-				},
 				pages: map[string]*targetpb.GetTargetHistoryResponse{
 					"":       decodeTargetHistoryPage(t, firstPage),
 					"page-2": decodeTargetHistoryPage(t, secondPage),
@@ -172,9 +168,7 @@ func TestTargetHistoryPaginatesMergesAndFiltersBothOutputModes(t *testing.T) {
 			}
 			startBuildBuddyTestServer(t, service)
 
-			previousJSONOutput := jsonOutput
-			jsonOutput = tc.jsonOutput
-			t.Cleanup(func() { jsonOutput = previousJSONOutput })
+			setJSONOutput(t, tc.jsonOutput)
 
 			cmd := targetHistorySubCmd()
 			if err := cmd.Flags().Set("repo", "https://repo.test/project"); err != nil {
@@ -185,7 +179,7 @@ func TestTargetHistoryPaginatesMergesAndFiltersBothOutputModes(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			output, err := captureTargetCommandStdout(t, func() error { return cmd.RunE(cmd, nil) })
+			output, err := captureStdout(t, func() error { return cmd.RunE(cmd, nil) })
 			if err != nil {
 				t.Fatalf("run target history: %v", err)
 			}
@@ -256,17 +250,10 @@ func TestTargetStatsPassesFiltersAndPreservesDefaultWindow(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			service := &targetTestServer{
-				t: t,
-				searchResult: &invocationpb.SearchInvocationResponse{
-					Invocation: []*invocationpb.Invocation{{Acl: &aclpb.ACL{GroupId: "test-group"}}},
-				},
-			}
+			service := &targetTestServer{t: t}
 			startBuildBuddyTestServer(t, service)
 
-			previousJSONOutput := jsonOutput
-			jsonOutput = true
-			t.Cleanup(func() { jsonOutput = previousJSONOutput })
+			setJSONOutput(t, true)
 
 			cmd := targetStatsSubCmd()
 			if err := cmd.Flags().Set("repo", "https://repo.test/project"); err != nil {
@@ -277,7 +264,7 @@ func TestTargetStatsPassesFiltersAndPreservesDefaultWindow(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if _, err := captureTargetCommandStdout(t, func() error { return cmd.RunE(cmd, nil) }); err != nil {
+			if _, err := captureStdout(t, func() error { return cmd.RunE(cmd, nil) }); err != nil {
 				t.Fatalf("run target stats: %v", err)
 			}
 			if len(service.statsRequests) != 1 {
@@ -319,9 +306,6 @@ func TestTargetTimeRangeRejectsReversedBounds(t *testing.T) {
 func TestTargetFlakesPaginatesAndReturnsCombinedJSON(t *testing.T) {
 	service := &targetTestServer{
 		t: t,
-		searchResult: &invocationpb.SearchInvocationResponse{
-			Invocation: []*invocationpb.Invocation{{Acl: &aclpb.ACL{GroupId: "test-group"}}},
-		},
 		flakePages: map[string]*targetpb.GetTargetFlakeSamplesResponse{
 			"":       decodeTargetFlakePage(t, []byte(`{"samples":[{"invocationId":"sample-1"},{"invocationId":"sample-2"}],"nextPageToken":"page-2"}`)),
 			"page-2": decodeTargetFlakePage(t, []byte(`{"samples":[{"invocationId":"sample-3"}]}`)),
@@ -329,9 +313,7 @@ func TestTargetFlakesPaginatesAndReturnsCombinedJSON(t *testing.T) {
 	}
 	startBuildBuddyTestServer(t, service)
 
-	previousJSONOutput := jsonOutput
-	jsonOutput = true
-	t.Cleanup(func() { jsonOutput = previousJSONOutput })
+	setJSONOutput(t, true)
 
 	cmd := targetFlakesSubCmd()
 	for name, value := range map[string]string{
@@ -345,7 +327,7 @@ func TestTargetFlakesPaginatesAndReturnsCombinedJSON(t *testing.T) {
 		}
 	}
 	runStarted := time.Now()
-	output, err := captureTargetCommandStdout(t, func() error { return cmd.RunE(cmd, []string{"//pkg:flaky"}) })
+	output, err := captureStdout(t, func() error { return cmd.RunE(cmd, []string{"//pkg:flaky"}) })
 	runFinished := time.Now()
 	if err != nil {
 		t.Fatalf("run target flakes: %v", err)
@@ -396,9 +378,6 @@ func TestTargetFlakesPaginatesAndReturnsCombinedJSON(t *testing.T) {
 func TestTargetFlakesRejectsRepeatedPageTokenBeforeOutput(t *testing.T) {
 	service := &targetTestServer{
 		t: t,
-		searchResult: &invocationpb.SearchInvocationResponse{
-			Invocation: []*invocationpb.Invocation{{Acl: &aclpb.ACL{GroupId: "test-group"}}},
-		},
 		flakePages: map[string]*targetpb.GetTargetFlakeSamplesResponse{
 			"":       decodeTargetFlakePage(t, []byte(`{"samples":[{"invocationId":"sample-1"}],"nextPageToken":"page-2"}`)),
 			"page-2": decodeTargetFlakePage(t, []byte(`{"samples":[{"invocationId":"sample-2"}],"nextPageToken":"page-2"}`)),
@@ -406,15 +385,13 @@ func TestTargetFlakesRejectsRepeatedPageTokenBeforeOutput(t *testing.T) {
 	}
 	startBuildBuddyTestServer(t, service)
 
-	previousJSONOutput := jsonOutput
-	jsonOutput = true
-	t.Cleanup(func() { jsonOutput = previousJSONOutput })
+	setJSONOutput(t, true)
 
 	cmd := targetFlakesSubCmd()
 	if err := cmd.Flags().Set("repo", "https://repo.test/project"); err != nil {
 		t.Fatal(err)
 	}
-	output, err := captureTargetCommandStdout(t, func() error { return cmd.RunE(cmd, []string{"//pkg:flaky"}) })
+	output, err := captureStdout(t, func() error { return cmd.RunE(cmd, []string{"//pkg:flaky"}) })
 	if err == nil {
 		t.Fatal("run target flakes with a repeated page token succeeded")
 	}
@@ -424,28 +401,4 @@ func TestTargetFlakesRejectsRepeatedPageTokenBeforeOutput(t *testing.T) {
 	if len(output) != 0 {
 		t.Errorf("partial JSON was printed before pagination completed: %s", output)
 	}
-}
-
-func captureTargetCommandStdout(t *testing.T, run func() error) ([]byte, error) {
-	t.Helper()
-	reader, writer, err := os.Pipe()
-	if err != nil {
-		return nil, err
-	}
-	previousStdout := os.Stdout
-	os.Stdout = writer
-	defer func() {
-		os.Stdout = previousStdout
-		_ = reader.Close()
-	}()
-	runErr := run()
-	if err := writer.Close(); err != nil {
-		return nil, err
-	}
-	os.Stdout = previousStdout
-	output, err := io.ReadAll(reader)
-	if err != nil {
-		return nil, err
-	}
-	return output, runErr
 }

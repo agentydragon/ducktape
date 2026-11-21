@@ -399,15 +399,8 @@ func (r *Reconciler) natives(ctx context.Context, o owner, ownerName string) (ma
 }
 
 func matches(actual, wanted client.Object) bool {
-	for key, value := range wanted.GetLabels() {
-		if actual.GetLabels()[key] != value {
-			return false
-		}
-	}
-	for key, value := range wanted.GetAnnotations() {
-		if actual.GetAnnotations()[key] != value {
-			return false
-		}
+	if !matchesIdentity(actual, wanted) {
+		return false
 	}
 	actualRef, actualSubjects := nativeRoleAndSubjects(actual)
 	wantedRef, wantedSubjects := nativeRoleAndSubjects(wanted)

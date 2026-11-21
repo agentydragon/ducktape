@@ -16,27 +16,6 @@ Environment variables:
     PROPS_E2E_HOST_HOSTNAME: Hostname for containers to reach host services.
         - Default: "host.docker.internal" (Docker bridge networking)
         - Set to "127.0.0.1" for host networking (e.g., CI with --network=host)
-
-Usage:
-    async def test_critic_completes(e2e_stack, all_files_scope, critic_image):
-        mock = make_critic_mock()
-        async with e2e_stack({DEFAULT_TEST_MODEL: mock}, images=[critic_image]) as stack:
-            image = await stack.registry.resolve_image(AgentType.CRITIC, BUILTIN_TAG)
-            run_id = await stack.registry.run_critic(
-                image=image,
-                example=all_files_scope,
-                model=stack.model,
-                timeout_seconds=60,
-                parent_run_id=None,
-                budget_usd=5.0,
-            )
-            # Assert on database state
-
-    # Multi-model usage:
-    async def test_orchestration(e2e_stack, ...):
-        mocks = {"optimizer-model": opt_mock, "critic-model": crit_mock}
-        async with e2e_stack(mocks, images=[...]) as stack:
-            ...
 """
 
 from __future__ import annotations
@@ -68,9 +47,9 @@ from props.orchestration.agent_registry import AgentRegistry, ResolvedImage
 from props.orchestration.docker_env import PROPS_NETWORK_NAME
 from props.orchestration.docker_executor import DockerExecutor
 from props.registry_proxy.app import create_app as create_registry_proxy_app
-from props.testing.constants import DEFAULT_TEST_MODEL
 from props.testing.fake_openai_server import FakeOpenAIServer
-from util.testing.asgi import bind_http_server
+from props.testing.models import DEFAULT_TEST_MODEL
+from testing.asgi import bind_http_server
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +106,7 @@ class E2EStack:
 
     @property
     def image_digests(self) -> dict[str, str]:
-        """repo_name → digest (sha256:...), for backward compatibility."""
+        """repo_name → digest (sha256:...)."""
         return {name: img.digest for name, img in self.resolved_images.items()}
 
 
@@ -202,7 +181,7 @@ async def _make_stack(
             with db.session() as session:
                 sync_model_metadata_with_session(session, config)
                 session.commit()
-            deps = BackendDeps(config=config, registry_proxy_config=registry_proxy_config, backend_url=backend_url)
+            deps = BackendDeps(config=config, registry_proxy_config=registry_proxy_config)
 
             async with (
                 AsyncDatabase(db.config) as proxy_db,
@@ -218,7 +197,7 @@ async def _make_stack(
                     extra_hosts=HOST_GATEWAY,
                     pull_auth={"username": db.config.user, "password": db.config.password},
                 )
-                registry = AgentRegistry(
+                async with AgentRegistry(
                     executor=executor,
                     db=db,
                     db_config=db.config,
@@ -227,9 +206,7 @@ async def _make_stack(
                     registry_config=registry_proxy_config,
                     llm_base_url=llm_proxy_url,
                     agent_registry_url=registry_proxy_server.origin,
-                )
-
-                try:
+                ) as registry:
                     proxy_url = f"localhost:{registry_proxy_server.port}"
                     crane = bazel_crane(registry=proxy_url, username=db.config.user, password=db.config.password)
                     resolved_images: dict[str, ResolvedImage] = {}
@@ -243,8 +220,6 @@ async def _make_stack(
                         for resolved_image in resolved_images.values():
                             tasks.create_task(executor.ensure_image(resolved_image.oci_ref))
                     yield E2EStack(registry=registry, model=model, resolved_images=resolved_images)
-                finally:
-                    await registry.close()
 
     finally:
         fake_openai.check_errors()

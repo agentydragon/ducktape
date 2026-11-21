@@ -11,6 +11,8 @@ from finance.augur.sim.situs import compile_situs
 
 # Month 0 of a test world's property-tax calendar.
 START_YEAR = 2024
+# Who owes a property's tax unless a test names another owner.
+DEFAULT_OWNER = AgentId("alice")
 
 
 def flat_parcel(rate: Decimal) -> Parcel:
@@ -37,10 +39,11 @@ def flat_parcel(rate: Decimal) -> Parcel:
 UNTAXED = flat_parcel(Decimal(0))
 
 
-def property_tax(property_id: PropertyId, collector: AgentId) -> PropertyTaxPolicy:
+def property_tax(property_id: PropertyId, collector: AgentId, *, owner: AgentId = DEFAULT_OWNER) -> PropertyTaxPolicy:
+    """`owner` pays the property's tax to `collector`, `checking` to `checking`, from the start of the calendar."""
     return PropertyTaxPolicy(
         property_id=property_id,
-        owner_agent_id=AgentId("alice"),
+        owner_agent_id=owner,
         from_account_id=AccountId("checking"),
         tax_authority_agent_id=collector,
         tax_authority_account_id=AccountId("checking"),

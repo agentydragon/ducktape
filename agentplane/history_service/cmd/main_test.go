@@ -27,8 +27,8 @@ import (
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"google.golang.org/grpc"
@@ -37,7 +37,6 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // callDeadline only bounds a call that stopped making progress, so a hang fails the test.
@@ -57,19 +56,6 @@ func useAPIServer(server *kubeapiserver.Server) (err error) {
 		return err
 	}
 	writerToken, err = server.WorkloadToken(ctx, auth.Account{Namespace: "test-sandbox-namespace", Name: "test-sandbox"}, audiences...)
-	if err != nil {
-		return err
-	}
-	account, err := server.Clientset.CoreV1().ServiceAccounts("test-sandbox-namespace").Get(ctx, "test-sandbox", metav1.GetOptions{})
-	if err != nil {
-		return err
-	}
-	controller := true
-	account.OwnerReferences = []metav1.OwnerReference{{
-		APIVersion: sandboxapi.GroupVersion.String(), Kind: sandboxapi.SandboxKind,
-		Name: "test-sandbox", UID: "test-sandbox-uid", Controller: &controller,
-	}}
-	_, err = server.Clientset.CoreV1().ServiceAccounts("test-sandbox-namespace").Update(ctx, account, metav1.UpdateOptions{})
 	return err
 }
 
@@ -222,15 +208,8 @@ func TestIncrementalCompactionFlagPreservesPublicReadsAndNativeEvidence(t *testi
 					t.Fatalf("event %d differs", index)
 				}
 			}
-			db, err := sql.Open("postgres", integrationDatabase.URL)
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() { _ = db.Close() })
-			var blocks int
-			if err := db.QueryRowContext(t.Context(), "SELECT count(*) FROM session_event_block WHERE session_id=$1", sessionID).Scan(&blocks); err != nil {
-				t.Fatal(err)
-			}
+			db := postgres.Open(t, integrationDatabase.URL)
+			blocks := postgres.Count(t, db, "SELECT count(*) FROM session_event_block WHERE session_id=$1", sessionID)
 			if (blocks > 0) != compact {
 				t.Fatalf("compact=%t created %d blocks", compact, blocks)
 			}

@@ -24,7 +24,6 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":types",
-        "//mcp_infra:constants",
         "//util/exec:models",
         "@pypi//aiodocker",
         "@pypi//anyio",

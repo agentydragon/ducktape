@@ -1,29 +1,24 @@
 # Session Dispatcher caller authority
 
-This contract governs SessionDispatcher gRPC methods served by the Runner Gateway and the generated
+This contract governs SessionDispatcher gRPC methods served by Sessions and the generated
 HTTP/JSON facade served by the App.
 It scopes existing Sessions and existing environments; it does not create environments or select templates.
 
 ## Process bootstrap
 
-The Sessions process loads its strict YAML settings from `AGENTPLANE_SESSIONS_CONFIG_FILE`
-or `AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE`. Its explicit runtime database Secret uses
-`AGENTPLANE_SESSIONS_DISPATCHER_DATABASE_URL` or
-`AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL`. Empty values are absent; identical
-nonempty aliases are accepted, and conflicting values fail startup without disclosing their
-values. Neither prefix enables generic per-setting environment overrides. File paths are supplied
-by configuration and need no baked-in mount root. YAML keys, database/Goose names, wire names,
-method grants and exact service SPIFFE IDs are independent of the bootstrap prefix.
+The Sessions process loads strict YAML settings from `AGENTPLANE_SESSIONS_CONFIG_FILE`.
+The database URL comes from the explicit runtime Secret input
+`AGENTPLANE_SESSIONS_DISPATCHER_DATABASE_URL`.
 
 ## Caller proof
 
-- One TLS gRPC listener serves Dispatcher, Runtime proxy, Executor and health. Dispatcher admits
+- The TLS listener at `sessions:8080` serves Dispatcher and gRPC health. Dispatcher admits
   live workload Identity SVIDs, configured exact service SVIDs and configured typed service
-  delegation. Runtime proxy and Executor have separate service-only grants; EnvironmentService is
-  served by Environments on its own listener. Gateway constructs no TokenReview receiver.
+  delegation. Environments serves EnvironmentService, Runtime proxy, HarnessHost and Executor
+  on its own listener.
 - Workload traffic reaches the shared TLS listener through central-proxy CONNECT and presents its
-  own SVID. Live credential and Identity UID resolution are unchanged, including standing
-  credentials with no Sandbox or Pod. No new Environment attachment requirement is introduced.
+  own SVID. Live credential and Identity UID resolution accepts standing credentials with no
+  Sandbox or Pod, so no Environment attachment is required.
 - Request fields never assert caller identity. A service principal carries no fabricated account
   UID or Pod, and certificate-plus-bearer authentication is refused. Retained ServiceAccount
   attribution and historical Session records remain readable without admitting new bearer calls.
@@ -42,9 +37,8 @@ actor's independent wake grant while keeping the effective Identity in attributi
 require a separate service wake grant.
 Both allowlists default empty and are configured only after receiver image pins.
 
-Additive migration 18 retains service actor, optional effective Identity and Action correlation in
-separate service attribution columns. Existing account and Identity evidence is unchanged, and a
-retry never rewrites it. Service wake attempts use their own budget table keyed by SPIFFE ID, never
+Additive migration 19 retains service actor, optional effective Identity and Action correlation in
+separate service attribution columns. Service wake attempts use their own budget table keyed by SPIFFE ID, never
 an account-shaped synthetic key. Old binaries see new actor attribution as absent, so rollback to
 an old receiver must precede caller enablement or explicitly assess pending service-attributed work.
 
@@ -52,7 +46,7 @@ an old receiver must precede caller enablement or explicitly assess pending serv
 
 - `dispatcher_service_delegation` names exact service actors and exact Dispatcher RPC methods.
   Middleware verifies the actor's SVID, typed Action provenance and the effective Identity's live
-  UID before handlers run. The legacy account-based `delegation` setting is ignored.
+  UID before handlers run.
 - Delegated calls use ordinary Identity Session ownership and `bind_session` checks. Actor grants
   never confer component privileges on the effective Identity. The Action actor's service broker
   grant applies only to automatic wake and does not lend component authority to that Identity.
@@ -64,7 +58,7 @@ an old receiver must precede caller enablement or explicitly assess pending serv
 - Wake eligibility ordinarily uses the effective Identity. A row carrying Action proof uses its
   verified service actor's independent exact service grant; the effective Identity remains in row
   attribution. No credential or Action lease token is persisted, and Dispatcher does no Actions or
-  App lookup. Existing lifecycle, ownership and attachment rules are unchanged.
+  App lookup.
 
 ## Session binding
 
@@ -82,28 +76,23 @@ an old receiver must precede caller enablement or explicitly assess pending serv
 - `CreateSession` requires `session_id` to be a canonical lowercase UUID before reading Sandbox state or recording a
   Session. Exact retries and authorized reads still find the record after its required Environment disappears.
   Explicit Session deletion is separate and not yet implemented; callers must not deliberately reuse a Session UUID
-  after explicit deletion. No permanent Session UUID marker is planned, and retained History can reject conflicting reuse.
-- A configured Pod-bound Dispatcher backend retains its existing privileged `CreateSession` path. A normal
-  ServiceAccount caller cannot choose a Session execution principal by supplying strings. An Identity caller may
+  after explicit deletion, and retained History can reject conflicting reuse.
+- A configured service caller keeps its privileged `CreateSession` path. An Identity caller may
   create only an `environment_hosted` Session and must have a current `bind_session` grant for the exact live
   Sandbox named in the placement. Central placement, an unbound Sandbox, and a target with a pending deletion or
   operator-requested stop remain refused for Identity creation.
 - An existing `CreateSession` request is a read-only idempotent retry. Before comparing its immutable request,
-  Dispatcher checks the same retained owner UID or configured Pod-bound backend authority as receipt reads; an
+  Dispatcher checks the same retained owner UID or configured service-caller authority as receipt reads; an
   Identity creator can recover its receipt only when the retained creator Identity name and UID match. An
   unauthorized caller gets `NOT_FOUND` without conflict details. The comparison is shared with
   transactional creation and includes exact environment name/UID, deterministic spec bytes, and optional
   setup bytes. Matching retries do not consult live environment inventory or change materialization,
-  attribution, pending principal binding or wake state. Delegated calls still pass middleware's current
+  attribution or wake state. Delegated calls still pass middleware's current
   effective-identity validation and never inherit their actor's privilege. An absent row still requires
   normal fresh admission; this path provides no historical deletion registry.
 - Every new opening retains the target execution Identity as its immutable logical principal and stores the
   authenticated creator separately. Ordinary Session reads continue to follow execution ownership; receipt
   recovery follows only the exact creator check above.
-- Before the controller has created the ServiceAccount, a configured Pod-bound backend may open against the
-  expected `<sandbox namespace>/<sandbox name>` account with a pending UID. Reconciliation binds the first UID
-  only after reading the exact Sandbox UID and verifying the ServiceAccount's controlling OwnerReference names
-  that Sandbox UID. The bind is conditional and cannot overwrite a UID already recorded.
 - Dispatcher is the authority for the Identity a Session executes as. Every new opening records the
   Identity its Sandbox names in `spec.identity`, read live with its UID, beside any execution ServiceAccount;
   a Sandbox naming an absent Identity cannot open a Session (`FAILED_PRECONDITION`). A Sandbox naming an
@@ -117,7 +106,7 @@ an old receiver must precede caller enablement or explicitly assess pending serv
   retained Sessions keep their recorded Identity and fail their next command after a rebind.
   `Session.identity` reads that Identity back (absent when the Sandbox named none), beside
   `Session.execution_identity`, the execution ServiceAccount.
-- An Identity caller (a workload SVID naming an Identity, admitted under the Gateway's configured
+- An Identity caller (a workload SVID naming an Identity, admitted under the configured
   `policy_namespace`) is never privileged. A native `CreateSession` requires an explicit `bind_session`
   grant even on a Sandbox acting as the caller; acting as the Identity alone does not authorize lifecycle control.
   It reads, writes, cancels and watches only Sessions whose recorded execution
@@ -128,21 +117,19 @@ an old receiver must precede caller enablement or explicitly assess pending serv
   must act as that live Identity incarnation and its `resumePolicy.allowOwnServiceAccount` must permit its
   own principal to resume it. Messaging between Sessions of one Identity, and the wake it causes, is implied;
   a direct resume or wake request by an Identity still has no rule type and is refused.
-- Legacy openings whose owner columns are NULL stay distinct from new/pending rows. The current owner of a
-  same-named ServiceAccount is not retroactively granted those Sessions.
 
 ## Method scope
 
 - SubmitInput, ChangeModel, ChangeReasoningEffort and InterruptTurn require an existing Dispatcher Session
-  record for every caller, including configured Pod-bound backends. The supplied Sandbox name and UID must
+  record for every caller, including configured service callers. The supplied Sandbox name and UID must
   match that record. Missing records and records hidden from the caller return `NOT_FOUND`, before command
   conflict details. No Session record is reconstructed from Runtime journals or History.
 - Normal Session commands and CancelDispatch require the caller to match
-  the opening's execution account and Sandbox UID. Normal calls also compare the authenticated UID with the
-  current controller-owned account UID. A changed or missing managed account cannot authorize a write.
-- GetSession, ListSessions, WatchSessions, GetDispatch and ListDispatches filter retained rows by the recorded target account and UID.
-  These reads do not require a live Sandbox or ServiceAccount. Old rows without a trustworthy owner are hidden
-  from normal account callers but remain visible through existing privileged backend behavior.
+  the opening's execution Identity and Sandbox UID. Normal calls also require the Sandbox to still name that
+  Identity incarnation; a changed or missing Identity cannot authorize a write.
+- GetSession, ListSessions, WatchSessions, GetDispatch and ListDispatches filter retained rows by the recorded execution Identity.
+  These reads do not require a live Sandbox or Identity. Old rows without a trustworthy owner are hidden
+  from Identity callers but remain visible to service callers.
 - WatchDispatches applies the retained Session read scope to live rows and deletion receipts, authorizes
   every request, and resumes from an opaque filter-bound version token. The token carries no caller identity;
   a filter mismatch returns `INVALID_ARGUMENT`, and a cursor behind retained coverage returns `OUT_OF_RANGE`.
@@ -156,17 +143,17 @@ an old receiver must precede caller enablement or explicitly assess pending serv
   Cancellation keeps its existing retained-receipt authority, including privileged backend access.
   Interrupts use this same durable admission, delivery and cancellation path, with the target turn ID
   checked by the Runtime at admission. A delayed interrupt cannot target a successor turn.
-- The worker checks the live managed account before binding a pending owner and again
-  immediately before Runner delivery. Source errors fail closed; missing pending accounts remain queued, while
-  a changed bound account fails queued work instead of delivering it under the replacement identity.
+- The worker checks the live execution Identity before placement and again
+  immediately before Runner delivery. Source errors fail closed and retry, while
+  a changed Identity fails queued work instead of delivering it under the replacement.
 - The delivery router requires the Session record and checks its stored Sandbox name and UID for
   native and central Sessions before selecting the backend. A missing record never falls back to
   a native Runtime. This check is not an atomic fence against deletion after the read; managed
   quiescence and Runtime's admission barrier remain separate.
 - Automatic wake is attempted only when the live Sandbox has `spec.wakeOnSend: true`. The shared lifecycle service
-  rechecks the target UID and retained caller: a ServiceAccount's current UID, or for an Identity caller,
-  that the Sandbox acts as that live Identity incarnation under its current `resumePolicy`. `wake_callers`
-  and `wake_service_callers` are separate automatic-only broker grants. An Action-attributed row is assessed
+  rechecks the target UID and retained caller: for an Identity caller, that the Sandbox acts as that live
+  Identity incarnation under its current `resumePolicy`; a retained ServiceAccount caller is never authorized.
+  `wake_service_callers` is an automatic-only broker grant. An Action-attributed row is assessed
   as its verified service actor through the Dispatcher's exact service broker grant; its effective Identity
   remains in the row attribution for Session authority. These grants do not authorize explicit resume or
   override `SuspendedBy=Requested`. Admission-time eligibility never grants wake authority.
@@ -200,8 +187,7 @@ Sandbox Pods retain proxy-only egress. Their credential-holding relay reaches th
 listener through central CONNECT; the listener authenticates the Runner SVID before applying the
 Dispatcher method rules. EnvironmentService has its own listener. The configured CLI credential string
 remains inert for compatibility. Backend callers use the same listener with the configured
-Dispatcher certificate admission and exact grants. A concrete MCP/client and History provenance propagation remain
-outside this transport change.
+Dispatcher certificate admission and exact grants.
 
 ## Typed delivery observations
 
@@ -211,8 +197,8 @@ storage, Get/List/Watch and `sessions__observe_input`. A changed assessment is a
 when delivery state and reason are unchanged. An absent stored assessment reads as
 `WAKE_STATE_NOT_EVALUATED`; this does not claim a wake request was authorized or attempted.
 
-Automatic wake is assessed and requested through the shared lifecycle manager by the Gateway's
-in-process DeliveryWorker. The worker preserves row attribution and records the manager's typed
+Automatic wake is assessed and requested through the shared lifecycle manager by the Sessions
+binary's in-process DeliveryWorker. The worker preserves row attribution and records the manager's typed
 assessment; Action proof selects the actor's service broker grant for wake. See the lifecycle manager
 SPEC for its policy and mutation contract.
 
@@ -242,36 +228,36 @@ new live environment omitted by the earlier snapshot cannot be permanently fence
 confirm absence aborts cleanup. This is not an atomic commit with Kubernetes deletion: if a removed environment has no stored work, a first admission
 using stale inventory can still commit before cleanup observes its row. The next reconciliation
 removes it and closes admission permanently. During a rolling upgrade, the fence applies only after
-all admitting/cleanup Gateway replicas use this protocol; the additive migration alone does not
+all admitting/cleanup Sessions replicas use this protocol; the additive migration alone does not
 fence old writers.
 
-## Native opening outcomes and dependent commands
+## Opening outcomes and dependent commands
 
-The Dispatcher retains logical existence and the immutable creation request after a native owner
+The Dispatcher retains logical existence and the immutable creation request after its placement owner
 rejects materialization. An exact opening retry reads that receipt; changing configuration requires
-a new Session UUID. Runtime admission reserves a Session, not a running native harness.
+a new Session UUID. Placement-owner admission reserves a Session, not a running harness.
 
-A native owner `CreateSession` response of `INVALID_ARGUMENT` proves validation rejected the request before
+A native Runtime `CreateSession` response of `INVALID_ARGUMENT` proves validation rejected the request before
 reservation; `ALREADY_EXISTS` reports a conflicting retained request. Dispatcher records these as
 `SESSION_MATERIALIZATION_FAILED` and, in the same transaction, fails commands still `QUEUED_IN_DISPATCHER` and never forwarded with
-`session_opening_rejected`; a previously attempted command becomes `UNKNOWN`. It does not alter delivering or admitted commands. Admission and
+`session_rejected`; a previously attempted command becomes `UNKNOWN`. It does not alter delivering or admitted commands. Admission and
 settlement serialize on the Session ID, and settlement checks the current Session lease holder.
 A command admitted first is included; a later new queued command is refused with
 `FAILED_PRECONDITION` without a stored receipt. Exact existing-command retries still return the
 original receipt after ordinary caller authorization.
 
 `ABORTED`, `UNAVAILABLE` and deadline responses keep the existing same-ID reservation reconciliation
-and backoff. Runtime recovers the durable reservation before native preparation; these retries are
-not permission to replay uncertain native harness effects. Other native opening errors, including
+and backoff. The placement owner recovers its durable reservation before preparation; these retries do
+not authorize replay of uncertain effects. Other opening errors, including
 `INTERNAL`, `UNKNOWN`, `RESOURCE_EXHAUSTED` and unproven preconditions, become `UNKNOWN`. Their
-pending commands remain queued with `session_opening_unconfirmed`; they do not wake the environment
-or reach Runtime. New queued commands are refused as above. Older `FAILED` openings lack proof of
+pending commands remain queued with `session_unconfirmed`; they do not wake the environment
+or reach the placement owner. New queued commands are refused as above. Older `FAILED` openings lack proof of
 rejection and receive the same hold without rewriting their stored outcome. Held commands remain
 cancellable. Automatic resolution of those held openings is not provided.
 
-These rules apply to native openings after all Dispatcher replicas run this protocol. Central
-sampler admission retains its existing behavior; new commands require a Dispatcher Session record.
-Deletion cleanup, retained History and UUID reuse policy are unchanged.
+For central openings, `INVALID_ARGUMENT` and `ALREADY_EXISTS` are also unconfirmed: the sampler
+may validate current configuration before checking a reservation from an earlier timed-out attempt.
+The command hold rules apply to both placements after all Dispatcher replicas run this protocol.
 
 ## Possible command forwarding and deletion outcomes
 
@@ -373,9 +359,9 @@ established; callers must not infer its UID from a current same-name account.
 ([values](#method-scope)): `SESSION_MATERIALIZATION_ACCEPTED` means the owner durably admitted the
 logical Session, not that a harness is ready, a turn completed or History projected a Thread.
 
-**Gotcha:** the current migration baselines assume Dispatcher migration 11, central sampler
-migration 10 and History migration 8 have run; a database restored from before them must run an
-image that still carries those migrations first.
+**Gotcha:** each migration baseline adopts only a database whose previous chain has completed:
+Dispatcher migration 13, central sampler migration 14 and History migration 17. A database restored
+from before them must run an image that still carries those migrations first.
 
 ## Session delivery lease
 
@@ -389,8 +375,7 @@ in flight can still arrive, so Runtime command-ID deduplication remains required
 A new holder requeues only its Session's in-flight materialization and commands. It preserves the
 committed `delivery_attempted` fact and command IDs. Pending-work scans include in-flight work
 with no runnable queued head. The head rule continues to serialize commands within a Session.
-Acquiring a lease requires only the Session ID, including when no Environment exists; this does
-not change current Session admission or Environment attachment contracts.
+Acquiring a lease requires only the Session ID, including when no Environment exists.
 
 Worker writes take the shared side of the existing Sandbox deletion advisory lock, then the
 Session admission advisory lock, then fence the Session lease. Environment cleanup takes the
@@ -445,7 +430,6 @@ invalidations to old replicas. This scheduling change needs no schema migration;
 `ListSessions`' retained-owner read scope, including waiting and failed materialization without
 History or a live Environment. Configured component services read all Sessions; Identity callers
 read only their exact retained execution Identity. Typed delegation remains method-scoped.
-The existing service caller/delegation settings accept this RPC; no new caller setting is required.
 
 An empty `resume_token` streams current Session records in version order, then `CaughtUp`.
 Every frame includes an opaque, versioned resume token containing the last version and a digest
@@ -510,9 +494,9 @@ Lease renewal revalidates suspension against the uncached API; uncertainty ends 
 DELETED is permanent for the exact UID and survives observer loss.
 
 Central observation reuses the same stream processing, wire-version guard, lease renewal and epoch
-fencing. The existing `central_sampler` target supplies its connection and Sessions SVID; no new
-setting is needed. Its singleton `central_sampler=true` row in `sandbox_activity_watch` leases one
-sampler watch across all Dispatcher replicas, independently of every executor Sandbox. Hosted rows
+fencing. The existing `central_sampler` target supplies its connection and Sessions SVID. Its
+singleton `central_sampler=true` row in `sandbox_activity_watch` leases one sampler watch across all
+Dispatcher replicas, independently of every executor Sandbox. Hosted rows
 retain their unique Sandbox UID; exactly one key kind is present per row. A lost replica is replaced
 after lease expiry, with a new epoch and full snapshot. The sampler admits the Sessions SVID and
 filters snapshots to the service owner's Sessions. Only locally recorded central Sessions are

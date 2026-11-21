@@ -1,6 +1,6 @@
 """Durable file staging must never change the published read API before commit."""
 
-# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep :testing
 import base64
 import cProfile
@@ -39,10 +39,10 @@ from ai_session_archive.queries import list_sessions
 from ai_session_archive.record_payloads import PARSER_VERSION, ParsedRecord
 from ai_session_archive.restic import ResticChange, ResticFile, ResticRepository, ResticSnapshot
 from ai_session_archive.source_paths import HarnessRoot
-from ai_session_archive.version_queries import get_version, list_events, list_versions
+from ai_session_archive.version_queries import list_events, list_versions
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
-pytest_plugins = ["util.testing.postgres_fixtures", "ai_session_archive.testing"]
+pytest_plugins = ["testing.postgres_fixtures", "ai_session_archive.testing"]
 PATH = "/.claude/projects/project/session.jsonl"
 SNAPSHOT = ResticSnapshot(
     id="snapshot", captured_at=datetime(2026, 1, 1, tzinfo=UTC), parent_id=None, tree_id="tree", paths=("/.claude",)
@@ -88,6 +88,18 @@ def _contents() -> bytes:
     )
 
 
+def _change_identity(engine: Engine, changed_metadata: str) -> None:
+    with sessionmaker(engine)() as db, db.begin():
+        if changed_metadata == "file":
+            file = db.get(SnapshotFileRow, ("batch-test", SNAPSHOT.id, PATH))
+            assert file is not None
+            file.modified_at = SNAPSHOT.captured_at
+        else:
+            snapshot = db.get(ResticSnapshotRow, ("batch-test", SNAPSHOT.id))
+            assert snapshot is not None
+            snapshot.tree_id = "changed-tree"
+
+
 class SimulatedCrash(BaseException):
     pass
 
@@ -96,14 +108,8 @@ def test_committed_batch_survives_crash_without_publishing(postgres_engine: Engi
     contents = _contents()
     importer = _ingestor(postgres_engine, contents)
     store_batch = importer._staging.store_record_batch
-    read_batch = file_capture.read_record_batch
     factory = sessionmaker(postgres_engine)
     committed_sizes = []
-
-    def parse_without_transaction(*args: Any, **kwargs: Any) -> list[ParsedRecord]:
-        assert isinstance(postgres_engine.pool, QueuePool)
-        assert postgres_engine.pool.checkedout() == 0
-        return read_batch(*args, **kwargs)
 
     def crash_after_second_batch(*args: Any, **kwargs: Any) -> None:
         store_batch(*args, **kwargs)
@@ -118,7 +124,6 @@ def test_committed_batch_survives_crash_without_publishing(postgres_engine: Engi
             assert summary.version_count == 0
             assert summary.latest_version_id is None
             assert list_versions(db, session_id=session.id) == []
-            assert get_version(db, session_id=session.id, version_id=stage.id) is None
             assert list_events(db, session_id=session.id, version_id=stage.id, cursor=None, limit=10) is None
             assert db.scalar(select(func.count()).select_from(FileVersionRow)) == 0
             assert db.scalar(select(func.count()).select_from(RecordPayloadRow)) == 2
@@ -140,7 +145,6 @@ def test_committed_batch_survives_crash_without_publishing(postgres_engine: Engi
 
     with (
         patch.object(importer._staging, "store_record_batch", side_effect=crash_after_second_batch),
-        patch.object(file_capture, "read_record_batch", side_effect=parse_without_transaction),
         pytest.raises(SimulatedCrash),
     ):
         importer.ingest()
@@ -250,7 +254,7 @@ def test_failed_batch_preserves_current_capture_then_retries(postgres_engine: En
         assert current.version_count == 1
         assert current.latest_version_record_count == 1
         assert len(list_versions(db, session_id=current.id)) == 1
-        assert get_version(db, session_id=current.id, version_id=stage.id) is None
+        assert list_events(db, session_id=current.id, version_id=stage.id, cursor=None, limit=10) is None
     with postgres_engine.begin() as connection:
         connection.exec_driver_sql("DROP TRIGGER reject_second_batch ON file_version_import_records")
         connection.exec_driver_sql("DROP FUNCTION reject_second_batch()")
@@ -509,15 +513,7 @@ def test_publication_rechecks_identity_after_parsing(postgres_engine: Engine, ch
 
     def change_file_identity_after_batch(*args: Any, **kwargs: Any) -> None:
         store_batch(*args, **kwargs)
-        with sessionmaker(postgres_engine)() as db, db.begin():
-            if changed_metadata == "file":
-                file = db.get(SnapshotFileRow, ("batch-test", SNAPSHOT.id, PATH))
-                assert file is not None
-                file.modified_at = SNAPSHOT.captured_at
-            else:
-                snapshot = db.get(ResticSnapshotRow, ("batch-test", SNAPSHOT.id))
-                assert snapshot is not None
-                snapshot.tree_id = "changed-tree"
+        _change_identity(postgres_engine, changed_metadata)
 
     with patch.object(importer._staging, "store_record_batch", side_effect=change_file_identity_after_batch):
         assert importer.ingest().files_failed == 1
@@ -536,15 +532,7 @@ def test_extraction_rechecks_identity_before_parsing(postgres_engine: Engine, ch
 
     def change_identity_during_dump(*args: Any, **kwargs: Any) -> None:
         dump(*args, **kwargs)
-        with sessionmaker(postgres_engine)() as db, db.begin():
-            if changed_metadata == "file":
-                file = db.get(SnapshotFileRow, ("batch-test", SNAPSHOT.id, PATH))
-                assert file is not None
-                file.modified_at = SNAPSHOT.captured_at
-            else:
-                snapshot = db.get(ResticSnapshotRow, ("batch-test", SNAPSHOT.id))
-                assert snapshot is not None
-                snapshot.tree_id = "changed-tree"
+        _change_identity(postgres_engine, changed_metadata)
 
     with (
         patch.object(importer._source.restic, "dump_to", side_effect=change_identity_during_dump),

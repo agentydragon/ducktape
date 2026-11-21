@@ -3,6 +3,23 @@ module(
     version = "0.1.0",
 )
 
+# Lean rules are not yet published to the Bazel Central Registry.
+bazel_dep(name = "rules_lean", version = "0.7.2")
+archive_override(
+    module_name = "rules_lean",
+    integrity = "sha256-WlWwUULPEqpQgwPCxWr/GRZ/qVu1IFUSaqqdeAMIPgc=",
+    patch_strip = 1,
+    patches = ["//patches:rules_lean_4_35.patch"],
+    strip_prefix = "rules_lean-97c226a720ebd23675b2825088c6b32a3fc61989",
+    urls = ["https://github.com/tomato-bazel/rules_lean/archive/97c226a720ebd23675b2825088c6b32a3fc61989.tar.gz"],
+)
+
+lean = use_extension("//devinfra/js/debundle/x/split_proof/lean:toolchain.bzl", "lean")
+lean.toolchain(version_file = "//devinfra/js/debundle/x/split_proof/lean:lean-toolchain")
+use_repo(lean, "lean_dist")
+
+register_toolchains("@lean_dist//:lean_toolchain_def")
+
 bazel_dep(name = "platforms", version = "1.1.0")
 bazel_dep(name = "bazel_skylib", version = "1.9.2")
 bazel_dep(name = "rules_python", version = "2.5.0-rc4")
@@ -86,12 +103,10 @@ bazel_dep(name = "package_metadata", version = "0.0.13")  # Required by image_pi
 
 bazel_dep(name = "ducktape_activitywatch", version = "0.1.0", dev_dependency = True)
 bazel_dep(name = "ducktape_cli_proxy_api", version = "0.1.0", dev_dependency = True)
-bazel_dep(name = "ducktape_tofu_controller", version = "0.1.0", dev_dependency = True)
 bazel_dep(name = "ducktape_iron_proxy", version = "0.1.0", dev_dependency = True)
 
 bazel_dep(name = "ducktape_haku", version = "0.1.0")
 
-bazel_dep(name = "ducktape_manifold_mcp_server", version = "0.1.0", dev_dependency = True)
 bazel_dep(name = "ducktape_claude_web_env_environment_manager", version = "0.1.0", dev_dependency = True)
 
 bazel_dep(name = "rules_mypy", version = "0.41.0")
@@ -175,11 +190,6 @@ local_path_override(
 )
 
 local_path_override(
-    module_name = "ducktape_tofu_controller",
-    path = "third_party/tofu_controller",
-)
-
-local_path_override(
     module_name = "ducktape_iron_proxy",
     path = "third_party/iron_proxy",
 )
@@ -187,11 +197,6 @@ local_path_override(
 local_path_override(
     module_name = "ducktape_haku",
     path = "haku/shared",
-)
-
-local_path_override(
-    module_name = "ducktape_manifold_mcp_server",
-    path = "third_party/manifold_mcp_server",
 )
 
 local_path_override(
@@ -208,11 +213,6 @@ tf.download(
     mirror = {
         "authentik": "goauthentik/authentik:2026.8.0",
         "aws": "hashicorp/aws:6.64.0",
-        # Intentionally omitted from the global provider mirror while
-        # haku/runtime/x/managed_agent/anthropic_hosted/terraform is parked.
-        # The community provider is
-        # published, but mirroring it here would make unrelated Terraform and
-        # image jobs depend on a parked module's provider.
         "external": "hashicorp/external:2.4.2",
         "forgejo": "svalabs/forgejo:1.6.0",
         "github": "integrations/github:6.13.0",
@@ -280,8 +280,7 @@ pnpm.pnpm(
 )
 use_repo(pnpm, "pnpm")
 
-# Workspace-level npm packages (pnpm workspace)
-# All JS/TS projects share a single lockfile and node_modules
+# Root JS/TS workspace packages share a lockfile and node_modules.
 npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm")
 npm.npm_translate_lock(
     name = "npm_ducktape",
@@ -329,6 +328,14 @@ npm.npm_translate_lock(
     use_pnpm = "@pnpm//:package/bin/pnpm.cjs",
 )
 use_repo(npm, "npm_ducktape")
+
+# Keep the translation experiment's parser pins separate from the JS workspace.
+translation_npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm", isolate = True)
+translation_npm.npm_translate_lock(
+    name = "npm_split_proof_translation",
+    pnpm_lock = "//devinfra/js/debundle/x/split_proof/experiments/translation:pnpm-lock.yaml",
+)
+use_repo(translation_npm, "npm_split_proof_translation")
 
 # Custom multitool lockfile with newer ruff (0.17.4 vs 0.8.3 in aspect_rules_lint)
 multitool = use_extension("@rules_multitool//multitool:extension.bzl", "multitool")
@@ -429,7 +436,7 @@ bazel_dep(name = "rules_rust_prost", version = "0.74.0")
 rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
 rust.toolchain(
     edition = "2024",
-    versions = ["1.98.1"],
+    versions = ["1.100.0"],
 )
 use_repo(rust, "rust_toolchains")
 

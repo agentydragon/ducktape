@@ -59,7 +59,6 @@ def container_disk_pool_template(
     ports: Sequence[VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecDomainDevicesInterfacesPorts],
     disks: Mapping[str, VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecVolumes],
     data_volume_templates: Sequence[VirtualMachinePoolSpecVirtualMachineTemplateSpecDataVolumeTemplates] = (),
-    run_strategy: str = "Always",
     affinity: VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecAffinity | None = None,
     tolerations: Sequence[VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecTolerations] | None = None,
     autoattach_graphics_device: bool | None = None,
@@ -77,7 +76,7 @@ def container_disk_pool_template(
     return VirtualMachinePoolSpecVirtualMachineTemplate(
         metadata={"labels": dict(labels)},
         spec=VirtualMachinePoolSpecVirtualMachineTemplateSpec(
-            run_strategy=run_strategy,
+            run_strategy="Always",
             data_volume_templates=list(data_volume_templates),
             template=VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplate(
                 metadata={"labels": dict(labels)},

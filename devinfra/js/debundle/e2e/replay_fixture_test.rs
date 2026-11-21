@@ -42,11 +42,7 @@ fn unexpected_cli_exit_replays_after_the_original_directory_is_removed() {
     let command = commands.iter().find(|command| command.debundle).unwrap();
     assert_eq!(command.exit_code, Some(0));
     let (workspace, output) = replay(&case, command);
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    process::assert_success(&output);
     assert_node_output(
         &workspace
             .path()
@@ -105,11 +101,7 @@ fn tree_command_replays_from_the_retained_relative_layout() {
         .find(|command| command.debundle)
         .unwrap();
     let (workspace, output) = replay(&case, &command);
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    process::assert_success(&output);
     assert_node_output(
         &workspace.path().join("replayed/out/app/main/entry.js"),
         "9\n",
@@ -172,11 +164,7 @@ fn staged_artifact_and_its_invocation_spec_replay_without_the_setup_owner() {
         .find(|command| command.debundle && command.args.iter().any(|arg| arg == "--analysis"))
         .unwrap();
     let (_workspace, output) = replay(&case, &command);
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    process::assert_success(&output);
 }
 
 #[test]
@@ -196,11 +184,7 @@ fn earlier_projection_replays_its_original_source_after_a_later_edit() {
     let case = failed_case();
     let command = recorded_commands(&case).unwrap().remove(0);
     let (workspace, output) = replay(&case, &command);
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    process::assert_success(&output);
     assert_eq!(
         fs::read_to_string(workspace.path().join("replayed/snapshot/static/app.js")).unwrap(),
         "console.log(11);"
@@ -248,11 +232,7 @@ fn graph_query_replays_with_its_recorded_graph_and_child_environment() {
         .unwrap();
     assert_eq!(command.exit_code, Some(0));
     let (_workspace, output) = replay(&case, &command);
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    process::assert_success(&output);
     let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(report["query"]["value"], "alpha");
 }
@@ -277,11 +257,7 @@ fn embedded_loader_dependency_replays_after_its_external_owner_is_gone() {
     let case = failed_case();
     let command = recorded_commands(&case).unwrap().remove(0);
     let (workspace, output) = replay(&case, &command);
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    process::assert_success(&output);
     assert_node_output(
         &workspace
             .path()

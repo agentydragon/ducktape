@@ -48,11 +48,6 @@ from props.db.models import GradingPending
 logger = logging.getLogger(__name__)
 
 
-# =============================================================================
-# Crane auth
-# =============================================================================
-
-
 def _setup_crane_auth(config: DatabaseConfig) -> None:
     """Write ~/.docker/config.json so crane can push/pull via Basic auth."""
     registry_url = os.environ.get("PROPS_REGISTRY_URL")
@@ -62,11 +57,6 @@ def _setup_crane_auth(config: DatabaseConfig) -> None:
     registry = urlparse(registry_url).netloc or registry_url
     write_docker_auth(registry, config.user, config.password, overwrite=True)
     logger.info("Crane auth configured for registry %s", registry)
-
-
-# =============================================================================
-# Improvement mode: termination checking
-# =============================================================================
 
 
 class TerminationSuccess(BaseModel):
@@ -292,8 +282,7 @@ def improve_termination_middleware(
     captured: dict[str, TerminationSuccess],
 ) -> Callable[[ChatContext, Callable[[], Awaitable[None]]], Awaitable[None]]:
     """Chat middleware (improve mode): before each model call, end the run once a candidate
-    definition beats baseline. Replaces agent_core's `ImprovementReminderHandler.on_before_sample`
-    (same per-model-call cadence); the captured success drives the exit code.
+    definition beats baseline. The captured success drives the exit code.
     """
 
     @chat_middleware
@@ -314,11 +303,6 @@ def improve_termination_middleware(
         await call_next()
 
     return middleware
-
-
-# =============================================================================
-# Agent loop
-# =============================================================================
 
 
 async def run_agent_loop(
@@ -383,11 +367,6 @@ async def run_agent_loop(
             return 1
 
 
-# =============================================================================
-# Entry point
-# =============================================================================
-
-
 async def main() -> int:
     """Main entry point for critic developer agent."""
     setup_logging()
@@ -410,7 +389,7 @@ async def main() -> int:
         base_url=backend_url, auth=(db.config.user, db.config.password), timeout=httpx.Timeout(60.0, connect=30.0)
     ) as http_client:
         system_prompt = render_system_prompt(
-            "props/agents/critic_dev/prompt.md.mako", db, helpers={"type_config": type_config}
+            "props/agents/critic_dev/prompt.md.mako", helpers={"type_config": type_config}
         )
 
         exit_code = await run_agent_loop(

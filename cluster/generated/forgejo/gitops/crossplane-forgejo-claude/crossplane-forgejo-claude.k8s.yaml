@@ -196,24 +196,6 @@ spec:
         }
       }
 
-      # The claude-sandbox and agents-infra ExternalSecrets adopt the Secrets these
-      # addresses created there.
-      # CLEANUP(added 2026-09-28): Remove once the forgejo_claude state has forgotten
-      # both addresses. Never destroy the ESO-owned Secrets.
-      removed {
-        from = kubernetes_secret.claude_forgejo_credentials
-        lifecycle {
-          destroy = false
-        }
-      }
-
-      removed {
-        from = kubernetes_secret.claude_forgejo_token_mint
-        lifecycle {
-          destroy = false
-        }
-      }
-
 
       terraform {
         required_version = ">= 1.0"

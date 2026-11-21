@@ -1,6 +1,7 @@
 # App TODOs
 
-- [ ] Consider loading the app config into protobuf messages and using a unified representation through config loading and the generated AppConfig API.
+- [ ] Choose a [shared settings framework](../plans/task_dag.md#service_settings_rethink--how-agentplane-services-are-configured)
+      before changing the App config schema.
 
 - [ ] Share and incrementally maintain PolicyService’s Kubernetes watches: each RPC currently opens
       its own watches and relists resources on changes. Preserve authorization and stale-data fencing.
@@ -19,7 +20,7 @@
 - [ ] Decide whether KubeVirt console access remains an app-owned browser capability or needs a
       backend API for non-app callers. Establish the intended callers and authorization boundary
       before introducing a shared capability; the current app route is in
-      [`go/sandboxes/console.go`](go/sandboxes/console.go). A browser-facing streaming adapter may
+      [`internal/sandboxes/console.go`](internal/sandboxes/console.go). A browser-facing streaming adapter may
       stay in the app either way; it does not decide who owns backend console access.
 
 ## Session and Environment listings

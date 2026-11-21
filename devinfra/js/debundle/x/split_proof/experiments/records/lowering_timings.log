@@ -1,0 +1,36 @@
+# Timings recorded while measuring the lowering experiment. Machine: 4 cores, 15 GB, Linux; Lean 4.35.0, node v22.23.5.
+# format: <what> | <time> | <note>
+lowersplit lodash (670 stmts, 6 contiguous modules), naive checker, compiled | >= 685 s, killed by me, no result | one core at 99%
+lowering lodash (84 KB, 670 stmts): node dump (acorn+eslint-scope+JSON) | 182 ms | best of 2
+lowering lodash (84 KB, 670 stmts): Lean footprint analysis incl. process start + JSON parse | 79 ms | best of 3
+lowering acorn (199 KB, 447 stmts): node dump (acorn+eslint-scope+JSON) | 238 ms | best of 2
+lowering acorn (199 KB, 447 stmts): Lean footprint analysis incl. process start + JSON parse | 92 ms | best of 3
+lowering semver (72 KB, 59 stmts): node dump (acorn+eslint-scope+JSON) | 154 ms | best of 2
+lowering semver (72 KB, 59 stmts): Lean footprint analysis incl. process start + JSON parse | 78 ms | best of 3
+lowering zod (744 KB, 1072 stmts): node dump (acorn+eslint-scope+JSON) | 465 ms | best of 2
+lowering zod (744 KB, 1072 stmts): Lean footprint analysis incl. process start + JSON parse | 200 ms | best of 3
+lowering acorn.min (119 KB, 374 stmts): node dump (acorn+eslint-scope+JSON) | 202 ms | best of 2
+lowering acorn.min (119 KB, 374 stmts): Lean footprint analysis incl. process start + JSON parse | 92 ms | best of 3
+lowering zod.min (447 KB, 805 stmts): node dump (acorn+eslint-scope+JSON) | 531 ms | best of 2
+lowering zod.min (447 KB, 805 stmts): Lean footprint analysis incl. process start + JSON parse | 192 ms | best of 3
+# --- BEFORE the ReadsClosed fix: naive checker, compiled, real lodash prefixes, contiguous modules. ReadsClosed is the only slow check.
+lowersplit lodash prefix 25 stmts: ReadsClosed | 22 ms | other six checks ~0 ms
+lowersplit lodash prefix 50 stmts: ReadsClosed | 184 ms | other six checks ~1 ms
+lowersplit lodash prefix 100 stmts: ReadsClosed | 3838 ms | other six checks ~4 ms
+lowersplit lodash prefix 150 stmts: ReadsClosed | 24438 ms | other six checks ~10 ms
+lowersplit lodash prefix 200+ stmts: not run to completion (stopped by me) | - | -
+lowersplit lodash 670 stmts: ReadsClosed | >= 685 s, no result | killed by me
+kernel decide +kernel synthetic bundle 48 stmts / 8 modules, AFTER ReadsClosed refactor | 4697 ms | rc=0
+kernel decide +kernel synthetic bundle 96 stmts / 16 modules, AFTER ReadsClosed refactor | 19881 ms | rc=0
+kernel decide +kernel synthetic bundle 144 stmts / 24 modules, AFTER ReadsClosed refactor | 51964 ms | rc=0
+# --- AFTER the ReadsClosed fix (same machine). Compiled `lowersplit`, contiguous modules. total = all stages.
+lowersplit lodash prefix 100 stmts, 4 modules: ReadsClosed 104 ms | total 113 ms
+lowersplit lodash prefix 150 stmts, 6 modules: ReadsClosed 346 ms | total 366 ms
+lowersplit lodash prefix 200 stmts, 8 modules: ReadsClosed 683 ms | total 717 ms
+lowersplit lodash prefix 300 stmts, 12 modules: ReadsClosed 2457 ms | total 2561 ms
+lowersplit lodash FULL 670 stmts, 6 modules: ReadsClosed 53107 ms (UniqueDefs 346, mkPlan 150, other five ~10) | total 53927 ms | all seven pass
+lowersplit semver FULL 59 stmts, 4 modules: ReadsClosed 121 ms | total 153 ms | pass
+lowersplit acorn FULL 447 stmts, 5 modules: ReadsClosed 3921 ms | total 4176 ms | pass
+lowersplit acorn.min FULL 374 stmts, 5 modules: ReadsClosed 5268 ms | total 5394 ms | OrderOk FAILS (m1 must run before m0): a correct rejection
+lowersplit zod.min FULL 805 stmts, 8 modules: ReadsClosed did NOT finish in 240 s cap | read+parse 152, footprints 35, spec 23, mkPlan 573, UniqueDefs 759 ms
+lowersplit zod FULL 1072 stmts: not run (skipped after zod.min timed out)

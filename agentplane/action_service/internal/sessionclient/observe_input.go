@@ -50,6 +50,33 @@ type SourceError struct {
 	Message string `json:"message"`
 }
 
+// NewSourceError describes a failed backend read by its gRPC code alone. An error without a gRPC
+// status, or with code Unknown, is reported as Unavailable.
+func NewSourceError(err error) *SourceError {
+	code := status.Code(err)
+	if code == codes.Unknown {
+		code = codes.Unavailable
+	}
+	message := "service unavailable"
+	switch code {
+	case codes.Canceled:
+		message = "read canceled"
+	case codes.DeadlineExceeded:
+		message = "read deadline expired"
+	case codes.NotFound:
+		message = "not found"
+	case codes.PermissionDenied, codes.Unauthenticated:
+		message = "permission denied"
+	case codes.InvalidArgument:
+		message = "invalid request"
+	case codes.DataLoss:
+		message = "retained history has a gap"
+	case codes.OutOfRange:
+		message = "dispatch deletion coverage expired; resync required"
+	}
+	return &SourceError{Code: code.String(), Message: message}
+}
+
 type CorrelatedTurn struct {
 	TurnID                string   `json:"turn_id"`
 	InputCommandIDs       []string `json:"input_command_ids"`
@@ -144,7 +171,7 @@ func ObserveInput(
 			}
 			result.Dispatch.Kind = SourcePartial
 			if result.Dispatch.Error == nil {
-				result.Dispatch.Error = sourceFailure(err)
+				result.Dispatch.Error = NewSourceError(err)
 			}
 			return result, nil
 		}
@@ -444,37 +471,12 @@ func historyFailure(err error, ctx, parent context.Context, result *InputObserva
 	if errors.Is(parent.Err(), context.Canceled) {
 		return *result, status.FromContextError(parent.Err()).Err()
 	}
-	result.Observation.Error = sourceFailure(err)
+	result.Observation.Error = NewSourceError(err)
 	return *result, nil
 }
 
 func isWaitDeadline(ctx, parent context.Context) bool {
 	return errors.Is(ctx.Err(), context.DeadlineExceeded) && parent.Err() == nil
-}
-
-func sourceFailure(err error) *SourceError {
-	code := status.Code(err)
-	if code == codes.Unknown {
-		code = codes.Unavailable
-	}
-	message := "service unavailable"
-	switch code {
-	case codes.Canceled:
-		message = "read canceled"
-	case codes.DeadlineExceeded:
-		message = "read deadline expired"
-	case codes.NotFound:
-		message = "not found"
-	case codes.PermissionDenied:
-		message = "permission denied"
-	case codes.InvalidArgument:
-		message = "invalid request"
-	case codes.DataLoss:
-		message = "retained history has a gap"
-	case codes.OutOfRange:
-		message = "dispatch deletion coverage expired; resync required"
-	}
-	return &SourceError{Code: code.String(), Message: message}
 }
 
 func encodeResumeToken(token resumeToken) string {

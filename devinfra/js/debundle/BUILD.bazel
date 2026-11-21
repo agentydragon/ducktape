@@ -256,6 +256,7 @@ rust_library(
         "@crates//:roaring",
         "@crates//:serde",
         "@crates//:strum",
+        "@crates//:swc_common",
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_visit",
     ],
@@ -332,9 +333,7 @@ rust_library(
         ":spec",
         ":spec_resolution",
         "@crates//:anyhow",
-        "@crates//:swc_common",
         "@crates//:swc_ecma_ast",
-        "@crates//:swc_ecma_visit",
     ],
 )
 
@@ -822,6 +821,7 @@ rust_library(
         "facts/value_flow/program_tests.rs",
         "facts/value_flow/read_only_callbacks.rs",
         "facts/value_flow/return_summary.rs",
+        "facts/value_flow/scalar_sequence.rs",
         "facts/value_flow_tests.rs",
         "facts/value_set_tests.rs",
         "graph/analysis_tests.rs",
@@ -959,7 +959,6 @@ rust_test(
     crate = ":gate",
     edition = "2024",
     deps = [
-        ":js_ast",
         ":raw_js_test_support",
         ":report_fixtures",
         "@crates//:proptest",
@@ -981,7 +980,6 @@ rust_library(
         ":binding_targets",
         ":spec",
         "@crates//:anyhow",
-        "@crates//:strum",
         "@crates//:swc_common",
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_visit",
@@ -998,9 +996,7 @@ rust_test(
 )
 
 # Test-only helpers for building dependency graph wire fixtures (the module
-# table + interned ModuleKey references). Shared by in-crate tests and
-# the separate integration / e2e test crates so the builders aren't
-# copy-pasted per test module.
+# table + interned ModuleKey references) for the gate crate's tests.
 rust_library(
     name = "report_fixtures",
     testonly = True,
@@ -1025,7 +1021,6 @@ rust_library(
         ":selector_outcome",
         ":spec",
         "@crates//:anyhow",
-        "@crates//:serde",
         "@crates//:serde_yaml",
     ],
 )
@@ -1054,10 +1049,7 @@ rust_test(
     name = "spec_stats_test",
     crate = ":spec_stats",
     edition = "2024",
-    deps = [
-        "@crates//:serde_json",
-        "@crates//:tempfile",
-    ],
+    deps = ["@crates//:tempfile"],
 )
 
 rust_library(
@@ -1184,9 +1176,7 @@ rust_library(
         "@crates//:anyhow",
         "@crates//:clap",
         "@crates//:petgraph",
-        "@crates//:rustc-hash",
         "@crates//:serde",
-        "@crates//:serde_json",
         "@crates//:strum",
         "@crates//:thiserror",
     ],
@@ -1196,10 +1186,7 @@ rust_test(
     name = "peel_test",
     crate = ":peel",
     edition = "2024",
-    deps = [
-        ":report_fixtures",
-        "@crates//:proptest",
-    ],
+    deps = ["@crates//:proptest"],
 )
 
 rust_library(
@@ -1364,7 +1351,6 @@ rust_library(
         ":graph_provenance",
         ":js_ast",
         ":output_layout",
-        ":program_analysis",
         ":prune_dead_imports",
         ":prune_module_exports",
         ":report_io",
@@ -1500,7 +1486,6 @@ rust_library(
     srcs = ["analyze_command.rs"],
     edition = "2024",
     deps = [
-        ":analysis",
         ":command_diagnostics",
         ":package_args",
         ":staged_analysis",
@@ -1560,7 +1545,6 @@ rust_library(
         ":spec_tree",
         ":spec_wire",
         ":spec_wire_rust_proto",
-        ":staged_analysis",
         ":vendor",
         ":write_tree",
         "@crates//:anyhow",
@@ -1645,7 +1629,6 @@ rust_library(
         ":spec_resolution",
         ":spec_stats",
         ":spec_tree",
-        ":staged_analysis",
         ":transform_command",
         ":yaml_edit",
         "@crates//:anyhow",
@@ -1655,7 +1638,6 @@ rust_library(
         "@crates//:serde",
         "@crates//:serde_json",
         "@crates//:serde_yaml",
-        "@crates//:sha2",
         "@crates//:shlex",
         "@crates//:strum",
         "@crates//:swc_atoms",
@@ -1668,7 +1650,6 @@ rust_test(
     name = "cli_test",
     crate = ":cli",
     edition = "2024",
-    deps = [":report_fixtures"],
 )
 
 rust_test(
@@ -1777,6 +1758,7 @@ rust_test(
         ":selector_constraint_backend",
         ":selector_constraint_model_builder",
         ":selector_ir",
+        ":selector_test_fixtures",
         ":source_identity",
     ],
 )
@@ -1894,7 +1876,6 @@ rust_library(
     edition = "2024",
     deps = [
         ":analysis",
-        ":analysis_model",
         ":chunk_facts",
         ":js_ast",
         ":selector_ir",
@@ -2031,8 +2012,6 @@ rust_binary(
         ":analysis_identity",
         ":analysis_thread",
         ":cli",
-        ":gate",
-        "@crates//:clap",
     ],
 )
 
@@ -2054,8 +2033,6 @@ rust_binary(
         ":analysis_identity",
         ":analysis_thread",
         ":cli",
-        ":gate",
-        "@crates//:clap",
     ],
 )
 

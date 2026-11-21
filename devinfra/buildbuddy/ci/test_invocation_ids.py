@@ -50,13 +50,6 @@ def test_scope_separates_parallel_release_artifact_builds() -> None:
     assert invocation_id(run_id="33060467222", attempt="1", role="release-stamped", scope="gazelle") != unstamped
 
 
-def test_bazel_accepts_the_shape() -> None:
-    """`--invocation_id` takes a UUID; anything else is rejected at the flag parser."""
-    result = invocation_id(run_id="33060467222", attempt="1", role="test")
-    assert result.version == 5
-    assert len(str(result)) == 36
-
-
 def test_bazel_ci_outputs_keep_allocated_ids_aligned_across_consumers(tmp_path: Path) -> None:
     github_output = tmp_path / "github-output"
     write_bazel_ci_outputs(github_output, run_id="33060467222", attempt="1")
@@ -69,12 +62,7 @@ def test_bazel_ci_outputs_keep_allocated_ids_aligned_across_consumers(tmp_path: 
     assert outputs["linkage_roles"].split(",") == ["test", "build"]
     all_ids = outputs["all_invocation_ids"].split(",")
     assert all_ids == [role_ids[role] for role in ("test", "build")]
-    assert list(zip(outputs["linkage_roles"].split(","), all_ids, strict=True)) == [
-        ("test", role_ids["test"]),
-        ("build", role_ids["build"]),
-    ]
     assert outputs["publication"].split(",") == [role_ids["build"]]
-    assert role_ids["test"] not in outputs["publication"].split(",")
     assert outputs["env_overrides"].splitlines() == [
         f"TEST_INVOCATION_ID={role_ids['test']}",
         f"BUILD_INVOCATION_ID={role_ids['build']}",

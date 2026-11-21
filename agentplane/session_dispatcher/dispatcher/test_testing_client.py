@@ -22,7 +22,6 @@ from agentplane.testing.tls import issue_leaf, make_ca
 class Dispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
     def __init__(self) -> None:
         self.requests: list[session_dispatcher_pb2.SubmitInputRequest] = []
-        self.bearers: list[str | bytes | None] = []
         self.failure: grpc.StatusCode | None = None
 
     @override
@@ -34,7 +33,6 @@ class Dispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
         ],
     ) -> session_dispatcher_pb2.SubmitInputResponse:
         self.requests.append(request)
-        self.bearers.append(dict(context.invocation_metadata() or ()).get("authorization"))
         if self.failure is not None:
             await context.abort(self.failure, "submission outcome unknown")
         return session_dispatcher_pb2.SubmitInputResponse(
@@ -55,7 +53,6 @@ class Dispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
             session_dispatcher_pb2.GetSessionRequest, session_dispatcher_pb2.GetSessionResponse
         ],
     ) -> session_dispatcher_pb2.GetSessionResponse:
-        self.bearers.append(dict(context.invocation_metadata() or ()).get("authorization"))
         return session_dispatcher_pb2.GetSessionResponse(
             session=session_dispatcher_pb2.Session(
                 session_id=request.session_id,
@@ -78,7 +75,6 @@ class Dispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
             session_dispatcher_pb2.WatchDispatchesRequest, session_dispatcher_pb2.WatchDispatchesResponse
         ],
     ) -> AsyncIterator[session_dispatcher_pb2.WatchDispatchesResponse]:
-        self.bearers.append(dict(context.invocation_metadata() or ()).get("authorization"))
         yield session_dispatcher_pb2.WatchDispatchesResponse(
             dispatch=session_dispatcher_pb2.Dispatch(
                 command_id="command",
@@ -90,15 +86,13 @@ class Dispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
         )
 
 
-async def test_native_submission_preserves_identity_and_rotates_service_credentials(tmp_path: Path) -> None:
+async def test_native_submission_preserves_identity_on_retry() -> None:
     backend = Dispatcher()
     server = grpc.aio.server()
     session_dispatcher_pb2_grpc.add_SessionDispatcherServicer_to_server(backend, server)
-    token_file = tmp_path / "dispatcher-token"
-    token_file.write_text("first-service-token")
     async with (
         serving(server, "127.0.0.1:0", grace_s=0) as port,
-        SessionDispatcherClient.connect(f"127.0.0.1:{port}", token_file=token_file, request_timeout_s=5) as client,
+        SessionDispatcherClient.connect(f"127.0.0.1:{port}", request_timeout_s=5) as client,
     ):
         session = await client.get_session("session")
         assert (
@@ -108,7 +102,6 @@ async def test_native_submission_preserves_identity_and_rotates_service_credenti
         ) == ("session", "original", "original-uid")
         sandbox, uid = await client.session_target("session")
         first = await client.submit_input("session", "same-command", sandbox, uid, "original input")
-        token_file.write_text("rotated-service-token")
         retry = await client.submit_input("session", "same-command", sandbox, uid, "original input")
     assert first == retry
     assert first.state == session_dispatcher_pb2.DELIVERY_STATE_QUEUED_IN_DISPATCHER
@@ -124,24 +117,16 @@ async def test_native_submission_preserves_identity_and_rotates_service_credenti
         ]
         * 2
     )
-    assert backend.bearers == [
-        "Bearer first-service-token",
-        "Bearer first-service-token",
-        "Bearer first-service-token",
-        "Bearer rotated-service-token",
-    ]
 
 
-async def test_native_submission_does_not_automatically_retry_an_unknown_outcome(tmp_path: Path) -> None:
+async def test_native_submission_does_not_automatically_retry_an_unknown_outcome() -> None:
     backend = Dispatcher()
     backend.failure = grpc.StatusCode.UNAVAILABLE
     server = grpc.aio.server()
     session_dispatcher_pb2_grpc.add_SessionDispatcherServicer_to_server(backend, server)
-    token_file = tmp_path / "dispatcher-token"
-    token_file.write_text("service-token")
     async with (
         serving(server, "127.0.0.1:0", grace_s=0) as port,
-        SessionDispatcherClient.connect(f"127.0.0.1:{port}", token_file=token_file, request_timeout_s=5) as client,
+        SessionDispatcherClient.connect(f"127.0.0.1:{port}", request_timeout_s=5) as client,
     ):
         with pytest.raises(ServiceError, match="submission outcome unknown") as caught:
             await client.submit_input("session", "same-command", "original", "original-uid", "original input")
@@ -149,22 +134,20 @@ async def test_native_submission_does_not_automatically_retry_an_unknown_outcome
     assert len(backend.requests) == 1
 
 
-async def test_svid_client_omits_bearer_for_unary_and_watch_calls() -> None:
+async def test_admitted_returns_the_dispatch_once_its_runner_admitted_it() -> None:
     backend = Dispatcher()
     server = grpc.aio.server()
     session_dispatcher_pb2_grpc.add_SessionDispatcherServicer_to_server(backend, server)
     async with (
         serving(server, "127.0.0.1:0", grace_s=0) as port,
-        SessionDispatcherClient.connect(f"127.0.0.1:{port}", token_file=None, request_timeout_s=5) as client,
+        SessionDispatcherClient.connect(f"127.0.0.1:{port}", request_timeout_s=5) as client,
     ):
-        await client.get_session("session")
         dispatch = session_dispatcher_pb2.Dispatch(
             command_id="command", session_id="session", sandbox="original", sandbox_uid="original-uid"
         )
         admitted_dispatch = await admitted(client, dispatch)
 
     assert admitted_dispatch.state == session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED
-    assert backend.bearers == [None, None]
 
 
 async def test_native_client_verifies_tls_through_a_port_forward(tmp_path: Path) -> None:
@@ -176,20 +159,16 @@ async def test_native_client_verifies_tls_through_a_port_forward(tmp_path: Path)
     port = server.add_secure_port(
         "127.0.0.1:0", grpc.ssl_server_credentials([(key.read_bytes(), certificate.read_bytes())])
     )
-    token_file = tmp_path / "dispatcher-token"
-    token_file.write_text("test-service-token")
     await server.start()
     try:
         async with SessionDispatcherClient.connect(
             f"127.0.0.1:{port}",
-            token_file=token_file,
             request_timeout_s=3,
             channel_credentials=grpc.ssl_channel_credentials(root_certificates=ca.cert_pem),
             server_name="localhost",
         ) as client:
             session = await client.get_session("test-session")
         assert session.session_id == "test-session"
-        assert backend.bearers == ["Bearer test-service-token"]
     finally:
         await server.stop(grace=0)
 

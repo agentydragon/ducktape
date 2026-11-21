@@ -122,7 +122,7 @@ are unique per host and match the bcrypt entries in
 ## Storage and recovery boundary
 
 One Rest Server pod mounts a 100 GiB ReadWriteOnce PVC on
-`piraeus-ssd-2-autodiskful`. Piraeus maintains two synchronous storage copies on
+`piraeus-hdd-2`. Piraeus maintains two synchronous storage copies on
 distinct OVH nodes. The server uses a Recreate deployment strategy, and the primary
 filesystem is mounted directly through Piraeus CSI. Flux waits for the Piraeus cluster
 before reconciling this component.
@@ -132,8 +132,7 @@ deleting repository data. No automatic repository expiration or pruning is confi
 the repositories grow until an operator performs planned server-side maintenance.
 The repository has two storage copies within the cluster and no separate recovery copy.
 
-Before first deployment, complete the replicated-class failover, resync, and expansion
-rehearsal recorded in the [Piraeus production plan](../../docs/plans/piraeus_production.md#replicated-class-and-seaweed-reduction).
+Failover, resync and expansion status for this class: [Piraeus block storage](../../docs/piraeus.md#storage-classes).
 
 TODO: Consider a separate recovery copy of the Restic repository if needed.
 
@@ -166,9 +165,9 @@ continues to hold only `.htpasswd` for the Rest Server.
 The deployment's SSO provider creates and reflects `ai-session-archive-oidc` into this namespace.
 Its Authentik application policy and the API's numeric subject check both restrict access to the
 owner. The CNPG app Secret supplies database credentials. Web and importer pods run the
-versioned migration image as an init container before starting, using a database migration lock
-to serialize concurrent runs. The CNPG database and reflected OIDC Secret must be ready before
-the web process can start.
+importer image with `--migrate-database` as an init container before starting, using a
+database migration lock to serialize concurrent runs. The CNPG database and reflected OIDC
+Secret must be ready before the web process can start.
 
 The import root arguments are `/.claude` and `/.codex`. The source service backs up relative
 `.claude` and `.codex` paths from each workstation home, and these are the roots present in the

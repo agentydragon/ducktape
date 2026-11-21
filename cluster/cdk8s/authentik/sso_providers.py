@@ -43,7 +43,6 @@ def chart(app: App) -> Chart:
                     "headlamp-oidc-secret",
                     "langfuse-oidc-config",
                     "matrix-oidc-config",
-                    "paperless-sso-providers",
                     "plaid-link-oidc-config",
                     "plaid-spend-web-oidc-config",
                     "props-oidc-config",

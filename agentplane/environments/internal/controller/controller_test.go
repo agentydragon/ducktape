@@ -12,16 +12,15 @@ import (
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/requester"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/testing/testscheme"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	runtimeschema "k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/types"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	clienttesting "k8s.io/client-go/testing"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -71,20 +70,8 @@ func testTemplate(image string) *sandboxapi.SandboxTemplate {
 
 func newReconciler(t *testing.T, running bool, objects ...client.Object) (*Reconciler, client.Client) {
 	t.Helper()
-	scheme := runtime.NewScheme()
-	if err := clientgoscheme.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
-	}
-	if err := sandboxapi.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
-	}
-	if err := policyapi.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
-	}
-	if err := kubevirtv1.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
-	}
-	addCredentialKinds(t, scheme)
+	scheme := testscheme.New(t)
+	addCertificateKind(scheme)
 	// A Sandbox acts as an Identity; the fixture's names a live one unless the test brings its own.
 	sandbox := &sandboxapi.Sandbox{
 		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: sandboxName, UID: "uid-sandbox"},
@@ -173,28 +160,30 @@ func setRunning(t *testing.T, c client.Client, running bool) {
 	}
 }
 
-func getPod(t *testing.T, c client.Client) *corev1.Pod {
+// getOrNil is the T at key, or nil when there is none.
+func getOrNil[T any, PT interface {
+	*T
+	client.Object
+}](t *testing.T, c client.Client, key client.ObjectKey) PT {
 	t.Helper()
-	var pod corev1.Pod
-	if err := c.Get(context.Background(), sandboxKey, &pod); err != nil {
+	object := PT(new(T))
+	if err := c.Get(context.Background(), key, object); err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil
 		}
 		t.Fatal(err)
 	}
-	return &pod
+	return object
+}
+
+func getPod(t *testing.T, c client.Client) *corev1.Pod {
+	t.Helper()
+	return getOrNil[corev1.Pod](t, c, sandboxKey)
 }
 
 func getPVC(t *testing.T, c client.Client) *corev1.PersistentVolumeClaim {
 	t.Helper()
-	var pvc corev1.PersistentVolumeClaim
-	if err := c.Get(context.Background(), pvcKey, &pvc); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil
-		}
-		t.Fatal(err)
-	}
-	return &pvc
+	return getOrNil[corev1.PersistentVolumeClaim](t, c, pvcKey)
 }
 
 func runningReason(t *testing.T, c client.Client) string {
@@ -676,41 +665,67 @@ func TestSuspendedThenResumedPodRunsTheCurrentTemplateAndRecordsItsSpec(t *testi
 	}
 }
 
-func TestMissingTemplateBlocksStart(t *testing.T) {
-	r, c := newReconciler(t, true)
-	reconcileOnce(t, r)
-	if getPod(t, c) != nil || getPVC(t, c) != nil {
-		t.Fatal("created resources without a template")
-	}
-	if reason := runningReason(t, c); reason != "TemplateNotFound" {
-		t.Errorf("Running reason = %s, want TemplateNotFound", reason)
-	}
-}
+// A Sandbox whose template, existing children or cluster the controller cannot use starts no
+// workload, and its Running condition says why.
+func TestUnrunnableSandboxStartsNoWorkload(t *testing.T) {
+	stateVolumeDefined := testTemplate("test-image:v1")
+	stateVolumeDefined.Spec.Pod.Spec.Volumes = []corev1.Volume{{Name: "state", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}}}
+	noRuntimeContainer := testTemplate("test-image:v1")
+	noRuntimeContainer.Spec.Pod.Spec.Containers[0].Name = "not-the-runner"
+	bothKinds := testVMTemplate("test-guest:v1")
+	bothKinds.Spec.Pod = testTemplate("test-image:v1").Spec.Pod
+	workspaceVolumeDefined := testWorkspaceVMTemplate("test-guest:v1")
+	workspaceVolumeDefined.Spec.VM.Template.Spec.Volumes = append(workspaceVolumeDefined.Spec.VM.Template.Spec.Volumes, kubevirtv1.Volume{
+		Name:         workspaceVolume,
+		VolumeSource: kubevirtv1.VolumeSource{EmptyDisk: &kubevirtv1.EmptyDiskSource{Capacity: resource.MustParse("1Gi")}},
+	})
+	podWithWorkspaceVolume := testTemplate("test-image:v1")
+	podWithWorkspaceVolume.Spec.WorkspaceVolume = testWorkspaceVMTemplate("test-guest:v1").Spec.WorkspaceVolume
 
-func TestTemplateDefiningTheStateVolumeIsRefused(t *testing.T) {
-	template := testTemplate("test-image:v1")
-	template.Spec.Pod.Spec.Volumes = []corev1.Volume{{Name: "state", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}}}
-	r, c := newReconciler(t, true, template)
-	reconcileOnce(t, r)
-	if getPod(t, c) != nil {
-		t.Fatal("started a Pod whose state volume the template replaced")
-	}
-	if reason := runningReason(t, c); reason != "TemplateInvalid" {
-		t.Errorf("Running reason = %s, want TemplateInvalid", reason)
-	}
-}
-
-func TestStateVolumeTheSandboxDoesNotOwnIsNotUsed(t *testing.T) {
-	stale := &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{
-		Namespace: namespace, Name: StateVolumeName(sandboxName),
-	}}
-	r, c := newReconciler(t, true, testTemplate("test-image:v1"), stale)
-	reconcileOnce(t, r)
-	if getPod(t, c) != nil {
-		t.Fatal("started a Pod on a previous Sandbox's state")
-	}
-	if reason := runningReason(t, c); reason != "StateVolumeConflict" {
-		t.Errorf("Running reason = %s, want StateVolumeConflict", reason)
+	for _, tc := range []struct {
+		name, reason   string
+		objects        []client.Object
+		noKubeVirt     bool
+		noStatePVC     bool
+		noWorkspacePVC bool
+	}{
+		{name: "MissingTemplateBlocksStart", reason: "TemplateNotFound", noStatePVC: true},
+		{name: "TemplateDefiningTheStateVolumeIsRefused", reason: "TemplateInvalid", objects: []client.Object{stateVolumeDefined}},
+		{name: "StateVolumeTheSandboxDoesNotOwnIsNotUsed", reason: "StateVolumeConflict", objects: []client.Object{
+			testTemplate("test-image:v1"),
+			&corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: StateVolumeName(sandboxName)}},
+		}},
+		{name: "ForeignLaunchConfigMapBlocksThePod", reason: "ConfigMapConflict", objects: []client.Object{
+			testTemplate("test-image:v1"),
+			&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: LaunchConfigMapName(sandboxName)}},
+		}},
+		{name: "TemplateWithoutAnEnvironmentRuntimeContainerIsRefused", reason: "TemplateInvalid", objects: []client.Object{noRuntimeContainer}},
+		{name: "TemplateWithBothKindsIsRefused", reason: "TemplateInvalid", objects: []client.Object{bothKinds}, noStatePVC: true},
+		{name: "VMTemplateWithoutKubeVirtStaysUnreadyWithoutStartingWorkload", reason: "KubeVirtMissing", objects: []client.Object{testVMTemplate("test-guest:v1")}, noKubeVirt: true},
+		{name: "WorkspaceVolumeTheSandboxDoesNotOwnIsNotUsed", reason: "VolumeLayoutMismatch", objects: []client.Object{
+			testWorkspaceVMTemplate("test-guest:v1"),
+			&corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: WorkspaceVolumeName(sandboxName)}},
+		}},
+		{name: "TemplateDefiningTheWorkspaceVolumeItselfIsRefused", reason: "VolumeLayoutMismatch", objects: []client.Object{workspaceVolumeDefined}, noWorkspacePVC: true},
+		{name: "PodTemplateWithAWorkspaceVolumeIsRefused", reason: "VolumeLayoutMismatch", objects: []client.Object{podWithWorkspaceVolume}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r, c := newReconciler(t, true, tc.objects...)
+			r.KubeVirt = !tc.noKubeVirt
+			reconcileOnce(t, r)
+			if pod, vm := getPod(t, c), getVM(t, c); pod != nil || vm != nil {
+				t.Fatalf("started a workload: Pod=%v VM=%v", pod, vm)
+			}
+			if tc.noStatePVC && getPVC(t, c) != nil {
+				t.Fatal("created the state PVC")
+			}
+			if tc.noWorkspacePVC && getWorkspacePVC(t, c) != nil {
+				t.Fatal("created the workspace PVC")
+			}
+			if reason := runningReason(t, c); reason != tc.reason {
+				t.Errorf("Running reason = %s, want %s", reason, tc.reason)
+			}
+		})
 	}
 }
 

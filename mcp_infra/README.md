@@ -7,5 +7,4 @@ Shared support for the repo's FastMCP servers.
   exchange, FastMCP proxy compatibility
 - `static_bearer.py` — fixed-bearer ASGI guard for cluster-internal endpoints
 - `persistence.py` — server state store config (PostgreSQL / Valkey)
-- `constants.py` — shared path and process constants
-- `testing/` — fixtures, naming and result matchers
+- `testing/` — fixtures, result matchers, loopback FastMCP serving and the session-manager wedge repro

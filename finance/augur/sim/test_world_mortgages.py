@@ -10,7 +10,6 @@ import pytest_bazel
 from finance.augur.model.series import LocationId
 from finance.augur.sim.actions import ClaimId, PayClaim
 from finance.augur.sim.agent import assemble
-from finance.augur.sim.bills import Biller
 from finance.augur.sim.capture import FinancialCapture
 from finance.augur.sim.ids import AccountId, LiabilityId, PropertyId
 from finance.augur.sim.market_path import Series
@@ -20,6 +19,7 @@ from finance.augur.sim.property_tax import PropertyTaxPolicy
 from finance.augur.sim.results import Executed
 from finance.augur.sim.schedule import Once
 from finance.augur.sim.testing.accounting import CASH, EXOGENOUS, HOUSEHOLD, RESERVE, WORLD, opening, world_on
+from finance.augur.sim.testing.bills import biller
 from finance.augur.sim.testing.situs import START_YEAR, UNTAXED, flat_parcel
 from finance.augur.sim.world import World
 
@@ -87,16 +87,13 @@ def composed(case: Situation) -> World:
         (case.home_values,), horizon_months=6, accounts=opening({CASH: 200_000, RESERVE: 3000}), taxpayers=()
     )
     world.track(
-        Biller(
+        biller(
             schedule=Once(month=3),
             obligation_id="ordinary",
             obligation_type="rent",
             from_account=CASH,
             to_account=EXOGENOUS,
             amount_due=2,
-            property_id=None,
-            deduction_category=None,
-            deductible_fraction_ppb=0,
         )
     )
     world.declare_housing(

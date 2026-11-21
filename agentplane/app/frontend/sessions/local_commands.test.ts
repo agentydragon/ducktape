@@ -43,6 +43,10 @@ function dispatch(
   });
 }
 
+function admittedDispatch(event = admission()): Dispatch {
+  return dispatch(COMMAND, DeliveryState.RUNNER_ADMITTED, "2026-10-14T12:00:02Z", event);
+}
+
 beforeEach(() => localStorage.clear());
 afterEach(() => vi.restoreAllMocks());
 
@@ -145,39 +149,30 @@ it("keeps an unscoped ProtoJSON command's exact input until History confirms it"
   expect(legacy.destination).toEqual({ kind: "reconcile-only", target: null });
   expect(legacy.attempted).toBe(true);
   expect(store.markAttempted("legacy")).toBe(false);
-  store.observePrefix([admission(9n, create(CommandSchema, legacy.command))]);
+  store.observeCommandIds(new Set(["legacy"]));
   expect(store.getSnapshot().commands).toEqual([]);
   expect(new LocalCommands("thread").getSnapshot().inputEchoes).toEqual([{ commandId: "legacy", text }]);
 });
 
-it("retains ahead-of-prefix HTTP admission evidence until matching replay takes ownership", () => {
+it("keeps a queued ProtoJSON command readable by the writing tab after a watch update", () => {
+  const key = "agentplane.pending:thread:legacy";
+  const command = { commandId: "legacy", submitInput: { text: "  original\ninput  " } };
+  const queued = { commandId: "legacy", sessionId: "thread", state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER" };
+  localStorage.setItem(key, JSON.stringify({ command, admission: null, submittedAt: 1, dispatch: queued }));
+
   const store = new LocalCommands("thread");
-  store.remember(COMMAND);
-  const admitted = admission();
-  store.acknowledge(COMMAND, admitted);
-  const restored = new LocalCommands("thread");
-  expect(restored.getSnapshot().commands[0].admission).toEqual(admitted);
-  restored.observePrefix([
-    create(EventEntrySchema, {
-      cursor: 1n,
-      origin: { sourceId: "runner", sequence: 1n },
-      event: { observation: { case: "harnessStarted", value: {} } },
-    }),
-  ]);
-  expect(restored.getSnapshot().commands).toHaveLength(1);
-  restored.observePrefix([admitted]);
-  expect(restored.getSnapshot().commands).toEqual([]);
-  expect(restored.getSnapshot().inputEchoes).toEqual([
-    { commandId: COMMAND.commandId, text: "  exact text\nsecond line  " },
-  ]);
-  expect(new LocalCommands("thread").getSnapshot().commands).toEqual([]);
+  const failed = fromJson(DispatchSchema, { ...queued, state: "DELIVERY_STATE_FAILED" });
+  expect(store.updateDispatch("legacy", failed)).toBe(true);
+  const saved = JSON.parse(localStorage.getItem(key)!);
+  expect(fromJson(CommandSchema, saved.command)).toEqual(fromJson(CommandSchema, command));
+  expect(fromJson(DispatchSchema, saved.dispatch)).toEqual(failed);
 });
 
 it("does not resurrect local input when replay wins the race with its HTTP response", () => {
   const store = new LocalCommands("thread");
   store.remember(COMMAND);
-  store.observePrefix([admission()]);
-  store.acknowledge(COMMAND, admission());
+  store.observeCommandIds(new Set([COMMAND.commandId]));
+  store.acknowledgeDispatch(COMMAND, admittedDispatch());
   expect(store.getSnapshot().commands).toEqual([]);
   expect(store.getSnapshot().inputEchoes).toEqual([
     { commandId: COMMAND.commandId, text: "  exact text\nsecond line  " },
@@ -210,17 +205,18 @@ it("rejects mismatched admission without removing the original input", () => {
     commandId: COMMAND.commandId,
     operation: { case: "submitInput", value: { text: "changed" } },
   });
-  expect(() => store.acknowledge(COMMAND, admission(9n, changed))).toThrow("does not confirm");
+  expect(() => store.acknowledgeDispatch(COMMAND, admittedDispatch(admission(9n, changed)))).toThrow(
+    "does not confirm"
+  );
   expect(create(CommandSchema, store.getSnapshot().commands[0].command)).toEqual(COMMAND);
   expect(store.getSnapshot().commands[0].admission).toBeNull();
 });
 
-it("rejects conflicting HTTP/replay evidence and keeps the saved record inspectable", () => {
+it("rejects conflicting Dispatcher admissions and keeps the saved record inspectable", () => {
   const store = new LocalCommands("thread");
   store.remember(COMMAND);
-  store.acknowledge(COMMAND, admission());
-  expect(() => store.acknowledge(COMMAND, admission(10n))).toThrow("Conflicting");
-  expect(() => store.observePrefix([admission(10n)])).toThrow("Conflicting");
+  store.acknowledgeDispatch(COMMAND, admittedDispatch());
+  expect(() => store.acknowledgeDispatch(COMMAND, admittedDispatch(admission(10n)))).toThrow("Conflicting");
   expect(new LocalCommands("thread").getSnapshot().commands[0].admission).toEqual(admission());
 });
 
@@ -358,15 +354,14 @@ it("keeps observed admission visible if persisting its receipt fails", () => {
   vi.spyOn(localStorage, "setItem").mockImplementationOnce(() => {
     throw new DOMException("receipt storage full", "QuotaExceededError");
   });
-  store.acknowledge(COMMAND, admission());
+  store.acknowledgeDispatch(COMMAND, admittedDispatch());
   expect(store.getSnapshot().commands[0].admission).toEqual(admission());
   expect(store.getSnapshot().error).toContain("receipt storage full");
-  expect(() => store.acknowledge(COMMAND, admission(10n))).toThrow("Conflicting");
-  expect(() => store.observePrefix([admission(10n)])).toThrow("Conflicting");
+  expect(() => store.acknowledgeDispatch(COMMAND, admittedDispatch(admission(10n)))).toThrow("Conflicting");
   const unsubscribe = store.subscribe(() => {});
   window.dispatchEvent(new StorageEvent("storage", { key: null }));
   expect(store.getSnapshot().commands[0].admission).toEqual(admission());
-  store.observePrefix([admission()]);
+  store.observeCommandIds(new Set([COMMAND.commandId]));
   expect(store.getSnapshot().commands).toEqual([]);
   unsubscribe();
 });
@@ -391,18 +386,17 @@ it("persists Dispatcher queue state and accepts a newer retry transition without
   expect(restored.getSnapshot().commands[0].dispatch?.state).toBe(DeliveryState.QUEUED_IN_DISPATCHER);
 });
 
-it("checks admission included in a Dispatcher receipt and transfers the input to History replay", () => {
+it("keeps a Dispatcher admission until History projects its command", () => {
   const store = new LocalCommands("thread");
   store.remember(COMMAND);
   const admitted = admission();
-  store.acknowledgeDispatch(
-    COMMAND,
-    dispatch(COMMAND, DeliveryState.RUNNER_ADMITTED, "2026-10-14T12:00:02Z", admitted)
-  );
-  expect(new LocalCommands("thread").getSnapshot().commands[0].admission).toEqual(admitted);
-  store.observePrefix([admitted]);
-  expect(store.getSnapshot().commands).toEqual([]);
-  expect(store.getSnapshot().inputEchoes).toEqual([
+  store.acknowledgeDispatch(COMMAND, admittedDispatch(admitted));
+  const restored = new LocalCommands("thread");
+  restored.observeCommandIds(new Set(["another-command"]));
+  expect(restored.getSnapshot().commands[0].admission).toEqual(admitted);
+  restored.observeCommandIds(new Set([COMMAND.commandId]));
+  expect(restored.getSnapshot().commands).toEqual([]);
+  expect(restored.getSnapshot().inputEchoes).toEqual([
     { commandId: COMMAND.commandId, text: "  exact text\nsecond line  " },
   ]);
 });

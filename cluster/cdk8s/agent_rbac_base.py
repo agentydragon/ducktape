@@ -14,7 +14,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCh
 
 from cluster.cdk8s import namespaces
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.kyverno.janitor import janitor
+from cluster.cdk8s.kyverno.janitor import ApiResource, janitor
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 
@@ -158,7 +158,14 @@ def _add_sandbox(chart: Chart) -> None:
         name="sandbox-janitor",
         namespace=NAMESPACE,
         schedule="20 * * * *",
-        kinds=["Pod", "Deployment", "StatefulSet", "Job", "CronJob", "Service"],
+        resources=[
+            ApiResource(group="", version="v1", resource="pods"),
+            ApiResource(group="apps", version="v1", resource="deployments"),
+            ApiResource(group="apps", version="v1", resource="statefulsets"),
+            ApiResource(group="batch", version="v1", resource="jobs"),
+            ApiResource(group="batch", version="v1", resource="cronjobs"),
+            ApiResource(group="", version="v1", resource="services"),
+        ],
     )
 
 

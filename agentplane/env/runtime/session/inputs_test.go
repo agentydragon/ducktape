@@ -24,7 +24,7 @@ func TestSessionReconcileSnapshotsIgnoreJournalOnlyChanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Emit(ctx, observation(&eventpb.HarnessStderr{Text: "raw output"}), nil); err != nil {
+	if err := s.Emit(ctx, harness.Observation(&eventpb.HarnessStderr{Text: "raw output"}), nil); err != nil {
 		t.Fatal(err)
 	}
 	s.wake()
@@ -167,7 +167,7 @@ func TestJournalNotificationsOnlySignalBlockerTransitions(t *testing.T) {
 	s.deps.changed = func() { notifications.Add(1) }
 	summariesChanged := manager.SummaryChangesSince()
 	for _, text := range []string{"first", "second"} {
-		if err := s.Emit(ctx, observation(&eventpb.HarnessStderr{Text: text}), nil); err != nil {
+		if err := s.Emit(ctx, harness.Observation(&eventpb.HarnessStderr{Text: text}), nil); err != nil {
 			t.Fatal(err)
 		}
 		s.wake()
@@ -180,14 +180,14 @@ func TestJournalNotificationsOnlySignalBlockerTransitions(t *testing.T) {
 	default:
 		t.Fatal("journal cursor changes did not wake Session summary observers")
 	}
-	if err := s.Emit(ctx, observation(&eventpb.TurnStarted{TurnId: "turn"}), nil); err != nil {
+	if err := s.Emit(ctx, harness.Observation(&eventpb.TurnStarted{TurnId: "turn"}), nil); err != nil {
 		t.Fatal(err)
 	}
 	if notifications.Load() != 1 {
 		t.Fatal("active turn did not notify observers")
 	}
 	if err := s.journal.WithBatch(ctx, func(ctx context.Context) error {
-		if err := s.Emit(ctx, observation(&eventpb.TurnCompleted{TurnId: "turn", Status: eventpb.TurnStatus_TURN_STATUS_COMPLETED}), nil); err != nil {
+		if err := s.Emit(ctx, harness.Observation(&eventpb.TurnCompleted{TurnId: "turn", Status: eventpb.TurnStatus_TURN_STATUS_COMPLETED}), nil); err != nil {
 			return err
 		}
 		if notifications.Load() != 1 {

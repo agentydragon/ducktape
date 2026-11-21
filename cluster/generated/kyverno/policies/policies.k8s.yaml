@@ -1,5 +1,5 @@
-apiVersion: kyverno.io/v1
-kind: ClusterPolicy
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
 metadata:
   annotations:
     policies.kyverno.io/category: Best Practices
@@ -9,118 +9,41 @@ metadata:
     policies.kyverno.io/title: Require GitOps
   name: require-gitops
 spec:
-  background: false
-  rules:
-    - exclude:
-        any:
-          - subjects:
-              - kind: ServiceAccount
-                name: kustomize-controller
-                namespace: flux-system
-          - subjects:
-              - kind: ServiceAccount
-                name: helm-controller
-                namespace: flux-system
-          - subjects:
-              - kind: ServiceAccount
-                name: source-controller
-                namespace: flux-system
-          - subjects:
-              - kind: ServiceAccount
-                name: haku-state-reconciler
-                namespace: flux-system
-          - subjects:
-              - kind: ServiceAccount
-                name: kyverno-admission-controller
-                namespace: kyverno
-          - subjects:
-              - kind: ServiceAccount
-                name: monitoring-operator
-                namespace: monitoring
-          - subjects:
-              - kind: ServiceAccount
-                name: grafana-operator
-                namespace: monitoring
-          - subjects:
-              - kind: ServiceAccount
-                name: seaweedfs-operator
-                namespace: seaweedfs
-          - subjects:
-              - kind: ServiceAccount
-                name: authentik
-                namespace: authentik
-          - subjects:
-              - kind: ServiceAccount
-                name: reloader-reloader
-                namespace: kube-system
-          - resources:
-              namespaces:
-                - crossplane-system
-            subjects:
-              - kind: ServiceAccount
-                name: crossplane
-                namespace: crossplane-system
-          - resources:
-              namespaces:
-                - kube-system
-                - kyverno
-                - flux-system
-      match:
-        any:
-          - resources:
-              kinds:
-                - Deployment
-                - StatefulSet
-                - DaemonSet
-              operations:
-                - CREATE
-                - UPDATE
-      name: block-direct-workload-changes
-      validate:
-        deny: {}
-        message: "Direct resource creation/modification blocked. All changes must go through GitOps (commit to git repository). Resource: {{request.object.kind}}/{{request.object.metadata.name}} User: {{request.userInfo.username}}"
-  validationFailureAction: audit
+  evaluation:
+    admission:
+      enabled: true
+    background:
+      enabled: false
+  matchConditions:
+    - expression: "!(request.userInfo.username in ['system:serviceaccount:flux-system:kustomize-controller', 'system:serviceaccount:flux-system:helm-controller', 'system:serviceaccount:flux-system:source-controller', 'system:serviceaccount:flux-system:haku-state-reconciler', 'system:serviceaccount:kyverno:kyverno-admission-controller', 'system:serviceaccount:monitoring:monitoring-operator', 'system:serviceaccount:monitoring:grafana-operator', 'system:serviceaccount:seaweedfs:seaweedfs-operator', 'system:serviceaccount:authentik:authentik', 'system:serviceaccount:kube-system:reloader-reloader'])"
+      name: not-exempt-service-account
+    - expression: "!(request.userInfo.username == 'system:serviceaccount:crossplane-system:crossplane' && request.namespace == 'crossplane-system')"
+      name: not-crossplane-in-its-namespace
+    - expression: "!(request.namespace in ['kube-system', 'kyverno', 'flux-system'])"
+      name: not-system-namespace
+  matchConstraints:
+    resourceRules:
+      - apiGroups:
+          - apps
+        apiVersions:
+          - v1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - deployments
+          - statefulsets
+          - daemonsets
+  validationActions:
+    - Audit
+  validations:
+    - expression: "false"
+      messageExpression: "'Direct resource creation/modification blocked. All changes must go through GitOps (commit to git repository). Resource: ' + object.kind + '/' + object.metadata.name + ' User: ' + request.userInfo.username"
 ---
-apiVersion: kyverno.io/v1
-kind: ClusterPolicy
+apiVersion: policies.kyverno.io/v1
+kind: MutatingPolicy
 metadata:
   annotations:
-    policies.kyverno.io/category: Best Practices
-    policies.kyverno.io/description: Sets spec.revisionHistoryLimit to 3 on Deployments, StatefulSets, and DaemonSets that do not specify it, to bound accumulated revision history (dead ReplicaSets / ControllerRevisions) and the kube-state-metrics series and memory that track them.
-    policies.kyverno.io/severity: low
-    policies.kyverno.io/subject: Deployment, StatefulSet, DaemonSet
-    policies.kyverno.io/title: Default revisionHistoryLimit
-  name: default-revision-history-limit
-spec:
-  admission: true
-  background: false
-  rules:
-    - match:
-        any:
-          - resources:
-              kinds:
-                - Deployment
-                - StatefulSet
-                - DaemonSet
-              operations:
-                - CREATE
-                - UPDATE
-      mutate:
-        patchStrategicMerge:
-          spec:
-            revisionHistoryLimit: 3
-      name: default-revision-history-limit
-      preconditions:
-        all:
-          - key: "{{ request.object.spec.revisionHistoryLimit || `-1` }}"
-            operator: Equals
-            value: -1
----
-apiVersion: kyverno.io/v1
-kind: ClusterPolicy
-metadata:
-  annotations:
-    pod-policies.kyverno.io/autogen-controllers: none
     policies.kyverno.io/category: Best Practices
     policies.kyverno.io/description: Sets enableServiceLinks to false on newly created Pods to prevent legacy Service environment variables from colliding with application settings.
     policies.kyverno.io/severity: medium
@@ -128,92 +51,31 @@ metadata:
     policies.kyverno.io/title: Default Service Links off
   name: default-disable-service-links
 spec:
-  admission: true
-  background: false
-  rules:
-    - match:
-        any:
-          - resources:
-              kinds:
-                - Pod
-              operations:
-                - CREATE
-      mutate:
-        patchStrategicMerge:
-          spec:
-            enableServiceLinks: false
-      name: default-disable-service-links
+  autogen:
+    podControllers:
+      controllers: []
+  evaluation:
+    admission:
+      enabled: true
+    background:
+      enabled: false
+  matchConstraints:
+    resourceRules:
+      - apiGroups:
+          - ""
+        apiVersions:
+          - v1
+        operations:
+          - CREATE
+        resources:
+          - pods
+  mutations:
+    - applyConfiguration:
+        expression: "Object{spec: Object.spec{enableServiceLinks: false}}"
+      patchType: ApplyConfiguration
 ---
-apiVersion: kyverno.io/v1
-kind: ClusterPolicy
-metadata:
-  annotations:
-    policies.kyverno.io/category: Best Practices
-    policies.kyverno.io/description: "Adds a goldilocks vpa-resource-policy annotation setting controlledValues: RequestsOnly to namespaces running goldilocks VPA in auto mode, so VPA never scales a container's limits down in proportion to its requests. Only applied when the namespace does not already declare its own policy."
-    policies.kyverno.io/severity: high
-    policies.kyverno.io/subject: Namespace
-    policies.kyverno.io/title: Default VPA to RequestsOnly
-  name: default-vpa-requests-only
-spec:
-  admission: true
-  background: false
-  rules:
-    - match:
-        any:
-          - resources:
-              kinds:
-                - Namespace
-              operations:
-                - CREATE
-                - UPDATE
-              selector:
-                matchLabels:
-                  goldilocks.fairwinds.com/vpa-update-mode: auto
-      mutate:
-        patchStrategicMerge:
-          metadata:
-            annotations:
-              +(goldilocks.fairwinds.com/vpa-resource-policy): '{"containerPolicies": [{"containerName": "*", "controlledValues": "RequestsOnly"}]}'
-      name: default-vpa-requests-only
----
-apiVersion: kyverno.io/v1
-kind: ClusterPolicy
-metadata:
-  annotations:
-    policies.kyverno.io/category: Access Control
-    policies.kyverno.io/description: "Blocks creation/modification of any Gateway API route (HTTPRoute, TLSRoute, TCPRoute, UDPRoute, GRPCRoute) or Gateway in the agent-writable sandbox namespaces (claude-sandbox, haku-sandbox). The public `cluster-gateway` listeners use `allowedRoutes.namespaces.from: All`, so without this fence an agent that gained `httproutes`/`gateways` RBAC could publish a route that attaches to the public gateway and bypasses the operator-owned Authentik proxy. Agents have no legitimate need to create routes — their sandbox Roles already omit these resources — so a blanket deny in those namespaces closes the latent hole structurally without touching any existing route (none live in a sandbox namespace). This denylist is preferred over per-listener `allowedRoutes` selectors because the public gateway's listener-level `allowedRoutes` is affected by Cilium bug #42159 (see cluster/docs/plan.md), and the Selector approach would require labeling the built-in `default` and `flux-system` namespaces that host critical routes. For Haku this is an enforcement inventory entry in haku/docs/security.md."
-    policies.kyverno.io/severity: high
-    policies.kyverno.io/subject: HTTPRoute, TLSRoute, TCPRoute, UDPRoute, GRPCRoute, Gateway
-    policies.kyverno.io/title: Restrict Agent Gateway API Routes
-  name: restrict-agent-gateway-routes
-spec:
-  admission: true
-  background: false
-  rules:
-    - match:
-        any:
-          - resources:
-              kinds:
-                - HTTPRoute
-                - GRPCRoute
-                - TLSRoute
-                - TCPRoute
-                - UDPRoute
-                - Gateway
-              namespaces:
-                - claude-sandbox
-                - haku-sandbox
-              operations:
-                - CREATE
-                - UPDATE
-      name: deny-routes-in-agent-namespaces
-      validate:
-        deny: {}
-        message: "Gateway API routes and Gateways may not be created in agent sandbox namespaces. Public ingress is operator-owned: route through the Authentik proxy (HTTPRoutes in the `authentik` namespace) instead. Resource: {{request.object.kind}}/{{request.object.metadata.name}}"
-  validationFailureAction: enforce
----
-apiVersion: kyverno.io/v1
-kind: ClusterPolicy
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
 metadata:
   annotations:
     policies.kyverno.io/category: Access Control
@@ -223,27 +85,27 @@ metadata:
     policies.kyverno.io/title: Require ClusterSecretStore Conditions
   name: require-secret-store-conditions
 spec:
-  admission: true
-  background: true
-  rules:
-    - match:
-        any:
-          - resources:
-              kinds:
-                - ClusterSecretStore
-              operations:
-                - CREATE
-                - UPDATE
-      name: require-conditions
-      validate:
-        deny:
-          conditions:
-            any:
-              - key: "{{ request.object.spec.conditions[].namespaces[] || `[]` | length(@) }}"
-                operator: Equals
-                value: 0
-        message: "ClusterSecretStore must name the namespaces allowed to use it in spec.conditions[].namespaces; without at least one the store is readable from every namespace and the ESO ServiceAccount has cluster-wide secret read. Store: {{request.object.metadata.name}} (remoteNamespace {{request.object.spec.provider.kubernetes.remoteNamespace || 'n/a'}})."
-  validationFailureAction: enforce
+  evaluation:
+    admission:
+      enabled: true
+    background:
+      enabled: true
+  matchConstraints:
+    resourceRules:
+      - apiGroups:
+          - external-secrets.io
+        apiVersions:
+          - v1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - clustersecretstores
+  validationActions:
+    - Deny
+  validations:
+    - expression: has(object.spec.conditions) && object.spec.conditions.exists(c, has(c.namespaces) && size(c.namespaces) > 0)
+      messageExpression: "'ClusterSecretStore must name the namespaces allowed to use it in spec.conditions[].namespaces; without at least one the store is readable from every namespace and the ESO ServiceAccount has cluster-wide secret read. Store: ' + object.metadata.name"
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole

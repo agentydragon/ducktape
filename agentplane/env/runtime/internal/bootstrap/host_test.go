@@ -22,6 +22,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/scripts"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/agentydragon/ducktape/agentplane/testing/eventually"
 	"github.com/cosi-project/runtime/pkg/controller/runtime"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
@@ -464,11 +465,6 @@ func TestConcurrentBootstrapWaitersShareOneAttempt(t *testing.T) {
 	script := fmt.Sprintf(": > %q\nwhile [ ! -f %q ]; do sleep 0.01; done\nprintf b >> %q\nprintf ready", started, release, count)
 	r := newHostTestRuntime(t, &script, stateDir, nil)
 	t.Cleanup(func() { _ = os.WriteFile(release, nil, 0o600) })
-	initialSignal, found, err := lifecycle.Read[operationSignal](t.Context(), r.state, ResourceID)
-	if err != nil || !found || initialSignal.Revision != 0 {
-		t.Fatalf("bootstrap operation signal before admission = (%+v, found=%t, err=%v), want initialized revision 0", initialSignal, found, err)
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), bootstrapTestTimeout)
 	defer cancel()
 	const waiters = 8
@@ -488,10 +484,6 @@ func TestConcurrentBootstrapWaitersShareOneAttempt(t *testing.T) {
 	r.workers.Wait()
 	if data, err := os.ReadFile(count); err != nil || string(data) != "b" {
 		t.Fatalf("bootstrap script count = %q, %v; want one execution", data, err)
-	}
-	signal, found, err := lifecycle.Read[operationSignal](ctx, r.state, ResourceID)
-	if err != nil || !found || signal.Revision != 2 {
-		t.Fatalf("bootstrap operation signal = (%+v, found=%t, err=%v), want revision 2", signal, found, err)
 	}
 }
 
@@ -586,97 +578,56 @@ func TestCompletionSignalPublicationFailureKeepsBootstrapFailClosed(t *testing.T
 	}
 }
 
-func TestInterruptedAttemptIsReconstructedWithoutRerunning(t *testing.T) {
-	stateDir := t.TempDir()
-	count := filepath.Join(stateDir, "count")
-	script := fmt.Sprintf("printf b >> %q", count)
-	store, closer, err := openTestState(stateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := publishSelection(t.Context(), store, script); err != nil {
-		t.Fatal(err)
-	}
-	log, err := OpenLog(t.Context(), store)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := log.AppendInterrupted(t.Context(), 1); err != nil {
-		t.Fatal(err)
-	}
-	if err := closer.Close(); err != nil {
-		t.Fatal(err)
-	}
+func TestBootstrapWithoutResultIsInterruptedAndNotRerunAfterRestart(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		record func(context.Context, *Log) error // nil leaves the selection as the only durable evidence
+	}{
+		{name: "selection only"},
+		{name: "partial output", record: func(ctx context.Context, log *Log) error {
+			return log.AppendOutput(ctx, 1, sessionpb.InitializationStream_INITIALIZATION_STREAM_STDOUT, []byte("partial"))
+		}},
+		{name: "interrupted attempt", record: func(ctx context.Context, log *Log) error {
+			return log.AppendInterrupted(ctx, 1)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stateDir := t.TempDir()
+			effect := filepath.Join(stateDir, "effect")
+			script := fmt.Sprintf("printf ran > %q", effect)
+			store, closer, err := openTestState(stateDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := publishSelection(t.Context(), store, script); err != nil {
+				t.Fatal(err)
+			}
+			if tc.record != nil {
+				log, err := OpenLog(t.Context(), store)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := tc.record(t.Context(), log); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := closer.Close(); err != nil {
+				t.Fatal(err)
+			}
 
-	r := newHostTestRuntime(t, &script, stateDir, nil)
-	ctx, cancel := context.WithTimeout(context.Background(), bootstrapTestTimeout)
-	defer cancel()
-	if err := r.host.Wait(ctx); !errors.Is(err, ErrInterrupted) {
-		t.Fatalf("restored interrupted bootstrap error = %v, want ErrInterrupted", err)
-	}
-	if _, err := os.Stat(count); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("interrupted bootstrap script ran again: %v", err)
-	}
-	bootstrapStatus, found, err := ReadStatus(ctx, r.state)
-	if err != nil || !found || bootstrapStatus.Phase != Interrupted {
-		t.Fatalf("restored interrupted runtime = (%+v, found=%t, err=%v), want interrupted", bootstrapStatus, found, err)
-	}
-}
-
-func TestSelectionWithoutTerminalEventIsInterruptedAfterRestart(t *testing.T) {
-	stateDir := t.TempDir()
-	script := fmt.Sprintf("printf ran > %q", filepath.Join(stateDir, "effect"))
-	store, closer, err := openTestState(stateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := publishSelection(t.Context(), store, script); err != nil {
-		t.Fatal(err)
-	}
-	if err := closer.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	r := newHostTestRuntime(t, &script, stateDir, nil)
-	ctx, cancel := context.WithTimeout(context.Background(), bootstrapTestTimeout)
-	defer cancel()
-	if err := r.host.Wait(ctx); !errors.Is(err, ErrInterrupted) {
-		t.Fatalf("restored selection without terminal event = %v, want interrupted", err)
-	}
-	if _, err := os.Stat(filepath.Join(stateDir, "effect")); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("script ran after restart: %v", err)
-	}
-}
-
-func TestOutputWithoutTerminalEventIsInterruptedAfterRestart(t *testing.T) {
-	stateDir := t.TempDir()
-	script := fmt.Sprintf("printf ran > %q", filepath.Join(stateDir, "effect"))
-	store, closer, err := openTestState(stateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := publishSelection(t.Context(), store, script); err != nil {
-		t.Fatal(err)
-	}
-	log, err := OpenLog(t.Context(), store)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := log.AppendOutput(t.Context(), 1, sessionpb.InitializationStream_INITIALIZATION_STREAM_STDOUT, []byte("partial")); err != nil {
-		t.Fatal(err)
-	}
-	if err := closer.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	r := newHostTestRuntime(t, &script, stateDir, nil)
-	ctx, cancel := context.WithTimeout(context.Background(), bootstrapTestTimeout)
-	defer cancel()
-	if err := r.host.Wait(ctx); !errors.Is(err, ErrInterrupted) {
-		t.Fatalf("restored output without terminal event = %v, want interrupted", err)
-	}
-	if _, err := os.Stat(filepath.Join(stateDir, "effect")); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("script ran after partial output recovery: %v", err)
+			r := newHostTestRuntime(t, &script, stateDir, nil)
+			ctx, cancel := context.WithTimeout(context.Background(), bootstrapTestTimeout)
+			defer cancel()
+			if err := r.host.Wait(ctx); !errors.Is(err, ErrInterrupted) {
+				t.Fatalf("restored bootstrap error = %v, want ErrInterrupted", err)
+			}
+			if _, err := os.Stat(effect); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("bootstrap script ran again after restart: %v", err)
+			}
+			if bootstrapStatus, found, err := ReadStatus(ctx, r.state); err != nil || !found || bootstrapStatus.Phase != Interrupted {
+				t.Fatalf("restored bootstrap status = (%+v, found=%t, err=%v), want interrupted", bootstrapStatus, found, err)
+			}
+		})
 	}
 }
 
@@ -880,12 +831,5 @@ func TestSelectionByteLimit(t *testing.T) {
 
 func waitForFile(t *testing.T, path string) {
 	t.Helper()
-	deadline := time.Now().Add(bootstrapTestTimeout)
-	for time.Now().Before(deadline) {
-		if _, err := os.Stat(path); err == nil {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("timed out waiting for %s", path)
+	eventually.PathExists(t, path, 10*time.Millisecond, bootstrapTestTimeout)
 }

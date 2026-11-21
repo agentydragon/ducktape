@@ -5,6 +5,7 @@
 #   freecad-test  — FreeCAD test runner (skills/freecad/Dockerfile.test)
 #   rtl-tcp       — RTL-SDR Blog V4 rtl_tcp server (x/rtl_tcp/Dockerfile); Flux ImagePolicy,
 #                   no digest pin needed. Uses rtl-sdr-blog fork for V4 R828D support.
+#   loom-gym-sandbox — forecasting-eval agent environment (x/loom/gym/sandbox); GHCR, devel only.
 #
 # (cpap-sync is built via Bazel — see //cpap:image and the
 # push-images.yml matrix. The RBE container image is rbe-container-image.yml, kept
@@ -40,7 +41,6 @@ env:
 jobs:
   freecad-image:
     name: FreeCAD Test
-    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:

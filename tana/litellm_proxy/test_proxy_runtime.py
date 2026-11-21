@@ -25,7 +25,7 @@ from python.runfiles import Runfiles
 
 from tana.litellm_proxy import custom_handler
 from tana.litellm_proxy.provider import TanaChatResult, TanaLiteLLM, TanaProxyClient, TanaProxyConfig
-from util.testing.asgi import serve_app_in_loop
+from testing.asgi import serve_app_in_loop
 
 
 def test_litellm_proxy_binary_imports_server(runfiles: Runfiles, tmp_path: Path) -> None:

@@ -27,28 +27,16 @@ from finance.plaid.spend.allowance import (
 )
 from finance.plaid.spend.consumption import ConsumptionMode, prepare_consumption
 from finance.plaid.spend.reconciliation import ReportStatus
+from finance.plaid.spend.testing.transaction import make_transaction
 
 _TODAY = date(2026, 4, 1)
 _ZONE = ZoneInfo("America/Los_Angeles")
 
 
 def transaction(name: str, amount: str = "10.00", **changes: object) -> Transaction:
-    return Transaction.model_validate(
-        {
-            "account_id": "card",
-            "transaction_id": name,
-            "pending_transaction_id": None,
-            "date": date(2026, 3, 10),
-            "amount": Decimal(amount),
-            "pending": False,
-            "name": name,
-            "merchant_name": None,
-            "pfc_primary": None,
-            "pfc_detailed": None,
-            "currency": "USD",
-            **changes,
-        }
-    )
+    return make_transaction(
+        account_id="card", transaction_id=name, date=date(2026, 3, 10), amount=Decimal(amount), name=name
+    ).model_copy(update=changes)
 
 
 def policy() -> AllowancePolicy:
@@ -259,28 +247,7 @@ def test_shared_decisions_preserve_allowance_consumption_and_statement_meaning(
 
 
 def test_statement_keeps_signed_reversal_legs_and_posting_date() -> None:
-    allowance = policy().model_copy(
-        update={
-            "reversal_pairs": [
-                ReversalPair(
-                    id="synthetic-return",
-                    description="Synthetic returned purchase",
-                    original=AllOf(
-                        conditions=[
-                            DateRange(start=date(2026, 1, 1), end=date(2026, 1, 1)),
-                            NamePrefix(field="name", prefix="SHOP original"),
-                        ]
-                    ),
-                    reversal=AllOf(
-                        conditions=[
-                            DateRange(start=date(2026, 3, 10), end=date(2026, 3, 10)),
-                            NamePrefix(field="name", prefix="SHOP return"),
-                        ]
-                    ),
-                )
-            ]
-        }
-    )
+    allowance = policy_with_reversal("Synthetic returned purchase")
     original = transaction("SHOP original", date=date(2026, 1, 1))
     reversal = transaction("SHOP return", "-10", authorized_date=date(2026, 3, 9))
     prepared = prepare_accounting([original, reversal], allowance=allowance, time_zone=_ZONE, today=_TODAY)

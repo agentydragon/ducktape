@@ -1,0 +1,12 @@
+{
+  "why": "isEven and isOdd call each other from different modules. The import cycle is fine: function declarations exist before any module runs.",
+  "entry": "main.mjs",
+  "modules": {
+    "math.mjs": ["PI", "square", "area"],
+    "even.mjs": ["isEven"],
+    "odd.mjs": ["isOdd"],
+    "registry.mjs": ["registry", "register"],
+    "plugins.mjs": ["#7", "label", "#9"],
+    "main.mjs": ["#10", "#11"]
+  }
+}

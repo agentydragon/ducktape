@@ -11,7 +11,7 @@ target-version = "py314"
 
 # Exclusions: Mirror of .gitattributes rules-lint-ignored patterns for Python files.
 # .gitattributes is the source of truth; this list must stay in sync.
-# Reason: devinfra/format/format.py reads .gitattributes, but ruff check reads ruff.toml.
+# Reason: devinfra/precommit/git_hook.py reads .gitattributes, but ruff check reads ruff.toml.
 # See README.md "Lint/Format Exclusions" section for details.
 exclude = [  # keep-sorted start
     "cluster/docs/inference/model_comparison",
@@ -161,6 +161,7 @@ known-first-party = [
     "openai_utils",
     "ssh_mcp_server",
     "tana",
+    "testing",
     "tests",  # test packages (until colocated under main packages)
     # This list must stay COMPLETE: the lint aspect runs ruff from the bazel exec
     # root, where ruff cannot auto-detect first-party packages (it only sees

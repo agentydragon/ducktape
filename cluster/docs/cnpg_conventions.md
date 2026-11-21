@@ -47,8 +47,8 @@ before changing a profile's tolerance, check where its PV lives and rebuild the
 instance on a schedulable node if needed.
 
 **Proxmox-single**: For homelab services. Single instance co-located with the
-app on Proxmox. Relies on ZFS for local reliability; off-site backups via
-pg_dump CronJobs (see backup strategy in <plan.md>).
+app on Proxmox. Relies on ZFS for local reliability; no off-site
+backup exists yet; a `pg_dump` CronJob pattern is a backlog item in <plan.md>.
 
 **Optiplex-single** (`cnpg.OPTIPLEX_PIRAEUS_SSD`): for a database whose app is
 pinned to the OptiPlex at home (Home Assistant's recorder), so writes stay
@@ -107,6 +107,14 @@ its default queries against that database, and the primary's instance reconcile 
 owner's password from the secret. When the role does not exist, that reconcile fails and
 skips every later step.
 
+## Gotcha: replica stuck `0/1` after failover
+
+A former primary can finish `pg_rewind`, enter standby and stay `0/1` for ~30 minutes while the
+new primary is healthy: it needs WAL up to a minimum recovery ending LSN that the idle primary
+has not sent (`airlock-db-1` needed `0/15000028`; the primary had sent and the replica replayed
+`0/15000000`). `pg_switch_wal()` does not help while the primary idles at a WAL segment boundary;
+one WAL record on the primary does: `select pg_create_restore_point('cnpg_recovery_nudge_<date>_<cluster>');`
+
 ## Current Compliance
 
 No roster here — it drifts. The SSOT is the `Cluster` manifests themselves;
@@ -123,7 +131,7 @@ Parked clusters (retained in Git; R2/R3 bind again on revival):
 
 - `Props` (<../../props/deploy/>): suspended 2026-08-20 for a temporary teardown
   (<decisions.md> § "Parked application manifests").
-- Proxmox-single: `firecrawl-db`, `inventree-db`, `tandoor-db` (`x/`). Their
+- Proxmox-single: `firecrawl-db`, `inventree-db`, `tandoor-db` (`parked/{firecrawl,inventree,tandoor}/db`). Their
   manifests still name the retired `local-path` StorageClass — re-point to
   `piraeus-ssd-local` when reviving.
 - `wayback-archive-db` (<../../x/loom/wayback/deploy/>): OVH-HA shape,

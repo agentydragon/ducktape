@@ -20,10 +20,9 @@ import (
 // Inbox is one Session's inbox: the entries of every source its subscriptions follow, in the order they were
 // committed. A cursor is an entry's position, from 1.
 type Inbox struct {
-	ID             uuid.UUID
-	OwnerIdentity  model.Identity
-	DestinationRef model.DestinationRef
-	SessionID      string
+	ID            uuid.UUID
+	OwnerIdentity model.Identity
+	SessionID     string
 	// LastCursor is the cursor of the newest committed entry, or 0.
 	LastCursor int64
 	// Acknowledged moves only when the agent acknowledges.
@@ -68,26 +67,19 @@ type InboxPage struct {
 	Notice  *Notice
 }
 
-const inboxColumns = `id, destination_namespace, destination_name, destination_uid,
-	session_id, last_cursor, acknowledged, covered, expired_through, retired, delivery_error,
-	owner_identity_name, owner_identity_uid`
+const inboxColumns = `id, session_id, last_cursor, acknowledged, covered, expired_through, retired,
+	delivery_error, owner_identity_name, owner_identity_uid`
 
 type rowScanner interface{ Scan(...any) error }
 
 // scanInbox reads inboxColumns, then any columns the query adds into extra.
 func scanInbox(row rowScanner, extra ...any) (Inbox, error) {
 	var inbox Inbox
-	var namespace, name, uid sql.NullString
 	var deliveryError sql.NullString
 	if err := row.Scan(append([]any{
-		&inbox.ID, &namespace, &name, &uid, &inbox.SessionID, &inbox.LastCursor, &inbox.Acknowledged,
+		&inbox.ID, &inbox.SessionID, &inbox.LastCursor, &inbox.Acknowledged,
 		&inbox.Covered, &inbox.ExpiredThrough, &inbox.Retired, &deliveryError, &inbox.OwnerIdentity.Name, &inbox.OwnerIdentity.UID,
 	}, extra...)...); err != nil {
-		return Inbox{}, err
-	}
-	var err error
-	inbox.DestinationRef, err = destinationRefFromColumns(inbox.ID, namespace, name, uid)
-	if err != nil {
 		return Inbox{}, err
 	}
 	if deliveryError.Valid {
@@ -96,24 +88,12 @@ func scanInbox(row rowScanner, extra ...any) (Inbox, error) {
 	return inbox, nil
 }
 
-func destinationRefFromColumns(id uuid.UUID, namespace, name, uid sql.NullString) (model.DestinationRef, error) {
-	if !namespace.Valid && !name.Valid && !uid.Valid {
-		return model.DestinationRef{}, nil
-	}
-	if !namespace.Valid || !name.Valid || !uid.Valid {
-		return model.DestinationRef{}, fmt.Errorf("inbox %s has incomplete normalized destination fields", id)
-	}
-	return model.DestinationRef{Namespace: namespace.String, Name: name.String, UID: uid.String}, nil
-}
-
-// owned is the owner's inbox, locked for update when lock is set. An inbox of another owner is not found.
-func owned(ctx context.Context, tx transaction.Tx, inboxID uuid.UUID, owner Owner, lock bool) (Inbox, error) {
+// owned is the owner's inbox, locked for update. An inbox of another owner is not found.
+func owned(ctx context.Context, tx transaction.Tx, inboxID uuid.UUID, owner Owner) (Inbox, error) {
 	predicate, args := ownerPredicate(owner, "", 2)
-	query := `SELECT ` + inboxColumns + ` FROM inbox WHERE id = $1 AND ` + predicate
-	if lock {
-		query += ` FOR UPDATE`
-	}
-	inbox, err := scanInbox(tx.QueryRowContext(ctx, query, append([]any{inboxID}, args...)...))
+	inbox, err := scanInbox(tx.QueryRowContext(ctx,
+		`SELECT `+inboxColumns+` FROM inbox WHERE id = $1 AND `+predicate+` FOR UPDATE`,
+		append([]any{inboxID}, args...)...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return Inbox{}, ErrNotFound
 	}
@@ -160,13 +140,12 @@ func (s *Store) ensureInbox(ctx context.Context, tx transaction.Tx, owner Owner,
 		return Inbox{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO inbox (id, destination_key,
-			destination_namespace, destination_name, destination_uid, session_id,
+		INSERT INTO inbox (id, session_id,
 			last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until,
 			owner_identity_name, owner_identity_uid)
-		VALUES ($1, $2, NULL, NULL, NULL, $3, 0, 0, 0, 0, false, $4, $4, $4, $5, $6)
+		VALUES ($1, $2, 0, 0, 0, 0, false, $3, $3, $3, $4, $5)
 		ON CONFLICT DO NOTHING`,
-		uuid.New(), sessionID, sessionID, written, owner.Identity.Name, owner.Identity.UID); err != nil {
+		uuid.New(), sessionID, written, owner.Identity.Name, owner.Identity.UID); err != nil {
 		return Inbox{}, err
 	}
 	predicate, args := ownerPredicate(owner, "", 2)
@@ -210,7 +189,7 @@ func (s *Store) ListInboxes(ctx context.Context, owner Owner) ([]Inbox, error) {
 // snapshot. Reading acknowledges nothing.
 func (s *Store) Read(ctx context.Context, owner Owner, inboxID uuid.UUID, after int64, limit int) (InboxPage, error) {
 	return s.read(ctx, after, limit, func(tx transaction.Tx) (Inbox, error) {
-		return owned(ctx, tx, inboxID, owner, true)
+		return owned(ctx, tx, inboxID, owner)
 	})
 }
 
@@ -343,7 +322,7 @@ func (s *Store) Acknowledge(ctx context.Context, owner Owner, inboxID uuid.UUID,
 	}
 	var acknowledged Inbox
 	err := s.transaction(ctx, func(tx transaction.Tx) error {
-		inbox, err := owned(ctx, tx, inboxID, owner, true)
+		inbox, err := owned(ctx, tx, inboxID, owner)
 		if err != nil {
 			return err
 		}
@@ -365,7 +344,7 @@ func (s *Store) Acknowledge(ctx context.Context, owner Owner, inboxID uuid.UUID,
 // Retiring a retired inbox changes nothing.
 func (s *Store) Retire(ctx context.Context, owner Owner, inboxID uuid.UUID) error {
 	return s.transaction(ctx, func(tx transaction.Tx) error {
-		inbox, err := owned(ctx, tx, inboxID, owner, true)
+		inbox, err := owned(ctx, tx, inboxID, owner)
 		if err != nil || inbox.Retired {
 			return err
 		}

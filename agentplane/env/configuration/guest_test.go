@@ -41,12 +41,17 @@ func TestGuestResourcePropertiesModeValidatesSeedBeforeOutput(t *testing.T) {
 		func(v map[string]any) {
 			v["environment"].(map[string]any)["resources"].(map[string]any)["service_memory_max_bytes"] = 0
 		},
-		func(v map[string]any) { v["environment"] = map[string]any{"kind": "pod", "supervision": "pid1"} },
+		func(v map[string]any) { v["environment"] = map[string]any{"supervision": "pid1"} },
 		func(v map[string]any) { v["unexpected"] = true },
 		func(v map[string]any) {
 			env := v["environment"].(map[string]any)
 			configurationVMExecutor(env)
 			delete(env, "executor")
+		},
+		func(v map[string]any) {
+			env := v["environment"].(map[string]any)
+			configurationVMSystemdExecutor(env)
+			delete(env["resources"].(map[string]any), "executor_workload")
 		},
 	} {
 		invalid := validGuestConfiguration(t)
@@ -135,7 +140,7 @@ func writeJSONFixture(t *testing.T, path string, value any) {
 func validGuestConfiguration(t *testing.T) map[string]any {
 	t.Helper()
 	value, _, _ := configurationFixture(t)
-	value["environment"] = configurationVMEnvironment()
+	value["environment"] = configurationSystemdEnvironment()
 	return value
 }
 

@@ -17,24 +17,36 @@ There are two current provider sources of truth: search Terraform for
 here; ownership is still being consolidated under
 <https://github.com/agentydragon/ducktape/issues/987>.
 
-OIDC provider files normally pair `authentik_provider_oauth2` with
-`authentik_application` and write a `kubernetes_secret` in the `authentik` namespace
-with Reflector annotations scoped to the consumer. Redirect URIs and Secret keys remain
-app-specific. Compare:
+Most OIDC providers are map entries in `providers.tf` or `providers_confidential.tf`, which
+hold the client ID and redirect URIs; a `provider_<app>.tf` normally adds the
+`authentik_application` and its access policy. The consumer `kubernetes_secret` in the
+`authentik` namespace, with Reflector annotations scoped to the consumer, is either an
+entry of `reflected_oidc_secrets.tf` or written by the app's own file. Redirect URIs and
+Secret keys remain app-specific. Compare:
 
-- `provider_grafana.tf` — redirect `https://grafana.allegedly.works/login/generic_oauth`;
-  secret keys `GF_AUTH_GENERIC_OAUTH_CLIENT_{ID,SECRET}`.
-- `provider_headlamp.tf` — redirect `https://headlamp.allegedly.works/oidc-callback`;
-  secret keys `OIDC_CLIENT_ID`/`OIDC_CLIENT_SECRET`/`OIDC_ISSUER_URL`/`OIDC_SCOPES`.
-- `provider_props.tf` — redirect `https://props.allegedly.works/auth/callback`;
-  secret keys `client-id`/`client-secret` plus an app-specific
-  `random_password`-generated `session-secret`, and an `authentik_policy_binding`
-  gating login to `data.authentik_group.admins`.
+- `grafana` — redirect `https://grafana.allegedly.works/login/generic_oauth`
+  (`providers_confidential.tf`); secret keys `GF_AUTH_GENERIC_OAUTH_CLIENT_{ID,SECRET}`
+  (`reflected_oidc_secrets.tf`).
+- `headlamp` — redirect `https://headlamp.allegedly.works/oidc-callback` (`providers.tf`);
+  secret keys `OIDC_CLIENT_ID`/`OIDC_CLIENT_SECRET`/`OIDC_ISSUER_URL`/`OIDC_SCOPES`
+  (`provider_headlamp.tf`).
+- `props` — redirect `https://props.allegedly.works/auth/callback`
+  (`providers_confidential.tf`); secret keys `client-id`/`client-secret` plus an
+  app-specific `random_password`-generated `session-secret` (`reflected_oidc_secrets.tf`),
+  and an `authentik_policy_binding` in `provider_props.tf` gating login to
+  `data.authentik_group.admins`.
 
 **Gotcha — give every `allowed_redirect_uris` entry a `redirect_uri_type`.** Authentik
 defaults an omitted type to `authorization`; provider 2026.8.0 stores that on read and
 diffs it against the omitted key, so the plan never converges and every 15-minute
 reconcile PUTs the provider.
+
+**Gotcha — `authentik_rbac_permission_role` returned `405 Method Not Allowed` on Authentik
+2026.2.1.** Upstream never routed the `assign`/`unassign` actions of
+`RoleAssignedPermissionViewSet`, so `POST /api/v3/rbac/permissions/assigned_by_roles/{uuid}/assign/`
+failed in every release checked and on `master` (2026-05-05). Server and provider are now
+2026.8: re-test before using the resource. The retired `claude-diagnostics` role (#11887) set
+its permissions in an `authentik_rbac.role` blueprint entry instead, which avoids that endpoint.
 
 ### Blueprint-managed providers (migration backlog)
 

@@ -10,10 +10,11 @@
 <lessons_learned/2026_03_07_talosctl_upgrade_hostname_loss.md> for platform-specific
 configuration and the full-plan warning.
 
-### Stale podCIDR After Node Hostname Change
+### Stale podCIDR After Node Hostname Change or Recreate
 
-**Symptoms**: Pods can't reach ClusterIP services; Longhorn `ManagerPodDown`; cascade to
-ESO secret sync. Pods have IPs outside node's `spec.podCIDR`.
+**Symptoms**: Pods can't reach ClusterIP services (`no route to host`); cascade to ESO
+secret sync. Pods have IPs outside node's `spec.podCIDR`: a hostname change or recreate
+gives the node a fresh podCIDR, and Cilium then routes only the new range.
 
 **Fix**: Delete pods with old-CIDR IPs -- DaemonSets recreate with correct IPs.
 
@@ -54,6 +55,21 @@ ssh root@atlas "qm reset <vmid>"
 
 See <lessons_learned/2026_03_24_xfs_quotacheck_stuck_boot.md> for the incident evidence
 and recovery outcome.
+
+### UserVolume Claimed but Not Mounted (New Mounts Fail with EROFS)
+
+**Signal**: a node's PVCs on a Talos `UserVolumeConfig` path fail new mounts with
+`mkdir <path>/...: read-only file system`, while pods already running keep working because
+their bind mounts outlive the missing top-level mount. On the broken node
+`talosctl get volumestatus` shows `u-<name>` as `ready`, but `talosctl get mountstatus` and
+`talosctl get volumemountstatus` have no entry for it; a healthy node has both. The machine
+config matches the working node and `tofu plan` shows no changes, `talosctl apply-config
+--mode=no-reboot` with identical content does nothing, and `talosctl wipe disk` refuses with
+`FailedPrecondition` because the volume still claims the disk.
+
+**Fix**: reboot the node. `VolumeConfigController` re-evaluates the volume from scratch and
+mounts it. Seen on Talos 1.12.3 after a node rename (2026-06-03); the backup lesson from that
+incident is in <plan.md>.
 
 ## Cilium Issues
 
@@ -104,6 +120,32 @@ control-plane health (`kubectl logs ... | grep "etcdserver: request timed out"`)
 assume the historical HDD issue is present. See the “Compounding Factor” in
 <lessons_learned/2026_07_03_tofu_controller_runner_rpc_hang.md>.
 
+## Goldilocks VPA Stays Stale After a Deployment Annotation Change
+
+Flux can apply a Deployment's `metadata.annotations` change while its Goldilocks-managed
+Vertical Pod Autoscaler (VPA) keeps the old update mode or resource policy. Goldilocks
+v4.16.1 watches Pod and Namespace events. A Deployment metadata-only edit leaves the Pod
+template unchanged and does not itself enqueue reconciliation.
+[Controller watches](https://github.com/FairwindsOps/goldilocks/blob/v4.16.1/pkg/controller/controller.go#L116-L169)
+
+After confirming the intended annotations are live on the Deployment, change the
+`ducktape.org/goldilocks-reconcile` annotation on its Namespace to trigger reconciliation.
+Set `namespace` and `deployment` to the affected names, then check the VPA's
+`spec.targetRef`, `spec.updatePolicy`, and `spec.resourcePolicy` against the intended policy.
+
+```bash
+kubectl annotate namespace "$namespace" \
+  ducktape.org/goldilocks-reconcile="$(date -u +%Y-%m-%dT%H:%M:%SZ)" --overwrite
+kubectl -n "$namespace" get vpa "goldilocks-$deployment" -o yaml
+```
+
+The annotation's value only needs to change. The Namespace event re-evaluates all
+Goldilocks-managed workloads in that namespace. Applying an eviction-capable mode such as
+`Recreate` can then lead to VPA-driven Pod evictions. This recovered `goldilocks-kubeapi-proxy`
+in `default` from `Initial` to `Recreate` after the Deployment annotation shipped.
+[Namespace handler](https://github.com/FairwindsOps/goldilocks/blob/v4.16.1/pkg/handler/namespace.go#L35-L43),
+[kubeapi-proxy change](https://github.com/agentydragon/ducktape/pull/18382).
+
 ## tofu-controller Issues
 
 ### TLS Secret Cache Desync (Startup GC Bug)
@@ -130,17 +172,14 @@ terminating a backend, prove it is an orphan on the **current CNPG primary**; se
 <lessons_learned/2026_07_11_tofu_pg_orphaned_session_lock.md> for the state matrix, SQL,
 and safe recovery.
 
-The Kubernetes-backend stale-Lease failure mode is historical. Current PG-backed lock
-diagnosis and recovery are covered by
-<lessons_learned/2026_07_11_tofu_pg_orphaned_session_lock.md>; the March note
-<lessons_learned/2026_03_18_tofu_controller_stale_state_locks.md> preserves the old incident.
+Deleting `lock-tfstate-*` Leases was the recovery for the retired Kubernetes state backend;
+it does not apply to PG state.
 
 ## Secrets & Auth Issues
 
 ### Resource ID Desync After Wiping a Backing Datastore
 
-Generalization of the Authentik-DB-wipe failure mode (see
-<lessons_learned/2026_02_18_authentik_tf_state_lifecycle_coupling.md>): any
+Generalization of the Authentik-DB-wipe failure mode: any
 tofu-controller `Terraform` CR that manages resources inside another stateful
 system (Authentik DB, Forgejo DB, etc.) will go into
 `Unable to read user/object … not found with id N` if that backing system is
@@ -168,10 +207,8 @@ Recovery (PG-backend CRs — current default):
 4. `flux resume kustomization -n flux-system <name>` and watch a fresh
    plan-and-apply.
 
-The Kubernetes-backend secret deletion and Vault-based variants (retired 2026-04-19)
-are historical; don't use those recovery steps. See
-<lessons_learned/2026_02_18_authentik_tf_state_lifecycle_coupling.md> for the original
-incident and historical procedure.
+State loss re-mints `random_password` values: a consumer that persisted the old one at
+init (write-once DB password, bootstrap token) diverges from the new Secret.
 
 ### SOPS Decryption Failure
 
@@ -207,15 +244,21 @@ chowns before the app starts.
 ```bash
 talosctl -n <node-ip> logs ext-nebula          # Talos nodes
 systemctl status nebula                         # NixOS workers
-ping 10.42.0.15                                 # talos-kimsufi-cp-0 lighthouse
-ping 10.42.0.13                                 # talos-kimsufi-worker-0 lighthouse
+ping 10.42.0.15                                 # ovh-ns102453 lighthouse
+ping 10.42.0.13                                 # ovh-ns103656 lighthouse
 ```
 
 Port: UDP 4242. If down: check firewall, verify certs (`nebula-cert print -path /etc/nebula/host.crt`).
 
-If rebooting both lighthouses leaves peers stuck (tunnels reported alive, no
+If rebooting all lighthouses leaves peers stuck (tunnels reported alive, no
 re-handshake, decrypt failures), see
 <troubleshooting/nebula_lighthouse_reboot_stale_tunnel.md>.
+
+Unexplained, 2026-07-03: Nebula on `wyrm2` could not complete handshakes to the lighthouse/relay hosts
+`ovh-ns104952` (`10.42.0.16`) and `ovh-ns104963` (`10.42.0.17`) although their host IPs answered ping and
+both nodes were `Ready`. Handshakes went unanswered (~6.5 s timeout, retried indefinitely); pods there
+were reached through the `10.42.0.13`–`.15` relays at added latency. Possible causes: UDP/4242 not open
+on those hosts, or Nebula extension misconfiguration; the cause and later status are not recorded.
 
 ### DNS & cert-manager
 
@@ -285,7 +328,9 @@ Gotchas:
   pull fails `DeadlineExceeded` with no streams at all.
 - Timestamps in the API are **nanoseconds** (hence the `000000000` suffix).
 
-Grafana also has Loki as a datasource for interactive log exploration (Explore view).
+Grafana also has Loki as a datasource for interactive log exploration (Explore view). It
+cannot scope access by namespace (TeamLBAC is Enterprise-only); namespace-scoped read
+access for agents goes through `loki-read-proxy` (<../proxies/loki_read_proxy/main.py>).
 
 ### Nix Cache
 
@@ -355,18 +400,15 @@ provisioners carry `ttlSecondsAfterFinished`, which deletes the finished Job so 
 reconcile recreates and re-runs it — recovery without a human. Change-driven scripts
 (the `readonly-role` GRANT Jobs) deliberately do **not**: a TTL there would convert a
 run-on-change script into a run-on-schedule one. Those stay on the manual recovery above.
-Rationale lives next to the Jobs themselves — see
-`HaMcpCredentialsProvisioner._add_job` in <../cdk8s/ha_mcp.py> and
-`_readonly_provisioner` in <../cdk8s/study_casino/app.py>.
+Rationale lives next to the Jobs themselves — see the TTL comment in
+<../cdk8s/atuin/user_provisioner.py> and `_readonly_provisioner` in
+<../cdk8s/study_casino/app.py>.
 
 ## Removing a CRD Operator (Uninstall Runbook)
 
-Distilled from the Longhorn uninstall incident
-(<lessons_learned/2026_05_13_longhorn_uninstall.md>). "Suspend the Flux resource
-
-- delete some pods by hand" is **not**
-  equivalent to an uninstall. Cluster-scoped admission webhooks make the order
-  matter, and Helm/chart-specific uninstall hooks exist for a reason.
+Distilled from the 2026-05 Longhorn uninstall. Suspending the Flux resource and deleting
+some pods by hand is **not** equivalent to an uninstall. Cluster-scoped admission webhooks
+make the order matter, and Helm/chart-specific uninstall hooks exist for a reason.
 
 ### Standard order for removing a CRD operator
 
@@ -435,7 +477,8 @@ Distilled from the Longhorn uninstall incident
 
 ### Emergency unblock (webhook is already wedging the cluster)
 
-If you arrive _after_ the zombie webhook is already rejecting unrelated PVCs:
+If you arrive _after_ the zombie webhook is already rejecting unrelated PVCs
+(`failed calling webhook "<name>": … connect: operation not permitted`):
 
 ```bash
 kubectl patch validatingwebhookconfiguration <name> --type=json \

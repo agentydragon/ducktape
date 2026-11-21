@@ -22,9 +22,9 @@ _CODE_TAR = _RUNFILES_ROOT / f"ducktape/{os.environ['SPECIMEN_CODE_TAR']}"
 _DATA_YAML = _RUNFILES_ROOT / f"ducktape/{os.environ['SPECIMEN_DATA_YAML']}"
 
 
-# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep //props/testing/fixtures:db
-pytest_plugins = ("util.testing.postgres_fixtures", "props.testing.fixtures.db")
+pytest_plugins = ("testing.postgres_fixtures", "props.testing.fixtures.db")
 
 
 def test_specimen_code_excludes_specimens_dataset() -> None:

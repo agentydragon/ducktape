@@ -22,7 +22,6 @@ py_library(
         ":config",
         "//cluster/rotators:sops",
         "//cluster/rotators:sops_stamps",
-        "//devinfra:prettier_cli",
         "@pypi//httpx",
         "@pypi//pyyaml",
         "@pypi//typer",

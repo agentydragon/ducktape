@@ -1,7 +1,8 @@
 # VM Sandbox scenarios on the KVM worker
 
 Run [`test_vm.py`](../../suites/test_vm.py) with KubeVirt hardware acceleration on the existing
-`kvm-vm` BuildBuddy pool. The target remains `manual` and is not a required CI lane.
+`kvm-vm` BuildBuddy pool. The required target is `//agentplane/system_tests/suites:test_vm`. This package holds the
+manual cold-worker, alternate-pool and cleanup probes. See [CI executor routing](../../../../devinfra/ci/README.md#where-bazel-ci-runs-tests).
 
 An earlier three-scenario suite passed on the existing 4-CPU/8-GiB KubeVirt worker with a 7-GiB
 scheduling estimate: 276.857s, a 5.51-GiB action cgroup peak, and no worker OOM or swap use. See the
@@ -20,11 +21,9 @@ bbr test //agentplane/system_tests/x/vm_kvm:test_vm_kvm --nocache_test_results
 
 The [17 November qualification](../../debug/kvm_docker_recycling.md) initially rejected retention
 under the executor's 2-GB default. A higher-cap follow-up passed two full warm actions, an ordinary
-same-worker action alongside the paused baseline, and explicit disposal. The target remains manual:
-ordinary scheduler affinity, repeated loaded execution and fleet CI savings are unqualified.
+same-worker action alongside the paused baseline, and explicit disposal. See the linked CI reports for the subsequent paired measurements.
 
-`test_vm_kvm_recycled` is an opt-in comparison target with the same two scenarios and resource
-estimates. It permits the existing fixture to retain K3s, PKI and KubeVirt controllers between
+The required `test_vm` target runs those same two scenarios and permits the existing fixture to retain K3s, PKI and KubeVirt controllers between
 actions while recreating workloads, credentials and workspace storage. Its K3s data lives at
 `/var/lib/k3s-recycled`, mounted from a private sparse ext4 file inside the retained Docker container.
 K3s's overlay snapshotter cannot use Docker's overlay filesystem directly. Bazel prepares the empty
@@ -46,8 +45,8 @@ receipt also preserves OOM counters. See the [kernel interface](https://docs.ker
 Build both targets normally before a pinned trial:
 
 ```bash
-bbr build //agentplane/system_tests/x/vm_kvm:test_vm_kvm{,_recycled}
-bbr test //agentplane/system_tests/x/vm_kvm:test_vm_kvm_recycled \
+bbr build //agentplane/system_tests/x/vm_kvm:test_vm_kvm //agentplane/system_tests/suites:test_vm
+bbr test //agentplane/system_tests/suites:test_vm \
   --nocache_test_results --flaky_test_attempts=1
 ```
 

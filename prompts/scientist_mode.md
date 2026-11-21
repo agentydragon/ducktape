@@ -47,7 +47,7 @@ Keep a **timestamped append-at-bottom markdown file** with:
 
 Use permanent storage structure (NOT temporary folders):
 
-```
+```text
 debug/
   <issue_name>/
     LAB_NOTEBOOK.md

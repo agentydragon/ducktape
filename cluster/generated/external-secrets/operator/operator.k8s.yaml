@@ -1,8 +1,10 @@
 apiVersion: v1
 kind: Namespace
 metadata:
+  annotations:
+    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "external-secrets", "controlledValues": "RequestsOnly", "minAllowed": {"memory": "256Mi", "cpu": "100m"}, "maxAllowed": {"memory": "384Mi", "cpu": "100m"}, "controlledResources": ["memory"]}, {"containerName": "webhook", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "15m", "memory": "256Mi"}, "maxAllowed": {"cpu": "100m", "memory": "384Mi"}, "controlledResources": ["cpu", "memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
   labels:
-    goldilocks.fairwinds.com/vpa-update-mode: "off"
+    goldilocks.fairwinds.com/vpa-update-mode: initial
   name: external-secrets-system
 spec: {}
 ---
@@ -45,9 +47,16 @@ spec:
     certController:
       create: false
     concurrent: 8
+    deploymentAnnotations:
+      goldilocks.fairwinds.com/vpa-update-mode: auto
     installCRDs: false
     leaderElect: true
+    podDisruptionBudget:
+      enabled: true
+      minAvailable: 1
     priorityClassName: system-cluster-critical
+    readinessProbe:
+      enabled: true
     replicaCount: 2
     resources:
       limits:
@@ -67,6 +76,14 @@ spec:
         key: node-role.kubernetes.io/control-plane
         operator: Exists
     webhook:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/instance: external-secrets
+                  app.kubernetes.io/name: external-secrets-webhook
+              topologyKey: kubernetes.io/hostname
       certManager:
         cert:
           issuerRef:
@@ -75,9 +92,50 @@ spec:
             name: external-secrets-selfsigned-issuer
         enabled: true
       create: true
+      deploymentAnnotations:
+        goldilocks.fairwinds.com/vpa-update-mode: auto
+      podDisruptionBudget:
+        enabled: true
+        minAvailable: 1
       port: 9443
       priorityClassName: system-cluster-critical
+      replicaCount: 2
       tolerations:
         - effect: NoSchedule
           key: node-role.kubernetes.io/control-plane
           operator: Exists
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: require-cluster-secret-store-namespaces
+spec:
+  failurePolicy: Fail
+  matchConditions:
+    - expression: "!('system:nodes' in request.userInfo.groups)"
+      name: exclude-kubelets
+  matchConstraints:
+    matchPolicy: Equivalent
+    resourceRules:
+      - apiGroups:
+          - external-secrets.io
+        apiVersions:
+          - v1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - clustersecretstores
+        scope: Cluster
+  validations:
+    - expression: object.spec.?conditions.orValue([]).exists(c, c.?namespaces.orValue([]).size() > 0) || (request.operation == 'UPDATE' && !oldObject.spec.?conditions.orValue([]).exists(c, c.?namespaces.orValue([]).size() > 0))
+      message: ClusterSecretStore must name at least one allowed namespace in spec.conditions[].namespaces.
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: require-cluster-secret-store-namespaces
+spec:
+  policyName: require-cluster-secret-store-namespaces
+  validationActions:
+    - Deny

@@ -25,19 +25,17 @@ from agentplane.net.peertls.config import (
     APP_URI,
     HISTORY_SERVICE_URI,
     NOTIFICATIONS_URI,
-    SANDBOX_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
 )
 from agentplane.notification_service.settings import (
     ActionsSettings,
     GitHubSettings,
     HistoryServiceSettings,
-    RunnerGatewaySettings,
     SessionDispatcherSettings,
     Settings,
 )
 from cluster.cdk8s import cilium, node_scheduling
-from cluster.cdk8s.agentplane import database, environment_service, workload_tls
+from cluster.cdk8s.agentplane import database, workload_tls
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
@@ -52,7 +50,7 @@ NAME = "notifications"
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-notification-service"
 _LABELS = {"app.kubernetes.io/name": NAME}
 # The health service whose verdict is "the process answers"; the empty name is readiness. Keep equal to
-# `livenessService` in agentplane/notification_service/main.go.
+# `LivenessService` in agentplane/postgres/probes/probes.go.
 _LIVENESS_HEALTH_SERVICE = "livez"
 
 
@@ -83,8 +81,6 @@ class Notifications(Construct):
         *,
         database_url: EnvValue,
         actions: ServiceRef,
-        gateway: ServiceRef,
-        gateway_control_target: str,
         history: ServiceRef,
         dispatcher: ServiceRef,
         callers: list[Pods],
@@ -94,12 +90,11 @@ class Notifications(Construct):
         memory_request: Size = _DEFAULT_MEMORY_REQUEST,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
     ) -> None:
-        """Bearer-authenticated and Sandbox-SVID RPCs share the TLS gRPC listener."""
+        """Service SVIDs and Sandbox workload SVIDs share one TLS gRPC listener."""
         super().__init__(scope, id)
         self.env = env
         self.callers = callers
         self.actions = actions
-        self.gateway = gateway
         self.history = history
         self.dispatcher = dispatcher
         endpoint = service(env.namespace)
@@ -164,10 +159,6 @@ class Notifications(Construct):
                 url=AnyHttpUrl(f"https://{actions.fqdn}:{actions.port.number}"),
                 tls=workload_tls.service_client_tls(ACTIONS_URI, client_uri=NOTIFICATIONS_URI),
             ),
-            runner_gateway=RunnerGatewaySettings(
-                control_target=gateway_control_target,
-                tls=workload_tls.service_client_tls(SANDBOX_CONTROLLER_URI, client_uri=NOTIFICATIONS_URI),
-            ),
             history_service=HistoryServiceSettings(
                 target=f"{history.fqdn}:{history.pod_port}",
                 tls=workload_tls.service_client_tls(HISTORY_SERVICE_URI, client_uri=NOTIFICATIONS_URI),
@@ -191,7 +182,7 @@ class Notifications(Construct):
             path="/etc/agentplane-notifications/settings.yaml",
             content=yaml_config(settings_model.model_dump(mode="json", exclude_none=True)),
         )
-        role_name = NAME.removeprefix("agentplane-")
+        role_name = NAME
         Role(
             self,
             "role",
@@ -235,7 +226,7 @@ class Notifications(Construct):
         NetworkPolicy(
             self,
             "network-policy",
-            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=env.namespace),
+            metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace),
             endpoint_selector=_LABELS,
             ingress=[
                 *(pods.admit(endpoint.pod_port) for pods in self.callers),
@@ -246,8 +237,6 @@ class Notifications(Construct):
                 EgressRule.to_fqdns("api.github.com"),
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 self.actions.egress(),
-                self.gateway.egress(),
-                environment_service.service(env.namespace).egress(),
                 self.history.egress(),
                 self.dispatcher.egress(),
                 database.egress(env.namespace),

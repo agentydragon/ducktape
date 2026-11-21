@@ -63,16 +63,6 @@ spec:
       name: authentik-tf
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/generated/authentik/tf/crossplane-sso-providers/**"
-          to: "@artifact/cluster/generated/authentik/tf/crossplane-sso-providers/"
-      name: crossplane-sso-providers
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/generated/authentik/tf/crossplane-agent-machine-access/**"
-          to: "@artifact/cluster/generated/authentik/tf/crossplane-agent-machine-access/"
-      name: crossplane-agent-machine-access
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/generated/cert-manager/app/**"
           to: "@artifact/cluster/generated/cert-manager/app/"
       name: cert-manager
@@ -156,11 +146,6 @@ spec:
         - from: "@repo/cluster/k8s/forgejo-images/**"
           to: "@artifact/cluster/k8s/forgejo-images/"
       name: forgejo-images
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/forgejo-images/crossplane-forgejo-images/**"
-          to: "@artifact/cluster/k8s/forgejo-images/crossplane-forgejo-images/"
-      name: crossplane-forgejo-images
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/generated/gateway/**"
@@ -610,21 +595,6 @@ spec:
       name: github-tf
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/generated/github-tf/crossplane-github-branch-protection/**"
-          to: "@artifact/cluster/generated/github-tf/crossplane-github-branch-protection/"
-      name: crossplane-github-branch-protection
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/generated/github-tf/crossplane-github-secrets-sync/**"
-          to: "@artifact/cluster/generated/github-tf/crossplane-github-secrets-sync/"
-      name: crossplane-github-secrets-sync
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/generated/github-tf/crossplane-flux-webhook-token/**"
-          to: "@artifact/cluster/generated/github-tf/crossplane-flux-webhook-token/"
-      name: crossplane-flux-webhook-token
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/generated/github-exporter/**"
           to: "@artifact/cluster/generated/github-exporter/"
         - from: "@repo/cluster/k8s/github-exporter-image-pins/**"
@@ -747,6 +717,11 @@ spec:
         - from: "@repo/cluster/generated/kubevirt/operator/**"
           to: "@artifact/cluster/generated/kubevirt/operator/"
       name: kubevirt-operator
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/cluster/generated/kubevirt/vpa/**"
+          to: "@artifact/cluster/generated/kubevirt/vpa/"
+      name: kubevirt-cdi-vpa
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/langfuse/**"
@@ -883,6 +858,11 @@ spec:
       name: study-casino
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/study-casino-vpa/**"
+          to: "@artifact/cluster/generated/study-casino-vpa/"
+      name: study-casino-vpa
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/generated/talos-cloud-controller-manager/**"
           to: "@artifact/cluster/generated/talos-cloud-controller-manager/"
       name: talos-cloud-controller-manager
@@ -901,6 +881,16 @@ spec:
         - from: "@repo/cluster/generated/vpa/**"
           to: "@artifact/cluster/generated/vpa/"
       name: vpa
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/cluster/generated/flux-system-vpa/**"
+          to: "@artifact/cluster/generated/flux-system-vpa/"
+      name: flux-system-vpa
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/cluster/generated/agentplane-staging/vpa/**"
+          to: "@artifact/cluster/generated/agentplane-staging/vpa/"
+      name: agentplane-staging-vpa
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/generated/website/**"

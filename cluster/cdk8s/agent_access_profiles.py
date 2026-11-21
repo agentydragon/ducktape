@@ -281,7 +281,7 @@ MANAGED_GRANTS = {
 }
 STATIC_GRANTS = {
     # Independently scoped legacy OAuth identity, not an alias for the Haku profile. Widening it
-    # fails cluster/validation's test_legacy_agentplane_accounts_are_not_haku_profile_aliases.
+    # fails test_agent_rbac.py's test_legacy_agentplane_accounts_are_not_haku_profile_aliases.
     "claude-ai": (
         "agentplane-sandbox-read",
         "haku-console-metadata",

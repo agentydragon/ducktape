@@ -16,18 +16,17 @@ from ai_session_archive.database import make_engine, make_session_factory
 from ai_session_archive.ingest import ArchiveSource, SnapshotIngestor
 from ai_session_archive.migrate_cli import main as migrate_database
 from ai_session_archive.models import Harness
-from ai_session_archive.restic import ResticRepository
+from ai_session_archive.restic import ResticRepository, find_pinned_restic_binary
 from ai_session_archive.source_paths import HarnessRoot
 
 
 def _configured_roots(cli_values: list[str], archive_env: str) -> list[str]:
     if cli_values:
-        values = cli_values
+        roots = cli_values
     elif value := os.environ.get(archive_env):
-        values = [value]
+        roots = [value]
     else:
         return []
-    roots = values
     if any(not Path(root).is_absolute() for root in roots):
         raise SystemExit(f"{archive_env} and root arguments must be absolute Restic paths")
     return roots
@@ -64,16 +63,6 @@ def _restic_environment(
     return restic_environment
 
 
-def _restic_binary() -> str:
-    for root in (os.environ.get("RUNFILES_DIR"), os.environ.get("TEST_SRCDIR")):
-        if root:
-            for workspace in ("_main", "ducktape"):
-                candidate = Path(root) / workspace / "third_party/restic/restic_bin"
-                if candidate.is_file():
-                    return str(candidate)
-    raise RuntimeError("pinned Restic binary is unavailable in Bazel runfiles")
-
-
 def _parse_args(arguments: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--machine-id", default=os.environ.get("MACHINE_ID"), required="MACHINE_ID" not in os.environ)
@@ -86,13 +75,13 @@ def _parse_args(arguments: list[str] | None) -> argparse.Namespace:
         "--claude-root",
         action="append",
         default=[],
-        help="absolute Restic node root for CLAUDE_CONFIG_DIR (session_backup.sh uses /.claude); repeat for more roots",
+        help="absolute Restic node root for CLAUDE_CONFIG_DIR (session_backup.py uses /.claude); repeat for more roots",
     )
     parser.add_argument(
         "--codex-root",
         action="append",
         default=[],
-        help="absolute Restic node root for CODEX_HOME (session_backup.sh uses /.codex); repeat for more roots",
+        help="absolute Restic node root for CODEX_HOME (session_backup.py uses /.codex); repeat for more roots",
     )
     parser.add_argument(
         "--credentials-file",
@@ -128,7 +117,7 @@ def main(arguments: list[str] | None = None) -> None:
             machine_id=args.machine_id,
             display_name=args.display_name,
             restic=ResticRepository(
-                binary=_restic_binary(),
+                binary=find_pinned_restic_binary(),
                 environment=_restic_environment(
                     machine_id=args.machine_id, credentials_file=args.credentials_file, environment=os.environ
                 ),

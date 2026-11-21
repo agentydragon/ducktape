@@ -64,11 +64,11 @@ func isFirecrackerPod(pod *corev1.Pod) bool {
 
 // Suspension cancels the Controller observation before checkpoint. A restored
 // guest must publish on the new stream before it can complete quiescence.
-func (r *Reconciler) firecrackerQuiesceReady(ctx context.Context, sandbox *sandboxapi.Sandbox, pod *corev1.Pod) (*unready, error) {
+func (r *Reconciler) firecrackerQuiesceReady(sandbox *sandboxapi.Sandbox, pod *corev1.Pod) *unready {
 	if !r.States.Snapshot(sandbox, string(pod.UID)).fresh(r.Now()) {
-		return &unready{reason: "Quiescing", stage: sandboxapi.StopStageQuiescing, message: "waiting for the restored Runtime's verified state", retryAfter: 2 * time.Second}, nil
+		return &unready{reason: "Quiescing", stage: sandboxapi.StopStageQuiescing, message: "waiting for the restored Runtime's verified state", retryAfter: 2 * time.Second}
 	}
-	return nil, nil
+	return nil
 }
 
 func withFirecracker(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate, spec *corev1.PodSpec) *unready {

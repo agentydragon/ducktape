@@ -2,51 +2,45 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
   - name: git.allegedly.works/ducktape-ci/agentplane-frontend
-    newTag: devel-20261118024714-37cec02 # {"$imagepolicy": "flux-system:agentplane-frontend:tag"}
-  # Bootstrap only: CI publishes the first image after merge; Flux must select a real tag before rollout.
+    newTag: devel-20261121073220-2c593af # {"$imagepolicy": "flux-system:agentplane-frontend:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-policy-controller
-    newTag: devel-20261118102705-c2927c5 # {"$imagepolicy": "flux-system:agentplane-policy-controller:tag"}
+    newTag: devel-20261121065900-78894b0 # {"$imagepolicy": "flux-system:agentplane-policy-controller:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-environments
-    newTag: devel-20261118102633-c2927c5 # {"$imagepolicy": "flux-system:agentplane-environments:tag"}
-  - name: git.allegedly.works/ducktape-ci/agentplane-sandbox-controller
-    newTag: devel-20261118102633-c2927c5 # {"$imagepolicy": "flux-system:agentplane-sandbox-controller:tag"}
+    newTag: devel-20261121072411-e15de54 # {"$imagepolicy": "flux-system:agentplane-environments:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-llm-ingress
-    newTag: devel-20261118102631-c2927c5 # {"$imagepolicy": "flux-system:agentplane-llm-ingress:tag"}
-  # Bootstrap only: Flux selects the published Go images before the separate workload cutover.
+    newTag: devel-20261121071947-0b7aa40 # {"$imagepolicy": "flux-system:agentplane-llm-ingress:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-proxy
-    newTag: devel-20261118102625-c2927c5 # {"$imagepolicy": "flux-system:agentplane-egress-proxy:tag"}
-  # CI publishes the first sampler image after merge; Flux selects its devel tag.
+    newTag: devel-20261121071322-f32a59b # {"$imagepolicy": "flux-system:agentplane-egress-proxy:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-central-sampler
-    newTag: devel-20261118033951-c7317fc # {"$imagepolicy": "flux-system:agentplane-central-sampler:tag"}
+    newTag: devel-20261121071957-0b7aa40 # {"$imagepolicy": "flux-system:agentplane-central-sampler:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-app
-    newTag: devel-20261118102654-c2927c5 # {"$imagepolicy": "flux-system:agentplane-app:tag"}
-  - name: git.allegedly.works/ducktape-ci/agentplane-runner-gateway
-    newTag: devel-20261118102638-c2927c5 # {"$imagepolicy": "flux-system:agentplane-runner-gateway:tag"}
+    newTag: devel-20261121073252-2c593af # {"$imagepolicy": "flux-system:agentplane-app:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sessions
-    newTag: devel-20261118102629-c2927c5 # {"$imagepolicy": "flux-system:agentplane-sessions:tag"}
-  # Bootstrap only: the image workflow publishes on devel; wait for Flux to select a real tag before creating Sandboxes.
+    newTag: devel-20261121071938-0b7aa40 # {"$imagepolicy": "flux-system:agentplane-sessions:tag"}
   - name: git.allegedly.works/ducktape-ci/environment-tools
-    newTag: devel-20261117115647-df351b0 # {"$imagepolicy": "flux-system:environment-tools:tag"}
+    newTag: devel-20261121025035-77cd80f # {"$imagepolicy": "flux-system:environment-tools:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox
-    newTag: devel-20261118024531-de25eb7 # {"$imagepolicy": "flux-system:agentplane-sandbox:tag"}
+    newTag: devel-20261121072523-91e8cb7 # {"$imagepolicy": "flux-system:agentplane-sandbox:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox-build
-    newTag: devel-20261118024616-de25eb7 # {"$imagepolicy": "flux-system:agentplane-sandbox-build:tag"}
+    newTag: devel-20261121072548-91e8cb7 # {"$imagepolicy": "flux-system:agentplane-sandbox-build:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar
-    newTag: devel-20261118023651-1e2296e # {"$imagepolicy": "flux-system:agentplane-egress-sidecar:tag"}
-  # Publication bootstrap: unused until the separate MCP edge cutover.
+    newTag: devel-20261121071015-f32a59b # {"$imagepolicy": "flux-system:agentplane-egress-sidecar:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-mcp-edge
-    newTag: devel-20261118012647-478950f # {"$imagepolicy": "flux-system:agentplane-mcp-edge:tag"}
+    newTag: devel-20261121065902-78894b0 # {"$imagepolicy": "flux-system:agentplane-mcp-edge:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-action-service
-    newTag: devel-20261118023431-1e2296e # {"$imagepolicy": "flux-system:agentplane-action-service:tag"}
+    newTag: devel-20261121072417-e15de54 # {"$imagepolicy": "flux-system:agentplane-action-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-notification-service
-    newTag: devel-20261118102639-c2927c5 # {"$imagepolicy": "flux-system:agentplane-notification-service:tag"}
+    newTag: devel-20261121065902-78894b0 # {"$imagepolicy": "flux-system:agentplane-notification-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-history-service
-    newTag: devel-20261118102635-c2927c5 # {"$imagepolicy": "flux-system:agentplane-history-service:tag"}
-  # Bootstrap only: the image workflow publishes on devel; wait for Flux to select a real tag before creating VM Sandboxes.
+    newTag: devel-20261121071946-0b7aa40 # {"$imagepolicy": "flux-system:agentplane-history-service:tag"}
+  - name: git.allegedly.works/ducktape-ci/agentplane-environment-firecracker
+    newTag: devel-20261121061139-f1e67d2 # {"$imagepolicy": "flux-system:agentplane-environment-firecracker:tag"}
+  - name: git.allegedly.works/ducktape-ci/agentplane-firecracker-launcher
+    newTag: devel-20261121072040-0b7aa40 # {"$imagepolicy": "flux-system:agentplane-firecracker-launcher:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-environment-vm
-    newTag: devel-20261117115827-df351b0 # {"$imagepolicy": "flux-system:agentplane-environment-vm:tag"}
+    newTag: devel-20261121060610-f1e67d2 # {"$imagepolicy": "flux-system:agentplane-environment-vm:tag"}
   # The `agentplane` command disk beside the VM guest and as an image volume in the environment Pod.
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-disk
-    newTag: devel-20261118061420-e9ec12c # {"$imagepolicy": "flux-system:agentplane-runner-disk:tag"}
+    newTag: devel-20261121081505-81e0d6a # {"$imagepolicy": "flux-system:agentplane-runner-disk:tag"}
 configurations:
   - kustomizeconfig

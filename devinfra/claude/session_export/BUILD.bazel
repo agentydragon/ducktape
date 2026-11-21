@@ -3,7 +3,7 @@ load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
-load("//util/testing:postgres_exec_properties.bzl", "POSTGRES_IMAGE_EXEC_PROPERTIES")
+load("//testing:postgres_exec_properties.bzl", "POSTGRES_IMAGE_EXEC_PROPERTIES")
 
 py_library(
     name = "api",
@@ -48,6 +48,7 @@ py_library(
         ":sync",
         ":web",
         "//devinfra/bazel:workspace",
+        "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//uvicorn",
     ],
@@ -117,8 +118,8 @@ py_library(
         ":models",
         ":oauth",
         ":store",
-        "//util/testing:postgres_fixtures",
-        "//util/testing:sqlalchemy_engines",
+        "//testing:postgres_fixtures",
+        "//testing:sqlalchemy_engines",
         "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//pytest",
@@ -251,6 +252,7 @@ py_test(
         ":store",
         "//:conftest",
         "//devinfra/claude:conftest",
+        "//testing:sqlalchemy_engines",
         "@pypi//alembic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -357,8 +359,8 @@ py_test(
         ":web",
         "//:conftest",
         "//devinfra/claude:conftest",
-        "//util/testing:asgi",
-        "//util/testing:mock_oidc",
+        "//testing:asgi",
+        "//testing:mock_oidc",
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

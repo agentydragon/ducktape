@@ -15,12 +15,14 @@ from cdk8s_plus_34 import k8s
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 
 from cluster.cdk8s import namespaces
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.volume_claim import volume_claim
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/oci-cache"
 _NAMESPACE = "oci-cache"
@@ -42,17 +44,14 @@ def _tcp_probe(port: str, *, initial_delay_seconds: int, period_seconds: int) ->
 
 def _deployment(chart: Chart) -> None:
     # One writer: BoltDB and its corresponding blob files live on the same volume.
-    k8s.KubePersistentVolumeClaim(
+    volume_claim(
         chart,
         "cache-pvc",
-        metadata=k8s.ObjectMeta(
-            name="zot-cache", namespace=_NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"}
-        ),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="piraeus-hdd-2",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("100Gi")}),
-        ),
+        name="zot-cache",
+        namespace=_NAMESPACE,
+        storage_class="piraeus-hdd-2",
+        size="100Gi",
+        annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"},
     )
     k8s.KubeDeployment(
         chart,
@@ -98,15 +97,8 @@ def _deployment(chart: Chart) -> None:
                                 k8s.VolumeMount(name="config", mount_path="/etc/zot", read_only=True),
                                 k8s.VolumeMount(name="cache", mount_path="/var/lib/zot"),
                             ],
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "memory": k8s.Quantity.from_string("128Mi"),
-                                    "cpu": k8s.Quantity.from_string("50m"),
-                                },
-                                limits={
-                                    "memory": k8s.Quantity.from_string("512Mi"),
-                                    "cpu": k8s.Quantity.from_string("1"),
-                                },
+                            resources=container_resources(
+                                cpu="50m", memory="128Mi", cpu_limit="1", memory_limit="512Mi"
                             ),
                             # TCP probe only confirms Zot is listening. Pull-through behavior is
                             # covered by the README smoke tests.
@@ -134,13 +126,7 @@ def _deployment(chart: Chart) -> None:
                                 ),
                                 k8s.VolumeMount(name="public-auth", mount_path="/etc/nginx/auth", read_only=True),
                             ],
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("10m"),
-                                    "memory": k8s.Quantity.from_string("32Mi"),
-                                },
-                                limits={"memory": k8s.Quantity.from_string("64Mi")},
-                            ),
+                            resources=container_resources(cpu="10m", memory="32Mi", memory_limit="64Mi"),
                             readiness_probe=_tcp_probe(
                                 _PUBLIC_AUTH.port.name, initial_delay_seconds=5, period_seconds=10
                             ),
@@ -196,12 +182,7 @@ def chart(app: App) -> Chart:
                 # backend targetPort (5000), not this Service port. So haku-ci's force-proxy
                 # egress allows 5000 explicitly (see haku_ci/runner.py).
                 # Plain HTTP.
-                k8s.ServicePort(
-                    name=HTTP.port.name,
-                    port=HTTP.port.number,
-                    target_port=k8s.IntOrString.from_number(HTTP.pod_port),
-                    protocol="TCP",
-                ),
+                HTTP.k8s_service_port(),
                 # Authenticated public entrypoint. The HTTPRoute for oci-cache.allegedly.works
                 # targets this port; in-cluster Docker mirrors must use the unauthenticated
                 # `http` port above.

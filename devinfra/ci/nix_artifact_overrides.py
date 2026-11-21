@@ -56,7 +56,11 @@ def main(argv: list[str] | None = None) -> None:
     )
     args = parser.parse_args(argv)
     invocation_ids = [invocation_id.strip() for invocation_id in args.invocations.split(",") if invocation_id.strip()]
-    print(json.dumps(fetch_overrides(invocation_ids, args.artifact_targets), sort_keys=True))
+    try:
+        overrides = fetch_overrides(invocation_ids, args.artifact_targets)
+    except ValueError as error:
+        raise SystemExit(str(error)) from error
+    print(json.dumps(overrides, sort_keys=True))
 
 
 if __name__ == "__main__":

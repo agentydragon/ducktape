@@ -2,9 +2,6 @@
 #
 # To apply: sudo nixos-rebuild switch --flake ~/code/ducktape#iguana
 {
-  config,
-  pkgs,
-  lib,
   ducktapePackages,
   ...
 }:
@@ -41,11 +38,7 @@
   # shared dual-recipient write token the cluster write-proxy checks.
   ducktape.activitywatch.sync = {
     enable = true;
-    dest = {
-      url = "https://activitywatch-write.allegedly.works";
-      device = "iguana";
-      tokenSopsFile = ../../../cluster/k8s/activitywatch/activitywatch-write-token.sops.yaml;
-    };
+    dest.device = "iguana";
   };
 
   home.stateVersion = "24.11";

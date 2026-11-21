@@ -27,17 +27,8 @@ func TestCleanupLocksMissingSessionLease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	connect := func() (*Store, int) {
-		db := postgres.Open(t, databaseURL)
-		db.SetMaxOpenConns(1)
-		var pid int
-		if err := db.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&pid); err != nil {
-			t.Fatal(err)
-		}
-		return NewStore(db, 3), pid
-	}
-	deleter, deleterPID := connect()
-	acquirer, acquirerPID := connect()
+	deleter, deleterPID := connectStore(t, ctx, databaseURL)
+	acquirer, acquirerPID := connectStore(t, ctx, databaseURL)
 	gate, err := store.DB.BeginTx(ctx, nil)
 	if err != nil {
 		t.Fatal(err)

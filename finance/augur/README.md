@@ -119,11 +119,20 @@ than duplicating this convention.
 - `fit/`: shared evidence loading and scoring for offline model fitting
 - `x/models/`: experimental fitted providers with training code; the provider-config union the
   app selects from
-- `api/`: `Config`, wire shapes, `Backend`, HTTP server, catalog/settings/calibration assembly,
+- `api/`: `Config`, wire shapes, HTTP server, catalog/settings/calibration assembly,
   OpenAPI export
 - `sim/`: the `World` — declared books, tracked actors, deterministic monthly execution
 - `frontend/`: React + Tailwind app, generated snake_case API schema, columnar-table helpers,
   scenario-set state, backend client
+- `product/`: the product service: lowers a request onto a `World`, steps one world per path,
+  reduces outcomes to metric fans and terminal distributions (<product/README.md>)
+- `policy/`: optional policy helpers and the household policies `product/` composes
+  (<policy/README.md>)
+- `calibration/`: prediction-market calibration of model paths (<docs/calibration.md>)
+- `study/`: reproductions of published results, one subdirectory per paper (<study/README.md>)
+- `docs/`: design notes: <docs/spending_model.md>, <docs/rental_and_lifecycle.md>,
+  <docs/private_equity_model.md>, <docs/private_equity_realization_failure.md>,
+  <docs/mare_island_special_taxes.md>, <docs/prior_art_audit.md>
 
 ## Deployment
 
@@ -133,8 +142,7 @@ than duplicating this convention.
 `AUGUR_{API,FRONTEND}_SOURCE_COMMIT`); pass them as env values (e.g. Flux ImagePolicy `:tag`
 markers), never stamped into the image, which would defeat digest dedup. Deployments serve
 the React bundle and property media separately (e.g. nginx sidecar); media is declared as
-`property_source.property_assets` entries binding a property ID to an asset ID and either an
-`image_url` or `property_source.asset_base_url/{asset_id}`.
+`property_source.property_assets` entries binding a property ID to an absolute `image_url`.
 
 Prediction-market calibration reads quotes from the augur-evidence checkout
 (`AUGUR_EVIDENCE_DIR`), with no request-time network I/O. The `finance/scraper` mirror is
@@ -147,14 +155,3 @@ macro models are chosen per preset in `Config.models` (e.g. `structural_macro`, 
 to the checked-in fit; `state_space` with an artifact path and grouped conditioning
 observations). A checked-in fit must pass `//finance/augur/x/models/calibrated:sanity_test`
 or be listed in its `QUARANTINED`, and then is not to be used.
-
-## Profiling
-
-```bash
-bazelisk run --config=nolint //finance/augur/api:profile_metric_fan_bin
-```
-
-Profiles one `Backend.product_metric_fan` request (default 50 rollouts × 100 months, public
-fixture) into `/tmp/augur_metric_fan.prof`, printing top cumulative functions; bounded by
-`--max-seconds=60`. Reshape with `--rollout-count`, `--horizon-months`, `--metric`,
-`--percentiles`.

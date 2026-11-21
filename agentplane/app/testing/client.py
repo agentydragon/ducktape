@@ -23,7 +23,7 @@ from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapProp
 from tenacity import AsyncRetrying, retry_if_exception, stop_after_delay, wait_fixed
 
 from agentplane.app import app_service_pb2
-from agentplane.app.testing.models import ThreadMetadata, ThreadView, thread_view_from_proto_json
+from agentplane.app.testing.models import ThreadView, thread_view_from_proto_json
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service.api.history import history_service_pb2
@@ -351,11 +351,6 @@ class Client:
             retry=retry_if_exception(_thread_not_found),
             reraise=True,
         )(self.thread, thread_id)
-
-    async def thread_metadata(self, thread_id: UUID) -> ThreadMetadata:
-        """The app-owned Thread row, independent of History's projection."""
-        data = await self._json("GET", f"/upstream/app/v1/threads/{thread_id}")
-        return ThreadMetadata.model_validate(data)
 
     async def threads(self, *, sandbox_uid: str) -> AsyncGenerator[ThreadView]:
         """Enumerate Dispatcher Sessions for artifact capture, including those without App metadata."""

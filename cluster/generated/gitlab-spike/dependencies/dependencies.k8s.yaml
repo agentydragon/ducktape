@@ -19,8 +19,11 @@ spec: {}
 apiVersion: v1
 kind: Namespace
 metadata:
+  annotations:
+    goldilocks.fairwinds.com/vpa-min-replicas: "1"
+    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "*", "controlledValues": "RequestsOnly"}]}'
   labels:
-    goldilocks.fairwinds.com/vpa-update-mode: "off"
+    goldilocks.fairwinds.com/vpa-update-mode: auto
     pod-security.kubernetes.io/enforce: baseline
   name: gitlab-spike-demo
 spec: {}
@@ -363,6 +366,17 @@ spec:
           requests:
             storage: 5Gi
         storageClassName: piraeus-hdd-local
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: gitlab-valkey
+  namespace: gitlab-spike
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: gitlab-valkey
 ---
 apiVersion: seaweed.seaweedfs.com/v1
 kind: Bucket
@@ -992,6 +1006,7 @@ spec:
             bucket: gitlab-spike-registry
             pathstyle: true
             checksum_disabled: true
+            objectownership: true
           redirect:
             disable: true
       engineVersion: v2

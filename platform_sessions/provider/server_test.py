@@ -100,6 +100,29 @@ class InteractiveSyntheticProvider(SyntheticProvider):
         return pb.ProbeResult(verified=empty_pb2.Empty())
 
 
+class BlockingImportProvider(SyntheticProvider):
+    def __init__(self) -> None:
+        super().__init__()
+        self.started = asyncio.Event()
+        self.second_started = asyncio.Event()
+        self.finish = asyncio.Event()
+        self.completed = asyncio.Event()
+        self.active = 0
+        self.max_active = 0
+
+    async def import_session(self, instance_id: str, *, media_type: str, candidate: bytes) -> pb.ImportSessionResponse:
+        self.active += 1
+        self.max_active = max(self.max_active, self.active)
+        self.imported_candidates.append(candidate)
+        if len(self.imported_candidates) == 2:
+            self.second_started.set()
+        self.started.set()
+        await self.finish.wait()
+        self.active -= 1
+        self.completed.set()
+        return pb.ImportSessionResponse(installed=empty_pb2.Empty())
+
+
 @asynccontextmanager
 async def served_provider(
     provider: ProviderBackend,
@@ -460,23 +483,7 @@ async def test_snapshot_supports_owner_presentation_imported_at_and_storage_erro
 
 
 async def test_disconnected_import_finishes_and_serializes_new_submissions() -> None:
-    class SlowProvider(SyntheticProvider):
-        def __init__(self) -> None:
-            super().__init__()
-            self.started = asyncio.Event()
-            self.finish = asyncio.Event()
-            self.completed = asyncio.Event()
-
-        async def import_session(
-            self, instance_id: str, *, media_type: str, candidate: bytes
-        ) -> pb.ImportSessionResponse:
-            self.imported_candidates.append(candidate)
-            self.started.set()
-            await self.finish.wait()
-            self.completed.set()
-            return pb.ImportSessionResponse(installed=empty_pb2.Empty())
-
-    provider = SlowProvider()
+    provider = BlockingImportProvider()
     request = import_request(instance=instance_ref(), media_type=_CANDIDATE_MEDIA_TYPE, candidate=_CANDIDATE)
     async with served_provider(provider) as (client, service):
         call = client.ImportSession(request)
@@ -492,29 +499,7 @@ async def test_disconnected_import_finishes_and_serializes_new_submissions() -> 
 
 
 async def test_explicit_reimport_can_submit_identical_bytes_and_is_serialized() -> None:
-    class SerializedProvider(SyntheticProvider):
-        def __init__(self) -> None:
-            super().__init__()
-            self.started = asyncio.Event()
-            self.finish = asyncio.Event()
-            self.active = 0
-            self.max_active = 0
-            self.second_started = asyncio.Event()
-
-        async def import_session(
-            self, instance_id: str, *, media_type: str, candidate: bytes
-        ) -> pb.ImportSessionResponse:
-            self.active += 1
-            self.max_active = max(self.max_active, self.active)
-            self.imported_candidates.append(candidate)
-            if len(self.imported_candidates) == 2:
-                self.second_started.set()
-            self.started.set()
-            await self.finish.wait()
-            self.active -= 1
-            return pb.ImportSessionResponse(installed=empty_pb2.Empty())
-
-    provider = SerializedProvider()
+    provider = BlockingImportProvider()
     request = import_request(instance=instance_ref(), media_type=_CANDIDATE_MEDIA_TYPE, candidate=_CANDIDATE)
     async with served_provider(provider) as (client, _service):
         first = client.ImportSession(request)
@@ -532,20 +517,7 @@ async def test_explicit_reimport_can_submit_identical_bytes_and_is_serialized() 
 
 
 async def test_drain_retains_instance_ownership_until_owner_is_stopped(tmp_path: Path) -> None:
-    class SlowProvider(SyntheticProvider):
-        def __init__(self) -> None:
-            super().__init__()
-            self.started = asyncio.Event()
-            self.finish = asyncio.Event()
-
-        async def import_session(
-            self, instance_id: str, *, media_type: str, candidate: bytes
-        ) -> pb.ImportSessionResponse:
-            self.started.set()
-            await self.finish.wait()
-            return pb.ImportSessionResponse(installed=empty_pb2.Empty())
-
-    provider = SlowProvider()
+    provider = BlockingImportProvider()
     ownership = {item.instance_id: InstanceOwnership(tmp_path / item.instance_id) for item in provider.info.instances}
     service = SessionProviderControlService(provider, ownership)
     server = grpc.aio.server()

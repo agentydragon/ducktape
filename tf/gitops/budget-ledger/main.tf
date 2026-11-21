@@ -47,7 +47,7 @@ resource "forgejo_repository" "ledger" {
 
 # Read-only access for the claude agent account (user provisioned by
 # tf/gitops/forgejo-claude; until it exists this resource fails and the
-# Terraform CR retries on its interval).
+# Workspace retries).
 resource "forgejo_collaborator" "claude" {
   repository_id = forgejo_repository.ledger.id
   user          = "claude"
@@ -76,15 +76,5 @@ resource "kubernetes_secret" "budget_ledger_git_creds_source" {
     username = forgejo_user.budget_ledger.login
     password = random_password.budget_ledger.result
     repo_url = "http://forgejo-http.forgejo:3000/${forgejo_user.budget_ledger.login}/${forgejo_repository.ledger.name}.git"
-  }
-}
-
-# The budget ExternalSecret adopts the Secret this address created there.
-# CLEANUP(added 2026-09-28): Remove once the budget_ledger state has forgotten
-# kubernetes_secret.budget_ledger_git_creds. Never destroy the ESO-owned Secret.
-removed {
-  from = kubernetes_secret.budget_ledger_git_creds
-  lifecycle {
-    destroy = false
   }
 }

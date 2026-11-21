@@ -25,13 +25,7 @@ type environmentConnection struct {
 }
 
 func (a *commands) connectEnvironment() (*environmentConnection, error) {
-	group := "SESSIONS"
-	if a.Getenv("AGENTPLANE_ENVIRONMENTS_URL") != "" {
-		group = "ENVIRONMENTS"
-	} else if a.Getenv("AGENTPLANE_ENVIRONMENTS_CREDENTIAL") != "" {
-		return nil, invocation.UsageFailure("AGENTPLANE_ENVIRONMENTS_URL not set")
-	}
-	connection, err := a.ConnectGRPC(group)
+	connection, err := a.ConnectGRPC("ENVIRONMENTS")
 	if err != nil {
 		return nil, err
 	}
@@ -41,10 +35,8 @@ func (a *commands) connectEnvironment() (*environmentConnection, error) {
 func (a *commands) environmentsCommand() *cobra.Command {
 	return invocation.Group("environments", "Discover existing environments this account may use",
 		`Lists and refreshes exact Sandbox identities (namespace/name/UID) for the authenticated caller.
-Uses AGENTPLANE_ENVIRONMENTS_URL and its optional AGENTPLANE_ENVIRONMENTS_CREDENTIAL bearer when
-configured. Otherwise uses AGENTPLANE_SESSIONS_URL and its optional AGENTPLANE_SESSIONS_CREDENTIAL.
-Setting an environments credential without its URL is a usage error. Explicit resume still requires
-current backend policy.`,
+Uses AGENTPLANE_ENVIRONMENTS_URL and its optional AGENTPLANE_ENVIRONMENTS_CREDENTIAL bearer.
+Explicit resume still requires current backend policy.`,
 		a.listEnvironmentsCommand(), a.getEnvironmentCommand(), a.resumeEnvironmentCommand())
 }
 

@@ -109,14 +109,10 @@ func runService(ctx context.Context, args []string, logLevel zap.AtomicLevel) er
 		return fmt.Errorf("initialize tracing: %w", err)
 	}
 	defer shutdownTracing()
-	codexBinary := ""
-	if settings.Codex != nil {
-		codexBinary = settings.Codex.Binary
-	}
 	instance, err := newRuntime(coordinator.Config{
 		Control: settings.Control, StateDir: settings.StateDir, Launch: settings.Launch,
-		Supervision: settings.Supervision, PodPID1: settings.PodPID1, VMProcessLauncher: settings.VMProcessLauncher,
-		CodexExecServer: settings.CodexExecServer, CodexBinary: codexBinary,
+		Supervision: settings.Supervision, SystemdLauncher: settings.SystemdLauncher,
+		CodexExecServer:    settings.CodexExecServer,
 		HarnessEnvironment: settings.HarnessEnvironment, InitializationCwd: settings.InitializationCwd,
 		HistoryIngress: ingress, SessionReconcileConcurrency: settings.SessionReconcileConcurrency,
 		ModelConfigTarget: settings.ModelConfigTarget,

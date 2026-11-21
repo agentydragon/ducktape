@@ -1,0 +1,262 @@
+load("@bazel_skylib//rules:diff_test.bzl", "diff_test")
+load("@rules_lean//lean:lean.bzl", "lean_axiom_test", "lean_binary")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+
+_EXAMPLE = "//devinfra/js/debundle/x/split_proof:example/"
+
+_PROOF_SOURCES = [
+    "EsmSplit.lean",
+    "//devinfra/js/debundle/x/split_proof/lean/generated:generate_instance",
+] + glob(
+    ["EsmSplit/*.lean"],
+    exclude = [
+        "EsmSplit/Audit.lean",
+        "EsmSplit/Instance.lean",
+    ],
+)
+
+lean_axiom_test(
+    name = "axioms_test",
+    srcs = _PROOF_SOURCES,
+    imports = ["EsmSplit"],
+    theorems = [
+        "EsmSplit.Bundle.conflict_symm",
+        "EsmSplit.inverted_conflict_rejected",
+        "EsmSplit.Bundle.exec_reorder",
+        "EsmSplit.split_correct",
+        "EsmSplit.sound_correct",
+        "Example.plan_valid",
+        "Example.plan_correct",
+        "Example.control_effect_order_rejected",
+        "Example.control_cycle_tdz_rejected",
+        "Example.control_claimed_twice_rejected",
+        "Example.missing_import_rejected",
+        "Example.dropped_module_rejected",
+        "Example.export_alias_valid",
+        "Example.export_alias_named",
+        "Example.export_collision_rejected",
+        "Example.variant_cycle_valid",
+        "Example.good_observes_same",
+        "Example.cycle_variant_observes_same",
+        "Example.effect_order_observes_differently",
+        "Example.cycle_tdz_observes_differently",
+    ],
+)
+
+lean_binary(
+    name = "render",
+    srcs = ["Main.lean"] + _PROOF_SOURCES,
+    entry = "Main.lean",
+)
+
+sh_test(
+    name = "example_test",
+    srcs = ["example_test.sh"],
+    args = [
+        "$(rlocationpath :render)",
+        "$(rlocationpath @nodejs_linux_amd64//:bin/node)",
+        "$(rlocationpath " + _EXAMPLE + "input/bundle.mjs)",
+    ],
+    data = [
+        ":render",
+        _EXAMPLE + "input/bundle.mjs",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    use_bash_launcher = True,
+)
+
+diff_test(
+    name = "instance_freshness_test",
+    file1 = "EsmSplit/Instance.lean",
+    file2 = "//devinfra/js/debundle/x/split_proof/lean/generated:generate_instance",
+)
+
+# The checker's Lean sources, less the entry and the module that converts footprints to
+# statements, so the `no_writes` mutation test can swap in a changed `Translate.lean`.
+_TRANSLATE_BASE = [
+    "EsmSplit/Bundle.lean",
+    "EsmSplit/Cli.lean",
+    "EsmSplit/Correct.lean",
+    "EsmSplit/Fast.lean",
+    "EsmSplit/Plan.lean",
+    "EsmSplit/Render.lean",
+    "EsmSplit/Semantics.lean",
+    "EsmSplit/Split.lean",
+    "Experiments/Effects.lean",
+    "Experiments/IntrinsicMembers.lean",
+    "Experiments/Intrinsics.lean",
+    "Experiments/Lower.lean",
+    "Experiments/TranslateMain.lean",
+]
+
+lean_binary(
+    name = "translate",
+    srcs = _TRANSLATE_BASE + ["Experiments/Translate.lean"],
+    # `lean_binary` runs the entry with `lean --run` on each call: it elaborates the entry and interprets the checker,
+    # about ten times slower than the native build of `lake build`. The tests that call it are `medium` or larger.
+    entry = "Experiments/TranslateMain.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/experiments/translation:__pkg__"],
+)
+
+lean_binary(
+    name = "lower",
+    srcs = [
+        "Experiments/Effects.lean",
+        "Experiments/IntrinsicMembers.lean",
+        "Experiments/Intrinsics.lean",
+        "Experiments/Lower.lean",
+        "Experiments/LowerMain.lean",
+    ],
+    entry = "Experiments/LowerMain.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/experiments/translation:__pkg__"],
+)
+
+# Source groups used only to compile the deliberately unsound `no_writes` checker.
+filegroup(
+    name = "translate_mutation_base_sources",
+    srcs = _TRANSLATE_BASE,
+    visibility = ["//devinfra/js/debundle/x/split_proof/lean/mutants:__subpackages__"],
+)
+
+filegroup(
+    name = "translate_mutation_source",
+    srcs = ["Experiments/Translate.lean"],
+    visibility = ["//devinfra/js/debundle/x/split_proof/lean/mutants:__subpackages__"],
+)
+
+lean_binary(
+    name = "lowersplit",
+    srcs = [
+        "EsmSplit/Bundle.lean",
+        "EsmSplit/Cli.lean",
+        "EsmSplit/Fast.lean",
+        "EsmSplit/Plan.lean",
+        "EsmSplit/Render.lean",
+        "EsmSplit/Semantics.lean",
+        "EsmSplit/Split.lean",
+        "Experiments/Effects.lean",
+        "Experiments/IntrinsicMembers.lean",
+        "Experiments/Intrinsics.lean",
+        "Experiments/Lower.lean",
+        "Experiments/LowerSplit.lean",
+    ],
+    entry = "Experiments/LowerSplit.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/experiments/translation:__pkg__"],
+)
+
+# The order in which the modules of a plan run. `experiments/model/differential.mjs` compares the CoreJS model's with it.
+lean_binary(
+    name = "evalorder",
+    srcs = [
+        "EsmSplit/Bundle.lean",
+        "EsmSplit/Plan.lean",
+        "Experiments/EvalOrder.lean",
+    ],
+    entry = "Experiments/EvalOrder.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/experiments/translation:__pkg__"],
+)
+
+# The CoreJS model. `experiments/model/differential.mjs` runs it against Node.
+lean_binary(
+    name = "corejs",
+    srcs = glob(
+        ["Experiments/CoreJS/*.lean"],
+        # the proofs about the model; `corejs_axioms_test` checks them
+        exclude = [
+            "Experiments/CoreJS/Frame.lean",
+            "Experiments/CoreJS/Fuel.lean",
+        ],
+    ) + ["Experiments/CoreJSMain.lean"],
+    entry = "Experiments/CoreJSMain.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/experiments/translation:__pkg__"],
+)
+
+lean_axiom_test(
+    name = "corejs_axioms_test",
+    srcs = [
+        "Experiments/CoreJS/Eval.lean",
+        "Experiments/CoreJS/Frame.lean",
+        "Experiments/CoreJS/Fuel.lean",
+        "Experiments/CoreJS/Number.lean",
+        "Experiments/CoreJS/Syntax.lean",
+        "Experiments/CoreJS/Value.lean",
+    ],
+    imports = [
+        "Experiments.CoreJS.Frame",
+        "Experiments.CoreJS.Fuel",
+    ],
+    theorems = [
+        "CoreJS.allocOnly_extends",
+        "CoreJS.decl_allocOnly",
+        "CoreJS.fuel_mono",
+        "CoreJS.Ends.unique",
+    ],
+)
+
+_PROOF_FIXTURE_SOURCES = [
+    "EsmSplit/Bundle.lean",
+    "EsmSplit/Cli.lean",
+    "EsmSplit/Correct.lean",
+    "EsmSplit/Fast.lean",
+    "EsmSplit/Plan.lean",
+    "EsmSplit/Render.lean",
+    "EsmSplit/Semantics.lean",
+    "EsmSplit/Split.lean",
+    "Experiments/MiniJS.lean",
+    "Experiments/MiniJSSource.lean",
+    "Experiments/ProofFixture.lean",
+    "//devinfra/js/debundle/x/split_proof/lean/generated:generate_proof_fixture",
+]
+
+lean_axiom_test(
+    name = "proof_fixture_axioms_test",
+    srcs = _PROOF_FIXTURE_SOURCES,
+    imports = ["Experiments.ProofFixture"],
+    theorems = [
+        "Example.plan_valid",
+        "Example.control_bad_rejected",
+        "ProofFixture.extracted_footprints",
+        "ProofFixture.source_accepted",
+        "ProofFixture.program_value",
+        "ProofFixture.unsupported_nonconst",
+        "ProofFixture.unsupported_extra_tokens",
+        "ProofFixture.unsupported_call",
+        "ProofFixture.unsupported_coercion",
+        "ProofFixture.unsupported_number",
+        "ProofFixture.unsupported_escape",
+        "ProofFixture.unsupported_keyword",
+        "ProofFixture.unsupported_reserved_name",
+        "ProofFixture.unsupported_strict_name",
+        "ProofFixture.execution_order",
+        "ProofFixture.safe_inversion",
+        "ProofFixture.hoisted_read_both_directions",
+        "ProofFixture.hoisted_write_both_directions",
+        "ProofFixture.declared_write_both_directions",
+        "ProofFixture.unsafe_inversion_rejected",
+        "ProofFixture.preserves_model",
+        "ProofFixture.rendered_base",
+        "ProofFixture.rendered_entry",
+    ],
+)
+
+lean_binary(
+    name = "proof_fixture_render",
+    srcs = ["ProofFixtureMain.lean"] + _PROOF_FIXTURE_SOURCES,
+    entry = "ProofFixtureMain.lean",
+)
+
+sh_test(
+    name = "proof_fixture_test",
+    srcs = ["proof_fixture_test.sh"],
+    args = [
+        "$(rlocationpath :proof_fixture_render)",
+        "$(rlocationpath @nodejs_linux_amd64//:bin/node)",
+        "$(rlocationpath //devinfra/js/debundle/x/split_proof:proof_fixture/bundle.mjs)",
+    ],
+    data = [
+        ":proof_fixture_render",
+        "//devinfra/js/debundle/x/split_proof:proof_fixture/bundle.mjs",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    use_bash_launcher = True,
+)

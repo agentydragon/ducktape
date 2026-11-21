@@ -338,7 +338,7 @@ func (s *Store) FinishCommand(ctx context.Context, owner Owner, sessionID, comma
 		}
 		session.ActiveCommand = nil
 		// Codex records pending turn input when a turn finishes and clears it when the turn aborts.
-		if _, err := s.settleNotifications(ctx, tx, owner, conversation, session, result == TurnDone); err != nil {
+		if _, err := s.settleNotifications(ctx, tx, conversation, session, result == TurnDone); err != nil {
 			return err
 		}
 		outcome := result.Outcome()
@@ -358,48 +358,23 @@ func (s *Store) FinishCommand(ctx context.Context, owner Owner, sessionID, comma
 			if err := settleTurnInterrupts(ctx, tx, session, result); err != nil {
 				return err
 			}
-			rows, err := tx.QueryContext(ctx, `SELECT session_id,id,payload,admission,outcome,failure_reason FROM sampler_command
-				WHERE session_id=$1 AND outcome=$2 ORDER BY admission FOR UPDATE`, sessionID,
-				int32(samplerpb.CommandOutcome_COMMAND_OUTCOME_ACCEPTED))
+			interrupts, err := acceptedInterruptIDsForTurn(ctx, tx, sessionID, commandID)
 			if err != nil {
 				return err
 			}
 			interruptID := ""
-			var interrupts []*Command
-			for rows.Next() {
-				candidate, err := scanCommand(rows)
-				if err != nil {
-					rows.Close()
-					return err
-				}
-				payload := &commandpb.Command{}
-				if err := proto.Unmarshal(candidate.Payload, payload); err != nil {
-					rows.Close()
-					return err
-				}
-				interrupt := payload.GetInterruptTurn()
-				if interrupt == nil || interrupt.GetTurnId() != commandID {
-					continue
-				}
-				interrupts = append(interrupts, candidate)
-			}
-			if err := rows.Err(); err != nil {
-				rows.Close()
-				return err
-			}
-			rows.Close()
-			for _, candidate := range interrupts {
-				if err := setCommandOutcome(ctx, tx, sessionID, candidate.ID, outcome, nil); err != nil {
+			for _, id := range interrupts {
+				if err := setCommandOutcome(ctx, tx, sessionID, id, outcome, nil); err != nil {
 					return err
 				}
 				if result == TurnDone {
 					if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_CommandNoop{
-						CommandNoop: &eventpb.CommandNoop{CommandId: candidate.ID, Reason: "turn completed before interrupt was applied"},
+						CommandNoop: &eventpb.CommandNoop{CommandId: id, Reason: "turn completed before interrupt was applied"},
 					}}); err != nil {
 						return err
 					}
 				} else {
-					interruptID = candidate.ID
+					interruptID = id
 				}
 			}
 			turnStatus := eventpb.TurnStatus_TURN_STATUS_INTERRUPTED
@@ -425,6 +400,33 @@ func (s *Store) FinishCommand(ctx context.Context, owner Owner, sessionID, comma
 		}
 		return persistSession(ctx, tx, session)
 	})
+}
+
+// acceptedInterruptIDsForTurn locks the Session's accepted commands and returns
+// matching IDs in admission order. It closes the result set before callers update those rows.
+func acceptedInterruptIDsForTurn(ctx context.Context, tx *sql.Tx, sessionID, turnID string) ([]string, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT session_id,id,payload,admission,outcome,failure_reason FROM sampler_command
+		WHERE session_id=$1 AND outcome=$2 ORDER BY admission FOR UPDATE`, sessionID,
+		int32(samplerpb.CommandOutcome_COMMAND_OUTCOME_ACCEPTED))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		command, err := scanCommand(rows)
+		if err != nil {
+			return nil, err
+		}
+		payload := &commandpb.Command{}
+		if err := proto.Unmarshal(command.Payload, payload); err != nil {
+			return nil, err
+		}
+		if interrupt := payload.GetInterruptTurn(); interrupt != nil && interrupt.GetTurnId() == turnID {
+			ids = append(ids, command.ID)
+		}
+	}
+	return ids, rows.Err()
 }
 
 func settleTurnInterrupts(ctx context.Context, tx *sql.Tx, session *Session, result TurnResult) error {
@@ -498,7 +500,7 @@ func (s *Store) FailExecution(ctx context.Context, owner Owner, sessionID string
 			// failed again by blockQueue.
 			commandID = session.ActiveCommand
 		}
-		return s.settleFailure(ctx, tx, owner, conversation, session, commandID, failure)
+		return s.settleFailure(ctx, tx, conversation, session, commandID, failure)
 	})
 }
 
@@ -558,7 +560,7 @@ func blockedReason(ctx context.Context, tx *sql.Tx, conversation *Conversation, 
 	return fmt.Sprintf("%s; session is blocked because %s. Inspect the linked boundary evidence and reconcile external effects before manual recovery. Automatic effect replay is disabled.", summary, description), nil
 }
 
-func (s *Store) settleFailure(ctx context.Context, tx *sql.Tx, owner Owner, conversation *Conversation, session *Session,
+func (s *Store) settleFailure(ctx context.Context, tx *sql.Tx, conversation *Conversation, session *Session,
 	commandID *string, failure error,
 ) error {
 	var command *Command
@@ -600,7 +602,7 @@ func (s *Store) settleFailure(ctx context.Context, tx *sql.Tx, owner Owner, conv
 	session.ActiveCommand = nil
 	// Deviation: Codex records pending input after a failed turn; a failed turn here may still hold
 	// an unresolved intent whose output must precede it, so queued notify() outputs are discarded.
-	if _, err := s.settleNotifications(ctx, tx, owner, conversation, session, false); err != nil {
+	if _, err := s.settleNotifications(ctx, tx, conversation, session, false); err != nil {
 		return err
 	}
 	reason := "execution stopped; inspect durable boundary evidence"
@@ -647,40 +649,16 @@ func (s *Store) settleFailure(ctx context.Context, tx *sql.Tx, owner Owner, conv
 		if err := settleTurnInterrupts(ctx, tx, session, TurnFailed); err != nil {
 			return err
 		}
-		rows, err := tx.QueryContext(ctx, `SELECT session_id,id,payload,admission,outcome,failure_reason FROM sampler_command WHERE session_id=$1 AND outcome=$2 ORDER BY admission FOR UPDATE`,
-			session.ID, int32(samplerpb.CommandOutcome_COMMAND_OUTCOME_ACCEPTED))
+		interrupts, err := acceptedInterruptIDsForTurn(ctx, tx, session.ID, *session.ActiveTurn)
 		if err != nil {
 			return err
 		}
-		var interrupts []*Command
-		for rows.Next() {
-			candidate, err := scanCommand(rows)
-			if err != nil {
-				rows.Close()
-				return err
-			}
-			payload := &commandpb.Command{}
-			if err := proto.Unmarshal(candidate.Payload, payload); err != nil {
-				rows.Close()
-				return err
-			}
-			interrupt := payload.GetInterruptTurn()
-			if interrupt == nil || interrupt.GetTurnId() != *session.ActiveTurn {
-				continue
-			}
-			interrupts = append(interrupts, candidate)
-		}
-		if err := rows.Err(); err != nil {
-			rows.Close()
-			return err
-		}
-		rows.Close()
-		for _, candidate := range interrupts {
-			if err := setCommandOutcome(ctx, tx, session.ID, candidate.ID, samplerpb.CommandOutcome_COMMAND_OUTCOME_APPLIED, nil); err != nil {
+		for _, id := range interrupts {
+			if err := setCommandOutcome(ctx, tx, session.ID, id, samplerpb.CommandOutcome_COMMAND_OUTCOME_APPLIED, nil); err != nil {
 				return err
 			}
 			if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_CommandNoop{
-				CommandNoop: &eventpb.CommandNoop{CommandId: candidate.ID, Reason: "target turn failed"},
+				CommandNoop: &eventpb.CommandNoop{CommandId: id, Reason: "target turn failed"},
 			}}); err != nil {
 				return err
 			}

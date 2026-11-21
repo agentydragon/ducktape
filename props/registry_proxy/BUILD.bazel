@@ -42,9 +42,8 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         ":routes",
+        "//props:data_plane",
         "//props/db:async_database",
-        "//props/db:config",
-        "//util:logging",
         "@pypi//fastapi",
     ],
 )
@@ -55,8 +54,7 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         ":app",
-        "@pypi//typer",
-        "@pypi//uvicorn",
+        "//props:data_plane",
     ],
 )
 
@@ -65,13 +63,11 @@ py_test(
     srcs = ["test_app.py"],
     deps = [
         ":app",
-        ":cli",
         "//:conftest",
         "//props:conftest",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pytest_bazel",
-        "@pypi//typer",
     ],
 )
 
@@ -93,8 +89,8 @@ py_test(
         "//props/testing/fixtures:credentials",
         "//props/testing/fixtures:db",
         "//props/testing/fixtures:runs",
-        "//util/testing:asgi",
-        "//util/testing:postgres_fixtures",
+        "//testing:asgi",
+        "//testing:postgres_fixtures",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pytest",
@@ -103,10 +99,6 @@ py_test(
         "@pypi//starlette",
     ],
 )
-
-# =============================================================================
-# OCI Image
-# =============================================================================
 
 aspect_py_binary(
     name = "registry_proxy_bin",

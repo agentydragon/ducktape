@@ -29,18 +29,6 @@ func (e *SessionNotFoundError) Error() string {
 	return fmt.Sprintf("Session %s was not found in Sandbox %q", e.SessionID, e.Sandbox)
 }
 
-// ThreadNotFoundError means the app has no Thread row for this History Session.
-type ThreadNotFoundError struct{ ThreadID uuid.UUID }
-
-func (e *ThreadNotFoundError) Error() string {
-	return fmt.Sprintf("thread %s was not found", e.ThreadID)
-}
-
-// ThreadStateError means the History feed rejected the Environment Runtime state.
-type ThreadStateError struct{ Message string }
-
-func (e *ThreadStateError) Error() string { return e.Message }
-
 // RequestTimeoutError means an Agentplane unary call did not finish before its
 // deadline. A mutation may still have committed.
 type RequestTimeoutError struct{ Cause error }
@@ -67,8 +55,7 @@ func (e *DispatcherRequestTimeoutError) Error() string {
 
 func (e *DispatcherRequestTimeoutError) Unwrap() error { return e.Cause }
 
-// RefusedError is the typed counterpart of the Python FAILED_PRECONDITION
-// transport error.
+// RefusedError is the typed form of a FAILED_PRECONDITION gRPC status.
 type RefusedError struct {
 	Code    codes.Code
 	Details string

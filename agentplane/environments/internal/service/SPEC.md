@@ -66,6 +66,9 @@ diagnostics while suspended.
   at admission, placement and command delivery; their next command fails `execution_identity_changed`.
   The selected Identity is revalidated by UID during the patch, but deletion and same-name recreation
   after that read remain a cross-resource race because the Sandbox spec stores only a name.
+- Workspace and state volumes carry over a rebind: the next Identity reads whatever the previous one
+  left, including privileged files. Accepted risk (operator, 2026-11-10); the app warns when an
+  identity change is requested (`app/frontend/sandboxes/identity.tsx`).
 - Get and watch require the complete Sandbox namespace/name/UID handle. Missing, replaced, deleting, or foreign targets are hidden as `NOT_FOUND` for Identity callers.
   Broad readers may see a deleting target and targets whose execution account is not yet present.
 - Identity list filters the configured
@@ -177,8 +180,7 @@ the stream; a successful review leaves it open. A stalled send is bounded by fiv
 
 ## Pagination and errors
 
-`ListEnvironments.limit` is required and ranges from 1 through 100. The request and response retain
-the approved paged contract. Identity
+`ListEnvironments.limit` is required and ranges from 1 through 100. Identity
 callers page over visible Sandboxes with a lexical name cursor; it cannot grant access to another
 Sandbox. Broad readers can continue namespace pages; their grant permits seeing all names.
 
@@ -188,17 +190,8 @@ Malformed requests and nonempty cursors from ordinary callers fail `INVALID_ARGU
 
 ## CLI
 
-- `agentplane environments list [--limit N] [--after TOKEN]`
-- `agentplane environments get NAMESPACE NAME UID`
-- `agentplane environments resume NAMESPACE NAME UID --resume-token TOKEN`
-
-Use `AGENTPLANE_ENVIRONMENTS_URL` and the optional `AGENTPLANE_ENVIRONMENTS_CREDENTIAL` when that URL
-is configured. Otherwise use the compatibility endpoint `AGENTPLANE_SESSIONS_URL` and its optional
-`AGENTPLANE_SESSIONS_CREDENTIAL`. Credentials are scoped to their matching endpoint, and setting an
-environments credential without its URL is a CLI usage error. Workload SVID routes need no bearer. A
-resume response is acceptance, not readiness, and an uncertain reply is never retried automatically.
-Reconcile current readiness and any uncertain effect before creating a new Session or submitting
-input. CLI and Action/MCP wait adapters over `WatchEnvironment` remain follow-up work.
+`agentplane environments list`, `get` and `resume` are documented in the
+[Agent CLI](../../../docs/agent_cli.md#commands).
 
 ## Resume and ownership
 

@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"cmp"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
 	"strings"
 	"unicode/utf8"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/santhosh-tekuri/jsonschema/v6"
@@ -22,7 +24,7 @@ const maxDescription = 20_000
 type tool struct {
 	definition catalog.ActionDefinition
 	// arguments is definition's input schema, compiled.
-	arguments *jsonschema.Schema
+	arguments *catalog.CompiledSchema
 }
 
 // invalidCatalogError is a tool list the group cannot offer: every tool in it is one the catalog cannot hold.
@@ -30,8 +32,8 @@ type invalidCatalogError struct{ reason string }
 
 func (e *invalidCatalogError) Error() string { return e.reason }
 
-// skipped maps the name of each listed tool the catalog cannot hold to why: an input schema that is not a JSON
-// Schema, a name listed twice, or a definition the catalog cannot hold. Such a tool is left out; the others are
+// skipped maps the name of each listed tool the catalog cannot hold to why: unusable tool metadata, an
+// evaluation failure during schema compilation, or an ambiguous duplicate name. Such a tool is left out; the others are
 // still offered.
 type skipped map[string]string
 
@@ -82,20 +84,41 @@ func mirror(listed []*mcp.Tool) (map[string]tool, skipped, error) {
 }
 
 // mirrorOne is one listed tool as an ActionDefinition and its compiled input schema.
-func mirrorOne(listed *mcp.Tool) (catalog.ActionDefinition, *jsonschema.Schema, error) {
+func mirrorOne(listed *mcp.Tool) (catalog.ActionDefinition, *catalog.CompiledSchema, error) {
 	schema, err := json.Marshal(listed.InputSchema)
 	if err != nil {
 		return catalog.ActionDefinition{}, nil, fmt.Errorf("input schema: %w", err)
 	}
-	arguments, err := compileSchema(schema)
+	// The catalog's wire representation requires an object even when its schema cannot be compiled.
+	document, err := jsonschema.UnmarshalJSON(bytes.NewReader(schema))
 	if err != nil {
 		return catalog.ActionDefinition{}, nil, fmt.Errorf("input schema: %w", err)
+	}
+	if _, isObject := document.(map[string]any); !isObject {
+		return catalog.ActionDefinition{}, nil, fmt.Errorf("input schema must be a JSON object")
 	}
 	description := cmp.Or(listed.Description, "MCP tool "+listed.Name)
 	if utf8.RuneCountInString(description) > maxDescription {
 		return catalog.ActionDefinition{}, nil, fmt.Errorf("description is longer than %d characters", maxDescription)
 	}
+	arguments, err := catalog.CompileSchema(document)
+	if errors.Is(err, catalog.ErrPatternEvaluation) {
+		// An indeterminate evaluation must never enable the unvalidated fallback.
+		return catalog.ActionDefinition{}, nil, err
+	}
 	definition := catalog.ActionDefinition{Description: description, InputSchema: schema}
+	if err != nil {
+		// Do not expose compiler errors: remote $refs can contain backend addresses or credentials.
+		detail := "Agentplane could not compile this tool's input schema."
+		definition.InputSchemaValidation = &action_servicepb.InputSchemaValidation{
+			Status: action_servicepb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_NOT_ENFORCED,
+			Reason: action_servicepb.InputSchemaValidationReason_INPUT_SCHEMA_VALIDATION_REASON_SCHEMA_COMPILE_FAILED,
+			Detail: &detail,
+		}
+		slog.Warn("MCP input schema cannot be compiled", "tool", listed.Name, "error_type", fmt.Sprintf("%T", err))
+	} else {
+		definition.InputSchemaValidation = &action_servicepb.InputSchemaValidation{Status: action_servicepb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_ENFORCED}
+	}
 	title := listed.Title
 	if hints := listed.Annotations; hints != nil {
 		// `annotations.title` is the older spelling of the display name that `title` replaced.
@@ -122,23 +145,22 @@ func optional[T comparable](v T) *T {
 	return &v
 }
 
-// compileSchema compiles an input schema, which must be a JSON object, as catalog.CompileSchema does.
-func compileSchema(schema json.RawMessage) (*jsonschema.Schema, error) {
-	document, err := jsonschema.UnmarshalJSON(bytes.NewReader(schema))
+// checkArguments requires an object even when there is no compiled schema.
+func (t tool) checkArguments(arguments json.RawMessage) error {
+	value, err := jsonschema.UnmarshalJSON(bytes.NewReader(arguments))
 	if err != nil {
-		return nil, err
+		return catalog.ErrInvalidArguments
 	}
-	if _, isObject := document.(map[string]any); !isObject {
-		return nil, fmt.Errorf("must be a JSON object")
+	if _, ok := value.(map[string]any); !ok {
+		return catalog.ErrInvalidArguments
 	}
-	return catalog.CompileSchema(document)
+	if t.arguments == nil {
+		return nil
+	}
+	return t.arguments.Validate(value)
 }
 
-// matches is whether arguments, a JSON object, satisfy the tool's input schema.
-func (t tool) matches(arguments json.RawMessage) bool {
-	value, err := jsonschema.UnmarshalJSON(bytes.NewReader(arguments))
-	return err == nil && t.arguments.Validate(value) == nil
-}
+func (t tool) matches(arguments json.RawMessage) bool { return t.checkArguments(arguments) == nil }
 
 // storedResult is the tool's answer as its Execution keeps it: the CallToolResult whole, every content block,
 // structured content, `isError` and `_meta`, so that it can be relayed unchanged. The result's type describes the

@@ -36,43 +36,10 @@ def test_receiver_omission_does_not_add_a_deployment_key() -> None:
     assert "environment_service" not in settings.model_dump(mode="json")
 
 
-def test_receiver_roles_and_typed_delegation() -> None:
-    settings = EnvironmentService.model_validate(receiver_settings())
-    assert settings.service_operators == ("spiffe://agentplane/app",)
-    assert settings.service_delegation is not None
-    assert settings.service_delegation.actors[0].spiffe_id == "spiffe://agentplane/actions"
-
-
-def test_runtime_proxy_is_optional_with_empty_allowlists() -> None:
+def test_runtime_proxy_omission_does_not_add_a_deployment_key() -> None:
     receiver = EnvironmentService.model_validate(receiver_settings())
     assert receiver.runtime_proxy is None
     assert "runtime_proxy" not in receiver.model_dump(mode="json")
-
-    runtime_proxy = RuntimeProxy.model_validate({"runner_security": {"mode": "insecure"}})
-    assert runtime_proxy.readers == ()
-    assert runtime_proxy.session_callers == ()
-    assert runtime_proxy.controller_callers == ()
-    assert runtime_proxy.executor_callers == ()
-
-
-def test_runtime_proxy_roles_are_typed() -> None:
-    receiver = EnvironmentService.model_validate(
-        receiver_settings()
-        | {
-            "runtime_proxy": {
-                "runner_security": {"mode": "insecure"},
-                "readers": ["spiffe://agentplane/app"],
-                "session_callers": ["spiffe://agentplane/sessions"],
-                "controller_callers": ["spiffe://agentplane/sandbox-controller"],
-                "executor_callers": ["spiffe://agentplane/runner-gateway"],
-            }
-        }
-    )
-    assert receiver.runtime_proxy is not None
-    assert receiver.runtime_proxy.readers == ("spiffe://agentplane/app",)
-    assert receiver.runtime_proxy.session_callers == ("spiffe://agentplane/sessions",)
-    assert receiver.runtime_proxy.controller_callers == ("spiffe://agentplane/sandbox-controller",)
-    assert receiver.runtime_proxy.executor_callers == ("spiffe://agentplane/runner-gateway",)
 
 
 @pytest.mark.parametrize(
@@ -91,6 +58,7 @@ def test_runtime_proxy_rejects_incomplete_or_unknown_settings(settings: dict[str
 
 @pytest.mark.parametrize("field", ["readers", "session_callers", "controller_callers", "executor_callers"])
 def test_runtime_proxy_rejects_unknown_service_callers(field: str) -> None:
+    RuntimeProxy.model_validate({"runner_security": {"mode": "insecure"}, field: ["spiffe://agentplane/app"]})
     with pytest.raises(ValidationError):
         RuntimeProxy.model_validate({"runner_security": {"mode": "insecure"}, field: ["spiffe://agentplane/unknown"]})
 

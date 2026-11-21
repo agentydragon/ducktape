@@ -65,13 +65,7 @@ from study_casino.credit_award import (
     streak_multiplier,
 )
 from study_casino.deployment import build_deployment_info
-from study_casino.events import (
-    BlackjackOutcome,
-    BlackjackSettlementOutcome,
-    GameEventMutation,
-    GameEventRead,
-    LedgerEventRead,
-)
+from study_casino.events import BlackjackOutcome, BlackjackSettlementOutcome, GameEventMutation
 from study_casino.games import (
     RNG_VERSION,
     GameSettlement,
@@ -274,30 +268,14 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
             raise HTTPException(status_code=403, detail="admin privilege required")
 
     def resolve_prize_owner(caller: str, target_user: str | None) -> str:
-        """Resolve which user's catalog a prize mutation touches.
-
-        Rules:
-        - target_user unset, caller is admin → caller (admin manages their own).
-        - target_user unset, caller is not admin → 403 (only admins manage catalogs).
-        - target_user set → must be admin, then target_user.
-        """
-        if target_user is None:
-            require_admin(caller)
-            return caller
+        """Resolve which user's catalog a prize mutation touches: only admins manage catalogs."""
         require_admin(caller)
-        return target_user
+        return caller if target_user is None else target_user
 
     app = FastAPI(title="Study Casino", docs_url=None, redoc_url=None)
     app.state.current_user_dep = current_user_dep
 
-    def current_rng_factory() -> ActionRngFactory:
-        return rng_factory
-
-    app.state.rng_factory_dep = current_rng_factory
-
-    def action_rng(
-        *, rng_factory: ActionRngFactory, username: str, body: ActionRequest, action_type: str
-    ) -> AuditedRandom:
+    def action_rng(*, username: str, body: ActionRequest, action_type: str) -> AuditedRandom:
         return rng_factory.for_action(
             user_id=username,
             client_action_id=body.client_action_id,
@@ -377,12 +355,6 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
     def admin_user_state(user: Annotated[str, Depends(admin_target_user)]) -> StateDump:
         return store.state_dump(user)
 
-    @app.get("/game-events")
-    def list_game_events(
-        username: Annotated[str, Depends(current_user_dep)], limit: Annotated[int, Query(ge=1, le=500)] = 100
-    ) -> list[GameEventRead]:
-        return store.list_game_events(username, limit=limit)
-
     @app.get("/casino/stats")
     def get_casino_stats(username: Annotated[str, Depends(current_user_dep)]) -> CasinoStats:
         return store.casino_stats(username)
@@ -390,12 +362,6 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
     @app.get("/admin/casino/stats")
     def admin_casino_stats(user: Annotated[str, Depends(admin_target_user)]) -> CasinoStats:
         return store.casino_stats(user)
-
-    @app.get("/ledger-events")
-    def list_ledger_events(
-        username: Annotated[str, Depends(current_user_dep)], limit: Annotated[int, Query(ge=1, le=500)] = 100
-    ) -> list[LedgerEventRead]:
-        return store.list_ledger_events(username, limit=limit)
 
     @app.post("/actions/session/complete")
     async def complete_session(
@@ -658,16 +624,12 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
         )
 
     @app.post("/casino/slots/spin")
-    async def slots_spin(
-        body: SlotsSpinRequest,
-        username: Annotated[str, Depends(current_user_dep)],
-        rng_factory: Annotated[ActionRngFactory, Depends(current_rng_factory)],
-    ) -> ActionResponse:
+    async def slots_spin(body: SlotsSpinRequest, username: Annotated[str, Depends(current_user_dep)]) -> ActionResponse:
         action_type = "casino.slots.spin"
 
         def mutate(s: Session, _now_ms: int) -> ActionMutation:
             balance = _debit_wager(s, username, body.wager_credits)
-            rng = action_rng(rng_factory=rng_factory, username=username, body=body, action_type=action_type)
+            rng = action_rng(username=username, body=body, action_type=action_type)
             settlement = spin_slots(body.wager_credits, rng)
             balance.tokens += settlement.payout_tokens
             return ActionMutation(
@@ -687,15 +649,13 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
 
     @app.post("/casino/roulette/spin")
     async def roulette_spin(
-        body: RouletteSpinRequest,
-        username: Annotated[str, Depends(current_user_dep)],
-        rng_factory: Annotated[ActionRngFactory, Depends(current_rng_factory)],
+        body: RouletteSpinRequest, username: Annotated[str, Depends(current_user_dep)]
     ) -> ActionResponse:
         action_type = "casino.roulette.spin"
 
         def mutate(s: Session, _now_ms: int) -> ActionMutation:
             balance = _debit_wager(s, username, body.wager_credits)
-            rng = action_rng(rng_factory=rng_factory, username=username, body=body, action_type=action_type)
+            rng = action_rng(username=username, body=body, action_type=action_type)
             try:
                 settlement = spin_roulette(body.wager_credits, body.bet_type, body.bet_number, rng)
             except ValueError as e:
@@ -718,15 +678,13 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
 
     @app.post("/casino/blackjack/deal")
     async def blackjack_deal(
-        body: BlackjackDealRequest,
-        username: Annotated[str, Depends(current_user_dep)],
-        rng_factory: Annotated[ActionRngFactory, Depends(current_rng_factory)],
+        body: BlackjackDealRequest, username: Annotated[str, Depends(current_user_dep)]
     ) -> ActionResponse:
         action_type = "blackjack.deal"
 
         def mutate(s: Session, now_ms: int) -> ActionMutation:
             balance = _debit_wager(s, username, body.wager_credits)
-            rng = action_rng(rng_factory=rng_factory, username=username, body=body, action_type=action_type)
+            rng = action_rng(username=username, body=body, action_type=action_type)
             shoe = make_shoe(rng)
             p1, shoe = draw_cards(shoe, 1)
             d1, shoe = draw_cards(shoe, 1)

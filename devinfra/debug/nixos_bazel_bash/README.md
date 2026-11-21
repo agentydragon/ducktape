@@ -3,7 +3,7 @@
 ## Summary
 
 Bazel doesn't work locally on NixOS. Three independent issues must be fixed — and a
-fourth, [Issue 4](#issue-4-nix-ld-is-environment-based-and-bazel-rulesets-scrub-the-environment),
+fourth, [Issue 4](#issue-4-nix-ld-and-bash-both-need-filesystem-defaults-not-environment-variables),
 which is about environment-scrubbed actions and is fixed with filesystem defaults rather
 than more env plumbing.
 
@@ -21,7 +21,7 @@ there.
 
 **Fix**: Add to user `~/.bazelrc`:
 
-```
+```text
 startup --shell_executable=/run/current-system/sw/bin/bash
 ```
 
@@ -51,7 +51,7 @@ The `env` call is redundant — bash can do `export VAR=val; exec "$python_exe"`
 
 **Workaround**: Add to user `~/.bazelrc`:
 
-```
+```text
 build --action_env=PATH
 build --host_action_env=PATH
 ```
@@ -116,7 +116,7 @@ nixpkgs patches Bazel's Java source code at build time, replacing `/bin/bash` wi
 
 ## Combined workaround (`~/.bazelrc`)
 
-```
+```text
 startup --shell_executable=/run/current-system/sw/bin/bash
 build --action_env=PATH
 build --host_action_env=PATH
@@ -220,7 +220,7 @@ Docker container test setup for reproducing these issues is at `devinfra/nixos_b
 | File                                                      | Role                                      |
 | --------------------------------------------------------- | ----------------------------------------- |
 | `~/.bazelrc`                                              | User-local NixOS workarounds (issues 1-2) |
-| `MODULE.bazel:336-349`                                    | BuildBuddy toolchain registration         |
+| `MODULE.bazel` (`toolchains_buildbuddy` block)            | BuildBuddy toolchain registration         |
 | External `toolchains_buildbuddy+/rules.bzl:84-87`         | FHS symlinks that break on NixOS          |
 | External `rules_mypy~/mypy/private/mypy.bzl:227`          | Action env missing PATH                   |
 | External `rules_python` bootstrap (`interpreter_tmpl.sh`) | Uses bare `env` command                   |

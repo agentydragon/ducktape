@@ -14,6 +14,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/anthropic"
+	"github.com/agentydragon/ducktape/agentplane/sampler/providers/chatcompletions"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/responses"
 )
 
@@ -30,16 +31,21 @@ const (
 
 // ModelConfig contains the wire and tool-call encodings supported by one model route.
 type ModelConfig struct {
-	Connection        string                `json:"connection"`
-	ProviderModel     string                `json:"provider_model"`
-	API               protocol.APIStyle     `json:"api"`
-	Responses         responses.Config      `json:"responses,omitzero"`
-	AnthropicMessages *anthropic.Config     `json:"anthropic_messages,omitempty"`
-	ExecEncoding      protocol.ExecEncoding `json:"exec_encoding"`
-	ReasoningEfforts  []string              `json:"reasoning_efforts"`
+	ResponseHeaderTimeoutSeconds *int                              `json:"response_header_timeout_seconds,omitempty"`
+	Connection                   string                            `json:"connection"`
+	ProviderModel                string                            `json:"provider_model"`
+	API                          protocol.APIStyle                 `json:"api"`
+	Responses                    responses.Config                  `json:"responses,omitzero"`
+	AnthropicMessages            *anthropic.Config                 `json:"anthropic_messages,omitempty"`
+	ChatCompaction               *chatcompletions.CompactionConfig `json:"chat_compaction,omitempty"`
+	ExecEncoding                 protocol.ExecEncoding             `json:"exec_encoding"`
+	ReasoningEfforts             []string                          `json:"reasoning_efforts"`
 }
 
 func (c ModelConfig) Validate() error {
+	if c.ResponseHeaderTimeoutSeconds != nil && (*c.ResponseHeaderTimeoutSeconds <= 0 || int64(*c.ResponseHeaderTimeoutSeconds) > maxExecutorInitializeTimeoutSeconds) {
+		return invalidSetting("response_header_timeout_seconds", "must be positive and fit in time.Duration")
+	}
 	if c.Connection == "" {
 		return invalidSetting("connection", "model connection is required")
 	}
@@ -51,6 +57,14 @@ func (c ModelConfig) Validate() error {
 	}
 	if c.ExecEncoding != protocol.ExecEncodingFreeform && c.ExecEncoding != protocol.ExecEncodingJSON {
 		return invalidSetting("exec_encoding", "exec_encoding must be freeform or json")
+	}
+	if c.ChatCompaction != nil {
+		if c.API != protocol.APIStyleChatCompletions {
+			return invalidSetting("chat_compaction", "requires the chat_completions API")
+		}
+		if err := c.ChatCompaction.Validate(); err != nil {
+			return invalidSettingWithCause("chat_compaction", "settings are invalid", err)
+		}
 	}
 	switch c.API {
 	case protocol.APIStyleResponses:
@@ -78,8 +92,15 @@ func (c ModelConfig) Validate() error {
 		if err := c.AnthropicMessages.Validate(); err != nil {
 			return invalidSettingWithCause("anthropic_messages", "settings are invalid", err)
 		}
+	case protocol.APIStyleChatCompletions:
+		if c.Responses != (responses.Config{}) || c.AnthropicMessages != nil {
+			return invalidSetting("api", "Chat Completions cannot set options for another API")
+		}
+		if c.ExecEncoding != protocol.ExecEncodingJSON {
+			return invalidSetting("exec_encoding", "chat_completions requires exec_encoding json")
+		}
 	default:
-		return invalidSetting("api", "model api must be responses or anthropic_messages")
+		return invalidSetting("api", "model api must be responses, anthropic_messages, or chat_completions")
 	}
 	return nil
 }
@@ -96,6 +117,8 @@ func (c ModelConfig) Compatible(other ModelConfig) bool {
 		return c.Responses.Compatible(other.Responses)
 	case protocol.APIStyleAnthropicMessages:
 		return c.Responses == other.Responses && c.AnthropicMessages.Compatible(other.AnthropicMessages)
+	case protocol.APIStyleChatCompletions:
+		return c.ChatCompaction.Compatible(other.ChatCompaction)
 	default:
 		return false
 	}

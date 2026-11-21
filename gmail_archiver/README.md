@@ -2,8 +2,6 @@
 
 Manage Gmail filters from YAML and preview or archive eligible inbox messages with `autoclean-inbox`, which extracts cleanup dates from message content.
 
-**V0 Scope**: Anthropic API receipts, USPS Informed Delivery, and other receipt types.
-
 ## Setup
 
 Gmail API commands require a Google authorized-user OAuth token. By default, they read
@@ -23,12 +21,9 @@ gmail-archiver filters download             # Export Gmail filters to YAML
 
 ### Cleanup Rules
 
-| Category               | Label                          | Threshold |
-| ---------------------- | ------------------------------ | --------- |
-| Anthropic receipts     | `receipts/anthropic`           | 30 days   |
-| USPS Informed Delivery | `batch/usps-informed-delivery` | 7 days    |
+`autoclean_inbox` in <gmail_archiver/main.py> registers every cleanup planner; each holds its Gmail query and archive rule.
 
-Archived emails get `gmail-archiver/inbox-auto-cleaned` label and are removed from inbox.
+Archived emails leave the inbox and get a label under `gmail-archiver/`: `gmail-archiver/inbox-auto-cleaned` unless the planner sets its own.
 
 ## Implementation
 

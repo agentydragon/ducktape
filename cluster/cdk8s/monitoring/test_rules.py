@@ -19,6 +19,11 @@ from cluster.cdk8s.monitoring import rules
     ("rule_files", "tests"),
     [
         pytest.param(
+            {"client-certificate-expiry-alerts": "client-cert.yaml"},
+            "client_certificate_rules.yaml",
+            id="client-certificate-expiry",
+        ),
+        pytest.param(
             {"github-quota-alerts": "github-quota.yaml", "roaming-node-alerts": "roaming-node.yaml"},
             "github_quota_rules.yaml",
             id="github-quota",

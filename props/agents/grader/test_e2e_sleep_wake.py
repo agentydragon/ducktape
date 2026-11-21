@@ -27,14 +27,13 @@ from props.agents.grader.drift_handler import get_drift
 from props.agents.grader.testing.mocks import GraderMock
 from props.agents.grader.tools import EdgeSpec, FPRef, TPRef
 from props.db.database import Database
-from props.db.models import AgentRunStatus, GradingEdge, ReportedIssue, ReportedIssueOccurrence
-from props.db.snapshots import LocationAnchor
+from props.db.models import GradingEdge
 from props.testing.assertions import assert_no_pending
-from props.testing.constants import DEFAULT_TEST_MODEL
-from props.testing.fixtures.runs import make_fake_critic_run
+from props.testing.fixtures.runs import make_fake_critic_run, make_reported_issues
+from props.testing.models import DEFAULT_TEST_MODEL
 
-# gazelle:include_dep //props/agents/grader/testing:e2e_pytest_plugins
-pytest_plugins = ("props.agents.grader.testing.e2e_pytest_plugins",)
+# gazelle:include_dep //props/agents/testing:e2e_pytest_plugins
+pytest_plugins = ("props.agents.testing.e2e_pytest_plugins",)
 
 logger = logging.getLogger(__name__)
 
@@ -108,22 +107,11 @@ async def test_grader_sleep_wake_cycle(e2e_stack, test_snapshot, all_files_scope
         critic_1_id = uuid4()
         with db.session() as session:
             critic_1 = make_fake_critic_run(
-                session=session,
-                example=all_files_scope,
-                model=stack.model,
-                status=AgentRunStatus.EXITED,
-                agent_run_id=critic_1_id,
+                session=session, example=all_files_scope, model=stack.model, agent_run_id=critic_1_id
             )
             session.add(critic_1)
             session.flush()
-            session.add(ReportedIssue(agent_run_id=critic_1_id, issue_id="issue-1", rationale="Critic 1 issue"))
-            session.add(
-                ReportedIssueOccurrence(
-                    agent_run_id=critic_1_id,
-                    reported_issue_id="issue-1",
-                    locations=[LocationAnchor(file="subtract.py", start_line=1, end_line=1)],
-                )
-            )
+            make_reported_issues(agent_run_id=critic_1_id, issue_ids=["issue-1"], session=session)
             session.commit()
 
         assert get_drift(test_snapshot, db).grading, "grading_pending should have rows"
@@ -156,22 +144,11 @@ async def test_grader_sleep_wake_cycle(e2e_stack, test_snapshot, all_files_scope
             critic_2_id = uuid4()
             with db.session() as session:
                 critic_2 = make_fake_critic_run(
-                    session=session,
-                    example=all_files_scope,
-                    model=stack.model,
-                    status=AgentRunStatus.EXITED,
-                    agent_run_id=critic_2_id,
+                    session=session, example=all_files_scope, model=stack.model, agent_run_id=critic_2_id
                 )
                 session.add(critic_2)
                 session.flush()
-                session.add(ReportedIssue(agent_run_id=critic_2_id, issue_id="issue-2", rationale="Critic 2 issue"))
-                session.add(
-                    ReportedIssueOccurrence(
-                        agent_run_id=critic_2_id,
-                        reported_issue_id="issue-2",
-                        locations=[LocationAnchor(file="subtract.py", start_line=1, end_line=1)],
-                    )
-                )
+                make_reported_issues(agent_run_id=critic_2_id, issue_ids=["issue-2"], session=session)
                 session.commit()
 
             logger.info("Critic-2 inserted, waiting for grader to wake and grade")

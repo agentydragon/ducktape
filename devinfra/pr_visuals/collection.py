@@ -59,7 +59,6 @@ class CollectionIssue:
     result: ResultKey | None = None
     related_results: tuple[ResultKey, ...] = ()
     output: OutputKey | None = None
-    artifact: str | None = None
     record: str | None = None
     invocation: str | None = None
     target: str | None = None
@@ -283,15 +282,12 @@ def collect_materialized_outputs(
         message: str,
         *,
         output: OutputKey | None = None,
-        artifact: str | None = None,
         record: str | None = None,
         related_results: tuple[ResultKey, ...] = (),
     ) -> None:
         nonlocal fatal
         fatal = True
-        issue = CollectionIssue(
-            message, result=key, related_results=related_results, output=output, artifact=artifact, record=record
-        )
+        issue = CollectionIssue(message, result=key, related_results=related_results, output=output, record=record)
         errors.append(issue)
         per_result[key].append(issue)
 
@@ -418,18 +414,22 @@ def collect_materialized_outputs(
         if total_run_count != len(keys):
             issue(representative, f"listed {len(keys)} result attempts but summary reports {total_run_count}")
             incomplete_configurations.add(configured)
-        if {key.run for key in keys} != set(range(1, run_count + 1)):
+        by_run: dict[int | None, list[ResultKey]] = defaultdict(list)
+        for key in keys:
+            by_run[key.run].append(key)
+
+        expected_runs = range(1, run_count + 1)
+        if by_run.keys() != set(expected_runs):
             issue(representative, f"missing or unexpected runs (expected 1..{run_count})")
             incomplete_configurations.add(configured)
-        for run_number in range(1, run_count + 1):
-            shards = {key.shard for key in keys if key.run == run_number}
-            if shards != set(range(1, shard_count + 1)):
+        expected_shards = set(range(1, shard_count + 1))
+        observed_attempt_count = 0
+        for run_number in expected_runs:
+            run_results = by_run.get(run_number, [])
+            if {key.shard for key in run_results} != expected_shards:
                 issue(representative, f"run {run_number} has missing or unexpected shards (expected 1..{shard_count})")
                 incomplete_configurations.add(configured)
-        observed_attempt_count = sum(
-            max(((key.attempt or 0) for key in keys if key.run == run_number), default=0)
-            for run_number in range(1, run_count + 1)
-        )
+            observed_attempt_count += max((key.attempt or 0 for key in run_results), default=0)
         if observed_attempt_count != attempt_count:
             issue(
                 representative,

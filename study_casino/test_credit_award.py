@@ -29,9 +29,6 @@ def _day(iso: str) -> datetime.date:
     return datetime.date.fromisoformat(iso)
 
 
-# ── Millicredit accounting ───────────────────────────────────────────────────
-
-
 def test_millis_rounding_has_no_drift_at_minute_boundary() -> None:
     # 61 s → 1.01667 credits → 1017 millis; 59 s → 0.98333 → 983. Sum exact.
     assert millis_from_credits(base_session_credits(61)) == 1017
@@ -40,9 +37,6 @@ def test_millis_rounding_has_no_drift_at_minute_boundary() -> None:
 
 def test_whole_minutes_stay_exact() -> None:
     assert millis_from_credits(base_session_credits(25 * 60)) == 25000
-
-
-# ── Multiplier ───────────────────────────────────────────────────────────────
 
 
 def test_streak_multiplier_ramp_and_cap() -> None:
@@ -64,9 +58,6 @@ def test_rest_days_accrue_every_14_streak_days() -> None:
     assert rest_days_available(14, 0) == 1
     assert rest_days_available(28, 1) == 1
     assert rest_days_available(28, 2) == 0
-
-
-# ── Streak qualification ─────────────────────────────────────────────────────
 
 
 def test_first_qualifying_day_starts_streak() -> None:
@@ -99,7 +90,7 @@ def test_one_day_gap_without_rest_day_resets() -> None:
 
 
 def test_two_day_gap_resets_even_with_rest_day_banked() -> None:
-    # Rest days cover exactly one missed day (plan scenario 23).
+    # Rest days cover exactly one missed day.
     state = _state(streak_days=15, last="2026-07-01")
     qualify_streak_day(state, _day("2026-07-04"))
     assert state.streak_days == 1
@@ -124,9 +115,6 @@ def test_pending_streak_days_mirrors_qualification_without_mutating() -> None:
     state = _state(streak_days=6, last="2026-07-01")
     pending_streak_days(state, _day("2026-07-02"))
     assert state.streak_days == 6  # projection never mutates
-
-
-# ── Pacific day handling ─────────────────────────────────────────────────────
 
 
 def test_pacific_date_uses_la_wall_clock() -> None:

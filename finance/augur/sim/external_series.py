@@ -8,8 +8,7 @@ The handoff is the model's own typed `LevelFrames` (one frame per
 `LevelSeriesKind`, keyed by a sub-id column, never by a magic-prefix
 `series_id` string) plus the typed `PrivateEquityBundle`. The compiler looks
 paths up by `LevelSeriesKey`, so nothing on this path re-parses a wire string
-that the layer above already had typed. Wire strings reappear only in the
-decoded read model (`sim/codec/series.py`), which is a serialization boundary.
+that the layer above already had typed.
 
 Declarations' path requirements are discoverable before sampling (`level_series_demand`);
 supplied series are validated and quantized into the integer paths a composed world
@@ -161,7 +160,6 @@ class MaterializedLevelRows(NamedTuple):
     rollout_position: Int64[np.ndarray, " observation"]
     month_index: Int64[np.ndarray, " observation"]
     values: Float64[np.ndarray, " observation"]
-    present: Bool[np.ndarray, " observation"]
     in_bounds: Bool[np.ndarray, " observation"]
 
 
@@ -172,15 +170,20 @@ def materialize_level_rows(
 
     rows: list[MaterializedLevelRows] = []
     for key, frame in value_rows:
-        rollout_position, month_index, values, in_bounds = _frame_values(frame, rollout_count, horizon_months)
+        rollout_position = frame.get_column("rollout_index").to_numpy()
+        month_index = frame.get_column("month_index").to_numpy()
         rows.append(
             MaterializedLevelRows(
                 key=key,
                 rollout_position=rollout_position,
                 month_index=month_index,
-                values=values,
-                present=frame.get_column("value").is_not_null().to_numpy(),
-                in_bounds=in_bounds,
+                values=frame.get_column("value").to_numpy(),
+                in_bounds=(
+                    (rollout_position >= 0)
+                    & (rollout_position < rollout_count)
+                    & (month_index >= 0)
+                    & (month_index <= horizon_months)
+                ),
             )
         )
     return tuple(rows)
@@ -189,26 +192,6 @@ def materialize_level_rows(
 def _add_amount_series_key(amount: Amount, add: Callable[[LevelSeriesKey], None]) -> None:
     if isinstance(amount, IndexedAmount):
         add(parse_level_series_key(amount.series_id))
-
-
-def _frame_values(
-    frame: Any, rollout_count: int, horizon_months: int
-) -> tuple[
-    Int64[np.ndarray, " observation"],
-    Int64[np.ndarray, " observation"],
-    Float64[np.ndarray, " observation"],
-    Bool[np.ndarray, " observation"],
-]:
-    rollout_position = frame.get_column("rollout_index").to_numpy()
-    month_index = frame.get_column("month_index").to_numpy()
-    raw_values = frame.get_column("value").to_numpy()
-    in_bounds = (
-        (rollout_position >= 0)
-        & (rollout_position < rollout_count)
-        & (month_index >= 0)
-        & (month_index <= horizon_months)
-    )
-    return rollout_position, month_index, raw_values, in_bounds
 
 
 def external_series_cubes(

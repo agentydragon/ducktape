@@ -1,8 +1,6 @@
 // @vitest-environment happy-dom
-import { MantineProvider } from "@mantine/core";
 import { focusManager, onlineManager, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
-import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { listAgents, fetchDeploymentInfo, updateAgentAccessProfile } from "./client";
@@ -10,6 +8,7 @@ import { createConsoleQueryClient } from "./query";
 import { SettingsPanel } from "./settings_panel";
 import type { AgentListResponse, AgentView } from "./schema";
 import { deferred } from "../../../util/frontend/testing/deferred";
+import { cleanupMounted, renderWithMantine } from "../../../util/frontend/testing/react";
 
 vi.mock(import("./client"), async (original) => ({
   ...(await original()),
@@ -19,7 +18,6 @@ vi.mock(import("./client"), async (original) => ({
 }));
 vi.mock("./toast", () => ({ toastSuccess: vi.fn(), toastError: vi.fn() }));
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const agent: AgentView = {
   agent_id: "40000000-0000-4000-8000-000000000004",
   display_name: "Claude Desktop",
@@ -32,18 +30,11 @@ const agent: AgentView = {
   access_profile_id: "haku_v1",
 };
 const catalog: AgentListResponse = { agents: [agent], access_profiles: ["haku_v1", "manual_review"] };
-const mounted: {
-  root: ReturnType<typeof createRoot>;
-  container: HTMLElement;
-  client: ReturnType<typeof createConsoleQueryClient>;
-}[] = [];
+const clients: ReturnType<typeof createConsoleQueryClient>[] = [];
 
 afterEach(async () => {
-  for (const { root, container, client } of mounted.splice(0)) {
-    await act(async () => root.unmount());
-    container.remove();
-    client.clear();
-  }
+  await cleanupMounted();
+  for (const client of clients.splice(0)) client.clear();
   focusManager.setFocused(undefined);
   onlineManager.setOnline(true);
   vi.useRealTimers();
@@ -52,19 +43,12 @@ afterEach(async () => {
 
 async function mountSettings() {
   window.history.replaceState(null, "", "/_console/settings");
-  const container = document.createElement("div");
-  document.body.append(container);
-  const root = createRoot(container);
   const client = createConsoleQueryClient();
-  mounted.push({ root, container, client });
-  await act(async () =>
-    root.render(
-      <QueryClientProvider client={client}>
-        <MantineProvider env="test">
-          <SettingsPanel />
-        </MantineProvider>
-      </QueryClientProvider>
-    )
+  clients.push(client);
+  const container = await renderWithMantine(
+    <QueryClientProvider client={client}>
+      <SettingsPanel />
+    </QueryClientProvider>
   );
   return { container, client };
 }

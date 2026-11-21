@@ -14,16 +14,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func TestDestinationKeysAreThosePythonComputes(t *testing.T) {
-	for _, vector := range loadGolden(t).DestinationKeys {
-		t.Run(vector.Name, func(t *testing.T) {
-			if got := model.DestinationKey(vector.DestinationRef, vector.SessionID); got != vector.Key {
-				t.Errorf("model.DestinationKey = %s, want %s", got, vector.Key)
-			}
-		})
-	}
-}
-
 func TestActionEventsAreStoredAsPythonStoresThem(t *testing.T) {
 	for _, vector := range loadGolden(t).ActionEvents {
 		t.Run(vector.Name, func(t *testing.T) {

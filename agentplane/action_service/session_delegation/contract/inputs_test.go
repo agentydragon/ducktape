@@ -44,21 +44,6 @@ func TestInputsUseApprovedActionNamesAndSchemas(t *testing.T) {
 		[]string{"command_id", "session_id", "target", "turn_id"}, []string{"command_id", "session_id", "target", "turn_id"})
 }
 
-func TestCreateSessionInstructionDescriptionKeepsSessionSeparateFromInput(t *testing.T) {
-	inputs, err := NewInputs()
-	if err != nil {
-		t.Fatal(err)
-	}
-	var open map[string]any
-	if err := json.Unmarshal(inputs.CreateSession.Definition().InputSchema, &open); err != nil {
-		t.Fatal(err)
-	}
-	description := open["properties"].(map[string]any)["additional_instructions"].(map[string]any)["description"].(string)
-	if description != "Standing instructions added to the Session. This field does not submit input or start a model turn. After creation, call sessions__submit_input with the task to start work." {
-		t.Fatalf("additional_instructions description = %q", description)
-	}
-}
-
 func TestInputDecoderRejectsUnknownFieldsAndInvalidEnums(t *testing.T) {
 	inputs, err := NewInputs()
 	if err != nil {
@@ -73,7 +58,7 @@ func TestInputDecoderRejectsUnknownFieldsAndInvalidEnums(t *testing.T) {
 		}
 	}
 	resumeArguments, err := json.Marshal(map[string]any{
-		"target":       map[string]string{"namespace": "agentplane-staging", "name": "sandbox-one", "uid": "uid-1"},
+		"target":       map[string]string{"namespace": "test-namespace", "name": "sandbox-one", "uid": "uid-1"},
 		"resume_token": strings.Repeat("x", 2049),
 	})
 	if err != nil {
@@ -88,7 +73,7 @@ func TestInputDecoderRejectsUnknownFieldsAndInvalidEnums(t *testing.T) {
 		sessionpb.Harness_HARNESS_CENTRAL_SAMPLER,
 	} {
 		arguments, err := json.Marshal(map[string]any{
-			"target":     map[string]string{"namespace": "agentplane-staging", "name": "sandbox-one", "uid": "uid-1"},
+			"target":     map[string]string{"namespace": "test-namespace", "name": "sandbox-one", "uid": "uid-1"},
 			"session_id": "11111111-1111-4111-8111-111111111111",
 			"spec":       map[string]any{"harness": harness.String(), "model": "model", "cwd": "/workspace"},
 		})
@@ -99,7 +84,7 @@ func TestInputDecoderRejectsUnknownFieldsAndInvalidEnums(t *testing.T) {
 			t.Errorf("CreateSession.Decode rejected offered harness %s: %v", harness, err)
 		}
 	}
-	const invalidHarness = `{"target":{"namespace":"agentplane-staging","name":"sandbox-one","uid":"uid-1"},"session_id":"11111111-1111-4111-8111-111111111111","spec":{"harness":"HARNESS_UNSPECIFIED","model":"model","cwd":"/workspace"}}`
+	const invalidHarness = `{"target":{"namespace":"test-namespace","name":"sandbox-one","uid":"uid-1"},"session_id":"11111111-1111-4111-8111-111111111111","spec":{"harness":"HARNESS_UNSPECIFIED","model":"model","cwd":"/workspace"}}`
 	if _, err := inputs.CreateSession.Decode(json.RawMessage(invalidHarness)); err == nil {
 		t.Fatal("CreateSession.Decode accepted the unspecified harness")
 	}

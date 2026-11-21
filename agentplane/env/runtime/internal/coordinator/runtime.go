@@ -41,9 +41,8 @@ import (
 )
 
 const (
-	RuntimeUnitName                            = "agentplane-environment-runtime.service"
-	RuntimeScopeID  supervision.SystemdScopeID = supervision.SystemdEnvironmentRuntimeScopeID
-	HarnessScopeID  supervision.SystemdScopeID = "harness"
+	RuntimeScopeID supervision.SystemdScopeID = supervision.SystemdEnvironmentRuntimeScopeID
+	HarnessScopeID supervision.SystemdScopeID = "harness"
 )
 
 // Config contains the resolved environment configuration.
@@ -54,10 +53,8 @@ type Config struct {
 	StateDir                    string
 	Launch                      configuration.SandboxLaunch
 	Supervision                 string
-	PodPID1                     bool
-	VMProcessLauncher           *supervision.SystemdLauncher
+	SystemdLauncher             *supervision.SystemdLauncher
 	CodexExecServer             *codexexecserver.Config
-	CodexBinary                 string
 	HarnessEnvironment          map[string]string
 	InitializationCwd           string
 	SessionReconcileConcurrency int
@@ -117,7 +114,6 @@ type Runtime struct {
 	lifecycleContext       context.Context
 	lifecycleWorkers       sync.WaitGroup
 	operationCoordinator   *runtimeOperationCoordinator
-	lifecycleCoordinator   *runtimeCloseController
 	lifecycleControllerErr error
 	processes              *supervision.Host
 	scripts                *scripts.Runner
@@ -156,6 +152,7 @@ type Runtime struct {
 	startupComplete        bool
 	harnessSupervisor      *supervision.Supervisor
 	executionSupervisor    *supervision.Supervisor
+	commandSupervisor      *supervision.Supervisor
 	harnessProcesses       *supervision.Host
 	sessionWorkers         sync.WaitGroup
 	sessionScripts         *scripts.Runner
@@ -188,17 +185,17 @@ func newRuntime(config Config, injectedState state.State, deps runtimeDeps) (*Ru
 	if config.Supervision != "pid1" && config.Supervision != "systemd" {
 		return nil, errors.New("environment Runtime requires explicit pid1 or systemd supervision")
 	}
-	if config.Supervision == "pid1" && (!config.PodPID1 || config.VMProcessLauncher != nil) {
-		return nil, errors.New("PID1 Runtime supervision requires Pod PID1 configuration")
+	if config.Supervision == "pid1" && config.SystemdLauncher != nil {
+		return nil, errors.New("PID 1 Runtime supervision cannot use a systemd launcher")
 	}
-	if config.Supervision == "systemd" && (config.PodPID1 || config.VMProcessLauncher == nil) {
-		return nil, errors.New("systemd Runtime supervision requires VM launcher configuration")
+	if config.Supervision == "systemd" && config.SystemdLauncher == nil {
+		return nil, errors.New("systemd Runtime supervision requires a systemd launcher")
 	}
 	if config.Supervision == "pid1" && os.Getpid() != 1 && deps.prepareSupervisor == nil {
-		return nil, errors.New("Pod environment Runtime must be PID 1")
+		return nil, errors.New("PID 1 supervision requires Environment Runtime to be PID 1")
 	}
-	if config.CodexExecServer != nil && (config.CodexBinary == "" || config.HarnessEnvironment == nil) {
-		return nil, errors.New("execution service requires Codex binary and resolved harness environment")
+	if config.CodexExecServer != nil && (config.HarnessEnvironment == nil) {
+		return nil, errors.New("execution service requires a resolved harness environment")
 	}
 	if err := retained.EnsureDirectory(config.StateDir); err != nil {
 		return nil, err
@@ -295,28 +292,28 @@ func (r *Runtime) initializeLifecycle(ctx context.Context) error {
 	r.lifecycleEngine = engine
 	r.processes = supervision.NewHost(ctx, r.lifecycleState, lifecycle.Namespace, supervision.RuntimeDomain, &r.lifecycleWorkers, r.fail)
 	if r.config.Supervision == "systemd" {
-		r.supervisor, err = r.processes.DeclareSystemdScope(ctx, r.config.VMProcessLauncher, r.config.StateDir, r.config.Launch.Sandbox.UID, supervision.SystemdOwner{
-			Unit: RuntimeUnitName, LifetimeDirectory: "/run/agentplane-environment-runtime-lifetime", ScopeID: RuntimeScopeID,
-		})
+		r.supervisor, err = r.processes.DeclareSystemdScope(ctx, r.config.SystemdLauncher, r.config.StateDir, r.config.Launch.Sandbox.UID, supervision.RuntimeOwner(RuntimeScopeID))
 		if err != nil {
 			return err
 		}
-		r.harnessSupervisor, err = r.processes.DeclareSystemdScope(ctx, r.config.VMProcessLauncher, r.config.StateDir, r.config.Launch.Sandbox.UID, supervision.SystemdOwner{
-			Unit: RuntimeUnitName, LifetimeDirectory: "/run/agentplane-environment-runtime-lifetime", ScopeID: HarnessScopeID,
-		})
+		r.harnessSupervisor, err = r.processes.DeclareSystemdScope(ctx, r.config.SystemdLauncher, r.config.StateDir, r.config.Launch.Sandbox.UID, supervision.RuntimeOwner(HarnessScopeID))
 		if err != nil {
 			return err
 		}
-		if r.config.CodexExecServer != nil {
-			r.executionSupervisor, err = r.processes.DeclareSystemdScope(ctx, r.config.CodexExecServer.Launcher, filepath.Join(r.config.StateDir, "execution"), r.config.Launch.Sandbox.UID, supervision.SystemdOwner{
-				Unit: RuntimeUnitName, LifetimeDirectory: "/run/agentplane-environment-runtime-lifetime", ScopeID: "execution-service",
-			})
+	} else {
+		r.harnessSupervisor = r.supervisor
+	}
+	if r.config.CodexExecServer != nil && r.config.CodexExecServer.Owner == codexexecserver.OwnerSystemd {
+		r.executionSupervisor, err = r.processes.DeclareSystemdScope(ctx, r.config.CodexExecServer.Launcher, filepath.Join(r.config.StateDir, "execution"), r.config.Launch.Sandbox.UID, supervision.RuntimeOwner("execution-service"))
+		if err != nil {
+			return err
+		}
+		if r.config.CodexExecServer.Placement == codexexecserver.PlacementSystemd {
+			r.commandSupervisor, err = r.processes.DeclareSystemdScope(ctx, r.config.CodexExecServer.WorkloadLauncher, filepath.Join(r.config.StateDir, "commands"), r.config.Launch.Sandbox.UID, supervision.RuntimeOwner("execution-commands"))
 			if err != nil {
 				return err
 			}
 		}
-	} else {
-		r.harnessSupervisor = r.supervisor
 	}
 	if err := engine.RegisterQController(r.processes.SystemdScopeController()); err != nil {
 		return err
@@ -363,8 +360,7 @@ func (r *Runtime) initializeLifecycle(ctx context.Context) error {
 		return err
 	}
 	r.operationCoordinator = &runtimeOperationCoordinator{r: r, requests: make(chan *runtimeTransitionRequest), stopped: make(chan struct{}), done: make(chan struct{})}
-	r.lifecycleCoordinator = &runtimeCloseController{r: r, stopped: make(chan struct{})}
-	if err := engine.RegisterController(r.lifecycleCoordinator); err != nil {
+	if err := engine.RegisterController(&lifecycleGuard{runtime: r}); err != nil {
 		return err
 	}
 	if r.executionLifecycle != nil {
@@ -461,7 +457,16 @@ func (r *Runtime) finishClose() error {
 	priorFence := r.executionFence
 	r.mu.Unlock()
 	if priorFence != nil {
-		<-priorFence.done
+		select {
+		case <-priorFence.done:
+		case <-r.lifecycleContext.Done():
+			r.transitionMu.Unlock()
+			return r.coordinatorFailure("Close transition settlement")
+		}
+	}
+	if r.lifecycleContext.Err() != nil {
+		r.transitionMu.Unlock()
+		return r.coordinatorFailure("Close transition settlement")
 	}
 
 	r.mu.Lock()
@@ -486,67 +491,17 @@ func (r *Runtime) finishClose() error {
 	r.mu.Unlock()
 	r.transitionMu.Unlock()
 
-	if err := r.waitRuntimeCloseStatus(desired.Generation); err != nil {
+	sessionLossErr, err := r.closeComponents(desired)
+	if r.lifecycleContext.Err() != nil {
+		return r.coordinatorFailure("Close completion")
+	}
+	if err != nil {
 		return err
 	}
-	return r.joinClose()
+	return r.joinClose(sessionLossErr)
 }
 
-func (r *Runtime) waitRuntimeCloseStatus(generation uint64) error {
-	watchCtx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	events := make(chan state.Event, 1)
-	if err := r.lifecycleState.Watch(watchCtx, runtimeCloseStatusResource(RuntimeCloseStatus{}).Metadata(), events); err != nil {
-		return fmt.Errorf("watch Runtime Close status: %w", err)
-	}
-	// Register before reading so a terminal publication cannot be lost.
-	// ReadyToJoin only grants permission to join the engine and native owners.
-	seenCurrent := false
-	for {
-		status, found, err := readRuntimeCloseStatus(watchCtx, r.lifecycleState)
-		if err != nil {
-			return fmt.Errorf("read Runtime Close status: %w", err)
-		}
-		if !found && seenCurrent {
-			return errors.New("Runtime Close status was destroyed before completion")
-		}
-		if found {
-			if status.Generation > generation {
-				return fmt.Errorf("Runtime Close observed future generation %d, want %d", status.Generation, generation)
-			}
-			if status.Generation == generation {
-				seenCurrent = true
-				switch status.Stage {
-				case runtimeCloseReadyToJoin:
-					return nil
-				case runtimeCloseFailed:
-					if status.Failure == nil {
-						return errors.New("Runtime Close failed without a failure")
-					}
-					return status.Failure
-				}
-			}
-		}
-		select {
-		case event, ok := <-events:
-			if !ok {
-				return errors.New("Runtime Close status watch closed")
-			}
-			if event.Type == state.Errored {
-				if event.Error == nil {
-					return errors.New("Runtime Close status watch failed")
-				}
-				return fmt.Errorf("watch Runtime Close status: %w", event.Error)
-			}
-		case <-r.lifecycleCoordinator.stopped:
-			return r.coordinatorFailure("Close completion")
-		case <-r.lifecycleDone:
-			return r.coordinatorFailure("Close completion")
-		}
-	}
-}
-
-func (r *Runtime) joinClose() error {
+func (r *Runtime) joinClose(sessionLossErr error) error {
 	// The aggregate has stopped every component that can need the engine. Its
 	// completion means only that it is now safe to join that engine.
 	r.lifecycleCancel()
@@ -558,7 +513,6 @@ func (r *Runtime) joinClose() error {
 	if lifecycleRunErr != nil || lifecycleControllerErr != nil {
 		return errors.Join(lifecycleRunErr, lifecycleControllerErr)
 	}
-	sessionLossErr := r.lifecycleCoordinator.plan.sessionLossErr
 	if sessionLossErr != nil {
 		r.mu.Lock()
 		sessionLossErr = errors.Join(sessionLossErr, r.failureLocked())
@@ -682,6 +636,7 @@ func (r *Runtime) facts() (*environmentruntimestatepb.EnvironmentRuntimeFacts, e
 	if activeAdmissions > 0 && !hasAutosuspendReason(facts.AutosuspendBlockers, "Admission") {
 		facts.AutosuspendBlockers = append(facts.AutosuspendBlockers, &environmentlifecyclepb.AutosuspendBlocker{Reason: "Admission"})
 	}
+	// Keep the stable EnvironmentRuntimeFacts enum value while execution is carried over typed gRPC.
 	if activeExecution > 0 && !hasAutosuspendReason(facts.AutosuspendBlockers, "ExecutorRelay") {
 		facts.AutosuspendBlockers = append(facts.AutosuspendBlockers, &environmentlifecyclepb.AutosuspendBlocker{Reason: "ExecutorRelay"})
 	}

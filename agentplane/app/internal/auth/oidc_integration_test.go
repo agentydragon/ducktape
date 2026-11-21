@@ -20,6 +20,8 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/app/internal/auth/session"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/httpresponse"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
 )
@@ -330,17 +332,12 @@ func newOIDCIntegration(t *testing.T, replicas int, policy oidcSessionPolicy) *o
 	for index := 0; index < replicas; index++ {
 		db := baseDB
 		if index > 0 {
-			var err error
-			db, err = sql.Open("postgres", dsn)
-			if err != nil {
-				t.Fatal(err)
-			}
+			db = postgres.Open(t, dsn)
 			db.SetMaxOpenConns(8)
 			if err := db.PingContext(t.Context()); err != nil {
 				t.Fatal(err)
 			}
 			dbs = append(dbs, db)
-			t.Cleanup(func() { _ = db.Close() })
 		}
 		config := Config{
 			OIDC: &OIDCConfig{
@@ -360,10 +357,10 @@ func newOIDCIntegration(t *testing.T, replicas int, policy oidcSessionPolicy) *o
 		protected := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			caller, ok := CallerFromContext(r.Context())
 			if !ok {
-				writeError(w, http.StatusInternalServerError, "caller missing")
+				httpresponse.WriteDetailError(w, http.StatusInternalServerError, "caller missing")
 				return
 			}
-			writeJSON(w, http.StatusOK, map[string]string{"kind": string(caller.Kind), "principal": caller.Principal})
+			httpresponse.WriteJSON(w, http.StatusOK, map[string]string{"kind": string(caller.Kind), "principal": caller.Principal})
 		})
 		mux.Handle("GET /protected", a.RequireCaller(protected))
 		mux.Handle("POST /protected", a.RequireCaller(protected))

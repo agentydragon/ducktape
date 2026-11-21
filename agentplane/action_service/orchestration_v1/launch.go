@@ -21,7 +21,6 @@ import (
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -239,16 +238,6 @@ func launchError(err error) error {
 		return refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_SANDBOX_EXISTS, "%s", result.Message())
 	}
 	if result.Code() == codes.InvalidArgument {
-		for _, detail := range result.Details() {
-			if info, ok := detail.(*errdetails.ErrorInfo); ok && info.Domain == "agentplane.environments" {
-				switch info.Reason {
-				case "UNKNOWN_POLICY_SET":
-					return refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_UNKNOWN_POLICY_SET, "%s", result.Message())
-				case "LAUNCHER_POLICY_SET":
-					return refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_LAUNCHER_POLICY_SET, "%s", result.Message())
-				}
-			}
-		}
 		return refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INVALID_ARGUMENTS, "%s", result.Message())
 	}
 	if result.Code() == codes.PermissionDenied || result.Code() == codes.Unauthenticated {

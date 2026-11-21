@@ -5,13 +5,14 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 
 	"github.com/lib/pq"
 )
 
 func TestSubscriptionCreationUsesTypedStorageAndEnforcesConstraints(t *testing.T) {
 	g := newIsolatedFixture(t, defaultQuotas())
-	if got := countQuery(t, t.Context(), g.db, `SELECT count(*) FROM subscription`); got != 0 {
+	if got := postgres.Count(t, g.db, `SELECT count(*) FROM subscription`); got != 0 {
 		t.Fatalf("fresh database has %d subscriptions, want none", got)
 	}
 	assertColumnExists(t, g.db, "subscription", "creation_proto", true)
@@ -38,7 +39,7 @@ func TestSubscriptionCreationUsesTypedStorageAndEnforcesConstraints(t *testing.T
 	if replay, err := g.Subscribe(t.Context(), g.incarnation(), creation, sourceadapter.ActionsAuthorization{}); err != nil || replay.ID != subscription.ID {
 		t.Fatalf("idempotent replay = %+v, %v; want %s", replay, err, subscription.ID)
 	}
-	if got := countQuery(t, t.Context(), g.db, `SELECT count(*) FROM subscription WHERE inbox_id = $1`, subscription.InboxID); got != 1 {
+	if got := postgres.Count(t, g.db, `SELECT count(*) FROM subscription WHERE inbox_id = $1`, subscription.InboxID); got != 1 {
 		t.Fatalf("rows after replay = %d, want one", got)
 	}
 	_, err = g.db.ExecContext(t.Context(), `UPDATE subscription SET source_provider = 'unknown' WHERE id = $1`, subscription.ID)
@@ -76,17 +77,6 @@ func assertColumnNullability(t *testing.T, db *sql.DB, table, column string, wan
 	}
 	if nullable != want {
 		t.Fatalf("%s.%s is_nullable=%s, want %s", table, column, nullable, want)
-	}
-}
-
-func assertTableExists(t *testing.T, db *sql.DB, table string, want bool) {
-	t.Helper()
-	var exists bool
-	if err := db.QueryRowContext(t.Context(), `SELECT to_regclass($1) IS NOT NULL`, table).Scan(&exists); err != nil {
-		t.Fatal(err)
-	}
-	if exists != want {
-		t.Fatalf("table %s exists = %t, want %t", table, exists, want)
 	}
 }
 

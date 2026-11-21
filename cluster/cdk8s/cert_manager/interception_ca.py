@@ -1,10 +1,10 @@
 """The shared shape of every TLS-interception root CA in this cluster (mitmproxy,
 the Agentplane egress proxy): a
-`cluster-ca-bootstrap`-issued, 10-year ECDSA P-256 self-signed CA, reflected by
-trust-manager into `reflection_namespaces` and published as a `ca-certificates.crt`
-trust bundle ConfigMap into `target_namespaces`. Callers differ only in naming, which
-namespaces read the reflected Secret and the published bundle, and (Agentplane) an extra
-PKCS12 target format for its JVM truststore consumer.
+`cluster-ca-bootstrap`-issued, 10-year ECDSA P-256 self-signed CA, reflected into
+`cert-manager` (where trust-manager reads Bundle sources) and published as a
+`ca-certificates.crt` trust bundle ConfigMap into `target_namespaces`. Callers differ only
+in naming, which namespaces read the published bundle, and (Agentplane) an extra PKCS12
+target format for its JVM truststore consumer.
 """
 
 from __future__ import annotations
@@ -32,12 +32,9 @@ from trust_manager_crds.io.cert_manager.trust import (
     BundleSpecTargetNamespaceSelectorMatchExpressions,
 )
 
-from cluster.cdk8s.cert_manager.cluster_ca import LONG_LIVED_CA, ROOT_CA_SECRET
+from cluster.cdk8s.cert_manager.cluster_ca import BOOTSTRAP_ISSUER, BUNDLE_KEY, LONG_LIVED_CA, ROOT_CA_SECRET
 from cluster.cdk8s.providers.cert_manager.certificate import CertificatePrivateKey
 from cluster.cdk8s.reflector import mirror_annotations
-
-_ROOT_CA_ISSUER = "cluster-ca-bootstrap"
-BUNDLE_KEY = "ca-certificates.crt"
 
 
 def interception_root_ca(
@@ -49,14 +46,11 @@ def interception_root_ca(
     bundle_name: str,
     description: str,
     target_namespaces: Sequence[str],
-    reflection_namespaces: Sequence[str] = ("cert-manager",),
     additional_formats: BundleSpecTargetAdditionalFormats | None = None,
 ) -> None:
     """Our policy: ECDSA P-256, 10-year duration, 1-year renewal window.
 
-    `reflection_namespaces` is where trust-manager may read the reflected CA Secret from
-    (always at least `cert-manager`, its own namespace); `target_namespaces` is where the
-    published trust bundle ConfigMap lands.
+    `target_namespaces` is where the published trust bundle ConfigMap lands.
     """
     Certificate(
         scope,
@@ -69,8 +63,8 @@ def interception_root_ca(
             **LONG_LIVED_CA,
             private_key=CertificatePrivateKey.ecdsa_p256(),
             # trust-manager reads Bundle sources from its own namespace.
-            secret_template=CertificateSpecSecretTemplate(annotations=mirror_annotations(reflection_namespaces)),
-            issuer_ref=CertificateSpecIssuerRef(name=_ROOT_CA_ISSUER, kind="ClusterIssuer"),
+            secret_template=CertificateSpecSecretTemplate(annotations=mirror_annotations(["cert-manager"])),
+            issuer_ref=CertificateSpecIssuerRef(name=BOOTSTRAP_ISSUER, kind="ClusterIssuer"),
         ),
     )
     Bundle(

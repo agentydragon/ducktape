@@ -1,14 +1,13 @@
 # Execution service contract
 
 The execution service provides typed process and filesystem operations for one execution
-environment. The public contract is [`executor.proto`](executor.proto). Its initial backend is
-Codex exec-server; running a native agent harness or app-server is not required.
+environment. The public contract is [`executor.proto`](executor.proto). The native backend owns execution state; a Codex-shaped WebSocket interface supports the Codex harness.
 
 ## Ownership and admission
 
 One Execution API lifetime owns one immutable Sandbox UID and incarnation and one native backend
-lifetime inside Environment Runtime. Runtime calls the adapter directly after the native backend
-readiness probe; Host asks Runtime for in-process readiness. Every
+lifetime inside Environment Runtime. Runtime forwards through its typed proxy after both backend
+readiness probes; Host asks Runtime for in-process readiness. Every
 call carries the destination, incarnation and attributing Session; a foreign destination or stale
 incarnation is rejected before native dispatch. The service cannot adopt another environment or
 advance a Runner watch epoch. Callers supply Session and incarnation context with each request;
@@ -39,16 +38,19 @@ fence before launching a successor. Pod ownership is PID 1 plus its private proc
 The Execution Service holds a gRPC Claim stream over the companion's filesystem-protected Unix
 socket; cancellation or transport loss requests a fence. Inspect and generation-scoped Fence are
 unary RPCs. Stream closure or a Fence reply alone does not prove cleanup.
-On ordinary release, the companion stops exec-server,
+On ordinary release, the companion stops the backend,
 fences every remaining process in that namespace, and publishes a new idle generation only after
 the process table contains no workload process. Fence requests name the observed generation;
 delayed duplicates cannot fence a successor. A changed generation proves the prior owner was
 fenced even if a successor has already claimed it. Startup still requires an idle generation.
 The companion keeps PID 1 alive for the next owner. If
-exec-server exits unexpectedly, the companion performs the same process-domain fence and closes the
+the backend exits unexpectedly, the companion performs the same process-domain fence and closes the
 ownership lease so Runtime can recover the backend. If the in-container fence fails, the companion
 exits and the outer runtime's whole-namespace cleanup supplies the stronger fence. VM ownership is the Runtime systemd unit, its lifetime marker and the explicit `execution-service`
 scope in `agentplane-executors.slice`, with startup fencing and stop proof from the shared supervisor.
+The backend runs as a non-PID-1 child and exclusively owns waits for processes it starts; the
+companion reaps orphans without stealing live direct-child waits. A lost child wait (including
+`ECHILD`) is fatal to the backend, so the supervisor fences the process domain before replacement.
 No second owner may start native work while the prior owner remains live. A
 failed fence is not permission to launch a successor. Runtime retains ownership when cleanup is
 uncertain; its process lifetime and external backend fences survive independently of COSI's
@@ -56,23 +58,22 @@ in-memory lifecycle state.
 
 ## Sessions and effects
 
-`OpenSession` owns one adapter connection and native WebSocket. It initializes a native session or
-resumes the requested identity. All connections in an environment share one exec-server. An
-execution session is separate from a persisted sampler conversation. Eight concurrent open or
-opening connections are admitted; active connections remain production autosuspend blockers.
-Native frames are limited to 1 MiB, with bounded notification backpressure.
+`OpenSession` holds a typed backend connection. The typed API and Codex WebSocket share the
+same in-memory session registry. An execution session is separate from a persisted sampler
+conversation. Eight concurrent typed open or opening connections are admitted; active connections
+remain production autosuspend blockers. Coalesced `process_changed` notifications wake
+clients; cursor reads remain authoritative for output and exit state.
 
-Closing the stream releases adapter connections and workers; it does not send `process/terminate`.
-Codex 0.162.1 retains a detached native session for 30 seconds; expiry removes it and terminates
-remaining processes. File handles belong to the connection. Resuming a retained session preserves
-process IDs and output sequence cursors. Restarting the backend loses its native session registry,
-processes and handles; no reconstruction replays prior commands.
+Closing the stream releases its connection-scoped file handles and workers; it does not terminate
+processes. A detached session is retained for one hour, after which its processes are terminated.
+Resuming a retained session preserves process IDs and output sequence cursors. Restarting the
+backend loses its session registry, processes and handles; no reconstruction replays prior commands.
+If file-handle cleanup cannot be confirmed, a replacement connection is refused.
 
-A canceled unary RPC ends that caller's wait. An admitted native operation still belongs to the
-held session and may have taken effect. Explicit process cancellation uses the typed terminate or
-signal operation. Native replies, including errors, remain evidence in returned frames; clients own
-retaining that evidence. Read calls preserve native cursor semantics. Process `cwd` and file `path` fields are absolute
-`file:` URIs; `argv` entries remain ordinary process arguments.
+A canceled unary RPC ends that caller's wait. An admitted operation still belongs to the held
+session and may have taken effect. Explicit process cancellation uses terminate or signal. Typed
+responses do not synthesize Codex native wire frames. Process `cwd` and file `path` fields are
+absolute `file:` URIs; `argv` entries remain ordinary process arguments.
 
 Request IDs correlate calls and evidence; they provide neither deduplication nor admission receipts.
 Lost mutation acknowledgements remain outcome-unknown. No transport or service layer automatically

@@ -18,26 +18,26 @@ class TestPullAuthority:
     def test_pull_host_overrides(self) -> None:
         # pull_host without pull_port drops the proxy port entirely — the pull
         # endpoint is a different authority, not the proxy host renamed.
-        config = RegistryProxyConfig(host="props-registry-proxy", port=8000, pull_host="props-registry.allegedly.works")
-        assert config.pull_authority() == "props-registry.allegedly.works"
+        config = RegistryProxyConfig(host="props-registry-proxy", port=8000, pull_host="props-registry.example.test")
+        assert config.pull_authority() == "props-registry.example.test"
 
     def test_pull_host_with_pull_port(self) -> None:
         config = RegistryProxyConfig(
-            host="props-registry-proxy", port=8000, pull_host="props-registry.allegedly.works", pull_port=5000
+            host="props-registry-proxy", port=8000, pull_host="props-registry.example.test", pull_port=5000
         )
-        assert config.pull_authority() == "props-registry.allegedly.works:5000"
+        assert config.pull_authority() == "props-registry.example.test:5000"
 
     def test_standard_ports_omitted(self) -> None:
         config = RegistryProxyConfig(
-            host="props-registry-proxy", port=8000, pull_host="props-registry.allegedly.works", pull_port=443
+            host="props-registry-proxy", port=8000, pull_host="props-registry.example.test", pull_port=443
         )
-        assert config.pull_authority() == "props-registry.allegedly.works"
+        assert config.pull_authority() == "props-registry.example.test"
 
     def test_port_80_omitted(self) -> None:
         config = RegistryProxyConfig(
-            host="props-registry-proxy", port=8000, pull_host="props-registry.allegedly.works", pull_port=80
+            host="props-registry-proxy", port=8000, pull_host="props-registry.example.test", pull_port=80
         )
-        assert config.pull_authority() == "props-registry.allegedly.works"
+        assert config.pull_authority() == "props-registry.example.test"
 
 
 class TestBuildOciReference:
@@ -56,13 +56,11 @@ class TestProxyUrl:
     """Tests for RegistryProxyConfig.proxy_url."""
 
     def test_ignores_pull_host(self) -> None:
-        config = RegistryProxyConfig(host="props-registry-proxy", port=8000, pull_host="props-registry.allegedly.works")
+        config = RegistryProxyConfig(host="props-registry-proxy", port=8000, pull_host="props-registry.example.test")
         assert config.proxy_url == "http://props-registry-proxy:8000"
 
 
 class TestIsDigest:
-    """Tests for is_digest()."""
-
     @pytest.mark.parametrize(
         "ref",
         [
@@ -119,7 +117,7 @@ class TestRewriteLocation:
 
     def test_absolute_public_host_stripped(self) -> None:
         assert (
-            _UPSTREAM.rewrite_location("https://git.allegedly.works/v2/props/critic/blobs/uploads/abc")
+            _UPSTREAM.rewrite_location("https://props-registry.example.test/v2/props/critic/blobs/uploads/abc")
             == "/v2/critic/blobs/uploads/abc"
         )
 

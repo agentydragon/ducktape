@@ -1,4 +1,4 @@
-# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep :testing
 """Read-committed progress polling while an importer registers a new machine."""
 
@@ -13,7 +13,7 @@ from sqlalchemy.orm import ORMExecuteState, sessionmaker
 from ai_session_archive.database import MachineRow, ResticSnapshotRow, SnapshotFileRow
 from ai_session_archive.progress_queries import list_import_progress
 
-pytest_plugins = ["util.testing.postgres_fixtures", "ai_session_archive.testing"]
+pytest_plugins = ["testing.postgres_fixtures", "ai_session_archive.testing"]
 
 
 @pytest.mark.parametrize("register_before_query", [2, 3])

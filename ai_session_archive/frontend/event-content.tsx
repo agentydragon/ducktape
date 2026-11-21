@@ -8,6 +8,7 @@ import { RetainedDisclosure } from "../../util/frontend/transcript/retained_disc
 import { TextBlock } from "../../util/frontend/transcript/text_block";
 import type { EventRecord } from "./schema";
 import { isClaudeIntermediateBlock } from "./claude-transcript";
+import { object, string } from "./json-values";
 
 export function recordLabel(record: EventRecord): string {
   const parsed = object(record.parsed);
@@ -97,7 +98,7 @@ function claudeContent(parsed: Record<string, unknown>): Part[] | null {
     Array.isArray(content) ? content.filter((part) => !isClaudeIntermediateBlock(part)) : content,
     (part) => {
       if (part.type === "text" && typeof part.text === "string") return { kind: "text", text: part.text };
-      return { kind: text(part.type) ?? "Content block", value: part };
+      return { kind: string(part.type) ?? "Content block", value: part };
     }
   );
 }
@@ -107,10 +108,10 @@ function codexContent(parsed: Record<string, unknown>): Part[] | null {
   if (payload === null) return null;
   if (payload.type === "message") {
     return parts(payload.content, (part) => {
-      if (["input_text", "output_text"].includes(text(part.type) ?? "") && typeof part.text === "string") {
+      if (["input_text", "output_text"].includes(string(part.type) ?? "") && typeof part.text === "string") {
         return { kind: "text", text: part.text };
       }
-      return { kind: text(part.type) ?? "Content block", value: part };
+      return { kind: string(part.type) ?? "Content block", value: part };
     });
   }
   if (payload.type === "reasoning") {
@@ -120,11 +121,11 @@ function codexContent(parsed: Record<string, unknown>): Part[] | null {
     return payload.summary.map((value) => {
       const part = object(value);
       if (part?.type === "summary_text" && typeof part.text === "string") return { kind: "thinking", text: part.text };
-      return { kind: text(part?.type) ?? "Unrecognized reasoning part", value };
+      return { kind: string(part?.type) ?? "Unrecognized reasoning part", value };
     });
   }
   if (payload.type === "function_call" || payload.type === "custom_tool_call") {
-    const name = text(payload.name) ?? text(payload.type)?.replaceAll("_", " ") ?? "Tool call";
+    const name = string(payload.name) ?? string(payload.type)?.replaceAll("_", " ") ?? "Tool call";
     const input = payload.type === "function_call" ? payload.arguments : payload.input;
     return [{ kind: `Tool call · ${name}`, value: input === undefined ? payload : input }];
   }
@@ -141,16 +142,6 @@ function parts(value: unknown, convert: (part: Record<string, unknown>) => Part)
     const part = object(item);
     return part === null ? [] : [convert(part)];
   });
-}
-
-function object(value: unknown): Record<string, unknown> | null {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
-function text(value: unknown): string | null {
-  return typeof value === "string" ? value : null;
 }
 
 function formatValue(value: unknown): string {

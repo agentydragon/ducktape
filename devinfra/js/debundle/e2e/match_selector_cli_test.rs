@@ -72,17 +72,9 @@ fn addressed_selectors_use_the_full_typed_spec_schema() {
 
     let module_selector = format!("{}#/source_matches/0", module.display());
     let module_result = run(&module_selector, false);
-    assert!(
-        module_result.status.success(),
-        "{}",
-        String::from_utf8_lossy(&module_result.stderr)
-    );
+    process::assert_success(&module_result);
     let flat_result = run("#/logical_modules/app/ui~1left/source_matches/0", true);
-    assert!(
-        flat_result.status.success(),
-        "{}",
-        String::from_utf8_lossy(&flat_result.stderr)
-    );
+    process::assert_success(&flat_result);
 
     write_text_file(&module, &format!("{claim}\nunknown_field: true\n"));
     let invalid_module = run(&module_selector, false);
@@ -631,11 +623,7 @@ fn invalid_selector_reports_keep_native_parser_diagnostics_and_source_context() 
                 .args(["--match", selector, "--no-slack", "--format", "text"]),
         )
         .unwrap_or_else(|err| panic!("{err}"));
-        assert!(
-            text.status.success(),
-            "{}",
-            String::from_utf8_lossy(&text.stderr)
-        );
+        process::assert_success(&text);
         let text = String::from_utf8(text.stdout).unwrap();
         assert!(text.contains(selector), "{text}");
         for diagnostic in diagnostics {
@@ -677,11 +665,7 @@ fn solver_stop_and_operational_settings_failure_remain_distinct() {
     // Smaller than the clock's resolution: CP-SAT stops before its initial
     // search. No assertion depends on elapsed time or machine performance.
     let stopped = run("1e-300", "json");
-    assert!(
-        stopped.status.success(),
-        "{}",
-        String::from_utf8_lossy(&stopped.stderr)
-    );
+    process::assert_success(&stopped);
     let report: Value = serde_json::from_slice(&stopped.stdout).unwrap();
     let outcomes = report["outcomes"].as_array().unwrap();
     assert_eq!(outcomes.len(), 2, "{report:#}");
@@ -702,11 +686,7 @@ fn solver_stop_and_operational_settings_failure_remain_distinct() {
     );
     assert!(String::from_utf8_lossy(&operational.stderr).contains("must be a positive number"));
     let control = run("", "json");
-    assert!(
-        control.status.success(),
-        "{}",
-        String::from_utf8_lossy(&control.stderr)
-    );
+    process::assert_success(&control);
     let control: Value = serde_json::from_slice(&control.stdout).unwrap();
     assert_eq!(control["counts"]["ambiguous"], 2, "{control:#}");
 }

@@ -4,12 +4,12 @@ import pytest
 import pytest_bazel
 from playwright.async_api import Page, expect
 
-from agentplane.app.frontend.testing.app import IDLE_THREAD, AgentplaneFixture, Flag
+from agentplane.app.frontend.testing.app import DELETED_SANDBOX_THREAD, IDLE_THREAD, AgentplaneFixture, Flag
 from agentplane.app.frontend.testing.visual_assertions import _expect_notice_badges, _open_settings
-from agentplane.app.frontend.testing.visual_fixtures import MOBILE_ONLY
-from util.testing.frontend_visual.capture import VisualPage
+from agentplane.app.frontend.testing.visual_fixtures import DESKTOP_AND_MOBILE, MOBILE_ONLY
+from testing.frontend_visual.capture import VisualPage
 
-pytest_plugins = ("util.testing.frontend_visual.fixtures", "agentplane.app.frontend.testing.visual_fixtures")
+pytest_plugins = ("testing.frontend_visual.fixtures", "agentplane.app.frontend.testing.visual_fixtures")
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
@@ -58,6 +58,54 @@ async def test_thread_notifications(view: VisualPage, app: AgentplaneFixture) ->
     await view.capture(name="thread_notifications_diagnostics")
 
 
+@DESKTOP_AND_MOBILE
+@pytest.mark.parametrize(
+    ("deleted", "error", "retired", "show_explanation"),
+    [
+        (True, "DispatcherNotFoundError", False, True),
+        (False, "DispatcherNotFoundError", False, False),
+        (True, "HistoryNotFoundError", False, False),
+        (True, "DispatcherNotFoundError", True, False),
+    ],
+    ids=["deleted", "environment-available", "other-error", "retired"],
+)
+async def test_archived_thread_delivery_diagnostic(
+    view: VisualPage, app: AgentplaneFixture, deleted: bool, error: str, retired: bool, show_explanation: bool
+) -> None:
+    await app.set_thread_archived(DELETED_SANDBOX_THREAD, True)
+    await app.set_required_environment(DELETED_SANDBOX_THREAD, deleted)
+    await app.set_inbox_snapshot(
+        DELETED_SANDBOX_THREAD,
+        {
+            "id": "retained-inbox",
+            "sessionId": DELETED_SANDBOX_THREAD,
+            "lastCursor": "741",
+            "acknowledged": "739",
+            "covered": "740",
+            "retired": retired,
+            "deliveryError": error,
+            "latestNotice": {"throughCursor": "740", "attempted": True},
+            "delivery": {"pendingAcknowledgementCount": 2, "waitReason": "NOTICE_WAIT_REASON_DELIVERY_RETRY"},
+        },
+    )
+    await app.mount_thread(DELETED_SANDBOX_THREAD)
+    page = view.page
+    await expect(page.get_by_text("Thread archived. Showing retained thread history", exact=False)).to_be_visible()
+    notifications = page.get_by_role("button", name="Notifications", exact=True)
+    if await notifications.is_visible():
+        await notifications.click()
+    else:
+        await page.get_by_role("button", name="More", exact=True).click()
+        await page.get_by_role("menuitem", name="Notifications").click()
+    await expect(page.get_by_text(f"Delivery: {error}", exact=True)).to_be_visible()
+    explanation = page.get_by_text("This Session's required Environment was deleted.", exact=False)
+    if show_explanation:
+        await expect(explanation).to_be_visible()
+    else:
+        await expect(explanation).to_have_count(0)
+    await view.capture()
+
+
 async def test_subscription_filter_shows_cancelled_only_on_request(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_thread(IDLE_THREAD)
     page = view.page
@@ -65,7 +113,7 @@ async def test_subscription_filter_shows_cancelled_only_on_request(view: VisualP
     await expect(
         page.get_by_text("Action d49b85b5-849f-4e7d-a644-d4a8b8c16127 · no current source error")
     ).to_be_visible()
-    cancelled = page.get_by_text("agentydragon/ducktape · pull request 42 · cancelled")
+    cancelled = page.get_by_text("test-owner/test-repository · pull request 42 · cancelled")
     await expect(cancelled).to_have_count(0)
 
     await page.get_by_role("combobox", name="Show subscriptions").click()

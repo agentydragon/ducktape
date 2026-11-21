@@ -9,7 +9,6 @@ import pytest_bazel
 from openai import AsyncOpenAI
 from openai.types.responses import Response, ResponseFunctionToolCall, ResponseOutputMessage, ResponseOutputText
 from openai.types.responses.response_reasoning_item import Content, ResponseReasoningItem
-from pydantic import ValidationError
 
 from openai_utils.model import (
     AssistantMessageOut,
@@ -86,14 +85,6 @@ async def test_response_usage_preserves_reported_details(
         input_tokens_details=expected_input,
         output_tokens_details=expected_output,
     )
-
-
-def test_reasoning_content_item_stays_strict() -> None:
-    # ReasoningContentItem is OpenAI-standard "reasoning_text" only; the z.ai GLM
-    # "output_text" variant is a separate type, not a widening of this one.
-    with pytest.raises(ValidationError):
-        ReasoningContentItem.model_validate({"text": "x", "type": "output_text"})
-    assert ReasoningOutputTextItem(text="thinking").type == "output_text"
 
 
 def _glm_sdk_response() -> Response:

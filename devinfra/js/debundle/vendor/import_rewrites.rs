@@ -11,7 +11,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use analysis::local_namespace_iife_target;
-use binding_targets::module_export_name;
+use binding_targets::public_export_name;
 use js_ast::{is_binding_identifier, member_property};
 use source_identity::ChunkId;
 use swc_common::DUMMY_SP;
@@ -172,9 +172,10 @@ impl VendorImportRewrites {
     }
 }
 
-/// Replacement import decl shapes shared by the wave dispatchers and
-/// lowering's construction-time vendor imports; one single-specifier
-/// `ImportDecl` per value so both application sites emit identical AST.
+/// Replacement import decl shapes shared by the pass-through emission
+/// rewriter and lowering's construction-time vendor imports; one
+/// single-specifier `ImportDecl` per value so both application sites emit
+/// identical AST.
 pub enum DeferredImport {
     /// `import * as <local> from "<source>"`
     Namespace { source: String, local: String },
@@ -286,11 +287,7 @@ impl PartialSwapIdentRewriter<'_> {
         let Some(target) = self.bindings.get(&orig.to_id()) else {
             return true;
         };
-        let exported = named
-            .exported
-            .as_ref()
-            .map(module_export_name)
-            .unwrap_or_else(|| orig.sym.to_string());
+        let exported = public_export_name(named);
         let (chunk_id, chunk_export) = match target {
             IdentRewriteTarget::Rename {
                 upstream_export,

@@ -39,10 +39,9 @@ from finance.augur.model.series import (
 )
 from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.actions import Action, LotSale, Sell
-from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta, rate_to_ppb
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LiabilityId, LotId, PropertyId
+from finance.augur.sim.ids import CHECKING, AgentId, AssetId, JurisdictionId, LiabilityId, LotId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath, Series
@@ -56,25 +55,23 @@ from finance.augur.sim.property import (
     ScheduledPurchase,
     ScheduledSale,
 )
-from finance.augur.sim.property_tax import PropertyTaxPolicy
 from finance.augur.sim.results import Rollout
 from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.situs import compile_situs
-from finance.augur.sim.tax_authority import TaxAuthority
-from finance.augur.sim.tax_indexation import FixedNominalLaw
-from finance.augur.sim.tax_profile import TaxProfile, compile_profile
+from finance.augur.sim.testing.accounts import ref
+from finance.augur.sim.testing.bills import biller
 from finance.augur.sim.testing.issuer_protocol import at_month, issuer_protocol
 from finance.augur.sim.testing.rollouts import book
 from finance.augur.sim.testing.scripted import Scripted, sell_into_cash
 from finance.augur.sim.testing.series import level_series
 from finance.augur.sim.testing.session import each, finish
-from finance.augur.sim.testing.situs import START_YEAR
+from finance.augur.sim.testing.situs import property_tax
+from finance.augur.sim.testing.tax_authority import filer
 from finance.augur.sim.world import World
 
 QUANTA_PER_UNIT = 100
 ALICE = AgentId("alice")
-CHECKING = AccountId("checking")
 FEDERAL = JurisdictionId("federal_us")
 VTI = SecurityKey(symbol=SecuritySymbol("vti"))
 VTI_SCALE = quantity_scale_for_asset(VTI)
@@ -103,10 +100,6 @@ def account(world: World, agent_id: AgentId, balance: Decimal | int = 0) -> None
     world.declare_account(
         account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=USD.quanta(balance)
     )
-
-
-def ref(agent_id: AgentId) -> AccountRef:
-    return AccountRef(agent_id=agent_id, account_id=CHECKING)
 
 
 def path(key: LevelSeriesKey, levels: Sequence[Decimal], *, horizon_months: int) -> tuple[Series, ...]:
@@ -193,16 +186,13 @@ def target_allocation_world() -> World:
     account(world, AgentId("landlord"))
     hold_vti(world, LotId("alice-vti"), quantity=200, cost_basis=10_000, purchase_month=-1)
     world.track(
-        Biller(
+        biller(
             schedule=Recurring(start_month=RENT_MONTH, end_month=None),
             obligation_id="alice-rent",
             obligation_type="rent",
             from_account=ref(ALICE),
             to_account=ref(AgentId("landlord")),
             amount_due=USD.quanta(RENT),
-            property_id=None,
-            deduction_category=None,
-            deductible_fraction_ppb=rate_to_ppb(1),
         )
     )
     return world
@@ -256,7 +246,6 @@ def property_sale_world() -> World:
     """
 
     home_values = [Decimal(1)] * PROPERTY_SALE_MONTH + [Decimal("1.5")] * (PROPERTY_HORIZON + 1 - PROPERTY_SALE_MONTH)
-    jurisdictions = {FEDERAL: load_jurisdiction(FEDERAL)}
     world = World(
         MarketPath(
             path(
@@ -276,16 +265,7 @@ def property_sale_world() -> World:
         (COUNTY, 0),
     ):
         account(world, agent_id, balance)
-    world.track(
-        TaxAuthority(
-            compile_profile(
-                TaxProfile(agent_id=ALICE, jurisdiction_ids=[FEDERAL], tax_authority_agent_id=AgentId("irs")),
-                jurisdictions,
-                currency=USD,
-            ),
-            indexation=FixedNominalLaw(),
-        )
-    )
+    world.track(filer(ALICE, [FEDERAL], authority=AgentId("irs")))
     world.declare_housing(
         Housing(
             purchases=(
@@ -332,18 +312,7 @@ def property_sale_world() -> World:
                 ),
             ),
         ),
-        (
-            PropertyTaxPolicy(
-                property_id=PropertyId("house"),
-                owner_agent_id=ALICE,
-                from_account_id=CHECKING,
-                tax_authority_agent_id=COUNTY,
-                tax_authority_account_id=CHECKING,
-                start_year=START_YEAR,
-                start_month=0,
-                end_month=None,
-            ),
-        ),
+        (property_tax(PropertyId("house"), COUNTY),),
     )
     return world
 

@@ -16,6 +16,7 @@ in [the egress spec](../egress/SPEC.md).
 | [`k3s/`](k3s/README.md)                 | Retained test node, bootstrap and networking         |
 | [`firecracker/`](firecracker/README.md) | Firecracker lifecycle adapter and KVM acceptance     |
 | [`vm/`](vm/README.md)                   | VM runtime, storage, guest image and evidence        |
+| [`debug/`](debug/README.md)             | Dated investigations and evidence, with `k3s/debug/` |
 
 Offline tests stay beside the helper they exercise. The deployment guide owns stack setup and
 artifacts; the VM guide owns guest details. The suite BUILD files and test modules are the source
@@ -24,9 +25,9 @@ of truth for exact case membership.
 ## Suite entrypoints
 
 Each k3s system-test target starts one fixture stack. Scenarios share it only when their resource
-changes are compatible. `test_dispatcher` owns a separate stack because it scales the Runner Gateway
-and deletes a controller Pod. The external MCP delegation acceptance owns another stack because it
-scales the app to zero after OAuth consent.
+changes are compatible. `test_dispatcher` owns a separate stack because it scales the `sessions`
+Deployment and deletes one of its Pods. The external MCP delegation acceptance owns another stack
+because it scales the app to zero after OAuth consent.
 
 | Target                                                                 | Coverage                                              |
 | ---------------------------------------------------------------------- | ----------------------------------------------------- |
@@ -43,14 +44,17 @@ scales the app to zero after OAuth consent.
 | `//agentplane/system_tests/suites/mcp:test_history_outage`             | History outage during an active central-sampler turn  |
 | `//agentplane/system_tests/suites/mcp:test_delegation`                 | External MCP delegation                               |
 | `//agentplane/system_tests/suites/mcp:test_parent_delegation`          | Parent-to-child Session CLI flow                      |
-| `//agentplane/system_tests/suites:test_vm`                             | VM Sandbox scenarios on the software-emulated stack   |
+| `//agentplane/system_tests/suites:test_vm`                             | Required Claude and Codex VM scenarios on hosted KVM  |
+| `//agentplane/system_tests/suites:test_vm_tcg`                         | Same VM cases on managed QEMU, manual comparison      |
 | `//agentplane/system_tests/suites:test_real_model`                     | Real-model egress and Session instructions            |
 | `//agentplane/system_tests/suites:test_vm_manual`                      | Manual VM storage, ownership and suspend/resume cases |
 | `//agentplane/system_tests/suites:test_vm_oom`                         | Manual Codex tool-OOM survival probe                  |
 | `//agentplane/system_tests/suites:test_vm_profile`                     | Manual tool-OOM probe with guest profiling            |
-| [`//agentplane/system_tests/x/vm_kvm:test_vm_kvm`](x/vm_kvm/README.md) | Experimental KVM variant, manual                      |
+| [`//agentplane/system_tests/x/vm_kvm:test_vm_kvm`](x/vm_kvm/README.md) | Cold KVM comparison, manual                           |
 
-`test_vm_manual`, `test_vm_oom`, `test_vm_kvm` and `test_vm_profile` carry the `manual` tag. The staging checks
+See [CI executor routing](../../devinfra/ci/README.md#where-bazel-ci-runs-tests) for pool selection and the paired evidence.
+
+`test_vm_tcg`, `test_vm_manual`, `test_vm_oom`, `test_vm_kvm` and `test_vm_profile` carry the `manual` tag. The staging checks
 [`test_thread_latency`](suites/live/test_thread_latency.py) and
 [`test_ollama_routes`](suites/live/test_ollama_routes.py) carry both `manual` and `no-remote-exec`;
 the [live-test instructions](#running-live) explain how to run them.
@@ -105,6 +109,8 @@ for VM image layout and lifecycle.
   Pod is replaced, and a prior failed turn remains retained before a new command is sent.
 - `test_delegation` continues an external MCP Connection with the app scaled down; the separate
   `test_parent_delegation` case drives a child Session through the actual `agentplane` CLI.
+- [`dcr.md`](dcr.md) covers external-client dynamic registration: the SDK component test
+  `//agentplane/mcp_edge/internal/authserver:sdk_dcr_test` and the deployed-edge scenario in `test_services_mcp`.
 - MCP operator login reads one named test Secret from the fixture API and keeps credentials in
   memory. The caller suppresses HTTP logging and refuses pytest `--showlocals` for the full exchange;
   do not add credential-bearing traces or artifacts ([`test_actions.py`](suites/mcp/test_actions.py),
@@ -121,10 +127,9 @@ for VM image layout and lifecycle.
 
 ### Runtime proxy outages
 
-The historical target names `test_gateway_crash` and `test_gateway_budget` now exercise the
-Environments Runtime proxy on `sandbox-controller:8082`. Executor traffic no longer traverses the
-Gateway; taking the Gateway down cannot establish an Executor reconnect failure. The shared
-outage helper removes the Environments Pod, proves its Service has no ready endpoint, and restores
+The `test_gateway_crash` and `test_gateway_budget` targets exercise the Environments Runtime
+proxy on `environments:8082`. The shared outage helper removes the Environments Pod, proves its
+Service has no ready endpoint, and restores
 it after checking retained History progress and the selected failure/recovery boundary.
 
 The abrupt-crash case sends `SIGSTOP` to the exact `sandbox-controller` process, confirms it is
@@ -186,19 +191,19 @@ creator scope across Identities.
 
 ## Dispatcher queue and replicas
 
-The queue case leaves a stopped Sandbox unchanged. The replica case raises Gateway replicas to two,
-removes the initial singleton and verifies that a peer reads and delivers the durable queued command;
-the stopped command has no held Session lease, so this case does not test lease expiry. Opted-in app
-and Notification submissions share a wake generation ([`dispatcher.py`](scenarios/dispatcher.py)).
+The queue case leaves a stopped Sandbox unchanged. The replica case scales Sessions to two and
+waits for the second Pod to be ready before deleting the initial Pod by UID. It reads the durable
+queued command and its eventual admission through the second Pod. Both ready replicas must see
+the outcome of a later Sandbox deletion. Opted-in app and Notification submissions share a wake generation ([`dispatcher.py`](scenarios/dispatcher.py)).
 Shared Session polling lives in [`dispatcher_operations.py`](driver/dispatcher_operations.py), and
 runner mount inspection, archives and cleanup evidence capture live in
 [`sandbox_diagnostics.py`](driver/sandbox_diagnostics.py).
 The mid-delivery crash case gates the real database settlement after Runtime admission, stops
-and kills the exact delivering process after kubelet observes Pod deletion, and lets a peer
-recover after the Session's natural PostgreSQL lease expiry. Its initial single replica identifies
-the delivering process; the queued replica case does not infer lease ownership from a Pod. It checks
-the retained attempt fact, one Runtime journal admission for the replayed command ID, and a subsequent
-admitted command. All replicas use the same image; this does not establish mixed-image overlap safety.
+and kills the exact delivering process after kubelet observes Pod deletion, and observes
+recovery through the ready peer after the Session's PostgreSQL lease expires. The initial
+singleton identifies the delivering process. The test checks the retained attempt fact,
+one Runtime journal admission for the replayed command ID, and a subsequent admitted command.
+Both cases restore Sessions to one replica.
 
 The [Dispatcher guide](../session_dispatcher/dispatcher/README.md) owns the command delivery contract.
 

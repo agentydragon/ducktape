@@ -27,7 +27,7 @@ func (e *Transport) openSessionWithHandshake(ctx context.Context, resume *string
 	if err == nil {
 		return nil
 	}
-	fence := findFailure(err, FailureIncarnationFence)
+	fence := FindFailure(err, FailureIncarnationFence)
 	if fence != nil {
 		if !fence.Recorded {
 			return fence
@@ -346,8 +346,8 @@ func (e *Transport) watchSession(streamCtx context.Context, stream grpc.ServerSt
 			cancel()
 			return
 		}
-		if len(response.NativeFrames) != 0 {
-			// Notifications are evidence and wakeups. Cursor reads remain authoritative for
+		if response.ProcessChanged || len(response.NativeFrames) != 0 {
+			// Notifications are wakeups; native frames also carry evidence. Cursor reads remain authoritative for
 			// output, so duplicate or coalesced wakeups cannot duplicate process bytes.
 			e.processChanges.SignalProcessChange()
 		}
@@ -414,7 +414,7 @@ func (e *Transport) ensureSessionLocked(ctx context.Context, method Method, proc
 	}
 	// Workspace preparation has no native handle or previously dispatched mutation. It can
 	// continue immediately after the durable incarnation notice and fresh session open.
-	changed := findFailure(err, FailureIncarnationReplaced)
+	changed := FindFailure(err, FailureIncarnationReplaced)
 	if changed != nil && method == MethodProcessStart && processID == "" {
 		return nil
 	}
@@ -429,7 +429,7 @@ func (e *Transport) ensureSessionLocked(ctx context.Context, method Method, proc
 }
 
 func isExecutorConnectionFailure(err error) bool {
-	return findFailure(err, FailureTransport, FailureEnvironment, FailureRejected, FailureIncarnationReplaced, FailureSessionReplaced) != nil
+	return FindFailure(err, FailureTransport, FailureEnvironment, FailureRejected, FailureIncarnationReplaced, FailureSessionReplaced) != nil
 }
 
 func (e *Transport) reconnectLocked(ctx context.Context, notDispatchedProcessID string) error {
@@ -480,7 +480,7 @@ func (e *Transport) reconnectLocked(ctx context.Context, notDispatchedProcessID 
 		if err == nil {
 			return nil
 		}
-		rejected := findFailure(err, FailureRejected)
+		rejected := FindFailure(err, FailureRejected)
 		if isDefinitiveLostExecutorSession(rejected, retainedSession) {
 			if retireErr := e.bindings.RetireLostSession(ctx, retainedSession, notDispatchedProcessID); retireErr != nil {
 				return fmt.Errorf("retire lost executor session after %v: %w", err, retireErr)
@@ -518,7 +518,7 @@ func (e *Transport) reconnectLocked(ctx context.Context, notDispatchedProcessID 
 }
 
 func retryableExecutorResumeFailure(err error) bool {
-	if failure := findFailure(err, FailureEnvironment); failure != nil {
+	if failure := FindFailure(err, FailureEnvironment); failure != nil {
 		// The Gateway may be healthy before the Runtime's control route is registered. This
 		// structured refusal proves OpenSession was not dispatched, so retry only the
 		// side-effect-free retained-session resume; other environment states stay terminal.
@@ -526,7 +526,7 @@ func retryableExecutorResumeFailure(err error) bool {
 			failure.EnvironmentState == executorpb.ExecutionEnvironmentFailure_STATE_CONTROL_ROUTE_UNAVAILABLE.String() &&
 			failure.RemoteOutcome == NotDispatched
 	}
-	failure := findFailure(err, FailureTransport)
+	failure := FindFailure(err, FailureTransport)
 	if failure == nil || failure.Phase != "open" && failure.Phase != "receive" {
 		return false
 	}

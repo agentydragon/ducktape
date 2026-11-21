@@ -35,6 +35,7 @@ from finance.budget.schema import (
     Rule,
     TransferDirection,
 )
+from finance.budget.wire import BudgetSnapshotResponse, BudgetTransactionsResponse
 from finance.plaid.db.models import AccountRow, LinkRow, TransactionRow, async_session_factory
 
 
@@ -125,70 +126,45 @@ def _tx(
     )
 
 
+def _link(item_id: str, *, institution_id: str, institution_name: str, status: str) -> LinkRow:
+    return LinkRow(
+        item_id=item_id,
+        institution_id=institution_id,
+        institution_name=institution_name,
+        products_requested=["transactions"],
+        products_authorized=["transactions"],
+        products_billed=[],
+        status=status,
+        access_token_secret=f"{item_id}-token",
+    )
+
+
+def _account(account_id: str, *, item_id: str, name: str) -> AccountRow:
+    return AccountRow(
+        account_id=account_id,
+        item_id=item_id,
+        name=name,
+        type="depository",
+        subtype="checking",
+        iso_currency_code="USD",
+        raw_json={},
+    )
+
+
 async def _seed_budget_rows(session_factory: async_sessionmaker[AsyncSession]) -> None:
     async with session_factory() as session:
         session.add_all(
             [
-                LinkRow(
-                    item_id="item-budget",
-                    institution_id="ins_budget",
-                    institution_name="Budget Bank",
-                    label=None,
-                    products_requested=["transactions"],
-                    products_authorized=["transactions"],
-                    products_billed=[],
-                    status="active",
-                    access_token_secret="budget-token",
-                ),
-                LinkRow(
-                    item_id="item-revoked",
-                    institution_id="ins_revoked",
-                    institution_name="Revoked Bank",
-                    label=None,
-                    products_requested=["transactions"],
-                    products_authorized=["transactions"],
-                    products_billed=[],
-                    status="revoked",
-                    access_token_secret="revoked-token",
-                ),
+                _link("item-budget", institution_id="ins_budget", institution_name="Budget Bank", status="active"),
+                _link("item-revoked", institution_id="ins_revoked", institution_name="Revoked Bank", status="revoked"),
             ]
         )
         await session.flush()
         session.add_all(
             [
-                AccountRow(
-                    account_id="checking",
-                    item_id="item-budget",
-                    name="Checking",
-                    official_name=None,
-                    mask=None,
-                    type="depository",
-                    subtype="checking",
-                    iso_currency_code="USD",
-                    raw_json={},
-                ),
-                AccountRow(
-                    account_id="other-account",
-                    item_id="item-budget",
-                    name="Other account",
-                    official_name=None,
-                    mask=None,
-                    type="depository",
-                    subtype="checking",
-                    iso_currency_code="USD",
-                    raw_json={},
-                ),
-                AccountRow(
-                    account_id="revoked-account",
-                    item_id="item-revoked",
-                    name="Revoked account",
-                    official_name=None,
-                    mask=None,
-                    type="depository",
-                    subtype="checking",
-                    iso_currency_code="USD",
-                    raw_json={},
-                ),
+                _account("checking", item_id="item-budget", name="Checking"),
+                _account("other-account", item_id="item-budget", name="Other account"),
+                _account("revoked-account", item_id="item-revoked", name="Revoked account"),
             ]
         )
         await session.flush()
@@ -289,19 +265,54 @@ def _averages_by_bucket(response) -> dict[str, Decimal]:
     return {row.bucket_id: row.window_monthly_avg for row in response.monthly_by_bucket}
 
 
+_WINDOW_START = date(2026, 3, 15)
+_WINDOW_END = date(2026, 4, 30)
+
+
+async def _snapshot(session_factory: async_sessionmaker[AsyncSession], config: BudgetConfig) -> BudgetSnapshotResponse:
+    return await sql_read_model.read_budget_snapshot(
+        session_factory=session_factory,
+        config=config,
+        window_start=_WINDOW_START,
+        window_end=_WINDOW_END,
+        account_ids=("checking",),
+    )
+
+
+async def _bucket_transactions(
+    session_factory: async_sessionmaker[AsyncSession], config: BudgetConfig, bucket_id: str
+) -> BudgetTransactionsResponse:
+    return await sql_read_model.read_budget_bucket_transactions(
+        session_factory=session_factory,
+        config=config,
+        bucket_id=bucket_id,
+        window_start=_WINDOW_START,
+        window_end=_WINDOW_END,
+        account_ids=("checking",),
+    )
+
+
+async def _custom_bucket_txns(
+    session_factory: async_sessionmaker[AsyncSession], config: BudgetConfig, bucket_id: str = "custom"
+) -> list[str]:
+    response = await _bucket_transactions(session_factory, config, bucket_id)
+    return [row.transaction_id for row in response.transactions]
+
+
+async def _classified(
+    session_factory: async_sessionmaker[AsyncSession], config: BudgetConfig
+) -> tuple[sql_read_model.ClassifiedRow, ...]:
+    return await sql_read_model.read_all_classified(
+        session_factory=session_factory, config=config, window_start=_WINDOW_START, window_end=_WINDOW_END
+    )
+
+
 async def test_sql_budget_snapshot_preserves_classification_and_aggregation_semantics(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     await _seed_budget_rows(session_factory)
-    config = _budget_config()
 
-    response = await sql_read_model.read_budget_snapshot(
-        session_factory=session_factory,
-        config=config,
-        window_start=date(2026, 3, 15),
-        window_end=date(2026, 4, 30),
-        account_ids=("checking",),
-    )
+    response = await _snapshot(session_factory, _budget_config())
 
     assert response.months == (date(2026, 3, 1), date(2026, 4, 1))
     assert _monthly_by_bucket(response) == {
@@ -342,27 +353,14 @@ async def test_sql_budget_readers_preserve_large_decimal_amounts_and_average(
         await session.commit()
     config = _budget_config()
 
-    snapshot = await sql_read_model.read_budget_snapshot(
-        session_factory=session_factory,
-        config=config,
-        window_start=date(2026, 3, 15),
-        window_end=date(2026, 4, 30),
-        account_ids=("checking",),
-    )
+    snapshot = await _snapshot(session_factory, config)
     other = next(row for row in snapshot.monthly_by_bucket if row.bucket_id == "other")
     assert other.monthly_amounts == (Decimal(20), precision_amount)
     assert other.window_monthly_avg == Decimal("5832999953545646.177845611702")
     precision_lumpy = next(row for row in snapshot.lumpy if row.transaction_id == "precision")
     assert precision_lumpy.amount == precision_amount
 
-    drilldown = await sql_read_model.read_budget_bucket_transactions(
-        session_factory=session_factory,
-        config=config,
-        bucket_id="other",
-        window_start=date(2026, 3, 15),
-        window_end=date(2026, 4, 30),
-        account_ids=("checking",),
-    )
+    drilldown = await _bucket_transactions(session_factory, config, "other")
     precision_transaction = next(row for row in drilldown.transactions if row.transaction_id == "precision")
     assert precision_transaction.amount == precision_amount
 
@@ -371,16 +369,8 @@ async def test_sql_budget_drilldown_filters_in_sql_and_enriches_account_labels(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     await _seed_budget_rows(session_factory)
-    config = _budget_config()
 
-    response = await sql_read_model.read_budget_bucket_transactions(
-        session_factory=session_factory,
-        config=config,
-        bucket_id="transfers_in",
-        window_start=date(2026, 3, 15),
-        window_end=date(2026, 4, 30),
-        account_ids=("checking",),
-    )
+    response = await _bucket_transactions(session_factory, _budget_config(), "transfers_in")
 
     assert response.bucket_id == "transfers_in"
     assert [row.transaction_id for row in response.transactions] == ["wealthfront_in"]
@@ -392,17 +382,8 @@ async def test_sql_budget_drilldown_filters_in_sql_and_enriches_account_labels(
 
 
 async def test_sql_budget_drilldown_rejects_unknown_bucket(session_factory: async_sessionmaker[AsyncSession]) -> None:
-    config = _budget_config()
-
     with pytest.raises(ValueError, match="unknown bucket_id"):
-        await sql_read_model.read_budget_bucket_transactions(
-            session_factory=session_factory,
-            config=config,
-            bucket_id="missing",
-            window_start=date(2026, 3, 15),
-            window_end=date(2026, 4, 30),
-            account_ids=("checking",),
-        )
+        await _bucket_transactions(session_factory, _budget_config(), "missing")
 
 
 async def test_sql_budget_overrides_beat_rules_and_ignore_direction(
@@ -419,13 +400,7 @@ async def test_sql_budget_overrides_beat_rules_and_ignore_direction(
         )
     )
 
-    response = await sql_read_model.read_budget_snapshot(
-        session_factory=session_factory,
-        config=config,
-        window_start=date(2026, 3, 15),
-        window_end=date(2026, 4, 30),
-        account_ids=("checking",),
-    )
+    response = await _snapshot(session_factory, config)
 
     monthly = _monthly_by_bucket(response)
     assert monthly["groceries"] == (Decimal(40), Decimal(1000))  # target_preempt (Mar) joins grocery_lumpy (Apr)
@@ -444,30 +419,10 @@ async def test_sql_budget_snapshot_reports_stale_overrides(session_factory: asyn
         )
     )
 
-    response = await sql_read_model.read_budget_snapshot(
-        session_factory=session_factory,
-        config=config,
-        window_start=date(2026, 3, 15),
-        window_end=date(2026, 4, 30),
-        account_ids=("checking",),
-    )
+    response = await _snapshot(session_factory, config)
 
     # Global existence probe: the live row is fine; the removed row and the absent id are stale.
     assert response.stale_overrides == ("ghost_txn_id", "removed_excluded")
-
-
-async def _custom_bucket_txns(
-    session_factory: async_sessionmaker[AsyncSession], config: BudgetConfig, bucket_id: str = "custom"
-) -> list[str]:
-    response = await sql_read_model.read_budget_bucket_transactions(
-        session_factory=session_factory,
-        config=config,
-        bucket_id=bucket_id,
-        window_start=date(2026, 3, 15),
-        window_end=date(2026, 4, 30),
-        account_ids=("checking",),
-    )
-    return [row.transaction_id for row in response.transactions]
 
 
 async def test_match_rule_all_of_combines_merchant_and_amount(
@@ -555,9 +510,7 @@ async def test_read_all_classified_returns_every_live_txn_with_its_bucket(
         await session.commit()
     config = _budget_config()  # source.plaid_account_ids=("checking",), coverage_starts=2026-03-15
 
-    rows = await sql_read_model.read_all_classified(
-        session_factory=session_factory, config=config, window_start=date(2026, 3, 15), window_end=date(2026, 4, 30)
-    )
+    rows = await _classified(session_factory, config)
 
     # Same classification as the snapshot, but flat (every bucket at once, no aggregation).
     # Excludes the other-account, pending, removed, revoked-link, and out-of-window rows.
@@ -654,13 +607,7 @@ async def test_match_override_is_ungated_and_beats_rules(session_factory: async_
     config = _config_with_match_overrides(
         (MatchOverride(condition=NameSubstringCondition(pattern="Wealthfront"), bucket_id="custom", note="both legs"),)
     )
-    response = await sql_read_model.read_budget_snapshot(
-        session_factory=session_factory,
-        config=config,
-        window_start=date(2026, 3, 15),
-        window_end=date(2026, 4, 30),
-        account_ids=("checking",),
-    )
+    response = await _snapshot(session_factory, config)
     monthly = _monthly_by_bucket(response)
     # custom already holds target_preempt (+40, via the Target rule); the match_override adds both
     # Wealthfront legs (+30000 out and -12000 in) regardless of sign: 40 + 30000 - 12000 = 18040.
@@ -680,12 +627,7 @@ async def test_transaction_id_override_beats_match_override(session_factory: asy
             )
         }
     )
-    classified = {
-        row.transaction_id: row.bucket_id
-        for row in await sql_read_model.read_all_classified(
-            session_factory=session_factory, config=config, window_start=date(2026, 3, 15), window_end=date(2026, 4, 30)
-        )
-    }
+    classified = {row.transaction_id: row.bucket_id for row in await _classified(session_factory, config)}
     assert classified["wealthfront_out"] == "groceries"  # transaction_id override wins
     assert classified["wealthfront_in"] == "custom"  # match_override applies to the rest
 
@@ -707,12 +649,7 @@ async def test_match_override_date_freeze_excludes_later_rows(
             ),
         )
     )
-    classified = {
-        row.transaction_id: row.bucket_id
-        for row in await sql_read_model.read_all_classified(
-            session_factory=session_factory, config=config, window_start=date(2026, 3, 15), window_end=date(2026, 4, 30)
-        )
-    }
+    classified = {row.transaction_id: row.bucket_id for row in await _classified(session_factory, config)}
     assert classified["wealthfront_out"] == "custom"  # 2026-03-22, within the freeze
     assert classified["wealthfront_in"] == "transfers_in"  # 2026-03-23, after the freeze -> normal rule
 

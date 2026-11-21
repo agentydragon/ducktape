@@ -29,10 +29,6 @@ class Operation(StrEnum):
     DELETE = "DELETE"
 
 
-# =============================================================================
-# Item types (discriminated union by table)
-# =============================================================================
-
 # Ground truth tables (from notify_gt_changed trigger)
 
 
@@ -95,11 +91,6 @@ GradingItem = Annotated[
     | ReportedIssueOccurrencesItem,
     Field(discriminator="table"),
 ]
-
-
-# =============================================================================
-# Notification model
-# =============================================================================
 
 
 class GradingPendingNotification(BaseModel):

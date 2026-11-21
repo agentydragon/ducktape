@@ -86,7 +86,7 @@ The cleanest next step for gemma throughput is the same as for the
 other Ollama configs: rerun with a single endpoint that we trust
 (probably `/api/chat`), accept gemma reasons by default, and report
 combined-decode TPS. Deferred — see the proposed-suite next pass in
-<../../benchmarks.md#proposed-benchmark-suite>.
+<cluster/docs/inference/benchmarks.md#legacy-proposed-benchmark-suite>.
 
 ## Raw data
 

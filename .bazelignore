@@ -1,7 +1,6 @@
 # Ignore pnpm internal directories that contain BUILD.bazel files
 # These are created when using hoist=false but should not be processed by Bazel
 node_modules/.pnpm
-bazel-js-skeletons
 
 # Python virtualenvs - contain installed package sources that confuse Gazelle
 # Note: .bazelignore patterns are root-relative only (no ** glob support)
@@ -31,14 +30,12 @@ bb-out
 # Trilium Notes extensions - deps not in main requirements
 trilium
 
-# Nested Bazel modules - build through their module labels.
-# (its own MODULE.bazel + Bazel/pnpm build); it is not part of ducktape's build.
+# Nested Bazel modules (each with its own MODULE.bazel): not part of ducktape's build; build through
+# their module labels.
 third_party/activitywatch
 third_party/cli_proxy_api
 third_party/iron_proxy
-third_party/tofu_controller
 haku/shared
-third_party/manifold_mcp_server
 devinfra/claude/web_env/re/environment_manager/src
 # Nix build results
 result

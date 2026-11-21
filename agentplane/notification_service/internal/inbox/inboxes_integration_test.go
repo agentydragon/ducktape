@@ -75,7 +75,7 @@ func TestOverlappingSubscriptionsCommitOnePrefixAndReadDoesNotAcknowledge(t *tes
 	if _, err := f.Acknowledge(t.Context(), f.incarnation(), a.InboxID, 4); !errors.Is(err, ErrCursorOutOfRange) {
 		t.Fatalf("error = %v, want ErrCursorOutOfRange", err)
 	}
-	if _, err := f.Acknowledge(t.Context(), Owner{Identity: model.Identity{Name: "other-identity", UID: "other-identity-uid"}, SandboxUID: testSandboxUID}, a.InboxID, 1); !errors.Is(err, ErrNotFound) {
+	if _, err := f.Acknowledge(t.Context(), Owner{Identity: model.Identity{Name: "other-identity", UID: "other-identity-uid"}}, a.InboxID, 1); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("error = %v, want ErrNotFound", err)
 	}
 }
@@ -215,7 +215,7 @@ func TestRetirementStopsWorkWithoutErasingEntries(t *testing.T) {
 	event := sourceadapter.WrapActionsEvent(model.ActionsEvent{RequestID: creation.Source.(sourceadapter.ActionsSource).RequestID, Sequence: 1})
 	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, payloadOf(event))
 
-	if err := f.Retire(t.Context(), Owner{Identity: model.Identity{Name: "other-identity", UID: "other-identity-uid"}, SandboxUID: testSandboxUID}, subscription.InboxID); !errors.Is(err, ErrNotFound) {
+	if err := f.Retire(t.Context(), Owner{Identity: model.Identity{Name: "other-identity", UID: "other-identity-uid"}}, subscription.InboxID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("another account retired the inbox: %v", err)
 	}
 	if err := f.Retire(t.Context(), f.incarnation(), subscription.InboxID); err != nil {
@@ -276,7 +276,6 @@ func TestInboxesAreListedForTheirOwnerOnly(t *testing.T) {
 	wantSessions := []string{"second-session", f.sessionID}
 	slices.Sort(wantSessions)
 	requireEqual(t, sessions, wantSessions)
-	requireEqual(t, inboxes[0].DestinationRef, model.DestinationRef{})
 }
 
 func TestRetentionGapIsVisibleAndReplayKeepsTheTombstone(t *testing.T) {
@@ -344,7 +343,7 @@ func TestUnreadProviderAndMessagePayloadsSurviveThirtyDayCleanup(t *testing.T) {
 	subscription := f.subscribe(t, creation)
 	event := actionsEvents(creation.Source.(sourceadapter.ActionsSource).RequestID, 1)[0]
 	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, payloadOf(event))
-	f.send(t, f.message(newOwner(), "message", "Please keep this message."))
+	f.send(t, f.message(newSender(), "message", "Please keep this message."))
 	f.exec(t, `UPDATE entry SET created_at = now() - interval '31 days' WHERE inbox_id = $1`, subscription.InboxID)
 
 	f.cleanAll(t)
@@ -397,38 +396,6 @@ func TestInboxesRetiredLongAgoAreDeletedWithTheirRows(t *testing.T) {
 	}
 }
 
-func TestSameIdentityCanAccessInboxAcrossSandboxIncarnations(t *testing.T) {
-	quotas := defaultQuotas()
-	quotas.InboxesPerAccount = 1
-	f := newFixture(t, quotas)
-	predecessor := f.subscribe(t, f.body("predecessor"))
-	successor := Owner{Identity: f.identity, SandboxUID: "test-successor-uid"}
-
-	if inboxes, err := f.ListInboxes(t.Context(), successor); err != nil || len(inboxes) != 1 || inboxes[0].ID != predecessor.InboxID {
-		t.Fatalf("listed %+v, %v; want the Session inbox", inboxes, err)
-	}
-	if subscriptions, err := f.ListSubscriptions(t.Context(), successor, nil); err != nil || len(subscriptions) != 1 || subscriptions[0].ID != predecessor.ID {
-		t.Fatalf("listed %+v, %v; want the Session subscription", subscriptions, err)
-	}
-	if _, err := f.Read(t.Context(), successor, predecessor.InboxID, 0, 128); err != nil {
-		t.Fatalf("read across Sandbox incarnations: %v", err)
-	}
-	if _, err := f.Acknowledge(t.Context(), successor, predecessor.InboxID, 0); err != nil {
-		t.Fatalf("acknowledge across Sandbox incarnations: %v", err)
-	}
-	if _, err := f.GetSubscription(t.Context(), successor, predecessor.ID); err != nil {
-		t.Fatalf("get subscription across Sandbox incarnations: %v", err)
-	}
-
-	// The same Identity's inbox quota follows it across Sandbox incarnations.
-	creation := f.body("successor")
-	creation.DestinationRef.UID = successor.SandboxUID
-	creation.SessionID = uuid.NewString()
-	if _, err := f.Subscribe(t.Context(), successor, creation, sourceadapter.ActionsAuthorization{}); !errors.As(err, new(*QuotaError)) {
-		t.Fatalf("second Session inbox error = %v, want Identity quota", err)
-	}
-}
-
 func TestIdentityUIDFencesRetainedInboxAndSubscriptions(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
 	subscription := f.subscribe(t, f.body("uid-owner"))
@@ -464,7 +431,7 @@ func TestIdentityUIDFencesRetainedInboxAndSubscriptions(t *testing.T) {
 	}
 }
 
-func TestAnIdentityUIDFencesInboxesRegardlessOfSandbox(t *testing.T) {
+func TestAnIdentityUIDFencesInboxes(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
 	owner := f.incarnation()
 	sub := f.subscribe(t, f.body("identity-owner"))
@@ -476,13 +443,6 @@ func TestAnIdentityUIDFencesInboxesRegardlessOfSandbox(t *testing.T) {
 			t.Fatalf("another Identity acknowledged inbox: %v", err)
 		}
 	}
-	otherSandbox := Owner{Identity: owner.Identity, SandboxUID: "replacement-sandbox-uid"}
-	if inboxes, err := f.ListInboxes(t.Context(), otherSandbox); err != nil || len(inboxes) != 1 || inboxes[0].ID != sub.InboxID {
-		t.Fatalf("same Identity in another Sandbox listed %+v, %v", inboxes, err)
-	}
-	if _, err := f.Acknowledge(t.Context(), otherSandbox, sub.InboxID, 0); err != nil {
-		t.Fatalf("same Identity in another Sandbox could not acknowledge: %v", err)
-	}
 	if _, err := f.Acknowledge(t.Context(), owner, sub.InboxID, 0); err != nil {
 		t.Fatal(err)
 	}
@@ -492,17 +452,16 @@ func TestReaderAcceptsSessionKeyedInboxWithoutSandboxMetadata(t *testing.T) {
 	f := newIsolatedFixture(t, defaultQuotas())
 	id, sessionID := uuid.New(), uuid.NewString()
 	if _, err := f.db.ExecContext(t.Context(), `INSERT INTO inbox (
-		id, owner_namespace, owner_name, destination_key, destination_namespace, destination_name, destination_uid,
-		session_id, last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until,
+		id, session_id, last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until,
 		owner_identity_name, owner_identity_uid)
-		VALUES ($1, NULL, NULL, $2, NULL, NULL, NULL, $3, 0, 0, 0, 0, false, now(), now(), now(), $4, $5)`,
-		id, sessionID, sessionID, f.identity.Name, f.identity.UID); err != nil {
+		VALUES ($1, $2, 0, 0, 0, 0, false, now(), now(), now(), $3, $4)`,
+		id, sessionID, f.identity.Name, f.identity.UID); err != nil {
 		t.Fatalf("insert Session-keyed inbox: %v", err)
 	}
 
-	owner := Owner{Identity: f.identity, SandboxUID: "irrelevant-sandbox"}
+	owner := f.incarnation()
 	inboxes, err := f.ListInboxes(t.Context(), owner)
-	if err != nil || len(inboxes) != 1 || inboxes[0].ID != id || inboxes[0].DestinationRef != (model.DestinationRef{}) {
+	if err != nil || len(inboxes) != 1 || inboxes[0].ID != id {
 		t.Fatalf("Session-keyed inboxes = %+v, %v", inboxes, err)
 	}
 	resolved, err := f.InboxIDForSession(t.Context(), owner, sessionID)

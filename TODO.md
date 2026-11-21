@@ -9,10 +9,20 @@
 - [ ] Catch **over-declared** `ts_library`/`js_library` deps. Under-declaration already fails the
       build — `ts_library` compiles each target's srcs as its own program against its deps' `.d.ts`,
       so a missing dep is a TS2307 — but a dep nothing imports is invisible, and it widens the
-      action's inputs and its cache key. Nothing in the repo checks for it today; gazelle here is
-      Python-only. The candidate is `aspect-build/aspect-gazelle`'s `language/js`, which generates
-      JS/TS deps from the import graph and so would remove the class rather than lint it. Deliberately
-      not hand-rolled — a bespoke import scanner would be a third parser of the same TypeScript.
+      action's inputs and its cache key. No repo check covers it today. Evaluate dependency
+      generation as part of the [TypeScript build refactor](#typescript-build-refactor).
+
+## TypeScript build refactor
+
+**Operator direction, 2026-11-19.** Compare alternatives before choosing a build layout or generator.
+Target granularity, dependency declarations, generated inputs, lint and tests constrain each other.
+
+- [ ] Spike alternatives on the same representative slice. Compare the
+      [Aspect Gazelle JS extension](https://github.com/aspect-build/aspect-gazelle/tree/main/language/js),
+      simpler handwritten rules or macros, and coarser package or feature targets against the current
+      setup. Include generated inputs, assets and tests. Measure manual edits, net maintained code
+      including overrides, affected-target precision and test coverage. Review the results before
+      selecting a tooling or layout change.
 
 ## AWS
 
@@ -51,7 +61,6 @@
 - [ ] Remove `--per_file_copt=external/or-tools[+]/.*@-Wno-sign-compare` from `.bazelrc` once OR-Tools cleans up signed/unsigned comparisons in `external/or-tools+/`. Currently `or-tools 9.15`.
 - [ ] Pre-commit lint for <devinfra/ci/image_targets.json> completeness: fail if any in-cluster `oci_image` target lacks an entry, and warn on entries whose `target` label points at a non-existent target. Would have caught `airlock`/`fc-vm-pod`-style coverage gaps during the runner-side push rewrite (PR #1290). Easiest implementation: extend `//devinfra/ci:test_plan_image_pushes` to run `bazel query 'kind("oci_image_rule", //...)'` and diff it against `load_images`.
 - [ ] Decide the fate of `secrets/shared/gaffer-private-fetch-pat.yaml` after the private-cache path exists: keep it for another workflow, rotate it, or delete it.
-- [ ] Cache `bazel-diff` base-commit hashes across PR runs. Today `bazel-ci.yml` regenerates the merge-base's Merkle hashes on every PR CI run (checks out the base, runs `bazel-diff generate-hashes` — a `bazel query`, so a chunk of RAM + wall-time per run) even though for a given devel commit the hashes are stable. Add a workflow on devel push that generates + uploads the hashes JSON keyed by SHA (GHA `actions/cache` with `key: bazel-diff-hashes-<sha>` is the simplest fit; SeaweedFS via `AWS_ENDPOINT_URL` or BuildBuddy CAS are alternatives), and have PR CI attempt a fetch before falling back to regeneration. PR CI then only pays the HEAD-hash cost.
 - [ ] Revisit Bazel repository-content caching after the Bazel upgrade: evaluate BuildBuddy or another backend for the experimental remote repository-content cache; measure wyrm2 local-cache hits after deployment and test the known output-base symlink cases on Bazel 9; then decide whether to explicitly configure it on my other developer machines. Account for wyrm2's 100G repository-cache mount and age-only garbage collection.
 - [ ] Package `hetzner-vnc-screenshot` with its skill as an independently released tool.
 

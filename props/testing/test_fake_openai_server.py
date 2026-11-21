@@ -4,7 +4,7 @@ import pytest_bazel
 
 from openai_utils.model import Model, ResponsesRequest, ResponsesResult, WireRequest
 from props.testing.fake_openai_server import FakeOpenAIServer
-from util.testing.asgi import bind_http_server
+from testing.asgi import bind_http_server
 
 
 class RaisingOpenAIModel(Model):

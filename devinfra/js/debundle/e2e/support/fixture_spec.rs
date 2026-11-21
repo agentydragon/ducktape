@@ -10,10 +10,9 @@ use spec::{
     ChunkRenameSelector, ChunkRenames, CrossRefSelector, DependencyGraphOptions,
     EmitBrowserHarnessConfig, IntrinsicAliasSelector, LoadJsChunksArgs, LogicalModule,
     MakesDecorateCallSelector, MaterializeLogicalModulesConfig, Member as SpecMember,
-    MemberOfModuleSelector, PassedToCallSelector, RawMemberSelector, ReadsMemberSelector,
-    SourceMatch, SourceMatchBinding, SourceMatchBindingDetail, SourceMatchClaim,
-    SourceMatchIdentifierMode, SwapVendorChunksConfig, TransformSpec, UnassignedMode,
-    WriteJsTreeConfig,
+    RawMemberSelector, ReadsMemberSelector, SourceMatch, SourceMatchBinding,
+    SourceMatchBindingDetail, SourceMatchClaim, SourceMatchIdentifierMode, SwapVendorChunksConfig,
+    TransformSpec, UnassignedMode, WriteJsTreeConfig,
 };
 use spec::{MemberEffect, MemberPurity};
 use std::collections::BTreeMap;
@@ -131,7 +130,6 @@ pub struct BindingGroup {
     adopt_names: Option<FixtureAdoptNames>,
     exports: BTreeMap<&'static str, &'static str>,
     comments: BTreeMap<&'static str, &'static str>,
-    notes: BTreeMap<&'static str, &'static str>,
 }
 
 impl BindingGroup {
@@ -170,11 +168,6 @@ impl BindingGroup {
 
     pub fn with_comments(mut self, comments: &[(&'static str, &'static str)]) -> Self {
         self.comments = comments.iter().copied().collect();
-        self
-    }
-
-    pub fn with_notes(mut self, notes: &[(&'static str, &'static str)]) -> Self {
-        self.notes = notes.iter().copied().collect();
         self
     }
 }
@@ -296,65 +289,12 @@ impl Member {
         )
     }
 
-    /// Pin a member as the entity **consumed as `module.member`** at a use site
-    /// (`module` an import specifier, `member` an export name), re-exported under
-    /// `name`. `kind` optionally narrows to one source-declaration kind
-    /// (`class_declaration`, …) when several source_units consume the module member.
-    pub fn member_of_module(
-        name: &'static str,
-        module: &'static str,
-        member: &'static str,
-        kind: Option<&'static str>,
-    ) -> Self {
-        Self::pinned(
-            name,
-            RawMemberSelector {
-                member_of_module: Some(MemberOfModuleSelector {
-                    module: module.to_string(),
-                    member: member.to_string(),
-                    kind: parse_kind(kind),
-                }),
-                ..Default::default()
-            },
-        )
-    }
-
-    /// Pin a member as the entity **passed as an argument** to a call of a known
-    /// callee — "the class passed to `@object.callee_member(...)`" — re-exported
-    /// under `name`. The `resolves_to`-of-argument primitive: pins a registry-style
-    /// target by the call that names it, not its own body or minified name.
-    /// `object` optionally constrains the callee's receiver (the readable `name:`
-    /// of another member, the registry singleton); `arg_index` optionally pins the
-    /// argument position; `kind` optionally narrows the target's own declaration
-    /// kind (`class_declaration`, …) when several source_units are passed to the callee.
-    pub fn passed_to_call(
-        name: &'static str,
-        callee_member: &'static str,
-        object: Option<&'static str>,
-        arg_index: Option<usize>,
-        kind: Option<&'static str>,
-    ) -> Self {
-        Self::pinned(
-            name,
-            RawMemberSelector {
-                passed_to_call: Some(PassedToCallSelector {
-                    callee_member: callee_member.to_string(),
-                    object: object.map(str::to_string),
-                    arg_index,
-                    kind: parse_kind(kind),
-                }),
-                ..Default::default()
-            },
-        )
-    }
-
     /// Pin a member as the **callee** of an esbuild `__decorate`-style decorator
     /// application on a pinned class — "the helper that decorates `@class`" —
-    /// re-exported under `name`. The inverse-direction sibling of `passed_to_call`:
-    /// pins the byte-identical decorate-helper copies by the class each decorates,
-    /// not by their own body or minified name. `member` optionally narrows to a
-    /// specific decorated member literal; `kind` optionally narrows the helper's own
-    /// declaration kind (`variable_declarator`).
+    /// re-exported under `name`. Pins the byte-identical decorate-helper copies by
+    /// the class each decorates, not by their own body or minified name. `member`
+    /// optionally narrows to a specific decorated member literal; `kind` optionally
+    /// narrows the helper's own declaration kind (`variable_declarator`).
     pub fn makes_decorate_call(
         name: &'static str,
         class: &'static str,
@@ -616,10 +556,6 @@ fn fixture_annotations(
             let public = group.exports.get(local).copied().unwrap_or(local);
             annotations.entry(public.to_string()).or_default().comment =
                 Some((*comment).to_string());
-        }
-        for (local, note) in &group.notes {
-            let public = group.exports.get(local).copied().unwrap_or(local);
-            annotations.entry(public.to_string()).or_default().note = Some((*note).to_string());
         }
     }
     annotations
@@ -1639,39 +1575,6 @@ pub fn chunk_renames(entries: &[ChunkRenameEntry]) -> ChunkRenames {
     ChunkRenames {
         members,
         annotations: BTreeMap::new(),
-    }
-}
-
-/// Build a single-member chunk-renames body that carries a `purity` annotation
-/// for the renamed binding. Covers the MobX-style `cx -> getMobxGlobalState`
-/// idiom where the rename target must be marked `pure` so the peel doesn't
-/// induce a cycle.
-pub fn chunk_rename_with_purity(
-    rename_to: &str,
-    from_binding: &str,
-    kind: Option<&'static str>,
-    purity: MemberPurity,
-) -> ChunkRenames {
-    let mut annotations = BTreeMap::new();
-    annotations.insert(
-        rename_to.to_string(),
-        BindingAnnotation {
-            purity,
-            ..Default::default()
-        },
-    );
-    let members = vec![ChunkRenameMember {
-        name: Some(rename_to.to_string()),
-        selector: ChunkRenameSelector {
-            binding: BindingSelector {
-                name: from_binding.to_string(),
-                kind: parse_kind(kind),
-            },
-        },
-    }];
-    ChunkRenames {
-        members,
-        annotations,
     }
 }
 

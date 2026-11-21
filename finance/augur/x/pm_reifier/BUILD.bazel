@@ -11,6 +11,7 @@ package(default_visibility = [
 # and stay uncommitted to Bazel.
 # gazelle:exclude backtest.py
 # gazelle:exclude backtest_rolling.py
+# gazelle:exclude calibration.py
 # gazelle:exclude kernel.py
 # gazelle:exclude plot_backtest.py
 # gazelle:exclude plot_backtest_rolling.py

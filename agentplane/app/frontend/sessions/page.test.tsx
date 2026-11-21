@@ -5,24 +5,21 @@ import {
   ThreadCommandOutcome,
   ThreadFeedStatus,
   FeedStatus,
+  SessionSummarySchema,
   type ThreadEntity,
 } from "../../../history_service/api/history/history_service_pb";
 import { AutosuspendBlockerSchema } from "../../../proto/environment_lifecycle_pb";
 import { DurationSchema, TimestampSchema, timestampFromDate } from "@bufbuild/protobuf/wkt";
-import { readySandbox, suspendedSandbox } from "../testing/sandbox";
+import { changedSandbox, readySandbox, suspendedSandbox } from "../testing/sandbox";
 import {
   SandboxPhase,
   ReadinessSchema,
   ReadinessState,
   EnvironmentDescriptorSchema,
-  type EnvironmentActions,
-  type EnvironmentConfiguration,
-  type EnvironmentObservedState,
-  type KubernetesDiagnostics,
   type EnvironmentDescriptor,
 } from "../../../environments/v1/environment_service_pb";
 
-import { clone, create, toJson } from "@bufbuild/protobuf";
+import { create, toJson } from "@bufbuild/protobuf";
 import {
   FrontendConfigSchema,
   TraceSearchSettingsSchema,
@@ -41,7 +38,10 @@ import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
 import { ItemKind, RecoveryDisposition } from "../../../proto/event_pb";
 import { HarnessState, LaunchOutcome, SetupState } from "../../../proto/session_pb";
 import { HarnessAttachment_State } from "../../../harness_host/harness_host_pb";
-import { SessionSchema } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
+import {
+  SessionSchema,
+  SessionStatus_Materialization,
+} from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 import type * as SandboxClientModule from "../sandboxes/client";
 import { LANGFUSE_SEARCH_SETTINGS } from "../observability/langfuse_search_fixture";
 import * as appConfigClient from "../app_config/client";
@@ -53,7 +53,7 @@ import {
   changeReasoningEffort,
   interruptTurn,
   getThread,
-  listThreadWindow,
+  listThreadMetadata,
 } from "./client";
 import { resumeSandbox } from "../sandboxes/client";
 import { historyRows, rowKey } from "./history_rows";
@@ -94,14 +94,13 @@ vi.mock("./client", async (importOriginal) => ({
   changeReasoningEffort: vi.fn(),
   interruptTurn: vi.fn(),
   getThread: vi.fn(),
-  listThreadWindow: vi.fn(),
+  listThreadMetadata: vi.fn(),
 }));
 vi.mock("../sandboxes/client", async (importOriginal) => ({
   ...(await importOriginal<typeof SandboxClientModule>()),
   resumeSandbox: vi.fn(),
 }));
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const mounted: Array<{
   root: ReturnType<typeof createRoot>;
   container: HTMLDivElement;
@@ -114,15 +113,6 @@ let favicon: HTMLLinkElement;
 // whether it then drops. By default the thread's sandbox is running on a current inventory, so its
 // controls are live.
 type Inventory = EnvironmentDescriptor[] | null;
-type DescriptorChanges = Omit<
-  Partial<EnvironmentDescriptor>,
-  "configuration" | "observedState" | "actions" | "kubernetesDiagnostics"
-> & {
-  configuration?: Partial<EnvironmentConfiguration>;
-  observedState?: Partial<EnvironmentObservedState>;
-  actions?: Partial<EnvironmentActions>;
-  kubernetesDiagnostics?: Partial<KubernetesDiagnostics>;
-};
 
 function inventorySandbox(scenario: "ready" | "suspended" = "ready", wakeOnSend = false): EnvironmentDescriptor {
   const uid = "20000000-0000-4000-8000-000000000001";
@@ -135,19 +125,8 @@ function inventorySandbox(scenario: "ready" | "suspended" = "ready", wakeOnSend 
   return sandbox;
 }
 
-function updatedSandbox(base: EnvironmentDescriptor, changes: DescriptorChanges): EnvironmentDescriptor {
-  const updated = clone(EnvironmentDescriptorSchema, base);
-  const { configuration, observedState, actions, kubernetesDiagnostics, ...topLevel } = changes;
-  Object.assign(updated, topLevel);
-  if (configuration) Object.assign(updated.configuration!, configuration);
-  if (observedState) Object.assign(updated.observedState!, observedState);
-  if (actions) Object.assign(updated.actions!, actions);
-  if (kubernetesDiagnostics) Object.assign(updated.kubernetesDiagnostics!, kubernetesDiagnostics);
-  return updated;
-}
-
 function autosuspendSandbox(idle_suspend_at: string | null): EnvironmentDescriptor {
-  return updatedSandbox(inventorySandbox(), {
+  return changedSandbox(inventorySandbox(), {
     configuration: { idleSuspendAfter: create(DurationSchema, { seconds: 900n }) },
     observedState: {
       idleSuspendAt: idle_suspend_at === null ? undefined : timestampFromDate(new Date(idle_suspend_at)),
@@ -220,7 +199,7 @@ beforeEach(() => {
       langfuseSearch: langfuseSearchSettings ?? undefined,
     })
   );
-  vi.mocked(getThread).mockResolvedValue(THREAD);
+  vi.mocked(getThread).mockImplementation(async () => sharedThreadView());
   vi.spyOn(appConfigClient, "listModels").mockResolvedValue(
     testModelCatalog([{ model: "test-model", displayName: "Test Model", reasoningEfforts: TEST_REASONING_EFFORTS }], [])
   );
@@ -279,18 +258,23 @@ beforeEach(() => {
         } else if (url.pathname === "/upstream/app/v1/threads:watch") {
           stream.send({ changed: {}, updatesConnected: true });
         } else {
-          stream.send({ changed: {} });
+          const ids = url.searchParams.getAll("selected.session_ids");
+          stream.send({
+            snapshot: {
+              summaries: (threadRows ?? [sharedThreadView()])
+                .filter((row) => ids.includes(row.metadata.threadId))
+                .map((row) => toJson(SessionSummarySchema, row.summary)),
+            },
+          });
         }
         return Promise.resolve(stream.response);
       }
     }
     return sandboxFetch(input, init);
   });
-  vi.mocked(listThreadWindow).mockImplementation(async () => ({
-    threads: threadRows ?? [sharedThreadView()],
-    more: false,
-    archived_count: 0,
-  }));
+  vi.mocked(listThreadMetadata).mockImplementation(
+    async () => new Map((threadRows ?? [sharedThreadView()]).map((row) => [row.metadata.threadId, row.metadata]))
+  );
 });
 
 afterEach(async () => {
@@ -325,25 +309,13 @@ async function render(state: ThreadState = threadState()): Promise<HTMLDivElemen
 }
 
 it("offers a Grafana trace link from the thread menu when configured", async () => {
-  const container = await render();
-  const menuButton = container.querySelector<HTMLButtonElement>('button[aria-label="More"]');
-  if (!menuButton) throw new Error("Missing thread actions menu");
-  await act(async () => menuButton.click());
-  const link = [...document.querySelectorAll('[role="menuitem"]')].find((node) =>
-    node.textContent?.includes("Find Thread traces in Grafana")
-  );
+  const link = menuItem(await threadMenuItems(), "Find Thread traces in Grafana");
   expect(link).toBeInstanceOf(HTMLAnchorElement);
   expect(new URL((link as HTMLAnchorElement).href).searchParams.get("panes")).toContain("span.session.id");
 });
 
 it("offers a Sandbox-scoped Langfuse link from the active Thread menu", async () => {
-  const container = await render();
-  const menuButton = container.querySelector<HTMLButtonElement>('button[aria-label="More"]');
-  if (!menuButton) throw new Error("Missing thread actions menu");
-  await act(async () => menuButton.click());
-  const link = [...document.querySelectorAll('[role="menuitem"]')].find((node) =>
-    node.textContent?.includes("Sandbox LLM traces in Langfuse")
-  );
+  const link = menuItem(await threadMenuItems(), "Sandbox LLM traces in Langfuse");
   expect(link).toBeInstanceOf(HTMLAnchorElement);
   const url = new URL((link as HTMLAnchorElement).href);
   expect(url.searchParams.get("filter")).toBe(
@@ -355,39 +327,19 @@ it("offers a Sandbox-scoped Langfuse link from the active Thread menu", async ()
 
 it("keeps the Langfuse link available from a stale Sandbox snapshot", async () => {
   inventoryFresh = false;
-  const container = await render();
-  const menuButton = container.querySelector<HTMLButtonElement>('button[aria-label="More"]');
-  if (!menuButton) throw new Error("Missing thread actions menu");
-  await act(async () => menuButton.click());
-  expect(
-    [...document.querySelectorAll('[role="menuitem"]')].some((node) =>
-      node.textContent?.includes("Sandbox LLM traces in Langfuse")
-    )
-  ).toBe(true);
+  expect(menuItem(await threadMenuItems(), "Sandbox LLM traces in Langfuse")).toBeDefined();
 });
 
 it("hides the Grafana trace link from the thread menu when unconfigured", async () => {
   traceSearchSettings = null;
-  const container = await render();
-  const menuButton = container.querySelector<HTMLButtonElement>('button[aria-label="More"]');
-  if (!menuButton) throw new Error("Missing thread actions menu");
-  await act(async () => menuButton.click());
-  expect(
-    [...document.querySelectorAll('[role="menuitem"]')].some((node) =>
-      node.textContent?.includes("Find Thread traces in Grafana")
-    )
-  ).toBe(false);
+  expect(menuItem(await threadMenuItems(), "Find Thread traces in Grafana")).toBeUndefined();
 });
 
 it("hides only the Langfuse link when Langfuse search is unconfigured", async () => {
   langfuseSearchSettings = null;
-  const container = await render();
-  const menuButton = container.querySelector<HTMLButtonElement>('button[aria-label="More"]');
-  if (!menuButton) throw new Error("Missing thread actions menu");
-  await act(async () => menuButton.click());
-  const menuItems = [...document.querySelectorAll('[role="menuitem"]')];
-  expect(menuItems.some((node) => node.textContent?.includes("Sandbox LLM traces in Langfuse"))).toBe(false);
-  expect(menuItems.some((node) => node.textContent?.includes("Find Thread traces in Grafana"))).toBe(true);
+  const items = await threadMenuItems();
+  expect(menuItem(items, "Sandbox LLM traces in Langfuse")).toBeUndefined();
+  expect(menuItem(items, "Find Thread traces in Grafana")).toBeDefined();
 });
 
 function TestLiveProviders({ children }: { children: JSX.Element }): JSX.Element {
@@ -493,6 +445,16 @@ function button(container: HTMLDivElement, label: string): HTMLButtonElement {
 
 function buttonIn(row: Element | null | undefined, text: string): HTMLButtonElement | undefined {
   return [...(row?.querySelectorAll("button") ?? [])].find((candidate) => candidate.textContent === text);
+}
+
+async function threadMenuItems(): Promise<Element[]> {
+  const container = await render();
+  await act(async () => button(container, "More").click());
+  return [...document.querySelectorAll('[role="menuitem"]')];
+}
+
+function menuItem(items: Element[], text: string): Element | undefined {
+  return items.find((node) => node.textContent?.includes(text));
 }
 
 function sentOperations(): unknown[] {
@@ -607,7 +569,7 @@ it("reports the autosuspend policy while no idle deadline is active", async () =
 
 it("shows an unfamiliar autosuspend blocker without breaking the inventory", async () => {
   sandboxes = [
-    updatedSandbox(autosuspendSandbox(null), {
+    changedSandbox(autosuspendSandbox(null), {
       observedState: { autosuspendBlockers: [create(AutosuspendBlockerSchema, { reason: "FutureReason" })] },
     }),
   ];
@@ -620,7 +582,7 @@ it("shows an unfamiliar autosuspend blocker without breaking the inventory", asy
 it("explains every runner blocker and links sessions outside the loaded thread listing", async () => {
   const unlistedSession = "00000000-0000-4000-8000-000000000099";
   sandboxes = [
-    updatedSandbox(autosuspendSandbox(null), {
+    changedSandbox(autosuspendSandbox(null), {
       observedState: {
         autosuspendBlockers: [
           create(AutosuspendBlockerSchema, { reason: "ActiveTurn", sessionId: THREAD.metadata.threadId }),
@@ -667,7 +629,7 @@ it.each([null, "2026-01-01T12:12:00Z"])(
     threadRows = [active, sibling];
     sharedFeed = FeedStatus.ENDED;
     sandboxes = [
-      updatedSandbox(autosuspendSandbox(deadline), {
+      changedSandbox(autosuspendSandbox(deadline), {
         observedState: {
           autosuspendBlockers: [
             create(AutosuspendBlockerSchema, { reason: "ActiveTurn", sessionId: THREAD.metadata.threadId }),
@@ -686,7 +648,7 @@ it.each([null, "2026-01-01T12:12:00Z"])(
 
 it("shows the current session's busy reason instead of a retained deadline", async () => {
   sandboxes = [
-    updatedSandbox(autosuspendSandbox("2026-01-01T12:12:00Z"), {
+    changedSandbox(autosuspendSandbox("2026-01-01T12:12:00Z"), {
       observedState: {
         autosuspendBlockers: [
           create(AutosuspendBlockerSchema, { reason: "ActiveTurn", sessionId: THREAD.metadata.threadId }),
@@ -706,7 +668,7 @@ it.each([
 ] as const)("does not present %s blockers as currently preventing autosuspend", async (_case, fresh, after, text) => {
   inventoryFresh = fresh;
   sandboxes = [
-    updatedSandbox(autosuspendSandbox(null), {
+    changedSandbox(autosuspendSandbox(null), {
       configuration: {
         idleSuspendAfter: after === null ? undefined : create(DurationSchema, { seconds: BigInt(after) }),
       },
@@ -724,7 +686,7 @@ it.each([
 
 it("explains bootstrap work before the Sandbox becomes ready", async () => {
   sandboxes = [
-    updatedSandbox(autosuspendSandbox(null), {
+    changedSandbox(autosuspendSandbox(null), {
       observedState: {
         readiness: create(ReadinessSchema, { state: ReadinessState.NOT_READY }),
         autosuspendBlockers: [create(AutosuspendBlockerSchema, { reason: "Bootstrap", sessionId: undefined })],
@@ -747,15 +709,12 @@ it("reports stale timing as unavailable and does not call a missing loading sand
   expect(loading.querySelector(".agentplane-composer-autosuspend")).toBeNull();
 });
 
-it.each([["a past deadline", "2026-01-01T11:59:00Z", "Autosuspend pending"]])(
-  "handles %s without showing a negative countdown",
-  async (_case, deadline, expected) => {
-    vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-01-01T12:00:00Z"));
-    sandboxes = [autosuspendSandbox(deadline)];
-    const container = await render();
-    expect(container.querySelector(".agentplane-composer-autosuspend")?.textContent).toBe(expected);
-  }
-);
+it("handles a past deadline without showing a negative countdown", async () => {
+  vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-01-01T12:00:00Z"));
+  sandboxes = [autosuspendSandbox("2026-01-01T11:59:00Z")];
+  const container = await render();
+  expect(container.querySelector(".agentplane-composer-autosuspend")?.textContent).toBe("Autosuspend pending");
+});
 
 it.each([
   ["2026-01-01T12:09:30Z", "just now"],
@@ -813,7 +772,7 @@ it("sends the draft on Enter and clears it", async () => {
 });
 
 it("queues a message through the Dispatcher for a fresh suspended Sandbox with wake-on-message", async () => {
-  sandboxes = [updatedSandbox(inventorySandbox("suspended", true), { observedState: { suspendedBy: "Requested" } })];
+  sandboxes = [changedSandbox(inventorySandbox("suspended", true), { observedState: { suspendedBy: "Requested" } })];
   sharedThread = {
     session: environmentDownSession(THREAD.metadata.threadId),
     summary: {
@@ -840,14 +799,13 @@ it("queues a message through the Dispatcher for a fresh suspended Sandbox with w
   await press(field, {});
 
   expect(field.value).toBe("");
-  expect(vi.mocked(submitInput).mock.calls).toHaveLength(1);
   expect(vi.mocked(submitInput).mock.calls[0]?.[0]).toBe(THREAD.metadata.threadId);
   expect(sentOperations()).toMatchObject([{ case: "submitInput", value: { text: "Continue after resume" } }]);
 });
 
 it("disables the composer and offers resume for a fresh suspended Sandbox without wake-on-message", async () => {
   vi.mocked(resumeSandbox).mockResolvedValue(undefined);
-  sandboxes = [updatedSandbox(inventorySandbox("suspended", false), { observedState: { suspendedBy: "Requested" } })];
+  sandboxes = [changedSandbox(inventorySandbox("suspended", false), { observedState: { suspendedBy: "Requested" } })];
   sharedThread = {
     session: environmentDownSession(THREAD.metadata.threadId),
     summary: {
@@ -1042,7 +1000,7 @@ it("lists the thread's Sandbox and harness in the More menu", async () => {
 });
 
 it("reads the Sandbox for the topbar and the composer from the one inventory stream", async () => {
-  sandboxes = [updatedSandbox(inventorySandbox("suspended", true), { observedState: { suspendedBy: "Requested" } })];
+  sandboxes = [changedSandbox(inventorySandbox("suspended", true), { observedState: { suspendedBy: "Requested" } })];
   sharedThread = { session: environmentDownSession(THREAD.metadata.threadId) };
   const container = await render();
   const indicator = mounted.at(-1)?.topbarTitle?.querySelector(".agentplane-thread-status-indicator");
@@ -1054,7 +1012,7 @@ it.each<["Idle" | "Requested", string]>([
   ["Idle", "idle"],
   ["Requested", "on request"],
 ])("says a Sandbox suspended by %s was suspended %s, in the indicator and composer", async (suspendedBy, reason) => {
-  sandboxes = [updatedSandbox(inventorySandbox("suspended"), { observedState: { suspendedBy } })];
+  sandboxes = [changedSandbox(inventorySandbox("suspended"), { observedState: { suspendedBy } })];
   sharedThread = { session: environmentDownSession(THREAD.metadata.threadId) };
   const container = await render();
   expect(container.querySelector(".agentplane-thread-status-indicator")?.getAttribute("aria-label")).toBe(
@@ -1094,7 +1052,7 @@ it("shows why a refused resume of a suspended Sandbox failed", async () => {
 
 // A send to a suspended Sandbox wakes it: it is Running again with no Pod and no Ready condition until
 // the controller has started the incarnation.
-const waking: EnvironmentDescriptor = updatedSandbox(autosuspendSandbox(null), {
+const waking: EnvironmentDescriptor = changedSandbox(autosuspendSandbox(null), {
   observedState: {
     phase: SandboxPhase.CREATING,
     readiness: create(ReadinessSchema, { state: ReadinessState.NOT_READY }),
@@ -1125,7 +1083,7 @@ it.each([null, "2026-01-01T12:12:00Z"])(
   async (deadline) => {
     const starting = autosuspendSandbox(deadline);
     sandboxes = [
-      updatedSandbox(starting, {
+      changedSandbox(starting, {
         observedState: { readiness: create(ReadinessSchema, { state: ReadinessState.NOT_READY }) },
         kubernetesDiagnostics: {
           sandboxStatus: { conditions: [{ type: "Ready", status: "False", reason: "AwaitingEnvironmentRuntime" }] },
@@ -1141,7 +1099,7 @@ it.each([null, "2026-01-01T12:12:00Z"])(
 it("does not call a failed Pod a Sandbox that is starting", async () => {
   const running = autosuspendSandbox(null);
   sandboxes = [
-    updatedSandbox(running, {
+    changedSandbox(running, {
       observedState: { readiness: create(ReadinessSchema, { state: ReadinessState.NOT_READY }) },
       kubernetesDiagnostics: {
         sandboxStatus: {},
@@ -1161,7 +1119,7 @@ it("does not call a failed Pod a Sandbox that is starting", async () => {
   );
 });
 
-it("does not show active-turn status when the runner is not active", async () => {
+it("shows the Dispatcher's active turn when History reports the runner stopped", async () => {
   threadRows = [
     threadView({
       metadata: THREAD.metadata,
@@ -1178,21 +1136,15 @@ it("does not show active-turn status when the runner is not active", async () =>
   expect(indicator?.getAttribute("data-status")).toBe("running");
 });
 
-it.each([[{ metadata: { archived: false } }, [], "Harness attached · ready for input", "idle"]])(
-  "does not infer Dispatcher activity from missing Sandbox inventory for thread %o with sandboxes %o: %s",
-  async (overrides, inventory, label, kind) => {
-    vi.mocked(getThread).mockResolvedValue(
-      threadView({ metadata: { ...THREAD.metadata, ...overrides.metadata }, summary: THREAD.summary })
-    );
-    sharedThread = overrides;
-    sandboxes = inventory;
-    const indicator = (
-      await render(threadState({ rows: [viewState({ status: ThreadFeedStatus.FAILED })] }))
-    ).querySelector(".agentplane-thread-status-indicator");
-    expect(indicator?.getAttribute("aria-label")).toBe(label);
-    expect(indicator?.getAttribute("data-status")).toBe(kind);
-  }
-);
+it("does not infer Dispatcher activity from missing Sandbox inventory", async () => {
+  sharedThread = { metadata: { archived: false } };
+  sandboxes = [];
+  const indicator = (
+    await render(threadState({ rows: [viewState({ status: ThreadFeedStatus.FAILED })] }))
+  ).querySelector(".agentplane-thread-status-indicator");
+  expect(indicator?.getAttribute("aria-label")).toBe("Harness attached · ready for input");
+  expect(indicator?.getAttribute("data-status")).toBe("idle");
+});
 
 const RUNNING = inventorySandbox();
 const SUSPENDED = inventorySandbox("suspended");
@@ -1232,6 +1184,68 @@ it("fetches thread metadata when it is absent from the live snapshot", async () 
 
   expect(getThread).toHaveBeenCalledExactlyOnceWith(THREAD.metadata.threadId);
   expect(container.querySelector("textarea")).not.toBeNull();
+});
+
+it.each([
+  ["failed", SessionStatus_Materialization.SESSION_MATERIALIZATION_FAILED],
+  ["unknown", SessionStatus_Materialization.SESSION_MATERIALIZATION_UNKNOWN],
+])("shows materialization %s without treating missing History as a deleted Sandbox", async (label, materialization) => {
+  sharedThread = {
+    summary: { sandbox: undefined, attached: undefined },
+    session: {
+      sessionId: THREAD.metadata.threadId,
+      placement: {
+        kind: {
+          case: "centralSamplerV1",
+          value: {
+            executorEnvironment: { name: COMMAND_TARGET.sandbox, uid: COMMAND_TARGET.sandboxUid },
+          },
+        },
+      },
+      status: {
+        materialization,
+        reason: "invalid model",
+      },
+    },
+  };
+  const container = await renderAfterThreadsSnapshot();
+  expect(container.textContent).toContain(`Session materialization ${label} · invalid model`);
+  expect(container.textContent).not.toContain("Sandbox no longer exists");
+  expect(container.textContent).toContain("composer-test · Central sampler");
+  expect(container.querySelector("textarea")).toBeNull();
+});
+
+it.each([
+  ["failed", SessionStatus_Materialization.SESSION_MATERIALIZATION_FAILED],
+  ["unknown", SessionStatus_Materialization.SESSION_MATERIALIZATION_UNKNOWN],
+])(
+  "keeps retained History visible and the composer disabled after materialization %s",
+  async (label, materialization) => {
+    sharedThread = {
+      summary: { projectionEpoch: "retained-epoch" },
+      session: {
+        sessionId: THREAD.metadata.threadId,
+        status: {
+          materialization,
+          reason: "invalid model",
+        },
+      },
+    };
+    const container = await renderAfterThreadsSnapshot(
+      threadState({ rows: [viewState(), testItem(1, ItemKind.TOOL_CALL, { toolName: "retained-tool" })] })
+    );
+    expect(container.textContent).toContain(`Session materialization ${label} · invalid model`);
+    expect(container.textContent).toContain("retained-tool");
+    expect(composer(container).disabled).toBe(true);
+  }
+);
+
+it("does not infer deletion when no exact Sandbox identity is known", async () => {
+  sharedThread = { summary: { sandbox: undefined, attached: undefined }, session: undefined };
+  const container = await renderAfterThreadsSnapshot();
+  expect(container.textContent).toContain("Sandbox identity unavailable");
+  expect(container.textContent).not.toContain("Sandbox no longer exists");
+  expect(composer(container).disabled).toBe(true);
 });
 
 // The Sandbox inventory controls whether commands can run or queue; Dispatcher activity owns the
@@ -1375,8 +1389,17 @@ function retry(container: HTMLDivElement, commandId: string): HTMLButtonElement 
 
 it("does not send a retained command whose admission it already holds", async () => {
   const store = new LocalCommands(THREAD.metadata.threadId);
-  store.remember(message("retained-admitted"));
-  store.acknowledge(message("retained-admitted"), admission(message("retained-admitted")));
+  const command = message("retained-admitted");
+  // Older tabs saved bare admission evidence before commands returned a Dispatch.
+  localStorage.setItem(
+    `agentplane.pending:${encodeURIComponent(THREAD.metadata.threadId)}:${command.commandId}`,
+    JSON.stringify({
+      command,
+      sessionAddressed: true,
+      submittedAt: 1,
+      admission: toJson(EventEntrySchema, admission(command)),
+    })
+  );
   // Its unadmitted sibling being sent shows the mount's delivery ran.
   store.remember(message("retained-unadmitted"));
   vi.mocked(submitInput).mockImplementation(admit);

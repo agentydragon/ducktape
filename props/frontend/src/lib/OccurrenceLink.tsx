@@ -5,15 +5,13 @@ interface Props {
   issueId: string;
   occurrenceId: string;
   filePath?: string;
-  displayText?: string;
 }
 
-export default function OccurrenceLink({ snapshotSlug, issueId, occurrenceId, filePath, displayText }: Props) {
+export default function OccurrenceLink({ snapshotSlug, issueId, occurrenceId, filePath }: Props) {
   let urlPath = `/snapshots/${snapshotSlug}/${issueId}/${occurrenceId}`;
   if (filePath) {
     urlPath += `?file=${encodeURIComponent(filePath)}`;
   }
-  const text = displayText ?? `${issueId}/${occurrenceId}`;
 
   return (
     <EntityLink
@@ -21,7 +19,7 @@ export default function OccurrenceLink({ snapshotSlug, issueId, occurrenceId, fi
       title={`View occurrence ${issueId}/${occurrenceId} in ${snapshotSlug}`}
       variant="monospace"
     >
-      {text}
+      {issueId}/{occurrenceId}
     </EntityLink>
   );
 }

@@ -9,8 +9,7 @@ AC status; `power-profile.txt` records the unchanged balanced profile.
 
 The temporary Ollama 0.40.2 server listens on loopback port 11500, with Vulkan,
 integrated GPUs enabled, cloud features disabled, one parallel request and one
-loaded model. `server.log` preserves device selection, GPU buffer allocations,
-cache behavior, and native timing logs. Models are unloaded between candidates.
+loaded model. Models are unloaded between candidates.
 This is an unloaded-model initialization, not a cleared operating-system cache.
 
 `host-vmstat.txt` records concurrent host load. Other workstation sessions were

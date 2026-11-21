@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 
+from cluster.cdk8s.ollama import tabby_endpoint
 from model_catalog.catalog import (
     ANTHROPIC_API,
     ANTHROPIC_SUBSCRIPTION,
@@ -17,6 +18,7 @@ from model_catalog.catalog import (
     OLLAMA_NATIVE,
     OLLAMA_OPENAI,
     RUGGED_LOCAL_OPENAI,
+    TABBYAPI_CHAT,
     TANA_CHAT,
     Upstream,
 )
@@ -29,8 +31,6 @@ class UpstreamBinding:
 
 
 _OLLAMA_BASE = "http://ollama.ollama.svc.cluster.local:11434"
-# Emit the rugged endpoint and bearer-token wiring for cluster access.
-RUGGED_LOCAL_LLM_ENABLED = True
 RUGGED_LOCAL_LLM_SERVICE = "rugged-local-llm"
 RUGGED_LOCAL_LLM_SECRET = "rugged-local-llm-bearer-token"
 RUGGED_LOCAL_LLM_PORT = 18080  # must match rugged's NixOS bearer proxy listener
@@ -53,6 +53,7 @@ UPSTREAM_BINDINGS: dict[Upstream, UpstreamBinding] = {
     TANA_CHAT: UpstreamBinding(
         api_base="https://app.tana.inc/functions", api_key="os.environ/TANA_FIREBASE_REFRESH_TOKEN"
     ),
+    TABBYAPI_CHAT: UpstreamBinding(api_base=tabby_endpoint.SWITCHING_API_BASE, api_key="tabbyapi"),
     OLLAMA_NATIVE: UpstreamBinding(api_base=_OLLAMA_BASE, api_key=None),
     OLLAMA_OPENAI: UpstreamBinding(api_base=f"{_OLLAMA_BASE}/v1", api_key="ollama"),
     RUGGED_LOCAL_OPENAI: UpstreamBinding(

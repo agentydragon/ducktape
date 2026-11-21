@@ -42,6 +42,7 @@ py_library(
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:namespaces",
         "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
     ],
 )
 
@@ -63,5 +64,17 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         "//cluster/cdk8s/providers/kubevirt:virtualmachinepool",
+    ],
+)
+
+py_library(
+    name = "vpa",
+    srcs = ["vpa.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s/providers/vpa:policy",
+        "//cluster/cdk8s/providers/vpa:verticalpodautoscaler",
+        "@pypi//cdk8s",
     ],
 )

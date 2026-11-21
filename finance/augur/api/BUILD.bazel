@@ -11,6 +11,7 @@ py_library(
     srcs = ["schemas.py"],
     deps = [
         "//finance/augur/sim:fixed_point",
+        "@pypi//more_itertools",
         "@pypi//pydantic",
     ],
 )
@@ -178,6 +179,7 @@ py_library(
     srcs = ["catalog.py"],
     deps = [
         ":config",
+        ":schemas",
         ":wire",
         "//finance/augur/calibration:catalog",
         "//finance/augur/model:series",
@@ -341,31 +343,6 @@ py_binary(
     name = "server_bin",
     main_module = "finance.augur.api.server",
     deps = [":server"],
-)
-
-py_library(
-    name = "profile_metric_fan",
-    srcs = ["profile_metric_fan.py"],
-    deps = [
-        ":catalog",
-        ":config",
-        ":portfolio_sources",
-        "//finance/augur/model:exogenous",
-        "//finance/augur/product:scenarios",
-        "//finance/augur/product:service",
-        "//finance/augur/product:wire",
-        "@rules_python//python/runfiles",
-    ],
-)
-
-py_binary(
-    name = "profile_metric_fan_bin",
-    data = [
-        ":public_fixture_config",
-        ":public_fixture_properties",
-    ],
-    main_module = "finance.augur.api.profile_metric_fan",
-    deps = [":profile_metric_fan"],
 )
 
 aspect_py_binary(

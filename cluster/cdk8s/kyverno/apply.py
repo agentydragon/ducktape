@@ -22,9 +22,7 @@ class KyvernoApplyResult:
 
     passed: int
     failed: int
-    warned: int
     errored: int
-    skipped: int
     stdout: str
     mutated_resources: list[dict] = field(default_factory=list)
 
@@ -33,32 +31,33 @@ class KyvernoApplyResult:
         return self.failed == 0 and self.errored == 0
 
 
-_SUMMARY_RE = re.compile(r"pass:\s*(\d+),\s*fail:\s*(\d+),\s*warn:\s*(\d+),\s*error:\s*(\d+),\s*skip:\s*(\d+)")
+_SUMMARY_RE = re.compile(r"pass:\s*(\d+),\s*fail:\s*(\d+),\s*warn:\s*\d+,\s*error:\s*(\d+),\s*skip:\s*\d+")
 
 
-def apply_policy(policy_path: Path, resource_path: Path, set_vars: dict[str, str] | None = None) -> KyvernoApplyResult:
+def apply_policy(
+    policy_path: Path, resource_path: Path, *, json_payload: bool = False, userinfo_path: Path | None = None
+) -> KyvernoApplyResult:
     """Run `kyverno apply` against a resource, parse summary and mutated output.
 
-    `set_vars` feeds `--set name=value` pairs into the run. `kyverno apply` unconditionally
-    disables `context[].apiCall` loading outside `--cluster` mode (verified against this
-    pinned CLI: passing the apiCall's target as an extra `--resource` has no effect, and the
-    engine logs "disabled loading of APICall context entry" regardless) -- so a policy whose
-    precondition depends on an apiCall-populated variable can only be exercised offline by
-    supplying that variable's value directly, keyed by the same name the `context` entry
-    would have bound it to.
+    Offline `kyverno apply` never loads `context[].apiCall` entries, so a policy that needs one is not testable here.
+
+    `json_payload` passes the file as `--json` instead of `--resource`: for a `policies.kyverno.io`
+    policy in `evaluation.mode: JSON` (see `apply_inputs.policy(json_mode=True)`), the only way to
+    evaluate a custom-resource kind, because offline `kyverno apply` cannot map a CRD's kind to a
+    resource ("failed to map gvk to gvr") and has no flag to load the CRD.
     """
     with tempfile.TemporaryDirectory() as tmpdir:
         args: list[str | Path] = [
             _kyverno_bin(),
             "apply",
             str(policy_path),
-            "--resource",
+            "--json" if json_payload else "--resource",
             str(resource_path),
             "-o",
             tmpdir,
         ]
-        if set_vars:
-            args += ["--set", ",".join(f"{name}={value}" for name, value in set_vars.items())]
+        if userinfo_path:
+            args += ["--userinfo", str(userinfo_path)]
         result = subprocess.run(args, check=False, capture_output=True, text=True)
         stdout = result.stdout + result.stderr
         match = _SUMMARY_RE.search(stdout)
@@ -70,9 +69,7 @@ def apply_policy(policy_path: Path, resource_path: Path, set_vars: dict[str, str
         return KyvernoApplyResult(
             passed=int(match.group(1)),
             failed=int(match.group(2)),
-            warned=int(match.group(3)),
-            errored=int(match.group(4)),
-            skipped=int(match.group(5)),
+            errored=int(match.group(3)),
             stdout=stdout,
             mutated_resources=mutated,
         )

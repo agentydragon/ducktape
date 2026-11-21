@@ -1,0 +1,53 @@
+network:
+  host: 0.0.0.0
+  port: 5000
+  disable_auth: true
+  allowed_origins: []
+  send_tracebacks: false
+
+model:
+  model_dir: /models
+  model_name: qwen38-exl3-268
+  inline_model_loading: true
+  # Keep the same budgets on startup and when a request switches checkpoints.
+  use_as_default:
+    - backend
+    - max_seq_len
+    - cache_size
+    - cache_mode
+    - max_batch_size
+    - tensor_parallel
+    - gpu_split
+    - gpu_split_auto
+    - vision
+    - ngram_ram
+    - chunk_size
+    - output_chunking
+    - warmup
+    - draft_mode
+    - draft_num_tokens
+    - draft_cache_mode
+  backend: exllamav3
+  max_seq_len: 262144
+  cache_size: 270336
+  cache_mode: Q8
+  max_batch_size: 1
+  tensor_parallel: false
+  gpu_split: [22, 30]
+  gpu_split_auto: false
+  vision: false
+  ngram_ram: false
+  chunk_size: 2048
+  output_chunking: true
+  warmup: true
+
+draft_model:
+  draft_mode: mtp
+  draft_num_tokens: 3
+  draft_cache_mode: Q8
+
+memory:
+  sysmem_kv_cache: 8192
+  disk_cache_dir: /prefix-cache
+  disk_cache_size: 16384
+  disk_cache_flush_on_idle: true

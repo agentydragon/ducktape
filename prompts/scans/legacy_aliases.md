@@ -11,7 +11,7 @@ Backward compatibility aliases that create duplicate names for the same entities
 - TypeScript/JavaScript export aliases (`export const oldName = newName`)
 - Python import aliases for backward compatibility
 - Constants assigned to other constants (`OLD_NAME = NEW_NAME`)
-- Trivial forwarder functions (see also: `trivial-forwarders.md`)
+- Trivial forwarder functions (see also: `trivial_forwarders.md`)
 - Comments/strings indicating temporary backward compatibility
 
 **Key principle**: Aliases should be removed by squashing to the canonical name. Temporary backward compatibility is acceptable during migration but should be cleaned up, not left indefinitely.
@@ -152,7 +152,7 @@ These comments are strong signals that the code should be cleaned up by:
 - Some aliases are legitimate (facade pattern, API stability)
 - Need context to determine if alias is truly temporary backward compat vs architectural pattern
 - Comments about "backward compatibility" are strong signal but need verification
-- Some trivial forwarders are justified (see `trivial-forwarders.md` for comprehensive decision framework)
+- Some trivial forwarders are justified (see `trivial_forwarders.md` for comprehensive decision framework)
 
 ### Primary Detection Methods
 
@@ -246,7 +246,7 @@ rg --type py -B1 '@property' | grep -A5 'deprecated\|backward\|legacy'
 
 - Check if property adds any logic (validation, transformation)
 - Verify it's truly just forwarding to another attribute
-- See `trivial-forwarder-methods.md` for comprehensive property evaluation
+- See `trivial_forwarder_methods.md` for comprehensive property evaluation
 
 #### 5. Backward Compatibility Comments (High Recall ~90%, Medium Precision ~50%)
 
@@ -276,7 +276,7 @@ rg --type py --type ts 'TODO.*remove.*(after|compat|migration|legacy)'
 
 #### 6. Trivial Forwarder Functions
 
-**See**: `trivial-forwarders.md` for comprehensive detection strategy, decision framework, and examples.
+**See**: `trivial_forwarders.md` for comprehensive detection strategy, decision framework, and examples.
 
 **Quick patterns**:
 
@@ -291,7 +291,7 @@ rg --type ts --type tsx 'export const \w+ = \([^)]*\) => \w+\('
 # Requires AST analysis or call graph tool
 ```
 
-**Note**: Function-level forwarders are covered comprehensively in `trivial-forwarders.md`. This scan focuses on non-function aliases (constants, imports, exports, properties).
+**Note**: Function-level forwarders are covered comprehensively in `trivial_forwarders.md`. This scan focuses on non-function aliases (constants, imports, exports, properties).
 
 ### Recommended Workflow
 
@@ -301,7 +301,7 @@ rg --type ts --type tsx 'export const \w+ = \([^)]*\) => \w+\('
    - Python constant aliases
    - Python property aliases
    - Backward compatibility comments
-   - (Function forwarders covered by `trivial-forwarders.md`)
+   - (Function forwarders covered by `trivial_forwarders.md`)
 
 2. **For each candidate, analyze**:
    - **Usage count**: Is the old name still used? (grep/ripgrep)
@@ -725,7 +725,7 @@ rg --type md '\bOLD_NAME\b'
 
 ## References
 
-- **Trivial Forwarders**: See `trivial-forwarders.md` for comprehensive function-level forwarder detection and decision framework
-- **Trivial Forwarder Methods**: See `trivial-forwarder-methods.md` for method-level forwarders
+- **Trivial Forwarders**: See `trivial_forwarders.md` for comprehensive function-level forwarder detection and decision framework
+- **Trivial Forwarder Methods**: See `trivial_forwarder_methods.md` for method-level forwarders
 - **API Stability**: [Semantic Versioning](https://semver.org/) for managing breaking changes
 - **Deprecation Patterns**: [Python PEP 387](https://peps.python.org/pep-0387/) - Backwards Compatibility Policy

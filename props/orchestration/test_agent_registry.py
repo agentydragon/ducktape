@@ -20,12 +20,12 @@ from props.orchestration.agent_registry import AgentRegistry, AgentRunHandle, Re
 from props.orchestration.executor import ContainerExecutor, ContainerHandle, ContainerResult, Exited, PodInfo, TimedOut
 from props.testing.fixtures.runs import FAKE_CRITIC_DIGEST, ensure_fake_agent_definitions, make_fake_critic_run
 
-# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep //props/testing/fixtures:db
 # gazelle:include_dep //props/testing/fixtures:runs
 # gazelle:include_dep //props/testing/fixtures:scopes
 pytest_plugins = (
-    "util.testing.postgres_fixtures",
+    "testing.postgres_fixtures",
     "props.testing.fixtures.db",
     "props.testing.fixtures.runs",
     "props.testing.fixtures.scopes",
@@ -63,35 +63,6 @@ def _registry(db: Database) -> AgentRegistry:
         registry_config=RegistryProxyConfig(host="reg", port=8000),
         llm_base_url="http://proxy:8000",
     )
-
-
-class _CancellableStartRegistry(AgentRegistry):
-    def __init__(self, db: Database, started: asyncio.Event) -> None:
-        super().__init__(
-            executor=cast(ContainerExecutor, _FakeExecutor()),
-            db=db,
-            db_config=DatabaseConfig(host="h", port=5432, database="d", user="u", password="p"),
-            backend_url="http://backend",
-            agent_base_env={},
-            registry_config=RegistryProxyConfig(host="reg", port=8000),
-            llm_base_url="http://proxy:8000",
-        )
-        self.started = started
-
-    async def _start_agent(
-        self,
-        agent_run_id: UUID,
-        *,
-        image: str,
-        timeout_seconds: int | None = None,
-        name: str,
-        extra_labels: dict[str, str] | None = None,
-        annotations: dict[str, str] | None = None,
-    ) -> AgentRunHandle:
-        del agent_run_id, image, timeout_seconds, name, extra_labels, annotations
-        self.started.set()
-        await asyncio.Event().wait()
-        raise AssertionError("unreachable")
 
 
 def test_slug_to_container_segment_is_k8s_name_safe() -> None:
@@ -265,10 +236,17 @@ async def test_collect_run_cancellation_finalization_is_idempotent(db: Database)
 
 
 async def test_background_critic_start_cancellation_finalizes_run(
-    synced_db: Database, all_files_scope: WholeSnapshotExample
+    synced_db: Database, all_files_scope: WholeSnapshotExample, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     started = asyncio.Event()
-    registry = _CancellableStartRegistry(synced_db, started)
+
+    async def start_agent_and_block(*args: object, **kwargs: object) -> AgentRunHandle:
+        started.set()
+        await asyncio.Event().wait()  # block forever — only a cancel unblocks us
+        raise AssertionError("unreachable")
+
+    registry = _registry(synced_db)
+    monkeypatch.setattr(registry, "_start_agent", start_agent_and_block)
     with synced_db.session() as session:
         ensure_fake_agent_definitions(session)
         session.commit()

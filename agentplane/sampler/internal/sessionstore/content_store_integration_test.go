@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"strings"
 	"testing"
-	"time"
 
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/content"
@@ -34,10 +33,7 @@ func openContentStoreSession(t *testing.T, store *Store, account string) (*Sessi
 	if err != nil {
 		t.Fatal(err)
 	}
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	owner := claim(t, store, session)
 	return session, owner
 }
 
@@ -298,7 +294,7 @@ func TestProviderRequestContentSharesAcrossAccountsAndReadsAreAuthorized(t *test
 
 func fixtureResponsesPreparation(body responses.Request) requestPreparation {
 	return func(ctx context.Context, tx *sql.Tx, store *contentdb.Store, conversation *Conversation, metadata ProviderRequest) (ProviderRequest, []byte, error) {
-		previous, err := previousRequest(ctx, tx, conversation.ID)
+		previous, err := previousRequest(ctx, tx, conversation.ID, "")
 		if err != nil {
 			return ProviderRequest{}, nil, err
 		}

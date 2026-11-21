@@ -18,7 +18,15 @@ from agentplane.app.oidc import OIDCSettings
 from agentplane.app.presets import SandboxPreset, ThreadPreset
 from agentplane.app.settings import FrontendConfig, Settings
 from agentplane.env.runtime.harness import Harness
-from agentplane.net.peertls.config import APP_URI, POLICY_CONTROLLER_URI
+from agentplane.net.peertls.config import (
+    APP_URI,
+    EGRESS_PROXY_URI,
+    HISTORY_SERVICE_URI,
+    NOTIFICATIONS_URI,
+    POLICY_CONTROLLER_URI,
+    SANDBOX_CONTROLLER_URI,
+    SESSION_DISPATCHER_URI,
+)
 from agentplane.sandboxes.runtimeconfig.model_catalog import (
     WORKSPACE_ROOT,
     Catalog,
@@ -49,22 +57,14 @@ from cluster.cdk8s.agentplane.egress import (
     PACKAGES_POLICY,
     PUBLIC_CODER_VISUALS_POLICY,
 )
-from cluster.cdk8s.agentplane.model_selections import HarnessRoutes
+from cluster.cdk8s.agentplane.model_selections import HarnessRoutes, chat_completions_id
 from model_catalog.catalog import Provider, Route
 from util.urls import HttpEndpointUrl
 
 _THREAD_PRESET_PUBLIC_CODER_CODEX = "public-coder-codex"
+# Agentplane stores one effort list per model across both harnesses, so a route both serve keeps
+# only the efforts common to both.
 _COMMON_HARNESS_REASONING_EFFORTS = frozenset(("low", "medium", "high"))
-
-# CLIProxyAPI live probe (2026-10-19): 16 one-token `/v1/messages` requests with adaptive
-# thinking. Sonnet 4.6 (`low`/`medium`/`high`/`max`) and both Gemini routes
-# (`minimal`/`low`/`medium`/`high`) returned HTTP 200 at every route-declared effort. All
-# four Opus efforts returned 429 `Individual quota reached`, so those remain unverified.
-# Agentplane stores one effort list per model across both harnesses, so expose their common
-# values: low, medium, high.
-# Follow-up: `gemini-3.8-flash-high` returned HTTP 200 at low, medium, and high through
-# `/v1/messages` with adaptive thinking (one 4-token request per effort); minimal is not
-# declared for this model by the CLIProxyAPI registry.
 
 DUCKTAPE_PR_INSTRUCTIONS = Path(__file__).with_name("ducktape_pr_instructions.md").read_text(encoding="utf-8").strip()
 _PUBLIC_CODER_INSTRUCTIONS = "\n\n".join(
@@ -79,6 +79,7 @@ _PICKER_PROVIDER_NAMES = {
     Provider.CHATGPT: "ChatGPT",
     Provider.ANTIGRAVITY: "Google Antigravity",
     Provider.OLLAMA: "cluster Ollama",
+    Provider.TABBYAPI: "TabbyAPI",
 }
 
 
@@ -96,25 +97,29 @@ def _reasoning_efforts(route: Route, models: HarnessRoutes) -> list[str]:
 
 
 def model_catalog(models: HarnessRoutes, *, central_sampler_enabled: bool = False) -> ModelCatalog:
-    return ModelCatalog(
-        models=[
-            ModelOption(
-                model=route.id,
-                display_name=_picker_model_name(route),
-                reasoning_efforts=_reasoning_efforts(route, models),
-            )
-            for route in models.all
-        ],
-        harnesses={
-            Harness.CLAUDE: [route.id for route in models.claude],
-            Harness.CODEX: [route.id for route in models.codex],
-            **(
-                {Harness.CENTRAL_SAMPLER: [route.id for route in models.central_sampler]}
-                if central_sampler_enabled
-                else {}
-            ),
-        },
-    )
+    options = {
+        route.id: ModelOption(
+            model=route.id, display_name=_picker_model_name(route), reasoning_efforts=_reasoning_efforts(route, models)
+        )
+        for route in models.all
+    }
+    harnesses = {
+        Harness.CLAUDE: [route.id for route in models.claude],
+        Harness.CODEX: [route.id for route in models.codex],
+    }
+    if central_sampler_enabled:
+        sampler_ids = [route.id for route in models.central_sampler]
+        for route in models.central_sampler_chat:
+            model_id = chat_completions_id(route)
+            if model_id not in options:
+                options[model_id] = ModelOption(
+                    model=model_id,
+                    display_name=f"{route.display_name} — TabbyAPI Chat Completions",
+                    reasoning_efforts=list(route.reasoning_efforts),
+                )
+            sampler_ids.append(model_id)
+        harnesses[Harness.CENTRAL_SAMPLER] = sampler_ids
+    return ModelCatalog(models=list(options.values()), harnesses=harnesses)
 
 
 def runtime_catalog(
@@ -143,8 +148,7 @@ def settings(
     *,
     namespace: str,
     sandbox_template: str,
-    models: HarnessRoutes,
-    runtime_catalog: Catalog | None = None,
+    runtime_catalog: Catalog,
     thread_preset_codex_model: Route,
     connection_service_url: HttpEndpointUrl,
     action_federation: ActionFederationSettings,
@@ -152,16 +156,11 @@ def settings(
     basic_policy_set: str,
     app_origin: str,
     oidc_issuer: str,
-    electric_url: HttpEndpointUrl | None = None,
-    frontend_config: FrontendConfig | None = None,
-    central_sampler_enabled: bool = False,
+    electric_url: HttpEndpointUrl,
+    frontend_config: FrontendConfig,
 ) -> Settings:
     configured = Settings(
-        models=(
-            runtime_catalog.models
-            if runtime_catalog is not None
-            else model_catalog(models, central_sampler_enabled=central_sampler_enabled)
-        ),
+        models=runtime_catalog.models,
         connection_service_url=connection_service_url,
         # App-owned launch-form presets. The browser expands one into editable concrete
         # template, policy, bootstrap, and SessionSpec fields; neither a Sandbox CR nor a
@@ -212,16 +211,22 @@ def settings(
         ),
         policy_service_target=policy_controller.tls_target(namespace),
         policy_service_tls=workload_tls.service_client_tls(POLICY_CONTROLLER_URI, client_uri=APP_URI),
+        # Every in-cluster caller uses the app's mounted service SVID, so no peer names a bearer
+        # token file. Stated here because the settings model has no implicit projected-token path.
+        egress_admin_tls=workload_tls.service_client_tls(EGRESS_PROXY_URI, client_uri=APP_URI),
+        runner_gateway_tls=workload_tls.service_client_tls(SANDBOX_CONTROLLER_URI, client_uri=APP_URI),
+        session_dispatcher_tls=workload_tls.service_client_tls(SESSION_DISPATCHER_URI, client_uri=APP_URI),
         history_service_target=(
             f"{history_service.service(namespace).fqdn}:{history_service.service(namespace).port.number}"
         ),
+        history_service_tls=workload_tls.service_client_tls(HISTORY_SERVICE_URI, client_uri=APP_URI),
         notifications_url=AnyHttpUrl(notifications.service(namespace).url),
+        notifications_tls=workload_tls.service_client_tls(NOTIFICATIONS_URI, client_uri=APP_URI),
         listen_address="0.0.0.0:8080",
         electric_url=electric_url,
         oidc=OIDCSettings(issuer=oidc_issuer, public_base_url=app_origin),
     )
-    if frontend_config is not None:
-        configured.frontend_config = frontend_config
+    configured.frontend_config = frontend_config
     return configured
 
 

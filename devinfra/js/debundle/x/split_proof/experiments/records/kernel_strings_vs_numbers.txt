@@ -1,0 +1,8 @@
+statements | names as strings | names as numbers
+12 | 1.2 s, peak 650 MB, exit 0 | 0.8 s, peak 612 MB, exit 0
+24 | 2.9 s, peak 866 MB, exit 0 | 1.9 s, peak 746 MB, exit 0
+48 | 7.4 s, peak 1459 MB, exit 0 | 4.4 s, peak 1117 MB, exit 0
+96 | 22.7 s, peak 3416 MB, exit 0 | 12.8 s, peak 2400 MB, exit 0
+144 | 44.9 s, peak 6158 MB, exit 0 | 26.8 s, peak 4267 MB, exit 0
+192 | 69.2 s, peak 9464 MB, exit 0 | 41.6 s, peak 6557 MB, exit 0
+288 | 66.6 s, peak 12031 MB, killed: memory | 63.6 s, peak 12027 MB, killed: memory

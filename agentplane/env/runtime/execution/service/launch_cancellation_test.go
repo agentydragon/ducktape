@@ -28,7 +28,7 @@ func TestCancellationDuringNativeStartRequiresJoinedFenceProof(t *testing.T) {
 				defer cancel()
 				entered, canceled, releaseFence := make(chan struct{}), make(chan struct{}), make(chan struct{})
 				start := codexexecserver.NativeStart(codexexecserver.NativeConfig{
-					Binary: "codex", Config: codexexecserver.Config{URL: "ws://127.0.0.1:4501"},
+					Binary: "codex", Config: codexexecserver.Config{URL: "ws://127.0.0.1:4501", Owner: codexexecserver.OwnerSystemd, Placement: codexexecserver.PlacementDirect},
 					LaunchProcess: func(ctx context.Context, _ supervision.ProcessConfig) (*supervision.ManagedProcess, error) {
 						close(entered)
 						<-ctx.Done()

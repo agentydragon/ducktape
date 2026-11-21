@@ -12,7 +12,7 @@ from finance.augur.model.series import LocationId
 from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.fixed_point import rate_to_ppb
-from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, PropertyId
+from finance.augur.sim.ids import CHECKING, AgentId, JurisdictionId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath, Series
@@ -23,11 +23,10 @@ from finance.augur.sim.results import Rollout
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.situs import compile_situs
 from finance.augur.sim.testing.session import each, finish
-from finance.augur.sim.testing.situs import START_YEAR, UNTAXED
+from finance.augur.sim.testing.situs import UNTAXED, property_tax
 from finance.augur.sim.world import World
 
 OWNER, SELLER, COUNTY = AgentId("test-owner"), AgentId("test-seller"), AgentId("test-county")
-CHECKING = AccountId("checking")
 HOME = PropertyId("test-home")
 SAN_FRANCISCO = compile_situs(load_jurisdiction(JurisdictionId("san_francisco")), currency=USD)
 MAINLAND_VALLEJO = compile_situs(load_jurisdiction(JurisdictionId("solano_tra_007000")), currency=USD)
@@ -103,16 +102,7 @@ SALE = ScheduledSale(
     commission_ppb=rate_to_ppb(Decimal("0.05")),
     escrow_title_ppb=rate_to_ppb(Decimal("0.01")),
 )
-POLICY = PropertyTaxPolicy(
-    property_id=HOME,
-    owner_agent_id=OWNER,
-    from_account_id=CHECKING,
-    tax_authority_agent_id=COUNTY,
-    tax_authority_account_id=CHECKING,
-    start_year=START_YEAR,
-    start_month=0,
-    end_month=None,
-)
+POLICY = property_tax(HOME, COUNTY, owner=OWNER)
 
 
 def compose(housing: Housing, policies: tuple[PropertyTaxPolicy, ...] = (POLICY,)) -> World:

@@ -1,16 +1,16 @@
 # Session Dispatcher
 
 The durable command queue is the Dispatcher role of the
-[Runner Gateway](../README.md). The Go integration app and the Notification Service use the
-Session Dispatcher gRPC contract; the stable Dispatcher Service maps port `8080` to the Gateway's
+[Sessions binary](../README.md). The Go integration app and the Notification Service use the
+Session Dispatcher gRPC contract; the stable `sessions` Service maps port `8080` to the binary's
 shared TLS listener. The credential-holding Sandbox relay reaches that same listener through
 central-proxy CONNECT and presents its Runner SVID. Dispatcher methods retain their caller rules,
 exact service grants and typed delegation policy. EnvironmentService has its own listener. The worker
-delivers through the Runner proxy once the exact Sandbox is ready, with a per-Session PostgreSQL
-delivery lease.
+delivers through the Environments Runtime proxy once the exact Sandbox is ready, with a
+per-Session PostgreSQL delivery lease.
 
-The manual queue, replica and wake probes are documented in the
-[system tests](../../system_tests/README.md#dispatcher-queue-and-replicas).
+The queue, replica and wake probes run in the `test_dispatcher` system test, described in the
+[system tests guide](../../system_tests/README.md#dispatcher-queue-and-replicas).
 
 ## Contract
 
@@ -18,7 +18,7 @@ The manual queue, replica and wake probes are documented in the
   `CreateSession`, `GetSession`, and `ListSessions` create and read logical Session records; the
   other Session RPCs operate on them. `GetDispatch`, `ListDispatches`, `WatchDispatches`, and
   `CancelDispatch` read or cancel command receipts
-  ([proto](session_dispatcher.proto)). Commands name the Session; Dispatcher resolves its placement.
+  ([proto](api/session/session_dispatcher.proto)). Commands name the Session; Dispatcher resolves its placement.
   A broker with an incarnation-scoped grant supplies `expected_sandbox_uid` as an authorization
   precondition. `command_id` is the idempotency key across every command RPC.
 - **Watching**: `WatchDispatches` sends the current Dispatches and retained deletion receipts in scope,
@@ -32,7 +32,7 @@ The manual queue, replica and wake probes are documented in the
   The App persists a cursor with its applied local receipts; `session_client` carries one in the input
   observation token. Both clear expired cursors and resync, while preserving an explicit coverage-loss
   warning or source error. Resync cannot recover a pruned deletion.
-- **Browser access**: the app serves an authenticated HTTP/JSON facade and calls the Gateway over native gRPC.
+- **Browser access**: the app serves an authenticated HTTP/JSON facade and calls the Dispatcher over native gRPC.
 - **Delivery states** say where a command is: `DELIVERY_STATE_QUEUED_IN_DISPATCHER`,
   `DELIVERY_STATE_DELIVERING_TO_RUNNER`, `DELIVERY_STATE_RUNNER_ADMITTED`,
   `DELIVERY_STATE_FAILED`, `DELIVERY_STATE_CANCELLED_IN_DISPATCHER`, and
@@ -49,12 +49,11 @@ The manual queue, replica and wake probes are documented in the
   expose SessionSpec or instructions. `status` reports owner materialization, not harness readiness
   ([contract](SPEC.md#session-resource)).
   `environment_hosted` carries one exact environment and the native Claude/Codex harness selection;
-  `central_sampler_v1` carries one exact `executor_environment`. Central sampler V1 still uses the
-  existing Sandbox-backed identity, admission, notification, wake and deletion behavior. Its
-  executor environment is fixed for the Session; it is not an optional attachment, and the central
-  Session cannot yet open without an environment. Both placements resolve the named environment to
-  the current Sandbox and reject a same-name replacement with `FAILED_PRECONDITION` before storing
-  anything. The request is keyed by the caller-minted canonical lowercase UUID `session_id`.
+  `central_sampler_v1` carries one exact `executor_environment`; its identity, admission, notification,
+  wake and deletion behavior stay Sandbox-backed ([binding rules](SPEC.md#session-binding)). Both
+  placements resolve the named environment to the current Sandbox and reject a same-name replacement
+  with `FAILED_PRECONDITION` before storing anything. The request is keyed by the caller-minted
+  canonical lowercase UUID `session_id`.
   An exact retry uses retained Session-read authority and returns the same Session without reading live
   Sandbox or execution-account inventory. It compares the same immutable placement, exact target, spec and
   optional `setup_script` as transactional creation; a mismatch is `ALREADY_EXISTS` only for an authorized
@@ -69,7 +68,7 @@ The manual queue, replica and wake probes are documented in the
   A reservation does not assert a running harness; `ALREADY_EXISTS` means a requested spec or
   setup conflicts, which the Dispatcher records as failed Session materialization.
   Native creation rejection and unconfirmed owner outcomes fence dependent queued commands; see
-  [the outcome contract](SPEC.md#native-opening-outcomes-and-dependent-commands).
+  [the outcome contract](SPEC.md#opening-outcomes-and-dependent-commands).
   Session records follow the deletion and retention rules below.
 - **Discovering Sessions**: `ListSessions` returns one bounded
   page of current Session records, including waiting and failed materialization before
@@ -89,16 +88,6 @@ The manual queue, replica and wake probes are documented in the
   snapshot. The generated JSON route is `GET /v1/sessions:watch`; see the
   [watch contract](SPEC.md#session-watch). Materialization and required-Environment state do not
   assert running or idle status.
-- **Wire and data cutover**: this cutover moves placement into the `SessionSpec` oneof; the flat
-  harness field and Dispatcher-level placement fields are retired. Coordinate the Dispatcher,
-  sampler, app/CLI and other logical Session callers with the matching environment/runtime images.
-  The logical creation/read APIs are `CreateSession`, `GetSession` and `ListSessions` across Dispatcher,
-  App, Environment Runtime and central Sampler; old opening RPCs and resource projections have no
-  compatibility route. The Runner's distinct streaming `Executor.OpenSession` remains the transport
-  that opens an execution connection. Old callers and old Sandbox binaries are not supported in an
-  overlap window. The in-place migrations convert retained session and sampler request records and
-  preserve Session/History data; they do not requeue commands or replay effects. See the
-  [placement cutover details](SPEC.md#sessionspec-placement-cutover).
 - **Caller authority**: live workload Identity SVIDs retain exact Identity ownership checks; configured
   service SVIDs carry the separate component role. Typed service delegation preserves the effective
   Identity independently of its service actor. Kubernetes bearers grant no admission. Historical
@@ -175,12 +164,12 @@ The detailed delivery and transport contract is in [SPEC.md](SPEC.md).
 
 ## Running
 
-The serving binary and image live under `//agentplane/session_dispatcher` and
-`//agentplane/session_dispatcher:image`. It reads the certificate and caller settings described in
-<../README.md>, a projected Gateway token for calls to other holder replicas, and
-`AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL`. The serving binary applies the embedded Goose queue migrations before opening the Gateway
-listener; the same binary accepts `--migrate-only` for explicit fixture or maintenance use. The
-startup probe waits for initialization before `grpc.health.v1` readiness on the shared listener.
+Build the serving binary at `//agentplane/session_dispatcher/cmd:runner-gateway` or the
+Sessions image at `//agentplane/session_dispatcher:image`. See the
+[Sessions settings](../README.md#source-and-tests) for TLS and caller grants. The binary uses
+`AGENTPLANE_SESSIONS_DISPATCHER_DATABASE_URL` to apply the embedded Goose migrations before
+opening the listener. Run the same binary with `--migrate-only` for explicit fixture or
+maintenance use. The startup probe waits for initialization before `grpc.health.v1` readiness.
 
 Automatic wake execution and its budget contract live in [`wake`](wake/manager.go). Environments
 owns explicit resume; both use the shared [`lifecycle` policy and guarded writes](../../environments/lifecycle/SPEC.md).

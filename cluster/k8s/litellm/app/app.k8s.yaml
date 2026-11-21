@@ -50,37 +50,45 @@ data:
     model_list:
       - model_name: ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
         litellm_params:
-          model: openai/qwen3.8-flash-next-iq4xs:latest
-          api_base: http://ollama.ollama.svc.cluster.local:11434/v1
-          api_key: ollama
+          model: hosted_vllm/qwen38-exl3-268
+          api_base: http://tabbyapi.ollama.svc:5000/v1
+          api_key: tabbyapi
+          allowed_openai_params:
+            - reasoning_effort
+          use_chat_completions_api: true
         model_info:
           mode: chat
           supports_function_calling: true
       - model_name: ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k
         litellm_params:
-          model: ollama_chat/qwen3.8-flash-next-iq4xs:latest
-          api_base: http://ollama.ollama.svc.cluster.local:11434
-          extra_body:
-            options:
-              num_ctx: 131072
+          model: hosted_vllm/qwen38-exl3-268
+          api_base: http://tabbyapi.ollama.svc:5000/v1
+          api_key: tabbyapi
+          allowed_openai_params:
+            - reasoning_effort
+          use_chat_completions_api: true
         model_info:
           mode: chat
           supports_function_calling: true
       - model_name: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
         litellm_params:
-          model: openai/qwen3.8-flash-next-iq4xs-256k:latest
-          api_base: http://ollama.ollama.svc.cluster.local:11434/v1
-          api_key: ollama
+          model: hosted_vllm/qwen38-exl3-268
+          api_base: http://tabbyapi.ollama.svc:5000/v1
+          api_key: tabbyapi
+          allowed_openai_params:
+            - reasoning_effort
+          use_chat_completions_api: true
         model_info:
           mode: chat
           supports_function_calling: true
       - model_name: ollama/olm-chat/qwen3.8-flash-next-iq4xs-256k
         litellm_params:
-          model: ollama_chat/qwen3.8-flash-next-iq4xs-256k:latest
-          api_base: http://ollama.ollama.svc.cluster.local:11434
-          extra_body:
-            options:
-              num_ctx: 262144
+          model: hosted_vllm/qwen38-exl3-268
+          api_base: http://tabbyapi.ollama.svc:5000/v1
+          api_key: tabbyapi
+          allowed_openai_params:
+            - reasoning_effort
+          use_chat_completions_api: true
         model_info:
           mode: chat
           supports_function_calling: true
@@ -165,6 +173,17 @@ data:
           extra_body:
             options:
               num_ctx: 131072
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: tabbyapi/oai-chat/qwen3.8-flash-next-abliterated
+        litellm_params:
+          model: hosted_vllm/qwen38-exl3-250-abliterated
+          api_base: http://tabbyapi-model-switching.ollama.svc:5000/v1
+          api_key: tabbyapi
+          allowed_openai_params:
+            - reasoning_effort
+          use_chat_completions_api: true
         model_info:
           mode: chat
           supports_function_calling: true
@@ -1064,6 +1083,17 @@ spec:
                 path: config.yaml
             name: config
           name: configmap-config
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: litellm
+  namespace: litellm
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: litellm
 ---
 apiVersion: v1
 kind: Service

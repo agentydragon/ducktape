@@ -22,7 +22,6 @@ py_library(
         ":config",
         "//cluster/rotators:sops",
         "//cluster/rotators:sops_stamps",
-        "//devinfra:prettier_cli",
         "@pypi//httpx",
         "@pypi//pyyaml",
         "@pypi//typer",
@@ -36,7 +35,7 @@ py_test(
         ":config",
         ":rotate",
         "//:conftest",
-        "//cluster/rotators:sops_stamps",
+        "//cluster/rotators:sops",
         "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//pytest",
@@ -70,7 +69,8 @@ oci_image(
     entrypoint = py_image_entrypoint("rotate_bin"),
     env = py_image_env(binary_name = "rotate_bin"),
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
-    # The apt layer provides git; sops_layer provides sops; layers the Python app.
+    # The apt layer provides git; sops_layer provides sops; the node and prettier layers
+    # format the written YAML; layers the Python app.
     tars = [
         "@trixie_authentik_rotation//:flat",
         ":sops_layer",

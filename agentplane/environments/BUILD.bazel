@@ -24,7 +24,7 @@ oci_image(
 oci_load(
     name = "load",
     image = ":image",
-    repo_tags = ["agentplane-sandbox-controller:latest"],
+    repo_tags = ["agentplane-environments:latest"],
 )
 
 py_library(

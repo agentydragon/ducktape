@@ -6,7 +6,7 @@ backend paths to the API.
 Trust boundary: the console runs in its OWN `haku-console` namespace, not haku-sandbox. As
 reviewed/released ducktape code it sits outside Haku's RBAC (Haku cannot read its secrets or
 logs or patch it) and outside haku-sandbox's egress fence, so it gets ordinary egress and can
-hold secrets Haku may not read (haku/PLAN.md, "The agent-authored console").
+hold secrets Haku may not read.
 
 The API and static shell are separate Deployments so a frontend-only image update never
 restarts operator authentication or background maintenance. Both images carry the
@@ -17,7 +17,7 @@ carries the Flux marker a generated file cannot.
 
 from __future__ import annotations
 
-from cdk8s import ApiObjectMetadata, Duration, Size
+from cdk8s import ApiObject, ApiObjectMetadata, Duration, JsonPatch, Size
 from cdk8s_plus_34 import (
     ApiResource,
     ConfigMap,
@@ -51,11 +51,12 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 
-from cluster.cdk8s import agent_access_profiles as access, node_scheduling, pod_policy, service_ref
+from cluster.cdk8s import agent_access_profiles as access, disruption_budget, node_scheduling, pod_policy, service_ref
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_registry.pull_credentials import forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.haku import console_config, database
+from cluster.cdk8s.haku.database import NAMESPACE
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.secret_ref import SecretKey, SecretRef
 from cluster.cdk8s.settings_file import SettingsFile
@@ -63,7 +64,6 @@ from haku.console.config import CONFIG_FILE_ENV
 from haku.console.settings import Settings
 from util.settings_contract import env_name
 
-NAMESPACE = "haku-console"
 NAME = "haku-console"
 HOSTNAME = "haku.allegedly.works"
 PUBLIC_BASE_URL = f"https://{HOSTNAME}"
@@ -110,12 +110,10 @@ class Console(Construct):
         super().__init__(scope, id)
         self._secrets: dict[str, ISecret] = {}
 
-        # Narrow runtime identity: claim/exec RBAC on the haku-sandbox pool
-        # (haku/workspaces.py). No Secret, log, exec, or SandboxTemplate access outside that pool.
         service_account = ServiceAccount(
             self, "serviceaccount", metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE), automount_token=True
         )
-        self._add_rbac(service_account)
+        self._add_rbac()
         env = self._container_env()
         config = SettingsFile(
             self,
@@ -130,7 +128,7 @@ class Console(Construct):
         self._add_static()
         self._add_http_route()
 
-    def _add_rbac(self, service_account: ServiceAccount) -> None:
+    def _add_rbac(self) -> None:
         # Narrow metadata/configuration diagnostics for the agents. Not
         # namespace-diagnostics-reader: that broader role includes pods/log, and console
         # logs can contain operator and personal-service data.
@@ -179,10 +177,10 @@ class Console(Construct):
             self._secrets[name] = Secret.from_secret_name(self, f"secret-{name}", name)
         return self._secrets[name]
 
-    def _from_secret(self, key: SecretKey, *path: str, optional: bool = False) -> tuple[str, EnvValue]:
+    def _from_secret(self, key: SecretKey, *path: str) -> tuple[str, EnvValue]:
         """The env var for the settings leaf at `path`, read from `key`."""
         return env_name(Settings, *path), EnvValue.from_secret_value(
-            SecretValue(secret=self._secret(key.secret.name), key=key.key), optional=optional
+            SecretValue(secret=self._secret(key.secret.name), key=key.key), optional=False
         )
 
     def _container_env(self) -> dict[str, EnvValue]:
@@ -224,7 +222,7 @@ class Console(Construct):
                 self._from_secret(oidc.key("operator_client_id"), "operator_oidc", "client_id"),
                 self._from_secret(oidc.key("operator_client_secret"), "operator_oidc", "client_secret"),
                 self._from_secret(oidc.key("operator_session_secret"), "operator_oidc", "session_secret"),
-                # The Authentik user-id namespace both providers above share (sub_mode=user_id).
+                # The Authentik user-id namespace the operator provider uses (sub_mode=user_id).
                 (
                     env_name(Settings, "operator_identity", "trust_domain"),
                     EnvValue.from_value("auth.allegedly.works/authentik-user-id/v1"),
@@ -311,6 +309,7 @@ class Console(Construct):
         pod_policy.harden(deployment)
 
     def _add_service(self) -> None:
+        disruption_budget.add_disruption_budget(self, "disruption-budget", name=_API.name, pods=_API.pods)
         Service(
             self,
             "service",
@@ -352,6 +351,13 @@ class Console(Construct):
             security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000, fs_group=1000),
         )
         deployment.select(LabelSelector.of(labels=_STATIC.pods.selector))
+        # Spread each revision across hosts; with one eligible host, keep one replica running.
+        ApiObject.of(deployment).add_json_patch(
+            JsonPatch.add(
+                "/spec/template/spec/topologySpreadConstraints",
+                [node_scheduling.hostname_spread(_STATIC.pods.selector)],
+            )
+        )
         container = deployment.add_container(
             name="static",
             image=f"{_STATIC_IMAGE}:{PLACEHOLDER_TAG}",
@@ -378,6 +384,7 @@ class Console(Construct):
         # The entrypoint writes the envsubst-rendered config here before nginx starts.
         container.mount("/etc/nginx/conf.d", Volume.from_empty_dir(self, "nginx-conf-volume", "nginx-conf"))
         pod_policy.harden(deployment)
+        disruption_budget.add_disruption_budget(self, "static-disruption-budget", name=_STATIC.name, pods=_STATIC.pods)
         Service(
             self,
             "static-service",
@@ -395,8 +402,7 @@ class Console(Construct):
 
     def _add_http_route(self) -> None:
         # Gateway -> static shell -> API, with no forward-auth outpost: the console owns its
-        # auth. The timeout clears the `sandbox` server's exec budget (max_exec_timeout_seconds
-        # plus the 15s the console waits beyond it) and the MCP/OAuth streams.
+        # auth. The timeout clears the MCP/OAuth streams.
         https_route(
             self,
             "httproute",

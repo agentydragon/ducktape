@@ -125,10 +125,7 @@ type TranscriptItem = Message | AssistantMessage | FunctionCallItem | ReasoningI
 
 
 def _sanitize_tool_result(result: ToolResult) -> ToolResult:
-    """Strip NULs before JSONB event persistence; PostgreSQL JSONB rejects them.
-
-    Keep the warning with the permanent event, and send sanitized data to the API.
-    """
+    """Strip NUL bytes from the result's text and structured content, and prepend a note counting them."""
     null_count = 0
 
     def sanitize(value: Any) -> Any:
@@ -209,9 +206,9 @@ class Agent:
             function_call: FunctionCallItem, args_json: str | None, local_map: dict[str, ToolResult] = local_result_map
         ) -> ToolResult:
             call_id = _require_call_id(function_call)
-            # No agent-level before-tool gating; Policy Gateway middleware enforces approvals/denials
+            # No before-tool approval gating: every call reaches the tool provider.
             if call_id in local_map:
-                # Replay persisted output by call_id.
+                # Replay the output already recorded in the transcript for this call_id.
                 return local_map[call_id]
 
             try:

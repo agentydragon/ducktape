@@ -18,13 +18,12 @@ import (
 )
 
 const (
-	settingPrefix            = "AGENTPLANE_RUNNER_GATEWAY_"
-	renamedSettingPrefix     = "AGENTPLANE_SESSIONS_"
+	settingPrefix            = "AGENTPLANE_SESSIONS_"
 	dispatcherDatabaseURLEnv = settingPrefix + "DISPATCHER_DATABASE_URL"
 )
 
 // config is the Gateway's deployment contract: static settings come from the YAML file named by
-// AGENTPLANE_SESSIONS_CONFIG_FILE or AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE.
+// AGENTPLANE_SESSIONS_CONFIG_FILE.
 // The database URL is an explicit runtime input.
 // Service caller grants contain exact SPIFFE IDs.
 type config struct {
@@ -62,11 +61,7 @@ func defaultConfig() config {
 }
 
 func loadConfig() (config, error) {
-	configFileEnv, err := bootstrapEnvName("CONFIG_FILE")
-	if err != nil {
-		return config{}, err
-	}
-	path := strings.TrimSpace(os.Getenv(configFileEnv))
+	path := strings.TrimSpace(os.Getenv(settingPrefix + "CONFIG_FILE"))
 	if path == "" {
 		return config{}, fmt.Errorf("%s is required", settingPrefix+"CONFIG_FILE")
 	}
@@ -76,29 +71,11 @@ func loadConfig() (config, error) {
 	}); err != nil {
 		return config{}, configfile.RedactMapstructureError("Runner Gateway", err)
 	}
-	databaseEnv, err := bootstrapEnvName("DISPATCHER_DATABASE_URL")
-	if err != nil {
-		return config{}, err
-	}
-	c.DispatcherDatabaseURL = os.Getenv(databaseEnv)
+	c.DispatcherDatabaseURL = os.Getenv(dispatcherDatabaseURLEnv)
 	if err := c.validate(); err != nil {
 		return config{}, err
 	}
 	return c, nil
-}
-
-// CLEANUP(added 2026-11-17): Remove the old bootstrap prefix after the operator's
-// last-caller census certifies that old Deployments and rollback consumers are gone.
-func bootstrapEnvName(suffix string) (string, error) {
-	oldName, newName := settingPrefix+suffix, renamedSettingPrefix+suffix
-	oldValue, newValue := os.Getenv(oldName), os.Getenv(newName)
-	if oldValue != "" && newValue != "" && oldValue != newValue {
-		return "", fmt.Errorf("%s and %s conflict", oldName, newName)
-	}
-	if newValue != "" {
-		return newName, nil
-	}
-	return oldName, nil
 }
 
 func (c *config) validate() error {
@@ -109,11 +86,6 @@ func (c *config) validate() error {
 	for name, callers := range serviceCallers {
 		if err := auth.ValidateServiceCallers(callers); err != nil {
 			return fmt.Errorf("%s: %w", name, err)
-		}
-	}
-	if hasServiceCallers(serviceCallers) || c.DispatcherServiceDelegation != nil {
-		if !c.RPC.Has(listener.SPIFFE) {
-			return errors.New("service caller settings require rpc.auth to include spiffe")
 		}
 	}
 	if c.DispatcherServiceDelegation != nil {
@@ -154,10 +126,6 @@ func (c *config) validate() error {
 	}
 	if err := c.RPC.Validate(); err != nil {
 		return fmt.Errorf("rpc: %w", err)
-	}
-	// The shared listener decoder still accepts legacy modes; these receivers only use SPIFFE.
-	if !c.RPC.Has(listener.SPIFFE) {
-		return errors.New("rpc.auth must include spiffe")
 	}
 	if c.GatewayTLS == nil {
 		return errors.New("gateway_tls is required for the Gateway's control-Service calls")
@@ -207,13 +175,4 @@ func (c *config) validate() error {
 	}
 
 	return nil
-}
-
-func hasServiceCallers(callers map[string][]string) bool {
-	for _, values := range callers {
-		if len(values) > 0 {
-			return true
-		}
-	}
-	return false
 }

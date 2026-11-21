@@ -18,7 +18,6 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
-from agentplane.app.testing.gateway_fixtures import DISPATCHER_AUDIENCE, GATEWAY_AUDIENCE
 from agentplane.app.testing.history import SessionHistory
 from agentplane.app.testing.replication_process import AppProcess, GatewayAccess, SandboxesAccess, app_process
 from agentplane.app.testing.thread_test_support import ThreadHTTP
@@ -98,23 +97,12 @@ async def app_config(
 
 @pytest.fixture
 async def gateway_service(
-    namespace: SandboxNamespace, api_server: KubernetesApiServer, dispatcher_database_url: str, tmp_path: Path
+    namespace: SandboxNamespace, api_server: KubernetesApiServer, dispatcher_database_url: str
 ) -> AsyncIterator[GatewayProcess]:
     async with run_gateway(
-        api_server.kubeconfig,
-        database_url=dispatcher_database_url,
-        namespace=namespace.name,
-        dispatcher_audience=DISPATCHER_AUDIENCE,
-        gateway_audience=GATEWAY_AUDIENCE,
+        api_server.kubeconfig, database_url=dispatcher_database_url, namespace=namespace.name
     ) as service:
         yield service
-
-
-@pytest.fixture
-def namespace_gateway(gateway_service: GatewayProcess, app_token_file: Path) -> GatewayAccess:
-    return GatewayAccess(
-        gateway_service.target, None, gateway_service.client_tls, gateway_service.environment_service.ca
-    )
 
 
 async def _watch_results(response: httpx.Response) -> AsyncIterator[dict[str, object]]:
@@ -183,14 +171,14 @@ async def test_thread_metadata_list_does_not_depend_on_history(
     api_server: KubernetesApiServer,
     app_config: dict[str, object],
     refused_address: str,
-    namespace_gateway: GatewayAccess,
+    gateway_access: GatewayAccess,
 ) -> None:
     async with (
         app_process(
             db_url,
             history_service,
             sandboxes=SandboxesAccess(api_server.kubeconfig, namespace.name),
-            gateway=namespace_gateway,
+            gateway=gateway_access,
             config=app_config | {"history_service_target": refused_address, "history_service_request_timeout_s": 0.5},
         ) as app,
         httpx.AsyncClient(base_url=app.url, cookies=app.cookies, headers={"Origin": app.url}) as http,
@@ -211,7 +199,7 @@ async def test_thread_metadata_watch_follows_replica_commits(
     history_service: GoHistoryService,
     api_server: KubernetesApiServer,
     app_config: dict[str, object],
-    namespace_gateway: GatewayAccess,
+    gateway_access: GatewayAccess,
     session_dispatcher: SessionDispatcherClient,
 ) -> None:
     async with (
@@ -219,7 +207,7 @@ async def test_thread_metadata_watch_follows_replica_commits(
             db_url,
             history_service,
             sandboxes=SandboxesAccess(api_server.kubeconfig, namespace.name),
-            gateway=namespace_gateway,
+            gateway=gateway_access,
             config=app_config,
         ) as replica,
         httpx.AsyncClient(base_url=replica.url, cookies=replica.cookies, headers={"Origin": replica.url}) as other,
@@ -326,7 +314,7 @@ async def test_thread_metadata_watch_reports_listener_loss_and_reconnect(
     history_service: GoHistoryService,
     namespace: SandboxNamespace,
     app_config: dict[str, object],
-    namespace_gateway: GatewayAccess,
+    gateway_access: GatewayAccess,
 ) -> None:
     database_url, reconnect = database_reconnect_gate
     async with (
@@ -334,7 +322,7 @@ async def test_thread_metadata_watch_reports_listener_loss_and_reconnect(
             database_url,
             history_service,
             sandboxes=SandboxesAccess(namespace.kubeconfig, namespace.name),
-            gateway=namespace_gateway,
+            gateway=gateway_access,
             config=app_config,
         ) as app,
         httpx.AsyncClient(base_url=app.url, cookies=app.cookies, headers={"Origin": app.url}) as http,
@@ -360,8 +348,7 @@ async def test_thread_metadata_watch_reports_listener_loss_and_reconnect(
         thread_id = uuid4()
         await ThreadHTTP(http).rename(thread_id, "Metadata during listener gap")
         reconnect.set()
-        recovered = await _wait_updates_connected(stream, connected=True)
-        assert recovered["updatesConnected"] is True
+        await _wait_updates_connected(stream, connected=True)
         page = (await http.get("/upstream/app/v1/threads")).json()
         assert [thread["threadId"] for thread in page["threads"]] == [str(thread_id)]
 

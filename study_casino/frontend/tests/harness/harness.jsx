@@ -5,7 +5,6 @@
 // scenario: full-app renders with different mocked `/state` payloads, or
 // standalone components that carry transient React state in production.
 
-import React from "react";
 import { createRoot } from "react-dom/client";
 
 import StudyCasino, { CasinoStyles } from "../../study_casino.jsx";
@@ -169,7 +168,7 @@ const SCENES = {
     return <StudyCasino />;
   },
   // The #shot box shrink-wraps the toast (plus a little padding for its shadow), so the PNG is
-  // just the toast on its felt backdrop — not however much of the viewport the test asks for, so
+  // just the toast on its felt backdrop — not however much of the viewport the test asks for.
   session_award: () => (
     <Standalone>
       <div id="shot" style={{ display: "inline-block", padding: 16 }}>

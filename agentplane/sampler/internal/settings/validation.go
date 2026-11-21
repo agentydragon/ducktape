@@ -138,8 +138,8 @@ func (s Settings) Validate() error {
 		if !ok {
 			return invalidSettingWithCause("models.*.connection", "references an unknown connection", fmt.Errorf("model %s references unknown connection %s", model, config.Connection))
 		}
-		if config.API == protocol.APIStyleResponses && connection.Auth.Type != AuthTypeBearer && connection.Auth.Type != AuthTypeAgentplaneIngress {
-			return invalidSettingWithCause("models.*.api", "responses API requires bearer or agentplane_ingress connection auth", fmt.Errorf("model %s responses API requires bearer or agentplane_ingress connection auth", model))
+		if (config.API == protocol.APIStyleResponses || config.API == protocol.APIStyleChatCompletions) && connection.Auth.Type != AuthTypeBearer && connection.Auth.Type != AuthTypeAgentplaneIngress {
+			return invalidSettingWithCause("models.*.api", "OpenAI-compatible API requires bearer or agentplane_ingress connection auth", fmt.Errorf("model %s responses API requires bearer or agentplane_ingress connection auth", model))
 		}
 		if config.API == protocol.APIStyleAnthropicMessages && connection.Auth.Type != AuthTypeAnthropicAPIKey {
 			return invalidSettingWithCause("models.*.api", "anthropic_messages API requires anthropic_api_key connection auth", fmt.Errorf("model %s anthropic_messages API requires anthropic_api_key connection auth", model))
@@ -231,7 +231,10 @@ func (s Settings) Validate() error {
 			return invalidSetting(name, "must be positive and fit in time.Duration")
 		}
 	}
-	headerSeconds := int64(s.ProviderResponseHeaderTimeout() / time.Second)
+	headerSeconds := int64(s.ProviderResponseHeaderTimeout(ModelConfig{}) / time.Second)
+	for _, model := range s.Models {
+		headerSeconds = max(headerSeconds, int64(s.ProviderResponseHeaderTimeout(model)/time.Second))
+	}
 	idleSeconds := int64(s.ProviderIdleTimeout() / time.Second)
 	rpcSlack := int64(s.RPCTimeoutSeconds)
 	if rpcSlack > maxExecutorInitializeTimeoutSeconds/3 ||
@@ -297,10 +300,13 @@ func (s Settings) ExecutorReconnectTimeout() time.Duration {
 	return time.Duration(seconds) * time.Second
 }
 
-func (s Settings) ProviderResponseHeaderTimeout() time.Duration {
+func (s Settings) ProviderResponseHeaderTimeout(model ModelConfig) time.Duration {
 	seconds := defaultProviderResponseHeaderTimeoutSeconds
 	if s.ProviderResponseHeaderTimeoutSeconds != nil {
 		seconds = *s.ProviderResponseHeaderTimeoutSeconds
+	}
+	if model.ResponseHeaderTimeoutSeconds != nil {
+		seconds = *model.ResponseHeaderTimeoutSeconds
 	}
 	return time.Duration(seconds) * time.Second
 }
@@ -316,8 +322,8 @@ func (s Settings) ProviderIdleTimeout() time.Duration {
 // ProviderAttemptLease covers response-header setup, one full semantic-idle interval, and three
 // bounded RPC operations for durable head/event/renewal writes. Each semantic event renews
 // the idle interval with two RPC operations reserved for evidence and the renewal.
-func (s Settings) ProviderAttemptLease() time.Duration {
-	phaseSeconds := int64(s.ProviderResponseHeaderTimeout()/time.Second) + int64(s.ProviderIdleTimeout()/time.Second) + 3*int64(s.RPCTimeoutSeconds)
+func (s Settings) ProviderAttemptLease(model ModelConfig) time.Duration {
+	phaseSeconds := int64(s.ProviderResponseHeaderTimeout(model)/time.Second) + int64(s.ProviderIdleTimeout()/time.Second) + 3*int64(s.RPCTimeoutSeconds)
 	return time.Duration(phaseSeconds) * time.Second
 }
 

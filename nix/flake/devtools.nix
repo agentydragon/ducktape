@@ -3,6 +3,7 @@
   pkgsUnstable,
   ducktapePkgs,
   ruffLatest,
+  rustToolchain,
 }:
 
 let
@@ -45,11 +46,7 @@ let
     pkgs.kubeconform
     pkgs.tflint
     pkgs.checkov
-    # TODO: Consider a rustfmt-only package here, preserving cargo-fmt in
-    # developer shells. Deferred: the container spike did not show enough
-    # setup-time benefit to justify the extra packaging complexity.
-    # Evidence and prototype: https://github.com/agentydragon/ducktape/pull/9220
-    pkgs.rustfmt
+    rustToolchain.rustfmt
     pkgs.ansible
   ];
 
@@ -63,20 +60,18 @@ let
   # See devinfra/claude/docs/devtools-closure-size.md for details.
   # Packages only needed by local development or cluster operations.
   localOnlyPackages = [
+    # cargo-fmt is included with rustfmt but requires cargo on PATH.
+    rustToolchain.cargo
     # Anthropic CLI (`ant`): Claude API / Managed Agents control plane, for
     # running `ant beta:*` (haku/runtime/x/managed_agent/self_hosted). Not included in the BuildBuddy Remote Runner toolset.
     ducktapePkgs.anthropic-cli
-    # Materialize the runner-layering spike's read-only tools and harness filesystems for its
-    # local Firecracker probe; this is not used by Bazel actions or CI.
-    pkgs.squashfsTools
   ]
   ++ [
     # Keep the symbolizer available in local dev shells as well as the runner.
     llvmAddr2line
-    # Cluster/infra CLIs (formerly cluster/shell.nix). Used for Talos,
-    # Route 53, Nebula PKI, policy validation, and bare-metal provisioning.
+    # Cluster/infra CLIs. Used for Talos, Route 53, Nebula PKI, policy
+    # validation, and bare-metal provisioning.
     pkgsUnstable.talosctl
-    pkgs.qemu_kvm # Disposable Talos disk-layout and storage rehearsals on existing hosts
     pkgs.awscli2 # AWS CLI for Route 53 management
     pkgs.hcloud # Price-comparison helper only; cluster bootstrap does not consume HCloud creds
     pkgs.kyverno # Policy engine CLI (validate manifests, test policies)
@@ -111,7 +106,6 @@ let
     pkgs.opentofu
     pkgs.sops
     pkgs.ssh-to-age
-    buildBuddyRunnerPackages.bazelDiff
   ];
   # Rust claude-hook is the active hook/shim implementation. The statusline
   # remains Python and is exposed separately as `claude-statusline`.

@@ -221,7 +221,7 @@ def select_alias_module(
     return alias_name, hits[0]
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("binary", type=pathlib.Path)
     ap.add_argument("out_dir", type=pathlib.Path)
@@ -367,8 +367,6 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
 
-    return 0
-
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

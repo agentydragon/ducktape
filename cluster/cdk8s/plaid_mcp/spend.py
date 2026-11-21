@@ -9,7 +9,8 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetDeletionPolicy,
 )
 
-from cluster.cdk8s import cilium, external_creds
+from cluster.cdk8s import cilium, external_creds, namespaces
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.plaid_mcp import db
@@ -22,11 +23,14 @@ from cluster.cdk8s.providers.external_secrets.external_secret import (
 )
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.vpa_policy import ContainerPolicy
 from finance.plaid.spend.settings import SpendSettings
 from util.settings_contract import env_name
 
 NAMESPACE = db.NAMESPACE
 _NAME = "plaid-spend"
+_CPU_REQUEST = "50m"
+_MEMORY_LIMIT = "512Mi"
 _HOST = "plaid-spend.allegedly.works"
 _CONFIG_MAP = "plaid-spend-config"
 POLICY_SECRET = "plaid-spend-policy"
@@ -44,7 +48,7 @@ _CONFIG_PATH = SpendSettings.model_fields["config_path"].default
 _DESKTOP_OIDC_ISSUER = "https://auth.allegedly.works/application/o/plaid-spend-desktop/"
 _DESKTOP_CLIENT_ID = "plaid-spend-desktop"
 _WEB_OIDC_ISSUER = "https://auth.allegedly.works/application/o/plaid-spend-web/"
-_WEB_PUBLIC_BASE_URL = "https://plaid-spend.allegedly.works"
+_WEB_PUBLIC_BASE_URL = f"https://{_HOST}"
 _WEB = ServiceRef(
     name=_NAME,
     port=Port(name="http", number=8080),
@@ -68,13 +72,6 @@ def _container_security_context() -> k8s.SecurityContext:
         run_as_group=1000,
         run_as_non_root=True,
         run_as_user=1000,
-    )
-
-
-def _resources() -> k8s.ResourceRequirements:
-    return k8s.ResourceRequirements(
-        requests={"memory": k8s.Quantity.from_string("128Mi"), "cpu": k8s.Quantity.from_string("50m")},
-        limits={"memory": k8s.Quantity.from_string("512Mi"), "cpu": k8s.Quantity.from_string("500m")},
     )
 
 
@@ -170,10 +167,14 @@ def _deployment(chart: Chart) -> None:
             namespace=NAMESPACE,
             labels=_WEB.pods.selector,
             annotations={
+                **namespaces.initial_request_annotations(
+                    # Peak 30-day working set was 338Mi.
+                    ContainerPolicy.cpu_and_memory_requests_only("plaid-spend", memory_floor="384Mi")
+                ),
                 "description": (
                     "Plaid Spend serves its Authentik-protected browser UI and desktop API from the same"
                     " configured card view and subscribes to committed plaid_spend_changed invalidations."
-                )
+                ),
             },
         ),
         spec=k8s.DeploymentSpec(
@@ -224,7 +225,9 @@ def _deployment(chart: Chart) -> None:
                             volume_mounts=[
                                 k8s.VolumeMount(name="config", mount_path=str(_CONFIG_PATH.parent), read_only=True)
                             ],
-                            resources=_resources(),
+                            resources=container_resources(
+                                cpu=_CPU_REQUEST, memory="128Mi", cpu_limit="500m", memory_limit=_MEMORY_LIMIT
+                            ),
                             readiness_probe=k8s.Probe(http_get=health, initial_delay_seconds=5, period_seconds=10),
                             liveness_probe=k8s.Probe(http_get=health, initial_delay_seconds=20, period_seconds=20),
                         )

@@ -1,5 +1,3 @@
-# --- Grocy SF household (proxy provider + MCP OAuth2) ---
-
 resource "authentik_group" "grocy_sf_household" {
   name = "SF household"
   users = [
@@ -116,8 +114,6 @@ resource "kubernetes_secret" "grocy_mcp_oidc_sf_source" {
     grocy_proxy_client_id = authentik_provider_proxy.grocy_sf.client_id
   }
 }
-
-# --- agentplane read-only identity ---
 
 # The account agentplane-staging's egress proxy presents to grocy-sf.allegedly.works for
 # claude-ai sandboxes (`grocy-sf-readonly` in cluster/cdk8s/agentplane/egress_staging_credentials.py),

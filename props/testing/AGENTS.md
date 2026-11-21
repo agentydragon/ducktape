@@ -2,9 +2,10 @@
 
 The root `props/conftest.py` holds configuration and tracing only. Opt in to shared fixture
 modules with `pytest_plugins` in each test module and a `gazelle:include_dep` for each plugin.
-Register `util.testing.postgres_fixtures` before `props.testing.fixtures.db` so Props' synchronous
-`engine` fixture overrides the shared asynchronous default. Container E2E tests also need
-`mcp_infra.testing.fixtures` for `async_docker_client`.
+Register `testing.postgres_fixtures` before `props.testing.fixtures.db` so Props' synchronous
+`engine` fixture overrides the shared asynchronous default. Agent container E2E tests register
+`props.agents.testing.e2e_pytest_plugins`, which bundles these with `runs`, `scopes`, `e2e_infra`,
+`e2e_container` and `mcp_infra.testing.fixtures` (`async_docker_client`).
 
 Git fixtures in `testing/fixtures/testdata/specimens/test-fixtures/` are the single source of
 truth for test data. Never construct `Snapshot`/`TruePositive`/`FalsePositive`/`Example` ORM
@@ -25,6 +26,6 @@ scopes inline):
   `fp_id`, `fp_occurrence_id` (prefer these single-field ID fixtures; tuple fixtures are for
   iteration only)
 - `runs.py`: `make_fake_{critic,grader}_run`, `make_fake_grader_run_with_credit`,
-  `test_snapshot`, `test_validation_snapshot`
+  `make_llm_request` (priced spend for budget tests), `test_snapshot`
 - `e2e_container.py`: `e2e_stack` (full Docker stack)
 - `db.py`: `synced_db`, `synced_test_session`

@@ -45,8 +45,8 @@ const subscriptionColumns = `s.id, s.inbox_id, s.creation_proto, s.source_provid
 // the subscription is judged expired at.
 func scanSubscription(row rowScanner, viewedAt time.Time, extra ...any) (Subscription, error) {
 	var subscription Subscription
-	var creationProto sql.Null[[]byte]
-	var sourceProvider sql.NullString
+	var creationProto []byte
+	var sourceProvider string
 	var message, kind sql.NullString
 	var lastSuccess, since, observed, nextAttempt sql.NullTime
 	if err := row.Scan(append([]any{
@@ -61,7 +61,7 @@ func scanSubscription(row rowScanner, viewedAt time.Time, extra ...any) (Subscri
 		return Subscription{}, err
 	}
 	subscription.Source = body.Source
-	subscription.SourceProvider = sourceProvider.String
+	subscription.SourceProvider = sourceProvider
 	subscription.ExpiresAt = subscription.ExpiresAt.UTC()
 	subscription.Expired = !subscription.ExpiresAt.After(viewedAt)
 	if nextAttempt.Valid {
@@ -146,8 +146,8 @@ func (s *Store) Subscribe(ctx context.Context, owner Owner, body sourceadapter.S
 		}
 		written := now()
 		var existingID uuid.UUID
-		var existingProto sql.Null[[]byte]
-		var existingProvider sql.NullString
+		var existingProto []byte
+		var existingProvider string
 		err = tx.QueryRowContext(ctx, `SELECT id, creation_proto, source_provider
 			FROM subscription WHERE inbox_id = $1 AND idempotency_key = $2`,
 			inbox.ID, body.IdempotencyKey).Scan(&existingID, &existingProto, &existingProvider)
@@ -212,6 +212,18 @@ func (s *Store) ListSubscriptions(ctx context.Context, owner Owner, afterID *uui
 	if err != nil {
 		return nil, err
 	}
+	return readSubscriptions(ctx, s.db, rows, viewedAt)
+}
+
+// querier is the read surface a database and a transaction share.
+type querier interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+// readSubscriptions reads rows of subscriptionColumns to the end and closes them, then loads each subscription's
+// source status through q. The rows are closed first because a transaction has one connection.
+func readSubscriptions(ctx context.Context, q querier, rows *sql.Rows, viewedAt time.Time) ([]Subscription, error) {
 	defer rows.Close()
 	var subscriptions []Subscription
 	for rows.Next() {
@@ -224,11 +236,12 @@ func (s *Store) ListSubscriptions(ctx context.Context, owner Owner, afterID *uui
 	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
 		return nil, err
 	}
-	for i := range subscriptions {
-		subscriptions[i].SourceStatus, err = sourceadapter.LoadSubscriptionStatus(ctx, s.db, subscriptions[i].ID, subscriptions[i].Source)
+	for i, subscription := range subscriptions {
+		sourceStatus, err := sourceadapter.LoadSubscriptionStatus(ctx, q, subscription.ID, subscription.Source)
 		if err != nil {
 			return nil, err
 		}
+		subscriptions[i].SourceStatus = sourceStatus
 	}
 	return subscriptions, nil
 }
@@ -260,7 +273,7 @@ func lockSubscription(ctx context.Context, tx transaction.Tx, owner Owner, id uu
 	if err != nil {
 		return Subscription{}, err
 	}
-	inbox, err := owned(ctx, tx, inboxID, owner, true)
+	inbox, err := owned(ctx, tx, inboxID, owner)
 	if err != nil {
 		return Subscription{}, err
 	}

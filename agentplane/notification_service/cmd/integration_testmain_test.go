@@ -29,8 +29,8 @@ var (
 	apiConfig *rest.Config
 	apiClient client.Client
 	// sandboxToken proves the ServiceAccount of the Sandbox sandboxName, which a Sandbox runs as by its own
-	// name; otherToken proves otherName's, whose Sandbox does not exist.
-	sandboxToken, otherToken string
+	// name.
+	sandboxToken string
 	// sandboxUID is the UID the API server gave the Sandbox sandboxName.
 	sandboxUID string
 )
@@ -68,9 +68,6 @@ func useAPIServer(server *kubeapiserver.Server) (err error) {
 		return err
 	}
 	sandboxUID = string(sandbox.UID)
-	if sandboxToken, err = server.WorkloadToken(ctx, auth.Account{Namespace: testNamespace, Name: sandboxName}, testAudience); err != nil {
-		return err
-	}
-	otherToken, err = server.WorkloadToken(ctx, auth.Account{Namespace: testNamespace, Name: otherName}, testAudience)
+	sandboxToken, err = server.WorkloadToken(ctx, auth.Account{Namespace: testNamespace, Name: sandboxName}, testAudience)
 	return err
 }

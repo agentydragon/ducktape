@@ -1,4 +1,4 @@
-"""Pinned Codex exec-server in the production Runner's private companion container."""
+"""Execution backends in the Runtime private companion container."""
 
 import http.client
 import os
@@ -17,8 +17,8 @@ from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_f
 from agentplane.env.e2e.testing import launches
 from agentplane.env.runtime.execution.companion.control import control_pb2, control_pb2_grpc
 from devinfra.oci.oci import load_oci_image
+from testing.container_logs import LoggedContainer
 from third_party.containers import debian_slim
-from util.testing.container_logs import LoggedContainer
 
 # The generated gRPC stubs resolve protobuf's own stubs through direct deps.
 # gazelle:include_dep @pypi//protobuf
@@ -80,6 +80,8 @@ def codex_exec_server_container(tmp_path: Path) -> Iterator[CodexExecServerConta
                     "--listen",
                     url,
                     "--binary",
+                    "/execution-service",
+                    "--codex-binary",
                     "/opt/codex/bin/codex",
                     "--health-listen",
                     f"127.0.0.1:{health_port}",

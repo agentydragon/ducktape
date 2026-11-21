@@ -3,13 +3,6 @@
 from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cilium_envoyconfig_crds.io.cilium import (
-    CiliumEnvoyConfig,
-    CiliumEnvoyConfigSpec,
-    CiliumEnvoyConfigSpecBackendServices,
-    CiliumEnvoyConfigSpecNodeSelector,
-)
-from constructs import Construct
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
     HelmReleaseSpecInstallRemediation,
@@ -18,12 +11,20 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 )
 
 from cluster.cdk8s import node_scheduling
+from cluster.cdk8s.cilium import tcp_listener
 from cluster.cdk8s.cnpg import cluster
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL, Vpa
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.vpa_policy import (
+    VPA_RESOURCE_POLICY_ANNOTATION,
+    ContainerPolicy,
+    ControlledValues,
+    resource_policy_annotation,
+)
 
 NAME = "gitlab-spike"
 NAMESPACE = NAME
@@ -31,6 +32,7 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/gitlab-spike/app"
 HOSTNAME = "gitlab-spike.allegedly.works"
 REGISTRY_HOSTNAME = "registry-gitlab-spike.allegedly.works"
 CHART_VERSION = "10.5.1"  # GitLab 19.5.1, published 2026-10-21 in charts.gitlab.io.
+_SHELL_CPU_REQUEST = "23m"  # Current admitted request on both GitLab Shell replicas.
 
 GITLAB_DB = cluster.PostgresRef.generated(name="gitlab-db", namespace=NAMESPACE)
 PRAEFECT_PASSWORD = SecretRef(namespace=NAMESPACE, name="praefect-db-credentials")
@@ -73,53 +75,13 @@ SSH = ServiceRef(
 )
 
 
-def _ssh_listener(scope: Construct) -> None:
-    # Cilium's Gateway API has no TCPRoute support, so raw SSH gets its own Envoy
-    # listener on the HIL gateway nodes. The backend remains a ClusterIP Service.
-    service = SSH.name
-    cluster = f"{NAMESPACE}:{service}:{SSH.port.number}"
-    CiliumEnvoyConfig(
-        scope,
-        "ssh-listener",
-        metadata=ApiObjectMetadata(
-            name=service, namespace=NAMESPACE, annotations={"cec.cilium.io/use-original-source-address": "false"}
+def _vpa_annotations(*policies: ContainerPolicy, mode: Vpa = Vpa.INITIAL) -> dict[str, str]:
+    return {
+        VPA_UPDATE_MODE_LABEL: mode,
+        VPA_RESOURCE_POLICY_ANNOTATION: resource_policy_annotation(
+            *policies, ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"), compact=True
         ),
-        spec=CiliumEnvoyConfigSpec(
-            node_selector=CiliumEnvoyConfigSpecNodeSelector(match_labels={"topology.kubernetes.io/region": "hil"}),
-            backend_services=[
-                CiliumEnvoyConfigSpecBackendServices(name=service, namespace=NAMESPACE, number=[str(SSH.port.number)])
-            ],
-            resources=[
-                {
-                    "@type": "type.googleapis.com/envoy.config.listener.v3.Listener",
-                    "name": service,
-                    "address": {"socketAddress": {"address": "0.0.0.0", "portValue": 2223}},
-                    "filterChains": [
-                        {
-                            "filters": [
-                                {
-                                    "name": "envoy.filters.network.tcp_proxy",
-                                    "typedConfig": {
-                                        "@type": "type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy",
-                                        "statPrefix": service,
-                                        "cluster": cluster,
-                                        "idleTimeout": "3600s",
-                                    },
-                                }
-                            ]
-                        }
-                    ],
-                },
-                {
-                    "@type": "type.googleapis.com/envoy.config.cluster.v3.Cluster",
-                    "name": cluster,
-                    "type": "EDS",
-                    "edsClusterConfig": {"serviceName": f"{NAMESPACE}/{service}:{SSH.port.number}"},
-                    "outlierDetection": {"splitExternalLocalOriginErrors": True},
-                },
-            ],
-        ),
-    )
+    }
 
 
 def _values() -> dict[str, object]:
@@ -191,8 +153,46 @@ def _values() -> dict[str, object]:
         "installCertmanager": False,
         "prometheus": {"install": False},
         "gitlab-runner": {"install": False},
-        "registry": {"storage": {"secret": f"{REGISTRY_BUCKET}-connection", "key": "config"}},
+        "registry": {
+            "storage": {"secret": f"{REGISTRY_BUCKET}-connection", "key": "config"},
+            # Spread each ReplicaSet across eligible hosts while allowing the HPA to scale beyond the host count.
+            "topologySpreadConstraints": [
+                {
+                    "maxSkew": 1,
+                    "topologyKey": "kubernetes.io/hostname",
+                    "whenUnsatisfiable": "DoNotSchedule",
+                    "nodeTaintsPolicy": "Honor",
+                    "labelSelector": {"matchLabels": REGISTRY.pods.selector},
+                    "matchLabelKeys": ["pod-template-hash"],
+                }
+            ],
+            "deployment": {
+                "annotations": _vpa_annotations(
+                    # Registry's HPA uses CPU utilization, which depends on the request.
+                    ContainerPolicy.memory_requests_only(
+                        "registry", cpu_request="50m", memory_floor="96Mi", memory_limit="128Mi"
+                    ),
+                    mode=Vpa.AUTO,
+                )
+            },
+        },
         "gitlab": {
+            "gitlab-exporter": {
+                "deployment": {
+                    "annotations": _vpa_annotations(ContainerPolicy.cpu_and_memory_requests_only("gitlab-exporter"))
+                }
+            },
+            "gitlab-shell": {
+                # Keep the current CPU share in the template while the HPA owns CPU.
+                # The init containers already reserve 50m, so the Pod request stays at 50m.
+                "resources": {"requests": {"cpu": _SHELL_CPU_REQUEST}},
+                "deployment": {
+                    "annotations": _vpa_annotations(
+                        ContainerPolicy.memory_requests_only("gitlab-shell", cpu_request=_SHELL_CPU_REQUEST),
+                        mode=Vpa.AUTO,
+                    )
+                },
+            },
             "gitaly": {
                 "persistence": {
                     "enabled": True,
@@ -224,7 +224,18 @@ def _values() -> dict[str, object]:
                     }
                 },
             },
-            "sidekiq": {"maxReplicas": 2, "concurrency": 10, "livenessProbe": {"initialDelaySeconds": 300}},
+            "sidekiq": {
+                "maxReplicas": 2,
+                "concurrency": 10,
+                "livenessProbe": {"initialDelaySeconds": 300},
+                "deployment": {
+                    "annotations": _vpa_annotations(
+                        ContainerPolicy.memory_requests_only(
+                            "sidekiq", cpu_request="900m", memory_floor="3Gi", memory_limit="4Gi"
+                        )
+                    )
+                },
+            },
             "toolbox": {
                 "backups": {
                     "objectStorage": {"backend": "s3", "config": {"secret": BACKUP_S3CFG_SECRET, "key": "config"}}
@@ -278,5 +289,5 @@ def chart(app: App) -> Chart:
         listener=None,
         timeout="900s",
     )
-    _ssh_listener(chart)
+    tcp_listener(chart, "ssh-listener", service=SSH)
     return chart

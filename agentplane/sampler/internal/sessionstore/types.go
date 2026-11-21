@@ -27,7 +27,6 @@ type Conversation struct {
 	ID         string
 	Generation int
 	Owner      *string
-	LeaseUntil *time.Time
 	API        protocol.APIStyle
 	// Transcript retains the full native conversation across compaction.
 	Transcript      protocol.Context
@@ -226,13 +225,15 @@ type ProviderRequest struct {
 	ProjectionKey providerrequest.ProjectionKey `json:"projection_key,omitempty"`
 	PrefixIDs     []content.ContentID           `json:"prefix_ids,omitempty"`
 	SuffixIDs     []content.ContentID           `json:"suffix_ids,omitempty"`
-	// CompactionControl pins the local policy used to apply a frozen Anthropic summary.
+	// CompactionControl pins the local policy used to apply a frozen summary.
 	CompactionControl *CompactionControl `json:"compaction_control,omitempty"`
 }
 
 type CompactionControl struct {
-	KeepRecentTurns  int  `json:"keep_recent_turns"`
-	PerMessageEffort bool `json:"per_message_effort"`
+	KeepRecentTurns     int    `json:"keep_recent_turns"`
+	PerMessageEffort    bool   `json:"per_message_effort"`
+	ReplacementRole     string `json:"replacement_role,omitempty"`
+	ReplacementTemplate string `json:"replacement_template,omitempty"`
 }
 
 // IntentResultStatus is the "status" of an intent result the sampler itself writes. Nested
@@ -249,8 +250,6 @@ const (
 type NestedOutcome string
 
 const (
-	NestedCompleted     NestedOutcome = "completed"
-	NestedRejected      NestedOutcome = "rejected"
 	NestedUnknown       NestedOutcome = "unknown"
 	NestedNotDispatched NestedOutcome = "not_dispatched"
 )
@@ -321,14 +320,11 @@ type ProviderAttempt struct {
 	Number          int
 	Budget          int
 	Generation      int
-	LeaseUntil      time.Time
 	Expired         bool
-	RetryAt         *time.Time
 	RetryIn         time.Duration
 	Retryable       bool
 	Ready           bool
 	FailureReason   string
-	ResultStatus    string
 	RetrySuppressed ProviderRetrySuppression
 	ProviderRequest *ProviderRequest
 }
@@ -359,7 +355,7 @@ func (result TurnResult) Outcome() samplerpb.CommandOutcome {
 	return samplerpb.CommandOutcome_COMMAND_OUTCOME_APPLIED
 }
 
-// endsTurn reports whether the turn loop stops advancing.
+// EndsTurn reports whether the turn loop stops advancing.
 func (result TurnResult) EndsTurn() bool {
 	return result == TurnDone || result == TurnInterrupted || result == TurnEffectsUnknown
 }

@@ -301,87 +301,17 @@ with ThreadPoolExecutor() as executor:
 
 ### Phase 1: Extract ALL Python Comments
 
-```python
-import ast
-import re
-from pathlib import Path
+**Tool**: `prompts/scans/scan_comments.py` extracts every comment and docstring with three lines of
+context. From the repository root:
 
-def extract_all_comments(file_path: Path) -> list[dict]:
-    """Extract every comment from a Python file with surrounding context.
-
-    Returns list of dicts with:
-        - line_num: Line number of comment
-        - comment: Comment text (without # prefix)
-        - context_before: 3 lines before comment
-        - context_after: 3 lines after comment
-        - comment_type: "inline" | "block" | "docstring"
-    """
-    with open(file_path) as f:
-        lines = f.readlines()
-
-    comments = []
-
-    # Extract regular comments (# ...)
-    for i, line in enumerate(lines, start=1):
-        stripped = line.strip()
-        if stripped.startswith('#') and not stripped.startswith('#!'):
-            comment_text = stripped.lstrip('#').strip()
-            context_before = lines[max(0, i-4):i-1]
-            context_after = lines[i:min(len(lines), i+3)]
-
-            comments.append({
-                'line_num': i,
-                'comment': comment_text,
-                'context_before': ''.join(context_before),
-                'context_after': ''.join(context_after),
-                'comment_type': 'inline' if '#' in line[:line.index('#')] else 'block'
-            })
-
-    # Extract docstrings via AST
-    try:
-        tree = ast.parse(''.join(lines), filename=str(file_path))
-        for node in ast.walk(tree):
-            docstring = ast.get_docstring(node)
-            if docstring and hasattr(node, 'lineno'):
-                line_num = node.lineno
-                context_before = lines[max(0, line_num-4):line_num-1]
-                context_after = lines[line_num:min(len(lines), line_num+10)]
-
-                comments.append({
-                    'line_num': line_num,
-                    'comment': docstring,
-                    'context_before': ''.join(context_before),
-                    'context_after': ''.join(context_after),
-                    'comment_type': 'docstring'
-                })
-    except SyntaxError:
-        pass  # Skip files with syntax errors
-
-    return comments
-
-
-def scan_codebase_comments(root_dir: Path) -> dict[str, list[dict]]:
-    """Scan all Python files and extract comments with context.
-
-    Returns dict mapping file paths to lists of comment dicts.
-    """
-    all_comments = {}
-    for py_file in root_dir.rglob('*.py'):
-        if 'venv' in py_file.parts or '__pycache__' in py_file.parts:
-            continue
-        comments = extract_all_comments(py_file)
-        if comments:
-            all_comments[str(py_file)] = comments
-    return all_comments
-
-
-# Example usage:
-# comments = scan_codebase_comments(Path('.'))
-# for file_path, file_comments in comments.items():
-#     print(f"\n{file_path}:")
-#     for c in file_comments:
-#         print(f"  Line {c['line_num']} [{c['comment_type']}]: {c['comment'][:60]}...")
+```bash
+python -m prompts.scans.scan_comments . > comments_scan.json
+# or
+bb run //prompts/scans:scan_comments_bin -- . > comments_scan.json
 ```
+
+The JSON groups comments by file. Each entry has `line`, `comment` (text without the `#`),
+`context_before`, `context_after` and `type` (`inline`, `block` or `docstring`).
 
 ### Phase 2: Automated Filtering (Low Precision)
 

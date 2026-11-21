@@ -17,7 +17,7 @@ func (r *Driver) controlledAdvance(ctx context.Context, sessionID string, owner 
 		return "", err
 	}
 	if len(interrupts) > 0 {
-		return r.applyInterrupt(ctx, sessionID, owner, live, interrupts)
+		return r.applyInterrupt(ctx, owner, live, interrupts)
 	}
 	advanceCtx, cancel := context.WithCancel(ctx)
 	type advanceResult struct {
@@ -80,7 +80,7 @@ func (r *Driver) controlledAdvance(ctx context.Context, sessionID string, owner 
 				cancel()
 				<-completed
 				joined = true
-				return r.applyInterrupt(ctx, sessionID, owner, live, interrupts, conversation.Pending)
+				return r.applyInterrupt(ctx, owner, live, interrupts, conversation.Pending)
 			}
 		}
 	}
@@ -221,7 +221,7 @@ func (r *Driver) advance(ctx context.Context, owner sessionstore.Owner, live *li
 	if conversation.API != config.API {
 		return "", protocol.ErrPrecondition
 	}
-	threshold := adapter.AutoCompactTokens(r.settings.AutoCompactTokens)
+	threshold := adapter.AutoCompactTokens(r.settings.AutoCompactTokens, conversation.Context())
 
 	if frontier == nil && threshold != nil && conversation.ContextTokens != nil && *conversation.ContextTokens >= *threshold && len(state.Cells) == 0 {
 		if err := r.compact(ctx, owner, session.Model); err != nil {
@@ -246,7 +246,7 @@ func (r *Driver) advance(ctx context.Context, owner sessionstore.Owner, live *li
 	}
 	preparation := adapter.Prepare(session, metadata)
 	request := sessionstore.ProviderRequestIntent(sessionstore.PendingIntentSampling, connection, config)
-	policy := runtimeProviderAttemptPolicy(r.settings)
+	policy := runtimeProviderAttemptPolicy(r.settings, r.settings.Models[session.Model])
 	var intentID string
 	var wire []byte
 	if frontier == nil {

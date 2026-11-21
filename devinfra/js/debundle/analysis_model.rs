@@ -45,12 +45,6 @@ pub enum DepKind {
 }
 
 impl DepKind {
-    /// Stable snake_case identifier used by serde reports and machine-facing output.
-    pub fn machine_code(self) -> &'static str {
-        let code: &'static str = self.into();
-        code
-    }
-
     /// Short human-readable label used in cycle and gate diagnostics.
     pub fn diagnostic_label(self) -> &'static str {
         match self {
@@ -154,12 +148,9 @@ mod tests {
     fn every_dependency_kind_has_a_diagnostic_message() {
         for kind in DepKind::iter() {
             assert!(!kind.diagnostic_label().is_empty());
-            assert_eq!(
-                serde_json::to_string(&kind).unwrap(),
-                format!("\"{}\"", kind.machine_code())
-            );
+            let code: &'static str = kind.into();
+            assert_eq!(serde_json::to_string(&kind).unwrap(), format!("\"{code}\""));
         }
-        assert_eq!(DepKind::EagerUse.machine_code(), "eager_use");
         assert_eq!(DepKind::EagerUse.to_string(), "eager_use");
         assert_eq!(DepKind::EagerUse.diagnostic_label(), "at-init");
     }

@@ -23,6 +23,7 @@ from external_secrets_crds.io.external_secrets import (
 
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.cnpg import backup, cluster
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
@@ -42,8 +43,8 @@ SPEND = SecretRef(namespace=NAMESPACE, name="plaid-mcp-db-spend")
 _READONLY_CONSUMER = "haku-sandbox"
 _READONLY_READER = "plaid-mcp-db-readonly-reader"
 _PROVISIONER_LABELS = {"app": "plaid-mcp-db-readonly-provisioner"}
-_SQL_CONFIG_MAP = "plaid-mcp-db-readonly-sql"
-_SQL_FILE = "readonly-role.sql"
+SQL_CONFIG_MAP = "plaid-mcp-db-readonly-sql"
+SQL_FILE = "readonly-role.sql"
 
 
 def _cluster(chart: Chart) -> None:
@@ -194,13 +195,7 @@ def _readonly_provisioner(chart: Chart) -> None:
                         k8s.Container(
                             name="psql",
                             image="ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie",
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("10m"),
-                                    "memory": k8s.Quantity.from_string("32Mi"),
-                                },
-                                limits={"memory": k8s.Quantity.from_string("128Mi")},
-                            ),
+                            resources=container_resources(cpu="10m", memory="32Mi", memory_limit="128Mi"),
                             command=["/bin/bash", "-c"],
                             args=[
                                 "set -euo pipefail\n"
@@ -212,7 +207,7 @@ def _readonly_provisioner(chart: Chart) -> None:
                                 " exit 1; fi\n"
                                 "  sleep 2\n"
                                 "done\n"
-                                f"exec psql --set=ON_ERROR_STOP=1 -f /sql/{_SQL_FILE}\n"
+                                f"exec psql --set=ON_ERROR_STOP=1 -f /sql/{SQL_FILE}\n"
                             ],
                             termination_message_policy="FallbackToLogsOnError",
                             env=[
@@ -224,7 +219,7 @@ def _readonly_provisioner(chart: Chart) -> None:
                             volume_mounts=[k8s.VolumeMount(name="sql", mount_path="/sql", read_only=True)],
                         )
                     ],
-                    volumes=[k8s.Volume(name="sql", config_map=k8s.ConfigMapVolumeSource(name=_SQL_CONFIG_MAP))],
+                    volumes=[k8s.Volume(name="sql", config_map=k8s.ConfigMapVolumeSource(name=SQL_CONFIG_MAP))],
                 ),
             ),
         ),

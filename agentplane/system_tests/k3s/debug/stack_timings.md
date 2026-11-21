@@ -177,7 +177,7 @@ Three fresh `test_lifecycle` runs each, with temporary wall-clock markers
 | Manifest ready in the fixture (render / load) | 1.5, 1.3, 0.9    | 0.1, 0.1, 0.1    |
 
 What is left before pytest is 5–10 s of VM and workspace setup and the remaining imports, mostly
-bytecode compilation ([executor constraints](../README.md#rbe-executor-constraints)).
+bytecode compilation ([executor constraints](../../deployment/README.md#rbe-executor-constraints)).
 
 The test process no longer builds the app's `Settings`, which parses argv, so pytest flags such as
 `--test_arg=-s` work on `test_lifecycle` and the system test k3s targets
@@ -287,8 +287,8 @@ observed savings in the changed scenarios, not a twofold improvement from parall
 Each candidate suite passed twice without test-result caching. The helper's overlap and peer
 cancellation tests also passed twice in `6b324d31`. Worker/snapshot state was uncontrolled, and the
 candidate base includes intervening devel changes, including kvm-clock restoration work. These
-samples do not isolate a causal CI latency improvement. Alternative runner compatibility results
-are recorded in [the framework evaluation](../../debug/concurrent_runners.md).
+samples do not isolate a causal CI latency improvement. Why the `TaskGroup` driver stays is recorded in the
+docstring of [`case_batch.py`](../../driver/case_batch.py).
 
 ## Pod worker reuse, 2026-11-15
 

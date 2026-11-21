@@ -8,6 +8,3 @@ LOCAL_MODEL_MODELS: dict[session_pb2.Harness, Route] = {
     session_pb2.HARNESS_CLAUDE: OLLAMA_QWEN_IQ4XS_128K.native,
     session_pb2.HARNESS_CODEX: GPT6_LUNA_RESPONSES,
 }
-LOCAL_MODEL_SCENARIO_IDS: dict[session_pb2.Harness, str] = {
-    harness: route.id for harness, route in LOCAL_MODEL_MODELS.items()
-}

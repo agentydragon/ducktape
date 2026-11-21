@@ -32,12 +32,9 @@ from agentplane.net.peertls.config import (
 from cluster.cdk8s.agentplane import egress, runner_gateway, staging
 from cluster.cdk8s.agentplane.sandbox_pod import SIDECAR_SETTINGS_VOLUME_NAME
 from cluster.cdk8s.cert_manager import cluster_ca
+from cluster.cdk8s.testing.manifests import config_map_yaml, find_resource
 
 Body = dict[str, Any]
-
-
-def _resource(documents: list[Body], kind: str, name: str) -> Body:
-    return one(doc for doc in documents if doc["kind"] == kind and doc["metadata"]["name"] == name)
 
 
 def _ca_files(value: object) -> Iterator[str]:
@@ -129,11 +126,11 @@ def test_every_deployment_verifies_agentplane_svids_against_the_workload_ca_alon
 
 
 def test_mcp_tls_listener_uses_its_mounted_certificate_and_only_admits_app(staging_manifests: list[Body]) -> None:
-    pod = _resource(staging_manifests, "Deployment", "mcp-edge")["spec"]["template"]["spec"]
+    pod = find_resource(staging_manifests, "Deployment", "mcp-edge")["spec"]["template"]["spec"]
     container = one(pod["containers"])
     volumes = {volume["name"]: volume for volume in pod["volumes"]}
     mounts = {PurePosixPath(m["mountPath"]): volumes[m["name"]] for m in container["volumeMounts"]}
-    settings = yaml.safe_load(one(_resource(staging_manifests, "ConfigMap", "mcp-edge-settings")["data"].values()))
+    settings = yaml.safe_load(one(find_resource(staging_manifests, "ConfigMap", "mcp-edge-settings")["data"].values()))
     tls = settings["rpc_tls"]
     assert settings["operator_services"] == [APP_URI]
     for field in ("cert_file", "key_file"):
@@ -149,18 +146,21 @@ def test_mcp_tls_listener_uses_its_mounted_certificate_and_only_admits_app(stagi
     assert _bundle(mounts[ca.parent], ca.name) == cluster_ca.WORKLOAD_BUNDLE
     port = int(tls["listen"].rsplit(":", 1)[1])
     assert any(p["containerPort"] == port for p in container["ports"])
-    assert any(p["targetPort"] == port for p in _resource(staging_manifests, "Service", "mcp-edge")["spec"]["ports"])
+    assert any(
+        p["targetPort"] == port for p in find_resource(staging_manifests, "Service", "mcp-edge")["spec"]["ports"]
+    )
 
 
 def test_notifications_calls_backends_with_its_mounted_service_svid(staging_manifests: list[Body]) -> None:
-    pod = _resource(staging_manifests, "Deployment", "notifications")["spec"]["template"]["spec"]
+    pod = find_resource(staging_manifests, "Deployment", "notifications")["spec"]["template"]["spec"]
     container = one(pod["containers"])
     volumes = {volume["name"]: volume for volume in pod["volumes"]}
     mounts = {PurePosixPath(m["mountPath"]): volumes[m["name"]] for m in container["volumeMounts"]}
-    settings = yaml.safe_load(one(_resource(staging_manifests, "ConfigMap", "notifications-settings")["data"].values()))
+    settings = yaml.safe_load(
+        one(find_resource(staging_manifests, "ConfigMap", "notifications-settings")["data"].values())
+    )
     for peer, server_uri in {
         "actions": ACTIONS_URI,
-        "runner_gateway": SANDBOX_CONTROLLER_URI,
         "history_service": HISTORY_SERVICE_URI,
         "session_dispatcher": SESSION_DISPATCHER_URI,
     }.items():
@@ -181,11 +181,11 @@ def test_notifications_calls_backends_with_its_mounted_service_svid(staging_mani
 
 
 def test_app_service_calls_use_its_mounted_svid(staging_manifests: list[Body]) -> None:
-    pod = _resource(staging_manifests, "Deployment", "app")["spec"]["template"]["spec"]
+    pod = find_resource(staging_manifests, "Deployment", "app")["spec"]["template"]["spec"]
     container = one(pod["containers"])
     volumes = {volume["name"]: volume for volume in pod["volumes"]}
     mounts = {PurePosixPath(m["mountPath"]): volumes[m["name"]] for m in container["volumeMounts"]}
-    settings = yaml.safe_load(_resource(staging_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])
+    settings = config_map_yaml(staging_manifests, "app-config", "config.yaml")
     for name, server_uri in (
         ("egress_admin", EGRESS_PROXY_URI),
         ("runner_gateway", SANDBOX_CONTROLLER_URI),
@@ -213,9 +213,9 @@ def test_app_service_calls_use_its_mounted_svid(staging_manifests: list[Body]) -
         assert _bundle(mounts[ca.parent], ca.name) == cluster_ca.WORKLOAD_BUNDLE
 
     port = int(settings["connection_service_url"].rstrip("/").rsplit(":", 1)[1])
-    edge_service = _resource(staging_manifests, "Service", "mcp-edge")
+    edge_service = find_resource(staging_manifests, "Service", "mcp-edge")
     assert one(p for p in edge_service["spec"]["ports"] if p["name"] == "grpc-tls")["port"] == port
-    policy = _resource(staging_manifests, "CiliumNetworkPolicy", "app-to-mcp-edge")
+    policy = find_resource(staging_manifests, "CiliumNetworkPolicy", "app-to-mcp-edge")
     assert any(
         int(p["port"]) == port
         for rule in policy["spec"]["egress"]
@@ -340,7 +340,7 @@ def test_service_svids_are_mounted_with_client_and_server_usage(staging_manifest
 
 def test_the_workload_ca_chains_to_the_cluster_root_and_its_bundle_carries_it_alone(scratch_app: App) -> None:
     documents = cdk8s.Testing.synth(cluster_ca.chart(scratch_app))
-    issuer = _resource(documents, "ClusterIssuer", cluster_ca.WORKLOAD_ISSUER.name)
+    issuer = find_resource(documents, "ClusterIssuer", cluster_ca.WORKLOAD_ISSUER.name)
     ca_secret = issuer["spec"]["ca"]["secretName"]
     ca = one(doc for doc in documents if doc["kind"] == "Certificate" and doc["spec"]["secretName"] == ca_secret)
     # A ClusterIssuer reads its CA from cert-manager's own namespace.
@@ -350,7 +350,7 @@ def test_the_workload_ca_chains_to_the_cluster_root_and_its_bundle_carries_it_al
     assert ca["spec"]["issuerRef"] == {"name": cluster_ca.INTERNAL_ISSUER.name, "kind": cluster_ca.INTERNAL_ISSUER.kind}
 
     # The intermediate alone: cert-manager writes a CA's `tls.crt` without the self-signed root.
-    workload = _resource(documents, "Bundle", cluster_ca.WORKLOAD_BUNDLE)["spec"]
+    workload = find_resource(documents, "Bundle", cluster_ca.WORKLOAD_BUNDLE)["spec"]
     assert workload["sources"] == [{"secret": {"name": ca_secret, "key": "tls.crt"}}]
     # Every namespace, like the cluster bundle: it is public trust data.
     assert "namespaceSelector" not in workload["target"]
@@ -358,7 +358,7 @@ def test_the_workload_ca_chains_to_the_cluster_root_and_its_bundle_carries_it_al
     # The cluster bundle carries roots only, not the intermediate.
     assert not any(
         source.get("secret", {}).get("name") == ca_secret
-        for source in _resource(documents, "Bundle", cluster_ca.BUNDLE)["spec"]["sources"]
+        for source in find_resource(documents, "Bundle", cluster_ca.BUNDLE)["spec"]["sources"]
     )
 
 

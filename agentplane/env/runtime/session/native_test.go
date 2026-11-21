@@ -25,8 +25,6 @@ import (
 	"github.com/cosi-project/runtime/pkg/controller"
 	cosiruntime "github.com/cosi-project/runtime/pkg/controller/runtime"
 	"github.com/cosi-project/runtime/pkg/resource"
-	"github.com/cosi-project/runtime/pkg/resource/typed"
-	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
@@ -54,23 +52,17 @@ func TestCodexDelayedTurnStartNotificationDoesNotFailJournal(t *testing.T) {
 				s.mu.Lock()
 				s.record.NativeSessionId = &threadID
 				s.mu.Unlock()
-				ptr := lifecycle.ResourceFor(s.id, LifecycleStatus{}).Metadata()
-				if _, err := safe.StateUpdateWithConflicts(ctx, s.deps.state, ptr, func(value *typed.Resource[LifecycleStatus, lifecycle.Extension[LifecycleStatus]]) error {
-					value.TypedSpec().Resuming = true
-					return nil
-				}, state.WithUpdateOwner(ControllerName)); err != nil {
-					t.Fatal(err)
-				}
+				updateLifecycleStatus(t, s, func(status *LifecycleStatus) { status.Resuming = true })
 			})
-			if err := s.Emit(ctx, observation(&eventpb.TurnStarted{TurnId: "known-turn"}), nil); err != nil {
+			if err := s.Emit(ctx, harness.Observation(&eventpb.TurnStarted{TurnId: "known-turn"}), nil); err != nil {
 				t.Fatal(err)
 			}
 			if completed {
-				if err := s.Emit(ctx, observation(&eventpb.TurnCompleted{TurnId: "known-turn", Status: eventpb.TurnStatus_TURN_STATUS_PROCESS_LOST}), nil); err != nil {
+				if err := s.Emit(ctx, harness.Observation(&eventpb.TurnCompleted{TurnId: "known-turn", Status: eventpb.TurnStatus_TURN_STATUS_PROCESS_LOST}), nil); err != nil {
 					t.Fatal(err)
 				}
 			}
-			if err := s.Emit(ctx, observation(&eventpb.TurnStarted{TurnId: "current-turn"}), nil); err != nil {
+			if err := s.Emit(ctx, harness.Observation(&eventpb.TurnStarted{TurnId: "current-turn"}), nil); err != nil {
 				t.Fatal(err)
 			}
 			// A fresh adapter must consult durable boundaries, including a known turn
@@ -113,19 +105,13 @@ func TestStaleNativeCodexCompletionRetainsFrameAndSuccessor(t *testing.T) {
 		s.mu.Lock()
 		s.record.NativeSessionId = &threadID
 		s.mu.Unlock()
-		ptr := lifecycle.ResourceFor(s.id, LifecycleStatus{}).Metadata()
-		if _, err := safe.StateUpdateWithConflicts(ctx, s.deps.state, ptr, func(value *typed.Resource[LifecycleStatus, lifecycle.Extension[LifecycleStatus]]) error {
-			value.TypedSpec().Resuming = true
-			return nil
-		}, state.WithUpdateOwner(ControllerName)); err != nil {
-			t.Fatal(err)
-		}
+		updateLifecycleStatus(t, s, func(status *LifecycleStatus) { status.Resuming = true })
 		adapter = codexadapter.New(s)
 	})
-	if err := s.Emit(ctx, observation(&eventpb.TurnStarted{TurnId: "finished-turn"}), nil); err != nil {
+	if err := s.Emit(ctx, harness.Observation(&eventpb.TurnStarted{TurnId: "finished-turn"}), nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Emit(ctx, observation(&eventpb.TurnCompleted{TurnId: "finished-turn", Status: eventpb.TurnStatus_TURN_STATUS_COMPLETED}), nil); err != nil {
+	if err := s.Emit(ctx, harness.Observation(&eventpb.TurnCompleted{TurnId: "finished-turn", Status: eventpb.TurnStatus_TURN_STATUS_COMPLETED}), nil); err != nil {
 		t.Fatal(err)
 	}
 	successorFrame := []byte(`{"method":"turn/started","params":{"threadId":"thread-1","turn":{"id":"active-successor"}}}`)
@@ -155,7 +141,7 @@ func TestStaleNativeCodexCompletionRetainsFrameAndSuccessor(t *testing.T) {
 func TestStaleTurnCompletionsHaveNoSessionSideEffects(t *testing.T) {
 	s, _, _ := frameTestSession(t, []string{"/bin/cat"})
 	ctx := context.Background()
-	if err := s.Emit(ctx, observation(&eventpb.TurnStarted{TurnId: "active-successor"}), nil); err != nil {
+	if err := s.Emit(ctx, harness.Observation(&eventpb.TurnStarted{TurnId: "active-successor"}), nil); err != nil {
 		t.Fatal(err)
 	}
 	s.mu.Lock()
@@ -165,11 +151,11 @@ func TestStaleTurnCompletionsHaveNoSessionSideEffects(t *testing.T) {
 	s.mu.Unlock()
 	before := s.journal.LastCursor()
 	staleInterrupt := &eventpb.TurnCompleted{TurnId: "finished-turn", Status: eventpb.TurnStatus_TURN_STATUS_INTERRUPTED}
-	if err := s.Emit(ctx, observation(staleInterrupt), nil); err != nil {
+	if err := s.Emit(ctx, harness.Observation(staleInterrupt), nil); err != nil {
 		t.Fatal(err)
 	}
 	staleLoss := &eventpb.TurnCompleted{TurnId: "unknown-turn", Status: eventpb.TurnStatus_TURN_STATUS_PROCESS_LOST}
-	if err := s.Emit(ctx, observation(staleLoss), nil); err != nil {
+	if err := s.Emit(ctx, harness.Observation(staleLoss), nil); err != nil {
 		t.Fatal(err)
 	}
 	if s.journal.LastCursor() != before {
@@ -200,7 +186,7 @@ func TestStaleTurnCompletionsHaveNoSessionSideEffects(t *testing.T) {
 func TestConcurrentCompletionAndSuccessorStartPreserveSuccessor(t *testing.T) {
 	s, _, _ := frameTestSession(t, []string{"/bin/cat"})
 	ctx := context.Background()
-	if err := s.Emit(ctx, observation(&eventpb.TurnStarted{TurnId: "current"}), nil); err != nil {
+	if err := s.Emit(ctx, harness.Observation(&eventpb.TurnStarted{TurnId: "current"}), nil); err != nil {
 		t.Fatal(err)
 	}
 	start := make(chan struct{})
@@ -210,12 +196,12 @@ func TestConcurrentCompletionAndSuccessorStartPreserveSuccessor(t *testing.T) {
 	go func() {
 		defer workers.Done()
 		<-start
-		errs <- s.Emit(ctx, observation(&eventpb.TurnCompleted{TurnId: "current", Status: eventpb.TurnStatus_TURN_STATUS_COMPLETED}), nil)
+		errs <- s.Emit(ctx, harness.Observation(&eventpb.TurnCompleted{TurnId: "current", Status: eventpb.TurnStatus_TURN_STATUS_COMPLETED}), nil)
 	}()
 	go func() {
 		defer workers.Done()
 		<-start
-		errs <- s.Emit(ctx, observation(&eventpb.TurnStarted{TurnId: "successor"}), nil)
+		errs <- s.Emit(ctx, harness.Observation(&eventpb.TurnStarted{TurnId: "successor"}), nil)
 	}()
 	close(start)
 	workers.Wait()
@@ -252,14 +238,14 @@ func TestTurnStartedReceiveBatchDoesNotDeadlockCompletion(t *testing.T) {
 		environmentState: func() Environment { return Environment{IncarnationUID: "test-incarnation"} },
 		ctx:              ctx, publish: func(*Session, bool) {}, changed: func() {}, summaryChanged: func() {}, fail: func(err error) { t.Error(err) },
 	}, "session", &retained.Record{}, j)
-	if err := s.Emit(ctx, observation(&eventpb.TurnStarted{TurnId: "current"}), nil); err != nil {
+	if err := s.Emit(ctx, harness.Observation(&eventpb.TurnStarted{TurnId: "current"}), nil); err != nil {
 		t.Fatal(err)
 	}
 	inAdapter, resumeAdapter := make(chan struct{}), make(chan struct{})
 	adapter := frameTestAdapter{onFrame: func(batchCtx context.Context, _ json.RawMessage, sequence uint64) error {
 		close(inAdapter)
 		<-resumeAdapter
-		return s.Emit(batchCtx, observation(&eventpb.TurnStarted{TurnId: "successor"}), []uint64{sequence})
+		return s.Emit(batchCtx, harness.Observation(&eventpb.TurnStarted{TurnId: "successor"}), []uint64{sequence})
 	}}
 	frame := []byte(`{"type":"turn/started"}`)
 	receiveDone := make(chan error, 1)
@@ -380,10 +366,7 @@ func frameTestSessionWithHarness(t *testing.T, command []string, withController 
 	ctx, cancel := context.WithCancel(context.Background())
 	root := t.TempDir()
 	resources := state.WrapCore(namespaced.NewState(inmem.Build))
-	store, err := retained.NewStore(filepath.Join(root, "sessions"), resources)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store := newTestStore(t, root, resources)
 	engine, err := cosiruntime.NewRuntime(resources, zap.L())
 	if err != nil {
 		t.Fatal(err)
@@ -451,10 +434,7 @@ func frameTestSessionWithHarness(t *testing.T, command []string, withController 
 			t.Error(err)
 		}
 	}()
-	record, err := retained.NewRecord(&sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "sandbox", Uid: "sandbox-uid"}, Harness: kind}}}, Cwd: root, Model: "test"}, "", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	record := newTestRecord(t, kind, root, "")
 	s, err := m.ReserveFresh(ctx, "session", func() error { return store.Write("session", record) })
 	if err != nil {
 		t.Fatal(err)
@@ -491,7 +471,7 @@ func TestNativeReplyWaitsForTranslationCommit(t *testing.T) {
 		if s.journal.LastCursor() != 1 {
 			t.Errorf("outbound frame was not committed before native delivery: cursor %d", s.journal.LastCursor())
 		}
-		if err := s.Emit(ctx, observation(&eventpb.HarnessStderr{Text: "translated"}), []uint64{sequence}); err != nil {
+		if err := s.Emit(ctx, harness.Observation(&eventpb.HarnessStderr{Text: "translated"}), []uint64{sequence}); err != nil {
 			return err
 		}
 		close(received)
@@ -502,8 +482,7 @@ func TestNativeReplyWaitsForTranslationCommit(t *testing.T) {
 			return ctx.Err()
 		}
 	}}
-	s.connection.readers.Add(1)
-	go s.connection.readStdout(p, func(ctx context.Context, line []byte) error { return s.receive(ctx, line, adapter) })
+	s.connection.startStdout(p, func(ctx context.Context, line []byte) error { return s.receive(ctx, line, adapter) })
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	done := make(chan nativeResult, 1)
@@ -585,7 +564,7 @@ func TestDispatchKeepsUncertainNativeWritePendingAndDoesNotResend(t *testing.T) 
 func TestRecoveryKeepsDispatchedInterruptPending(t *testing.T) {
 	s, _, _ := frameTestSession(t, []string{"/bin/cat"})
 	ctx := context.Background()
-	if err := s.Emit(ctx, observation(&eventpb.TurnStarted{TurnId: "turn-1"}), nil); err != nil {
+	if err := s.Emit(ctx, harness.Observation(&eventpb.TurnStarted{TurnId: "turn-1"}), nil); err != nil {
 		t.Fatal(err)
 	}
 	command := &commandpb.Command{
@@ -620,14 +599,13 @@ func TestNativeHandshakeWaitCancellationLeavesLateResponseJournaled(t *testing.T
 			close(received)
 			return nil
 		}
-		if err := s.Emit(ctx, observation(&eventpb.HarnessStderr{Text: string(raw)}), []uint64{sequence}); err != nil {
+		if err := s.Emit(ctx, harness.Observation(&eventpb.HarnessStderr{Text: string(raw)}), []uint64{sequence}); err != nil {
 			return err
 		}
 		close(lateReplyReceived)
 		return nil
 	}}
-	s.connection.readers.Add(1)
-	go s.connection.readStdout(p, func(ctx context.Context, line []byte) error { return s.receive(ctx, line, adapter) })
+	s.connection.startStdout(p, func(ctx context.Context, line []byte) error { return s.receive(ctx, line, adapter) })
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
@@ -679,8 +657,7 @@ while IFS= read -r line; do
 done`
 	s, p, _ := frameTestSession(t, []string{"/bin/sh", "-c", script, stdin})
 	adapter := codexadapter.New(s)
-	s.connection.readers.Add(1)
-	go s.connection.readStdout(p, func(ctx context.Context, line []byte) error { return s.receive(ctx, line, adapter) })
+	s.connection.startStdout(p, func(ctx context.Context, line []byte) error { return s.receive(ctx, line, adapter) })
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := adapter.Interrupt(ctx, "turn-1"); err != nil {
@@ -716,8 +693,7 @@ done`
 func TestStdoutRetainsFinalFrameWithoutNewline(t *testing.T) {
 	s, p, _ := frameTestSession(t, []string{"/bin/sh", "-c", `printf '{"final":true}\r'`})
 	adapter := frameTestAdapter{onFrame: func(context.Context, json.RawMessage, uint64) error { return nil }}
-	s.connection.readers.Add(1)
-	go s.connection.readStdout(p, func(ctx context.Context, line []byte) error { return s.receive(ctx, line, adapter) })
+	s.connection.startStdout(p, func(ctx context.Context, line []byte) error { return s.receive(ctx, line, adapter) })
 	s.connection.readers.Wait()
 	entries, err := s.journal.Since(context.Background(), 0, 128)
 	if err != nil {
@@ -731,10 +707,10 @@ func TestStdoutRetainsFinalFrameWithoutNewline(t *testing.T) {
 func TestHarnessExitPublishesTurnRecoveryBeforeTerminalEvent(t *testing.T) {
 	ctx := context.Background()
 	s, p, _ := frameTestSession(t, []string{"/bin/cat"})
-	if err := s.Emit(ctx, observation(&eventpb.TurnStarted{TurnId: "lost-turn"}), nil); err != nil {
+	if err := s.Emit(ctx, harness.Observation(&eventpb.TurnStarted{TurnId: "lost-turn"}), nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Emit(ctx, observation(&eventpb.ItemStarted{ItemId: "unfinished-tool", Kind: eventpb.ItemKind_ITEM_KIND_TOOL_CALL, ToolName: "Bash"}), nil); err != nil {
+	if err := s.Emit(ctx, harness.Observation(&eventpb.ItemStarted{ItemId: "unfinished-tool", Kind: eventpb.ItemKind_ITEM_KIND_TOOL_CALL, ToolName: "Bash"}), nil); err != nil {
 		t.Fatal(err)
 	}
 	adapter := frameTestAdapter{onFrame: func(context.Context, json.RawMessage, uint64) error { return nil }}
@@ -776,10 +752,7 @@ func TestConfirmationReplayKeepsTerminalReceipt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	record, err := retained.NewRecord(&sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "sandbox", Uid: "sandbox-uid"}, Harness: sessionpb.Harness_HARNESS_CLAUDE}}}, Cwd: t.TempDir(), Model: "test-model"}, "", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	record := newTestRecord(t, sessionpb.Harness_HARNESS_CLAUDE, t.TempDir(), "")
 	deps := sessionDependencies{environmentState: func() Environment { return Environment{IncarnationUID: "test-incarnation"} }, ctx: ctx, state: resources, store: store, publish: func(*Session, bool) {}, changed: func() {}, summaryChanged: func() {}, fail: func(err error) { t.Error(err) }}
 	s := newSession(deps, "session-1", record, journal)
 	command := &commandpb.Command{CommandId: "input-1", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "hello"}}}
@@ -833,14 +806,13 @@ func TestCompletedTurnSchedulesInputRecoveryOutsideReader(t *testing.T) {
 		s.adapter = adapter
 		s.mu.Unlock()
 	})
-	s.connection.readers.Add(1)
 	reader := frameTestAdapter{onFrame: func(context.Context, json.RawMessage, uint64) error { return nil }}
-	go s.connection.readStdout(process, func(ctx context.Context, line []byte) error { return s.receive(ctx, line, reader) })
+	s.connection.startStdout(process, func(ctx context.Context, line []byte) error { return s.receive(ctx, line, reader) })
 	ctx := context.Background()
-	if err := s.Emit(ctx, observation(&eventpb.TurnStarted{TurnId: "turn"}), nil); err != nil {
+	if err := s.Emit(ctx, harness.Observation(&eventpb.TurnStarted{TurnId: "turn"}), nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Emit(ctx, observation(&eventpb.TurnCompleted{TurnId: "turn", Status: eventpb.TurnStatus_TURN_STATUS_COMPLETED}), nil); err != nil {
+	if err := s.Emit(ctx, harness.Observation(&eventpb.TurnCompleted{TurnId: "turn", Status: eventpb.TurnStatus_TURN_STATUS_COMPLETED}), nil); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -854,7 +826,7 @@ func (*rpcReconciliationAdapter) BlocksCommandDispatch() bool { return false }
 
 func (a *rpcReconciliationAdapter) OnFrame(ctx context.Context, raw json.RawMessage, sequence uint64) error {
 	if string(raw) == `{"interrupt":true}` {
-		return a.session.Emit(ctx, observation(&eventpb.TurnCompleted{TurnId: "turn", Status: eventpb.TurnStatus_TURN_STATUS_INTERRUPTED}), []uint64{sequence})
+		return a.session.Emit(ctx, harness.Observation(&eventpb.TurnCompleted{TurnId: "turn", Status: eventpb.TurnStatus_TURN_STATUS_INTERRUPTED}), []uint64{sequence})
 	}
 	return nil
 }
@@ -884,11 +856,10 @@ func TestInterruptedReconciliationLeavesStdoutFreeForHistoryRPC(t *testing.T) {
 		s.adapter = adapter
 		s.mu.Unlock()
 	})
-	if err := s.Emit(context.Background(), observation(&eventpb.TurnStarted{TurnId: "turn"}), nil); err != nil {
+	if err := s.Emit(context.Background(), harness.Observation(&eventpb.TurnStarted{TurnId: "turn"}), nil); err != nil {
 		t.Fatal(err)
 	}
-	s.connection.readers.Add(1)
-	go s.connection.readStdout(p, func(ctx context.Context, line []byte) error { return s.receive(ctx, line, adapter) })
+	s.connection.startStdout(p, func(ctx context.Context, line []byte) error { return s.receive(ctx, line, adapter) })
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := s.SendNative(ctx, json.RawMessage(`{"interrupt":true}`)); err != nil {
@@ -930,29 +901,14 @@ func openTestJournal(t *testing.T) *journal.Journal {
 // live Session controller must pause it for the fixture mutation.
 func setLifecycleStatusReady(t *testing.T, m *Manager, s *Session) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	ptr := lifecycle.ResourceFor(s.id, LifecycleStatus{}).Metadata()
 	if m == nil {
+		ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
+		defer cancel()
 		if err := s.deps.state.Create(ctx, lifecycle.ResourceFor(s.id, LifecycleStatus{Phase: Ready, ProcessID: s.processID}), state.WithCreateOwner(ControllerName)); err != nil {
 			t.Fatal(err)
 		}
-		s.mu.Lock()
-		s.processState = sessionpb.ProcessState_PROCESS_STATE_RUNNING
-		s.mu.Unlock()
-		return
-	}
-	_, err := safe.StateWatchFor[*typed.Resource[LifecycleStatus, lifecycle.Extension[LifecycleStatus]]](ctx, s.deps.state, ptr, state.WithEventTypes(state.Created, state.Updated))
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = safe.StateUpdateWithConflicts(ctx, s.deps.state, ptr, func(value *typed.Resource[LifecycleStatus, lifecycle.Extension[LifecycleStatus]]) error {
-		value.TypedSpec().Phase = Ready
-		value.TypedSpec().ProcessID = s.processID
-		return nil
-	}, state.WithUpdateOwner(ControllerName))
-	if err != nil {
-		t.Fatal(err)
+	} else {
+		setSessionPhase(t, s, Ready)
 	}
 	s.mu.Lock()
 	s.processState = sessionpb.ProcessState_PROCESS_STATE_RUNNING

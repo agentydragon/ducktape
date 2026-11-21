@@ -8,7 +8,7 @@ load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//devinfra/js:typed_eslint.bzl", "typed_eslint_test")
 load("//devinfra/js:vitest.bzl", "vitest_config")
 load("//devinfra/python:defs.bzl", "py_test")
-load("//util/testing/frontend_visual:py_visual_test.bzl", "py_visual_test")
+load("//testing/frontend_visual:py_visual_test.bzl", "py_visual_test")
 
 # Link npm packages for this workspace member.
 npm_link_all_packages(name = "node_modules")
@@ -86,10 +86,6 @@ exports_files(
     visibility = ["//props/backend:__pkg__"],
 )
 
-# ============================================================
-# App entry point
-# ============================================================
-
 js_library(
     name = "app_css",
     srcs = ["src/app.css"],
@@ -143,10 +139,6 @@ ts_library(
     ],
 )
 
-# ============================================================
-# Development server
-# ============================================================
-
 # Run: bazel run //props/frontend:dev
 js_binary(
     name = "dev",
@@ -194,7 +186,9 @@ py_test(
 
 py_test(
     name = "test_dev_server_integration",
-    size = "medium",  # Cold imports, PostgreSQL image load and launcher startup; debug/dev_server_integration_budget.md.
+    # Not a wedge: on a cold RBE worker the run took 92 s with the limit lifted (PostgreSQL image load
+    # 27.8 s, container start 6.9 s), over the 60 s `small` budget.
+    size = "medium",
     srcs = ["test_dev_server_integration.py"],
     data = [":dev"],
     env = {"PROPS_DEV_RLOCATION": "$(rlocationpath :dev)"},
@@ -205,15 +199,11 @@ py_test(
         "//props:conftest",
         "//props/db:database",
         "//props/testing/fixtures:db",
-        "//util/testing:postgres_fixtures",
+        "//testing:postgres_fixtures",
         "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )
-
-# ============================================================
-# Production bundle
-# ============================================================
 
 # Tailwind plugin and aliases for the native esbuild() rule (see spa_bundle).
 js_library(
@@ -243,10 +233,6 @@ spa_bundle(
         ":node_modules/react-dom",
     ],
 )
-
-# ============================================================
-# Test harness (visual regression scaffold)
-# ============================================================
 
 ts_library(
     name = "harness_lib",
@@ -304,26 +290,20 @@ js_run_binary(
     args = ["tests/harness/dist"],
     chdir = package_name(),
     tool = ":build_harness",
-    visibility = ["//props/frontend/src:__subpackages__"],
 )
 
 filegroup(
     name = "harness_js",
     srcs = ["tests/harness/dist/harness.js"],
-    visibility = ["//props/frontend/src:__subpackages__"],
 )
 
-# ============================================================
-# Visual regression tests
-#
+# Visual regression tests.
 # Run all:  bazel test //props/frontend:visual
 # Run one:  bazel test //props/frontend:visual --test_filter=DefinitionDetail
-# ============================================================
 
 filegroup(
     name = "visual_test_assets",
     srcs = ["tests/harness/index.html"],
-    visibility = ["//props/frontend/src:__subpackages__"],
 )
 
 # small: a shard renders 3 scenarios. The 12 per-scenario targets this replaces were 6.0-9.4s
@@ -338,8 +318,8 @@ py_visual_test(
     harness = ":harness_js",
     shard_count = 4,
     test_deps = [
-        "//util/testing/frontend_visual:capture",
-        "//util/testing/frontend_visual:viewports",
+        "//testing/frontend_visual:capture",
+        "//testing/frontend_visual:viewports",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -358,7 +338,7 @@ py_visual_test(
     page_url = "http://props.test/",
     stylesheets = ["tests/harness/dist/harness.css"],
     test_deps = [
-        "//util/testing/frontend_visual:capture",
+        "//testing/frontend_visual:capture",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

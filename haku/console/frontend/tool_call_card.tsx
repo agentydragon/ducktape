@@ -1,5 +1,5 @@
 import { Group, Loader, Stack, Text } from "@mantine/core";
-import type { JSX, ReactNode, Ref } from "react";
+import type { JSX } from "react";
 
 import {
   showsAutoApprovalEvaluation,
@@ -9,26 +9,13 @@ import {
 } from "./tool_call_state";
 import type { ToolCallRecord } from "./tool_call_record";
 import { ClockIcon, CloseIcon, SyncCurrentIcon, SyncErrorIcon } from "./icons";
-import { RawArgumentsDisclosure, ToolArgumentsField } from "./tool_arguments_field";
+import { ToolArgumentsField } from "./tool_arguments_field";
 import { ToolCallMeta } from "./tool_call_meta";
-import { toolActionDescription } from "./tool_rendering/actions";
-import { toolCallPreview } from "./tool_rendering/index";
+import { isDestructiveToolCall } from "./tool_rendering/actions";
 import type { PreviewVariant } from "./tool_rendering/vocabulary";
-import { RawResultDisclosure, ToolResultField } from "./tool_result_field";
+import { ToolResultField } from "./tool_result_field";
 import { VariantControl } from "./variant_control";
 
-/** One tool call, rendered the same way everywhere it appears — the approvals panel's pending and
- * recent cards, and the history page's rows. It owns the shared skeleton: identity header, action
- * line, rationale/denial subhead, status marker, Details toggle, the arguments body, the result body
- * (a finished call's result, or its error when it failed) and the detailed Metadata. What differs
- * per surface — the status marker's label/color and the footer actions (approve/deny, dismiss,
- * countdown) — comes in as props.
- *
- * Most tools split pending/finished rendering across two independent widgets (arguments, then a
- * finished call's result). A tool whose result mostly restates its own arguments instead registers
- * one combined widget (tool_rendering's call registry) that owns both states; `toolCallPreview`
- * renders it in place of the separate fields when one matches, and the raw-JSON disclosures stay
- * available either way. */
 function ToolCallStatus({ status }: { status: ToolCallRecord["status"] }): JSX.Element {
   const label = terminalStatusLabel(status);
   const color = statusColor(status);
@@ -51,40 +38,34 @@ function ToolCallStatus({ status }: { status: ToolCallRecord["status"] }): JSX.E
   );
 }
 
+/** One recorded tool call: title, status and detail toggle, rationale and decision notes,
+ * arguments, a finished call's result, and (when detailed) metadata. */
 export function ToolCallCard({
   fields,
   args,
   variant,
   onVariantChange,
   status,
-  error = null,
   result,
-  footer,
-  containerRef,
 }: {
   fields: ApprovalDisplayFields;
   args: Record<string, unknown>;
   variant: PreviewVariant;
   onVariantChange: (v: PreviewVariant) => void;
   status: ToolCallRecord["status"];
-  error?: string | null;
   result?: unknown;
-  footer?: ReactNode;
-  /** Set by a surface that needs to scroll this specific card into view (a deep-linked call). */
-  containerRef?: Ref<HTMLElement>;
 }): JSX.Element {
   const detailed = variant === "detailed";
-  const combined = toolCallPreview(fields.serverId, fields.toolName, args, result, variant);
-  const action = toolActionDescription(fields.serverId, fields.toolName, args);
+  const destructive = isDestructiveToolCall(fields.serverId, fields.toolName);
   return (
-    <section className="haku-tool-call" ref={containerRef}>
+    <section className="haku-tool-call">
       <Stack gap="sm">
         <div className="haku-tool-call-summary">
           <Text
             fw={600}
             size="sm"
             className="haku-tool-call-title"
-            c={action?.destructive || status === "error" ? "red" : status === "running" ? "blue" : undefined}
+            c={destructive || status === "error" ? "red" : status === "running" ? "blue" : undefined}
           >
             {fields.title}
           </Text>
@@ -116,38 +97,14 @@ export function ToolCallCard({
             </Text>
           )}
         </div>
-        {combined ? (
-          <>
-            {combined}
-            {detailed && <RawArgumentsDisclosure argumentsJson={fields.argumentsJson} />}
-          </>
-        ) : (
-          <ToolArgumentsField
-            serverId={fields.serverId}
-            toolName={fields.toolName}
-            args={args}
-            argumentsJson={fields.argumentsJson}
-            variant={variant}
-          />
-        )}
-        {/* A failed call's error is its outcome — the failure counterpart of the result body
-            below — so it renders under the arguments, not as a head subhead. Error and result
-            are mutually exclusive (the ledger finishes a call with exactly one), so this never
-            collides with the result field. */}
-        {error && (
-          <Text size="sm" c="red">
-            {error}
-          </Text>
-        )}
-        {/* Rendered for both variants; it self-gates (compact shows a result only when a
-            per-tool widget makes it self-describing). A combined widget already rendered the
-            result above (it's the same node as the arguments in that case), so this only adds
-            the detailed-only Raw result disclosure. */}
-        {combined ? (
-          detailed && result != null && <RawResultDisclosure result={result} />
-        ) : (
-          <ToolResultField serverId={fields.serverId} toolName={fields.toolName} result={result} variant={variant} />
-        )}
+        <ToolArgumentsField
+          serverId={fields.serverId}
+          toolName={fields.toolName}
+          args={args}
+          argumentsJson={fields.argumentsJson}
+          variant={variant}
+        />
+        <ToolResultField result={result} variant={variant} />
         {detailed && (
           <ToolCallMeta
             serverId={fields.serverId}
@@ -157,7 +114,6 @@ export function ToolCallCard({
             toolCallId={fields.toolCallId}
           />
         )}
-        {footer}
       </Stack>
     </section>
   );

@@ -1,6 +1,8 @@
 apiVersion: v1
 kind: Namespace
 metadata:
+  annotations:
+    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "*", "controlledValues": "RequestsOnly"}]}'
   labels:
     goldilocks.fairwinds.com/vpa-update-mode: auto
     rbac.ducktape.io/agent-readable-logs: "true"
@@ -307,8 +309,7 @@ kind: Deployment
 metadata:
   annotations:
     description: Public Authentik-backed MCP facade for Tana, running the shared mcp-oauth-facade image. Access is enforced by Authentik group membership; the server injects a static downstream PAT.
-    goldilocks.fairwinds.com/vpa-resource-policy: |
-      {"containerPolicies":[{"containerName":"server","minAllowed":{"cpu":"25m"},"controlledValues":"RequestsOnly"}]}
+    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "server", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "25m"}}]}'
   labels:
     app.kubernetes.io/name: tana-mcp-facade
   name: facade

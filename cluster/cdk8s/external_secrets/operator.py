@@ -9,17 +9,21 @@ repository.
 from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s_plus_34 import k8s
 from cert_manager_issuer_crds.io.cert_manager import Issuer, IssuerSpec, IssuerSpecSelfSigned
 
 from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.namespaces import Vpa, VpaProfile
+from cluster.cdk8s.vpa_policy import ContainerPolicy, ControlledValues
 
 NAME = "external-secrets"
 NAMESPACE = "external-secrets-system"
 OUTPUT_DIR = f"{GENERATED_ROOT}/external-secrets/operator"
+_CONTROLLER_CPU_REQUEST = "100m"
+_SECRET_STORE_ADMISSION = "require-cluster-secret-store-namespaces"
 
 
 def _values(webhook_issuer: str) -> dict[str, object]:
@@ -34,6 +38,12 @@ def _values(webhook_issuer: str) -> dict[str, object]:
         # together with this flag.
         "replicaCount": 2,
         "leaderElect": True,
+        # Guard VPA evictions with a ready standby. Enabling the probe also rolls
+        # the Pods, which Goldilocks watches to pick up the Deployment annotation.
+        "readinessProbe": {"enabled": True},
+        "podDisruptionBudget": {"enabled": True, "minAvailable": 1},
+        # Keep the namespace's resource policy for both components.
+        "deploymentAnnotations": {namespaces.VPA_UPDATE_MODE_LABEL: Vpa.AUTO},
         "concurrent": 8,
         # Size the limit above heap + the mapped binary, not just the heap. This
         # controller never OOM-kills when it runs out: the kernel can always meet the
@@ -44,7 +54,10 @@ def _values(webhook_issuer: str) -> dict[str, object]:
         # while the pod reported 1/1 Ready with 0 restarts. On an HDD node that
         # starves containerd's CRI calls past their deadlines and strands every pod
         # scheduled there. See docs/lessons_learned/2026_09_07_eso_memory_limit_thrash.md.
-        "resources": {"limits": {"cpu": "500m", "memory": "512Mi"}, "requests": {"cpu": "100m", "memory": "256Mi"}},
+        "resources": {
+            "limits": {"cpu": "500m", "memory": "512Mi"},
+            "requests": {"cpu": _CONTROLLER_CPU_REQUEST, "memory": "256Mi"},
+        },
         # Both settings below apply to the controller and, separately, to the webhook
         # under `webhook:` — the chart takes no inherited value.
         #
@@ -67,6 +80,12 @@ def _values(webhook_issuer: str) -> dict[str, object]:
         # cert-controller is off.
         "webhook": {
             "create": True,
+            "replicaCount": 2,
+            "podDisruptionBudget": {"enabled": True, "minAvailable": 1},
+            "deploymentAnnotations": {namespaces.VPA_UPDATE_MODE_LABEL: Vpa.AUTO},
+            "affinity": node_scheduling.one_per_host(
+                {"app.kubernetes.io/instance": NAME, "app.kubernetes.io/name": f"{NAME}-webhook"}
+            ),
             "port": 9443,
             "priorityClassName": "system-cluster-critical",
             "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
@@ -81,7 +100,37 @@ def _values(webhook_issuer: str) -> dict[str, object]:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, "external-secrets-operator", disable_resource_name_hashes=True)
-    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.RECOMMEND)
+    namespaces.namespace(
+        chart,
+        "namespace",
+        name=NAMESPACE,
+        vpa=VpaProfile(
+            Vpa.INITIAL,
+            (
+                # Startup peaked at 229Mi over 30 days. Keep the existing 256Mi reservation
+                # and pin CPU during the switch: VPA 1.7.1 may apply a stale CPU recommendation
+                # until the recommender processes controlledResources.
+                ContainerPolicy(
+                    container_name="external-secrets",
+                    controlled_values=ControlledValues.REQUESTS_ONLY,
+                    controlled_resources=("memory",),
+                    min_allowed={"memory": "256Mi", "cpu": _CONTROLLER_CPU_REQUEST},
+                    max_allowed={"memory": "384Mi", "cpu": _CONTROLLER_CPU_REQUEST},
+                ),
+                # The webhook has no CPU request. Its 30-day peak two-minute rate was 4.2m
+                # (3.1m at startup), and startup memory peaked at 179Mi.
+                ContainerPolicy(
+                    container_name="webhook",
+                    controlled_values=ControlledValues.REQUESTS_ONLY,
+                    controlled_resources=("cpu", "memory"),
+                    min_allowed={"cpu": "15m", "memory": "256Mi"},
+                    max_allowed={"cpu": "100m", "memory": "384Mi"},
+                ),
+                # Additional chart containers need their own review before VPA sizes them.
+                ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
+            ),
+        ),
+    )
     webhook_issuer = Issuer(
         chart,
         "webhook-issuer",
@@ -98,6 +147,50 @@ def chart(app: App) -> Chart:
         interval="15m",
         install=RETRY_FAILED_INSTALL,
         values=_values(webhook_issuer.name),
+    )
+    # ESO can read secrets across namespaces. Require ClusterSecretStores to
+    # explicitly name their consumer namespaces, as the existing Kyverno rule does.
+    has_namespaces = ".spec.?conditions.orValue([]).exists(c, c.?namespaces.orValue([]).size() > 0)"
+    k8s.KubeValidatingAdmissionPolicy(
+        chart,
+        "cluster-secret-store-admission",
+        metadata=k8s.ObjectMeta(name=_SECRET_STORE_ADMISSION),
+        spec=k8s.ValidatingAdmissionPolicySpec(
+            failure_policy="Fail",
+            match_constraints=k8s.MatchResources(
+                match_policy="Equivalent",
+                resource_rules=[
+                    k8s.NamedRuleWithOperations(
+                        api_groups=["external-secrets.io"],
+                        api_versions=["v1"],
+                        operations=["CREATE", "UPDATE"],
+                        resources=["clustersecretstores"],
+                        scope="Cluster",
+                    )
+                ],
+            ),
+            # Keep Kyverno's current node-group exclusion; RBAC does not authorize
+            # node identities to write ClusterSecretStores.
+            match_conditions=[
+                k8s.MatchCondition(name="exclude-kubelets", expression="!('system:nodes' in request.userInfo.groups)")
+            ],
+            validations=[
+                k8s.Validation(
+                    # Mirror Kyverno's allowExistingViolations. Once a store has a list,
+                    # it cannot lose it, and new stores cannot omit it.
+                    expression=(
+                        f"object{has_namespaces} || (request.operation == 'UPDATE' && !oldObject{has_namespaces})"
+                    ),
+                    message="ClusterSecretStore must name at least one allowed namespace in spec.conditions[].namespaces.",
+                )
+            ],
+        ),
+    )
+    k8s.KubeValidatingAdmissionPolicyBinding(
+        chart,
+        "cluster-secret-store-admission-binding",
+        metadata=k8s.ObjectMeta(name=_SECRET_STORE_ADMISSION),
+        spec=k8s.ValidatingAdmissionPolicyBindingSpec(policy_name=_SECRET_STORE_ADMISSION, validation_actions=["Deny"]),
     )
     return chart
 

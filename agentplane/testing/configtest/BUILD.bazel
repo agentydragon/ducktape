@@ -10,7 +10,6 @@ go_library(
         "//agentplane/egress/cmd:__pkg__",
         "//agentplane/history_service/cmd:__pkg__",
         "//agentplane/llm_ingress/internal/server:__pkg__",
-        "//agentplane/notification_service:__pkg__",
         "//agentplane/notification_service/cmd:__pkg__",
         "//agentplane/session_dispatcher/internal/app:__pkg__",
     ],

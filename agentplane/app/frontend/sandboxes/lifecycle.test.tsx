@@ -33,8 +33,6 @@ vi.mock("../identities/client", () => ({
 vi.mock("../sessions/session_client", () => ({ listIdentitySessions: mocks.sessions }));
 vi.mock("./client", () => ({ deleteEnvironment: mocks.deleteEnvironment }));
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-
 it("waits for Sandbox removal and rechecks references before retrying identity deletion", async () => {
   const target = create(EnvironmentTargetSchema, { namespace: "tools", name: "sandbox", uid: "sandbox-uid" });
   const sandbox = create(EnvironmentDescriptorSchema, { target, identityName: "reader" });

@@ -33,6 +33,10 @@ def _misc_transactions(rows: list[tuple[str, date, Decimal, str]]) -> list[Class
     ]
 
 
+_MISC_BUCKETS = {"misc": _bucket("misc", BucketKind.EXPENSE, TransferDirection.OUTFLOW)}
+_FUNDING = {"a": "Assets:BofA:Checking"}
+
+
 def _load(text: str) -> list[data.Directive]:
     entries, errors, _ = loader.load_string(text)
     assert not errors, [str(e) for e in errors]
@@ -102,19 +106,9 @@ def test_output_parses_cleanly() -> None:
 
 
 def test_decimal_amount_beyond_float_precision_survives_beancount_conversion() -> None:
-    buckets = {"misc": _bucket("misc", BucketKind.EXPENSE, TransferDirection.OUTFLOW)}
-    txns = [
-        ClassifiedTxn(
-            transaction_id="precision",
-            date=date(2026, 5, 1),
-            amount=Decimal("9007199254740993.01"),
-            name="Exact amount",
-            account_id="a",
-            bucket_id="misc",
-        )
-    ]
+    txns = _misc_transactions([("precision", date(2026, 5, 1), Decimal("9007199254740993.01"), "Exact amount")])
 
-    (txn,) = _txns(_load(render_ledger(txns, buckets, {"a": "Assets:Checking"})))
+    (txn,) = _txns(_load(render_ledger(txns, _MISC_BUCKETS, _FUNDING)))
 
     assert _units(txn, "Expenses:Misc").number == Decimal("9007199254740993.01")
 
@@ -140,8 +134,6 @@ def test_income_signs_are_inverted() -> None:
 
 
 def test_entries_ordered_by_date_then_id() -> None:
-    buckets = {"misc": _bucket("misc", BucketKind.EXPENSE, TransferDirection.OUTFLOW)}
-    funding = {"a": "Assets:BofA:Checking"}
     txns = _misc_transactions(
         [
             ("z", date(2026, 5, 2), Decimal("1.0"), "late"),
@@ -149,55 +141,32 @@ def test_entries_ordered_by_date_then_id() -> None:
             ("a", date(2026, 5, 1), Decimal("1.0"), "early-a"),
         ]
     )
-    rendered = render_ledger(txns, buckets, funding)
+    rendered = render_ledger(txns, _MISC_BUCKETS, _FUNDING)
     assert rendered.index("early-a") < rendered.index("early-b") < rendered.index("late")
 
 
 def test_render_is_deterministic() -> None:
-    buckets = {"misc": _bucket("misc", BucketKind.EXPENSE, TransferDirection.OUTFLOW)}
-    funding = {"a": "Assets:BofA:Checking"}
     txns = _misc_transactions(
         [("b", date(2026, 5, 1), Decimal("2.5"), "two"), ("a", date(2026, 5, 1), Decimal("1.0"), "one")]
     )
-    assert render_ledger(txns, buckets, funding) == render_ledger(list(reversed(txns)), buckets, funding)
+    assert render_ledger(txns, _MISC_BUCKETS, _FUNDING) == render_ledger(list(reversed(txns)), _MISC_BUCKETS, _FUNDING)
 
 
 def test_string_escaping_in_narration() -> None:
     """A quote in the descriptor survives a render -> parse round-trip."""
-    buckets = {"misc": _bucket("misc", BucketKind.EXPENSE, TransferDirection.OUTFLOW)}
-    txns = [
-        ClassifiedTxn(
-            transaction_id="tx",
-            date=date(2026, 5, 1),
-            amount=Decimal("1.0"),
-            name='ACME "PREMIUM" SVC',
-            account_id="a",
-            bucket_id="misc",
-        )
-    ]
-    (txn,) = _txns(_load(render_ledger(txns, buckets, {"a": "Assets:BofA:Checking"})))
+    txns = _misc_transactions([("tx", date(2026, 5, 1), Decimal("1.0"), 'ACME "PREMIUM" SVC')])
+    (txn,) = _txns(_load(render_ledger(txns, _MISC_BUCKETS, _FUNDING)))
     assert txn.narration == 'ACME "PREMIUM" SVC'
 
 
 def test_negative_zero_is_normalized() -> None:
-    buckets = {"misc": _bucket("misc", BucketKind.EXPENSE, TransferDirection.OUTFLOW)}
-    txns = [
-        ClassifiedTxn(
-            transaction_id="tx",
-            date=date(2026, 5, 1),
-            amount=Decimal("0.0"),
-            name="zero",
-            account_id="a",
-            bucket_id="misc",
-        )
-    ]
-    ledger = render_ledger(txns, buckets, {"a": "Assets:BofA:Checking"})
+    txns = _misc_transactions([("tx", date(2026, 5, 1), Decimal("0.0"), "zero")])
+    ledger = render_ledger(txns, _MISC_BUCKETS, _FUNDING)
     assert "-0.00" not in ledger
     _load(ledger)
 
 
 def test_currency_honors_iso_code() -> None:
-    buckets = {"misc": _bucket("misc", BucketKind.EXPENSE, TransferDirection.OUTFLOW)}
     txns = [
         ClassifiedTxn(
             transaction_id="tx",
@@ -209,7 +178,7 @@ def test_currency_honors_iso_code() -> None:
             iso_currency_code="EUR",
         )
     ]
-    (txn,) = _txns(_load(render_ledger(txns, buckets, {"a": "Assets:BofA:Checking"})))
+    (txn,) = _txns(_load(render_ledger(txns, _MISC_BUCKETS, _FUNDING)))
     assert {_units(txn, p.account).currency for p in txn.postings} == {"EUR"}
 
 
@@ -220,4 +189,4 @@ def test_empty_input_has_header_no_entries() -> None:
 
 
 if __name__ == "__main__":
-    raise SystemExit(pytest_bazel.main())
+    pytest_bazel.main()

@@ -2,7 +2,6 @@ package rpc
 
 import (
 	"maps"
-	"net"
 	"slices"
 	"testing"
 
@@ -11,6 +10,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -33,15 +33,9 @@ func TestEveryRPCAdmitsOnlyItsCallers(t *testing.T) {
 		t.Fatal(err)
 	}
 	serve := func(methods auth.Methods) *routedClientConn {
-		listener, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			t.Fatal(err)
-		}
 		server := grpc.NewServer(append(methods.ServerOptions(callDeadline), grpc.Creds(credentials.NewTLS(serverTLS)))...)
 		notificationspb.RegisterNotificationsServer(server, notificationspb.UnimplementedNotificationsServer{})
-		go func() { _ = server.Serve(listener) }()
-		t.Cleanup(server.Stop)
-		address := listener.Addr().String()
+		address := grpcserver.Serve(t, server)
 		connect := func(config *peertls.ClientTLS) *grpc.ClientConn {
 			security, err := config.Credentials()
 			if err != nil {

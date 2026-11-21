@@ -15,6 +15,8 @@ from model_catalog.catalog import (
     OLLAMA_OPENAI_ROUTES,
     OLLAMA_QWEN_IQ4XS_128K,
     OLLAMA_QWEN_IQ4XS_256K,
+    TABBYAPI_QWEN_ABLITERATED,
+    Provider,
     Route,
 )
 
@@ -24,11 +26,12 @@ class HarnessRoutes:
     """Generation-time selections retained until app and ingress settings are emitted."""
 
     claude: tuple[Route, ...]
-    # Responses routes shared by the Codex and central sampler pickers.
+    # Routes offered by Codex through the Responses API.
     codex: tuple[Route, ...]
     # Routes offered by the service-side central sampler. This is independent of Codex so
     # API-only models never become Codex models through the subscription-compatible wrapper.
     central_sampler: tuple[Route, ...] = ()
+    central_sampler_chat: tuple[Route, ...] = ()
 
     @property
     def all(self) -> tuple[Route, ...]:
@@ -54,9 +57,25 @@ _AGENTPLANE_OLLAMA_OPENAI_ROUTES = tuple(
 # GPT-6 Sol remains served for other clients, but Agentplane exposes GPT-6.1 Sol instead.
 _AGENTPLANE_GPT6_RESPONSES_ROUTES = tuple(route for route in GPT6_RESPONSES_ROUTES if route != GPT6_SOL_RESPONSES)
 
+QWEN_CHAT_CANARY_ROUTE = OLLAMA_QWEN_IQ4XS_256K.openai
+
+
+def chat_completions_id(route: Route) -> str:
+    # Native Chat Completions routes can use their LiteLLM ID directly.
+    return route.id if route.upstream.provider == Provider.TABBYAPI else f"{route.id}-chat-completions"
+
+
+QWEN_CHAT_CANARY_ID = chat_completions_id(QWEN_CHAT_CANARY_ROUTE)
+
 STAGING_APP_MODELS = HarnessRoutes(
+    central_sampler_chat=(QWEN_CHAT_CANARY_ROUTE, TABBYAPI_QWEN_ABLITERATED),
     claude=_AGENTPLANE_ANTIGRAVITY_ROUTES,
-    codex=(*_AGENTPLANE_GPT6_RESPONSES_ROUTES, *_AGENTPLANE_ANTIGRAVITY_ROUTES, *_AGENTPLANE_OLLAMA_OPENAI_ROUTES),
+    codex=(
+        *_AGENTPLANE_GPT6_RESPONSES_ROUTES,
+        *_AGENTPLANE_ANTIGRAVITY_ROUTES,
+        *_AGENTPLANE_OLLAMA_OPENAI_ROUTES,
+        TABBYAPI_QWEN_ABLITERATED,
+    ),
     central_sampler=(
         *_AGENTPLANE_GPT6_RESPONSES_ROUTES,
         *_AGENTPLANE_ANTIGRAVITY_ROUTES,
@@ -72,6 +91,7 @@ RUNNER_CONTEXT_OVERRIDES = {
     OLLAMA_QWEN_IQ4XS_128K.native: 128 * 1024,
     OLLAMA_QWEN_IQ4XS_256K.openai: 256 * 1024,
     OLLAMA_QWEN_IQ4XS_256K.native: 256 * 1024,
+    TABBYAPI_QWEN_ABLITERATED: 256 * 1024,
 }
 
 

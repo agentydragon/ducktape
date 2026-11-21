@@ -1,4 +1,4 @@
-# Pre-commit checks reusable workflow
+# Pre-commit checks
 #
 # Runs pre-commit safety checks and formatters; Bazel aspects run in bazel-ci.yml.
 name: Pre-commit checks

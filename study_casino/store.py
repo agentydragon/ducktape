@@ -111,7 +111,7 @@ class ActionMutation:
     `result` is the typed payload that surfaces as `ActionResponse.result`
     on the wire. `game_event` is the typed payload that gets persisted to
     `game_events.outcome_json` and re-read as `GameEventRead` by the
-    casino-stats and audit-log endpoints. `rng_audit` is the deterministic
+    casino-stats endpoints. `rng_audit` is the deterministic
     RNG trace, committed atomically with the ledger/game rows. `details`
     stays loosely typed — it's audit metadata persisted to
     `ledger_events.details_json` and not part of the frontend's read surface.
@@ -122,7 +122,6 @@ class ActionMutation:
     game_event: GameEventMutation | None = None
     rng_audit: RngActionAudit | None = None
     rng_version: str | None = None
-    rules_version: str = RULES_VERSION
 
 
 @dataclass(frozen=True)
@@ -178,8 +177,6 @@ class SqlStore:
         _run_alembic_migrations(self._engine)
         self._Session = sessionmaker(bind=self._engine, expire_on_commit=False)
 
-    # ── Read-side ───────────────────────────────────────────────────────────
-
     def state_dump(self, username: str) -> StateDump:
         """Return the full canonical state for `username` — same shape as
         `state_snapshots.decoded_json`. The frontend's `GET /state`
@@ -197,18 +194,6 @@ class SqlStore:
         """Whether `username` already has a balance row (i.e. has been seeded)."""
         with self._Session() as s:
             return s.get(BalanceRow, username) is not None
-
-    def list_game_events(self, username: str, limit: int = 100) -> list[GameEventRead]:
-        with self._Session() as s:
-            rows = list(
-                s.scalars(
-                    select(GameEventRow)
-                    .where(GameEventRow.user_id == username)
-                    .order_by(GameEventRow.id.desc())
-                    .limit(limit)
-                ).all()
-            )
-            return [game_event_from_row(row) for row in rows]
 
     def list_ledger_events(self, username: str, limit: int = 100) -> list[LedgerEventRead]:
         with self._Session() as s:
@@ -247,8 +232,6 @@ class SqlStore:
         return CasinoStats(
             username=username, since_date=SERVER_RESOLVED_SINCE_DATE, event_count=len(events), games=games
         )
-
-    # ── Write-side ──────────────────────────────────────────────────────────
 
     def run_server_action(
         self,
@@ -315,7 +298,7 @@ class SqlStore:
                 server_at_ms=now_ms,
                 action_type=action_type,
                 source="server_action",
-                rules_version=mutation.rules_version,
+                rules_version=RULES_VERSION,
                 rng_version=mutation.rng_version,
                 credits_before=before_credits,
                 credits_after=after_credits,
@@ -337,9 +320,6 @@ class SqlStore:
                     credits_after=after_credits,
                     tokens_before=before_tokens,
                     tokens_after=after_tokens,
-                    server_credits=after_credits,
-                    server_tokens=after_tokens,
-                    rules_version=mutation.rules_version,
                     rng_version=mutation.rng_version,
                 )
                 s.add(game_event_row)
@@ -365,8 +345,6 @@ class SqlStore:
         return ServerActionResult(
             event=ledger_event_from_row(event_row), result=mutation.result, game_event=game_event_out
         )
-
-    # ── Helpers used by import/reset mutators ───────────────────────────────
 
     def replace_state_for_import(self, s: Session, username: str, data: ImportData) -> None:
         """Wipe sessions/prizes/prize_log + reset balance for `username`, then
@@ -413,8 +391,7 @@ class SqlStore:
 
     def replace_state_for_reset(self, s: Session, username: str) -> None:
         """Wipe sessions/prize_log for `username`, zero their balance and
-        streak state, keep their prize catalog. Equivalent to the legacy
-        `build_reset_casino` behaviour."""
+        streak state, keep their prize catalog."""
         s.execute(delete(SessionRow).where(SessionRow.user_id == username))
         s.execute(delete(PrizeLogRow).where(PrizeLogRow.user_id == username))
         balance = locked_balance(s, username)
@@ -425,8 +402,6 @@ class SqlStore:
         credit_state.last_qualifying_date = None
         credit_state.rest_days_used = 0
         credit_state.last_first_bonus_date = None
-
-    # ── Internal ────────────────────────────────────────────────────────────
 
     def _ensure_user(self, s: Session, username: str) -> None:
         """Idempotently seed a balance row and the default prize catalog for `username`.
@@ -498,9 +473,6 @@ class SqlStore:
         credits_after: int,
         tokens_before: int,
         tokens_after: int,
-        server_credits: int,
-        server_tokens: int,
-        rules_version: str,
         rng_version: str | None,
     ) -> GameEventRow:
         return GameEventRow(
@@ -517,10 +489,10 @@ class SqlStore:
             credits_after=credits_after,
             tokens_before=tokens_before,
             tokens_after=tokens_after,
-            server_credits=server_credits,
-            server_tokens=server_tokens,
+            server_credits=credits_after,
+            server_tokens=tokens_after,
             outcome_json=event.outcome.model_dump_json(),
-            rules_version=rules_version,
+            rules_version=RULES_VERSION,
             rng_version=rng_version,
         )
 

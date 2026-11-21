@@ -7,11 +7,9 @@ this shape into the exact facts a world declares.
 
 from __future__ import annotations
 
-from collections import Counter
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import StrEnum
-from functools import cached_property
 from typing import Annotated, Literal
 
 from pydantic import (
@@ -25,18 +23,18 @@ from pydantic import (
     model_validator,
 )
 
-from finance.augur.api.schemas import NonNegativeCurrencyAmount, PositiveCurrencyAmount
+from finance.augur.api.schemas import (
+    ID_PATTERN,
+    ApiModel,
+    NonNegativeCurrencyAmount,
+    PositiveCurrencyAmount,
+    duplicates,
+)
 from finance.augur.model.asset_key import AssetKey, PrivateEquityAssetKey
 from finance.augur.model.series import IssuerId, LevelSeriesKey, SecurityKey, SecuritySymbol
 from finance.augur.sim.ids import AccountId, AgentId, BondId, LotId, PortfolioId
 from finance.augur.sim.income import InterestCharacter
 from finance.augur.sim.tlh import TlhAssumptions
-
-_ID_PATTERN = r"^[a-z0-9][a-z0-9_\-]*$"
-
-
-class PortfolioConfigModel(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True, ignored_types=(cached_property,))
 
 
 class PortfolioAccountType(StrEnum):
@@ -59,15 +57,15 @@ class HoldingKind(StrEnum):
     OTHER = "other"
 
 
-class PortfolioAccountConfig(PortfolioConfigModel):
-    account_id: AccountId = Field(pattern=_ID_PATTERN)
-    owner_agent_id: AgentId = Field(pattern=_ID_PATTERN)
+class PortfolioAccountConfig(ApiModel):
+    account_id: AccountId = Field(pattern=ID_PATTERN)
+    owner_agent_id: AgentId = Field(pattern=ID_PATTERN)
     account_type: PortfolioAccountType = PortfolioAccountType.TAXABLE_BROKERAGE
     label: str | None = None
 
 
-class HoldingTaxLotConfig(PortfolioConfigModel):
-    lot_id: LotId = Field(pattern=_ID_PATTERN)
+class HoldingTaxLotConfig(ApiModel):
+    lot_id: LotId = Field(pattern=ID_PATTERN)
     holding_period_months_at_start: NonNegativeInt
     quantity: PositiveFloat
     cost_basis: NonNegativeCurrencyAmount
@@ -84,9 +82,9 @@ class HoldingAssetKind(StrEnum):
     PRIVATE_EQUITY = "private_equity"
 
 
-class _HoldingPositionBase(PortfolioConfigModel):
-    position_id: str = Field(pattern=_ID_PATTERN)
-    account_id: AccountId = Field(pattern=_ID_PATTERN)
+class _HoldingPositionBase(ApiModel):
+    position_id: str = Field(pattern=ID_PATTERN)
+    account_id: AccountId = Field(pattern=ID_PATTERN)
     label: str | None = None
     unit_value: PositiveCurrencyAmount
     lots: tuple[HoldingTaxLotConfig, ...] = Field(min_length=1)
@@ -158,7 +156,7 @@ class PrivateEquityHoldingConfig(_HoldingPositionBase):
 type HoldingPositionConfig = Annotated[SecurityHoldingConfig | PrivateEquityHoldingConfig, Field(discriminator="kind")]
 
 
-class BondHoldingConfig(PortfolioConfigModel):
+class BondHoldingConfig(ApiModel):
     """A bond held at scenario start, in the deployment's idiom.
 
     Deliberately NOT a third `HoldingPositionConfig` variant. A bond is not a tax lot — the
@@ -172,8 +170,8 @@ class BondHoldingConfig(PortfolioConfigModel):
     so a portfolio never mixes calendar dates with sim-relative indexes.
     """
 
-    bond_id: BondId = Field(pattern=_ID_PATTERN)
-    account_id: AccountId = Field(pattern=_ID_PATTERN)
+    bond_id: BondId = Field(pattern=ID_PATTERN)
+    account_id: AccountId = Field(pattern=ID_PATTERN)
     label: str | None = None
     character: InterestCharacter = Field(
         description=(
@@ -195,7 +193,7 @@ class BondHoldingConfig(PortfolioConfigModel):
     months_to_maturity_at_start: PositiveInt
 
 
-class PortfolioConfig(PortfolioConfigModel):
+class PortfolioConfig(ApiModel):
     """Deployment-authored portfolio facts.
 
     Month 0 is the start of the simulated scenario. Tax lots express their
@@ -211,7 +209,7 @@ class PortfolioConfig(PortfolioConfigModel):
 
     @model_validator(mode="after")
     def _validate_references(self) -> PortfolioConfig:
-        duplicate_accounts = _duplicates(account.account_id for account in self.accounts)
+        duplicate_accounts = duplicates(account.account_id for account in self.accounts)
         if duplicate_accounts:
             raise ValueError(f"portfolio accounts must have unique account_id values: {duplicate_accounts}")
 
@@ -230,15 +228,15 @@ class PortfolioConfig(PortfolioConfigModel):
         if missing_bond_accounts:
             raise ValueError(f"portfolio bonds reference unknown account_id values: {missing_bond_accounts}")
 
-        duplicate_bonds = _duplicates(bond.bond_id for bond in self.bonds)
+        duplicate_bonds = duplicates(bond.bond_id for bond in self.bonds)
         if duplicate_bonds:
             raise ValueError(f"portfolio bonds must have unique bond_id values: {duplicate_bonds}")
 
-        duplicate_positions = _duplicates(position.position_id for position in self.holdings)
+        duplicate_positions = duplicates(position.position_id for position in self.holdings)
         if duplicate_positions:
             raise ValueError(f"public securities must have unique position_id values: {duplicate_positions}")
 
-        duplicate_lots = _duplicates(lot.lot_id for position in self.holdings for lot in position.lots)
+        duplicate_lots = duplicates(lot.lot_id for position in self.holdings for lot in position.lots)
         if duplicate_lots:
             raise ValueError(f"public security tax lots must have unique lot_id values: {duplicate_lots}")
 
@@ -334,8 +332,3 @@ class PortfolioLevelAnchors:
 
     level_series_anchors: dict[LevelSeriesKey, float]
     private_equity_anchors: dict[IssuerId, float]
-
-
-def _duplicates(values) -> list[str]:
-    counts = Counter(values)
-    return sorted(value for value, count in counts.items() if count > 1)

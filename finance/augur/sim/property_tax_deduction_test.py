@@ -20,22 +20,20 @@ from finance.augur.model.series import LocationId
 from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.books import AccountRef, Posting
 from finance.augur.sim.fixed_point import rate_to_ppb
-from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, PropertyId
+from finance.augur.sim.ids import CHECKING, AgentId, JurisdictionId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
 from finance.augur.sim.property import Housing, Parcel, PrimaryResidence, ScheduledPurchase
-from finance.augur.sim.property_tax import PropertyTaxPolicy
 from finance.augur.sim.results import Rollout
 from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.situs import compile_situs
-from finance.augur.sim.tax_authority import SaltCap, SaltDeduction, TaxAuthority
-from finance.augur.sim.tax_indexation import FixedNominalLaw
-from finance.augur.sim.tax_profile import TaxProfile, compile_profile
+from finance.augur.sim.tax_authority import SaltCap, SaltDeduction
 from finance.augur.sim.testing.session import each, finish
-from finance.augur.sim.testing.situs import START_YEAR, flat_parcel
+from finance.augur.sim.testing.situs import flat_parcel, property_tax
+from finance.augur.sim.testing.tax_authority import filer
 from finance.augur.sim.world import World
 
 ALICE, PAYROLL, IRS, SELLER, COUNTY = (
@@ -45,7 +43,6 @@ ALICE, PAYROLL, IRS, SELLER, COUNTY = (
     AgentId("test-seller"),
     AgentId("test-county"),
 )
-CHECKING = AccountId("checking")
 HOME = PropertyId("test-home")
 FEDERAL, CALIFORNIA = JurisdictionId("federal_us"), JurisdictionId("california")
 FLAT = flat_parcel(Decimal("0.012"))
@@ -70,16 +67,7 @@ def run(cap: int) -> Rollout:
     world = World(MarketPath((), 0, rollout_count=1), horizon_months=12, income_sources=(ORDINARY_INCOME,))
     for agent, balance in ((ALICE, 700_000), (PAYROLL, 300_000), (IRS, 0), (SELLER, 0), (COUNTY, 0)):
         world.declare_account(account=AccountRef(agent_id=agent, account_id=CHECKING), opening_balance=dollars(balance))
-    world.track(
-        TaxAuthority(
-            compile_profile(
-                TaxProfile(agent_id=ALICE, jurisdiction_ids=[FEDERAL, CALIFORNIA], tax_authority_agent_id=IRS),
-                {id_: load_jurisdiction(id_) for id_ in (FEDERAL, CALIFORNIA)},
-                currency=USD,
-            ),
-            indexation=FixedNominalLaw(),
-        )
-    )
+    world.track(filer(ALICE, [FEDERAL, CALIFORNIA], authority=IRS))
     world.declare_deduction(
         SaltDeduction(
             profile_id=ALICE,
@@ -111,18 +99,7 @@ def run(cap: int) -> Rollout:
             ),
             initial_residences=(PrimaryResidence(agent_id=ALICE, property_id=HOME),),
         ),
-        (
-            PropertyTaxPolicy(
-                property_id=HOME,
-                owner_agent_id=ALICE,
-                from_account_id=CHECKING,
-                tax_authority_agent_id=COUNTY,
-                tax_authority_account_id=CHECKING,
-                start_year=START_YEAR,
-                start_month=0,
-                end_month=None,
-            ),
-        ),
+        (property_tax(HOME, COUNTY, owner=ALICE),),
     )
     world.declare_flow(
         schedule=Recurring(start_month=0, end_month=11),

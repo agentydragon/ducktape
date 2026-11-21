@@ -10,8 +10,6 @@ from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.exec.docker.types import AlwaysSetTo, ContainerExecServerConfig, DefaultValue, ModelChooses
 from mcp_infra.testing.fixtures import WORKING_DIR
 
-# -- CwdPolicy tests: verify each mode runs commands in the expected directory --
-
 
 @pytest.fixture
 def make_cwd_server(async_docker_client, debian_slim_image):
@@ -41,12 +39,13 @@ async def test_cwd_default_value(make_cwd_server, cwd, expected) -> None:
 
 
 async def test_cwd_always_set_to(make_cwd_server) -> None:
-    """AlwaysSetTo: command always runs in the fixed cwd, field hidden from schema."""
+    """AlwaysSetTo: command always runs in the fixed cwd, field hidden from schema, description names it."""
     server = make_cwd_server(AlwaysSetTo(value=Path("/tmp")))
     async with Client(server) as c:
         tools = await c.list_tools()
         exec_tool = next(t for t in tools if t.name == "exec")
         assert "cwd" not in exec_tool.input_schema["properties"]
+        assert "/tmp" in (exec_tool.description or "")
 
         result = await c.call_tool("exec", {"cmd": ["pwd"], "timeout_ms": 10000})
         text = result.content[0].text if result.content else ""
@@ -65,15 +64,6 @@ async def test_cwd_model_chooses(make_cwd_server) -> None:
         result = await c.call_tool("exec", {"cmd": ["pwd"], "cwd": "/tmp", "timeout_ms": 10000})
         text = result.content[0].text if result.content else ""
         assert "/tmp" in text
-
-
-async def test_cwd_always_set_to_description(make_cwd_server) -> None:
-    """AlwaysSetTo: tool description mentions the fixed cwd."""
-    server = make_cwd_server(AlwaysSetTo(value=Path("/var")))
-    async with Client(server) as c:
-        tools = await c.list_tools()
-        exec_tool = next(t for t in tools if t.name == "exec")
-        assert "/var" in (exec_tool.description or "")
 
 
 if __name__ == "__main__":

@@ -26,7 +26,6 @@ py_library(
         "//openai_utils:model",
         "//props:config",
         "//props/backend:auth",
-        "//props/backend:deps",
         "//props/db:async_database",
         "//props/db:models",
         "@pypi//fastapi",
@@ -42,9 +41,8 @@ py_library(
     deps = [
         ":routes",
         "//props:config",
+        "//props:data_plane",
         "//props/db:async_database",
-        "//props/db:config",
-        "//util:logging",
         "@pypi//fastapi",
     ],
 )
@@ -55,8 +53,7 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         ":app",
-        "@pypi//typer",
-        "@pypi//uvicorn",
+        "//props:data_plane",
     ],
 )
 
@@ -76,10 +73,10 @@ py_test(
         "//props/db:database",
         "//props/db:models",
         "//props/orchestration:agent_credentials",
-        "//props/testing:constants",
+        "//props/testing:models",
         "//props/testing/fixtures:db",
         "//props/testing/fixtures:runs",
-        "//util/testing:postgres_fixtures",
+        "//testing:postgres_fixtures",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pytest",
@@ -93,14 +90,13 @@ py_test(
     srcs = ["test_app.py"],
     deps = [
         ":app",
-        ":cli",
         "//:conftest",
         "//props:config",
         "//props:conftest",
         "@pypi//fastapi",
         "@pypi//httpx",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//typer",
     ],
 )
 
@@ -115,14 +111,14 @@ py_test(
         ":routes",
         "//:conftest",
         "//props:conftest",
-        "//props/core:agent_types",
         "//props/db:async_database",
         "//props/db:database",
         "//props/db:models",
-        "//props/testing:constants",
+        "//props/testing:examples",
+        "//props/testing:models",
         "//props/testing/fixtures:db",
         "//props/testing/fixtures:runs",
-        "//util/testing:postgres_fixtures",
+        "//testing:postgres_fixtures",
         "@pypi//fastapi",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -144,16 +140,12 @@ py_test(
         "//props/db:database",
         "//props/db:models",
         "//props/testing/fixtures:db",
-        "//util/testing:postgres_fixtures",
+        "//testing:postgres_fixtures",
         "@pypi//fastapi",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
-
-# =============================================================================
-# OCI Image
-# =============================================================================
 
 # Container-specific binary using aspect_rules_py (py_image_layer requires it).
 aspect_py_binary(

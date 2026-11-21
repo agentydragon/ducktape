@@ -132,7 +132,6 @@ const mutableSnapshot = live.snapshot;
 const readyPod = readySandbox.kubernetesDiagnostics!.pod;
 const readyStatus = readySandbox.kubernetesDiagnostics!.sandboxStatus;
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: ReturnType<typeof createRoot>;
 let container: HTMLDivElement;
 let rerender: () => Promise<void> = async () => {};
@@ -659,6 +658,29 @@ it("preserves a Sandbox reasoning default through model loading and submits it o
   expect((await postedBody(sessions)).spec.reasoningEffort).toBe("high");
 });
 
+it("submits empty form values instead of restoring the Sandbox preset", async () => {
+  presetDefaults = { harness: Harness.CLAUDE, model: "test-model", reasoningEffort: "high", instructions: "preset" };
+  const catalog = testModelCatalog([{ model: "test-model", displayName: "Test Model", reasoningEfforts: [] }], []);
+  modelCatalogResponse = Promise.resolve(Response.json(testModelCatalogProtoJSON(catalog)));
+  const sessions = vi.fn<(request: Request) => Promise<Response>>(() =>
+    Promise.resolve(Response.json({ detail: "stop" }, { status: 422 }))
+  );
+  await render(sessions);
+  await act(async () => newThread().click());
+  const instructions = container.querySelector('textarea[aria-label="Standing instructions"]');
+  if (!(instructions instanceof HTMLTextAreaElement)) throw new Error("Missing instructions field");
+  const setTextareaValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
+  if (!setTextareaValue) throw new Error("Missing native textarea value setter");
+  await act(async () => {
+    setTextareaValue.call(instructions, "");
+    instructions.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await submitNewThread();
+  const body = await postedBody(sessions);
+  expect(body.spec.reasoningEffort).toBe("");
+  expect(body.spec.instructions).toBe("");
+});
+
 it("uses the configured preset working directory template and setup script for later Threads", async () => {
   presetDefaults = {
     harness: Harness.CLAUDE,
@@ -882,7 +904,9 @@ it("shows creation progress, prevents duplicate clicks, and does not retry faile
   expect((await createThreadTooltip())?.textContent).toContain("A thread is being created");
   await act(async () => createThreadButton().click());
   expect(sessions.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
-  await act(async () => fail(Response.json({ detail: "session refused" }, { status: 422 })));
+  await act(async () =>
+    fail(Response.json({ title: "Unprocessable Entity", status: 422, detail: "session refused" }, { status: 422 }))
+  );
   expect(createThreadButton().disabled).toBe(true);
   expect((await createThreadTooltip())?.textContent).toContain("Check its status");
   expect(container.textContent).toContain("session refused");

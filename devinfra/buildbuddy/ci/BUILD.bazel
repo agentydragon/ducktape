@@ -17,7 +17,10 @@ py_library(
     name = "collect_profiles",
     srcs = ["collect_profiles.py"],
     visibility = ["//:__subpackages__"],
-    deps = [":invocation_ids"],
+    deps = [
+        ":invocation_ids",
+        ":remote_log_markers",
+    ],
 )
 
 py_library(
@@ -47,6 +50,7 @@ py_test(
     deps = [
         ":invocation_census",
         ":invocation_ids",
+        "//devinfra/buildbuddy:cli",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -73,6 +77,12 @@ py_library(
     name = "emit_remote_linkage",
     srcs = ["emit_remote_linkage.py"],
     visibility = ["//:__subpackages__"],
+    deps = [":remote_log_markers"],
+)
+
+py_library(
+    name = "remote_log_markers",
+    srcs = ["remote_log_markers.py"],
 )
 
 py_binary(

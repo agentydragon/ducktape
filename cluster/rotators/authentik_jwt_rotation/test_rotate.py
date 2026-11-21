@@ -3,7 +3,6 @@ import json
 import textwrap
 import urllib.parse
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -11,6 +10,7 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
+from cluster.rotators import sops
 from cluster.rotators.authentik_jwt_rotation import rotate
 from cluster.rotators.authentik_jwt_rotation.config import Config, K8sSecretOutput, Probe, Rotation
 from cluster.rotators.authentik_jwt_rotation.rotate import (
@@ -21,7 +21,6 @@ from cluster.rotators.authentik_jwt_rotation.rotate import (
     stamped_claims,
     token_audiences,
 )
-from cluster.rotators.sops_stamps import remaining_hours
 
 
 def _make_jwt(claims: dict) -> str:
@@ -45,90 +44,16 @@ def _recording_client(status_code: int, seen: list[httpx.Request], json: dict | 
     return _mock_client(handler)
 
 
-def test_rotate_one_formats_raw_sops_file_after_encrypt(monkeypatch, tmp_path: Path):
-    sops_file = tmp_path / "secrets" / "haku-k8s-jwt.yaml"
-    credentials_dir = tmp_path / "creds"
-    credentials_dir.mkdir()
-    rotation = Rotation(
-        name="haku-k8s",
-        provider_slug="kubectl-sandbox-client-credentials",
-        scopes="openid profile email groups",
-        credentials_dir=credentials_dir,
-        sops_file=sops_file,
-        token_field="jwt",
-    )
-    token = _make_jwt({"iss": rotation.expected_issuer, "exp": 1_800_000_000, "groups": []})
-    calls: list[tuple[str, object]] = []
-
-    def fake_run(args, **kwargs):
-        assert kwargs == {"check": True}
-        calls.append(("run", list(args)))
-
-    def fake_format(path: Path) -> None:
-        calls.append(("format", path))
-
-    monkeypatch.setattr(rotate, "mint_jwt", lambda _client, _rotation: token)
-    monkeypatch.setattr(rotate.subprocess, "run", fake_run)
-    monkeypatch.setattr(rotate, "prettier_format_yaml_in_place", fake_format)
-
-    assert rotate.rotate_one(_status_client(500), rotation, Config(rotations=[])) is True
-    assert calls == [("run", ["sops", "encrypt", "--indent", "2", "--in-place", str(sops_file)]), ("format", sops_file)]
-
-
-def test_write_k8s_secret_formats_after_encrypt(monkeypatch, tmp_path: Path):
-    out = K8sSecretOutput(
-        path=tmp_path / "cluster/k8s/agents/example/test-kube-token.sops.yaml",
-        name="test-kube-token",
-        namespace="example",
-    )
-    calls: list[tuple[str, object]] = []
-
-    def fake_run(args, **kwargs):
-        assert kwargs == {"check": True}
-        calls.append(("run", list(args)))
-
-    def fake_format(path: Path) -> None:
-        calls.append(("format", path))
-
-    monkeypatch.setattr(rotate.subprocess, "run", fake_run)
-    monkeypatch.setattr(rotate, "prettier_format_yaml_in_place", fake_format)
-
-    rotate.write_k8s_secret(out, token="the-jwt", exp_epoch=1_800_000_000)
-
-    assert calls == [("run", ["sops", "encrypt", "--indent", "2", "--in-place", str(out.path)]), ("format", out.path)]
-
-
-def test_remaining_hours_missing_file_is_none(tmp_path: Path):
-    assert remaining_hours(tmp_path / "absent.yaml") is None
-
-
-def test_remaining_hours_unstamped_file_is_none(tmp_path: Path):
-    f = tmp_path / "t.yaml"
-    f.write_text("jwt: abc\n")
-    assert remaining_hours(f) is None
-
-
-def test_remaining_hours_reads_unencrypted_expiry(tmp_path: Path):
-    expires = datetime.now(UTC) + timedelta(hours=10)
-    f = tmp_path / "t.yaml"
-    f.write_text(
-        textwrap.dedent(f"""\
-            expires_unencrypted: "{expires:%Y-%m-%dT%H:%M:%SZ}"
-            jwt: abc
-            """)
-    )
-    remaining = remaining_hours(f)
-    assert remaining is not None
-    assert 9 < remaining < 11
-
-
 def test_token_audiences_normalizes_string_list_and_missing():
     assert token_audiences({"aud": "one"}) == ["one"]
     assert token_audiences({"aud": ["one", "two"]}) == ["one", "two"]
     assert token_audiences({}) == []
 
 
-def test_stamped_audiences_reads_yaml_list(tmp_path: Path):
+@pytest.mark.parametrize(
+    ("read_stamp", "expected"), [(stamped_audiences, ["a", "b"]), (stamped_claims, {"email": "haku@allegedly.works"})]
+)
+def test_stamp_reader_returns_its_own_stamp_or_none(read_stamp, expected, tmp_path: Path):
     f = tmp_path / "t.yaml"
     f.write_text(
         textwrap.dedent("""\
@@ -136,37 +61,15 @@ def test_stamped_audiences_reads_yaml_list(tmp_path: Path):
             audiences_unencrypted:
               - a
               - b
-            jwt: abc
-            """)
-    )
-    assert stamped_audiences(f) == ["a", "b"]
-
-
-def test_stamped_audiences_absent_is_none(tmp_path: Path):
-    f = tmp_path / "t.yaml"
-    f.write_text("jwt: abc\n")
-    assert stamped_audiences(f) is None
-    assert stamped_audiences(tmp_path / "absent.yaml") is None
-
-
-def test_stamped_claims_reads_yaml_dict(tmp_path: Path):
-    f = tmp_path / "t.yaml"
-    f.write_text(
-        textwrap.dedent("""\
-            expires_unencrypted: "2030-01-01T00:00:00Z"
             claims_unencrypted:
               email: haku@allegedly.works
             jwt: abc
             """)
     )
-    assert stamped_claims(f) == {"email": "haku@allegedly.works"}
-
-
-def test_stamped_claims_absent_is_none(tmp_path: Path):
-    f = tmp_path / "t.yaml"
+    assert read_stamp(f) == expected
     f.write_text("jwt: abc\n")
-    assert stamped_claims(f) is None
-    assert stamped_claims(tmp_path / "absent.yaml") is None
+    assert read_stamp(f) is None
+    assert read_stamp(tmp_path / "absent.yaml") is None
 
 
 def test_build_secret_manifest_carries_token_exp_under_configured_keys():
@@ -248,12 +151,12 @@ def test_rotation_probe_requires_k8s_secret():
         "token_field": "token",
     }
     with pytest.raises(ValidationError):
-        Rotation.model_validate(base | {"probe": {"url": "https://alloy-otlp.allegedly.works/v1/metrics"}})
+        Rotation.model_validate(base | {"probe": {"url": "https://alloy-otlp.example.test/v1/metrics"}})
     r = Rotation.model_validate(
         base
         | {
             "k8s_secret": {"path": "cluster/k8s/x.sops.yaml", "name": "alloy-otlp-bearer", "namespace": "flux-system"},
-            "probe": {"url": "https://alloy-otlp.allegedly.works/v1/metrics", "method": "POST"},
+            "probe": {"url": "https://alloy-otlp.example.test/v1/metrics", "method": "POST"},
         }
     )
     assert r.probe is not None
@@ -305,7 +208,7 @@ def _probed_rotation(tmp_path: Path) -> Rotation:
             namespace="flux-system",
             token_key="token",
         ),
-        probe=Probe(url="https://alloy-otlp.allegedly.works/v1/metrics", method="POST"),
+        probe=Probe(url="https://alloy-otlp.example.test/v1/metrics", method="POST"),
     )
 
 
@@ -314,8 +217,8 @@ def _stub_mint(monkeypatch):
         {"iss": "https://auth.allegedly.works/application/o/alloy-otlp-client-credentials/", "exp": 1_800_000_000}
     )
     monkeypatch.setattr(rotate, "mint_jwt", lambda _client, _rotation: token)
-    monkeypatch.setattr(rotate.subprocess, "run", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(rotate, "prettier_format_yaml_in_place", lambda _path: None)
+    monkeypatch.setattr(sops.subprocess, "run", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(sops, "prettier_format_yaml_in_place", lambda _path: None)
 
 
 def test_rotate_one_probe_rejection_forces_remint(monkeypatch, tmp_path: Path):
@@ -327,7 +230,7 @@ def test_rotate_one_probe_rejection_forces_remint(monkeypatch, tmp_path: Path):
     seen: list[httpx.Request] = []
     assert rotate.rotate_one(_recording_client(401, seen), rotation, Config(rotations=[])) is True
     [request] = seen
-    assert (request.method, str(request.url)) == ("POST", "https://alloy-otlp.allegedly.works/v1/metrics")
+    assert (request.method, str(request.url)) == ("POST", "https://alloy-otlp.example.test/v1/metrics")
     assert request.headers["Authorization"] == "Bearer live-token"
 
 

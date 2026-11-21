@@ -2,7 +2,7 @@
 load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
-load("//util/testing/frontend_visual:py_visual_test.bzl", "py_visual_test")
+load("//testing/frontend_visual:py_visual_test.bzl", "py_visual_test")
 
 npm_link_all_packages(name = "node_modules")
 
@@ -10,8 +10,8 @@ npm_link_all_packages(name = "node_modules")
 # visual-regression test harness. The two woff2 files are latin-subset
 # variable fonts (Playfair Display v40 / Outfit v15, OFL-licensed); fonts.css
 # wires them into @font-face declarations the React component expects. The
-# files live under public/ so Vite copies them to dist/ verbatim during the
-# production build.
+# files live under public/ so `spa_bundle` copies them to dist/ verbatim during
+# the production build.
 filegroup(
     name = "casino_fonts",
     srcs = [
@@ -21,8 +21,6 @@ filegroup(
     ],
     visibility = ["//study_casino:__subpackages__"],
 )
-
-# ── Per-file source libraries ──────────────────────────────────────────────────
 
 js_library(
     name = "sync",
@@ -189,28 +187,19 @@ js_library(
     ],
 )
 
-# ── Production bundle (esbuild) ────────────────────────────────────────────────
-#
 # esbuild bundles main.jsx → dist/main.js; index.html (referencing /main.js) and
-# the public/ tree (manifest, icon, fonts) are copied in alongside. The .js files
-# carry JSX, so the loader treats them as such. Served verbatim by the FastAPI
-# app's StaticFiles mount.
+# the public/ tree (manifest, icon, fonts) are copied in alongside. Served
+# verbatim by the FastAPI app's StaticFiles mount.
 
 spa_bundle(
     name = "bundle",
     entry_point = "main.jsx",
     jsx = "automatic",
-    loader = {".js": "jsx"},
     public = glob(["public/**/*"]),
-    visibility = [
-        "//study_casino:__pkg__",
-        "//study_casino/tests:__pkg__",
-    ],
+    visibility = ["//study_casino:__pkg__"],
     deps = [":main"],
 )
 
-# ── Visual render-health tests ───────────────────────────────────────────────
-#
 # Renders the StudyCasino component with mocked state and publishes the
 # screenshot for PR visual review (publishOnly — no checked-in baselines).
 # Python tests in test_visual.py own readiness and capture.
@@ -273,8 +262,8 @@ py_visual_test(
     harness = ":visual_harness_js",
     shard_count = 2,
     test_deps = [
-        "//util/testing/frontend_visual:capture",
-        "//util/testing/frontend_visual:viewports",
+        "//testing/frontend_visual:capture",
+        "//testing/frontend_visual:viewports",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

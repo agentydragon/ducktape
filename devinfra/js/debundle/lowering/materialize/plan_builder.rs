@@ -87,6 +87,47 @@ struct CoarseResidualBucket {
     export_surface: PublicExportSurface,
 }
 
+/// Declared names and syntax location of every dependency-graph source unit.
+struct SourceUnitIndex {
+    declared_names: HashMap<SourceUnitId, Vec<Id>>,
+    statements: HashMap<SourceUnitId, StatementId>,
+}
+
+impl SourceUnitIndex {
+    fn new(
+        precomputed: &DependencyGraphAndAtomicGroups,
+        layout: &SourceUnitLayout,
+    ) -> Result<Self> {
+        let mut declared_names: HashMap<SourceUnitId, Vec<Id>> = HashMap::new();
+        let mut statements = HashMap::<SourceUnitId, StatementId>::new();
+        for node in precomputed.dependency_graph.iter_nodes() {
+            declared_names.insert(node.id, node.declared.iter().cloned().collect());
+            let location = layout.by_source_unit(node.id).with_context(|| {
+                format!("source unit {} has no checked syntax location", node.id.0)
+            })?;
+            statements.insert(node.id, location.statement);
+        }
+        Ok(Self {
+            declared_names,
+            statements,
+        })
+    }
+
+    fn declared_names(&self, source_unit: SourceUnitId) -> &[Id] {
+        self.declared_names
+            .get(&source_unit)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+    }
+
+    fn statement(&self, source_unit: SourceUnitId) -> StatementId {
+        *self
+            .statements
+            .get(&source_unit)
+            .expect("every graph node was checked against the source-unit layout")
+    }
+}
+
 /// Per-explicit-request inputs the builder reads but does not own.
 pub(super) struct ExplicitRequestContext<'a> {
     pub(super) body: &'a [ModuleItem],
@@ -131,11 +172,7 @@ pub(super) struct ChunkPlanBuilder {
     /// caller fails the pipeline at the end with the rolled-up list.
     unmatched_spec_claims: Vec<crate::UnmatchedSpecClaim>,
     /// Name-keyed index into `bindings_catalogue` for the
-    /// duplicate-claim check inside `add_explicit_request`. The
-    /// previous shape — a linear scan of the entire `bindings_catalogue`
-    /// HashMap on every member of every request — was the dominant
-    /// cost in `build_module_plans` on chunks with thousands of spec
-    /// modules (O(N^2) over the growing catalogue). Every catalogue
+    /// duplicate-claim check inside `add_explicit_request`. Every catalogue
     /// key is constructed via `top_level_id(name,
     /// chunk_top_level_mark)`, so the `name` alone uniquely
     /// identifies the catalogue entry within a chunk; we mirror
@@ -360,8 +397,8 @@ impl ChunkPlanBuilder {
     /// claim each member that does not need chunk-analysis facts, and append a
     /// `ModulePlan`.
     /// Solver-resolved members and anonymous statement selectors are left
-    /// unclaimed until `resolve_and_claim_global_selectors` runs over chunk
-    /// analysis facts. Duplicate-claim detection across all explicit requests is
+    /// unclaimed until `claim_resolution` applies the selector resolution.
+    /// Duplicate-claim detection across all explicit requests is
     /// keyed by binding-name via the builder's scratch indexes.
     pub(super) fn add_explicit_request(
         &mut self,
@@ -497,10 +534,7 @@ impl ChunkPlanBuilder {
                 self.bindings_catalogue.insert(binding_id, kind);
             } else {
                 // The spec claimed a binding name that does not
-                // appear as a top-level declaration in this chunk —
-                // the previous behavior silently dropped the claim,
-                // leaving the destination module short one export
-                // and the binding falling into the residual sweep.
+                // appear as a top-level declaration in this chunk.
                 // Record it so the pipeline can fail at the end
                 // with the full list across every chunk; meanwhile
                 // keep lowering as if the spec had not claimed the
@@ -1428,16 +1462,7 @@ impl ChunkPlanBuilder {
             return Ok(());
         }
 
-        let dependency_graph = &precomputed.dependency_graph;
-        let mut source_unit_declared_names: HashMap<SourceUnitId, Vec<Id>> = HashMap::new();
-        let mut source_unit_statements = HashMap::<SourceUnitId, StatementId>::new();
-        for node in dependency_graph.iter_nodes() {
-            source_unit_declared_names.insert(node.id, node.declared.iter().cloned().collect());
-            let location = layout.by_source_unit(node.id).with_context(|| {
-                format!("source unit {} has no checked syntax location", node.id.0)
-            })?;
-            source_unit_statements.insert(node.id, location.statement);
-        }
+        let source_units = SourceUnitIndex::new(precomputed, layout)?;
 
         let opted_in_owner_paths: BTreeSet<String> = opted_in_owner_paths.iter().cloned().collect();
         let mut atomic_groups: Vec<&BTreeSet<SourceUnitId>> = precomputed
@@ -1460,14 +1485,9 @@ impl ChunkPlanBuilder {
             let mut has_imported_binding = false;
 
             for &source_unit_id in members {
-                let names = source_unit_declared_names
-                    .get(&source_unit_id)
-                    .map(Vec::as_slice)
-                    .unwrap_or(&[]);
+                let names = source_units.declared_names(source_unit_id);
                 if names.is_empty() {
-                    let body_index = *source_unit_statements
-                        .get(&source_unit_id)
-                        .expect("every graph node was checked against the source-unit layout");
+                    let body_index = source_units.statement(source_unit_id);
                     match self.whole_statement_assignment.get(&body_index).copied() {
                         Some(owner) => {
                             current_owners.insert(owner);
@@ -1568,16 +1588,7 @@ impl ChunkPlanBuilder {
             return Ok(BTreeMap::new());
         }
 
-        let dependency_graph = &precomputed.dependency_graph;
-        let mut source_unit_declared_names: HashMap<SourceUnitId, Vec<Id>> = HashMap::new();
-        let mut source_unit_statements = HashMap::<SourceUnitId, StatementId>::new();
-        for node in dependency_graph.iter_nodes() {
-            source_unit_declared_names.insert(node.id, node.declared.iter().cloned().collect());
-            let location = layout.by_source_unit(node.id).with_context(|| {
-                format!("source unit {} has no checked syntax location", node.id.0)
-            })?;
-            source_unit_statements.insert(node.id, location.statement);
-        }
+        let source_units = SourceUnitIndex::new(precomputed, layout)?;
 
         let opted_in_owner_paths: BTreeSet<&str> =
             opted_in_owner_paths.iter().map(String::as_str).collect();
@@ -1593,14 +1604,9 @@ impl ChunkPlanBuilder {
             let mut current_owners = BTreeSet::<usize>::new();
             let mut has_imported_binding = false;
             for &source_unit_id in members {
-                let names = source_unit_declared_names
-                    .get(&source_unit_id)
-                    .map(Vec::as_slice)
-                    .unwrap_or(&[]);
+                let names = source_units.declared_names(source_unit_id);
                 if names.is_empty() {
-                    let body_index = *source_unit_statements
-                        .get(&source_unit_id)
-                        .expect("every graph node was checked against the source-unit layout");
+                    let body_index = source_units.statement(source_unit_id);
                     if let Some(owner) = self.whole_statement_assignment.get(&body_index) {
                         current_owners.insert(*owner);
                     }
@@ -1678,17 +1684,7 @@ impl ChunkPlanBuilder {
         precomputed: &'a DependencyGraphAndAtomicGroups,
         layout: &SourceUnitLayout,
     ) -> Result<Vec<&'a BTreeSet<SourceUnitId>>> {
-        let dependency_graph = &precomputed.dependency_graph;
-        let mut source_unit_declared_names: HashMap<SourceUnitId, Vec<Id>> = HashMap::new();
-        let mut source_unit_statements = HashMap::<SourceUnitId, StatementId>::new();
-        for node in dependency_graph.iter_nodes() {
-            let ids: Vec<Id> = node.declared.iter().cloned().collect();
-            source_unit_declared_names.insert(node.id, ids);
-            let location = layout.by_source_unit(node.id).with_context(|| {
-                format!("source unit {} has no checked syntax location", node.id.0)
-            })?;
-            source_unit_statements.insert(node.id, location.statement);
-        }
+        let source_units = SourceUnitIndex::new(precomputed, layout)?;
 
         let residual_plan_index = self.residual_plan_index;
         let bindings_catalogue = &self.bindings_catalogue;
@@ -1702,10 +1698,7 @@ impl ChunkPlanBuilder {
         // claim intact (and let downstream validation flag an
         // atomic group conflict if the claims disagree).
         let is_source_unit_unclaimed = |source_unit: SourceUnitId| -> bool {
-            let names = source_unit_declared_names
-                .get(&source_unit)
-                .map(Vec::as_slice)
-                .unwrap_or(&[]);
+            let names = source_units.declared_names(source_unit);
             for id in names {
                 match owned_destination(bindings_catalogue, id) {
                     None => continue,
@@ -1714,10 +1707,8 @@ impl ChunkPlanBuilder {
                 }
             }
             if names.is_empty() {
-                let body_idx = source_unit_statements
-                    .get(&source_unit)
-                    .expect("every graph node was checked against the source-unit layout");
-                match whole_statement_assignment.get(body_idx).copied() {
+                let body_idx = source_units.statement(source_unit);
+                match whole_statement_assignment.get(&body_idx).copied() {
                     None => return true,
                     Some(idx) if Some(idx) == residual_plan_index => return true,
                     Some(_) => return false,
@@ -1916,16 +1907,7 @@ impl ChunkPlanBuilder {
         path_prefix: &str,
         generated_residual: bool,
     ) -> Result<()> {
-        let dependency_graph = &precomputed.dependency_graph;
-        let mut source_unit_declared_names: HashMap<SourceUnitId, Vec<Id>> = HashMap::new();
-        let mut source_unit_statements = HashMap::<SourceUnitId, StatementId>::new();
-        for node in dependency_graph.iter_nodes() {
-            source_unit_declared_names.insert(node.id, node.declared.iter().cloned().collect());
-            let location = layout.by_source_unit(node.id).with_context(|| {
-                format!("source unit {} has no checked syntax location", node.id.0)
-            })?;
-            source_unit_statements.insert(node.id, location.statement);
-        }
+        let source_units = SourceUnitIndex::new(precomputed, layout)?;
 
         let residual_plan_index = self.residual_plan_index;
         for (idx, members) in groups.into_iter().enumerate() {
@@ -1935,18 +1917,13 @@ impl ChunkPlanBuilder {
             let target_file = target_file_for_request(target_dir, &target_path)?;
             let mut bindings = HashMap::<String, String>::new();
             let mut anonymous_statements = Vec::<StatementId>::new();
-            for source_unit in members {
-                let names = source_unit_declared_names
-                    .get(source_unit)
-                    .map(Vec::as_slice)
-                    .unwrap_or(&[]);
+            for &source_unit in members {
+                let names = source_units.declared_names(source_unit);
                 if names.is_empty() {
-                    let body_idx = source_unit_statements
-                        .get(source_unit)
-                        .expect("every graph node was checked against the source-unit layout");
+                    let body_idx = source_units.statement(source_unit);
                     self.whole_statement_assignment
-                        .insert(*body_idx, synthetic_idx);
-                    anonymous_statements.push(*body_idx);
+                        .insert(body_idx, synthetic_idx);
+                    anonymous_statements.push(body_idx);
                     continue;
                 }
                 for name in names {

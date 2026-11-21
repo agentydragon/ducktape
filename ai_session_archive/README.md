@@ -12,7 +12,7 @@ This package imports transcript file versions from one machine's Restic reposito
 
 Existing archive Postgres indexes may be discarded and reimported. Verify that retained Restic snapshots cover the transcripts you need before doing so. This rebuild affects only the derived Postgres index; it does not delete or recreate source data, including native Codex SQLite databases.
 
-Configure the Restic node roots explicitly. The repository's `session_backup.sh` changes to the workstation home and backs up relative `.claude` and `.codex` paths, so `restic ls` exposes the roots as `/.claude` and `/.codex`. Configure those paths even if `restic snapshots --json` lists the physical home paths in its `Paths` metadata:
+Configure the Restic node roots explicitly. The repository's [`session_backup.py`](../nix/home/services/session_backup.py) changes to the workstation home and backs up relative `.claude` and `.codex` paths, so `restic ls` exposes the roots as `/.claude` and `/.codex`. Configure those paths even if `restic snapshots --json` lists the physical home paths in its `Paths` metadata:
 
 ```sh
 DATABASE_URL='postgresql+psycopg://…' \
@@ -93,13 +93,10 @@ as they write observations, and later observation inserts, corrections, or delet
 update candidates through those triggers. Routine projection reads the compact
 candidate table; the importer no longer runs a one-time historical backfill.
 
-Existing observation and candidate rows are not changed by this code update. Fresh
-databases and newly registered machines build candidates as imports write
-observations. This release does not rebuild candidates from observations that
-predate migration 0005, or finish an interrupted backfill on a database at revision
-0005 or 0006; recovery of those databases is out of scope. The change adds no
-migration and drops no tables, so rolling back to the previous importer remains
-schema-compatible.
+Fresh databases and newly registered machines build candidates as imports write
+observations. Candidates are not rebuilt from observations that predate migration
+0005, and an interrupted backfill on a database at revision 0005 or 0006 is not
+finished; recovery of those databases is out of scope.
 
 ## Read API and browser
 
@@ -111,7 +108,7 @@ native titles and renames replace a prompt fallback. A versioned title projectio
 refreshes existing sessions from stored raw record payloads during ingestion, without
 rereading transcript bytes from Restic.
 
-The browser frontend lives in `//ai_session_archive/frontend:bundle`. Its Bazel output is the portable `dist/` directory (`index.html`, `main.js`, and source maps) mounted by the archive web server.
+The browser frontend lives in `//ai_session_archive/frontend:bundle`. Its Bazel output is the portable `dist/` directory (`index.html`, `main.js`, `main.css`, and source maps) mounted by the archive web server.
 
 The session list has checkboxes for Main sessions, Subagents, Guardian, and Unknown.
 Main and Unknown are selected by default. Kind selections are retained in the URL
@@ -119,7 +116,7 @@ and applied before pagination; clearing every checkbox leaves the list empty.
 Changing kinds preserves the open conversation and captured version. Direct and
 related-session links can open any kind independently of the list filter.
 
-The browser selects a session at `/sessions/<session-id>` and keeps the machine, harness, and captured-version choices in the URL query string. It shows the latest capture by default; the conversation options menu provides older versions and capture metadata. Selecting an older version shows an Earlier capture indicator. Session badges describe exceptional states; a normal capture and its version count add no session-list chrome. The top bar shows compact progress beside the title only for machines with pending or failed import work; `/?view=import-progress` opens full snapshot, file-entry, and Codex metadata details for every registered machine. Session rows and related sessions are links that can be opened in a new tab; session and version changes participate in browser history. The page can be reloaded after sign-in. An unknown session ID stays on its URL and shows a load error; an unavailable version shows an explicit unavailable state without displaying another capture.
+The browser selects a session at `/sessions/<session-id>` and keeps the machine, harness, and captured-version choices in the URL query string. It shows the latest capture by default; the conversation options menu provides older versions and capture metadata. Selecting an older version shows an Earlier capture indicator. Session badges describe exceptional states; a normal capture and its version count add no session-list chrome. The top bar shows compact progress beside the title for every registered machine, with a Synced mark in place of the bars once a machine has no pending or failed import work; `/?view=import-progress` opens full snapshot, file-entry, and Codex metadata details for every registered machine. Session rows and related sessions are links that can be opened in a new tab; session and version changes participate in browser history. The page can be reloaded after sign-in. An unknown session ID stays on its URL and shows a load error; an unavailable version shows an explicit unavailable state without displaying another capture.
 
 `//ai_session_archive:web_image` packages the owner-authenticated read API with the frontend bundle in its Bazel runfiles; `//ai_session_archive:web_bin` does the same for local runs. Set `AI_SESSION_ARCHIVE_DATABASE_URL`, `AI_SESSION_ARCHIVE_PUBLIC_BASE_URL`, `AI_SESSION_ARCHIVE_OIDC_ISSUER`, `AI_SESSION_ARCHIVE_OIDC_CLIENT_ID`, `AI_SESSION_ARCHIVE_OIDC_CLIENT_SECRET`, `AI_SESSION_ARCHIVE_OIDC_SESSION_SECRET`, and `AI_SESSION_ARCHIVE_OIDC_ALLOWED_SUBJECT`. `AI_SESSION_ARCHIVE_FRONTEND_DIR` is an optional override for a separately provisioned frontend directory. The only unauthenticated endpoint is `/healthz`.
 

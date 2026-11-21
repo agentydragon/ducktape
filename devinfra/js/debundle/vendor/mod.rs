@@ -17,7 +17,7 @@ mod strip;
 mod validate;
 mod wrappers;
 
-use swc_common::{DUMMY_SP, SyntaxContext};
+use swc_common::DUMMY_SP;
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
@@ -270,39 +270,6 @@ fn make_named_reexport(source: &str, orig: &str, exported: &str) -> ModuleItem {
     )
 }
 
-/// `new URL("<source>", import.meta.url)` — the pass-through rewriter's
-/// replacement for a canonicalized `new Worker("<source>")` string
-/// argument (worker URLs must be module-relative at runtime).
-fn new_url_expr(source: &str) -> Expr {
-    Expr::New(NewExpr {
-        span: DUMMY_SP,
-        ctxt: SyntaxContext::empty(),
-        callee: Box::new(Expr::Ident(Ident::new_no_ctxt("URL".into(), DUMMY_SP))),
-        args: Some(vec![
-            ExprOrSpread {
-                spread: None,
-                expr: Box::new(Expr::Lit(Lit::Str(Str {
-                    span: DUMMY_SP,
-                    value: source.into(),
-                    raw: None,
-                }))),
-            },
-            ExprOrSpread {
-                spread: None,
-                expr: Box::new(Expr::Member(MemberExpr {
-                    span: DUMMY_SP,
-                    obj: Box::new(Expr::MetaProp(MetaPropExpr {
-                        span: DUMMY_SP,
-                        kind: MetaPropKind::ImportMeta,
-                    })),
-                    prop: MemberProp::Ident(IdentName::new("url".into(), DUMMY_SP)),
-                })),
-            },
-        ]),
-        type_args: None,
-    })
-}
-
 /// `export * as <exported> from "<source>"`.
 fn make_namespace_reexport(source: &str, exported: &str) -> ModuleItem {
     named_export_module_item(
@@ -361,29 +328,6 @@ pub fn validate_partial_swap_consumers(
 mod tests {
     use super::*;
     use swc_ecma_visit::VisitMutWith;
-
-    #[test]
-    fn worker_url_rewrite_uses_import_meta_url_as_base() {
-        let Expr::New(new_expr) = new_url_expr("../worker.js") else {
-            panic!("expected new URL expression");
-        };
-        let args = new_expr.args.expect("new URL args");
-        assert_eq!(args.len(), 2);
-        let Expr::Member(member) = &*args[1].expr else {
-            panic!("expected import.meta.url member expression");
-        };
-        assert!(matches!(
-            &*member.obj,
-            Expr::MetaProp(MetaPropExpr {
-                kind: MetaPropKind::ImportMeta,
-                ..
-            })
-        ));
-        let MemberProp::Ident(prop) = &member.prop else {
-            panic!("expected ident member property");
-        };
-        assert_eq!(prop.sym.as_ref(), "url");
-    }
 
     #[test]
     fn partial_swap_rewriter_preserves_namespace_iife_initializer_target() {

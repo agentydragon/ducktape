@@ -17,8 +17,8 @@ from testcontainers.core.network import Network
 from devinfra.oci.oci import load_oci_image
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from grafana.visual_tests.recorded import prepare_recorded_dashboard_fixture
+from testing.container_logs import LoggedContainer
 from third_party.containers import grafana_visual, prometheus_visual, ryuk
-from util.testing.container_logs import LoggedContainer
 
 TEST_PASSWORD = "isolated-synthetic-grafana"
 

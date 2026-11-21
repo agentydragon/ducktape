@@ -12,12 +12,14 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":config",
+        ":environment",
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:namespaces",
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:service_ref",
-        "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
+        "//cluster/cdk8s:vpa_policy",
+        "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
         "@pypi//cdk8s",
     ],
@@ -74,7 +76,6 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s:external_creds",
-        "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
@@ -93,6 +94,7 @@ py_library(
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:namespaces",
         "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:vpa_policy",
         "@pypi//cdk8s",
     ],
 )

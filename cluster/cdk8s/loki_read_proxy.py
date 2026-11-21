@@ -12,11 +12,13 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 
 from cluster.cdk8s import cilium, namespaces
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.vpa_policy import ContainerPolicy
 
 NAME = "loki-read-proxy"
 OUTPUT_DIR = f"{GENERATED_ROOT}/agents/loki-read-proxy"
@@ -91,6 +93,11 @@ def _deployment(chart: Chart) -> None:
             namespace=NAME,
             labels=SERVICE.pods.selector,
             annotations={
+                **namespaces.initial_request_annotations(
+                    ContainerPolicy.memory_requests_only(
+                        "proxy", cpu_request="50m", memory_floor="128Mi", memory_limit="160Mi"
+                    )
+                ),
                 "description": (
                     "Read-only namespace-filtering Loki query proxy for agents. Exposes only GET"
                     " query/query_range and requires an exact namespace matcher in every query; Loki"
@@ -98,7 +105,7 @@ def _deployment(chart: Chart) -> None:
                     " with a Kubernetes bearer token is authorized by that token's RBAC"
                     " (SelfSubjectAccessReview for get pods/log in the namespace); an anonymous request"
                     " by the static NAMESPACE_ALLOWLIST, fenced by the CiliumNetworkPolicy next to it."
-                )
+                ),
             },
         ),
         spec=k8s.DeploymentSpec(
@@ -147,15 +154,8 @@ def _deployment(chart: Chart) -> None:
                             volume_mounts=[
                                 k8s.VolumeMount(name="kube-root-ca", mount_path="/var/run/kube-root-ca", read_only=True)
                             ],
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("50m"),
-                                    "memory": k8s.Quantity.from_string("64Mi"),
-                                },
-                                limits={
-                                    "cpu": k8s.Quantity.from_string("200m"),
-                                    "memory": k8s.Quantity.from_string("256Mi"),
-                                },
+                            resources=container_resources(
+                                cpu="50m", memory="64Mi", cpu_limit="200m", memory_limit="256Mi"
                             ),
                             readiness_probe=_healthz(initial_delay_seconds=3, period_seconds=10),
                             liveness_probe=_healthz(initial_delay_seconds=10, period_seconds=20),
@@ -173,24 +173,13 @@ def _deployment(chart: Chart) -> None:
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAME)
-    namespaces.namespace(chart, "namespace", name=NAME, vpa=Vpa.DISABLED)
+    namespaces.namespace(chart, "namespace", name=NAME, vpa=Vpa.RECOMMEND)
     _deployment(chart)
     k8s.KubeService(
         chart,
         "service",
         metadata=k8s.ObjectMeta(name=SERVICE.name, namespace=NAME, labels=SERVICE.labels),
-        spec=k8s.ServiceSpec(
-            selector=SERVICE.pods.selector,
-            ports=[
-                k8s.ServicePort(
-                    name=SERVICE.port.name,
-                    port=SERVICE.port.number,
-                    target_port=k8s.IntOrString.from_number(SERVICE.pod_port),
-                    protocol="TCP",
-                )
-            ],
-            type="ClusterIP",
-        ),
+        spec=k8s.ServiceSpec(selector=SERVICE.pods.selector, ports=[SERVICE.k8s_service_port()], type="ClusterIP"),
     )
     # Who may reach the proxy at all. Anonymous requests are authorized only by the proxy's
     # static allowlist, so this ingress fence is their access control; token-bearing requests

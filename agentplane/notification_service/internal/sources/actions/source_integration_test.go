@@ -35,16 +35,15 @@ import (
 )
 
 const (
-	testNamespace  = "test-namespace"
-	testSandbox    = "test-sandbox"
-	testSandboxUID = "test-uid"
+	testNamespace = "test-namespace"
+	testSandbox   = "test-sandbox"
 )
 
 // testOwner is retained ServiceAccount attribution on historical Action events.
 var testOwner = model.ServiceAccount{Namespace: testNamespace, Name: testSandbox}
 
-// testIncarnation owns the inboxes for this exact Sandbox incarnation.
-var testIncarnation = inboxstore.Owner{Identity: model.Identity{Name: "test-identity", UID: "test-identity-uid"}, SandboxUID: testSandboxUID}
+// testIncarnation owns the inboxes as an Identity incarnation.
+var testIncarnation = inboxstore.Owner{Identity: model.Identity{Name: "test-identity", UID: "test-identity-uid"}}
 
 // wireEvent is the payload the Notification Service retains for an Action event.
 func wireEvent(sequence int64) string {
@@ -192,7 +191,6 @@ func (f fixture) client(t *testing.T, timeoutSeconds float64) actionpb.ActionSer
 func (f fixture) subscribe(t *testing.T) inboxstore.Subscription {
 	t.Helper()
 	subscription, err := f.store.Subscribe(t.Context(), testIncarnation, sourceadapter.Subscribe{
-		DestinationRef: model.DestinationRef{Namespace: testNamespace, Name: testSandbox, UID: testSandboxUID},
 		SessionID:      "test-session",
 		IdempotencyKey: "test-key",
 		Source:         sourceadapter.WrapActionsSource(model.ActionsSource{RequestID: uuid.New()}),
@@ -391,7 +389,7 @@ func TestEventsReturnsTheOwnersEventsAndRefusesAnotherIdentity(t *testing.T) {
 		t.Errorf("events call = %+v", call)
 	}
 
-	_, err = f.source.Events(t.Context(), inboxstore.Owner{Identity: model.Identity{Name: "another-identity", UID: "another-identity-uid"}, SandboxUID: testSandboxUID}, request, 0)
+	_, err = f.source.Events(t.Context(), inboxstore.Owner{Identity: model.Identity{Name: "another-identity", UID: "another-identity-uid"}}, request, 0)
 	requireFailure(t, err, model.FailureAccessDenied, "SourceNotOwnedError")
 }
 

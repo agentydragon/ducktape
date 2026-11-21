@@ -21,7 +21,7 @@ from devinfra.claude.session_export.database_migrate import RUNNER
 from devinfra.claude.session_export.models import DEFAULT_ATTESTATION_STATUS, SESSION_STATUS_ARCHIVED, SessionSummary
 from devinfra.claude.session_export.oauth import CredentialStore, OAuthCredential
 from devinfra.claude.session_export.store import SessionStore, make_engine
-from util.testing.postgres_fixtures import (
+from testing.postgres_fixtures import (
     database_clones,
     database_names,
     migrated_database_fixtures,
@@ -29,7 +29,7 @@ from util.testing.postgres_fixtures import (
     postgres_container,
     postgres_image,
 )
-from util.testing.sqlalchemy_engines import managed_async_engine
+from testing.sqlalchemy_engines import managed_async_engine
 
 TEST_ORG_UUID = "test-org-uuid"
 TEST_COOKIE = SessionCookie(session_key=SecretStr("test-session-key"), org_uuid=TEST_ORG_UUID)

@@ -2,20 +2,16 @@
 
 from __future__ import annotations
 
-import jsii
 from cdk8s import ApiObjectMetadata, Size
 from cdk8s_plus_34 import (
-    Capability,
     ConfigMap,
     ContainerResources,
     ContainerSecurityContextProps,
-    ContainerSecutiryContextCapabilities,
     Cpu,
     CpuResources,
     Deployment,
     DeploymentStrategy,
     EnvValue,
-    IApiResource,
     ImagePullPolicy,
     LabelSelector,
     MemoryResources,
@@ -29,7 +25,7 @@ from constructs import Construct
 from kubevirt_virtualmachine_crds.io.kubevirt import VirtualMachine
 
 from cluster.cdk8s import cilium, pod_policy
-from cluster.cdk8s.api_resource import custom_resource
+from cluster.cdk8s.api_resource import custom_resource, named_resource
 from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 from cluster.controllers.vm_image_restart.settings import Settings
@@ -40,28 +36,6 @@ IMAGE = "git.allegedly.works/ducktape-ci/vm-image-restart:unset"
 OPT_IN_ANNOTATION = "ducktape.org/auto-restart-template-changes"
 STATE_CONFIGMAP_NAME = f"{NAME}-state"
 _LABELS = {"app.kubernetes.io/name": NAME}
-
-
-@jsii.implements(IApiResource)
-class _NamedApiResource:
-    """One namespaced custom resource, restricted to the configured object's name."""
-
-    def __init__(self, *, api_group: str, resource_type: str, resource_name: str) -> None:
-        self._api_group = api_group
-        self._resource_type = resource_type
-        self._resource_name = resource_name
-
-    @property
-    def api_group(self) -> str:
-        return self._api_group
-
-    @property
-    def resource_type(self) -> str:
-        return self._resource_type
-
-    @property
-    def resource_name(self) -> str:
-        return self._resource_name
 
 
 class VmImageRestartController(Construct):
@@ -92,12 +66,8 @@ class VmImageRestartController(Construct):
                 annotations={"description": "Durable rollout state and bounded retry count for the configured VM."},
             ),
         )
-        vm_resource = _NamedApiResource(
-            api_group="kubevirt.io", resource_type="virtualmachines", resource_name=target_name
-        )
-        vmi_resource = _NamedApiResource(
-            api_group="kubevirt.io", resource_type="virtualmachineinstances", resource_name=target_name
-        )
+        vm_resource = named_resource("kubevirt.io", "virtualmachines", target_name)
+        vmi_resource = named_resource("kubevirt.io", "virtualmachineinstances", target_name)
         Role(
             self,
             "role",
@@ -158,7 +128,6 @@ class VmImageRestartController(Construct):
                 allow_privilege_escalation=False,
                 # aspect_py_binary's launcher creates its venv under runfiles at startup.
                 read_only_root_filesystem=False,
-                capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
             ),
         )
         pod_policy.harden(deployment)

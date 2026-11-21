@@ -28,27 +28,16 @@ from constructs import Construct
 
 from agentplane.app.settings import EnvironmentServicePeer, Settings
 from agentplane.crd_group import GROUP
-from agentplane.net.peertls.config import (
-    ACTIONS_URI,
-    APP_URI,
-    EGRESS_PROXY_URI,
-    HISTORY_SERVICE_URI,
-    MCP_EDGE_URI,
-    NOTIFICATIONS_URI,
-    SANDBOX_CONTROLLER_URI,
-    SESSION_DISPATCHER_URI,
-)
+from agentplane.net.peertls.config import ACTIONS_URI, APP_URI, MCP_EDGE_URI, SANDBOX_CONTROLLER_URI
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import (
     actions,
     database,
     egress,
-    environment_service,
     history_service,
     notifications,
     policy_controller,
     runner_gateway,
-    session_dispatcher,
     telemetry,
     workload_tls,
 )
@@ -122,25 +111,16 @@ class App(Construct):
         self.oidc = oidc_secret(env.namespace)
 
         settings = self.props.config.model_copy()
-        settings.egress_admin_tls = workload_tls.service_client_tls(EGRESS_PROXY_URI, client_uri=APP_URI)
-        settings.egress_admin_token_file = None
-        settings.runner_gateway_tls = workload_tls.service_client_tls(SANDBOX_CONTROLLER_URI, client_uri=APP_URI)
-        settings.runner_gateway_token_file = None
-        settings.session_dispatcher_tls = workload_tls.service_client_tls(SESSION_DISPATCHER_URI, client_uri=APP_URI)
-        settings.session_dispatcher_token_file = None
         if environment_service_endpoint is not None:
             settings.environment_service = EnvironmentServicePeer(
                 target=f"{environment_service_endpoint.fqdn}:{environment_service_endpoint.port.number}",
                 request_timeout_s=settings.session_dispatcher_request_timeout_s,
                 tls=workload_tls.service_client_tls(SANDBOX_CONTROLLER_URI, client_uri=APP_URI),
             )
-        settings.history_service_tls = workload_tls.service_client_tls(HISTORY_SERVICE_URI, client_uri=APP_URI)
-        settings.history_service_token_file = None
-        settings.notifications_tls = workload_tls.service_client_tls(NOTIFICATIONS_URI, client_uri=APP_URI)
-        settings.notifications_token_file = None
+        # These operator-token facades are optional in the settings model, so the workload mounts
+        # decide them here rather than in each environment's authored config.
         settings.actions_tls = workload_tls.service_client_tls(ACTIONS_URI, client_uri=APP_URI)
         settings.connection_service_tls = workload_tls.service_client_tls(MCP_EDGE_URI, client_uri=APP_URI)
-        settings.policy_service_token_file = None
         config = SettingsFile(
             self,
             "config",
@@ -162,7 +142,7 @@ class App(Construct):
         role = Role(
             self,
             "role",
-            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=namespace),
+            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
             rules=[
                 RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list", "watch"]),
                 # The app lists names to present in the operator's create form.
@@ -190,10 +170,7 @@ class App(Construct):
             ],
         )
         RoleBinding(
-            self,
-            "rolebinding",
-            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=namespace),
-            role=role,
+            self, "rolebinding", metadata=ApiObjectMetadata(name=NAME, namespace=namespace), role=role
         ).add_subjects(app_service_account)
 
     def _container_env(self) -> dict[str, EnvValue]:
@@ -279,27 +256,24 @@ class App(Construct):
     def _add_network_policy(self) -> None:
         namespace = self.env.namespace
         # The app takes browser traffic straight from the gateway and reaches DNS, the
-        # API server, the OIDC provider, Runner Gateway, Session Dispatcher, History Service, the egress
+        # API server, the OIDC provider, Sessions, History Service, the egress
         # proxy's admin port, the Action Service, and the trajectory store.
         NetworkPolicy(
             self,
             "networkpolicy-app",
-            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=namespace),
+            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
             endpoint_selector=self.service.pods.selector,
             ingress=[IngressRule.from_gateway(self.service.pod_port)],
             egress=[
                 cilium.dns_egress(),
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 *self._oidc_egress_rules(),
-                runner_gateway.service(namespace).egress(),
-                # Old App Pods and rollback images still use this authority during the roll.
-                environment_service.service(namespace).egress(),
+                runner_gateway.sessions_service(namespace).egress(),
                 *(
                     [self.environment_service_endpoint.egress()]
                     if self.environment_service_endpoint is not None
                     else []
                 ),
-                session_dispatcher.service(namespace).egress(),
                 history_service.service(namespace).egress(),
                 notifications.service(namespace).egress(),
                 policy_controller.tls_service(namespace).egress(),

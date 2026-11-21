@@ -40,12 +40,6 @@ class K8sSecretOutput(BaseModel):
     referenced from the start, and the first run overwrites it (a stale
     `expires_unencrypted` forces the mint). That is exactly the failure mode
     `probe` exists to catch: "a seed placeholder never overwritten".
-
-    `haku-openclaw-spike-kube-token` is the worked example of getting
-    this wrong -- #3772 deferred the resource line behind a comment asking a
-    human to remember, the rotator landed the manifest 4.5 min later, and CI on
-    `devel` stayed red ~4h48m until #3780 added the line. A comment promising a
-    follow-up is not a mechanism.
     """
 
     path: Path = Field(description="Repo-relative path for the Secret manifest (under cluster/k8s/, *.sops.yaml)")

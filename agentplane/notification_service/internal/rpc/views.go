@@ -179,8 +179,20 @@ func sourceView(source sourceadapter.Source) (*notificationspb.Source, error) {
 	}
 }
 
-func refreshStatus(refresh githubstate.RefreshStatus) (observation, error) {
-	return observe(refresh.LastSuccessAt, refresh.Failure)
+// refreshStatusView is the message for a shared row's refresh state; nil when the status carries no such row.
+func refreshStatusView(refresh *githubstate.RefreshStatus) (*notificationspb.GitHubRefreshStatus, error) {
+	if refresh == nil {
+		return nil, nil
+	}
+	seen, err := observe(refresh.LastSuccessAt, refresh.Failure)
+	if err != nil {
+		return nil, err
+	}
+	return &notificationspb.GitHubRefreshStatus{
+		LastSuccessAt: seen.lastSuccessAt, ErrorKind: seen.errorKind, Error: seen.errorMessage,
+		ErrorSince: seen.errorSince, ErrorObservedAt: seen.errorObserved,
+		RetryAt: timestamp(refresh.RetryAt), RefreshingUntil: timestamp(refresh.RefreshingUntil),
+	}, nil
 }
 
 func githubStatusView(status *githubstate.Status) (*notificationspb.GitHubStatus, error) {
@@ -188,41 +200,18 @@ func githubStatusView(status *githubstate.Status) (*notificationspb.GitHubStatus
 		return nil, nil
 	}
 	view := &notificationspb.GitHubStatus{}
-	if status.CheckRuns != nil {
-		seen, err := refreshStatus(*status.CheckRuns)
-		if err != nil {
-			return nil, err
-		}
-		view.CheckRuns = &notificationspb.GitHubRefreshStatus{
-			LastSuccessAt: seen.lastSuccessAt, ErrorKind: seen.errorKind, Error: seen.errorMessage,
-			ErrorSince: seen.errorSince, ErrorObservedAt: seen.errorObserved,
-			RetryAt: timestamp(status.CheckRuns.RetryAt), RefreshingUntil: timestamp(status.CheckRuns.RefreshingUntil),
-		}
+	var err error
+	if view.CheckRuns, err = refreshStatusView(status.CheckRuns); err != nil {
+		return nil, err
 	}
-	if status.CommitStatuses != nil {
-		seen, err := refreshStatus(*status.CommitStatuses)
-		if err != nil {
-			return nil, err
-		}
-		view.CommitStatuses = &notificationspb.GitHubRefreshStatus{
-			LastSuccessAt: seen.lastSuccessAt, ErrorKind: seen.errorKind, Error: seen.errorMessage,
-			ErrorSince: seen.errorSince, ErrorObservedAt: seen.errorObserved,
-			RetryAt: timestamp(status.CommitStatuses.RetryAt), RefreshingUntil: timestamp(status.CommitStatuses.RefreshingUntil),
-		}
+	if view.CommitStatuses, err = refreshStatusView(status.CommitStatuses); err != nil {
+		return nil, err
 	}
-	if status.Reviews != nil {
-		seen, err := refreshStatus(*status.Reviews)
-		if err != nil {
-			return nil, err
-		}
-		view.Reviews = &notificationspb.GitHubRefreshStatus{
-			LastSuccessAt: seen.lastSuccessAt, ErrorKind: seen.errorKind, Error: seen.errorMessage,
-			ErrorSince: seen.errorSince, ErrorObservedAt: seen.errorObserved,
-			RetryAt: timestamp(status.Reviews.RetryAt), RefreshingUntil: timestamp(status.Reviews.RefreshingUntil),
-		}
+	if view.Reviews, err = refreshStatusView(status.Reviews); err != nil {
+		return nil, err
 	}
 	for _, access := range status.Access {
-		seen, err := refreshStatus(access.RefreshStatus)
+		seen, err := observe(access.LastSuccessAt, access.Failure)
 		if err != nil {
 			return nil, err
 		}
@@ -234,7 +223,7 @@ func githubStatusView(status *githubstate.Status) (*notificationspb.GitHubStatus
 			RetryAt: timestamp(access.RetryAt), RefreshingUntil: timestamp(access.RefreshingUntil),
 		})
 	}
-	seen, err := refreshStatus(status.Subject.RefreshStatus)
+	seen, err := observe(status.Subject.LastSuccessAt, status.Subject.Failure)
 	if err != nil {
 		return nil, err
 	}
@@ -281,17 +270,9 @@ func subscriptionView(subscription inboxstore.Subscription) (*notificationspb.Su
 	}, nil
 }
 
-func destinationRefView(ref model.DestinationRef) *notificationspb.DestinationRef {
-	return &notificationspb.DestinationRef{Namespace: ref.Namespace, Name: ref.Name, Uid: ref.UID}
-}
-
 func inboxView(inbox inboxstore.Inbox) *notificationspb.Inbox {
-	var destination *notificationspb.DestinationRef
-	if inbox.DestinationRef.Namespace != "" || inbox.DestinationRef.Name != "" || inbox.DestinationRef.UID != "" {
-		destination = destinationRefView(inbox.DestinationRef)
-	}
 	return &notificationspb.Inbox{
-		Id: inbox.ID.String(), DestinationRef: destination, SessionId: inbox.SessionID,
+		Id: inbox.ID.String(), SessionId: inbox.SessionID,
 		LastCursor: inbox.LastCursor, Acknowledged: inbox.Acknowledged, Covered: inbox.Covered,
 		ExpiredThrough: inbox.ExpiredThrough, Retired: inbox.Retired, DeliveryError: inbox.DeliveryError,
 	}

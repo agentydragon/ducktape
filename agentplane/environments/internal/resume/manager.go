@@ -7,7 +7,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/environments/lifecycle"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
-	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -40,7 +39,7 @@ func (s *Manager) ResumeEnvironment(
 	if request == nil || request.Target == nil {
 		return nil, status.Error(codes.InvalidArgument, "target is required")
 	}
-	target := targetFromProto(request.Target)
+	target := request.Target
 	if !lifecycle.ValidTarget(target) {
 		return nil, status.Error(codes.InvalidArgument, "target namespace, name and UID are required")
 	}
@@ -72,10 +71,7 @@ func (s *Manager) ResumeEnvironment(
 		// observed generation anyway so conflict retries cannot silently advance a later one.
 		resumeToken = lifecycle.NewResumeToken(target, view.Spec.WakeGeneration)
 	}
-	assessment, err := s.policy.ApplyExplicitResume(ctx, target, caller, resumeToken, operator)
-	if err != nil {
-		return nil, err
-	}
+	assessment := s.policy.ApplyExplicitResume(ctx, target, caller, resumeToken, operator)
 	switch assessment.GetState() {
 	case environmentlifecyclepb.WakeState_WAKE_STATE_REQUESTED:
 		return resumeResponse(target, assessment.GetTargetGeneration(), environmentpb.ResumeOutcome_RESUME_OUTCOME_REQUESTED, eligibility, assessment), nil
@@ -140,7 +136,7 @@ func resumeResponse(
 	wake *environmentlifecyclepb.WakeAssessment,
 ) *environmentpb.ResumeEnvironmentResponse {
 	return &environmentpb.ResumeEnvironmentResponse{
-		Target: targetProto(target), Outcome: outcome, WakeGeneration: proto.Int64(generation), Eligibility: eligibility, Wake: wake,
+		Target: target, Outcome: outcome, WakeGeneration: proto.Int64(generation), Eligibility: eligibility, Wake: wake,
 	}
 }
 
@@ -152,15 +148,4 @@ func stateChangedResponse(
 ) *environmentpb.ResumeEnvironmentResponse {
 	wake := lifecycle.AssessmentFor(environmentlifecyclepb.WakeState_WAKE_STATE_NOT_EVALUATED, reason, view.Spec.WakeGeneration)
 	return resumeResponse(target, view.Spec.WakeGeneration, environmentpb.ResumeOutcome_RESUME_OUTCOME_STATE_CHANGED, eligibility, wake)
-}
-
-func targetFromProto(target *identitypb.EnvironmentTarget) *lifecycle.Target {
-	if target == nil {
-		return nil
-	}
-	return target
-}
-
-func targetProto(target *lifecycle.Target) *identitypb.EnvironmentTarget {
-	return target
 }

@@ -2,7 +2,7 @@
 
 Agent (uses skill) vs Simulator (holds ground truth). Provides:
 - CLI utilities (add_common_args, model_from_args, etc.)
-- Pydantic models for results and logging
+- Pydantic models for results
 - Helpers for loading the skill text
 
 Uses the OpenAI Responses API via ResponsesModel and the SDK's configured retry policy.
@@ -12,24 +12,14 @@ import argparse
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
 
 from pydantic import BaseModel
 from python.runfiles import Runfiles
 
 from openai_utils.client_factory import get_async_openai
 from openai_utils.model import Model, ResponsesModel
-from skills.info_gathering.evals.agent_runtime.events import ToolCall
 
 logger = logging.getLogger(__name__)
-
-
-class LogEntry(BaseModel):
-    timestamp: datetime
-    player: Literal["agent", "simulator"]
-    model: str
-    content: str
-    tool_calls: list[ToolCall] = []
 
 
 class RunSummary[ResultT: BaseModel](BaseModel):

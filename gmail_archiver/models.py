@@ -37,7 +37,6 @@ class Email:
     internal_date: datetime
     snippet: str | None
 
-    # Raw content - single source of truth
     raw_bytes: bytes
 
     @cached_property
@@ -47,10 +46,6 @@ class Email:
     @cached_property
     def sender(self) -> str:
         return self._parsed.get("From", "")
-
-    @cached_property
-    def recipient(self) -> str | None:
-        return self._parsed.get("To")
 
     @cached_property
     def subject(self) -> str:

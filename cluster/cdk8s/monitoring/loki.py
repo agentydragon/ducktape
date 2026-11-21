@@ -1,8 +1,6 @@
 """Loki (SimpleScalable) with its SeaweedFS bucket, identity, credentials and CiliumNetworkPolicy.
 
-External access goes through the Authentik proxy outpost (native blueprint in
-cluster/k8s/authentik/app/blueprints/): Gateway → ak-outpost-loki-outpost (auth) → loki
-backend. Grafana reaches Loki internally via the cluster Service.
+Grafana reaches Loki internally via the cluster Service.
 """
 
 from __future__ import annotations
@@ -15,9 +13,15 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import grafana_helmrepository
-from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.namespaces import PRIVILEGED_POD_SECURITY, Vpa
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.seaweedfs import s3
+from cluster.cdk8s.vpa_policy import (
+    VPA_RESOURCE_POLICY_ANNOTATION,
+    ContainerPolicy,
+    ControlledValues,
+    resource_policy_annotation,
+)
 
 NAME = "loki"
 OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/loki"
@@ -32,17 +36,7 @@ _GOLDILOCKS_OFF = {"goldilocks.fairwinds.com/enabled": "false"}
 
 
 def _storage(chart: Chart) -> None:
-    namespaces.namespace(
-        chart,
-        "namespace",
-        name=NAME,
-        vpa=Vpa.INITIAL,
-        labels={
-            "pod-security.kubernetes.io/enforce": "privileged",
-            "pod-security.kubernetes.io/audit": "privileged",
-            "pod-security.kubernetes.io/warn": "privileged",
-        },
-    )
+    namespaces.namespace(chart, "namespace", name=NAME, vpa=Vpa.INITIAL, labels=PRIVILEGED_POD_SECURITY)
     # Single bucket "loki" carrying chunks, ruler, and admin sub-paths
     # (Loki splits them internally by key prefix). See the HelmRelease's
     # `storage.bucketNames` — all three point at the same bucket.
@@ -120,9 +114,14 @@ def _loki_values() -> dict[str, object]:
             # cgroup limit aligned with GOMEMLIMIT and WAL replay while VPA sizes
             # requests for scheduling, including enough memory for recovery.
             "annotations": {
-                "goldilocks.fairwinds.com/vpa-resource-policy": (
-                    '{"containerPolicies":[{"containerName":"loki","controlledValues":"RequestsOnly",'
-                    '"minAllowed":{"memory":"1Gi"},"maxAllowed":{"memory":"2Gi"}}]}'
+                VPA_RESOURCE_POLICY_ANNOTATION: resource_policy_annotation(
+                    ContainerPolicy(
+                        container_name="loki",
+                        controlled_values=ControlledValues.REQUESTS_ONLY,
+                        min_allowed={"memory": "1Gi"},
+                        max_allowed={"memory": "2Gi"},
+                    ),
+                    compact=True,  # Preserve the Helm values byte for byte.
                 )
             },
             "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
@@ -133,7 +132,10 @@ def _loki_values() -> dict[str, object]:
             "resources": {"requests": {"cpu": "100m", "memory": "1Gi"}, "limits": {"cpu": "500m", "memory": "2Gi"}},
         },
         "read": {
-            "replicas": 2,
+            # The chart rolls one unavailable Pod at a time. Keep two reads available
+            # through rollouts and voluntary evictions across the three OVH workers.
+            "replicas": 3,
+            "maxUnavailable": 1,
             "annotations": _GOLDILOCKS_OFF,
             "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
             "affinity": node_scheduling.PREFER_WORKERS,

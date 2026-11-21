@@ -12,7 +12,7 @@ import "google/protobuf/timestamp.proto";
 
 // The caller is the integration app acting for an operator. The bearer is the operator's OIDC token, whose issuer,
 // audience and signature the service verifies; a workload's bearer never reaches this service. An operator decides
-// requests and manages MCP server linkage.
+// requests, reads integration summaries and manages MCP server linkage.
 //
 // An error carries the gRPC status code that names it. `UNAUTHENTICATED` is a bearer that is missing, invalid or
 // expired. `INVALID_ARGUMENT` is a malformed request, or scopes the MCP server is not configured for. `NOT_FOUND` is a
@@ -42,6 +42,34 @@ service OperatorActionService {
   // fails `FAILED_PRECONDITION`. A draining service fails `UNAVAILABLE`.
   rpc DecideActionRequest(DecideActionRequestRequest) returns (DecideActionRequestResponse) {
     option (google.api.http) = {post: "/v1/operator/action-requests/{request_id}/decision" body: "*"};
+  }
+
+  // Live subjects of threads named by a recorded Gmail relabel or draft reply request, or returned by a thread search.
+  // An unavailable thread or backend is omitted. The receipt's arguments remain authoritative.
+  rpc GetGmailThreadSummaries(GetGmailThreadSummariesRequest) returns (GetGmailThreadSummariesResponse) {
+    option (google.api.http) = {get: "/v1/operator/action-requests/{request_id}/gmail-thread-summaries"};
+  }
+
+  // Live display metadata for draft, message, label and filter IDs in a recorded Gmail Action.
+  rpc GetGmailResourceSummaries(GetGmailResourceSummariesRequest) returns (GetGmailResourceSummariesResponse) {
+    option (google.api.http) = {get: "/v1/operator/action-requests/{request_id}/gmail-resource-summaries"};
+  }
+
+  // Live names of nodes or a workspace named by a supported recorded Tana request.
+  // An unavailable node or backend is omitted. The receipt's arguments remain authoritative.
+  rpc GetTanaNodeSummaries(GetTanaNodeSummariesRequest) returns (GetTanaNodeSummariesResponse) {
+    option (google.api.http) = {get: "/v1/operator/action-requests/{request_id}/tana-node-summaries"};
+  }
+
+  // Live display metadata for a pending Calendar request. The saved arguments supply the
+  // calendar and optional event or series ID. Unavailable metadata is omitted.
+  rpc GetGoogleCalendarEventPreview(GetGoogleCalendarEventPreviewRequest) returns (GetGoogleCalendarEventPreviewResponse) {
+    option (google.api.http) = {get: "/v1/operator/action-requests/{request_id}/google-calendar-event-preview"};
+  }
+
+  // Live names for exact references in a saved, pending Grocy SF Action request.
+  rpc GetGrocyReferenceSummaries(GetGrocyReferenceSummariesRequest) returns (GetGrocyReferenceSummariesResponse) {
+    option (google.api.http) = {get: "/v1/operator/action-requests/{request_id}/grocy-reference-summaries"};
   }
 
   // The linkage of every configured MCP server, then each one again whenever it changes, including when its token
@@ -78,6 +106,155 @@ message DecideActionRequestRequest {
 
 message DecideActionRequestResponse {
   ActionRequest action_request = 1;
+}
+
+message GetGmailThreadSummariesRequest {
+  string request_id = 1;
+}
+
+message GetGmailThreadSummariesResponse {
+  repeated GmailThreadSummary threads = 1;
+}
+
+message GmailThreadSummary {
+  string thread_id = 1;
+  string subject = 2;
+}
+
+message GetGmailResourceSummariesRequest {
+  string request_id = 1;
+}
+
+message GetGmailResourceSummariesResponse {
+  repeated GmailResourceTitle drafts = 1;
+  repeated GmailResourceTitle messages = 2;
+  repeated GmailResourceTitle labels = 3;
+  repeated GmailFilterSummary filters = 4;
+}
+
+message GmailResourceTitle {
+  string id = 1;
+  string title = 2;
+}
+
+message GmailFilterSummary {
+  string id = 1;
+  GmailFilterCriteria criteria = 2;
+  GmailFilterAction action = 3;
+}
+
+message GmailFilterCriteria {
+  optional string from = 1;
+  optional string to = 2;
+  optional string subject = 3;
+  optional string query = 4;
+  optional string negated_query = 5;
+  optional bool has_attachment = 6;
+  optional bool exclude_chats = 7;
+  optional int32 size = 8;
+  optional string size_comparison = 9;
+}
+
+message GmailFilterAction {
+  repeated string add_label_ids = 1;
+  repeated string remove_label_ids = 2;
+  optional string forward = 3;
+}
+
+message GetTanaNodeSummariesRequest {
+  string request_id = 1;
+}
+
+message GetTanaNodeSummariesResponse {
+  repeated TanaNodeSummary nodes = 1;
+  TanaWorkspaceSummary workspace = 2;
+}
+
+message TanaNodeSummary {
+  string node_id = 1;
+  string name = 2;
+}
+
+message TanaWorkspaceSummary {
+  string workspace_id = 1;
+  string name = 2;
+}
+
+message GetGoogleCalendarEventPreviewRequest {
+  string request_id = 1;
+}
+
+message GetGoogleCalendarEventPreviewResponse {
+  GoogleCalendarEventPreview event = 1;
+  GoogleCalendarSummary calendar = 2;
+}
+
+message GoogleCalendarSummary {
+  // Exact calendar ID in the request. The "primary" alias is not resolved.
+  string calendar_id = 1;
+  string summary = 2;
+}
+
+message GoogleCalendarEventPreview {
+  string event_id = 1;
+  string summary = 2;
+  string html_link = 3;
+  GoogleCalendarEventTime start = 4;
+  GoogleCalendarEventTime end = 5;
+  GoogleCalendarEventTime original_start_time = 6;
+  GoogleCalendarEventScope scope = 7;
+}
+
+message GoogleCalendarEventTime {
+  // Exactly one of date or date_time is set. The end date of an all-day event is exclusive.
+  string date = 1;
+  string date_time = 2;
+  string time_zone = 3;
+}
+
+enum GoogleCalendarEventScope {
+  GOOGLE_CALENDAR_EVENT_SCOPE_UNSPECIFIED = 0;
+  GOOGLE_CALENDAR_EVENT_SCOPE_SINGLE_EVENT = 1;
+  GOOGLE_CALENDAR_EVENT_SCOPE_OCCURRENCE = 2;
+  GOOGLE_CALENDAR_EVENT_SCOPE_SERIES = 3;
+}
+
+message GetGrocyReferenceSummariesRequest {
+  string request_id = 1;
+}
+
+message GetGrocyReferenceSummariesResponse {
+  repeated GrocyReferenceSummary references = 1;
+}
+
+message GrocyReferenceSummary {
+  // An entity type and exact ID, for example "products/42".
+  string key = 1;
+  string name = 2;
+  GrocyProductEditCurrent product_edit_current = 3;
+  GrocyShoppingItemCurrent shopping_item_current = 4;
+}
+
+message GrocyProductEditCurrent {
+  optional int64 location_id = 1;
+  optional int64 stock_unit_id = 2;
+  optional int64 purchase_unit_id = 3;
+  optional int64 consume_unit_id = 4;
+  optional double minimum_stock = 5;
+  optional int64 shelf_life_days = 6;
+  optional int64 due_type = 7;
+  optional int64 parent_product_id = 8;
+  optional int64 product_group_id = 9;
+  optional string description = 10;
+  optional double calories = 11;
+}
+
+message GrocyShoppingItemCurrent {
+  string list_name = 1;
+  optional double amount = 2;
+  string unit_name = 3;
+  optional bool done = 4;
+  optional string note = 5;
 }
 
 message WatchMcpServersRequest {}

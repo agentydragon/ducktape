@@ -12,10 +12,10 @@ from finance.augur.sim.tax import TaxProfile
 
 
 class ObligationType(StrEnum):
-    """Closed set of `obligation_type` values that flow through dense engine event tables.
+    """Closed set of `obligation_type` values that flow through the obligation event frames.
 
     Sim and product callers should use these enum members at construction sites and at
-    filter sites in decoded `obligation_settlements` / `obligation_failures` frames.
+    filter sites in decoded `obligation_accruals` / `obligation_settlements` / `rollout_failures` frames.
     """
 
     CASH_SPEND = "cash_spend"

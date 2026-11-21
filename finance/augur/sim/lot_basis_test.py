@@ -20,7 +20,7 @@ from finance.augur.product.portfolio import product_portfolio_response
 from finance.augur.sim.actions import Action, LotSale, Sell
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId
+from finance.augur.sim.ids import CHECKING, AgentId, AssetId, LotId
 from finance.augur.sim.income import ORDINARY_INCOME
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import USD
@@ -29,8 +29,6 @@ from finance.augur.sim.session import ActionSession
 from finance.augur.sim.testing.series import level_series
 from finance.augur.sim.testing.session import each, finish
 from finance.augur.sim.world import World
-
-CHECKING = AccountId("checking")
 
 ASSET = SecurityKey(symbol=SecuritySymbol("test-security"))
 OWNER = AgentId("test-owner")

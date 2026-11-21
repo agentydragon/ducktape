@@ -402,11 +402,12 @@ Equality is an _admission rule_, not a complete authorization design or an isola
 
 ### Where a Session's identity comes from
 
-Today `SessionSpec` has no identity: `CreateSession` derives the execution principal from the placed
-Sandbox's own ServiceAccount and pins its UID. That per-Sandbox account exists so `PolicyBinding`s
-can attach permission sets to one agent. In the goal the permission handle is
-the Identity: `CreateSession` names it (`SERVICES_IDENTITY_PRINCIPAL`), Dispatcher holds the
-Session-to-Identity binding, and the reference is neither a credential nor authority to act as it.
+Today `SessionSpec` names no identity: `CreateSession` records the Identity the placed Sandbox names in
+`spec.identity`, read live with its UID, as the Session's immutable principal
+([Dispatcher SPEC](../session_dispatcher/dispatcher/SPEC.md#session-binding)). In the goal the permission
+handle is the Identity: `CreateSession` names it
+([`SESSION_IDENTITY_CONTRACT`](task_dag.md#session_identity_contract--session-identity-and-shared-environment-admission)),
+Dispatcher holds the Session-to-Identity binding, and the reference is neither a credential nor authority to act as it.
 A central Session keeps its Identity with zero Environments; the sampler acts for it as a delegating
 actor ([`CENTRAL_SESSION_ACTING_DESIGN`](task_dag.md#central_session_acting_design--a-central-session-acting-as-its-identity)),
 never by holding the agent's key, and its own ServiceAccount never becomes the agent's.
@@ -591,9 +592,11 @@ a gap against the selected lifetime direction.
 ### Decision: Session and inbox lifetimes after environment deletion
 
 The operator asked to resolve Dispatcher Session-record lifetime and Notification inbox lifetime
-together. The Notification worker [checks the stored Sandbox name and UID and its owner](../notification_service/internal/worker/destination.go), then [retires an inbox and cancels its subscriptions](../notification_service/internal/store/claims.go)
-after confirming a missing or replaced destination, independently of Dispatcher's retained Session
-row. An inbox can therefore still retire when its environment disappears.
+together. The Notification worker [resolves the Session by ID
+and checks the Identity it records against the inbox owner](../notification_service/internal/worker/worker.go),
+and a missing or unplaced destination only postpones delivery. [Retiring an inbox and cancelling its
+subscriptions](../notification_service/internal/inbox/inboxes.go) stays an explicit `RetireInbox` call
+that the worker never makes, so a disappearing environment cannot retire an inbox.
 
 The selected policy is an independent Session lifetime: deleting a native Session's required
 Environment leaves its Session addressable while the native harness is unavailable. History remains
@@ -601,8 +604,9 @@ in its separate store and follows its own retention and read policy. Dispatcher 
 Session row; the selected inbox/subscription retention is not implemented. Do not silently bind a replacement or claim native continuation
 without its actual state and a separately authorized recovery path.
 The intended inbox behavior is to keep subscriptions active and collect authorized events and
-messages while delivery is unavailable, but current Notification cleanup still retires stale
-destinations. Sustained collection efficiency can be revisited if costs warrant it. Central V1 still
+messages while delivery is unavailable, which is what the worker does today: it retains the inbox and
+its subscriptions and retries on the long unavailable-destination interval. Sustained collection
+efficiency can be revisited if costs warrant it. Central V1 still
 requires its exact executor Environment; retained identity is not environment-independent execution.
 Explicit Session deletion, deletion of inbox contents and History, and subscription behavior after
 explicit deletion remain separate work. Suspension, an unavailable Runtime, and a deleted or
@@ -636,14 +640,14 @@ Current sources: [History Service](https://github.com/agentydragon/ducktape/blob
 Give callers the same operation for creating a logical Session on either backend. Choose placement explicitly; let the selected owner prepare, reuse or start its harness as needed.
 
 `CreateSession`, `GetSession` and `ListSessions` are implemented for both placements; the
-[placement contract](../session_dispatcher/dispatcher/SPEC.md#sessionspec-placement-cutover) defines
+[placement contract](../session_dispatcher/dispatcher/SPEC.md#session-resource) defines
 the Dispatcher commit, idempotent retry, minimal `Session` projection and owner-materialization
 states. Materialization is placement-owner progress, not harness readiness, a model turn or History
 projection.
 
 **Open: unconfirmed native openings.** An unconfirmed native owner admission holds dependent queued
-commands as `session_opening_unconfirmed`
-([outcome contract](../session_dispatcher/dispatcher/SPEC.md#native-opening-outcomes-and-dependent-commands));
+commands as `session_unconfirmed`
+([outcome contract](../session_dispatcher/dispatcher/SPEC.md#opening-outcomes-and-dependent-commands));
 nothing resolves that hold automatically. Whether an authorized caller or operator can resolve it
 from durable owner evidence remains open in
 [`SESSION_RUNTIME_MODEL_DESIGN`](task_dag.md#session_runtime_model_design--sessions-harness-placement-and-execution-attachments).
@@ -652,7 +656,7 @@ from durable owner evidence remains open in
 
 The Dispatcher commit establishes logical existence without waiting for the owner, wake, History or
 native creation; the native temporary/rejected/unknown materialization outcomes are in the
-[outcome contract](../session_dispatcher/dispatcher/SPEC.md#native-opening-outcomes-and-dependent-commands).
+[outcome contract](../session_dispatcher/dispatcher/SPEC.md#opening-outcomes-and-dependent-commands).
 Unavailable owners and suspended environments are wait and retry conditions; wake an environment
 only under an authorized policy, which must support eligible unattended inbox notices. A rejected
 configuration is corrected by a new Session UUID; a future edit-and-retry operation is a separate
@@ -874,7 +878,7 @@ an environment when creating a native Session is placement, not a compound Sessi
 | Surface and current behavior                                                                                                                                                                                                                                                                                                                                                                                                                                      | Follow-up and owning task                                                                                                                                                                                                                                                                                 |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [Dispatcher](../session_dispatcher/dispatcher/api/session/session_dispatcher.proto) addresses Sessions by ID with typed `SessionPlacement`; cleanup retains the Session row and fences the deleted UID.                                                                                                                                                                                                                                                           | Remaining [command authority](task_dag.md#delivery_destination_contract--send-commands-to-a-session-id) and durable command-receipt reads after cleanup.                                                                                                                                                  |
-| [App command delivery](../app/frontend/sessions/command_delivery.ts) submits new commands by Session ID; the [Session CLI](../cli/sessions.go) likewise uses Session ID for send and interrupt. Previously retained browser commands keep their original Sandbox target.                                                                                                                                                                                          | Preserve the original fence of saved or accepted work and no-replay recovery; remaining broker and authority work is in [Session-ID command addressing](task_dag.md#delivery_destination_contract--send-commands-to-a-session-id).                                                                        |
+| [App command delivery](../app/frontend/sessions/command_delivery.ts) submits new commands by Session ID; the [Session CLI](../cli/internal/session_dispatcher/session_dispatcher.go) likewise uses Session ID for send and interrupt. Previously retained browser commands keep their original Sandbox target.                                                                                                                                                    | Preserve the original fence of saved or accepted work and no-replay recovery; remaining broker and authority work is in [Session-ID command addressing](task_dag.md#delivery_destination_contract--send-commands-to-a-session-id).                                                                        |
 | [Session Actions](../action_service/session_delegation/contract/inputs.go), their [executor](../action_service/session_delegation/executor.go), and [orchestration](../action_service/orchestration_v1/sessions.go) carry a target environment for opening and Session commands.                                                                                                                                                                                  | Review command schema and grant scope in [Session-ID command addressing](task_dag.md#delivery_destination_contract--send-commands-to-a-session-id); retain creation placement and delegated actor/effective-caller checks.                                                                                |
 | Notification message sends, delivery, inbox reads, acknowledgement and retirement address a Session ID with exact-Sandbox-UID send and delivery fences.                                                                                                                                                                                                                                                                                                           | [Central Sessions without Environments](task_dag.md#central_session_notifications--inboxes-for-sessions-without-environments) need separate identity and lifetime work; preserve exact UID fences, unread messages, idempotency and authorized unattended wake.                                           |
 | [Central sampler opening](../sampler/api/sampler.proto) embeds a required executor destination and incarnation; central Session storage is separate for conversation/continuation.                                                                                                                                                                                                                                                                                | Session ID remains the Session address; move executor choice to optional attachment/setup under [Session/environment design](task_dag.md#session_runtime_model_design--sessions-harness-placement-and-execution-attachments). Identity and 0..N attachment behavior remain open, not a mechanical rename. |

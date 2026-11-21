@@ -28,6 +28,7 @@ from external_secrets_crds.io.external_secrets import (
 from python.runfiles import Runfiles
 
 from cluster.cdk8s import cilium, namespaces, node_scheduling
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME
 from cluster.cdk8s.gateway import https_route
@@ -37,6 +38,7 @@ from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPo
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.volume_claim import volume_claim
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/cli-proxy-api"
 NAME = "cli-proxy-api"
@@ -50,10 +52,7 @@ SERVICE = ServiceRef(
 )
 _CONFIG_SECRET = "cli-proxy-api-config"
 _DATA_CLAIM = "cli-proxy-api-state"
-_INIT_RESOURCES = k8s.ResourceRequirements(
-    requests={"cpu": k8s.Quantity.from_string("10m"), "memory": k8s.Quantity.from_string("16Mi")},
-    limits={"memory": k8s.Quantity.from_string("64Mi")},
-)
+_INIT_RESOURCES = container_resources(cpu="10m", memory="16Mi", memory_limit="64Mi")
 _ADMIN_OIDC = SecretRef(namespace=NAMESPACE, name="cli-proxy-api-admin-oidc")
 # The SOPS-managed management key; aiquota reads it too.
 MANAGEMENT_PASSWORD = SecretRef(namespace=NAMESPACE, name="cli-proxy-api-management").key("management-password")
@@ -70,15 +69,8 @@ def _data_claim(scope: Construct) -> None:
     # Holds the Claude and Codex OAuth auth files that CLIProxyAPI refreshes in place.
     # Single replica (Recreate strategy) because refresh tokens are rotated by this one writer.
     # A few MiB of files: two DRBD copies, following the Pod onto its node.
-    k8s.KubePersistentVolumeClaim(
-        scope,
-        "data",
-        metadata=k8s.ObjectMeta(name=_DATA_CLAIM, namespace=NAMESPACE),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="piraeus-ssd-2-autodiskful",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("256Mi")}),
-        ),
+    volume_claim(
+        scope, "data", name=_DATA_CLAIM, namespace=NAMESPACE, storage_class="piraeus-ssd-2-autodiskful", size="256Mi"
     )
 
 
@@ -158,15 +150,8 @@ def _deployment(scope: Construct) -> None:
                             ports=[SERVICE.port.k8s_container_port()],
                             readiness_probe=k8s.Probe(tcp_socket=tcp_probe, initial_delay_seconds=5, period_seconds=10),
                             liveness_probe=k8s.Probe(tcp_socket=tcp_probe, initial_delay_seconds=30, period_seconds=30),
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("100m"),
-                                    "memory": k8s.Quantity.from_string("128Mi"),
-                                },
-                                limits={
-                                    "cpu": k8s.Quantity.from_string("1"),
-                                    "memory": k8s.Quantity.from_string("512Mi"),
-                                },
+                            resources=container_resources(
+                                cpu="100m", memory="128Mi", cpu_limit="1", memory_limit="512Mi"
                             ),
                             volume_mounts=[
                                 k8s.VolumeMount(name="config", mount_path="/config", read_only=True),

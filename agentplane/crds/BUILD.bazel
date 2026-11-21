@@ -93,9 +93,7 @@ py_test(
     data = [":crds"],
     deps = [
         "//:conftest",
-        "//agentplane/testing:kubernetes_apiserver",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//pytest",
+        "//agentplane/testing:crd_admission",
         "@pypi//pytest_bazel",
     ],
 )
@@ -106,9 +104,7 @@ py_test(
     data = [":crds"],
     deps = [
         "//:conftest",
-        "//agentplane/testing:kubernetes_apiserver",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//pytest",
+        "//agentplane/testing:crd_admission",
         "@pypi//pytest_bazel",
     ],
 )
@@ -180,9 +176,8 @@ py_test(
     data = [":crds"],
     deps = [
         "//:conftest",
-        "//agentplane/testing:kubernetes_apiserver",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//pytest",
+        "//agentplane:crd_group",
+        "//agentplane/testing:crd_admission",
         "@pypi//pytest_bazel",
     ],
 )
@@ -193,9 +188,7 @@ py_test(
     data = [":crds"],
     deps = [
         "//:conftest",
-        "//agentplane/testing:kubernetes_apiserver",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//pytest",
+        "//agentplane/testing:crd_admission",
         "@pypi//pytest_bazel",
     ],
 )

@@ -37,14 +37,12 @@ class TransferDirection(StrEnum):
 class BucketKind(StrEnum):
     """How a bucket's money flows.
 
-    The earlier model split medical spend into REIMBURSABLE / REIMBURSEMENT and netted
-    them on a rolling window. That assumed reimbursements always arrive after charges
-    within a fixed window; in practice, insurance disbursements are lumpy and (for some
-    providers) actually arrive *before* the charge is submitted. The simpler model:
-    every bucket is either money leaving (EXPENSE), money coming in as a refund or
+    Every bucket is either money leaving (EXPENSE), money coming in as a refund or
     insurance payout (INFLOW), money moving between the user's own accounts (TRANSFER),
     or earned income (INCOME). The UI groups related buckets with `BucketDef.family`
-    and shows both sides without forcing them to balance.
+    and shows both sides without forcing them to balance: insurance disbursements are
+    lumpy and for some providers arrive *before* the charge is submitted, so they are
+    never netted against charges.
     """
 
     EXPENSE = "expense"
@@ -81,10 +79,7 @@ class BucketDef(FrozenModel):
     def _validate_direction(self) -> BucketDef:
         expected = _EXPECTED_DIRECTION.get(self.kind)
         if expected is not None and self.direction != expected:
-            raise ValueError(
-                f"bucket {self.id!r} kind={self.kind.value} requires direction={expected.value}, "
-                f"got {self.direction.value}"
-            )
+            raise ValueError(f"bucket {self.id!r} kind={self.kind} requires direction={expected}, got {self.direction}")
         return self
 
 
@@ -125,9 +120,9 @@ class PfcRule(_RuleBase):
     detailed: str | None = None
 
 
-# --- Condition DSL (Stage A): composable predicates for the `match` rule kind ---
-# Leaf conditions mirror the flat rule kinds plus regex / amount / account; composites
-# (all_of / any_of / not) nest arbitrarily. A `MatchRule` pairs a condition with a bucket.
+# Condition DSL: composable predicates for the `match` rule kind. Leaf conditions mirror
+# the flat rule kinds plus regex / amount / account; composites (all_of / any_of / not)
+# nest arbitrarily. A `MatchRule` pairs a condition with a bucket.
 
 
 class MerchantSubstringCondition(FrozenModel):
@@ -254,12 +249,9 @@ Condition = Annotated[
     Field(discriminator="kind"),
 ]
 
-for _composite in (AllOfCondition, AnyOfCondition, NotCondition):
-    _composite.model_rebuild()
-
 
 class MatchRule(_RuleBase):
-    """Rich rule (Stage A): route to `bucket_id` when `condition` matches. Direction-gated
+    """Rich rule: route to `bucket_id` when `condition` matches. Direction-gated
     by the target bucket like the flat rule kinds; first match wins across all rules."""
 
     kind: Literal["match"] = "match"
@@ -365,18 +357,17 @@ class BudgetConfig(FrozenModel):
     @model_validator(mode="after")
     def _validate_references(self) -> BudgetConfig:
         bucket_by_id = {bucket.id: bucket for bucket in self.buckets}
-        for field_name, expected in (
-            ("default_outflow_bucket_id", TransferDirection.OUTFLOW),
-            ("default_inflow_bucket_id", TransferDirection.INFLOW),
+        for field_name, bucket_id, expected in (
+            ("default_outflow_bucket_id", self.default_outflow_bucket_id, TransferDirection.OUTFLOW),
+            ("default_inflow_bucket_id", self.default_inflow_bucket_id, TransferDirection.INFLOW),
         ):
-            bucket_id = getattr(self, field_name)
             target = bucket_by_id.get(bucket_id)
             if target is None:
                 raise ValueError(f"{field_name}={bucket_id!r} not in buckets ({sorted(bucket_by_id)})")
             if target.direction != expected:
                 raise ValueError(
-                    f"{field_name}={bucket_id!r} must reference a direction={expected.value} bucket, "
-                    f"got direction={target.direction.value}"
+                    f"{field_name}={bucket_id!r} must reference a direction={expected} bucket, "
+                    f"got direction={target.direction}"
                 )
         for rule in self.rules:
             if rule.bucket_id not in bucket_by_id:

@@ -19,13 +19,16 @@ import yaml
 from cdk8s import Chart
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client.exceptions import ApiException
-from kubernetes_asyncio.config import new_client_from_config
 from more_itertools import one
 from python.runfiles import Runfiles
-from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from agentplane.subjects import ServiceAccountRef
-from agentplane.testing.kubernetes_apiserver import KubernetesApiServer, kubernetes_apiserver
+from agentplane.testing.kubernetes_apiserver import (
+    KubernetesApiServer,
+    dry_run_admitted,
+    kubernetes_apiserver,
+    wait_until_refused,
+)
 from cluster.cdk8s.agentplane import policy_controller, sandbox_controller, staging, workload_certificate_admission
 from cluster.cdk8s.cert_manager.cluster_ca import WORKLOAD_ISSUER
 
@@ -58,14 +61,14 @@ def _record_uri(namespace: str, name: str = "test-agent") -> str:
     return f"spiffe://agentplane/{namespace}/{name}/{CREDENTIAL_ID}"
 
 
-def _certificate(*, uris: list[str], namespace: str = NAMESPACE, issuer: Body = ISSUER_REF) -> Body:
+def _certificate(*, uris: list[str], namespace: str = NAMESPACE) -> Body:
     return {
         "apiVersion": f"{GROUP}/{VERSION}",
         "kind": "Certificate",
         "metadata": {"name": "test-certificate", "namespace": namespace},
         "spec": {
             "secretName": "test-certificate",
-            "issuerRef": issuer,
+            "issuerRef": ISSUER_REF,
             "uris": uris,
             "usages": ["digital signature", "server auth", "client auth"],
         },
@@ -93,26 +96,12 @@ def _without_spec(body: Body, field: str) -> Body:
     return changed
 
 
-# The client serializes a manifest dict as it would its own model, which is what its stubs name.
-def _cert_manager_crds() -> list[Any]:
+def _cert_manager_crds() -> list[Body]:
     runfiles = Runfiles.CreateOrRaise()
     return [
         yaml.safe_load(Path(str(runfiles.Rlocation(os.environ[variable]))).read_text())
         for variable in ("CERT_MANAGER_CERTIFICATE_CRD", "CERT_MANAGER_CERTIFICATEREQUEST_CRD")
     ]
-
-
-async def _install_cert_manager_crds(server: KubernetesApiServer) -> None:
-    extensions = k8s_client.ApiextensionsV1Api(server.api)
-    names = []
-    for crd in await asyncio.to_thread(_cert_manager_crds):
-        await extensions.create_custom_resource_definition(crd)
-        names.append(crd["metadata"]["name"])
-    async for attempt in AsyncRetrying(stop=stop_after_delay(30), wait=wait_fixed(0.1), reraise=True):
-        with attempt:
-            for name in names:
-                installed = await extensions.read_custom_resource_definition(name)
-                assert any(c.type == "Established" and c.status == "True" for c in installed.status.conditions or [])
 
 
 def _policy_object(documents: list[Body], kind: str) -> Body:
@@ -124,39 +113,22 @@ def _policy_object(documents: list[Body], kind: str) -> Body:
 @asynccontextmanager
 async def _admission(server: KubernetesApiServer, documents: list[Body], namespaces: set[str]) -> AsyncIterator[Admits]:
     """Install the policy in `documents` and yield whether a dry-run create by a user is admitted."""
-    await _install_cert_manager_crds(server)
-    core = k8s_client.CoreV1Api(server.api)
-    for namespace in namespaces:
-        await core.create_namespace(k8s_client.V1Namespace(metadata=k8s_client.V1ObjectMeta(name=namespace)))
-    admission = k8s_client.AdmissionregistrationV1Api(server.api)
-    policy: Any = _policy_object(documents, "ValidatingAdmissionPolicy")
-    binding: Any = _policy_object(documents, "ValidatingAdmissionPolicyBinding")
-    await admission.create_validating_admission_policy(policy)
-    await admission.create_validating_admission_policy_binding(binding)
+    await server.install_crds(*await asyncio.to_thread(_cert_manager_crds))
+    await server.install_admission_policy(
+        _policy_object(documents, "ValidatingAdmissionPolicy"),
+        _policy_object(documents, "ValidatingAdmissionPolicyBinding"),
+        namespaces=namespaces,
+    )
 
     async def admitted(user: str, body: Body) -> bool:
-        async with await new_client_from_config(config_file=str(server.kubeconfig)) as impersonating:
-            impersonating.set_default_header("Impersonate-User", user)
-            # Authorized as an administrator, so that admission alone decides.
-            impersonating.set_default_header("Impersonate-Group", "system:masters")
-            try:
-                await k8s_client.CustomObjectsApi(impersonating).create_namespaced_custom_object(
+        async with server.impersonating(user) as impersonating:
+            return await dry_run_admitted(
+                k8s_client.CustomObjectsApi(impersonating).create_namespaced_custom_object(
                     GROUP, VERSION, body["metadata"]["namespace"], _PLURALS[body["kind"]], body, dry_run="All"
                 )
-            except ApiException as error:
-                if error.status != 422:
-                    raise
-                return False
-            return True
+            )
 
     yield admitted
-
-
-async def _await_policy(admitted: Admits, user: str, refused: Body) -> None:
-    # The API server loads a new policy in the background, and shows no sign of having loaded it.
-    async for attempt in AsyncRetrying(stop=stop_after_delay(30), wait=wait_fixed(0.1), reraise=True):
-        with attempt:
-            assert not await admitted(user, refused)
 
 
 async def test_only_named_requesters_get_workload_certificates(scratch_chart: Chart) -> None:
@@ -173,7 +145,7 @@ async def test_only_named_requesters_get_workload_certificates(scratch_chart: Ch
         kubernetes_apiserver() as server,
         _admission(server, documents, {NAMESPACE, OTHER_NAMESPACE}) as admitted,
     ):
-        await _await_policy(admitted, OTHER_ACCOUNT, record)
+        await wait_until_refused(lambda: admitted(OTHER_ACCOUNT, record))
         # cdk8s renders an issuerRef without a group; cert-manager defaults it.
         assert await admitted(record_issuer, _with_spec(record, issuerRef={k: ISSUER_REF[k] for k in ("name", "kind")}))
         assert await admitted(APPLIER, service)
@@ -240,15 +212,11 @@ async def test_only_named_requesters_get_workload_certificates(scratch_chart: Ch
         # A write that leaves the spec alone, as cert-manager's and the garbage collector's are, is
         # admitted from anyone; a spec change is checked like a create.
         certificates = k8s_client.CustomObjectsApi(server.api)
-        async with await new_client_from_config(config_file=str(server.kubeconfig)) as impersonating:
-            impersonating.set_default_header("Impersonate-User", record_issuer)
-            impersonating.set_default_header("Impersonate-Group", "system:masters")
+        async with server.impersonating(record_issuer) as impersonating:
             await k8s_client.CustomObjectsApi(impersonating).create_namespaced_custom_object(
                 GROUP, VERSION, NAMESPACE, "certificates", record
             )
-        async with await new_client_from_config(config_file=str(server.kubeconfig)) as impersonating:
-            impersonating.set_default_header("Impersonate-User", OTHER_ACCOUNT)
-            impersonating.set_default_header("Impersonate-Group", "system:masters")
+        async with server.impersonating(OTHER_ACCOUNT) as impersonating:
             other = k8s_client.CustomObjectsApi(impersonating)
             current = cast(
                 Body,
@@ -297,7 +265,7 @@ async def test_staging_requesters_get_the_certificates_staging_renders(staging_m
     record = _certificate(uris=[_record_uri(staging.ENV.namespace)], namespace=staging.ENV.namespace)
     namespaces = {doc["metadata"]["namespace"] for doc in workload} | {staging.ENV.namespace}
     async with kubernetes_apiserver() as server, _admission(server, staging_manifests, namespaces) as admitted:
-        await _await_policy(admitted, applier, record)
+        await wait_until_refused(lambda: admitted(applier, record))
         assert await admitted(record_issuer, record)
         assert not await admitted(controller, record)
         for certificate in workload:

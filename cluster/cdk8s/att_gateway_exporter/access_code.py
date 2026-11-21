@@ -1,6 +1,5 @@
 """The AT&T BGW320 gateway's device access code, which unlocks its login-only pages (NAT session
-table, speed-test history). The SOPS Secret stays hand-written and only Flux decrypts it; this builds
-the directory's Flux Kustomization."""
+table, speed-test history). The SOPS Secret stays hand-written and only Flux decrypts it."""
 
 from __future__ import annotations
 

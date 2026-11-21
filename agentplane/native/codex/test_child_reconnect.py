@@ -25,7 +25,7 @@ from agentplane.native.codex.testing.model import MODEL
 from agentplane.native.codex.testing.probe_support import native_probe_thread_start_params
 from agentplane.native.codex.testing.responses import OpenAIResponses
 from agentplane.native.testing.async_process import AsyncNativeProcess
-from util.testing.net import async_wait_for_port
+from testing.net import async_wait_for_port
 
 
 @dataclass
@@ -131,13 +131,7 @@ async def test_live_child_survives_disconnect_and_history_joins_the_new_stream(
                         model=MODEL,
                     ).events
                 )
-            async with (
-                await openai_responses.await_next_request() as first,
-                await openai_responses.await_next_request() as second,
-            ):
-                parent, child = (
-                    (first, second) if first.request.client_metadata.thread_id == root_id else (second, first)
-                )
+            async with openai_responses.await_parent_and_child(root_id) as (parent, child):
                 child_id = child.request.client_metadata.thread_id
                 assert child_id != root_id
                 assert parent.request.function_call_outputs[-1].call_id == "spawn_reconnect"

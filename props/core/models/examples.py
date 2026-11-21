@@ -60,6 +60,3 @@ class WholeSnapshotExample(OpenAIStrictModeBaseModel):
 
 
 ExampleSpec = Annotated[WholeSnapshotExample | SingleFileSetExample, Field(discriminator="kind")]
-
-
-__all__ = ["ExampleKind", "ExampleSpec", "SingleFileSetExample", "WholeSnapshotExample"]

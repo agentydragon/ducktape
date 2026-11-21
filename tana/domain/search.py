@@ -48,6 +48,3 @@ class BooleanSearch(_SearchBase):
 SearchExpression = Annotated[
     TagSearch | TypeSearch | TextSearch | FieldSearch | BooleanSearch, Field(discriminator="kind")
 ]
-
-
-BooleanSearch.model_rebuild()

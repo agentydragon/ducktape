@@ -24,7 +24,7 @@ from agentplane.session_dispatcher.api import (
 from agentplane.session_dispatcher.client import SandboxControlClient
 
 
-async def test_runner_proxy_omits_bearer_and_keeps_sandbox_identity(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_runner_proxy_keeps_sandbox_identity(monkeypatch: pytest.MonkeyPatch) -> None:
     observed: list[tuple[tuple[str, str], ...]] = []
 
     @asynccontextmanager
@@ -44,9 +44,7 @@ async def test_runner_proxy_omits_bearer_and_keeps_sandbox_identity(monkeypatch:
         owner=identity_pb2.ServiceAccount(namespace="owner-ns", name="owner"),
         target=identity_pb2.EnvironmentTarget(namespace="sandbox-ns", name="sandbox", uid="sandbox-uid"),
     )
-    client = SandboxControlClient(
-        control_target="runner-gateway.{namespace}.svc:8080", token_file=None, request_timeout_s=10
-    )
+    client = SandboxControlClient(control_target="environments.{namespace}.svc:8082", request_timeout_s=10)
     await client.runner_unary(
         destination,
         lambda stub: stub.GetStatus,

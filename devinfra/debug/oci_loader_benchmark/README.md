@@ -20,7 +20,7 @@ pin and consider sharing loading with Python.
 
 ## What was compared
 
-`util/oci.py` reads the first OCI manifest digest from `index.json`. A hit needs
+`devinfra/oci/oci.py` reads the first OCI manifest digest from `index.json`. A hit needs
 both a per-tag marker containing that digest and the Docker ID recorded at the
 last load to match the daemon's current tag ID. A miss takes a `flock` under
 `tempfile.gettempdir()`, rechecks, writes a Docker-format tar stream using

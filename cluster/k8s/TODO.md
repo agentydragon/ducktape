@@ -13,10 +13,9 @@ Audit findings deferred for later.
 
 ## Study Casino database backups
 
-- [ ] Choose and deploy the backup/restore path for the CNPG
-      `study-casino/study-casino-db` cluster. Schedule regular backups, keep
-      enough retention to use the available storage comfortably, and run a
-      restore drill before relying on the backups.
+- [ ] Rehearse a restore of `study-casino/study-casino-db` from its barman
+      backups (`CnpgBackup` in `cluster/cdk8s/study_casino/app.py`) before
+      relying on them.
 
 ## Secret layout
 
@@ -25,13 +24,6 @@ Audit findings deferred for later.
       rotators write paths like `secrets/*-k8s-jwt.yaml` and
       `secrets/*-forgejo-tea-token.yaml`; keep `.sops.yaml`, home-manager
       modules, and rotator configs in sync when moving them.
-
-## InvenTree secrets if reviving
-
-- [ ] Add SOPS secrets for InvenTree admin and database passwords before
-      reviving it. The old Vault `kv/inventree/*` values are gone with
-      Vault (decommissioned 2026-04-19; <../docs/decisions.md> § "Secrets: SOPS
-      SSOT"), so generate fresh values.
 
 ## Mobile Nebula phone followups
 
@@ -45,22 +37,6 @@ Audit findings deferred for later.
 - [ ] Consider running an SSH daemon on the phone for emergency access back to
       the device, probably via Termux/OpenSSH, with explicit keys and a clear
       power/background-execution story.
-
-## OpenHands: self-hosted git provider
-
-OpenHands supports GitHub and GitLab natively (PAT or OAuth App). Consider pointing
-it at a self-hosted option — either cluster Forgejo (`git.allegedly.works`) or a
-self-hosted GitLab instance — so agent work can land in private repos without relying
-on `github.com`. GitLab PAT just needs `GITLAB_TOKEN` env var (same pattern as
-`GITHUB_TOKEN`); Forgejo would need a git-credential helper or embedded PAT in URLs
-since there's no first-class Forgejo provider in OpenHands.
-
-## OpenHands sandbox egress isolation
-
-- [ ] Add NetworkPolicy/CiliumNetworkPolicy to `openhands-sandboxes` namespace blocking
-      egress to internal cluster IP ranges (pod CIDR `10.244.0.0/16`, service CIDR
-      `10.96.0.0/12`). Only allow egress to external internet + DNS (port 53 to
-      kube-dns). Agent pods shouldn't reach internal cluster services by default.
 
 ## Proxmox drift watch
 
@@ -90,10 +66,10 @@ needs.
 
 ## Missing CiliumNetworkPolicy
 
-71% of namespaces lack network policies. Tracked in `cluster/docs/plan.md`.
+Most services lack network policies. Tracked in <../docs/plan.md> § "CiliumNetworkPolicy Rollout".
 
 **Proxy-mode services** missing the required NetworkPolicy restricting ingress
-to the authentik shared proxy outpost pod (per AGENTS.md):
+to the authentik shared proxy outpost pod (<../docs/sso.md> § "Proxy-mode NetworkPolicy"):
 proxmox.
 
 **Critical unprotected services** (no NetworkPolicy at all):
@@ -105,15 +81,14 @@ Goldilocks VPA was moved to `controlledValues: RequestsOnly` after the
 2026-08-09 LiteLLM outage (VPA scales limits in proportion to requests, which
 collapsed the CPU limit to 150m and made cold start impossible). Limits are now
 whatever the manifest declares. Goldilocks has no cluster-level setting for
-this, so the `default-vpa-requests-only` Kyverno policy defaults the annotation
-on every namespace labelled `vpa-update-mode: auto`.
+this, so the cdk8s Namespace helper defaults auto-mode namespaces to a
+`RequestsOnly` resource policy at generation time. Hand-written parked
+namespaces declare the same policy explicitly.
 
-Gotcha: that policy adds the annotation only when it is **absent**, so a
-namespace declaring any policy of its own — even a partial one that sets only
-`minAllowed` — opts out of the default entirely and must spell out
-`controlledValues` itself (`airlock`, `langfuse`).
+A namespace declaring any policy of its own opts out of that default and must
+specify `controlledValues` for its container policies (`airlock`, `langfuse`).
 
-That exposed a second problem: **14 containers declared a memory limit below
+That exposed a second problem: **several containers declared a memory limit below
 what they actually use**, and only VPA silently raising the ceiling kept them
 alive. Each was raised to clear VPA's observed upper bound, tagged
 `TODO(vpa-memory-audit)` at the site. Raising them was the safe move, not
@@ -126,9 +101,6 @@ descending order of "that can't be right":
 - [ ] `forgejo` — 2Gi → 8Gi, VPA saw 3.24Gi. Git pack cache? Mirror sync?
 - [ ] `haku-console` server — 512Mi → 3Gi, VPA saw 1.29Gi for a static-file +
       API server.
-- [ ] `grocy-{sf,vallejo}` valkey — 128Mi → 384Mi, VPA saw 256Mi. Check the
-      eviction policy; this is a cache with apparently unbounded key growth.
-- [ ] `website` nginx — 64Mi → 192Mi, VPA saw 100Mi to serve static files.
 - [ ] Remaining, smaller: `grocy` mcp-base server (256Mi → 768Mi), `tana-mcp`
       firebase-resigner (128Mi → 256Mi), `tana-mcp-facade` server (256Mi →
       512Mi), `props` (1Gi → 1.5Gi), `activitywatch` readonly-proxy (64Mi →
@@ -142,51 +114,13 @@ Follow-up on the mechanism itself:
       times, and the litellm one was only discovered by the outage it failed to
       prevent.
 
-## Missing resource limits
-
-Goldilocks VPA enabled (auto mode) for nix-cache, ollama, and litellm —
-will recommend limits.
-
-- `cdk8s/nix_cache/attic.py` — attic container missing `resources:`
-- `cdk8s/ollama/app.py` — auth-proxy sidecar missing `resources:`
-
 ## SecurityContext
 
 Talos enforces `baseline` Pod Security Standards by default via PSA.
 Explicit `securityContext` on Deployments is defense-in-depth. Low urgency.
 
-Missing securityContext: ollama, devbot, grocy-sf, grocy-vallejo, proxmox-proxy,
-tana-mcp, mitmproxy, props, atuin.
-
-## Grocy MCP startup probe
-
-The Grocy MCP server (`grocy-mcp-server` deployment, instantiated per site in
-the `grocy-sf` and `grocy-vallejo` namespaces) crash-loops on first boot
-until Grocy receives its first HTTP request (which triggers database migrations).
-The MCP server tries to fetch Grocy's OpenAPI spec at startup, but Grocy returns
-errors until migrations complete. After a manual visit to the Grocy web UI,
-the MCP server starts successfully. Consider an init container or startup probe
-that pokes Grocy's `/login` endpoint before the MCP server starts.
-
-## Nix cache circular dependency on wyrm2 (incident 2026-05-06)
-
-`attic` and its CNPG postgres are pinned to `region=proxmox`, which in practice
-means wyrm2-only (`rugged` is roaming/often NotReady, and the old
-`talos-pve-cp-0` VM is retired). wyrm2 itself uses `cache.allegedly.works` during
-`nixos-rebuild`. When wyrm2's `/nix/store` crosses the kubelet DiskPressure
-threshold, kubelet adds `node.kubernetes.io/disk-pressure:NoSchedule`, attic +
-postgres get evicted with nowhere to land, the gateway returns 503, and wyrm2
-can't rebuild itself out of the situation.
-
-Options to consider:
-
-- [ ] Add a second `region=proxmox` node, or relax the selector to also accept
-      `hil`.
-- [ ] Move attic off wyrm2 entirely so wyrm2's local disk can't take the
-      cache down with it.
-- [ ] Configure a fallback substituter on wyrm2 (e.g. `cache.nixos.org`
-      ahead of `cache.allegedly.works`, or as a fallback) so a degraded
-      attic doesn't block local rebuilds.
+Missing securityContext: ollama, grocy-sf, grocy-vallejo, proxmox-proxy,
+tana-mcp, props, atuin.
 
 ## Attic cache retention
 
@@ -210,16 +144,16 @@ Options to consider:
 Agent self-exposure — an HTTPRoute in any namespace attaching to the public gateway and
 bypassing Authentik (`cluster/cdk8s/gateway.py`'s listeners are all `allowedRoutes:
 namespaces: from: All`) — is **already fenced**: the `restrict-agent-gateway-routes`
-Kyverno ClusterPolicy denies route/Gateway creation in the agent namespaces, and
-`haku-sandbox-admin`/`claude-sandbox-admin` omit `httproutes`/`gateways` anyway. So the
-hole the agent-authored Haku UI (`haku/console/docs/containment.md`) relies on
-staying closed is closed. What's left is the gateway-layer belt-and-suspenders:
+ValidatingAdmissionPolicy denies route and Gateway writes in the agent namespaces, and
+`haku-sandbox-admin` and the `claude-sandbox` `admin` Role omit `httproutes`/`gateways`
+anyway. So the hole the agent-authored Haku UI (`haku/console/docs/containment.md`) relies
+on staying closed is closed. What's left is the gateway-layer belt-and-suspenders:
 
 - [ ] **Still want the `allowedRoutes` Selector eventually** (at the gateway layer
       itself, not only via a per-namespace deny). Deferred because:
-      (a) Cilium bug #42159 — per-listener `allowedRoutes` bleeds across listeners in
-      this setup (see `cluster/docs/plan.md`); (b) the kube-API routes live in the
-      built-in `default` namespace (and a flux-system route) with no in-repo `Namespace`
+      (a) Cilium bug [#42159](https://github.com/cilium/cilium/issues/42159) — per-listener
+      `allowedRoutes` bleeds across listeners in this setup; (b) the kube-API routes live in
+      the built-in `default` namespace (and a flux-system route) with no in-repo `Namespace`
       manifest to carry a selector label. Revisit if/when #42159 is fixed and there's a
       clean way to label those built-in namespaces — then switch listeners to
       `from: Selector` and the denylist becomes redundant.
@@ -235,13 +169,10 @@ Authentik route work; these tighten them (operator-approved as follow-ups):
       principal on the repo). Mint a read-only Forgejo deploy key for `haku-state`
       and point the GitRepository's `secretRef` at it instead.
 
-- [ ] **Shorten tofu-state PostgreSQL dead-client detection.** A `wyrm2` reboot left an
-      idle PostgreSQL backend session holding the `sso_providers` advisory lock even
-      though its runner pod/IP was gone. PostgreSQL inherited the kernel's two-hour
-      `tcp_keepalive_time`, so this did not recover promptly and blocked the Flux chain
-      through `haku-console`. Configure shorter keepalives (and consider a bounded
-      Terraform `tfstate.lockTimeout` to reduce retry churn), then failure-test runner
-      node loss. RCA and recovery matrix:
+- [ ] **Bound tofu-state lock retries.** PostgreSQL keepalives
+      (`cluster/cdk8s/tofu_state/db.py`) detect a dead runner's session in about
+      two minutes. Consider a bounded Terraform `tfstate.lockTimeout` to reduce
+      retry churn, then failure-test runner node loss. RCA and recovery matrix:
       `cluster/docs/lessons_learned/2026_07_11_tofu_pg_orphaned_session_lock.md`.
 
 ## Ship node logs to Loki (not just pod logs)
@@ -291,28 +222,6 @@ already shows replays, the marginal-link canary), ECC, thermal/power violations.
       optional; a small textfile/exporter DaemonSet reading `aer_dev_*` would add the raw
       AER counts.
 
-## agent-box follow-ups
-
-The agent-box VM configuration is parked (see
-<../parked/agent-box/README.md>). Revisit these follow-ups only if resuming it:
-
-- [ ] **Enable the attic substituter** on agent-box: the Nix wiring is tombstoned
-      in `cluster/parked/agent-box/nix/nixos.nix` +
-      `cluster/parked/agent-box/nix/home/common.nix`.
-      Flip it on once `attic-jwt-rotation` has minted+committed
-      `secrets/hosts/agent-box-attic.yaml` to devel (the path literal would
-      otherwise fail flake eval).
-- [ ] **`claude` agent user** on agent-box: same multi-user pattern as `codex`
-      (the `agentUsers` list + a per-user HM module under
-      `cluster/parked/agent-box/nix/home/`),
-      but running Claude Code against Anthropic directly (not via LiteLLM/z.ai).
-- [ ] **Auto-provision the Codex CLI auth credential** (`~/.codex/auth.json`):
-      today the ChatGPT login is done manually via the device-code flow and is lost
-      on every image rebuild + VM recreate. Investigate SOPS-planting it (decrypted
-      with the `agent-box-codex-user` key) — caveat: the token likely carries a
-      refresh token that rotates on use, so a static plant could go stale; check
-      whether the Codex CLI rewrites `auth.json` after refresh.
-
 ## Alloy `allow_arbitrary_file_access`: decide the residual components
 
 Native scrapes in `cluster/cdk8s/monitoring/config.alloy` cover apiserver and kubelet,
@@ -358,7 +267,7 @@ unverified around it (operator-facing summary: `haku/docs/security.md`):
       when AnkiWeb's side is empty, so the collection is pushed to the dedicated AnkiWeb account
       straight away. Also consider dropping `optional: true` so a missing Secret is loud.
 - [ ] Enforce at two layers. Agentplane egress enforces each account's host rules at L7, but its
-      Pods have open 80/443 (`cilium.open_internet_egress` in `agentplane/egress.py`), so a proxy
+      Pods have open 80/443 (`cilium.open_internet_egress` in `cluster/cdk8s/agentplane/egress.py`), so a proxy
       bug is not backstopped at L3/L4.
 - [ ] Route cluster-internal traffic through the proxies too. The haku-ci runner
       (`_PROXY_ENV` in `cluster/cdk8s/haku_ci/runner.py`) sets `NO_PROXY` to
@@ -385,7 +294,7 @@ checked whether each reruns exactly when its inputs change. Reloader never rerun
 - [ ] Check which rerun mechanism each actually has against what it needs:
   - a template change, with `kustomize.toolkit.fluxcd.io/force` recreating the Job:
     reruns on a hash-suffixed ConfigMap or image change, never on an unhashed Secret;
-  - a versioned name (`clickhouse-aiquota-schema-v12`, `setup-gpt-oss-v9`): reruns only
+  - a versioned name (`clickhouse-aiquota-schema-vN`, `setup-gpt-oss-vN`): reruns only
     when someone remembers to bump it;
   - `ttlSecondsAfterFinished` plus Flux recreating the missing Job (the atuin and matrix
     provisioners): reruns every TTL whether or not anything changed;

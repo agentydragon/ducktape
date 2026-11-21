@@ -66,7 +66,7 @@ locals {
   # Block Cilium/container interfaces from being advertised as Nebula endpoints.
   # Without this, Nebula may advertise pod CIDR IPs (10.244.x.x) to peers,
   # causing a VXLAN-in-Nebula tunnel loop that overwhelms the tun device.
-  # See cluster/debug/2026-04-07-pve-cp0-etcd-partition/
+  # See cluster/docs/lessons_learned/2026_04_07_nebula_cilium_vxlan_loop.md
   nebula_local_allow_list = {
     interfaces = {
       "cilium.*" = false
@@ -81,7 +81,8 @@ locals {
     # Keep read_buffer/write_buffer above the small kernel default as harmless headroom,
     # but do not treat this as the single-stream fix. Follow-up measurements showed the
     # direct OVH public path is already slow/lossy/asymmetric, so the main bottleneck is
-    # below Nebula. See cluster/debug/nebula_inter_node_perf and issue #2917.
+    # below Nebula. See
+    # cluster/docs/lessons_learned/2026_07_05_nebula_overlay_packet_loss_investigation.md (issue #2917).
     listen = { host = "0.0.0.0", port = 4242, read_buffer = 10485760, write_buffer = 10485760 }
     # 2 UDP-processing routines (nebula default is 1 = single-threaded). Nodes are
     # 4-core/8-thread (Xeon E3-1270 v6 / i7-7700K); 2 doubles packet parallelism while

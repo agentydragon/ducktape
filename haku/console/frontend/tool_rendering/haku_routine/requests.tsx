@@ -1,34 +1,39 @@
-// Per-tool-type rendering for haku-console's in-process `haku_routine` MCP server (see
-// haku/console/tools/routine.py). `launch_routine` starts a new Haku claude-code-web run; its
-// only argument is the optional per-run instruction text, which the operator wants to read
-// verbatim before approving. Its validator comes from the exact FastMCP input schema advertised
-// by tools/list, through the same generated catalog as the Gmail and Calendar previews.
+import { Text } from "@mantine/core";
+import Ajv2020 from "ajv/dist/2020.js";
+import type { JSX } from "react";
 
-import type { z } from "zod";
-
+import type { LaunchRoutineArguments } from "../../../mcp/launch_routine_arguments";
+import launchRoutineArgumentsSchema from "../../../mcp/launch_routine_arguments.schema.json";
 import { CodeBlock } from "../../code_block";
 import { Field } from "../../field";
-import { mcpToolSchema, type McpToolArgumentsFor } from "../../mcp_tool_schema";
-import { definePreview, type ToolPreview } from "../entry";
-import { clampBlock, PreviewText, type PreviewProps } from "../vocabulary";
-import { HAKU_ROUTINE_SERVER_ID } from "../server_ids";
+import { clampBlock, type PreviewVariant } from "../vocabulary";
 
-const zLaunchRoutineArgs: z.ZodType<McpToolArgumentsFor<typeof HAKU_ROUTINE_SERVER_ID, "launch_routine">> =
-  mcpToolSchema(HAKU_ROUTINE_SERVER_ID, "launch_routine");
-type LaunchRoutineArgs = z.infer<typeof zLaunchRoutineArgs>;
+export type { LaunchRoutineArguments };
 
-function LaunchRoutinePreview({ args, variant }: PreviewProps<LaunchRoutineArgs>) {
+const validate = new Ajv2020().compile<LaunchRoutineArguments>(launchRoutineArgumentsSchema);
+
+export function validateLaunchRoutineArguments(args: unknown): args is LaunchRoutineArguments {
+  return validate(args);
+}
+
+export function LaunchRoutinePreview({
+  args,
+  variant,
+}: {
+  args: LaunchRoutineArguments;
+  variant: PreviewVariant;
+}): JSX.Element {
   const text = args.text?.trim();
   const shown = text ? (variant === "compact" ? clampBlock(text, 3) : text) : null;
   return (
     <Field label="Instructions">
-      {shown ? <CodeBlock value={shown} /> : <PreviewText c="dimmed">(routine default)</PreviewText>}
+      {shown ? (
+        <CodeBlock value={shown} />
+      ) : (
+        <Text size="sm" c="dimmed">
+          (routine default)
+        </Text>
+      )}
     </Field>
   );
 }
-
-export const hakuRoutinePreviews: {
-  launch_routine: ToolPreview<typeof zLaunchRoutineArgs>;
-} = {
-  launch_routine: definePreview(zLaunchRoutineArgs, LaunchRoutinePreview),
-} satisfies Record<string, ToolPreview>;

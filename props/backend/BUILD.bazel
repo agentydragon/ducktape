@@ -1,4 +1,4 @@
-"""Props backend - FastAPI unified server (dashboard, proxies, eval APIs)."""
+"""Props backend - FastAPI server (dashboard, run and ground-truth APIs)."""
 
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
@@ -9,16 +9,11 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 load("//props:py_test.bzl", "py_test")
 load("//props/specimens:defs.bzl", "specimen_layer_tars")
 
-# =============================================================================
-# Library targets
-# =============================================================================
-
 py_library(
     name = "deps",
     srcs = ["deps.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//props:config",
         "//props/db:database",
         "@pypi//fastapi",
     ],
@@ -122,10 +117,6 @@ py_library(
     ],
 )
 
-# =============================================================================
-# Test support
-# =============================================================================
-
 py_library(
     name = "conftest",
     testonly = True,
@@ -133,10 +124,6 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = ["@pypi//pytest"],
 )
-
-# =============================================================================
-# Tests
-# =============================================================================
 
 py_test(
     name = "test_auth",
@@ -201,19 +188,15 @@ py_test(
         "//props/db:examples",
         "//props/db:models",
         "//props/orchestration:agent_credentials",
-        "//props/testing:constants",
+        "//props/testing:examples",
         "//props/testing/fixtures:credentials",
         "//props/testing/fixtures:db",
         "//props/testing/fixtures:runs",
-        "//util/testing:postgres_fixtures",
+        "//testing:postgres_fixtures",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
     ],
 )
-
-# =============================================================================
-# Binaries
-# =============================================================================
 
 py_binary(
     name = "backend_cli",
@@ -238,14 +221,6 @@ genrule(
     tools = [":export_schema_bin"],
     visibility = ["//props/frontend/src/lib:__pkg__"],
 )
-
-# =============================================================================
-# Linting
-# =============================================================================
-
-# =============================================================================
-# OCI Image
-# =============================================================================
 
 # Container-specific binary using aspect_rules_py (py_image_layer requires it).
 aspect_py_binary(
@@ -358,7 +333,7 @@ py_test(
         "//props:config",
         "//props:conftest",
         "//props/core:oci_utils",
-        "//util/testing:asgi",
+        "//testing:asgi",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pytest",

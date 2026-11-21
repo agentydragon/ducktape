@@ -2,7 +2,7 @@ load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_b
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
-load("//util/testing:postgres_exec_properties.bzl", "POSTGRES_IMAGE_EXEC_PROPERTIES")
+load("//testing:postgres_exec_properties.bzl", "POSTGRES_IMAGE_EXEC_PROPERTIES")
 
 py_library(
     name = "account_history",
@@ -82,6 +82,7 @@ py_library(
         ":net_worth",
         ":pace_history",
         ":pace_history_models",
+        ":plaid_valuation",
         ":policy_queries",
         ":portfolio",
         ":portfolio_models",
@@ -182,7 +183,6 @@ py_test(
         ":allowance",
         ":configuration",
         ":conftest",
-        ":models",
         ":reconciliation_views",
         "//:conftest",
         "//finance/plaid/spend/testing:transaction",
@@ -232,6 +232,7 @@ py_test(
         ":configuration",
         ":conftest",
         ":models",
+        ":plaid_valuation",
         ":portfolio_models",
         ":service",
         ":sustainability",
@@ -352,8 +353,8 @@ py_library(
     visibility = ["//finance/plaid/spend:__subpackages__"],
     deps = [
         "//finance/plaid/db:testing",
+        "//testing:postgres_fixtures",
         "//util:db_url",
-        "//util/testing:postgres_fixtures",
         "@pypi//asyncpg",
         "@pypi//psycopg",
         "@pypi//pytest",
@@ -458,6 +459,7 @@ py_test(
         ":consumption",
         ":reconciliation",
         "//:conftest",
+        "//finance/plaid/spend/testing:transaction",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -487,6 +489,7 @@ py_library(
     deps = [
         ":account_history",
         ":allowance",
+        ":models",
         ":sustainability",
         "//finance:yaml_decimal",
         "@pypi//pydantic",
@@ -534,8 +537,8 @@ py_test(
         ":conftest",
         ":oidc_principal",
         "//:conftest",
-        "//util/testing:asgi",
-        "//util/testing:mock_oidc",
+        "//testing:asgi",
+        "//testing:mock_oidc",
         "@pypi//cryptography",
         "@pypi//httpx",
         "@pypi//pyjwt",

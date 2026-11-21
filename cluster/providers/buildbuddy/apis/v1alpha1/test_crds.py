@@ -1,6 +1,6 @@
 """Exercise the generated provider CRDs against Kubernetes admission."""
 
-from typing import Any, cast
+from typing import Any
 
 import pytest
 import pytest_bazel
@@ -8,7 +8,6 @@ import yaml
 from kubernetes_asyncio import client as k8s
 from kubernetes_asyncio.client.exceptions import ApiException
 from python.runfiles import Runfiles
-from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from agentplane.testing.kubernetes_apiserver import kubernetes_apiserver
 
@@ -19,15 +18,7 @@ async def test_generated_crds_and_api_key_capabilities() -> None:
     assert crd_paths
 
     async with kubernetes_apiserver() as server:
-        crds = k8s.ApiextensionsV1Api(server.api)
-        for path in crd_paths:
-            await crds.create_custom_resource_definition(cast(Any, yaml.safe_load(path.read_text())))
-
-        async for attempt in AsyncRetrying(stop=stop_after_delay(30), wait=wait_fixed(0.1), reraise=True):
-            with attempt:
-                crd = await crds.read_custom_resource_definition("apikeys.buildbuddy.m.allegedly.works")
-                assert any(c.type == "Established" and c.status == "True" for c in crd.status.conditions or [])
-
+        await server.install_crds(*(yaml.safe_load(path.read_text()) for path in crd_paths))
         await k8s.CoreV1Api(server.api).create_namespace(k8s.V1Namespace(metadata=k8s.V1ObjectMeta(name="test")))
         api = k8s.CustomObjectsApi(server.api)
 

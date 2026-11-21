@@ -1,0 +1,9 @@
+{
+  "entry": "main.mjs",
+  "modules": {
+    "utils.mjs": ["PI", "square", "area", "isEven", "isOdd", "label"],
+    "registry.mjs": ["registry", "register"],
+    "plugins.mjs": ["#7", "#9"],
+    "main.mjs": ["#10", "#11"]
+  }
+}

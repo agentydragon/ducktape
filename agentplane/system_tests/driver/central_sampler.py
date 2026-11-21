@@ -6,7 +6,7 @@ import json
 import shutil
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
 from uuid import uuid4
@@ -19,7 +19,6 @@ from agentplane.grpc.calls import ServiceError, dial
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.proto.identity_pb2 import EnvironmentTarget, SandboxDestination, ServiceAccount
 from agentplane.sampler.api import sampler_admin_pb2_grpc
-from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.session_dispatcher.client import SandboxControlClient, SandboxRunner
 from agentplane.session_dispatcher.dispatcher.api.session import session_dispatcher_pb2_grpc
 from agentplane.system_tests.driver import sandbox_cleanup
@@ -31,6 +30,7 @@ from agentplane.system_tests.driver.identity import (
     delete_scenario_identity,
 )
 from agentplane.system_tests.driver.native_auth import RUNTIME_PROXY_TEST_READER_SECRET
+from agentplane.system_tests.driver.sandbox_object import create_sandbox_object
 from agentplane.system_tests.driver.sandbox_ownership import release_owned_sandboxes, remember_sandbox
 from agentplane.system_tests.driver.tls import service_svid_credentials
 from agentplane.system_tests.driver.tracing import tracer
@@ -44,9 +44,7 @@ MODEL = GPT6_LUNA_RESPONSES.id
 @dataclass(frozen=True)
 class CentralStack:
     dispatcher: session_dispatcher_pb2_grpc.SessionDispatcherAsyncStub
-    metadata: tuple[tuple[str, str], ...] = field(repr=False)
     sampler_admin: sampler_admin_pb2_grpc.SamplerAdminAsyncStub
-    sampler_metadata: tuple[tuple[str, str], ...] = field(repr=False)
     history: HistoryServiceClient
     sandbox: str
     sandbox_uid: str
@@ -84,21 +82,7 @@ async def _owned_native_sandbox(cluster: Cluster, name: str, template: str) -> A
     """Own the acknowledged native Sandbox before readiness work and release its Identity last."""
     async with AsyncExitStack() as cleanup:
         identity = await create_scenario_identity(cluster, name, list(LAUNCH_DEFAULT_POLICY_SETS))
-        created = json.loads(
-            await cluster.kubectl(
-                "create",
-                "-f",
-                "-",
-                "-o",
-                "json",
-                body={
-                    "apiVersion": SANDBOX_API_VERSION,
-                    "kind": "Sandbox",
-                    "metadata": {"name": name, "namespace": cluster.namespace},
-                    "spec": {"template": template, "running": True, "identity": {"name": identity["name"]}},
-                },
-            )
-        )
+        created = await create_sandbox_object(cluster, name, template=template, identity=identity["name"], running=True)
         metadata = created["metadata"]
         target = EnvironmentTarget(namespace=metadata["namespace"], name=metadata["name"], uid=metadata["uid"])
         owned: list[EnvironmentTarget] = []
@@ -191,7 +175,7 @@ async def capture_sampler_diagnostics(cluster: Cluster, core: k8s.CoreV1Api | No
 
 
 @asynccontextmanager
-async def central_stack(cluster: Cluster, directory: Path, *, template: str) -> AsyncIterator[CentralStack]:
+async def central_stack(cluster: Cluster, *, template: str) -> AsyncIterator[CentralStack]:
     async with AsyncExitStack() as cleanup, AsyncExitStack() as stack:
         with tracer.start_as_current_span(
             "system_test.central_sampler.setup", record_exception=False, set_status_on_exception=False
@@ -213,7 +197,7 @@ async def central_stack(cluster: Cluster, directory: Path, *, template: str) -> 
             sampler_pod = await _pod(cluster, core, SERVICE)
             stack.push_async_callback(capture_sampler_diagnostics, cluster, core)
             # Call through the stable Service so Kubernetes can send every request to any replica.
-            gateway_target = await _address(cluster, core, "sandbox-controller", 8082)
+            gateway_target = await _address(cluster, core, "environments", 8082)
             # Direct observations act as the same Sessions service principal as Gateway.
             # Its certificate survives a Gateway Pod roll; no Pod-bound bearer is involved.
             sampler_client = await core.read_namespaced_secret("sessions-client-workload-tls", cluster.namespace)
@@ -229,10 +213,9 @@ async def central_stack(cluster: Cluster, directory: Path, *, template: str) -> 
             caller_credentials = await service_svid_credentials(cluster, "app-workload-tls")
             gateway = SandboxControlClient(
                 control_target=gateway_target,
-                token_file=None,
                 request_timeout_s=2,
                 channel_credentials=await service_svid_credentials(cluster, RUNTIME_PROXY_TEST_READER_SECRET),
-                server_name=f"sandbox-controller.{cluster.namespace}.svc.cluster.local",
+                server_name=f"environments.{cluster.namespace}.svc.cluster.local",
             )
             destination = SandboxDestination(
                 owner=ServiceAccount(namespace=cluster.namespace, name=sandbox),
@@ -247,9 +230,9 @@ async def central_stack(cluster: Cluster, directory: Path, *, template: str) -> 
             )
             dispatcher_channel = await stack.enter_async_context(
                 dial(
-                    await _address(cluster, core, "session-dispatcher", 8080),
+                    await _address(cluster, core, "sessions", 8080),
                     channel_credentials=caller_credentials,
-                    server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
+                    server_name=f"sessions.{cluster.namespace}.svc.cluster.local",
                 )
             )
             await asyncio.wait_for(dispatcher_channel.channel_ready(), timeout=30)
@@ -263,9 +246,7 @@ async def central_stack(cluster: Cluster, directory: Path, *, template: str) -> 
             )
             deployed = CentralStack(
                 dispatcher=session_dispatcher_pb2_grpc.SessionDispatcherStub(dispatcher_channel),
-                metadata=(),
                 sampler_admin=sampler_admin_pb2_grpc.SamplerAdminStub(sampler_channel),
-                sampler_metadata=(),
                 history=history,
                 sandbox=sandbox,
                 sandbox_uid=uid,

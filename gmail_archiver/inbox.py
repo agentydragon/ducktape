@@ -1,7 +1,6 @@
 """Inbox interface with caching for Gmail operations."""
 
 from collections.abc import Iterable
-from pathlib import Path
 
 from rich.console import Console
 
@@ -20,10 +19,9 @@ class GmailInbox:
     Planners use this interface to fetch messages without worrying about caching.
     """
 
-    def __init__(self, client: GmailClient, console: Console, cache_dir: Path, *, show_progress: bool = True):
+    def __init__(self, client: GmailClient, console: Console, *, show_progress: bool = True):
         self.client = client
         self.console = console
-        self.cache_dir = cache_dir
         self._full_cache: dict[str, Email] = {}
         self._metadata_cache: dict[str, GmailMessageWithHeaders] = {}
         self.show_progress = show_progress

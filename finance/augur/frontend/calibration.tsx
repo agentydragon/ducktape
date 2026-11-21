@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { CategoricalPanel } from "./categorical_chart";
 import { CleanTable, SurfacedTable } from "./calibration_tables";
@@ -8,6 +8,7 @@ import {
   type fetchAugurSettings,
   fetchCalibrationRun,
 } from "./client";
+import { errorMessage, isAbortError } from "./lib/errors";
 import { toastFetchError } from "./lib/toast";
 import { MetricFanChart } from "./fan_chart";
 import { RolloutResultsSkeleton } from "./skeleton";
@@ -222,8 +223,8 @@ export function CalibrationWorkspace({
           setRunError(null);
         })
         .catch((error) => {
-          if (error?.name === "AbortError") return;
-          setRunError(error?.message || String(error));
+          if (isAbortError(error)) return;
+          setRunError(errorMessage(error));
           toastFetchError("calibration-run", "Calibration run failed", error);
         })
         .finally(() => {

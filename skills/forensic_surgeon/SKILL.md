@@ -22,7 +22,7 @@ Obsessive, mechanistic debugging. Never work around problems. Trace through ever
 
 Exact root cause identified with evidence:
 
-```
+```text
 Root cause: In libfoo v2.3.4, file src/connection.c:847, the timeout
 calculation uses signed int overflow. When RTT > 2147ms, it wraps negative,
 causing immediate connection drop.
@@ -38,7 +38,7 @@ arithmetic pattern from src/utils.h:203
 
 Exhaustive trace proving problem lies outside observable scope:
 
-```
+```text
 Investigation complete. 37 diagnostic steps documented in ./debug-trace/
 
 Proven:
@@ -141,7 +141,7 @@ Use whatever's available and appropriate. Think across layers.
 
 Keep user informed of progress:
 
-```
+```text
 Layer 3/7: Confirmed request reaches nginx correctly (access.log shows 200)
 Layer 4/7: Proxied request to upstream... checking application logs
 Found anomaly: upstream timeout after 30.001s, configured timeout is 30s
@@ -150,7 +150,7 @@ Drilling into timeout handling...
 
 ### Smoking gun found
 
-```
+```text
 ## Root Cause Analysis
 
 **Summary**: Connection drops after exactly 2147ms due to signed integer overflow
@@ -172,7 +172,7 @@ Drilling into timeout handling...
 
 ### Visibility boundary reached
 
-```
+```text
 ## Investigation Summary
 
 **Conclusion**: Problem occurs outside our observable infrastructure

@@ -8,7 +8,7 @@ transcript + the agent's /work workspace to --output-dir.
 `Agent.run()` drives the tool-dispatch loop. JSONL transcript writes go
 through `JsonlTranscriptProvider` (AF's standard `HistoryProvider`-shaped
 audit log via `Message.to_json()`). The `submit` tool sets
-`SubmitState.summary`; `terminate_when` raises `MiddlewareTermination`
+`_SubmitState.summary`; `terminate_when` raises `MiddlewareTermination`
 once that is set. Wall-clock enforcement comes from `asyncio.wait_for`
 around `agent.run()`.
 
@@ -20,7 +20,7 @@ harness. Outputs:
 
 Run with:
   bb run \\
-    //devinfra/skills/reverse_engineer/evals/agent_framework:re_rollout -- \\
+    //devinfra/skills/reverse_engineer/evals/agent_framework:re_rollout_bin -- \\
     --skill on --output-dir /tmp/re_eval/$(date -u +%Y%m%dT%H%M%SZ)
 """
 
@@ -65,9 +65,6 @@ _TARGET_BINARY_RLOCATION = (
 _SKILL_BY_ARM: dict[str, SkillSpec] = {"on": REVERSE_ENGINEER_SKILL_SPEC, "off": EMPTY_SKILL_SPEC}
 
 
-# -- Run summary --
-
-
 class EndReason(StrEnum):
     SUBMIT = "submit"
     AGENT_RETURNED = "agent_returned"
@@ -80,9 +77,6 @@ class RunSummary(BaseModel):
     end_reason: EndReason
     wall_seconds: float
     submit_summary: str | None = None
-
-
-# -- Prompts --
 
 
 _TARGET_PATH = INPUT_PATH / "target"
@@ -103,9 +97,6 @@ _FIRST_USER_MESSAGE = (
     "binary's were obfuscated. When done, call `submit` with a one-paragraph summary "
     "noting which parts you are confident vs unsure about."
 )
-
-
-# -- Submit state + tool --
 
 
 class _SubmitState:
@@ -133,9 +124,6 @@ def _make_submit_tool(state: _SubmitState) -> FunctionTool:
         func=submit,
         input_model=_SubmitInput,
     )
-
-
-# -- Main --
 
 
 async def _async_main(args: argparse.Namespace) -> None:

@@ -33,19 +33,19 @@ flat parameter list one field at a time.
 
 Audited against the Google Calendar API v3 reference on 2026-07-14:
 <https://developers.google.com/workspace/calendar/api/v3/reference>. The current server exposes
-`create_event`, `get_event`, `list_events`, and `list_event_instances`; authenticated-agent reads
-auto-approve, while creation stays operator-approved. The remaining public API is intentionally
-deferred:
+`create_event`, `update_event`, `delete_event`, `get_event`, `list_events`, and
+`list_event_instances`; authenticated-agent reads auto-approve, while writes stay
+operator-approved. The remaining public API is intentionally deferred:
 
 - **Event recurrence and mutation** — accept Google-supported `RDATE`, `EXDATE`, and `EXRULE`
-  content lines; update or delete a whole series or one instance; and implement "this and
+  content lines; update or delete one instance; and implement "this and
   following" as the documented trim-old-series + insert-new-series operation. Before exposing
   these, specify exception preservation, optimistic concurrency, attendee notifications, and
   partial-failure recovery.
-- **Remaining Events methods** — `events.delete`, `import`, `move`, `patch`/`update`, `quickAdd`,
-  and `watch`. Deletes/moves/updates need explicit approval scope and etag behavior; import and
-  quick-add need clear reasons to coexist with typed creation; watch needs durable callback and
-  renewal infrastructure.
+- **Remaining Events methods** — `events.import`, `move`, `update` (full replacement;
+  `update_event` uses `patch`), `quickAdd`, and `watch`. Moves and updates need explicit approval
+  scope and etag behavior; import and quick-add need clear reasons to coexist with typed
+  creation; watch needs durable callback and renewal infrastructure.
 - **Remaining Events list/sync controls** — incremental `syncToken`/`nextSyncToken`, `updatedMin`,
   `showDeleted`, `showHiddenInvitations`, `iCalUID`, `eventTypes`, private/shared extended-property
   filters, `maxAttendees`, `orderBy`, and response `timeZone`. Add these as real workflows emerge,

@@ -78,7 +78,8 @@ source policy. Neither shape infers graph edges or artifact membership. `artifac
 imports the deployed source-watcher CRD; `generate_manifests.py` builds each consumer's
 artifact before its Kustomization node, writes the directory with
 `generation.write_directory` as the node's `RenderedDirectory` argument, and hands every
-artifact to `artifact_generators.write_artifact_generators` last. A tofu-controller
+artifact a Kustomization reads to
+`artifact_generators.write_artifact_generators` last. A tofu-controller
 `Terraform` CR is built through `terraform.tofu_state_terraform` (a `tf/gitops` module's
 through `terraform.gitops_terraform`, from the module's own artifact, which the entry point
 builds with `terraform.gitops_module` and hands to the chart and to the ArtifactGenerator),
@@ -191,9 +192,8 @@ an `http_file` in `MODULE.bazel` pinned by sha256 to the version the cluster dep
 (the same tag as the operator's `GitRepository` or Terraform install). The jsii-backed
 Python bindings are build-time output, never committed. Put each import declaration and
 its optional smoke test in `cluster/cdk8s/providers/<provider>/BUILD.bazel`, beside the
-CRD's generic wrapper modules; keep upstream CRD source pins in `MODULE.bazel`. Current
-providers are
-`//cluster/cdk8s/providers/{agent_sandbox,cert_manager,cilium,clickhouse,cnpg,external_secrets,external_snapshotter,flux,gateway_api,grafana_operator,keda,kubevirt,kyverno,prometheus_operator,redis_operator,seaweedfs,source_watcher,tofu_controller,volsync}`.
+CRD's generic wrapper modules; keep upstream CRD source pins in `MODULE.bazel`. Every
+directory under `cluster/cdk8s/providers/` is one provider.
 `//agentplane/crds` declares the imports of Agentplane's first-party CRDs beside their
 YAML; `providers/agentplane` holds only their wrappers, and `agentplane_crds.py` points Flux
 at the same authored directory under `agentplane/crds/manifests`.

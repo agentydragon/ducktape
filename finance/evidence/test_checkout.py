@@ -36,28 +36,18 @@ def test_cached_checkout_used_without_credentials(monkeypatch: pytest.MonkeyPatc
     assert ensure_checkout() == checkout
 
 
-def test_certificate_check_defers_valid_cert_to_libgit2(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    callbacks = _checkout_callbacks(monkeypatch, tmp_path)
-    with pytest.raises(pygit2.Passthrough):
-        callbacks.certificate_check(None, True, b"git.allegedly.works")
-
-
-def test_certificate_check_defers_invalid_cert_with_proxy_to_libgit2(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+@pytest.mark.parametrize("certificate_valid", [True, False], ids=["valid-cert", "invalid-cert"])
+@pytest.mark.parametrize("https_proxy", [None, "http://test-mitmproxy.invalid:8080"], ids=["no-proxy", "proxy"])
+def test_certificate_check_defers_to_libgit2(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, certificate_valid: bool, https_proxy: str | None
 ) -> None:
-    monkeypatch.setenv("HTTPS_PROXY", "http://test-mitmproxy.invalid:8080")
+    if https_proxy is None:
+        monkeypatch.delenv("HTTPS_PROXY", raising=False)
+    else:
+        monkeypatch.setenv("HTTPS_PROXY", https_proxy)
     callbacks = _checkout_callbacks(monkeypatch, tmp_path)
     with pytest.raises(pygit2.Passthrough):
-        callbacks.certificate_check(None, False, b"git.allegedly.works")
-
-
-def test_certificate_check_defers_invalid_cert_without_proxy_to_libgit2(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    monkeypatch.delenv("HTTPS_PROXY", raising=False)
-    callbacks = _checkout_callbacks(monkeypatch, tmp_path)
-    with pytest.raises(pygit2.Passthrough):
-        callbacks.certificate_check(None, False, b"git.allegedly.works")
+        callbacks.certificate_check(None, certificate_valid, b"git.example.test")
 
 
 def _checkout_callbacks(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> pygit2.RemoteCallbacks:

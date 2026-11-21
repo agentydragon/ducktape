@@ -11,7 +11,7 @@ load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//devinfra/js:typed_eslint.bzl", "typed_eslint_test")
 load("//devinfra/js:vitest.bzl", "check_vitest_specs", "vitest_config", "vitest_test")
-load("//util/testing/frontend_visual:py_visual_test.bzl", "py_visual_test")
+load("//testing/frontend_visual:py_visual_test.bzl", "py_visual_test")
 
 package(default_visibility = ["//ai_session_archive:__pkg__"])
 
@@ -76,6 +76,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":claude_transcript",
+        ":json_values",
         ":schema",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -107,6 +108,7 @@ ts_library(
     deps = [
         ":api",
         ":schema",
+        ":session_viewer_formatting",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
@@ -274,14 +276,12 @@ vitest_test(
     deps = [
         ":app",
         ":session_fixture",
-        "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
         "//:node_modules/react",
-        "//:node_modules/react-dom",
         "//:node_modules/react-router",
         "//:node_modules/vitest",
         "//util/frontend:deferred_test_utils",
+        "//util/frontend:react_test_utils",
     ],
 )
 
@@ -350,11 +350,11 @@ py_visual_test(
         ":visual_harness_css",
     ],
     harness = ":visual_harness_js",
-    shard_count = 2,
+    shard_count = 4,
     test_deps = [
-        "//util/testing/frontend_visual:capture",
-        "//util/testing/frontend_visual:page_capture",
-        "//util/testing/frontend_visual:viewports",
+        "//testing/frontend_visual:capture",
+        "//testing/frontend_visual:page_capture",
+        "//testing/frontend_visual:viewports",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
@@ -373,9 +373,9 @@ py_visual_test(
     ],
     harness = ":visual_harness_js",
     test_deps = [
-        "//util/testing/frontend_visual:capture",
-        "//util/testing/frontend_visual:page_capture",
-        "//util/testing/frontend_visual:viewports",
+        "//testing/frontend_visual:capture",
+        "//testing/frontend_visual:page_capture",
+        "//testing/frontend_visual:viewports",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
@@ -394,9 +394,9 @@ py_visual_test(
     ],
     harness = ":visual_harness_js",
     test_deps = [
-        "//util/testing/frontend_visual:capture",
-        "//util/testing/frontend_visual:page_capture",
-        "//util/testing/frontend_visual:viewports",
+        "//testing/frontend_visual:capture",
+        "//testing/frontend_visual:page_capture",
+        "//testing/frontend_visual:viewports",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
@@ -416,9 +416,9 @@ py_visual_test(
     harness = ":visual_harness_js",
     test_deps = [
         "//devinfra/testing:undeclared_outputs",
-        "//util/testing/frontend_visual:capture",
-        "//util/testing/frontend_visual:page_capture",
-        "//util/testing/frontend_visual:viewports",
+        "//testing/frontend_visual:capture",
+        "//testing/frontend_visual:page_capture",
+        "//testing/frontend_visual:viewports",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
@@ -484,10 +484,6 @@ ts_library(
     srcs = ["transcript-rows.ts"],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
-    visibility = [
-        "//agentplane:__subpackages__",
-        "//ai_session_archive/frontend:__pkg__",
-    ],
     deps = [
         ":claude_transcript",
         ":codex_record",
@@ -502,10 +498,6 @@ ts_library(
     srcs = ["transcript.tsx"],
     isolated_typecheck = True,
     tsconfig = ":tsconfig",
-    visibility = [
-        "//agentplane:__subpackages__",
-        "//ai_session_archive/frontend:__pkg__",
-    ],
     deps = [
         ":event_content",
         ":history_recorder",

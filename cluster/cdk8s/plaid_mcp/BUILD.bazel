@@ -5,9 +5,9 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 py_library(
     name = "app",
     srcs = ["app.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":db",
+        "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
@@ -27,6 +27,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s/cnpg:backup",
@@ -50,8 +51,11 @@ py_library(
     deps = [
         ":db",
         "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:container_resources",
+        "//cluster/cdk8s:namespaces",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s:vpa_policy",
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
@@ -67,10 +71,13 @@ py_library(
     deps = [
         ":db",
         "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:external_creds",
         "//cluster/cdk8s:gateway",
+        "//cluster/cdk8s:namespaces",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s:vpa_policy",
         "//cluster/cdk8s/external_secrets:single_secret_store",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
@@ -104,7 +111,7 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
-    deps = ["//util/testing:postgres_fixtures"],
+    deps = ["//testing:postgres_fixtures"],
 )
 
 py_test(
@@ -118,7 +125,7 @@ py_test(
         "//:conftest",
         "//finance/plaid/db:models",
         "//finance/plaid/spend:portfolio_queries",
-        "//util/testing:postgres",
+        "//testing:postgres",
         "@pypi//psycopg",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",

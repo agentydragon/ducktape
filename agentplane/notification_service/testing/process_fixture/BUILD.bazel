@@ -79,8 +79,8 @@ py_test(
         "//agentplane/sandboxes/testing:kubernetes",
         "//agentplane/testing:kubernetes_apiserver",
         "//agentplane/testing:tls",
-        "//util/testing:postgres",
-        "//util/testing:postgres_fixtures",
+        "//testing:postgres",
+        "//testing:postgres_fixtures",
         "@pypi//grpcio",
         "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@pypi//pytest",

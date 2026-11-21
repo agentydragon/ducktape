@@ -25,6 +25,86 @@ def retained_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return root
 
 
+@pytest.fixture
+def docker_namespaces(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, set[str], list[tuple[str, ...]]]:
+    (tmp_path / ".dockerenv").touch()
+    (tmp_path / "proc/self").mkdir(parents=True)
+    (tmp_path / "proc/self/cgroup").write_text("0::/init\n")
+    root = tmp_path / "sys/fs/cgroup"
+    (root / "init").mkdir(parents=True)
+    (root / "init/cgroup.procs").write_text(f"{os.getpid()}\n")
+    (root / "cgroup.procs").touch()
+    (root / "cgroup.controllers").write_text("cpu memory\n")
+    (root / "cgroup.subtree_control").write_text("cpu memory\n")
+
+    read_only: set[str] = set()
+    mount_commands: list[tuple[str, ...]] = []
+    monkeypatch.setattr(baseline, "Path", lambda path: tmp_path / path.removeprefix("/"))
+    monkeypatch.setattr(
+        baseline.os, "statvfs", lambda path: SimpleNamespace(f_flag=os.ST_RDONLY if str(path) in read_only else 0)
+    )
+    monkeypatch.setattr(baseline, "run", lambda *args: mount_commands.append(args))
+    return root, read_only, mount_commands
+
+
+def test_fresh_docker_action_prepares_private_namespaces(
+    tmp_path: Path, docker_namespaces: tuple[Path, set[str], list[tuple[str, ...]]]
+) -> None:
+    root, read_only, mount_commands = docker_namespaces
+    (tmp_path / "proc/self/cgroup").write_text("0::/\n")
+    (root / "init/cgroup.procs").unlink()
+    (root / "init").rmdir()
+    (root / "cgroup.subtree_control").write_text("")
+    read_only.update(("/proc/sys/net", str(root)))
+
+    baseline._prepare_docker_namespaces()
+
+    assert mount_commands == [
+        ("mount", "--bind", "/proc/sys/net", "/proc/sys/net"),
+        ("mount", "-o", "remount,rw,bind", "/proc/sys/net"),
+        ("mount", "-o", "remount,rw", str(root)),
+    ]
+    assert (root / "init").is_dir()
+    assert (root / "cgroup.subtree_control").read_text() == "+cpu +memory"
+
+
+def test_recycled_docker_action_keeps_prepared_namespaces(
+    docker_namespaces: tuple[Path, set[str], list[tuple[str, ...]]],
+) -> None:
+    root, _, mount_commands = docker_namespaces
+
+    baseline._prepare_docker_namespaces()
+    baseline._prepare_docker_namespaces()
+
+    assert not mount_commands
+    assert (root / "cgroup.subtree_control").read_text() == "cpu memory\n"
+
+
+@pytest.mark.parametrize("unprepared", ["host", "host_cgroup", "network_mount", "cgroup_mount", "delegation", "init"])
+def test_docker_namespace_guard_refuses_unprepared_action(
+    tmp_path: Path, docker_namespaces: tuple[Path, set[str], list[tuple[str, ...]]], unprepared: str
+) -> None:
+    root, read_only, mount_commands = docker_namespaces
+    match unprepared:
+        case "host":
+            (tmp_path / ".dockerenv").unlink()
+        case "host_cgroup":
+            (tmp_path / "proc/self/cgroup").write_text("0::/system.slice/docker-test.scope\n")
+        case "network_mount":
+            read_only.add("/proc/sys/net")
+        case "cgroup_mount":
+            read_only.add(str(root))
+        case "delegation":
+            (root / "cgroup.subtree_control").write_text("cpu\n")
+        case "init":
+            (root / "init/cgroup.procs").write_text("")
+
+    with pytest.raises(RuntimeError, match=r"Docker action.*namespaces"):
+        baseline._prepare_docker_namespaces()
+
+    assert not mount_commands
+
+
 @pytest.mark.parametrize("changed", ["binary", "crd", "release", "image", "helper", "layer_mode", "data_directory"])
 def test_infrastructure_inputs_change_compatibility(
     tmp_path: Path, changed: str, monkeypatch: pytest.MonkeyPatch

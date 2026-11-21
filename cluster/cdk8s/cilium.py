@@ -2,7 +2,7 @@
 `cluster.cdk8s.providers.cilium`: which labels reach this cluster's kube-dns and Authentik, which
 Pods scrape metrics and probe uptime, the node-IP/SNI workaround this cluster's hostNetwork
 Gateway needs for egress to its own public hostnames, and the clusterwide policy forcing a
-sandbox namespace's egress through its proxy.
+sandbox namespace's egress through its proxy, and the public listener for a raw-TCP Service.
 """
 
 from __future__ import annotations
@@ -24,8 +24,15 @@ from cilium_clusterwide_crds.io.cilium import (
     CiliumClusterwideNetworkPolicySpecEndpointSelectorMatchExpressionsOperator,
 )
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
+from cilium_envoyconfig_crds.io.cilium import (
+    CiliumEnvoyConfig,
+    CiliumEnvoyConfigSpec,
+    CiliumEnvoyConfigSpecBackendServices,
+    CiliumEnvoyConfigSpecNodeSelector,
+)
 from constructs import Construct
 
+# Aliased because this module's own `dns_egress` binds `KUBE_DNS_LABELS` to the generic rule.
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, Protocol, dns_egress as _dns_egress
 from cluster.cdk8s.service_ref import Pods, ServiceRef
 
@@ -120,8 +127,8 @@ def force_proxy_egress(
 ) -> CiliumClusterwideNetworkPolicy:
     """Force the external egress of every Pod in `namespaces` through a proxy: admit kube-dns
     (plain L4), in-cluster traffic on TCP `cluster_ports` (any port when `None`), the
-    kube-apiserver when `kube_apiserver`, and `proxy`'s Pods on its pod port. Cilium policies are additive, so any other egress policy selecting these
-    Pods widens this one.
+    kube-apiserver when `kube_apiserver`, and `proxy`'s Pods on its pod port. Cilium policies are
+    additive, so any other egress policy selecting these Pods widens this one.
     """
     return CiliumClusterwideNetworkPolicy(
         scope,
@@ -162,6 +169,64 @@ def force_proxy_egress(
                     to_endpoints=[CiliumClusterwideNetworkPolicySpecEgressToEndpoints(match_labels=proxy.pods.cilium)],
                     to_ports=_to_ports((proxy.pod_port, "TCP")),
                 ),
+            ],
+        ),
+    )
+
+
+_TCP_PROXY_TYPE = "type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy"
+
+
+def tcp_listener(scope: Construct, id: str, *, service: ServiceRef) -> CiliumEnvoyConfig:
+    """Public listener for a raw-TCP Service (SSH) via a manual CiliumEnvoyConfig.
+
+    Cilium 1.19's Gateway API controller supports HTTPRoute/GRPCRoute/TLSRoute but not TCPRoute,
+    and raw TCP has no SNI/Host header to route on. The Cilium Envoy DaemonSet already runs with
+    hostNetwork on HIL gateway nodes, so this binds the Service's own port directly on those
+    nodes and forwards raw TCP to the in-cluster Service.
+    """
+    namespace = service.pods.namespace
+    port = service.port.number
+    cluster = f"{namespace}:{service.name}:{port}"
+    return CiliumEnvoyConfig(
+        scope,
+        id,
+        metadata=ApiObjectMetadata(
+            name=service.name, namespace=namespace, annotations={"cec.cilium.io/use-original-source-address": "false"}
+        ),
+        spec=CiliumEnvoyConfigSpec(
+            node_selector=CiliumEnvoyConfigSpecNodeSelector(match_labels={"topology.kubernetes.io/region": "hil"}),
+            backend_services=[
+                CiliumEnvoyConfigSpecBackendServices(name=service.name, namespace=namespace, number=[str(port)])
+            ],
+            resources=[
+                {
+                    "@type": "type.googleapis.com/envoy.config.listener.v3.Listener",
+                    "name": service.name,
+                    "address": {"socketAddress": {"address": "0.0.0.0", "portValue": port}},
+                    "filterChains": [
+                        {
+                            "filters": [
+                                {
+                                    "name": "envoy.filters.network.tcp_proxy",
+                                    "typedConfig": {
+                                        "@type": _TCP_PROXY_TYPE,
+                                        "statPrefix": service.name,
+                                        "cluster": cluster,
+                                        "idleTimeout": "3600s",
+                                    },
+                                }
+                            ]
+                        }
+                    ],
+                },
+                {
+                    "@type": "type.googleapis.com/envoy.config.cluster.v3.Cluster",
+                    "name": cluster,
+                    "type": "EDS",
+                    "edsClusterConfig": {"serviceName": f"{namespace}/{service.name}:{port}"},
+                    "outlierDetection": {"splitExternalLocalOriginErrors": True},
+                },
             ],
         ),
     )

@@ -3,6 +3,7 @@ package providerio
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -40,6 +41,16 @@ func ParseProviderRetryAfter(value string) time.Duration {
 		return delay
 	}
 	return 0
+}
+
+// ProviderStatusError types a non-success provider HTTP response: transient, with its Retry-After
+// hint, for HTTP 408, 429 and 5xx; otherwise a known failure carrying evidence. provider names the
+// API in the transient message.
+func ProviderStatusError(response *http.Response, provider string, evidence map[string]any) error {
+	if status := response.StatusCode; status == http.StatusRequestTimeout || status == http.StatusTooManyRequests || status >= http.StatusInternalServerError {
+		return &protocol.ProviderTransientError{Cause: fmt.Errorf("%s returned HTTP %d", provider, status), RetryAfter: ParseProviderRetryAfter(response.Header.Get("Retry-After"))}
+	}
+	return &protocol.KnownFailureError{Evidence: evidence}
 }
 
 // ProviderContextError reports a typed phase cancellation when a stream operation observes its

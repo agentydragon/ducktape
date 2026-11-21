@@ -14,12 +14,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-const (
-	autosuspendBootstrap = "Bootstrap"
-	autosuspendAdmission = "Admission"
-	// Keep the stable EnvironmentRuntimeFacts enum value while execution is carried over typed gRPC.
-	autosuspendExecution = "ExecutorRelay"
-)
+const autosuspendAdmission = "Admission"
 
 func (r *Runtime) harnessHostSessions(ctx context.Context) ([]*harnesshostpb.Session, error) {
 	sessions, err := r.sessionInventory(ctx)

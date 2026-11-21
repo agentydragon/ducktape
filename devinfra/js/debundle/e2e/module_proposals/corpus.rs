@@ -1,6 +1,9 @@
 //! Corpus proposal runs stay chunk-local and compose into the real tree pipeline.
 
-use super::support::{CHAIN_SOURCE, proposal_args, restore_tree, run};
+use super::support::{
+    CHAIN_SOURCE, graph_for, plan_args, proposal_args, restore_tree, run, run_ok, tree_run_args,
+};
+use debundle_e2e_support::saved_analysis::assert_ok;
 use debundle_e2e_support::{
     TreeFixture, assert_node_output, parse_stdout_json, read_gzip_json, read_tree,
     run_tree_graph_fixture, write_tree_fixture,
@@ -8,7 +11,7 @@ use debundle_e2e_support::{
 use serde_json::Value;
 use std::collections::BTreeSet;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 const CHUNKS: &[(&str, &str)] = &[
     ("alpha", CHAIN_SOURCE),
@@ -44,29 +47,12 @@ fn graph_ids(graph: &Path) -> BTreeSet<String> {
         .collect()
 }
 
-fn graph_for(run_root: &Path, chunk: &str) -> PathBuf {
-    run_root
-        .join("out/reports/tree")
-        .join(chunk)
-        .join("dependency_graph.json.gz")
-}
-
 #[test]
 fn corpus_proposes_independently_for_configured_chunks_and_plans_run_under_node() {
     let run_tree = run_tree_graph_fixture(&fixture(), &[]);
-    assert!(
-        run_tree.result.status.success(),
-        "{}",
-        run_tree.result.stderr
-    );
+    assert_ok(&run_tree.result, "tree run");
     let root = run_tree.root();
-    let output = run(&proposal_args(root, "--graphs", &run_tree.report_root));
-    assert!(
-        output.status.success(),
-        "stdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
+    let output = run_ok(&proposal_args(root, "--graphs", &run_tree.report_root));
     let corpus = parse_stdout_json(&output);
     assert_eq!(corpus["status"], "found", "{corpus}");
     assert_eq!(corpus["scope"]["evaluated"], "configured_chunks_only");
@@ -83,8 +69,8 @@ fn corpus_proposes_independently_for_configured_chunks_and_plans_run_under_node(
     assert_eq!(rows[0]["chunk_id"], "alpha");
     assert_eq!(rows[1]["chunk_id"], "beta");
 
-    let alpha_graph = graph_for(root, "alpha");
-    let beta_graph = graph_for(root, "beta");
+    let alpha_graph = graph_for(&run_tree.report_root, "alpha");
+    let beta_graph = graph_for(&run_tree.report_root, "beta");
     assert_eq!(
         graph_ids(&alpha_graph),
         graph_ids(&beta_graph),
@@ -93,12 +79,7 @@ fn corpus_proposes_independently_for_configured_chunks_and_plans_run_under_node(
 
     let mut plans = Vec::new();
     for (row, graph) in rows.iter().zip([&alpha_graph, &beta_graph]) {
-        let single = run(&proposal_args(root, "--graph", graph));
-        assert!(
-            single.status.success(),
-            "single-graph proposal failed: {}",
-            String::from_utf8_lossy(&single.stderr)
-        );
+        let single = run_ok(&proposal_args(root, "--graph", graph));
         let mut single_report = parse_stdout_json(&single);
         let single_plan = single_report["plan"].clone();
         single_report.as_object_mut().unwrap().remove("plan");
@@ -133,95 +114,14 @@ fn corpus_proposes_independently_for_configured_chunks_and_plans_run_under_node(
     for (chunk, plan, graph) in &plans {
         let plan_path = root.join(format!("{chunk}-plan.json"));
         fs::write(&plan_path, serde_json::to_vec(plan).unwrap()).unwrap();
-        let check = run(&[
-            "modules".into(),
-            "check".into(),
-            "--source-root".into(),
-            root.join("snapshot").to_string_lossy().into_owned(),
-            "--plan".into(),
-            plan_path.to_string_lossy().into_owned(),
-            "--graph".into(),
-            graph.to_string_lossy().into_owned(),
-            "--modules".into(),
-            root.join("modules").to_string_lossy().into_owned(),
-            "--tree-config".into(),
-            root.join("spec_config.yaml").to_string_lossy().into_owned(),
-            "--format".into(),
-            "json".into(),
-        ]);
-        assert!(
-            check.status.success(),
-            "check {chunk} failed:\n{}",
-            String::from_utf8_lossy(&check.stderr)
-        );
+        let check = run_ok(&plan_args(root, "check", graph, &plan_path, &[]));
         assert_eq!(parse_stdout_json(&check)["accepted"], true);
         let before = read_tree(&modules_root);
-        let preview = run(&[
-            "modules".into(),
-            "apply".into(),
-            "--plan".into(),
-            plan_path.to_string_lossy().into_owned(),
-            "--graph".into(),
-            graph.to_string_lossy().into_owned(),
-            "--modules".into(),
-            modules_root.to_string_lossy().into_owned(),
-            "--tree-config".into(),
-            root.join("spec_config.yaml").to_string_lossy().into_owned(),
-            "--source-root".into(),
-            root.join("snapshot").to_string_lossy().into_owned(),
-            "--dry-run".into(),
-            "--format".into(),
-            "json".into(),
-        ]);
-        assert!(
-            preview.status.success(),
-            "dry-run {chunk} failed:\n{}",
-            String::from_utf8_lossy(&preview.stderr)
-        );
+        run_ok(&plan_args(root, "apply", graph, &plan_path, &["--dry-run"]));
         assert_eq!(read_tree(&modules_root), before);
-        let apply = run(&[
-            "modules".into(),
-            "apply".into(),
-            "--plan".into(),
-            plan_path.to_string_lossy().into_owned(),
-            "--graph".into(),
-            graph.to_string_lossy().into_owned(),
-            "--modules".into(),
-            root.join("modules").to_string_lossy().into_owned(),
-            "--tree-config".into(),
-            root.join("spec_config.yaml").to_string_lossy().into_owned(),
-            "--source-root".into(),
-            root.join("snapshot").to_string_lossy().into_owned(),
-            "--format".into(),
-            "json".into(),
-        ]);
-        assert!(
-            apply.status.success(),
-            "apply {chunk} failed:\n{}",
-            String::from_utf8_lossy(&apply.stderr)
-        );
+        run_ok(&plan_args(root, "apply", graph, &plan_path, &[]));
         let out_after = root.join(format!("out-after-{chunk}"));
-        let rerun = run(&[
-            "run".into(),
-            "--tree-config".into(),
-            root.join("spec_config.yaml").to_string_lossy().into_owned(),
-            "--tree-modules".into(),
-            modules_root.to_string_lossy().into_owned(),
-            "--tree-vendor-marks".into(),
-            root.join("vendor_marks.yaml")
-                .to_string_lossy()
-                .into_owned(),
-            "--tree-source-root".into(),
-            root.to_string_lossy().into_owned(),
-            "--out-root".into(),
-            out_after.to_string_lossy().into_owned(),
-            "--graphs".into(),
-        ]);
-        assert!(
-            rerun.status.success(),
-            "tree rerun after applying {chunk} failed:\n{}",
-            String::from_utf8_lossy(&rerun.stderr)
-        );
+        run_ok(&tree_run_args(root, &out_after, &[]));
         assert_node_output(
             &out_after.join(format!("app/{chunk}/entry.js")),
             "1 3\n",
@@ -248,19 +148,9 @@ fn corpus_reports_non_entry_residual_routing_without_claiming_exhaustion() {
     config["import_order"]["alpha"] = serde_yaml::to_value(["residual"]).unwrap();
     fs::write(&config_path, serde_yaml::to_string(&config).unwrap()).unwrap();
     let run_tree = workspace.run(&["--graphs"]);
-    assert!(
-        run_tree.result.status.success(),
-        "{}",
-        run_tree.result.stderr
-    );
+    assert_ok(&run_tree.result, "tree run");
 
-    let output = run(&proposal_args(&root, "--graphs", &run_tree.report_root));
-    assert!(
-        output.status.success(),
-        "stdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
+    let output = run_ok(&proposal_args(&root, "--graphs", &run_tree.report_root));
     let corpus = parse_stdout_json(&output);
     assert_eq!(corpus["status"], "unsupported_residual_routing", "{corpus}");
     let row = &corpus["chunks"][0];
@@ -284,15 +174,11 @@ fn corpus_reports_non_entry_residual_routing_without_claiming_exhaustion() {
 #[test]
 fn corpus_requires_all_configured_graphs_rejects_duplicates_and_stale_secondary_provenance() {
     let run_tree = run_tree_graph_fixture(&fixture(), &[]);
-    assert!(
-        run_tree.result.status.success(),
-        "{}",
-        run_tree.result.stderr
-    );
+    assert_ok(&run_tree.result, "tree run");
     let root = run_tree.root();
     let graphs_root = run_tree.report_root.clone();
 
-    let beta_graph = graph_for(root, "beta");
+    let beta_graph = graph_for(&graphs_root, "beta");
     fs::remove_file(&beta_graph).unwrap();
     let missing = run(&proposal_args(root, "--graphs", &graphs_root));
     assert!(!missing.status.success());
@@ -303,7 +189,7 @@ fn corpus_requires_all_configured_graphs_rejects_duplicates_and_stale_secondary_
     );
     fs::create_dir_all(graphs_root.join("duplicate-alpha")).unwrap();
     fs::copy(
-        graph_for(root, "alpha"),
+        graph_for(&graphs_root, "alpha"),
         graphs_root.join("duplicate-alpha/dependency_graph.json.gz"),
     )
     .unwrap();
@@ -318,11 +204,7 @@ fn corpus_requires_all_configured_graphs_rejects_duplicates_and_stale_secondary_
     // Use a fresh tree with all configured reports, then mutate only the
     // secondary chunk's source after report generation.
     let stale_tree = run_tree_graph_fixture(&fixture(), &[]);
-    assert!(
-        stale_tree.result.status.success(),
-        "{}",
-        stale_tree.result.stderr
-    );
+    assert_ok(&stale_tree.result, "stale tree run");
     let stale_root = stale_tree.root();
     fs::write(
         stale_root.join("snapshot/beta.js"),

@@ -12,6 +12,7 @@ def stable_identity_digest(payload: Mapping[str, Any]) -> str:
 
 
 def _json_stable(value: Any) -> Any:
+    # Payloads mix pydantic models with plain mappings and sequences; `model_dump` marks the models.
     if hasattr(value, "model_dump"):
         return _json_stable(value.model_dump(mode="json"))
     if isinstance(value, Mapping):

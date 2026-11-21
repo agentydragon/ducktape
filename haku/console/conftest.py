@@ -33,18 +33,13 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from haku.console.app import create_app
 from haku.console.config import OperatorIdentityConfig, OperatorOidcConfig
 from haku.console.database_migrate import apply_migrations
-from haku.console.identity.operator_auth import OPERATOR_SESSION_MAX_AGE_SECONDS, SESSION_USER_KEY, OperatorActor
-from haku.console.identity.operator_identity import (
-    OperatorIdentityTrust,
-    ResolvedOperatorIdentity,
-    VerifiedExternalIdentity,
-)
-from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
+from haku.console.identity.operator_auth import OPERATOR_SESSION_MAX_AGE_SECONDS, SESSION_USER_KEY
+from haku.console.identity.operator_identity import ResolvedOperatorIdentity, VerifiedExternalIdentity
 from haku.console.settings import Settings
+from testing.postgres import DatabaseClones, PostgresDatabaseTemplate
+from testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, postgres_container
+from testing.sqlalchemy_engines import managed_async_engine
 from third_party.containers import pgvector_pg18
-from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
-from util.testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, postgres_container
-from util.testing.sqlalchemy_engines import managed_async_engine
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
 # gazelle:include_dep @pypi//httpx
@@ -135,16 +130,6 @@ def console_settings(migrated_db_url: str, tmp_path: Path, **overrides: Any) -> 
         defaults["config_file"] = _empty_config_file(tmp_path)
     defaults.update(overrides)
     return Settings(**defaults)
-
-
-def operator_identity_store(sessions: async_sessionmaker[AsyncSession]) -> PostgresOperatorIdentityStore:
-    """The `PostgresOperatorIdentityStore` tests need, trusting the app-owned test OIDC issuer."""
-    return PostgresOperatorIdentityStore(
-        sessions,
-        OperatorIdentityTrust(
-            trust_domain=TEST_OPERATOR_IDENTITY.trust_domain, trusted_issuers=frozenset({TEST_OPERATOR_OIDC.issuer})
-        ),
-    )
 
 
 async def _resolve_operator_identity(app: Any, external_user_key: str) -> ResolvedOperatorIdentity:
@@ -249,7 +234,6 @@ def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.Monkey
             if operator:
                 assert c.portal is not None
                 operator_identity = c.portal.call(_resolve_operator_identity, app, operator_external_user_key)
-                app.state.test_operator_actor = OperatorActor(operator_id=operator_identity.operator_id)
                 c.headers["Origin"] = settings.public_base_url.rstrip("/")
                 c.cookies.set(
                     "session",

@@ -1,13 +1,17 @@
 """Recovery totals survive unit rounding, FIFO order and prior compulsory sales."""
 
+from decimal import Decimal
+
 import pytest
 import pytest_bazel
 
+from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode, PrivateEquityRegimeCode
 from finance.augur.sim.capture import FinancialCapture, FinancialOutput
 from finance.augur.sim.ids import AccountId, AssetId, LotId
-from finance.augur.sim.market_path import MarketPath, Series
+from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.private_equity import TenderPolicy
 from finance.augur.sim.testing.accounting import CASH, HOUSEHOLD, opening
+from finance.augur.sim.testing.issuer_protocol import issuer_protocol
 from finance.augur.sim.world import World
 
 
@@ -17,31 +21,16 @@ def recovered(total: int, positions: tuple[tuple[int, int], ...], *, earlier_sal
     With `earlier_sale`, month 0 first forces a half sale of every position.
     """
     horizon = 2 if earlier_sale else 1
-    channels = {
-        "mark": 9,
-        "regime": 4,
-        "event_kind": 6,
-        "sale_opportunity": 0,
-        "sale_capacity": 1_000_000_000,
-        "eligible": 1_000_000_000,
-        "forced_sale": 0,
-        "liquidity_blocked": 1,
-        "forced_recovery": total,
-        "company_valuation": 0,
-    }
-    series = tuple(
-        Series(
-            series_id=f"private_equity_{channel}:test_issuer",
-            snapshots=horizon + 1,
-            values=(
-                (0 if channel == "forced_recovery" else 500_000_000 if channel == "forced_sale" else value),
-                value,
-                value,
-            )
-            if earlier_sale
-            else (value, value),
-        )
-        for channel, value in channels.items()
+    recovery = Decimal(total) / 100
+    series = issuer_protocol(
+        IssuerId("test_issuer"),
+        horizon_months=horizon,
+        mark_usd=Decimal("0.09"),
+        regime=PrivateEquityRegimeCode.COLLAPSED,
+        event_kind=PrivateEquityEventKindCode.FORCED_RECOVERY,
+        liquidity_blocked=1,
+        forced_sale=[Decimal("0.5"), 0, 0] if earlier_sale else 0,
+        forced_recovery_usd=[Decimal(0), recovery, recovery] if earlier_sale else recovery,
     )
     world = World(MarketPath(series, 0, rollout_count=1), horizon_months=horizon)
     for account, balance in opening({}).items():

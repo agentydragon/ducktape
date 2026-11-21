@@ -14,7 +14,7 @@ import pytest_bazel
 from finance.augur.model.series import LocationId
 from finance.augur.sim.actor import MonthOpened
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.ids import AccountId, AgentId, JurisdictionId, PropertyId
+from finance.augur.sim.ids import CHECKING, AgentId, JurisdictionId, PropertyId
 from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath, MarketStatement
 from finance.augur.sim.money import USD
@@ -24,7 +24,6 @@ from finance.augur.sim.situs import SitusLaw, compile_situs
 from finance.augur.sim.world import World
 
 OWNER, COUNTY = AgentId("test-owner"), AgentId("test-county")
-CHECKING = AccountId("checking")
 HOME = PropertyId("test-home")
 SAN_FRANCISCO = compile_situs(load_jurisdiction(JurisdictionId("san_francisco")), currency=USD)
 

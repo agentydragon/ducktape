@@ -12,8 +12,6 @@ import (
 	"github.com/google/uuid"
 )
 
-const providerRetrySuppressedHostLoss = "host_loss"
-
 type ProviderFinishReadback struct {
 	Open         bool
 	Completed    bool
@@ -137,7 +135,7 @@ func (s *Store) beginProviderAfterHostLoss(ctx context.Context, owner Owner, ses
 		if err := insertProviderAttempt(ctx, tx, id, owner, string(requestWire), session, policy, previous.StepID, &previousID, previous.Number+1, previous.Budget); err != nil {
 			return err
 		}
-		return s.publishIntent(ctx, tx, owner, conversation, session, id, request)
+		return s.publishIntent(ctx, tx, conversation, session, id, request)
 	})
 	if err != nil {
 		return "", nil, err

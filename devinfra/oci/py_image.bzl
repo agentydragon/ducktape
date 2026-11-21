@@ -28,7 +28,7 @@ def py_image_entrypoint(binary_name, binary_package = None):
     pkg = binary_package or native.package_name()
     return ["/{}/{}".format(pkg, binary_name)]
 
-def py_image_env(binary_name = None, binary_package = None, extra_env = {}):
+def py_image_env(binary_name = None, extra_env = {}):
     """Standard env dict for py_image_layer containers.
 
     When binary_name is provided, sets PATH so that `python3` resolves to the
@@ -36,9 +36,8 @@ def py_image_env(binary_name = None, binary_package = None, extra_env = {}):
     py_binary launcher adds first-party imports to that venv via its .pth file.
 
     Args:
-        binary_name: Name of the aspect_py_binary target. When set, adds
-            the venv bin/ to PATH.
-        binary_package: Bazel package path. Defaults to calling BUILD's package.
+        binary_name: Name of the aspect_py_binary target in the calling BUILD's
+            package. When set, adds the venv bin/ to PATH.
         extra_env: Additional env vars to merge.
 
     Returns:
@@ -46,13 +45,11 @@ def py_image_env(binary_name = None, binary_package = None, extra_env = {}):
     """
     env = dict(_PY_IMAGE_ENV)
     if binary_name:
-        pkg = binary_package or native.package_name()
-
         # The aspect py_binary launcher creates the venv at runtime inside the
         # runfiles directory as ".{binary_name}.venv".  Use that path so that
         # subprocess exec calls inherit the correct python3 after the entrypoint
         # has initialised the venv.
-        venv_bin = "/{}/{}.runfiles/.{}.venv/bin".format(pkg, binary_name, binary_name)
+        venv_bin = "/{}/{}.runfiles/.{}.venv/bin".format(native.package_name(), binary_name, binary_name)
         env["PATH"] = "{}:/usr/local/bin:/usr/bin:/bin".format(venv_bin)
     env.update(extra_env)
     return env
@@ -145,7 +142,7 @@ def shared_py_image_layers(name, binary, owner = "1000", group = "1000"):
         ":" + alias_name,
     ]
 
-def py_python3_symlink(name, binary_name, binary_package = None):
+def py_python3_symlink(name, binary_name):
     """Create a pkg_tar that symlinks /usr/local/bin/python3 to the venv python.
 
     This makes `exec(["python3", ...])` work in agent containers without
@@ -157,11 +154,9 @@ def py_python3_symlink(name, binary_name, binary_package = None):
 
     Args:
         name: Target name for the pkg_tar.
-        binary_name: Name of the aspect_py_binary target.
-        binary_package: Bazel package path. Defaults to calling BUILD's package.
+        binary_name: Name of the aspect_py_binary target in the calling BUILD's package.
     """
-    pkg = binary_package or native.package_name()
-    venv_python = "/{}/{}.runfiles/.{}.venv/bin/python3".format(pkg, binary_name, binary_name)
+    venv_python = "/{}/{}.runfiles/.{}.venv/bin/python3".format(native.package_name(), binary_name, binary_name)
     pkg_tar(
         name = name,
         symlinks = {"/usr/local/bin/python3": venv_python},

@@ -6,26 +6,27 @@ This document analyzes how Tana exports search nodes and their query semantics i
 
 ## 1. Core Search Node Properties
 
-Every search node in a Tana export has these fundamental properties:
+A search node in a Tana export has these properties (`children` is absent when no results are stored):
 
 ```json
 {
   "id": "unique_node_id",
-  "name": "Search name visible to user",
+  "props": {
+    "name": "Search name visible to user",
+    "_docType": "search",
+    "_metaNodeId": "metadata_node_id",
+    "_ownerId": "parent_container_id",
+    "created": 1749757586155
+  },
   "children": ["result_id_1", "result_id_2", ...],
-  "_docType": "search",
-  "_metaNodeId": "metadata_node_id",
-  "_ownerId": "parent_container_id",
-  "createdAt": 1234567890,
-  "editedAt": 1234567890,
-  "touchCounts": {...},
-  "modifiedTs": {...}
+  "touchCounts": [4, 0],
+  "modifiedTs": [1749757586329, 0]
 }
 ```
 
 Key observations:
 
-- `_docType: "search"` identifies search nodes
+- `props._docType: "search"` identifies search nodes
 - Search results are stored as direct children
 - The actual search expression is stored separately in the metadata node
 
@@ -33,7 +34,7 @@ Key observations:
 
 The search query is not stored directly in the search node. Instead, it follows this indirection pattern:
 
-```
+```text
 Search Node
   └── _metaNodeId → Metadata Node
                       └── children[0] → Tuple Node
@@ -66,7 +67,7 @@ Tana uses special system nodes for search operators and types:
 
 The simplest search type - finding all nodes with a specific tag:
 
-```
+```text
 Metadata Node
   └── Tuple Node
       ├── "SYS_A15" (Search expression key)
@@ -79,7 +80,7 @@ Example: Searching for `#issue` tag
 
 For searches with boolean logic:
 
-```
+```text
 Metadata Node
   └── Tuple Node
       ├── "SYS_A15"
@@ -97,7 +98,7 @@ Example: `OR(event, meeting, "FROM CALENDAR")`
 
 Boolean expressions can be nested to arbitrary depth:
 
-```
+```text
 AND(
   tag1,
   OR(
@@ -169,25 +170,13 @@ Searches for calendar items use text criteria:
 - Include usage tracking via `touchCounts`
 - Can be referenced and reused
 
-## 8. Query Semantics Preservation
-
-The export format preserves:
-
-1. **Complete boolean logic** - All AND/OR/NOT operations with proper nesting
-2. **Tag and type references** - Via node IDs that can be resolved
-3. **Text-based criteria** - Stored as nodes with the search text as name
-4. **Search scope** - Via searchContextNode
-5. **Result ordering** - Via children array order
-6. **Result metadata** - Via associationMap
-7. **View preferences** - In metadata node
-
-## 9. Examples from Real Data
+## 8. Examples from Real Data
 
 ### Example 1: Simple Tag Search
 
 Search: "Search results for #issue"
 
-```
+```text
 Search Node (SGrUB4iyWYde)
   └── Metadata (UPQzRt-7yPuY)
       └── Tuple (iA36z7SvNO)
@@ -199,7 +188,7 @@ Search Node (SGrUB4iyWYde)
 
 Search: "Agenda"
 
-```
+```text
 Search Node (lRiDEA6lQM)
   └── Metadata (uDnQ7Y7qR1d0)
       └── Tuple (-OjqkA37F5)
@@ -212,28 +201,6 @@ Search Node (lRiDEA6lQM)
                   └── "qvgxOipNOT" ("FROM CALENDAR")
 ```
 
-## 10. Reconstruction Capabilities
-
-With this structure, you can fully reconstruct:
-
-1. **The original search query** - By parsing the expression tree
-2. **Boolean logic** - Including nested operations
-3. **All search criteria** - Tags, types, and text searches
-4. **Search context** - Where the search was scoped
-5. **Result presentation** - How results should be displayed
-6. **Result metadata** - Additional data attached to results
-
-### Limitations
+## Limitations
 
 The main limitation is that these are **static snapshots** - the search results are frozen at export time and won't update dynamically. The search expression is preserved, but would need to be re-executed against current data to get fresh results.
-
-## Conclusion
-
-Tana's JSON export format preserves complete search semantics through a well-structured system of:
-
-- Search nodes with result children
-- Metadata nodes containing search expressions
-- System nodes representing operators and types
-- Association maps for result metadata
-
-This architecture allows for full reconstruction of search queries while maintaining a clean separation between search definitions and their results.

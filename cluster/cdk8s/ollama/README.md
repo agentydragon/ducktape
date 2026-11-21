@@ -1,4 +1,96 @@
-# Ollama
+# Local inference on wyrm2
+
+## TabbyAPI
+
+TabbyAPI starts with Qwen3.8 Flash-Next EXL3 2.68-bit and can switch to the
+abliterated 2.50-bit checkpoint by request. Both use the two 5090s, a configured
+262,144-token context, and one active generation stream. Switching checkpoints
+waits for the current request to finish and reloads weights from NVMe.
+Matching prompt prefixes can be restored from the NVMe cache after the switch.
+
+TabbyAPI uses an 8 GiB pinned RAM prefix cache and a 16 GiB persistent NVMe
+prefix cache on `/games/tabbyapi-prefix-cache`. Kubernetes requests 20 GiB of
+RAM for the pod, including the pinned cache. The NVMe budget is enforced by
+TabbyAPI and shared across both checkpoints. The cache stores prompt token
+IDs and recurrent state from serving traffic. The dedicated local volume
+retains those files across pod replacement. Keep its directory accessible
+only to the host owner and TabbyAPI's UID 0. See the
+[211K-prefix measurements](../../docs/inference/runs/2026-11-19_tabby_prefix_cache/README.md)
+and [directory setup](prefix-cache-probe.md#prepare-the-gitops-rollout).
+
+With the original 28/30 GiB loader budgets, a 137K-token prefill ran out of
+memory with about 200 MiB free on GPU 0 and 11.3 GiB free on GPU 1. The
+warm TabbyAPI process used 29.97 GiB and 20.03 GiB, respectively. Allowing
+GPU 0 another 1 GiB for desktop growth and dividing the remaining headroom
+evenly gives warm-use targets of 23.9 GiB and 26.1 GiB, or about 6 GiB to
+move from GPU 0. The 22/30 GiB loader budgets use that estimate to guide
+placement. After rollout, measure warm and peak VRAM on both cards while
+completing a cold prompt plus generation near the 256K limit through LiteLLM.
+Repeat with a fresh prefix after mixed requests.
+
+The LiteLLM compatibility IDs
+`ollama/{oai,olm}-chat/qwen3.8-flash-next-iq4xs-{128k,256k}` all use this
+deployment and select the stock checkpoint. Select
+`tabbyapi/oai-chat/qwen3.8-flash-next-abliterated` in LiteLLM or
+**Qwen3.8 Flash-Next Abliterated (EXL3 2.50 bpw) — TabbyAPI**
+in Agentplane staging's Codex and central sampler pickers. Codex uses
+LiteLLM's Responses bridge and the central sampler uses Chat Completions.
+Gatus probes the private
+`/v1/models` endpoint. LiteLLM handles client authentication.
+
+The static local volumes mount the [staged checkpoints](#tabbyapi-checkpoint-staging)
+on the wyrm2 NVMe read-only. The ConfigMap overlays a chat template that supports
+mid-conversation system messages and maps the established `high` effort to
+Qwen's `xhigh`.
+
+The initial deployment took 55 seconds to load the model. The first
+authenticated request took 37 seconds while the engine compiled kernels.
+During that request the health endpoint timed out, and Kubernetes briefly
+removed the Service endpoint. TabbyAPI's built-in warmup runs during model
+load. The readiness probe also tolerates six consecutive timeouts to cover
+remaining first-use compilation. After a restart, watch the initial request
+and confirm the Service endpoint stays ready.
+
+Ollama is scaled to zero. Its direct API, embeddings, and other model routes
+are offline. To restore Ollama through GitOps, first revert the TabbyAPI
+deployment and LiteLLM bindings and wait for the TabbyAPI Pod to stop.
+Then restore the Ollama Deployment to one replica. Its existing claims,
+registry, and completed setup Job support that rollback.
+
+### TabbyAPI checkpoint staging
+
+Checkpoint files live under `/games/llm-models/` on `wyrm2`.
+
+| Directory                     | Use                                                   | Source                                                                                                                                                           |
+| ----------------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `qwen38-exl3-268`             | Serving, 2.68 bpw self-calibrated, 8-bit n-gram table | [turboderp revision `d660113`](https://huggingface.co/turboderp/Qwen3.8-Flash-Next-exl3/tree/d660113325e1eba20e760a9063580139bdbdfc22)                           |
+| `qwen38-exl3-250-abliterated` | Serving on demand, 2.50 bpw, 3-bit n-gram table       | [ghost-actual revision `1354024`](https://huggingface.co/ghost-actual/Qwen3.8-Flash-Next-Abliterated-EXL3-2.50bpw/tree/135402464a8d351ca6ecb6969f2a6f4061681a24) |
+
+The candidate quantizes [OrcaRouter's abliterated BF16 checkpoint](https://huggingface.co/orcarouter/Qwen3.8-Flash-Next-Uncensored).
+The ablation is in the model weights. The download includes the MTP weights and
+`ngram_embedding.safetensors`. Full-context serving and MTP throughput on the
+cluster image still need measurement.
+
+To stage the candidate from a Ducktape checkout on `wyrm2`, use the Hugging
+Face CLI from the repository's Nixpkgs pin.
+
+```sh
+nixpkgs_revision=$(jq -er '.nodes.nixpkgs.locked.rev' flake.lock)
+nix shell "github:NixOS/nixpkgs/$nixpkgs_revision#python3Packages.huggingface-hub" \
+  --command ionice -c 3 nice -n 10 bash cluster/cdk8s/ollama/stage_tabbyapi_checkpoint.sh
+```
+
+The wrapper uses `hf download` to resume partial downloads and `hf cache verify`
+to check the pinned snapshot before renaming the staging directory. Hugging Face
+locks individual files. The wrapper holds a separate lock through the rename so
+overlapping runs can safely share the staging directory. Rerunning the wrapper
+verifies the existing checkpoint. The pinned CLI reports its own `.cache/huggingface/`
+resume metadata as extra files. To restore the serving checkpoint onto a replacement
+disk, stage its pinned snapshot with the n-gram table and verify its weight hashes
+before starting TabbyAPI.
+See [the declarative-staging TODO](TODO.md).
+
+## Ollama provisioning
 
 `app.py` renders `setup-gpt-oss-v2.sh.j2` using the source declarations in
 `model_catalog/ollama.py` and packages the result as `setup-gpt-oss-v2.sh`.
@@ -84,8 +176,8 @@ exclusive host experiments before resuming this Deployment. Serving acceptance,
 throughput and tool-call results:
 [2026-09-27 run](../../docs/inference/runs/2026-09-27_ollama_ssd/README.md).
 
-LiteLLM derives its `ollama/{oai,olm}-chat/qwen3.8-flash-next-iq4xs-{128k,256k}` routes
-and key allowlists from the shared model roster. The 256K routes use
+LiteLLM derives the Qwen compatibility IDs and key allowlists from the shared
+model roster. When bound to Ollama, the 256K routes use
 `qwen3.8-flash-next-iq4xs-256k:latest`, an alias sharing all weight blobs with
 `num_ctx=262144`: Ollama's OpenAI-compatible API ignores native `options.num_ctx`, so
 the alias makes the context effective on both wires. A short prompt does not

@@ -15,7 +15,7 @@
 //! closure) — there is no second serializer. The matcher proves the result
 //! (gate 1), exactly as the cover path does.
 //!
-//! ## Skeleton / arity anchors (W1 hand-off note #2)
+//! ## Skeleton / arity anchors
 //!
 //! When the discriminating feature is **structural** — a function/var skeleton,
 //! a member count, a param arity — it pins no literal, so it contributes **no
@@ -37,7 +37,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use selector_candidate_index::SelectorFeature;
+use selector_candidate_index::{
+    SelectorFeature, class_member_label_span, expr_label, member_prop_label, object_key_label_span,
+    object_pat_key_label_span,
+};
 use shape_index::{AnchorSet, ShapeFeature};
 use swc_common::{Span, Spanned};
 use swc_ecma_ast::*;
@@ -217,8 +220,10 @@ impl Visit for SpanCollector<'_> {
     }
 
     fn visit_call_expr(&mut self, call: &CallExpr) {
+        // A bare-identifier callee is alpha-wildcarded and never an anchor.
         if let Callee::Expr(callee) = &call.callee
-            && let Some(label) = member_callee_label(callee)
+            && matches!(**callee, Expr::Member(_))
+            && let Some(label) = expr_label(callee)
         {
             // Pin the callee member access; the prune keeps the property name
             // and holes the receiver, yielding `ANYTHING.foo(...)`.
@@ -265,85 +270,6 @@ impl Visit for SpanCollector<'_> {
     }
 }
 
-/// `a.foo` for a member-access callee, mirroring `selector_candidate_index`'s
-/// `callee_label` for the member case (a bare identifier is never an anchor).
-fn member_callee_label(expr: &Expr) -> Option<String> {
-    let Expr::Member(member) = expr else {
-        return None;
-    };
-    let object = expr_label(&member.obj)?;
-    let prop = member_prop_label(&member.prop)?;
-    Some(format!("{object}.{prop}"))
-}
-
-fn expr_label(expr: &Expr) -> Option<String> {
-    match expr {
-        Expr::Ident(ident) => Some(ident.sym.to_string()),
-        Expr::Member(member) => {
-            let object = expr_label(&member.obj)?;
-            let prop = member_prop_label(&member.prop)?;
-            Some(format!("{object}.{prop}"))
-        }
-        _ => None,
-    }
-}
-
-fn member_prop_label(prop: &MemberProp) -> Option<String> {
-    match prop {
-        MemberProp::Ident(ident) => Some(ident.sym.to_string()),
-        MemberProp::PrivateName(private) => Some(format!("#{}", private.name)),
-        MemberProp::Computed(_) => None,
-    }
-}
-
-fn object_key_label_span(prop: &PropOrSpread) -> Option<(String, Span)> {
-    let PropOrSpread::Prop(prop) = prop else {
-        return None;
-    };
-    match prop.as_ref() {
-        Prop::Shorthand(ident) => Some((ident.sym.to_string(), ident.span)),
-        Prop::KeyValue(kv) => prop_name_label_span(&kv.key),
-        Prop::Assign(assign) => Some((assign.key.sym.to_string(), assign.key.span)),
-        Prop::Getter(getter) => prop_name_label_span(&getter.key),
-        Prop::Setter(setter) => prop_name_label_span(&setter.key),
-        Prop::Method(method) => prop_name_label_span(&method.key),
-    }
-}
-
-fn object_pat_key_label_span(prop: &ObjectPatProp) -> Option<(String, Span)> {
-    match prop {
-        ObjectPatProp::KeyValue(kv) => prop_name_label_span(&kv.key),
-        ObjectPatProp::Assign(assign) => Some((assign.key.id.sym.to_string(), assign.key.id.span)),
-        ObjectPatProp::Rest(_) => None,
-    }
-}
-
-fn class_member_label_span(member: &ClassMember) -> Option<(String, Span)> {
-    match member {
-        ClassMember::Constructor(ctor) => prop_name_label_span(&ctor.key),
-        ClassMember::Method(method) => prop_name_label_span(&method.key),
-        ClassMember::PrivateMethod(method) => {
-            Some((format!("#{}", method.key.name), method.key.span))
-        }
-        ClassMember::ClassProp(prop) => prop_name_label_span(&prop.key),
-        ClassMember::PrivateProp(prop) => Some((format!("#{}", prop.key.name), prop.key.span)),
-        ClassMember::AutoAccessor(_)
-        | ClassMember::StaticBlock(_)
-        | ClassMember::TsIndexSignature(_)
-        | ClassMember::Empty(_) => None,
-    }
-}
-
-fn prop_name_label_span(name: &PropName) -> Option<(String, Span)> {
-    match name {
-        PropName::Ident(ident) => Some((ident.sym.to_string(), ident.span)),
-        PropName::Str(str_) => Some((str_.value.to_string_lossy().to_string(), str_.span)),
-        PropName::Num(num) => Some((num.value.to_string(), num.span)),
-        PropName::BigInt(bigint) => Some((bigint.value.to_string(), bigint.span)),
-        PropName::Computed(_) => None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -378,6 +304,25 @@ const v = 1;"#;
             kept.iter()
                 .map(|s| span_text(source, s))
                 .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn hole_spelled_key_is_not_pinned() {
+        // `ANYTHING` is the selector language's property-run hole, so a real key
+        // spelled that way is never indexed and the read-off pins the other key.
+        // If it were indexed, its shorter label would outrank `distinguishing_key`.
+        let source = r#"const target = { ANYTHING: first, distinguishing_key: second };
+const other = { shared: third };"#;
+        let module = parse(source);
+        let index = ShapeIndex::new(&module);
+        let anchor_set = index.minimal_anchor_set(0).unwrap();
+        let kept = kept_spans_for_anchor_set(&module.body[0], &anchor_set);
+        assert_eq!(
+            kept.iter()
+                .map(|s| span_text(source, s))
+                .collect::<Vec<_>>(),
+            ["distinguishing_key"]
         );
     }
 }

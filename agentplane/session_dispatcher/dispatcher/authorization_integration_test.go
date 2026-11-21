@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
-	"net"
 	"reflect"
 	"sync"
 	"sync/atomic"
@@ -25,6 +24,7 @@ import (
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -40,10 +40,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-const (
-	authoritySandboxUID = "00000000-0000-4000-8000-000000009013"
-	pendingSandboxUID   = "00000000-0000-4000-8000-000000009014"
-)
+const authoritySandboxUID = "00000000-0000-4000-8000-000000009013"
 
 type authorityInventory struct {
 	mu              sync.Mutex
@@ -117,15 +114,7 @@ type authorityPeers struct {
 // Neither workload Identity inherits the component's authority from its ServiceAccount name.
 func authorityClients(t *testing.T, queueStore *store.Store, inventory *authorityInventory, hub *wakeups.Hub) authorityPeers {
 	t.Helper()
-	api, err := kubeapiserver.Start()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := api.Stop(); err != nil {
-			t.Error(err)
-		}
-	})
+	api := kubeapiserver.StartForTest(t)
 	sameNamed := workloadauthtesting.NewWorkload(t, api, caller.Namespace, caller.Name)
 	other := workloadauthtesting.NewWorkload(t, api, caller.Namespace, "test-stranger")
 	svids, err := auth.NewSVIDResolver(sameNamed.Objects, []string{caller.Namespace}, &resolver.Identities{PolicyNamespace: caller.Namespace})
@@ -146,17 +135,12 @@ func authorityClients(t *testing.T, queueStore *store.Store, inventory *authorit
 	if err != nil {
 		t.Fatal(err)
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	server := grpc.NewServer(append(Methods(rule).ServerOptions(time.Second), grpc.Creds(credentials.NewTLS(serverTLS)))...)
 	dispatcherpb.RegisterSessionDispatcherServer(server, service)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
+	serverAddr := grpcserver.Serve(t, server)
 	dial := func(uri string) dispatcherpb.SessionDispatcherClient {
 		t.Helper()
-		return authoritySVIDClient(t, listener.Addr().String(), uri, ca, ca.Issue(t, uri))
+		return authoritySVIDClient(t, serverAddr, uri, ca, ca.Issue(t, uri))
 	}
 	return authorityPeers{component: dial(peertls.AppURI), sameNamedIdentity: dial(sameNamed.URI), otherIdentity: dial(other.URI)}
 }
@@ -214,20 +198,6 @@ func (s *countingAuthorityDispatcher) ListSessions(
 	return s.SessionDispatcherServer.ListSessions(ctx, request)
 }
 
-func requireMissingSessionCommands(t *testing.T, client dispatcherpb.SessionDispatcherClient, ctx context.Context, sessionID, sandboxName, sandboxUID string) {
-	t.Helper()
-	if _, err := client.SubmitInput(ctx, &dispatcherpb.SubmitInputRequest{
-		SessionId: sessionID, ExpectedSandboxUid: sandboxUID, CommandId: uuid.NewString(), Text: "unregistered",
-	}); status.Code(err) != codes.NotFound {
-		t.Fatalf("unregistered Session input: %v", err)
-	}
-	if _, err := client.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{
-		SessionId: sessionID, ExpectedSandboxUid: sandboxUID, CommandId: uuid.NewString(), TurnId: "unregistered-turn",
-	}); status.Code(err) != codes.NotFound {
-		t.Fatalf("unregistered Session interrupt: %v", err)
-	}
-}
-
 type authoritySVIDServer struct {
 	queueStore *store.Store
 	address    string
@@ -249,7 +219,7 @@ func serveAuthoritySVIDServer(
 	queueStore := testStore(t, 10)
 	hub := testWatchHub(t, queueStore)
 	service := &Service{
-		Store: queueStore, DispatcherCallers: sets.New[auth.Account](),
+		Store:     queueStore,
 		Sandboxes: inventory, EnvironmentRules: environmentRules, PolicyReady: func() error { return nil },
 		Hub: hub, WatchLease: 10 * time.Second,
 	}
@@ -261,15 +231,10 @@ func serveAuthoritySVIDServer(
 		t.Fatal(err)
 	}
 	serverTLS.NextProtos = []string{"h2", "http/1.1"}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	server := grpc.NewServer(append(Methods(auth.AnySubject(svids)).ServerOptions(time.Second), grpc.Creds(credentials.NewTLS(serverTLS)))...)
 	dispatcherpb.RegisterSessionDispatcherServer(server, counted)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
-	return authoritySVIDServer{queueStore: queueStore, address: listener.Addr().String(), ca: ca, counted: counted}
+	serverAddr := grpcserver.Serve(t, server)
+	return authoritySVIDServer{queueStore: queueStore, address: serverAddr, ca: ca, counted: counted}
 }
 
 func (s authoritySVIDServer) client(t *testing.T, uri string, leaf peertls.Config) dispatcherpb.SessionDispatcherClient {
@@ -305,15 +270,7 @@ func requireRejectedLeavesAndMixedAuthentication(t *testing.T, server authorityS
 }
 
 func TestDispatcherServiceAccountSVIDDoesNotOwnSandboxIdentitySessions(t *testing.T) {
-	api, err := kubeapiserver.Start()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := api.Stop(); err != nil {
-			t.Error(err)
-		}
-	})
+	api := kubeapiserver.StartForTest(t)
 	owner := workloadauthtesting.NewWorkload(t, api, caller.Namespace, caller.Name)
 	foreign := workloadauthtesting.NewWorkload(t, api, caller.Namespace, "test-foreign-caller")
 	ownerSandbox := SandboxSnapshot{Name: owner.Sandbox.Name, Namespace: owner.Sandbox.Namespace, UID: string(owner.Sandbox.UID)}
@@ -355,15 +312,7 @@ func TestDispatcherServiceAccountSVIDDoesNotOwnSandboxIdentitySessions(t *testin
 }
 
 func TestDispatcherIdentitySVIDDoesNotInheritSameNamedAccountAuthority(t *testing.T) {
-	api, err := kubeapiserver.Start()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := api.Stop(); err != nil {
-			t.Error(err)
-		}
-	})
+	api := kubeapiserver.StartForTest(t)
 	owner := workloadauthtesting.NewIdentityWorkload(t, api, caller.Namespace, caller.Name, caller.Namespace).Workload
 	foreign := workloadauthtesting.NewIdentityWorkload(t, api, caller.Namespace, "test-foreign-caller", caller.Namespace).Workload
 	ownerIdentity := &identitypb.Identity{Name: owner.Identity.Name, Uid: string(owner.Identity.UID)}
@@ -375,7 +324,7 @@ func TestDispatcherIdentitySVIDDoesNotInheritSameNamedAccountAuthority(t *testin
 	requireRejectedLeavesAndMixedAuthentication(t, authority, owner.URI)
 	ownerClient := authority.client(t, owner.URI, authority.ca.Issue(t, owner.URI))
 	sessionID := uuid.NewString()
-	_, err = ownerClient.CreateSession(authoritySVIDContext(t), &dispatcherpb.CreateSessionRequest{
+	_, err := ownerClient.CreateSession(authoritySVIDContext(t), &dispatcherpb.CreateSessionRequest{
 		SessionId: sessionID,
 		Spec: &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{
 			EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{

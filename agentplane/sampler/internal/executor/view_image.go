@@ -75,7 +75,7 @@ func (e *Executor) viewImage(ctx context.Context, arguments json.RawMessage) (*V
 		path = filepath.Join(e.cwd, path)
 	}
 	metadata, err := operationValue(e.transport.GetMetadata(ctx, transport.GetMetadataRequest{Path: fileURI(path)}))
-	if rejected := findTransportFailure(err, transport.FailureRejected); rejected != nil {
+	if rejected := transport.FindFailure(err, transport.FailureRejected); rejected != nil {
 		return nil, &toolcontract.Rejection{Message: fmt.Sprintf("unable to locate image at `%s`: %s", path, rejected.RejectionMessage)}
 	} else if err != nil {
 		return nil, err
@@ -87,7 +87,7 @@ func (e *Executor) viewImage(ctx context.Context, arguments json.RawMessage) (*V
 		return nil, &toolcontract.Rejection{Message: fmt.Sprintf("image at `%s` is %d bytes; view_image reads at most %d bytes", path, metadata.Size, maxViewImageBytes)}
 	}
 	data, err := e.readFile(ctx, path)
-	if rejected := findTransportFailure(err, transport.FailureRejected); rejected != nil {
+	if rejected := transport.FindFailure(err, transport.FailureRejected); rejected != nil {
 		return nil, &toolcontract.Rejection{Message: fmt.Sprintf("unable to read image at `%s`: %s", path, rejected.RejectionMessage)}
 	} else if err != nil {
 		return nil, err
@@ -112,7 +112,7 @@ func (e *Executor) readFile(ctx context.Context, path string) ([]byte, error) {
 	}
 	data, err := e.readBlocks(ctx, handle)
 	_, closeErr := operationValue(e.transport.CloseFile(ctx, transport.CloseFileRequest{HandleID: handle}))
-	if rejected := findTransportFailure(closeErr, transport.FailureRejected); rejected != nil {
+	if rejected := transport.FindFailure(closeErr, transport.FailureRejected); rejected != nil {
 		// Upstream also ignores close failures; the rejection is journaled.
 		slog.Warn("exec-server rejected fs/close", "handle", handle, "error", closeErr)
 	} else if err == nil {

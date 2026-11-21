@@ -1,35 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { create, fromJson, type JsonObject, type JsonValue } from "@bufbuild/protobuf";
-import { TimestampSchema } from "@bufbuild/protobuf/wkt";
+import type { JsonValue } from "@bufbuild/protobuf";
 
-import {
-  ActionIdentitySchema,
-  ActionRequestSchema,
-  ActionState,
-  type ActionRequest,
-} from "../../../../action_service/api/contracts/action_service_pb";
+import { actionRequest } from "../testing/proto_fixtures";
 import { formatActionNotification } from "./index";
-
-function actionRequest(fields: {
-  action: { group: string; name: string };
-  arguments: JsonObject;
-  title: string;
-  description?: string | null;
-}): ActionRequest {
-  return create(ActionRequestSchema, {
-    id: "00000000-0000-4000-8000-000000000001",
-    action: create(ActionIdentitySchema, fields.action),
-    arguments: fields.arguments,
-    title: fields.title,
-    caller: { namespace: "test-namespace", name: "test-account" },
-    description: fields.description ?? undefined,
-    state: ActionState.DECISION_PENDING,
-    version: 1n,
-    createdAt: fromJson(TimestampSchema, "2026-10-09T12:00:00Z"),
-    updatedAt: fromJson(TimestampSchema, "2026-10-09T12:00:00Z"),
-  });
-}
 
 // [Action name, arguments, notification's Action title, notification text when it is not the description]
 const kubernetesNotificationCases: [string, { [key: string]: JsonValue }, string, string?][] = [
@@ -84,6 +58,24 @@ const kubernetesNotificationCases: [string, { [key: string]: JsonValue }, string
   ],
 ];
 
+const fixedKubernetesNotificationCases: [string, { [key: string]: JsonValue }, string][] = [
+  ["pods_list", {}, "List Pods across namespaces"],
+  ["namespaces_list", {}, "List Kubernetes namespaces"],
+  ["projects_list", {}, "List OpenShift projects"],
+  ["nodes_log", { name: "worker-1", query: "kubelet" }, "View Kubernetes Node logs"],
+  ["nodes_stats_summary", { name: "worker-1" }, "Read Kubernetes Node statistics"],
+  ["nodes_top", {}, "Read Kubernetes Node metrics"],
+  ["pods_top", {}, "Read Kubernetes Pod metrics"],
+  ["pods_run", { image: "private-registry.example.test/app" }, "Run Kubernetes Pod"],
+  ["resources_scale", { apiVersion: "apps/v1", kind: "Deployment", name: "web" }, "Review Kubernetes resource scale"],
+  [
+    "resources_scale",
+    { apiVersion: "apps/v1", kind: "Deployment", name: "web", scale: 0 },
+    "Set Kubernetes replica count",
+  ],
+  ["configuration_view", {}, "Read Kubernetes configuration"],
+];
+
 const malformedKubernetesNotificationCases: [string, { [key: string]: JsonValue }][] = [
   ["resources_create_or_update", { resource: 123 }],
   ["resources_get", { apiVersion: "apps/v1", kind: "Deployment", name: "api", namespace: 7 }],
@@ -98,6 +90,50 @@ const malformedKubernetesNotificationCases: [string, { [key: string]: JsonValue 
 ];
 
 describe("action notification formatting", () => {
+  it.each([
+    ["google_calendar", "create_event", "Create Google Calendar event"],
+    ["google_calendar", "list_event_instances", "List Google Calendar event occurrences"],
+    ["home_assistant", "ha_manage_backup", "Manage Home Assistant backup"],
+    ["orchestration_v1", "change_model", "Change Sandbox Session model"],
+    ["sandbox", "get_template", "Inspect Sandbox template"],
+    ["ssh", "list_targets", "List SSH targets"],
+  ])("uses specific copy for %s / %s without including arbitrary arguments", (group, name, title) => {
+    expect(
+      formatActionNotification(
+        actionRequest({
+          action: { group, name },
+          arguments: { name: "private-resource-name" },
+          title: "",
+          description: "Check the reviewed request.",
+        })
+      )
+    ).toEqual({ title, text: "Check the reviewed request." });
+  });
+
+  it.each([
+    ["environments", "list", "List environments"],
+    ["environments", "get", "Inspect environment review-box"],
+    ["environments", "resume", "Resume environment review-box"],
+    ["sessions", "create", "Create Session"],
+    ["sessions", "get", "Inspect Session"],
+    ["sessions", "submit_input", "Submit Session input"],
+    ["sessions", "observe_input", "Observe Session input"],
+    ["sessions", "cancel_input", "Cancel Session input"],
+    ["sessions", "interrupt_turn", "Interrupt Session turn"],
+    ["sessions", "read_turns", "Read Session turns"],
+  ])("formats %s / %s", (group, name, title) => {
+    expect(
+      formatActionNotification(
+        actionRequest({
+          action: { group, name },
+          arguments: { target: { name: "review-box", uid: "target-1" }, text: "Private draft text" },
+          title: "",
+          description: "Requested from a Session.",
+        })
+      )
+    ).toEqual({ title, text: "Requested from a Session." });
+  });
+
   it("snapshots the fallback for an unhandled Action", () => {
     const request = actionRequest({
       action: { group: "finance", name: "transfer" },
@@ -202,6 +238,20 @@ describe("action notification formatting", () => {
     });
   });
 
+  it("uses Tana operation titles without adding resolved node or argument data to push", () => {
+    const request = actionRequest({
+      action: { group: "tana", name: "set_field_content" },
+      arguments: { nodeId: "private-id", attributeId: "private-field", content: "private value" },
+      title: "Update the planning page",
+      description: "Review the requested update.",
+    });
+
+    expect(formatActionNotification(request, new Map([["private-id", "Private title"]]))).toEqual({
+      title: "Update the planning page · Change Tana field content",
+      text: "Review the requested update.",
+    });
+  });
+
   it("uses human-facing descriptions for Grocy's no-lookup Actions", () => {
     const cases = [
       ["products_list", "List Grocy products"],
@@ -252,6 +302,35 @@ describe("action notification formatting", () => {
     });
   });
 
+  it.each([
+    ["drafts_delete", "Delete Gmail draft"],
+    ["drafts_get", "Read Gmail draft"],
+    ["drafts_list", "Search Gmail drafts"],
+    ["drafts_update", "Replace Gmail draft"],
+    ["filters_create", "Create Gmail filter"],
+    ["filters_delete", "Delete Gmail filter"],
+    ["filters_get", "Read Gmail filter"],
+    ["filters_list", "List Gmail filters"],
+    ["labels_create", "Create Gmail label"],
+    ["labels_delete", "Delete Gmail label"],
+    ["labels_get", "Read Gmail label"],
+    ["labels_list", "List Gmail labels"],
+    ["labels_patch", "Update Gmail label"],
+    ["messages_get", "Read Gmail message"],
+    ["threads_get", "Read Gmail thread"],
+  ])("formats the Gmail notification for %s using caller-approved copy", (name, title) => {
+    const request = actionRequest({
+      action: { group: "gmail", name },
+      arguments: { to: ["test-address@example.com"], subject: "Private example subject" },
+      title: "Review Gmail access",
+      description: null,
+    });
+    expect(formatActionNotification(request, new Map([["target", "Private example name"]]))).toEqual({
+      title: `Review Gmail access · ${title}`,
+      text: "Action requires approval",
+    });
+  });
+
   it.each(kubernetesNotificationCases)(
     "formats the Kubernetes notification for %s",
     (name, args, actionTitle, text = "The controller is waiting for this change.") => {
@@ -268,6 +347,18 @@ describe("action notification formatting", () => {
       });
     }
   );
+
+  it.each(fixedKubernetesNotificationCases)("formats the Kubernetes operation title for %s", (name, args, title) => {
+    const request = actionRequest({
+      action: { group: "kubernetes_admin", name },
+      arguments: args,
+      title: "Review the cluster operation",
+    });
+    expect(formatActionNotification(request)).toEqual({
+      title: `Review the cluster operation · ${title}`,
+      text: "Action requires approval",
+    });
+  });
 
   it.each(kubernetesNotificationCases)("falls back for %s when arguments contain an unknown field", (name, args) => {
     const request = actionRequest({

@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from finance.plaid.spend.account_history import AccountHistory
 from finance.plaid.spend.allowance import AllowancePolicy
+from finance.plaid.spend.models import AllowanceConfigurationView, CardConfigurationView, SpendConfigurationView
 from finance.plaid.spend.sustainability import SustainabilityPolicy
 from finance.yaml_decimal import DecimalSafeLoader
 
@@ -92,3 +93,33 @@ def load_configuration(path: Path) -> SpendConfiguration:
     """Load and validate the shared YAML configuration used by the app and analyses."""
     document = yaml.load(path.read_text(encoding="utf-8"), Loader=DecimalSafeLoader)
     return SpendConfiguration.model_validate(document)
+
+
+def configuration_view(configuration: SpendConfiguration) -> SpendConfigurationView:
+    policy = configuration.allowance
+    allowance = None
+    if policy is not None:
+        allowance = AllowanceConfigurationView(
+            monthly_minor_units=policy.monthly_minor_units,
+            activation_at=policy.activation_at,
+            currency=policy.currency,
+            spending_account_count=len(policy.spending_account_ids),
+            max_sync_age_hours=policy.max_sync_age_hours,
+            forecast_basis_period_id=policy.forecast_basis_period_id,
+            rules=policy.rules,
+            reversal_pairs=policy.reversal_pairs,
+            analysis_categories=policy.analysis_categories,
+        )
+    return SpendConfigurationView(
+        time_zone=configuration.time_zone.key,
+        cards=[
+            CardConfigurationView(
+                label=card.label,
+                enabled=card.enabled,
+                limit_minor_units=card.limit_minor_units,
+                alert_threshold_percent=card.alert_threshold_percent,
+            )
+            for card in configuration.cards
+        ],
+        allowance=allowance,
+    )

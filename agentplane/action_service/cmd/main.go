@@ -1,8 +1,8 @@
 // Command actions is the Go Action Service, over the Action Service's PostgreSQL database. It serves Action,
 // operator, linkage, Web Push and health APIs over gRPC. It runs the dispatch worker, which
-// runs the Actions of the sandbox, orchestration_v1 and MCP groups, refreshes linked OAuth tokens, pushes requests
-// awaiting a Decision to operators' browsers when Web Push is configured, and keeps its policy index equal to the API
-// server's.
+// runs the Actions of the sandbox, orchestration_v1, session_delegation and MCP groups, refreshes linked OAuth tokens,
+// pushes requests awaiting a Decision to operators' browsers when Web Push is configured, and keeps its policy index
+// equal to the API server's.
 package main
 
 import (
@@ -70,10 +70,9 @@ import (
 )
 
 const (
-	// shutdownGrace bounds how long open calls may finish once the process is told to stop, as the Python
-	// service's graceful shutdown does.
+	// shutdownGrace bounds how long open calls may finish once the process is told to stop.
 	shutdownGrace = 5 * time.Second
-	// maxConnections and idleConnections size the pool as the Python service's: four kept and two more under load.
+	// maxConnections and idleConnections size the pool: four kept and two more under load.
 	maxConnections  = 6
 	idleConnections = 4
 )
@@ -122,8 +121,7 @@ func openDatabase(ctx context.Context, databaseURL string) (*sql.DB, error) {
 }
 
 // executors routes each Action the catalog offers to the Executor of its group. An Action the catalog does not offer,
-// or of a group no Executor runs, fails as unsupported, as in the Python service; one of a group that is unavailable
-// waits for it to come back.
+// or of a group no Executor runs, fails as unsupported; one of a group that is unavailable waits for it to come back.
 type executors struct {
 	catalog *catalog.Catalog
 	// byGroup holds the Executor of each group, by key.
@@ -270,11 +268,10 @@ func sessionDelegationExecutors(
 ) (map[string]worker.Executor, error) {
 	byGroup := map[string]worker.Executor{}
 	for key, group := range groups.Groups() {
-		binding, isSessionDelegation := group.Executor.(catalog.SessionDelegationBinding)
-		if !isSessionDelegation {
+		if _, isSessionDelegation := group.Executor.(catalog.SessionDelegationBinding); !isSessionDelegation {
 			continue
 		}
-		executor, err := sessiondelegation.NewExecutor(key, binding, environment, dispatcher, history)
+		executor, err := sessiondelegation.NewExecutor(key, environment, dispatcher, history)
 		if err != nil {
 			return nil, fmt.Errorf("ActionGroup %s: %w", key, err)
 		}
@@ -329,15 +326,7 @@ func gate(c config, d deps, callers grpcgate.Callers) (*grpcgate.Gate, error) {
 	var err error
 	options := grpcgate.Options{ErrorMapper: rpc.Failure, Callers: callers, ServiceReaders: c.ServiceReaders, OperatorServices: c.OperatorServices}
 	if c.ConnectionDelegationService != "" || c.SessionDelegationService != "" {
-		scheme := runtime.NewScheme()
-		if err := policyapi.AddToScheme(scheme); err != nil {
-			return nil, fmt.Errorf("register Policy API for delegated Identity checks: %w", err)
-		}
-		objects, err := client.New(d.Kube, client.Options{Scheme: scheme})
-		if err != nil {
-			return nil, fmt.Errorf("configure delegated Identity checks: %w", err)
-		}
-		identities, err := auth.KubernetesIdentityUIDs(objects, c.PolicyNamespace)
+		identities, err := auth.NewKubernetesIdentityUIDs(d.Kube, c.PolicyNamespace)
 		if err != nil {
 			return nil, fmt.Errorf("configure delegated Identity checks: %w", err)
 		}
@@ -427,7 +416,7 @@ func actionSessionDelegation(identities auth.IdentityUIDReader) (auth.Methods, e
 // the MCP groups, the refreshes and Web Push delivery drain from then on, beside the listener's shutdown, and serve
 // returns once they have and the policy watches have stopped.
 func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
-	policy := informer.NewIndex(c.CallerServiceAccountNamespaces)
+	policy := informer.NewIndex()
 	admission, err := gate(c, d, policy)
 	if err != nil {
 		return err
@@ -605,7 +594,9 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 		Executors: actions, Provider: policies.NewProvider(visibility),
 	})
 	action_servicepb.RegisterActionServiceServer(grpcServer, actionAPI)
-	operator_action_servicepb.RegisterOperatorActionServiceServer(grpcServer, rpc.NewOperatorService(requests, hub, admission, linkages))
+	operator_action_servicepb.RegisterOperatorActionServiceServer(grpcServer, rpc.NewOperatorService(requests, hub, admission, linkages, rpc.IntegrationPreviews{
+		Gmail: supervisors["gmail"], Tana: supervisors["tana"], GoogleCalendar: supervisors["google_calendar"], Grocy: supervisors["grocy_sf"],
+	}))
 	// The callback is public: its single-use state, not a bearer, authorizes completion.
 	linkage_servicepb.RegisterLinkageServiceServer(grpcServer, linkage.NewService(linkages))
 	web_push_servicepb.RegisterWebPushServiceServer(grpcServer, rpc.NewPushService(push.NewSubscriptions(db), pushIdentity, hub, admission))

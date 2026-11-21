@@ -1,6 +1,6 @@
 """End-to-end auth boundary for the console's `/api/*` split, exercised through the real
 ``create_app`` — real routers, real router-level guards, real SessionMiddleware, and a real Authentik
-authorization-code login against a hermetic mock OIDC provider (``util.testing.mock_oidc``). No stub
+authorization-code login against a hermetic mock OIDC provider (``testing.mock_oidc``). No stub
 app, no hand-minted session: the operator credential is obtained by actually walking
 ``/auth/login`` → provider → ``/auth/callback``.
 
@@ -14,6 +14,8 @@ import asyncio
 import datetime
 import logging
 import time
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import httpx
@@ -28,12 +30,13 @@ from haku.console.config import OperatorOidcConfig
 from haku.console.conftest import TEST_OPERATOR_OIDC, console_settings
 from haku.console.database_schema import OidcIdentity
 from haku.console.identity import operator_auth, operator_login_flow
-from util.testing.asgi import bind_http_server
-from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
+from testing.asgi import bind_http_server
+from testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 
 AGENT_TOKEN = "agent-secret"  # a test literal, not a real credential
 _OPERATOR_SUBJECT = "op-subject-1"  # the opaque Authentik `sub` the mock IdP issues
 _OPERATOR_USERNAME = "agentydragon"
+_OPERATOR_CLAIMS = {"sub": _OPERATOR_SUBJECT, "preferred_username": _OPERATOR_USERNAME}
 _UNSAFE_HTTP_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 
@@ -48,60 +51,29 @@ def _dependency_calls(route: RouteContext) -> set[object]:
     return calls
 
 
-class _MismatchedIssuerClient:
+class _StubOAuth:
+    """The authlib registry at `/auth/callback`, doubling as its Authentik client: the code exchange
+    returns the given claims as `userinfo`, or raises the given `OAuthError`."""
+
+    def __init__(self, outcome: dict[str, str] | operator_auth.OAuthError) -> None:
+        self._outcome = outcome
+
+    def create_client(self, _name: str) -> _StubOAuth:
+        return self
+
     async def authorize_access_token(self, _request: object) -> dict[str, object]:
-        return {
-            "userinfo": {
-                "iss": "https://different-issuer.test/",
-                "sub": _OPERATOR_SUBJECT,
-                "preferred_username": _OPERATOR_USERNAME,
-            }
-        }
+        if isinstance(self._outcome, operator_auth.OAuthError):
+            raise self._outcome
+        return {"userinfo": self._outcome}
 
 
-class _MismatchedIssuerOAuth:
-    def create_client(self, _name: str) -> _MismatchedIssuerClient:
-        return _MismatchedIssuerClient()
+_MATCHING_ISSUER_OAUTH = _StubOAuth({"iss": TEST_OPERATOR_OIDC.issuer, **_OPERATOR_CLAIMS})
 
 
-class _MissingIssuerClient:
-    async def authorize_access_token(self, _request: object) -> dict[str, object]:
-        return {"userinfo": {"sub": _OPERATOR_SUBJECT, "preferred_username": _OPERATOR_USERNAME}}
-
-
-class _MissingIssuerOAuth:
-    def create_client(self, _name: str) -> _MissingIssuerClient:
-        return _MissingIssuerClient()
-
-
-class _MatchingIssuerClient:
-    async def authorize_access_token(self, _request: object) -> dict[str, object]:
-        return {
-            "userinfo": {
-                "iss": TEST_OPERATOR_OIDC.issuer,
-                "sub": _OPERATOR_SUBJECT,
-                "preferred_username": _OPERATOR_USERNAME,
-            }
-        }
-
-
-class _MatchingIssuerOAuth:
-    def create_client(self, _name: str) -> _MatchingIssuerClient:
-        return _MatchingIssuerClient()
-
-
-class _MismatchingStateClient:
-    async def authorize_access_token(self, _request: object) -> dict[str, object]:
-        raise operator_auth.OAuthError(error="mismatching_state")
-
-
-class _MismatchingStateOAuth:
-    def create_client(self, _name: str) -> _MismatchingStateClient:
-        return _MismatchingStateClient()
-
-
-async def test_credential_matrix_through_real_app(migrated_db_url: str, tmp_path: Path) -> None:
-    """The browser API requires an Operator session; a bearer is not browser auth."""
+@asynccontextmanager
+async def _serve_console_with_mock_idp(migrated_db_url: str, tmp_path: Path) -> AsyncIterator[str]:
+    """Serve the real console beside a hermetic OIDC provider, each on its own local port; yield the
+    console's origin."""
     private_key, public_key = generate_rsa_keypair()
     with bind_http_server() as idp_endpoint, bind_http_server() as console_endpoint:
         idp_url, console_url = idp_endpoint.origin, console_endpoint.origin
@@ -124,22 +96,25 @@ async def test_credential_matrix_through_real_app(migrated_db_url: str, tmp_path
         app = create_app(settings)
 
         async with idp_endpoint.serve(idp), console_endpoint.serve(app):
-            async with httpx.AsyncClient(base_url=console_url) as anon:
-                assert (await anon.get("/api/config")).status_code == 401
-                assert (await anon.get("/healthz")).status_code == 200
+            yield console_url
 
-            async with httpx.AsyncClient(
-                base_url=console_url, headers={"Authorization": f"Bearer {AGENT_TOKEN}"}
-            ) as agent:
-                assert (await agent.get("/api/config")).status_code == 401
 
-            async with httpx.AsyncClient(base_url=console_url, follow_redirects=True) as operator:
-                await operator.get("/auth/login")
-                me = await operator.get("/auth/me")
-                assert me.status_code == 200, me.text
-                assert me.json()["username"] == _OPERATOR_USERNAME
-                assert (await operator.get("/api/config")).status_code == 200
-                assert (await operator.get("/api/tool-calls")).status_code == 404
+async def test_credential_matrix_through_real_app(migrated_db_url: str, tmp_path: Path) -> None:
+    """The browser API requires an Operator session; a bearer is not browser auth."""
+    async with _serve_console_with_mock_idp(migrated_db_url, tmp_path) as console_url:
+        async with httpx.AsyncClient(base_url=console_url) as anon:
+            assert (await anon.get("/api/config")).status_code == 401
+            assert (await anon.get("/healthz")).status_code == 200
+
+        async with httpx.AsyncClient(base_url=console_url, headers={"Authorization": f"Bearer {AGENT_TOKEN}"}) as agent:
+            assert (await agent.get("/api/config")).status_code == 401
+
+        async with httpx.AsyncClient(base_url=console_url, follow_redirects=True) as operator:
+            await operator.get("/auth/login")
+            me = await operator.get("/auth/me")
+            assert me.status_code == 200, me.text
+            assert me.json()["username"] == _OPERATOR_USERNAME
+            assert (await operator.get("/api/config")).status_code == 200
 
 
 async def test_two_console_tabs_can_log_in_at_once(migrated_db_url: str, tmp_path: Path) -> None:
@@ -147,45 +122,23 @@ async def test_two_console_tabs_can_log_in_at_once(migrated_db_url: str, tmp_pat
     to /auth/login together. Neither attempt may strand the other: with authlib's session-backed
     state each new authorization request evicts the last, and the loser's callback dies on
     "expired or was superseded"."""
-    private_key, public_key = generate_rsa_keypair()
-    with bind_http_server() as idp_endpoint, bind_http_server() as console_endpoint:
-        idp_url, console_url = idp_endpoint.origin, console_endpoint.origin
-        idp = build_mock_oidc_app(
-            issuer_url=idp_url,
-            private_key=private_key,
-            public_key=public_key,
-            subject=_OPERATOR_SUBJECT,
-            extra_id_token_claims={"preferred_username": _OPERATOR_USERNAME},
+    async with (
+        _serve_console_with_mock_idp(migrated_db_url, tmp_path) as console_url,
+        # One client is one browser: both tabs share a cookie jar, and both requests are built
+        # from the same snapshot of it.
+        httpx.AsyncClient(base_url=console_url) as browser,
+    ):
+        settings_tab, home_tab = await asyncio.gather(
+            browser.get("/auth/login", params={"return_to": "/_console/settings"}),
+            browser.get("/auth/login", params={"return_to": "/"}),
         )
-        settings = console_settings(
-            migrated_db_url,
-            tmp_path,
-            haku_ui_url="about:blank",
-            public_base_url=console_url,
-            operator_oidc=OperatorOidcConfig(
-                issuer=idp_url, client_id="console", client_secret=SecretStr("secret"), session_secret=SecretStr("sess")
-            ),
-        )
-        app = create_app(settings)
 
-        async with (
-            idp_endpoint.serve(idp),
-            console_endpoint.serve(app),
-            # One client is one browser: both tabs share a cookie jar, and both requests are built
-            # from the same snapshot of it.
-            httpx.AsyncClient(base_url=console_url) as browser,
-        ):
-            settings_tab, home_tab = await asyncio.gather(
-                browser.get("/auth/login", params={"return_to": "/_console/settings"}),
-                browser.get("/auth/login", params={"return_to": "/"}),
-            )
-
-            for tab, expected_return_to in ((settings_tab, "/_console/settings"), (home_tab, "/")):
-                landed = await browser.get(tab.headers["location"], follow_redirects=False)
-                finished = await browser.get(landed.headers["location"], follow_redirects=False)
-                assert finished.status_code == 303, finished.text
-                assert finished.headers["location"] == expected_return_to
-            assert (await browser.get("/auth/me")).status_code == 200
+        for tab, expected_return_to in ((settings_tab, "/_console/settings"), (home_tab, "/")):
+            landed = await browser.get(tab.headers["location"], follow_redirects=False)
+            finished = await browser.get(landed.headers["location"], follow_redirects=False)
+            assert finished.status_code == 303, finished.text
+            assert finished.headers["location"] == expected_return_to
+        assert (await browser.get("/auth/me")).status_code == 200
 
 
 def test_every_unsafe_api_route_has_an_explicit_admission_boundary(make_client) -> None:
@@ -262,7 +215,7 @@ def test_continuous_use_cannot_slide_operator_session_past_absolute_deadline(
 
 def test_successful_login_cookie_has_one_hour_max_age(make_client) -> None:
     with make_client() as client:
-        client.app.state.operator_oauth = _MatchingIssuerOAuth()
+        client.app.state.operator_oauth = _MATCHING_ISSUER_OAUTH
         response = client.get("/auth/callback", follow_redirects=False)
 
     assert response.status_code == 303
@@ -284,21 +237,20 @@ def _seed_login_flow(client, *, return_to: str | None, binding: str = "test-brow
     return state
 
 
-@pytest.mark.parametrize("return_to", ["/_console/settings"])
-def test_callback_returns_to_the_page_the_login_started_from(make_operator_client, return_to: str) -> None:
+def test_callback_returns_to_the_page_the_login_started_from(make_operator_client) -> None:
     with make_operator_client() as client:
-        state = _seed_login_flow(client, return_to=return_to)
-        client.app.state.operator_oauth = _MatchingIssuerOAuth()
+        state = _seed_login_flow(client, return_to="/_console/settings")
+        client.app.state.operator_oauth = _MATCHING_ISSUER_OAUTH
         response = client.get("/auth/callback", params={"state": state}, follow_redirects=False)
 
     assert response.status_code == 303
-    assert response.headers["location"] == return_to
+    assert response.headers["location"] == "/_console/settings"
 
 
 async def test_callback_without_a_continuation_returns_to_the_root(make_operator_client) -> None:
     with make_operator_client() as client:
         state = _seed_login_flow(client, return_to=None)
-        client.app.state.operator_oauth = _MatchingIssuerOAuth()
+        client.app.state.operator_oauth = _MATCHING_ISSUER_OAUTH
         response = client.get("/auth/callback", params={"state": state}, follow_redirects=False)
 
     assert response.headers["location"] == "/"
@@ -334,7 +286,7 @@ async def test_a_login_started_by_another_browser_is_refused(make_operator_clien
     with make_operator_client() as client:
         state = _seed_login_flow(client, return_to="/_console/settings", binding="the-secret-that-started-it")
         client.cookies.set(operator_login_flow.binding_cookie_name(state), "some-other-browsers-guess")
-        client.app.state.operator_oauth = _MatchingIssuerOAuth()
+        client.app.state.operator_oauth = _MATCHING_ISSUER_OAUTH
         response = client.get("/auth/callback", params={"state": state}, follow_redirects=False)
 
         assert response.status_code == 401
@@ -347,7 +299,7 @@ async def test_a_stale_attempt_restarts_the_login_once_then_explains(make_client
     """A superseded or expired attempt is ordinary — every tab bounces to login at the same time —
     so the first one restarts itself instead of dead-ending on a page the operator must click."""
     with make_client() as client:
-        client.app.state.operator_oauth = _MismatchingStateOAuth()
+        client.app.state.operator_oauth = _StubOAuth(operator_auth.OAuthError(error="mismatching_state"))
 
         restarted = client.get("/auth/callback", follow_redirects=False)
         assert restarted.status_code == 303
@@ -372,12 +324,12 @@ async def test_me_reports_the_absolute_reauthentication_deadline(make_operator_c
     )
 
 
-@pytest.mark.parametrize("oauth", [_MismatchedIssuerOAuth(), _MissingIssuerOAuth()])
+@pytest.mark.parametrize("claims", [{"iss": "https://different-issuer.test/", **_OPERATOR_CLAIMS}, _OPERATOR_CLAIMS])
 async def test_callback_rejects_wrong_or_missing_verified_issuer_claim(
-    oauth: object, make_client, migrated_engine
+    claims: dict[str, str], make_client, migrated_engine
 ) -> None:
     with make_client() as client:
-        client.app.state.operator_oauth = oauth
+        client.app.state.operator_oauth = _StubOAuth(claims)
         response = client.get("/auth/callback")
         me = client.get("/auth/me")
 
@@ -388,8 +340,7 @@ async def test_callback_rejects_wrong_or_missing_verified_issuer_claim(
         assert (await connection.scalar(select(func.count()).select_from(OidcIdentity))) == 0
 
 
-@pytest.mark.parametrize("path", ["/api/config"])
-def test_retired_authentik_headers_cannot_authenticate_an_operator(make_client, path: str) -> None:
+def test_retired_authentik_headers_cannot_authenticate_an_operator(make_client) -> None:
     """The app-owned OIDC session is the only operator identity boundary.
 
     These headers were trustworthy only behind the retired Authentik forward-auth
@@ -398,7 +349,8 @@ def test_retired_authentik_headers_cannot_authenticate_an_operator(make_client, 
     """
     with make_client() as client:
         response = client.get(
-            path, headers={"X-Authentik-Uid": "forged-operator-subject", "X-Authentik-Username": "forged-operator"}
+            "/api/config",
+            headers={"X-Authentik-Uid": "forged-operator-subject", "X-Authentik-Username": "forged-operator"},
         )
 
     assert response.status_code == 401

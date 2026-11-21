@@ -159,7 +159,7 @@ func (s *Store) ProcessResult(ctx context.Context, owner Owner, processID string
 			return err
 		}
 		payload := map[string]any{"after_seq": afterSequence, "exit_code": exitCode}
-		return s.recordEvidence(ctx, tx, owner, conversation, session, processID, eventpb.ExecutionProgress_KIND_PROCESS, processPhase(status), payload)
+		return s.recordEvidence(ctx, tx, conversation, session, processID, eventpb.ExecutionProgress_KIND_PROCESS, processPhase(status), payload)
 	})
 }
 
@@ -207,7 +207,7 @@ func (s *Store) AbandonProcess(ctx context.Context, owner Owner, processID strin
 		if err != nil {
 			return err
 		}
-		return s.recordEvidence(ctx, tx, owner, conversation, session, processID, eventpb.ExecutionProgress_KIND_PROCESS, eventpb.ExecutionProgress_PHASE_ABANDONED, map[string]any{
+		return s.recordEvidence(ctx, tx, conversation, session, processID, eventpb.ExecutionProgress_KIND_PROCESS, eventpb.ExecutionProgress_PHASE_ABANDONED, map[string]any{
 			"after_seq": afterSequence, "exit_code": process.ExitCode, "remote_outcome": remoteOutcome,
 			"automatic_replay": false, "buffered_bytes": len(buffered), "omitted_bytes": omitted,
 			"executor_session_id": executorSessionID,
@@ -248,7 +248,7 @@ func (s *Store) RetainProcessOutput(ctx context.Context, owner Owner, processID 
 			return err
 		}
 		payload := map[string]any{"after_seq": afterSequence, "exit_code": exitCode, "unread_bytes": buffer.TotalBytes()}
-		return s.recordEvidence(ctx, tx, owner, conversation, session, processID, eventpb.ExecutionProgress_KIND_PROCESS, processPhase(status), payload)
+		return s.recordEvidence(ctx, tx, conversation, session, processID, eventpb.ExecutionProgress_KIND_PROCESS, processPhase(status), payload)
 	})
 }
 
@@ -270,7 +270,7 @@ func (s *Store) CellResult(ctx context.Context, owner Owner, cellID string, stat
 		if err != nil {
 			return err
 		}
-		return s.recordEvidence(ctx, tx, owner, conversation, session, cellID, eventpb.ExecutionProgress_KIND_CELL, cellPhase(status), map[string]any{})
+		return s.recordEvidence(ctx, tx, conversation, session, cellID, eventpb.ExecutionProgress_KIND_CELL, cellPhase(status), map[string]any{})
 	})
 }
 
@@ -395,15 +395,8 @@ func (s *Store) PendingInterrupts(ctx context.Context, owner Owner) ([]string, e
 		if err != nil {
 			return err
 		}
-		defer rows.Close()
-		for rows.Next() {
-			var id string
-			if err := rows.Scan(&id); err != nil {
-				return err
-			}
-			ids = append(ids, id)
-		}
-		return rows.Err()
+		ids, err = scanIDs(rows)
+		return err
 	})
 	return ids, err
 }
@@ -524,7 +517,7 @@ func (s *Store) AcknowledgeInterrupt(ctx context.Context, owner Owner, requestID
 		if err := updateConversation(ctx, tx, conversation); err != nil {
 			return err
 		}
-		return s.recordEvidence(ctx, tx, owner, conversation, session, requestIDs[0], eventpb.ExecutionProgress_KIND_INTERRUPT, eventpb.ExecutionProgress_PHASE_RESULT, result)
+		return s.recordEvidence(ctx, tx, conversation, session, requestIDs[0], eventpb.ExecutionProgress_KIND_INTERRUPT, eventpb.ExecutionProgress_PHASE_RESULT, result)
 	})
 }
 

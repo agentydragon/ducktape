@@ -381,7 +381,6 @@ def _result_reference(
     attempt: int | None,
     shards: set[int | None],
     output: OutputKey | None,
-    artifact: str | None,
     record: str | None,
     invocation_numbers: dict[str, int],
     available_invocations: set[str],
@@ -404,8 +403,6 @@ def _result_reference(
                 f"role {_inline_code(output.role)}",
             )
         )
-    if artifact is not None:
-        parts.append(f"artifact {_inline_code(artifact)}")
     if record is not None:
         parts.append(f"record {_inline_code(record)}")
     return f"{_invocation_reference(invocation, invocation_numbers, available_invocations)} / " + ", ".join(parts)
@@ -415,8 +412,7 @@ def _issue_lines(
     issues: Sequence[CollectionIssue], invocation_numbers: dict[str, int], available_invocations: set[str]
 ) -> list[str]:
     by_result: dict[
-        tuple[str, str, str, str | None, int | None, int | None, OutputKey | None, str | None, str | None],
-        set[int | None],
+        tuple[str, str, str, str | None, int | None, int | None, OutputKey | None, str | None], set[int | None]
     ] = defaultdict(set)
     by_scope: set[tuple[str, str | None, str | None, str | None]] = set()
     configurations: set[str] = set()
@@ -438,23 +434,12 @@ def _issue_lines(
                     result.run,
                     result.attempt,
                     issue.output,
-                    issue.artifact,
                     issue.record,
                 )
             ].add(result.shard)
 
     lines: list[str] = []
-    for (
-        message,
-        invocation,
-        target,
-        configuration,
-        run,
-        attempt,
-        output,
-        artifact,
-        record,
-    ), shards in by_result.items():
+    for (message, invocation, target, configuration, run, attempt, output, record), shards in by_result.items():
         reference = _result_reference(
             invocation,
             target,
@@ -463,7 +448,6 @@ def _issue_lines(
             attempt,
             shards,
             output,
-            artifact,
             record,
             invocation_numbers,
             available_invocations,

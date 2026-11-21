@@ -21,7 +21,6 @@ const (
 	stateDirectory        = "/var/lib/agentplane/state"
 	workspaceImage        = "/var/lib/agentplane/workspace/disk.img"
 	workspaceBlock        = "/dev/agentplane-workspace"
-	credentialDirectory   = "/run/agentplane/environment-runtime-tls"
 	configSourceDirectory = "/run/agentplane/config"
 	launchSourceDirectory = "/run/agentplane/sandbox"
 	trustSourceDirectory  = "/run/agentplane/trust"
@@ -146,27 +145,23 @@ func (storage *Storage) Prepare(ctx context.Context) error {
 		} else if !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
-		staging := uniqueSibling(destination)
-		if err := copyAndSync(ctx, image.source, staging); err != nil {
-			_ = os.Remove(staging)
-			return fmt.Errorf("copy %s image: %w", image.name, err)
-		}
-		if err := os.Rename(staging, destination); err != nil {
-			_ = os.Remove(staging)
-			return err
-		}
-		if err := syncDirectory(storage.liveDirectory); err != nil {
+		if err := installStaged(destination, func(staging string) error {
+			if err := copyAndSync(ctx, image.source, staging); err != nil {
+				return fmt.Errorf("copy %s image: %w", image.name, err)
+			}
+			return nil
+		}); err != nil {
 			return err
 		}
 	}
-	if err := createExt4(ctx, storage.Paths["state"], int64(storage.config.StateSizeMiB)*bytesPerMiB, "APSTATE", ""); err != nil {
+	if err := createExt4(ctx, storage.Paths["state"], int64(storage.config.StateSizeMiB)*bytesPerMiB, "APSTATE"); err != nil {
 		return err
 	}
 	if storage.config.WorkspaceKind == WorkspaceKindRawDiskImage {
 		if err := os.MkdirAll(filepath.Dir(storage.Paths["workspace"]), 0o700); err != nil {
 			return err
 		}
-		if err := createExt4(ctx, storage.Paths["workspace"], int64(storage.config.WorkspaceSizeMiB)*bytesPerMiB, "APWORKSPACE", ""); err != nil {
+		if err := createExt4(ctx, storage.Paths["workspace"], int64(storage.config.WorkspaceSizeMiB)*bytesPerMiB, "APWORKSPACE"); err != nil {
 			return err
 		}
 	} else if err := prepareWorkspaceBlock(ctx, storage.Paths["workspace"]); err != nil {
@@ -261,14 +256,14 @@ func (storage *Storage) MarkActive() error {
 	if err := errors.Join(writeErr, syncErr, closeErr); err != nil {
 		return err
 	}
-	return syncDirectory(storage.Work)
+	return syncPath(storage.Work)
 }
 
 func (storage *Storage) ClearActive() error {
 	if err := os.Remove(storage.ActivePath); err != nil {
 		return err
 	}
-	return syncDirectory(storage.Work)
+	return syncPath(storage.Work)
 }
 
 func (storage *Storage) Restore(ctx context.Context, manifest *Manifest) error {
@@ -317,16 +312,9 @@ func (storage *Storage) Restore(ctx context.Context, manifest *Manifest) error {
 			}
 			continue
 		}
-		staging := uniqueSibling(target)
-		if err := copyAndSync(ctx, source, staging); err != nil {
-			_ = os.Remove(staging)
-			return err
-		}
-		if err := os.Rename(staging, target); err != nil {
-			_ = os.Remove(staging)
-			return err
-		}
-		if err := syncDirectory(filepath.Dir(target)); err != nil {
+		if err := installStaged(target, func(staging string) error {
+			return copyAndSync(ctx, source, staging)
+		}); err != nil {
 			return err
 		}
 	}
@@ -360,7 +348,7 @@ func (storage *Storage) Checkpoint(ctx context.Context, memory, vmstate, bootID 
 		}
 		files[name] = record
 	}
-	if err := syncDirectory(directory); err != nil {
+	if err := syncPath(directory); err != nil {
 		return nil, err
 	}
 	binaryDigest, err := digest(storage.firecracker)
@@ -380,24 +368,16 @@ func (storage *Storage) Checkpoint(ctx context.Context, memory, vmstate, bootID 
 	if err != nil {
 		return nil, err
 	}
-	staging := randomName(".manifest-")
-	stagingPath := filepath.Join(storage.Work, staging)
-	output, err := os.OpenFile(stagingPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
-	if err != nil {
-		return nil, err
-	}
-	_, writeErr := output.Write(data)
-	syncErr := output.Sync()
-	closeErr := output.Close()
-	if err := errors.Join(writeErr, syncErr, closeErr); err != nil {
-		_ = os.Remove(stagingPath)
-		return nil, err
-	}
-	if err := os.Rename(stagingPath, storage.ManifestPath); err != nil {
-		_ = os.Remove(stagingPath)
-		return nil, err
-	}
-	if err := syncDirectory(storage.Work); err != nil {
+	if err := installStaged(storage.ManifestPath, func(staging string) error {
+		output, err := os.OpenFile(staging, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if err != nil {
+			return err
+		}
+		_, writeErr := output.Write(data)
+		syncErr := output.Sync()
+		closeErr := output.Close()
+		return errors.Join(writeErr, syncErr, closeErr)
+	}); err != nil {
 		return nil, err
 	}
 	return manifest, nil
@@ -421,7 +401,7 @@ func (storage *Storage) FinishCheckpoint(manifest *Manifest, capture string) err
 			}
 		}
 	}
-	return syncDirectory(storage.Work)
+	return syncPath(storage.Work)
 }
 
 func (storage *Storage) configDigest() string {
@@ -454,13 +434,7 @@ func digest(path string) (string, error) {
 
 // moveDurable renames a finished capture into the generation after flushing its contents.
 func moveDurable(source, destination string) (FileRecord, error) {
-	file, err := os.Open(source)
-	if err != nil {
-		return FileRecord{}, err
-	}
-	syncErr := file.Sync()
-	closeErr := file.Close()
-	if err := errors.Join(syncErr, closeErr); err != nil {
+	if err := syncPath(source); err != nil {
 		return FileRecord{}, err
 	}
 	if err := os.Chmod(source, 0o600); err != nil {
@@ -509,13 +483,7 @@ func copyAndSync(ctx context.Context, source, destination string) error {
 		if err := os.Chmod(destination, 0o600); err != nil {
 			return err
 		}
-		file, err := os.Open(destination)
-		if err != nil {
-			return err
-		}
-		syncErr := file.Sync()
-		closeErr := file.Close()
-		if err := errors.Join(syncErr, closeErr); err != nil {
+		if err := syncPath(destination); err != nil {
 			return err
 		}
 	}
@@ -594,41 +562,27 @@ func allZero(data []byte) bool {
 	return true
 }
 
-func createExt4(ctx context.Context, destination string, sizeBytes int64, label, source string) error {
+func createExt4(ctx context.Context, destination string, sizeBytes int64, label string) error {
 	if _, err := os.Stat(destination); err == nil {
 		return nil
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	staging := uniqueSibling(destination)
-	image, err := os.OpenFile(staging, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0o666)
-	if err != nil {
-		return err
-	}
-	truncateErr := image.Truncate(sizeBytes)
-	closeErr := image.Close()
-	if err := errors.Join(truncateErr, closeErr); err != nil {
-		_ = os.Remove(staging)
-		return err
-	}
-	args := []string{"-F", "-q", "-m", "0", "-L", label}
-	if source != "" {
-		args = append(args, "-d", source)
-	}
-	args = append(args, staging)
-	if _, err := runCommand(ctx, "mkfs.ext4", args...); err != nil {
-		_ = os.Remove(staging)
-		return err
-	}
-	if err := syncFile(staging); err != nil {
-		_ = os.Remove(staging)
-		return err
-	}
-	if err := os.Rename(staging, destination); err != nil {
-		_ = os.Remove(staging)
-		return err
-	}
-	return syncDirectory(filepath.Dir(destination))
+	return installStaged(destination, func(staging string) error {
+		image, err := os.OpenFile(staging, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0o666)
+		if err != nil {
+			return err
+		}
+		truncateErr := image.Truncate(sizeBytes)
+		closeErr := image.Close()
+		if err := errors.Join(truncateErr, closeErr); err != nil {
+			return err
+		}
+		if _, err := runCommand(ctx, "mkfs.ext4", "-F", "-q", "-m", "0", "-L", label, staging); err != nil {
+			return err
+		}
+		return syncPath(staging)
+	})
 }
 
 func createISO(ctx context.Context, destination, label, source string) error {
@@ -637,20 +591,12 @@ func createISO(ctx context.Context, destination, label, source string) error {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	staging := uniqueSibling(destination)
-	if _, err := runCommand(ctx, "xorriso", "-as", "mkisofs", "-quiet", "-R", "-J", "-V", label, "-o", staging, source); err != nil {
-		_ = os.Remove(staging)
-		return err
-	}
-	if err := syncFile(staging); err != nil {
-		_ = os.Remove(staging)
-		return err
-	}
-	if err := os.Rename(staging, destination); err != nil {
-		_ = os.Remove(staging)
-		return err
-	}
-	return syncDirectory(filepath.Dir(destination))
+	return installStaged(destination, func(staging string) error {
+		if _, err := runCommand(ctx, "xorriso", "-as", "mkisofs", "-quiet", "-R", "-J", "-V", label, "-o", staging, source); err != nil {
+			return err
+		}
+		return syncPath(staging)
+	})
 }
 
 func prepareWorkspaceBlock(ctx context.Context, device string) error {
@@ -709,7 +655,7 @@ func prepareWorkspaceBlockWith(ctx context.Context, device string, isBlock block
 	if _, err := run(ctx, "mkfs.ext4", "-F", "-q", "-m", "0", "-L", "APWORKSPACE", device); err != nil {
 		return err
 	}
-	if err := syncFile(device); err != nil {
+	if err := syncPath(device); err != nil {
 		return err
 	}
 	formatted, err := run(ctx, "blkid", "-p", "-s", "TYPE", "-o", "value", device)
@@ -794,8 +740,10 @@ func runCommand(ctx context.Context, name string, args ...string) ([]byte, error
 	return output, nil
 }
 
-func syncFile(path string) error {
-	file, err := os.OpenFile(path, os.O_RDWR, 0)
+// syncPath flushes the file or directory at path. It opens read-only: fsync needs no write access,
+// and a directory cannot be opened for writing.
+func syncPath(path string) error {
+	file, err := os.Open(path)
 	if err != nil {
 		return err
 	}
@@ -804,14 +752,20 @@ func syncFile(path string) error {
 	return errors.Join(syncErr, closeErr)
 }
 
-func syncDirectory(path string) error {
-	directory, err := os.Open(path)
-	if err != nil {
+// installStaged builds a file beside destination and renames it into place, so a crash leaves the
+// previous destination, if any, or the complete new file. build must flush the file before
+// returning; the directory is synced after the rename.
+func installStaged(destination string, build func(staging string) error) error {
+	staging := uniqueSibling(destination)
+	if err := build(staging); err != nil {
+		_ = os.Remove(staging)
 		return err
 	}
-	syncErr := directory.Sync()
-	closeErr := directory.Close()
-	return errors.Join(syncErr, closeErr)
+	if err := os.Rename(staging, destination); err != nil {
+		_ = os.Remove(staging)
+		return err
+	}
+	return syncPath(filepath.Dir(destination))
 }
 
 func uniqueSibling(path string) string {

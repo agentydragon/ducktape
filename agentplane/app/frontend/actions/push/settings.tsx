@@ -6,11 +6,13 @@ import {
   WatchPushSubscriptionsResponseSchema,
   type PushSubscription,
 } from "../../../../action_service/api/web_push/web_push_service_pb";
-import { Button, Code, Group, Paper, Stack, Text } from "@mantine/core";
+import { Button, Code, Group, Paper, Stack, Switch, Text } from "@mantine/core";
 import { type JSX, useCallback, useEffect, useState } from "react";
 import { displayableError, fetchJson, HttpError } from "../../transport/client";
 import { type StreamConnection } from "../../transport/stream_reader";
 import { followWatch } from "../../transport/watch_stream";
+
+import { notificationPreviewsEnabled, setNotificationPreviewsEnabled } from "./preview_preference";
 
 const PUSH_PATH = "/upstream/actions/v1/operator/push";
 
@@ -74,6 +76,24 @@ export function PushSettings(): JSX.Element {
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [current, setCurrent] = useState<string | null>(null);
+
+  const [showPreviews, setShowPreviews] = useState<boolean | null>(null);
+  useEffect(() => {
+    void notificationPreviewsEnabled().then(setShowPreviews);
+  }, []);
+
+  async function updatePreviews(enabled: boolean): Promise<void> {
+    setBusy(true);
+    try {
+      await setNotificationPreviewsEnabled(enabled);
+      setShowPreviews(enabled);
+      setError(null);
+    } catch (failure) {
+      setError(displayableError(failure));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -198,6 +218,15 @@ export function PushSettings(): JSX.Element {
         >
           Register this browser
         </Button>
+      )}
+      {thisBrowserRegistered && "caches" in window && (
+        <Switch
+          label="Show Gmail subjects and Tana node names in this browser’s notifications"
+          description="These details may be visible on the lock screen."
+          checked={showPreviews ?? false}
+          disabled={busy || showPreviews === null}
+          onChange={(event) => void updatePreviews(event.currentTarget.checked)}
+        />
       )}
       {connection.phase === "reconnecting" && (
         <Text role="status" c="dimmed" size="sm">

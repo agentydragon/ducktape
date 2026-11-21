@@ -19,6 +19,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/workloadid"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
+	"github.com/agentydragon/ducktape/agentplane/testing/eventually"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/health"
@@ -28,10 +29,7 @@ import (
 
 func TestGatewayClientAuthenticatesEnvironmentRuntimeServer(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	runnerURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "pod-uid"}.URI()
-	if err != nil {
-		t.Fatal(err)
-	}
+	runnerURI := workloadURI(t, "pod-uid")
 	runner := ca.IssueWithUsage(t, runnerURI, x509.ExtKeyUsageServerAuth)
 	gateway := ca.IssueWithUsage(t, peertls.GatewayURI, x509.ExtKeyUsageClientAuth)
 
@@ -87,24 +85,6 @@ func TestWorkloadTLSConfigPinsEgressAndRequiresRuntimeClientAuth(t *testing.T) {
 	if got, err := peertls.PeerIdentityFromTLSState(serverState, x509.ExtKeyUsageClientAuth); err != nil || got != runtimeURI {
 		t.Fatalf("client identity = %q, error %v", got, err)
 	}
-	clientCredentials, err := clientConfig.ClientCredentials(peertls.EgressProxyURI)
-	if err != nil {
-		t.Fatal(err)
-	}
-	serverCredentials, err := serverConfig.WorkloadServerCredentials(peertls.EgressProxyURI)
-	if err != nil {
-		t.Fatal(err)
-	}
-	clientInfo, serverInfo, err := handshake(t, clientCredentials, serverCredentials)
-	if err != nil {
-		t.Fatalf("workload server gRPC credentials handshake: %v", err)
-	}
-	if got, err := peertls.PeerIdentity(peer.NewContext(context.Background(), &peer.Peer{AuthInfo: clientInfo})); err != nil || got != peertls.EgressProxyURI {
-		t.Fatalf("gRPC client saw proxy identity %q, error %v", got, err)
-	}
-	if got, err := peertls.PeerIdentity(peer.NewContext(context.Background(), &peer.Peer{AuthInfo: serverInfo})); err != nil || got != runtimeURI {
-		t.Fatalf("gRPC proxy saw runtime identity %q, error %v", got, err)
-	}
 	if _, err := peertls.PeerIdentityFromTLSState(serverState, x509.ExtKeyUsageServerAuth); err == nil {
 		t.Fatal("peer helper accepted a certificate without the requested EKU")
 	}
@@ -131,10 +111,7 @@ func TestWorkloadTLSConfigPinsEgressAndRequiresRuntimeClientAuth(t *testing.T) {
 
 func TestOptionalCertificateTLSStillVerifiesEveryPresentedLeaf(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	uri, err := workloadid.ID{Namespace: "test-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
-	if err != nil {
-		t.Fatal(err)
-	}
+	uri := workloadURI(t, "credential-id")
 	server := ca.IssueWithUsage(t, peertls.EgressProxyURI, x509.ExtKeyUsageServerAuth)
 	client := ca.IssueWithUsage(t, uri, x509.ExtKeyUsageClientAuth)
 	clientTLS, err := client.ClientTLSConfig(peertls.EgressProxyURI)
@@ -228,14 +205,8 @@ func TestBearerServerTLSListenerAuthenticatesOnlyTheConfiguredService(t *testing
 
 func TestClientTLSConfigReloadsSameIdentityAndRejectsChangedIdentity(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	runtimeURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
-	if err != nil {
-		t.Fatal(err)
-	}
-	otherRuntimeURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "rotated-credential-id"}.URI()
-	if err != nil {
-		t.Fatal(err)
-	}
+	runtimeURI := workloadURI(t, "credential-id")
+	otherRuntimeURI := workloadURI(t, "rotated-credential-id")
 	proxy := ca.IssueWithUsage(t, peertls.EgressProxyURI, x509.ExtKeyUsageServerAuth)
 	client := ca.IssueWithUsage(t, runtimeURI, x509.ExtKeyUsageClientAuth)
 	proxyTLS, err := proxy.WorkloadServerTLSConfig(peertls.EgressProxyURI)
@@ -291,22 +262,33 @@ func TestClientTLSConfigReloadsSameIdentityAndRejectsChangedIdentity(t *testing.
 	}
 }
 
-func tlsHandshake(t *testing.T, clientConfig, serverConfig *tls.Config) (tls.ConnectionState, tls.ConnectionState, error) {
+// loopbackPair returns both ends of a TCP connection over the loopback interface, closed when the test ends.
+func loopbackPair(t *testing.T) (client, server net.Conn) {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer listener.Close()
-	clientRaw, err := net.Dial("tcp", listener.Addr().String())
+	client, err = net.Dial("tcp", listener.Addr().String())
 	if err != nil {
 		t.Fatal(err)
 	}
-	serverRaw, err := listener.Accept()
+	server, err = listener.Accept()
 	if err != nil {
-		_ = clientRaw.Close()
+		_ = client.Close()
 		t.Fatal(err)
 	}
+	t.Cleanup(func() {
+		_ = client.Close()
+		_ = server.Close()
+	})
+	return client, server
+}
+
+func tlsHandshake(t *testing.T, clientConfig, serverConfig *tls.Config) (tls.ConnectionState, tls.ConnectionState, error) {
+	t.Helper()
+	clientRaw, serverRaw := loopbackPair(t)
 	deadline := time.Now().Add(5 * time.Second)
 	_ = clientRaw.SetDeadline(deadline)
 	_ = serverRaw.SetDeadline(deadline)
@@ -321,8 +303,6 @@ func tlsHandshake(t *testing.T, clientConfig, serverConfig *tls.Config) (tls.Con
 	}
 	serverErr := <-serverResult
 	clientState, serverState := client.ConnectionState(), server.ConnectionState()
-	_ = clientRaw.Close()
-	_ = serverRaw.Close()
 	if clientErr != nil {
 		return tls.ConnectionState{}, tls.ConnectionState{}, clientErr
 	}
@@ -332,50 +312,37 @@ func tlsHandshake(t *testing.T, clientConfig, serverConfig *tls.Config) (tls.Con
 	return clientState, serverState, nil
 }
 
-func TestClientPinsExactPeerURI(t *testing.T) {
+// Each client differs from the Gateway that TestGatewayClientAuthenticatesEnvironmentRuntimeServer accepts in one
+// respect: the runner it pins, its own identity, or its root.
+func TestCredentialsRejectWrongPeersAndMissingEKU(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	runnerURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "pod-uid"}.URI()
-	if err != nil {
-		t.Fatal(err)
-	}
-	otherEnvironmentRuntimeURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "other-pod-uid"}.URI()
-	if err != nil {
-		t.Fatal(err)
-	}
+	otherCA := environmentruntimetransporttesting.NewCA(t)
+	runnerURI := workloadURI(t, "pod-uid")
 	runner := ca.IssueWithUsage(t, runnerURI, x509.ExtKeyUsageServerAuth)
-	gateway := ca.IssueWithUsage(t, peertls.GatewayURI, x509.ExtKeyUsageClientAuth)
-	clientCredentials, err := gateway.ClientCredentials(otherEnvironmentRuntimeURI)
-	if err != nil {
-		t.Fatal(err)
-	}
 	serverCredentials, err := runner.ServerCredentials(peertls.GatewayURI)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = handshake(t, clientCredentials, serverCredentials)
-	if err == nil {
-		t.Fatal("handshake succeeded with the wrong expected peer URI")
+	for name, tc := range map[string]struct {
+		client peertls.Config
+		pinned string
+	}{
+		"client pins another runner":     {ca.IssueWithUsage(t, peertls.GatewayURI, x509.ExtKeyUsageClientAuth), workloadURI(t, "other-pod-uid")},
+		"another runner as the client":   {ca.IssueWithUsage(t, runnerURI, x509.ExtKeyUsageClientAuth), runnerURI},
+		"Gateway from an untrusted root": {otherCA.IssueWithUsage(t, peertls.GatewayURI, x509.ExtKeyUsageClientAuth), runnerURI},
+	} {
+		t.Run(name, func(t *testing.T) {
+			clientCredentials, err := tc.client.ClientCredentials(tc.pinned)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, _, err := handshake(t, clientCredentials, serverCredentials); err == nil {
+				t.Fatal("handshake succeeded")
+			}
+		})
 	}
-}
-
-func TestEnvironmentRuntimeServerRejectsAnotherRunnerAsClient(t *testing.T) {
-	ca := environmentruntimetransporttesting.NewCA(t)
-	runnerURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
-	if err != nil {
-		t.Fatal(err)
-	}
-	runner := ca.IssueWithUsage(t, runnerURI, x509.ExtKeyUsageServerAuth)
-	client := ca.IssueWithUsage(t, runnerURI, x509.ExtKeyUsageClientAuth)
-	clientCredentials, err := client.ClientCredentials(runnerURI)
-	if err != nil {
-		t.Fatal(err)
-	}
-	serverCredentials, err := runner.ServerCredentials(peertls.GatewayURI)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := handshake(t, clientCredentials, serverCredentials); err == nil {
-		t.Fatal("runner accepted another runner as its Gateway")
+	if _, err := runner.ClientCredentials(peertls.GatewayURI); err == nil {
+		t.Fatal("client credentials accepted a certificate without clientAuth EKU")
 	}
 }
 
@@ -385,10 +352,7 @@ func TestEnvironmentRuntimeServerRejectsAnotherRunnerAsClient(t *testing.T) {
 func TestServerVerifiesClientsAgainstClientCAFileAlone(t *testing.T) {
 	root := environmentruntimetransporttesting.NewCA(t)
 	workload := root.Intermediate(t)
-	runnerURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
-	if err != nil {
-		t.Fatal(err)
-	}
+	runnerURI := workloadURI(t, "credential-id")
 	runner := workload.IssueWithUsage(t, runnerURI, x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth)
 	runner.CAFile = root.RootFile
 	gateway := workload.IssueWithUsage(t, peertls.GatewayURI, x509.ExtKeyUsageClientAuth)
@@ -479,10 +443,7 @@ func TestClientsVerifyServerSVIDsAgainstTheWorkloadCAAlone(t *testing.T) {
 	}
 
 	// The Gateway dialing a runner: the same file also verifies the Gateway's own chain.
-	runnerURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-a", CredentialID: "credential-id"}.URI()
-	if err != nil {
-		t.Fatal(err)
-	}
+	runnerURI := workloadURI(t, "credential-id")
 	gateway, err := workload.IssueWithUsage(t, peertls.GatewayURI, x509.ExtKeyUsageClientAuth).ClientCredentials(runnerURI)
 	if err != nil {
 		t.Fatal(err)
@@ -503,41 +464,10 @@ func TestClientsVerifyServerSVIDsAgainstTheWorkloadCAAlone(t *testing.T) {
 	}
 }
 
-func TestCredentialsRejectUntrustedRootsAndMissingEKU(t *testing.T) {
-	trustedCA := environmentruntimetransporttesting.NewCA(t)
-	otherCA := environmentruntimetransporttesting.NewCA(t)
-	runnerURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "pod-uid"}.URI()
-	if err != nil {
-		t.Fatal(err)
-	}
-	runner := trustedCA.Issue(t, runnerURI)
-	gateway := otherCA.Issue(t, peertls.GatewayURI)
-	clientCredentials, err := gateway.ClientCredentials(runnerURI)
-	if err != nil {
-		t.Fatal(err)
-	}
-	serverCredentials, err := runner.ServerCredentials(peertls.GatewayURI)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, _, err = handshake(t, clientCredentials, serverCredentials)
-	if err == nil {
-		t.Fatal("handshake succeeded across untrusted roots")
-	}
-
-	wrongUsage := trustedCA.IssueWithUsage(t, runnerURI, x509.ExtKeyUsageServerAuth)
-	if _, err := wrongUsage.ClientCredentials(peertls.GatewayURI); err == nil {
-		t.Fatal("client credentials accepted a certificate without clientAuth EKU")
-	}
-}
-
 func TestCredentialsRejectExpiredLeafAndRootCertificates(t *testing.T) {
 	now := time.Now().UTC()
 	validCA := environmentruntimetransporttesting.NewCA(t)
-	runnerURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
-	if err != nil {
-		t.Fatal(err)
-	}
+	runnerURI := workloadURI(t, "credential-id")
 	expiredLeaf := validCA.IssueWithValidity(
 		t,
 		runnerURI,
@@ -559,10 +489,7 @@ func TestCredentialsRejectExpiredLeafAndRootCertificates(t *testing.T) {
 
 func TestServerCredentialsDisableTLS13SessionResumption(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	runtimeURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
-	if err != nil {
-		t.Fatal(err)
-	}
+	runtimeURI := workloadURI(t, "credential-id")
 	local := ca.IssueWithUsage(t, peertls.EgressProxyURI, x509.ExtKeyUsageServerAuth)
 	runtime := ca.IssueWithUsage(t, runtimeURI, x509.ExtKeyUsageClientAuth)
 	serverTLS, err := local.WorkloadServerTLSConfig(peertls.EgressProxyURI)
@@ -608,10 +535,7 @@ func TestServerCredentialsDisableTLS13SessionResumption(t *testing.T) {
 func TestCredentialsReloadRotatedCertificateAndRoots(t *testing.T) {
 	oldCA := environmentruntimetransporttesting.NewCA(t)
 	newCA := environmentruntimetransporttesting.NewCA(t)
-	runnerURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "pod-uid"}.URI()
-	if err != nil {
-		t.Fatal(err)
-	}
+	runnerURI := workloadURI(t, "pod-uid")
 	runner := oldCA.Issue(t, runnerURI)
 	gateway := oldCA.Issue(t, peertls.GatewayURI)
 	clientCredentials, err := gateway.ClientCredentials(runnerURI)
@@ -656,10 +580,7 @@ func TestCredentialsReloadRotatedCertificateAndRoots(t *testing.T) {
 
 func TestGRPCClientConnReconnectsAfterFileSVIDExpiryAndRotation(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	runnerURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
-	if err != nil {
-		t.Fatal(err)
-	}
+	runnerURI := workloadURI(t, "credential-id")
 	now := time.Now().UTC()
 	short := ca.IssueWithValidity(t, runnerURI, now.Add(-time.Minute), now.Add(4*time.Second), x509.ExtKeyUsageClientAuth)
 	rotated := ca.IssueWithUsage(t, runnerURI, x509.ExtKeyUsageClientAuth)
@@ -684,10 +605,7 @@ func TestGRPCClientConnReconnectsAfterFileSVIDExpiryAndRotation(t *testing.T) {
 
 func TestGRPCClientConnReconnectsAfterWorkloadAPISVIDExpiryAndRotation(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	runnerURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "workload-credential"}.URI()
-	if err != nil {
-		t.Fatal(err)
-	}
+	runnerURI := workloadURI(t, "workload-credential")
 	now := time.Now().UTC()
 	short := ca.IssueWithValidity(t, runnerURI, now.Add(-time.Minute), now.Add(4*time.Second), x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth)
 	rotated := ca.IssueWithUsage(t, runnerURI, x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth)
@@ -717,31 +635,18 @@ func TestGRPCClientConnReconnectsAfterWorkloadAPISVIDExpiryAndRotation(t *testin
 	rotatedDER := readCertificateDER(t, rotated.CertFile)
 	assertGRPCClientReconnectsAfterExpiry(t, clientCredentials, serverCredentials, shortLeaf.NotAfter, func() {
 		workloadServer.updates <- workloadX509SVID(t, rotated, runnerURI, rootDER)
-		time.Sleep(100 * time.Millisecond)
-		waitForWorkloadClientHandshake(t, clientCredentials, serverCredentials, rotatedDER)
+		eventually.Within(t, 5*time.Second, func() (bool, string) {
+			_, serverInfo, err := handshake(t, clientCredentials, serverCredentials)
+			if err != nil {
+				t.Fatalf("handshake during Workload API rotation: %v", err)
+			}
+			return bytes.Equal(peerLeaf(t, serverInfo).Raw, rotatedDER), "Workload API source did not rotate the presented client certificate"
+		})
 	})
 	if err := opened.Close(); err != nil {
 		t.Fatal(err)
 	}
 	workloadServer.waitForStreamsToClose(t)
-}
-
-func waitForWorkloadClientHandshake(t *testing.T, client, server credentials.TransportCredentials, want []byte) {
-	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		_, serverInfo, err := handshake(t, client, server)
-		if err != nil {
-			t.Fatalf("handshake during Workload API rotation: %v", err)
-		}
-		if got := peerLeaf(t, serverInfo); bytes.Equal(got.Raw, want) {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("Workload API source did not rotate the presented client certificate")
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
 }
 
 func assertGRPCClientReconnectsAfterExpiry(
@@ -855,10 +760,7 @@ func TestPeerIdentityRequiresTLSPeerCertificate(t *testing.T) {
 }
 
 func TestPeerIdentityRejectsExpiredLeafOnExistingConnection(t *testing.T) {
-	runnerURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
-	if err != nil {
-		t.Fatal(err)
-	}
+	runnerURI := workloadURI(t, "credential-id")
 	identity, err := url.Parse(runnerURI)
 	if err != nil {
 		t.Fatal(err)
@@ -887,24 +789,7 @@ func handshakeWithApplicationData(t *testing.T, client, server credentials.Trans
 
 func handshakeWithApplicationDataMode(t *testing.T, client, server credentials.TransportCredentials, exchange bool) (clientInfo, serverInfo credentials.AuthInfo, err error) {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer listener.Close()
-	clientRaw, err := net.Dial("tcp", listener.Addr().String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	serverRaw, err := listener.Accept()
-	if err != nil {
-		clientRaw.Close()
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_ = clientRaw.Close()
-		_ = serverRaw.Close()
-	})
+	clientRaw, serverRaw := loopbackPair(t)
 	type result struct {
 		conn net.Conn
 		info credentials.AuthInfo
@@ -987,6 +872,15 @@ func readCertificateDER(t *testing.T, path string) []byte {
 	return block.Bytes
 }
 
+func workloadURI(t *testing.T, credentialID string) string {
+	t.Helper()
+	uri, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: credentialID}.URI()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return uri
+}
+
 // Each endpoint must enforce both expiries even when the other endpoint uses
 // ordinary gRPC TLS credentials, as during a rolling update.
 func TestCertificateExpiryClosesEachEndpointIndependently(t *testing.T) {
@@ -996,10 +890,7 @@ func TestCertificateExpiryClosesEachEndpointIndependently(t *testing.T) {
 			t.Run(name, func(t *testing.T) {
 				t.Parallel()
 				ca := environmentruntimetransporttesting.NewCA(t)
-				clientURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
-				if err != nil {
-					t.Fatal(err)
-				}
+				clientURI := workloadURI(t, "credential-id")
 				now := time.Now()
 				clientEnd, serverEnd := now.Add(time.Hour), now.Add(time.Hour)
 				if serverExpires {
@@ -1010,6 +901,7 @@ func TestCertificateExpiryClosesEachEndpointIndependently(t *testing.T) {
 				clientConfig := ca.IssueWithValidity(t, clientURI, now.Add(-time.Minute), clientEnd, x509.ExtKeyUsageClientAuth)
 				serverConfig := ca.IssueWithValidity(t, peertls.GatewayURI, now.Add(-time.Minute), serverEnd, x509.ExtKeyUsageServerAuth)
 				var clientCreds, serverCreds credentials.TransportCredentials
+				var err error
 				if serverEnforces {
 					clientCreds = standardTestCredentials(t, clientConfig, false)
 					serverCreds, err = serverConfig.ServerCredentials(clientURI)
@@ -1020,20 +912,7 @@ func TestCertificateExpiryClosesEachEndpointIndependently(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				listener, err := net.Listen("tcp", "127.0.0.1:0")
-				if err != nil {
-					t.Fatal(err)
-				}
-				defer listener.Close()
-				clientRaw, err := net.Dial("tcp", listener.Addr().String())
-				if err != nil {
-					t.Fatal(err)
-				}
-				serverRaw, err := listener.Accept()
-				if err != nil {
-					t.Fatal(err)
-				}
-				t.Cleanup(func() { _ = clientRaw.Close(); _ = serverRaw.Close() })
+				clientRaw, serverRaw := loopbackPair(t)
 				type result struct {
 					conn net.Conn
 					err  error

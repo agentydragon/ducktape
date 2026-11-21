@@ -38,18 +38,18 @@ func sandboxSuspension(s *sandboxapi.Sandbox) (*sandboxapi.SuspendedBy, *int64) 
 	}
 }
 
-// sessionsQuiesced reports whether every Session was sealed.
+// sandboxSessionsQuiesced reports whether every Session was sealed.
 func sandboxSessionsQuiesced(s *sandboxapi.Sandbox) bool {
 	return meta.IsStatusConditionTrue(s.Status.Conditions, sandboxapi.ConditionQuiesced)
 }
 
-// quiescedIncarnation reports whether uid is the incarnation whose Environment Runtime sealed
+// sandboxQuiescedIncarnation reports whether uid is the incarnation whose Environment Runtime sealed
 // every Session.
 func sandboxQuiescedIncarnation(s *sandboxapi.Sandbox, uid string) bool {
 	return s.Status.QuiescedIncarnation != nil && *s.Status.QuiescedIncarnation == uid
 }
 
-// quiescing reports whether the controller has begun quiescing the current incarnation's Runtime.
+// sandboxQuiescing reports whether the controller has begun quiescing the current incarnation's Runtime.
 // A Runtime that has entered lameduck refuses every Session for good, so a Sandbox resumed meanwhile
 // still waits for the quiesce to finish and replaces the incarnation, as for one resumed after it.
 func sandboxQuiescing(s *sandboxapi.Sandbox) bool {

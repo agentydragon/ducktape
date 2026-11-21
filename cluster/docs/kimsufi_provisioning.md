@@ -4,8 +4,8 @@ Add a Kimsufi bare-metal node in OVH HIL to the cluster. Talos is installed via
 OVH rescue boot → `dd` of the metal image; then we apply a Talos machine config
 that joins the cluster and brings up the Nebula extension.
 
-The Terraform code in `cluster/terraform/main/ovh-nodes.tf` declares KS-5 and
-KS-GAME slots keyed by `for_each` over `local.active_kimsufi_servers`. A slot is
+The Terraform code in `cluster/terraform/main/ovh-nodes.tf` declares KS-5,
+KS-GAME and SYS-1 slots keyed by `for_each` over `local.active_kimsufi_servers`. A slot is
 "active" iff its `service_name` variable is non-empty.
 
 ## Prerequisites
@@ -34,7 +34,7 @@ KS-GAME slots keyed by `for_each` over `local.active_kimsufi_servers`. A slot is
 
 ## 1. Choose a slot
 
-All five slot variables below are currently occupied by provisioned servers (there is
+All six slot variables below are currently occupied by provisioned servers (there is
 no spare slot). To provision a genuinely new node, either add a new variable following
 this naming pattern, or free up one of these slots via §5 (replacing an existing slot).
 
@@ -45,18 +45,20 @@ this naming pattern, or free up one of these slots via §5 (replacing an existin
 | `kimsufi_service_name_cp0`       | `ovh-ns102453`   | KS-5     |
 | `kimsufi_service_name_ks_game_0` | `ovh-ns104952`   | KS-GAME  |
 | `kimsufi_service_name_ks_game_1` | `ovh-ns104963`   | KS-GAME  |
+| `kimsufi_service_name_sys1`      | `ovh-ns1001419`  | SYS-1    |
 
 Slot ↔ Nebula identity is fixed in code (`cluster/terraform/main/ovh-nodes.tf`,
 `local.kimsufi_server_provisioning`, keyed by the `nebula-mesh.json` entry that
 holds the hostname, Nebula IP and role):
 
-| Variable                         | Hostname       | Nebula IP       | Talos role    | Install disk                     | Data disk selector               |
-| -------------------------------- | -------------- | --------------- | ------------- | -------------------------------- | -------------------------------- |
-| `kimsufi_service_name`           | `ovh-ns103656` | `10.42.0.13/16` | worker        | `/dev/sda`                       | `/dev/sdb`                       |
-| `kimsufi_service_name_1`         | `ovh-ns103711` | `10.42.0.14/16` | worker        | `/dev/sda`                       | `/dev/sdb`                       |
-| `kimsufi_service_name_cp0`       | `ovh-ns102453` | `10.42.0.15/16` | worker        | `/dev/sda`                       | `/dev/sdb`                       |
-| `kimsufi_service_name_ks_game_0` | `ovh-ns104952` | `10.42.0.16/16` | control plane | NVMe serial `BTPF8256006P450RGN` | NVMe serial `BTPF8304019P450RGN` |
-| `kimsufi_service_name_ks_game_1` | `ovh-ns104963` | `10.42.0.17/16` | control plane | NVMe serial `BTPF8256002V450RGN` | NVMe serial `BTPF8256009U450RGN` |
+| Variable                         | Hostname        | Nebula IP       | Talos role    | Install disk                     | Data disk selector               |
+| -------------------------------- | --------------- | --------------- | ------------- | -------------------------------- | -------------------------------- |
+| `kimsufi_service_name`           | `ovh-ns103656`  | `10.42.0.13/16` | worker        | `/dev/sda`                       | `/dev/sdb`                       |
+| `kimsufi_service_name_1`         | `ovh-ns103711`  | `10.42.0.14/16` | worker        | `/dev/sda`                       | `/dev/sdb`                       |
+| `kimsufi_service_name_cp0`       | `ovh-ns102453`  | `10.42.0.15/16` | worker        | `/dev/sda`                       | `/dev/sdb`                       |
+| `kimsufi_service_name_ks_game_0` | `ovh-ns104952`  | `10.42.0.16/16` | control plane | NVMe serial `BTPF8256006P450RGN` | NVMe serial `BTPF8304019P450RGN` |
+| `kimsufi_service_name_ks_game_1` | `ovh-ns104963`  | `10.42.0.17/16` | control plane | NVMe serial `BTPF8256002V450RGN` | NVMe serial `BTPF8256009U450RGN` |
+| `kimsufi_service_name_sys1`      | `ovh-ns1001419` | `10.42.0.19/16` | control plane | NVMe serial `190130800417`       | NVMe serial `1951A3449505`       |
 
 Talos owns only the system disk, split into the volumes in
 `local.piraeus_talos_node_layouts`; Piraeus initializes the whole data disk named
@@ -120,10 +122,10 @@ while public peer traffic still fails.
 
 ```bash
 # Direct API readiness for each Kimsufi control-plane public IP
-# (ovh-ns104952, ovh-ns104963 — see nebula-mesh.json for the roster).
-kubectl --server=https://147.135.39.162:6443 --insecure-skip-tls-verify=true get --raw='/readyz?verbose'
+# (ovh-ns104952, ovh-ns104963, ovh-ns1001419 — see nebula-mesh.json for the roster).
 kubectl --server=https://147.135.104.5:6443 --insecure-skip-tls-verify=true get --raw='/readyz?verbose'
 kubectl --server=https://147.135.104.16:6443 --insecure-skip-tls-verify=true get --raw='/readyz?verbose'
+kubectl --server=https://51.81.245.180:6443 --insecure-skip-tls-verify=true get --raw='/readyz?verbose'
 
 # Cross-node Talos API/maintenance reachability from host-networked Kimsufi pods.
 # Use one Cilium pod per Kimsufi node as the source and test the other public IPs.

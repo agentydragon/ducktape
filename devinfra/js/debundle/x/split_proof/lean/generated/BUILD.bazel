@@ -1,0 +1,15 @@
+genrule(
+    name = "generate_instance",
+    srcs = ["//devinfra/js/debundle/x/split_proof:generated_instance"],
+    outs = ["EsmSplit/Instance.lean"],
+    cmd = "cp $(location //devinfra/js/debundle/x/split_proof:generated_instance) $@",
+    visibility = ["//devinfra/js/debundle/x/split_proof/lean:__pkg__"],
+)
+
+genrule(
+    name = "generate_proof_fixture",
+    srcs = ["//devinfra/js/debundle/x/split_proof:proof_fixture_instance"],
+    outs = ["ProofFixture/Instance.lean"],
+    cmd = "cp $(location //devinfra/js/debundle/x/split_proof:proof_fixture_instance) $@",
+    visibility = ["//devinfra/js/debundle/x/split_proof/lean:__pkg__"],
+)

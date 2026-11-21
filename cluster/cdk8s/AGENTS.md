@@ -105,7 +105,7 @@ how to regenerate: `cluster/AGENTS.md` § Generated manifests.
 - **One helper per repeated shape**: cluster facts in `cilium.py` (`egress_via_gateway`,
   `dns_egress`, ...), generic shapes in `providers/cilium/network_policy.py`
   (`EgressRule`/`IngressRule`); also `gateway.https_route`, `probes.http_probe`,
-  `node_scheduling.py`, `pod_policy.py`,
+  `node_scheduling.py`, `pod_policy.py`, `volume_claim.volume_claim`,
   `api_resource.custom_resource`. Parameterize only variation call sites actually have.
 - **A value feeding two artifacts lives once** (web-push hosts: one tuple in
   `agentplane/staging.py` feeds both the Action Service allowlist and its egress rule).
@@ -130,8 +130,11 @@ node or pass its timing fields and predecessors.
   and passes `generation.write_directory(root, artifact, *chart_builders, siblings=[...])`
   as the node's argument, which synthesizes the directory's one generated file
   (<../docs/cdk8s.md> § Shapes of a directory) plus a `kustomization.yaml` listing it and
-  hand-written siblings. Every artifact goes to `write_artifact_generators` last; parked
-  nodes' artifacts are left out. A directory with a hand-written `kustomization.yaml` is
+  hand-written siblings. Every artifact a Kustomization reads as its `sourceRef` goes to
+  `write_artifact_generators` last; parked nodes' artifacts are left out, and so is a
+  node's own artifact when its Kustomization reads a subdirectory of a shared parent
+  artifact (`opentofu.workspace_kustomization`'s `source`). A directory with a
+  hand-written `kustomization.yaml` is
   written by its module's `write_manifests` at the top of `generate_manifests()`, and its
   node takes the artifact instead of a directory (as do nodes not yet on
   `write_directory`). A node sourcing a `GitRepository` directly passes that `sourceRef`
@@ -159,7 +162,7 @@ node or pass its timing fields and predecessors.
   differs from ours). The same _fact_ twice becomes one local; the same _value_
   everywhere (SOPS `decryption`) may become a module constant.
 - **A retained component function lives with its directory's generator once fully generated**
-  (`aiquota.aiquota`, `litellm.keys.litellm_keys_tf`); until then in
+  (`kube_api_proxy.kube_api_proxy`, `valkey.valkey`); until then in
   `<area>/flux_kustomizations.py`, moving as part of the conversion. No interim flattening
   of those packages.
 - **Output routing is by `spec.path`**; Kustomizations whose `path` isn't their own
@@ -227,7 +230,7 @@ helper, class or indirection.
   `cluster/k8s/flux/kustomizations.k8s.yaml`) equals the committed one, and that
   `cluster/generated` holds nothing else. No keep-lists: data deps carry both trees.
 - **Invariants live beside the generator**: tests over the in-memory synth
-  (`agentplane/conftest.py`'s `agentplane_manifests`) or fleet rules (`fleet_rules.py`,
+  (`agentplane/testing/fixtures.py`'s `staging_manifests`) or fleet rules (`fleet_rules.py`,
   attached to every App `generation.write_app` writes, seeing all its charts). Every object
   of a kind → fleet rule; one construct's shape → test in its package; a relation holding
   by construction (selector is the Deployment, ConfigMap rendered from `Settings`) → no
@@ -288,8 +291,8 @@ whose object is gone or now passes.
 - `Chart(namespace=...)` also injects the namespace into cluster-scoped objects
   (ClusterRole, Bundle) with no opt-out; usable only once those get their own chart.
 - `cdk8s import` names a multi-version CRD's _first listed_ version plainly and suffixes
-  the rest, regardless of storage version: tofu-controller's `Terraform` is v1alpha1; the
-  cluster's CRs are `TerraformV1Alpha2`
+  the rest, regardless of storage version. Tofu-controller v0.17.0 only serves v1alpha2,
+  so its generated `Terraform` class renders v1alpha2
   (`//cluster/cdk8s/providers/tofu_controller:test_terraform_import`).
 
 ## Typed constructs over raw dicts

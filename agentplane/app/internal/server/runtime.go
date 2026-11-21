@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/app/internal/settings"
@@ -128,10 +127,7 @@ func Run(ctx context.Context, config settings.Config) error {
 		return fmt.Errorf("configure Environment Service client: %w", err)
 	}
 	defer environmentConn.Close()
-	environments, err := sandboxes.NewEnvironmentReader(environmentpb.NewEnvironmentServiceClient(environmentConn))
-	if err != nil {
-		return fmt.Errorf("configure Environment Service reader: %w", err)
-	}
+	environments := environmentpb.NewEnvironmentServiceClient(environmentConn)
 	sessionClient, err := sessionclient.New(dispatcher)
 	if err != nil {
 		return fmt.Errorf("configure Session client: %w", err)
@@ -320,7 +316,7 @@ func Run(ctx context.Context, config settings.Config) error {
 	}); err != nil {
 		return err
 	}
-	return serve(ctx, config, server, appAuth, nil)
+	return serve(ctx, config, server, appAuth)
 }
 
 type threadEpochStore struct {
@@ -360,7 +356,7 @@ func newSystemStatus(config settings.Config, httpClient *http.Client) (*status.C
 		name, target string
 		tls          *peertls.ClientTLS
 	}{
-		{"Runner Gateway", config.RunnerGatewayTarget, config.RunnerGatewayTLS}, {"History Service", config.HistoryServiceTarget, config.HistoryServiceTLS},
+		{"Environments", config.RunnerGatewayTarget, config.RunnerGatewayTLS}, {"History Service", config.HistoryServiceTarget, config.HistoryServiceTLS},
 	} {
 		if err := dialHealth(endpoint.name, endpoint.target, endpoint.tls); err != nil {
 			closeConnections(connections)
@@ -422,12 +418,7 @@ func healthURL(raw, path string) string {
 	return parsed.String()
 }
 
-type processWorker struct {
-	name string
-	run  func(context.Context) error
-}
-
-func serve(ctx context.Context, config settings.Config, app *httpServer, appAuth *auth.Auth, workers []processWorker) error {
+func serve(ctx context.Context, config settings.Config, app *httpServer, appAuth *auth.Auth) error {
 	listener, err := netlistener.Open(config.ListenAddress)
 	if err != nil {
 		return fmt.Errorf("listen for app HTTP: %w", err)
@@ -440,40 +431,24 @@ func serve(ctx context.Context, config settings.Config, app *httpServer, appAuth
 		Handler: appHTTPHandler(app.Handler(appAuth)), ReadHeaderTimeout: 10 * time.Second,
 		BaseContext: func(net.Listener) context.Context { return appCtx },
 	}
-	workerErrors := make(chan error, len(workers)+1)
-	var group sync.WaitGroup
-	for _, worker := range workers {
-		worker := worker
-		group.Add(1)
-		go func() {
-			defer group.Done()
-			err := worker.run(appCtx)
-			if appCtx.Err() == nil {
-				if err == nil {
-					err = errors.New("worker stopped unexpectedly")
-				}
-				workerErrors <- fmt.Errorf("%s: %w", worker.name, err)
-			}
-		}()
-	}
+	serveErrors := make(chan error, 1)
 	go func() {
 		err := httpServer.Serve(listener)
 		if !errors.Is(err, http.ErrServerClosed) {
-			workerErrors <- fmt.Errorf("HTTP server: %w", err)
+			serveErrors <- fmt.Errorf("HTTP server: %w", err)
 		}
 	}()
 
 	var cause error
 	select {
 	case <-ctx.Done():
-	case cause = <-workerErrors:
+	case cause = <-serveErrors:
 	}
 	app.BeginDrain()
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), time.Duration(config.ShutdownTimeoutSeconds)*time.Second)
 	shutdownErr := httpServer.Shutdown(shutdownCtx)
 	shutdownCancel()
 	cancel()
-	group.Wait()
 	if cause != nil {
 		return errors.Join(cause, shutdownErr)
 	}

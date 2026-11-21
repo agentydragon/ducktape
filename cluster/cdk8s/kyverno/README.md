@@ -9,14 +9,15 @@ manifests.
 | File               | Contents                                            |
 | ------------------ | --------------------------------------------------- |
 | `apply.py`         | Runs `kyverno apply` and parses its result.         |
-| `test_utils.py`    | Looks up fixtures and synthesizes one policy chart. |
+| `apply_inputs.py`  | Looks up fixtures and synthesizes one policy chart. |
 | `test_<policy>.py` | One module and Bazel target per policy.             |
 | `testdata/`        | Input resources for the policy behavior cases.      |
 
 ## Coverage
 
-Tested: `default-vpa-requests-only`, `default-disable-service-links`,
-`require-secret-store-conditions`, `restrict-agent-gateway-routes`.
-
-`require-gitops` matches on `request.userInfo`, which plain `kyverno apply` does
-not supply. It needs `--userinfo` or a mock admission context.
+Tested: `default-disable-service-links`, `require-gitops` (the request user comes from
+`--userinfo`), `require-secret-store-conditions` and the janitor `NamespacedDeletingPolicy`
+(`janitor.py`, which `test_janitor.py` builds inline and applies to Pods of different ages).
+Offline `kyverno apply` cannot map a custom resource's kind, so `require-secret-store-conditions`
+runs in JSON mode (`apply_inputs.policy(json_mode=True)`): its CEL `validations` are evaluated,
+its admission match is not.

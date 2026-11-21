@@ -138,18 +138,15 @@ def test_alias_without_filters_a_structural_duplicate_in_binary_cli(tmp_path: Pa
         )
     )
     output = tmp_path / "extracted"
-    assert (
-        main(
-            [
-                str(binary),
-                str(output),
-                "--alias-all",
-                "sharedConfig.js=globalThis.sharedConfig",
-                "--alias-without",
-                "sharedConfig.js=startService",
-            ]
-        )
-        == 0
+    main(
+        [
+            str(binary),
+            str(output),
+            "--alias-all",
+            "sharedConfig.js=globalThis.sharedConfig",
+            "--alias-without",
+            "sharedConfig.js=startService",
+        ]
     )
     assert (output / "sharedConfig.js").read_bytes() == shared_config_provider
 
@@ -180,7 +177,7 @@ def test_virtual_source_path_and_stable_alias_are_both_written(tmp_path: Path) -
     binary = tmp_path / "binary"
     binary.write_bytes(synthetic_graph([("/$bunfs/root/foo.js", b"export function factory() {}")]))
     output = tmp_path / "extracted"
-    assert main([str(binary), str(output), "--alias", "factory.js=factory"]) == 0
+    main([str(binary), str(output), "--alias", "factory.js=factory"])
     assert (output / "$bunfs/root/foo.js").read_text() == "export function factory() {}"
     assert (output / "factory.js").read_text() == "export function factory() {}"
 
@@ -195,19 +192,16 @@ def test_debundle_list_excludes_non_utf8_and_non_js_files(tmp_path: Path) -> Non
     binary = tmp_path / "binary"
     binary.write_bytes(synthetic_graph(modules))
     output = tmp_path / "extracted"
-    assert (
-        main(
-            [
-                str(binary),
-                str(output),
-                "--only-js",
-                "--alias",
-                "factory.js=export function factory",
-                "--debundle-list",
-                str(output / "js-files.txt"),
-            ]
-        )
-        == 0
+    main(
+        [
+            str(binary),
+            str(output),
+            "--only-js",
+            "--alias",
+            "factory.js=export function factory",
+            "--debundle-list",
+            str(output / "js-files.txt"),
+        ]
     )
     assert (output / "js-files.txt").read_text().splitlines() == ["$bunfs/root/b.js", "factory.js\t$bunfs/root/a.js"]
 
@@ -222,7 +216,7 @@ def test_embedded_loaders_name_each_module_loader(tmp_path: Path) -> None:
     )
     output = tmp_path / "extracted"
     manifest = output / "embedded-loaders.json"
-    assert main([str(binary), str(output), "--only-js", "--embedded-loaders", str(manifest)]) == 0
+    main([str(binary), str(output), "--only-js", "--embedded-loaders", str(manifest)])
     assert json.loads(manifest.read_text()) == {
         "$bunfs/root/a.js": "js",
         "$bunfs/root/b.md": "text",

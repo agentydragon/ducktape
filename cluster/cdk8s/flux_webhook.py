@@ -37,7 +37,6 @@ from flux_receiver_crds.io.fluxcd.toolkit.notification import (
 
 from cluster.cdk8s import ntfy
 from cluster.cdk8s.config_format import yaml_config
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo import secret_copy
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -101,7 +100,6 @@ def chart(app: App) -> Chart:
                 # Public Flux control objects retain a dedicated sparse checkout. Reconcile
                 # it immediately on a Ducktape push rather than waiting for its poll.
                 ReceiverResource.git_repository("ducktape", namespace="ducktape-flux"),
-                ReceiverResource.image_repository("tofu-controller", namespace="flux-system"),
                 ReceiverResource.image_repository("tf-runner", namespace="flux-system"),
             ],
         ),
@@ -210,7 +208,7 @@ def chart(app: App) -> Chart:
             namespace=NAMESPACE,
             annotations={
                 "description": "Flux failure notifications delivered through the self-hosted ntfy instance",
-                "ntfy.ducktape.io/auth-generation": "1",
+                **ntfy.AUTH_GENERATION_ANNOTATION,
             },
         ),
         refresh_policy=ExternalSecretSpecRefreshPolicy.ON_CHANGE,
@@ -225,26 +223,3 @@ def chart(app: App) -> Chart:
         ),
     )
     return chart
-
-
-def flux_webhook(
-    chart: Chart,
-    directory: RenderedDirectory,
-    external_secrets_operator: Kustomization,
-    kyverno: Kustomization,
-    github_webhook_token: Kustomization,
-) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        NAME,
-        directory,
-        retry_interval=None,
-        wait=None,
-        timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(
-            external_secrets_operator,
-            # Kyverno's failurePolicy: Fail webhooks admit the HTTPRoute.
-            kyverno,
-            github_webhook_token,
-        ),
-    )

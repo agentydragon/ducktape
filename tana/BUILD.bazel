@@ -9,6 +9,7 @@ py_test(
         "//:conftest",
         "//tana/domain:nodes",
         "//tana/export:convert",
+        "//tana/export:export_node_subset",
         "//tana/graph",
         "//tana/graph:loader",
         "@pypi//pytest",

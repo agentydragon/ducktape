@@ -1,25 +1,24 @@
 # gazelle:ignore
 
-load(":defs.bzl", "vm_kvm_test")
+load("//agentplane/system_tests/vm:defs.bzl", "vm_test")
 
 package(
     default_testonly = True,
     default_visibility = ["//agentplane:__subpackages__"],
 )
 
-vm_kvm_test(name = "test_vm_kvm")
+vm_test(
+    name = "test_vm_kvm",
+    tags = ["manual"],
+)
 
-vm_kvm_test(
+vm_test(
     name = "test_vm_nixos_spike",
     pool = "kvm-vm-nixos-spike",
+    tags = ["manual"],
 )
 
-vm_kvm_test(
-    name = "test_vm_kvm_recycled",
-    recycle = True,
-)
-
-vm_kvm_test(
+vm_test(
     name = "test_retained_failure_cleanup",
     extra_deps = [
         "//agentplane:sandbox_resource",
@@ -30,4 +29,8 @@ vm_kvm_test(
     ],
     recycle = True,
     suite = ":test_retained_failure_cleanup.py",
+    tags = [
+        "bench",
+        "manual",
+    ],
 )

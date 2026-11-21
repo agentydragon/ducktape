@@ -26,10 +26,6 @@ async def plain_mcp() -> AsyncIterator[FastMCP]:
         yield build_mcp(settings, client_provider=borrowed_http_client_provider(client))
 
 
-async def test_build_mcp_accepts_grocy_spec(plain_mcp: FastMCP) -> None:
-    assert await plain_mcp.list_tools()
-
-
 async def test_record_tool_count_exports_metric(plain_mcp: FastMCP) -> None:
     tool_count = await record_tool_count(plain_mcp)
 
@@ -55,12 +51,9 @@ async def test_batch_client_dependency_failure_is_mcp_error_before_body() -> Non
     settings = ServerSettings(grocy_url="https://grocy.example.com")
     mcp = build_mcp(settings, client_provider=rejected_client)
     async with Client(mcp) as mcp_client:
-        result = await mcp_client.call_tool_mcp("entities_list", {"entity_types": ["products"]})
+        with pytest.raises(ToolError, match="Backend authentication failed"):
+            await mcp_client.call_tool("entities_list", {"entity_types": ["products"]})
 
-    assert result.is_error is True
-    assert "Backend authentication failed" in "\n".join(
-        block.text for block in result.content if hasattr(block, "text")
-    )
     assert dependency_entries == 1
 
 

@@ -1,5 +1,6 @@
 import type { JSX } from "react";
 import { Code, Text } from "@mantine/core";
+import { branchCreated } from "./receipts";
 
 import { type ActionPresentation, expandsForRejectedArguments } from "../presentation";
 import { definePreview, type ArgumentsPreview } from "../entry";
@@ -22,18 +23,14 @@ function CreateBranchLabel({ args }: { args: CreateBranchArguments }): JSX.Eleme
   );
 }
 
-// Nothing is left once the label has drawn every argument; the schema still gates the empty view.
-function NoFurtherArguments(): JSX.Element {
-  return <></>;
-}
-
 export const createBranchLabel: ArgumentsPreview = definePreview(zCreateBranchArguments, CreateBranchLabel);
-export const createBranchArguments: ArgumentsPreview = definePreview(zCreateBranchArguments, NoFurtherArguments);
+// The label already names every validated argument.
+const createBranchArguments: ArgumentsPreview = { schema: zCreateBranchArguments, render: () => null };
 
 export const createBranchPresentation: ActionPresentation = {
   fallbackLabel: "Create GitHub branch",
   label: createBranchLabel,
-  details: { arguments: createBranchArguments },
+  details: { arguments: createBranchArguments, result: branchCreated },
   offersCardDecisionButtons: offersCardDecisionButtonsCreateBranch,
   compactCardExpands: expandsForRejectedArguments(zCreateBranchArguments),
 };

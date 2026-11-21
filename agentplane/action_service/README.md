@@ -7,7 +7,7 @@ external harnesses remain clients rather than state owners.
 Agent entry point: `agentplane actions guide` ([source](docs/agents/llms.txt)), with lifecycle,
 recovery and Kubernetes/grant workflows. The Action, operator decision, and linkage APIs are
 defined by their [protobuf contracts](api/contracts/README.md); the Web Push schema remains in
-[web_push_service.proto](web_push_service.proto). The integration app exposes its own generated
+[web_push_service.proto](api/web_push/web_push_service.proto). The integration app exposes its own generated
 HTTP/JSON facade for browser clients.
 The `/v1/` HTTP examples below describe that facade (mounted under `/upstream/actions` in the app),
 not routes on the Action Service listener.
@@ -40,7 +40,7 @@ integration app presents the operator UI ([consent UI](../app/README.md)). See t
 [ConnectionService implementation](../mcp_edge/internal/connections/service.go) and
 [authorization server](../mcp_edge/internal/authserver/authserver.go).
 
-EnvironmentService calls use the Sandbox Controller's every-replica `sandbox-controller:8082`
+EnvironmentService calls use the Sandbox Controller's every-replica `environments:8082`
 listener, presenting the Actions service SVID and verifying the Controller SVID. Delegated
 list/get/resume keep their typed effective-Identity envelope; reviewed orchestration launch uses
 the separate direct launcher grant and validated launch origin. Session Dispatcher and History
@@ -191,14 +191,14 @@ The MCP edge's optional `oauth` settings enable its Go authorization server: dis
 registration (DCR), CIMD, authorization, token (code and refresh), revocation, and callback
 endpoints. It pins an upstream OIDC issuer, client, and operator subject; only a verified sign-in of
 that operator completes authorization. The consent page chooses a new Connection or a confirmed
-reconnect and a currently labeled ServiceAccount. A consent decision is one-shot and
+reconnect and a live Identity. A consent decision is one-shot and
 version-checked; code exchange rechecks the choice, activates the grant, and issues local tokens in
 one database transaction. Replaying an exchanged code revokes that grant.
 
 Local access and refresh tokens are opaque; PostgreSQL stores their SHA-256 digests. The upstream
 provider refresh token must be recoverable for renewal, so it is stored as plaintext in
 the MCP edge database's `oauth_authorization.upstream_refresh_token`; the current design accepts
-plaintext database storage. Each `/mcp` request resolves the grant to its Connection's current bound account. Grant
+plaintext database storage. Each `/mcp` request resolves the grant to its Connection's live bound Identity. Grant
 identity and provenance are retained on newly admitted Action receipts, with the authenticated
 component actor kept separate from the effective Identity. Actions does not resolve the Connection
 or treat its IDs as authority. Receipts written before attribution recording, and direct calls, have
@@ -207,15 +207,16 @@ grant; upstream account revocation is separate.
 
 Configure `base_url`, `integration_app_url`, `upstream_issuer`, `upstream_client_id`,
 `upstream_client_secret_file`, `upstream_subject`, and `approving_operator` in the optional `oauth`
-settings. See the edge's [Go OAuth configuration](../mcp_edge/config.go), the
+settings. See the edge's [Go OAuth configuration](../mcp_edge/cmd/config.go), the
 [authorization server](../mcp_edge/internal/authserver/authserver.go), and the
 [ConnectionService contract](../mcp_edge/api/connection/connection_service.proto).
 
 | Tool                         | Use                                                                                                                                                            |
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `list_actions`               | Compact `{group, name, available}` entries; optional group filter, `limit` (default 30, max 100), keyset `after`/`next_after`.                                 |
+| `get_action_group`           | One group's availability, MCP connection state and per-tool schema warnings.                                                                                   |
 | `get_action_policy`          | The effective policy of a `target`: `"self"` (default) or a named Sandbox or ServiceAccount; its bindings, the sets that resolved, and the auto-approval list. |
-| `get_action`                 | One definition by group/name. `include_fields` on either catalog read accepts only `input_schema` and `description`; omitted/empty excludes both.              |
+| `get_action`                 | One definition by group/name, including schema-validation status. `include_fields` selects `input_schema` and `description`; omitted/empty excludes both.      |
 | `request_action`             | The request envelope under `request`, validated as on HTTP; a used key is refused. Answers like `get_action_result`, or `respond_with: receipt`.               |
 | `get_action_request`         | One own-caller receipt by exactly one of `request_id` or `idempotency_key`; the key lookup recovers a submission whose response was lost.                      |
 | `get_action_result`          | The outcome as the tool that ran answered, named and waited on like `get_action_request`; see below.                                                           |
@@ -338,12 +339,15 @@ single-Execution claim and lease token, not the MCP connection, fence dispatch a
 attempt from being replayed.
 
 `cmd/main.go` builds a supervised `mcpexec.Executor` for each `catalog.MCPBinding`, a
-`sandbox.Executor` for each `catalog.PodBinding` and an `orchestrationv1.Executor` for each
-`catalog.OrchestrationBinding`. The MCP executor discovers upstream tools through
+`sandbox.Executor` for each `catalog.PodBinding`, an `orchestrationv1.Executor` for each
+`catalog.OrchestrationBinding` and a `sessiondelegation.Executor` for each
+`catalog.SessionDelegationBinding`. The MCP executor discovers upstream tools through
 its Go SDK session; Sandbox Actions come from the configured template roster and are offered after
 startup validation ([sandbox Actions](sandbox/README.md)). The orchestration Actions launch Session
 Sandboxes and drive their Sessions through the Session Dispatcher, a stopgap that acts with this
 service's own authority on each request's Decision ([orchestration Actions](orchestration_v1/README.md)).
+The session delegation Actions forward each request's Identity incarnation to the Environment Service,
+Session Dispatcher and History Service ([session delegation Actions](session_delegation/README.md)).
 Echo is only an explicitly injected test executor, never a production default.
 
 An empty catalog starts with no offered actions. An explicitly configured missing/non-file YAML
@@ -440,8 +444,8 @@ is accepted.
 ## Action policy sets and bindings
 
 `PolicySet` and `PolicyBinding` (CRDs in `agentplane/crds/`) supply Action policies. The Go
-[`informer`](internal/admission/informer/informer.go) watches the policy namespace's sets and bindings and labeled
-caller ServiceAccounts, and writes `ActionsReady` on bindings. The Go
+[`informer`](internal/admission/informer/informer.go) watches the policy namespace's sets, bindings and
+Identities, and writes `ActionsReady` on bindings. The Go
 [`policies.Provider`](internal/admission/policies/provider.go) evaluates valid `action_auto_approve` rules at admission;
 a matching allow records `PolicyEvidence`, including the matched rule and any resolved GitHub
 repository. A set has no deny form: no match leaves the request for a human. The Go
@@ -452,7 +456,7 @@ authoring package and its `resources` target remain at their existing path for c
 system-test consumers.
 
 The Go integration app obtains PolicySet names from the Policy Controller's
-`ListPolicySetNames` gRPC API through [`AppService.GetSandboxForm`](../app/internal/server/appconfigapi.go).
+`ListPolicySetNames` gRPC API through [`AppService.GetSandboxForm`](../app/internal/httpapi/appconfigapi.go).
 Its effective action-policy view comes from the Action Service's generated `WatchActionPolicy`
 response. The Python
 `policies/resources` parser remains in cdk8s policy authoring and Python test support; Python Pydantic
@@ -461,16 +465,16 @@ Go informer and provider. Staging's network policy admits `api.github.com:443` f
 public-repository lookup.
 
 The end-to-end proof is `//agentplane/system_tests/suites/mcp:test_services`, which creates the set and binding
-for the Sandbox it launches through the Runner Gateway's `EnvironmentService` (see [the system tests README](../system_tests/README.md))
+for the Sandbox it launches through the Environments `EnvironmentService` (see [the system tests README](../system_tests/README.md))
 against the upstream `mcp-everything` image described in
 [the fixture guide](testing/README.md). The Go service's startup, MCP execution recovery and OAuth
 edge composition are covered by `//agentplane/action_service/cmd:integration_test`.
 
 ## Authentication boundaries
 
-`caller_service_account_namespaces` scopes live WorkloadCredential reads and the existing policy
-index watches. `policy_namespace` names where Identities, PolicySets and PolicyBindings are read
-and `ActionsReady` is written. Neither setting approves Actions or selects an MCP destination.
+`caller_service_account_namespaces` scopes live WorkloadCredential reads. `policy_namespace` names
+where Identities, PolicySets and PolicyBindings are read and `ActionsReady` is written. Neither
+setting approves Actions or selects an MCP destination.
 
 The [workload resolver](../identity/auth/) resolves a verified client certificate to the live Identity
 its WorkloadCredential names. It rechecks credential validity and the Identity incarnation on calls
@@ -485,7 +489,8 @@ The service image runs Goose migrations before opening listeners or starting wor
 `--migrate-only` mode uses the same code path for fixture checks. Each deployed environment gives
 the service its own `actions` database and login role on the namespace's shared
 CNPG cluster `postgres` (`cluster/k8s/agentplane-staging/agentplane-staging.k8s.yaml`),
-separate from the integration app's database.
+separate from the integration app's database. Schema versions, adoption and rollback:
+[SPEC.md § Durable storage](SPEC.md#durable-storage).
 
 ### Service certificate admission
 
@@ -506,34 +511,10 @@ enabling it or deploying a sampler client that calls these methods.
 
 These settings require the listener's SPIFFE client trust and default to no service grants.
 Receiver settings no longer accept `reader_accounts` or `connection_delegation_actor`; Connection
-delegation is configured by `connection_delegation_service`. Listener `kubernetes_bearer` entries
-remain decodable but grant no admission.
+delegation is configured by `connection_delegation_service`. Listener `auth` accepts only
+`mode: spiffe`; any other mode fails settings decoding.
 Mixed service/bearer credentials fail closed except the explicit service-plus-operator-OIDC
 path. The listener verifies every presented certificate before method authorization.
-
-### Schema initialization
-
-Goose version 7 creates the final typed schema on an empty database. A database that completed
-version 6 is adopted in place: the migration validates its history and schema, then records version
-7 without replaying DDL or rewriting Action rows. Version 8 adds nullable `caller_uid` provenance;
-existing requests remain unknown and are never backfilled. Existing Goose versions 1–6 and Alembic
-history remain intact. Databases behind version 6, or with a partial or unmarked schema, must first
-be repaired with the earlier migration-capable image. Do not renumber this baseline; subsequent
-schema changes use later Goose versions.
-
-Version 12 adds a nullable typed delegating-actor snapshot and UUID columns for Session or
-Connection/grant provenance. The effective caller remains the owner and policy subject. No existing
-receipt is backfilled or refused, and older replicas may keep writing NULL during a roll. Rollback
-to the prior image keeps the additive columns and all receipts; no database downgrade is needed.
-
-Action identities use `action_group`/`action_name` columns, event actors use binary `Principal`
-messages, and decision policy evidence uses binary `PolicyEvidence` messages. Arguments, results and
-errors retain JSONB. The rolling Deployment keeps the existing replica serving while replacements
-apply migrations. Goose's session lock serializes concurrent starts; every schema change must
-remain compatible with the old and new service versions during that overlap. A database with historical
-versions 1–6 retains its rollback path to a typed-storage-compatible version 6 image. A fresh
-version 8 database requires a rollback image that understands the version 8 schema, or a
-coordinated database restore.
 
 ## MCP executor transports
 

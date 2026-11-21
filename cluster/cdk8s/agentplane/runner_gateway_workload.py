@@ -55,65 +55,26 @@ from cluster.cdk8s.agentplane import (
     notifications,
     runner_gateway,
     sandbox_controller,
-    session_dispatcher,
     workload_tls,
 )
-from cluster.cdk8s.agentplane.environment import Environment, ReplicaProfile
+from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import ServiceWorkload, add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.probes import tls_grpc_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
-from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.service_ref import Pods, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 
-_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway:unset"
 _SESSIONS_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-sessions:unset"
-_GRPC_PORT = 8080
 
 _DEFAULT_MEMORY_REQUEST = Size.mebibytes(256)
 _DEFAULT_MEMORY_LIMIT = Size.gibibytes(1)
 
 
-def dispatcher_service(namespace: str) -> ServiceRef:
-    """Keep the sender's DNS and Service port; target the shared listener."""
-    return ServiceRef(
-        name=session_dispatcher.NAME,
-        port=Port(name="grpc", number=_GRPC_PORT),
-        pods=runner_gateway.service(namespace).pods,
-        target_port=_GRPC_PORT,
-    )
-
-
-def add_stable_services(scope: Construct, env: Environment) -> None:
-    """Keep stable Services in their root Flux owner, targeting the shared listener."""
-    proxy = runner_gateway.service(env.namespace)
-    dispatcher = dispatcher_service(env.namespace)
-    k8s.KubeService(
-        scope,
-        "runner-gateway-service",
-        metadata=k8s.ObjectMeta(name=proxy.name, namespace=env.namespace, labels=proxy.labels),
-        spec=k8s.ServiceSpec(selector=runner_gateway.SESSIONS_ROUTING_LABELS, ports=[proxy.port.k8s_service_port()]),
-    )
-    k8s.KubeService(
-        scope,
-        "session-dispatcher-service",
-        metadata=k8s.ObjectMeta(
-            name=dispatcher.name, namespace=env.namespace, labels={"app.kubernetes.io/name": dispatcher.name}
-        ),
-        spec=k8s.ServiceSpec(
-            selector=runner_gateway.SESSIONS_ROUTING_LABELS,
-            ports=[
-                k8s.ServicePort(
-                    name=dispatcher.port.name,
-                    port=dispatcher.port.number,
-                    target_port=k8s.IntOrString.from_number(dispatcher.pod_port),
-                    protocol="TCP",
-                )
-            ],
-        ),
-    )
+def add_service(scope: Construct, env: Environment) -> None:
+    """Keep Sessions in the root Flux owner."""
     sessions = runner_gateway.sessions_service(env.namespace)
     k8s.KubeService(
         scope,
@@ -136,8 +97,7 @@ def _add_dispatcher_workload(
     placement: node_scheduling.Placement | None,
     memory_request: Size,
     memory_limit: Size | None,
-    service_account: ServiceAccount | None = None,
-    replica_profile: ReplicaProfile | None = None,
+    service_account: ServiceAccount,
 ) -> ServiceWorkload:
     workload = add_service_workload(
         scope,
@@ -176,7 +136,7 @@ def _add_dispatcher_workload(
         # A Recreate drops Dispatcher admission and delivery, so the Gateway rolls
         # (a surged replica is Ready before the old one goes) even where the environment recreates.
         replica_profile=replace(
-            replica_profile or env.replicas,
+            env.replicas,
             strategy=DeploymentStrategy.rolling_update(
                 max_surge=PercentOrAbsolute.absolute(1), max_unavailable=PercentOrAbsolute.absolute(0)
             ),
@@ -189,8 +149,8 @@ def _add_dispatcher_workload(
     )
     for key, value in runner_gateway.SESSIONS_ROUTING_LABELS.items():
         workload.deployment.pod_metadata.add_label(key, value)
-    # Keep telemetry names stable until the new endpoints have been observed on staging.
-    workload.container.env.add_variable("OTEL_SERVICE_NAME", EnvValue.from_value(runner_gateway.NAME))
+    # Preserve the OpenTelemetry service identity across the deployment rename.
+    workload.container.env.add_variable("OTEL_SERVICE_NAME", EnvValue.from_value("runner-gateway"))
     return workload
 
 
@@ -209,25 +169,20 @@ class RunnerGateway(Construct):
         orchestration_callers: Mapping[ServiceAccountRef, Pods],
         delegation_actor: ServiceAccountRef | None,
         wake_service_callers: frozenset[ServiceSPIFFEID] = frozenset(),
-        wake_callers: frozenset[ServiceAccountRef],
         registry_secret_name: str | None = "forgejo-images-creds",
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         container_env: Mapping[str, EnvValue] | None = None,
         memory_request: Size = _DEFAULT_MEMORY_REQUEST,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
-        image: str = _IMAGE,
-        legacy_replica_profile: ReplicaProfile | None = None,
     ) -> None:
         super().__init__(scope, id)
         if not dispatcher_callers:
             raise ValueError("Runner Gateway needs explicit Dispatcher caller grants")
-        if not wake_callers <= dispatcher_callers.keys():
-            raise ValueError("wake callers must also be Dispatcher callers")
 
         namespace = env.namespace
         self.env = env
         self.dispatcher_callers = dispatcher_callers
-        proxy = runner_gateway.service(namespace)
+        endpoint = runner_gateway.sessions_service(namespace)
         # Only orchestration_v1 grants direct Actions Dispatcher authority.
         # The direct Actions SVID roles follow that exact feature gate; delegated session tools
         # do not make the Actions service a direct component caller.
@@ -236,12 +191,37 @@ class RunnerGateway(Construct):
             if ServiceAccountRef(namespace=namespace, name=actions.NAME) in orchestration_callers
             else frozenset()
         )
-        workload = _add_dispatcher_workload(
-            self,
+        prerequisites = Construct(self, "sessions-prerequisites")
+        account = ServiceAccount(
+            prerequisites,
+            "account",
+            metadata=ApiObjectMetadata(name=endpoint.name, namespace=namespace),
+            automount_token=True,
+        )
+        add_rbac(prerequisites, account, namespace, role_name=endpoint.name)
+        workload_tls.certificate(
+            prerequisites,
+            "serving",
             env,
-            endpoint=proxy,
-            replica_profile=legacy_replica_profile,
-            image=image,
+            name="sessions-workload",
+            secret_name="sessions-workload-tls",
+            uri=SESSION_DISPATCHER_URI,
+        )
+        workload_tls.certificate(
+            prerequisites,
+            "client",
+            env,
+            name="sessions-client-workload",
+            secret_name="sessions-client-workload-tls",
+            uri=GATEWAY_SESSIONS_URI,
+        )
+
+        sessions = Construct(self, "sessions")
+        sessions_workload = _add_dispatcher_workload(
+            sessions,
+            env,
+            endpoint=endpoint,
+            image=sessions_image,
             database_env=Settings.dispatcher_database_url_env,
             database_url=database_url,
             container_env=container_env,
@@ -249,24 +229,23 @@ class RunnerGateway(Construct):
             placement=placement,
             memory_request=memory_request,
             memory_limit=memory_limit,
+            service_account=account,
         )
-        serving_tls = workload_tls.service_certificate(
-            self, env, container=workload.container, name=runner_gateway.NAME, uri=SESSION_DISPATCHER_URI
+        serving_tls = workload_tls.mount_service_certificate(
+            sessions, container=sessions_workload.container, name="sessions"
         )
-        sessions_tls = workload_tls.client_certificate(
-            self, env, container=workload.container, name=f"{runner_gateway.NAME}-sessions", uri=GATEWAY_SESSIONS_URI
-        )
-        assert sessions_tls.cert_file is not None
-        assert sessions_tls.key_file is not None
-        assert sessions_tls.ca_file is not None
+        client = workload_tls.mount_client_certificate(sessions, container=sessions_workload.container, name="sessions")
+        assert client.cert_file is not None
+        assert client.key_file is not None
+        assert client.ca_file is not None
         central_sampler_target = (
             CentralSamplerTarget(
                 target=central_sampler.target(namespace),
                 tls=ClientTLS(
-                    ca_file=Path(sessions_tls.ca_file),
+                    ca_file=Path(client.ca_file),
                     server_uri=CENTRAL_SAMPLER_URI,
-                    cert_file=Path(sessions_tls.cert_file),
-                    key_file=Path(sessions_tls.key_file),
+                    cert_file=Path(client.cert_file),
+                    key_file=Path(client.key_file),
                     client_uri=GATEWAY_SESSIONS_URI,
                 ),
             )
@@ -293,94 +272,27 @@ class RunnerGateway(Construct):
                     "/agentplane.runner_gateway.dispatcher.SessionDispatcher/CancelDispatch",
                 ),
             )
-        static_settings = Settings(
+        sessions_settings = Settings(
             sandbox_namespace=namespace,
             policy_namespace=namespace,
             kubernetes_client_qps=-1,
             rpc=workload_listener.Listener(
-                listen_address=f"0.0.0.0:{proxy.pod_port}",
+                listen_address=f"0.0.0.0:{endpoint.pod_port}",
                 tls=workload_listener.TLS(cert_file=Path(serving_tls.cert_file), key_file=Path(serving_tls.key_file)),
                 auth=[workload_listener.SPIFFEAuth(ca_file=Path(serving_tls.ca_file))],
             ),
             gateway_tls=ClientTLS(
-                ca_file=Path(sessions_tls.ca_file),
+                ca_file=Path(client.ca_file),
                 server_uri=SANDBOX_CONTROLLER_URI,
-                cert_file=Path(sessions_tls.cert_file),
-                key_file=Path(sessions_tls.key_file),
+                cert_file=Path(client.cert_file),
+                key_file=Path(client.key_file),
                 client_uri=GATEWAY_SESSIONS_URI,
             ),
-            runner_control_target_template=environment_service.control_target(namespace),
+            runner_control_target_template=environment_service.environments_control_target(namespace),
             dispatcher_service_callers=frozenset({APP_URI, NOTIFICATIONS_URI}) | actions_orchestration_svids,
             wake_service_callers=wake_service_callers,
             dispatcher_service_delegation=dispatcher_service_delegation,
             central_sampler=central_sampler_target,
-        )
-        settings_file = SettingsFile(
-            self,
-            "settings",
-            metadata=ApiObjectMetadata(name=f"{runner_gateway.NAME}-settings", namespace=namespace),
-            content=yaml_config(static_settings),
-            path="/etc/agentplane-runner-gateway/settings/settings.yaml",
-        )
-        settings_file.mount_into(workload.container, env=Settings.config_file_env)
-        add_rbac(self, workload.account, namespace, role_name=runner_gateway.NAME)
-        prerequisites = Construct(self, "sessions-prerequisites")
-        account = ServiceAccount(
-            prerequisites,
-            "account",
-            metadata=ApiObjectMetadata(name=runner_gateway.sessions_service(namespace).name, namespace=namespace),
-            automount_token=True,
-        )
-        add_rbac(prerequisites, account, namespace, role_name=runner_gateway.sessions_service(namespace).name)
-        workload_tls.certificate(
-            prerequisites,
-            "serving",
-            env,
-            name="sessions-workload",
-            secret_name="sessions-workload-tls",
-            uri=SESSION_DISPATCHER_URI,
-        )
-        workload_tls.certificate(
-            prerequisites,
-            "client",
-            env,
-            name="sessions-client-workload",
-            secret_name="sessions-client-workload-tls",
-            uri=GATEWAY_SESSIONS_URI,
-        )
-
-        sessions = Construct(self, "sessions")
-        sessions_workload = _add_dispatcher_workload(
-            sessions,
-            env,
-            endpoint=runner_gateway.sessions_service(namespace),
-            image=sessions_image,
-            database_env="AGENTPLANE_SESSIONS_DISPATCHER_DATABASE_URL",
-            database_url=database_url,
-            container_env=container_env,
-            registry_secret_name=registry_secret_name,
-            placement=placement,
-            memory_request=memory_request,
-            memory_limit=memory_limit,
-            service_account=account,
-        )
-        workload_tls.mount_service_certificate(sessions, container=sessions_workload.container, name="sessions")
-        client = workload_tls.mount_client_certificate(sessions, container=sessions_workload.container, name="sessions")
-        assert client.cert_file is not None
-        assert client.key_file is not None
-        credentials = {"cert_file": Path(client.cert_file), "key_file": Path(client.key_file)}
-        sessions_settings = static_settings.model_copy(
-            update={
-                "runner_control_target_template": environment_service.environments_control_target(namespace),
-                "gateway_tls": static_settings.gateway_tls.model_copy(update=credentials),
-                "central_sampler": (
-                    static_settings.central_sampler.model_copy(
-                        update={"tls": static_settings.central_sampler.tls.model_copy(update=credentials)}
-                    )
-                    if static_settings.central_sampler is not None and static_settings.central_sampler.tls is not None
-                    else static_settings.central_sampler
-                ),
-            }
         )
         SettingsFile(
             sessions,
@@ -388,35 +300,31 @@ class RunnerGateway(Construct):
             metadata=ApiObjectMetadata(name="sessions-settings", namespace=namespace),
             content=yaml_config(sessions_settings),
             path="/etc/agentplane-sessions/settings/settings.yaml",
-        ).mount_into(sessions_workload.container, env="AGENTPLANE_SESSIONS_CONFIG_FILE")
+        ).mount_into(sessions_workload.container, env=Settings.config_file_env)
 
     def add_platform_resources(self) -> None:
         """Add the fleet Cilium fences around the shared Gateway listeners."""
         namespace = self.env.namespace
-        proxy = runner_gateway.service(namespace)
-        dispatcher = dispatcher_service(namespace)
         sessions = runner_gateway.sessions_service(namespace)
         ingress = [
-            egress.proxy(namespace).pods.admit(dispatcher.pod_port),
-            *(pods.admit(dispatcher.pod_port) for pods in self.dispatcher_callers.values()),
+            egress.proxy(namespace).pods.admit(sessions.pod_port),
+            *(pods.admit(sessions.pod_port) for pods in self.dispatcher_callers.values()),
         ]
         outbound = [
             cilium.dns_egress(),
             EgressRule.to_entities(Entity.KUBE_APISERVER),
             database.egress(namespace),
-            environment_service.service(namespace).egress(),
             environment_service.environments_service(namespace).egress(),
             *([central_sampler.service(namespace).egress()] if self.env.central_sampler is not None else []),
         ]
-        for id, endpoint in (("network-policy", proxy), ("sessions-network-policy", sessions)):
-            NetworkPolicy(
-                self,
-                id,
-                metadata=ApiObjectMetadata(name=endpoint.name, namespace=namespace),
-                endpoint_selector=endpoint.pods.selector,
-                ingress=ingress,
-                egress=outbound,
-            )
+        NetworkPolicy(
+            self,
+            "sessions-network-policy",
+            metadata=ApiObjectMetadata(name=sessions.name, namespace=namespace),
+            endpoint_selector=sessions.pods.selector,
+            ingress=ingress,
+            egress=outbound,
+        )
         callers = dict.fromkeys([egress.proxy(namespace).pods, *self.dispatcher_callers.values()])
         for caller in callers:
             NetworkPolicy(
@@ -495,9 +403,7 @@ def serving_chart(
         sessions_image=_SESSIONS_IMAGE,
         dispatcher_callers=callers | orchestration | session_delegation,
         orchestration_callers=orchestration,
-        delegation_actor=(sandbox_controller.action_delegation_actor(env)),
+        delegation_actor=sandbox_controller.action_delegation_actor(env),
         wake_service_callers=wake_service_callers,
-        # The orchestration_v1 group sends input that wakes a Sandbox launched with wakeOnSend.
-        wake_callers=env.wake_caller_accounts | orchestration.keys(),
     ).add_platform_resources()
     return chart

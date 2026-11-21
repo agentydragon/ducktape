@@ -413,31 +413,6 @@ func TestArtifactAndToolLogDownloadsIncludeInvocationID(t *testing.T) {
 	}
 }
 
-func captureStdout(t *testing.T, run func() error) ([]byte, error) {
-	t.Helper()
-	reader, writer, err := os.Pipe()
-	if err != nil {
-		return nil, err
-	}
-	oldStdout := os.Stdout
-	os.Stdout = writer
-	runErr := run()
-	closeErr := writer.Close()
-	os.Stdout = oldStdout
-	output, readErr := io.ReadAll(reader)
-	reader.Close()
-	if runErr != nil {
-		return nil, runErr
-	}
-	if closeErr != nil {
-		return nil, closeErr
-	}
-	if readErr != nil {
-		return nil, readErr
-	}
-	return output, nil
-}
-
 func TestParseArtifactsPreservesNativeFileAndConfiguration(t *testing.T) {
 	stream := `[
  {"id":{"testResult":{"label":"//pkg:test","configuration":{"id":"one"},"shard":1}},

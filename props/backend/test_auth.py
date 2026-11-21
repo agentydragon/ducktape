@@ -25,20 +25,16 @@ from props.db.database import Database
 from props.db.models import AgentType
 
 
-def test_get_caller_db_admin_returns_admin_db(exhaust_generator):
-    """Admin users get the shared admin database connection."""
+@pytest.mark.parametrize(
+    "auth",
+    [
+        pytest.param(AuthenticatedIdentity(username="postgres", password="secret", role=AdminRole()), id="admin"),
+        pytest.param(SessionIdentity(email="admin@test.invalid"), id="sso_session"),
+    ],
+)
+def test_get_caller_db_admin_identities_return_admin_db(auth, exhaust_generator):
+    """Admins and SSO browser sessions (admin-only) get the shared admin database connection."""
     admin_db = MagicMock(spec=Database)
-    auth = AuthenticatedIdentity(username="postgres", password="secret", role=AdminRole())
-
-    gen = get_caller_db(admin_db=admin_db, auth=auth)
-    db = exhaust_generator(gen)
-    assert db is admin_db
-
-
-def test_get_caller_db_sso_session_returns_admin_db(exhaust_generator):
-    """SSO browser sessions are admin-only: they use the shared admin pool."""
-    admin_db = MagicMock(spec=Database)
-    auth = SessionIdentity(email="admin@test.invalid")
 
     gen = get_caller_db(admin_db=admin_db, auth=auth)
     db = exhaust_generator(gen)
@@ -64,8 +60,8 @@ def test_get_caller_db_anonymous_raises_401():
     assert exc_info.value.status_code == 401
 
 
-def test_get_caller_db_agent_calls_per_request():
-    """Agent callers get a Database.per_request() instance with their credentials."""
+def test_get_caller_db_agent_creates_and_disposes_per_request_db():
+    """Agent callers get a Database.per_request() instance with their credentials, disposed after the request."""
     run_id = uuid4()
     admin_config = DatabaseConfig(host="localhost", port=5432, database="testdb", user="admin", password="admin_pass")
     admin_db = MagicMock(spec=Database)
@@ -93,29 +89,6 @@ def test_get_caller_db_agent_calls_per_request():
         # Verify it's the per_request instance, not admin
         assert db is mock_caller_db
         assert db is not admin_db
-
-        # Cleanup
-        with contextlib.suppress(StopIteration):
-            next(gen)
-
-
-def test_get_caller_db_agent_disposes_on_cleanup():
-    """Agent per-request database is disposed after the request."""
-    run_id = uuid4()
-    admin_config = DatabaseConfig(host="localhost", port=5432, database="testdb", user="admin", password="admin_pass")
-    admin_db = MagicMock(spec=Database)
-    admin_db.config = admin_config
-
-    auth = AuthenticatedIdentity(
-        username=f"agent_{run_id}",
-        password="agent_pass",
-        role=AgentRole(agent_type=AgentType.CRITIC_DEV_OPTIMIZE, agent_run_id=run_id),
-    )
-
-    mock_caller_db = MagicMock(spec=Database)
-    with patch.object(Database, "per_request", return_value=mock_caller_db):
-        gen = get_caller_db(admin_db=admin_db, auth=auth)
-        next(gen)  # Get the yielded db
 
         mock_caller_db.dispose.assert_not_called()
 

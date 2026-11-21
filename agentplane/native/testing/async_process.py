@@ -10,14 +10,26 @@ import signal
 import time
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field
 
-from agentplane.native.transport import MAX_FRAME_LINE_BYTES, FrameMatcher, NativeReceipt
-
 FrameResponder = Callable[[dict[str, Any]], Awaitable[BaseModel | None]]
+FrameMatcher = Callable[[dict[str, Any]], bool]
+
+# The longest native stdout line this pipe accepts; the runtime's `harness.MaxFrameLineBytes` is the
+# same size. Tool results ride inside single frames, so a line can run to megabytes.
+MAX_FRAME_LINE_BYTES = 64 * 1024 * 1024
+
+
+@dataclass(frozen=True)
+class NativeReceipt:
+    """One stdout frame and its 1-based position in the process's trace."""
+
+    frame: dict[str, Any]
+    sequence: int
 
 
 class TextRecord(BaseModel):

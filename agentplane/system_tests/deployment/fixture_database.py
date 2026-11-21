@@ -82,7 +82,7 @@ def _database_secret(scope: Construct, *, namespace: str, database: Database) ->
     )
 
 
-def add_database(scope: Construct, *, namespace: str, databases: Sequence[Database]) -> Construct:
+def add_database(scope: Construct, *, namespace: str, databases: Sequence[Database]) -> None:
     """Build the fixture database and its connection Secrets."""
     db_scope = Construct(scope, "db")
     Secret(
@@ -165,4 +165,3 @@ def add_database(scope: Construct, *, namespace: str, databases: Sequence[Databa
         selector=deployment,
         ports=[ServicePort(name="postgres", port=PORT, target_port=PORT)],
     )
-    return db_scope

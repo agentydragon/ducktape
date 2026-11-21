@@ -8,6 +8,7 @@ from python.runfiles import Runfiles
 
 from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.atuin.server import DATABASE, NAMESPACE
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.secret_ref import SecretRef
 
@@ -38,8 +39,8 @@ def chart(app: App) -> Chart:
         spec=k8s.JobSpec(
             # The script is idempotent (creates if missing, updates the password only when
             # the SOPS source changed, else no-op), so re-running is safe; the TTL lets a
-            # failed run retry instead of holding this Kustomization unready forever.
-            # Rationale in cluster/cdk8s/ha_mcp.py's HaMcpCredentialsProvisioner._add_job.
+            # failed run retry instead of holding this Kustomization unready forever
+            # (cluster/docs/troubleshooting.md § A Failed Job Wedges Its Flux Kustomization).
             ttl_seconds_after_finished=3600,
             backoff_limit=5,
             template=k8s.PodTemplateSpec(
@@ -53,13 +54,7 @@ def chart(app: App) -> Chart:
                         k8s.Container(
                             name="provisioner",
                             image="python:3.14-alpine",
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("50m"),
-                                    "memory": k8s.Quantity.from_string("128Mi"),
-                                },
-                                limits={"memory": k8s.Quantity.from_string("512Mi")},
-                            ),
+                            resources=container_resources(cpu="50m", memory="128Mi", memory_limit="512Mi"),
                             command=[
                                 "sh",
                                 "-c",

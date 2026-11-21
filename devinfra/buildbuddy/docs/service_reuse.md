@@ -5,6 +5,12 @@ Tests must pass with a cold environment and with any compatible recycled
 environment. Retain expensive infrastructure and immutable caches; allocate fresh
 application state for each test at the scope its assertions require.
 
+The outer Remote Bazel runner is recycled so its Bazel server survives between
+jobs. Bazel keeps Skyframe's analysis cache only in the server's JVM heap, not on
+disk or in the remote cache, and BuildBuddy preserves it by snapshotting and
+restoring the Firecracker VM. A cold runner reloads every package: 418 of 448 s
+for `bazel build -k //...` on a GitHub-hosted runner (2026-03).
+
 This document distinguishes current behavior from the proposed lifecycle for
 additional reusable services. It does not enable a new pool, daemon, preparation
 workflow, or snapshot policy.
@@ -18,14 +24,28 @@ not require retaining its service process.
 
 ## Current configuration and the save-policy change
 
-| Layer                                | Current behavior                                                                                                                | Owner                                                                                                                                                          |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Outer Remote Bazel runner            | Hosted Firecracker, recycling enabled, `snapshot-read-policy=newest`, save policy unset                                         | [`.bbrc`](../../../.bbrc)                                                                                                                                      |
-| Ordinary RBE actions                 | Firecracker, recycling enabled, Docker started; no blanket remote-snapshot opt-in                                               | [RBE platform](../../../BUILD.bazel)                                                                                                                           |
-| Agentplane K3s tests                 | Infrastructure-derived family, explicit remote-snapshot permission and retention permission; fresh workloads                    | [Macro](../../../agentplane/system_tests/k3s/defs.bzl), [baseline helper](../../../agentplane/system_tests/k3s/baseline.py)                                    |
-| App browser/bridge tests             | Dedicated image families; servers and test data still follow fresh fixture lifetimes                                            | [BUILD](../../../agentplane/app/BUILD.bazel), [image-reuse evidence](../../../agentplane/app/debug/thread_browser_ci/2026_11_01_thread_browser_image_reuse.md) |
-| Shared Python/Go PostgreSQL fixtures | Digest-checked image loading, session migration templates and fresh database clones; containers stop when their action finishes | [Python](../../../util/testing/postgres_fixtures.py), [Go](../../../agentplane/testing/postgres/postgres.go)                                                   |
-| Self-hosted `kvm-vm` tests           | Docker action isolation inside a VM; recycling explicitly disabled                                                              | [Properties](../../../agentplane/system_tests/k3s/defs.bzl)                                                                                                    |
+| Layer                                | Current behavior                                                                                                                | Owner                                                                                                                       |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Outer Remote Bazel runner            | Hosted Firecracker, recycling enabled, `snapshot-read-policy=newest`, save policy unset                                         | [`.bbrc`](../../../.bbrc)                                                                                                   |
+| Ordinary RBE actions                 | Firecracker, recycling enabled, Docker started; no blanket remote-snapshot opt-in                                               | [RBE platform](../../../BUILD.bazel)                                                                                        |
+| Agentplane K3s tests                 | Infrastructure-derived family, explicit remote-snapshot permission and retention permission; fresh workloads                    | [Macro](../../../agentplane/system_tests/k3s/defs.bzl), [baseline helper](../../../agentplane/system_tests/k3s/baseline.py) |
+| App browser/bridge tests             | Dedicated image families; servers and test data still follow fresh fixture lifetimes                                            | [BUILD](../../../agentplane/app/BUILD.bazel)                                                                                |
+| Shared Python/Go PostgreSQL fixtures | Digest-checked image loading, session migration templates and fresh database clones; containers stop when their action finishes | [Python](../../../testing/postgres_fixtures.py), [Go](../../../agentplane/testing/postgres/postgres.go)                     |
+| Self-hosted `kvm-vm` tests           | Docker action isolation inside a VM; recycling explicitly disabled                                                              | [Properties](../../../agentplane/system_tests/k3s/defs.bzl)                                                                 |
+
+The browser suites share one family key; a further consumer must load all four
+infrastructure images in every possible first action. Mean Bazel elapsed on
+2026-11-02, two warm keyed runs versus two default controls:
+`test_thread_browser` 152 → 88 s, `test_thread_window_browser` 151 → 104 s. Not
+a soak (warm runs reused shard placements), fleet percentiles or whole-CI
+savings (earlier full-system samples ended on VM tests minutes after browser
+tests); hit rates across normal CI heads, host turnover, time gaps and image
+changes need measuring before any fleet expectation.
+
+A `test.allow-remote-snapshots` trial restored a seed on other hosts for 12 of
+the 16 shards of its first full run; 4 had another VM configuration hash and ran
+cold. Speed against local reuse is unproven; the simpler local key stayed, and
+sharing remains a measured alternative.
 
 BuildBuddy asked us to remove forced snapshot saves after excessive snapshot
 generation. [#14120](https://github.com/agentydragon/ducktape/pull/14120) removed

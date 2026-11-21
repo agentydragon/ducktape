@@ -62,15 +62,12 @@ def opening(bill_dollars: int) -> World:
 def test_opening_investment_reserves_claims_and_does_not_rescue_shortfalls(
     opening: World, bought_units: int, paid: int, ending_cash: int
 ) -> None:
-    session = ActionSession({0: opening}, HOUSEHOLD)
-    try:
+    with ActionSession({0: opening}, HOUSEHOLD) as session:
         batch = session.start()
         assert not isinstance(batch, Finished)
         finished = session.advance(decide(batch))
         assert isinstance(finished, Finished)
         [result] = finished.rollouts
-    finally:
-        session.close()
     financial = result.trace
     assert financial is not None
     assert [receipt.action.kind for receipt in financial.receipts] == (

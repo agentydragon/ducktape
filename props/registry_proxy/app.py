@@ -7,21 +7,15 @@ include frontend, orchestration, SSO, LLM proxy, or specimen-sync startup work.
 from __future__ import annotations
 
 import logging
-import os
 from collections.abc import AsyncIterator
-from contextlib import AsyncExitStack, asynccontextmanager
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from fastapi.responses import PlainTextResponse
 
+from props.data_plane import add_probe_routes, admin_database
 from props.db.async_database import AsyncDatabase
-from props.db.config import DatabaseConfig
 from props.registry_proxy import routes
-from util.logging import LogLevel, configure_logging
 
-configure_logging(
-    log_output=os.environ.get("PROPS_LOG_OUTPUT", "stderr"), log_level=os.environ.get("PROPS_LOG_LEVEL", LogLevel.INFO)
-)
 logger = logging.getLogger(__name__)
 
 
@@ -35,25 +29,12 @@ def create_app(*, db: AsyncDatabase | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        async with AsyncExitStack() as stack:
-            if db is None:
-                admin_db = await stack.enter_async_context(AsyncDatabase(DatabaseConfig()))
-                await admin_db.verify()
-            else:
-                admin_db = db
+        async with admin_database(db) as admin_db:
             app.state.admin_db = admin_db
             logger.info("Registry proxy ready")
             yield
 
     app = FastAPI(title="props-registry-proxy", lifespan=lifespan)
     app.include_router(routes.router)
-
-    @app.get("/health", response_class=PlainTextResponse)
-    async def health() -> str:
-        return "ok"
-
-    @app.get("/readyz", response_class=PlainTextResponse)
-    async def readyz() -> str:
-        return "ok"
-
+    add_probe_routes(app)
     return app

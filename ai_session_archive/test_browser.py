@@ -1,13 +1,11 @@
 """Browser-level read of real, owner-authenticated archived transcript data."""
 
-# gazelle:include_dep //util/testing/frontend_visual:fixtures
+# gazelle:include_dep //testing/frontend_visual:fixtures
 
 from __future__ import annotations
 
-import base64
 import hashlib
 import json
-import time
 from collections.abc import AsyncIterator, Iterator, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -17,7 +15,6 @@ from uuid import UUID, uuid4
 import httpx
 import pytest
 import pytest_bazel
-from itsdangerous import TimestampSigner
 from playwright.async_api import Playwright, expect
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
@@ -37,13 +34,14 @@ from ai_session_archive.database import (
 from ai_session_archive.web import create_app
 from ai_session_archive.web_main import _frontend_dir
 from ai_session_archive.web_settings import WebSettings
+from ai_session_archive.web_testing import fake_web_settings, owner_session_cookie
 from devinfra.testing.output_writer import BoundTestOutputs
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
-from util.testing.asgi import serve_app
-from util.testing.frontend_visual.capture import VisualPage
-from util.testing.frontend_visual.context import deterministic_browser_context, disable_animations_script
+from testing.asgi import serve_app
+from testing.frontend_visual.capture import VisualPage
+from testing.frontend_visual.context import deterministic_browser_context, disable_animations_script
 
-pytest_plugins = ("util.testing.frontend_visual.fixtures",)
+pytest_plugins = ("testing.frontend_visual.fixtures",)
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 _PARSER_VERSION = "jsonl-v1"
@@ -70,15 +68,7 @@ def archive(tmp_path: Path) -> Iterator[Archive]:
 
 @pytest.fixture
 def archive_settings() -> WebSettings:
-    return WebSettings(
-        database_url="sqlite://",
-        public_base_url="http://127.0.0.1",
-        oidc_issuer="https://identity.example.invalid",
-        oidc_client_id="archive-test",
-        oidc_client_secret="archive-test-client-secret",
-        oidc_session_secret="archive-test-session-secret",
-        oidc_allowed_subject="archive-test-owner",
-    )
+    return fake_web_settings(public_base_url="http://127.0.0.1")
 
 
 @pytest.fixture
@@ -101,7 +91,7 @@ async def test_authenticated_browser_reads_archived_transcript(
         response = await unauthenticated.get(f"{archive_origin}/api/machines")
     assert response.status_code == 401
 
-    session_cookie = _owner_session_cookie(archive_settings)
+    session_cookie = owner_session_cookie(archive_settings)
     async with deterministic_browser_context(
         playwright_driver, viewport={"width": 1440, "height": 1000}, frozen_now_ms=1_767_264_000_000
     ) as context:
@@ -552,19 +542,6 @@ def _add_archive_version(
 def _jsonl_record(parsed: dict[str, object], timestamp: datetime) -> tuple[bytes, object, datetime, str, None]:
     raw = json.dumps(parsed, separators=(",", ":")).encode("utf-8") + b"\n"
     return raw, parsed, timestamp, str(parsed["type"]), None
-
-
-def _owner_session_cookie(settings: WebSettings) -> str:
-    session = {
-        "user": {
-            "issuer": settings.oidc_issuer,
-            "subject": settings.oidc_allowed_subject,
-            "username": "archive-test-owner",
-            "expires_at": time.time() + 600,
-        }
-    }
-    payload = base64.b64encode(json.dumps(session).encode("utf-8"))
-    return TimestampSigner(settings.oidc_session_secret.get_secret_value()).sign(payload).decode("utf-8")
 
 
 if __name__ == "__main__":

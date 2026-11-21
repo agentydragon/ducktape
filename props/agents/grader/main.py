@@ -12,7 +12,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
@@ -66,7 +65,6 @@ from props.db.models import (
     IssueCluster,
     IssueClusterMember,
     ReportedIssue,
-    ReportedIssueOccurrence,
     TruePositive,
     TruePositiveOccurrenceORM,
 )
@@ -90,9 +88,6 @@ TEXT_OUTPUT_REMINDER = (
     "or fill_remaining, and its .clustering field lists issues needing create_cluster or add_to_cluster. "
     "Call sleep when all grading and clustering is complete."
 )
-
-# Default workspace path
-_WORKSPACE = Path("/workspace")
 
 
 class GraderAbortError(Exception):
@@ -149,17 +144,11 @@ def _create_grader_tools(grader_run_id: UUID, snapshot_slug: SnapshotSlug, state
             if not issue:
                 raise ValueError(f"Issue not found: {args.run}/{args.issue_id}")
 
-            occs = (
-                session.query(ReportedIssueOccurrence)
-                .filter_by(agent_run_id=args.run, reported_issue_id=args.issue_id)
-                .all()
-            )
-
             return IssueDetails(
                 issue_id=issue.issue_id,
                 critique_run_id=issue.agent_run_id,
                 rationale=issue.rationale,
-                occurrences=[OccurrenceInfo(locations=list(occ.locations or [])) for occ in occs],
+                occurrences=[OccurrenceInfo(locations=list(occ.locations)) for occ in issue.occurrences],
             )
 
     def show_tp(args: ShowTPArgs) -> GTDetails:
@@ -314,8 +303,6 @@ def _create_grader_tools(grader_run_id: UUID, snapshot_slug: SnapshotSlug, state
             logger.debug("Spurious wake — no pending work, going back to sleep")
         return "Woke up — new work arrived."
 
-    # --- Clustering tools ---
-
     def list_clusters(args: ListClustersArgs) -> list[ClusterSummary]:
         """List all clusters for this snapshot."""
         with db.session() as session:
@@ -424,7 +411,7 @@ def _create_grader_tools(grader_run_id: UUID, snapshot_slug: SnapshotSlug, state
         return f"Deleted cluster '{args.cluster_id}'"
 
     return [
-        make_exec_tool(_WORKSPACE),
+        make_exec_tool(WORKSPACE),
         *direct_tools(
             get_drift,
             show_issue,
@@ -523,9 +510,7 @@ async def main() -> int:
     fetch_snapshot_to_path(snapshot_slug, WORKSPACE, db)
 
     logger.info("Rendering system prompt")
-    system_prompt = render_system_prompt(
-        "props/agents/grader/prompt.md.mako", db, helpers={"snapshot_slug": snapshot_slug}
-    )
+    system_prompt = render_system_prompt("props/agents/grader/prompt.md.mako", helpers={"snapshot_slug": snapshot_slug})
 
     logger.info("Starting grader loop")
     try:

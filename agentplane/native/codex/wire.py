@@ -1,4 +1,4 @@
-"""Codex 0.162.1 app-server JSON-RPC frames (serde `camelCase`).
+"""Codex app-server JSON-RPC frames (serde `camelCase`).
 
 Inbound frames are what the app-server writes to stdout: responses to our requests, requests of its
 own that block a turn until answered, and notifications. Only the notifications and items a consumer
@@ -318,7 +318,7 @@ def parse_frame(frame: dict[str, Any]) -> CodexFrame:
     raise ValueError(f"not a JSON-RPC frame: {sorted(frame)}")
 
 
-# Requests a driver sends, and the one reply it gives to a server request.
+# Requests a driver sends.
 
 
 class ClientInfo(Wire):
@@ -436,13 +436,7 @@ class TurnInterruptRequest(Wire):
     params: TurnInterruptParams
 
 
-class ErrorResponse(Wire):
-    id: RequestId
-    error: RpcError
-
-
-# Outbound frames that carry an id and so get a `Response`; the notification and the error answer
-# to a server request do not.
+# Outbound frames that carry an id and so get a `Response`; the `initialized` notification does not.
 Request = (
     InitializeRequest
     | ThreadStartRequest

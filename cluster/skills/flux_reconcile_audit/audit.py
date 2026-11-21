@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import logging
 import math
 import re
 from collections import defaultdict
@@ -24,6 +25,8 @@ from kubernetes_asyncio import client, config
 
 from cluster.validation.flux import FluxKustomizationStatus, FluxReconcileHistoryEntry
 from cluster.validation.k8s import K8sMetadata
+
+logger = logging.getLogger(__name__)
 
 MIMIR_URL = "http://localhost:8080/prometheus/api/v1"
 LOKI_URL = "http://localhost:3100/loki/api/v1"
@@ -62,7 +65,6 @@ DEFAULT_PROBE_KINDS: list[tuple[str, str, str, str]] = [
     ("kubevirt.io", "v1", "virtualmachines", "VirtualMachine"),
     ("seaweed.seaweedfs.com", "v1", "buckets", "Bucket"),
     ("infra.contrib.fluxcd.io", "v1alpha2", "terraforms", "Terraform"),
-    ("openclaw.rocks", "v1alpha1", "openclawinstances", "OpenclawInstance"),
     ("cilium.io", "v2", "ciliumenvoyconfigs", "CiliumEnvoyConfig"),
 ]
 
@@ -82,7 +84,6 @@ class Resource:
     kind: str  # "Kustomization" | "HelmRelease"
     namespace: str
     name: str
-    api_version: str
     suspended: bool
     status: FluxKustomizationStatus
     bucket: str = "?"
@@ -96,7 +97,8 @@ async def mimir_p99_by_name(http: httpx.AsyncClient, window: str) -> dict[tuple[
     try:
         r = await http.get(f"{MIMIR_URL}/query", params={"query": promql}, timeout=60.0)
         result = r.json()["data"]["result"]
-    except Exception:
+    except httpx.HTTPError, KeyError, ValueError:
+        logger.warning("Mimir query failed; p99 reconcile durations are missing from this report", exc_info=True)
         return {}
     out: dict[tuple[str, str], float] = {}
     for series in result:
@@ -126,7 +128,8 @@ async def loki_count_by_name(
     try:
         r = await http.get(f"{LOKI_URL}/query", params={"query": promql}, timeout=90.0)
         result = r.json()["data"]["result"]
-    except Exception:
+    except httpx.HTTPError, KeyError, ValueError:
+        logger.warning("Loki query failed; its reconcile counts are missing from this report", exc_info=True)
         return {}
     out: dict[str, int] = {}
     for series in result:
@@ -143,16 +146,16 @@ async def loki_count_by_name(
 async def collect_universe(custom: client.CustomObjectsApi) -> list[Resource]:
     out: list[Resource] = []
     flux_kinds = [
-        ("Kustomization", "kustomize.toolkit.fluxcd.io/v1", "kustomize.toolkit.fluxcd.io", "v1", "kustomizations"),
-        ("HelmRelease", "helm.toolkit.fluxcd.io/v2", "helm.toolkit.fluxcd.io", "v2", "helmreleases"),
+        ("Kustomization", "kustomize.toolkit.fluxcd.io", "v1", "kustomizations"),
+        ("HelmRelease", "helm.toolkit.fluxcd.io", "v2", "helmreleases"),
     ]
     responses = await asyncio.gather(
         *(
             custom.list_cluster_custom_object(group=group, version=version, plural=plural)
-            for _, _, group, version, plural in flux_kinds
+            for _, group, version, plural in flux_kinds
         )
     )
-    for (kind, api_version, _, _, _), resp in zip(flux_kinds, responses, strict=True):
+    for (kind, _, _, _), resp in zip(flux_kinds, responses, strict=True):
         for it in resp.get("items", []):
             md = K8sMetadata.model_validate(it.get("metadata", {}))
             spec = it.get("spec", {}) or {}
@@ -162,7 +165,6 @@ async def collect_universe(custom: client.CustomObjectsApi) -> list[Resource]:
                     kind=kind,
                     namespace=md.namespace,
                     name=md.name,
-                    api_version=api_version,
                     suspended=bool(spec.get("suspend", False)),
                     status=status,
                 )
@@ -178,7 +180,10 @@ async def fetch_probe_kinds(
             return (await custom.list_cluster_custom_object(group=spec[0], version=spec[1], plural=spec[2])).get(
                 "items", []
             ) or []
-        except Exception:
+        except client.ApiException, OSError:
+            logger.warning(
+                "Listing %s.%s failed; its objects are missing from the probes", spec[2], spec[0], exc_info=True
+            )
             return []
 
     results = await asyncio.gather(*(_fetch(s) for s in probe_kinds))
@@ -520,6 +525,7 @@ async def async_main(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.WARNING)
     ap = argparse.ArgumentParser()
     ap.add_argument("--window", default="7d")
     ap.add_argument("--name", default=None)

@@ -6,7 +6,7 @@ Persistent graders that continuously reconcile grading state with ground truth.
 
 Snapshot graders follow the **Kubernetes controller pattern** — a reconciliation loop that drives actual state toward desired state:
 
-```
+```text
 Desired State: grading_pending is empty (all critique/GT pairs have edges)
 Actual State:  grading_pending shows missing edges
 Action:        Grade missing pairs until no drift remains
@@ -33,14 +33,15 @@ No explicit versioning needed. The `grading_edges` table IS the checkpoint — g
 
 ## Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                   GraderSupervisor (host)                   │
 ├─────────────────────────────────────────────────────────────┤
-│  Manages one container per snapshot:                        │
-│  - spawn_existing(): start graders for all snapshots        │
-│  - pg_notify listener: spawn on snapshot_created            │
-│  - pg_notify listener: restart all on grader_definition_changed │
+│  Manages one container per snapshot with reconcile(),       │
+│  triggered by:                                              │
+│  - startup and a periodic backstop                          │
+│  - pg_notify listener: snapshot_created                     │
+│  - pg_notify listener: grader_definition_changed            │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -77,31 +78,23 @@ The grader's `sleep` tool checks this before sleeping:
 
 ## Notifications
 
-PostgreSQL `pg_notify` triggers fire on GT changes:
+PostgreSQL `pg_notify` triggers fire on the `grading_pending` channel for:
 
 - `INSERT/DELETE` on `true_positives`, `true_positive_occurrences`
 - `INSERT/DELETE` on `false_positives`, `false_positive_occurrences`
-
-No trigger needed for critique completion — `grading_pending` shows missing edges as soon as critic writes issues.
+- `INSERT` on `reported_issues`, `reported_issue_occurrences` (critique changes)
 
 ## Context Management
 
 When a grader's context grows large:
 
 1. Agent continues operating (sleep tool maintains context across wake cycles)
-2. If context limit approached, transcript compaction can summarize old results
+2. On context-length overflow, the agent loop restarts from scratch; edges already written are excluded from `grading_pending`
 3. On fatal error, `GraderSupervisor` can restart with fresh context
 
 ## Configuration
 
-One grader per snapshot. Config stored in `agent_runs.type_config`:
-
-```python
-@dataclass
-class SnapshotGraderTypeConfig:
-    agent_type: Literal["snapshot_grader"] = "snapshot_grader"
-    snapshot_slug: str
-```
+One grader per snapshot. Config stored in `agent_runs.type_config` as `GraderTypeConfig` (`core/agent_types.py`): `agent_type` (`grader`) and `snapshot_slug`.
 
 ## Token Economics
 
@@ -112,10 +105,10 @@ class SnapshotGraderTypeConfig:
 
 ## Key Files
 
-| File                                    | Purpose                                    |
-| --------------------------------------- | ------------------------------------------ |
-| `agents/grader/main.py`                 | Container entry point, agent loop, tools   |
-| `agents/grader/drift_handler.py`        | Check `grading_pending` for work           |
-| `agents/grader/notification_handler.py` | Inject pg_notify messages into agent       |
-| `orchestration/grader_supervisor.py`    | `GraderSupervisor` — container lifecycle   |
-| `backend/app.py`                        | Lifespan auto-start via `GraderSupervisor` |
+| File                                       | Purpose                                    |
+| ------------------------------------------ | ------------------------------------------ |
+| `agents/grader/main.py`                    | Container entry point, agent loop, tools   |
+| `agents/grader/drift_handler.py`           | Check `grading_pending` for work           |
+| `agents/grader/notification_middleware.py` | Inject pg_notify messages into agent       |
+| `orchestration/grader_supervisor.py`       | `GraderSupervisor` — container lifecycle   |
+| `backend/app.py`                           | Lifespan auto-start via `GraderSupervisor` |

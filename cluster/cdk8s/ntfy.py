@@ -10,10 +10,8 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import (
-    Capability,
     ContainerResources,
     ContainerSecurityContextProps,
-    ContainerSecutiryContextCapabilities,
     Cpu,
     CpuResources,
     Deployment,
@@ -39,7 +37,7 @@ from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.external_secrets.kubernetes_store import ESO_SERVICE_ACCOUNT, cluster_secret_store
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.namespaces import Vpa, VpaProfile
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.secret_ref import SecretRef
@@ -59,6 +57,10 @@ DATABASE = cluster.PostgresRef.generated(name="ntfy-db", namespace=NAMESPACE)
 _AUTH_SOURCE_SECRET = "ntfy-credentials"
 _AUTH = SecretRef(namespace=NAMESPACE, name="ntfy-auth")
 SECRET_STORE = "kubernetes-ntfy-secret-store"
+# The ExternalSecrets that derive from the SOPS credentials refresh only OnChange, so changing
+# this value is what re-renders them on a deliberate credential rotation
+# (cluster/k8s/ntfy/README.md). Annotate every such ExternalSecret with it.
+AUTH_GENERATION_ANNOTATION = {"ntfy.ducktape.io/auth-generation": "1"}
 
 
 def _secret_store(scope: Construct) -> None:
@@ -89,7 +91,7 @@ def _auth_external_secret(scope: Construct) -> None:
                 # Sprig bcrypt uses a fresh salt on every render. Keep this ExternalSecret
                 # OnChange and bump the generation on deliberate credential rotation instead
                 # of regenerating hashes on every ESO refresh.
-                "ntfy.ducktape.io/auth-generation": "1",
+                **AUTH_GENERATION_ANNOTATION,
             },
         ),
         refresh_policy=ExternalSecretSpecRefreshPolicy.ON_CHANGE,
@@ -128,7 +130,7 @@ def _alertmanager_webhook_secret(scope: Construct) -> None:
             namespace="monitoring",
             annotations={
                 "description": "Alertmanager bearer credential for the self-hosted ntfy instance",
-                "ntfy.ducktape.io/auth-generation": "1",
+                **AUTH_GENERATION_ANNOTATION,
             },
         ),
         refresh_policy=ExternalSecretSpecRefreshPolicy.ON_CHANGE,
@@ -164,7 +166,13 @@ class Ntfy(Construct):
     def __init__(self, scope: Construct, id: str) -> None:
         super().__init__(scope, id)
         namespaces.namespace(
-            self, "namespace", name=NAMESPACE, vpa=Vpa.RECOMMEND, labels={"app.kubernetes.io/name": NAMESPACE}
+            self,
+            "namespace",
+            name=NAMESPACE,
+            # TODO: Revisit automatic VPA updates once ntfy supports multiple replicas:
+            # https://github.com/agentydragon/ducktape/issues/17987
+            vpa=VpaProfile.requests_only(Vpa.INITIAL),
+            labels={"app.kubernetes.io/name": NAMESPACE},
         )
         _secret_store(self)
         _database(self)
@@ -224,12 +232,7 @@ class Ntfy(Construct):
             ),
             readiness=http_probe("/v1/health", port=SERVICE.pod_port, initial_delay_seconds=10, failure_threshold=12),
             liveness=http_probe("/v1/health", port=SERVICE.pod_port, initial_delay_seconds=20, period_seconds=20),
-            security_context=ContainerSecurityContextProps(
-                capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
-                user=65532,
-                group=65532,
-                read_only_root_filesystem=True,
-            ),
+            security_context=ContainerSecurityContextProps(user=65532, group=65532, read_only_root_filesystem=True),
         )
         pod_policy.harden(deployment)
         return deployment

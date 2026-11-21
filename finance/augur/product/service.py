@@ -10,7 +10,7 @@ import functools
 import threading
 from collections.abc import Collection, Iterator
 from decimal import Decimal
-from typing import Any, overload
+from typing import Any
 
 import numpy as np
 
@@ -32,9 +32,7 @@ from finance.augur.product.metrics import (
     ProductMetricFanSummary,
     ProductProjectionSummaries,
     ProductTerminalSummary,
-    metric_fan,
     projection_summaries,
-    terminal_summary,
 )
 from finance.augur.product.projection import project_product_rollout
 from finance.augur.product.scenarios import PRIMARY_ACCOUNT_ID, Situation, asset_labels, build_situation, compose, paths
@@ -45,7 +43,6 @@ from finance.augur.product.wire import (
     MetricName,
     ProductProjectionRequest,
     ProductProjectionResponse,
-    ProjectionSamplingRequest,
     RolloutOutput,
     RolloutRequest,
     RolloutResponse,
@@ -99,7 +96,7 @@ class ProductService:
         )
         self._asset_labels = asset_labels(portfolio)
         # Keep one product projection in flight per API process. A dense rollout batch is
-        # memory-heavy enough that overlapping fan + terminal requests can exceed the pod limit.
+        # memory-heavy enough that overlapping projection requests can exceed the pod limit.
         self._projection_lock = threading.Lock()
         # A projection request fully determines its result — the samplers are pure in the
         # request's seeds and horizon, and nothing a simulation reads off this service changes
@@ -111,28 +108,6 @@ class ProductService:
             self._simulate_projection_summary
         )
         self._cached_rollout = functools.lru_cache(maxsize=result_cache_entries)(self._simulate_rollout)
-
-    def metric_fan(self, request: ProjectionSamplingRequest) -> MetricFanResponse:
-        if request.rollout_count > self._max_rollout_samples:
-            raise ValueError(f"rollout count {request.rollout_count} exceeds max {self._max_rollout_samples}")
-        percentiles = tuple(float(pct) for pct in request.percentiles)
-        with self._projection_lock:
-            summary = self._simulate_product_summary(
-                request.scenario, request.rollout_seeds, metric=request.metric, percentiles=percentiles
-            )
-            return _metric_fan_response(summary, metric=request.metric)
-
-    def terminal_distribution(self, request: ProjectionSamplingRequest) -> TerminalDistributionResponse:
-        if request.rollout_count > self._max_rollout_samples:
-            raise ValueError(f"rollout count {request.rollout_count} exceeds max {self._max_rollout_samples}")
-        percentiles = tuple(float(pct) for pct in request.percentiles)
-        with self._projection_lock:
-            summary = self._simulate_product_summary(
-                request.scenario, request.rollout_seeds, metric=request.metric, percentiles=None
-            )
-            return _terminal_distribution_response(
-                summary, metric=request.metric, percentiles=percentiles, seeds=request.rollout_seeds
-            )
 
     def projection_summary(self, request: ProductProjectionRequest) -> ProductProjectionResponse:
         """Return the fan and terminal distribution from one shared simulation."""
@@ -243,35 +218,10 @@ class ProductService:
         )
         return situation, worlds
 
-    @overload
-    def _simulate_product_summary(
-        self, scenario_key: ScenarioKey, seeds: tuple[int, ...], *, metric: str, percentiles: tuple[float, ...]
-    ) -> ProductMetricFanSummary: ...
-
-    @overload
-    def _simulate_product_summary(
-        self, scenario_key: ScenarioKey, seeds: tuple[int, ...], *, metric: str, percentiles: None
-    ) -> ProductTerminalSummary: ...
-
-    def _simulate_product_summary(
-        self, scenario_key: ScenarioKey, seeds: tuple[int, ...], *, metric: str, percentiles: tuple[float, ...] | None
-    ) -> ProductMetricFanSummary | ProductTerminalSummary:
-        """Reduces the metric arrays alone; selected-rollout detail (`project_product_rollout`) is never built."""
-        situation, worlds = self._worlds(scenario_key, seeds)
-        metric_name = _quanta_metric(metric)
-        arrays = simulate_product_metrics(
-            worlds,
-            horizon_months=situation.horizon_months,
-            currency=situation.currency,
-            primary_agent_id=self._primary_agent_id,
-        )
-        if percentiles is None:
-            return terminal_summary(arrays, metric=metric_name)
-        return metric_fan(arrays, metric=metric_name, percentiles=percentiles)
-
     def _simulate_product_summaries(
         self, scenario_key: ScenarioKey, seeds: tuple[int, ...], *, metric: str, percentiles: tuple[float, ...]
     ) -> ProductProjectionSummaries:
+        """Reduces the metric arrays alone; selected-rollout detail (`project_product_rollout`) is never built."""
         situation, worlds = self._worlds(scenario_key, seeds)
         return projection_summaries(
             simulate_product_metrics(

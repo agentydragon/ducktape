@@ -1,7 +1,7 @@
 # Runner control
 
-The runner serves native gRPC on one private listener: `Runner`, `Executor` and standard gRPC
-health. The Environments proxy derives its address from the current workload's Pod IP and the runner port;
+The runner serves native gRPC on one private listener: `EnvironmentRuntime`, `HarnessHost`,
+`Executor` and standard gRPC health. The Environments proxy derives its address from the current workload's Pod IP and the runner port;
 KubeVirt forwards that port into the guest. Environments proxy and Controller binding-observer peers reach it with separate method authority. History Event
 ingress remains a separate outbound platform route.
 
@@ -12,12 +12,12 @@ requires a `tls` block with absolute `cert_file`, `key_file` and `ca_file` paths
 verifies the client certificates this side serves; `ca_file` keeps verifying its own chain and the
 servers it dials. Firecracker Runtime selects the Workload API; the proxy uses
 projected files. Source forms cannot be mixed. `insecure` rejects a TLS block. Missing/unknown modes and partial or contradictory configuration fail startup.
-The service definitions are `env/runtime/control/environment_runtime.proto` and `env/runtime/execution/executor.proto`;
-`proto/environment_runtime_state.proto` defines the facts published by `Runner.WatchState`.
+The service definitions are `env/runtime/control/environment_runtime.proto`, `harness_host/harness_host.proto` and `env/runtime/execution/executor.proto`;
+`proto/environment_runtime_state.proto` defines the facts published by `EnvironmentRuntime.WatchState`.
 
 ## State observation and fencing
 
-The Controller serves EnvironmentService on every replica at `sandbox-controller:8082`, using its
+The Controller serves EnvironmentService on every replica at `environments:8082`, using its
 existing service SVID. This inventory/desired-state listener has no Runtime command client and does
 not change the leader-only observation below. The optional Runtime proxy on the same listener
 separately owns callable Runtime connections on every replica. Its readiness depends on
@@ -140,22 +140,6 @@ The certificate authenticates the Sandbox workload, not every process within it.
 the runner's private key can act as that workload. No runner certificate authenticates as the
 Runtime proxy, and certificates do not replace command authorization or journal deduplication.
 
-### Receiver retirement and rollback
-
-All Runtime proxy callers target Environments before the Gateway receiver is removed. Gateway
-receiver retirement keeps its old settings decodable and leaves deployed certificates, mounts and
-network permissions until an image without Runtime calls is pinned and running. Manifest cleanup
-then removes those unused resources and fields; strict code decoders remove the fields only after
-that configuration has rolled. The Dispatcher keeps its workload/policy inventory, wake permissions
-and independent delivery Leases.
-
-Rollback first restores a Gateway image with the receiver, its Runtime client certificate, method
-grants and network permissions. Confirm the listener and Runtime observations are healthy before
-restoring caller targets and exact server pins together. Roll callers after Flux applies their
-settings, then check readiness, auth/TLS errors, diagnostics, native admission, Executor and idle
-quiesce/suspend. Keep retained Sandbox state, journals, identities and History. Never retry an
-uncertain command under a fresh command ID.
-
 ## Heartbeat and liveness
 
 `WatchState` publishes a snapshot on a fact change and every 10 seconds while idle. The Controller and Environments proxy end their separate observations after 30 seconds without a
@@ -219,15 +203,14 @@ Pod. Callers without Sandbox certificates require a separate authentication desi
 
 ## Environments receiver
 
-Deployment enables `environment_service.runtime_proxy` to register the same Runtime proxy and
-Executor wire services on `sandbox-controller:8082`. Every replica owns its routing cache and
+The `environment_service.runtime_proxy` setting enables the Runtime proxy and Executor services on
+`environments:8082`. Every replica owns its routing cache and
 callable Runtime watches independently of leadership, while the Controller's incarnation-binding
 facts watch stays leader-only. This receiver presents the dedicated `runtime-proxy` SVID to Runtime;
 callers verify the existing Sandbox Controller server SVID and receive only their exact per-method
 service grants. It admits no bearer, workload Identity or delegated proxy calls, and requires no
-proxy audience. Sandbox/Pod/boot fences and uncertain outcomes remain unchanged. Caller targets
-now select Environments for diagnostics, inventory, native delivery, lifecycle and Executor.
-Dispatcher API callers retain their separate `session-dispatcher:8080` endpoint and server pin.
+proxy audience. Environments handles diagnostics, inventory, native delivery, lifecycle and Executor.
+Dispatcher calls go to `sessions:8080`.
 Enable receiver configuration only after its accepting image is pinned and running. See the
 [receiver contract](../environments/SPEC.md#optional-runtime-proxy-and-executor-receiver).
 

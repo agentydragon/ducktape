@@ -65,11 +65,6 @@ async def push_bazel_image(
     return digest
 
 
-# ---------------------------------------------------------------------------
-# Docker auth
-# ---------------------------------------------------------------------------
-
-
 def docker_auth_config(registry: str, username: str, password: str) -> dict[str, object]:
     """Build a Docker auth config dict for a single registry."""
     auth = base64.b64encode(f"{username}:{password}".encode()).decode()
@@ -86,21 +81,11 @@ def write_docker_auth(registry: str, username: str, password: str, *, overwrite:
     config_path.write_text(json.dumps(docker_auth_config(registry, username, password)))
 
 
-# ---------------------------------------------------------------------------
-# OCI layout
-# ---------------------------------------------------------------------------
-
-
 def read_oci_layout_digest(image_dir: Path) -> str:
     """Read the image manifest digest from an OCI layout's index.json."""
     index = json.loads((image_dir / "index.json").read_text())
     digest: str = index["manifests"][0]["digest"]
     return digest
-
-
-# ---------------------------------------------------------------------------
-# Image loading via crane
-# ---------------------------------------------------------------------------
 
 
 def _lock_path(tag: str) -> Path:
@@ -114,7 +99,7 @@ def _one_loader_at_a_time(tag: str) -> Iterator[None]:
     Concurrent test processes can load the same image into one Docker daemon. The per-tag lock
     serializes those imports; the post-lock check skips work already done by another process.
     The timeout report describes a plausible herd, but does not prove that the affected CI actions
-    shared a daemon (<../devinfra/buildbuddy/debug/2026_08_14_docker_test_timeouts.md>).
+    shared a daemon (<../buildbuddy/debug/2026_08_14_docker_test_timeouts.md>).
 
     `flock` is released when the fd closes, so a loader that dies mid-push does not strand others.
     """

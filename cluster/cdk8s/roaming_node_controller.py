@@ -12,10 +12,12 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 
 from cluster.cdk8s import namespaces, node_scheduling, pod_policy
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
+from cluster.cdk8s.vpa_policy import ContainerPolicy
 
 NAME = "roaming-node-controller"
 OUTPUT_DIR = f"{GENERATED_ROOT}/roaming-node-controller"
@@ -82,7 +84,12 @@ def _deployment(chart: Chart) -> None:
                     "Taints a roaming node node.kubernetes.io/out-of-service while its kubelet Lease is"
                     " stale, so DaemonSets and pod GC treat the absent laptop as gone; untaints on the"
                     " first renewal."
-                )
+                ),
+                **namespaces.initial_request_annotations(
+                    ContainerPolicy.memory_requests_only(
+                        "controller", cpu_request="10m", memory_floor="64Mi", memory_limit="80Mi"
+                    )
+                ),
             },
         ),
         spec=k8s.DeploymentSpec(
@@ -111,13 +118,7 @@ def _deployment(chart: Chart) -> None:
                                 read_only_root_filesystem=True,
                                 capabilities=k8s.Capabilities(drop=["ALL"]),
                             ),
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("10m"),
-                                    "memory": k8s.Quantity.from_string("32Mi"),
-                                },
-                                limits={"memory": k8s.Quantity.from_string("128Mi")},
-                            ),
+                            resources=container_resources(cpu="10m", memory="32Mi", memory_limit="128Mi"),
                             readiness_probe=_health_probe(initial_delay_seconds=3),
                             liveness_probe=_health_probe(initial_delay_seconds=10),
                         )
@@ -132,7 +133,7 @@ def _deployment(chart: Chart) -> None:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    namespaces.namespace(chart, "namespace", name=NAME, vpa=Vpa.DISABLED)
+    namespaces.namespace(chart, "namespace", name=NAME, vpa=Vpa.RECOMMEND)
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAME)
     _rbac(chart)
     _deployment(chart)

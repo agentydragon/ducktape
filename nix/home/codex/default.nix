@@ -61,20 +61,25 @@ let
   # localModelSettings (opt-in via ducktape.codex.localModels);
   # the writable-roots sandbox block is appended only under workspace-write.
   baseSettings = {
-    model = "gpt-6-astra";
+    model = "gpt-6.1-terra";
     # To exceed a model's default, set `model_context_window = <tokens>;` here;
     # Codex clamps it to that model's catalogued maximum (Astra: 872000).
-    model_reasoning_effort = "medium";
+    model_reasoning_effort = "xhigh";
     plan_mode_reasoning_effort = "medium";
+    # 2026-11-20: Trial disabling animations to see how the UX feels: less
+    # feedback that things are happening, but hopefully less lag in tmux.
+    tui.animations = false;
+    # TODO: Consider tui.notifications, tui.status_line, tui.presets,
+    # features.current_time_reminder, and features.context_management.
 
     features = {
-      streamable_shell = true;
-      rmcp_client = true;
       unified_exec = true;
-      view_image_tool = true;
       shell_tool = true; # enable `/shell`
       apply_patch_freeform = true; # freeform patch syntax
       memories = true; # experimental memory read/write pipeline
+      async_compaction = true;
+      wake_on_agent_messages = true;
+      send_message_to_user_async = true;
       # shell_snapshot ?  (keep off unless you want offline TUI snapshots)
     };
     # Persist command history to disk.
@@ -230,14 +235,13 @@ let
   managedRulesFileAbsolute = "${rulesDirectoryAbsolute}/managed.rules";
   defaultRulesFileAbsolute = "${rulesDirectoryAbsolute}/default.rules";
   rulesReadmeRelative = "${codexHomeRelative}/rules/README.md";
-  skillPrefix = if useXdgDirectories then "${xdgConfigHomeRelative}/codex" else ".codex";
 
   pythonMerge = pkgs.python314.withPackages (ps: [ ps."tomli-w" ]);
   managedRulesSource = pkgs.writeText "codex-managed.rules" execPolicyRules.text;
   mkSkills = import ../skills.nix sharedSkillsArgs;
   # Codex currently skips symlinked SKILL.md files, so deploy each skill as a directory symlink.
   skillFiles = mkSkills {
-    prefix = skillPrefix;
+    prefix = codexHomeRelative;
     mode = "directory-symlink";
   };
 

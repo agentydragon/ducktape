@@ -1,19 +1,34 @@
-"""Ducktape's policy for the Namespace kind: the labels Goldilocks and `kyverno/policies.py` read."""
+"""Ducktape's Namespace labels and Goldilocks resource-policy defaults."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from enum import StrEnum
+from typing import Self
 
 from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import Namespace, k8s
 from constructs import Construct
 
 from cluster.cdk8s.namespace_access import NAMESPACE_DIAGNOSTICS, AgentReadable
+from cluster.cdk8s.vpa_policy import (
+    REQUESTS_ONLY,
+    VPA_RESOURCE_POLICY_ANNOTATION,
+    ContainerPolicy,
+    ControlledValues,
+    resource_policy_annotation,
+)
 
 _GOLDILOCKS_ENABLED_LABEL = "goldilocks.fairwinds.com/enabled"
 VPA_UPDATE_MODE_LABEL = "goldilocks.fairwinds.com/vpa-update-mode"
-VPA_RESOURCE_POLICY_ANNOTATION = "goldilocks.fairwinds.com/vpa-resource-policy"
+_VPA_MIN_REPLICAS_ANNOTATION = "goldilocks.fairwinds.com/vpa-min-replicas"
+# The `privileged` Pod Security level in all three modes; each call site says why it needs it.
+PRIVILEGED_POD_SECURITY: Mapping[str, str] = {
+    "pod-security.kubernetes.io/enforce": "privileged",
+    "pod-security.kubernetes.io/audit": "privileged",
+    "pod-security.kubernetes.io/warn": "privileged",
+}
 
 
 class Vpa(StrEnum):
@@ -27,7 +42,38 @@ class Vpa(StrEnum):
     AUTO = "auto"
 
 
+@dataclass(frozen=True)
+class VpaProfile:
+    """Explicit namespace policy, with the optional updater minimum shared by all of its VPAs."""
+
+    mode: Vpa
+    container_policies: tuple[ContainerPolicy, ...] = ()
+    min_replicas: int | None = None
+
+    @classmethod
+    def requests_only(cls, mode: Vpa, *, min_replicas: int | None = None) -> Self:
+        return cls(mode, (REQUESTS_ONLY,), min_replicas=min_replicas)
+
+    def annotations(self) -> dict[str, str]:
+        annotations = {}
+        if self.container_policies:
+            annotations[VPA_RESOURCE_POLICY_ANNOTATION] = resource_policy_annotation(*self.container_policies)
+        if self.min_replicas is not None:
+            annotations[_VPA_MIN_REPLICAS_ANNOTATION] = str(self.min_replicas)
+        return annotations
+
+
 _POLICY_LABELS = {_GOLDILOCKS_ENABLED_LABEL, VPA_UPDATE_MODE_LABEL, *AgentReadable}
+
+
+def initial_request_annotations(*container_policies: ContainerPolicy) -> dict[str, str]:
+    """Opt a workload into admission-time sizing for the listed containers."""
+    return {
+        VPA_UPDATE_MODE_LABEL: Vpa.INITIAL,
+        VPA_RESOURCE_POLICY_ANNOTATION: resource_policy_annotation(
+            *container_policies, ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off")
+        ),
+    }
 
 
 def _labels(name: str, vpa: Vpa, labels: Mapping[str, str] | None) -> dict[str, str]:
@@ -42,28 +88,56 @@ def _labels(name: str, vpa: Vpa, labels: Mapping[str, str] | None) -> dict[str, 
     return {**extra, **policy}
 
 
+def _vpa_annotations(
+    name: str, vpa: Vpa | VpaProfile, annotations: Mapping[str, str] | None
+) -> tuple[Vpa, dict[str, str] | None]:
+    metadata_annotations = None if annotations is None else dict(annotations)
+    if isinstance(vpa, VpaProfile):
+        vpa_annotations = vpa.annotations()
+        metadata_annotations = metadata_annotations or {}
+        if overlap := metadata_annotations.keys() & vpa_annotations.keys():
+            raise ValueError(f"{name=}: {sorted(overlap)} are set by the VPA profile")
+        metadata_annotations.update(vpa_annotations)
+        vpa = vpa.mode
+    if vpa is Vpa.AUTO:
+        # Proportional CPU limits caused the 2026-08-09 LiteLLM crashloop; see cluster/k8s/TODO.md.
+        metadata_annotations = metadata_annotations or {}
+        metadata_annotations.setdefault(VPA_RESOURCE_POLICY_ANNOTATION, resource_policy_annotation(REQUESTS_ONLY))
+    return vpa, metadata_annotations
+
+
 def namespace(
     scope: Construct,
     id: str,
     *,
     name: str,
-    vpa: Vpa,
+    vpa: Vpa | VpaProfile,
     labels: Mapping[str, str] | None = None,
     annotations: Mapping[str, str] | None = None,
 ) -> Namespace:
     """A Namespace labeled for `vpa` and the shared diagnostics policy."""
+    vpa, metadata_annotations = _vpa_annotations(name, vpa, annotations)
     return Namespace(
         scope,
         id,
-        metadata=ApiObjectMetadata(
-            name=name, labels=_labels(name, vpa, labels), annotations=None if annotations is None else dict(annotations)
-        ),
+        metadata=ApiObjectMetadata(name=name, labels=_labels(name, vpa, labels), annotations=metadata_annotations),
     )
 
 
 def namespace_patch(
-    scope: Construct, id: str, *, name: str, vpa: Vpa, labels: Mapping[str, str] | None = None
+    scope: Construct,
+    id: str,
+    *,
+    name: str,
+    vpa: Vpa | VpaProfile,
+    labels: Mapping[str, str] | None = None,
+    annotations: Mapping[str, str] | None = None,
 ) -> k8s.KubeNamespace:
     """A strategic-merge patch labeling an upstream release's Namespace `name` as `namespace`
     would. Tier 2, since `Namespace` renders `spec: {}`, which the patch would add to the object."""
-    return k8s.KubeNamespace(scope, id, metadata=k8s.ObjectMeta(name=name, labels=_labels(name, vpa, labels)))
+    vpa, metadata_annotations = _vpa_annotations(name, vpa, annotations)
+    return k8s.KubeNamespace(
+        scope,
+        id,
+        metadata=k8s.ObjectMeta(name=name, labels=_labels(name, vpa, labels), annotations=metadata_annotations),
+    )

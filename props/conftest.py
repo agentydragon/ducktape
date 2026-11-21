@@ -6,7 +6,7 @@ from collections.abc import Generator
 import pytest
 from opentelemetry import trace
 
-from util.testing.otel_tracing import configure_tracing
+from testing.otel_tracing import configure_tracing
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -20,8 +20,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 @pytest.hookimpl(tryfirst=True)
 def pytest_configure(config: pytest.Config) -> None:
-    """Configure pytest-asyncio auto mode and register custom markers."""
-    config.option.asyncio_mode = "auto"
+    """Configure tracing and the agent password salt."""
     configure_tracing(config)
 
     # Agent DB passwords derive from PROPS_AGENT_PASSWORD_SALT, which is required
@@ -30,8 +29,6 @@ def pytest_configure(config: pytest.Config) -> None:
     # value and trip the fail-closed path).
     if not os.environ.get("PROPS_AGENT_PASSWORD_SALT"):
         os.environ["PROPS_AGENT_PASSWORD_SALT"] = "test-agent-password-salt"
-
-    config.addinivalue_line("markers", "live_openai_api: marks tests calling real OpenAI API")
 
 
 @pytest.hookimpl(hookwrapper=True)

@@ -34,33 +34,21 @@ py_library(
     name = "service_monitor",
     srcs = ["service_monitor.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
-    deps = [
-        ":servicemonitor",
-        "@pypi//cdk8s",
-        "@pypi//constructs",
-    ],
+    deps = [":servicemonitor"],
 )
 
 py_library(
     name = "pod_monitor",
     srcs = ["pod_monitor.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
-    deps = [
-        ":podmonitor",
-        "@pypi//cdk8s",
-        "@pypi//constructs",
-    ],
+    deps = [":podmonitor"],
 )
 
 py_library(
     name = "prometheus_rule",
     srcs = ["prometheus_rule.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
-    deps = [
-        ":prometheusrule",
-        "@pypi//cdk8s",
-        "@pypi//constructs",
-    ],
+    deps = [":prometheusrule"],
 )
 
 py_test(

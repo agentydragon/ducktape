@@ -67,7 +67,5 @@ after maintenance. See [Flux suspension and resource reconciliation](https://flu
 
 ## Other migration lifecycles
 
-MCP edge's cross-database Connection/OAuth transfer is a separate ownership handoff with explicit
-source/destination writer fencing. It is not ordinary schema initialization. Runner's per-path
-SQLite journal applies its SQLite Goose migrations when opened, before journal recovery; it
-does not use PostgreSQL advisory locks or a migration container.
+Runner's per-path SQLite journal applies its SQLite Goose migrations when opened, before journal
+recovery; it does not use PostgreSQL advisory locks or a migration container.

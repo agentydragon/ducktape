@@ -32,9 +32,9 @@ from finance.plaid.spend.reconciliation import ReportStatus
 from finance.plaid.spend.sustainability import SustainabilityDashboard, SustainabilityHistoryPoint
 from finance.plaid.spend.testing import dashboard, ledger
 from finance.plaid.spend.ui.testing import sustainability, transactions
-from util.testing.asgi import serve_app_sync
-from util.testing.frontend_visual.capture import VisualPage, open_visual_page
-from util.testing.frontend_visual.context import deterministic_browser_context
+from testing.asgi import serve_app_sync
+from testing.frontend_visual.capture import VisualPage, open_visual_page
+from testing.frontend_visual.context import deterministic_browser_context
 
 # pytest_plugins loads util.playwright by name; Gazelle cannot see the dependency.
 # gazelle:include_dep //util:playwright
@@ -440,13 +440,26 @@ async def test_history_controls_and_category_highlighting(page: Page, view: Visu
     await expect(graph.get_by_label("30-day moving average")).to_be_checked()
     category = graph.get_by_role("button", name="Unclassified", exact=False).first
     await category.hover()
-    await expect(graph.locator("canvas")).to_have_attribute("data-highlighted-category", "unclassified")
+    await expect(graph.locator("canvas")).to_have_attribute("data-highlighted-categories", "unclassified")
     await category.click()
     await expect(category).to_have_attribute("aria-pressed", "true")
     await graph.get_by_text("How this chart works").hover()
-    await expect(graph.locator("canvas")).to_have_attribute("data-highlighted-category", "unclassified")
+    await expect(graph.locator("canvas")).to_have_attribute("data-highlighted-categories", "unclassified")
+    other = graph.get_by_role("button", name="Holiday travel", exact=False)
+    await other.click()
+    await expect(other).to_have_attribute("aria-pressed", "true")
+    await expect(category).to_have_attribute("aria-pressed", "true")
+    await graph.get_by_text("How this chart works").hover()
+    await expect(graph.locator("canvas")).to_have_attribute("data-highlighted-categories", "travel,unclassified")
+    await view.capture(
+        "spending-history-multiple-categories", label="Multiple highlighted categories", animations="disabled"
+    )
     await category.click()
     await expect(category).to_have_attribute("aria-pressed", "false")
+    await expect(other).to_have_attribute("aria-pressed", "true")
+    await other.click()
+    await graph.get_by_text("How this chart works").hover()
+    await expect(graph.locator("canvas")).to_have_attribute("data-highlighted-categories", "")
 
 
 @pytest.mark.asyncio

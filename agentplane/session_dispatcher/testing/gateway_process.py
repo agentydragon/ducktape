@@ -6,8 +6,8 @@ import asyncio
 import os
 import subprocess
 import tempfile
-from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
-from contextlib import AsyncExitStack, ExitStack, asynccontextmanager, suppress
+from collections.abc import AsyncIterator, Callable, Sequence
+from contextlib import AbstractAsyncContextManager, ExitStack, asynccontextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
@@ -21,7 +21,7 @@ from agentplane.identity.auth import listener as workload_listener
 from agentplane.net.peertls import config as runtime_transport
 from agentplane.session_dispatcher.client import SandboxControlClient
 from agentplane.session_dispatcher.settings import Settings
-from agentplane.testing.go_process import GoProcess, go_process
+from agentplane.testing.go_process import GoProcess, RestartGoProcess, WhileStopped, go_process, restartable_go_process
 from agentplane.testing.tls import CertificateAuthority, issue_workload_leaf, make_ca, write_ca
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.db_url import render_postgresql_url
@@ -62,26 +62,20 @@ class GatewayProcess:
 
     process: asyncio.subprocess.Process
     target: str
-    log_path: Path
     environment_service: EnvironmentServiceProcess
-    dispatcher_audience: str
-    gateway_audience: str
     service_certificates: dict[str, tuple[Path, Path]]
-    _restart: Callable[[Callable[[], Awaitable[None]] | None], Awaitable[GoProcess]]
+    _restart: RestartGoProcess
     _close_listener: Callable[[], None]
 
     @property
     def client_tls(self) -> runtime_transport.ClientTLS:
-        return self.service_tls(runtime_transport.APP_URI)
-
-    def service_tls(self, service: str) -> runtime_transport.ClientTLS:
-        cert_file, key_file = self.service_certificates[service]
+        cert_file, key_file = self.service_certificates[runtime_transport.APP_URI]
         return runtime_transport.ClientTLS(
             ca_file=self.environment_service.ca_file,
             server_uri=_SESSION_DISPATCHER_URI,
             cert_file=cert_file,
             key_file=key_file,
-            client_uri=service,
+            client_uri=runtime_transport.APP_URI,
         )
 
     def service_credentials(self, service: str) -> grpc.ChannelCredentials:
@@ -105,7 +99,6 @@ class GatewayProcess:
         """Call Runtime through this explicitly separate Environments listener."""
         return SandboxControlClient(
             control_target=self.environment_service.target,
-            token_file=None,
             request_timeout_s=request_timeout_s,
             channel_credentials=self.environment_service.channel_credentials(service),
         )
@@ -123,11 +116,10 @@ class GatewayProcess:
                 self.process.kill()
             await self.process.wait()
 
-    async def restart(self, *, while_stopped: Callable[[], Awaitable[None]] | None = None) -> None:
+    async def restart(self, *, while_stopped: WhileStopped | None = None) -> None:
         """Replace the process while retaining its listener, database and deployment settings."""
         started = await self._restart(while_stopped)
         self.process = started.process
-        self.log_path = started.stderr
 
 
 @asynccontextmanager
@@ -138,8 +130,6 @@ async def run_gateway(
     namespace: str,
     runtime_proxy_controller_callers: Sequence[str] = (),
     runtime_proxy_executor_callers: Sequence[str] = (),
-    dispatcher_audience: str,
-    gateway_audience: str,
     environment_runtime_ca: CertificateAuthority | None = None,
 ) -> AsyncIterator[GatewayProcess]:
     """Run the Dispatcher and an independent production Environments Runtime proxy peer."""
@@ -178,12 +168,7 @@ async def run_gateway(
                     auth=[workload_listener.SPIFFEAuth(ca_file=environment_runtime_ca_file)],
                 )
                 service_certificates = {}
-                for service in (
-                    runtime_transport.APP_URI,
-                    runtime_transport.GATEWAY_SESSIONS_URI,
-                    runtime_transport.SANDBOX_CONTROLLER_URI,
-                    runtime_transport.CENTRAL_SAMPLER_URI,
-                ):
+                for service in (runtime_transport.APP_URI, runtime_transport.CENTRAL_SAMPLER_URI):
                     directory = settings_directory / service.rsplit("/", 1)[-1]
                     directory.mkdir()
                     service_certificates[service] = issue_workload_leaf(environment_runtime_ca, service, directory)
@@ -200,17 +185,13 @@ async def run_gateway(
                 settings_path = settings_directory / "settings.yaml"
                 settings_path.write_text(yaml.safe_dump(settings, sort_keys=False))
                 environment = {
-                    **{
-                        key: value
-                        for key, value in os.environ.items()
-                        if not key.startswith("AGENTPLANE_RUNNER_GATEWAY_")
-                    },
+                    **os.environ,
                     "AGENTPLANE_SESSIONS_CONFIG_FILE": str(settings_path),
                     "AGENTPLANE_SESSIONS_DISPATCHER_DATABASE_URL": _wire_database_url(database_url),
                 }
                 credentials = grpc.ssl_channel_credentials(root_certificates=environment_runtime_ca_file.read_bytes())
 
-                def process_context(generation: int):
+                def process_context(generation: int) -> AbstractAsyncContextManager[GoProcess]:
                     generation_log = log_path.with_name(f"{log_path.stem}-{generation}{log_path.suffix}")
                     return go_process(
                         binary,
@@ -222,25 +203,11 @@ async def run_gateway(
                         health_credentials=credentials,
                     )
 
-                generation = 0
-                async with AsyncExitStack() as process_stack:
-                    started = await process_stack.enter_async_context(process_context(generation))
-
-                    async def restart_process(while_stopped: Callable[[], Awaitable[None]] | None) -> GoProcess:
-                        nonlocal generation
-                        await process_stack.aclose()
-                        if while_stopped is not None:
-                            await while_stopped()
-                        generation += 1
-                        return await process_stack.enter_async_context(process_context(generation))
-
+                async with restartable_go_process(process_context) as (started, restart_process):
                     gateway = GatewayProcess(
                         process=started.process,
                         target=f"localhost:{rpc_listener.port}",
-                        log_path=started.stderr,
                         environment_service=environment_service,
-                        dispatcher_audience=dispatcher_audience,
-                        gateway_audience=gateway_audience,
                         service_certificates=service_certificates,
                         _restart=restart_process,
                         _close_listener=rpc_listener.socket.close,

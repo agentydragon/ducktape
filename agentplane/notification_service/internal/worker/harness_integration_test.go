@@ -34,7 +34,6 @@ import (
 )
 
 const (
-	testNamespace  = "test-namespace"
 	testSandbox    = "test-sandbox"
 	testSandboxUID = "test-sandbox-uid"
 	testSession    = "test-session"
@@ -43,8 +42,8 @@ const (
 // testOwner owns the inboxes: the Dispatcher records this exact Identity for each Session.
 var testOwner = model.Identity{Name: "test-identity", UID: "test-identity-uid"}
 
-// testIncarnation keeps legacy Sandbox sender metadata for store tests.
-var testIncarnation = inboxstore.Owner{Identity: testOwner, SandboxUID: testSandboxUID}
+// testIncarnation is testOwner as the store's inbox owner.
+var testIncarnation = inboxstore.Owner{Identity: testOwner}
 
 func ptr[T any](v T) *T { return &v }
 
@@ -154,7 +153,6 @@ func dispatched(state dispatcherpb.DeliveryState, reason *string) *dispatcherpb.
 type fakeProvider struct {
 	mu         sync.Mutex
 	handle     func(ctx context.Context, claim inboxstore.Claim, due inboxstore.DueSubscription) error
-	calls      []inboxstore.DueSubscription
 	reconciled chan inboxstore.DueSubscription
 }
 
@@ -164,7 +162,6 @@ func newFakeProvider() *fakeProvider {
 
 func (p *fakeProvider) Process(ctx context.Context, claim inboxstore.Claim, due inboxstore.DueSubscription) error {
 	p.mu.Lock()
-	p.calls = append(p.calls, due)
 	handle := p.handle
 	p.mu.Unlock()
 	select {
@@ -187,12 +184,6 @@ func (p *fakeProvider) returns(err error) {
 	p.on(func(context.Context, inboxstore.Claim, inboxstore.DueSubscription) error { return err })
 }
 
-func (p *fakeProvider) callCount() int {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return len(p.calls)
-}
-
 // harness is a Worker over real PostgreSQL, with fakes for what it calls out to.
 type harness struct {
 	db           *sql.DB
@@ -210,11 +201,6 @@ type harness struct {
 func newHarness(t *testing.T, settings Settings) *harness {
 	t.Helper()
 	return newHarnessWithDatabaseURL(t, database.URL, settings)
-}
-
-func newIsolatedHarness(t *testing.T, settings Settings) *harness {
-	t.Helper()
-	return newHarnessWithDatabaseURL(t, database.Clone(t), settings)
 }
 
 func newHarnessWithDatabaseURL(t *testing.T, databaseURL string, settings Settings) *harness {
@@ -266,7 +252,7 @@ func (h *harness) step(t *testing.T) {
 
 func (h *harness) subscribeTo(t *testing.T, key string, request uuid.UUID) inboxstore.Subscription {
 	t.Helper()
-	subscription, err := h.store.Subscribe(t.Context(), inboxstore.Owner{Identity: testOwner, SandboxUID: testSandboxUID}, sourceadapter.Subscribe{
+	subscription, err := h.store.Subscribe(t.Context(), testIncarnation, sourceadapter.Subscribe{
 		SessionID: testSession, IdempotencyKey: key,
 		Source: sourceadapter.WrapActionsSource(model.ActionsSource{RequestID: request}), LifetimeDays: 7,
 	}, sourceadapter.ActionsAuthorization{})
@@ -380,7 +366,6 @@ func (h *harness) makeDue(t *testing.T, inboxID uuid.UUID) {
 
 type inboxRow struct {
 	retired       bool
-	staleCheckAt  *time.Time
 	nextAttempt   *time.Time
 	deliveryError *string
 	acknowledged  int64
@@ -390,15 +375,12 @@ type inboxRow struct {
 func (h *harness) row(t *testing.T, inboxID uuid.UUID) inboxRow {
 	t.Helper()
 	var row inboxRow
-	var stale, next sql.NullTime
+	var next sql.NullTime
 	var deliveryError sql.NullString
 	if err := h.db.QueryRowContext(t.Context(), `
-		SELECT retired, stale_check_at, next_attempt, delivery_error, acknowledged, last_cursor FROM inbox WHERE id = $1`,
-		inboxID).Scan(&row.retired, &stale, &next, &deliveryError, &row.acknowledged, &row.lastCursor); err != nil {
+		SELECT retired, next_attempt, delivery_error, acknowledged, last_cursor FROM inbox WHERE id = $1`,
+		inboxID).Scan(&row.retired, &next, &deliveryError, &row.acknowledged, &row.lastCursor); err != nil {
 		t.Fatal(err)
-	}
-	if stale.Valid {
-		row.staleCheckAt = &stale.Time
 	}
 	if next.Valid {
 		row.nextAttempt = &next.Time

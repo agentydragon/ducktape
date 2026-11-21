@@ -21,7 +21,7 @@ that passed with `bazel --batch` and workspace-rule logging enabled.
 
 ## Why the earlier runner tag bump did not cover publication
 
-The [previous profiler incident](2026_10_29_pr12822_profiler_clock.md) changed
+The [earlier profiler crashes](#workaround) led to changing
 `.github/workflows/bazel-ci.yml` from `ducktape-bazel-ci-v3` to
 `ducktape-bazel-ci-v4`. That workflow explicitly requests 8 compute units and
 that recycling key. Publication calls `.github/actions/bb-remote` with its
@@ -156,3 +156,14 @@ per-vCPU TSC state.
 
 The focused `//devinfra/buildbuddy:test_bbr` check passed through the new wrapper:
 [invocation](https://app.buildbuddy.io/invocation/bc492f6d-dba9-4c88-b486-29556cba5c0d).
+
+Earlier restored-VM hits: Bazel's profiler crashed with `NegativeArraySizeException`
+in `TimeSeries.toDoubleArray` before test execution in
+[run 40787876182](https://github.com/agentydragon/ducktape/actions/runs/40787876182)
+(2026-10-28; after an `Invalid duration` warning, client exit 37) and in both
+attempts of [run 40811672455](https://github.com/agentydragon/ducktape/actions/runs/40811672455).
+[Firecracker PR 6200](https://github.com/firecracker-microvm/firecracker/pull/6200)
+(merged 2026-09-28) fixes restored vCPUs receiving different TSC offsets. The
+executor log reported Firecracker v1.16.2, whose restore code lacks it. Before
+removing the wrapper, ask BuildBuddy whether the hosted binary includes that PR or
+a backport.

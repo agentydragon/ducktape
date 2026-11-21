@@ -8,6 +8,14 @@ workload trust chain on every hop. A service URI is separate from a workload `Wo
 and never resolves to an agent `Identity`. Callers read certificate and trust-bundle files;
 authenticating a service peer requires no Kubernetes API call.
 
+**Why (operator, 2026-11-10):** to keep Agentplane identity from being hard-baked to the Kubernetes
+API server. An identity that only a ServiceAccount and TokenReview can carry ties every caller to a
+cluster-hosted Pod; one the Agentplane issuer owns can also act for a central Session with no
+Sandbox, or later an enrolled external machine. The central-Session decoupling did not strictly
+require the cutover, but building it on ServiceAccounts would add a contract the cutover has to undo.
+
+A Kubernetes ServiceAccount TokenReview is not a second identity source for agents.
+
 ## Sandbox SVID route
 
 Each Sandbox's Runtime certificate is its `WorkloadCredential`'s, with URI SAN
@@ -152,8 +160,8 @@ including one inherited through a tunnel:
    name, as a standing record from git does, since git cannot know a UID. Each verifier receives its
    policy namespace explicitly: the egress proxy and Action Service
    ([caller admission](../action_service/SPEC.md#caller-admission-and-connection-authority)) pass
-   their own, and LLM ingress, History, Notification and the Runner Gateway receive theirs from
-   `policy_namespace`, which staging sets for each. A legacy record without an Identity is retained
+   their own, and LLM ingress, History, Sessions and Environments receive theirs from
+   `policy_namespace` (Notification from `namespace`), which staging sets for each. A legacy record without an Identity is retained
    but refused; it is not resolved through a ServiceAccount of the same name.
 
 An API server error fails closed. Headers, metadata and request bodies never select the subject.
@@ -162,7 +170,7 @@ Services see every workload SVID as an `IdentityPrincipal` naming the Identity a
 namespace, name and its controller owner, or `NoController` for an ownerless record), so a service
 can pin state to a proven owner where the operation requires one. `AnySubject` with an
 `SVIDResolver` admits an Identity as an `IdentityAdmission`; handlers read `auth.Admitted`.
-`auth.Caller`, `AdmittedReviewedCaller` and `EffectiveCaller` do not convert that admission into a
+`auth.Caller` and `EffectiveCaller` do not convert that admission into a
 ServiceAccount proof. The Action Service's Gate calls `SVIDResolver.ResolveSubject` itself. A
 standing workload's Identity subject, like a bound one whose owner has not named its Pod yet, has
 no Pod: an operation that needs Pod proof refuses it. The egress proxy refuses a bound record with
@@ -218,8 +226,8 @@ alone, so a `cluster-internal-ca` leaf naming an Agentplane URI authenticates in
 
 - Listeners verifying client SVIDs: a leaf naming a live Sandbox's URI does not authenticate, so the
   live record lookup is not the only check. A runner's control listener refuses one naming the
-  Runner Gateway ([runner control](runner_control.md#authentication-and-incarnation-binding)).
-- Clients verifying server SVIDs: the Gateway dialing runners (`runner_security`), the egress sidecar
+  Runtime proxy ([runner control](runner_control.md#authentication-and-incarnation-binding)).
+- Clients verifying server SVIDs: the Environments proxy dialing runners (`runner_security`), the egress sidecar
   and launcher relay dialing the proxy and services, and backend clients and probes through
   `cluster/cdk8s/agentplane/workload_tls.py`. A leaf at a runner's or service's address naming its URI
   is refused.

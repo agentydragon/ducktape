@@ -58,7 +58,7 @@ def chart(app: App) -> Chart:
     # ESO rather than the reflector annotations on the source Secret: the source is
     # SOPS-encrypted to the cluster key only, and an agent without that key cannot
     # re-MAC an annotation edit — a scoped store is the distribution path that agents
-    # can author (cluster/AGENTS.md § Annotating a SOPS-encrypted Secret).
+    # can author (cluster/AGENTS.md § Secrets).
     #
     # activitywatch holds two Secrets: the read token (mirrored here) and the write
     # token (never mirrored anywhere — a namespace on this list can pull either, so
@@ -98,8 +98,7 @@ def chart(app: App) -> Chart:
     # Before adding a namespace, check what it actually needs. A namespace that only wants
     # the forgejo-images-creds pull secret belongs on the scoped
     # kubernetes-forgejo-images-secret-store instead — that grants one dockerconfigjson,
-    # where an entry here grants every Secret in flux-system. osm-mcp was on this
-    # list for exactly that reason and has moved.
+    # where an entry here grants every Secret in flux-system.
     _store(
         chart,
         "kubernetes-flux-system-secret-store",
@@ -113,11 +112,9 @@ def chart(app: App) -> Chart:
         remote_namespace="flux-system",
     )
     # Every namespace that pulls a private git.allegedly.works/ducktape-ci/* image reads
-    # the source Secret through here via its own ExternalSecret (named
-    # forgejo-images-creds-eso.yaml, next to that namespace's other manifests) — this
-    # replaced the old emberstack-reflector fan-out on
-    # cluster/k8s/forgejo-images/registry-creds.sops.yaml, which required SOPS-decrypting a
-    # shared ciphertext file to add a namespace. Keep this list to genuine consumers.
+    # the source Secret through here via its own ExternalSecret
+    # (`pull_credentials.forgejo_images_creds_external_secret`). Keep this list to genuine
+    # consumers.
     _store(
         chart,
         "kubernetes-forgejo-images-secret-store",

@@ -1,5 +1,6 @@
 load("//agentplane/app/frontend:vitest.bzl", "agentplane_vitest_test")
 load("//devinfra/js:ts_library.bzl", "ts_library")
+load("//devinfra/js:vitest.bzl", "check_vitest_specs")
 
 package(default_visibility = ["//agentplane/app:__subpackages__"])
 
@@ -29,17 +30,21 @@ ts_library(
         ":entry",
         ":github",
         ":gmail",
+        ":google_calendar",
         ":grocy",
+        ":home_assistant",
+        ":home_assistant_secondary",
         ":kubernetes_admin",
+        ":orchestration",
         ":presentation",
         ":result_entry",
         ":sandbox",
+        ":session_delegation",
         ":ssh",
         ":tana",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/action_service/api/contracts:action_service_pb",
-        "//agentplane/app/frontend/actions:action_client",
         "//agentplane/app/frontend/actions:call_tool_result",
         "//agentplane/app/frontend/ui:text_block",
     ],
@@ -52,19 +57,29 @@ ts_library(
         "github/create_or_update_file.tsx",
         "github/create_pull_request.tsx",
         "github/delete_file.tsx",
+        "github/discovery.tsx",
+        "github/display.tsx",
         "github/index.ts",
+        "github/issues.tsx",
+        "github/metadata.tsx",
         "github/push_files.tsx",
+        "github/receipts.tsx",
+        "github/repository_reads.tsx",
+        "github/reviews.tsx",
         "github/search_pull_requests.tsx",
         "github/update_pull_request.tsx",
         "github/update_pull_request_branch.tsx",
+        "github/workflows.tsx",
     ],
     tsconfig = TSCONFIG,
     deps = [
         ":entry",
         ":presentation",
+        ":result_entry",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//:node_modules/zod",
         "//agentplane/app/frontend/actions:github_action_schemas",
         "//agentplane/app/frontend/ui:operation_section",
         "//agentplane/app/frontend/ui:text_block",
@@ -75,11 +90,213 @@ ts_library(
 )
 
 ts_library(
+    name = "home_assistant_secondary",
+    srcs = [
+        "home_assistant/history.tsx",
+        "home_assistant/operations.ts",
+        "home_assistant/organization.ts",
+        "home_assistant/secondary_common.tsx",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":entry",
+        ":presentation",
+        ":result_entry",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+        "//agentplane/app/frontend/ui:text_block",
+        "//util/frontend:disclosure",
+    ],
+)
+
+ts_library(
+    name = "integration_previews",
+    srcs = ["integration_previews.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tanstack/react-query",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend/actions:action_client",
+    ],
+)
+
+ts_library(
     name = "gmail",
     srcs = ["gmail.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":entry",
+        ":gmail_common",
+        ":gmail_filters",
+        ":gmail_labels",
+        ":gmail_mail",
+        ":integration_previews",
+        ":presentation",
+        ":result_entry",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+        "//agentplane/app/frontend/actions:integration_preview_schemas",
+        "//agentplane/app/frontend/ui:text_block",
+    ],
+)
+
+ts_library(
+    name = "home_assistant",
+    srcs = ["home_assistant.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":entry",
+        ":presentation",
+        ":result_entry",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+        "//agentplane/app/frontend/ui:text_block",
+        "//util/frontend:disclosure",
+    ],
+)
+
+ts_library(
+    name = "gmail_common",
+    srcs = ["gmail/common.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tanstack/react-query",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+        "//agentplane/action_service/api/contracts:operator_action_service_pb",
+        "//agentplane/app/frontend/actions:action_client",
+        "//agentplane/app/frontend/ui:brand_icons",
+    ],
+)
+
+ts_library(
+    name = "gmail_filters",
+    srcs = ["gmail/filters.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":entry",
+        ":gmail_common",
+        ":presentation",
+        ":result_entry",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+    ],
+)
+
+ts_library(
+    name = "gmail_labels",
+    srcs = ["gmail/labels.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":entry",
+        ":gmail_common",
+        ":presentation",
+        ":result_entry",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+    ],
+)
+
+ts_library(
+    name = "gmail_mail",
+    srcs = ["gmail/mail.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":entry",
+        ":gmail_common",
+        ":integration_previews",
+        ":presentation",
+        ":result_entry",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/dompurify",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+        "//agentplane/app/frontend/ui:text_block",
+    ],
+)
+
+ts_library(
+    name = "google_calendar",
+    srcs = [
+        "google_calendar.tsx",
+        "google_calendar_time.ts",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":entry",
+        ":presentation",
+        ":result_entry",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tanstack/react-query",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/rrule",
+        "//:node_modules/zod",
+        "//agentplane/action_service/api/contracts:operator_action_service_pb",
+        "//agentplane/app/frontend/actions:action_client",
+        "//agentplane/app/frontend/ui:brand_icons",
+    ],
+)
+
+ts_library(
+    name = "grocy",
+    srcs = ["grocy.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":entry",
+        ":grocy_catalog",
+        ":grocy_entities",
+        ":grocy_shared",
+        ":grocy_shopping",
+        ":grocy_stock",
+        ":presentation",
+        ":result_entry",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+        "//agentplane/action_service/api/contracts:operator_action_service_pb",
+    ],
+)
+
+ts_library(
+    name = "grocy_catalog",
+    srcs = ["grocy_catalog.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":entry",
+        ":grocy_shared",
+        ":presentation",
+        ":result_entry",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+    ],
+)
+
+ts_library(
+    name = "grocy_entities",
+    srcs = ["grocy_entities.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":entry",
+        ":grocy_shared",
         ":presentation",
         ":result_entry",
         "//:node_modules/@mantine/core",
@@ -91,11 +308,46 @@ ts_library(
 )
 
 ts_library(
-    name = "grocy",
-    srcs = ["grocy.tsx"],
+    name = "grocy_shared",
+    srcs = ["grocy_shared.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":entry",
+        ":presentation",
+        ":result_entry",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tanstack/react-query",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+        "//agentplane/action_service/api/contracts:operator_action_service_pb",
+        "//agentplane/app/frontend/actions:action_client",
+    ],
+)
+
+ts_library(
+    name = "grocy_shopping",
+    srcs = ["grocy_shopping.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":entry",
+        ":grocy_shared",
+        ":presentation",
+        ":result_entry",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+    ],
+)
+
+ts_library(
+    name = "grocy_stock",
+    srcs = ["grocy_stock.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":entry",
+        ":grocy_shared",
         ":presentation",
         ":result_entry",
         "//:node_modules/@mantine/core",
@@ -108,8 +360,10 @@ ts_library(
 ts_library(
     name = "kubernetes_admin",
     srcs = [
+        "kubernetes_admin/additional.tsx",
         "kubernetes_admin/events_list.tsx",
         "kubernetes_admin/index.ts",
+        "kubernetes_admin/list_result.tsx",
         "kubernetes_admin/pods_exec.tsx",
         "kubernetes_admin/pods_get.tsx",
         "kubernetes_admin/pods_list_in_namespace.tsx",
@@ -120,6 +374,7 @@ ts_library(
         "kubernetes_admin/resources_delete.tsx",
         "kubernetes_admin/resources_get.tsx",
         "kubernetes_admin/resources_list.tsx",
+        "kubernetes_admin/text_result.tsx",
     ],
     tsconfig = TSCONFIG,
     deps = [
@@ -135,7 +390,22 @@ ts_library(
         "//agentplane/app/frontend/ui:argv_text",
         "//agentplane/app/frontend/ui:shell_command_view",
         "//agentplane/app/frontend/ui:text_block",
-        "//util/frontend:clamped_block",
+        "//util/frontend:disclosure",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "pods_exec_test",
+    srcs = ["kubernetes_admin/pods_exec.test.tsx"],
+    deps = [
+        ":index",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/vitest",
+        "//agentplane/action_service/api/contracts:action_service_pb",
+        "//agentplane/app/frontend/actions:call_tool_result",
+        "//agentplane/app/frontend/actions/testing:harness",
     ],
 )
 
@@ -165,7 +435,7 @@ ts_library(
     name = "ssh",
     srcs = [
         "ssh/exec.tsx",
-        "ssh/index.ts",
+        "ssh/index.tsx",
     ],
     tsconfig = TSCONFIG,
     deps = [
@@ -178,7 +448,6 @@ ts_library(
         "//:node_modules/zod",
         "//agentplane/app/frontend/actions:ssh_action_schemas",
         "//agentplane/app/frontend/ui:shell_command_view",
-        "//util/frontend:code_block",
     ],
 )
 
@@ -188,11 +457,18 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":entry",
+        ":integration_previews",
         ":presentation",
+        ":result_entry",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/zod",
+        "//agentplane/app/frontend/actions:integration_preview_schemas",
+        "//agentplane/app/frontend/actions:tana_action_titles",
+        "//agentplane/app/frontend/ui:text_block",
+        "//util/frontend:clamped_block",
+        "//util/frontend:markdown",
     ],
 )
 
@@ -203,9 +479,11 @@ agentplane_vitest_test(
         ":index",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@types/react",
+        "//:node_modules/react",
         "//:node_modules/vitest",
         "//agentplane/action_service/api/contracts:action_service_pb",
         "//agentplane/app/frontend/actions:call_tool_result",
+        "//agentplane/app/frontend/actions:notifications",
         "//agentplane/app/frontend/actions:presentation",
         "//agentplane/app/frontend/actions/testing:harness",
     ],
@@ -235,7 +513,6 @@ agentplane_vitest_test(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/vitest",
-        "//agentplane/app/frontend/actions:ssh_action_schemas",
         "//agentplane/app/frontend/actions/testing:harness",
         "//ssh_mcp_server:exec_payload_fixture_js",
     ],
@@ -252,9 +529,48 @@ ts_library(
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//:node_modules/yaml",
         "//:node_modules/zod",
         "//agentplane/app/frontend/actions:sandbox_action_schemas",
         "//agentplane/app/frontend/ui:shell_command_view",
+        "//agentplane/app/frontend/ui:text_block",
+        "//util/frontend:disclosure",
+    ],
+)
+
+ts_library(
+    name = "orchestration",
+    srcs = ["orchestration.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":entry",
+        ":presentation",
+        ":result_entry",
+        ":session_delegation",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+        "//agentplane/app/frontend/ui:shell_command_view",
+        "//agentplane/app/frontend/ui:text_block",
+    ],
+)
+
+ts_library(
+    name = "session_delegation",
+    srcs = ["session_delegation.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":entry",
+        ":presentation",
+        ":result_entry",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-router",
+        "//:node_modules/zod",
+        "//agentplane/app/frontend/ui:shell_command_view",
+        "//agentplane/app/frontend/ui:text_block",
     ],
 )
 
@@ -268,3 +584,17 @@ ts_library(
         "//:node_modules/zod",
     ],
 )
+
+agentplane_vitest_test(
+    name = "google_calendar_test",
+    srcs = ["google_calendar.test.tsx"],
+    deps = [
+        ":index",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/vitest",
+        "//agentplane/action_service/api/contracts:action_service_pb",
+        "//agentplane/app/frontend/actions/testing:harness",
+    ],
+)
+
+check_vitest_specs()

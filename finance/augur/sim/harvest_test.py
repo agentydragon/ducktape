@@ -13,19 +13,16 @@ from finance.augur.policy.funding import full_payments
 from finance.augur.sim.actions import Action, Liquidate, LotSale, Sell, Withdraw
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
-from finance.augur.sim.ids import AccountId, AgentId, AssetId, JurisdictionId, LotId, PortfolioId
+from finance.augur.sim.ids import CHECKING, AccountId, AgentId, AssetId, JurisdictionId, LotId, PortfolioId
 from finance.augur.sim.income import ORDINARY_INCOME
-from finance.augur.sim.jurisdictions import load_jurisdiction
 from finance.augur.sim.market_path import MarketPath, Series
-from finance.augur.sim.money import USD, position_value
+from finance.augur.sim.money import position_value
 from finance.augur.sim.observations import Observation
 from finance.augur.sim.results import Rollout
 from finance.augur.sim.session import ActionSession
-from finance.augur.sim.tax_authority import TaxAuthority
-from finance.augur.sim.tax_indexation import FixedNominalLaw
-from finance.augur.sim.tax_profile import FilingStatus, TaxProfile, compile_profile
 from finance.augur.sim.testing.series import level_series
 from finance.augur.sim.testing.session import each, finish
+from finance.augur.sim.testing.tax_authority import filer
 from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
 from finance.augur.sim.world import World
 
@@ -35,7 +32,6 @@ IRS = AgentId("irs")
 SP500 = SecurityKey(symbol=SP500_SYMBOL)
 GAINCO = SecurityKey(symbol=SecuritySymbol("gainco"))
 BROKERAGE = AccountId("brokerage")
-CHECKING = AccountId("checking")
 FEDERAL = JurisdictionId("federal_us")
 PARAMS = TlhAssumptions(
     peak_annual_yield=0.12,
@@ -120,7 +116,6 @@ def situation(
 
 
 def compose(case: Situation, rollout_id: int) -> World:
-    jurisdictions = {FEDERAL: load_jurisdiction(FEDERAL)}
     world = World(
         MarketPath(case.series, rollout_id, rollout_count=case.rollout_count),
         horizon_months=case.horizon_months,
@@ -128,21 +123,7 @@ def compose(case: Situation, rollout_id: int) -> World:
     )
     for agent_id, account_id in ((ALICE, BROKERAGE), (ALICE, CHECKING), (IRS, CHECKING)):
         world.declare_account(account=AccountRef(agent_id=agent_id, account_id=account_id), opening_balance=0)
-    world.track(
-        TaxAuthority(
-            compile_profile(
-                TaxProfile(
-                    agent_id=ALICE,
-                    filing_status=FilingStatus.SINGLE,
-                    jurisdiction_ids=[FEDERAL],
-                    tax_authority_agent_id=IRS,
-                ),
-                jurisdictions,
-                currency=USD,
-            ),
-            indexation=FixedNominalLaw(),
-        )
-    )
+    world.track(filer(ALICE, [FEDERAL], authority=IRS))
     lots = case.extra_lots if case.with_harvest else (case.sleeve, *case.extra_lots)
     for asset_id, quantity_scale in {lot.asset_id: lot.quantity_scale for lot in lots}.items():
         world.declare_pool(agent_id=ALICE, account_id=BROKERAGE, asset_id=asset_id, quantity_scale=quantity_scale)
@@ -390,9 +371,7 @@ def test_partial_sales_give_back_proportionally_and_never_exceed_harvest() -> No
     assert ytd_gain(rollout, month_index=horizon, classification="stcg") == pytest.approx(0.0, abs=1e-6)
 
 
-def test_harvest_off_reproduces_baseline_capital_gains_exactly() -> None:
-    # Regression: a scenario with no harvest policy must produce byte-identical capital-gain YTD to
-    # the same scenario run on the pre-harvest code path (here: no harvested losses ever appear).
+def test_harvest_off_with_no_sales_books_no_capital_gains() -> None:
     [rollout] = run(situation({SP500: [[1.0, 0.8, 0.9, 0.85, 0.95, 1.1, 1.2]]}, with_harvest=False))
     assert rollout.trace is not None
     # No sales, no harvest → no capital-gain rows at all.

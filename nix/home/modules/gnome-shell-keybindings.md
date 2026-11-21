@@ -23,6 +23,11 @@ adapted for horizontal workspaces.
 | `Super+Shift+Left/Right` | Move window to workspace             |
 | `Super+Shift+Up/Down`    | Move window to workspace (Pop Shell) |
 
+GNOME Shell 49 ignores a `{switch,move}-to-workspace-{left,right,up,down}` binding on
+the wrong axis (`_showWorkspaceSwitcher` in `js/ui/windowManager.js`): left/right do
+nothing on a vertical layout (for example from V-Shell), up/down nothing on the
+default horizontal one.
+
 ## Window Management
 
 | Shortcut       | Action             |

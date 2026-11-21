@@ -11,32 +11,35 @@ from volsync_replicationsource_crds.backube.volsync import (
 from cluster.cdk8s.providers.volsync.replication_source import ReplicationSource
 
 
-def test_rsync_tls_mover_sets_rsync_tls_field(scratch_chart: Chart) -> None:
+@pytest.mark.parametrize(
+    ("mover", "field", "other_field"),
+    [
+        (
+            ReplicationSourceSpecRsyncTls(copy_method=ReplicationSourceSpecRsyncTlsCopyMethod.DIRECT),
+            "rsyncTLS",
+            "restic",
+        ),
+        (ReplicationSourceSpecRestic(repository="my-repo"), "restic", "rsyncTLS"),
+    ],
+    ids=["rsync_tls", "restic"],
+)
+def test_mover_sets_only_its_own_field(
+    scratch_chart: Chart,
+    mover: ReplicationSourceSpecRsyncTls | ReplicationSourceSpecRestic,
+    field: str,
+    other_field: str,
+) -> None:
     ReplicationSource(
         scratch_chart,
         "test",
         metadata=ApiObjectMetadata(name="test-source"),
         source_pvc="data",
         trigger=ReplicationSourceSpecTrigger(schedule="* * * * *"),
-        mover=ReplicationSourceSpecRsyncTls(copy_method=ReplicationSourceSpecRsyncTlsCopyMethod.DIRECT),
+        mover=mover,
     )
     (manifest,) = Cdk8sTesting.synth(scratch_chart)
-    assert "rsyncTLS" in manifest["spec"]
-    assert "restic" not in manifest["spec"]
-
-
-def test_restic_mover_sets_restic_field(scratch_chart: Chart) -> None:
-    ReplicationSource(
-        scratch_chart,
-        "test",
-        metadata=ApiObjectMetadata(name="test-source"),
-        source_pvc="data",
-        trigger=ReplicationSourceSpecTrigger(schedule="* * * * *"),
-        mover=ReplicationSourceSpecRestic(repository="my-repo"),
-    )
-    (manifest,) = Cdk8sTesting.synth(scratch_chart)
-    assert "restic" in manifest["spec"]
-    assert "rsyncTLS" not in manifest["spec"]
+    assert field in manifest["spec"]
+    assert other_field not in manifest["spec"]
 
 
 def test_unsupported_mover_raises(scratch_chart: Chart) -> None:

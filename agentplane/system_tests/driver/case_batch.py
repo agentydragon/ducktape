@@ -1,4 +1,12 @@
-"""Selected pytest cases sharing a deployment, with bounded case-owned async work."""
+"""Selected pytest cases sharing a deployment, with bounded case-owned async work.
+
+A replacement for this `TaskGroup` driver must keep session-scoped async fixtures alive until every case has
+cleaned up, keep individual results and filtering, bound concurrency, and run cases that change deployment-wide
+state exclusively. `pytest-asyncio-cooperative` 0.40.0 fails the first: it replaces fixture finalization with its
+own reference counting, and the shared stack stopped while a case was still running. TestFlows 2.0.261028 does not
+import on Python 3.14. `pytest-xdist` runs a session fixture once per worker, so it needs a parent-owned stack and
+case routing in the shared scripted-model server.
+"""
 
 from __future__ import annotations
 

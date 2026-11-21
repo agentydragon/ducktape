@@ -14,7 +14,6 @@ import time
 import urllib.request
 from collections.abc import Iterator
 from pathlib import Path
-from typing import cast
 
 import pytest
 import pytest_bazel
@@ -24,7 +23,7 @@ from python.runfiles import Runfiles
 from study_casino.app import create_app
 from study_casino.changelog import LATEST_CHANGELOG_ID
 from study_casino.config import Settings
-from util.testing.asgi import serve_app_sync
+from testing.asgi import serve_app_sync
 
 # pytest_plugins loads util.playwright by name; gazelle cannot see the dependency.
 # gazelle:include_dep //util:playwright
@@ -45,12 +44,12 @@ def casino_server(db_url: str) -> Iterator[str]:
 
 def _attach_logs(page: Page) -> list[str]:
     logs: list[str] = []
-    page.on("pageerror", lambda e: logs.append(f"pageerror: {e}\n{getattr(e, 'stack', '')}"))
+    page.on("pageerror", lambda e: logs.append(f"pageerror: {e}\n{e.stack}"))
     page.on("console", lambda m: logs.append(f"[{m.type}] {m.text}"))
     return logs
 
 
-def _post_json(base_url: str, path: str, payload: dict[str, object]) -> dict[str, object]:
+def _post_json(base_url: str, path: str, payload: dict[str, object]) -> None:
     req = urllib.request.Request(
         f"{base_url}{path}",
         data=json.dumps(payload).encode(),
@@ -59,9 +58,6 @@ def _post_json(base_url: str, path: str, payload: dict[str, object]) -> dict[str
     )
     with urllib.request.urlopen(req, timeout=10) as resp:
         assert resp.status == 200
-        decoded = json.loads(resp.read().decode())
-        assert isinstance(decoded, dict)
-        return cast(dict[str, object], decoded)
 
 
 def _ack_changelog(base_url: str) -> None:
@@ -95,10 +91,7 @@ async def test_state_5xx_shows_offline_not_stuck_syncing(page: Page, casino_serv
 
     await page.route("**/state", handle_state)
     await page.goto(casino_server)
-    print(f"\n[e2e] page loaded for 5xx test, title={await page.title()!r}")
-
     await page.wait_for_selector("[data-testid='sync-banner-offline']", state="visible", timeout=30_000)
-    print(f"[e2e] offline banner appeared, logs={logs}")
     assert await page.locator("[data-testid='sync-banner-syncing']").count() == 0, (
         f"syncing banner still present\nlogs={logs}"
     )
@@ -200,7 +193,11 @@ async def test_slots_spin_does_not_throw_on_server_action_response(page: Page, c
     await page.get_by_role("button", name="casino").click()
     await page.get_by_role("button", name="slots").click()
     await page.get_by_role("button", name=re.compile(r"^Spin . 5 cr$")).click()
-    await page.wait_for_timeout(500)
+
+    # The button reads `Spinning...` from the server result until the reels settle; a mapping error leaves it stuck.
+    spinning = page.get_by_role("button", name="Spinning...")
+    await spinning.wait_for(state="visible", timeout=10_000)
+    await spinning.wait_for(state="hidden", timeout=10_000)
 
     assert not [line for line in logs if line.startswith("pageerror:")], f"browser errors during slots spin\n{logs}"
 

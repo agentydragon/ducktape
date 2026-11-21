@@ -99,8 +99,7 @@ func settleIntentResult(ctx context.Context, tx *sql.Tx, intentID string, result
 
 const providerAttemptColumns = `id::text,provider_step_id::text,COALESCE(previous_provider_intent_id::text,''),
 	COALESCE(provider_command_id,''),request->>'kind',provider_attempt_no,provider_attempt_budget,generation,
-	provider_attempt_lease_until,provider_attempt_lease_until<=clock_timestamp(),provider_retry_not_before,
-	COALESCE(result->>'failure_class',''),COALESCE(result->>'failure_reason',''),COALESCE(result->>'status',''),
+	provider_attempt_lease_until<=clock_timestamp(),COALESCE(result->>'failure_class',''),COALESCE(result->>'failure_reason',''),
 	COALESCE(result->>'provider_retry_suppressed',''),
 	(COALESCE(result->>'failure_class','')='transient' AND provider_retry_not_before IS NOT NULL AND provider_attempt_no<provider_attempt_budget),
 	COALESCE(COALESCE(result->>'failure_class','')='transient' AND provider_retry_not_before<=clock_timestamp() AND provider_attempt_no<provider_attempt_budget,FALSE),
@@ -110,11 +109,10 @@ func scanProviderAttempt(row rowScanner) (*ProviderAttempt, error) {
 	var attempt ProviderAttempt
 	var kind, failureClass, retrySuppressed string
 	var number, budget int
-	var retryAt sql.NullTime
 	var retryInSeconds float64
 	var requestWire []byte
 	if err := row.Scan(&attempt.IntentID, &attempt.StepID, &attempt.PreviousID, &attempt.CommandID, &kind, &number, &budget,
-		&attempt.Generation, &attempt.LeaseUntil, &attempt.Expired, &retryAt, &failureClass, &attempt.FailureReason, &attempt.ResultStatus, &retrySuppressed,
+		&attempt.Generation, &attempt.Expired, &failureClass, &attempt.FailureReason, &retrySuppressed,
 		&attempt.Retryable, &attempt.Ready, &retryInSeconds, &requestWire); err != nil {
 		return nil, err
 	}
@@ -126,9 +124,6 @@ func scanProviderAttempt(row rowScanner) (*ProviderAttempt, error) {
 		return nil, err
 	}
 	attempt.ProviderRequest = request.ProviderRequest
-	if retryAt.Valid {
-		attempt.RetryAt = &retryAt.Time
-	}
 	return &attempt, nil
 }
 
@@ -330,7 +325,7 @@ func (s *Store) AbandonProviderAttempt(ctx context.Context, owner Owner, intentI
 				return err
 			}
 		}
-		abandonedSources, err := s.recordEvidenceWithSources(ctx, tx, owner, conversation, session, intentID, intent.Kind.progressKind(), eventpb.ExecutionProgress_PHASE_ABANDONED, abandoned)
+		abandonedSources, err := s.recordEvidenceWithSources(ctx, tx, conversation, session, intentID, intent.Kind.progressKind(), eventpb.ExecutionProgress_PHASE_ABANDONED, abandoned)
 		if err != nil {
 			return err
 		}
@@ -440,7 +435,7 @@ func (s *Store) beginProviderRetry(ctx context.Context, owner Owner, previousInt
 		if err := insertProviderAttempt(ctx, tx, id, owner, retryRequestWire, session, policy, predecessor.StepID, &previousIntentID, attemptNo, predecessor.Budget); err != nil {
 			return err
 		}
-		return s.publishIntent(ctx, tx, owner, conversation, session, id, request)
+		return s.publishIntent(ctx, tx, conversation, session, id, request)
 	})
 	if err != nil {
 		return "", nil, err

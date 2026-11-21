@@ -87,7 +87,7 @@ retire and rebuild the source standbys serially afterward.
    [CNPG conventions](../cnpg_conventions.md#current-compliance)), work serially:
    finish and verify one before starting the next. Record its desired count,
    each Pod/PVC UID, size, StorageClass and primary. New claims use
-   `piraeus-ssd-local`, sized for measured PGDATA plus headroom.
+   `piraeus-ssd-local`, sized for measured PGDATA plus headroom (Study Casino stays **1Gi**).
    Measure actual PGDATA, including WAL. Stop before requesting a replacement that cannot hold the
    current data and agreed reserve.
 2. Put a brief, resource-specific Flux hold on that Cluster, then temporarily
@@ -105,9 +105,8 @@ retire and rebuild the source standbys serially afterward.
    healthy members remain outside the outage set.
 5. Restore the Cluster's desired count before removing its Flux hold. Verify
    Flux and CNPG agree, then proceed to the next cluster.
-6. Three-member clusters (Attic, Study Casino) need no temporary member: move a
-   target primary first and retain two healthy off-target members. Study Casino
-   stays **1Gi**.
+6. A Cluster whose `spec.instances` is already 3 needs no temporary member: move a
+   target primary first and retain two healthy off-target members.
 
 Use a brief, resource-specific Flux hold for each temporary member change. A
 parent can undo suspension of a child Kustomization; hold the managed resource
@@ -253,14 +252,16 @@ it. Verify both data and Keeper health before moving another affected member.
 For fresh native MergeTree storage, replay captured `CREATE` definitions after
 guarded `SYSTEM DROP REPLICA` for the exact retired, inactive replica.
 The historical `traces_30d_amt_mv` and `traces_7d_amt_mv` definitions were
-orphaned: their source and target tables were absent. The one-time guarded Flux
-cleanup ran to completion on 2026-11-01 and has been retired. Current replicas
-were checked separately; [the investigation](../../debug/clickhouse_orphan_views.md)
-records the endpoint mapping and read-only view counts. Keep the captured
-definitions for recovery, but verify current Langfuse migrations and view
-dependencies before restoring any old definition. A partially initialized
-replica can retain its own local copies, so check it separately before accepting
-its schema.
+orphaned: their source and target tables were absent. Their link to the Langfuse
+v3-to-v4 migration is suspected, not proven. The one-time guarded Flux cleanup
+(`clickhouse-orphan-views-cleanup-v1`) ran to completion on 2026-11-01 and has
+been retired. Current replicas were checked separately: a read-only
+`system.tables` count on each returned no row for either view. The captured
+definitions were in `cluster/debug/clickhouse_orphan_views.md`, retired in #17709 and
+recoverable from git history;
+verify current Langfuse migrations and view dependencies before restoring any
+old definition. A partially initialized replica can retain its own local copies,
+so check it separately before accepting its schema.
 
 #### Forgejo Valkey replica
 

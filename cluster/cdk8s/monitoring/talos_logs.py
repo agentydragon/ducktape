@@ -6,15 +6,16 @@ second DaemonSet would contend for the same host port. The ConfigMap hash rolls 
 
 from __future__ import annotations
 
-from cdk8s import App, Chart, Size
-from cdk8s_plus_34 import Cpu, k8s
+from cdk8s import App, Chart
+from cdk8s_plus_34 import k8s
 from python.runfiles import Runfiles
 
 from cluster.cdk8s import namespaces, pod_policy
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import loki
-from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.namespaces import PRIVILEGED_POD_SECURITY, Vpa
 
 NAME = "vector-talos-logs"
 NAMESPACE = "vector-talos-logs"
@@ -45,14 +46,10 @@ def chart(app: App) -> Chart:
         name=NAMESPACE,
         # Fixed-resource DaemonSet -- opt out of Goldilocks/VPA recommendations.
         vpa=Vpa.DISABLED,
-        labels={
-            # The receiver joins the host network so it can bind only host loopback;
-            # baseline forbids hostNetwork. This is an operator-only namespace: Flux is its
-            # sole writer, while the Alloy container itself remains unprivileged.
-            "pod-security.kubernetes.io/enforce": "privileged",
-            "pod-security.kubernetes.io/audit": "privileged",
-            "pod-security.kubernetes.io/warn": "privileged",
-        },
+        # The receiver joins the host network so it can bind only host loopback;
+        # baseline forbids hostNetwork. This is an operator-only namespace: Flux is its
+        # sole writer, while the Alloy container itself remains unprivileged.
+        labels=PRIVILEGED_POD_SECURITY,
     )
     daemonset = k8s.KubeDaemonSet(
         chart,
@@ -63,7 +60,6 @@ def chart(app: App) -> Chart:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=_LABELS),
                 spec=k8s.PodSpec(
-                    security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     automount_service_account_token=False,
                     # hostNetwork lets Alloy bind the actual host loopback address. A Cilium
                     # hostPort would also expose the listener on the node's public addresses.
@@ -104,15 +100,8 @@ def chart(app: App) -> Chart:
                                 period_seconds=10,
                             ),
                             volume_mounts=[k8s.VolumeMount(name="config", mount_path=_CONFIG_DIR, read_only=True)],
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string(Cpu.millis(50).amount),
-                                    "memory": k8s.Quantity.from_string(Size.mebibytes(128).as_string()),
-                                },
-                                limits={
-                                    "cpu": k8s.Quantity.from_string(Cpu.millis(500).amount),
-                                    "memory": k8s.Quantity.from_string(Size.mebibytes(256).as_string()),
-                                },
+                            resources=container_resources(
+                                cpu="50m", memory="128Mi", cpu_limit="500m", memory_limit="256Mi"
                             ),
                         )
                     ],

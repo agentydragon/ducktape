@@ -1,8 +1,6 @@
 """Owner access and read-only routing of the workstation session archive."""
 
 import base64
-import json
-import time
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
@@ -11,7 +9,6 @@ from uuid import UUID, uuid4
 import pytest_bazel
 from fastapi.responses import RedirectResponse
 from fastapi.testclient import TestClient
-from itsdangerous import TimestampSigner
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
@@ -28,7 +25,7 @@ from ai_session_archive.database import (
     make_session_factory,
 )
 from ai_session_archive.web import _archive_session, create_app, create_routes_app
-from ai_session_archive.web_settings import WebSettings
+from ai_session_archive.web_testing import fake_web_settings, owner_session_cookie
 
 
 def test_openapi_uses_production_routes_without_database() -> None:
@@ -250,32 +247,14 @@ def test_session_archive_requires_owner_and_serves_machine_list() -> None:
             )
         )
         db.commit()
-    settings = WebSettings(
-        database_url="sqlite://",
-        frontend_dir="/fake/frontend",
-        public_base_url="http://testserver",
-        oidc_issuer="https://idp.example.invalid",
-        oidc_client_id="fake-client",
-        oidc_client_secret="fake-client-secret",
-        oidc_session_secret="fake-session-secret",
-        oidc_allowed_subject="fake-owner",
-    )
+    settings = fake_web_settings()
     app = create_app(engine=engine, settings=settings)
     client = TestClient(app)
     assert client.get("/healthz").status_code == 200
     assert client.get("/api/machines").status_code == 401
     assert client.get("/api/import-progress").status_code == 401
 
-    session = {
-        "user": {
-            "issuer": settings.oidc_issuer,
-            "subject": settings.oidc_allowed_subject,
-            "username": "fake-user",
-            "expires_at": time.time() + 600,
-        }
-    }
-    payload = base64.b64encode(json.dumps(session).encode())
-    client.cookies.set("ai-session-archive", TimestampSigner("fake-session-secret").sign(payload).decode())
+    client.cookies.set("ai-session-archive", owner_session_cookie(settings))
     machines = client.get("/api/machines")
     assert machines.status_code == 200
     assert machines.headers["cache-control"] == "no-store"
@@ -521,27 +500,9 @@ def test_event_backward_pagination_reads_delta_version_lineage() -> None:
         )
         db.commit()
 
-    settings = WebSettings(
-        database_url="sqlite://",
-        frontend_dir="/fake/frontend",
-        public_base_url="http://testserver",
-        oidc_issuer="https://idp.example.invalid",
-        oidc_client_id="fake-client",
-        oidc_client_secret="fake-client-secret",
-        oidc_session_secret="fake-session-secret",
-        oidc_allowed_subject="fake-owner",
-    )
+    settings = fake_web_settings()
     client = TestClient(create_app(engine=engine, settings=settings))
-    session = {
-        "user": {
-            "issuer": settings.oidc_issuer,
-            "subject": settings.oidc_allowed_subject,
-            "username": "fake-user",
-            "expires_at": time.time() + 600,
-        }
-    }
-    payload = base64.b64encode(json.dumps(session).encode())
-    client.cookies.set("ai-session-archive", TimestampSigner("fake-session-secret").sign(payload).decode())
+    client.cookies.set("ai-session-archive", owner_session_cookie(settings))
     events_url = f"/api/sessions/{session_id}/versions/{delta_id}/events"
 
     first_forward = client.get(events_url, params={"limit": 2}).json()
@@ -576,16 +537,7 @@ def test_login_routes_are_reachable_with_the_frontend_mounted(tmp_path: Path) ->
     (assets / "app.js").write_text("console.log('archive frontend')")
 
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-    settings = WebSettings(
-        database_url="sqlite://",
-        frontend_dir=frontend,
-        public_base_url="http://testserver",
-        oidc_issuer="https://idp.example.invalid",
-        oidc_client_id="fake-client",
-        oidc_client_secret="fake-client-secret",
-        oidc_session_secret="fake-session-secret",
-        oidc_allowed_subject="fake-owner",
-    )
+    settings = fake_web_settings()
     app = create_app(engine=engine, settings=settings, frontend_dir=frontend)
 
     class FakeOAuthClient:
@@ -605,16 +557,7 @@ def test_login_routes_are_reachable_with_the_frontend_mounted(tmp_path: Path) ->
     app.state.oauth = FakeOAuth()
     client = TestClient(app)
 
-    session = {
-        "user": {
-            "issuer": settings.oidc_issuer,
-            "subject": settings.oidc_allowed_subject,
-            "username": "fake-user",
-            "expires_at": time.time() + 600,
-        }
-    }
-    payload = base64.b64encode(json.dumps(session).encode())
-    client.cookies.set("ai-session-archive", TimestampSigner("fake-session-secret").sign(payload).decode())
+    client.cookies.set("ai-session-archive", owner_session_cookie(settings))
 
     home = client.get("/", follow_redirects=False)
     deep_link = client.get("/sessions/fake-session-id?machine=fake-host", follow_redirects=False)

@@ -1,4 +1,4 @@
-"""Integer discriminators for scenario income categories."""
+"""Integer discriminators for income categories."""
 
 from __future__ import annotations
 

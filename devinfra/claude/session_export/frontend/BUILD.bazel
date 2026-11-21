@@ -6,7 +6,7 @@ load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//devinfra/js:typed_eslint.bzl", "typed_eslint_test")
 load("//devinfra/js:vitest.bzl", "check_vitest_specs", "vitest_config")
-load("//util/testing/frontend_visual:py_visual_test.bzl", "py_visual_test")
+load("//testing/frontend_visual:py_visual_test.bzl", "py_visual_test")
 load(":vitest.bzl", "session_export_vitest_test")
 
 package(default_visibility = ["//devinfra/claude/session_export:__pkg__"])
@@ -82,7 +82,6 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":api",
         ":schema",
         ":status",
         "//:node_modules/@mantine/core",
@@ -129,7 +128,6 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":api",
         ":narration",
         ":schema",
     ],
@@ -148,7 +146,6 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":api",
         ":schema",
         ":transcript",
     ],
@@ -160,7 +157,6 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":api",
         ":schema",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -174,7 +170,6 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":api",
         ":event_inspector",
         ":schema",
         "//:node_modules/@mantine/core",
@@ -189,7 +184,6 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":api",
         ":schema",
     ],
 )
@@ -208,7 +202,6 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":api",
         ":schema",
         ":session_info",
         "//:node_modules/@mantine/core",
@@ -223,7 +216,6 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":api",
         ":event_inspector",
         ":event_timeline",
         ":schema",
@@ -275,7 +267,6 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":api",
         ":session_directory",
         ":session_info",
         ":session_list",
@@ -312,8 +303,6 @@ spa_bundle(
     ],
 )
 
-# ── Unit tests ─────────────────────────────────────────────────────────────────
-
 session_export_vitest_test(
     name = "app_test",
     srcs = ["app.test.tsx"],
@@ -322,12 +311,10 @@ session_export_vitest_test(
         ":api",
         ":app",
         ":schema",
-        "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
         "//:node_modules/react",
-        "//:node_modules/react-dom",
         "//:node_modules/vitest",
+        "//util/frontend:react_test_utils",
     ],
 )
 
@@ -346,7 +333,6 @@ session_export_vitest_test(
     srcs = ["transcript.test.ts"],
     isolated_typecheck = True,
     deps = [
-        ":api",
         ":schema",
         ":transcript",
         "//:node_modules/vitest",
@@ -380,7 +366,6 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":api",
         ":schema",
     ],
 )
@@ -392,13 +377,12 @@ session_export_vitest_test(
     deps = [
         ":api",
         ":noisy_session_fixture",
+        ":schema",
         ":viewer",
-        "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
         "//:node_modules/react",
-        "//:node_modules/react-dom",
         "//:node_modules/vitest",
+        "//util/frontend:react_test_utils",
     ],
 )
 
@@ -419,15 +403,12 @@ session_export_vitest_test(
     srcs = ["event-timeline.test.tsx"],
     isolated_typecheck = True,
     deps = [
-        ":api",
         ":event_timeline",
         ":schema",
-        "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
         "//:node_modules/react",
-        "//:node_modules/react-dom",
         "//:node_modules/vitest",
+        "//util/frontend:react_test_utils",
     ],
 )
 
@@ -447,7 +428,6 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":api",
         ":app",
         ":noisy_session_fixture",
         ":schema",
@@ -497,9 +477,9 @@ py_visual_test(
     harness = ":visual_harness_js",
     shard_count = 4,
     test_deps = [
-        "//util/testing/frontend_visual:capture",
-        "//util/testing/frontend_visual:page_capture",
-        "//util/testing/frontend_visual:viewports",
+        "//testing/frontend_visual:capture",
+        "//testing/frontend_visual:page_capture",
+        "//testing/frontend_visual:viewports",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",

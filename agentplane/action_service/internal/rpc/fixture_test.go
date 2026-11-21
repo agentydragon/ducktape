@@ -6,10 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -18,7 +16,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/linkage_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/operator_action_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/action_service/callers"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/grpcgate"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/informer"
@@ -32,6 +29,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
+	"github.com/agentydragon/ducktape/agentplane/testing/eventually"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	testwakeups "github.com/agentydragon/ducktape/agentplane/testing/wakeups"
@@ -45,8 +44,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -59,27 +56,20 @@ const (
 )
 
 var (
-	callerAccount    = auth.Account{Namespace: testNamespace, Name: "test-caller"}
-	otherAccount     = auth.Account{Namespace: testNamespace, Name: "test-other-caller"}
-	readerAccount    = auth.Account{Namespace: testNamespace, Name: "test-reader"}
-	unlabeledAccount = auth.Account{Namespace: testNamespace, Name: "test-unlabeled"}
-	// labeledReaderAccount is a service reader whose ServiceAccount also carries the caller label.
-	labeledReaderAccount = auth.Account{Namespace: testNamespace, Name: "test-labeled-reader"}
-	// outsiderAccount is labeled, outside the namespaces whose workloads may call.
-	outsiderAccount = auth.Account{Namespace: "test-elsewhere", Name: "test-caller"}
+	callerAccount = auth.Account{Namespace: testNamespace, Name: "test-caller"}
+	otherAccount  = auth.Account{Namespace: testNamespace, Name: "test-other-caller"}
 
 	kube *kubeapiserver.Server
 	// policyObjects writes PolicySets and PolicyBindings.
 	policyObjects client.Client
-	// Each proves its account, from a Pod running as it.
-	validKubernetesToken, unlabeledToken, outsiderToken string
+	// validKubernetesToken proves callerAccount, from a Pod running as it. The service refuses every Kubernetes bearer.
+	validKubernetesToken string
 	// policyNamespaces numbers the policy namespaces.
 	policyNamespaces atomic.Int32
 )
 
 func useAPIServer(server *kubeapiserver.Server) error {
 	kube = server
-	ctx := context.Background()
 	scheme := runtime.NewScheme()
 	if err := policyapi.AddToScheme(scheme); err != nil {
 		return err
@@ -88,33 +78,7 @@ func useAPIServer(server *kubeapiserver.Server) error {
 	if policyObjects, err = client.New(server.Config, client.Options{Scheme: scheme}); err != nil {
 		return err
 	}
-	for _, account := range []auth.Account{callerAccount, otherAccount, labeledReaderAccount, outsiderAccount} {
-		if err := setCallerLabel(ctx, account, true); err != nil {
-			return err
-		}
-	}
-	for token, account := range map[*string]auth.Account{
-		&validKubernetesToken: callerAccount, &unlabeledToken: unlabeledAccount, &outsiderToken: outsiderAccount,
-	} {
-		var err error
-		if *token, err = server.WorkloadToken(ctx, account, testAudience); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// setCallerLabel sets or removes the caller label on the account's ServiceAccount, which it creates when absent.
-func setCallerLabel(ctx context.Context, account auth.Account, labeled bool) error {
-	if _, err := kube.ServiceAccount(ctx, account); err != nil {
-		return err
-	}
-	value := "null"
-	if labeled {
-		value = fmt.Sprintf("%q", callers.ServiceAccountLabelValue)
-	}
-	_, err := kube.Clientset.CoreV1().ServiceAccounts(account.Namespace).Patch(ctx, account.Name, types.MergePatchType,
-		fmt.Appendf(nil, `{"metadata":{"labels":{%q:%s}}}`, callers.ServiceAccountLabelKey, value), metav1.PatchOptions{})
+	validKubernetesToken, err = server.WorkloadToken(context.Background(), callerAccount, testAudience)
 	return err
 }
 
@@ -179,7 +143,7 @@ func newPolicyNamespace(t *testing.T) policyNamespace {
 // watch runs a policy informer of the namespace until the test ends, and returns its index once the index is available.
 func (n policyNamespace) watch(t *testing.T) *informer.Index {
 	t.Helper()
-	index := informer.NewIndex([]string{testNamespace})
+	index := informer.NewIndex()
 	policyInformer, err := informer.New(kube.Config, index, string(n))
 	if err != nil {
 		t.Fatal(err)
@@ -194,18 +158,8 @@ func (n policyNamespace) watch(t *testing.T) *informer.Index {
 		cancel()
 		<-done
 	})
-	eventually(t, "the policy index to be available", index.Health.Available)
+	eventually.Eventually(t, "the policy index to be available", index.Health.Available)
 	return index
-}
-
-// eventually waits for the condition, and fails the test once callDeadline passes without it.
-func eventually(t *testing.T, what string, condition func() bool) {
-	t.Helper()
-	err := wait.PollUntilContextTimeout(t.Context(), 20*time.Millisecond, callDeadline, true,
-		func(context.Context) (bool, error) { return condition(), nil })
-	if err != nil {
-		t.Fatalf("gave up waiting for %s: %v", what, err)
-	}
 }
 
 // submissionCatalog are the ActionGroups submissions name. test-group's and test-github's Actions run and
@@ -289,29 +243,23 @@ func serveWithPolicy(
 	servers ...linkage.Server,
 ) *served {
 	t.Helper()
-	return serveWithPolicyOptions(t, groups, namespace, index, nil, servers...)
+	return serveWithPolicyOptions(t, groups, namespace, index, nil, IntegrationPreviews{}, servers...)
 }
 
 func serveWithGateOptions(t *testing.T, configure func(*grpcgate.Options, policyNamespace)) *served {
 	t.Helper()
 	namespace := newPolicyNamespace(t)
-	return serveWithPolicyOptions(t, newCatalog(t, submissionCatalog), namespace, namespace.watch(t), configure)
+	return serveWithPolicyOptions(t, newCatalog(t, submissionCatalog), namespace, namespace.watch(t), configure, IntegrationPreviews{})
 }
 
 func serveWithPolicyOptions(t *testing.T, groups *catalog.Catalog, namespace policyNamespace, index *informer.Index,
-	configure func(*grpcgate.Options, policyNamespace), servers ...linkage.Server,
+	configure func(*grpcgate.Options, policyNamespace), previews IntegrationPreviews, servers ...linkage.Server,
 ) *served {
 	t.Helper()
 	dsn := integrationDatabase.Clone(t)
 	db := postgres.Open(t, dsn)
 	// The LISTEN connection is named so a test can drop it.
-	listening, err := url.Parse(dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	query := listening.Query()
-	query.Set("application_name", updatesConnection)
-	listening.RawQuery = query.Encode()
+	listening := postgres.URLWithApplicationName(t, dsn, updatesConnection)
 	updates, err := wakeups.Listen(t.Context(), listening.String(), store.UpdatesChannel, linkage.UpdatesChannel)
 	if err != nil {
 		t.Fatal(err)
@@ -347,18 +295,13 @@ func serveWithPolicyOptions(t *testing.T, groups *catalog.Catalog, namespace pol
 	s.gate = grpcgate.New(options)
 	grpcServer := grpc.NewServer(grpc.Creds(serverCredentials), grpc.ChainUnaryInterceptor(s.gate.UnaryInterceptor), grpc.ChainStreamInterceptor(s.gate.StreamInterceptor))
 	action_servicepb.RegisterActionServiceServer(grpcServer, NewService(s.store, updates, groups, s.gate, index, s.submissions(t)))
-	operator_action_servicepb.RegisterOperatorActionServiceServer(grpcServer, NewOperatorService(s.store, updates, s.gate, s.linkages))
+	operator_action_servicepb.RegisterOperatorActionServiceServer(grpcServer, NewOperatorService(s.store, updates, s.gate, s.linkages, previews))
 	linkage_servicepb.RegisterLinkageServiceServer(grpcServer, linkage.NewService(s.linkages))
 	healthServer := health.NewServer()
 	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
 	healthpb.RegisterHealthServer(grpcServer, healthServer)
-	grpcListener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	go func() { _ = grpcServer.Serve(grpcListener) }()
-	t.Cleanup(grpcServer.Stop)
-	s.connectCertificates(t, grpcListener.Addr().String())
+	serverAddr := grpcserver.Serve(t, grpcServer)
+	s.connectCertificates(t, serverAddr)
 	s.client = action_servicepb.NewActionServiceClient(s.connections)
 	s.operators = operator_action_servicepb.NewOperatorActionServiceClient(s.connections)
 	s.linkageRPC = linkage_servicepb.NewLinkageServiceClient(s.connections)
@@ -378,10 +321,11 @@ func as(t *testing.T, token string) context.Context {
 	return metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token)
 }
 
-// get is the HTTP facade's answer to a GET of path with the bearer, or with none when token is empty.
-func (s *served) get(t *testing.T, path, token string) (int, []byte) {
+// callFacade is the HTTP facade's answer to a call of method on path with the body and the bearer, or with none when
+// token is empty.
+func (s *served) callFacade(t *testing.T, method, path, token, body string) (int, []byte) {
 	t.Helper()
-	call, err := http.NewRequestWithContext(t.Context(), http.MethodGet, s.facadeURL(token)+path, nil)
+	call, err := http.NewRequestWithContext(t.Context(), method, s.facadeURL(token)+path, strings.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -393,11 +337,21 @@ func (s *served) get(t *testing.T, path, token string) (int, []byte) {
 		t.Fatal(err)
 	}
 	defer response.Body.Close()
-	body, err := io.ReadAll(response.Body)
+	answer, err := io.ReadAll(response.Body)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return response.StatusCode, body
+	return response.StatusCode, answer
+}
+
+func (s *served) get(t *testing.T, path, token string) (int, []byte) {
+	t.Helper()
+	return s.callFacade(t, http.MethodGet, path, token, "")
+}
+
+func (s *served) post(t *testing.T, path, token, body string) (int, []byte) {
+	t.Helper()
+	return s.callFacade(t, http.MethodPost, path, token, body)
 }
 
 // submit stores a pending request of the owner, as admission would.
@@ -407,6 +361,20 @@ func (s *served) submit(t *testing.T, owner store.Owner, key string) store.Actio
 		IdempotencyKey: key, Action: store.ActionIdentity{Group: "test-group", Name: "test-action"},
 		Arguments: json.RawMessage(`{"test": "argument"}`), Title: "test title for " + key,
 	}, store.Admission{RequestID: uuid.New()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return request
+}
+
+// submitAction stores a pending request of the caller for the Action with the JSON arguments, as admission would.
+func (s *served) submitAction(t *testing.T, group, name, arguments string) store.ActionRequest {
+	t.Helper()
+	id := uuid.New()
+	request, err := s.store.Submit(t.Context(), s.caller, store.ActionRequestInput{
+		IdempotencyKey: id.String(), Action: store.ActionIdentity{Group: group, Name: name},
+		Arguments: json.RawMessage(arguments), Title: name,
+	}, store.Admission{RequestID: id})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,4 +1,4 @@
-"""Tunable constants for the credit system (see plans/credit_system_v2.md).
+"""Tunable constants for the credit system.
 
 Kept in one module so game balance can be tweaked without touching
 business logic. Milestone/break constants land with their phases.

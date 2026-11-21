@@ -56,9 +56,7 @@ def add_service_workload(
     startup: Probe | None = None,
     extra_ports: list[ContainerPort] | None = None,
     replica_profile: ReplicaProfile | None = None,
-    args: list[str] | None = None,
     env_variables: dict[str, EnvValue] | None = None,
-    service_account_labels: dict[str, str] | None = None,
     service_account: ServiceAccount | None = None,
     annotations: dict[str, str] | None = None,
     image_pull_policy: ImagePullPolicy = ImagePullPolicy.IF_NOT_PRESENT,
@@ -85,7 +83,7 @@ def add_service_workload(
     account = service_account or ServiceAccount(
         scope,
         "account",
-        metadata=ApiObjectMetadata(name=name, namespace=env.namespace, labels=service_account_labels),
+        metadata=ApiObjectMetadata(name=name, namespace=env.namespace),
         automount_token=automount_service_account_token,
     )
     deployment = Deployment(
@@ -122,7 +120,6 @@ def add_service_workload(
         name=container,
         image=image,
         image_pull_policy=image_pull_policy,
-        args=args,
         env_variables={**(env_variables or {}), **service_environment},
         ports=[*ports.values(), *(extra_ports or [])],
         readiness=readiness,
@@ -135,6 +132,12 @@ def add_service_workload(
     # With the database (cnpg_conventions R5).
     if placement is not None:
         pod_policy.place(deployment, placement, tolerate_control_plane=tolerate_control_plane)
+    if name in env.hostname_spread_services:
+        if replicas.count < 2:
+            raise ValueError(f"hostname spread requires at least two replicas: {name}")
+        ApiObject.of(deployment).add_json_patch(
+            JsonPatch.add("/spec/template/spec/topologySpreadConstraints", [node_scheduling.hostname_spread(labels)])
+        )
     pod_policy.harden(deployment)
     if create_service:
         service = Service(

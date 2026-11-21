@@ -41,9 +41,6 @@ async def test_process_message_adds_to_transcript(noop_agent) -> None:
     assert isinstance(messages[1], UserMessage)
 
 
-# --- Message forwarding tests ---
-
-
 async def test_mixed_reasoning_fc_ordering(mcp_tool_provider_echo) -> None:
     """Resp1 returns reasoning, function_call, assistant; after function_call_output, messages preserves order
     reasoning, function_call, function_call_output, assistant.
@@ -62,9 +59,6 @@ async def test_mixed_reasoning_fc_ordering(mcp_tool_provider_echo) -> None:
 
     messages = agent.to_openai_messages()
     assert_items_include_instances(messages, ReasoningItem, FunctionCallItem, FunctionCallOutputItem, AssistantMessage)
-
-
-# --- Reasoning threading tests ---
 
 
 async def test_reasoning_threading_filters_reasoning_from_next_input(mcp_tool_provider_echo) -> None:

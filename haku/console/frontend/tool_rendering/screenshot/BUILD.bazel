@@ -20,27 +20,9 @@ filegroup(
 
 TSCONFIG = "//haku/console/frontend:tsconfig"
 
-# Shared preview-screenshot harness. `mcp_mock.ts` owns only the JSON-RPC transport simulation;
-# each server package owns its fixtures and tiny installer beside its widgets. `emit_fixtures`
-# derives a server's scenario table from its fixtures (see `preview_screenshots`).
 js_binary(
     name = "emit_fixtures",
     entry_point = "emit_fixtures.mjs",
-)
-
-ts_library(
-    name = "visual_network_ledger",
-    srcs = ["visual_network_ledger.ts"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-)
-
-ts_library(
-    name = "mcp_mock",
-    srcs = ["mcp_mock.ts"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [":visual_network_ledger"],
 )
 
 ts_library(
@@ -78,9 +60,9 @@ py_library(
     testonly = True,
     srcs = ["preview_visual.py"],
     deps = [
-        "//util/testing/frontend_visual:capture",
-        "//util/testing/frontend_visual:fixtures",
-        "//util/testing/frontend_visual:viewports",
+        "//testing/frontend_visual:capture",
+        "//testing/frontend_visual:fixtures",
+        "//testing/frontend_visual:viewports",
         "@pypi//playwright",
         "@pypi//pydantic",
         "@pypi//pytest",

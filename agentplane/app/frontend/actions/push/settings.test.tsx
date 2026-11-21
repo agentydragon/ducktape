@@ -2,7 +2,7 @@
 import { MantineProvider } from "@mantine/core";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 
 import { ServedWatch } from "../../testing/watch";
 import { PushSettings } from "./settings";
@@ -10,10 +10,6 @@ import { PushSettings } from "./settings";
 const PUSH_PATH = "/upstream/actions/v1/operator/push";
 const mounts: { container: HTMLDivElement; root?: Root }[] = [];
 let restoreServiceWorker: (() => void) | undefined;
-
-beforeEach(() => {
-  (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-});
 
 afterEach(async () => {
   const mounted = mounts.splice(0);

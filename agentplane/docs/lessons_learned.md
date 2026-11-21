@@ -32,3 +32,19 @@ and Runner Gateway stayed `ConnectionPending`. The Pod uses `fsGroup: 1000`; kub
 change on remount is the likely cause. Code that requires a private directory on a volume with
 `fsGroup` must restore the mode itself (through the directory file descriptor, without following
 symlinks) rather than assume the mode it created survives a remount.
+
+## Suspended, Idle and no Pod is not yet Stopped
+
+2026-11-13 CI: the operator idle-resume Pod case in #16244 called `ResumeEnvironment` once the Sandbox
+showed `Suspended`, `Idle` and no diagnostic Pod. The call wrote nothing (Kubernetes GETs, no PATCH),
+and the readiness wait expired after 300 seconds on the original Pod UID. Pod deletion and the
+controller's status write are separate operations: `converge` can delete the Pod while `updateStatus`
+still sees the old workload and leaves the stop stage empty. The lifecycle policy resumes an idle
+suspension only from `Stopped`, so the early call found a running desired state and had nothing to
+wake. This cause is read from the source; no response or Sandbox snapshot was captured.
+
+Wait for `stop_stage == "Stopped"` before resuming, then expect `REQUESTED` with the next wake
+generation. #16244 added both checks to `agentplane/system_tests/scenarios/suspend_resume.py`
+(`test_suspend_resume.py` covers the wait) without relaxing the lifecycle policy, authorization,
+optimistic fencing or the ban on replaying uncertain writes. The policy now also refuses a resume
+before `Stopped` with `FailedPrecondition` (`agentplane/environments/lifecycle/SPEC.md`).

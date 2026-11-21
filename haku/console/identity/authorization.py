@@ -68,6 +68,7 @@ def _utcnow() -> datetime.datetime:
 def _database_is_unavailable(error: DBAPIError) -> bool:
     if isinstance(error, (OperationalError, InterfaceError)) or error.connection_invalidated:
         return True
+    # `orig` is typed only as `BaseException`; drivers that report SQLSTATE expose it as `sqlstate`.
     sqlstate = getattr(error.orig, "sqlstate", None)
     return isinstance(sqlstate, str) and sqlstate.startswith("08")
 
@@ -84,15 +85,11 @@ class PostgresAgentAuthority:
         sessions: async_sessionmaker[AsyncSession],
         *,
         clock: Callable[[], datetime.datetime] = _utcnow,
-        activation_lifetime: datetime.timedelta = _ACTIVATION_LIFETIME,
         access_profiles: Collection[str],
     ) -> None:
-        if activation_lifetime <= datetime.timedelta():
-            raise ValueError("Agent authority lifetimes must be positive")
         # The engine/sessionmaker is created once in create_app and shared across every store.
         self._sessions = sessions
         self._clock = clock
-        self._activation_lifetime = activation_lifetime
         self._access_profiles = tuple(dict.fromkeys(access_profiles))
         if not self._access_profiles:
             raise ValueError("at least one access profile must be configured")
@@ -272,7 +269,7 @@ class PostgresAgentAuthority:
                     .where(
                         CredentialBinding.status == CredentialBindingStatus.ISSUED,
                         AuthorizationGrant.token_family_persisted_at.is_not(None),
-                        AuthorizationGrant.token_family_persisted_at <= now - self._activation_lifetime,
+                        AuthorizationGrant.token_family_persisted_at <= now - _ACTIVATION_LIFETIME,
                     )
                 )
                 issued_interactions = (
@@ -364,13 +361,12 @@ class PostgresAgentAuthority:
             return None
         return row[0], row[1], row[2], row[3], row[4]
 
-    def _activation_expired(
-        self, grant: AuthorizationGrant, binding: CredentialBinding, now: datetime.datetime
-    ) -> bool:
+    @staticmethod
+    def _activation_expired(grant: AuthorizationGrant, binding: CredentialBinding, now: datetime.datetime) -> bool:
         return (
             binding.status is CredentialBindingStatus.ISSUED
             and grant.token_family_persisted_at is not None
-            and now >= grant.token_family_persisted_at + self._activation_lifetime
+            and now >= grant.token_family_persisted_at + _ACTIVATION_LIFETIME
         )
 
     @staticmethod

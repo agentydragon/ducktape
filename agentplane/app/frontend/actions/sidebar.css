@@ -178,8 +178,7 @@
   padding: 8px;
 }
 
-.agentplane-actions-sidebar-preview .agentplane-command-call,
-.agentplane-actions-sidebar-preview .agentplane-command-call-command {
+.agentplane-actions-sidebar-preview .agentplane-command-call {
   max-width: 100%;
   overflow-wrap: anywhere;
 }

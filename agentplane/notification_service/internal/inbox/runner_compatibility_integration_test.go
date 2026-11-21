@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/encoding/protowire"
@@ -43,14 +42,11 @@ func goldenRunnerEntry(t *testing.T, name string) (*eventlogpb.EventEntry, []byt
 func (f fixture) insertPythonInbox(t *testing.T) (inboxID uuid.UUID, acknowledged, through int64, text string) {
 	t.Helper()
 	inboxID, acknowledged, through, text = goldenNotice(t, pythonNotice)
-	ref := f.body("first").DestinationRef
-	f.exec(t, `INSERT INTO inbox (id, owner_namespace, owner_name, destination_key,
-		destination_namespace, destination_name, destination_uid, session_id,
+	f.exec(t, `INSERT INTO inbox (id, session_id,
 		last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until,
 		owner_identity_name, owner_identity_uid)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, 'test-session', $8, $9, 0, 0, false, now(), now(), now(), $10, $11)`,
-		inboxID, f.owner.Namespace, f.owner.Name, model.DestinationKey(ref, "test-session"),
-		ref.Namespace, ref.Name, ref.UID, through, acknowledged, f.identity.Name, f.identity.UID)
+		VALUES ($1, 'test-session', $2, $3, 0, 0, false, now(), now(), now(), $4, $5)`,
+		inboxID, through, acknowledged, f.identity.Name, f.identity.UID)
 	return inboxID, acknowledged, through, text
 }
 

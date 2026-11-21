@@ -21,18 +21,15 @@ import (
 func (c *Coordinator) recordObservationSnapshots(ctx context.Context, tx transaction.Tx, inboxID uuid.UUID,
 	subscriptionID uuid.UUID, fences []githubstate.AccessFence, table string,
 ) (int, bool, error) {
-	args := argList{subscriptionID}
-	access := make([]string, 0, len(fences))
-	for _, fence := range fences {
-		access = append(access, "(app_id = "+args.add(fence.Key.AppID)+" AND installation_id = "+
-			args.add(fence.Key.InstallationID)+" AND repository_id = "+args.add(fence.Key.RepositoryID)+")")
-	}
-	if len(access) == 0 {
+	if len(fences) == 0 {
 		return 0, false, nil
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT app_id, installation_id, repository_id, event, sequence, payload
-		FROM `+table+` WHERE subscription_id = $1 AND (`+strings.Join(access, " OR ")+`)
-		ORDER BY sequence LIMIT `+args.add(githubmodel.DeliveryPageSize+1), args...)
+	args := argList{subscriptionID}
+	accessible := observationAccessClause(&args, fences)
+	limit := args.add(githubmodel.DeliveryPageSize + 1)
+	rows, err := tx.QueryContext(ctx, `SELECT e.app_id, e.installation_id, e.repository_id, e.event, e.sequence, e.payload
+		FROM `+table+` e WHERE e.subscription_id = $1 AND (`+accessible+`)
+		ORDER BY e.sequence LIMIT `+limit, args...)
 	if err != nil {
 		return 0, false, err
 	}
@@ -59,28 +56,47 @@ func (c *Coordinator) recordObservationSnapshots(ctx context.Context, tx transac
 	return len(snapshots), len(snapshots) == githubmodel.DeliveryPageSize, nil
 }
 
-type observationAccessOrder bool
-
-const (
-	installationBeforeRepository observationAccessOrder = false
-	repositoryBeforeInstallation observationAccessOrder = true
-)
-
-// observationAccessClause binds each event's full access tuple in the query's parameter order.
-func observationAccessClause(args *argList, fences []githubstate.AccessFence, order observationAccessOrder) string {
+// observationAccessClause matches an observation row aliased e by the full access tuple of any of the fences.
+func observationAccessClause(args *argList, fences []githubstate.AccessFence) string {
 	clauses := make([]string, len(fences))
 	for i, fence := range fences {
 		key := fence.Key
-		firstColumn, secondColumn := "installation_id", "repository_id"
-		firstID, secondID := key.InstallationID, key.RepositoryID
-		if order == repositoryBeforeInstallation {
-			firstColumn, secondColumn = secondColumn, firstColumn
-			firstID, secondID = secondID, firstID
-		}
-		clauses[i] = fmt.Sprintf("(e.app_id = %s AND e.%s = %s AND e.%s = %s)",
-			args.add(key.AppID), firstColumn, args.add(firstID), secondColumn, args.add(secondID))
+		clauses[i] = fmt.Sprintf("(e.app_id = %s AND e.installation_id = %s AND e.repository_id = %s)",
+			args.add(key.AppID), args.add(key.InstallationID), args.add(key.RepositoryID))
 	}
 	return strings.Join(clauses, " OR ")
+}
+
+// notRecorded is the condition that no entry the subscription matched in the inbox already has the identity of the
+// observation event aliased e.
+func notRecorded(args *argList, inboxID, subscriptionID uuid.UUID) string {
+	return `NOT EXISTS (SELECT 1 FROM subscription_match m JOIN entry existing
+			ON existing.inbox_id = ` + args.add(inboxID) + ` AND existing.cursor = m.cursor
+			WHERE m.subscription_id = ` + args.add(subscriptionID) + `
+				AND existing.identity_provider = 'github_observation'
+				AND existing.github_app_id = e.app_id AND existing.github_repository_id = e.repository_id
+				AND existing.github_event = e.event AND existing.github_observation_sequence = e.sequence)`
+}
+
+// githubSourceOf reads the GitHub source a subscription was created with, and into dests the further columns of its
+// row that the caller names.
+func githubSourceOf(ctx context.Context, tx transaction.Tx, subscriptionID uuid.UUID, columns string, dests ...any) (sourceadapter.GitHubSource, error) {
+	var creationProto []byte
+	var sourceProvider, idempotencyKey string
+	if err := tx.QueryRowContext(ctx, `SELECT creation_proto, source_provider, idempotency_key, `+columns+`
+		FROM subscription WHERE id = $1`, subscriptionID).
+		Scan(append([]any{&creationProto, &sourceProvider, &idempotencyKey}, dests...)...); err != nil {
+		return sourceadapter.GitHubSource{}, err
+	}
+	body, err := sourceadapter.DecodeStoredSubscriptionCreation(subscriptionID, creationProto, sourceProvider, idempotencyKey)
+	if err != nil {
+		return sourceadapter.GitHubSource{}, err
+	}
+	source, ok := body.Source.(sourceadapter.GitHubSource)
+	if !ok {
+		return sourceadapter.GitHubSource{}, fmt.Errorf("subscription %s is not a GitHub subscription", subscriptionID)
+	}
+	return source, nil
 }
 
 func (c *Coordinator) appendObservationPage(ctx context.Context, tx transaction.Tx, inboxID, subscriptionID uuid.UUID,

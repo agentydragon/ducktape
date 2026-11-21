@@ -39,8 +39,8 @@ from haku.console.identity.agent_management import AgentAccessProfileManagedByDe
 from haku.console.identity.authorization import AgentGrantAuthorityUnavailableError, PostgresAgentAuthority
 from haku.console.identity.operator_identity import OperatorIdentityTrust, VerifiedExternalIdentity
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
+from testing.sqlalchemy_engines import managed_async_engine
 from util.db_url import render_postgresql_url
-from util.testing.sqlalchemy_engines import managed_async_engine
 
 _BROWSER_ISSUER = "https://auth.test/browser/"
 _REDIRECT_URI = "https://claude.test/oauth/callback"
@@ -163,88 +163,95 @@ async def harness(harness_factory: HarnessFactory) -> Harness:
     return await harness_factory()
 
 
-async def _seed_allowed_interaction(harness: Harness, *, label: str) -> UUID:
-    now = harness.clock.now
+async def _add_allowed_interaction(
+    session: AsyncSession, harness: Harness, *, created_at: datetime.datetime, expires_at: datetime.datetime
+) -> tuple[EnrollmentInteraction, AgentNameReservation]:
+    """Persist a legacy enrollment interaction in the ALLOWED phase with its client, correlation and pending name."""
+    token = uuid4()
     interaction_id = uuid4()
-    token = str(uuid4())
-    client_id = f"legacy-{label}-{token}"
-    code_challenge = f"challenge-{token}"
-    expires_at = now + datetime.timedelta(minutes=10)
+    client_id = f"legacy-client-{token}"
+    code_challenge = f"legacy-challenge-{token}"
     correlation_release_after = expires_at + datetime.timedelta(hours=2)
-    async with harness.sessions.begin() as session:
-        client = ClientSoftware(
-            client_software_id=uuid4(),
-            registration_kind=ClientRegistrationKind.OAUTH_PROXY_UNCLASSIFIED,
-            oauth_client_id=client_id,
-            validated_redirect_uris=[_REDIRECT_URI],
-            metadata_hash=b"legacy-client-metadata",
-            observed_name="Legacy client",
-            observed_icon_uri=None,
-            created_at=now,
-            updated_at=now,
-        )
-        session.add(client)
-        await session.flush()
-        interaction = EnrollmentInteraction(
+    client = ClientSoftware(
+        client_software_id=uuid4(),
+        registration_kind=ClientRegistrationKind.OAUTH_PROXY_UNCLASSIFIED,
+        oauth_client_id=client_id,
+        validated_redirect_uris=[_REDIRECT_URI],
+        metadata_hash=b"legacy-client-metadata",
+        observed_name="Legacy client",
+        observed_icon_uri=None,
+        created_at=created_at,
+        updated_at=created_at,
+    )
+    session.add(client)
+    await session.flush()
+    interaction = EnrollmentInteraction(
+        interaction_id=interaction_id,
+        client_software_id=client.client_software_id,
+        client_id=client_id,
+        redirect_uri=_REDIRECT_URI,
+        code_challenge=code_challenge,
+        requested_scopes=["tools:call"],
+        presentation_snapshot={"display_name": "Legacy client"},
+        upstream_authorization_url=f"https://auth.test/authorize/{token}",
+        phase=EnrollmentPhase.AWAITING_BROWSER,
+        expires_at=expires_at,
+        correlation_release_after=correlation_release_after,
+        browser_nonce_digest=hashlib.sha256(f"browser-nonce:{token}".encode()).digest(),
+        browser_identity_id=None,
+        browser_binding_digest=None,
+        decision_digest=None,
+        reconnect_agent_id=None,
+        reconnect_predecessor_binding_id=None,
+        access_profile_id=None,
+        closure_reason=None,
+        created_at=created_at,
+        updated_at=created_at,
+        closed_at=None,
+    )
+    session.add(interaction)
+    await session.flush()
+    session.add(
+        EnrollmentCorrelationReservation(
             interaction_id=interaction_id,
-            client_software_id=client.client_software_id,
             client_id=client_id,
             redirect_uri=_REDIRECT_URI,
             code_challenge=code_challenge,
-            requested_scopes=["tools:call"],
-            presentation_snapshot={"display_name": "Legacy client"},
-            upstream_authorization_url=f"https://auth.test/authorize/{token}",
-            phase=EnrollmentPhase.AWAITING_BROWSER,
-            expires_at=expires_at,
-            correlation_release_after=correlation_release_after,
-            browser_nonce_digest=hashlib.sha256(f"browser-nonce:{token}".encode()).digest(),
-            browser_identity_id=None,
-            browser_binding_digest=None,
-            decision_digest=None,
-            reconnect_agent_id=None,
-            reconnect_predecessor_binding_id=None,
-            access_profile_id=None,
-            closure_reason=None,
-            created_at=now,
-            updated_at=now,
-            closed_at=None,
+            release_after=correlation_release_after,
         )
-        session.add(interaction)
-        await session.flush()
-        session.add(
-            EnrollmentCorrelationReservation(
-                interaction_id=interaction_id,
-                client_id=client_id,
-                redirect_uri=_REDIRECT_URI,
-                code_challenge=code_challenge,
-                release_after=correlation_release_after,
-            )
+    )
+    await session.flush()
+    interaction.phase = EnrollmentPhase.AWAITING_APPROVAL
+    interaction.browser_nonce_digest = None
+    interaction.browser_identity_id = harness.identity_id
+    interaction.browser_binding_digest = hashlib.sha256(f"browser-binding:{token}".encode()).digest()
+    await session.flush()
+    interaction.phase = EnrollmentPhase.ALLOWED
+    interaction.decision_digest = hashlib.sha256(f"decision:{token}".encode()).digest()
+    interaction.access_profile_id = harness.authority.available_access_profiles()[0]
+    await session.flush()
+    name = AgentNameReservation(
+        reservation_id=uuid4(),
+        display_name=f"Legacy Agent {token}",
+        display_name_key=f"legacy-agent-{token}",
+        originating_interaction_id=interaction_id,
+        pending_interaction_id=interaction_id,
+        agent_id=None,
+        created_at=created_at,
+        activated_at=None,
+    )
+    session.add(name)
+    await session.flush()
+    return interaction, name
+
+
+async def _seed_allowed_interaction(harness: Harness) -> UUID:
+    now = harness.clock.now
+    async with harness.sessions.begin() as session:
+        interaction, _ = await _add_allowed_interaction(
+            session, harness, created_at=now, expires_at=now + datetime.timedelta(minutes=10)
         )
-        await session.flush()
-        interaction.phase = EnrollmentPhase.AWAITING_APPROVAL
-        interaction.browser_nonce_digest = None
-        interaction.browser_identity_id = harness.identity_id
-        interaction.browser_binding_digest = hashlib.sha256(f"browser-binding:{token}".encode()).digest()
-        await session.flush()
-        interaction.phase = EnrollmentPhase.ALLOWED
-        interaction.decision_digest = hashlib.sha256(f"decision:{token}".encode()).digest()
-        interaction.access_profile_id = harness.authority.available_access_profiles()[0]
-        interaction.updated_at = now
-        await session.flush()
-        session.add(
-            AgentNameReservation(
-                reservation_id=uuid4(),
-                display_name=f"Legacy Agent {token}",
-                display_name_key=f"legacy-agent-{token}",
-                originating_interaction_id=interaction_id,
-                pending_interaction_id=interaction_id,
-                agent_id=None,
-                created_at=now,
-                activated_at=None,
-            )
-        )
-        await session.flush()
-    return interaction_id
+        return interaction.interaction_id
 
 
 async def _seed_expiring_grant(harness: Harness, *, phase: EnrollmentPhase) -> UUID:
@@ -253,94 +260,19 @@ async def _seed_expiring_grant(harness: Harness, *, phase: EnrollmentPhase) -> U
     assert phase in {EnrollmentPhase.EXCHANGING, EnrollmentPhase.COMPLETED}
     now = harness.clock.now
     older = now - datetime.timedelta(minutes=16)
-    interaction_id = uuid4()
-    client_software_id = uuid4()
-    client_id = f"legacy-client-{uuid4()}"
-    reservation_id = uuid4()
     agent_id = uuid4()
     binding_id = uuid4()
     grant_id = uuid4()
-    code_challenge = f"legacy-challenge-{uuid4()}"
     is_exchanging = phase is EnrollmentPhase.EXCHANGING
     expires_at = now - datetime.timedelta(seconds=1) if is_exchanging else now + datetime.timedelta(minutes=10)
-    correlation_release_after = expires_at + datetime.timedelta(hours=2)
     async with harness.sessions.begin() as session:
-        session.add(
-            ClientSoftware(
-                client_software_id=client_software_id,
-                registration_kind=ClientRegistrationKind.OAUTH_PROXY_UNCLASSIFIED,
-                oauth_client_id=client_id,
-                validated_redirect_uris=[_REDIRECT_URI],
-                metadata_hash=b"legacy-client-metadata",
-                observed_name="Legacy client",
-                observed_icon_uri=None,
-                created_at=older,
-                updated_at=older,
-            )
-        )
-        await session.flush()
-        interaction = EnrollmentInteraction(
-            interaction_id=interaction_id,
-            client_software_id=client_software_id,
-            client_id=client_id,
-            redirect_uri=_REDIRECT_URI,
-            code_challenge=code_challenge,
-            requested_scopes=["tools:call"],
-            presentation_snapshot={"display_name": "Legacy client"},
-            upstream_authorization_url="https://auth.test/authorize/legacy",
-            phase=EnrollmentPhase.AWAITING_BROWSER,
-            expires_at=expires_at,
-            correlation_release_after=correlation_release_after,
-            browser_nonce_digest=b"legacy-browser-nonce",
-            browser_identity_id=None,
-            browser_binding_digest=None,
-            decision_digest=None,
-            reconnect_agent_id=None,
-            reconnect_predecessor_binding_id=None,
-            access_profile_id=None,
-            closure_reason=None,
-            created_at=older,
-            updated_at=older,
-            closed_at=None,
-        )
-        session.add(interaction)
-        await session.flush()
-        session.add(
-            EnrollmentCorrelationReservation(
-                interaction_id=interaction_id,
-                client_id=client_id,
-                redirect_uri=_REDIRECT_URI,
-                code_challenge=code_challenge,
-                release_after=correlation_release_after,
-            )
-        )
-        await session.flush()
-        interaction.phase = EnrollmentPhase.AWAITING_APPROVAL
-        interaction.browser_nonce_digest = None
-        interaction.browser_identity_id = harness.identity_id
-        interaction.browser_binding_digest = b"legacy-browser-binding"
-        await session.flush()
-        interaction.phase = EnrollmentPhase.ALLOWED
-        interaction.decision_digest = b"legacy-decision"
-        interaction.access_profile_id = "no_auto_approval"
-        await session.flush()
-        name = AgentNameReservation(
-            reservation_id=reservation_id,
-            display_name=f"Legacy Agent {grant_id}",
-            display_name_key=f"legacy-agent-{grant_id}",
-            originating_interaction_id=interaction_id,
-            pending_interaction_id=interaction_id,
-            agent_id=None,
-            created_at=older,
-            activated_at=None,
-        )
-        session.add(name)
-        await session.flush()
+        interaction, name = await _add_allowed_interaction(session, harness, created_at=older, expires_at=expires_at)
+        interaction_id = interaction.interaction_id
         session.add(
             Agent(
                 agent_id=agent_id,
                 owner_operator_id=harness.operator_id,
-                current_name_reservation_id=reservation_id,
+                current_name_reservation_id=name.reservation_id,
                 status=AgentStatus.DRAFT,
                 created_at=older,
                 updated_at=older,
@@ -375,7 +307,7 @@ async def _seed_expiring_grant(harness: Harness, *, phase: EnrollmentPhase) -> U
             grant_id=grant_id,
             binding_id=binding_id,
             authorizing_identity_id=harness.identity_id,
-            client_software_id=client_software_id,
+            client_software_id=interaction.client_software_id,
             enrollment_interaction_id=interaction_id,
             allowed_scopes=["tools:call"],
             initial_access_jti=None,
@@ -487,9 +419,9 @@ async def test_list_agents_returns_owned_disabled_static_history(
 async def test_expiry_maintenance_sweeps_allowed_response_loss_and_skips_locked_rows(
     db_url: str, harness: Harness
 ) -> None:
-    locked_interaction_id = await _seed_allowed_interaction(harness, label="locked-allowed")
+    locked_interaction_id = await _seed_allowed_interaction(harness)
     harness.clock.advance(datetime.timedelta(seconds=1))
-    unlocked_interaction_id = await _seed_allowed_interaction(harness, label="unlocked-allowed")
+    unlocked_interaction_id = await _seed_allowed_interaction(harness)
     harness.clock.advance(datetime.timedelta(minutes=11))
 
     engine = create_engine(db_url)
@@ -580,7 +512,7 @@ async def test_database_outage_maps_to_authority_unavailable() -> None:
             await authority.list_agents(operator_id=uuid4())
 
 
-async def test_sqlalchemy_pool_timeout_maps_to_authority_unavailable(db_url: str, harness: Harness) -> None:
+async def test_sqlalchemy_pool_timeout_maps_to_authority_unavailable(harness: Harness) -> None:
 
     async def time_out() -> None:
         raise SQLAlchemyTimeoutError("connection pool exhausted")
@@ -589,7 +521,7 @@ async def test_sqlalchemy_pool_timeout_maps_to_authority_unavailable(db_url: str
         await harness.authority._database_call(time_out)
 
 
-async def test_host_unreachable_maps_to_authority_unavailable(db_url: str, harness: Harness) -> None:
+async def test_host_unreachable_maps_to_authority_unavailable(harness: Harness) -> None:
     """asyncpg can raise a bare OSError (e.g. EHOSTUNREACH) that isn't a ConnectionError subclass."""
 
     async def no_route_to_host() -> None:

@@ -40,12 +40,6 @@ from cdk8s_plus_34 import (
     TaintEffect,
     Volume,
 )
-from cert_manager_crds.io.cert_manager import (
-    Certificate,
-    CertificateSpec,
-    CertificateSpecPrivateKeyRotationPolicy,
-    CertificateSpecUsages,
-)
 from constructs import Construct
 from trust_manager_crds.io.cert_manager.trust import (
     Bundle,
@@ -66,7 +60,15 @@ from agentplane.egress.settings import APIServer, Settings
 from agentplane.identity.auth.listener import TLS, Listener, SPIFFEAuth
 from agentplane.net.peertls.config import APP_URI, EGRESS_PROXY_URI
 from cluster.cdk8s import cilium, node_scheduling
-from cluster.cdk8s.agentplane import actions, database, environment_service, llm_ingress, notifications, runner_gateway
+from cluster.cdk8s.agentplane import (
+    actions,
+    database,
+    environment_service,
+    llm_ingress,
+    notifications,
+    runner_gateway,
+    workload_tls,
+)
 from cluster.cdk8s.agentplane.egress_credentials import BUILDBUDDY_API_KEY_SECRET, GITHUB_PAT_SECRET
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.kubernetes_account_ref import KubernetesAccountRef
@@ -83,7 +85,6 @@ from cluster.cdk8s.ollama import app as ollama
 from cluster.cdk8s.probes import tls_grpc_probe
 from cluster.cdk8s.providers.agentplane.egress_credential import Source
 from cluster.cdk8s.providers.agentplane.policy_set import AutoApproveIf, Rule
-from cluster.cdk8s.providers.cert_manager.certificate import CertificatePrivateKey
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
@@ -166,9 +167,7 @@ def add_runner_egress_network_policy(scope: Construct, *, policy: str, endpoint:
     NetworkPolicy(
         scope,
         f"{policy}-proxy-egress",
-        metadata=ApiObjectMetadata(
-            name=f"{endpoint.name.removeprefix('agentplane-')}-{policy}-proxy", namespace=namespace
-        ),
+        metadata=ApiObjectMetadata(name=f"{endpoint.name}-{policy}-proxy", namespace=namespace),
         endpoint_selector=proxy(namespace).pods.selector,
         egress=[endpoint.egress()],
     )
@@ -559,23 +558,13 @@ class Egress(Construct):
         self.memory_request = memory_request
         self.memory_limit = memory_limit
 
-        Certificate(
+        workload_tls.certificate(
             self,
             "svid-listener-certificate",
-            metadata=ApiObjectMetadata(name="agentplane-egress-proxy", namespace=self.env.namespace),
-            spec=CertificateSpec(
-                secret_name=PROXY_MTLS_SECRET,
-                uris=[EGRESS_PROXY_URI],
-                duration="24h",
-                renew_before="8h",
-                private_key=CertificatePrivateKey.ecdsa_p256(CertificateSpecPrivateKeyRotationPolicy.ALWAYS),
-                usages=[
-                    CertificateSpecUsages.DIGITAL_SIGNATURE,
-                    CertificateSpecUsages.CLIENT_AUTH,
-                    CertificateSpecUsages.SERVER_AUTH,
-                ],
-                issuer_ref=cluster_ca.WORKLOAD_ISSUER,
-            ),
+            env,
+            name="agentplane-egress-proxy",
+            secret_name=PROXY_MTLS_SECRET,
+            uri=EGRESS_PROXY_URI,
         )
 
         settings = Settings(
@@ -660,17 +649,12 @@ class Egress(Construct):
                 RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["get"]),
             ]
         )
-        Role(
-            self,
-            "role",
-            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=self.env.namespace),
-            rules=role_rules,
-        )
+        Role(self, "role", metadata=ApiObjectMetadata(name=NAME, namespace=self.env.namespace), rules=role_rules)
         RoleBinding(
             self,
             "rolebinding",
-            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=self.env.namespace),
-            role=Role.from_role_name(self, "role-ref", NAME.removeprefix("agentplane-")),
+            metadata=ApiObjectMetadata(name=NAME, namespace=self.env.namespace),
+            role=Role.from_role_name(self, "role-ref", NAME),
         ).add_subjects(service_account)
         # A standing workload's record lives in its own namespace; its Identity subject in the policy
         # namespace, read above.
@@ -857,7 +841,7 @@ class Egress(Construct):
         NetworkPolicy(
             self,
             "networkpolicy",
-            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=namespace),
+            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
             endpoint_selector=self.proxy.pods.selector,
             ingress=[
                 # Runner Pods, and the sandbox Actions' command boxes. command_sandbox.py imports this
@@ -874,8 +858,8 @@ class Egress(Construct):
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 llm_ingress.service(namespace).egress(),
                 actions.service(namespace).egress(),
-                runner_gateway.service(namespace).egress(),
-                environment_service.service(namespace).egress(),
+                runner_gateway.sessions_service(namespace).egress(),
+                environment_service.environments_service(namespace).egress(),
                 notifications.service(namespace).egress(),
                 forgejo.HTTP.egress(),
                 ollama.AUTH_PROXY.egress(),

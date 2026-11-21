@@ -18,7 +18,7 @@ Other Authentik logins stay out, each held there by something this flow would ha
 - `haku/console/identity/operator_{auth,login_flow}.py` keeps each pending login in a Postgres row with its own
   binding cookie and `return_to` continuation, requests no PKCE, and trusts the session only after
   `PostgresOperatorIdentityStore` re-resolves the identity on every request.
-- `agentplane/app/{oidc,auth_routes}.py` requests `offline_access` and keeps the login tokens in Postgres-backed
+- `agentplane/app/internal/auth/` requests `offline_access` and keeps the login tokens in Postgres-backed
   sessions, and pins a single audience where `valid_claims` also admits several audiences whose `azp` is this client.
 """
 

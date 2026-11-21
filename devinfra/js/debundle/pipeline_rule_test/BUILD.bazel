@@ -1,7 +1,7 @@
 load("//devinfra/js/debundle:debundle_cli.bzl", "debundle_cli")
-load("//devinfra/js/debundle:pipeline.bzl", "debundle_analysis", "debundle_apply")
+load("//devinfra/js/debundle:pipeline.bzl", "debundle_apply")
 load("//devinfra/python:defs.bzl", "py_test")
-load(":pipeline_rule_test.bzl", "analysis_identity_inputs_test", "analysis_threads_action_test", "apply_projection_inputs_test", "ownership_subset_split_graphs_test", "package_root_fixture", "pipeline_report_flags_test", "selected_subset_cli_contract_test", "shared_analysis_test", "source_tree_fixture")
+load(":pipeline_rule_test.bzl", "analysis_identity_inputs_test", "analysis_threads_action_test", "apply_projection_inputs_test", "fixture_analysis", "fixture_apply", "ownership_subset_split_graphs_test", "package_root_fixture", "pipeline_report_flags_test", "selected_subset_cli_contract_test", "shared_analysis_test", "source_tree_fixture")
 
 package(default_testonly = True)
 
@@ -37,56 +37,27 @@ source_tree_fixture(
     },
 )
 
-debundle_analysis(
-    name = "analysis",
-    input_data = [":source"],
-    spec_tree_inputs = [":spec"],
-    tags = ["manual"],
-    tree_config = "fixture/config.yaml",
-    tree_modules = "fixture/modules",
-    tree_source_root = ":source",
-    tree_vendor_marks = "fixture/vendor_marks.yaml",
-)
+fixture_analysis(name = "analysis")
 
-debundle_apply(
+fixture_apply(
     name = "jsonl_default",
     analysis = ":analysis",
-    input_data = [":source"],
-    spec_tree_inputs = [":spec"],
-    tags = ["manual"],
-    tree_config = "fixture/config.yaml",
-    tree_modules = "fixture/modules",
-    tree_source_root = ":source",
-    tree_vendor_marks = "fixture/vendor_marks.yaml",
 )
 
-debundle_apply(
+fixture_apply(
     name = "tree_projection_inputs",
     analysis = ":analysis",
-    input_data = [":source"],
     package_roots = {":package_root": "fixture-package"},
-    spec_tree_inputs = [":spec"],
-    tags = ["manual"],
-    tree_config = "fixture/config.yaml",
-    tree_modules = "fixture/modules",
-    tree_source_root = ":source",
-    tree_vendor_marks = "fixture/vendor_marks.yaml",
 )
 
-debundle_apply(
+fixture_apply(
     name = "tree_extra_spec_input",
     analysis = ":analysis",
-    input_data = [":source"],
     package_roots = {":package_root": "fixture-package"},
     spec_tree_inputs = [
         ":spec",
         "flat_spec.yaml",
     ],
-    tags = ["manual"],
-    tree_config = "fixture/config.yaml",
-    tree_modules = "fixture/modules",
-    tree_source_root = ":source",
-    tree_vendor_marks = "fixture/vendor_marks.yaml",
 )
 
 debundle_apply(
@@ -126,32 +97,18 @@ apply_projection_inputs_test(
     target_under_test = ":flat_projection_inputs",
 )
 
-debundle_apply(
+fixture_apply(
     name = "jsonl_readable_default",
     analysis = ":analysis",
     emit_on_rejection = True,
-    input_data = [":source"],
-    spec_tree_inputs = [":spec"],
     split_dependency_graphs = True,
-    tags = ["manual"],
-    tree_config = "fixture/config.yaml",
-    tree_modules = "fixture/modules",
-    tree_source_root = ":source",
-    tree_vendor_marks = "fixture/vendor_marks.yaml",
 )
 
-debundle_apply(
+fixture_apply(
     name = "subset_graphs",
     analysis = ":analysis",
-    input_data = [":source"],
     ownership_subset = "ownership_subset.json",
-    spec_tree_inputs = [":spec"],
     split_dependency_graphs = True,
-    tags = ["manual"],
-    tree_config = "fixture/config.yaml",
-    tree_modules = "fixture/modules",
-    tree_source_root = ":source",
-    tree_vendor_marks = "fixture/vendor_marks.yaml",
 )
 
 ownership_subset_split_graphs_test(
@@ -206,16 +163,9 @@ py_test(
     ],
 )
 
-debundle_analysis(
+fixture_analysis(
     name = "thread_limited",
     analysis_threads = 2,
-    input_data = [":source"],
-    spec_tree_inputs = [":spec"],
-    tags = ["manual"],
-    tree_config = "fixture/config.yaml",
-    tree_modules = "fixture/modules",
-    tree_source_root = ":source",
-    tree_vendor_marks = "fixture/vendor_marks.yaml",
 )
 
 analysis_threads_action_test(
@@ -224,20 +174,13 @@ analysis_threads_action_test(
 )
 
 [
-    debundle_apply(
+    fixture_apply(
         name = name,
         analysis = ":analysis",
         effect_conflicts_chunks = chunks,
         effect_conflicts_jsonl = export,
         emit_on_rejection = readable,
-        input_data = [":source"],
-        spec_tree_inputs = [":spec"],
         split_dependency_graphs = readable,
-        tags = ["manual"],
-        tree_config = "fixture/config.yaml",
-        tree_modules = "fixture/modules",
-        tree_source_root = ":source",
-        tree_vendor_marks = "fixture/vendor_marks.yaml",
     )
     for name, export, chunks, readable in [
         ("jsonl_export", True, [], False),
@@ -291,20 +234,13 @@ pipeline_report_flags_test(
 )
 
 [
-    debundle_apply(
+    fixture_apply(
         name = name,
         analysis = ":analysis",
         emit_on_rejection = readable,
         full_report_chunks = chunks,
         full_reports = kinds,
-        input_data = [":source"],
-        spec_tree_inputs = [":spec"],
         split_dependency_graphs = readable,
-        tags = ["manual"],
-        tree_config = "fixture/config.yaml",
-        tree_modules = "fixture/modules",
-        tree_source_root = ":source",
-        tree_vendor_marks = "fixture/vendor_marks.yaml",
     )
     for name, chunks, readable, kinds in [
         (

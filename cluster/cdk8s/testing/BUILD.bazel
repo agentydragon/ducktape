@@ -11,3 +11,13 @@ py_library(
         "@pypi//pytest",
     ],
 )
+
+py_library(
+    name = "manifests",
+    srcs = ["manifests.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "@pypi//more_itertools",
+        "@pypi//pyyaml",
+    ],
+)

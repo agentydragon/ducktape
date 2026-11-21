@@ -18,6 +18,7 @@ from pathlib import Path
 from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import ServiceAccount, k8s
 from constructs import Construct
+from vpa_crds.io.k8s.autoscaling import VerticalPodAutoscaler, VerticalPodAutoscalerSpecTargetRef
 
 from agentplane.egress import sidecar_config
 from cluster.cdk8s import node_scheduling
@@ -25,10 +26,12 @@ from cluster.cdk8s.agentplane import egress
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.cert_manager import cluster_ca
 from cluster.cdk8s.config_format import yaml_config
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.providers.agentplane.identity import Identity
 from cluster.cdk8s.providers.agentplane.workload_credential import WorkloadCredential
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
+from cluster.cdk8s.providers.vpa.policy import initial_requests_spec
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 
@@ -40,6 +43,19 @@ _SVID_DIR = Path("/var/run/agentplane-svid")
 # The workload CA alone, which the egress proxy's server SVID chains to.
 _WORKLOAD_CA_DIR = Path("/etc/agentplane-workload-ca")
 _ZONES = node_scheduling.HOME_AND_OVH_ZONES
+
+
+def add_vpa(scope: Construct, namespace: str) -> VerticalPodAutoscaler:
+    """Size the relay's requests while Goldilocks stays disabled for runner Jobs."""
+    return VerticalPodAutoscaler(
+        scope,
+        NAME,
+        metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
+        spec=initial_requests_spec(
+            VerticalPodAutoscalerSpecTargetRef(api_version="apps/v1", kind="Deployment", name=NAME),
+            container_name=sidecar_config.CONTAINER_NAME,
+        ),
+    )
 
 
 def service(namespace: str) -> ServiceRef:
@@ -158,13 +174,7 @@ def add_gateway(scope: Construct, env: Environment, *, clients: Pods) -> Identit
                                 capabilities=k8s.Capabilities(drop=["ALL"]),
                             ),
                             # Streams CI downloads (Bazel toolchains, image layers) without buffering bodies.
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("50m"),
-                                    "memory": k8s.Quantity.from_string("64Mi"),
-                                },
-                                limits={"memory": k8s.Quantity.from_string("256Mi")},
-                            ),
+                            resources=container_resources(cpu="50m", memory="64Mi", memory_limit="256Mi"),
                             volume_mounts=[
                                 settings.mount,
                                 k8s.VolumeMount(name="svid", mount_path=str(_SVID_DIR), read_only=True),

@@ -18,6 +18,7 @@ from props.db.database import Database
 from props.db.models import ModelMetadata
 from props.llm_proxy.routes import (
     LLMAccess,
+    UpstreamRoute,
     _extract_usage,
     _get_upstream_route,
     _merge_props_metadata,
@@ -25,9 +26,9 @@ from props.llm_proxy.routes import (
     _upstream_auth_headers,
 )
 
-# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep //props/testing/fixtures:db
-pytest_plugins = ("util.testing.postgres_fixtures", "props.testing.fixtures.db")
+pytest_plugins = ("testing.postgres_fixtures", "props.testing.fixtures.db")
 
 
 @pytest.fixture
@@ -62,98 +63,84 @@ def test_resolve_upstream_url_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     assert _resolve_upstream_url(config) == "http://test.example.com/v1"
 
 
+def _add_model(
+    synced_db: Database,
+    model_id: str,
+    *,
+    upstream_name: str,
+    upstream_model: str,
+    api_shape: LLMApiShape = LLMApiShape.RESPONSES,
+) -> None:
+    """Add a zero-priced `model_metadata` row for `_get_upstream_route` to look up."""
+    with synced_db.session() as session:
+        session.merge(
+            ModelMetadata(
+                model_id=model_id,
+                input_usd_per_1m_tokens=0.0,
+                cached_input_usd_per_1m_tokens=0.0,
+                output_usd_per_1m_tokens=0.0,
+                context_window_tokens=8192,
+                max_output_tokens=2048,
+                upstream_name=upstream_name,
+                upstream_model=upstream_model,
+                api_shape=api_shape,
+            )
+        )
+        session.commit()
+
+
+async def _route(synced_db: Database, config: PropsConfig, model_id: str) -> UpstreamRoute:
+    """Resolve `model_id` for the Responses endpoint on a fresh async session."""
+    async with AsyncDatabase(synced_db.config) as db, db.session() as session:
+        return await _get_upstream_route(model_id, session, config, LLMApiShape.RESPONSES)
+
+
 @pytest.mark.asyncio
 async def test_custom_model_routes_to_configured_upstream(
     synced_db: Database, sample_config: PropsConfig, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Custom model routes to its configured upstream with model rewriting."""
-    # Insert a custom model pointing to "local" upstream
-    with synced_db.session() as session:
-        session.merge(
-            ModelMetadata(
-                model_id="local:llama-70b",
-                input_usd_per_1m_tokens=0.0,
-                cached_input_usd_per_1m_tokens=0.0,
-                output_usd_per_1m_tokens=0.0,
-                context_window_tokens=128000,
-                max_output_tokens=4096,
-                upstream_name="local",
-                upstream_model="llama3.3:70b",
-            )
-        )
-        session.commit()
+    _add_model(synced_db, "local:llama-70b", upstream_name="local", upstream_model="llama3.3:70b")
+    monkeypatch.setenv("LOCAL_API_KEY", "local-key")
 
-    async with AsyncDatabase(synced_db.config) as db:
-        async with db.session() as session:
-            with monkeypatch.context() as mp:
-                mp.setenv("LOCAL_API_KEY", "local-key")
-                route = await _get_upstream_route("local:llama-70b", session, sample_config, LLMApiShape.RESPONSES)
-        assert route.url == "http://localhost:11434/v1"
-        assert route.api_key == "local-key"
-        assert route.model_name == "llama3.3:70b"
+    route = await _route(synced_db, sample_config, "local:llama-70b")
+
+    assert route.url == "http://localhost:11434/v1"
+    assert route.api_key == "local-key"
+    assert route.model_name == "llama3.3:70b"
 
 
 @pytest.mark.asyncio
 async def test_unknown_model_raises_400(synced_db: Database, sample_config: PropsConfig) -> None:
     """Unknown model ID raises HTTPException(400)."""
-    async with AsyncDatabase(synced_db.config) as db:
-        async with db.session() as session:
-            with pytest.raises(HTTPException) as exc_info:
-                await _get_upstream_route("nonexistent-model", session, sample_config, LLMApiShape.RESPONSES)
-        assert exc_info.value.status_code == 400
+    with pytest.raises(HTTPException) as exc_info:
+        await _route(synced_db, sample_config, "nonexistent-model")
+    assert exc_info.value.status_code == 400
 
 
 @pytest.mark.asyncio
 async def test_unknown_upstream_raises_500(synced_db: Database, sample_config: PropsConfig) -> None:
     """Model referencing unknown upstream raises HTTPException(500)."""
-    # Insert a model pointing to nonexistent upstream
-    with synced_db.session() as session:
-        session.merge(
-            ModelMetadata(
-                model_id="broken-model",
-                input_usd_per_1m_tokens=0.0,
-                cached_input_usd_per_1m_tokens=0.0,
-                output_usd_per_1m_tokens=0.0,
-                context_window_tokens=8192,
-                max_output_tokens=2048,
-                upstream_name="nonexistent-upstream",
-                upstream_model="model-name",
-            )
-        )
-        session.commit()
-
-    async with AsyncDatabase(synced_db.config) as db:
-        async with db.session() as session:
-            with pytest.raises(HTTPException) as exc_info:
-                await _get_upstream_route("broken-model", session, sample_config, LLMApiShape.RESPONSES)
-        assert exc_info.value.status_code == 500
+    _add_model(synced_db, "broken-model", upstream_name="nonexistent-upstream", upstream_model="model-name")
+    with pytest.raises(HTTPException) as exc_info:
+        await _route(synced_db, sample_config, "broken-model")
+    assert exc_info.value.status_code == 500
 
 
 @pytest.mark.asyncio
 async def test_api_shape_mismatch_raises_400(synced_db: Database, sample_config: PropsConfig) -> None:
     """A chat-shaped model cannot be routed through the Responses endpoint."""
-    with synced_db.session() as session:
-        session.merge(
-            ModelMetadata(
-                model_id="chat-model",
-                input_usd_per_1m_tokens=0.0,
-                cached_input_usd_per_1m_tokens=0.0,
-                output_usd_per_1m_tokens=0.0,
-                context_window_tokens=8192,
-                max_output_tokens=2048,
-                upstream_name="local",
-                upstream_model="chat-upstream",
-                api_shape=LLMApiShape.CHAT_COMPLETIONS,
-            )
-        )
-        session.commit()
-
-    async with AsyncDatabase(synced_db.config) as db:
-        async with db.session() as session:
-            with pytest.raises(HTTPException) as exc_info:
-                await _get_upstream_route("chat-model", session, sample_config, LLMApiShape.RESPONSES)
-        assert exc_info.value.status_code == 400
-        assert "api_shape" in exc_info.value.detail
+    _add_model(
+        synced_db,
+        "chat-model",
+        upstream_name="local",
+        upstream_model="chat-upstream",
+        api_shape=LLMApiShape.CHAT_COMPLETIONS,
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        await _route(synced_db, sample_config, "chat-model")
+    assert exc_info.value.status_code == 400
+    assert "api_shape" in exc_info.value.detail
 
 
 def test_chat_usage_extraction() -> None:

@@ -26,7 +26,7 @@ from cluster.cdk8s.flux import (
     kustomize_kustomization,
 )
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.namespaces import Vpa, VpaProfile
 
 CNPG_DATABASE_READY = (
     "has(status.applied) && status.applied && "
@@ -116,18 +116,12 @@ def write_charts(
     directory: str,
     *chart_builders: Callable[[App], Chart],
     manifest_name: str | None = None,
-    unhardened_pods: Collection[str] = (),
     unpinned_https_egress: Collection[str] = (),
 ) -> str:
     """Synthesize charts, in order, into one generated file in `directory`; return its name.
-    The waivers are `write_app`'s."""
+    `unpinned_https_egress` is `write_app`'s waiver."""
     return write_app(
-        root,
-        directory,
-        _app(chart_builders),
-        manifest_name=manifest_name,
-        unhardened_pods=unhardened_pods,
-        unpinned_https_egress=unpinned_https_egress,
+        root, directory, _app(chart_builders), manifest_name=manifest_name, unpinned_https_egress=unpinned_https_egress
     )
 
 
@@ -146,8 +140,6 @@ def write_directory(
     configurations: Sequence[str] = (),
     patch_charts: Sequence[Callable[[App], Chart]] = (),
     json6902_patches: Sequence[Json6902Patch] = (),
-    unhardened_pods: Collection[str] = (),
-    unpinned_https_egress: Collection[str] = (),
 ) -> RenderedDirectory:
     """Synthesize a component's charts into the one generated file of the directory `artifact`
     packages (`write_charts`), and write its `kustomization.yaml` listing it, then `siblings`:
@@ -155,8 +147,7 @@ def write_directory(
     such as an upstream release manifest. `patch_charts` are synthesized into
     `patches.k8s.yaml` beside it and listed as strategic-merge patches, before
     `json6902_patches`. `namespace`, `components`, `generator_options`, `config_map_generator`,
-    `secret_generator` and `configurations` are `kustomize_kustomization`'s; `unhardened_pods` and
-    `unpinned_https_egress` are `write_app`'s fleet-rule waivers.
+    `secret_generator` and `configurations` are `kustomize_kustomization`'s.
 
     For a directory whose `kustomization.yaml` the generator owns: under `GENERATED_ROOT`, or
     under `HAND_WRITTEN_ROOT` beside the hand-written files it names (a `.sops.yaml` sibling,
@@ -178,19 +169,7 @@ def write_directory(
         raise ValueError(f"{artifact.name=}: the writer lists one directory; this artifact also copies {shared=}")
     out_dir = root / directory
     out_dir.mkdir(parents=True, exist_ok=True)
-    resources = (
-        [
-            write_app(
-                root,
-                directory,
-                _app(chart_builders, app),
-                unhardened_pods=unhardened_pods,
-                unpinned_https_egress=unpinned_https_egress,
-            )
-        ]
-        if chart_builders or app is not None
-        else []
-    )
+    resources = [write_app(root, directory, _app(chart_builders, app))] if chart_builders or app is not None else []
     patch_files: list[PatchFile] = []
     if patch_charts:
         # Partial objects: the fleet rules check the resources they patch, not the patches.
@@ -232,7 +211,7 @@ def namespace_chart(
     app: App,
     *,
     name: str,
-    vpa: Vpa,
+    vpa: Vpa | VpaProfile,
     labels: Mapping[str, str] | None = None,
     annotations: Mapping[str, str] | None = None,
 ) -> Chart:

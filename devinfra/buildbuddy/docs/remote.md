@@ -129,37 +129,16 @@ that nested Bazel actions execute remotely.
 
 ## Credential and locality boundary
 
-`bb remote` has two BuildBuddy hops, and they do not share the caller's
-Agentplane identity:
+`bb remote` makes two BuildBuddy hops that do not share the caller's Agentplane identity. The
+local `bb` CLI sends the outer `BuildBuddyService.Run` request, which a local egress proxy can
+authenticate by substituting a placeholder in a whole header or metadata value. BuildBuddy then
+starts Bazel on the hosted runner. That process reads `RunRequest.steps[].run` outside the local
+Sandbox and makes its own nested BES, cache and Remote Execution requests, without the caller
+Pod's workload token or egress path, so a placeholder copied into `steps[].run` stays inert.
 
-1. The local `bb` CLI makes the outer `BuildBuddyService.Run` request. A local
-   egress proxy can authenticate that request by substituting a configured
-   placeholder in its whole metadata value.
-2. BuildBuddy later starts a Bazel process on the hosted runner. That process
-   reads `RunRequest.steps[].run` and makes its own nested BES, cache, and
-   Remote Execution requests. The hosted process is outside the local Sandbox
-   and does not inherit the caller Pod's workload token or egress path.
-
-The current proxy contract substitutes whole HTTP headers and gRPC metadata;
-it intentionally does not rewrite arbitrary request bodies. Consequently, a
-placeholder copied into `steps[].run` remains a placeholder on the hosted
-runner. The outer request can authenticate successfully while the nested Bazel
-process fails authentication.
-
-This is especially important for live tests that need the staging Kubernetes
-API. A direct `bb run` keeps the completed binary on the caller, where the
-caller can hold the intended Kubernetes access. `bbr`/`bb remote` runs that
-binary on BuildBuddy infrastructure, where the current Sandbox-bound
-credential-substitution design cannot authenticate it to the staging cluster.
-
-Do not use hosted `bb remote` as a credentialless route to caller-local
-services, and do not put a real staging credential into the hosted command as a
-workaround. Hosted-runner authentication requires a separately designed
-boundary, such as a runner-side credential reference or a run-scoped gateway.
-A narrow BuildBuddy-specific `RunRequest` body rewrite is a possible weaker
-boundary, but it gives the real BuildBuddy credential to hosted agent-controlled
-code and is not equivalent to Sandbox workload authentication. The design
-tradeoff and required evidence are tracked in
+The execution policy that follows (when to use direct `bb run` instead of `bbr`) is in
+[`bazel_configuration.md`](../../docs/bazel_configuration.md#credential-boundary-for-hosted-bb-remote).
+The design tradeoffs of the hosted-runner alternatives are in
 [`agentplane/docs/buildbuddy_remote_auth.md`](../../../agentplane/docs/buildbuddy_remote_auth.md).
 
 ## Git state synchronization
@@ -224,8 +203,8 @@ working tree.
 - **Fallback base is `origin/devel` via `@{upstream}`**: needs a **local**
   `devel` branch with tracking config. A CI checkout (`actions/checkout`)
   creates only `origin/devel`, so both `@{upstream}` and the
-  `git rev-parse devel` fallback fail — `bazel-ci.yml` creates a local `devel`
-  ref for PR builds. A stale `origin/devel` puts the diff base hundreds of
+  `git rev-parse devel` fallback fail — `bench-remote-bazel.yml` creates a local
+  `devel` ref, and `bazel-ci.yml` avoids the fallback with `run_from_commit`. A stale `origin/devel` puts the diff base hundreds of
   commits behind HEAD: a huge patchset — on `bb` < 5.0.445, possibly an
   unappliable one (next bullet) — instead of the small diff you expect.
   `devinfra/buildbuddy/bbr.py`'s `check_base_branch_freshness()` **refuses to run** when
@@ -462,7 +441,7 @@ Outputs fetched back by `--remote_download_outputs=toplevel` or
 our standard Linux x86_64 RBE builds. **There is NO
 `bb-out/bazel-bin/<pkg>/<name>` convenience symlink** — it exists only in
 local Bazel workspaces. Consumers of bb-remote-built artifacts (e.g.
-`push-images.yml`) must use the full path:
+`publish-oci-image.yml`) must use the full path:
 
 ```bash
 bbr build //:requirements --remote_download_regex='.*requirements\.out'
@@ -584,7 +563,9 @@ Source: `cli/config/config.go`, `cli/storage/storage.go`, `cli/login/login.go`,
   schema includes per-action `platform_properties`, `container_image`, and
   `resource_requests`; it is a separate consumer from `bb remote`.
 - `.git/config [buildbuddy]` stores API key (`api-key`), selected remote name,
-  and default branch.
+  and default branch. `Warning: Failed to cache default branch … in .git/config`
+  (seen when `bbr` ran from a Claude Code session; cause not traced) is cosmetic:
+  `bb remote` re-detects the default branch on every run.
 
 For `bb remote`, an API key supplied in the command's
 `--remote_header=x-buildbuddy-api-key=…` takes precedence over

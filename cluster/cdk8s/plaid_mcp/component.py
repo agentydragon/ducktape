@@ -26,16 +26,14 @@ def write_directory(root: Path, artifact: ArtifactGeneratorSpecArtifacts) -> Ren
     return generation.write_directory(
         root,
         artifact,
-        partial(generation.namespace_chart, name=_NAMESPACE, vpa=Vpa.DISABLED),
+        partial(generation.namespace_chart, name=_NAMESPACE, vpa=Vpa.RECOMMEND),
         app.chart,
         db.chart,
         pgweb.chart,
         spend.chart,
         siblings=["plaid-client-credentials.sops.yaml"],
         components=["image-pins"],
-        config_map_generator=[
-            ConfigMapArgs(name="plaid-mcp-db-readonly-sql", namespace=_NAMESPACE, files=["readonly-role.sql"])
-        ],
+        config_map_generator=[ConfigMapArgs(name=db.SQL_CONFIG_MAP, namespace=_NAMESPACE, files=[db.SQL_FILE])],
     )
 
 
@@ -47,10 +45,9 @@ def plaid_mcp(
     authentik: Kustomization,
     seaweedfs_operator: Kustomization,
 ) -> Kustomization:
-    name = "plaid-mcp"
     return flux_kustomization(
         chart,
-        name,
+        "plaid-mcp",
         directory,
         timeout="10m",
         # Web OIDC credentials are supplied by an ExternalSecret and required by

@@ -50,6 +50,7 @@ type backendFactory func(ProcessConfig) processBackend
 
 // Supervisor is an immutable factory for native processes.
 type Supervisor struct {
+	commands       *SystemdLauncher
 	systemdScope   SystemdScopeID
 	makeBackend    backendFactory
 	fenceNamespace func(context.Context) error

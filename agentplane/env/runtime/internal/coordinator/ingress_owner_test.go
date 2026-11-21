@@ -6,9 +6,13 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/bootstrap"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/cosistate"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/retained"
 	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/api/ingress/session_ingresspb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -20,10 +24,11 @@ import (
 
 type pausedRecoveryState struct {
 	state.State
-	once    sync.Once
-	entered chan struct{}
-	release chan struct{}
-	err     error
+	once       sync.Once
+	entered    chan struct{}
+	release    chan struct{}
+	err        error
+	allowReads atomic.Bool
 }
 
 type failingSealedAcknowledgementState struct {
@@ -47,7 +52,7 @@ func (s *failingSealedAcknowledgementState) Modify(ctx context.Context, value re
 }
 
 func (s *pausedRecoveryState) List(ctx context.Context, kind resource.Kind, opts ...state.ListOption) (resource.List, error) {
-	if kind.Type() == retained.SessionRecordType {
+	if kind.Type() == retained.SessionRecordType && !s.allowReads.Load() {
 		s.once.Do(func() { close(s.entered) })
 		select {
 		case <-s.release:
@@ -61,13 +66,12 @@ func (s *pausedRecoveryState) List(ctx context.Context, kind resource.Kind, opts
 	return s.State.List(ctx, kind, opts...)
 }
 
-func ingressTestRuntime(t *testing.T, store state.State, run func(context.Context, configuration.Endpoint) error) *Runtime {
+func ingressTestRuntime(t *testing.T, store state.State, deps runtimeDeps) *Runtime {
 	t.Helper()
 	proxy := modelConfigServer(t)
 	config := lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false")
 	config.Config.HistoryIngress.Target = "history.test:8081"
-	config.deps.runIngress = run
-	r, err := newTestRuntime(t, config.Config, store, config.deps)
+	r, err := newTestRuntime(t, config.Config, store, deps)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,11 +102,11 @@ func TestRuntimeHistoryStartsAfterSessionRecovery(t *testing.T) {
 		State: state.WrapCore(namespaced.NewState(inmem.Build)), entered: make(chan struct{}), release: make(chan struct{}),
 	}
 	started := make(chan struct{})
-	r := ingressTestRuntime(t, store, func(ctx context.Context, _ configuration.Endpoint) error {
+	r := ingressTestRuntime(t, store, runtimeDeps{runIngress: func(ctx context.Context, _ configuration.Endpoint) error {
 		close(started)
 		<-ctx.Done()
 		return nil
-	})
+	}})
 	t.Cleanup(func() {
 		select {
 		case <-store.release:
@@ -146,9 +150,16 @@ func TestRuntimeRecoveryFailureNeverStartsHistoryDelivery(t *testing.T) {
 		State: state.WrapCore(namespaced.NewState(inmem.Build)), entered: make(chan struct{}), release: make(chan struct{}), err: recoveryErr,
 	}
 	started := make(chan struct{})
-	r := ingressTestRuntime(t, store, func(context.Context, configuration.Endpoint) error {
-		close(started)
-		return nil
+	stopping := make(chan struct{})
+	r := ingressTestRuntime(t, store, runtimeDeps{
+		runIngress: func(context.Context, configuration.Endpoint) error {
+			close(started)
+			return nil
+		},
+		stopSessions: func(context.Context) error {
+			close(stopping)
+			return nil
+		},
 	})
 	t.Cleanup(func() {
 		select {
@@ -185,8 +196,16 @@ func TestRuntimeRecoveryFailureNeverStartsHistoryDelivery(t *testing.T) {
 		t.Fatal("History delivery started after failed Session recovery")
 	default:
 	}
-	if err := r.Close(ctx); err == nil {
-		t.Fatal("Runtime Close lost the startup failure")
+	// Let the aggregate read inventory during shutdown after the recovery
+	// worker's read has already failed.
+	store.allowReads.Store(true)
+	if err := r.Close(ctx); !errors.Is(err, recoveryErr) {
+		t.Fatalf("Runtime Close after failed recovery = %v, want recovery failure", err)
+	}
+	select {
+	case <-stopping:
+	default:
+		t.Fatal("Runtime skipped Session cleanup after recovery failure")
 	}
 }
 
@@ -194,11 +213,11 @@ func TestRuntimeHistoryFailureFencesAdmissionAndCloses(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
 	ingressErr := errors.New("injected History delivery failure")
-	r := ingressTestRuntime(t, nil, func(context.Context, configuration.Endpoint) error {
+	r := ingressTestRuntime(t, nil, runtimeDeps{runIngress: func(context.Context, configuration.Endpoint) error {
 		close(started)
 		<-release
 		return ingressErr
-	})
+	}})
 	t.Cleanup(func() {
 		select {
 		case <-release:
@@ -236,13 +255,13 @@ func TestRuntimeCloseJoinsHistoryBeforeReleasingOwner(t *testing.T) {
 	started := make(chan struct{})
 	canceled := make(chan struct{})
 	release := make(chan struct{})
-	r := ingressTestRuntime(t, nil, func(ctx context.Context, _ configuration.Endpoint) error {
+	r := ingressTestRuntime(t, nil, runtimeDeps{runIngress: func(ctx context.Context, _ configuration.Endpoint) error {
 		close(started)
 		<-ctx.Done()
 		close(canceled)
 		<-release
 		return nil
-	})
+	}})
 	t.Cleanup(func() {
 		select {
 		case <-release:
@@ -266,10 +285,7 @@ func TestRuntimeCloseJoinsHistoryBeforeReleasingOwner(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("Runtime did not cancel History delivery after Host drain")
 	}
-	if owner, err := openTestRuntimeStore(r.config.StateDir); err == nil {
-		_ = owner.Close()
-		t.Fatal("Runtime released owner before History worker join")
-	}
+	requireOwnerRetained(t, r.config.StateDir, "Runtime released owner before History worker join")
 	select {
 	case err := <-closed:
 		t.Fatalf("Runtime Close completed before History worker joined: %v", err)
@@ -284,11 +300,7 @@ func TestRuntimeCloseJoinsHistoryBeforeReleasingOwner(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("Runtime Close did not join History worker")
 	}
-	owner, err := openTestRuntimeStore(r.config.StateDir)
-	if err != nil {
-		t.Fatalf("joined Runtime retained owner: %v", err)
-	}
-	_ = owner.Close()
+	requireOwnerReleased(t, r.config.StateDir, "joined Runtime retained owner")
 }
 
 const sealedHistorySessionID = "session-1"
@@ -329,17 +341,48 @@ func (seal heldHistorySeal) startRuntimeClose(t *testing.T, r *Runtime) (context
 	}
 	closed := make(chan error, 1)
 	go func() { closed <- r.Close(ctx) }()
-	waitRuntimeCloseStatus(t, r, func(progress RuntimeCloseStatus) bool {
-		return progress.Stage == runtimeCloseHistoryFlushing
-	}, "Runtime Close to wait at the sealed History acknowledgement barrier")
+	waitClosingSessionStage(t, r, lifecycle.Flushing)
 	return ctx, closed
+}
+
+type closeHistoryReadProbe struct {
+	state.State
+	read chan struct{}
+	once sync.Once
+}
+
+func (s *closeHistoryReadProbe) Get(ctx context.Context, pointer resource.Pointer, options ...state.GetOption) (resource.Resource, error) {
+	value, err := s.State.Get(ctx, pointer, options...)
+	// The sealed History wait reads aggregate status on the fence deadline.
+	// Native-stop observation and the aggregate writer use the engine lifetime.
+	if _, bounded := ctx.Deadline(); bounded && err == nil && pointer.Type() == lifecycle.AggregateStatusType {
+		status := value.(interface{ TypedSpec() *lifecycle.Status }).TypedSpec()
+		desired, found, err := lifecycle.ReadEnvironmentDesired(ctx, s.State)
+		if err == nil && found && desired.Mode == lifecycle.Closing && status.Generation == desired.Generation && status.Stage == lifecycle.Flushing {
+			s.once.Do(func() { close(s.read) })
+		}
+	}
+	return value, err
+}
+
+func newSealedHistoryCloseProbe(t *testing.T, config runtimeTestConfig) (*Runtime, <-chan struct{}) {
+	t.Helper()
+	store, backing, err := cosistate.Open(config.StateDir, lifecycle.Namespace, bootstrap.SelectionRegistration(), bootstrap.EventRegistration(), retained.SessionRecordRegistration(), retained.IngressAckRegistration(), cosistate.EnvironmentSealRegistration())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = backing.Close() })
+	config.testBacking = backing
+	probe := &closeHistoryReadProbe{State: store, read: make(chan struct{})}
+	return newLifecycleRuntimeWithState(t, config, probe), probe.read
 }
 
 func TestRuntimeKeepsHistoryAliveUntilExactSealedAcknowledgement(t *testing.T) {
 	config, seal := sealedHistoryConfig(t)
-	r := newLifecycleRuntime(t, config)
+	r, closeRead := newSealedHistoryCloseProbe(t, config)
 	t.Cleanup(seal.release)
 	ctx, closed := seal.startRuntimeClose(t, r)
+	waitSignal(t, closeRead, "Close did not observe the unacknowledged seal")
 	select {
 	case <-r.ingress.done:
 		t.Fatal("Runtime stopped History delivery before the sealed acknowledgement")
@@ -347,10 +390,7 @@ func TestRuntimeKeepsHistoryAliveUntilExactSealedAcknowledgement(t *testing.T) {
 		t.Fatalf("Runtime Close accepted an unacknowledged seal: %v", err)
 	default:
 	}
-	if owner, err := openTestRuntimeStore(r.config.StateDir); err == nil {
-		_ = owner.Close()
-		t.Fatal("Runtime released owner before sealed History acknowledgement")
-	}
+	requireOwnerRetained(t, r.config.StateDir, "Runtime released owner before sealed History acknowledgement")
 	seal.release()
 	select {
 	case err := <-closed:
@@ -360,6 +400,45 @@ func TestRuntimeKeepsHistoryAliveUntilExactSealedAcknowledgement(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("Runtime Close did not finish after the exact History acknowledgement")
 	}
+}
+
+func TestLateSealedAcknowledgementAfterEngineStopKeepsRuntimeOwner(t *testing.T) {
+	config, seal := sealedHistoryConfig(t)
+	config.expectCloseError = true
+	var r *Runtime
+	t.Cleanup(func() {
+		if r != nil {
+			_ = closeTestRuntimeStore(r)
+		}
+	})
+	r, closeRead := newSealedHistoryCloseProbe(t, config)
+	t.Cleanup(seal.release)
+	ctx, closed := seal.startRuntimeClose(t, r)
+	waitSignal(t, closeRead, "Close did not observe the unacknowledged seal")
+	journalSeal := r.sessions.Get(sealedHistorySessionID).EventJournal().SealState()
+	if journalSeal == nil {
+		t.Fatal("History received the seal before the journal committed it")
+	}
+
+	r.lifecycleCancel()
+	select {
+	case <-r.lifecycleDone:
+	case <-ctx.Done():
+		t.Fatal("lifecycle engine did not join while History was waiting for the acknowledgement")
+	}
+	if err := waitClose(t, closed); err == nil || errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Close after engine stop = %v, want lifecycle failure", err)
+	}
+
+	seal.release()
+	ack := retained.AcknowledgementResource(sealedHistorySessionID, retained.Acknowledgement{})
+	if _, err := r.lifecycleState.WatchFor(ctx, ack.Metadata(), state.WithCondition(func(value resource.Resource) (bool, error) {
+		ack, ok := value.(*retained.IngressAckResource)
+		return ok && ack.TypedSpec().Value.Sealed && ack.TypedSpec().Value.Cursor == journalSeal.Cursor, nil
+	})); err != nil {
+		t.Fatalf("wait for late durable sealed acknowledgement: %v", err)
+	}
+	requireOwnerRetained(t, r.config.StateDir, "late acknowledgement released the owner after the lifecycle engine stopped")
 }
 
 func TestRuntimeRetainsOwnerWhenHistoryFailsBeforeSealedAcknowledgement(t *testing.T) {
@@ -447,10 +526,7 @@ func TestRuntimeRetainsOwnerWhenHistoryFailsBeforeSealedAcknowledgement(t *testi
 	case <-ctx.Done():
 		t.Fatal("Runtime Close did not report the failed sealed History delivery")
 	}
-	if owner, err := openTestRuntimeStore(r.config.StateDir); err == nil {
-		_ = owner.Close()
-		t.Fatal("Runtime released owner without the exact durable sealed History acknowledgement")
-	}
+	requireOwnerRetained(t, r.config.StateDir, "Runtime released owner without the exact durable sealed History acknowledgement")
 }
 
 func TestRuntimeRetainsOwnerWhenSessionDeliveryCannotPersistSealedAcknowledgement(t *testing.T) {
@@ -487,8 +563,5 @@ func TestRuntimeRetainsOwnerWhenSessionDeliveryCannotPersistSealedAcknowledgemen
 	if err != nil || found && ack.Sealed {
 		t.Fatalf("durable sealed History ACK after failed write = %+v, found=%t, err=%v", ack, found, err)
 	}
-	if owner, err := openTestRuntimeStore(r.config.StateDir); err == nil {
-		_ = owner.Close()
-		t.Fatal("Runtime released owner without durable sealed History acknowledgement")
-	}
+	requireOwnerRetained(t, r.config.StateDir, "Runtime released owner without durable sealed History acknowledgement")
 }

@@ -174,9 +174,6 @@ func run(ctx context.Context, settings samplersettings.Settings) error {
 		<-runningCtx.Done()
 		healthServer.Shutdown()
 		for _, server := range []*grpc.Server{healthOnlyServer, tlsServer} {
-			if server == nil {
-				continue
-			}
 			stopping, release := context.WithTimeout(context.Background(), 5*time.Second)
 			graceful.Stop(stopping, server)
 			release()

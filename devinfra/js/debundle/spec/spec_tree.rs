@@ -75,16 +75,6 @@ struct AuthoringConfig {
     import_order: BTreeMap<String, Vec<ModulePath>>,
 }
 
-/// Read one chunk's explicit priority from verified authoring configuration.
-/// `None` means the chunk has no declaration; `Some(vec![])` is explicit.
-pub fn read_chunk_import_order(
-    config_bytes: &[u8],
-    chunk_id: &str,
-) -> Result<Option<Vec<ModulePath>>> {
-    let (config, _) = parse_authoring_config(config_bytes)?;
-    Ok(config.import_order.get(chunk_id).cloned())
-}
-
 /// Update one chunk's priority while retaining every other YAML claim and
 /// metadata field from the existing authoring configuration.
 pub fn update_chunk_import_order(
@@ -804,6 +794,22 @@ chunk_renames:
         }
     }
 
+    /// Writes `config`, an empty `modules` root and no vendor marks under
+    /// `root`, and returns the options that compile them.
+    fn write_config_tree(root: &Path, config: &str) -> CompileSpecTreeOptions {
+        let options = CompileSpecTreeOptions {
+            config_path: root.join("spec_config.yaml"),
+            modules_root: root.join("modules"),
+            vendor_marks_path: root.join("vendor_marks.yaml"),
+            source_root: None,
+            out_root: root.join("out"),
+        };
+        write_file(&options.config_path, config);
+        fs::create_dir_all(&options.modules_root).unwrap();
+        write_file(&options.vendor_marks_path, "vendor_marks: []\n");
+        options
+    }
+
     #[test]
     fn configured_chunk_ids_use_main_or_module_root_values() {
         let temp = tempfile::tempdir().unwrap();
@@ -828,7 +834,7 @@ chunk_renames:
     }
 
     #[test]
-    fn chunk_import_order_reads_absence_and_empty_and_updates_only_its_key() {
+    fn update_chunk_import_order_replaces_only_its_chunk_entry() {
         let bytes = br#"
 main_chunk_id: static/main
 module_roots:
@@ -851,55 +857,23 @@ import_order:
   empty: []
 "#;
         let mut original_value: serde_yaml::Value = serde_yaml::from_slice(bytes).unwrap();
-        assert_eq!(
-            read_chunk_import_order(bytes, "static/main").unwrap(),
-            Some(vec![
-                ModulePath::parse("core/runtime", "").unwrap(),
-                ModulePath::parse("utils/date", "").unwrap(),
-            ])
-        );
-        assert_eq!(
-            read_chunk_import_order(bytes, "empty").unwrap(),
-            Some(Vec::new())
-        );
-        assert_eq!(read_chunk_import_order(bytes, "missing").unwrap(), None);
-
         let priority = vec![ModulePath::parse("new/owner", "").unwrap()];
-        let updated = update_chunk_import_order(bytes, "static/main", priority.clone()).unwrap();
-        assert_eq!(
-            read_chunk_import_order(&updated, "static/main").unwrap(),
-            Some(priority)
-        );
-        assert_eq!(
-            read_chunk_import_order(&updated, "empty").unwrap(),
-            Some(Vec::new())
-        );
+        let updated = update_chunk_import_order(bytes, "static/main", priority).unwrap();
 
-        let mut updated_value: serde_yaml::Value = serde_yaml::from_slice(&updated).unwrap();
+        let (_, mut updated_value) = parse_authoring_config(&updated).unwrap();
         let import_order_key = serde_yaml::Value::String("import_order".to_string());
+        assert_eq!(
+            updated_value
+                .as_mapping_mut()
+                .unwrap()
+                .remove(&import_order_key),
+            Some(serde_yaml::from_str("{static/main: [new/owner], empty: []}").unwrap())
+        );
         original_value
             .as_mapping_mut()
             .unwrap()
             .remove(&import_order_key);
-        updated_value
-            .as_mapping_mut()
-            .unwrap()
-            .remove(&import_order_key);
         assert_eq!(updated_value, original_value);
-    }
-
-    #[test]
-    fn chunk_import_order_config_keeps_strict_authoring_fields() {
-        let bytes = br#"
-main_chunk_id: main
-inputs:
-  root: snapshot
-  js_list_path: js.txt
-unassigned_mode:
-  main: {kind: inline_in_entry}
-unknown: true
-"#;
-        assert!(read_chunk_import_order(bytes, "main").is_err());
     }
 
     #[test]
@@ -941,19 +915,14 @@ unassigned_mode:
   main: {kind: inline_in_entry}
 unknown: true
 "#;
-        assert!(read_chunk_import_order(bytes, "main").is_err());
         assert!(update_chunk_import_order(bytes, "main", Vec::new()).is_err());
     }
 
     #[test]
     fn compiles_multiple_chunk_module_roots_into_one_flat_spec() {
         let temp = tempfile::tempdir().unwrap();
-        let root = temp.path();
-        let config = root.join("spec_config.yaml");
-        let modules = root.join("modules");
-        let vendor_marks = root.join("vendor_marks.yaml");
-        write_file(
-            &config,
+        let options = write_config_tree(
+            temp.path(),
             r#"main_chunk_id: cli
 module_roots:
   chunks/cli: cli
@@ -970,7 +939,7 @@ unassigned_mode:
     target: residual/print
 "#,
         );
-        write_file(&vendor_marks, "vendor_marks: []\n");
+        let modules = &options.modules_root;
         write_file(
             &modules.join("chunks/cli/runtime/session.yaml"),
             r#"source_matches:
@@ -1000,14 +969,7 @@ unassigned_mode:
             "members: [{ selector: { binding: { name: ignored } } }]\n",
         );
 
-        let spec = compile_spec_tree(&CompileSpecTreeOptions {
-            config_path: config,
-            modules_root: modules,
-            vendor_marks_path: vendor_marks,
-            source_root: None,
-            out_root: root.join("out"),
-        })
-        .unwrap();
+        let spec = compile_spec_tree(&options).unwrap();
 
         assert_eq!(spec.logical_modules.len(), 2);
         assert_eq!(
@@ -1068,27 +1030,14 @@ unassigned_mode:
 
         for (case, module_roots, expected) in cases {
             let temp = tempfile::tempdir().unwrap();
-            let root = temp.path();
-            let config = root.join("spec_config.yaml");
-            let modules = root.join("modules");
-            let vendor_marks = root.join("vendor_marks.yaml");
-            write_file(
-                &config,
+            let options = write_config_tree(
+                temp.path(),
                 &format!(
                     "main_chunk_id: cli\nmodule_roots:\n{module_roots}inputs:\n  root: snapshot\n  js_list_path: extracted/js-files.txt\nunassigned_mode:\n  cli: {{ kind: inline_in_entry }}\n  print: {{ kind: inline_in_entry }}\n"
                 ),
             );
-            fs::create_dir_all(&modules).unwrap();
-            write_file(&vendor_marks, "vendor_marks: []\n");
 
-            let error = compile_spec_tree(&CompileSpecTreeOptions {
-                config_path: config,
-                modules_root: modules,
-                vendor_marks_path: vendor_marks,
-                source_root: None,
-                out_root: root.join("out"),
-            })
-            .expect_err(case);
+            let error = compile_spec_tree(&options).expect_err(case);
             let message = format!("{error:#}");
             assert!(
                 message.contains(expected),
@@ -1100,27 +1049,18 @@ unassigned_mode:
     #[test]
     fn rejects_one_module_path_in_two_trees_of_a_chunk() {
         let temp = tempfile::tempdir().unwrap();
-        let root = temp.path();
-        let config = root.join("spec_config.yaml");
-        let modules = root.join("modules");
-        let vendor_marks = root.join("vendor_marks.yaml");
-        write_file(
-            &config,
+        let options = write_config_tree(
+            temp.path(),
             "main_chunk_id: cli\nmodule_roots:\n  left: cli\n  right: cli\ninputs:\n  root: snapshot\n  js_list_path: extracted/js-files.txt\nunassigned_mode:\n  cli: { kind: inline_in_entry }\n",
         );
-        write_file(&vendor_marks, "vendor_marks: []\n");
         for tree in ["left", "right"] {
-            write_file(&modules.join(tree).join("shared.yaml"), "members: []\n");
+            write_file(
+                &options.modules_root.join(tree).join("shared.yaml"),
+                "members: []\n",
+            );
         }
 
-        let error = compile_spec_tree(&CompileSpecTreeOptions {
-            config_path: config,
-            modules_root: modules,
-            vendor_marks_path: vendor_marks,
-            source_root: None,
-            out_root: root.join("out"),
-        })
-        .unwrap_err();
+        let error = compile_spec_tree(&options).unwrap_err();
         assert!(
             format!("{error:#}").contains(
                 "module_roots entries `left` and `right` both define module `shared` of chunk `cli`"
@@ -1154,12 +1094,8 @@ unassigned_mode:
     #[test]
     fn omits_browser_harness_when_not_configured() {
         let temp = tempfile::tempdir().unwrap();
-        let root = temp.path();
-        let config = root.join("spec_config.yaml");
-        let modules = root.join("modules");
-        let vendor_marks = root.join("sources/vendor/vendor_marks.yaml");
-        write_file(
-            &config,
+        let options = write_config_tree(
+            temp.path(),
             r#"main_chunk_id: static/main
 inputs:
   root: snapshots/test
@@ -1169,17 +1105,8 @@ unassigned_mode:
     kind: inline_in_entry
 "#,
         );
-        fs::create_dir_all(&modules).unwrap();
-        write_file(&vendor_marks, "vendor_marks: []\n");
 
-        let spec = compile_spec_tree(&CompileSpecTreeOptions {
-            config_path: config,
-            modules_root: modules,
-            vendor_marks_path: vendor_marks,
-            source_root: None,
-            out_root: PathBuf::from("out/override"),
-        })
-        .unwrap();
+        let spec = compile_spec_tree(&options).unwrap();
 
         assert!(spec.emit_browser_harness.is_none());
         assert!(spec.write_js_tree.is_none());

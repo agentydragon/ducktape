@@ -113,15 +113,6 @@ http_archive(
     urls = ["https://snapshot.debian.org/archive/debian/20260301T000000Z/pool/main/c/ca-certificates/ca-certificates_20250419_all.deb"],
 )
 
-# tiktoken o200k_base encoding (used by gpt-4o) — bundled for offline/RBE testing.
-# Cache key = sha1("https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken")
-http_file(
-    name = "tiktoken_o200k_base",
-    downloaded_file_path = "fb374d419588a4632f3f557e76b4b70aebbca790",
-    sha256 = "446a9538cb6c348e3516120d7c08b09f57c36495e2acfffe59a5bf8b0cfb1a2d",
-    urls = ["https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken"],
-)
-
 # NLTK data for the Wordle environment (//x/rl_finetune:wordle_env), pinned to an nltk_data
 # commit so its tests need no network. NLTK reads <root>/corpora/words/ and
 # <root>/taggers/averaged_perceptron_tagger_eng/ as directories (its zip lookup does not cover the
@@ -209,7 +200,7 @@ filegroup(
 # The one browser every Playwright test drives: Chrome for Testing's headless shell. `:executable`
 # is a single-file target, so `$(rootpath ...)` of it is a path a test can be handed (the grafana skill
 # takes it as CHROMIUM_HEADLESS_SHELL); the visual tests find the binary in the runfiles of
-# //util/testing/browser:launcher. The rest of the archive (libs, .pak, icudtl.dat, ...)
+# //testing/browser:launcher. The rest of the archive (libs, .pak, icudtl.dat, ...)
 # rides along as its runfiles, because the executable loads those from its own directory.
 # Pinned to the `chromium-headless-shell` browserVersion in Playwright 1.62.0's browsers.json, the
 # Chromium that Playwright release is tested against; keep in step with `playwright==1.62.0` in
@@ -364,13 +355,6 @@ http_file(
     urls = ["https://raw.githubusercontent.com/TheCodingSheikh/provider-litellm/v2.1.0/package/crds/litellm.m.crossplane.io_providerconfigs.yaml"],
 )
 
-http_file(
-    name = "crossplane_litellm_organizations_crd",
-    downloaded_file_path = "litellm.m.crossplane.io_organizations.yaml",
-    sha256 = "3c5f13122312d6083c66ab306498678e6827c2de6a73b0a31d3d6ef1c5917f43",
-    urls = ["https://raw.githubusercontent.com/TheCodingSheikh/provider-litellm/v2.1.0/package/crds/litellm.m.crossplane.io_organizations.yaml"],
-)
-
 # Upbound's OpenTofu provider CRDs used by the Crossplane Tofu adoption spike.
 # Keep these pinned to the package version installed by cluster/cdk8s/crossplane.py.
 http_file(
@@ -425,6 +409,14 @@ http_file(
     downloaded_file_path = "dnsendpoints.externaldns.k8s.io.yaml",
     sha256 = "7d1c06b1e991c8db3a70be658fb628e61e71ba72f2686469c276f4f6ab0d1e30",
     urls = ["https://raw.githubusercontent.com/kubernetes-sigs/external-dns/v0.22.0/config/crd/standard/dnsendpoints.externaldns.k8s.io.yaml"],
+)
+
+# Match the VPA controller release deployed by the Fairwinds chart.
+http_file(
+    name = "vpa_verticalpodautoscaler_crd",
+    downloaded_file_path = "vpa-v1-crd-gen.yaml",
+    sha256 = "92240d0f43a78bc9d64ce70825e84e0cd32d2793b0b605df4772cdcfc36d3fca",
+    urls = ["https://raw.githubusercontent.com/kubernetes/autoscaler/vertical-pod-autoscaler-1.7.1/vertical-pod-autoscaler/deploy/vpa-v1-crd-gen.yaml"],
 )
 
 http_file(
@@ -632,17 +624,24 @@ http_file(
 
 # Match the kyverno chart 3.9.1 (appVersion v1.19.1) in cluster/cdk8s/kyverno/app.py.
 http_file(
-    name = "kyverno_clusterpolicy_crd",
-    downloaded_file_path = "kyverno.io_clusterpolicies.yaml",
-    sha256 = "8b567653a33c7db9843ec2d2c2f4845625bed6d4b005dbb5485e6646b9376703",
-    urls = ["https://raw.githubusercontent.com/kyverno/kyverno/v1.19.1/config/crds/kyverno/kyverno.io_clusterpolicies.yaml"],
+    name = "kyverno_mutatingpolicy_crd",
+    downloaded_file_path = "policies.kyverno.io_mutatingpolicies.yaml",
+    sha256 = "7a71c76ed2ae76bedfa1e285fa919a2e8bb0bc7ea7a2122bebc6d9c183659688",
+    urls = ["https://raw.githubusercontent.com/kyverno/kyverno/v1.19.1/config/crds/policies.kyverno.io/policies.kyverno.io_mutatingpolicies.yaml"],
 )
 
 http_file(
-    name = "kyverno_cleanuppolicy_crd",
-    downloaded_file_path = "kyverno.io_cleanuppolicies.yaml",
-    sha256 = "84d8f500897ad14122177129adfeb3cbb0dac1d24796abf7cf22001c2ac9eb25",
-    urls = ["https://raw.githubusercontent.com/kyverno/kyverno/v1.19.1/config/crds/kyverno/kyverno.io_cleanuppolicies.yaml"],
+    name = "kyverno_validatingpolicy_crd",
+    downloaded_file_path = "policies.kyverno.io_validatingpolicies.yaml",
+    sha256 = "87d8700778623b26ae2c9b2f512713e478714ddd0fbcb4e44574c76ae015f10f",
+    urls = ["https://raw.githubusercontent.com/kyverno/kyverno/v1.19.1/config/crds/policies.kyverno.io/policies.kyverno.io_validatingpolicies.yaml"],
+)
+
+http_file(
+    name = "kyverno_namespaceddeletingpolicy_crd",
+    downloaded_file_path = "policies.kyverno.io_namespaceddeletingpolicies.yaml",
+    sha256 = "e722c8415fb040b02e2a24bf0d093ba0a35647a4e6e73265ac1f4f92d4bd2806",
+    urls = ["https://raw.githubusercontent.com/kyverno/kyverno/v1.19.1/config/crds/policies.kyverno.io/policies.kyverno.io_namespaceddeletingpolicies.yaml"],
 )
 
 # The k3s fixture's Kyverno (agentplane/system_tests/vm/sandboxes.py); keep the `kyverno_*` images'
@@ -760,9 +759,9 @@ http_file(
 )
 
 # Gmail's and Google Calendar's official multicolor product icon SVGs — Google's own versioned
-# gstatic-hosted assets, the same ones Google itself serves for these apps' icons. haku-console's
-# tool-call preview widgets embed them (as build-time-generated data URIs; see
-# haku/console/frontend/BUILD.bazel) to mark a link that opens in that app. Versioned URL, so
+# gstatic-hosted assets, the same ones Google itself serves for these apps' icons. Agentplane's
+# Gmail and Calendar Action views embed them (as build-time-generated data URIs; see
+# agentplane/app/frontend/ui/BUILD.bazel) before a link that opens in that app. Versioned URL, so
 # content is expected stable; bump the version path + sha256 if Google revises the mark.
 http_file(
     name = "gmail_icon_svg",
@@ -947,14 +946,6 @@ http_file(
     ],
 )
 
-# Firecracker v1.12 CI's x86_64 ELF guest kernel, pinned for the local runner-layering VM probe.
-http_file(
-    name = "firecracker_vmlinux_6_1_128",
-    downloaded_file_path = "vmlinux-6.1.128",
-    sha256 = "27a8310b9a727517e9eb02044524b6ceb77de5728e3491b6974d5c846227ecc8",
-    urls = ["https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/v1.12/x86_64/vmlinux-6.1.128"],
-)
-
 # Node.js v22.22.2 LTS linux-x64 — provides the hermetic Node runtime used by
 # development tooling and JavaScript tests.
 http_archive(
@@ -999,4 +990,12 @@ http_archive(
     build_file_content = 'exports_files(["release-v1.17.0-x86_64/firecracker-v1.17.0-x86_64", "release-v1.17.0-x86_64/jailer-v1.17.0-x86_64"])',
     sha256 = "06094a1108ae9e82aa4c23a775aa92758f53f1175d422270d9d6162cb9ade558",
     urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.17.0/firecracker-v1.17.0-x86_64.tgz"],
+)
+
+# Terraform CRD from the same release as cluster/cdk8s/tofu_controller_release.py.
+http_file(
+    name = "tofu_controller_crd",
+    downloaded_file_path = "crds.yaml",
+    sha256 = "cfe13c818ad5a7c7a128560906093e982908583a77607884a40b02f7e3e167ff",
+    urls = ["https://raw.githubusercontent.com/flux-iac/tofu-controller/v0.17.0/charts/tofu-controller/crds/crds.yaml"],
 )
