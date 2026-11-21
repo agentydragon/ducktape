@@ -20,13 +20,12 @@ from kubernetes_asyncio import client, config
 from kubernetes_asyncio.client import ApiException
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from cluster.controllers.vm_image_restart.kubernetes_watch import ListWatch, WatchedKind, apply_to
+from cluster.controllers.vm_image_restart.kubernetes_watch import watch_kubevirt_resource
 from cluster.controllers.vm_image_restart.settings import Settings
 
 CONTROLLER = "vm-image-restart"
 OPT_IN_ANNOTATION = "ducktape.org/auto-restart-template-changes"
 STATE_KEY = "state"
-WATCH_TIMEOUT_SECONDS = 300
 RECONCILE_RETRY_SECONDS = 30
 MAX_RESTART_ATTEMPTS = 3
 RETRY_BACKOFF_SECONDS = (15, 60, 180)
@@ -490,33 +489,18 @@ async def main() -> None:
 
         vm_cache: dict[str, dict[str, Any]] = {}
         vmi_cache: dict[str, dict[str, Any]] = {}
-        field_selector = f"metadata.name={settings.target_vm_name}"
-
-        def watched_kind(plural: str, store: dict[str, dict[str, Any]]) -> WatchedKind:
-            return WatchedKind(
-                name=plural,
-                list=vm_api.list_namespaced_custom_object,
-                args=("kubevirt.io", "v1", settings.target_namespace, plural),
-                kwargs={"field_selector": field_selector, "_request_timeout": (10, WATCH_TIMEOUT_SECONDS + 30)},
-                key=lambda obj: str(obj["metadata"]["name"]),
-                names=lambda: set(store),
-                apply=lambda name, obj: apply_to(store, name, obj),
+        async with asyncio.TaskGroup() as tasks:
+            for plural, store in (("virtualmachines", vm_cache), ("virtualmachineinstances", vmi_cache)):
+                tasks.create_task(
+                    watch_kubevirt_resource(
+                        vm_api, settings.target_namespace, plural, settings.target_vm_name, store, changed
+                    ),
+                    name=f"list-watch-{plural}",
+                )
+            tasks.create_task(
+                _run_reconcile_loop(vm_api, core, settings, changed, vm_cache=vm_cache, vmi_cache=vmi_cache),
+                name="reconcile",
             )
-
-        async def on_change(_kind: WatchedKind) -> None:
-            changed.set()
-
-        informer = ListWatch(
-            kinds=(watched_kind("virtualmachines", vm_cache), watched_kind("virtualmachineinstances", vmi_cache)),
-            resync_seconds=WATCH_TIMEOUT_SECONDS,
-            on_change=on_change,
-        )
-        informer_task = asyncio.create_task(informer.run(), name="kubevirt-vm-informer")
-        try:
-            await _run_reconcile_loop(vm_api, core, settings, changed, vm_cache=vm_cache, vmi_cache=vmi_cache)
-        finally:
-            informer_task.cancel()
-            await asyncio.gather(informer_task, return_exceptions=True)
 
 
 if __name__ == "__main__":
