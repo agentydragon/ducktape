@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from textwrap import dedent
+
 from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecImages,
@@ -33,10 +35,29 @@ def snapshot_controller(chart: Chart) -> Kustomization:
                 target=KustomizationSpecPatchesTarget(
                     kind="Deployment", name="snapshot-controller", namespace="kube-system"
                 ),
-                patch=(
-                    "- op: add\n  path: /spec/template/spec/nodeSelector\n  value:\n    "
-                    f"{node_scheduling.ZONE_LABEL}: {node_scheduling.HIL_OVH_ZONE}"
-                ),
+                patch=dedent(f"""\
+                    apiVersion: apps/v1
+                    kind: Deployment
+                    metadata:
+                      name: {name}
+                      namespace: kube-system
+                    spec:
+                      strategy:
+                        rollingUpdate:
+                          maxSurge: 1
+                          maxUnavailable: 0
+                      template:
+                        spec:
+                          nodeSelector:
+                            {node_scheduling.ZONE_LABEL}: {node_scheduling.HIL_OVH_ZONE}
+                          affinity:
+                            podAntiAffinity:
+                              requiredDuringSchedulingIgnoredDuringExecution:
+                                - topologyKey: kubernetes.io/hostname
+                                  labelSelector:
+                                    matchLabels:
+                                      app.kubernetes.io/name: {name}
+                    """),
             )
         ],
     )
