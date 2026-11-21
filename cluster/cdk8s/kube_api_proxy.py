@@ -69,7 +69,8 @@ def _deployment(chart: Chart) -> None:
                         controlled_values=ControlledValues.REQUESTS_ONLY,
                         controlled_resources=("cpu", "memory"),
                         min_allowed={"cpu": _NGINX_CPU_REQUEST, "memory": _NGINX_MEMORY_REQUEST},
-                        max_allowed={"memory": "24Mi"},
+                        # Keep a stale VPA CPU target schedulable when the other proxy replica keeps its host.
+                        max_allowed={"cpu": "1", "memory": "24Mi"},
                     ),
                     ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
                 ),
