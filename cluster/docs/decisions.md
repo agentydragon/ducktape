@@ -419,7 +419,8 @@ applications").
 - **osm-mcp**: `cluster/parked/osm-mcp/` — decommissioned; its Flux Kustomization
   is removed from the active bundle. The third-party Go MCP server
   (`github.com/NERVsystems/osmmcp`) build wrapper (`third_party/osmmcp/`) stays live
-  and unparked. Already unwired from haku-console's tool config since 2026-07-19
+  and unparked, but its image is no longer on the publish roster or tracked by Flux.
+  Already unwired from haku-console's tool config since 2026-07-19
   (routing-profile bug), so it had no live consumer.
 - **codex-nix-pod, codex-nix-image-pod, codex-nix-pvc-uid-pod**:
   `cluster/parked/<name>/` — three successive Codex-in-a-pod experiments, previously

@@ -298,11 +298,6 @@ spec:
       name: mcp-oauth-facade
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
-      filter: req.package.name == 'osm-mcp'
-      kind: ImageRepository
-      name: osm-mcp
-      namespace: flux-system
-    - apiVersion: image.toolkit.fluxcd.io/v1
       filter: req.package.name == 'plaid-mcp-server'
       kind: ImageRepository
       name: plaid-mcp-server

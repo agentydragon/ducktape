@@ -79,10 +79,6 @@
       "test": "//x/mcp_oauth_facade/...",
       "registry": "forgejo"
     },
-    "osm-mcp": {
-      "target": "//third_party/osmmcp:image",
-      "registry": "forgejo"
-    },
     "grocy-mcp": {
       "target": "//grocy_mcp:server_image",
       "test": "//grocy_mcp/...",
