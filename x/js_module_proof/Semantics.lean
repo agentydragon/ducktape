@@ -435,6 +435,49 @@ inductive CaptureValuesMatch : List (String × String) → List (String × Nat) 
       (name != name) = false → CaptureValuesMatch captures values →
       CaptureValuesMatch ((name, key) :: captures) ((name, value) :: values)
 
+/- A successful raw writeback witnesses the frame's lexical shape. -/
+theorem successful_store_captures_matches (captures : List (String × String)) (values : List (String × Nat))
+    (store updated : List (String × Nat)) (written : storeCaptures store captures values = some updated) :
+    CaptureValuesMatch captures values := by
+  induction captures generalizing values store updated with
+  | nil =>
+    cases values with
+    | nil => exact .nil
+    | cons head tail => cases written
+  | cons capture captures ih =>
+    cases capture with
+    | mk name key =>
+      cases values with
+      | nil => cases written
+      | cons entry values =>
+        cases entry with
+        | mk actual value =>
+          change (if name != actual then none else do
+            let next ← updateBinding store key value
+            storeCaptures next captures values) = some updated at written
+          cases different : name != actual with
+          | true => rw [different] at written; cases written
+          | false =>
+            have same : (name == actual) = true := by
+              cases eq : name == actual with
+              | true => rfl
+              | false =>
+                have impossible : (name != actual) = true := by
+                  change (!(name == actual)) = true
+                  rw [eq]
+                  rfl
+                rw [different] at impossible
+                cases impossible
+            have namesEqual : name = actual := beq_iff_eq.mp same
+            cases namesEqual
+            rw [different] at written
+            change (updateBinding store key value).bind (fun next => storeCaptures next captures values) = some updated at written
+            cases nextStore : updateBinding store key value with
+            | none => rw [nextStore] at written; cases written
+            | some next =>
+              rw [nextStore] at written
+              exact .cons name key value different (ih values next updated written)
+
 theorem load_captures_update_other (captures : List (String × String)) (store updated : List (String × Nat))
     (key : String) (value : Nat)
     (different : ∀ name other, (name, other) ∈ captures → key ≠ other)
