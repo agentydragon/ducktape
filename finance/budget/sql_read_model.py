@@ -41,6 +41,7 @@ from finance.budget.wire import (
     LumpyView,
     TransactionView,
 )
+from finance.calendar_months import offset_calendar_month
 from finance.plaid.db.models import AccountRow, LinkRow, TransactionRow
 
 # Mean Gregorian month in days; converts a window's per-day average into `window_monthly_avg`.
@@ -51,18 +52,13 @@ def _month_start(d: date) -> date:
     return date(d.year, d.month, 1)
 
 
-def _add_months(month: date, delta: int) -> date:
-    total = month.year * 12 + (month.month - 1) + delta
-    return date(total // 12, total % 12 + 1, 1)
-
-
 def _enumerate_months(start: date, end: date) -> tuple[date, ...]:
     months: list[date] = []
     cursor = _month_start(start)
     last = _month_start(end)
     while cursor <= last:
         months.append(cursor)
-        cursor = _add_months(cursor, 1)
+        cursor = offset_calendar_month(cursor, 1)
     return tuple(months)
 
 
