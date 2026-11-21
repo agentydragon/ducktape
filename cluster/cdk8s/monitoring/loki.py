@@ -132,7 +132,10 @@ def _loki_values() -> dict[str, object]:
             "resources": {"requests": {"cpu": "100m", "memory": "1Gi"}, "limits": {"cpu": "500m", "memory": "2Gi"}},
         },
         "read": {
-            "replicas": 2,
+            # The chart rolls one unavailable Pod at a time. Keep two reads available
+            # through rollouts and voluntary evictions across the three OVH workers.
+            "replicas": 3,
+            "maxUnavailable": 1,
             "annotations": _GOLDILOCKS_OFF,
             "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
             "affinity": node_scheduling.PREFER_WORKERS,

@@ -95,9 +95,9 @@ spec:
         goldilocks.fairwinds.com/vpa-update-mode: initial
       enabled: true
       podDisruptionBudget:
-        minAvailable: 1
+        minAvailable: 2
       priorityClassName: system-cluster-critical
-      replicas: 2
+      replicas: 3
       resources:
         limits:
           cpu: 100m
@@ -116,6 +116,9 @@ spec:
           nodeTaintsPolicy: Honor
           topologyKey: kubernetes.io/hostname
           whenUnsatisfiable: DoNotSchedule
+      updateStrategy:
+        rollingUpdate:
+          maxUnavailable: 0
     config:
       excludeKyvernoNamespace: true
     crds:
