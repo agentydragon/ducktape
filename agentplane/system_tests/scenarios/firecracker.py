@@ -41,6 +41,8 @@ _CHILD = textwrap.dedent(
     import json, os, pathlib, time
     path = pathlib.Path(__import__('sys').argv[1])
     marker = os.urandom(24).hex()
+    working_set = bytearray(64 * 1024 * 1024)
+    working_set[::4096] = b'X' * (len(working_set) // 4096)
     (cgroup,) = [line.removeprefix('0::') for line in pathlib.Path('/proc/self/cgroup').read_text().splitlines()
                  if line.startswith('0::')]
     counter = 0
@@ -48,7 +50,7 @@ _CHILD = textwrap.dedent(
         counter += 1
         evidence = dict(pid=os.getpid(), marker=marker, counter=counter, cgroup=cgroup,
                         start_ticks=pathlib.Path('/proc/self/stat').read_text().split()[21],
-                        wall_ns=time.time_ns())
+                        wall_ns=time.time_ns(), working_set_bytes=len(working_set))
         pending = path.with_suffix('.pending')
         pending.write_text(json.dumps(evidence))
         pending.replace(path)
@@ -214,8 +216,60 @@ async def preserves_live_guest(
         assert report["egress_rules_identity"] == {"name": view.identity_name}, report
         return report
 
+    pod_json = json.loads(await cluster.kubectl("get", "pod", pod.name, "-o", "json"))
+    (launcher,) = [
+        container for container in pod_json["spec"]["containers"] if container["name"] == "environment-runtime"
+    ]
+    memory_limit = int(launcher["resources"]["limits"]["memory"])
+
+    async def wait_for_checkpoint(cycle: int) -> dict[str, object]:
+        async for attempt in AsyncRetrying(
+            stop=stop_after_delay(300), wait=wait_fixed(1), retry=retry_if_exception_type(AssertionError), reraise=True
+        ):
+            with attempt:
+                # Use the launcher's cgroup, which includes the VMM and buffered snapshot writes.
+                # The kernel high-water mark captures spikes between samples.
+                raw_memory = await cluster.kubectl(
+                    "exec",
+                    pod.name,
+                    "-c",
+                    "environment-runtime",
+                    "--",
+                    "sh",
+                    "-ec",
+                    'cg="/sys/fs/cgroup$(cut -d: -f3 /proc/self/cgroup)"; '
+                    'cat "$cg/memory.current" "$cg/memory.peak" "$cg/memory.max" "$cg/memory.stat" "$cg/memory.events"',
+                    timeout_s=10,
+                )
+                current, peak, maximum, *counters = raw_memory.splitlines()
+                sample = {
+                    "cycle": cycle,
+                    "current_bytes": int(current),
+                    "peak_bytes": int(peak),
+                    "limit_bytes": int(maximum),
+                    **{name: int(value) for name, value in (line.split() for line in counters)},
+                }
+                with (output / "launcher-memory.jsonl").open("a") as samples:
+                    samples.write(json.dumps(sample) + "\n")
+                assert sample["limit_bytes"] == memory_limit, sample
+                assert sample["oom_kill"] == 0, sample
+                suspended = await client.get_environment(view.target)
+                assert suspended.observed_state.operating_mode == environment_service_pb2.OPERATING_MODE_SUSPENDED
+                assert suspended.observed_state.stop_stage == "Stopped", suspended.observed_state
+                assert suspended.kubernetes_diagnostics.pod.uid == pod.uid
+        # The launcher reports suspended only after committing the checkpoint and reaping the VMM.
+        status = json.loads(
+            await cluster.kubectl(
+                "get", "--raw", f"/api/v1/namespaces/{cluster.namespace}/pods/{pod.name}:9092/proxy/state"
+            )
+        )
+        assert isinstance(status, dict), status
+        assert status["phase"] == "suspended", status
+        return status
+
     before = await probe(1)
     assert before["pid1"] == "systemd"
+    assert before["working_set_bytes"] == 64 * 1024 * 1024
     assert str(before["cgroup"]).startswith("/agentplane.slice/agentplane-commands.slice/"), before
     assert before["projected_sa_token_present"] is False
     mounts = before["mounts"]
@@ -230,7 +284,6 @@ async def preserves_live_guest(
         "/run/agentplane/trust": "iso9660",
     }.items():
         assert mounts[mount] == filesystem, before
-    pod_json = json.loads(await cluster.kubectl("get", "pod", pod.name, "-o", "json"))
     credential_id = pod_json["metadata"]["labels"]["agentplane.allegedly.works/environment-runtime-credential"]
     record = json.loads(await cluster.kubectl("get", "workloadcredential", view.target.name, "-o", "json"))
     assert record["status"]["credentialID"] == credential_id, record["status"]
@@ -246,21 +299,7 @@ async def preserves_live_guest(
     await cluster.kubectl(
         "patch", "sandbox", view.target.name, "--type=merge", "-p", json.dumps({"spec": {"idleSuspendAfter": "1m"}})
     )
-    async for attempt in AsyncRetrying(
-        stop=stop_after_delay(300), wait=wait_fixed(1), retry=retry_if_exception_type(AssertionError), reraise=True
-    ):
-        with attempt:
-            suspended = await client.get_environment(view.target)
-            assert suspended.observed_state.operating_mode == environment_service_pb2.OPERATING_MODE_SUSPENDED
-            assert suspended.observed_state.stop_stage == "Stopped", suspended.observed_state
-            assert suspended.kubernetes_diagnostics.pod.uid == pod.uid
-    # The launcher's suspended phase is published only after checkpoint commit and VMM reap.
-    status = json.loads(
-        await cluster.kubectl(
-            "get", "--raw", f"/api/v1/namespaces/{cluster.namespace}/pods/{pod.name}:9092/proxy/state"
-        )
-    )
-    assert status["phase"] == "suspended", status
+    status = await wait_for_checkpoint(1)
     stopped = json.loads(await cluster.kubectl("get", "sandbox", view.target.name, "-o", "json"))
     assert stopped["status"]["suspendedBy"] == "Idle", stopped["status"]
     assert stopped["status"]["firecrackerSuspension"]["phase"] == "Checkpointing", stopped["status"]
@@ -287,6 +326,18 @@ async def preserves_live_guest(
     for key in ("boot_id", "pid", "start_ticks", "marker", "cgroup"):
         assert after[key] == before[key], (before, after)
     assert int(str(after["counter"])) > int(str(before["counter"]))
+
+    # Exercise full capture from a restored, actively used memory mapping. A
+    # cold capture alone never observes the overlapping restore and dump buffers.
+    await client.suspend_sandbox(view.target)
+    await wait_for_checkpoint(2)
+    await client.resume_sandbox(view.target)
+    resumed_again = await wait_until_running(client, view.target)
+    assert resumed_again.kubernetes_diagnostics.pod.uid == pod.uid
+    after_second = await probe(3)
+    for key in ("boot_id", "pid", "start_ticks", "marker", "cgroup", "working_set_bytes"):
+        assert after_second[key] == before[key], (before, after_second)
+    assert int(str(after_second["counter"])) > int(str(after["counter"]))
     (output / "continuation.json").write_text(
         json.dumps(
             {
@@ -297,6 +348,7 @@ async def preserves_live_guest(
                 "process_id": process.process_id,
                 "before": before,
                 "after": after,
+                "after_second": after_second,
             },
             indent=2,
         )

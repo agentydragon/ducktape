@@ -46,6 +46,13 @@ runner disk and full memory/disk checkpoints. Size this PVC for the actual guest
 workspace contents, including both old and new checkpoints during capture. Snapshots contain
 private keys and workload memory and need the same storage access controls as retained state.
 
+The launcher requests enough container memory for guest RAM, a second guest-sized
+allowance for a full buffered snapshot, and 512 MiB for the VMM and supervisor.
+A restored VM maps the previous snapshot file and can charge its resident pages
+while writing the next one. Include both charges when sizing the launcher. A launcher
+whose memory limit is breached loses its same-Pod continuation and cannot finish
+normal Sandbox deletion.
+
 ## Control and RAM suspension
 
 ```mermaid
