@@ -146,7 +146,6 @@ def test_staging_exposes_firecracker_in_both_launch_paths(staging_manifests: lis
     name = environment_firecracker.NAME
     template = find_resource(staging_manifests, "SandboxTemplate", name)
     pod = pod_spec(template)
-    assert pod["nodeSelector"] == {"topology.kubernetes.io/zone": "hil-ovh", "kubernetes.io/arch": "amd64"}
     assert pod["securityContext"]["seccompProfile"] == {"type": "RuntimeDefault"}
     launcher = one(container for container in pod["containers"] if container["name"] == "environment-runtime")
     assert launcher["resources"]["limits"]["devices.kubevirt.io/kvm"] == 1

@@ -6044,9 +6044,6 @@ spec:
               - mountPath: /etc/agentplane-egress-sidecar
                 name: egress-sidecar-settings
                 readOnly: true
-        nodeSelector:
-          kubernetes.io/arch: amd64
-          topology.kubernetes.io/zone: hil-ovh
         restartPolicy: Never
         securityContext:
           fsGroup: 1000

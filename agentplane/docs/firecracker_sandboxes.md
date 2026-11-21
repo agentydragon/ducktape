@@ -6,10 +6,10 @@ is a trusted, privileged host process. The guest runs the same Environment Runti
 supervision, harnesses and Execution Service as the NixOS KubeVirt image.
 
 In staging, select the **Firecracker** launch preset to create a new `environment-firecracker`
-Sandbox with the standard policies and a Codex thread. The launcher runs on x86-64 OVH nodes with
-access to the retained disks and the `devices.kubevirt.io/kvm` device resource. It also requires
-`/dev/net/tun`, native sidecars, Kubernetes image volumes and permission to run a privileged
-container. The launcher runs in the Pod network namespace.
+Sandbox with the standard policies and a Codex thread. The launcher image targets x86-64 and the
+Pod requests the `devices.kubevirt.io/kvm` device resource. It also requires `/dev/net/tun`, native
+sidecars, Kubernetes image volumes and permission to run a privileged container. The launcher runs
+in the Pod network namespace.
 
 ## Template and images
 

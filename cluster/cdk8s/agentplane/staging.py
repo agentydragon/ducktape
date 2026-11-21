@@ -779,7 +779,6 @@ def chart(app: App, env: Environment = ENV) -> Chart:
         environment_template_name=POD_TEMPLATE,
         environment_tools_image=_ENVIRONMENT_TOOLS_IMAGE,
         environment_runtime_key_files=(_BUILDBUDDY_KEY,),
-        firecracker_node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
     )
     # Cluster-scoped and covering every Agentplane namespace; staging is the only environment.
     workload_certificate_admission.add_workload_certificate_admission(
