@@ -63,14 +63,22 @@
       import { BarChart, LineChart } from "@mantine/charts";
       import { html, mount } from "../report.js?v=ebc2503d323c1b76";
       const response = await fetch(
-        "./evidence.json?v=8ab94db5e264842677aa573455da99102e3ac4921e550fde7bb0bce18a41fea6",
+        "./evidence.json?v=e047d35c58dab766894df1a0a8c3de28ed60f66d601657001564bab137f494de",
       );
       if (!response.ok) throw new Error(`Evidence HTTP ${response.status}`);
       const evidence = await response.json();
       const podAdmission = evidence.managed_pod_admission;
       const cas = evidence.cas_followup;
       const overlap = evidence.firecracker_overlap;
-      const census = evidence.trial_pr_census;
+      const census = evidence.scheduler_pr_census;
+      const firecrackerFollowup = evidence.firecracker_scheduler_followup;
+      const staggered = firecrackerFollowup.staggered_probe;
+      const hhmm = (stamp) => stamp.slice(11, 16);
+      const modeNames = {
+        serial: "Serial",
+        simultaneous: "Simultaneous",
+        staggered: "Staggered",
+      };
       const cacheTrial = evidence.kvm_shared_cache_trial;
       const gh = "https://github.com/agentydragon/ducktape";
       const source = evidence.source_devel_commit;
@@ -146,10 +154,10 @@
               ${link("../", "Ducktape reports")}
               <${Title} order=${1} mt="md" mb="xs">PR time to green<//>
               <${Text} size="lg">Across 13–19 November, 247 of 350 sampled heads reached green. Median ${time(evidence.weekly_feedback.pooled.median_s)} · p90 ${time(evidence.weekly_feedback.pooled.p90_s)} among those heads, including five successful reruns.<//>
-              <${Text} c="dimmed" size="sm" mt="sm">Seven complete UTC days · KVM cache trial updated 21 November<//>
+              <${Text} c="dimmed" size="sm" mt="sm">Seven complete UTC days · Firecracker scheduling updated 21 November<//>
               <${Group} gap="md" mt="xs">${link("./evidence.json", "Evidence")}${link("./manifest.json", "Manifest")}<//>
-              <${Text} mt="sm">In the 22:35–01:54 UTC refresh on 20–21 November, ${census.overall.outcomes.green} of ${census.eligible_prs} current exact PR heads reached required green. Median ${time(census.overall.median_s)} · p90 ${time(census.overall.p90_s)} among the green heads. At collection ${census.overall.outcomes.incomplete} were incomplete and ${census.overall.outcomes.cancelled} were canceled.<//>
-              <${Text} c="dimmed" size="sm">The refresh reviewed ${census.workflow_runs} workflow runs, excluding superseded and unmatched heads. The weekly graph retains its seven complete UTC days and original population.<//>
+              <${Text} mt="sm">In the ${hhmm(census.window_utc[0])}–${hhmm(census.window_utc[1])} UTC refresh on 21 November, ${census.overall.outcomes.green ?? 0} of ${census.eligible_prs} current exact PR heads reached required green. Median ${time(census.overall.median_s)} · p90 ${time(census.overall.p90_s)} among the green heads. At collection ${census.eligible_prs - (census.overall.outcomes.green ?? 0)} heads had yet to reach green.<//>
+              <${Text} c="dimmed" size="sm">The refresh reviewed ${census.workflow_runs} workflow runs. It excludes superseded and unmatched heads. The weekly chart retains its original population.<//>
             </header>
             <section id="weekly-trend">
               <${Title} order=${2}>Daily time to green · 13–19 November<//>
@@ -351,7 +359,50 @@
               <//><//><//>
             </section>
             <section id="firecracker-overlap">
-              <${Title} order=${2}>Firecracker case overlap on a warm KVM runner<///>
+              <${Title} order=${2}>Firecracker overlap delayed live-guest scheduling<///>
+              <${Text} my="sm">In four serial-versus-simultaneous pairs, TestRunner savings ranged from 47 seconds faster to 12 seconds slower. The live-guest launcher reached PodScheduled 3–6 seconds after the readiness wait began in serial runs and 37–69 seconds with both scenarios starting together. All eight runs passed both scenarios. Required CI stays serial.<//>
+              ${table(
+                [
+                  "Host and fixture",
+                  "Serial",
+                  "Simultaneous",
+                  "Process change",
+                  "Live PodScheduled",
+                ],
+                firecrackerFollowup.matched_pairs.map((pair) => {
+                  const saved = pair.process_seconds_saved;
+                  const { serial, concurrent } = pair.rows;
+                  return [
+                    `${pair.host.replace("ovh-ns", "")} · ${pair.fixture}`,
+                    build(serial.invocation, seconds(serial.process_s)),
+                    build(concurrent.invocation, seconds(concurrent.process_s)),
+                    `${seconds(Math.abs(saved))} ${saved >= 0 ? "faster" : "slower"}`,
+                    `${seconds(serial.live_pod_schedule_s)} → ${seconds(concurrent.live_pod_schedule_s)}`,
+                  ];
+                }),
+                535,
+              )}
+              <${Text} size="sm" mt="sm">Each pair used the same worker and input tree. The interrupted repeat used another guest on the same physical host. The process clock includes fixture setup and teardown. PodScheduled uses the nested Kubernetes condition timestamp and the test’s readiness-span start.<//>
+              <${Title} order=${3} mt="md">Staggered start on one retained fixture<///>
+              <${Text} my="sm">${staggered.finding}<//>
+              ${table(
+                [
+                  "Start mode",
+                  "TestRunner",
+                  "Live PodScheduled",
+                  "Both-case envelope",
+                ],
+                staggered.arms.map((arm) => [
+                  arm.replay ? "Staggered repeat" : modeNames[arm.mode],
+                  build(arm.invocation, seconds(arm.process_s)),
+                  seconds(arm.live_pod_schedule_s),
+                  seconds(arm.case_envelope_s),
+                ]),
+                425,
+              )}
+              <${Text} mt="sm">${staggered.scheduler_evidence}<//>
+              <${Text} size="sm" mt="sm">The four timed executions reused one baseline and passed both scenarios. Each staggered gate opened after the observer saw the live pod scheduled. The first staggered submission disconnected after cancellation and later finished on the worker. Its verdicts and timings came from native BuildBuddy output, and the repeat followed it on the retained runner. The experiment used a private recycling key and verified removal of the retained container and loop backing. ${build(staggered.dispose_invocation, "Disposal")} · ${link("./firecracker-staggered-spike.patch", "Probe patch")}<//>
+              <${Accordion} variant="contained" mt="md"><${Accordion.Item} value="first-overlap"><${Accordion.Control}>Earlier warm overlap experiment<//><${Accordion.Panel}>
               <${Text} my="sm">${overlap.finding}<//>
               ${table(
                 [
@@ -374,7 +425,8 @@
               )}
               <${Text} size="sm" mt="sm">${overlap.method}<//>
               <${Text} size="sm" mt="sm">${overlap.limit}<//>
-              <${Text} my="sm">${overlap.decision} ${link("./firecracker-overlap-spike.patch", "Experiment patch")} · ${pr(18246)}<//>
+              <${Text} my="sm">${link("./firecracker-overlap-spike.patch", "Experiment patch")} · ${pr(18246)}<//>
+              <//><//><//>
             </section>
             <section id="reruns">
               <${Title} order=${2}>Failure recovery drove the backend tail<//>
@@ -493,8 +545,8 @@
                     "Two of 12 successful first-attempt backend heads with physical test records show minute-scale feedback headroom. Snapshot restore errors require their own recovery evidence.",
                   ],
                   [
-                    "2 · Firecracker scenario overlap",
-                    html`${overlap.action}
+                    "2 · Firecracker scheduling",
+                    html`${staggered.action}
                     ${link("#firecracker-overlap", "Matched KVM comparison")}`,
                     "Three of 12 earlier first-pass backend heads had Firecracker as latest physical finisher. Other gates and action stages constrain any PR-level saving.",
                   ],

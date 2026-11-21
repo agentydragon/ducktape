@@ -1,12 +1,12 @@
 {
-  "source_devel_commit": "9e995a34746f576f359a570f128c2146c13bdb9b",
+  "source_devel_commit": "a1bef327a08b51a34c26825a49d6a9620b8f3ac6",
   "window_start_utc": "2026-11-13T00:00:00Z",
-  "window_end_utc": "2026-11-21T01:54:40+00:00",
-  "published_at_utc": "2026-11-21T01:59:18.767892+00:00",
+  "window_end_utc": "2026-11-21T04:14:24.964816+00:00",
+  "published_at_utc": "2026-11-21T04:14:24.964854+00:00",
   "attribution": "not collected",
-  "report_sha256": "986202b23299d585d0fea48d5b64be8cb1e5716f40fa98b09c0f92bf5df8d51c",
-  "evidence_sha256": "8ab94db5e264842677aa573455da99102e3ac4921e550fde7bb0bce18a41fea6",
-  "previous_report_commit": "19042039523d7c78e7ce6b4964dc21256a0cbddc",
+  "report_sha256": "2f654d54aad1632dd0a73e6a006164e3764c8a3965bc9bc5ae2f0b9f50c2ca9d",
+  "evidence_sha256": "e047d35c58dab766894df1a0a8c3de28ed60f66d601657001564bab137f494de",
+  "previous_report_commit": "1eaa2987f8fb65f4f55171162fbad6aa8ba813ff",
   "feedback_clock": "Earliest observed PR CI workflow creation on the exact SHA to all three required check contexts accepted",
   "visual_validation": "visual-validation.json",
   "weekly_feedback_window_utc": [
@@ -31,5 +31,12 @@
     "pr_census_window_utc": ["2026-11-20T22:35:50Z", "2026-11-21T01:54:27Z"],
     "browser_invocation": "b8378197-df31-4631-9b34-03641a1ea583"
   },
-  "visual_validation_sha256": "b109e078d7cb7ce90466a5df9dbd94c5173b9b40f149d0a550687e415a9bc9ee"
+  "firecracker_scheduler_followup": {
+    "evidence_key": "firecracker_scheduler_followup",
+    "matched_source_commit": "4c58b8af404080df5bb13fad66238e5beb9ba430",
+    "probe_source_commit": "a1bef327a08b51a34c26825a49d6a9620b8f3ac6",
+    "pr_census_window_utc": ["2026-11-21T01:54:27Z", "2026-11-21T03:53:13Z"],
+    "browser_invocation": "136ac02e-4470-43ca-a0c0-501092d7e76e"
+  },
+  "visual_validation_sha256": "3e3647498dbf0702d4ad415113e54616f0123fe7b950d2a1f2d35c8abf5ca18e"
 }
