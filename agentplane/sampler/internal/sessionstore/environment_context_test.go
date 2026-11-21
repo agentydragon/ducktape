@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/testsupport"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/responses"
 )
@@ -39,11 +38,7 @@ func TestEnvironmentContextPrecedesTurnInputAndFollowsChanges(t *testing.T) {
 	}
 	submit := func(id, text string) []responses.Item {
 		t.Helper()
-		if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{
-			CommandId: id, Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: text}},
-		}, "fixture-account", nil); err != nil {
-			t.Fatal(err)
-		}
+		admitInput(t, store, session.ID, id, text)
 		if _, err := store.NextCommand(t.Context(), owner, session.ID); err != nil {
 			t.Fatal(err)
 		}

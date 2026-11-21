@@ -6,16 +6,13 @@ import (
 	"testing"
 	"time"
 
-	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 )
 
 func TestHostSessionsTracksAdmissionAndSetup(t *testing.T) {
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")
-	if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{CommandId: "input", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "hello"}}}, "fixture-account", nil); err != nil {
-		t.Fatal(err)
-	}
+	admitInput(t, store, session.ID, "input", "hello")
 	sessions, err := store.HostSessions(t.Context(), "fixture-account")
 	if err != nil || len(sessions) != 1 {
 		t.Fatalf("sessions=%v err=%v", sessions, err)
@@ -63,12 +60,7 @@ func TestHostSessionsTracksAdmissionAndSetup(t *testing.T) {
 func TestHostSessionsUsesRecoveryCausePrecedence(t *testing.T) {
 	for _, scenario := range []string{"pending", "intent", "cell", "process", "effects"} {
 		t.Run(scenario, func(t *testing.T) {
-			store := newTestStore(t)
-			session := openSessionForStore(t, store, "")
-			owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-			if err != nil {
-				t.Fatal(err)
-			}
+			store, session, owner := claimedSession(t)
 			// Seed all lower-priority blockers too, so the assertion verifies precedence.
 			if scenario != "effects" {
 				if _, err := store.DB().ExecContext(t.Context(), `INSERT INTO sampler_process(id,conversation_id,generation,status,tty) VALUES('process',$1,$2,'running',false)`, session.ConversationID, owner.Generation); err != nil {

@@ -30,3 +30,21 @@ func newTestStore(t testing.TB) *Store {
 	store, _ := newTestStoreWithDSN(t)
 	return store
 }
+
+func claimedSession(t *testing.T) (*Store, *Session, Owner) {
+	t.Helper()
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return store, session, owner
+}
+
+func expireLease(t *testing.T, store *Store, session *Session) {
+	t.Helper()
+	if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1`, session.ConversationID); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -259,19 +259,12 @@ func TestStoreSessionWithoutPlatformGuidanceKeepsCallerPromptAcrossActivation(t 
 }
 
 func TestStoreFencesEveryWriteToTheLiveLeaseGeneration(t *testing.T) {
-	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, session, owner := claimedSession(t)
 	intentID, _, err := store.Begin(t.Context(), owner, IntentPayload{Kind: PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1`, session.ConversationID); err != nil {
-		t.Fatal(err)
-	}
+	expireLease(t, store, session)
 	if err := store.Renew(t.Context(), owner, time.Minute); !errors.As(err, new(*LostOwnershipError)) {
 		t.Fatalf("expired owner renewed lease: %v", err)
 	}
@@ -297,12 +290,7 @@ func TestStoreFencesEveryWriteToTheLiveLeaseGeneration(t *testing.T) {
 }
 
 func TestResponseEvidenceAcceptsOpenCompactionIntent(t *testing.T) {
-	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, session, owner := claimedSession(t)
 	conversation, err := store.Read(t.Context(), owner)
 	if err != nil {
 		t.Fatal(err)
@@ -356,12 +344,7 @@ func TestResponseEvidenceAcceptsOpenCompactionIntent(t *testing.T) {
 func TestResponseEvidenceRejectsLateRecordsForClosedIntent(t *testing.T) {
 	for _, scenario := range []string{"finished", "abandoned-with-successor"} {
 		t.Run(scenario, func(t *testing.T) {
-			store := newTestStore(t)
-			session := openSessionForStore(t, store, "")
-			owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-			if err != nil {
-				t.Fatal(err)
-			}
+			store, session, owner := claimedSession(t)
 			if scenario == "abandoned-with-successor" {
 				if err := store.StampCodeHostInstance(t.Context(), owner, uuid.NewString()); err != nil {
 					t.Fatal(err)
@@ -407,12 +390,7 @@ func TestResponseEvidenceRejectsLateRecordsForClosedIntent(t *testing.T) {
 }
 
 func TestStoreIntentJournalBlocksReplayAndPersistsKnownRejection(t *testing.T) {
-	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, _, owner := claimedSession(t)
 	first, _, err := store.Begin(t.Context(), owner, IntentPayload{Kind: PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
 	if err != nil {
 		t.Fatal(err)
@@ -534,9 +512,7 @@ func TestStoreRecoverSessionAbandonsBlockedCellAndFencesOldOwner(t *testing.T) {
 	if _, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", cursor, "reviewed evidence", ""); !errors.Is(err, protocol.ErrPrecondition) {
 		t.Fatalf("active owner lease was ignored: %v", err)
 	}
-	if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1`, session.ConversationID); err != nil {
-		t.Fatal(err)
-	}
+	expireLease(t, store, session)
 
 	recovered, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", cursor, "reviewed evidence", replacementIncarnationUID)
 	if err != nil {
@@ -648,12 +624,7 @@ func TestStoreRecoverSessionAbandonsBlockedCellAndFencesOldOwner(t *testing.T) {
 }
 
 func TestStoreRecoverSessionPreservesKnownRejectedCellResult(t *testing.T) {
-	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, session, owner := claimedSession(t)
 	sampling, _, err := store.Begin(t.Context(), owner, IntentPayload{Kind: PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
 	if err != nil {
 		t.Fatal(err)
@@ -731,12 +702,7 @@ func TestStoreRecoverSessionPreservesKnownRejectedCellResult(t *testing.T) {
 func TestStoreRecoverSessionSupportsLostRuntimeWithoutPendingIntent(t *testing.T) {
 	for _, kind := range []string{"cell", "process"} {
 		t.Run(kind, func(t *testing.T) {
-			store := newTestStore(t)
-			session := openSessionForStore(t, store, "")
-			owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-			if err != nil {
-				t.Fatal(err)
-			}
+			store, session, owner := claimedSession(t)
 			switch kind {
 			case "cell":
 				if err := store.CellResult(t.Context(), owner, "code-session:yielded-cell", "live"); err != nil {
@@ -754,9 +720,7 @@ func TestStoreRecoverSessionSupportsLostRuntimeWithoutPendingIntent(t *testing.T
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1`, session.ConversationID); err != nil {
-				t.Fatal(err)
-			}
+			expireLease(t, store, session)
 			if recovered, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", blocked.Cursor, "runtime was lost", ""); err != nil {
 				t.Fatal(err)
 			} else if recovered.Blocked {
@@ -776,19 +740,9 @@ func TestStoreRecoverSessionSupportsLostRuntimeWithoutPendingIntent(t *testing.T
 }
 
 func TestStoreRecoverSessionAbandonsSoleUnresolvedSamplingIntent(t *testing.T) {
-	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, session, owner := claimedSession(t)
 	const commandID = "sample-then-recover"
-	if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{
-		CommandId: commandID,
-		Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "Start"}},
-	}, "fixture-account", nil); err != nil {
-		t.Fatal(err)
-	}
+	admitInput(t, store, session.ID, commandID, "Start")
 	if _, err := store.NextCommand(t.Context(), owner, session.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -807,9 +761,7 @@ func TestStoreRecoverSessionAbandonsSoleUnresolvedSamplingIntent(t *testing.T) {
 	if _, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", blocked.Cursor, "reviewed provider request", ""); !errors.Is(err, protocol.ErrPrecondition) {
 		t.Fatalf("recovery ignored active owner: %v", err)
 	}
-	if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1`, session.ConversationID); err != nil {
-		t.Fatal(err)
-	}
+	expireLease(t, store, session)
 	if _, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", blocked.Cursor-1, "reviewed provider request", ""); !errors.Is(err, protocol.ErrPrecondition) {
 		t.Fatalf("stale cursor recovered sampling: %v", err)
 	}
@@ -875,12 +827,7 @@ func TestStoreRecoverSessionAbandonsSoleUnresolvedSamplingIntent(t *testing.T) {
 }
 
 func TestStoreRecoverSessionRejectsSamplingWithOtherUnresolvedEffect(t *testing.T) {
-	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, session, owner := claimedSession(t)
 	if _, _, err := store.Begin(t.Context(), owner, IntentPayload{Kind: PendingIntentSampling}, nil, providerAttemptTestPolicyPointer()); err != nil {
 		t.Fatal(err)
 	}
@@ -894,21 +841,14 @@ func TestStoreRecoverSessionRejectsSamplingWithOtherUnresolvedEffect(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1`, session.ConversationID); err != nil {
-		t.Fatal(err)
-	}
+	expireLease(t, store, session)
 	if _, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", blocked.Cursor, "provider and executor uncertain", ""); !errors.Is(err, protocol.ErrPrecondition) {
 		t.Fatalf("mixed sampling and executor uncertainty recovered: %v", err)
 	}
 }
 
 func TestStoreRecoverSessionRejectsSamplingPendingWithWrongIntentKind(t *testing.T) {
-	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, session, owner := claimedSession(t)
 	intentID, _, err := store.Begin(t.Context(), owner, IntentPayload{Kind: PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
 	if err != nil {
 		t.Fatal(err)
@@ -925,9 +865,7 @@ func TestStoreRecoverSessionRejectsSamplingPendingWithWrongIntentKind(t *testing
 	if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_intent SET request=jsonb_set(request,'{kind}','"compaction"') WHERE id=$1`, intentID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1`, session.ConversationID); err != nil {
-		t.Fatal(err)
-	}
+	expireLease(t, store, session)
 	if _, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", blocked.Cursor, "reviewed mismatched request", ""); !errors.Is(err, protocol.ErrPrecondition) {
 		t.Fatalf("wrong sampling intent kind recovered: %v", err)
 	}
@@ -967,9 +905,7 @@ func TestStoreRecoverSessionRejectsCompactionAndSetupBoundaries(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1`, session.ConversationID); err != nil {
-				t.Fatal(err)
-			}
+			expireLease(t, store, session)
 			if _, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", blocked.Cursor, "not recoverable", ""); !errors.Is(err, protocol.ErrPrecondition) {
 				t.Fatalf("unsupported %s boundary recovered: %v", kind, err)
 			}
@@ -1143,12 +1079,7 @@ func TestStoreCodeHostLossSettlesUnresolvedExecutorIntentAndUnblocks(t *testing.
 }
 
 func TestStoreCodeHostLossAbandonsLiveProcessHandleWithRetainedEvidence(t *testing.T) {
-	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, session, owner := claimedSession(t)
 	if err := store.StampCodeHostInstance(t.Context(), owner, uuid.NewString()); err != nil {
 		t.Fatal(err)
 	}
@@ -1189,17 +1120,8 @@ func TestStoreStaleGenerationSamplingIntentIsAbandonedForResampling(t *testing.T
 	// blocked the Session; the host marker is NULL because no cell ever ran.
 	for _, blocked := range []bool{false, true} {
 		t.Run(fmt.Sprintf("blocked=%v", blocked), func(t *testing.T) {
-			store := newTestStore(t)
-			session := openSessionForStore(t, store, "")
-			owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{
-				CommandId: "cut", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "Start"}},
-			}, "fixture-account", nil); err != nil {
-				t.Fatal(err)
-			}
+			store, session, owner := claimedSession(t)
+			admitInput(t, store, session.ID, "cut", "Start")
 			if _, err := store.NextCommand(t.Context(), owner, session.ID); err != nil {
 				t.Fatal(err)
 			}
@@ -1265,12 +1187,7 @@ func TestStoreStaleGenerationSamplingIntentIsAbandonedForResampling(t *testing.T
 }
 
 func TestStoreCodeHostLossAfterSettledCellWithoutLiveHandles(t *testing.T) {
-	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, session, owner := claimedSession(t)
 	if err := store.StampCodeHostInstance(t.Context(), owner, uuid.NewString()); err != nil {
 		t.Fatal(err)
 	}
@@ -1302,12 +1219,7 @@ func TestStoreCodeHostLossAfterSettledCellWithoutLiveHandles(t *testing.T) {
 }
 
 func TestStoreCodeHostLossLeavesUnrelatedPendingCallForDispatcher(t *testing.T) {
-	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, session, owner := claimedSession(t)
 	if err := store.StampCodeHostInstance(t.Context(), owner, uuid.NewString()); err != nil {
 		t.Fatal(err)
 	}
@@ -1354,12 +1266,7 @@ func TestStoreCodeHostLossLeavesUnrelatedPendingCallForDispatcher(t *testing.T) 
 }
 
 func TestStoreLargeEvidenceIsFragmentedAndReconstructed(t *testing.T) {
-	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, session, owner := claimedSession(t)
 	before, err := store.GetSession(t.Context(), session.ID, "")
 	if err != nil {
 		t.Fatal(err)
@@ -1404,12 +1311,7 @@ func TestStoreLargeEvidenceIsFragmentedAndReconstructed(t *testing.T) {
 }
 
 func TestStoreUnreadProcessOutputKeepsHeadAndTail(t *testing.T) {
-	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, _, owner := claimedSession(t)
 	if err := store.RegisterProcess(t.Context(), owner, "process-output", false); err != nil {
 		t.Fatal(err)
 	}
@@ -1431,12 +1333,7 @@ func TestStoreUnreadProcessOutputKeepsHeadAndTail(t *testing.T) {
 }
 
 func TestStoreAbandonedProcessPreservesEvidenceAndLeavesScheduler(t *testing.T) {
-	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, _, owner := claimedSession(t)
 	if err := store.RegisterModelProcess(t.Context(), owner, "1234-unknown", 1234, false); err != nil {
 		t.Fatal(err)
 	}
@@ -1464,12 +1361,7 @@ func TestStoreAbandonedProcessPreservesEvidenceAndLeavesScheduler(t *testing.T) 
 }
 
 func TestStoreReleasesModelSessionNumberOnExit(t *testing.T) {
-	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, _, owner := claimedSession(t)
 	if err := store.RegisterModelProcess(t.Context(), owner, "1234-first", 1234, false); err != nil {
 		t.Fatal(err)
 	}
@@ -1492,12 +1384,7 @@ func TestStoreReleasesModelSessionNumberOnExit(t *testing.T) {
 }
 
 func TestCompletedCompactionReleasesCommandBeforeNextInput(t *testing.T) {
-	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, session, owner := claimedSession(t)
 	if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{CommandId: "compact", Operation: &commandpb.Command_Compact{Compact: &commandpb.Compact{}}}, "fixture-account", nil); err != nil {
 		t.Fatal(err)
 	}
@@ -1524,9 +1411,7 @@ func TestCompletedCompactionReleasesCommandBeforeNextInput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{CommandId: "after", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "Continue"}}}, "fixture-account", nil); err != nil {
-		t.Fatal(err)
-	}
+	admitInput(t, store, session.ID, "after", "Continue")
 	command, err := store.NextCommand(t.Context(), owner, session.ID)
 	if err != nil || command == nil || command.ID != "after" {
 		t.Fatalf("next command=%+v err=%v", command, err)
@@ -1534,15 +1419,8 @@ func TestCompletedCompactionReleasesCommandBeforeNextInput(t *testing.T) {
 }
 
 func TestStoreInterruptIsFencedToItsTurnAndSettledAtomically(t *testing.T) {
-	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{CommandId: "turn-1", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "hello"}}}, "fixture-account", nil); err != nil {
-		t.Fatal(err)
-	}
+	store, session, owner := claimedSession(t)
+	admitInput(t, store, session.ID, "turn-1", "hello")
 	command, err := store.NextCommand(t.Context(), owner, session.ID)
 	if err != nil || command.ID != "turn-1" {
 		t.Fatalf("turn command=%v err=%v", command, err)
@@ -1587,12 +1465,7 @@ func TestStoreInterruptIsFencedToItsTurnAndSettledAtomically(t *testing.T) {
 }
 
 func TestAcknowledgeCompletedInterruptDoesNotLeaveStalePendingIntent(t *testing.T) {
-	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, _, owner := claimedSession(t)
 	requestID, err := store.RequestInterrupt(t.Context(), owner.ConversationID, owner.Generation)
 	if err != nil {
 		t.Fatal(err)
@@ -1616,12 +1489,7 @@ func TestAcknowledgeCompletedInterruptDoesNotLeaveStalePendingIntent(t *testing.
 }
 
 func TestAcknowledgeIncompleteInterruptPersistsBlockingIntent(t *testing.T) {
-	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, _, owner := claimedSession(t)
 	requestID, err := store.RequestInterrupt(t.Context(), owner.ConversationID, owner.Generation)
 	if err != nil {
 		t.Fatal(err)
@@ -1648,20 +1516,9 @@ func TestLateInterruptIsSettledWithItsTurn(t *testing.T) {
 	for _, takeover := range []bool{false, true} {
 		for _, failure := range []bool{false, true} {
 			t.Run(fmt.Sprintf("takeover_%t/failure_%t", takeover, failure), func(t *testing.T) {
-				store := newTestStore(t)
-				session := openSessionForStore(t, store, "")
-				owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-				if err != nil {
-					t.Fatal(err)
-				}
+				store, session, owner := claimedSession(t)
 				for _, commandID := range []string{"first", "second"} {
-					_, err := store.Admit(t.Context(), session.ID, &commandpb.Command{
-						CommandId: commandID,
-						Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: commandID}},
-					}, "fixture-account", nil)
-					if err != nil {
-						t.Fatal(err)
-					}
+					admitInput(t, store, session.ID, commandID, commandID)
 				}
 				command, err := store.NextCommand(t.Context(), owner, session.ID)
 				if err != nil || command == nil || command.ID != "first" {
@@ -1734,19 +1591,8 @@ func TestLateInterruptIsSettledWithItsTurn(t *testing.T) {
 func TestKnownRejectionPreservesOtherEffectUncertainty(t *testing.T) {
 	for _, uncertainty := range []string{"nested", "cell", "process"} {
 		t.Run(uncertainty, func(t *testing.T) {
-			store := newTestStore(t)
-			session := openSessionForStore(t, store, "")
-			owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-			if err != nil {
-				t.Fatal(err)
-			}
-			_, err = store.Admit(t.Context(), session.ID, &commandpb.Command{
-				CommandId: "first",
-				Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "Start"}},
-			}, "fixture-account", nil)
-			if err != nil {
-				t.Fatal(err)
-			}
+			store, session, owner := claimedSession(t)
+			admitInput(t, store, session.ID, "first", "Start")
 			if _, err := store.NextCommand(t.Context(), owner, session.ID); err != nil {
 				t.Fatal(err)
 			}
@@ -1793,22 +1639,8 @@ func TestKnownRejectionPreservesOtherEffectUncertainty(t *testing.T) {
 func TestWorkScansRetainAcceptedInputAfterKnownRejection(t *testing.T) {
 	for _, ownership := range []string{"owned", "released", "expired"} {
 		t.Run(ownership, func(t *testing.T) {
-			store := newTestStore(t)
-			session := openSessionForStore(t, store, "")
-			owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-			if err != nil {
-				t.Fatal(err)
-			}
-			admit := func(id string) {
-				t.Helper()
-				if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{
-					CommandId: id,
-					Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: id}},
-				}, "fixture-account", nil); err != nil {
-					t.Fatal(err)
-				}
-			}
-			admit("first")
+			store, session, owner := claimedSession(t)
+			admitInput(t, store, session.ID, "first", "first")
 			if _, err := store.NextCommand(t.Context(), owner, session.ID); err != nil {
 				t.Fatal(err)
 			}
@@ -1822,7 +1654,7 @@ func TestWorkScansRetainAcceptedInputAfterKnownRejection(t *testing.T) {
 			if ids, err := store.OwnedWork(t.Context(), []string{owner.Token}); err != nil || len(ids) != 0 {
 				t.Fatalf("settled rejection has pending work: %v err=%v", ids, err)
 			}
-			admit("second")
+			admitInput(t, store, session.ID, "second", "second")
 			conversation, err := store.Read(t.Context(), owner)
 			if err != nil || !conversation.Stopped {
 				t.Fatalf("admission changed previous turn's stopped state: %+v err=%v", conversation, err)
@@ -1833,9 +1665,7 @@ func TestWorkScansRetainAcceptedInputAfterKnownRejection(t *testing.T) {
 					t.Fatal(err)
 				}
 			case "expired":
-				if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1`, session.ConversationID); err != nil {
-					t.Fatal(err)
-				}
+				expireLease(t, store, session)
 			}
 			owned, err := store.OwnedWork(t.Context(), []string{owner.Token})
 			if err != nil {
@@ -1881,9 +1711,7 @@ func TestRecoverableSessionsUsesBoundedRotatingPages(t *testing.T) {
 func TestGooseInitializationPreservesRetainedState(t *testing.T) {
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")
-	if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{CommandId: "stored-command", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "stored input"}}}, "fixture-account", nil); err != nil {
-		t.Fatal(err)
-	}
+	admitInput(t, store, session.ID, "stored-command", "stored input")
 	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
 	if err != nil {
 		t.Fatal(err)
@@ -2094,20 +1922,9 @@ func TestFailedActiveInputFoldsAsConfirmedInputAndFailedTurn(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			store := newTestStore(t)
-			session := openSessionForStore(t, store, "")
-			owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-			if err != nil {
-				t.Fatal(err)
-			}
+			store, session, owner := claimedSession(t)
 			for _, commandID := range []string{"active-input", "queued-input"} {
-				_, err := store.Admit(t.Context(), session.ID, &commandpb.Command{
-					CommandId: commandID,
-					Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: commandID}},
-				}, "fixture-account", nil)
-				if err != nil {
-					t.Fatal(err)
-				}
+				admitInput(t, store, session.ID, commandID, commandID)
 			}
 			active, err := store.NextCommand(t.Context(), owner, session.ID)
 			if err != nil || active == nil || active.ID != "active-input" {
@@ -2157,12 +1974,7 @@ func admitInput(t *testing.T, store *Store, sessionID, commandID, text string) {
 }
 
 func TestSteeringInputJoinsTheActiveTurnOnceInAdmissionOrder(t *testing.T) {
-	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, session, owner := claimedSession(t)
 	admitInput(t, store, session.ID, "turn-1", "start")
 	if command, err := store.NextCommand(t.Context(), owner, session.ID); err != nil || command.ID != "turn-1" {
 		t.Fatalf("turn command=%v err=%v", command, err)
@@ -2255,12 +2067,7 @@ func TestSteeringInputJoinsTheActiveTurnOnceInAdmissionOrder(t *testing.T) {
 }
 
 func TestPendingInterruptTakesPrecedenceOverSteering(t *testing.T) {
-	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, session, owner := claimedSession(t)
 	admitInput(t, store, session.ID, "turn-1", "start")
 	if _, err := store.NextCommand(t.Context(), owner, session.ID); err != nil {
 		t.Fatal(err)
