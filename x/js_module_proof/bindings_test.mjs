@@ -866,4 +866,16 @@ if (runSection(3)) {
   assert.equal(elseResult.result, "proved under assumptions", JSON.stringify(elseResult));
   assert.deepEqual(execute(elseSource, branchCalls), { events: [], results: [3, 8] });
   assert.deepEqual(execute(join(elseOut, "entry.mjs"), branchCalls), { events: [], results: [3, 8] });
+
+  const earlySource = join(root, "early-return-alias-source.mjs");
+  const earlyOut = join(root, "early-return-alias-out");
+  await writeFile(
+    earlySource,
+    `let value = 3;\nlet other = 5;\nfunction compute(p) { if (p < value) { return value; } return p; }\nexport { compute };\n`
+  );
+  assert.equal(cli("generate", earlySource, constSpec, earlyOut).value.result, "generated");
+  const earlyResult = cli("validate", earlySource, constSpec, earlyOut).value;
+  assert.equal(earlyResult.result, "proved under assumptions", JSON.stringify(earlyResult));
+  assert.deepEqual(execute(earlySource, branchCalls), { events: [], results: [3, 4] });
+  assert.deepEqual(execute(join(earlyOut, "entry.mjs"), branchCalls), { events: [], results: [3, 4] });
 }

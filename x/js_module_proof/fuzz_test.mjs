@@ -210,6 +210,30 @@ if (shards === 4 && shard === 1) {
   assert.equal(unchangedElse.localImportAliasProvedCases, 1);
   assert.equal(unchangedElse.equal, 1);
 }
+if (shards === 4 && shard === 2) {
+  const changedEarly = await runFuzz({
+    seed: 773,
+    start: 589,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "alias",
+    validateEvery: 1,
+  });
+  assert.match(makeLocalAliasCase(773, 589).source, /return \(offset \+ numericLeft\)/);
+  assert.equal(changedEarly.mutatedDifferent, 1);
+  assert.equal(changedEarly.mutatedVerdicts.unsafe, 1);
+  const unchangedEarly = await runFuzz({
+    seed: 773,
+    start: 589,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "alias",
+    mutationMode: "disabled",
+    validateEvery: 1,
+  });
+  assert.equal(unchangedEarly.localImportAliasProvedCases, 1);
+  assert.equal(unchangedEarly.equal, 1);
+}
 if (shards === 4 && shard === 3) {
   const changedCompound = await runFuzz({
     seed: 773,
