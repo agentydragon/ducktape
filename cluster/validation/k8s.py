@@ -225,9 +225,15 @@ class ImagePolicyResource(K8sResource):
     """An image-automation `ImagePolicy`: what a `$imagepolicy` setter marker names."""
 
 
+class _ArtifactCopy(BaseModel):
+    source: str = Field(alias="from")
+    destination: str = Field(alias="to")
+
+
 class _ArtifactGeneratorArtifact(BaseModel):
     model_config = ConfigDict(extra="ignore")
     name: str
+    copies: list[_ArtifactCopy] = Field(default_factory=list, alias="copy")
 
 
 class ArtifactGeneratorSpec(BaseModel):

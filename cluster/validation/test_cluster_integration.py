@@ -59,26 +59,19 @@ def cluster(repo_root: Path) -> ParsedCluster:
 
     # Build all local flux-referenced kustomizations (including suspended — kustomize
     # build should still succeed). Only validation checks filter suspended.
-    local_dirs = {d for spec in parsed.flux_kustomizations.values() if (d := spec.local_dir(repo_root))}
-    kusts = [k for path, k in parsed.kustomize_files.items() if path.parent.resolve() in local_dirs]
-
-    artifact_specs: dict[tuple[str, str], list[tuple[str, str]]] = {}
-    for manifest_path, resources in parsed.source_resources.items():
-        generator_resources = [resource for resource in resources if isinstance(resource, ArtifactGeneratorResource)]
-        if not generator_resources:
-            continue
-        for document in yaml.safe_load_all(manifest_path.read_text()):
-            if not isinstance(document, dict) or document.get("kind") != "ArtifactGenerator":
-                continue
-            namespace = document.get("metadata", {}).get("namespace", "")
-            for artifact in document.get("spec", {}).get("artifacts", []):
-                artifact_specs[(namespace, artifact["name"])] = [
-                    (copy["from"], copy["to"]) for copy in artifact.get("copy", [])
-                ]
     specs_by_dir = {
-        directory.resolve(): spec
+        directory: spec
         for spec in parsed.flux_kustomizations.values()
         if (directory := spec.local_dir(repo_root)) is not None
+    }
+    kusts = [kust for path, kust in parsed.kustomize_files.items() if path.parent.resolve() in specs_by_dir]
+
+    artifact_specs = {
+        (resource.namespace, artifact.name): [(copy.source, copy.destination) for copy in artifact.copies]
+        for resources in parsed.source_resources.values()
+        for resource in resources
+        if isinstance(resource, ArtifactGeneratorResource)
+        for artifact in resource.spec.artifacts
     }
 
     def needs_artifact_staging(copies: list[tuple[str, str]]) -> bool:
