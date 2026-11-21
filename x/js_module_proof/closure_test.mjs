@@ -74,7 +74,7 @@ if (shard === 10) {
   const zeroWitness = cli("validate", textSource, textSpec, safeOut);
   assert.equal(zeroWitness.result, "unsafe", JSON.stringify(zeroWitness));
   assert.notDeepEqual(execute(textSource, []).events, execute(join(safeOut, "entry.mjs"), []).events);
-  await writeFile(stateFile, stateText.replace("record(0n)", "record(-0n)"));
+  await writeFile(stateFile, stateText.replace("record(0n)", "record(-0x0n)"));
   assert.equal(cli("validate", textSource, textSpec, safeOut).result, "proved under assumptions");
   assert.deepEqual(execute(textSource, []).events, execute(join(safeOut, "entry.mjs"), []).events);
   await writeFile(stateFile, stateText.replace("record(0n)", "record(0)"));

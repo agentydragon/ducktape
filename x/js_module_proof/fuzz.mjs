@@ -1208,6 +1208,7 @@ export function makeComposedCase(seed, index) {
           recordSpecialNumber(1),
           recordSpecialNumber(-1),
           recordBigInteger("0"),
+          recordBigInteger("0xff"),
           recordBigInteger("123456789012345678901234567890"),
           recordBigInteger("123456789012345678901234567890", true),
         ]
