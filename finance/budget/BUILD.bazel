@@ -54,7 +54,10 @@ py_test(
 py_library(
     name = "csv_export",
     srcs = ["csv_export.py"],
-    deps = [":wire"],
+    deps = [
+        ":schema",
+        ":wire",
+    ],
 )
 
 py_test(
