@@ -134,7 +134,7 @@ if (shards === 4 && shard === 2) {
   assert.equal(renamedRelay.renamedReexportGeneratedCases, 1);
   assert.equal(renamedRelay.renamedReexportComparedCases, 1);
   assert.equal(renamedRelay.renamedReexportProvedCases, 1);
-  for (const start of [59, 123, 187, 251]) {
+  for (const start of [59, 123, 187, 251, 315]) {
     const redirectedRelay = await runFuzz({
       seed: 51981,
       start,

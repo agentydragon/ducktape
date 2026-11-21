@@ -257,3 +257,30 @@ if (runSection(2)) {
   assert.notEqual(wrongRelay.result, "proved under assumptions", JSON.stringify(wrongRelay));
   assert.notDeepEqual(execute(aliasSource, ["current"]), execute(join(aliasOut, "entry.mjs"), ["current"]));
 }
+
+if (runSection(1)) {
+  const expressionSource = join(root, "record-expression-source.mjs");
+  const expressionSpec = join(root, "record-expression-spec.json");
+  const expressionOut = join(root, "record-expression-out");
+  await writeFile(
+    expressionSource,
+    `let seed = 2;\nfunction compute() { return seed + 1; }\nglobalThis.record(compute());\nexport { compute };\n`
+  );
+  await writeFile(
+    expressionSpec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0] },
+        "logic.mjs": { imports: ["state.mjs"], statements: [1, 2] },
+        "entry.mjs": { imports: ["logic.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", expressionSource, expressionSpec, expressionOut).value.result, "generated");
+  const checkedExpression = cli("validate", expressionSource, expressionSpec, expressionOut).value;
+  assert.equal(checkedExpression.result, "proved under assumptions", JSON.stringify(checkedExpression));
+  assert.deepEqual(execute(expressionSource, ["compute"]), { events: [3], results: [3] });
+  assert.deepEqual(execute(join(expressionOut, "entry.mjs"), ["compute"]), execute(expressionSource, ["compute"]));
+}

@@ -1030,28 +1030,30 @@ def bindingOperations (source : List BindingStmt) (statement : BindingStmt) : Op
     | .recordPrimitive _ => none
   | .wrapper _ _ => some []
   | .recordCall name => do
-    let ops ← functionOperations source name false
     let definition ← findDefinition source name
-    let target ← match definition with
-      | .closure closureName _ => some (closureCell closureName)
-      | .wrapper _ closureName => some (closureCell closureName)
-      | .factory _ _ _ => none
-      | .variable _ _ => none
-      | .hoistedVariable _ _ => none
-      | .constant _ _ => none
-      | .function _ _ _ => none
-      | .reader _ sourceName => some sourceName
-      | .thrower _ _ => none
-      | .expressionFunction _ _ _ => none
-      | .capturedFactory _ _ _ _ _ => none
-      | .capturedClosure _ _ _ _ => none
-      | .capturedAlias _ _ => none
-      | .recordCall _ => none
-      | .call _ => none
-      | .record _ => none
-      | .discardedLiteral => none
-      | .recordPrimitive _ => none
-    some (ops ++ [.observeBinding target])
+    match definition with
+    | .expressionFunction _ parameters body =>
+      if parameters.isEmpty then some [.observeExpression body] else none
+    | .reader _ sourceName => some [.readBinding sourceName, .observeBinding sourceName]
+    | .closure closureName _ => some [.incrementBinding (closureCell closureName), .observeBinding (closureCell closureName)]
+    | .wrapper _ closureName =>
+      if isClosure source closureName then
+        some [.incrementBinding (closureCell closureName), .observeBinding (closureCell closureName)]
+      else none
+    | .factory _ _ _ => none
+    | .variable _ _ => none
+    | .hoistedVariable _ _ => none
+    | .constant _ _ => none
+    | .function _ _ _ => none
+    | .thrower _ _ => none
+    | .capturedFactory _ _ _ _ _ => none
+    | .capturedClosure _ _ _ _ => none
+    | .capturedAlias _ _ => none
+    | .recordCall _ => none
+    | .call _ => none
+    | .record _ => none
+    | .discardedLiteral => none
+    | .recordPrimitive _ => none
   | .record name =>
     if isHoistedName source name then some [.observeHoisted name] else some [.observeBinding name]
   | .call name => functionOperations source name false

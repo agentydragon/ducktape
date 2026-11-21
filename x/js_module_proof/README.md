@@ -187,8 +187,8 @@ observations, including unpaired surrogates; initialization-order counterexample
 include those strings.
 Calls with boolean, null, or safe-integer literals, including negative zero, also produce
 observations and can appear in initialization-order witnesses. A top-level
-`globalThis.record(reader())` also supports a zero-argument reader returning a
-modeled numeric binding, as well as the supported counter-closure calls.
+`globalThis.record(compute())` also supports zero-argument functions returning
+modeled numeric expressions, as well as the supported counter-closure calls.
 The constant forms `record(0 / 0)`, `record(1 / 0)`, and `record(-1 / 0)`
 record `NaN`, positive infinity, and negative infinity distinctly.
 BigInt literals, including negated literals, can also be recorded; their

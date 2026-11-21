@@ -1250,19 +1250,17 @@ export function makeComposedCase(seed, index) {
   }
   if (index % 64 === 59) {
     functionNames.unshift("fuzzRelayRead");
+    const initExpressionReader = index % 512 === 315;
     const expressionReader = index % 128 === 123 && index % 256 !== 251;
-    functions.unshift(
-      functionNode(
-        "fuzzRelayRead",
-        expressionReader ? ["parameter"] : [],
-        expressionReader
-          ? [
-              declaration("global1", id("parameter")),
-              returnNode({ type: "BinaryExpression", operator: "+", left: id("global"), right: id("global1") }),
-            ]
-          : [returnNode(id("global"))]
-      )
-    );
+    const body = initExpressionReader
+      ? [returnNode({ type: "BinaryExpression", operator: "+", left: id("global"), right: literal(1) })]
+      : expressionReader
+        ? [
+            declaration("global1", id("parameter")),
+            returnNode({ type: "BinaryExpression", operator: "+", left: id("global"), right: id("global1") }),
+          ]
+        : [returnNode(id("global"))];
+    functions.unshift(functionNode("fuzzRelayRead", expressionReader ? ["parameter"] : [], body));
   }
   const publicFunctionNames = functionNames.map((name, i) =>
     index % 3 === 0 && i === 0 && name !== "fuzzRelayRead" ? `public_${name}` : name
@@ -1298,8 +1296,8 @@ export function makeComposedCase(seed, index) {
           recordBigInteger("123456789012345678901234567890", true),
         ]
       : [];
-  const observeRelayAtInit = index % 256 === 187 || index % 256 === 251;
-  const observeRelayViaCall = index % 256 === 251;
+  const observeRelayAtInit = index % 256 === 187 || index % 256 === 251 || index % 512 === 315;
+  const observeRelayViaCall = index % 256 === 251 || index % 512 === 315;
   const ast = {
     type: "Program",
     sourceType: "module",
@@ -1970,7 +1968,7 @@ export async function runFuzz({
       if (mutation === "throwValue") input.calls = [{ name: "fuzzThrower", args: [1] }];
       if (mutation === "renamedReexport")
         input.calls =
-          index % 256 === 187 || index % 256 === 251
+          index % 256 === 187 || index % 256 === 251 || index % 512 === 315
             ? []
             : [{ name: "fuzzRelayRead", args: index % 128 === 123 ? [1] : [] }];
       const independentCategory = input.invalidAssignment ? "invalidAssignment" : input.cyclic ? "cyclic" : "acyclic";
