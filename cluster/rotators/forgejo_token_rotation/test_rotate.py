@@ -200,13 +200,7 @@ def test_tokens_to_prune_keeps_current_and_newest_previous():
         keep_previous=1,
     )
     creds = ForgejoCredentials("test-user", "test-secret", "http://forgejo.test:3000", "https://git.test")
-    current = RotatedToken(
-        rotation=r,
-        credentials=creds,
-        token_id=4,
-        token_name="forgejo-tea-haku-20260704000000",
-        token_last_eight="current",
-    )
+    current = RotatedToken(rotation=r, credentials=creds, token_id=4, token_name="forgejo-tea-haku-20260704000000")
     tokens = [
         {"id": 4, "name": "forgejo-tea-haku-20260704000000"},
         {"id": 3, "name": "forgejo-tea-haku-20260703000000"},
