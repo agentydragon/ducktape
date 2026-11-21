@@ -1151,6 +1151,12 @@ spec:
           podSelector:
             matchLabels:
               app.kubernetes.io/name: gatus
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: alloy-node
       ports:
         - port: 5000
           protocol: TCP
