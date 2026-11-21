@@ -306,16 +306,42 @@ theorem single_loaded : (Program.single ss).loaded =
 theorem single_tops : (Program.single ss).tops = (List.range ss.length).zip ss := by
   simp only [Program.tops, single_loaded, List.flatMap_cons, List.flatMap_nil, List.append_nil, mergeSort_zip_range]
 
-theorem split_loaded_flat (horder : OrderKept ss P) :
-    (splitProgram ss B P).loaded.flatMap (·.body) = (List.range ss.length).zip ss := by
+theorem split_loaded_flat :
+    (splitProgram ss B P).loaded.flatMap (·.body) = P.execOrder.filterMap (numbered ss) := by
   unfold Program.loaded
   rw [split_evalOrder, split_loaded_bodies]
-  unfold OrderKept EsmSplit.Plan.execOrder at horder
-  rw [horder, filterMap_numbered_range]
+  rfl
 
-theorem split_tops (horder : OrderKept ss P) : (splitProgram ss B P).tops = (List.range ss.length).zip ss := by
+theorem mem_numbered_eq {l l' : List Nat} {p q : Nat × Stmt} (hp : p ∈ l.filterMap (numbered ss))
+    (hq : q ∈ l'.filterMap (numbered ss)) (h : p.1 = q.1) : p = q := by
+  obtain ⟨i, s⟩ := p
+  obtain ⟨j, s'⟩ := q
+  simp only [List.mem_filterMap, numbered, Option.map_eq_some_iff, Prod.mk.injEq] at hp hq h
+  obtain ⟨_, _, _, hs, rfl, rfl⟩ := hp
+  obtain ⟨_, _, _, hs', rfl, rfl⟩ := hq
+  subst h
+  rw [hs] at hs'
+  cases hs'
+  rfl
+
+/-- The statements a plan runs, each once, sorted by their identities, are the bundle's. -/
+theorem mergeSort_numbered {l : List Nat} (hperm : l.Perm (List.range ss.length)) :
+    (l.filterMap (numbered ss)).mergeSort (fun a b => decide (a.1 ≤ b.1)) = (List.range ss.length).zip ss := by
+  have hp : ((l.filterMap (numbered ss)).mergeSort fun a b => decide (a.1 ≤ b.1)).Perm
+      ((List.range ss.length).zip ss) := by
+    rw [← filterMap_numbered_range]
+    exact (List.mergeSort_perm _ _).trans (hperm.filterMap _)
+  refine hp.eq_of_pairwise (le := fun a b => a.1 ≤ b.1) (fun a b ha hb hab hba => ?_) ?_ (zip_range_sorted ss)
+  · rw [← filterMap_numbered_range] at hb
+    exact mem_numbered_eq ss ((List.mergeSort_perm _ _).mem_iff.1 ha) hb (Nat.le_antisymm hab hba)
+  · exact (List.pairwise_mergeSort (fun _ _ _ h h' => by simp at h h' ⊢; omega)
+      (fun _ _ => by simp; omega) _).imp fun h => by simpa using h
+
+/-- The statements of the split, sorted by their identities, are the bundle's, when the plan runs each once. -/
+theorem split_tops (hperm : P.execOrder.Perm (List.range ss.length)) :
+    (splitProgram ss B P).tops = (List.range ss.length).zip ss := by
   unfold Program.tops
-  rw [split_loaded_flat ss B P horder, mergeSort_zip_range]
+  rw [split_loaded_flat ss B P, mergeSort_numbered ss hperm]
 
 theorem foldl_max_eq : ∀ (l : List Nat) (a n : Nat), a ≤ n → (∀ x ∈ l, x ≤ n) → (a = n ∨ n ∈ l) →
     l.foldl max a = n
@@ -351,7 +377,8 @@ theorem mem_numbered {l : List Nat} {p : Nat × Stmt} : p ∈ l.filterMap (numbe
   · rintro ⟨j, hj, s', hs', rfl, rfl⟩; exact ⟨hj, hs'⟩
   · rintro ⟨hj, hs⟩; exact ⟨i, hj, s, hs, rfl, rfl⟩
 
-theorem split_regions (horder : OrderKept ss P) : (splitProgram ss B P).regions = ss.length := by
+theorem split_regions (hperm : P.execOrder.Perm (List.range ss.length)) :
+    (splitProgram ss B P).regions = ss.length := by
   unfold Program.regions
   refine foldl_max_eq _ 0 _ (Nat.zero_le _) ?_ ?_
   · simp only [splitProgram, List.flatMap_map, List.mem_flatMap, List.mem_map]
@@ -362,7 +389,7 @@ theorem split_regions (horder : OrderKept ss P) : (splitProgram ss B P).regions 
   · rcases Nat.eq_zero_or_pos ss.length with h | h
     · exact Or.inl h.symm
     · right
-      have hmem : ss.length - 1 ∈ P.execOrder := by rw [horder]; exact List.mem_range.2 (by omega)
+      have hmem : ss.length - 1 ∈ P.execOrder := hperm.mem_iff.2 (List.mem_range.2 (by omega))
       simp only [EsmSplit.Plan.execOrder, List.mem_flatMap] at hmem
       obtain ⟨m, _, hm⟩ := hmem
       cases hf : P.find m with
@@ -375,12 +402,24 @@ theorem split_regions (horder : OrderKept ss P) : (splitProgram ss B P).regions 
 
 end statements
 
-/-- **A plan that keeps the order gives a program with the bundle's statements.** -/
-theorem split_holds_statements {ss : List Stmt} {B : EsmSplit.Bundle} {P : EsmSplit.Plan} (horder : OrderKept ss P) :
+/-- **A plan that runs every statement once gives a program with the bundle's statements.** -/
+theorem split_holds_statements {ss : List Stmt} {B : EsmSplit.Bundle} {P : EsmSplit.Plan}
+    (hperm : P.execOrder.Perm (List.range ss.length)) :
     (Program.single ss).regions = (splitProgram ss B P).regions ∧
     (Program.single ss).tops = (splitProgram ss B P).tops := by
-  rw [single_regions, split_regions ss B P horder, single_tops, split_tops ss B P horder]
+  rw [single_regions, split_regions ss B P hperm, single_tops, split_tops ss B P hperm]
   exact ⟨rfl, rfl⟩
+
+/-- A plan that `Valid` accepts runs every statement once. -/
+theorem valid_perm {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSplit.Plan}
+    (hvalid : EsmSplit.Valid B S P) (hlen : B.length = ss.length) : P.execOrder.Perm (List.range ss.length) := by
+  obtain ⟨-, -, -, -, -, -, -, ⟨hnd, hlt, hall⟩, -⟩ := hvalid
+  refine (List.perm_ext_iff_of_nodup hnd List.nodup_range).2 fun x => ⟨fun hx => ?_, fun hx => hall x (hlen ▸ hx)⟩
+  exact List.mem_range.2 (hlen ▸ hlt x hx)
+
+theorem orderKept_perm {ss : List Stmt} {P : EsmSplit.Plan} (horder : OrderKept ss P) :
+    P.execOrder.Perm (List.range ss.length) := by
+  rw [horder]
 
 
 /-! ## The scopes of the split -/
@@ -681,18 +720,26 @@ theorem sameUnits_of : ∀ {us us' : List (Nat × Stmt × Env)},
 
 end scopes
 
-/-- **For a plan that `Valid` accepts and that keeps the order, the scopes of the split agree with the scope of the
-bundle.** -/
-theorem split_scopes_agree {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSplit.Plan}
-    (hvalid : EsmSplit.Valid B S P) (hfp : FootprintsOfSyntax ss B) (horder : OrderKept ss P) :
-    ScopesAgree (Program.single ss) (splitProgram ss B P) := by
-  obtain ⟨hud, -, hfaith, hlink, hexpU, hhyg, -, -, -⟩ := hvalid
+/-- The module of the bundle, and its scope. -/
+def bundleModule (ss : List Stmt) : Module :=
+  { name := "main", imports := [], body := (List.range ss.length).zip ss, exports := [] }
+
+def bundleEnv (ss : List Stmt) (frames : List (Nat × List (Name × Addr))) : Env :=
+  { vars := (bundleModule ss).scope frames ++ [], this := .undef }
+
+/-- **For a plan that `Valid` accepts, the scopes of the split agree with the scope of the bundle**, statement by
+statement, in whatever order the plan runs them. -/
+theorem split_units_agree {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSplit.Plan}
+    (hvalid : EsmSplit.Valid B S P) (hfp : FootprintsOfSyntax ss B) {frames : List (Nat × List (Name × Addr))}
+    (hF : FramesOf ((List.range ss.length).zip ss) frames) :
+    ∃ L', (splitProgram ss B P).scopes frames (splitProgram ss B P).loaded = .ok L' ∧
+      (unitsOf L').map (fun u => (u.1, u.2.1)) = P.execOrder.filterMap (numbered ss) ∧
+      ∀ u ∈ unitsOf L', Agree u.2.1.free (bundleEnv ss frames) u.2.2 := by
+  obtain ⟨hud, -, hfaith, hlink, hexpU, hhyg, -, ⟨-, -, hperm⟩, -⟩ := hvalid
   have hlt : ∀ md ∈ P.mods, ∀ i ∈ md.stmts, i < ss.length := fun md hmd i hi =>
     hfp.1 ▸ hfaith.2.2.2.2.2.1 md hmd i hi
-  intro frames hF
-  rw [single_tops] at hF
-  let main : Module := { name := "main", imports := [], body := (List.range ss.length).zip ss, exports := [] }
-  let env0 : Env := { vars := main.scope frames ++ [], this := .undef }
+  let main := bundleModule ss
+  let env0 := bundleEnv ss frames
   have hmainbody : ∀ p, p ∈ main.body ↔ p.1 < ss.length ∧ ss[p.1]? = some p.2 := by
     intro p
     show p ∈ (List.range ss.length).zip ss ↔ _
@@ -771,7 +818,7 @@ theorem split_scopes_agree {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.
           himp (List.mem_flatMap.2 ⟨e, he, List.contains_iff_mem.1 hc⟩)
         simp only [EsmSplit.Plan.resolve, hdf, hfn, Bool.false_eq_true, ↓reduceIte] at hres
         -- but statement `j` declares it, and some module holds `j`
-        have hje : j ∈ P.execOrder := by rw [horder]; exact List.mem_range.2 hj
+        have hje : j ∈ P.execOrder := hperm j (List.mem_range.2 (hfp.1 ▸ hj))
         obtain ⟨m, _, hm⟩ := List.mem_flatMap.1 hje
         cases hf : P.find m with
         | none => simp [hf] at hm
@@ -795,23 +842,37 @@ theorem split_scopes_agree {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.
       have hmd : md ∈ P.mods := List.mem_of_find?_eq_some hf
       obtain ⟨cells, hc, hl⟩ := himported md hmd
       exact ⟨cells, hc, md, hmd, rfl, hl⟩)
-  have hkeys0 : (unitsOf [(main, env0)]).map (fun u => (u.1, u.2.1)) = (List.range ss.length).zip ss := by
-    rw [unitsOf_keys]; simp [main]
-  refine ⟨[(main, env0)], L', ?_, hL', ?_, ?_⟩
+  refine ⟨L', hL', ?_, fun u' hu' => ?_⟩
+  · rw [unitsOf_keys]
+    have : L'.flatMap (·.1.body) = (L'.map (·.1)).flatMap (·.body) := by rw [List.flatMap_map]
+    rw [this, hmap', split_loaded_flat ss B P]
+  · obtain ⟨p', hp', hb', he'⟩ := mem_unitsOf hu'
+    obtain ⟨cells, ⟨md, hmd, hM, hl⟩, henv⟩ := hall' p' hp'
+    rw [he', henv, hM]
+    rw [hM] at hb'
+    have hb := (hbody md _).1 hb'
+    exact hagree md hmd u'.1 hb.1 u'.2.1 hb.2 cells hl
+
+/-- **For a plan that `Valid` accepts and that keeps the order, the scopes of the split agree with the scope of the
+bundle.** -/
+theorem split_scopes_agree {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSplit.Plan}
+    (hvalid : EsmSplit.Valid B S P) (hfp : FootprintsOfSyntax ss B) (horder : OrderKept ss P) :
+    ScopesAgree (Program.single ss) (splitProgram ss B P) := by
+  intro frames hF
+  rw [single_tops] at hF
+  obtain ⟨L', hL', hkeys, hagree⟩ := split_units_agree hvalid hfp hF
+  have hkeys0 : (unitsOf [(bundleModule ss, bundleEnv ss frames)]).map (fun u => (u.1, u.2.1)) =
+      (List.range ss.length).zip ss := by
+    rw [unitsOf_keys]; simp [bundleModule]
+  refine ⟨[(bundleModule ss, bundleEnv ss frames)], L', ?_, hL', ?_, ?_⟩
   · rw [single_loaded]; rfl
   · refine sameUnits_of ?_ fun u hu u' hu' _ h2 => ?_
-    · rw [hkeys0, unitsOf_keys]
-      have : L'.flatMap (·.1.body) = (L'.map (·.1)).flatMap (·.body) := by rw [List.flatMap_map]
-      rw [this, hmap', split_loaded_flat ss B P horder]
+    · rw [hkeys0, hkeys, horder, filterMap_numbered_range]
     · obtain ⟨p, hp, _, he⟩ := mem_unitsOf hu
-      obtain ⟨p', hp', hb', he'⟩ := mem_unitsOf hu'
-      obtain ⟨cells, ⟨md, hmd, hM, hl⟩, henv⟩ := hall' p' hp'
       rw [List.mem_singleton] at hp
       subst hp
-      rw [he, he', henv, h2, hM]
-      rw [hM] at hb'
-      have hb := (hbody md _).1 hb'
-      exact hagree md hmd u'.1 hb.1 u'.2.1 hb.2 cells hl
+      rw [he, h2]
+      exact hagree u' hu'
   · have h := zip_range_sorted ss
     rw [← hkeys0] at h
     exact (List.pairwise_map (R := fun a b => a.1 ≤ b.1) (f := fun u : Nat × Stmt × Env => (u.1, u.2.1))).1 h
@@ -823,7 +884,8 @@ theorem valid_order_kept_preserves {W : World} {ss : List Stmt} {B : EsmSplit.Bu
     (horder : OrderKept ss P) :
     (∀ r, Ends W (Program.single ss) r → Ends W (splitProgram ss B P) r) ∧
     (∀ r, Ends W (splitProgram ss B P) r → Ends W (Program.single ss) r) :=
-  order_kept_preserves (split_holds_statements horder).1 (split_holds_statements horder).2
+  order_kept_preserves (split_holds_statements (orderKept_perm horder)).1
+    (split_holds_statements (orderKept_perm horder)).2
     (split_scopes_agree hvalid hfootprints horder)
 
 #print axioms valid_order_kept_preserves
