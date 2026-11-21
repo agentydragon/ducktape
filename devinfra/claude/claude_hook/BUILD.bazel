@@ -6,13 +6,15 @@ rust_library(
     srcs = ["protocol.rs"],
     edition = "2024",
     visibility = ["//visibility:public"],
-    deps = ["@crates//:serde"],
+    deps = [
+        "@crates//:serde",
+        "@crates//:serde_json",
+    ],
 )
 
 rust_test(
     name = "protocol_test",
     crate = ":protocol",
-    deps = ["@crates//:serde_json"],
 )
 
 rust_library(
