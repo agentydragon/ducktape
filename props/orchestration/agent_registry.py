@@ -269,7 +269,7 @@ class AgentRegistry:
         creds = await ensure_agent_role(self._db_config, agent_run_id)
         logger.info("Agent role ready: %s", creds.username)
 
-        # OpenAI SDK sends api_key as Bearer token. The backend auth middleware
+        # OpenAI SDK sends api_key as Bearer token. The LLM proxy (`require_llm_access`)
         # accepts Bearer tokens containing base64-encoded username:password.
         api_key = self._db_config.with_user(creds.username, creds.password).basic_auth_token
         env = {
