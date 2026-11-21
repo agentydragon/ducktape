@@ -10,11 +10,15 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/companion"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 )
 
 const invalidCompanionUsage = "executor companion requires PID 1, absolute socket and binary paths, an HTTP health address, and a private PID namespace"
 
 func main() {
+	if len(os.Args) >= 2 && os.Args[1] == "command-helper" {
+		os.Exit(supervision.RunCommandHelper(os.Args[2:]))
+	}
 	if len(os.Args) >= 2 && os.Args[1] == "serve" {
 		os.Exit(runServer(os.Args[2:]))
 	}

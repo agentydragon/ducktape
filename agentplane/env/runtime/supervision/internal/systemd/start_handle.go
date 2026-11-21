@@ -49,16 +49,19 @@ type StartHandle struct {
 	startOnce   sync.Once
 	startErr    error
 
-	exitDone chan struct{}
-	exitMu   sync.Mutex
-	exitCode int
-	exitErr  error
-	exitOnce sync.Once
+	exitDone      chan struct{}
+	exitMu        sync.Mutex
+	exitCode      int
+	exitOOMKilled bool
+	exitErr       error
+	exitOnce      sync.Once
 
-	cleanupDone chan struct{}
-	cleanupMu   sync.Mutex
-	cleanupErr  error
-	cleanupOnce sync.Once
+	cleanupRequest   chan struct{}
+	cleanupRequested sync.Once
+	cleanupDone      chan struct{}
+	cleanupMu        sync.Mutex
+	cleanupErr       error
+	cleanupOnce      sync.Once
 
 	closeStdinOnce sync.Once
 	closeStdinErr  error
@@ -75,17 +78,18 @@ type StartHandle struct {
 
 func newStartHandle(backend *Backend, conn *goSystemd.Conn, cancel context.CancelFunc, name string, stdin, stdout, stderr *os.File) *StartHandle {
 	return &StartHandle{
-		backend:     backend,
-		conn:        conn,
-		cancel:      cancel,
-		name:        name,
-		stdin:       stdin,
-		stdout:      stdout,
-		stderr:      stderr,
-		requestDone: make(chan struct{}),
-		startDone:   make(chan struct{}),
-		exitDone:    make(chan struct{}),
-		cleanupDone: make(chan struct{}),
+		backend:        backend,
+		conn:           conn,
+		cancel:         cancel,
+		name:           name,
+		stdin:          stdin,
+		stdout:         stdout,
+		stderr:         stderr,
+		requestDone:    make(chan struct{}),
+		startDone:      make(chan struct{}),
+		exitDone:       make(chan struct{}),
+		cleanupRequest: make(chan struct{}),
+		cleanupDone:    make(chan struct{}),
 	}
 }
 
@@ -213,8 +217,7 @@ func (h *StartHandle) cancelStart() {
 	}
 }
 
-func (h *StartHandle) runStart(ctx context.Context, properties []goSystemd.Property, stdinReader, stdoutWriter, stderrWriter *os.File) {
-	defer closeFiles(stdinReader, stdoutWriter, stderrWriter)
+func (h *StartHandle) runStart(ctx context.Context, properties []goSystemd.Property, child [3]*os.File) {
 	h.observeStart(StartSubmitted, nil)
 	launchCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	h.setStartCancel(cancel)
@@ -226,6 +229,11 @@ func (h *StartHandle) runStart(ctx context.Context, properties []goSystemd.Prope
 		}
 	}
 	job, err := start(launchCtx, h.conn, h.name, properties, completion)
+	if err == nil {
+		closeFiles(child[:]...)
+	} else {
+		defer closeFiles(child[:]...)
+	}
 	cancel()
 	h.setStartCancel(nil)
 	h.stateMu.Lock()
@@ -302,8 +310,18 @@ func (h *StartHandle) closeOwnedStreams() {
 }
 
 func (h *StartHandle) CloseStdin() error {
+	if h.stdin == nil {
+		return nil
+	}
 	h.closeStdinOnce.Do(func() { h.closeStdinErr = h.stdin.Close() })
 	return h.closeStdinErr
+}
+
+// OOMKilled reports retained manager evidence for the leader exit.
+func (h *StartHandle) OOMKilled() bool {
+	h.exitMu.Lock()
+	defer h.exitMu.Unlock()
+	return h.exitOOMKilled
 }
 
 // Wait returns exit evidence as soon as it is observed. The cgroup fence and
@@ -331,10 +349,11 @@ func (h *StartHandle) exitResult() (int, error) {
 	return h.exitCode, h.exitErr
 }
 
-func (h *StartHandle) recordExit(code int, err error) {
+func (h *StartHandle) recordExit(code int, err error, oomKilled bool) {
 	h.exitOnce.Do(func() {
 		h.exitMu.Lock()
 		h.exitCode = code
+		h.exitOOMKilled = oomKilled
 		h.exitErr = err
 		close(h.exitDone)
 		h.exitMu.Unlock()
@@ -364,7 +383,7 @@ func (h *StartHandle) waitFenced(ctx context.Context) error {
 
 func (h *StartHandle) completeWith(code int, err error) {
 	h.cleanupOnce.Do(func() {
-		h.recordExit(code, err)
+		h.recordExit(code, err, false)
 		h.cleanupMu.Lock()
 		h.cleanupErr = err
 		close(h.cleanupDone)
@@ -385,6 +404,7 @@ func (h *StartHandle) Stop(ctx context.Context) error {
 	default:
 	}
 	_ = h.CloseStdin()
+	h.cleanupRequested.Do(func() { close(h.cleanupRequest) })
 	h.cancelStart()
 	select {
 	case <-h.requestDone:
@@ -619,6 +639,7 @@ func systemdStopTimeout(grace time.Duration) uint64 {
 func (h *StartHandle) reap() {
 	code := -1
 	statusObserved := false
+	oomKilled := false
 	var observationErr error
 	readConn := h.conn
 	var readConnCancel context.CancelFunc
@@ -668,6 +689,7 @@ func (h *StartHandle) reap() {
 		}
 		code, statusObserved, observationErr = nativeExitStatus(props, h.invocationID)
 		if statusObserved || observationErr != nil {
+			oomKilled = props.Result == "oom-kill"
 			break
 		}
 		if props.ExecMainPID == 0 {
@@ -682,7 +704,10 @@ func (h *StartHandle) reap() {
 		// Publish the manager observation before releasing waiters; cleanup and
 		// stream/connection teardown remain tracked by cleanupDone.
 		h.observeExit(code, true, observationErr)
-		h.recordExit(code, observationErr)
+		h.recordExit(code, observationErr, oomKilled)
+		if h.backend.config.RetainUntilStop {
+			h.waitForCommandCleanup()
+		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	if unit, err := Read(ctx, h.conn, h.name); err == nil && unit.ControlGroup != "" {
@@ -697,6 +722,26 @@ func (h *StartHandle) reap() {
 	_ = h.CloseStdin()
 	h.release()
 	h.completeWith(code, errors.Join(observationErr, fenceErr))
+}
+
+// A command cgroup may outlive its leader. Wait for a stop request or
+// natural emptiness so background work stays alive without pinning empty units.
+func (h *StartHandle) waitForCommandCleanup() {
+	h.stateMu.Lock()
+	group := h.group
+	h.stateMu.Unlock()
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		if empty, err := GroupEmpty(group); err == nil && empty {
+			return
+		}
+		select {
+		case <-h.cleanupRequest:
+			return
+		case <-ticker.C:
+		}
+	}
 }
 
 func (h *StartHandle) readSnapshotOn(ctx context.Context, conn *goSystemd.Conn) (UnitSnapshot, error) {

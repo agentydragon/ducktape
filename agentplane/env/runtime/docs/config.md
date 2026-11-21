@@ -132,24 +132,33 @@ persistence, operation receipts or execution configuration.
 `environment` has exactly one discriminator, `kind`:
 
 - `kind: "pod"`: required `supervision` (`pid1` for a private container PID namespace),
-  plus optional `executor` with loopback `url` and absolute ownership `socket`.
+  plus optional `executor` with loopback `url`, absolute ownership `socket` and `placement: "direct"`.
   Kubernetes owns the container resource limits.
 - `kind: "vm"`: required `resources`, non-root `agent_uid`/`agent_gid`, absolute `block_devices`,
   optional `console_autologin` (false when omitted), and optional `executor` with loopback `url`.
-  Systemd owns containment; both native service slices use the VM identity and block devices.
+  Select `placement: "direct"` for commands inside the executor's service cgroup, or `placement: "systemd"`
+  for native commands in separate transient units under the shared `agentplane-commands.slice`.
 
 The VM `resources` object contains `guest_memory_bytes`, `guest_vcpu_count`, `os_reserve_bytes`,
 `service_memory_high_bytes`, `service_memory_max_bytes`, `service_cpu_quota_micros`,
-`service_pids_max`, and `aggregate`/`process` harness budgets. Its optional `executor` budget must be supplied together with
-the VM executor endpoint. Each budget contains `memory_max_bytes`, `cpu_quota_micros` per fixed
+`service_pids_max`, and `aggregate`/`process` harness budgets. Supply the `executor` budget with
+the VM executor endpoint and the `executor_workload` budget with `systemd` placement. The workload
+budget covers all executor command units collectively. Each budget contains `memory_max_bytes`, `cpu_quota_micros` per fixed
 100,000 µs period, `pids_max`, `read_bps`, `write_bps`, `read_iops` and `write_iops`. Environment Runtime derives
 cgroup limits from these budgets; the document contains each budget once. Process memory/CPU/PID
-ceilings must fit the aggregate; harness and executor caps must fit the enclosing service.
+ceilings must fit the harness aggregate. The harness, executor and executor workload caps together must fit
+the enclosing memory high threshold and leave PID headroom for Runtime and supervisors. Each CPU quota must
+fit the enclosing service quota.
 
 Omitting `environment.executor` selects local tools. An executor requires Codex, and its endpoint
 must be `ws://127.0.0.1:<nonzero port>`. `CODEX_EXEC_SERVER_URL` belongs to Environment Runtime and is rejected in
 the harness environment. Lifecycle, recovery and scope are documented in
 [Codex executor isolation](../execution/docs/codex_executor.md).
+
+The Go loader temporarily interprets a missing `placement` as `direct` in existing templates.
+Staging can emit the field once its `agentplane-runner-disk` pin selects an image accepting it.
+Remove omission support after every template emits the field and Sandbox incarnations with older configuration
+are retired. Enabling `systemd` placement in VM templates also requires the guest image containing `agentplane-commands.slice`.
 
 ## Shared layout
 

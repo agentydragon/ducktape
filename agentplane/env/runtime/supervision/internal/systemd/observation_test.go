@@ -69,7 +69,7 @@ func TestWaitReturnsRecordedExitBeforeCleanup(t *testing.T) {
 	if err != nil || !observed || code != 23 {
 		t.Fatalf("manager exit = (%d, %t, %v), want (23, true, nil)", code, observed, err)
 	}
-	handle.recordExit(code, err)
+	handle.recordExit(code, err, false)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	if got, err := handle.Wait(ctx); err != nil || got != 23 {

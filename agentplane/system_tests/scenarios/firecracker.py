@@ -41,10 +41,12 @@ _CHILD = textwrap.dedent(
     import json, os, pathlib, time
     path = pathlib.Path(__import__('sys').argv[1])
     marker = os.urandom(24).hex()
+    (cgroup,) = [line.removeprefix('0::') for line in pathlib.Path('/proc/self/cgroup').read_text().splitlines()
+                 if line.startswith('0::')]
     counter = 0
     while True:
         counter += 1
-        evidence = dict(pid=os.getpid(), marker=marker, counter=counter,
+        evidence = dict(pid=os.getpid(), marker=marker, counter=counter, cgroup=cgroup,
                         start_ticks=pathlib.Path('/proc/self/stat').read_text().split()[21],
                         wall_ns=time.time_ns())
         pending = path.with_suffix('.pending')
@@ -214,6 +216,7 @@ async def preserves_live_guest(
 
     before = await probe(1)
     assert before["pid1"] == "systemd"
+    assert str(before["cgroup"]).startswith("/agentplane.slice/agentplane-commands.slice/"), before
     assert before["projected_sa_token_present"] is False
     mounts = before["mounts"]
     assert isinstance(mounts, dict)
@@ -281,7 +284,7 @@ async def preserves_live_guest(
     (continued_process,) = [row for row in restored.processes if str(agent.thread_id) in row.assigned_session_ids]
     assert continued_process.process_id == process.process_id
     after = await probe(2)
-    for key in ("boot_id", "pid", "start_ticks", "marker"):
+    for key in ("boot_id", "pid", "start_ticks", "marker", "cgroup"):
         assert after[key] == before[key], (before, after)
     assert int(str(after["counter"])) > int(str(before["counter"]))
     (output / "continuation.json").write_text(

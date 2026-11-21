@@ -187,11 +187,35 @@ func (h *HarnessConfiguration) resolve(environ map[string]string) (*harness.Laun
 	return &harness.LaunchConfig{Binary: h.Binary, BaseURL: strings.TrimRight(h.BaseURL, "/"), Token: token}, nil
 }
 
+type executorPlacement string
+
+func (p *executorPlacement) UnmarshalJSON(raw []byte) error {
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return fmt.Errorf("executor placement: %w", err)
+	}
+	if value != codexexecserver.PlacementDirect && value != codexexecserver.PlacementSystemd {
+		return fmt.Errorf("executor placement must explicitly select direct or systemd, got %s", raw)
+	}
+	*p = executorPlacement(value)
+	return nil
+}
+
+func (p executorPlacement) resolve() string {
+	// CLEANUP(added 2026-11-20): Remove omission support after all templates emit
+	// placement and Sandbox incarnations with older Runtime configuration are retired.
+	if p == "" {
+		return codexexecserver.PlacementDirect
+	}
+	return string(p)
+}
+
 type ContainerExecutorConfiguration struct {
-	URL            string          `json:"url"`
-	Socket         string          `json:"socket"`
-	Implementation string          `json:"implementation"`
-	Limits         json.RawMessage `json:"limits"`
+	URL            string            `json:"url"`
+	Socket         string            `json:"socket"`
+	Implementation string            `json:"implementation"`
+	Placement      executorPlacement `json:"placement"`
+	Limits         json.RawMessage   `json:"limits"`
 }
 
 type PodEnvironmentConfiguration struct {
@@ -201,9 +225,10 @@ type PodEnvironmentConfiguration struct {
 }
 
 type VMExecutorConfiguration struct {
-	URL            string          `json:"url"`
-	Implementation string          `json:"implementation"`
-	Limits         json.RawMessage `json:"limits"`
+	URL            string            `json:"url"`
+	Implementation string            `json:"implementation"`
+	Placement      executorPlacement `json:"placement"`
+	Limits         json.RawMessage   `json:"limits"`
 }
 
 type VMEnvironmentConfiguration struct {
@@ -259,7 +284,11 @@ func (f Configuration) resolveEnvironment() (*supervision.SystemdLauncher, *code
 		podPID1 = pod.Supervision == "pid1"
 		supervisionMode = pod.Supervision
 		if pod.Executor != nil {
-			executor = &codexexecserver.Config{URL: pod.Executor.URL, ContainerSocket: pod.Executor.Socket, Implementation: pod.Executor.Implementation}
+			placement := pod.Executor.Placement.resolve()
+			if placement != codexexecserver.PlacementDirect {
+				return nil, nil, nil, false, "", errors.New("Pod executor placement must explicitly select direct")
+			}
+			executor = &codexexecserver.Config{URL: pod.Executor.URL, ContainerSocket: pod.Executor.Socket, Implementation: pod.Executor.Implementation, Placement: placement}
 			if err := configureExecutionLimits(executor, pod.Executor.Limits); err != nil {
 				return nil, nil, nil, false, "", err
 			}
@@ -288,9 +317,18 @@ func (f Configuration) resolveEnvironment() (*supervision.SystemdLauncher, *code
 		if (vm.Executor == nil) != (vm.Resources.Executor == nil) {
 			return nil, nil, nil, false, "", errors.New("executor endpoint and resource budget must be supplied together")
 		}
+		systemdPlacement := vm.Executor != nil && vm.Executor.Placement == codexexecserver.PlacementSystemd
+		if systemdPlacement != (vm.Resources.ExecutorWorkload != nil) {
+			return nil, nil, nil, false, "", errors.New("systemd executor placement and executor workload budget must be supplied together")
+		}
 		if vm.Executor != nil {
-			executor = &codexexecserver.Config{URL: vm.Executor.URL, Launcher: vm.launcher(supervision.ExecutorSlice, *vm.Resources.Executor, *vm.Resources.Executor)}
-			executor.Implementation = vm.Executor.Implementation
+			executor = &codexexecserver.Config{
+				URL: vm.Executor.URL, Implementation: vm.Executor.Implementation, Placement: vm.Executor.Placement.resolve(),
+				Launcher: vm.launcher(supervision.ExecutorSlice, *vm.Resources.Executor, *vm.Resources.Executor),
+			}
+			if systemdPlacement {
+				executor.WorkloadLauncher = vm.launcher(supervision.CommandSlice, *vm.Resources.ExecutorWorkload, supervision.ResourceLimits{})
+			}
 			if err := configureExecutionLimits(executor, vm.Executor.Limits); err != nil {
 				return nil, nil, nil, false, "", err
 			}

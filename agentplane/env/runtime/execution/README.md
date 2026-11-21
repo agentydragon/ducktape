@@ -15,6 +15,9 @@ the `companion` subcommand runs as PID 1 in the isolated executor container and 
 protocol. `//agentplane/env/e2e:test_executor_container` exercises process output, session resume,
 filesystem access, incarnation fencing and shutdown through Runtime with the real native executor.
 
+TODO: Reconsider embedding the native execution server in Environment Runtime once the ownership,
+resource isolation, and failure behavior of that arrangement have been evaluated.
+
 ## Pod companion invocation
 
 `//agentplane/env/runtime/execution/cmd:agentplane-execution-service` supplies the Pod companion
@@ -45,6 +48,7 @@ Native execution limits are optional overrides in the same Runtime configuration
 "executor": {
   "url": "ws://127.0.0.1:4501",
   "implementation": "native",
+  "placement": "direct",
   "limits": {
     "native": { "max_sessions": 128, "max_output_bytes": 67108864 },
     "codex": { "max_message_bytes": 16777216, "max_concurrent_requests": 64 }

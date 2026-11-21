@@ -1,0 +1,11 @@
+[Unit]
+Description=Agentplane execution command resource aggregate
+# Keep command cgroups until Runtime has fenced their units.
+DefaultDependencies=no
+
+[Slice]
+CPUAccounting=yes
+MemoryAccounting=yes
+TasksAccounting=yes
+IOAccounting=yes
+MemorySwapMax=0

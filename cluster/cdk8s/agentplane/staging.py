@@ -723,6 +723,8 @@ ENV = Environment(
     vm_sandboxes=True,
     vm_storage_class="piraeus-ssd-2-autodiskful",
     vm_resources=STAGING_VM_RESOURCES,
+    vm_executor_placement="direct",
+    omit_executor_placement_from_config=True,
 )
 
 

@@ -25,6 +25,7 @@ import (
 	"github.com/godbus/dbus/v5"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -93,6 +94,14 @@ func TestSystemdKernelFixture(t *testing.T) {
 	}
 	defer cancelConnection()
 	defer conn.Close()
+
+	t.Run("command_release_preserves_detached_child_until_owner_shutdown", func(t *testing.T) {
+		commandLauncher := *launcher
+		commandLauncher.Slice = CommandSlice
+		commandLauncher.ProcessLimits = ResourceLimits{}
+		commandSupervisor := reconcileKernelSystemdScope(t, &commandLauncher, stateDir, sandboxUID, RuntimeOwner("command-proof"))
+		testCommandRelease(t, ctx, commandSupervisor, dir, runtimeOwner.LifetimeDirectory)
+	})
 
 	t.Run("stale_runtime_invocation_cannot_execute", func(t *testing.T) {
 		stale := *launcher
@@ -926,4 +935,127 @@ func reconcileKernelSystemdScope(t *testing.T, launcher *SystemdLauncher, stateD
 		t.Fatalf("scope reconciliation: status=%v engine=%v", err, runErr)
 	}
 	return supervisor
+}
+
+// The process-group leader has exited and been reaped by systemd before Release.
+// Signaling the stored pidfd must still kill its original group without touching
+// a child that called setsid, even after the executor closes its command socket.
+func testCommandRelease(t *testing.T, ctx context.Context, supervisor *Supervisor, dir, socketDir string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	listener, err := ListenCommandSocket(filepath.Join(socketDir, "command-proof.sock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownerCtx, stopOwner := context.WithCancel(ctx)
+	ownerDone := make(chan error, 1)
+	helper := "/run/agentplane/environment/bin/agentplane-execution-service"
+	go func() {
+		ownerDone <- ServeCommands(ownerCtx, listener, supervisor, helper, os.Getpid)
+	}()
+	stopAndWait := sync.OnceValue(func() error {
+		stopOwner()
+		select {
+		case err := <-ownerDone:
+			return err
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	})
+	defer func() {
+		if err := stopAndWait(); err != nil {
+			t.Error(err)
+		}
+	}()
+	out, outChild, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer out.Close()
+	defer outChild.Close()
+	stderr, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stderr.Close()
+	config := CommandConfig{
+		Path: "/bin/sh", Dir: dir,
+		Environment: []string{"PATH=/usr/bin:/bin", "COMMAND_PROOF=handoff"},
+		Argv: []string{"argv0-proof", "-c", `
+/bin/sleep 30 </dev/null >/dev/null 2>&1 &
+group=$!
+setsid /bin/sleep 30 </dev/null >/dev/null 2>&1 &
+detached=$!
+while ! { IFS=' ' read -r pid comm state ppid pgid sid rest < "/proc/$detached/stat" && [ "$sid" = "$detached" ]; }; do sleep 0.01; done
+printf '%s %s %d %d
+' "$0" "$COMMAND_PROOF" "$group" "$detached"
+exit 23
+`},
+	}
+	command, err := StartRemoteCommand(ctx, listener.Addr().String(), config, CommandFiles{Stdout: outChild, Stderr: stderr})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := outChild.Close(); err != nil {
+		t.Fatal(err)
+	}
+	deadline, _ := ctx.Deadline()
+	if err := out.SetReadDeadline(deadline); err != nil {
+		t.Fatal(err)
+	}
+	output, err := io.ReadAll(out)
+	if err != nil {
+		t.Fatalf("read output through natural pipe EOF: %v", err)
+	}
+	var argv0, env string
+	var groupPID, detachedPID int
+	if _, err := fmt.Sscan(string(output), &argv0, &env, &groupPID, &detachedPID); err != nil || argv0 != "argv0-proof" || env != "handoff" {
+		t.Fatalf("command stdout = %q, scan error = %v", output, err)
+	}
+	groupFD := testCommandPIDFD(t, groupPID)
+	detachedFD := testCommandPIDFD(t, detachedPID)
+	if exit, err := command.Wait(ctx); exit.Code != 23 || exit.OOMKilled || err != nil {
+		t.Fatalf("leader exit = %+v, error = %v", exit, err)
+	}
+	if err := command.Release(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if !testCommandExited(t, groupFD, 5*time.Second) {
+		t.Fatal("original process group survived release after its leader was reaped")
+	}
+	if testCommandExited(t, detachedFD, 0) {
+		t.Fatal("setsid child exited during ordinary command release")
+	}
+	if err := stopAndWait(); err != nil {
+		t.Fatal(err)
+	}
+	if !testCommandExited(t, detachedFD, 0) {
+		t.Fatal("Runtime command owner returned before fencing the detached child")
+	}
+}
+
+func testCommandPIDFD(t *testing.T, pid int) int {
+	t.Helper()
+	fd, err := unix.PidfdOpen(pid, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = unix.Close(fd) })
+	return fd
+}
+
+func testCommandExited(t *testing.T, fd int, wait time.Duration) bool {
+	t.Helper()
+	fds := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}}
+	for {
+		n, err := unix.Poll(fds, int(wait.Milliseconds()))
+		if errors.Is(err, unix.EINTR) {
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		return n != 0
+	}
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"net"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -79,17 +80,34 @@ var ErrExecutionBackendLost = errors.New("execution backend lost")
 // lease. It is a more specific diagnostic for Pod backends.
 var ErrContainerOwnershipLost = errors.New("executor container ownership connection lost")
 
+const (
+	PlacementDirect  = "direct"
+	PlacementSystemd = "systemd"
+)
+
 // Config selects local systemd supervision or ownership of the Pod executor container.
 type Config struct {
-	URL             string
-	Implementation  string
-	LimitsJSON      string
-	ContainerSocket string
-	Launcher        *supervision.SystemdLauncher
-	Readiness       Readiness
+	URL              string
+	Implementation   string
+	Placement        string
+	WorkloadLauncher *supervision.SystemdLauncher
+	LimitsJSON       string
+	ContainerSocket  string
+	Launcher         *supervision.SystemdLauncher
+	Readiness        Readiness
 }
 
 func (c Config) Validate(harnessLauncher *supervision.SystemdLauncher) error {
+	if c.Placement != "" && c.Placement != PlacementDirect && c.Placement != PlacementSystemd {
+		return errors.New("unknown command placement")
+	}
+	if c.Placement == PlacementSystemd {
+		if c.Implementation == ImplementationCodex || c.ContainerSocket != "" || c.WorkloadLauncher == nil {
+			return errors.New("systemd command placement requires native VM execution and workload limits")
+		}
+	} else if c.WorkloadLauncher != nil {
+		return errors.New("workload launcher requires systemd command placement")
+	}
 	if _, err := ResolveImplementation(c.Implementation); err != nil {
 		return err
 	}
@@ -154,11 +172,12 @@ func Command(implementation, binary, endpoint, limitsJSON string) ([]string, err
 }
 
 type NativeConfig struct {
-	Config      Config
-	Binary      string
-	StateDir    string
-	Environment map[string]string
-	Supervisor  *supervision.Supervisor
+	Config            Config
+	Binary            string
+	StateDir          string
+	Environment       map[string]string
+	Supervisor        *supervision.Supervisor
+	CommandSupervisor *supervision.Supervisor
 	// LaunchProcess binds an embedded native executor to Runtime's process
 	// controller.
 	LaunchProcess func(context.Context, supervision.ProcessConfig) (*supervision.ManagedProcess, error)
@@ -193,6 +212,26 @@ func NativeStart(config NativeConfig) Start {
 		if err != nil {
 			return nil, err
 		}
+		var commandListener *net.UnixListener
+		if config.Config.Placement == PlacementSystemd {
+			if config.CommandSupervisor == nil {
+				return nil, errors.New("systemd placement requires command supervisor")
+			}
+			if err := config.CommandSupervisor.WaitCommandScope(ctx); err != nil {
+				return nil, fmt.Errorf("command scope readiness: %w", err)
+			}
+			commandListener, err = supervision.ListenCommandSocket("/run/agentplane-environment-runtime-lifetime/execution-commands.sock")
+			if err != nil {
+				return nil, err
+			}
+			command = append(command, "--command-socket", commandListener.Addr().String())
+		}
+		launched := false
+		defer func() {
+			if !launched && commandListener != nil {
+				_ = commandListener.Close()
+			}
+		}()
 		processConfig := supervision.ProcessConfig{
 			Command:      command,
 			Dir:          config.StateDir,
@@ -217,6 +256,27 @@ func NativeStart(config NativeConfig) Start {
 			}
 			process = native
 		}
+		done := make(chan error, 1)
+		var stopCommands context.CancelFunc
+		var commandsDone chan struct{}
+		var commandsErr error
+		if commandListener != nil {
+			var bridgeCtx context.Context
+			bridgeCtx, stopCommands = context.WithCancel(context.Background())
+			commandsDone = make(chan struct{})
+			go func() {
+				commandsErr = supervision.ServeCommands(bridgeCtx, commandListener, config.CommandSupervisor, config.Binary, process.PID)
+				close(commandsDone)
+				if bridgeCtx.Err() == nil {
+					select {
+					case done <- errors.Join(ErrExecutionBackendLost, errors.New("command supervision stopped"), commandsErr):
+					default:
+					}
+				}
+			}()
+		}
+
+		launched = true
 		go func() { _, _ = io.Copy(io.Discard, process.Stdout()) }()
 		go func() {
 			buffer := make([]byte, 4096)
@@ -230,15 +290,28 @@ func NativeStart(config NativeConfig) Start {
 				}
 			}
 		}()
-		done := make(chan error, 1)
 		go func() {
 			code, err := process.Wait(context.Background())
-			done <- errors.Join(ErrExecutionBackendLost, fmt.Errorf("execution backend exited: code=%d; %s", code, process.ExitDescription()), err)
+			select {
+			case done <- errors.Join(ErrExecutionBackendLost, fmt.Errorf("execution backend exited: code=%d; %s", code, process.ExitDescription()), err):
+			default:
+			}
 		}()
-		return &supervision.Instance{
-			PID: process.PID(), Done: done,
-			Stop: process.Stop,
-		}, nil
+		stop := func(ctx context.Context) error {
+			err := process.Stop(ctx)
+			if stopCommands != nil {
+				stopCommands()
+				_ = commandListener.Close()
+				select {
+				case <-commandsDone:
+					err = errors.Join(err, commandsErr)
+				case <-ctx.Done():
+					err = errors.Join(err, ctx.Err())
+				}
+			}
+			return err
+		}
+		return &supervision.Instance{PID: process.PID(), Done: done, Stop: stop}, nil
 	}
 }
 

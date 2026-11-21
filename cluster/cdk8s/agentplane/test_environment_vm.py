@@ -26,9 +26,14 @@ def _environment_vm_manifests(
     console_autologin: bool,
     session_reconcile_concurrency: int | None = None,
     codex_readiness: CodexReadiness | None = None,
+    omit_executor_placement_from_config: bool = False,
 ) -> dict[str, dict[str, Any]]:
     chart = Chart(app, "test")
-    env = replace(staging.ENV, vm_console_autologin=console_autologin)
+    env = replace(
+        staging.ENV,
+        vm_console_autologin=console_autologin,
+        omit_executor_placement_from_config=omit_executor_placement_from_config,
+    )
     guest_config = ConfigMap(
         chart,
         "environment-vm-config",
@@ -107,7 +112,16 @@ def test_console_autologin_reaches_the_vm_environment_only_when_enabled(
 
 def test_executor_selects_native_implementation(scratch_app: App) -> None:
     rendered = _environment_vm_manifests(app=scratch_app, console_autologin=False)
-    assert rendered["environment_runtime"]["environment"]["executor"]["implementation"] == "native"
+    executor = rendered["environment_runtime"]["environment"]["executor"]
+    assert executor["implementation"] == "native"
+    assert executor["placement"] == "direct"
+
+
+def test_legacy_config_omits_executor_placement(scratch_app: App) -> None:
+    rendered = _environment_vm_manifests(
+        app=scratch_app, console_autologin=False, omit_executor_placement_from_config=True
+    )
+    assert "placement" not in rendered["environment_runtime"]["environment"]["executor"]
 
 
 def test_harness_env_reaches_the_vm_environment(scratch_app: App) -> None:

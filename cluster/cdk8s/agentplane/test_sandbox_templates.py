@@ -15,7 +15,7 @@ from more_itertools import one
 
 from agentplane.crd_group import GROUP
 from agentplane.egress.platform_routes import PLATFORM_ROUTES_PORT
-from agentplane.env.config import CONFIG_FILE, LAUNCH_FILE, CodexReadiness, Configuration
+from agentplane.env.config import CONFIG_FILE, LAUNCH_FILE, CodexReadiness, EnvironmentVariables
 from agentplane.net.peertls.config import LLM_INGRESS_URI
 from cluster.cdk8s.agentplane import llm_ingress, platform_routes, sandbox_pod, staging
 from cluster.cdk8s.agentplane.environment_sandbox import EnvironmentSandboxTemplate
@@ -64,8 +64,8 @@ def test_sandbox_harnesses_inherit_runtime_timezone(staging_manifests: list[dict
         pod = template["spec"]["pod"]["spec"]
         workload = one(container for container in pod["containers"] if container["name"] == "environment-runtime")
         workload_environment = {item["name"] for item in workload["env"]}
-        config = Configuration.model_validate(_runner_configuration(staging_manifests, pod))
-        inherited_environment = set(config.harness_environment.inherit)
+        config = _runner_configuration(staging_manifests, pod)
+        inherited_environment = set(EnvironmentVariables.model_validate(config["harness_environment"]).inherit)
 
         assert "TZ" in workload_environment & inherited_environment
         assert "TZDIR" in inherited_environment
@@ -90,6 +90,7 @@ def test_runner_pod_gives_codex_a_private_executor_with_shared_paths(staging_man
     assert config["environment"]["kind"] == "pod"
     assert config["environment"]["supervision"] == "pid1"
     assert config["environment"]["executor"]["implementation"] == "native"
+    assert "placement" not in config["environment"]["executor"]
     assert executor["command"] == ["/run/agentplane/environment/bin/agentplane-execution-service"]
     args = executor["args"]
     assert args[0] == "companion"

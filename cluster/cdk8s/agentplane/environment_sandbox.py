@@ -56,7 +56,7 @@ from cluster.cdk8s.agentplane import (
     telemetry,
     workload_routes,
 )
-from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.agentplane.environment import Environment, runtime_config_json
 from cluster.cdk8s.agentplane.platform_instructions import agent_cli_environment, platform_instructions, service_urls
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy, isolate_ingress
 from cluster.cdk8s.service_ref import Pods
@@ -305,7 +305,9 @@ class EnvironmentSandboxTemplate(Construct):
             codex=Codex(binary="/bin/codex", base_url=f"{llm_url}/v1", token_env="OPENAI_API_KEY"),
             environment=PodEnvironment(
                 supervision="pid1",
-                executor=ContainerExecutor(url=_EXECUTOR_URL, socket=_EXECUTOR_SOCKET, implementation="native")
+                executor=ContainerExecutor(
+                    url=_EXECUTOR_URL, socket=_EXECUTOR_SOCKET, implementation="native", placement="direct"
+                )
                 if self.env.isolated_codex_executor
                 else None,
             ),
@@ -314,7 +316,7 @@ class EnvironmentSandboxTemplate(Construct):
             self,
             "environment-runtime-config",
             metadata=ApiObjectMetadata(name=self.config_map_name, namespace=self.env.namespace),
-            data={"environment-runtime.json": config.model_dump_json(exclude_none=True)},
+            data={"environment-runtime.json": runtime_config_json(self.env, config)},
         )
         return k8s.Container(
             name="environment-runtime",

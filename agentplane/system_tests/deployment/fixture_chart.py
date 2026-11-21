@@ -458,6 +458,7 @@ def environment(
         vm_sandboxes=runtime is SandboxRuntime.KUBEVIRT,
         firecracker_sandboxes=runtime is SandboxRuntime.FIRECRACKER,
         vm_resources=vm_configuration.RESOURCES if runtime is not SandboxRuntime.POD else None,
+        vm_executor_placement="systemd" if runtime is not SandboxRuntime.POD else None,
         vm_console_autologin=True,
     )
 

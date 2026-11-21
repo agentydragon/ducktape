@@ -13,21 +13,23 @@ import (
 // Config is immutable for a service lifetime. The environment owner supplies it;
 // a different incarnation requires stopping and fencing this service first.
 type Config struct {
-	Namespace        string
-	SandboxName      string
-	SandboxUID       string
-	IncarnationUID   string
-	WorkingDirectory string
-	StateDir         string
-	Binary           string
-	CodexBinary      string
-	ContainerSocket  string
-	ExecutorURL      string
-	Implementation   string
-	LimitsJSON       string
-	Environment      map[string]string
-	Backend          string
-	Readiness        codexexecserver.Readiness
+	Namespace         string
+	SandboxName       string
+	SandboxUID        string
+	IncarnationUID    string
+	WorkingDirectory  string
+	StateDir          string
+	Binary            string
+	CodexBinary       string
+	ContainerSocket   string
+	ExecutorURL       string
+	Implementation    string
+	Placement         string
+	CommandSupervisor *supervision.Supervisor
+	LimitsJSON        string
+	Environment       map[string]string
+	Backend           string
+	Readiness         codexexecserver.Readiness
 	// ProcessHost binds native systemd work to Runtime's process finalizers.
 	ProcessHost       *supervision.Host
 	Supervisor        *supervision.Supervisor
@@ -58,6 +60,16 @@ func (c Config) Validate() error {
 }
 
 func (c Config) validate() error {
+	if c.Placement != "" && c.Placement != codexexecserver.PlacementDirect && c.Placement != codexexecserver.PlacementSystemd {
+		return errors.New("unknown command placement")
+	}
+	if c.Placement == codexexecserver.PlacementSystemd {
+		if c.Backend != "systemd" || c.Implementation != codexexecserver.ImplementationNative || c.CommandSupervisor == nil {
+			return errors.New("systemd command placement requires native VM execution and command supervisor")
+		}
+	} else if c.CommandSupervisor != nil {
+		return errors.New("command supervisor requires systemd command placement")
+	}
 	if c.Namespace == "" || c.SandboxName == "" || c.SandboxUID == "" || c.IncarnationUID == "" {
 		return errors.New("execution configuration requires Sandbox namespace, name, UID and incarnation UID")
 	}

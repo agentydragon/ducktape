@@ -40,6 +40,7 @@ go_test(
     deps = [
         "//agentplane/env/runtime/codexappserver",
         "//agentplane/env/runtime/execution/codexexecserver",
+        "//agentplane/env/runtime/supervision",
         "@io_bazel_rules_go//go/runfiles",
         "@org_uber_go_zap//zapcore",
     ],

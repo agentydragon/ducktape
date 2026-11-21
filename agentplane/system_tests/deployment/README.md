@@ -328,33 +328,20 @@ exits; otherwise Pod termination can stop the state filesystem while the guest c
 Existing KubeVirt initializers run before these daemons; ContainerPath daemons retain their ordinary
 container placement for KubeVirt reconciliation.
 
-`test_vm` starts five VM Sandboxes concurrently in one stack: one per harness for the
-scripted turn, one per harness for credential authentication, and one for Codex tool OOM containment.
-The OOM scenario drives the real Codex app-server to run a memory-exhausting shell command through
-its isolated exec-server. The allocator
-touches memory beyond the configured executor limit, with a raised `oom_score_adj` to select that
-tool as the victim. The test checks a single
-`memory.events` OOM kill with `memory.oom.group=0`, a tool result reporting exit 137, and a failed
-native command item with that exit code; the turn itself completes normally. Runner boot identity
-and app-server process identity/PID stay unchanged before and after the OOM and a successful
-follow-up turn. That command runs in the same executor leaf and reports exit zero. Evidence goes
-to `test.outputs/vm-codex-oom.json`, alongside the guest console and scripted upstream requests.
-The OOM template explicitly sets `agentplane.cgroup-observer=1`, starting a root observer outside
-the execution slices to publish read-only snapshots of executor limits and OOM counters. Other
-guests retain the observer unit for the unprivileged restart-denial check without starting its
-polling process. Tool processes retain
-production's UID and cgroup permissions.
-The executor aggregate's hierarchical OOM counter proves the constrained subtree, while the leaf's
-victim counter proves the single kill: either the aggregate or leaf limit can trigger first.
-This exercises the test guest's kernel, shared production systemd units, and production Runner/Codex
-binaries; it does not boot the production NixOS image or force exec-server death/restart.
+`test_vm_oom` drives the real Codex app-server to run a command that allocates and touches
+memory beyond the shared systemd command slice's configured limit. It checks the slice's local
+OOM counter, the subtree's OOM kill counter, exit 137 in both the tool response and the native
+command item, and a successful follow-up command on the same Codex Session. The Runtime boot ID,
+harness attachment, app-server process and native executor PID and start time must survive.
+A loopback gRPC probe opens a native execution session before the OOM, then resumes that exact
+session ID and reads successful output from a new process in it.
+Evidence goes to `test.outputs/vm-codex-oom.json`, alongside the guest console and scripted
+upstream requests.
 
-Only this OOM sandbox selects the `environment-vm-codex-oom` template to enable the guest
-cgroup observer. Its guest RAM and all resource budgets match `environment-vm`, including the
-256 MiB native executor leaf. The command grows above that limit so the kernel exercises the OOM
-path while the Codex session remains active. A 96 MiB leaf was tried and withdrawn: a later EROFS page
-fault reached the same cgroup limit and the kernel also killed Codex, so the session was lost. A workspace
-`nofail` mount and a `quiet` kernel argument showed no measured startup gain and were not adopted.
+The `environment-vm-codex-oom` template adds `agentplane.cgroup-observer=1` to `environment-vm`'s
+guest configuration. The argument starts a root service that publishes read-only snapshots of
+kernel counters and executor identity outside both execution slices. Tool processes retain
+production's UID and cgroup permissions.
 
 KubeVirt's and Kyverno's images are Bazel-pulled layouts (`vm_sandboxes/`, pinned in `MODULE.bazel`),
 imported before their releases are applied, so no Pod pulls them; the releases roll out while the
