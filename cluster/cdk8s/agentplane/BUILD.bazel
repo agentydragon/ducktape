@@ -545,8 +545,10 @@ py_library(
     srcs = ["actions.py"],
     visibility = [
         "//agentplane/system_tests/deployment:__pkg__",
+        "//cluster/cdk8s:__pkg__",
         "//cluster/cdk8s/haku:__pkg__",
         "//cluster/cdk8s/public_coder:__pkg__",
+        "//cluster/cdk8s/ssh_mcp:__pkg__",
     ],
     deps = [
         ":central_sampler",
@@ -879,11 +881,13 @@ py_library(
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:external_creds",
         "//cluster/cdk8s:gateway",
+        "//cluster/cdk8s:google_mcp",
         "//cluster/cdk8s:ha_mcp",
         "//cluster/cdk8s:kubectl_passthrough_mcp",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:secret_ref",
+        "//cluster/cdk8s:tana_mcp",
         "//cluster/cdk8s/agentplane:model_selections",
         "//cluster/cdk8s/cnpg:cluster",
         "//cluster/cdk8s/external_secrets:minted_secret",
@@ -1543,6 +1547,7 @@ py_library(
         "//cluster/cdk8s:__pkg__",
         "//cluster/cdk8s/haku:__pkg__",
         "//cluster/cdk8s/monitoring:__pkg__",
+        "//cluster/cdk8s/ssh_mcp:__pkg__",
     ],
 )
 
