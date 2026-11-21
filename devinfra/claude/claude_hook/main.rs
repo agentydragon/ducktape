@@ -16,8 +16,7 @@ use http_body_util::{BodyExt, Full};
 use hyper::body::Bytes;
 use hyper_util::rt::TokioIo;
 use protocol::{
-    AnyHookInput, AnyHookSpecificOutput, HookOutput, HookRequest, HookResponse,
-    SessionStartSpecificOutput,
+    AnyHookSpecificOutput, HookOutput, HookRequest, HookResponse, SessionStartSpecificOutput,
 };
 use serde::Deserialize;
 use tokio::net::{UnixListener, UnixStream};
@@ -364,39 +363,31 @@ async fn handle_hook(
     state.touch();
 
     let session_env_file = req.env.get("CLAUDE_ENV_FILE").map(PathBuf::from);
-    let session_id = req.hook.session_id();
+    let session = state.get_or_create_session(&req.hook.session_id);
 
-    let session = session_id
-        .as_deref()
-        .map(|id| state.get_or_create_session(id));
-
-    let mut output = match (&req.hook, session.as_ref()) {
-        (AnyHookInput::SessionStart(_), Some(s)) => {
+    let mut output = match req.hook.hook_event_name.as_str() {
+        "SessionStart" => {
             if let Some(env_file) = session_env_file {
                 let caller_sid = req
                     .env
                     .get("CLAUDE_CODE_SESSION_ID")
                     .map(|s| s.as_str())
                     .unwrap_or("unknown");
-                Some(handle_session_start(&state, s, &env_file, caller_sid))
+                Some(handle_session_start(
+                    &state, &session, &env_file, caller_sid,
+                ))
             } else {
                 eprintln!("SessionStart: CLAUDE_ENV_FILE not in request env");
                 Some(HookOutput::default())
             }
         }
-        // PreToolUse / PostToolUse: no per-hook logic; output is built entirely
-        // from the mailbox drain below. Listed explicitly so the dispatch table
-        // reads as "these are handled" rather than falling into the noop arm.
-        (AnyHookInput::PreToolUse(_) | AnyHookInput::PostToolUse(_), _) => None,
         _ => None,
     };
 
     // Drain mailbox into output.system_message for REPL hooks.
-    if req.hook.is_repl()
-        && let Some(s) = session
-    {
-        let mailbox = s.drain_messages();
-        let bg = s.drain_bg_output();
+    if req.hook.is_repl() {
+        let mailbox = session.drain_messages();
+        let bg = session.drain_bg_output();
         if let Some(msg) = format_system_message(mailbox, bg) {
             let out = output.get_or_insert_with(HookOutput::default);
             out.system_message = Some(match out.system_message.take() {
@@ -739,7 +730,8 @@ async fn dispatch_hook() {
     let mut input = String::new();
     io::stdin().read_to_string(&mut input).unwrap();
 
-    let hook: AnyHookInput = match serde_json::from_str(&input) {
+    // Relayed verbatim; the daemon reads what it needs (`protocol::HookInput`).
+    let hook: serde_json::Value = match serde_json::from_str(&input) {
         Ok(h) => h,
         Err(e) => {
             eprintln!("claude-hook: failed to parse hook input: {e}");
@@ -747,7 +739,6 @@ async fn dispatch_hook() {
         }
     };
     let env: HashMap<String, String> = std::env::vars().collect();
-    let req = HookRequest { hook, env };
 
     let session_id = match session_id_from_env() {
         Some(id) => id,
@@ -767,7 +758,7 @@ async fn dispatch_hook() {
         return;
     }
 
-    let body = serde_json::to_vec(&req).unwrap();
+    let body = serde_json::to_vec(&serde_json::json!({ "hook": hook, "env": env })).unwrap();
     match post_json_over_uds(&sock_path, "/hook", body).await {
         Ok(resp_body) => {
             // The daemon returns a HookResponse envelope; Claude Code expects
