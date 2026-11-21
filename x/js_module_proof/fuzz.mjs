@@ -1300,7 +1300,7 @@ export function makeComposedCase(seed, index) {
     }
     functionNames.unshift("fuzzRelayRead");
     const initExpressionReader = index % 512 === 315;
-    const expressionReader = (index % 128 === 123 && index % 256 !== 251) || redirectedCallee;
+    const expressionReader = (index % 128 === 123 && index % 256 !== 251) || redirectedCallee || index % 1024 === 699;
     const body =
       crossModuleReader || redirectedCallee
         ? [returnNode(call(id("fuzzRelayHelper"), [id("parameter")]))]
@@ -1349,7 +1349,7 @@ export function makeComposedCase(seed, index) {
         ]
       : [];
   const observeRelayAtInit = !redirectedCallee && (index % 256 === 187 || index % 256 === 251 || index % 512 === 315);
-  const observeRelayViaCall = index % 256 === 251 || index % 512 === 315;
+  const observeRelayViaCall = index % 256 === 251 || index % 512 === 315 || index % 1024 === 699;
   const ast = {
     type: "Program",
     sourceType: "module",
@@ -1364,7 +1364,7 @@ export function makeComposedCase(seed, index) {
               ? expr(
                   call(
                     { type: "MemberExpression", object: id("globalThis"), property: id("record"), computed: false },
-                    [call(id("fuzzRelayRead"))]
+                    [call(id("fuzzRelayRead"), index % 1024 === 699 ? [literal(1)] : [])]
                   )
                 )
               : record("global"),
@@ -1785,9 +1785,46 @@ async function mutateOutput(out, input, kind) {
   throw new Error(`mutation failed: ${kind}`);
 }
 
-async function minimizeProvedDifference(input, root, mutation = null) {
+function reproduceUnsafeWitness(source, entry, verdict) {
+  const calls = verdict.calls ?? [];
+  const before = execute(source, calls);
+  const after = execute(entry, calls);
+  const witness = (trace) => ({
+    events: trace.events,
+    exports: trace.exports,
+    ...(calls.length ? { results: trace.results.map((v) => (v.undefined ? null : v.value)) } : {}),
+    ...(calls.length && trace.error ? { thrown: trace.error.thrown } : {}),
+  });
+  const invalid = (trace) =>
+    trace.inconclusive ||
+    (trace.error && (!calls.length || trace.error.phase !== "call" || trace.error.thrown.kind === "opaque"));
+  if (
+    invalid(before) ||
+    invalid(after) ||
+    JSON.stringify(before) === JSON.stringify(after) ||
+    JSON.stringify(verdict.original) !== JSON.stringify(witness(before)) ||
+    JSON.stringify(verdict.output) !== JSON.stringify(witness(after))
+  )
+    throw new Error("unsafe witness does not match Node");
+  return { calls, before, after };
+}
+
+async function minimizeDifference(
+  input,
+  root,
+  mutation = null,
+  expectedVerdict = "proved under assumptions",
+  maxAttempts = Infinity
+) {
   const scratch = join(root, "shrink-attempt");
+  let attempts = 0;
+  let initialCheck = true;
   const fails = async (candidate) => {
+    if (initialCheck) initialCheck = false;
+    else {
+      if (attempts >= maxAttempts) return false;
+      attempts++;
+    }
     await rm(scratch, { recursive: true, force: true });
     await mkdir(scratch, { recursive: true });
     const source = join(scratch, "source.mjs"),
@@ -1808,7 +1845,7 @@ async function minimizeProvedDifference(input, root, mutation = null) {
         JSON.stringify(before) === JSON.stringify(after)
       )
         return false;
-      return (await validateBindings(source, spec, out)).result === "proved under assumptions";
+      return (await validateBindings(source, spec, out)).result === expectedVerdict;
     } catch {
       return false;
     }
@@ -1837,10 +1874,19 @@ async function minimizeProvedDifference(input, root, mutation = null) {
       2
     ) + "\n"
   );
-  await writeFile(
-    join(destination, "verdict.json"),
-    JSON.stringify(await validateBindings(minimizedSource, minimizedSpec, minimizedOut), null, 2) + "\n"
-  );
+  const finalVerdict = await validateBindings(minimizedSource, minimizedSpec, minimizedOut);
+  if (finalVerdict.result !== expectedVerdict) throw new Error(`minimized case lost its ${expectedVerdict} verdict`);
+  if (expectedVerdict === "unsafe")
+    await writeFile(
+      join(destination, "node-witness.json"),
+      JSON.stringify(
+        reproduceUnsafeWitness(minimizedSource, join(minimizedOut, minimized.spec.entry), finalVerdict),
+        null,
+        2
+      ) + "\n"
+    );
+  await writeFile(join(destination, "verdict.json"), JSON.stringify(finalVerdict, null, 2) + "\n");
+  await writeFile(join(destination, "reduction.json"), JSON.stringify({ attempts, maxAttempts }, null, 2) + "\n");
   await rm(scratch, { recursive: true, force: true });
 }
 
@@ -1857,7 +1903,10 @@ export async function runFuzz({
   splitMode = "pattern",
   grammarMode = "pattern",
   mutationMode = "enabled",
+  unsafeShrinkAttempts = 0,
 }) {
+  if (!Number.isSafeInteger(unsafeShrinkAttempts) || unsafeShrinkAttempts < 0)
+    throw new Error("unsafe shrink attempts must be a nonnegative integer");
   if (!["enabled", "disabled"].includes(mutationMode)) throw new Error("unknown mutation mode");
   if (!["pattern", "independent"].includes(splitMode)) throw new Error("unknown split mode");
   if (!["pattern", "composed", "async"].includes(grammarMode)) throw new Error("unknown grammar mode");
@@ -1878,6 +1927,7 @@ export async function runFuzz({
     splitMode,
     grammarMode,
     mutationMode,
+    unsafeShrinkAttempts,
     asyncSourceExecuted: 0,
     asyncRefused: 0,
     nodeVersion: process.version,
@@ -2106,8 +2156,11 @@ export async function runFuzz({
             unsupported: input.unsupported,
             invalidAssignment: input.invalidAssignment,
             cyclic: input.cyclic,
-            plannedMutation: mutation !== null,
+            plannedMutation: plannedMutation !== null,
+            plannedMutationKind: plannedMutation,
             mutation,
+            mutationMode,
+            unsafeShrinkAttempts,
             splitMode,
             grammarMode,
             ...(input.independentSplit ? { splitCategory: independentCategory } : {}),
@@ -2379,37 +2432,30 @@ export async function runFuzz({
           if (input.grammar === "captured") summary.capturedProved++;
           if (input.grammar === "parameter") summary.parameterProved++;
           if (!equal || ((before.error || after.error) && !input.expectThrow)) {
-            if (!equal) await minimizeProvedDifference(input, root, mutation);
+            if (!equal) await minimizeDifference(input, root, mutation);
             throw new Error("proved case differs or fails in Node");
           }
         } else if (verdict.result === "unsafe") {
           summary.unsafe++;
           if (input.earlyVar) summary.earlyVarUnsafeCases++;
-          const witnessCalls = verdict.calls ?? [];
-          const witnessBefore = witnessCalls.length ? execute(source, witnessCalls) : before;
-          const witnessAfter = witnessCalls.length ? execute(join(out, input.spec.entry), witnessCalls) : after;
-          const witness = (trace) => ({
-            events: trace.events,
-            exports: trace.exports,
-            ...(witnessCalls.length ? { results: trace.results.map((v) => (v.undefined ? null : v.value)) } : {}),
-            ...(witnessCalls.length && trace.error ? { thrown: trace.error.thrown } : {}),
-          });
-          const invalidError = (trace) =>
-            trace.error &&
-            (!witnessCalls.length || trace.error.phase !== "call" || trace.error.thrown.kind === "opaque");
-          if (
-            invalidError(witnessBefore) ||
-            invalidError(witnessAfter) ||
-            JSON.stringify(witnessBefore) === JSON.stringify(witnessAfter) ||
-            JSON.stringify(verdict.original) !== JSON.stringify(witness(witnessBefore)) ||
-            JSON.stringify(verdict.output) !== JSON.stringify(witness(witnessAfter))
-          )
-            throw new Error("unsafe witness does not match Node");
+          const {
+            calls: witnessCalls,
+            before: witnessBefore,
+            after: witnessAfter,
+          } = reproduceUnsafeWitness(source, join(out, input.spec.entry), verdict);
           await writeFile(
             join(root, "node-witness.json"),
             JSON.stringify({ calls: witnessCalls, before: witnessBefore, after: witnessAfter }, null, 2) + "\n"
           );
-          summary.certifiedWitnesses.push({ index, mutated, calls: witnessCalls, artifactPath });
+          if (unsafeShrinkAttempts > 0)
+            await minimizeDifference({ ...input, calls: witnessCalls }, root, mutation, "unsafe", unsafeShrinkAttempts);
+          summary.certifiedWitnesses.push({
+            index,
+            mutated,
+            calls: witnessCalls,
+            artifactPath,
+            ...(unsafeShrinkAttempts > 0 ? { minimizedPath: `${artifactPath}/minimized` } : {}),
+          });
         } else if (verdict.result === "unknown") {
           summary.unknown++;
           summary.unknownCases.push({
@@ -2468,6 +2514,7 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.
             "--splits",
             "--grammar",
             "--mutations",
+            "--shrink-unsafe-attempts",
           ].includes(key)
       )
     )
@@ -2477,21 +2524,23 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.
       cases = Number(opts["--cases"] ?? 100),
       validateEvery = Number(opts["--validate-every"] ?? 1),
       shard = Number(opts["--shard"] ?? 0),
-      shards = Number(opts["--shards"] ?? 1);
+      shards = Number(opts["--shards"] ?? 1),
+      unsafeShrinkAttempts = Number(opts["--shrink-unsafe-attempts"] ?? 0);
     if (
-      ![seed, start, cases, validateEvery, shard, shards].every(Number.isSafeInteger) ||
+      ![seed, start, cases, validateEvery, shard, shards, unsafeShrinkAttempts].every(Number.isSafeInteger) ||
       seed < 0 ||
       seed > 0xffffffff ||
       start < 0 ||
       cases < 1 ||
       validateEvery < 1 ||
+      unsafeShrinkAttempts < 0 ||
       shards < 1 ||
       shard < 0 ||
       shard >= shards ||
       !opts["--output-dir"]
     )
       throw new Error(
-        "usage: fuzz.mjs --output-dir DIR [--seed UINT32] [--start N] [--cases N] [--validate-every N] [--shard N --shards N] [--splits pattern|independent] [--grammar pattern|composed|async] [--mutations enabled|disabled]"
+        "usage: fuzz.mjs --output-dir DIR [--seed UINT32] [--start N] [--cases N] [--validate-every N] [--shard N --shards N] [--splits pattern|independent] [--grammar pattern|composed|async] [--mutations enabled|disabled] [--shrink-unsafe-attempts N]"
       );
     console.log(
       JSON.stringify(
@@ -2505,6 +2554,7 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.
           splitMode: opts["--splits"] ?? "pattern",
           grammarMode: opts["--grammar"] ?? "pattern",
           mutationMode: opts["--mutations"] ?? "enabled",
+          unsafeShrinkAttempts,
           outputDir: resolve(opts["--output-dir"]),
         }),
         null,

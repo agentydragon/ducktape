@@ -1149,8 +1149,15 @@ function statement(node) {
   const arg = expr.arguments[0];
   const observation = constantObservation(arg);
   if (observation) return { kind: "recordConstant", observation };
-  if (arg?.type === "CallExpression" && !arg.optional && arg.arguments.length === 0)
-    return { kind: "recordCall", name: identifier(arg.callee) };
+  if (arg?.type === "CallExpression" && !arg.optional) {
+    check(
+      arg.arguments.every(
+        (value) => value.type === "Literal" && Number.isSafeInteger(value.value) && value.value >= 0 && value.value <= 8
+      ),
+      "recorded call arguments must be integer literals from 0 to 8"
+    );
+    return { kind: "recordCall", name: identifier(arg.callee), arguments: arg.arguments.map((value) => value.value) };
+  }
   return { kind: "record", name: identifier(arg) };
 }
 
@@ -1567,7 +1574,7 @@ function leanStatement(item) {
     case "wrapper":
       return `.wrapper ${str(item.name)} ${str(item.target)}`;
     case "recordCall":
-      return `.recordCall ${str(item.name)}`;
+      return `.recordCall ${str(item.name)} ${list(item.arguments.map(String))}`;
     case "call":
       return `.call ${str(item.name)}`;
     case "record":

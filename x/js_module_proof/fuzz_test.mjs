@@ -68,10 +68,18 @@ if (shards === 4 && shard === 1) {
     outputDir: process.env.TEST_TMPDIR,
     grammarMode: "composed",
     validateEvery: 1,
+    unsafeShrinkAttempts: 1,
   });
   assert.equal(changedThrow.mutationKinds.throwValue, 1);
   assert.equal(changedThrow.mutatedDifferent, 1);
   assert.equal(changedThrow.mutatedVerdicts.unsafe, 1);
+  const reducedPath = join(process.env.TEST_TMPDIR, changedThrow.certifiedWitnesses[0].minimizedPath);
+  const reducedVerdict = JSON.parse(await readFile(join(reducedPath, "verdict.json"), "utf8"));
+  const reducedWitness = JSON.parse(await readFile(join(reducedPath, "node-witness.json"), "utf8"));
+  const reduction = JSON.parse(await readFile(join(reducedPath, "reduction.json"), "utf8"));
+  assert.equal(reducedVerdict.result, "unsafe");
+  assert.notDeepEqual(reducedWitness.before, reducedWitness.after);
+  assert.equal(reduction.attempts, 1);
   const changedBigIntegerThrow = await runFuzz({
     seed: 51981,
     start: 87,
@@ -136,8 +144,8 @@ if (shards === 4 && shard === 2) {
   assert.equal(renamedRelay.renamedReexportProvedCases, 1);
 }
 if (shards === 4 && shard >= 1) {
-  const safeCases = { 1: [], 2: [379, 443], 3: [507, 571, 635] };
-  const redirectedCases = { 1: [59, 123, 187], 2: [251, 315, 379], 3: [443, 507, 571, 635] };
+  const safeCases = { 1: [], 2: [379, 443, 699], 3: [507, 571, 635] };
+  const redirectedCases = { 1: [59, 123, 187], 2: [251, 315, 379, 699], 3: [443, 507, 571, 635] };
   for (const start of safeCases[shard]) {
     const unchangedCall = await runFuzz({
       seed: 51981,
@@ -176,6 +184,18 @@ if (shards === 4 && shard >= 1) {
       );
       assert.deepEqual(witness.before.results, [{ value: 1 }]);
       assert.deepEqual(witness.after.results, [{ value: 2 }]);
+      const metadata = JSON.parse(
+        await readFile(
+          join(process.env.TEST_TMPDIR, redirectedRelay.certifiedWitnesses[0].artifactPath, "case.json"),
+          "utf8"
+        )
+      );
+      assert.equal(metadata.seed, 51981);
+      assert.equal(metadata.index, start);
+      assert.equal(metadata.mutationMode, "enabled");
+      assert.equal(metadata.unsafeShrinkAttempts, 0);
+      assert.equal(metadata.plannedMutationKind, "renamedReexport");
+      assert.equal(typeof metadata.nodeVersion, "string");
     }
   }
 }
@@ -206,6 +226,10 @@ await assert.rejects(
 await assert.rejects(
   runFuzz({ seed: 1, cases: 1, outputDir: process.env.TEST_TMPDIR, mutationMode: "invalid" }),
   /unknown mutation mode/
+);
+await assert.rejects(
+  runFuzz({ seed: 1, cases: 1, outputDir: process.env.TEST_TMPDIR, unsafeShrinkAttempts: -1 }),
+  /unsafe shrink attempts/
 );
 const shrinkInput = makeCase(123, 0);
 const keptNode = JSON.stringify(shrinkInput.ast.body[0]);

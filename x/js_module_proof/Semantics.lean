@@ -77,7 +77,7 @@ inductive Operation where
   | returnUndefined
   | throwNumber (value : Nat)
   | returnExpression (expression : NumericExpr) (parameters : List (String × Nat))
-  | observeExpression (expression : NumericExpr)
+  | observeExpression (expression : NumericExpr) (parameters : List (String × Nat))
   | initializeCapture (key : String) (expression : NumericExpr) (parameters : List (String × Nat)) (prior : List (String × String))
   | invokeCaptured (captures : List (String × String)) (parameters : List String) (arguments : List Nat) (body : NumericExpr)
   deriving DecidableEq, Repr
@@ -1047,8 +1047,8 @@ def executeStep {α : Type} (state : ExecutionState α) (operation : Operation) 
       match result.completion with
       | .error value => pure { state with thrown := some value }
       | .ok value => pure { state with returns := state.returns ++ [some value] }
-    | .observeExpression expression => do
-      let result ← evaluateExpression [] state.bindings expression
+    | .observeExpression expression parameters => do
+      let result ← evaluateExpression parameters state.bindings expression
       match result.completion with
       | .error value => pure { state with thrown := some value }
       | .ok value => pure (recordObservation state (.number value))

@@ -187,8 +187,9 @@ observations, including unpaired surrogates; initialization-order counterexample
 include those strings.
 Calls with boolean, null, or safe-integer literals, including negative zero, also produce
 observations and can appear in initialization-order witnesses. A top-level
-`globalThis.record(compute())` also supports zero-argument functions returning
-modeled numeric expressions, as well as the supported counter-closure calls.
+`globalThis.record(compute(...))` also supports modeled numeric expression
+functions when the argument count matches and every argument is an integer
+literal from 0 through 8, as well as the supported counter-closure calls.
 The constant forms `record(0 / 0)`, `record(1 / 0)`, and `record(-1 / 0)`
 record `NaN`, positive infinity, and negative infinity distinctly.
 BigInt literals, including negated literals, can also be recorded; their
@@ -376,7 +377,10 @@ Node observations and, if available, the validator verdict. Unexpected failures
 also include a phase and error record. Cases with a Node difference and an unknown or unvalidated verdict are retained
 for investigation. Certified unsafe cases are retained with their Lean verdict and
 independently reproduced Node witness; `certifiedWitnesses` lists their relative
-artifact paths and calls. Other non-failing cases are removed. A split that
+artifact paths and calls. Other non-failing cases are removed. Set
+`--shrink-unsafe-attempts N` to try at most N reductions of a certified unsafe
+case; the retained `minimized/` directory includes the resulting verdict and a
+freshly reproduced Node witness. A split that
 is proved but differs in Node, whether mutated or unmodified, is reduced by removing statements, calls, empty
 modules and imports while preserving that failure, with the result saved under
 `minimized/`. The fuzzer keeps files only inside the chosen output directory.

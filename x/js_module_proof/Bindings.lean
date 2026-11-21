@@ -21,7 +21,7 @@ inductive BindingStmt where
   | factory (name localName source : String)
   | closure (name factory : String)
   | wrapper (name target : String)
-  | recordCall (name : String)
+  | recordCall (name : String) (arguments : List Nat)
   | call (name : String)
   | record (name : String)
   | discardedLiteral
@@ -58,7 +58,7 @@ def declaredName : BindingStmt → Option String
   | .factory name _ _ => some name
   | .closure name _ => some name
   | .wrapper name _ => some name
-  | .recordCall _ => none
+  | .recordCall _ _ => none
   | .call _ => none
   | .record _ => none
   | .discardedLiteral => none
@@ -86,7 +86,7 @@ def isVariable (source : List BindingStmt) (name : String) : Bool :=
     | .factory _ _ _ => false
     | .closure _ _ => false
     | .wrapper _ _ => false
-    | .recordCall _ => false
+    | .recordCall _ _ => false
     | .call _ => false
     | .record _ => false
     | .discardedLiteral => false
@@ -109,7 +109,7 @@ def isReadableBinding (source : List BindingStmt) (name : String) : Bool :=
     | .factory _ _ _ => false
     | .closure _ _ => false
     | .wrapper _ _ => false
-    | .recordCall _ => false
+    | .recordCall _ _ => false
     | .call _ => false
     | .record _ => false
     | .discardedLiteral => false
@@ -132,7 +132,7 @@ def isFunction (source : List BindingStmt) (name : String) : Bool :=
     | .factory _ _ _ => false
     | .closure _ _ => true
     | .wrapper _ _ => true
-    | .recordCall _ => false
+    | .recordCall _ _ => false
     | .call _ => false
     | .record _ => false
     | .discardedLiteral => false
@@ -155,7 +155,7 @@ def isThrower (source : List BindingStmt) (name : String) : Bool :=
     | .factory _ _ _ => false
     | .closure _ _ => false
     | .wrapper _ _ => false
-    | .recordCall _ => false
+    | .recordCall _ _ => false
     | .call _ => false
     | .record _ => false
     | .discardedLiteral => false
@@ -178,7 +178,7 @@ def isFactory (source : List BindingStmt) (name : String) : Bool :=
     | .capturedAlias _ _ => false
     | .closure _ _ => false
     | .wrapper _ _ => false
-    | .recordCall _ => false
+    | .recordCall _ _ => false
     | .call _ => false
     | .record _ => false
     | .discardedLiteral => false
@@ -201,7 +201,7 @@ def isClosure (source : List BindingStmt) (name : String) : Bool :=
     | .capturedClosure _ _ _ _ => false
     | .capturedAlias _ _ => false
     | .wrapper _ _ => false
-    | .recordCall _ => false
+    | .recordCall _ _ => false
     | .call _ => false
     | .record _ => false
     | .discardedLiteral => false
@@ -563,7 +563,7 @@ def callableSyntax (source : List BindingStmt) (name : String) : Option (List St
     | .factory _ _ _ => none
     | .closure _ _ => none
     | .wrapper _ _ => none
-    | .recordCall _ => none
+    | .recordCall _ _ => none
     | .call _ => none
     | .record _ => none
     | .discardedLiteral => none
@@ -657,7 +657,7 @@ def capturedFactoryData (source : List BindingStmt) (name : String) : Option (Li
     | .factory _ _ _ => none
     | .closure _ _ => none
     | .wrapper _ _ => none
-    | .recordCall _ => none
+    | .recordCall _ _ => none
     | .call _ => none
     | .record _ => none
     | .discardedLiteral => none
@@ -681,7 +681,7 @@ def capturedClosureDataFuel (source : List BindingStmt) : Nat → String → Opt
       | .factory _ _ _ => none
       | .closure _ _ => none
       | .wrapper _ _ => none
-      | .recordCall _ => none
+      | .recordCall _ _ => none
       | .call _ => none
       | .record _ => none
       | .discardedLiteral => none
@@ -743,7 +743,7 @@ def validRefs (source : List BindingStmt) (modules : List BindingModule) (index 
   | .factory _ localName sourceName => factoryInitializerResolves localName sourceName && isReadableBinding source sourceName && visible modules index sourceName
   | .closure _ factory => isFactory source factory && visible modules index factory
   | .wrapper _ target => isClosure source target && visible modules index target
-  | .recordCall name => isFunction source name && visible modules index name
+  | .recordCall name _ => isFunction source name && visible modules index name
   | .call name => isFunction source name && !(isThrower source name) && visible modules index name
   | .record name => isReadableBinding source name && visible modules index name
   | .discardedLiteral => true
@@ -810,7 +810,7 @@ def referenceNames : BindingStmt → List String
   | .factory _ _ source => [source]
   | .closure _ factory => [factory]
   | .wrapper _ target => [target]
-  | .recordCall name => [name]
+  | .recordCall name _ => [name]
   | .call name => [name]
   | .record name => [name]
   | .discardedLiteral => []
@@ -842,7 +842,7 @@ def capturedKeys (source : List BindingStmt) : List String :=
     | .factory _ _ _ => []
     | .closure _ _ => []
     | .wrapper _ _ => []
-    | .recordCall _ => []
+    | .recordCall _ _ => []
     | .call _ => []
     | .record _ => []
     | .discardedLiteral => []
@@ -949,7 +949,7 @@ def functionOperations (source : List BindingStmt) (name : String) (observeRetur
     | .closure closureName _ => some (if observeReturn then [.incrementBinding (closureCell closureName), .returnBinding (closureCell closureName)] else [.incrementBinding (closureCell closureName)])
     | .wrapper _ target => if isClosure source target then some (if observeReturn then [.incrementBinding (closureCell target), .returnBinding (closureCell target)] else [.incrementBinding (closureCell target)]) else none
     | .factory _ _ _ => none
-    | .recordCall _ => none
+    | .recordCall _ _ => none
     | .variable _ _ => none
     | .hoistedVariable _ _ => none
     | .constant _ _ => none
@@ -981,7 +981,7 @@ def isHoistedName (source : List BindingStmt) (name : String) : Bool :=
     | .factory _ _ _ => false
     | .closure _ _ => false
     | .wrapper _ _ => false
-    | .recordCall _ => false
+    | .recordCall _ _ => false
     | .call _ => false
     | .record _ => false
     | .discardedLiteral => false
@@ -1023,17 +1023,17 @@ def bindingOperations (source : List BindingStmt) (statement : BindingStmt) : Op
     | .capturedAlias _ _ => none
     | .closure _ _ => none
     | .wrapper _ _ => none
-    | .recordCall _ => none
+    | .recordCall _ _ => none
     | .call _ => none
     | .record _ => none
     | .discardedLiteral => none
     | .recordPrimitive _ => none
   | .wrapper _ _ => some []
-  | .recordCall name => do
+  | .recordCall name arguments => do
     let definition ← findDefinition source name
     match definition with
     | .expressionFunction _ parameters body =>
-      if parameters.isEmpty then some [.observeExpression body] else none
+      if parameters.length == arguments.length then some [.observeExpression body (parameters.zip arguments)] else none
     | .reader _ sourceName => some [.readBinding sourceName, .observeBinding sourceName]
     | .closure closureName _ => some [.incrementBinding (closureCell closureName), .observeBinding (closureCell closureName)]
     | .wrapper _ closureName =>
@@ -1049,7 +1049,7 @@ def bindingOperations (source : List BindingStmt) (statement : BindingStmt) : Op
     | .capturedFactory _ _ _ _ _ => none
     | .capturedClosure _ _ _ _ => none
     | .capturedAlias _ _ => none
-    | .recordCall _ => none
+    | .recordCall _ _ => none
     | .call _ => none
     | .record _ => none
     | .discardedLiteral => none
@@ -1081,7 +1081,7 @@ def canonicalBindingState (source : List BindingStmt) (state : ExecutionState Un
     | .factory _ _ _ => []
     | .closure name _ => [closureCell name]
     | .wrapper _ _ => []
-    | .recordCall _ => []
+    | .recordCall _ _ => []
     | .call _ => []
     | .record _ => []
     | .discardedLiteral => []
@@ -1276,7 +1276,7 @@ def witnessedOutputStatement (modules : List BindingModule) (index : Nat) : Bind
   | .factory name localName source => some (.factory name localName source)
   | .closure name factory => some (.closure name factory)
   | .wrapper name target => some (.wrapper name target)
-  | .recordCall name => (witnessedName modules index [] name).map BindingStmt.recordCall
+  | .recordCall name arguments => (witnessedName modules index [] name).map (fun target => .recordCall target arguments)
   | .call name => (witnessedName modules index [] name).map BindingStmt.call
   | .record name => (witnessedName modules index [] name).map BindingStmt.record
   | .discardedLiteral => some .discardedLiteral
@@ -1302,7 +1302,7 @@ def witnessedUnloweredClosure : BindingStmt → Bool
   | .reader _ _ => false
   | .thrower _ _ => false
   | .expressionFunction _ _ _ => false
-  | .recordCall _ => false
+  | .recordCall _ _ => false
   | .call _ => false
   | .record _ => false
   | .discardedLiteral => false
@@ -1378,7 +1378,7 @@ def outputCaptureNamespace (renames : List (String × String)) : BindingStmt →
   | .factory name localName source => .factory name localName source
   | .closure name factory => .closure name factory
   | .wrapper name target => .wrapper name target
-  | .recordCall name => .recordCall name
+  | .recordCall name arguments => .recordCall name arguments
   | .call name => .call name
   | .record name => .record name
   | .discardedLiteral => .discardedLiteral
@@ -1442,7 +1442,7 @@ def publicCallable (statements : List BindingStmt) (name : String) : Option Publ
     | .hoistedVariable _ _ => none
     | .constant _ _ => none
     | .factory _ _ _ => none
-    | .recordCall _ => none
+    | .recordCall _ _ => none
     | .call _ => none
     | .record _ => none
     | .discardedLiteral => none
@@ -1476,7 +1476,7 @@ def publicCapturedEnvironment (statements : List BindingStmt) (name : String) : 
     | .factory _ _ _ => none
     | .closure _ _ => none
     | .wrapper _ _ => none
-    | .recordCall _ => none
+    | .recordCall _ _ => none
     | .call _ => none
     | .record _ => none
     | .discardedLiteral => none
