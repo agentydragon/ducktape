@@ -1304,6 +1304,27 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  name: tofu-controller-vpa
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: vpa
+      namespace: ducktape-flux
+    - name: tofu-controller
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/tofu-controller-vpa
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: tofu-controller-vpa
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
   name: monitoring-home-switch
   namespace: ducktape-flux
 spec:

@@ -202,6 +202,11 @@ spec:
       name: tofu-controller
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/tofu-controller-vpa/**"
+          to: "@artifact/cluster/generated/tofu-controller-vpa/"
+      name: tofu-controller-vpa
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/k8s/tofu-state/**"
           to: "@artifact/cluster/k8s/tofu-state/"
       name: tofu-state-db

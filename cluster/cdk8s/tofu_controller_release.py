@@ -19,6 +19,14 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 )
 from flux_imagerepository_crds.io.fluxcd.toolkit.image import ImageRepository, ImageRepositorySpec
 from python.runfiles import Runfiles
+from vpa_crds.io.k8s.autoscaling import (
+    VerticalPodAutoscaler,
+    VerticalPodAutoscalerSpec,
+    VerticalPodAutoscalerSpecResourcePolicy,
+    VerticalPodAutoscalerSpecResourcePolicyContainerPolicies,
+    VerticalPodAutoscalerSpecTargetRef,
+    VerticalPodAutoscalerSpecUpdatePolicy,
+)
 
 from cluster.cdk8s import flux, terraform
 from cluster.cdk8s.helm import helm_release, https_helm_repository
@@ -28,6 +36,8 @@ from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 NAME = "tofu-controller"
 NAMESPACE = "flux-system"
 OUTPUT_DIR = f"{GENERATED_ROOT}/tofu-controller"
+VPA_NAME = f"{NAME}-vpa"
+VPA_OUTPUT_DIR = f"{GENERATED_ROOT}/{VPA_NAME}"
 PINS_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}-image-pins"
 # GHCR, not the Forgejo registry: the Forgejo pull credential's user is created by a Terraform
 # this controller applies, so a Forgejo-hosted controller or runner could never start on a fresh
@@ -79,6 +89,28 @@ def chart(app: App) -> Chart:
             f"{RUNNER_NAME}-image-repository",
             metadata=ApiObjectMetadata(name=RUNNER_NAME, namespace=NAMESPACE),
             spec=ImageRepositorySpec(image=RUNNER_IMAGE, interval="5m"),
+        ),
+    )
+    return chart
+
+
+def vpa_chart(app: App) -> Chart:
+    chart = Chart(app, VPA_NAME, disable_resource_name_hashes=True)
+    VerticalPodAutoscaler(
+        chart,
+        NAME,
+        metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
+        spec=VerticalPodAutoscalerSpec(
+            target_ref=VerticalPodAutoscalerSpecTargetRef(api_version="apps/v1", kind="Deployment", name=NAME),
+            update_policy=VerticalPodAutoscalerSpecUpdatePolicy(update_mode="Initial"),
+            resource_policy=VerticalPodAutoscalerSpecResourcePolicy(
+                container_policies=[
+                    VerticalPodAutoscalerSpecResourcePolicyContainerPolicies(
+                        container_name=NAME, controlled_resources=["cpu", "memory"], controlled_values="RequestsOnly"
+                    ),
+                    VerticalPodAutoscalerSpecResourcePolicyContainerPolicies(container_name="*", mode="Off"),
+                ]
+            ),
         ),
     )
     return chart
