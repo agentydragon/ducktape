@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
 from dataclasses import replace
 from pathlib import PurePosixPath
 from typing import Any
 
 import pytest_bazel
-from cdk8s import App, Testing as Cdk8sTesting  # alias avoids pytest collecting Testing as a test class
+from cdk8s import Chart
+from cdk8s_plus_34 import EnvValue
 from more_itertools import one
 
 from agentplane.net.peertls.config import (
@@ -22,6 +22,7 @@ from agentplane.net.peertls.config import (
 )
 from cluster.cdk8s.agentplane import (
     central_sampler,
+    central_sampler_workload,
     history_service,
     llm_ingress,
     policy_controller,
@@ -240,11 +241,14 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     ]
 
 
-def test_central_sampler_turn_timeout_option_is_rendered(scratch_app_factory: Callable[[], App]) -> None:
+def test_central_sampler_turn_timeout_option_is_rendered(scratch_chart: Chart) -> None:
     sampler = staging.ENV.central_sampler
     assert sampler is not None
     env = replace(staging.ENV, central_sampler=replace(sampler, turn_timeout_seconds=123))
-    manifests = Cdk8sTesting.synth(staging.chart(scratch_app_factory(), env))
+    central_sampler_workload.CentralSampler(
+        scratch_chart, "sampler", env, database_url=EnvValue.from_value("postgresql://test.invalid/sampler")
+    )
+    manifests = scratch_chart.to_json()
     config = json.loads(find_resource(manifests, "ConfigMap", "central-sampler-settings")["data"]["settings.json"])
     assert config["turn_timeout_seconds"] == 123
 

@@ -36,17 +36,6 @@ def test_frontend_has_no_runtime_credentials_or_outbound_access(staging_manifest
     pod = find_resource(staging_manifests, "Deployment", frontend.NAME)["spec"]["template"]["spec"]
     account = find_resource(staging_manifests, "ServiceAccount", frontend.NAME)
     assert pod["automountServiceAccountToken"] is False
-    assert pod["topologySpreadConstraints"] == [
-        {
-            "labelSelector": {"matchLabels": {"app.kubernetes.io/name": "frontend"}},
-            "matchLabelKeys": ["pod-template-hash"],
-            "maxSkew": 1,
-            "minDomains": 2,
-            "nodeTaintsPolicy": "Honor",
-            "topologyKey": "kubernetes.io/hostname",
-            "whenUnsatisfiable": "DoNotSchedule",
-        }
-    ]
     assert account["automountServiceAccountToken"] is False
     assert not pod.get("initContainers")
     container = one(pod["containers"])
@@ -78,6 +67,9 @@ def test_staging_services_keep_replicas_on_separate_hosts(staging_manifests: lis
         assert spread["labelSelector"]["matchLabels"] == {"app.kubernetes.io/name": name}
         assert spread["topologyKey"] == "kubernetes.io/hostname"
         assert spread["minDomains"] == 2
+        assert spread["maxSkew"] == 1
+        assert spread["matchLabelKeys"] == ["pod-template-hash"]
+        assert spread["nodeTaintsPolicy"] == "Honor"
         assert spread["whenUnsatisfiable"] == "DoNotSchedule"
         assert find_resource(staging_manifests, "PodDisruptionBudget", name)["spec"]["minAvailable"] >= 1
 

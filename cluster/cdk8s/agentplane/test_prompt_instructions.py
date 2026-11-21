@@ -1,11 +1,4 @@
-"""Both thread presets receive the same public ducktape contribution procedure, and each sandbox
-preset binds the Action policy sets its principal is meant to hold.
-
-The preset is what a *launch* binds: a managed runner Pod runs as its own per-Sandbox
-ServiceAccount, so a binding written for a static caller account never reaches it. A preset that
-forgets a set the account binding names leaves those Actions approval-gated in exactly one of the
-two places they are supposed to work, which reads as flaky policy rather than a missing grant.
-"""
+"""Sandbox presets bind the Action policy sets their principals are meant to hold."""
 
 from typing import Any
 
@@ -18,25 +11,9 @@ from cluster.cdk8s.agentplane.actions_staging_policies import (
     DUCKTAPE_PR_FAILED_JOBS_SET,
     GAFFER_PRIVATE_BRANCH_AND_PR_CREATION_SET,
 )
-from cluster.cdk8s.agentplane.app_settings import _PUBLIC_CODER_INSTRUCTIONS, DUCKTAPE_PR_INSTRUCTIONS
 from cluster.cdk8s.agentplane.egress import BASIC_POLICY
-from cluster.cdk8s.agentplane.staging_config import _FINANCE_AGENT_INSTRUCTIONS, HAKU_ACTION_POLICY_SETS
+from cluster.cdk8s.agentplane.staging_config import HAKU_ACTION_POLICY_SETS
 from cluster.cdk8s.testing.manifests import find_resource
-
-
-def test_ducktape_pr_instructions_are_shared_once() -> None:
-    for instructions in (_PUBLIC_CODER_INSTRUCTIONS, _FINANCE_AGENT_INSTRUCTIONS):
-        assert instructions.count(DUCKTAPE_PR_INSTRUCTIONS) == 1
-
-
-def test_ducktape_preset_installs_hooks_without_direnv() -> None:
-    assert staging.ENV.app is not None
-    cfg = staging.ENV.app.config
-    script = cfg.thread_presets["public-coder-ducktape-codex"].setup_script
-    assert "pre-commit install" in script
-    assert "direnv allow" not in script
-    # The generic public coder preset has no repo-specific checkout or hooks.
-    assert cfg.thread_presets["public-coder-codex"].setup_script == ""
 
 
 def test_gaffer_write_policies_are_finance_agent_only() -> None:

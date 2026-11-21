@@ -1,7 +1,9 @@
 """Exercise the PrometheusRule expressions with upstream promtool."""
 
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
 import pytest_bazel
@@ -13,6 +15,12 @@ from cdk8s import (
 from python.runfiles import Runfiles
 
 from cluster.cdk8s.monitoring import rules
+
+
+@pytest.fixture(scope="module")
+def rendered_rules(scratch_app_factory: Callable[[], App]) -> dict[str, dict[str, Any]]:
+    app = scratch_app_factory()
+    return {manifest["metadata"]["name"]: manifest for manifest in Cdk8sTesting.synth(rules.chart(app))}
 
 
 @pytest.mark.parametrize(
@@ -35,11 +43,15 @@ from cluster.cdk8s.monitoring import rules
     ],
 )
 def test_prometheus_rules(
-    runfiles: Runfiles, promtool: Path, scratch_app: App, tmp_path: Path, rule_files: dict[str, str], tests: str
+    runfiles: Runfiles,
+    promtool: Path,
+    rendered_rules: dict[str, dict[str, Any]],
+    tmp_path: Path,
+    rule_files: dict[str, str],
+    tests: str,
 ) -> None:
-    manifests = {manifest["metadata"]["name"]: manifest for manifest in Cdk8sTesting.synth(rules.chart(scratch_app))}
     for manifest_name, rule_file in rule_files.items():
-        (tmp_path / rule_file).write_text(yaml.safe_dump(manifests[manifest_name]["spec"]))
+        (tmp_path / rule_file).write_text(yaml.safe_dump(rendered_rules[manifest_name]["spec"]))
     (tmp_path / "tests.yaml").write_text(
         (runfiles.root() / f"ducktape/cluster/cdk8s/monitoring/testdata/{tests}").read_text()
     )
