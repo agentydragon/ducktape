@@ -411,7 +411,6 @@ ts_library(
     tsconfig = "//agentplane/app/frontend:tsconfig",
     deps = [
         "//:node_modules/@bufbuild/protobuf",
-        "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend/sandboxes:client",
         "//agentplane/app/frontend/ui:format_time",
         "//agentplane/app/frontend/ui:status_mark",

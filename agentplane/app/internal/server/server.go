@@ -8,15 +8,12 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/app/internal/auth"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/httpresponse"
-	"github.com/danielgtaylor/huma/v2"
-	"github.com/danielgtaylor/huma/v2/adapters/humago"
 )
 
-// httpServer owns the standard-library router, the Huma API behind the OpenAPI document and the
-// readiness drain gate. A single mux keeps auth and health routes on one listener.
+// httpServer owns the standard-library router and the readiness drain gate. A single mux keeps
+// auth and health routes on one listener.
 type httpServer struct {
 	mux            *uuidMux
-	api            huma.API
 	authentication *auth.Auth
 	drain          atomic.Bool
 	drainDone      chan struct{}
@@ -25,11 +22,7 @@ type httpServer struct {
 
 func newHTTPServer(authentication *auth.Auth) *httpServer {
 	mux := &uuidMux{ServeMux: http.NewServeMux()}
-	apiConfig := huma.DefaultConfig("Agentplane", "0")
-	// The OpenAPI document stays at /openapi.json; the app serves no documentation page.
-	apiConfig.DocsPath = ""
-	api := humago.New(mux, apiConfig)
-	server := &httpServer{mux: mux, api: api, authentication: authentication, drainDone: make(chan struct{})}
+	server := &httpServer{mux: mux, authentication: authentication, drainDone: make(chan struct{})}
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})

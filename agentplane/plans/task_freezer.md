@@ -596,9 +596,8 @@ background work ([child evidence](../native/docs/child_sessions.md),
 
 **Frozen; operator, 2026-10-30: think about it later.** About eight fetch-in-`useEffect` blocks with
 manual cancellation guards, a `setInterval` poll and a hand-built Action request cache could become
-TanStack Query (with `openapi-react-query` over the existing `openapi-fetch` client). Action request
-details and thread evidence readers already use it; the System page's `setInterval` poll and other
-effect fetches remain.
+TanStack Query. Action request details and thread evidence readers already use it; the System page's
+`setInterval` poll and other effect fetches remain.
 
 ### `FRONTEND_CONNECT_ES` — typed streaming clients
 
