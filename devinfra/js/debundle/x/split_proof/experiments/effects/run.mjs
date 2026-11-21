@@ -80,6 +80,9 @@ writeFileSync(
     "export const mk = () => ({ get() { return globalThis.__cb && globalThis.__cb(); }, configurable: true });",
     // a function that gives its argument a conversion hook, which calls back the same function
     'export const hook = (o) => { o.toString = () => { globalThis.__cb && globalThis.__cb(); return ""; }; };',
+    // a binding that the module's own code changes
+    "export let count = 0;",
+    "export const bump = () => { count += 1; };",
     "",
   ].join("\n")
 );

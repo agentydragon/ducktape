@@ -1358,6 +1358,18 @@ console.log(o.n);
     [...Array(13).keys(), 14, 13]
   ),
   p3(
+    "a getter 11 prototypes up writes o, and a pure reader of o follows",
+    `
+const o = { n: 0 };
+const p0 = { get g() { o.n = 1; return 1; } };
+${chain(11)}
+p11.g;
+const seen = o.n;
+console.log(seen);
+`,
+    [...Array(13).keys(), 14, 13, 15]
+  ),
+  p3(
     "a toString 12 prototypes up runs in a template literal",
     `
 const o = { n: 0 };
@@ -1860,6 +1872,39 @@ console.log(seen);
     ),
     premises: {},
   },
+  // unknown code writes the imports: a binding of another module changes when that module's code runs
+  p3(
+    "a binding of a module outside the tree changes when the world's code runs",
+    `
+import { count, bump } from "%VENDOR%";
+bump();
+const fresh = count === 0;
+console.log(fresh);
+`,
+    [0, 2, 1, 3]
+  ),
+  p3(
+    "reduce returns what its callback returned",
+    `
+const o = { n: 0 };
+const last = [1, 2].reduce(() => o);
+last.n = 1;
+const seen = o.n;
+console.log(seen);
+`,
+    [0, 1, 3, 2, 4]
+  ),
+  p3(
+    "Object.assign stores what a later source holds",
+    `
+const o = { n: 0 };
+const target = Object.assign({}, {}, { held: o });
+target.held.n = 1;
+const seen = o.n;
+console.log(seen);
+`,
+    [0, 1, 3, 2, 4]
+  ),
   // a search with a receiver that is not an array reads it through its getters
   p3(
     "Array.prototype.includes on an array-like reads length",

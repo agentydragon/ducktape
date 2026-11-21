@@ -79,7 +79,7 @@ What the statement forces:
 
 5. **Let footprints remove the order that a sequence imposes.** A spec with `sequential` keeps the bundle's order by imports, and `Valid` checks the plan ([`README.md`](README.md)). On the large bundle that makes 2,367 of the 2,793 modules of the reviewed tree valid whole, and `lowersplit` accepts the split. It is not yet what a person would write: 629 of its 3,049 modules get imports they need only for the order (2,744 bare imports), and the imports nest 466 deep. Each such import is a candidate to drop, and dropping one is a claim that two modules commute, which is where a footprint, or a proof, is needed. First candidates: a module that only declares functions can run early without harm, so a forward mention of one needs no ordering import. This turns "is the split valid" from the hard question into the easy one, and makes precision a matter of how natural the imports look. Step 5 below is a special case.
 
-**Open decisions for the owner.** What budget the spike gets before its kill rule applies. Whether a reviewed vendor table is worth its review cost before the rule in item 4 exists: alone it does not change which modules peel.
+**Open decisions for the owner.** What budget the spike gets before its kill rule applies. Whether premise P3 may assume that code of the program which the world runs adds no accessor or hook (finding F7), or the analysis gives up P3 where such code may do it. Whether a reviewed vendor table is worth its review cost before the rule in item 4 exists: alone it does not change which modules peel.
 
 ## Order of work
 

@@ -419,12 +419,6 @@ MUTANTS = {
         '  if false then "Error"\n  else if path == "parseFloat"',
         "Error.tag = … read as TypeError.tag",
     ),
-    "Object.assign copies no property values": (
-        EFFECTS,
-        "  for (src, dst) in s.copies do\n    let v ← contentsOf (pos src)\n    setAV (pos dst) none v\n    noteProps (pos dst) v\n",
-        "",
-        "Object.assign runs a getter of its source",
-    ),
     "__defineGetter__ defines no accessor": (
         EFFECTS,
         "  for (dst, f) in s.accessors do\n    setAV (pos dst) none (pos f)\n",
