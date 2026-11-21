@@ -57,6 +57,13 @@ structure Env where
   vars : List (Name × Addr)
   this : Val
 
+/-- The bindings of `names` in `env`, and its `this`: what a closure keeps of the scope it was made in. A function
+keeps the bindings its code can mean (`Func.closes`) and no others, so two scopes that give those names the same
+bindings give the same closure. -/
+def Env.capture (env : Env) (names : List Name) : Env where
+  vars := names.eraseDups.filterMap fun x => (env.vars.lookup x).map (x, ·)
+  this := env.this
+
 /-- What a callable object runs. `fields` are the instance fields of a class constructor. -/
 inductive Code where
   | closure (f : Func) (env : Env) (fields : List (String × Expr))

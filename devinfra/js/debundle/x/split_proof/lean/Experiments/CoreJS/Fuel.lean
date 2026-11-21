@@ -246,29 +246,21 @@ theorem mono : ∀ n m, n ≤ m → Mono W n m := by
       exact ⟨ih.expr_succ, ih.args_succ, ih.target_succ, ih.props_succ, ih.members_succ, ih.fields_succ, ih.call_succ,
         ih.construct_succ, ih.stmt_succ, ih.stmts_succ, ih.loop_succ⟩
 
-theorem runBody_le {n m : Nat} (h : n ≤ m) (env : Env) (body : List (Nat × Stmt)) :
-    (runBody n env body : M W _) ⊑ runBody m env body := by
-  induction body with
+theorem runUnits_le {n m : Nat} (h : n ≤ m) (units : List (Nat × Stmt × Env)) :
+    (runUnits n units : M W _) ⊑ runUnits m units := by
+  induction units with
   | nil => exact M.le_refl _
   | cons unit rest ih =>
-    obtain ⟨id, s⟩ := unit
+    obtain ⟨id, s, env⟩ := unit
     have hs := (mono (W := W) n m h).stmt env s
-    unfold runBody runUnit inRegion
+    unfold runUnits runUnit inRegion
     repeat' first | exact hs | exact ih | mono_step
-
-theorem runModules_le {n m : Nat} (h : n ≤ m) (linked : List (Module × Env)) :
-    (runModules n linked : M W _) ⊑ runModules m linked := by
-  induction linked with
-  | nil => exact M.le_refl _
-  | cons first rest ih =>
-    obtain ⟨md, env⟩ := first
-    exact M.le_bind (runBody_le h env md.body) fun _ => ih
 
 /-- **More fuel never changes a run that finished.** -/
 theorem fuel_mono {n m : Nat} {P : Program} {r : Res W Unit} (h : runProgram W n P = r) (hr : r ≠ .fuel)
     (hnm : n ≤ m) : runProgram W m P = r := by
   have hle : (runProgram W n P).le (runProgram W m P) :=
-    M.le_bind (M.le_refl _) (fun linked => runModules_le hnm linked) (initialState W P.regions)
+    M.le_bind (M.le_refl _) (fun linked => runUnits_le hnm (unitsOf linked)) (initialState W P.regions)
   rcases hle with hf | he
   · exact absurd (h ▸ hf) hr
   · exact he ▸ h

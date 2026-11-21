@@ -18,6 +18,9 @@
 //     the modules run in order (`sequential`), and the same without an order. For every split it accepts, four runs
 //     must agree: the bundle in Node, the bundle in the model, the split in Node, the split in the model. The split's
 //     statements must be the bundle's, token for token, and the model must run the modules in the order of the plan.
+//     A split that runs the statements in the bundle's order must also end in the bundle's state in the model, every
+//     object and binding at the same address, when it runs in the world the bundle recorded (`order_kept_preserves`
+//     of `Split.lean` says it does).
 //     Bundle and split differing in Node is a wrong accept by the tool, and is reported as that.
 //     The tool's verdict is for a bundle whose evaluation completes (premise P4 of `../effects/README.md`). So a split
 //     is compared with its bundle when the bundle ends normally in Node, or when the split runs the statements in the
@@ -493,6 +496,7 @@ const tally = {
   unsupported: 0,
   agree: 0,
   orderKept: 0,
+  sameState: 0,
   otherCalls: 0,
 };
 const apart = { splits: 0, differ: 0 }; // accepted splits that move code, of a bundle that does not end normally
@@ -546,6 +550,10 @@ for (const job of bundleJobs)
 runModel(bundleJobs.map((j) => j.numbered));
 await runNode(splitJobs);
 runModel(splitJobs);
+// `order_kept_preserves` of `Split.lean` is about one world: a split that keeps the order also runs in the world its
+// bundle recorded, and must end there in the bundle's state.
+for (const job of splitJobs) job.inBundleWorld = { label: job.label, node: job.of.node, program: job.program };
+runModel(splitJobs.filter((job) => job.orderKept).map((job) => job.inBundleWorld));
 for (const job of splitJobs) {
   const files = () =>
     job.program.modules.map((m) => `// ${m.name}\n${readFileSync(path.join(path.dirname(job.entry), m.name), "utf8")}`);
@@ -582,7 +590,13 @@ for (const job of splitJobs) {
     wrongAccepts.push(`${job.label}\n${table}\n${text()}`);
     continue;
   }
-  if (job.orderKept) tally.orderKept++;
+  if (job.orderKept) {
+    tally.orderKept++;
+    const there = job.inBundleWorld.result;
+    const bundle = job.of.numbered.result;
+    if (there.state === bundle.state && sameRun(there, bundle)) tally.sameState++;
+    else failures.push(`${job.label}: the split keeps the order and ends in another state than its bundle`);
+  }
   if (!same(job.result.order, job.order))
     failures.push(`${job.label}: the model runs the modules as ${job.result.order}, the plan as ${job.order}`);
   for (const m of job.program.modules)
@@ -614,7 +628,8 @@ const verdicts = (kind) => `${kind}: ${tally[kind][0]} accepted, ${tally[kind][1
 console.log(
   `splits: ${tally.named[0]} named accepted, ${tally.named[1]} named rejected; ${tally.programs} programs; ${["cut", "ordered", "free"].map(verdicts).join("; ")}; ` +
     `${tally.unsupported} unsupported; ${tally.agree} accepted splits where the four runs agree, ` +
-    `${tally.orderKept} of them with the statements in the bundle's order; ${apart.splits} accepted splits move code ` +
+    `${tally.orderKept} of them with the statements in the bundle's order, ${tally.sameState} of those ending in ` +
+    `the bundle's state; ${apart.splits} accepted splits move code ` +
     `of a bundle that does not end normally and are not compared with it (premise P4), ${apart.differ} of them ` +
     `differ; ${tally.otherCalls} accepted splits make other host calls than their bundle, or in another order`
 );

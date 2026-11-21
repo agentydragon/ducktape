@@ -6,9 +6,10 @@ import Experiments.CoreJS.Eval
 
 `corejs programs.jsonl [--fuel N]` runs each line, a program as `to_core.mjs` writes it, and prints one line for it:
 `{"out": […], "end": "normal" | "throw" | "unknown" | "fuel" | "malformed", "detail": …, "region": …, "order": […],
-"world": …, "left": …}`. `out` has one entry for each `console.log`. `detail` describes a thrown value as
+"world": …, "left": …, "state": …}`. `out` has one entry for each `console.log`. `detail` describes a thrown value as
 `differential.mjs` describes Node's, or says which unknown code the run reached; `region` is 1 + the identity of the
-statement it ended in; `order` is the order in which the modules run.
+statement it ended in; `order` is the order in which the modules run; `state` is a hash of every object and binding
+of the final state, with its address.
 
 **The world of a run** is a recording. A program may come with `"world": [call, …]`, the calls of host functions that
 a run of the program in Node made, in order, each with how it ended. The model runs in the world that answers exactly
@@ -132,12 +133,45 @@ def describe {W : World} (s : State W) : Val → String
   | .error .uri _ => "URIError"
   | .host _ => "host"
 
+/-- A value as text, an object by its address. -/
+def showVal : Val → String
+  | .undef => "undefined"
+  | .null => "null"
+  | .bool b => toString b
+  | .num n => s!"#{n.toBits}"
+  | .str x => (Json.str x).compress
+  | .obj a => s!"@{a.region}.{a.index}"
+  | .error kind msg => s!"error {reprStr kind} {msg}"
+  | .host name => s!"host {name}"
+
+def showAddr (a : Addr) : String := s!"@{a.region}.{a.index}"
+
+def showProperty : Property → String
+  | .data v w e c => s!"data {showVal v} {w} {e} {c}"
+  | .accessor g st e c => s!"accessor {showVal g} {showVal st} {e} {c}"
+
+def showCode : Code → String
+  | .closure f env fields =>
+    s!"closure {f.name} {f.params} {env.vars.map fun (x, a) => (x, showAddr a)} {showVal env.this} {fields.map (·.1)}"
+  | .host name => s!"host {name}"
+
+def showObj (o : Obj) : String :=
+  s!"{o.proto.map showAddr} {o.props.map fun (k, p) => (k, showProperty p)} {o.code.map showCode} {o.array}"
+
+def showBinding (b : Binding) : String := s!"{b.value.map showVal} {b.mutable}"
+
+/-- Every object and every binding of a state as text, each at its address. Two states with the same text have the
+same heap and the same bindings, up to the code of their functions, of which only the name, the parameters and the
+kept bindings are written. -/
+def showState {W : World} (s : State W) : String :=
+  s!"{s.heap.map (·.map showObj)} {s.cells.map (·.map showBinding)}"
+
 /-- `s`: the state the run ended in. Its region says where: 0 outside every statement, `i + 1` in the statement
-with identity `i`. -/
+with identity `i`. `state` is a hash of `showState`. -/
 def report {calls : List Recorded} (order : List String) (s : State (replay calls)) (ending detail : String) : String :=
   (Json.mkObj [("out", Json.arr (s.out.map Json.str)), ("end", ending), ("detail", detail), ("region", s.region),
     ("order", Json.arr (order.toArray.map Json.str)), ("world", s.world.problem.getD ""),
-    ("left", s.world.left.length)]).compress
+    ("left", s.world.left.length), ("state", toString (hash (showState s)))]).compress
 
 def runLine (fuel : Nat) (line : String) : String :=
   match Json.parse line >>= fun j => do pure (← Decode.program j, ← Decode.world j) with
