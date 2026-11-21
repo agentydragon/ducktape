@@ -21,7 +21,6 @@ from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client.exceptions import ApiException
 from more_itertools import one
 from python.runfiles import Runfiles
-from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.kubernetes_apiserver import (
@@ -97,26 +96,12 @@ def _without_spec(body: Body, field: str) -> Body:
     return changed
 
 
-# The client serializes a manifest dict as it would its own model, which is what its stubs name.
-def _cert_manager_crds() -> list[Any]:
+def _cert_manager_crds() -> list[Body]:
     runfiles = Runfiles.CreateOrRaise()
     return [
         yaml.safe_load(Path(str(runfiles.Rlocation(os.environ[variable]))).read_text())
         for variable in ("CERT_MANAGER_CERTIFICATE_CRD", "CERT_MANAGER_CERTIFICATEREQUEST_CRD")
     ]
-
-
-async def _install_cert_manager_crds(server: KubernetesApiServer) -> None:
-    extensions = k8s_client.ApiextensionsV1Api(server.api)
-    names = []
-    for crd in await asyncio.to_thread(_cert_manager_crds):
-        await extensions.create_custom_resource_definition(crd)
-        names.append(crd["metadata"]["name"])
-    async for attempt in AsyncRetrying(stop=stop_after_delay(30), wait=wait_fixed(0.1), reraise=True):
-        with attempt:
-            for name in names:
-                installed = await extensions.read_custom_resource_definition(name)
-                assert any(c.type == "Established" and c.status == "True" for c in installed.status.conditions or [])
 
 
 def _policy_object(documents: list[Body], kind: str) -> Body:
@@ -128,7 +113,7 @@ def _policy_object(documents: list[Body], kind: str) -> Body:
 @asynccontextmanager
 async def _admission(server: KubernetesApiServer, documents: list[Body], namespaces: set[str]) -> AsyncIterator[Admits]:
     """Install the policy in `documents` and yield whether a dry-run create by a user is admitted."""
-    await _install_cert_manager_crds(server)
+    await server.install_crds(*await asyncio.to_thread(_cert_manager_crds))
     await server.install_admission_policy(
         _policy_object(documents, "ValidatingAdmissionPolicy"),
         _policy_object(documents, "ValidatingAdmissionPolicyBinding"),

@@ -209,7 +209,7 @@ def chart(app: App) -> Chart:
         spec=GitRepositorySpec(
             interval="24h",
             url="https://github.com/seaweedfs/seaweedfs-csi-driver",
-            ref=GitRepositorySpecRef(tag="v1.4.38"),
+            ref=GitRepositorySpecRef(tag=_VERSION),
             ignore=textwrap.dedent(
                 """\
             /*

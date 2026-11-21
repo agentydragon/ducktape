@@ -89,6 +89,19 @@ class KubernetesApiServer:
         await admission.create_validating_admission_policy(cast(Any, policy))
         await admission.create_validating_admission_policy_binding(cast(Any, binding))
 
+    async def install_crds(self, *definitions: dict[str, Any]) -> None:
+        """Create the CRDs from their manifests, then wait until the API server serves every one."""
+        extensions = k8s_client.ApiextensionsV1Api(self.api)
+        for definition in definitions:
+            await extensions.create_custom_resource_definition(cast(Any, definition))
+        async for attempt in AsyncRetrying(stop=stop_after_delay(30), wait=wait_fixed(0.1), reraise=True):
+            with attempt:
+                for definition in definitions:
+                    installed = await extensions.read_custom_resource_definition(definition["metadata"]["name"])
+                    assert any(
+                        c.type == "Established" and c.status == "True" for c in installed.status.conditions or []
+                    )
+
 
 async def dry_run_admitted(write: Awaitable[object]) -> bool:
     """Whether the API server admits the dry-run `write`: admission refuses with a 422, any other failure raises."""

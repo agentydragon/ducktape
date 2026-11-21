@@ -61,16 +61,8 @@ async def test_cluster_secret_store_admission(scratch_app: App, eso_store_crds: 
         {"conditions": [{"namespaceRegexes": ["^consumer$"]}]},
     )
     async with kubernetes_apiserver() as server:
-        extensions = k8s_client.ApiextensionsV1Api(server.api)
         assert len(eso_store_crds) == 2
-        for crd in eso_store_crds:
-            await extensions.create_custom_resource_definition(cast(Any, crd))
-            async for attempt in AsyncRetrying(stop=stop_after_delay(30), wait=wait_fixed(0.1), reraise=True):
-                with attempt:
-                    installed = await extensions.read_custom_resource_definition(crd["metadata"]["name"])
-                    assert any(
-                        c.type == "Established" and c.status == "True" for c in installed.status.conditions or []
-                    )
+        await server.install_crds(*eso_store_crds)
 
         stores = k8s_client.CustomObjectsApi(server.api)
         # Seed a pre-policy violation to exercise the grandfathering path.

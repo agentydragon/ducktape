@@ -15,6 +15,7 @@ from cluster.cdk8s.agentplane import staging
 from cluster.cdk8s.agentplane.actions_staging_policies import ANKIWEB_SYNC_POLICY, HAKU_NOTEBOOK_FETCH_POLICY
 from cluster.cdk8s.haku import rbac as haku_rbac, ui_egress
 from cluster.cdk8s.haku.namespace import NAMESPACE
+from cluster.cdk8s.testing.manifests import find_resource
 
 
 @pytest.fixture(scope="module")
@@ -27,27 +28,17 @@ def resources(scratch_app_factory: Callable[[], App]) -> list[dict[str, Any]]:
     ]
 
 
-def _binding(resources: list[dict[str, Any]], name: str) -> dict[str, Any]:
-    return one(d for d in resources if d["kind"] == "PolicyBinding" and d["metadata"]["name"] == name)
-
-
 def test_haku_ui_account_mounts_no_token(resources: list[dict[str, Any]]) -> None:
     """Haku runs Pods as this account; none of them gets a Kubernetes credential from it."""
-    account = one(
-        d
-        for d in resources
-        if d["kind"] == "ServiceAccount"
-        and d["metadata"]["name"] == ui_egress.SERVICE_ACCOUNT
-        and d["metadata"]["namespace"] == NAMESPACE
-    )
+    account = find_resource(resources, "ServiceAccount", ui_egress.SERVICE_ACCOUNT, namespace=NAMESPACE)
 
     assert account["automountServiceAccountToken"] is False
 
 
 def test_haku_ui_grants_are_a_subset_of_claude_ais(resources: list[dict[str, Any]]) -> None:
     """`haku-sandbox-admin` lets Haku run Pods as haku-ui, so its grants must add nothing to claude-ai's."""
-    haku_ui = _binding(resources, ui_egress.IDENTITY)
-    claude_ai = _binding(resources, "claude-ai")
+    haku_ui = find_resource(resources, "PolicyBinding", ui_egress.IDENTITY)
+    claude_ai = find_resource(resources, "PolicyBinding", "claude-ai")
 
     assert haku_ui["spec"]["subject"] == {"identity": {"name": ui_egress.IDENTITY}}
     # AnkiWeb is the one deliberate grant claude-ai lacks; haku-anki shares this account.
@@ -68,8 +59,8 @@ def _egress_hosts(resources: list[dict[str, Any]], policy_sets: list[str]) -> se
 
 def test_haku_jupyters_hosts_are_haku_uis_and_within_claude_ais(resources: list[dict[str, Any]]) -> None:
     """haku-jupyter egresses as haku-ui, so its notebook hosts are that account's, and add no host to claude-ai's."""
-    haku_ui = _binding(resources, ui_egress.IDENTITY)
-    claude_ai = _binding(resources, "claude-ai")
+    haku_ui = find_resource(resources, "PolicyBinding", ui_egress.IDENTITY)
+    claude_ai = find_resource(resources, "PolicyBinding", "claude-ai")
 
     assert HAKU_NOTEBOOK_FETCH_POLICY in haku_ui["spec"]["policySets"]
     hosts = _egress_hosts(resources, [HAKU_NOTEBOOK_FETCH_POLICY])
@@ -82,7 +73,7 @@ def test_haku_ui_has_no_legacy_direct_action_policy(resources: list[dict[str, An
 
 
 def _settings(resources: list[dict[str, Any]], config_map: str) -> dict[str, Any]:
-    data = one(d for d in resources if d["kind"] == "ConfigMap" and d["metadata"]["name"] == config_map)["data"]
+    data = find_resource(resources, "ConfigMap", config_map)["data"]
     return cast(dict[str, Any], yaml.safe_load(one(data.values())))
 
 
@@ -121,13 +112,7 @@ def _granted(resources: list[dict[str, Any]], namespace: str, account: tuple[str
 
 
 def _container_env(resources: list[dict[str, Any]], deployment: str) -> dict[str, str]:
-    workload = one(
-        d
-        for d in resources
-        if d["kind"] == "Deployment"
-        and d["metadata"]["name"] == deployment
-        and d["metadata"]["namespace"] == "agentplane-staging"
-    )
+    workload = find_resource(resources, "Deployment", deployment, namespace="agentplane-staging")
     (container,) = workload["spec"]["template"]["spec"]["containers"]
     return {variable["name"]: variable["value"] for variable in container["env"] if "value" in variable}
 

@@ -4,11 +4,9 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, Size
 from cdk8s_plus_34 import (
-    Capability,
     ConfigMap,
     ContainerResources,
     ContainerSecurityContextProps,
-    ContainerSecutiryContextCapabilities,
     Cpu,
     CpuResources,
     Deployment,
@@ -130,7 +128,6 @@ class VmImageRestartController(Construct):
                 allow_privilege_escalation=False,
                 # aspect_py_binary's launcher creates its venv under runfiles at startup.
                 read_only_root_filesystem=False,
-                capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
             ),
         )
         pod_policy.harden(deployment)
