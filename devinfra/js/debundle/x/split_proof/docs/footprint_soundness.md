@@ -60,20 +60,31 @@ writes against `(B.stmt i).defs ++ (B.stmt i).writes`, and reject incorrect hois
 labels for active statements. Existing scope and `AssignsHome` checks remain
 necessary: moving an assignment must not turn its target into an immutable import.
 
-A useful integration regression is a split that swaps independent assignments
-such as `x = 1` and `y = 2`, which the existing syntax-only `MayMove` rejects.
-Removing a required write or read from a supplied summary must reject its
-certificate. Unsupported code must gain no new permission.
+The executable path is `bindingCertificate` → `bindingMayMove` →
+`certifiedMovesOk`. The checker caches per-statement certificates and read sets.
+`bindingMayMove_sound` connects accepted summaries to semantic commutation using
+`Stmt.bindingFootprint` and `declareTops_bundleEnv_injective`;
+`moves_preserve_of_certifiedMovesOk` supplies the whole-program result.
+`LowerSplit.sliceLines` reports this as `moves (certified bindings)` when the
+existing syntax-only rule cannot cover a plan.
+
+The integration regressions swap independent assignments such as `x = 1` and
+`y = 2`, keeping each assignment with its declaration as `AssignsHome` requires.
+They also copy object references without inspecting their heaps during the moved
+statements. Generated variants exercise literals, reads and sequencing, and must
+reject a corresponding dependency-bearing plan. A mutation control reloads actual
+Effects output, removes a required write, and requires the semantic certificate
+to reject it. Unsupported code gains no permission from the new certificate.
 
 ## Current proof inventory
 
-| Rule family                                       | Existing proof                                 | Remaining footprint obligation                                                   |
-| ------------------------------------------------- | ---------------------------------------------- | -------------------------------------------------------------------------------- |
-| Inert statements and allocation-only declarations | CoreJS locality and syntax-based commutation   | Certifying the corresponding Effects output                                      |
-| Binding reads, initialization, assignment         | Primitive semantics and opaque request frames  | Compositional read/write footprint and certificate integration                   |
-| Opaque binding and own-key requests               | Reachability envelope and request framing      | Analyzer-state correspondence, other requests, and whole-conversation invariants |
-| Objects, closures, control flow, classes          | CoreJS semantics and selected locality results | Soundness of the corresponding Effects summaries                                 |
-| Intrinsics and unknown-code fallback              | Handwritten and generated regression coverage  | Per-rule semantic contracts and conservative fallback proofs                     |
+| Rule family                                           | Existing proof                                               | Remaining footprint obligation                                                   |
+| ----------------------------------------------------- | ------------------------------------------------------------ | -------------------------------------------------------------------------------- |
+| Inert statements and allocation-only declarations     | CoreJS locality and syntax-based commutation                 | Certifying the corresponding Effects output                                      |
+| Binding reads, initialization, assignment, sequencing | `BindingFootprint`, `BindingMoves`, checked actual summaries | Producer completeness; abrupt-execution equivalence                              |
+| Opaque binding and own-key requests                   | Reachability envelope and request framing                    | Analyzer-state correspondence, other requests, and whole-conversation invariants |
+| Objects, closures, control flow, classes              | CoreJS semantics and selected locality results               | Soundness of the corresponding Effects summaries                                 |
+| Intrinsics and unknown-code fallback                  | Handwritten and generated regression coverage                | Per-rule semantic contracts and conservative fallback proofs                     |
 
 The [`model` coverage matrix](../experiments/model/README.md) and
 [`effects` tests](../experiments/effects/README.md) describe executable evidence.

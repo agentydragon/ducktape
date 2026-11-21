@@ -612,12 +612,14 @@ js_test(
         "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
         "//devinfra/js/debundle/x/split_proof/lean:corejs",
         "//devinfra/js/debundle/x/split_proof/lean:evalorder",
+        "//devinfra/js/debundle/x/split_proof/lean:lower",
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
     ],
     entry_point = _MODEL + ":differential",
     env = {
         "COREJS": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:corejs)",
         "EVALORDER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:evalorder)",
+        "LOWER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lower)",
         "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
     },
 )

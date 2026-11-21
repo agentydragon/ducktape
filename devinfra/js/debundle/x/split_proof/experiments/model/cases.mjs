@@ -426,6 +426,33 @@ export const cases = [
 // the split. Otherwise it accepts it, and with `differs` the split does not behave like the bundle.
 export const splitCases = [
   {
+    name: "certified independent assignments retain their declaration homes",
+    poisonWrite: 2,
+    source: `let x = 0; let y = 0; x = 1; y = 2; console.log(x, y);`,
+    spec: { entry: "entry.mjs", modules: { "m0.mjs": ["#1", "#3"], "entry.mjs": ["#0", "#2", "#4"] } },
+    certified: true,
+  },
+  {
+    name: "certified sequencing copies a reference without inspecting its heap",
+    source: `const object = { value: 7 }; let x = null; let y = null;
+      (x = object, x); (y = object, y); console.log(x.value, y.value);`,
+    spec: {
+      entry: "entry.mjs",
+      modules: {
+        "object.mjs": ["#0"],
+        "m0.mjs": ["#2", "#4"],
+        "entry.mjs": ["#1", "#3", "#5"],
+      },
+    },
+    certified: true,
+  },
+  {
+    name: "a binding dependency prevents reordering assignments",
+    source: `let x = 0; let y = 0; x = 1; y = x; console.log(x, y);`,
+    spec: { entry: "entry.mjs", modules: { "m0.mjs": ["#1", "#3"], "entry.mjs": ["#0", "#2", "#4"] } },
+    refused: true,
+  },
+  {
     // A `throw` that the analysis reaches is unknown code, so it keeps its place after the `console.log`.
     name: "a throw does not move before an effect",
     source: `console.log("printed");\nthrow 1.5;\n`,

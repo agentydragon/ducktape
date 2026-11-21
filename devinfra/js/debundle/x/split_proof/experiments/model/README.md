@@ -37,6 +37,16 @@ declaration itself. Accepted normal `moves` runs also compare the final model-st
 hash in the bundle's recorded world; the hash omits full function bodies and world state.
 Order-kept splits retain the corresponding check for every ending.
 
+The binding-certificate cases require a different move: each assignment stays in its
+declaration's module, while independent assignments change relative order. Every seed
+runs a supported literal/variable/sequence variant through the `moves (certified
+bindings)` slice and supplies a dependent variant that the real checker must reject.
+The handwritten cases also copy an object reference without inspecting it during the
+moved statements. A mutation control obtains the actual Effects output, reloads it,
+then removes a required write and requires the semantic certificate to reject it.
+Successful certified splits receive the same four-way execution and exact final-state
+comparisons as the other proved moves.
+
 The broad [`translation/gen`](../translation/gen/) sample remains separate: the harness
 reports units accepted alone and units surviving dependency/unknown-code filtering.
 Those counts do not measure which syntax executed. Random plans remain manual-first
