@@ -439,7 +439,6 @@ py_test(
     size = "medium",
     srcs = ["test_thread_window_browser.py"],
     exec_properties = _BROWSER_IMAGE_EXEC_PROPERTIES,
-    main = "test_thread_window_browser.py",
     requires_docker = True,
     deps = [
         "//:conftest",
@@ -672,7 +671,6 @@ py_library(
         "//agentplane/app/testing:history",
         "//agentplane/app/testing:replication_process",
         "//agentplane/app/testing:thread_test_support",
-        "//agentplane/history_service:client",
         "//agentplane/history_service/testing:fixtures",
         "//agentplane/history_service/testing:go_service",
         "//agentplane/history_service/testing:history",

@@ -250,18 +250,7 @@ def chart(app: App) -> Chart:
                 )
             },
         ),
-        spec=k8s.ServiceSpec(
-            type="ClusterIP",
-            selector=_CARD.pods.selector,
-            ports=[
-                k8s.ServicePort(
-                    name=_CARD.port.name,
-                    port=_CARD.port.number,
-                    protocol="TCP",
-                    target_port=k8s.IntOrString.from_number(_CARD.pod_port),
-                )
-            ],
-        ),
+        spec=k8s.ServiceSpec(type="ClusterIP", selector=_CARD.pods.selector, ports=[_CARD.k8s_service_port()]),
     )
     k8s.KubeService(
         chart,

@@ -384,6 +384,20 @@ func (r *Reconciler) quiesceBeforeStop(ctx context.Context, sandbox *sandboxapi.
 	if runtimeUID == "" || runtimeUID != string(pod.UID) {
 		return nil, nil
 	}
+	if pod == w.launcher && pod.Spec.NodeName == "" {
+		// Older controllers could publish an unassigned launcher. Delete that exact
+		// version before halting: if the scheduler bound it first, the delete
+		// conflicts and the next reconcile must seal it. Kubernetes will not bind
+		// a Pod once deletion has begun.
+		uid, version := pod.UID, pod.ResourceVersion
+		if err := client.IgnoreNotFound(r.Delete(ctx, pod, client.Preconditions{UID: &uid, ResourceVersion: &version})); err != nil {
+			return nil, err
+		}
+		if attempt := sandbox.Status.QuiesceAttempt; attempt != nil && attempt.RunnerPodUID == runtimeUID {
+			sandbox.Status.QuiesceAttempt = nil
+		}
+		return nil, nil
+	}
 	if !sandboxQuiescing(sandbox) {
 		if held := r.holdSuspend(sandbox, runtimeUID); held != nil {
 			return held, nil

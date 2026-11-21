@@ -18,7 +18,6 @@ import (
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
-	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/anthropic"
@@ -28,11 +27,7 @@ import (
 
 func startTurnForStore(t *testing.T, store *sessionstore.Store, session *sessionstore.Session, owner sessionstore.Owner, commandID string) {
 	t.Helper()
-	if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{
-		CommandId: commandID, Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: commandID}},
-	}, "fixture-account", nil); err != nil {
-		t.Fatal(err)
-	}
+	runtimetesting.AdmitInput(t, store, session.ID, commandID, commandID)
 	if command, err := store.NextCommand(t.Context(), owner, session.ID); err != nil || command == nil || command.ID != commandID {
 		t.Fatalf("turn command=%v err=%v", command, err)
 	}
@@ -58,12 +53,7 @@ func outputTexts(items []responses.Item) []string {
 }
 
 func TestNotificationFollowsStepOutputsAndTurnEnd(t *testing.T) {
-	store := runtimetesting.NewStore(t, integrationDatabase)
-	session := runtimetesting.OpenSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, session, owner := runtimetesting.ClaimedSession(t, integrationDatabase)
 	if err := store.QueueNotification(t.Context(), owner, "exec-call", "cell", "idle"); !errors.Is(err, protocol.ErrPrecondition) {
 		t.Fatalf("notification without an active turn: %v", err)
 	}
@@ -261,16 +251,12 @@ func TestLostExecutorNoticeFollowsPendingToolResultForEachProvider(t *testing.T)
 func TestNotificationIsDiscardedWhenTurnDoesNotComplete(t *testing.T) {
 	for _, ending := range []string{"interrupted", "effects_unknown", "failed"} {
 		t.Run(ending, func(t *testing.T) {
-			store := runtimetesting.NewStore(t, integrationDatabase)
-			session := runtimetesting.OpenSessionForStore(t, store, "")
-			owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-			if err != nil {
-				t.Fatal(err)
-			}
+			store, session, owner := runtimetesting.ClaimedSession(t, integrationDatabase)
 			startTurnForStore(t, store, session, owner, "turn")
 			if err := store.QueueNotification(t.Context(), owner, "exec-call", "cell", "discarded"); err != nil {
 				t.Fatal(err)
 			}
+			var err error
 			if ending == "failed" {
 				commandID := "turn"
 				err = store.FailExecution(t.Context(), owner, session.ID, &commandID, &protocol.KnownFailureError{Evidence: map[string]any{"reason": "fixture failure"}})
@@ -295,12 +281,7 @@ func TestNotificationIsDiscardedWhenTurnDoesNotComplete(t *testing.T) {
 }
 
 func TestCodeModeAcknowledgesNotificationOnlyAfterDurableQueue(t *testing.T) {
-	store := runtimetesting.NewStore(t, integrationDatabase)
-	session := runtimetesting.OpenSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, session, owner := runtimetesting.ClaimedSession(t, integrationDatabase)
 	manager, peers := newFakeCodeModeManager(t)
 	manager.store = store
 	code, err := manager.OpenSession(t.Context(), session.ConversationID, owner, &executor.Executor{})

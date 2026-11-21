@@ -122,14 +122,6 @@ ts_config(
     src = "tsconfig.json",
 )
 
-# Generated Zod modules infer their exported types from the generated schemas; declaration emit
-# needs whole-program inference rather than isolatedDeclarations' authored-type annotations.
-ts_config(
-    name = "tsconfig_generated",
-    src = "tsconfig.generated.json",
-    deps = [":tsconfig"],
-)
-
 ts_library(
     name = "settings",
     srcs = ["settings/dialog.tsx"],

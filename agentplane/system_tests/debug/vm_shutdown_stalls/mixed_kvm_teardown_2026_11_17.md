@@ -182,8 +182,7 @@ exercised a simulated resource unwind. A later retained-stack probe found a
 kubelet block-device lease still attached after userspace owners exited.
 [PR #17371](https://github.com/agentydragon/ducktape/pull/17371) added identity-checked lease
 release. The real Ready-VM error probe then preserved the injected failure and
-detached both mappings. See [the repair qualification](raw_block_kernel_lease_2026_11_17.md#repair-qualification)
-and [the repeat command](../../x/vm_kvm/README.md#retained-failure-cleanup-qualification).
+detached both mappings. See [the repair qualification and its repeat command](../../x/vm_kvm/README.md#retained-failure-cleanup-qualification).
 
 ## PR CI: QEMU boot assertion reported by the teardown gate
 

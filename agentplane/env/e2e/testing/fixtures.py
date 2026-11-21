@@ -14,13 +14,11 @@ from typing import Any, cast
 
 import pytest
 
-from agentplane.env.config import Endpoint, SVIDEndpoint
 from agentplane.env.e2e.testing import launches
 from agentplane.env.e2e.testing.config import RunnerTestConfig
-from agentplane.env.e2e.testing.driver import RunnerDriver
+from agentplane.env.e2e.testing.driver import RunnerDriver, running
 from agentplane.env.e2e.testing.failure_journal import FailureEvidence
 from agentplane.env.e2e.testing.gateway import Gateway, serve_gateway
-from agentplane.env.e2e.testing.history_tunnel import history_tunnel
 from agentplane.env.e2e.testing.process import RunningRunner
 from agentplane.history_service.testing.go_service import WRITER, GoHistoryService, go_history_service
 from agentplane.native.claude.testing.messages import AnthropicMessages
@@ -116,17 +114,10 @@ async def runner(
 ) -> AsyncIterator[RunningRunner]:
     """The production Go runner, pushing its journal to the Go History Service ingress."""
     launched = replace(config, launch=replace(config.launch, sandbox=runner_gateway.sandbox.identity))
-    async with history_tunnel(history_service.ingress_target) as proxy:
-        ingress = Endpoint(
-            target=history_service.ingress_target,
-            svid=SVIDEndpoint(server_uri="spiffe://agentplane/history-ingress", proxy_address=proxy),
-        )
-        async with RunningRunner(
-            launched, runner_gateway, history=history_service.reader, ingress_endpoint=ingress
-        ) as started:
-            yield started
-            if (evidence := FailureEvidence.for_failed_call(request)) is not None:
-                await evidence.preserve_runner(started)
+    async with running(launched, runner_gateway, history_service) as started:
+        yield started
+        if (evidence := FailureEvidence.for_failed_call(request)) is not None:
+            await evidence.preserve_runner(started)
 
 
 @pytest.fixture

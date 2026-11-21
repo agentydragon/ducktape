@@ -119,6 +119,15 @@ class ServiceRef(_Service):
         """This port on the Service, targeting the Pods' port."""
         return ServicePort(name=self.port.name, port=self.port.number, target_port=self.pod_port, protocol=Protocol.TCP)
 
+    def k8s_service_port(self) -> k8s.ServicePort:
+        """`service_port` as a `k8s.ServicePort`."""
+        return k8s.ServicePort(
+            name=self.port.name,
+            port=self.port.number,
+            target_port=k8s.IntOrString.from_number(self.pod_port),
+            protocol="TCP",
+        )
+
     def egress(self) -> CiliumNetworkPolicySpecEgress:
         """The client's rule. Cilium matches after socket-LB translation, so it names the Pods' port."""
         return EgressRule.to_endpoints(self.pods.cilium, self.pod_port)

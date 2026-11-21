@@ -34,12 +34,20 @@ SOURCE_NAME = "ducktape"
 # This repository and the branch Flux deploys, for every GitRepository that checks it out.
 REPOSITORY_URL = "https://github.com/agentydragon/ducktape.git"
 BRANCH = "devel"
-# Clone timeout for the `GitRepository` objects this generator writes for this repository. A bare clone
-# is ~519 MB and takes ~60 seconds, which is exactly the `GitRepository.spec.timeout` default, so leaving
-# it unset makes every fetch a race the source usually loses. One value because all four sources of this
-# repository clone the same history; the full measurement and reasoning are on the `source`
-# GitRepository below, and the hand-written bootstrap source carries the same 5m in
-# cluster/k8s/flux/flux-system/gotk-sync.yaml.
+# `GitRepository.spec.timeout` for every source of this repository: the `ducktape` source below,
+# `drift_watch`'s, `flux_image_automation_ghcr`'s and the hand-written bootstrap source, which carries the
+# same 5m in cluster/k8s/flux/flux-system/gotk-sync.yaml. Measured on 2026-10-15: a bare clone is ~519 MB and
+# takes ~60 seconds, which is the default timeout, so each fetch races its deadline and usually loses.
+# `source-controller` then reports `GitOperationFailed: failed to checkout and determine revision: ... context
+# deadline exceeded` and keeps serving the last artifact it stored, which stops every generated artifact and
+# direct Kustomization from advancing with no PR at fault and nothing else saying so.
+#
+# Narrowing `sparseCheckout` does not help: it filters the checked-out working tree, not what git transfers,
+# and this CRD (source-controller v1.9.5) has no partial or shallow clone field. The history is the cost
+# (~233 MB deleted `augur`, ~121 MB deleted `adgn`, 74 revisions of MODULE.bazel.lock ~130 MB); slimming it is
+# the durable fix, and this value only makes the clone fit until then. 5m is an order of magnitude over the
+# measurement while still bounding one attempt. It is unrelated to the 2m-30m `Kustomization.spec.timeout`s,
+# which bound an apply.
 CLONE_TIMEOUT = "5m"
 TF_GITOPS_ROOT = "tf/gitops"  # tofu-controller Terraform modules (terraform.py)
 _READER = "ducktape-flux-reader"
@@ -144,28 +152,6 @@ def chart(app: App) -> Chart:
         # same interval (cluster/k8s/flux/flux-system/gotk-sync.yaml); keep the two in step.
         spec=GitRepositorySpec(
             interval="30m",
-            # `CLONE_TIMEOUT`, because a clone of this repository does not fit in the 60s that
-            # `GitRepository.spec.timeout` defaults to.
-            #
-            # Measured on 2026-10-15: a bare clone is ~519 MB and takes ~60 seconds, so under the
-            # default this source raced its own deadline once a minute and usually lost. On the losing
-            # side `source-controller` reports `GitOperationFailed: failed to checkout and determine
-            # revision: ... context deadline exceeded` and keeps serving the last artifact it managed
-            # to store, which stops 164 generated artifacts and 74 direct Kustomizations from advancing
-            # with no PR at fault and nothing else saying so.
-            #
-            # Not fixed by narrowing `sparseCheckout`: that filters the checked-out working tree, not
-            # what git transfers, so the whole history crosses the wire whatever the list says. A
-            # partial/shallow clone is what would help and this CRD (source-controller v1.9.5) offers
-            # no field for it. The history is the cost, and most of it is paths no longer in the tree:
-            # ~233 MB `augur` and ~121 MB `adgn` are deleted, and 74 revisions of MODULE.bazel.lock
-            # alone are ~130 MB. Slimming that is the durable fix; this line is what makes the clone
-            # fit until someone does.
-            #
-            # 5m is an order of magnitude over the measurement while still bounding one attempt.
-            # The 2m-30m timeouts elsewhere in the tree are
-            # `Kustomization.spec.timeout`, how long an apply may take, which is a different knob
-            # answering a different question.
             timeout=CLONE_TIMEOUT,
             ref=GitRepositorySpecRef(branch=BRANCH),
             sparse_checkout=[

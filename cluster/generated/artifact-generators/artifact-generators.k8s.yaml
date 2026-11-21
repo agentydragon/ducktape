@@ -63,16 +63,6 @@ spec:
       name: authentik-tf
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/generated/authentik/tf/crossplane-sso-providers/**"
-          to: "@artifact/cluster/generated/authentik/tf/crossplane-sso-providers/"
-      name: crossplane-sso-providers
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/generated/authentik/tf/crossplane-agent-machine-access/**"
-          to: "@artifact/cluster/generated/authentik/tf/crossplane-agent-machine-access/"
-      name: crossplane-agent-machine-access
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/generated/cert-manager/app/**"
           to: "@artifact/cluster/generated/cert-manager/app/"
       name: cert-manager
@@ -156,11 +146,6 @@ spec:
         - from: "@repo/cluster/k8s/forgejo-images/**"
           to: "@artifact/cluster/k8s/forgejo-images/"
       name: forgejo-images
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/forgejo-images/crossplane-forgejo-images/**"
-          to: "@artifact/cluster/k8s/forgejo-images/crossplane-forgejo-images/"
-      name: crossplane-forgejo-images
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/generated/gateway/**"
@@ -608,21 +593,6 @@ spec:
         - from: "@repo/cluster/generated/github-tf/**"
           to: "@artifact/cluster/generated/github-tf/"
       name: github-tf
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/generated/github-tf/crossplane-github-branch-protection/**"
-          to: "@artifact/cluster/generated/github-tf/crossplane-github-branch-protection/"
-      name: crossplane-github-branch-protection
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/generated/github-tf/crossplane-github-secrets-sync/**"
-          to: "@artifact/cluster/generated/github-tf/crossplane-github-secrets-sync/"
-      name: crossplane-github-secrets-sync
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/generated/github-tf/crossplane-flux-webhook-token/**"
-          to: "@artifact/cluster/generated/github-tf/crossplane-flux-webhook-token/"
-      name: crossplane-flux-webhook-token
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/generated/github-exporter/**"

@@ -216,7 +216,7 @@ after a successful response, and HTTP upgrades are relayed as protocol switches.
 - The proxy depends on the API server and nothing else. The integration app is a viewer of the
   same resources, never a participant: no part of a decision passes through it, so an app that is
   down or broken changes nothing about what a sandbox may reach.
-- The proxy watches egress policies, bindings, policy sets, policy bindings and credentials in its one configured rules namespace, and
+- The proxy watches policy sets, policy bindings, identities and egress credentials in its one configured rules namespace, and
   Secrets in the credentials namespace; it reads no Pods at all, in any namespace. The rules namespace may be one
   of the workload namespaces, and in both deployments it is the only one; the credentials namespace
   is separate, so a workload is never in a namespace holding the Secrets the proxy substitutes. The proxy's picture is kept equal to the API server's, and a

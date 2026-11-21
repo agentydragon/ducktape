@@ -283,7 +283,7 @@ func (c *Changes) listen(state *listenerState) {
 				}
 			}
 			if payload.Final {
-				c.broadcast(state, changeEvent{}, pending.byKey)
+				c.broadcast(state, pending.byKey)
 				pending = nil
 			}
 		case <-deadline.C:
@@ -295,7 +295,7 @@ func (c *Changes) listen(state *listenerState) {
 	}
 }
 
-func (c *Changes) broadcast(state *listenerState, event changeEvent, changes map[subjectKey][]uuid.UUID) {
+func (c *Changes) broadcast(state *listenerState, changes map[subjectKey][]uuid.UUID) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.listener != state || state.stopping {

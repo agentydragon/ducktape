@@ -30,7 +30,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionstore"
 
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
-	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/codemode"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/executor"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/sampler/internal/settings"
@@ -514,17 +513,8 @@ func (*drainExecutorServer) TerminateProcess(context.Context, *executorpb.Termin
 
 func newDrainFixture(t *testing.T, drainSeconds int) *drainFixture {
 	t.Helper()
-	store := runtimetesting.NewStore(t, integrationDatabase)
-	session := runtimetesting.OpenSessionForStore(t, store, "")
-	seed, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{
-		CommandId: "turn", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "run the cell"}},
-	}, "fixture-account", nil); err != nil {
-		t.Fatal(err)
-	}
+	store, session, seed := runtimetesting.ClaimedSession(t, integrationDatabase)
+	runtimetesting.AdmitInput(t, store, session.ID, "turn", "run the cell")
 	if _, err := store.NextCommand(t.Context(), seed, session.ID); err != nil {
 		t.Fatal(err)
 	}

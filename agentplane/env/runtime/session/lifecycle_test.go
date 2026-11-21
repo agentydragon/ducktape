@@ -168,9 +168,9 @@ func TestSessionPreFenceWaitsForInspectionJournalCommit(t *testing.T) {
 	}, "inspection observation committed and pre-fence cleanup settled")
 }
 
-// setSessionPhase directly changes controller-owned lifecycle status; callers must
+// updateLifecycleStatus directly changes controller-owned lifecycle status; callers must
 // pause the Session controller for the fixture mutation.
-func setSessionPhase(t *testing.T, s *Session, phase Phase) {
+func updateLifecycleStatus(t *testing.T, s *Session, update func(*LifecycleStatus)) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 	defer cancel()
@@ -180,13 +180,20 @@ func setSessionPhase(t *testing.T, s *Session, phase Phase) {
 		t.Fatal(err)
 	}
 	_, err = safe.StateUpdateWithConflicts(ctx, s.deps.state, ptr, func(value *typed.Resource[LifecycleStatus, lifecycle.Extension[LifecycleStatus]]) error {
-		value.TypedSpec().Phase = phase
-		value.TypedSpec().ProcessID = s.processID
+		update(value.TypedSpec())
 		return nil
 	}, state.WithUpdateOwner(ControllerName))
 	if err != nil {
 		t.Fatal(err)
 	}
+}
+
+func setSessionPhase(t *testing.T, s *Session, phase Phase) {
+	t.Helper()
+	updateLifecycleStatus(t, s, func(status *LifecycleStatus) {
+		status.Phase = phase
+		status.ProcessID = s.processID
+	})
 }
 
 func TestQuiesceDuringPreparationKeepsJournalWritable(t *testing.T) {
@@ -208,9 +215,8 @@ func TestQuiesceDuringPreparationKeepsJournalWritable(t *testing.T) {
 			var op *oneoff.Operation
 			withSessionControllerGate(t, s, &gate, func() {
 				setSessionPhase(t, s, Preparing)
-				s.connection.readers.Add(2)
-				go s.connection.readStdout(p, func(ctx context.Context, line []byte) error { return s.receive(ctx, line, adapter) })
-				go s.connection.readStderr(p)
+				s.connection.startStdout(p, func(ctx context.Context, line []byte) error { return s.receive(ctx, line, adapter) })
+				s.connection.startStderr(p)
 				s.startOperation(&s.preparation, func(ctx context.Context) error {
 					preparing <- ctx
 					if phase == "recovery" {

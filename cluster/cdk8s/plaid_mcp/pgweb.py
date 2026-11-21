@@ -132,18 +132,7 @@ def chart(app: App) -> Chart:
         chart,
         "service",
         metadata=k8s.ObjectMeta(name=_NAME, namespace=NAMESPACE, labels=_LABELS),
-        spec=k8s.ServiceSpec(
-            selector=_LABELS,
-            ports=[
-                k8s.ServicePort(
-                    name=SERVICE.port.name,
-                    port=SERVICE.port.number,
-                    target_port=k8s.IntOrString.from_number(SERVICE.pod_port),
-                    protocol="TCP",
-                )
-            ],
-            type="ClusterIP",
-        ),
+        spec=k8s.ServiceSpec(selector=_LABELS, ports=[SERVICE.k8s_service_port()], type="ClusterIP"),
     )
     NetworkPolicy(
         chart,

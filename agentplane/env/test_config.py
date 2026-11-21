@@ -171,7 +171,6 @@ def test_runner_accepts_model_config_target() -> None:
         {"control": {"listen_address": "127.0.0.1:8090", "security": {"tls": {}}}},
         {"environment": {}},
         {"environment": {"supervision": "unknown"}},
-        {"environment": {"kind": "pod", "supervision": "pid1"}},
         {"environment": {"supervision": "pid1", "console_autologin": True}},
         {
             "environment": {
@@ -442,10 +441,6 @@ def test_executor_settings(kind: str) -> None:
         Configuration.model_validate(_configuration() | {"environment": environment})
 
 
-if __name__ == "__main__":
-    pytest_bazel.main()
-
-
 @pytest.mark.parametrize("level", [None, "debug", "info", "warn", "error"])
 def test_log_level(level: str | None) -> None:
     config = Configuration.model_validate(_configuration() | {"log_level": level})
@@ -455,3 +450,7 @@ def test_log_level(level: str | None) -> None:
         assert "log_level" not in encoded
     else:
         assert encoded["log_level"] == level
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

@@ -97,42 +97,27 @@ func TestAnAccountNamedInArgumentsIsNotRead(t *testing.T) {
 	}
 }
 
-// An authenticated platform component account is not an implicit workload subject. It must name an effective
-// Identity through reviewed delegation before this executor can create a box.
-func TestServiceAccountActorMustDelegateAnIdentity(t *testing.T) {
+// A caller that is no Identity is given no box. An authenticated platform component account is not an implicit
+// workload subject: it must name an effective Identity through reviewed delegation before this executor can create a
+// box. A caller of a kind this release does not know has none to name.
+func TestACallerThatIsNoIdentityIsRefused(t *testing.T) {
 	f := newFixture(t, nil)
 	executor, err := NewExecutor(f.binding, f.inventory())
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The refusal comes before any lease is held, so it needs none.
-	outcome, err := executor.Execute(t.Context(), store.ExecutionRequest{
-		RequestID: uuid.New(), Action: store.ActionIdentity{Group: "sandbox", Name: string(contract.Create)},
-		Arguments: json.RawMessage(`{"name": "box", "template": "test-template"}`),
-		Caller:    store.ServiceAccountCaller{Account: store.ServiceAccount{Namespace: "agentplane", Name: "action-service"}},
-	}, nil)
-	if kind := (attempted{t, outcome, err}).failure(); kind != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_CALLER_UNKNOWN {
-		t.Errorf("kind = %q, want caller_unknown", kind)
-	}
-	pods, err := server.Clientset.CoreV1().Pods(f.binding.Namespace).List(t.Context(), metav1.ListOptions{})
-	if err != nil || len(pods.Items) != 0 {
-		t.Errorf("the namespace holds Pods %v, %v", pods, err)
-	}
-}
-
-// A caller of a kind this release does not know is given no box.
-func TestAnUnknownCallerIsRefused(t *testing.T) {
-	f := newFixture(t, nil)
-	executor, err := NewExecutor(f.binding, f.inventory())
-	if err != nil {
-		t.Fatal(err)
-	}
-	outcome, err := executor.Execute(t.Context(), store.ExecutionRequest{
-		RequestID: uuid.New(), Action: store.ActionIdentity{Group: "sandbox", Name: string(contract.Create)},
-		Arguments: json.RawMessage(`{"name": "box", "template": "test-template"}`), Caller: store.UnknownCaller{},
-	}, nil)
-	if kind := (attempted{t, outcome, err}).failure(); kind != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_CALLER_UNKNOWN {
-		t.Errorf("kind = %v, want caller_unknown", kind)
+	for _, caller := range []store.Caller{
+		store.ServiceAccountCaller{Account: store.ServiceAccount{Namespace: "agentplane", Name: "action-service"}},
+		store.UnknownCaller{},
+	} {
+		// The refusal comes before any lease is held, so it needs none.
+		outcome, err := executor.Execute(t.Context(), store.ExecutionRequest{
+			RequestID: uuid.New(), Action: store.ActionIdentity{Group: "sandbox", Name: string(contract.Create)},
+			Arguments: json.RawMessage(`{"name": "box", "template": "test-template"}`), Caller: caller,
+		}, nil)
+		if kind := (attempted{t, outcome, err}).failure(); kind != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_CALLER_UNKNOWN {
+			t.Errorf("%T: kind = %v, want caller_unknown", caller, kind)
+		}
 	}
 	pods, err := server.Clientset.CoreV1().Pods(f.binding.Namespace).List(t.Context(), metav1.ListOptions{})
 	if err != nil || len(pods.Items) != 0 {

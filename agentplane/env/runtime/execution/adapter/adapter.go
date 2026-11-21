@@ -23,8 +23,7 @@ type Config struct {
 	// opening distinguishes a new local executor session from work on an open session.
 	Admit func(ctx context.Context, scope *executorpb.ExecutionScope, opening bool, accept func(context.Context) error) error
 	// Acquire requests the controller-owned executor and waits for its ready local endpoint.
-	Acquire  func(context.Context) (string, error)
-	OnChange func()
+	Acquire func(context.Context) (string, error)
 }
 type Adapter struct {
 	executorpb.UnimplementedExecutorServer
@@ -32,14 +31,12 @@ type Adapter struct {
 	ctx      context.Context
 	cancel   context.CancelFunc
 	mu       sync.Mutex
-	drainMu  sync.Mutex
 	sessions map[string]*connection
 	slots    map[uint64]context.CancelFunc
 	slotDone map[uint64]chan struct{}
 	nextSlot uint64
 	opening  int
 	workers  sync.WaitGroup
-	draining bool
 	closed   bool
 }
 
@@ -58,57 +55,6 @@ func validateScope(scope *executorpb.ExecutionScope) error {
 	return nil
 }
 
-func (a *Adapter) changed() {
-	if a.config.OnChange != nil {
-		a.config.OnChange()
-	}
-}
-
-func (a *Adapter) Active() bool {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.opening > 0 || len(a.sessions) > 0
-}
-
-func (a *Adapter) Drain(ctx context.Context) error {
-	a.drainMu.Lock()
-	defer a.drainMu.Unlock()
-	a.mu.Lock()
-	if a.closed || a.ctx.Err() != nil {
-		a.mu.Unlock()
-		return a.wait(ctx)
-	}
-	a.draining = true
-	cancels := make([]context.CancelFunc, 0, len(a.slots))
-	for _, cancel := range a.slots {
-		cancels = append(cancels, cancel)
-	}
-	a.mu.Unlock()
-	a.changed()
-	for _, cancel := range cancels {
-		cancel()
-	}
-	err := a.wait(ctx)
-	a.mu.Lock()
-	if !a.closed && a.ctx.Err() == nil {
-		a.draining = false
-	}
-	a.mu.Unlock()
-	a.changed()
-	return err
-}
-
-func (a *Adapter) wait(ctx context.Context) error {
-	done := make(chan struct{})
-	go func() { a.workers.Wait(); close(done) }()
-	select {
-	case <-done:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-}
-
 func (a *Adapter) Close() error {
 	a.mu.Lock()
 	if !a.closed {
@@ -116,8 +62,8 @@ func (a *Adapter) Close() error {
 		a.cancel()
 	}
 	a.mu.Unlock()
-	a.changed()
-	return a.wait(context.Background())
+	a.workers.Wait()
+	return nil
 }
 
 func (a *Adapter) authorize(ctx context.Context, scope *executorpb.ExecutionScope, opening bool, f func(context.Context) error) error {
@@ -141,7 +87,7 @@ func (a *Adapter) execute(ctx context.Context, scope *executorpb.ExecutionScope,
 	err := a.authorize(ctx, scope, false, func(context.Context) error {
 		a.mu.Lock()
 		defer a.mu.Unlock()
-		if a.closed || a.draining || a.ctx.Err() != nil {
+		if a.closed || a.ctx.Err() != nil {
 			return status.Error(codes.Unavailable, "execution adapter is stopping")
 		}
 		c := a.sessions[sid]

@@ -15,7 +15,6 @@ from typing import BinaryIO
 from agentplane.system_tests.vm import shutdown_diagnostic
 
 logger = logging.getLogger(__name__)
-SHUTDOWN_COMPLETE = b"AGENTPLANE_GUEST_SHUTDOWN_COMPLETE"
 SUPERVISION_FAILED = b"AGENTPLANE_GUEST_SUPERVISION_FAILED"
 SUPERVISION_PASSED = b'AGENTPLANE_GUEST_SUPERVISION_PASSED {"real_systemd_supervision":"passed"}'
 BOOT_EVIDENCE_REPORT_BEGIN = b"AGENTPLANE_BOOT_EVIDENCE_BEGIN"
@@ -42,11 +41,16 @@ class GuestBootEvidenceError(RuntimeError):
     """The selected fixture guest did not retain complete device-discovery evidence."""
 
 
+def cri_records(path: Path) -> Iterator[tuple[bytes, bytes]]:
+    """Yield the timestamp and payload of each newline-terminated `stdout F` record of a retained CRI log."""
+    for line in path.read_bytes().splitlines(keepends=True):
+        fields = line.rstrip(b"\r\n").split(b" ", 3)
+        if line.endswith(b"\n") and len(fields) == 4 and fields[1:3] == [b"stdout", b"F"]:
+            yield fields[0], fields[3]
+
+
 def _has_payload(path: Path, payload: bytes) -> bool:
-    return any(
-        line.endswith(b"\n") and line.rstrip(b"\r\n").split(b" ", 3)[1:] == [b"stdout", b"F", payload]
-        for line in path.read_bytes().splitlines(keepends=True)
-    )
+    return any(record == payload for _, record in cri_records(path))
 
 
 _KERNEL_PRINTK_FRAME = re.compile(rb"\[[ \t]*[0-9]+\.[0-9]{6}\] \S.*")
@@ -54,20 +58,14 @@ _KERNEL_PRINTK_FRAME = re.compile(rb"\[[ \t]*[0-9]+\.[0-9]{6}\] \S.*")
 
 def _has_boot_readiness_payload(path: Path) -> bool:
     """Accept the readiness marker when a kernel printk shares its CRI record."""
-    for line in path.read_bytes().splitlines(keepends=True):
-        if not line.endswith(b"\n"):
-            continue
-        fields = line.rstrip(b"\r\n").split(b" ", 3)
-        if fields[1:3] != [b"stdout", b"F"] or len(fields) != 4:
-            continue
-        payload = fields[3]
-        if payload == BOOT_EVIDENCE_READY:
-            return True
-        if payload.startswith(BOOT_EVIDENCE_READY) and _KERNEL_PRINTK_FRAME.fullmatch(
-            payload[len(BOOT_EVIDENCE_READY) :]
-        ):
-            return True
-    return False
+    return any(
+        payload == BOOT_EVIDENCE_READY
+        or (
+            payload.startswith(BOOT_EVIDENCE_READY)
+            and _KERNEL_PRINTK_FRAME.fullmatch(payload[len(BOOT_EVIDENCE_READY) :])
+        )
+        for _, payload in cri_records(path)
+    )
 
 
 def _require_boot_evidence(consoles: Path) -> None:
@@ -220,7 +218,7 @@ def _require_shutdown(consoles: Path) -> None:
         incarnation.name
         for incarnation in consoles.glob("*")
         if incarnation.is_dir()
-        and not any(_has_payload(path, SHUTDOWN_COMPLETE) for path in incarnation.glob("*.cri.log"))
+        and not any(_has_payload(path, shutdown_diagnostic.SHUTDOWN_COMPLETE) for path in incarnation.glob("*.cri.log"))
     )
     if missing:
         raise GuestShutdownError(f"Guest shutdown did not complete for launcher(s): {', '.join(missing)}")
