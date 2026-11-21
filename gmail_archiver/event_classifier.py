@@ -2,7 +2,6 @@
 
 import json
 import logging
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Literal
@@ -66,8 +65,8 @@ class TemplateExtractionCache:
 class EmailTemplateExtractor:
     """Recognize email templates and extract structured data using OpenAI."""
 
-    def __init__(self, api_key: str | None = None):
-        self.client = openai.AsyncOpenAI(api_key=api_key or os.environ.get("OPENAI_API_KEY"))
+    def __init__(self):
+        self.client = openai.AsyncOpenAI()
         self.cache = TemplateExtractionCache()
 
     async def extract(self, email: Email, *, use_cache: bool = True) -> EmailTemplateExtraction:
@@ -80,11 +79,10 @@ class EmailTemplateExtractor:
         if len(body) > 2000:
             body_truncated += "\n\n[... truncated ...]"
 
-        # Format received date
         received_date = email.date.isoformat() if email.date else email.internal_date.isoformat()
 
         # Build prompt for template recognition
-        # Example DBSA SF emails (see archiver.gmail_link() for link format):
+        # Example DBSA SF emails (see plan_display.gmail_link() for link format):
         # - 193640d276f72ccb (6:30pm Thanksgiving meeting)
         # - 19848789cae078f1 (1:30pm meeting)
         prompt = f"""Recognize which email template this matches and extract structured data.
@@ -127,7 +125,6 @@ CONFIDENCE GUIDELINES:
 
         schema = openai_json_schema(EmailTemplateExtraction)
 
-        # Use Responses API with structured outputs
         response = await self.client.responses.create(
             model="gpt-5-nano",
             input=prompt,
@@ -139,7 +136,6 @@ CONFIDENCE GUIDELINES:
 
         classification = EmailTemplateExtraction.model_validate_json(response.output_text)
 
-        # Cache result
         self.cache.set(email.id, classification)
 
         return classification

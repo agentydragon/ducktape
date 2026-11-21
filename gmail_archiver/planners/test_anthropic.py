@@ -12,9 +12,9 @@ Anthropic, PBC
 
 Receipt from Anthropic, PBC $90.28 Paid December 15, 2025
 
-Receipt number 2554-1935-9612
-Invoice number OKBBHMMB-0145
-Payment method - 5474
+Receipt number 0000-0000-0000
+Invoice number TEST-INVOICE-0001
+Payment method - 0000
 
 Auto-recharge credits Qty 1 $90.28
 Total $90.28
@@ -34,7 +34,7 @@ class TestAnthropicParser:
     def test_parse_full_receipt(self, make_email):
         msg = make_email(
             sender="invoice+statements@mail.anthropic.com",
-            subject="Your receipt from Anthropic, PBC #2554-1935-9612",
+            subject="Your receipt from Anthropic, PBC #0000-0000-0000",
             body=SAMPLE_RECEIPT_FULL,
         )
 
@@ -43,8 +43,8 @@ class TestAnthropicParser:
         assert isinstance(receipt, AnthropicReceipt)
         assert receipt.amount == Decimal("90.28")
         assert receipt.charge_date == datetime(2025, 12, 15)
-        assert receipt.invoice_number == "OKBBHMMB-0145"
-        assert receipt.receipt_number == "2554-1935-9612"
+        assert receipt.invoice_number == "TEST-INVOICE-0001"
+        assert receipt.receipt_number == "0000-0000-0000"
 
     def test_parse_minimal_receipt(self, make_email):
         msg = make_email(sender="invoice+statements@mail.anthropic.com", body=SAMPLE_RECEIPT_MINIMAL)

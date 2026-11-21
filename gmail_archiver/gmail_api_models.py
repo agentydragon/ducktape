@@ -75,9 +75,6 @@ class GmailMessageWithHeaders(BaseModel):
         return self.get_header("Date")
 
 
-# Filter models
-
-
 class SizeComparison(StrEnum):
     LARGER = "larger"
     SMALLER = "smaller"

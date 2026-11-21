@@ -1,7 +1,6 @@
 """Gmail filters subcommands."""
 
 import io
-import itertools
 from pathlib import Path
 from typing import Annotated
 
@@ -12,7 +11,6 @@ from rich.table import Table
 
 from gmail_api.labels import SystemLabel, is_system_label
 from gmail_archiver.cli.options import DryRunOption, TokenFileOption, get_client
-from gmail_archiver.dirs import get_cache_dir
 from gmail_archiver.filter_planner import GmailFilterPlanner
 from gmail_archiver.filter_sync import (
     FilterDiff,
@@ -208,7 +206,6 @@ def upload(filters_file: FiltersFileArg, dry_run: DryRunOption = None, token_fil
         console.print("[green]✓[/green] All filters already exist. Nothing to upload.")
         return
 
-    # Show what will be created
     console.print(f"[bold]Filters to create ({len(filter_diff.to_create)}):[/bold]")
     for f in filter_diff.to_create:
         console.print(f"  [green]+[/green] {format_filter_for_display(f)}")
@@ -344,10 +341,10 @@ def apply(
     labels = client.list_labels_full()
     label_maps = LabelMaps.from_labels(labels)
 
-    planner = GmailFilterPlanner(target_filter, label_maps.by_id, additional_query=query)
+    planner = GmailFilterPlanner(target_filter, additional_query=query)
     console.print(f"Filter: {planner.name}")
 
-    inbox = GmailInbox(client, console, cache_dir=get_cache_dir())
+    inbox = GmailInbox(client, console)
     plan = planner.plan(inbox)
 
     for msg in plan.messages:
@@ -366,16 +363,8 @@ def apply(
     def do_apply():
         total_processed = 0
         for sig, msg_ids in plan.group_by_signature().items():
-            batch_size = 1000
-            for batch in itertools.batched(msg_ids, batch_size, strict=False):
-                body: dict = {"ids": list(batch)}
-                if sig.labels_to_add:
-                    body["addLabelIds"] = list(sig.labels_to_add)
-                if sig.labels_to_remove:
-                    body["removeLabelIds"] = list(sig.labels_to_remove)
-
-                client.service.users().messages().batchModify(userId="me", body=body).execute()
-                total_processed += len(batch)
+            client.modify_labels_batch(msg_ids, add_label_ids=sig.labels_to_add, remove_label_ids=sig.labels_to_remove)
+            total_processed += len(msg_ids)
 
         console.print(f"[green]✓[/green] Applied filter to {total_processed} email(s)")
 

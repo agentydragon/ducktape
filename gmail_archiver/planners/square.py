@@ -34,16 +34,14 @@ class SquareReceipt(BaseModel):
 
 
 def parse_square(email: Email) -> SquareReceipt:
-    # Get email date from parsed Date header
     email_dt = email.date
     if email_dt:
         email_dt = email_dt.replace(tzinfo=None)
 
-    # Extract text using get_text() which handles HTML conversion
     text = email.get_text()
 
     # Extract structured data using regex
-    # Pattern: "You paid $27.78 with your Visa ending in 6915 to Bean Scene Cafe on Mar 16 2023 at 10:26 AM."
+    # Pattern: "You paid $27.78 with your Visa ending in 0000 to Test Merchant on Mar 16 2023 at 10:26 AM."
     # Captures datetime up to period or end of string
     amount_decimal = None
     card_type = None
@@ -84,7 +82,6 @@ class SquarePlanner:
     def plan(self, inbox: GmailInbox) -> Plan:
         plan = Plan(planner=self)
 
-        # Fetch messages using inbox interface
         query = "from:receipts@messaging.squareup.com in:inbox"
         messages = inbox.fetch_messages(query)
 

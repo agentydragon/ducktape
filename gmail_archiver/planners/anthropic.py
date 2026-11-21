@@ -40,10 +40,10 @@ def parse_anthropic(email: Email) -> AnthropicReceipt:
     # Extract amount: "$90.19"
     amount = Decimal(amount_match.group(1)) if (amount_match := _AMOUNT_REGEX.search(body)) else None
 
-    # Extract invoice number: "OKBBHMMB-0070"
+    # Extract invoice number: "TEST-INVOICE-0001"
     invoice_number = invoice_match.group(1) if (invoice_match := _INVOICE_REGEX.search(body)) else None
 
-    # Extract receipt number: "2281-0248-1919"
+    # Extract receipt number: "0000-0000-0000"
     receipt_number = receipt_match.group(1) if (receipt_match := _RECEIPT_REGEX.search(body)) else None
 
     return AnthropicReceipt(

@@ -7,7 +7,6 @@ py_library(
     deps = [
         ":options",
         "//gmail_api:labels",
-        "//gmail_archiver:dirs",
         "//gmail_archiver:filter_planner",
         "//gmail_archiver:filter_sync",
         "//gmail_archiver:gmail_api_models",

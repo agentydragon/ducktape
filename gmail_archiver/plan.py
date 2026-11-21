@@ -84,20 +84,16 @@ class Plan:
         # Filter out no-op label operations based on message's current labels
         current_labels = set(message.label_ids)
 
-        # Only add labels not already present
         effective_add = {lbl for lbl in labels_to_add if lbl not in current_labels}
 
-        # Only remove labels that are present
         effective_remove = {lbl for lbl in labels_to_remove if lbl in current_labels}
 
-        # Create action with effective operations only
         action = Action(
             labels_to_add=effective_add, labels_to_remove=effective_remove, reason=reason, custom_data=custom_data
         )
 
         message_id = message.id
 
-        # Check for collision
         if message_id in self.actions:
             existing = self.actions[message_id]
             raise ValueError(
@@ -105,7 +101,6 @@ class Plan:
                 f"cannot also be claimed by {self.planner_name}"
             )
 
-        # Add planned action
         assert self.planner_name is not None  # Must be set in __init__
         self.actions[message_id] = PlannedAction(planner_name=self.planner_name, action=action)
 
@@ -115,11 +110,9 @@ class Plan:
         if not plans:
             raise ValueError("Cannot merge empty list of plans")
 
-        # Create merged plan using proper constructor (no specific planner owner)
         merged = Plan(planner_name=None)
 
         for plan in plans:
-            # Check for collisions before merging
             for message_id, planned_action in plan.actions.items():
                 if message_id in merged.actions:
                     existing = merged.actions[message_id]
@@ -129,7 +122,6 @@ class Plan:
                     )
                 merged.actions[message_id] = planned_action
 
-            # Merge planner-specific messages with headers
             if plan.messages:
                 merged.messages.append(f"[{plan.planner_name}]")
                 merged.messages.extend(plan.messages)
@@ -151,7 +143,6 @@ class Plan:
         if not add_counts and not remove_counts:
             return ""
 
-        # Collect all labels and their +/- counts
         all_labels = set(add_counts.keys()) | set(remove_counts.keys())
         parts = []
         for lbl in sorted(all_labels):

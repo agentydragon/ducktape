@@ -24,13 +24,11 @@ class SprucePlanner:
         if not messages:
             return plan
 
-        # Sort by internal_date descending (newest first)
         messages.sort(key=lambda m: m.internal_date, reverse=True)
 
         cutoff = datetime.now(UTC) - timedelta(days=self.DAYS_THRESHOLD)
         newest = messages[0]
 
-        # Keep newest only if it's recent enough
         if newest.internal_date >= cutoff:
             plan.add_action(
                 message=newest, labels_to_add=[], labels_to_remove=[], reason="Most recent, keeping in inbox"

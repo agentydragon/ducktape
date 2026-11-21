@@ -40,9 +40,8 @@ def criteria_to_gmail_query(criteria: FilterCriteria) -> str:
 class GmailFilterPlanner:
     """Planner that applies a Gmail API filter to matching emails."""
 
-    def __init__(self, gmail_filter: GmailFilter, labels_by_id: dict[str, str], additional_query: str | None = None):
+    def __init__(self, gmail_filter: GmailFilter, additional_query: str | None = None):
         self.gmail_filter = gmail_filter
-        self.labels_by_id = labels_by_id
         self.additional_query = additional_query
 
         # Build display name from filter criteria using the same query builder

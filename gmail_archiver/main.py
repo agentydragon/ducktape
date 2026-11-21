@@ -20,7 +20,6 @@ from gmail_api.labels import SystemLabel
 from gmail_archiver.cli.filters import filters_app
 from gmail_archiver.cli.labels import labels_app
 from gmail_archiver.cli.options import DryRunDefaultTrueOption, TokenFileOption, get_client
-from gmail_archiver.dirs import get_cache_dir
 from gmail_archiver.event_classifier import EmailTemplateExtractor
 from gmail_archiver.fmt import format_truncation_suffix
 from gmail_archiver.inbox import GmailInbox
@@ -60,7 +59,7 @@ def autoclean_inbox(dry_run: DryRunDefaultTrueOption = True, token_file: TokenFi
     console.print("[bold]Gmail Email Archiver[/bold] - Inbox Auto-Cleaner")
     console.print(f"Dry run: {dry_run}, Archive label: gmail-archiver/inbox-auto-cleaned\n")
 
-    inbox = GmailInbox(client, console, cache_dir=get_cache_dir())
+    inbox = GmailInbox(client, console)
 
     extractor = EmailTemplateExtractor()
     planners: list[Planner] = [
@@ -89,14 +88,10 @@ def autoclean_inbox(dry_run: DryRunDefaultTrueOption = True, token_file: TokenFi
 
     display_plan(combined, inbox, console, dry_run=dry_run, group_by_category=True)
 
-    # Use batched execution like cli/filters.py does
     if not dry_run and combined.count_operations() > 0:
         console.print("Executing label operations...")
 
-        # Resolve label names -> IDs once (creating missing user labels) so batchModify
-        # receives label IDs as required by the Gmail API. Previously we passed label
-        # *names*, which triggered HttpError 400 "Invalid label: ..." when Gmail
-        # validated the request body.
+        # batchModify takes label IDs, not names: resolve names once, creating missing user labels.
         label_name_to_id: dict[str, str] = {}
 
         system_label_ids = set(SystemLabel)
@@ -116,22 +111,14 @@ def autoclean_inbox(dry_run: DryRunDefaultTrueOption = True, token_file: TokenFi
             for lbl in planned_action.action.labels_to_add | planned_action.action.labels_to_remove:
                 ensure_label_id(lbl)
 
-        # Execute each unique action signature in batches
         total_processed = 0
         for sig, msg_ids in combined.group_by_signature().items():
-            batch_size = 1000
-            add_ids = [ensure_label_id(lbl) for lbl in sig.labels_to_add]
-            remove_ids = [ensure_label_id(lbl) for lbl in sig.labels_to_remove]
-
-            for batch in batched(msg_ids, batch_size, strict=False):
-                body: dict = {"ids": list(batch)}
-                if add_ids:
-                    body["addLabelIds"] = add_ids
-                if remove_ids:
-                    body["removeLabelIds"] = remove_ids
-
-                client.service.users().messages().batchModify(userId="me", body=body).execute()
-                total_processed += len(batch)
+            client.modify_labels_batch(
+                msg_ids,
+                add_label_ids=[ensure_label_id(lbl) for lbl in sig.labels_to_add],
+                remove_label_ids=[ensure_label_id(lbl) for lbl in sig.labels_to_remove],
+            )
+            total_processed += len(msg_ids)
 
         console.print(f"[green]✓[/green] Executed {total_processed} label operation(s)")
     elif dry_run:
@@ -396,7 +383,6 @@ def classify_event(
     console = Console()
     console.print(f"Reading {eml_file}...")
 
-    # Read raw bytes from .eml file
     raw_bytes = eml_file.read_bytes()
 
     # Create Email object from raw bytes (using dummy metadata for local .eml)
