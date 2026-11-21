@@ -75,6 +75,7 @@ py_library(
         ":config",
         ":timescale",
         "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:namespaces",
