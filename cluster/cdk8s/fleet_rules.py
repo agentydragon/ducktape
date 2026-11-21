@@ -219,37 +219,43 @@ def _references(pod: dict[str, Any]) -> Iterator[tuple[str, str]]:
             yield from _references(item)
 
 
-def resolved_references(objects: list[dict[str, Any]]) -> list[str]:
-    """Resolve Pod references against resources synthesized in the same App.
+def reference_kind_mismatches(objects: list[dict[str, Any]]) -> list[str]:
+    """Catch some Pod references whose name is created as the other kind in the same namespace.
 
     Controllers can create resources named by an ExternalSecret, Certificate,
-    trust-manager Bundle, or CNPG Cluster. References not created in the App may
-    come from sibling files or other Kustomizations and are outside this rule's scope.
-    A same-name resource of the other kind is still a local resolution error.
+    trust-manager Bundle, or CNPG Cluster. A reference not found in the App can
+    come from another source; this rule does not prove it is missing. Namespace-less
+    resources can receive a namespace later, so they cannot prove a mismatch either.
     """
-    secrets = {
-        *(
-            o["spec"].get("target", {}).get("name", o["metadata"]["name"])
-            for o in objects
-            if o["kind"] == "ExternalSecret"
-        ),
-        *(o["metadata"]["name"] for o in objects if o["kind"] == "Secret"),
-        *(o["spec"]["secretName"] for o in objects if o["kind"] == "Certificate"),
-        *(
-            f"{o['metadata']['name']}-app"
-            for o in objects
-            if o["kind"] == "Cluster" and o["apiVersion"].startswith("postgresql.cnpg.io/")
-        ),
-    }
-    config_maps = {o["metadata"]["name"] for o in objects if o["kind"] in ("ConfigMap", "Bundle")}
-    created = {"Secret": secrets, "ConfigMap": config_maps}
+    created: dict[str, set[tuple[str | None, str]]] = {"Secret": set(), "ConfigMap": set()}
+    for obj in objects:
+        namespace = obj["metadata"].get("namespace")
+        kind = obj["kind"]
+        name = obj["metadata"]["name"]
+        if kind == "ExternalSecret":
+            created["Secret"].add((namespace, obj["spec"].get("target", {}).get("name", name)))
+        elif kind in ("Secret", "ConfigMap"):
+            created[kind].add((namespace, name))
+        elif kind == "Certificate":
+            created["Secret"].add((namespace, obj["spec"]["secretName"]))
+        elif kind == "Cluster" and obj["apiVersion"].startswith("postgresql.cnpg.io/"):
+            created["Secret"].add((namespace, f"{name}-app"))
+        elif kind == "Bundle":
+            # A Bundle may publish into several namespaces, not its own.
+            created["ConfigMap"].add((None, name))
     other_kind = {"Secret": "ConfigMap", "ConfigMap": "Secret"}
     errors: list[str] = []
-    for owner, pod in _pod_specs(objects):
-        for kind, name in _references(pod):
-            if name in created[kind] or name not in created[other_kind[kind]]:
+    for obj in objects:
+        if not embeds_pod(obj) or not (namespace := obj["metadata"].get("namespace")):
+            continue
+        owner = f"{obj['kind']}/{obj['metadata']['name']}"
+        for kind, name in _references(pod_spec(obj)):
+            if any(target == name for _, target in created[kind]) or (namespace, name) not in created[other_kind[kind]]:
                 continue
-            errors.append(f"{owner} reads {kind} {name!r}, but the app creates a {other_kind[kind]} with that name")
+            errors.append(
+                f"{owner} in namespace {namespace!r} reads {kind} {name!r}, "
+                f"but the app creates a {other_kind[kind]} with that name"
+            )
     return errors
 
 
@@ -333,7 +339,7 @@ class FleetRules:
             *pinned_https_egress(objects, unpinned=self._unpinned_https_egress),
             *https_egress_sni_conflicts(objects),
             *cilium_rules_enforce_something(objects),
-            *resolved_references(objects),
+            *reference_kind_mismatches(objects),
             *vpa_auto_mode_policies_set_controlled_values(objects),
             *daemonsets_leave_offline_nodes(objects),
             *unused_waivers(objects, unhardened=self._unhardened_pods, unpinned=self._unpinned_https_egress),

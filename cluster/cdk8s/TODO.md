@@ -36,9 +36,10 @@ Done: no `CLEANUP(added 2026-10-12)` waiver remains except documented by-design 
 
 ## Fleet rule references
 
-`resolved_references` is a same-App kind-mismatch check, not missing-reference
-validation; it currently ignores namespace. Narrow its name/claims or strengthen its
-implementation. Whole-tree resolution must distinguish:
+`reference_kind_mismatches` is a same-App kind-mismatch check, not missing-reference
+validation. It skips unknown namespaces and suppresses a mismatch when the expected kind
+exists anywhere in the App, since external producers may also exist. Whole-tree resolution
+must distinguish:
 
 - Namespaced Secret/ConfigMap objects and controller-created targets (ESO, Certificate,
   CNPG, trust-manager), with their actual output semantics.

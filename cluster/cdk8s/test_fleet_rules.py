@@ -18,7 +18,7 @@ from cluster.cdk8s.fleet_rules import (
     https_egress_sni_conflicts,
     pinned_https_egress,
     pod_hardening,
-    resolved_references,
+    reference_kind_mismatches,
     unused_waivers,
 )
 from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL
@@ -228,7 +228,9 @@ def _reader(
     return _deployment(name, containers=[container], pod=pod)
 
 
-def test_references_resolve_in_chart_and_reject_wrong_kind() -> None:
+def test_reference_kind_mismatches_only_when_namespace_is_known() -> None:
+    wrong_map: dict[str, Any] = {"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "wrong-kind"}}
+    wrong_certificate_kind = _reader("wrong-certificate-kind", config_map="ca-secret")
     objects = [
         {
             "apiVersion": "external-secrets.io/v1",
@@ -254,12 +256,37 @@ def test_references_resolve_in_chart_and_reject_wrong_kind() -> None:
         # External and unmatched references are outside this App's validation scope.
         _reader("external", env_secret="oidc", config_map="image-tag"),
         _reader("unmatched", env_secret="missing-secret", config_map="missing-map"),
-        {"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "wrong-kind"}},
+        wrong_map,
         _reader("wrong-kind", volume_secret="wrong-kind"),
+        wrong_certificate_kind,
+        _reader("unknown-bundle-target", env_secret="ca-bundle"),
     ]
-    assert resolved_references(objects) == [
-        "Deployment/wrong-kind reads Secret 'wrong-kind', but the app creates a ConfigMap with that name"
+    for obj in objects:
+        if obj["kind"] != "Bundle":
+            obj["metadata"]["namespace"] = "same"
+    assert reference_kind_mismatches(objects) == [
+        "Deployment/wrong-kind in namespace 'same' reads Secret 'wrong-kind', but the app creates a ConfigMap with that name",
+        "Deployment/wrong-certificate-kind in namespace 'same' reads ConfigMap 'ca-secret', but the app creates a Secret with that name",
     ]
+
+    # An object in another namespace cannot satisfy this Pod reference. A
+    # missing namespace may be supplied by Kustomize, so it cannot prove a mismatch.
+    wrong_map["metadata"]["namespace"] = "other"
+    assert reference_kind_mismatches(objects) == [
+        "Deployment/wrong-certificate-kind in namespace 'same' reads ConfigMap 'ca-secret', but the app creates a Secret with that name"
+    ]
+    del wrong_map["metadata"]["namespace"]
+    assert len(reference_kind_mismatches(objects)) == 1
+
+    # The consumer's namespace may also be assigned after synthesis.
+    del wrong_certificate_kind["metadata"]["namespace"]
+    assert reference_kind_mismatches(objects) == []
+
+    # A known same-kind resource elsewhere suppresses the heuristic too: an
+    # external producer could supply this namespace's Secret independently.
+    wrong_map["metadata"]["namespace"] = "same"
+    objects.append({"apiVersion": "v1", "kind": "Secret", "metadata": {"name": "wrong-kind", "namespace": "other"}})
+    assert reference_kind_mismatches(objects) == []
 
 
 _STAGING = "agentplane-staging"
