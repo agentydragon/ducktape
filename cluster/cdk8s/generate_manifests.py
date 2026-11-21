@@ -278,8 +278,8 @@ def generate_manifests(root: Path) -> None:
     ssh_config = ssh_mcp_config.load()
     seaweedfs_cluster.write_manifests(root)
     litellm_namespace.write_manifests(root)
-    litellm_proxy.write_manifests(root, mesh)
-    litellm_database.write_manifests(root)
+    litellm_proxy_chart = litellm_proxy.write_manifests(root, mesh)
+    litellm_database_chart = litellm_database.write_manifests(root)
     litellm_secrets.write_manifests(root)
     tofu_state_namespace.write_manifests(root)
     tofu_state_db.write_manifests(root)
@@ -1487,16 +1487,23 @@ def generate_manifests(root: Path) -> None:
     gitlab_spike_integrations_artifact = artifact(
         gitlab_spike_flux.INTEGRATIONS_NAME, gitlab_spike_flux.INTEGRATIONS_DIR
     )
-    gitlab_spike_flux.integrations(
+    gitlab_spike_integrations_app = App()
+    gitlab_spike_runner_chart = gitlab_spike_runner.chart(gitlab_spike_integrations_app)
+    flux.flux_kustomization(
         flux_chart,
+        gitlab_spike_flux.INTEGRATIONS_NAME,
         write_directory(
             root,
             gitlab_spike_integrations_artifact,
-            gitlab_spike_runner.chart,
             gitlab_spike_delivery.chart,
             gitlab_spike_benchmark.chart,
+            app=gitlab_spike_integrations_app,
         ),
-        gitlab_spike_gitops_kustomization,
+        timeout="10m",
+        # The source and demo cannot become ready before the manual seed and first image.
+        wait=False,
+        health_checks=flux.health_checks(gitlab_spike_runner_chart, ["HelmRelease"]),
+        depends_on=flux.flux_kustomization_depends_on_many(gitlab_spike_gitops_kustomization),
     )
     matrix_app_artifact = artifact("matrix-app", matrix.OUTPUT_DIR)
     matrix_kustomization = matrix.matrix(
@@ -2200,6 +2207,10 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         monitoring_crds_kustomization,
         seaweedfs_operator_kustomization,
+        health_checks=[
+            *flux.health_checks(litellm_database_chart, ["Cluster"]),
+            *flux.health_checks(litellm_proxy_chart, ["Deployment", "HTTPRoute"]),
+        ],
     )
     aiquota_artifact = artifact("aiquota", aiquota.OUTPUT_DIR)
     flux.flux_kustomization(

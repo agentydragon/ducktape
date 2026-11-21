@@ -107,8 +107,6 @@ py_library(
         "//ssh_keys:wyrm2-forgejo.pub",
     ],
     deps = [
-        ":app",
-        ":runner",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
