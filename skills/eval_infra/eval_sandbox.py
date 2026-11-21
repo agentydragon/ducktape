@@ -45,7 +45,7 @@ _LAUNCHER_RLOCATION = "ducktape/mcp_infra/exec/docker_launcher"
 
 @asynccontextmanager
 async def eval_sandbox(
-    *, skill: StagedSkill, workspace: Path, inputs: Path | None, image: str = "python:3.14-slim", name: str = "exec"
+    *, skill: StagedSkill, workspace: Path, inputs: Path | None, image: str = "python:3.14-slim"
 ) -> AsyncGenerator[MCPStdioTool]:
     """Yield an `MCPStdioTool` exposing `exec` against a scratch container.
 
@@ -58,7 +58,6 @@ async def eval_sandbox(
             for evals with no inputs. Caller is responsible for assembling
             this directory's contents before entering the context.
         image: Container image. Defaults to `python:3.14-slim`.
-        name: MCPStdioTool tool name (defaults to ``"exec"``).
 
     The container has host networking, proxy env wired, and `cwd`/`user`/`env`
     fields hidden from the model.
@@ -73,5 +72,5 @@ async def eval_sandbox(
 
     config = scratch_exec_config(image=image, working_dir=WORK_PATH, binds=binds)
     launcher = Runfiles.CreateOrRaise().root() / _LAUNCHER_RLOCATION
-    async with MCPStdioTool(name=name, command=str(launcher), args=["--config", config.model_dump_json()]) as tool:
+    async with MCPStdioTool(name="exec", command=str(launcher), args=["--config", config.model_dump_json()]) as tool:
         yield tool
