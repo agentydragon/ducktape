@@ -148,6 +148,70 @@ def test_forgejo_image_namespace_missing_external_secret_is_flagged() -> None:
     assert "worker" in error
 
 
+@pytest.mark.parametrize(
+    ("api_version", "spec", "image_names"),
+    [
+        pytest.param(
+            "extensions.agents.x-k8s.io/v1beta1",
+            {"podTemplate": {"spec": {"containers": [{"image": "git.allegedly.works/ducktape-ci/upstream:tag"}]}}},
+            ["upstream"],
+            id="upstream-pod",
+        ),
+        pytest.param(
+            "agentplane.allegedly.works/v1alpha1",
+            {"pod": {"spec": {"initContainers": [{"image": "git.allegedly.works/ducktape-ci/init:tag"}]}}},
+            ["init"],
+            id="agentplane-pod",
+        ),
+        pytest.param(
+            "agentplane.allegedly.works/v1alpha1",
+            {
+                "vm": {
+                    "template": {
+                        "spec": {"volumes": [{"containerDisk": {"image": "git.allegedly.works/ducktape-ci/disk:tag"}}]}
+                    }
+                }
+            },
+            ["disk"],
+            id="agentplane-vm",
+        ),
+        pytest.param(
+            "agentplane.allegedly.works/v1alpha1",
+            {
+                "firecracker": {
+                    "pod": {"spec": {"containers": [{"image": "git.allegedly.works/ducktape-ci/launcher:tag"}]}},
+                    "bootImage": "git.allegedly.works/ducktape-ci/boot:tag",
+                    "runnerImage": "git.allegedly.works/ducktape-ci/runner:tag",
+                    "memoryMiB": 256,
+                    "vcpuCount": 1,
+                }
+            },
+            ["launcher", "boot", "runner"],
+            id="agentplane-firecracker",
+        ),
+    ],
+)
+def test_sandbox_template_images_require_namespace_credentials(
+    api_version: str, spec: dict, image_names: list[str]
+) -> None:
+    template = {
+        "apiVersion": api_version,
+        "kind": "SandboxTemplate",
+        "metadata": {"namespace": "worker", "name": "sandbox"},
+        "spec": spec,
+    }
+    resources = parse_k8s_resources([template, _forgejo_creds_eso("other")])
+    cluster = ParsedCluster(source_resources={Path("sandbox.yaml"): resources})
+
+    [error] = check_forgejo_image_namespace_reflection(cluster)
+    assert "SandboxTemplate 'worker/sandbox'" in error
+    for name in image_names:
+        assert f"git.allegedly.works/ducktape-ci/{name}:tag" in error
+
+    resources.extend(parse_k8s_resources([_forgejo_creds_eso("worker")]))
+    assert check_forgejo_image_namespace_reflection(cluster) == []
+
+
 def test_external_credential_central_store_passes(tmp_path: Path) -> None:
     cluster = _external_creds_cluster(tmp_path, [_consumer_external_secret()])
     assert check_external_credential_ownership(cluster, tmp_path) == []

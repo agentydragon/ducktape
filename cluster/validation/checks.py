@@ -7,6 +7,7 @@ from pathlib import Path
 from cluster.cdk8s.cilium_rule_sections import enforces_nothing
 from cluster.validation.cluster import ParsedCluster
 from cluster.validation.k8s import (
+    AgentplaneSandboxTemplateResource,
     CiliumPolicyResource,
     CronJobResource,
     ExternalSecretResource,
@@ -19,7 +20,12 @@ from cluster.validation.k8s import (
 
 _FORGEJO_REGISTRY = "git.allegedly.works"
 _FORGEJO_CREDENTIAL_SECRET = "forgejo-images-creds"
-_FORGEJO_IMAGE_WORKLOAD_TYPES = (CronJobResource, PodTemplateWorkloadResource, SandboxTemplateResource)
+_FORGEJO_IMAGE_WORKLOAD_TYPES = (
+    CronJobResource,
+    PodTemplateWorkloadResource,
+    SandboxTemplateResource,
+    AgentplaneSandboxTemplateResource,
+)
 # These inputs are intentionally stored without a deploy Kustomization reference:
 # Dreo is retained for future Home Assistant provisioning (see homeassistant/TODO.md).
 _INTENTIONALLY_STORED_ONLY_FILES = {Path("cluster/k8s/external-creds/dreo-account.sops.yaml")}
@@ -106,15 +112,6 @@ def _rendered_or_source_resources(cluster: ParsedCluster) -> list[tuple[Path, K8
     ]
 
 
-def _forgejo_images(resource: CronJobResource | PodTemplateWorkloadResource | SandboxTemplateResource) -> set[str]:
-    return {
-        image
-        for pod_spec in resource.pod_specs
-        for image in pod_spec.images
-        if image.split("/", 1)[0] == _FORGEJO_REGISTRY
-    }
-
-
 def check_forgejo_image_namespace_reflection(cluster: ParsedCluster) -> list[str]:
     """Every rendered Forgejo image workload namespace has its own forgejo-images-creds ExternalSecret."""
     namespaces_with_credential = {
@@ -126,7 +123,7 @@ def check_forgejo_image_namespace_reflection(cluster: ParsedCluster) -> list[str
     for origin, resource in _rendered_or_source_resources(cluster):
         if not isinstance(resource, _FORGEJO_IMAGE_WORKLOAD_TYPES):
             continue
-        images = _forgejo_images(resource)
+        images = {image for image in resource.images if image.split("/", 1)[0] == _FORGEJO_REGISTRY}
         if not images:
             continue
         if resource.namespace not in namespaces_with_credential:
