@@ -61,7 +61,7 @@ _oci_layout_py_src = rule(
     },
 )
 
-def oci_layout_py(name, image, visibility = None, testonly = None):
+def oci_layout_py(name, image, visibility = None, testonly = None, tags = None):
     """A py_library exporting `LAYOUT_RLOCATION` and carrying `image` in its runfiles.
 
     One dep gives a test both the constant and the bytes it names:
@@ -81,17 +81,20 @@ def oci_layout_py(name, image, visibility = None, testonly = None):
         visibility: target visibility.
         testonly: mark the generated module and library testonly. Unset follows the package's
             `default_testonly`; pass `False` to opt out of it.
+        tags: tags applied to both the generated source and the library.
     """
     _oci_layout_py_src(
         name = name + "_src",
         module = name,
         image = image,
+        tags = tags,
         testonly = testonly,
     )
     py_library(
         name = name,
         srcs = [":" + name + "_src"],
         data = [image],
+        tags = tags,
         testonly = testonly,
         visibility = visibility,
     )
