@@ -19,7 +19,6 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//skills/info_gathering/evals/agent_runtime:events",
-        "//skills/info_gathering/evals/agent_runtime:tool_provider",
         "@pypi//pyhamcrest",
     ],
 )

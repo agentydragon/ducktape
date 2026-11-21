@@ -10,7 +10,7 @@ import pytest_bazel
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
-from hamcrest import anything, assert_that, contains_string, has_entries
+from hamcrest import assert_that, contains_string, has_entries
 from more_itertools import one
 
 from openai_utils.model import FunctionCallItem, ResponsesRequest, ResponsesResult, UserMessage
@@ -22,10 +22,7 @@ from skills.info_gathering.evals.agent_runtime.events import ToolCallOutput
 from skills.info_gathering.evals.agent_runtime.loop_control import RequireAnyTool
 from skills.info_gathering.evals.agent_runtime.mcp_provider import MCPToolProvider
 from skills.info_gathering.evals.agent_runtime.testing.handlers import TextCaptureHandler, run_until_text
-from skills.info_gathering.evals.agent_runtime.testing.matchers import (
-    assert_function_call_output_structured,
-    tool_call_with_error_text,
-)
+from skills.info_gathering.evals.agent_runtime.testing.matchers import assert_function_call_output_structured
 from skills.info_gathering.evals.agent_runtime.testing.mcp.echo_server import ECHO_TOOL_NAME
 from skills.info_gathering.evals.agent_runtime.tool_provider import ImageContent, TextContent, ToolResult
 
@@ -152,7 +149,8 @@ async def test_invalid_tool_argument_json(mcp_tool_provider_echo, arguments) -> 
     assert len(tool_outputs) == 1
 
     tool_result = tool_outputs[0].result
-    assert_that(tool_result, tool_call_with_error_text(anything()))
+    assert tool_result.is_error
+    assert isinstance(one(tool_result.content), TextContent)
 
 
 async def test_malformed_json_multiple_tool_calls(mcp_tool_provider_echo) -> None:
