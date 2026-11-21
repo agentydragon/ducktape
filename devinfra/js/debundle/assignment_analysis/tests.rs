@@ -201,30 +201,6 @@ fn member_bindings(members: &[BindingReport]) -> Vec<String> {
         .collect()
 }
 
-/// LazyRebind atomic-group split: declarer and assigner of a
-/// mutable binding must materialize together. `assignment_assembly`
-/// records this as an `atomic_group_conflicts` entry on the
-/// assignment analysis; the materializer bails on any non-empty list.
-#[test]
-fn cross_destination_lazy_write_is_rejected() {
-    let assignment_analysis = assignment_analysis_for(
-        "let A = 0; function B() { A = 1; }",
-        &[("A", logical(0)), ("B", TestDestination::Entry)],
-    );
-    let report = assignment_analysis.validate();
-    assert_eq!(
-        report.atomic_group_conflicts.len(),
-        1,
-        "expected one atomic-group conflict (A and B share a LazyRebind atomic group but the spec splits them): {report:?}",
-    );
-    let conflict = &report.atomic_group_conflicts[0];
-    // The entry destination follows the one planned output module.
-    assert_eq!(
-        distinct_claim_modules(conflict),
-        vec![ModuleId(0), ModuleId(1)],
-    );
-}
-
 /// Sorted distinct destination modules across a conflict's claims.
 fn distinct_claim_modules(conflict: &AtomicGroupConflict) -> Vec<ModuleId> {
     let mut modules: Vec<ModuleId> = conflict
@@ -236,20 +212,6 @@ fn distinct_claim_modules(conflict: &AtomicGroupConflict) -> Vec<ModuleId> {
         .collect();
     modules.sort();
     modules
-}
-
-#[test]
-fn same_destination_lazy_write_is_allowed() {
-    let assignment_analysis = assignment_analysis_for(
-        "let A = 0; function B() { A = 1; }",
-        &[("A", logical(0)), ("B", logical(0))],
-    );
-
-    let report = assignment_analysis.validate();
-    assert!(
-        report.atomic_group_conflicts.is_empty(),
-        "same-destination rebinding writes should stay local to the emitted module: {report:?}",
-    );
 }
 
 fn assignment_analysis_from_facts(
@@ -589,119 +551,93 @@ fn assignment_summary(assignment_analysis: &AssignmentAnalysis) -> Vec<(String, 
     out
 }
 
+/// An atomic group split across destinations is one conflict between the two
+/// destination modules (the entry follows the one planned output module).
+/// `assignment_assembly` records it in `atomic_group_conflicts`; the
+/// materializer bails on any non-empty list.
 #[test]
-fn assignment_assembly_unclaimed_source_units_default_to_residual() {
-    let assignment_analysis = assignment_analysis_for("const A = 1; const B = 2;", &[]);
-    let summary = assignment_summary(&assignment_analysis);
-    assert_eq!(
-        summary,
-        vec![
-            ("A".to_string(), "<residual>".to_string()),
-            ("B".to_string(), "<residual>".to_string()),
-        ],
-    );
+fn splitting_an_atomic_group_is_one_conflict() {
+    let cycle = "const A = B + 1; const B = A + 1;";
+    for (source, ownership) in [
+        // A LazyRebind group: the declarer and assigner of a mutable binding
+        // must materialize together.
+        (
+            "let A = 0; function B() { A = 1; }",
+            vec![("A", logical(0)), ("B", TestDestination::Entry)],
+        ),
+        // An EagerUse cycle is one atomic group. Claiming only A leaves B
+        // defaulting to the entry; `assignment_assembly` refuses to move B
+        // silently.
+        (cycle, vec![("A", logical(0))]),
+        (cycle, vec![("A", logical(0)), ("B", logical(1))]),
+    ] {
+        let report = assignment_analysis_for(source, &ownership).validate();
+        assert_eq!(
+            report.atomic_group_conflicts.len(),
+            1,
+            "{source} with {ownership:?}: {report:?}",
+        );
+        assert_eq!(
+            distinct_claim_modules(&report.atomic_group_conflicts[0]),
+            vec![ModuleId(0), ModuleId(1)],
+            "{source} with {ownership:?}",
+        );
+    }
 }
 
 #[test]
-fn assignment_assembly_single_claim_with_unclaimed_atomic_group_members_is_a_conflict() {
-    // `const A = B + 1; const B = A + 1;` is one EagerUse cycle —
-    // a single atomic group. Claiming A for mod_0 leaves B
-    // defaulting to residual entry, which splits the atomic group
-    // across {mod_0, <residual_entry>} — unrealizable. The spec
-    // author needs to either also assign B (or leave both
-    // unassigned), or remove the constraining edge that fused
-    // them in the first place. `debundle coverage` may flag the
-    // split the atomic group as an advisory edit, but assignment_assembly refuses
-    // to silently move B for the user.
-    let assignment_analysis =
-        assignment_analysis_for("const A = B + 1; const B = A + 1;", &[("A", logical(0))]);
-    let report = assignment_analysis.validate();
-    assert_eq!(
-        report.atomic_group_conflicts.len(),
-        1,
-        "expected the half-claimed EagerUse cycle to surface as an atomic-group conflict: {report:?}",
-    );
-    // The entry destination follows the one planned output module.
-    assert_eq!(
-        distinct_claim_modules(&report.atomic_group_conflicts[0]),
-        vec![ModuleId(0), ModuleId(1)],
-    );
+fn claims_that_keep_atomic_groups_whole_are_not_conflicts() {
+    for (source, ownership) in [
+        // Rebinding writes stay local to the emitted module.
+        (
+            "let A = 0; function B() { A = 1; }",
+            vec![("A", logical(0)), ("B", logical(0))],
+        ),
+        // Directed Sequenced edges alone form a chain in `G_atomic`, not an
+        // SCC, so every source unit is its own atomic group and the spec can
+        // split them across modules without violating co-location.
+        (
+            r#"const a1 = (globalThis.tag = "a1", 1); const b1 = (globalThis.tag = "b1", 2); const a2 = (globalThis.tag = "a2", 3);"#,
+            vec![("a1", logical(0)), ("b1", logical(1)), ("a2", logical(0))],
+        ),
+    ] {
+        let report = assignment_analysis_for(source, &ownership).validate();
+        assert!(
+            report.atomic_group_conflicts.is_empty(),
+            "{source} with {ownership:?}: {report:?}",
+        );
+    }
 }
 
 #[test]
-fn assignment_assembly_concordant_claims_within_atomic_group_are_fine() {
-    // Both members of the same atomic group claimed for the same
-    // module — that's the spec author being explicit, not a
-    // conflict.
-    let assignment_analysis = assignment_analysis_for(
-        "const A = B + 1; const B = A + 1;",
-        &[("A", logical(0)), ("B", logical(0))],
-    );
-    let summary = assignment_summary(&assignment_analysis);
-    assert_eq!(
-        summary,
-        vec![
-            ("A".to_string(), "mod_0".to_string()),
-            ("B".to_string(), "mod_0".to_string()),
-        ],
-    );
-}
-
-#[test]
-fn assignment_assembly_records_conflict_on_split_eager_use_cycle() {
-    let assignment_analysis = assignment_analysis_for(
-        "const A = B + 1; const B = A + 1;",
-        &[("A", logical(0)), ("B", logical(1))],
-    );
-    let report = assignment_analysis.validate();
-    assert_eq!(
-        report.atomic_group_conflicts.len(),
-        1,
-        "expected the A↔B EagerUse cycle to surface as an atomic-group conflict: {report:?}",
-    );
-    let conflict = &report.atomic_group_conflicts[0];
-    assert_eq!(
-        distinct_claim_modules(conflict),
-        vec![ModuleId(0), ModuleId(1)],
-    );
-}
-
-#[test]
-fn assignment_assembly_records_no_conflict_for_sequenced_only_chain() {
-    // Three side-effect statements, source-ordered. Directed
-    // Sequenced edges alone form a chain in `G_atomic`, not an
-    // SCC, so every source unit is its own atomic group and the spec
-    // can split them across modules without violating
-    // co-location. The validator may still flag a module-level
-    // cycle when the spec creates one through reverse claims,
-    // but assignment_assembly itself does not panic / record a
-    // conflict here.
-    let assignment_analysis = assignment_analysis_for(
-        r#"const a1 = (globalThis.tag = "a1", 1); const b1 = (globalThis.tag = "b1", 2); const a2 = (globalThis.tag = "a2", 3);"#,
-        &[("a1", logical(0)), ("b1", logical(1)), ("a2", logical(0))],
-    );
-    let report = assignment_analysis.validate();
-    assert!(
-        report.atomic_group_conflicts.is_empty(),
-        "Sequenced-only chains never force co-location: {report:?}",
-    );
-}
-
-#[test]
-fn assignment_assembly_independent_source_units_keep_independent_claims() {
-    // Three eager-use chain: A → B → C, no cycle, three atomic
-    // atomic groups. Each source unit's claim takes effect independently.
-    let assignment_analysis = assignment_analysis_for(
-        "const C = 3; const B = C + 1; const A = B + 1;",
-        &[("A", logical(0)), ("B", logical(1)), ("C", logical(0))],
-    );
-    let summary = assignment_summary(&assignment_analysis);
-    assert_eq!(
-        summary,
-        vec![
-            ("A".to_string(), "mod_0".to_string()),
-            ("B".to_string(), "mod_1".to_string()),
-            ("C".to_string(), "mod_0".to_string()),
-        ],
-    );
+fn assignments_follow_claims_per_source_unit() {
+    for (source, ownership, expected) in [
+        // Unclaimed source units default to the residual.
+        (
+            "const A = 1; const B = 2;",
+            vec![],
+            vec![("A", "<residual>"), ("B", "<residual>")],
+        ),
+        // Both members of one atomic group claimed for the same module is
+        // explicit, not a conflict.
+        (
+            "const A = B + 1; const B = A + 1;",
+            vec![("A", logical(0)), ("B", logical(0))],
+            vec![("A", "mod_0"), ("B", "mod_0")],
+        ),
+        // An eager-use chain A -> B -> C has no cycle, so each source unit's
+        // claim takes effect independently.
+        (
+            "const C = 3; const B = C + 1; const A = B + 1;",
+            vec![("A", logical(0)), ("B", logical(1)), ("C", logical(0))],
+            vec![("A", "mod_0"), ("B", "mod_1"), ("C", "mod_0")],
+        ),
+    ] {
+        let summary = assignment_summary(&assignment_analysis_for(source, &ownership));
+        let expected: Vec<_> = expected
+            .iter()
+            .map(|(key, label)| (key.to_string(), label.to_string()))
+            .collect();
+        assert_eq!(summary, expected, "{source} with {ownership:?}");
+    }
 }
