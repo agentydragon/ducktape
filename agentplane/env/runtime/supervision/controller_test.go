@@ -327,13 +327,13 @@ func TestProcessControllerRetainsSystemdObservationsAcrossFence(t *testing.T) {
 		releaseStop := make(chan struct{})
 		var release sync.Once
 		t.Cleanup(func() { release.Do(func() { close(releaseStop) }) })
-		observers := make(chan func(SystemdObservation), 1)
+		observers := make(chan func(systemdops.Observation), 1)
 		var starts atomic.Int32
 		f.request(t, id, func(context.Context) (*Instance, error) {
 			starts.Add(1)
-			observe := func(observation SystemdObservation) { f.host.observeSystemd(id, observation) }
+			observe := func(observation systemdops.Observation) { f.host.observeSystemd(id, observation) }
 			observers <- observe
-			observe(SystemdObservation{Revision: 1, Unit: "old.service", Snapshot: systemdops.UnitSnapshot{InvocationID: "old", ActiveState: "active"}})
+			observe(systemdops.Observation{Revision: 1, Unit: "old.service", Snapshot: systemdops.UnitSnapshot{InvocationID: "old", ActiveState: "active"}})
 			return &Instance{
 				Done: done, PID: 123,
 				Stop: func(context.Context) error {
@@ -350,8 +350,8 @@ func TestProcessControllerRetainsSystemdObservationsAcrossFence(t *testing.T) {
 			t.Fatalf("initial observation = %+v", initial.Systemd)
 		}
 		observe := <-observers
-		observe(SystemdObservation{Revision: 3, Unit: "old.service", Snapshot: systemdops.UnitSnapshot{InvocationID: "old", ActiveState: "failed"}, Error: "manager disconnected"})
-		observe(SystemdObservation{Revision: 2, Unit: "old.service", Snapshot: systemdops.UnitSnapshot{InvocationID: "old", ActiveState: "active"}})
+		observe(systemdops.Observation{Revision: 3, Unit: "old.service", Snapshot: systemdops.UnitSnapshot{InvocationID: "old", ActiveState: "failed"}, Error: "manager disconnected"})
+		observe(systemdops.Observation{Revision: 2, Unit: "old.service", Snapshot: systemdops.UnitSnapshot{InvocationID: "old", ActiveState: "active"}})
 		facts, found, err := readResource[observationSpec](f.ctx, f.state, processTestNamespace, id)
 		if err != nil || !found || facts.Systemd.Revision != 3 || facts.Systemd.Snapshot.ActiveState != "failed" {
 			t.Fatalf("process observations lost newest systemd observation: facts=%+v found=%t err=%v", facts, found, err)
@@ -362,9 +362,9 @@ func TestProcessControllerRetainsSystemdObservationsAcrossFence(t *testing.T) {
 		if current.Systemd.Error != "manager disconnected" || current.Systemd.Snapshot.ActiveState != "failed" {
 			t.Fatalf("newest observation = %+v", current.Systemd)
 		}
-		observe(SystemdObservation{Revision: 4, Unit: "old.service", ExitState: SystemdExitObserved, ExitCode: 23})
+		observe(systemdops.Observation{Revision: 4, Unit: "old.service", ExitState: systemdops.ExitObserved, ExitCode: 23})
 		waitProcessStatus(t, f, id, "exit observation before cleanup", func(status Status) bool {
-			return status.Systemd.ExitState == SystemdExitObserved && status.Systemd.ExitCode == 23
+			return status.Systemd.ExitState == systemdops.ExitObserved && status.Systemd.ExitCode == 23
 		})
 		done <- nil
 		close(done)
@@ -386,7 +386,7 @@ func TestProcessControllerRetainsSystemdObservationsAcrossFence(t *testing.T) {
 			t.Fatal(err)
 		}
 		synctest.Wait()
-		observe(SystemdObservation{Revision: 5, Unit: "stale.service"})
+		observe(systemdops.Observation{Revision: 5, Unit: "stale.service"})
 		synctest.Wait()
 		if _, found := f.status(t, id); found {
 			t.Fatal("stale observation recreated retired process status")
@@ -407,7 +407,7 @@ func TestProcessControllerPublishesSystemdEvidenceWhileStartIsBlocked(t *testing
 		var starts atomic.Int32
 		f.request(t, id, func(context.Context) (*Instance, error) {
 			starts.Add(1)
-			f.host.observeSystemd(id, SystemdObservation{Revision: 1, Unit: "uncertain.service", Error: "manager disconnected"})
+			f.host.observeSystemd(id, systemdops.Observation{Revision: 1, Unit: "uncertain.service", Error: "manager disconnected"})
 			<-release
 			return nil, errors.New("fenced start failure")
 		})
