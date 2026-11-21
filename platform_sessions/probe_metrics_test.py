@@ -7,7 +7,8 @@ import pytest_bazel
 from prometheus_client import CollectorRegistry, generate_latest
 from pydantic import BaseModel
 
-from platform_sessions.probe_metrics import ProbeMetrics, ProbeOutcome, ProbeSource
+from platform_sessions.probe_metrics import ProbeMetrics
+from platform_sessions.probe_types import ProbeOutcome, ProbeSource
 from platform_sessions.registry import IntegrationRegistry, IntegrationType
 
 

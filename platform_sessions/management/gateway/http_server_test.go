@@ -10,8 +10,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	providerpb "github.com/agentydragon/ducktape/platform_sessions/provider/providerpb"
 )
 
 // trustedCAFile writes a TLS test server's certificate to a PEM file for `ProviderHTTPConfig.CAFile`.
@@ -118,10 +116,7 @@ func TestGeneratedHTTPRequiresOwnerAndSameOriginForBrowserMutations(t *testing.T
 
 func TestHTTPImportReachesProviderOnce(t *testing.T) {
 	fake := &fakeProvider{}
-	service, err := New([]Provider{{Ref: &providerpb.InstanceRef{ProviderId: "chatgpt", InstanceId: "personal"}, Client: fake}})
-	if err != nil {
-		t.Fatal(err)
-	}
+	service := newTestService(t, fake)
 	ownerToken := strings.Repeat("o", 40)
 	handler, err := HTTPServer(context.Background(), service, HTTPConfig{
 		Owner: testOwnerConfig(), Bearers: []Bearer{{Token: ownerToken, Owner: true}},

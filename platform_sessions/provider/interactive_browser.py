@@ -185,7 +185,7 @@ class InteractiveBrowserRuntime:
                 self._pending_data_jobs += 1
             self._jobs.put(work)
         try:
-            return cast("_T", work.result.result())
+            return cast(_T, work.result.result())
         finally:
             if not allow_during_viewer:
                 with self._state_lock:

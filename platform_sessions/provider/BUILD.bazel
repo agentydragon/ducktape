@@ -79,6 +79,7 @@ py_test(
     deps = [
         ":control_server",
         "//:conftest",
+        "//util:net",
         "@pypi//cryptography",
         "@pypi//grpcio",
         "@pypi//pytest",
