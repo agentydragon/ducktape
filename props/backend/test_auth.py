@@ -25,20 +25,16 @@ from props.db.database import Database
 from props.db.models import AgentType
 
 
-def test_get_caller_db_admin_returns_admin_db(exhaust_generator):
-    """Admin users get the shared admin database connection."""
+@pytest.mark.parametrize(
+    "auth",
+    [
+        pytest.param(AuthenticatedIdentity(username="postgres", password="secret", role=AdminRole()), id="admin"),
+        pytest.param(SessionIdentity(email="admin@test.invalid"), id="sso_session"),
+    ],
+)
+def test_get_caller_db_admin_identities_return_admin_db(auth, exhaust_generator):
+    """Admins and SSO browser sessions (admin-only) get the shared admin database connection."""
     admin_db = MagicMock(spec=Database)
-    auth = AuthenticatedIdentity(username="postgres", password="secret", role=AdminRole())
-
-    gen = get_caller_db(admin_db=admin_db, auth=auth)
-    db = exhaust_generator(gen)
-    assert db is admin_db
-
-
-def test_get_caller_db_sso_session_returns_admin_db(exhaust_generator):
-    """SSO browser sessions are admin-only: they use the shared admin pool."""
-    admin_db = MagicMock(spec=Database)
-    auth = SessionIdentity(email="admin@test.invalid")
 
     gen = get_caller_db(admin_db=admin_db, auth=auth)
     db = exhaust_generator(gen)
