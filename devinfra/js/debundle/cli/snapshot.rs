@@ -355,21 +355,10 @@ fn actual_input(
 }
 
 fn relative_in_snapshot(root: &Path, path: &Path) -> Result<PathBuf> {
-    let relative = path
-        .strip_prefix(root)
-        .context("snapshot input escapes its directory")?;
-    let mut normalized = PathBuf::new();
-    for component in relative.components() {
-        match component {
-            Component::Normal(name) => normalized.push(name),
-            Component::CurDir => {}
-            Component::ParentDir => {
-                ensure!(normalized.pop(), "snapshot input escapes its directory");
-            }
-            Component::RootDir | Component::Prefix(_) => bail!("snapshot input is not relative"),
-        }
-    }
-    Ok(normalized)
+    lexically_within(
+        path.strip_prefix(root)
+            .context("snapshot input escapes its directory")?,
+    )
 }
 
 fn source_files(root: &Path) -> Result<Vec<PathBuf>> {
@@ -517,23 +506,22 @@ fn verify(directory: &Path) -> Result<SnapshotOutcome> {
             .map(|(name, root)| Ok((name.clone(), contained(&directory, root)?)))
             .collect::<Result<_>>()?,
     };
-    for file in &provenance.files {
+    for (root, input_path) in provenance
+        .files
+        .iter()
+        .map(|file| (&file.root, &file.path))
+        .chain(
+            provenance
+                .present_directories
+                .iter()
+                .map(|input| (&input.root, &input.path)),
+        )
+    {
         ensure!(
-            file.root != InputRoot::Absolute,
+            *root != InputRoot::Absolute,
             "snapshot graph has an unrelocated absolute input"
         );
-        let path = provenance.resolve(&file.root, &file.path, &current)?;
-        let relative = path
-            .strip_prefix(&directory)
-            .context("snapshot input escapes its directory")?;
-        contained(&directory, relative)?;
-    }
-    for input in &provenance.present_directories {
-        ensure!(
-            input.root != InputRoot::Absolute,
-            "snapshot graph has an unrelocated absolute input"
-        );
-        let path = provenance.resolve(&input.root, &input.path, &current)?;
+        let path = provenance.resolve(root, input_path, &current)?;
         let relative = path
             .strip_prefix(&directory)
             .context("snapshot input escapes its directory")?;
