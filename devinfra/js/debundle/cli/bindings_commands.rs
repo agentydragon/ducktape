@@ -11,6 +11,7 @@ use crate::emit_report;
 use crate::outcome::{MutationOutcome, MutationVerb, emit_gate_rejection_json};
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Subcommand};
+use command_output::infallible;
 use graph_provenance::{CurrentRoots, VerifiedGraphSourceContext};
 use peel::OutputFormat;
 use serde::Serialize;
@@ -229,10 +230,7 @@ fn run_bindings_list_cmd(args: BindingsListNsArgs, output: &mut dyn std::io::Wri
         output,
         args.format,
         &report,
-        |report, out| {
-            render_bindings_list_text(report, out);
-            Ok(())
-        },
+        infallible(render_bindings_list_text),
         "writing bindings list output",
     )
 }
