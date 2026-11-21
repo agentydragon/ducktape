@@ -684,6 +684,11 @@ spec:
       name: haku-ci
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/haku-ci-egress-vpa/**"
+          to: "@artifact/cluster/generated/haku-ci-egress-vpa/"
+      name: haku-ci-egress-vpa
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/generated/headlamp/**"
           to: "@artifact/cluster/generated/headlamp/"
       name: headlamp-app
@@ -891,11 +896,6 @@ spec:
         - from: "@repo/cluster/generated/agentplane-staging/vpa/**"
           to: "@artifact/cluster/generated/agentplane-staging/vpa/"
       name: agentplane-staging-vpa
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/generated/static-application-vpa/**"
-          to: "@artifact/cluster/generated/static-application-vpa/"
-      name: static-application-vpa
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/generated/website/**"

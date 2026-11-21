@@ -26,6 +26,8 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/agentplane-staging/vpa"
 _WORKLOADS = (
     ("actions", "actions", "128Mi", "160Mi"),
     ("app", "app", "128Mi", "160Mi"),
+    ("central-sampler", "central-sampler", None, None),
+    ("egress", "proxy", None, None),
     ("electric", "electric", "448Mi", None),
     ("environments", "environments", "64Mi", "112Mi"),
     ("frontend", "frontend", None, None),
@@ -36,6 +38,7 @@ _WORKLOADS = (
     ("policy-controller", "policy-controller", "64Mi", "112Mi"),
     ("sessions", "sessions", "256Mi", "320Mi"),
 )
+_UPDATE_MODES = {"central-sampler": "Off", "frontend": "Recreate"}
 
 
 def chart(app: App) -> Chart:
@@ -50,7 +53,7 @@ def chart(app: App) -> Chart:
                     api_version="apps/v1", kind="Deployment", name=deployment
                 ),
                 update_policy=VerticalPodAutoscalerSpecUpdatePolicy(
-                    update_mode="Recreate" if deployment == "frontend" else "Initial"
+                    update_mode=_UPDATE_MODES.get(deployment, "Initial")
                 ),
                 resource_policy=VerticalPodAutoscalerSpecResourcePolicy(
                     container_policies=[

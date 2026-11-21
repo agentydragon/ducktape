@@ -791,33 +791,27 @@ def test_goldilocks_explicit_decision(generated: Path, parsed_yaml_documents: di
     assert not missing, "Generated Namespaces must label their Goldilocks decision:\n" + "\n".join(missing)
 
 
-def test_static_application_vpas_target_only_selected_deployments(
-    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]], documents: list[dict[str, Any]]
-) -> None:
-    vpas = parsed_yaml_documents[
-        generated / GENERATED_ROOT / "static-application-vpa" / "static-application-vpa.k8s.yaml"
+def test_haku_ci_vpa_targets_only_egress(documents: list[dict[str, Any]]) -> None:
+    namespace = "haku-ci"
+    name = "haku-ci-egress"
+    ns = find_resource(documents, "Namespace", namespace)
+    assert ns["metadata"]["labels"]["goldilocks.fairwinds.com/enabled"] == "false"
+    [vpa] = [
+        doc for doc in documents if doc["kind"] == "VerticalPodAutoscaler" and doc["metadata"]["namespace"] == namespace
     ]
-    expected = {
-        ("agentplane-staging", "central-sampler"): ("central-sampler", "Off"),
-        ("agentplane-staging", "egress"): ("proxy", "Initial"),
-        ("haku-ci", "haku-ci-egress"): ("egress-sidecar", "Initial"),
-    }
-    assert {(vpa["metadata"]["namespace"], vpa["metadata"]["name"]) for vpa in vpas} == expected.keys()
-    for vpa in vpas:
-        namespace = vpa["metadata"]["namespace"]
-        name = vpa["metadata"]["name"]
-        container, mode = expected[(namespace, name)]
-        deployment = find_resource(documents, "Deployment", name, namespace=namespace)
-        assert container in {item["name"] for item in deployment["spec"]["template"]["spec"]["containers"]}
-        namespace_resource = find_resource(documents, "Namespace", namespace)
-        assert namespace_resource["metadata"]["labels"]["goldilocks.fairwinds.com/enabled"] == "false"
-        assert vpa["kind"] == "VerticalPodAutoscaler"
-        assert vpa["spec"]["targetRef"] == {"apiVersion": "apps/v1", "kind": "Deployment", "name": name}
-        assert vpa["spec"]["updatePolicy"] == {"updateMode": mode}
-        assert vpa["spec"]["resourcePolicy"]["containerPolicies"] == [
-            {"containerName": container, "controlledResources": ["cpu", "memory"], "controlledValues": "RequestsOnly"},
-            {"containerName": "*", "mode": "Off"},
-        ]
+    assert vpa["metadata"]["name"] == name
+    deployment = find_resource(documents, "Deployment", name, namespace=namespace)
+    [container] = deployment["spec"]["template"]["spec"]["containers"]
+    assert vpa["spec"]["targetRef"] == {"apiVersion": "apps/v1", "kind": "Deployment", "name": name}
+    assert vpa["spec"]["updatePolicy"] == {"updateMode": "Initial"}
+    assert vpa["spec"]["resourcePolicy"]["containerPolicies"] == [
+        {
+            "containerName": container["name"],
+            "controlledResources": ["cpu", "memory"],
+            "controlledValues": "RequestsOnly",
+        },
+        {"containerName": "*", "mode": "Off"},
+    ]
 
 
 def test_claude_session_sync_vpa_opt_in_is_limited_to_deployments(documents: list[dict[str, Any]]) -> None:

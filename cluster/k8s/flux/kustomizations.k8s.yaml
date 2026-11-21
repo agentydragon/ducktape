@@ -4950,7 +4950,7 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: static-application-vpa
+  name: haku-ci-egress-vpa
   namespace: ducktape-flux
 spec:
   dependsOn:
@@ -4961,12 +4961,12 @@ spec:
     - name: haku-ci
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/generated/static-application-vpa
+  path: ./cluster/generated/haku-ci-egress-vpa
   prune: true
   retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
-    name: static-application-vpa
+    name: haku-ci-egress-vpa
     namespace: ducktape-flux
   wait: true
 ---

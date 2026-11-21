@@ -9,13 +9,13 @@ from vpa_crds.io.k8s.autoscaling import (
 )
 
 
-def requests_only_spec(
-    target_ref: VerticalPodAutoscalerSpecTargetRef, *, container_name: str, update_mode: str = "Initial"
+def initial_requests_spec(
+    target_ref: VerticalPodAutoscalerSpecTargetRef, *, container_name: str
 ) -> VerticalPodAutoscalerSpec:
-    """Size one container's CPU and memory requests, with admission-only updates by default."""
+    """Size a single container's CPU and memory requests at admission, leaving other containers alone."""
     return VerticalPodAutoscalerSpec(
         target_ref=target_ref,
-        update_policy=VerticalPodAutoscalerSpecUpdatePolicy(update_mode=update_mode),
+        update_policy=VerticalPodAutoscalerSpecUpdatePolicy(update_mode="Initial"),
         resource_policy=VerticalPodAutoscalerSpecResourcePolicy(
             container_policies=[
                 VerticalPodAutoscalerSpecResourcePolicyContainerPolicies(

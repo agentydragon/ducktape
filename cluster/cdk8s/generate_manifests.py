@@ -71,7 +71,6 @@ from cluster.cdk8s import (
     seaweedfs_csi,
     session_archive,
     session_backup,
-    static_application_vpa,
     talos_cloud_controller_manager,
     tana_mcp,
     terraform,
@@ -182,7 +181,7 @@ from cluster.cdk8s.haku import (
     workloads as haku_workloads,
     workspaces as haku_workspaces,
 )
-from cluster.cdk8s.haku_ci import runner as haku_ci_runner
+from cluster.cdk8s.haku_ci import egress_gateway as haku_ci_egress, runner as haku_ci_runner
 from cluster.cdk8s.home_assistant import (
     app as home_assistant_app,
     backup as home_assistant_backup,
@@ -2332,11 +2331,13 @@ def generate_manifests(root: Path) -> None:
         write_directory(root, agentplane_staging_vpa_artifact, staging_vpa.chart),
         depends_on=flux.flux_kustomization_depends_on_many(vpa_kustomization, agentplane_staging_kustomization),
     )
-    static_application_vpa_artifact = artifact(static_application_vpa.NAME, static_application_vpa.OUTPUT_DIR)
+    haku_ci_egress_vpa_artifact = artifact(haku_ci_egress.VPA_NAME, haku_ci_egress.VPA_OUTPUT_DIR)
     flux.flux_kustomization(
         flux_chart,
-        static_application_vpa.NAME,
-        write_directory(root, static_application_vpa_artifact, static_application_vpa.chart),
+        haku_ci_egress.VPA_NAME,
+        write_directory(
+            root, haku_ci_egress_vpa_artifact, lambda app: haku_ci_egress.vpa_chart(app, haku_ci_runner.NAMESPACE)
+        ),
         depends_on=flux.flux_kustomization_depends_on_many(
             vpa_kustomization, agentplane_staging_kustomization, haku_ci_kustomization
         ),
@@ -2542,6 +2543,7 @@ def generate_manifests(root: Path) -> None:
             haku_workspaces_app_artifact,
             host_firewall_artifact,
             haku_ci_artifact,
+            haku_ci_egress_vpa_artifact,
             headlamp_app_artifact,
             infra_drift_artifact,
             keda_artifact,
@@ -2583,7 +2585,6 @@ def generate_manifests(root: Path) -> None:
             vpa_artifact,
             flux_system_vpa_artifact,
             agentplane_staging_vpa_artifact,
-            static_application_vpa_artifact,
             website_artifact,
             home_switch_module,
             gitlab_spike_module,

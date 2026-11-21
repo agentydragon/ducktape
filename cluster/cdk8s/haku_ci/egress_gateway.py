@@ -15,9 +15,10 @@ egress proxy release it talks to.
 
 from pathlib import Path
 
-from cdk8s import ApiObjectMetadata
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ServiceAccount, k8s
 from constructs import Construct
+from vpa_crds.io.k8s.autoscaling import VerticalPodAutoscaler, VerticalPodAutoscalerSpecTargetRef
 
 from agentplane.egress import sidecar_config
 from cluster.cdk8s import node_scheduling
@@ -27,13 +28,17 @@ from cluster.cdk8s.cert_manager import cluster_ca
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.providers.agentplane.identity import Identity
 from cluster.cdk8s.providers.agentplane.workload_credential import WorkloadCredential
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
+from cluster.cdk8s.providers.vpa.policy import initial_requests_spec
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 
 NAME = "haku-ci-egress"
+VPA_NAME = f"{NAME}-vpa"
+VPA_OUTPUT_DIR = f"{GENERATED_ROOT}/{VPA_NAME}"
 _PLACEHOLDER_TAG = "unset"  # always overridden by agentplane-staging's image-pins/kustomization.yaml
 _SIDECAR_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-sidecar"
 _SETTINGS_PATH = "/etc/agentplane-egress-sidecar/settings.yaml"
@@ -41,6 +46,21 @@ _SVID_DIR = Path("/var/run/agentplane-svid")
 # The workload CA alone, which the egress proxy's server SVID chains to.
 _WORKLOAD_CA_DIR = Path("/etc/agentplane-workload-ca")
 _ZONES = node_scheduling.HOME_AND_OVH_ZONES
+
+
+def vpa_chart(app: App, namespace: str) -> Chart:
+    """Size the relay's requests while Goldilocks stays disabled for runner Jobs."""
+    chart = Chart(app, VPA_NAME, disable_resource_name_hashes=True)
+    VerticalPodAutoscaler(
+        chart,
+        NAME,
+        metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
+        spec=initial_requests_spec(
+            VerticalPodAutoscalerSpecTargetRef(api_version="apps/v1", kind="Deployment", name=NAME),
+            container_name=sidecar_config.CONTAINER_NAME,
+        ),
+    )
+    return chart
 
 
 def service(namespace: str) -> ServiceRef:
