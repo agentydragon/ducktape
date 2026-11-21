@@ -110,17 +110,19 @@
           >
             <${Paper} component="article" withBorder p="lg" radius="md" my="md">
               <${Title} order=${2} mt="md" mb="sm">
-                <${Anchor} href="vpa/">Cluster VPA coverage and action plan<//>
+                <${Anchor} href="vpa/">Cluster VPA rollout<//>
               <//>
               <${Text} component="p" my="sm">
-                A dated cluster census, availability guardrails and
-                ${" "}<${Anchor} href="vpa/#remaining-work">remaining work<//>,
-                with a current searchable workload inventory, policy reporting
-                status and separately dated historical evidence.
+                CPU and memory request coverage, a searchable workload snapshot
+                and ${" "}<${Anchor} href="vpa/#remaining-work"
+                  >next rollout waves<//
+                >.
               <//>
               <${ManifestStamp} src="vpa/manifest.json" />
               <${Text} component="p" my="sm">
-                <${Anchor} href="vpa/evidence.json">evidence<//>
+                <${Anchor} href="vpa/inventory.json">inventory<//>
+                ${" · "}
+                <${Anchor} href="vpa/evidence.json">earlier evidence<//>
                 ${" · "}
                 <${Anchor} href="vpa/manifest.json">manifest<//>
               <//>
