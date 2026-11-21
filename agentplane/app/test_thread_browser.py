@@ -1077,6 +1077,27 @@ async def test_browser_replays_streams_and_reloads_one_exact_thread(thread_brows
     assert await thread_browser.event_logs.events(thread.id, limit=100) == source.entries
 
 
+async def test_history_updates_do_not_reload_thread_metadata(thread_browser: ThreadBrowser) -> None:
+    page, source = thread_browser.page, thread_browser.source
+    await thread_browser.start_replay()
+    await expect(page.locator("nav.agentplane-sidebar").get_by_text("Browser thread", exact=True)).to_be_visible()
+    reads: list[str] = []
+
+    def observe(request: Request) -> None:
+        path = urlsplit(request.url).path
+        if path in ("/upstream/app/v1/threads", "/upstream/history/v1/sessions:batchGetSummaries"):
+            reads.append(path)
+
+    page.on("request", observe)
+    text = "Test retained prefix"
+    for suffix in (" first", " second", " third"):
+        source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-browser-item", text=suffix)))
+        text += suffix
+        await expect(page.get_by_text(text, exact=True)).to_be_visible()
+    assert reads == []
+    page.remove_listener("request", observe)
+
+
 async def test_sidebar_receives_rename_and_archive_from_another_app_replica(thread_browser: ThreadBrowser) -> None:
     page = thread_browser.page
     await thread_browser.start_replay()

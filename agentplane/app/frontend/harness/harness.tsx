@@ -4048,6 +4048,29 @@ routes.unshift(
   ],
   [
     "GET",
+    /^\/upstream\/history\/v1\/session-summaries:watchSelected$/,
+    (_match, query, signal) => {
+      const wanted = new Set(query.getAll("session_ids"));
+      const frames = () => [
+        {
+          snapshot: {
+            summaries: THREADS_WITH_SANDBOXES.map(mapThread)
+              .filter((thread) => wanted.has(thread.metadata.threadId))
+              .map((thread) => toJson(SessionSummarySchema, thread.summary)),
+          },
+        },
+      ];
+      return liveNdjsonWatch(
+        "/upstream/history/v1/session-summaries:watchSelected",
+        frames(),
+        frames,
+        signal,
+        flags.has("threadStreamDropped")
+      );
+    },
+  ],
+  [
+    "GET",
     /^\/upstream\/history\/v1\/session-summaries:watch$/,
     (_match, _query, signal) =>
       liveNdjsonWatch(
@@ -4111,6 +4134,7 @@ function projectQueuedSession(): void {
   unrecordedSessions.delete(sessionId);
   publishStreams("/upstream/dispatcher/v1/sessions:watch");
   publishStreams("/upstream/history/v1/session-summaries:watch");
+  publishStreams("/upstream/history/v1/session-summaries:watchSelected");
 }
 
 function mount(element: ReactNode): void {

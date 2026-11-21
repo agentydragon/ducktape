@@ -46,6 +46,10 @@ service HistoryService {
   rpc FindSessions(FindSessionsRequest) returns (FindSessionsResponse) {
     option (google.api.http) = {get: "/v1/sessions:find"};
   }
+  // Streams a bounded set of authorized summaries, beginning with an authoritative snapshot.
+  rpc WatchSelectedSessionSummaries(WatchSelectedSessionSummariesRequest) returns (stream WatchSelectedSessionSummariesResponse) {
+    option (google.api.http) = {get: "/v1/session-summaries:watchSelected"};
+  }
   // Tells the caller when fold state it may hold changed, which names nothing: re-read what you hold.
   // On request it also names each Session the History Service records.
   rpc WatchSessionSummaries(WatchSessionSummariesRequest) returns (stream WatchSessionSummariesResponse) {
@@ -524,4 +528,15 @@ message ReadNativeFramesResponse {
   repeated NativeFrame frames = 1;
   // Absent on the last page.
   optional uint64 next_after_sequence = 2;
+}
+
+// A fresh snapshot is sent on each connection. Session IDs are bounded as in BatchGetSessionSummaries.
+message WatchSelectedSessionSummariesRequest { repeated string session_ids = 1; }
+message WatchSelectedSessionSummariesResponse {
+  oneof observation {
+    BatchGetSessionSummariesResponse snapshot = 1;
+    SessionSummary summary = 2;
+    string removed_session_id = 3;
+    google.protobuf.Empty reconnect_required = 4;
+  }
 }

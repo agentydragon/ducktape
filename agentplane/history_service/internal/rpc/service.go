@@ -47,16 +47,17 @@ type Options struct {
 func Methods(subjects auth.SubjectResolver) auth.Methods {
 	rule := auth.AnySubject(subjects)
 	return auth.Methods{
-		historypb.HistoryService_ReadSessionEvents_FullMethodName:        rule,
-		historypb.HistoryService_FollowSession_FullMethodName:            rule,
-		historypb.HistoryService_ReadSessionObservations_FullMethodName:  rule,
-		historypb.HistoryService_GetSessionSummary_FullMethodName:        rule,
-		historypb.HistoryService_BatchGetSessionSummaries_FullMethodName: rule,
-		historypb.HistoryService_ReadThreadEntities_FullMethodName:       rule,
-		historypb.HistoryService_ReadEntityEvidence_FullMethodName:       rule,
-		historypb.HistoryService_ReadNativeFrames_FullMethodName:         rule,
-		historypb.HistoryService_FindSessions_FullMethodName:             rule,
-		historypb.HistoryService_WatchSessionSummaries_FullMethodName:    rule,
+		historypb.HistoryService_ReadSessionEvents_FullMethodName:             rule,
+		historypb.HistoryService_FollowSession_FullMethodName:                 rule,
+		historypb.HistoryService_ReadSessionObservations_FullMethodName:       rule,
+		historypb.HistoryService_GetSessionSummary_FullMethodName:             rule,
+		historypb.HistoryService_BatchGetSessionSummaries_FullMethodName:      rule,
+		historypb.HistoryService_ReadThreadEntities_FullMethodName:            rule,
+		historypb.HistoryService_ReadEntityEvidence_FullMethodName:            rule,
+		historypb.HistoryService_ReadNativeFrames_FullMethodName:              rule,
+		historypb.HistoryService_FindSessions_FullMethodName:                  rule,
+		historypb.HistoryService_WatchSessionSummaries_FullMethodName:         rule,
+		historypb.HistoryService_WatchSelectedSessionSummaries_FullMethodName: rule,
 	}
 }
 
@@ -73,6 +74,7 @@ func ReadMethods() []string {
 		historypb.HistoryService_ReadNativeFrames_FullMethodName,
 		historypb.HistoryService_FindSessions_FullMethodName,
 		historypb.HistoryService_WatchSessionSummaries_FullMethodName,
+		historypb.HistoryService_WatchSelectedSessionSummaries_FullMethodName,
 	}
 }
 

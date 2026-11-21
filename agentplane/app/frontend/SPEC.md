@@ -54,7 +54,10 @@ reconnected watch must reach `CaughtUp` before its observations become current. 
 EnvironmentDown never imply idle. History supplies conversation content and the last completed
 turn's outcome. Materialization never establishes that a harness is running. A Session with no
 History summary appears with its materialization state. History-only records cannot add list
-members. Metadata and History watches refresh the joins without polling.
+members. The App metadata watch refreshes cached metadata; the scoped History watch supplies
+summary snapshots and changes for the visible and open Sessions. Dispatcher updates reselect the
+window without refetching App metadata. A replacement summary watch retains the previous view until
+its snapshot is ready.
 
 The Thread page uses Dispatcher placement to identify the exact Environment before History exists.
 Failed or unknown materialization and its reason are visible and command controls are disabled. Retained History remains visible when available. Missing identity
