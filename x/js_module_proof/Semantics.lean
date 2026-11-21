@@ -430,3 +430,48 @@ def runExecution {α : Type} : ExecutionState α → List Operation → Option (
   | state, operation :: operations => do
     let next ← executeStep state operation
     runExecution next operations
+
+inductive RelatedOperations (relation : Operation → Operation → Prop) : List Operation → List Operation → Prop where
+  | nil : RelatedOperations relation [] []
+  | cons {left right leftTail rightTail} : relation left right → RelatedOperations relation leftTail rightTail →
+      RelatedOperations relation (left :: leftTail) (right :: rightTail)
+
+/- Lift a relation preserved by each pair of machine steps to any finite pair
+   of operation sequences. Both executions must complete in the model. -/
+theorem runExecution_relation_preserved {α : Type}
+    (stateRel : ExecutionState α → ExecutionState α → Prop)
+    (operationRel : Operation → Operation → Prop)
+    (preserve : ∀ left right leftOp rightOp leftNext rightNext,
+      stateRel left right → operationRel leftOp rightOp →
+      executeStep left leftOp = some leftNext → executeStep right rightOp = some rightNext →
+      stateRel leftNext rightNext)
+    (leftOps rightOps : List Operation) (operations : RelatedOperations operationRel leftOps rightOps)
+    (left right leftFinal rightFinal : ExecutionState α)
+    (initial : stateRel left right)
+    (leftRun : runExecution left leftOps = some leftFinal)
+    (rightRun : runExecution right rightOps = some rightFinal) : stateRel leftFinal rightFinal := by
+  induction operations generalizing left right with
+  | nil =>
+    change some left = some leftFinal at leftRun
+    change some right = some rightFinal at rightRun
+    cases leftRun
+    cases rightRun
+    exact initial
+  | @cons leftOp rightOp leftTail rightTail opRelated tailsRelated inductionHypothesis =>
+    change (executeStep left leftOp).bind (fun next => runExecution next leftTail) = some leftFinal at leftRun
+    change (executeStep right rightOp).bind (fun next => runExecution next rightTail) = some rightFinal at rightRun
+    cases leftStep : executeStep left leftOp with
+    | none =>
+      rw [leftStep] at leftRun
+      cases leftRun
+    | some leftNext =>
+      cases rightStep : executeStep right rightOp with
+      | none =>
+        rw [rightStep] at rightRun
+        cases rightRun
+      | some rightNext =>
+        rw [leftStep] at leftRun
+        rw [rightStep] at rightRun
+        exact inductionHypothesis leftNext rightNext
+          (preserve left right leftOp rightOp leftNext rightNext initial opRelated leftStep rightStep)
+          leftRun rightRun

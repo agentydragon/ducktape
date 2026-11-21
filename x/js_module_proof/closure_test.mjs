@@ -26,6 +26,14 @@ function cli(...args) {
 const models = (
   await Promise.all(["Semantics.lean", "Effects.lean", "Bindings.lean"].map((n) => readFile(join(here, n), "utf8")))
 ).join("\n");
+if (shard === 0) {
+  const modelCheck = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
+    encoding: "utf8",
+    input: models + "\n#print axioms runExecution_relation_preserved\n",
+  });
+  assert.equal(modelCheck.status, 0, modelCheck.stdout + modelCheck.stderr);
+  assert.match(modelCheck.stdout, /'runExecution_relation_preserved' does not depend on any axioms/);
+}
 if (shard < 2) {
   await writeFile(
     source,
@@ -757,6 +765,7 @@ example : (storeCapturedFrame [("cell", 3)] [("first", "cell"), ("second", "cell
 #print axioms captured_call_frame_preserved
 #print axioms captured_completion_preserved
 #print axioms captured_machine_step_preserved
+#print axioms runExecution_relation_preserved
 def frameExampleBody : NumericExpr :=
   .assign "value" (.add (.name "value") (.add (.name "delta") (.name "seed"))) (.name "value")
 def frameExampleLeft : ExecutionState Unit := ⟨[("seed", 4)], [], [], none, [], none, [("left-cell", 3)]⟩
@@ -776,6 +785,7 @@ example : (executeStep frameExampleRight (.invokeCaptured [("value", "right-cell
   assert.match(replay.stdout, /'captured_call_frame_preserved' does not depend on any axioms/);
   assert.match(replay.stdout, /'captured_completion_preserved' does not depend on any axioms/);
   assert.match(replay.stdout, /'captured_machine_step_preserved' does not depend on any axioms/);
+  assert.match(replay.stdout, /'runExecution_relation_preserved' does not depend on any axioms/);
   const emitted = join(out, "alias.mjs");
   await writeFile(emitted, (await readFile(emitted, "utf8")).replaceAll("first", "second"));
   assert.equal(cli("validate", source, spec, out).result, "unknown");
