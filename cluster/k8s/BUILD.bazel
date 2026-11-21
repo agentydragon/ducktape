@@ -1,13 +1,4 @@
 filegroup(
-    name = "cluster_yaml_files",
-    srcs = glob(
-        ["**/*.yaml"],
-        exclude = ["flux/flux-system/**"],
-    ),
-    visibility = ["//cluster:__subpackages__"],
-)
-
-filegroup(
     name = "cluster_all_files",
     srcs = glob(
         ["**"],
@@ -18,30 +9,18 @@ filegroup(
 
 # Focused tests inline these direct-file inputs in their data lists.
 exports_files(
-    [
-        "haku/forgejo-tea/haku-forgejo-tea.sops.yaml",
-        "haku/mailbox/nginx.conf",
-        "kustomization.yaml",
-    ],
-    visibility = [
-        "//cluster/cdk8s:__pkg__",
-        "//cluster/cdk8s/haku:__pkg__",
-        "//cluster/cdk8s/haku_ci:__pkg__",
-        "//cluster/validation:__pkg__",
-    ],
+    ["haku/forgejo-tea/haku-forgejo-tea.sops.yaml"],
+    visibility = ["//cluster/cdk8s/haku_ci:__pkg__"],
 )
 
 exports_files(
-    [
-        "clickhouse/cluster/public-coder-credentials.sops.yaml",
-    ],
-    visibility = [
-        "//cluster/cdk8s:__pkg__",
-        "//cluster/cdk8s/clickhouse:__pkg__",
-        "//cluster/cdk8s/haku:__pkg__",
-        "//cluster/cdk8s/haku_ci:__pkg__",
-        "//cluster/validation:__pkg__",
-    ],
+    ["haku/mailbox/nginx.conf"],
+    visibility = ["//cluster/cdk8s/haku:__pkg__"],
+)
+
+exports_files(
+    ["clickhouse/cluster/public-coder-credentials.sops.yaml"],
+    visibility = ["//cluster/cdk8s/clickhouse:__pkg__"],
 )
 
 exports_files(
