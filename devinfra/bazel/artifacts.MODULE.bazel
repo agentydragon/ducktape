@@ -113,15 +113,6 @@ http_archive(
     urls = ["https://snapshot.debian.org/archive/debian/20260301T000000Z/pool/main/c/ca-certificates/ca-certificates_20250419_all.deb"],
 )
 
-# tiktoken o200k_base encoding (used by gpt-4o) — bundled for offline/RBE testing.
-# Cache key = sha1("https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken")
-http_file(
-    name = "tiktoken_o200k_base",
-    downloaded_file_path = "fb374d419588a4632f3f557e76b4b70aebbca790",
-    sha256 = "446a9538cb6c348e3516120d7c08b09f57c36495e2acfffe59a5bf8b0cfb1a2d",
-    urls = ["https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken"],
-)
-
 # NLTK data for the Wordle environment (//x/rl_finetune:wordle_env), pinned to an nltk_data
 # commit so its tests need no network. NLTK reads <root>/corpora/words/ and
 # <root>/taggers/averaged_perceptron_tagger_eng/ as directories (its zip lookup does not cover the
