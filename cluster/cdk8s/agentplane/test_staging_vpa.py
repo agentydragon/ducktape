@@ -27,6 +27,7 @@ def test_vpa_bounds_fit_staging_deployments(scratch_app: App) -> None:
         memory = resources.memory
         assert memory is not None
         if minimum is not None:
+            assert memory.request is not None
             assert _mib(memory.request.as_string()) <= _mib(minimum)
         if maximum is not None:
             assert memory.limit is not None
