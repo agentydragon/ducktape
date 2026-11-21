@@ -747,6 +747,7 @@ py_test(
         ":bills",
         ":books",
         ":capture",
+        ":holdings",
         ":ids",
         ":market_path",
         ":mortgage",

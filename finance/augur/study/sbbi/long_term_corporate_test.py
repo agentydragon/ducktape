@@ -54,7 +54,7 @@ def reproduced(evidence_dir: Path) -> dict[int, float]:
     return reproduce(evidence_dir)
 
 
-def test_the_published_series_was_read_correctly(reproduced: dict[int, float]) -> None:
+def test_the_published_series_was_read_correctly() -> None:
     """The vendored annual returns are the diagonal of a holding-period matrix, so a misread row
     is the live risk. The monograph's own summary statistics are computed from all 62 years and
     published separately, so agreeing with them is an independent check on the transcription —

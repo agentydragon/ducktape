@@ -139,7 +139,6 @@ class YearRecord:
     prior_book: int | None
     spending: Spending
     funding: tuple[tuple[Stage, int], ...]
-    swept: int
     # Withheld from the withdrawal to repay earlier tax advances; it stays in the portfolio.
     repaid: int
     # Moved from the withdrawal into the tax reserve toward this year's tax.
@@ -406,15 +405,7 @@ def annual_actions(observation: Observation, cell: Cell, memory: Memory) -> list
             )
     memory.records.append(
         YearRecord(
-            year,
-            wealth,
-            None if last is None else last.book,
-            spending,
-            tuple(funding),
-            swept,
-            repaid,
-            reserved,
-            settled,
+            year, wealth, None if last is None else last.book, spending, tuple(funding), repaid, reserved, settled
         )
     )
     memory.last = _Review(observation.cpi[0], prices, spending.withdrawal, None, 0)
