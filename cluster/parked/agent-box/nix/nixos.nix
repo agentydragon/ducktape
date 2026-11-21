@@ -93,7 +93,7 @@ in
   # Each agent user's own SSH/age identity (agent-box-<user>-user), encrypted to the
   # VM's host key. NixOS sops-nix decrypts it via the persisted host key and plants
   # it at ~/.ssh/id_ed25519; home-manager (user=<name>) then chains its own sops-nix
-  # secrets (BuildBuddy, attic, Forgejo bot key) off this id.
+  # secrets (BuildBuddy, attic) off this id.
   # tmpfiles pre-creates each ~/.ssh <user>-owned so home-manager can write into it.
   systemd.tmpfiles.rules = map (u: "d /home/${u.name}/.ssh 0700 ${u.name} users - -") agentUsers;
   sops.secrets = builtins.listToAttrs (
@@ -119,8 +119,8 @@ in
           shell = pkgs.zsh;
           openssh.authorizedKeys.keys = loginKeys;
           extraGroups = [ "systemd-journal" ];
-          # home-manager installs the user-level sops secrets (BuildBuddy, Forgejo,
-          # attic) via the agent user's `sops-nix.service` systemd *user* unit. A
+          # home-manager installs the user-level sops secrets (BuildBuddy, attic)
+          # via the agent user's `sops-nix.service` systemd *user* unit. A
           # headless, non-lingering user has no `systemd --user`, so that unit never
           # starts and the secrets never land. Linger keeps the user manager up at boot.
           # TODO(better): can home-manager sops install user secrets without a

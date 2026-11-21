@@ -42,7 +42,6 @@ py_library(
         ":cluster",
         ":port_forward",
         ":tls",
-        ":tracing",
         "//agentplane/session_dispatcher/dispatcher:testing_client",
         "@pypi//grpcio",
     ],
@@ -52,7 +51,6 @@ py_library(
     name = "dispatcher_operations",
     srcs = ["dispatcher_operations.py"],
     deps = [
-        ":dispatcher_transport",
         "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb2",
         "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb2_grpc",
         "@pypi//grpcio",  # keep: mypy follows generated gRPC interfaces

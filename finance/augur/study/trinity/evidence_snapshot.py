@@ -20,14 +20,12 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from finance.evidence.sources import EvidenceSource
-from finance.scraper.http_fetch import HttpGet, http_get as _real_http_get
+from finance.scraper.http_fetch import http_get
 
 logger = logging.getLogger(__name__)
 
 
-async def snapshot_evidence(
-    directory: Path, evidence_sources: Iterable[EvidenceSource], *, http_get: HttpGet = _real_http_get
-) -> None:
+async def snapshot_evidence(directory: Path, evidence_sources: Iterable[EvidenceSource]) -> None:
     """GET every source concurrently into `directory/<output_filename>`, as raw bytes.
 
     Bytes, not parsed content: a binary upstream (Ken French ships a zip) needs nothing

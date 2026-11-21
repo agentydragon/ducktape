@@ -1,4 +1,5 @@
 import Experiments.Automation
+import Experiments.CoreJS.Frame
 import Experiments.Ladder
 import Experiments.MiniJS
 import Experiments.MiniJSExample

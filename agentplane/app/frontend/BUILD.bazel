@@ -125,14 +125,6 @@ ts_config(
     src = "tsconfig.json",
 )
 
-# Generated Zod modules infer their exported types from the generated schemas; declaration emit
-# needs whole-program inference rather than isolatedDeclarations' authored-type annotations.
-ts_config(
-    name = "tsconfig_generated",
-    src = "tsconfig.generated.json",
-    deps = [":tsconfig"],
-)
-
 # TypeScript types from the app's OpenAPI document: the inventory's models and routes. The bridge's
 # proto-JSON bodies are plain objects there; the runner's shared protocol types them.
 openapi_js_library(
@@ -368,8 +360,10 @@ agentplane_visual_test(
 
 ts_library(
     name = "harness_network",
+    testonly = True,
     srcs = ["harness/network.ts"],
     tsconfig = TSCONFIG,
+    deps = ["//agentplane/app/frontend/sessions/testing:electric_entity"],
 )
 
 agentplane_vitest_test(

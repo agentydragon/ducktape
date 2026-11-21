@@ -54,10 +54,12 @@ from finance.augur.sim.property import (
 from finance.augur.sim.property_tax import PropertyTaxPolicy
 from finance.augur.sim.schedule import Once, Recurring, Schedule
 from finance.augur.sim.tax_authority import MortgageInterestDeduction
+from finance.augur.sim.testing.accounts import ref
 from finance.augur.sim.testing.bills import biller
 from finance.augur.sim.testing.issuer_protocol import issuer_protocol
 from finance.augur.sim.testing.situs import START_YEAR, UNTAXED, property_tax
-from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
+from finance.augur.sim.testing.tlh import NO_HARVEST
+from finance.augur.sim.tlh import TlhOpeningCohort
 from finance.augur.sim.world import World
 
 HOLDER = AgentId("test-holder")
@@ -70,13 +72,6 @@ HORIZON = 2
 TAXABLE = Taxable()
 # A payout that is all taxable interest.
 WHOLLY_INTEREST: Mapping[TransferIncomeCategory, int] = {InterestIncome(character=TAXABLE): 1_000_000_000}
-FLAT = TlhAssumptions(
-    peak_annual_yield=0, floor_annual_yield=0, maturity_decay_exponent=1, drawdown_sensitivity=0, short_term_fraction=1
-)
-
-
-def ref(agent_id: AgentId, account_id: AccountId = CHECKING) -> AccountRef:
-    return AccountRef(agent_id=agent_id, account_id=account_id)
 
 
 def prices(*values: int) -> Series:
@@ -608,7 +603,7 @@ def portfolio(
         account_id=account_id,
         asset_id=STOCK,
         initial_cohorts=(cohort,),
-        assumptions=FLAT,
+        assumptions=NO_HARVEST,
     )
 
 

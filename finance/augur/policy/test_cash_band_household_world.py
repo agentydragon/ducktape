@@ -28,17 +28,14 @@ from finance.augur.sim.capture import FinancialCapture, FinancialOutput
 from finance.augur.sim.ids import AccountId, AgentId, AssetId, LotId, PortfolioId
 from finance.augur.sim.market_path import MarketPath, Series
 from finance.augur.sim.schedule import Once
-from finance.augur.sim.tlh import TlhAssumptions, TlhOpeningCohort
+from finance.augur.sim.testing.tlh import NO_HARVEST
+from finance.augur.sim.tlh import TlhOpeningCohort
 from finance.augur.sim.world import World
 
 ALICE = AgentId("alice")
 CREDITOR = AgentId("creditor")
 CASH = AccountId("cash-account")
 HOLDINGS = AccountId("holdings-account")
-# No modeled harvest: the managed sleeve's value moves only with contributions here.
-QUIET = TlhAssumptions(
-    peak_annual_yield=0, floor_annual_yield=0, maturity_decay_exponent=1, drawdown_sensitivity=0, short_term_fraction=1
-)
 GUARDED = AgentId("test-alice")
 STOCK = AssetId("test-stock")
 CHECKING = AccountId("checking")
@@ -138,7 +135,7 @@ def run(case: Situation) -> FinancialOutput:
             account_id=HOLDINGS,
             asset_id=AssetId("index"),
             initial_cohorts=(case.managed,),
-            assumptions=QUIET,
+            assumptions=NO_HARVEST,
         )
     world.track(
         Biller(

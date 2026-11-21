@@ -3,7 +3,8 @@
 A dedicated, SSH-accessible NixOS VM (`agent-box`) hosting agent users, each under
 its own scoped identity. The first user, `codex`, runs the OpenAI Codex CLI. Its
 Forgejo and Authentik service accounts and their repository/Kubernetes access
-are retired by this configuration; this VM remains parked. Baseline UX:
+are retired, and its home-manager config installs no Forgejo or Kubernetes credentials;
+this VM remains parked. Baseline UX:
 `ssh codex@agent-box.allegedly.works` (or `ssh agent-box.allegedly.works` from a
 host with the matchBlock), attach tmux, drive `codex`.
 
@@ -35,14 +36,6 @@ You log in _as_ codex with your personal keys (in `authorizedKeys`); the
 `agent-box-codex-user` key remains the codex user's identity for the separate
 parked VM secrets.
 
-## Retired Forgejo and Kubernetes access
-
-The `agent-box-codex` Forgejo and Authentik accounts are retired by this
-configuration, along with their Forgejo SSH/API credentials and the
-Authentik-issued Kubernetes JWT. The parked home-manager config no longer
-installs Forgejo or Kubernetes credentials. The VM's host and user age identities
-remain for its separate configuration and secrets.
-
 ## First-boot secret ordering (known-ugly, works)
 
 Direct-boot images hit a first-boot race that bootstrap+switch never hits (gecko's
@@ -62,13 +55,6 @@ around in `nix/nixos.nix`:
 This directory is archival. Its CDI image and credential point at the retired
 `vm-images` SeaweedFS bucket. Port the VM to an OCI `containerDisk` image before
 adding it back to Flux; see <../../docs/kubevirt_vm_image_artifacts.md>.
-
-- The former flow booted the VM, then ran
-  `nixos-rebuild switch ...#agent-box` (pause before activating per house rule).
-- Its first `forgejo-agentydragon-repos` reconcile mutates the real Forgejo repos
-  (adopt + collaborators) — watch the initial Terraform plan/apply. Settings were
-  matched to the live repos to keep the import diff-free; collaborator grants are
-  additive.
 
 ## See also
 

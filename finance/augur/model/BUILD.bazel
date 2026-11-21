@@ -331,6 +331,7 @@ py_library(
         ":exogenous",
         ":market_paths",
         ":series",
+        "@pypi//more_itertools",
         "@pypi//numpy",
     ],
 )

@@ -173,7 +173,7 @@ export function ActionCall({
           </Text>
           {combinedCall.content}
         </div>
-      ) : combinedCall?.includesResult && combinedCall.content != null && !raw ? null : (
+      ) : (
         <div>
           {!(prettyArguments === null && !raw) && (
             <>

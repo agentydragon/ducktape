@@ -25,12 +25,7 @@ func TestMain(m *testing.M) {
 
 func claimedExecutorStore(t *testing.T) (*sessionstore.Store, sessionstore.Owner) {
 	t.Helper()
-	store := runtimetesting.NewStore(t, integrationDatabase)
-	session := runtimetesting.OpenSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, _, owner := runtimetesting.ClaimedSession(t, integrationDatabase)
 	if err := store.SetExecutorSession(t.Context(), owner, "retained-executor", nil); err != nil {
 		t.Fatal(err)
 	}

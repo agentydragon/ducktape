@@ -155,7 +155,6 @@ func scanConversation(row rowScanner) (*Conversation, error) {
 	var (
 		conversation      Conversation
 		owner             sql.NullString
-		lease             sql.NullTime
 		pending           []byte
 		executor          sql.NullString
 		transcriptID      sql.NullString
@@ -167,7 +166,7 @@ func scanConversation(row rowScanner) (*Conversation, error) {
 		shell             sql.NullString
 		environment       []byte
 	)
-	if err := row.Scan(&conversation.ID, &conversation.Generation, &owner, &lease, &pending,
+	if err := row.Scan(&conversation.ID, &conversation.Generation, &owner, &pending,
 		&conversation.Stopped, &executor, &transcriptID, &activeID, &transcriptControl, &activeControl, &instructions, &contextTokens, &shell, &environment, &conversation.API); err != nil {
 		return nil, err
 	}
@@ -182,9 +181,6 @@ func scanConversation(row rowScanner) (*Conversation, error) {
 	}
 	if owner.Valid {
 		conversation.Owner = &owner.String
-	}
-	if lease.Valid {
-		conversation.LeaseUntil = &lease.Time
 	}
 	if executor.Valid {
 		conversation.ExecutorSession = &executor.String
@@ -207,7 +203,7 @@ func scanConversation(row rowScanner) (*Conversation, error) {
 	return &conversation, nil
 }
 
-const conversationColumns = `id::text, generation, owner::text, lease_until, pending, stopped,
+const conversationColumns = `id::text, generation, owner::text, pending, stopped,
 	executor_session, transcript_context_id, active_context_id, transcript_control, active_control, instructions, context_tokens, executor_shell, environment_context, api`
 
 func lockOwner(ctx context.Context, tx *sql.Tx, owner Owner) (*Conversation, error) {
@@ -234,12 +230,11 @@ func lockOwnerHeader(ctx context.Context, tx *sql.Tx, owner Owner) (*Conversatio
 	var (
 		conversation Conversation
 		currentOwner sql.NullString
-		leaseUntil   sql.NullTime
 		pending      []byte
 	)
-	err := tx.QueryRowContext(ctx, `SELECT id::text,generation,owner::text,lease_until,pending
+	err := tx.QueryRowContext(ctx, `SELECT id::text,generation,owner::text,pending
 		FROM sampler_conversation WHERE id=$1 FOR UPDATE`, owner.ConversationID).Scan(
-		&conversation.ID, &conversation.Generation, &currentOwner, &leaseUntil, &pending,
+		&conversation.ID, &conversation.Generation, &currentOwner, &pending,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, &LostOwnershipError{Reason: "conversation no longer exists"}
@@ -252,9 +247,6 @@ func lockOwnerHeader(ctx context.Context, tx *sql.Tx, owner Owner) (*Conversatio
 	}
 	if currentOwner.Valid {
 		conversation.Owner = &currentOwner.String
-	}
-	if leaseUntil.Valid {
-		conversation.LeaseUntil = &leaseUntil.Time
 	}
 	if conversation.Pending, err = decodePendingIntent(pending); err != nil {
 		return nil, err

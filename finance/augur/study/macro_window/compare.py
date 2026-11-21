@@ -50,17 +50,6 @@ EVIDENCE = tuple(
 )
 
 
-def spectral_radius(transition: object) -> float:
-    """How persistent the fitted state is: the largest |eigenvalue| of `A`.
-
-    Below 1 or the VAR(1) is non-stationary and the simulated path wanders without bound. How
-    close it sits to 1 is how long a run of high inflation can persist, which is the property
-    this whole state exists to carry.
-    """
-
-    return float(np.max(np.abs(np.linalg.eigvals(np.asarray(transition, dtype=float)))))
-
-
 def stationary_sigma(fit: MacroVarFit) -> list[float]:
     """Each state's unconditional standard deviation under the fitted process.
 
@@ -92,7 +81,7 @@ def describe(window: MacroFitWindow, fit: MacroVarFit) -> str:
         str(window),
         f"  span            {fit.first_month} .. {fit.latest_month}  ({fit.sample_months} months)",
         f"  sources         {','.join(source.provenance_label for source in macro_fit_sources(window))}",
-        f"  persistence     spectral radius {spectral_radius(fit.transition):.4f}",
+        f"  persistence     spectral radius {fit.spectral_radius:.4f}",
     ]
     lines.extend(
         f"  {name:<15} shock sd {shock:.5f}   stationary sd {sigma:.5f}"

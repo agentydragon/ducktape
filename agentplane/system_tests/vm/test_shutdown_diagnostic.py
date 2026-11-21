@@ -10,6 +10,19 @@ from agentplane.system_tests.vm.shutdown_diagnostic import record, require_order
 
 NAMESPACE = "systest"
 VMI_UID = "fake-vmi-uid"
+ORDERLY_SERIAL = (
+    b"AGENTPLANE_GUEST_SHUTDOWN_REQUESTED\nAGENTPLANE_GUEST_SHUTDOWN_COMPLETE\n[  72.512345] reboot: Power down\n"
+)
+
+
+@pytest.fixture
+def output(tmp_path: Path) -> Path:
+    return tmp_path / "test.outputs"
+
+
+@pytest.fixture
+def artifacts(output: Path) -> Path:
+    return output / "vm-artifacts"
 
 
 def _serial(artifacts: Path, content: bytes, *, uid: str = VMI_UID) -> Path:
@@ -48,13 +61,8 @@ def _host_logs(artifacts: Path, *, forced: bool = False, shutdown_event: bool = 
         launcher.write_text(_cri("virt-launcher", "Domain stopped.", uid=uid))
 
 
-def test_records_ordered_guest_shutdown_and_correlated_host_evidence(tmp_path: Path) -> None:
-    output = tmp_path / "test.outputs"
-    artifacts = output / "vm-artifacts"
-    _serial(
-        artifacts,
-        b"AGENTPLANE_GUEST_SHUTDOWN_REQUESTED\nAGENTPLANE_GUEST_SHUTDOWN_COMPLETE\n[  72.512345] reboot: Power down\n",
-    )
+def test_records_ordered_guest_shutdown_and_correlated_host_evidence(output: Path, artifacts: Path) -> None:
+    _serial(artifacts, ORDERLY_SERIAL)
     _host_logs(artifacts)
     # A prior VMI with a reused name expired its grace period. UID correlation must exclude it.
     with (artifacts / "handlers/handler.log").open("a") as output_file:
@@ -80,13 +88,8 @@ def test_records_ordered_guest_shutdown_and_correlated_host_evidence(tmp_path: P
     require_orderly_shutdown(report)
 
 
-def test_correlates_and_classifies_a_kubevirt_forced_stop(tmp_path: Path) -> None:
-    output = tmp_path / "test.outputs"
-    artifacts = output / "vm-artifacts"
-    _serial(
-        artifacts,
-        b"AGENTPLANE_GUEST_SHUTDOWN_REQUESTED\nAGENTPLANE_GUEST_SHUTDOWN_COMPLETE\n[  72.512345] reboot: Power down\n",
-    )
+def test_correlates_and_classifies_a_kubevirt_forced_stop(output: Path, artifacts: Path) -> None:
+    _serial(artifacts, ORDERLY_SERIAL)
     _host_logs(artifacts, forced=True)
     write_progress(output, "sandbox_deleted")
 
@@ -102,13 +105,8 @@ def test_correlates_and_classifies_a_kubevirt_forced_stop(tmp_path: Path) -> Non
         require_orderly_shutdown(report)
 
 
-def test_domain_stopped_destroyed_is_a_forced_stop_without_kill_log(tmp_path: Path) -> None:
-    output = tmp_path / "test.outputs"
-    artifacts = output / "vm-artifacts"
-    _serial(
-        artifacts,
-        b"AGENTPLANE_GUEST_SHUTDOWN_REQUESTED\nAGENTPLANE_GUEST_SHUTDOWN_COMPLETE\n[  72.512345] reboot: Power down\n",
-    )
+def test_domain_stopped_destroyed_is_a_forced_stop_without_kill_log(output: Path, artifacts: Path) -> None:
+    _serial(artifacts, ORDERLY_SERIAL)
     handler = artifacts / "handlers/handler.log"
     launcher = artifacts / "launchers/compute.log"
     handler.parent.mkdir(parents=True)
@@ -133,13 +131,8 @@ def test_domain_stopped_destroyed_is_a_forced_stop_without_kill_log(tmp_path: Pa
     assert events["virt_launcher_kill"] == []
 
 
-def test_missing_correlated_host_logs_is_not_reported_as_no_forced_stop(tmp_path: Path) -> None:
-    output = tmp_path / "test.outputs"
-    artifacts = output / "vm-artifacts"
-    _serial(
-        artifacts,
-        b"AGENTPLANE_GUEST_SHUTDOWN_REQUESTED\nAGENTPLANE_GUEST_SHUTDOWN_COMPLETE\n[  72.512345] reboot: Power down\n",
-    )
+def test_missing_correlated_host_logs_is_not_reported_as_no_forced_stop(output: Path, artifacts: Path) -> None:
+    _serial(artifacts, ORDERLY_SERIAL)
     _host_logs(artifacts, uid="unrelated-vmi")
     write_progress(output, "sandbox_deleted")
 
@@ -151,13 +144,8 @@ def test_missing_correlated_host_logs_is_not_reported_as_no_forced_stop(tmp_path
     assert lifecycle["observation"] == "correlated_handler_or_launcher_logs_missing"
 
 
-def test_correlated_host_logs_without_shutdown_event_remain_unknown(tmp_path: Path) -> None:
-    output = tmp_path / "test.outputs"
-    artifacts = output / "vm-artifacts"
-    _serial(
-        artifacts,
-        b"AGENTPLANE_GUEST_SHUTDOWN_REQUESTED\nAGENTPLANE_GUEST_SHUTDOWN_COMPLETE\n[  72.512345] reboot: Power down\n",
-    )
+def test_correlated_host_logs_without_shutdown_event_remain_unknown(output: Path, artifacts: Path) -> None:
+    _serial(artifacts, ORDERLY_SERIAL)
     _host_logs(artifacts, shutdown_event=False)
     write_progress(output, "sandbox_deleted")
 
@@ -191,22 +179,14 @@ def test_correlated_host_logs_without_shutdown_event_remain_unknown(tmp_path: Pa
             b"[  72.512345] reboot: Power down\n",
             "shutdown_markers_missing_or_out_of_order",
         ),
-        (
-            "guest_ready",
-            b"AGENTPLANE_GUEST_SHUTDOWN_REQUESTED\nAGENTPLANE_GUEST_SHUTDOWN_COMPLETE\n"
-            b"[  72.512345] reboot: Power down\n",
-            "sandbox_deletion_not_completed",
-        ),
+        ("guest_ready", ORDERLY_SERIAL, "sandbox_deletion_not_completed"),
     ],
 )
 def test_classifies_incomplete_lifecycle_or_shutdown_evidence(
-    tmp_path: Path, phase: str, serial: bytes, classification: str
+    output: Path, artifacts: Path, phase: str, serial: bytes, classification: str
 ) -> None:
-    output = tmp_path / "test.outputs"
-    artifacts = output / "vm-artifacts"
     if phase not in ("not_started", "started"):
         _serial(artifacts, serial)
-    if phase not in ("not_started", "started"):
         _host_logs(artifacts)
     write_progress(output, phase)
 
@@ -217,9 +197,7 @@ def test_classifies_incomplete_lifecycle_or_shutdown_evidence(
         require_orderly_shutdown(report)
 
 
-def test_reports_guest_launch_evidence_separately_from_fixture_setup(tmp_path: Path) -> None:
-    output = tmp_path / "test.outputs"
-    artifacts = output / "vm-artifacts"
+def test_reports_guest_launch_evidence_separately_from_fixture_setup(output: Path, artifacts: Path) -> None:
     console = artifacts / f"consoles/{NAMESPACE}_virt-launcher-probe_uid-one/console.log"
     console.parent.mkdir(parents=True)
     console.write_text("guest kernel boot started\n")
@@ -230,9 +208,7 @@ def test_reports_guest_launch_evidence_separately_from_fixture_setup(tmp_path: P
     assert report["classification"] == "guest_launch_seen_before_ready"
 
 
-def test_refuses_receipts_that_are_not_complete_lines(tmp_path: Path) -> None:
-    output = tmp_path / "test.outputs"
-    artifacts = output / "vm-artifacts"
+def test_refuses_receipts_that_are_not_complete_lines(output: Path, artifacts: Path) -> None:
     _serial(
         artifacts,
         b"not AGENTPLANE_GUEST_SHUTDOWN_REQUESTED\nAGENTPLANE_GUEST_SHUTDOWN_COMPLETE extra\nreboot: Power down",

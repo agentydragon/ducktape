@@ -23,6 +23,18 @@ The checker reads one footprint per unit: what it declares, reads, may write, an
 - **Two kinds of error, with different cures.** F2 and F5 are bugs in the engine (a depth cap, the recursion). F1 and F3 are wrong rows in the table of standard functions. A proof against a semantics removes the first kind. It removes the second only if the standard functions are defined in the semantics and not asserted in a table.
 - **Fail-safe needs care at every cap.** F2 and the audit of the give-up paths found give-ups that forgot what the skipped code could reach: a depth limit that returned "unknown value" without running or flagging the accessors behind it. A cap must degrade to "runs unknown code", never to "nothing happened".
 
+## The first slice of a model
+
+[`CoreJS`](../lean/Experiments/CoreJS/) is an executable model of a core of JavaScript, with one footprint rule proved in it ([`../experiments/README.md`](../experiments/README.md) § 14).
+
+- **An interpreter can be tested, and the test found the one error.** Model and Node agree on every program both run. The one disagreement on the way was the last bit of `**`, which the specification leaves to the implementation; the operator is refused now.
+- **The program generator barely reaches the model.** No whole generated program is in the fragment, because nearly every one calls the standard library. Cut down to the units the model accepts, about 9% of the units are left. Hand-written cases carry the object model. A few methods of strings and arrays would let whole programs through.
+- **Where an object is allocated decides how hard commutation is.** With one counter, two units in the other order make the same objects at other addresses, and "the same state" needs a renaming. The model gives each unit its own region to allocate in, which JavaScript cannot observe, and the two orders end in equal states.
+- **Start-up runs little code and most of the language.** Block coverage of the large bundle in a browser, taken at the end of module evaluation ([`executed_census.mjs`](../experiments/translation/executed_census.mjs)): 248 of the application chunk's 21,885 functions were entered (1.1%), and 3,125 of the vendor chunk's 30,548 (10.2%). That code still used 37 of 45 tracked language features, 60 of 65 node types, and 112 standard functions counted by name, with 3,648 regular expression literals evaluated. Not run: `throw`, `yield`, dynamic `import()`, `import.meta`. So "only start-up needs an exact model" shrinks the code, not the language.
+- **The application chunk alone is much closer to the model.** There the features outside `CoreJS` ran rarely (70 spreads, 38 regular expressions, 12 destructuring patterns, 12 optional chains, 5 `for`-`of`, 3 async functions), except `class … extends`, 162 times: every class is evaluated at start-up. It called 46 standard functions by name.
+- **So the standard library is the part that cannot be modelled by writing it down.** Syntax is finite and each construct is small. A hundred standard functions with a regular expression engine are not. They have to enter the model as parameters with a stated class of behaviour, which leaves the table of standard functions as an assumption that is tested and not proved.
+- **Unknown code has to be an outcome of the model.** A run ends with a value, a thrown value, or "reached code the model does not define". That keeps the fragment honest: nothing outside it gets a guessed result.
+
 ## What the large bundle says
 
 Numbers are for one production bundle of 9,707 units and its reviewed tree of 2,793 modules, under premise P3. The evidence is in the private repository.

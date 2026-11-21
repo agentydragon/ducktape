@@ -59,6 +59,7 @@ from cluster.cdk8s.agentplane import (
 )
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.platform_instructions import agent_cli_environment, platform_instructions, service_urls
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy, isolate_ingress
 from cluster.cdk8s.service_ref import Pods
 from cluster.cdk8s.settings_file import SettingsFile
@@ -244,10 +245,7 @@ class EnvironmentSandboxTemplate(Construct):
                 self.env, [*sandbox_pod.proxy_environment(), *(key.env() for key in self.key_files)]
             ),
             resources=self.executor_resources
-            or k8s.ResourceRequirements(
-                requests={"cpu": k8s.Quantity.from_string("250m"), "memory": k8s.Quantity.from_string("512Mi")},
-                limits={"cpu": k8s.Quantity.from_string("2"), "memory": k8s.Quantity.from_string("2Gi")},
-            ),
+            or container_resources(cpu="250m", memory="512Mi", cpu_limit="2", memory_limit="2Gi"),
             liveness_probe=liveness_probe,
             readiness_probe=readiness_probe,
             volume_mounts=[
@@ -353,10 +351,7 @@ class EnvironmentSandboxTemplate(Construct):
                 ],
             ),
             resources=self.environment_runtime_resources
-            or k8s.ResourceRequirements(
-                requests={"cpu": k8s.Quantity.from_string("500m"), "memory": k8s.Quantity.from_string("1Gi")},
-                limits={"cpu": k8s.Quantity.from_string("2"), "memory": k8s.Quantity.from_string("4Gi")},
-            ),
+            or container_resources(cpu="500m", memory="1Gi", cpu_limit="2", memory_limit="4Gi"),
             ports=[k8s.ContainerPort(name="env-runtime", container_port=ENVIRONMENT_RUNTIME_SERVICE_PORT)],
             volume_mounts=[
                 *self._execution_mounts(),

@@ -6,6 +6,9 @@ import (
 	"github.com/google/go-github/v88/github"
 )
 
+// pageSize is the page size every paginated read asks for, the most GitHub's REST API returns.
+const pageSize = 100
+
 type resourcePage[T any] struct {
 	value    T
 	response *github.Response

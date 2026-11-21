@@ -42,7 +42,7 @@ from more_itertools import one
 
 from finance.augur.model.series import LocationId
 from finance.augur.policy.funding import ClaimPayer
-from finance.augur.sim.books import AccountRef, TaxAccrual
+from finance.augur.sim.books import TaxAccrual
 from finance.augur.sim.fixed_point import rate_to_ppb
 from finance.augur.sim.ids import CHECKING, AgentId, JurisdictionId, LiabilityId, PropertyId
 from finance.augur.sim.income import ORDINARY_INCOME
@@ -64,6 +64,7 @@ from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.situs import compile_situs
 from finance.augur.sim.tax_authority import SaltDeduction
+from finance.augur.sim.testing.accounts import ref
 from finance.augur.sim.testing.session import each, finish
 from finance.augur.sim.testing.situs import property_tax
 from finance.augur.sim.testing.tax_authority import filer
@@ -152,10 +153,6 @@ MAINLAND_VALLEJO = Expected(
 
 def dollars(amount: Decimal | int) -> int:
     return USD.quanta(Decimal(amount))
-
-
-def ref(agent: AgentId) -> AccountRef:
-    return AccountRef(agent_id=agent, account_id=CHECKING)
 
 
 def compose(case: Expected) -> World:

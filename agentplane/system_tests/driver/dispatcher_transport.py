@@ -11,44 +11,13 @@ from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispa
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.port_forward import PortForward, async_port_forward
 from agentplane.system_tests.driver.tls import service_svid_credentials
-from agentplane.system_tests.driver.tracing import tracer
 
 SERVICE = "sessions"
-TOKEN_AUDIENCE = "session-dispatcher"
 
 
 @dataclass(frozen=True)
 class Caller:
-    token: str | None = field(default=None, repr=False)
     channel_credentials: grpc.ChannelCredentials | None = field(default=None, repr=False)
-
-    @property
-    def metadata(self) -> tuple[tuple[str, str], ...]:
-        return (("authorization", f"Bearer {self.token}"),) if self.token is not None else ()
-
-
-async def bound_caller(
-    cluster: Cluster, service_account: str, *, audience: str = TOKEN_AUDIENCE
-) -> tuple[Caller, str, str]:
-    """Mint an audience-scoped token bound to an existing service Pod."""
-    with tracer.start_as_current_span("system_test.dispatcher.caller"):
-        pods = json.loads(
-            await cluster.kubectl("get", "pods", "-l", f"app.kubernetes.io/name={service_account}", "-o", "json")
-        )
-        pod = next(item for item in pods["items"] if not item["metadata"].get("deletionTimestamp"))
-        name = pod["metadata"]["name"]
-        uid = pod["metadata"]["uid"]
-        token = await cluster.kubectl(
-            "create",
-            "token",
-            service_account,
-            f"--audience={audience}",
-            "--duration=1800s",
-            "--bound-object-kind=Pod",
-            f"--bound-object-name={name}",
-            f"--bound-object-uid={uid}",
-        )
-        return Caller(token), name, uid
 
 
 async def service_caller(cluster: Cluster, component: str, *, certificate_secret: str) -> tuple[Caller, str, str]:

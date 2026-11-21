@@ -113,9 +113,8 @@ keep working. Browser History watches reconnect and refresh summaries when the s
   `sandbox_models.py`: deployment configuration schema used by cdk8s.
 - `agentplane/sandboxes/runtimeconfig`: shared deployment-published model and harness offers read by
   the app and existing-environment discovery.
-- `testing/`: Go process fixtures, real service peers and test-only HTTP DTOs checked against Go's
-  OpenAPI schema. Browser and Electric tests use Chromium, PostgreSQL, History and Electric with
-  the Go API process. k3s tests deploy the packaged Go image.
+- `testing/`: Go process fixtures, real service peers and test-only HTTP DTOs. Browser and Electric tests use
+  Chromium, PostgreSQL, History and Electric with the Go API process. k3s tests deploy the packaged Go image.
 - `frontend/`: React SPA and visual scenarios on the repository's TypeScript/esbuild toolchain.
 
 ## Live views
@@ -143,8 +142,7 @@ unchanged commands alone. Deletion receipts may have no Sandbox address. If rete
 that some delivery updates may be missing. A fresh snapshot cannot recover pruned deletion receipts.
 Queued and delivering are distinct from runner admission; a Dispatcher admission proves only that the Runner journaled the command, not an effect.
 History remains the authority for command outcomes. The browser retains the command locally until History
-projects its admission or command row; the app adds no command queue. Grant the Session Dispatcher's
-service caller allowlist `spiffe://agentplane/app` before rolling out an app image that requires this setting.
+projects its admission or command row; the app adds no command queue.
 
 The `/upstream/dispatcher/…` BFF routes expose generated Dispatcher HTTP reads and writes to a browser
 operator session. Agents and Agentplane services call the Dispatcher over native gRPC, not through the app.
@@ -159,10 +157,10 @@ and executor report command failures after submission.
 
 The Sandbox page lists Sessions from the Dispatcher's retained inventory, including Sessions that
 History has not recorded. Materialization and required Environment state come from Dispatcher;
-a row's running/idle mark still comes from History and live Environment observations. Thread marks
-are not current while their watches are disconnected. The Status tab shows the
-Sandbox's state and lets an operator change its wake-on-message and idle-suspend settings, as the list
-does; the Kubernetes conditions and containers below start open only where one is unmet. It reads
+a row's running/idle mark comes from Dispatcher activity and is Unknown while its watch is disconnected.
+The Status tab shows the Sandbox's state and lets an operator change its wake-on-message and idle-suspend
+settings, as the list does; the Kubernetes conditions and containers below start open only where one is
+unmet. It reads
 `GET /upstream/environments/v1/environments/{namespace}/{name}:runtime-diagnostics?target.uid={uid}`
 through the generated EnvironmentService facade for current runner process and Session diagnostics; it does not
 wake a suspended Sandbox. A missing or unavailable runner is
@@ -382,12 +380,12 @@ clears the token and rebuilds the inventory from a new snapshot; reloading the p
 empty. Disconnection keeps the previous view with stale health. Tokens advance after applying frames.
 
 Dispatcher records alone determine list membership, newest-first order and Environment grouping.
-The browser joins paged App metadata for titles and archived state and batched History summaries
+The browser joins paged App metadata for titles and archived state and History summaries
 for visible rows. History-only metadata cannot add a Session to the list. Search, archive counts
 and pagination apply to Dispatcher members; the open Session stays pinned outside the visible page.
 A missing History summary yields a row showing Dispatcher materialization, with no invented
-running/idle state. History summary and App metadata watches invalidate their joins; inventory
-upserts refresh them directly. There is no list polling loop. History content continues through
+running/idle state. App metadata watch frames reload metadata; summary frames and inventory
+upserts reselect the window. There is no list polling loop. History content continues through
 its existing Electric shapes. The App metadata list and watch expose only App-held titles and
 archived state, keyed by Session ID; metadata creation time orders metadata pages. They do not read
 History, filter by Environment, synthesize membership, or relay History notifications. Browsers get
@@ -402,11 +400,8 @@ sidebar and the landing page share one browser listing and its search.
 
 The retained snapshot stays navigable during an outage, and the browser connection, stale
 Kubernetes watch, and disconnected database listener all show in the topbar's one connection
-indicator rather than as page banners. A Thread's live dot
-requires fresh sources, a running Sandbox, and its last observed harness state; a stale persisted
-RUNNING state alone does not make a suspended or deleted Sandbox look live. The snapshot includes
-the feed's active turn, and how the Thread's last completed turn ended (`last_turn_status`, read
-from the newest stored `turn_completed` entry through a partial index), so the sidebar and
+indicator rather than as page banners. A Thread's status dot follows Dispatcher activity; History
+contributes only how the Thread's last completed turn ended (`last_turn_status`), so the sidebar and
 open-thread composer can use the same status-dot component. These are operational snapshots, not
 replacements for a Thread's runner Event prefix.
 
@@ -430,8 +425,8 @@ The Thread composer shows an approximate age of this Thread's latest model-origi
 beside its send controls on wider screens, or at the scrollable Thread history tail on narrow screens.
 The fold records it on the Thread's summary in the same transaction as the events it folds, using
 assistant/reasoning output and generated tool calls/arguments; it ignores tool
-output, user input, harness bookkeeping and turn completion. A migration backfills existing
-logs. The timestamp is a **proxy** for LLM-request recency: model output can arrive well after
+output, user input, harness bookkeeping and turn completion. The timestamp is a **proxy** for
+LLM-request recency: model output can arrive well after
 an upstream request, and a request with no model output may not be represented. The UI does
 not report a provider request time or a cache hit. The value remains meaningful during a
 long-running tool or an active turn, and is unknown when no qualifying event was observed.
@@ -511,7 +506,7 @@ Authorize follows only the server-held continuation returned by the authenticate
 Service; no client or browser-provided URL is accepted. Deny grants nothing and leaves a
 terminal page. Completing consent alone does not activate a grant: the MCP edge's OAuth server still
 verifies the same upstream operator and completes issuance. Operator credentials never
-reach the external client. An external-client Action is auto-approved only by an
+reach the external client. An external-client Action is auto-approved only by a
 PolicyBinding naming its ServiceAccount, otherwise by the operator; clients sharing a
 ServiceAccount share receipts while submitted Actions preserve exact connection provenance.
 
@@ -687,16 +682,9 @@ snapshot, and changing the Environment incarnation or account discards the prior
 
 ## Decisions
 
-- **Connection direction:** Environments dials the runner's private mTLS gRPC server
-  ([runner control](../docs/runner_control.md)); the runner pushes journals to Event ingress.
-  Callers use the stable `environments` Service across Pod replacements.
 - **Model credentials:** staging uses a dedicated key for OpenAI/Claude subscription and local
-  Ollama chat routes; testing uses the `cheap-experiments` LiteLLM key. The Pod holds no
-  key: the sidecar strips caller Authorization on the exact-origin SVID route, the central proxy
-  authorizes CONNECT for the Sandbox's ServiceAccount, and the LLM ingress verifies the current
-  Sandbox certificate before it uses its one server-held key. The model endpoint remains governed
-  by the credentialless egress design in [the ADR](../docs/adr_sandbox_proxy_gateway.md) rather
-  than excepted from it.
+  Ollama chat routes; testing uses the `cheap-experiments` LiteLLM key. The Pod holds no key: see
+  [LLM ingress](../llm_ingress/README.md) and the [egress design](../docs/adr_sandbox_proxy_gateway.md).
 - **No gRPC-Web or Connect surface for browsers:** the app stays the one HTTP surface; the schema is
   shared through proto-JSON and generated types instead.
 - **Deletion takes only a suspended sandbox:** it removes the Pod and the volume with everything on

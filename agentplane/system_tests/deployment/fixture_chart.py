@@ -222,6 +222,12 @@ PUBLIC_LITELLM_ROUTES = HarnessRoutes(claude=(HAIKU_API,), codex=(GPT6_LUNA_RESP
 _ONE_REPLICA = ReplicaProfile(count=1, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None)
 _EGRESS_CA = "systest-egress-ca"
 _LITELLM_KEY_SECRET = "litellm-key-cheap-experiments"
+_THREAD_PRESETS = {launch_preset.THREAD_PRESET: launch_preset.thread_preset(model=GPT6_LUNA_RESPONSES.id)}
+_SANDBOX_PRESETS = {
+    launch_preset.SANDBOX_PRESET: launch_preset.sandbox_preset(
+        template=POD_TEMPLATE, policy_sets=[egress.PACKAGES_POLICY]
+    )
+}
 
 
 def add_secret(
@@ -278,12 +284,6 @@ def app_props(
     *, routes: HarnessRoutes, operator_oidc: OperatorOidcSettings, operator_token_key: str | None, app_origin: str
 ) -> AppProps:
     catalog = app_settings.model_catalog(routes, central_sampler_enabled=bool(routes.central_sampler))
-    thread_presets = {launch_preset.THREAD_PRESET: launch_preset.thread_preset(model=GPT6_LUNA_RESPONSES.id)}
-    sandbox_presets = {
-        launch_preset.SANDBOX_PRESET: launch_preset.sandbox_preset(
-            template=POD_TEMPLATE, policy_sets=[egress.PACKAGES_POLICY]
-        )
-    }
     return AppProps(
         origin=app_origin,
         oidc_issuer=DEX_ISSUER,
@@ -291,8 +291,8 @@ def app_props(
         config=Settings(
             models=catalog,
             connection_service_url=AnyHttpUrl(f"https://{MCP_EDGE_SERVICE.fqdn}:{MCP_EDGE_SERVICE.port.number}"),
-            thread_presets=thread_presets,
-            sandbox_presets=sandbox_presets,
+            thread_presets=_THREAD_PRESETS,
+            sandbox_presets=_SANDBOX_PRESETS,
             egress_admin_url=AnyHttpUrl(egress.admin(NAMESPACE).url),
             egress_admin_tls=workload_tls.service_client_tls(EGRESS_PROXY_URI, client_uri=APP_URI),
             sandbox_namespace=NAMESPACE,
@@ -383,12 +383,6 @@ def actions_props(
     oauth_secret_items: Sequence[str],
     central_sampler_session_delegation: bool,
 ) -> ActionsProps:
-    thread_presets = {launch_preset.THREAD_PRESET: launch_preset.thread_preset(model=GPT6_LUNA_RESPONSES.id)}
-    sandbox_presets = {
-        launch_preset.SANDBOX_PRESET: launch_preset.sandbox_preset(
-            template=POD_TEMPLATE, policy_sets=[egress.PACKAGES_POLICY]
-        )
-    }
     return ActionsProps(
         central_sampler_session_delegation=central_sampler_session_delegation,
         operator_oidc=operator_oidc,
@@ -411,7 +405,7 @@ def actions_props(
         },
         oauth_secret_items=oauth_secret_items,
         orchestration_v1=OrchestrationProps(
-            presets=app_settings.orchestration_presets(sandbox_presets=sandbox_presets, thread_presets=thread_presets)
+            presets=app_settings.orchestration_presets(sandbox_presets=_SANDBOX_PRESETS, thread_presets=_THREAD_PRESETS)
         ),
     )
 
@@ -709,11 +703,7 @@ def add_backend_services(
         env,
         database_url=history_database_url,
         callers=platform_callers | notifications_caller | orchestration_caller,
-        delegation_actor=(
-            ServiceAccountRef(namespace=NAMESPACE, name=actions.NAME)
-            if env.actions.orchestration_v1 is not None
-            else None
-        ),
+        delegation_actor=environment_service_delegation_actor,
         placement=None,
         registry_secret_name=None,
         container_env=database_env,
@@ -922,11 +912,7 @@ def _fixture_vm_firmware(kernel_args: str) -> VirtualMachineSpecTemplateSpecDoma
 
 
 def add_vm_templates(
-    chart: Chart,
-    env: Environment,
-    runner_template: environment_sandbox.EnvironmentSandboxTemplate,
-    *,
-    workspace_storage_class: str = block_storage.STORAGE_CLASS,
+    chart: Chart, env: Environment, runner_template: environment_sandbox.EnvironmentSandboxTemplate
 ) -> None:
     """Compose the ordinary and test-only VM templates from the fixture's runner Pod."""
     scope = chart
@@ -940,7 +926,7 @@ def add_vm_templates(
         state_claim["storageClassName"] = env.vm_storage_class
     vm_state_volume = {**state_volume, "claim": state_claim}
     workspace_volume = environment_sandbox.workspace_volume_spec(
-        vm_state_volume, layout_type="BlockFilesystem", storage_class=workspace_storage_class
+        vm_state_volume, layout_type="BlockFilesystem", storage_class=block_storage.STORAGE_CLASS
     )
     config_data = environment_guest.guest_config_data(
         env,

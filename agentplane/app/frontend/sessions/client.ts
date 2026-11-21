@@ -12,8 +12,6 @@ import {
   type ThreadMetadata,
 } from "../../app_service_pb";
 import {
-  BatchGetSessionSummariesRequestSchema,
-  BatchGetSessionSummariesResponseSchema,
   GetSessionSummaryRequestSchema,
   ReadEntityEvidenceRequestSchema,
   ReadEntityEvidenceResponseSchema,
@@ -531,41 +529,6 @@ export function selectThreadWindow(
     return { metadata: row, summary, session };
   });
   return { threads, more: filtered.length > listing.limit, archived_count: archivedCount };
-}
-
-/** Join watched inventory with metadata and History. */
-export async function listThreadWindow(
-  listing: ThreadListing,
-  openThreadId: string | null,
-  sessions: readonly Session[],
-  signal?: AbortSignal
-): Promise<ThreadWindow> {
-  if (listing.limit < 1) throw new Error("Thread list limit must be positive");
-  const metadata = await listThreadMetadata(signal);
-  const selected = selectThreadWindow(listing, openThreadId, sessions, metadata, new Map());
-  const visible = selected.threads.map((thread) => thread.session!);
-  const summaries = new Map<string, SessionSummary>();
-  for (let offset = 0; offset < visible.length; offset += 100) {
-    const batch = visible.slice(offset, offset + 100);
-    const response = fromJson(
-      BatchGetSessionSummariesResponseSchema,
-      await historyJson("/sessions:batchGetSummaries", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal,
-        body: JSON.stringify(
-          toJson(
-            BatchGetSessionSummariesRequestSchema,
-            create(BatchGetSessionSummariesRequestSchema, {
-              sessionIds: batch.map((session) => session.sessionId),
-            })
-          )
-        ),
-      })
-    );
-    for (const summary of response.summaries) summaries.set(summary.sessionId, summary);
-  }
-  return selectThreadWindow(listing, openThreadId, sessions, metadata, summaries);
 }
 
 export function sessionEnvironment(session: Session | undefined): ExactEnvironment | undefined {

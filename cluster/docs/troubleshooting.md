@@ -10,10 +10,11 @@
 <lessons_learned/2026_03_07_talosctl_upgrade_hostname_loss.md> for platform-specific
 configuration and the full-plan warning.
 
-### Stale podCIDR After Node Hostname Change
+### Stale podCIDR After Node Hostname Change or Recreate
 
-**Symptoms**: Pods can't reach ClusterIP services; Longhorn `ManagerPodDown`; cascade to
-ESO secret sync. Pods have IPs outside node's `spec.podCIDR`.
+**Symptoms**: Pods can't reach ClusterIP services (`no route to host`); cascade to ESO
+secret sync. Pods have IPs outside node's `spec.podCIDR`: a hostname change or recreate
+gives the node a fresh podCIDR, and Cilium then routes only the new range.
 
 **Fix**: Delete pods with old-CIDR IPs -- DaemonSets recreate with correct IPs.
 
@@ -399,9 +400,9 @@ provisioners carry `ttlSecondsAfterFinished`, which deletes the finished Job so 
 reconcile recreates and re-runs it — recovery without a human. Change-driven scripts
 (the `readonly-role` GRANT Jobs) deliberately do **not**: a TTL there would convert a
 run-on-change script into a run-on-schedule one. Those stay on the manual recovery above.
-Rationale lives next to the Jobs themselves — see
-`HaMcpCredentialsProvisioner._add_job` in <../cdk8s/ha_mcp.py> and
-`_readonly_provisioner` in <../cdk8s/study_casino/app.py>.
+Rationale lives next to the Jobs themselves — see the TTL comment in
+<../cdk8s/atuin/user_provisioner.py> and `_readonly_provisioner` in
+<../cdk8s/study_casino/app.py>.
 
 ## Removing a CRD Operator (Uninstall Runbook)
 

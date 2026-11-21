@@ -723,7 +723,6 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
     db_url: str,
     store: ThreadHTTP,
     event_logs: SessionHistory,
-    content: SessionHistory,
     history: History,
     history_service: GoHistoryService,
     electric: ElectricService,
@@ -900,12 +899,7 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
         await page.context.set_offline(True)
         await ingress.drop_connections()
         source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text=" after reconnect")))
-        async with asyncio.timeout(10):
-            while True:
-                scope = await content.session_summary(thread)
-                if scope is not None and scope.folded_through >= source.entries[-1].cursor:
-                    break
-                await asyncio.sleep(0.01)
+        await history_service.folded(thread, source.entries[-1].cursor)
         # Whether or not the delta beat the drop, nothing shown is withdrawn.
         await expect(page.get_by_text("Projected browser prefix and streamed suffix", exact=False)).to_have_count(1)
         await page.context.set_offline(False)

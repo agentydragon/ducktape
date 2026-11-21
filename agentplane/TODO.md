@@ -15,3 +15,11 @@
       without altering the provider's opaque payload. Verify that the instruction reaches the continued
       model and that it can retrieve earlier items and calls/results after compaction, including for a
       central sampler Session.
+- [ ] Decide what to do with the two disposable `sampler-storage-smoke-20261112` Sessions in staging
+      History, if they still exist (`f247d7fd-1ffd-483f-af22-e9d6108d83ef` and
+      `91397b91-a732-41e3-bfa8-ae79a8977efa`). Their saved attachment projection still carries the
+      retired `executionPrincipal`, so the fold treats them as permanent failures, and
+      `GetSessionSummary` fails for them and `BatchGetSessionSummaries` for any batch naming either.
+      Options: keep them failed, rebuild their projection from validated binary History (verify first
+      that every input decodes and the projection is reconstructible), or retire them. A rebuild or
+      retirement needs separate operator authorization.

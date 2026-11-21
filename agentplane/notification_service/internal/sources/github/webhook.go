@@ -478,8 +478,6 @@ func ParseDelivery(appID int64, event string, deliveryID uuid.UUID, raw []byte) 
 		if found.head != nil {
 			ingest.Revisions = append(ingest.Revisions, githubmodel.HeadRevision{Repository: *found.head, SHA: *found.sha})
 		}
-	}
-	if common.repository != nil && found.sha != nil {
 		switch event {
 		case string(githubmodel.EventCheckRun):
 			checkRun, err := webhookCheckRun(body, common.action, *found.sha)

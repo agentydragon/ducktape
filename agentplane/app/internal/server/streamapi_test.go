@@ -23,13 +23,8 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
-func newStreamTestAuth(t *testing.T) *testauth.Fixture {
-	t.Helper()
-	return testauth.New(t)
-}
-
 func TestOperatorStreamsAndProxyRoutesRejectWorkloadTokens(t *testing.T) {
-	authentication := newStreamTestAuth(t)
+	authentication := testauth.New(t)
 	server := newHTTPServer(authentication.Auth)
 	streamhttp.RegisterRoutes(server, server.DrainDone(), streamhttp.Dependencies{})
 	ids := uuid.NewString()
@@ -69,7 +64,7 @@ func TestOperatorStreamsAndProxyRoutesRejectWorkloadTokens(t *testing.T) {
 }
 
 func TestHistoryFacadeRequiresAnAuthenticatedCaller(t *testing.T) {
-	authentication := newStreamTestAuth(t)
+	authentication := testauth.New(t)
 	server := newHTTPServer(authentication.Auth)
 	var gotPath, gotBearer string
 	upstream := &streamTestUpstream{forward: func(w http.ResponseWriter, _ *http.Request, _ context.Context, path, bearer string) error {
@@ -134,7 +129,7 @@ func TestHistoryEntityGeneratedFacade(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	authentication := newStreamTestAuth(t)
+	authentication := testauth.New(t)
 	app := newHTTPServer(authentication.Auth)
 	streamhttp.RegisterRoutes(app, app.DrainDone(), streamhttp.Dependencies{HistoryHTTP: upstreamproxy.NewHandlerUpstream(generated, "")})
 	const id = "9b6d568a-2253-43d7-a7d4-190e98359594"
@@ -184,7 +179,7 @@ func TestHistoryEntityGeneratedFacade(t *testing.T) {
 }
 
 func TestDispatcherFacadeRequiresOperatorSessionForCommands(t *testing.T) {
-	authentication := newStreamTestAuth(t)
+	authentication := testauth.New(t)
 	server := newHTTPServer(authentication.Auth)
 	forwarded := 0
 	upstream := &streamTestUpstream{forward: func(w http.ResponseWriter, _ *http.Request, _ context.Context, _, _ string) error {
@@ -231,7 +226,7 @@ func (f *streamTestUpstream) ForwardHTTP(w http.ResponseWriter, request *http.Re
 }
 
 func TestEnvironmentFacadeRequiresAppCallerAndForwardsManagementAndWatch(t *testing.T) {
-	authentication := newStreamTestAuth(t)
+	authentication := testauth.New(t)
 	server := newHTTPServer(authentication.Auth)
 	var gotPath, gotMethod, gotQuery string
 	upstream := &streamTestUpstream{forward: func(w http.ResponseWriter, request *http.Request, _ context.Context, path, bearer string) error {
@@ -276,7 +271,7 @@ func TestEnvironmentFacadeRequiresAppCallerAndForwardsManagementAndWatch(t *test
 }
 
 func TestEnvironmentGetRequiresAppCallerAndForwardsOnlyTarget(t *testing.T) {
-	authentication := newStreamTestAuth(t)
+	authentication := testauth.New(t)
 	server := newHTTPServer(authentication.Auth)
 	var gotMethod, gotPath, gotQuery string
 	var calls int
@@ -311,7 +306,7 @@ func TestEnvironmentGetRequiresAppCallerAndForwardsOnlyTarget(t *testing.T) {
 }
 
 func TestEnvironmentGeneratedFacadeRejectsUnknownAndDispatcherRoutes(t *testing.T) {
-	authentication := newStreamTestAuth(t)
+	authentication := testauth.New(t)
 	server := newHTTPServer(authentication.Auth)
 	generated, err := facade.NewHandler(t.Context(), "127.0.0.1:1", time.Second, environmentpb.RegisterEnvironmentServiceHandlerFromEndpoint)
 	if err != nil {
@@ -339,7 +334,7 @@ func TestEnvironmentGeneratedFacadeRejectsUnknownAndDispatcherRoutes(t *testing.
 }
 
 func TestEnvironmentGetCancelsUpstreamWithRequest(t *testing.T) {
-	authentication := newStreamTestAuth(t)
+	authentication := testauth.New(t)
 	server := newHTTPServer(authentication.Auth)
 	started := make(chan context.Context, 1)
 	canceled := make(chan error, 1)
@@ -404,7 +399,7 @@ func TestHistorySelectedSummariesGeneratedFacade(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	authentication := newStreamTestAuth(t)
+	authentication := testauth.New(t)
 	app := newHTTPServer(authentication.Auth)
 	streamhttp.RegisterRoutes(app, app.DrainDone(), streamhttp.Dependencies{HistoryHTTP: upstreamproxy.NewHandlerUpstream(generated, "")})
 	httpServer := httptest.NewServer(app.Handler(authentication.Auth))

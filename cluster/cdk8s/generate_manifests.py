@@ -89,7 +89,6 @@ from cluster.cdk8s.agentplane import (
     staging,
     staging_vpa,
 )
-from cluster.cdk8s.agents import flux_kustomizations as agents_flux_kustomizations
 from cluster.cdk8s.artifact_generators import (
     artifact,
     artifact_generators as artifact_generators_factory,
@@ -190,7 +189,12 @@ from cluster.cdk8s.home_assistant import (
     namespace as home_assistant_namespace,
 )
 from cluster.cdk8s.infra_drift import drift_watch
-from cluster.cdk8s.kubevirt import app as kubevirt_app, cdi as kubevirt_cdi, operators as kubevirt_operators
+from cluster.cdk8s.kubevirt import (
+    app as kubevirt_app,
+    cdi as kubevirt_cdi,
+    operators as kubevirt_operators,
+    vpa as kubevirt_vpa,
+)
 from cluster.cdk8s.kyverno import app as kyverno_app, policies as kyverno_policies
 from cluster.cdk8s.litellm import (
     buildbuddy_crossplane as litellm_buildbuddy_crossplane,
@@ -333,9 +337,12 @@ def generate_manifests(root: Path) -> None:
     artifact_generators_factory(flux_chart)
     external_secrets_crds_kustomization = external_secrets_flux_kustomizations.external_secrets_crds(flux_chart)
     flux_image_automation_ghcr_artifact = artifact("flux-image-automation-ghcr", flux_image_automation_ghcr.OUTPUT_DIR)
-    flux_image_automation_ghcr_kustomization = flux_image_automation_ghcr.flux_image_automation_ghcr(
+    flux_image_automation_ghcr_kustomization = flux.flux_kustomization(
         flux_chart,
+        "flux-image-automation-ghcr",
         write_directory(root, flux_image_automation_ghcr_artifact, flux_image_automation_ghcr.automation_chart),
+        retry_interval=None,
+        wait=None,
     )
     haku_namespace_artifact = artifact(haku_namespace.NAME, haku_namespace.OUTPUT_DIR)
     haku_namespace_kustomization = flux.flux_kustomization(
@@ -509,7 +516,9 @@ def generate_manifests(root: Path) -> None:
         timeout="5m",
         depends_on=[flux.flux_kustomization_depends_on(kyverno_kustomization)],
     )
-    kubevirt_cdi.cdi(flux_chart, write_directory(root, cdi_artifact, kubevirt_cdi.chart), cdi_operator_kustomization)
+    cdi_kustomization = kubevirt_cdi.cdi(
+        flux_chart, write_directory(root, cdi_artifact, kubevirt_cdi.chart), cdi_operator_kustomization
+    )
     clickhouse_operator_artifact = artifact("clickhouse-operator", clickhouse_operator.OUTPUT_DIR)
     clickhouse_operator_kustomization = clickhouse_operator.clickhouse_operator(
         flux_chart,
@@ -654,6 +663,15 @@ def generate_manifests(root: Path) -> None:
         write_directory(root, vpa_artifact, vpa.chart),
         timeout="5m",
         depends_on=flux.flux_kustomization_depends_on_many(kyverno_kustomization),
+    )
+    kubevirt_vpa_artifact = artifact(kubevirt_vpa.NAME, kubevirt_vpa.OUTPUT_DIR)
+    flux.flux_kustomization(
+        flux_chart,
+        kubevirt_vpa.NAME,
+        write_directory(root, kubevirt_vpa_artifact, kubevirt_vpa.chart),
+        depends_on=flux.flux_kustomization_depends_on_many(
+            vpa_kustomization, kubevirt_kustomization, cdi_kustomization
+        ),
     )
     flux_system_vpa_artifact = artifact(flux_system_vpa.NAME, flux_system_vpa.OUTPUT_DIR)
     flux.flux_kustomization(
@@ -852,10 +870,19 @@ def generate_manifests(root: Path) -> None:
         flux_chart, write_directory(root, volsync_artifact, volsync.chart), monitoring_crds_kustomization
     )
     agent_shared_rbac_artifact = artifact("agent-shared-rbac", agent_shared_rbac.OUTPUT_DIR)
-    agent_shared_rbac.agent_shared_rbac(
+    flux.flux_kustomization(
         flux_chart,
+        agent_shared_rbac.NAME,
         write_directory(root, agent_shared_rbac_artifact, agent_shared_rbac.chart),
-        claude_rbac_kustomization,
+        retry_interval=None,
+        wait=None,
+        timeout="2m",
+        depends_on=flux.flux_kustomization_depends_on_many(claude_rbac_kustomization),
+        description=(
+            "Cluster-scoped agent RBAC (ClusterRoleBindings) + flux-system "
+            "RoleBindings only. Namespace-scoped RoleBindings live in per-service "
+            "agent-rbac/ directories."
+        ),
     )
     agent_shared_secrets_artifact = artifact("agent-shared-secrets", f"{HAND_WRITTEN_ROOT}/agents/shared-secrets")
     flux.flux_kustomization(
@@ -979,10 +1006,12 @@ def generate_manifests(root: Path) -> None:
     )
     gaffer_private_source_flux_kustomizations.gaffer_private_bridge(flux_chart, kyverno_kustomization)
     dns_automation_artifact = artifact("dns-automation", dns_automation.OUTPUT_DIR)
-    dns_automation_kustomization = dns_automation.dns_automation(
+    dns_automation_kustomization = flux.flux_kustomization(
         flux_chart,
+        dns_automation.NAME,
         write_directory(root, dns_automation_artifact, dns_automation.chart),
-        external_secrets_operator_kustomization,
+        depends_on=flux.flux_kustomization_depends_on_many(external_secrets_operator_kustomization),
+        description="Make Route 53 credentials available to the Crossplane domain delegation Workspace.",
     )
     route53_domain_delegation_artifact = artifact(route53_domain_delegation.NAME, route53_domain_delegation.OUTPUT_DIR)
     route53_domain_delegation.resources(
@@ -1012,12 +1041,17 @@ def generate_manifests(root: Path) -> None:
         flux_chart, write_directory(root, infra_drift_artifact, drift_watch.chart), tofu_controller_kustomization
     )
     alloy_otlp_bearer_artifact = artifact("alloy-otlp-bearer", alloy_otlp_bearer.OUTPUT_DIR)
-    alloy_otlp_bearer.alloy_otlp_bearer(
+    flux.flux_kustomization(
         flux_chart,
+        alloy_otlp_bearer.NAME,
         write_directory(
             root, alloy_otlp_bearer_artifact, alloy_otlp_bearer.chart, siblings=[f"{alloy_otlp_bearer.NAME}.sops.yaml"]
         ),
-        external_secrets_operator_kustomization,
+        retry_interval=None,
+        wait=None,
+        timeout="2m",
+        # ExternalSecret CRD and ESO's failurePolicy: Fail webhook
+        depends_on=flux.flux_kustomization_depends_on_many(external_secrets_operator_kustomization),
     )
     github_secrets_sync_secrets_app = App()
     github_secrets_sync_secrets_chart = github_secrets_sync_secrets.chart(github_secrets_sync_secrets_app)
@@ -1567,12 +1601,19 @@ def generate_manifests(root: Path) -> None:
         ],
     )
     flux_webhook_artifact = artifact("flux-webhook", flux_webhook.OUTPUT_DIR)
-    flux_webhook.flux_webhook(
+    flux.flux_kustomization(
         flux_chart,
+        flux_webhook.NAME,
         write_directory(root, flux_webhook_artifact, flux_webhook.chart),
-        external_secrets_operator_kustomization,
-        kyverno_kustomization,
-        flux_webhook_token_kustomization,
+        retry_interval=None,
+        wait=None,
+        timeout="5m",
+        depends_on=flux.flux_kustomization_depends_on_many(
+            external_secrets_operator_kustomization,
+            # Kyverno's failurePolicy: Fail webhooks admit the HTTPRoute.
+            kyverno_kustomization,
+            flux_webhook_token_kustomization,
+        ),
     )
     cdviz_database_artifact = artifact("cdviz-database", cdviz_database.OUTPUT_DIR)
     cdviz_database_kustomization = cdviz_database.cdviz_database(
@@ -1723,7 +1764,7 @@ def generate_manifests(root: Path) -> None:
         depends_on=flux.flux_kustomization_depends_on_many(external_secrets_operator_kustomization),
         description="Marks roaming laptop nodes out of service while their kubelet is silent, so offline laptops stop blocking DaemonSet rollouts, Helm waits and pod alerts.",
     )
-    agents_flux_kustomizations.plaid_spend_policy(flux_chart)
+    ducktape_flux.plaid_spend_policy(flux_chart)
     plaid_mcp_artifact = artifact("plaid-mcp", plaid_mcp_component.OUTPUT_DIR)
     plaid_mcp_directory = plaid_mcp_component.write_directory(root, plaid_mcp_artifact)
     plaid_mcp_kustomization = plaid_mcp_component.plaid_mcp(
@@ -2376,8 +2417,6 @@ def generate_manifests(root: Path) -> None:
             claude_rbac_artifact,
             authentik_artifact,
             authentik_tf_artifact,
-            sso_providers_artifact,
-            agent_machine_access_artifact,
             cert_manager_artifact,
             cert_manager_environment_artifact,
             cnpg_artifact,
@@ -2395,7 +2434,6 @@ def generate_manifests(root: Path) -> None:
             gitlab_spike_gitops_artifact,
             gitlab_spike_integrations_artifact,
             forgejo_images_artifact,
-            forgejo_images_workspace_artifact,
             gateway_artifact,
             kyverno_artifact,
             litellm_keys_tf_artifact,
@@ -2479,9 +2517,6 @@ def generate_manifests(root: Path) -> None:
             gaffer_private_source_artifact,
             gatus_artifact,
             github_tf_artifact,
-            github_branch_protection_artifact,
-            github_secrets_sync_artifact,
-            flux_webhook_token_artifact,
             github_exporter_artifact,
             att_gateway_exporter_artifact,
             att_gateway_access_code_artifact,
@@ -2504,6 +2539,7 @@ def generate_manifests(root: Path) -> None:
             kube_system_artifact,
             kubevirt_cdi_operator_artifact,
             kubevirt_operator_artifact,
+            kubevirt_vpa_artifact,
             langfuse_artifact,
             matrix_app_artifact,
             matrix_user_provisioner_artifact,

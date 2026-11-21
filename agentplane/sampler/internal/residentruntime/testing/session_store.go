@@ -48,6 +48,17 @@ func OpenSessionForStore(t *testing.T, store *sessionstore.Store, setup string) 
 	return session
 }
 
+func ClaimedSession(t *testing.T, database *postgres.Database) (*sessionstore.Store, *sessionstore.Session, sessionstore.Owner) {
+	t.Helper()
+	store := NewStore(t, database)
+	session := OpenSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return store, session, owner
+}
+
 func AssertNoUnresolvedNestedIntents(t *testing.T, store *sessionstore.Store, owner sessionstore.Owner) {
 	t.Helper()
 	var count int

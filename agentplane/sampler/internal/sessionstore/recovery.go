@@ -591,11 +591,11 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerKey string, expecte
 	return recovered, err
 }
 
+const lostExecutorSessionNotice = "The retained exec-server session was definitively lost. Its live process handles have been abandoned; their remote state is unknown unless explicitly reported, and no mutation was replayed. A fresh executor session is being opened. Recreate any required process state before continuing; old process handles cannot be reused."
+
 // RetireLostExecutorSession records that a retained exec-server session was definitively absent.
 // It abandons process handles without claiming they exited, clears the stale binding, and adds a
 // durable model-visible notice before any fresh executor session can be used.
-const lostExecutorSessionNotice = "The retained exec-server session was definitively lost. Its live process handles have been abandoned; their remote state is unknown unless explicitly reported, and no mutation was replayed. A fresh executor session is being opened. Recreate any required process state before continuing; old process handles cannot be reused."
-
 func (s *Store) RetireLostExecutorSession(ctx context.Context, owner Owner, sessionID, notDispatchedProcessID string) error {
 	if sessionID == "" {
 		return protocol.ErrInvalid

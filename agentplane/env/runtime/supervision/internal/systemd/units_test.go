@@ -51,15 +51,11 @@ func TestUnitFenceEvidence(t *testing.T) {
 		expected  UnitFence
 		wantError bool
 	}{
-		{name: "success without exact expected invocation", snapshot: UnitSnapshot{LoadState: "loaded", ActiveState: "inactive", Result: "success"}, expected: UnitFence{Ordered: true, RequireSuccess: true}, wantError: true},
 		{name: "ordered absence", snapshot: UnitSnapshot{LoadState: "not-found"}, expected: UnitFence{Ordered: true}},
 		{name: "unresolved start absence", snapshot: UnitSnapshot{LoadState: "not-found"}, wantError: true},
 		{name: "loaded UUID reconciles acceptance", snapshot: UnitSnapshot{LoadState: "loaded", ActiveState: "inactive"}},
 		{name: "later stopped invocation", snapshot: UnitSnapshot{LoadState: "loaded", ActiveState: "inactive", InvocationID: "later"}, expected: UnitFence{Ordered: true, InvocationID: "old", ControlGroup: "/old"}, wantError: true},
 		{name: "lost invocation", snapshot: UnitSnapshot{LoadState: "loaded", ActiveState: "inactive"}, expected: UnitFence{Ordered: true, InvocationID: "old"}, wantError: true},
-		{name: "collected success unavailable", snapshot: UnitSnapshot{LoadState: "not-found"}, expected: UnitFence{Ordered: true, InvocationID: "old", RequireSuccess: true}, wantError: true},
-		{name: "successful exact invocation", snapshot: UnitSnapshot{LoadState: "loaded", ActiveState: "inactive", InvocationID: "old", Result: "success"}, expected: UnitFence{Ordered: true, InvocationID: "old", RequireSuccess: true}},
-		{name: "failed exact invocation", snapshot: UnitSnapshot{LoadState: "loaded", ActiveState: "failed", InvocationID: "old", Result: "timeout"}, expected: UnitFence{Ordered: true, InvocationID: "old", RequireSuccess: true}, wantError: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			m := &testSystemdManager{snapshots: []UnitSnapshot{test.snapshot}}
@@ -123,12 +119,6 @@ func TestUnitFenceLostInvocationUsesOnlyCapturedEmptyDomain(t *testing.T) {
 			snapshot:  UnitSnapshot{LoadState: "loaded", ActiveState: "inactive", JobID: 9},
 			expected:  UnitFence{Ordered: true, InvocationID: "old", ControlGroup: "/old"},
 			wantError: true,
-		},
-		{
-			name:     "successful completion still requires invocation result",
-			snapshot: UnitSnapshot{LoadState: "loaded", ActiveState: "inactive"},
-			expected: UnitFence{Ordered: true, InvocationID: "old", ControlGroup: "/old", RequireSuccess: true},
-			empty:    true, wantError: true,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {

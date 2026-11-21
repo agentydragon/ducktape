@@ -2,7 +2,6 @@ package coordinator
 
 import (
 	"context"
-	"net"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -18,6 +17,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
 	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
@@ -153,15 +153,7 @@ func startNativeExecutionTestServer(t *testing.T, notify bool) (string, <-chan s
 
 func startExecutorTestGRPC(t *testing.T, service executorpb.ExecutorServer) string {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := grpc.NewServer()
-	executorpb.RegisterExecutorServer(server, service)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(func() { server.Stop(); _ = listener.Close() })
-	return listener.Addr().String()
+	return grpcserver.ServeRegistered(t, func(server *grpc.Server) { executorpb.RegisterExecutorServer(server, service) })
 }
 
 func TestOpenSessionSurvivesGatewayObserverLoss(t *testing.T) {

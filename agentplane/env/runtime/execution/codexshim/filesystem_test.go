@@ -3,7 +3,6 @@ package codexshim
 import (
 	"context"
 	"encoding/json"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -13,25 +12,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/native"
 	"github.com/coder/websocket"
 )
 
 func TestFilesystemRPCParity(t *testing.T) {
-	core := native.New()
-	defer core.Close()
 	limits := DefaultLimits()
 	limits.MaxReadDirectoryEntries = 4
 	limits.MaxReadFileBytes = 5
-	server := httptest.NewServer(Handler{Server: core, Limits: limits})
-	defer server.Close()
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
-	ws, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http"), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ws.CloseNow()
+	ws := dialShim(t, ctx, serveShim(t, limits))
 
 	call := func(method string, p map[string]any, wantCode int, out any) {
 		t.Helper()

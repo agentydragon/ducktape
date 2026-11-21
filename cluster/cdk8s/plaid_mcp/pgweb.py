@@ -56,12 +56,7 @@ def _deployment(chart: Chart) -> None:
             namespace=NAMESPACE,
             labels=_LABELS,
             annotations={
-                **namespaces.initial_request_annotations(
-                    # Peak 30-day working set was 36Mi.
-                    ContainerPolicy.memory_requests_only(
-                        "pgweb", cpu_request=_CPU_REQUEST, memory_floor="64Mi", memory_limit=_MEMORY_LIMIT
-                    )
-                ),
+                **namespaces.initial_request_annotations(ContainerPolicy.cpu_and_memory_requests_only("pgweb")),
                 "description": (
                     "pgweb over the Plaid sync database as the read-only plaid_ro role, for sandboxes that reach it"
                     " through the agentplane-staging egress proxy."
@@ -137,18 +132,7 @@ def chart(app: App) -> Chart:
         chart,
         "service",
         metadata=k8s.ObjectMeta(name=_NAME, namespace=NAMESPACE, labels=_LABELS),
-        spec=k8s.ServiceSpec(
-            selector=_LABELS,
-            ports=[
-                k8s.ServicePort(
-                    name=SERVICE.port.name,
-                    port=SERVICE.port.number,
-                    target_port=k8s.IntOrString.from_number(SERVICE.pod_port),
-                    protocol="TCP",
-                )
-            ],
-            type="ClusterIP",
-        ),
+        spec=k8s.ServiceSpec(selector=_LABELS, ports=[SERVICE.k8s_service_port()], type="ClusterIP"),
     )
     NetworkPolicy(
         chart,

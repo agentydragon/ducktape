@@ -658,7 +658,7 @@ class Actions(Construct):
             )
             # Its own directory: a subPath file cannot be mounted inside the read-only
             # settings volume (runc: "not a directory").
-            container.mount(f"/run/secrets/{mount.name}", bearer_volume, read_only=True)
+            container.mount(mount.mount_dir, bearer_volume, read_only=True)
         return workload
 
     def _add_network_policy(self) -> None:

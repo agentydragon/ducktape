@@ -35,7 +35,6 @@ from vpa_crds.io.k8s.autoscaling import (
     VerticalPodAutoscalerSpec,
     VerticalPodAutoscalerSpecResourcePolicy,
     VerticalPodAutoscalerSpecResourcePolicyContainerPolicies,
-    VerticalPodAutoscalerSpecResourcePolicyContainerPoliciesMaxAllowed,
     VerticalPodAutoscalerSpecResourcePolicyContainerPoliciesMinAllowed,
     VerticalPodAutoscalerSpecTargetRef,
     VerticalPodAutoscalerSpecUpdatePolicy,
@@ -398,16 +397,11 @@ def vpa_chart(app: App) -> Chart:
                 container_policies=[
                     VerticalPodAutoscalerSpecResourcePolicyContainerPolicies(
                         container_name="app",
-                        controlled_resources=["memory"],
+                        controlled_resources=["cpu", "memory"],
                         controlled_values="RequestsOnly",
                         min_allowed={
                             "memory": VerticalPodAutoscalerSpecResourcePolicyContainerPoliciesMinAllowed.from_string(
                                 "224Mi"
-                            )
-                        },
-                        max_allowed={
-                            "memory": VerticalPodAutoscalerSpecResourcePolicyContainerPoliciesMaxAllowed.from_string(
-                                "240Mi"
                             )
                         },
                     ),

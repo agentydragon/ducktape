@@ -1,14 +1,13 @@
-package main
+package settings
 
 import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/native"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/settings"
 )
 
 func TestReadLimits(t *testing.T) {
-	got, err := settings.Parse(`{"native":{"max_sessions":3},"codex":{"max_message_bytes":2097152}}`)
+	got, err := Parse(`{"native":{"max_sessions":3},"codex":{"max_message_bytes":2097152}}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -16,7 +15,7 @@ func TestReadLimits(t *testing.T) {
 		t.Fatalf("unexpected merged limits: %+v", got)
 	}
 	for _, value := range []string{`{"native":{"unknown":1}}`, `{"codex":{"max_open_files":0}}`, `[]`, `{} {}`} {
-		if _, err := settings.Parse(value); err == nil {
+		if _, err := Parse(value); err == nil {
 			t.Fatalf("accepted invalid limits %s", value)
 		}
 	}

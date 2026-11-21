@@ -44,7 +44,7 @@ func (s *Service) SubmitActionRequest(ctx context.Context, request *action_servi
 	case store.OperatorPrincipal:
 		return nil, status.Error(codes.PermissionDenied, "an operator cannot submit a request")
 	default:
-		// A service reader acts as no caller: it is refused as an account without the caller label is.
+		// A service reader acts as no caller.
 		return nil, grpcgate.ErrUnauthenticated
 	}
 	input, arguments, err := submission(request)

@@ -17,13 +17,7 @@ from mcp.client.auth.oauth2 import OAuthClientProvider
 from mcp.client.auth.utils import extract_resource_metadata_from_www_auth
 from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamable_http_client
-from mcp.shared.auth import (
-    AuthorizationCodeResult,
-    OAuthClientInformationFull,
-    OAuthClientMetadata,
-    OAuthMetadata,
-    ProtectedResourceMetadata,
-)
+from mcp.shared.auth import AuthorizationCodeResult, OAuthClientMetadata, OAuthMetadata, ProtectedResourceMetadata
 from pydantic import AnyUrl
 
 
@@ -49,12 +43,6 @@ def _safe_reason(error: BaseException) -> str:
     if isinstance(error, BaseExceptionGroup):
         return "; ".join(sorted({_safe_reason(child) for child in error.exceptions}))
     return type(error).__name__
-
-
-@dataclass(repr=False)
-class Registration:
-    client: OAuthClientInformationFull = field(repr=False)
-    authorization_url: str = field(repr=False)
 
 
 @dataclass
@@ -124,12 +112,11 @@ class _Wire:
             self.stage = "registration validation"
 
 
-async def register_client(server: str, redirect_uri: str) -> Registration:
+async def register_client(server: str, redirect_uri: str) -> None:
     """Initiate MCP using a fresh SDK client; stop only after validated DCR.
 
     No static client ID, bearer, cached credentials, mock HTTP, browser, or token
-    exchange. The returned authorization URL stays in memory for optional testing
-    against the real consent boundary. The caller must refuse pytest --showlocals.
+    exchange.
     """
     __tracebackhide__ = True
     wire = _Wire(server)
@@ -141,11 +128,11 @@ async def register_client(server: str, redirect_uri: str) -> Registration:
         response_types=["code"],
         token_endpoint_auth_method="none",
     )
-    registration: Registration | None = None
+    registered = False
 
     async def redirect(url: str) -> None:
         __tracebackhide__ = True
-        nonlocal registration
+        nonlocal registered
         client = await storage.get_client_info()
         _require(client is not None, "SDK did not persist registration result")
         assert client is not None
@@ -166,7 +153,7 @@ async def register_client(server: str, redirect_uri: str) -> Registration:
         )
         _require(authorization.params.get("code_challenge_method") == "S256", "SDK did not prepare S256 PKCE")
         _require(bool(authorization.params.get("state")), "SDK did not prepare OAuth state")
-        registration = Registration(client=client, authorization_url=url)
+        registered = True
         raise _RegistrationCompleteError
 
     async def callback() -> AuthorizationCodeResult:
@@ -197,10 +184,8 @@ async def register_client(server: str, redirect_uri: str) -> Registration:
                     await session.initialize()
             except* _RegistrationCompleteError:
                 pass
-            _require(registration is not None, "MCP initialization ended without validated registration")
+            _require(registered, "MCP initialization ended without validated registration")
             _require(await storage.get_tokens() is None, "Registration-only probe obtained a token")
-            assert registration is not None
-            return registration
     except Exception as error:
         # SDK errors may include response bodies or OAuth state. Do not chain them,
         # including when nested inside the transport's AnyIO exception groups.

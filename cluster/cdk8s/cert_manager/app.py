@@ -56,16 +56,7 @@ def _availability(component: str, *, replicas: int, min_available: int) -> dict[
     return {
         "replicaCount": replicas,
         "podDisruptionBudget": {"enabled": True, "minAvailable": min_available},
-        "affinity": {
-            "podAntiAffinity": {
-                "requiredDuringSchedulingIgnoredDuringExecution": [
-                    {
-                        "labelSelector": {"matchLabels": _component(component).selector},
-                        "topologyKey": "kubernetes.io/hostname",
-                    }
-                ]
-            }
-        },
+        "affinity": node_scheduling.one_per_host(_component(component).selector),
     }
 
 

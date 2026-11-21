@@ -1,7 +1,7 @@
 # KVM workers
 
 A KubeVirt `VirtualMachinePool` runs one BuildBuddy executor per VM in pool
-`kvm-vm`, with one action slot per executor. KEDA permits one to eight members.
+`kvm-vm`, with one action slot per executor. KEDA permits two to eight members.
 Each guest has four vCPUs and 8 GiB RAM; its launcher requests two CPUs and can
 use four. Members select nested-KVM-capable nodes in the `hil` region and may
 share a host. Required VM-test routing is configured separately.
@@ -47,12 +47,12 @@ do not assume retained Docker layers are reusable. The
 records the observed workload and disk checks.
 
 A template change replaces at most one member at a time and waits for the
-replacement executor to register. With one member, the pool is temporarily
-empty. Readiness uses the executor's `/readyz` on port 8080, with the
-`server-type: buildbuddy-executor` header. Check active work before merging an
-image change: the long shutdown grace can delay replacement while an action
-drains. Use a quiet window for the initial rollout and verify each member's
-image, boot journal, registration and physical workload execution.
+replacement executor to register. Readiness uses the executor's `/readyz` on
+port 8080, with the `server-type: buildbuddy-executor` header. Check active
+work before merging an image change: the long shutdown grace can delay
+replacement while an action drains. Use a quiet window for the initial rollout
+and verify each member's image, boot journal, registration and physical
+workload execution.
 
 Normal pool scale-in sends ACPI shutdown. The executor stops accepting work
 and drains active actions for the pinned 24-hour task limit plus one minute
@@ -69,8 +69,8 @@ Scale-up has no stabilization delay and adds at most four members per minute.
 Scale-down stabilizes for 15 minutes and removes at most one per five minutes.
 While a requested member is booting, unregistered or missing metrics, KEDA holds
 the requested size and alerts if the condition persists. Missing pool metrics
-also hold the current count. Flux initializes `spec.replicas` to one for the
-KubeVirt scale subresource, then ignores HPA changes to that field.
+also hold the current count. Flux initializes `spec.replicas` to KEDA's minimum
+of two for the KubeVirt scale subresource, then ignores HPA changes to that field.
 
 The executor advertises four CPUs and 7 GiB, leaving 1 GiB for the guest. KVM
 actions reserve four CPUs, 6 GB memory and 20 GB free disk. These allocations

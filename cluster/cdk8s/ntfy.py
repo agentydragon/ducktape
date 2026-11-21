@@ -57,6 +57,10 @@ DATABASE = cluster.PostgresRef.generated(name="ntfy-db", namespace=NAMESPACE)
 _AUTH_SOURCE_SECRET = "ntfy-credentials"
 _AUTH = SecretRef(namespace=NAMESPACE, name="ntfy-auth")
 SECRET_STORE = "kubernetes-ntfy-secret-store"
+# The ExternalSecrets that derive from the SOPS credentials refresh only OnChange, so changing
+# this value is what re-renders them on a deliberate credential rotation
+# (cluster/k8s/ntfy/README.md). Annotate every such ExternalSecret with it.
+AUTH_GENERATION_ANNOTATION = {"ntfy.ducktape.io/auth-generation": "1"}
 
 
 def _secret_store(scope: Construct) -> None:
@@ -87,7 +91,7 @@ def _auth_external_secret(scope: Construct) -> None:
                 # Sprig bcrypt uses a fresh salt on every render. Keep this ExternalSecret
                 # OnChange and bump the generation on deliberate credential rotation instead
                 # of regenerating hashes on every ESO refresh.
-                "ntfy.ducktape.io/auth-generation": "1",
+                **AUTH_GENERATION_ANNOTATION,
             },
         ),
         refresh_policy=ExternalSecretSpecRefreshPolicy.ON_CHANGE,
@@ -126,7 +130,7 @@ def _alertmanager_webhook_secret(scope: Construct) -> None:
             namespace="monitoring",
             annotations={
                 "description": "Alertmanager bearer credential for the self-hosted ntfy instance",
-                "ntfy.ducktape.io/auth-generation": "1",
+                **AUTH_GENERATION_ANNOTATION,
             },
         ),
         refresh_policy=ExternalSecretSpecRefreshPolicy.ON_CHANGE,

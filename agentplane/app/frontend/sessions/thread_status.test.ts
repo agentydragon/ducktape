@@ -6,60 +6,17 @@ import { HarnessAttachment_State } from "../../../harness_host/harness_host_pb";
 import { FeedStatus } from "../../../history_service/api/history/history_service_pb";
 import { TurnStatus } from "../../../proto/event_pb";
 import { HarnessState, SetupState } from "../../../proto/session_pb";
-import { threadView } from "./testing/state";
+import { observedHostedSession, threadView, type ObservedHostedSessionInit } from "./testing/state";
 import { archiveBlockReason, observedSession, threadStatusFromSnapshot } from "./thread_status";
 
 const ID = "10000000-0000-4000-8000-000000000001";
 type Activity = NonNullable<NonNullable<MessageInitShape<typeof SessionSchema>["status"]>["activity"]>;
 
-function thread(
-  activity: Activity = {
-    kind: {
-      case: "observed",
-      value: {
-        sessionId: ID,
-        host: {
-          case: "environmentHosted",
-          value: { setup: SetupState.NOT_REQUIRED, harness: { state: HarnessAttachment_State.ATTACHED } },
-        },
-      },
-    },
-  }
-) {
-  const value = threadView({ metadata: { threadId: ID } });
-  value.session = create(SessionSchema, {
-    sessionId: ID,
-    placement: { kind: { case: "environmentHosted", value: {} } },
-    status: { activity },
-  });
-  return value;
-}
+const thread = (activity: Activity) =>
+  threadView({ metadata: { threadId: ID }, session: { sessionId: ID, status: { activity } } });
 
-function hosted({
-  activeTurnId = "",
-  pendingCommands = 0,
-  setup = SetupState.NOT_REQUIRED,
-  state = HarnessAttachment_State.ATTACHED,
-  failureCursor,
-}: {
-  activeTurnId?: string;
-  pendingCommands?: number;
-  setup?: SetupState;
-  state?: HarnessAttachment_State;
-  failureCursor?: bigint;
-} = {}) {
-  return thread({
-    kind: {
-      case: "observed",
-      value: {
-        sessionId: ID,
-        activeTurnId,
-        pendingCommands,
-        host: { case: "environmentHosted", value: { setup, harness: { state, failureCursor } } },
-      },
-    },
-  });
-}
+const hosted = (init: ObservedHostedSessionInit = {}) =>
+  threadView({ metadata: { threadId: ID }, session: observedHostedSession(ID, init) });
 
 describe("Dispatcher activity owns current Thread status", () => {
   it.each([
@@ -68,9 +25,9 @@ describe("Dispatcher activity owns current Thread status", () => {
     [hosted({ setup: SetupState.RUNNING }), "setting_up"],
     [hosted({ setup: SetupState.FAILED }), "failed"],
     [hosted({ setup: SetupState.INTERRUPTED }), "failed"],
-    [hosted({ state: HarnessAttachment_State.STARTING }), "pending"],
-    [hosted({ state: HarnessAttachment_State.DETACHED }), "stopped"],
-    [hosted({ state: HarnessAttachment_State.DETACHED, failureCursor: 15n }), "failed"],
+    [hosted({ harnessState: HarnessAttachment_State.STARTING }), "pending"],
+    [hosted({ harnessState: HarnessAttachment_State.DETACHED }), "stopped"],
+    [hosted({ harnessState: HarnessAttachment_State.DETACHED, failureCursor: 15n }), "failed"],
     [hosted(), "idle"],
     [thread({ kind: { case: "unknown", value: { reason: 1 } } }), "unknown"],
     [thread({ kind: { case: "unknown", value: { reason: 2 } } }), "unknown"],
@@ -78,7 +35,7 @@ describe("Dispatcher activity owns current Thread status", () => {
     [thread({ kind: { case: "environmentDown", value: { cause: 2 } } }), "environment_down"],
     [thread({ kind: { case: "environmentDown", value: {} } }), "unknown"],
     [hosted({ setup: SetupState.UNSPECIFIED }), "unknown"],
-    [hosted({ state: HarnessAttachment_State.UNSPECIFIED }), "unknown"],
+    [hosted({ harnessState: HarnessAttachment_State.UNSPECIFIED }), "unknown"],
     [thread({}), "unknown"],
   ])("maps the authoritative observation to %s", (value, kind) => {
     // History can lag independently and claim the opposite of the host's observation.
@@ -126,7 +83,7 @@ describe("Dispatcher activity owns current Thread status", () => {
       const idle = hosted();
       idle.summary.lastTurnStatus = lastTurnStatus;
       expect(threadStatusFromSnapshot(idle, true).kind).toBe("turn_error");
-      const dormant = hosted({ state: HarnessAttachment_State.DETACHED });
+      const dormant = hosted({ harnessState: HarnessAttachment_State.DETACHED });
       dormant.summary.lastTurnStatus = lastTurnStatus;
       expect(threadStatusFromSnapshot(dormant, true).kind).toBe("stopped");
     }
@@ -167,7 +124,7 @@ it.each([
   [hosted({ activeTurnId: "turn" }), "active turn"],
   [hosted({ pendingCommands: 1 }), "pending commands"],
   [hosted({ setup: SetupState.RUNNING }), "setup"],
-  [hosted({ state: HarnessAttachment_State.STARTING }), "harness to start"],
+  [hosted({ harnessState: HarnessAttachment_State.STARTING }), "harness to start"],
   [thread({ kind: { case: "unknown", value: {} } }), "activity to be known"],
 ])("blocks archiving for authoritative unfinished work", (value, reason) => {
   expect(archiveBlockReason(value, true)).toContain(reason);
@@ -175,7 +132,7 @@ it.each([
 
 it.each([
   hosted(),
-  hosted({ state: HarnessAttachment_State.DETACHED }),
+  hosted({ harnessState: HarnessAttachment_State.DETACHED }),
   thread({ kind: { case: "environmentDown", value: { cause: 1 } } }),
 ])("allows archiving confirmed idle, dormant or down Sessions", (value) => {
   value.summary.attached!.activeTurnId = "stale-history-turn";

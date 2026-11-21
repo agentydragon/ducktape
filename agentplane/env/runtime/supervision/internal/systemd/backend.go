@@ -78,9 +78,6 @@ func (b *Backend) Start(ctx context.Context) (*StartHandle, error) {
 	if b.config.LaunchReady != nil && !b.config.LaunchReady() {
 		return nil, errors.New("systemd scope is not ready")
 	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

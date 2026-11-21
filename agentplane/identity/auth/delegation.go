@@ -15,8 +15,10 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/validation"
+	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -49,6 +51,20 @@ func KubernetesIdentityUIDs(objects client.Reader, policyNamespace string) (Iden
 		return nil, errors.New("an Identity reader and a valid policy namespace are required")
 	}
 	return kubernetesIdentityUIDs{objects: objects, namespace: policyNamespace}, nil
+}
+
+// NewKubernetesIdentityUIDs creates an uncached reader of policyNamespace's Identities for a service's
+// delegation boundary.
+func NewKubernetesIdentityUIDs(config *rest.Config, policyNamespace string) (IdentityUIDReader, error) {
+	scheme := runtime.NewScheme()
+	if err := policyapi.AddToScheme(scheme); err != nil {
+		return nil, err
+	}
+	objects, err := client.New(config, client.Options{Scheme: scheme})
+	if err != nil {
+		return nil, err
+	}
+	return KubernetesIdentityUIDs(objects, policyNamespace)
 }
 
 type kubernetesIdentityUIDs struct {

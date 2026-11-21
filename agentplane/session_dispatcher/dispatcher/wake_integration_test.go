@@ -47,19 +47,6 @@ func (w *callbackWake) RequestWake(
 	return assessment, nil
 }
 
-type executionAccountCatalog struct {
-	*growingCatalog
-	accountUID string
-}
-
-func (*executionAccountCatalog) GetExecutionIdentity(context.Context, SandboxSnapshot) (*identitypb.Identity, bool, error) {
-	return testExecutionIdentity(), true, nil
-}
-
-func (c *executionAccountCatalog) GetExecutionAccount(_ context.Context, sandbox SandboxSnapshot) (*identitypb.ServiceAccountIdentity, bool, error) {
-	return serviceAccountIdentityFor(auth.Account{Namespace: sandbox.Namespace, Name: sandbox.Name}, c.accountUID), true, nil
-}
-
 func wakeAttribution(actor, effective *identitypb.ServiceAccountIdentity) *store.AdmissionAttribution {
 	return &store.AdmissionAttribution{
 		Actor: actor, EffectiveCaller: effective,

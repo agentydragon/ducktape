@@ -1,0 +1,17 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_testonly = True)
+
+go_library(
+    name = "providerfixture",
+    srcs = ["providerfixture.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/sampler/testing/providerfixture",
+    visibility = ["//agentplane/sampler/providers:__subpackages__"],
+    deps = [
+        "//agentplane/proto:event_go_proto",
+        "//agentplane/sampler/internal/content",
+        "//agentplane/sampler/internal/providerio",
+        "//agentplane/sampler/protocol",
+        "//agentplane/testing/jsonassert",
+    ],
+)

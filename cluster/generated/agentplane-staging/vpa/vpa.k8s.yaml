@@ -60,10 +60,9 @@ spec:
     containerPolicies:
       - containerName: electric
         controlledResources:
+          - cpu
           - memory
         controlledValues: RequestsOnly
-        maxAllowed:
-          memory: 576Mi
         minAllowed:
           memory: 448Mi
       - containerName: "*"
@@ -111,12 +110,9 @@ spec:
     containerPolicies:
       - containerName: frontend
         controlledResources:
+          - cpu
           - memory
         controlledValues: RequestsOnly
-        maxAllowed:
-          memory: 40Mi
-        minAllowed:
-          memory: 32Mi
       - containerName: "*"
         mode: "Off"
   targetRef:

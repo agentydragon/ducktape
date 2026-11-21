@@ -210,8 +210,6 @@ py_test(
     deps = [
         ":flux",
         ":flux_bootstrap_auth",
-        "@pypi//durationpy",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
