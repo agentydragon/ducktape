@@ -1,4 +1,4 @@
-// Package api serves the Action Service's request RPCs over its store and its catalog: `ActionService`'s submission,
+// Package rpc serves the Action Service's request RPCs over its store and its catalog: `ActionService`'s submission,
 // reads and watches of requests and their events, a caller's cancellation, the reads and watch of the ActionGroups and
 // the Action policy over the policy index, `OperatorActionService`'s Decisions and MCP server linkages, and
 // `WebPushService`'s subscriptions of an operator's browsers.

@@ -50,7 +50,6 @@ func TestEachPrincipalReadsTheRequestsItMayAndEachSeesTheSameReceipt(t *testing.
 	s := serve(t)
 	own := s.decide(t, s.submit(t, s.caller, "test-own"), store.VerdictAllow)
 	others := s.decide(t, s.submit(t, s.otherCaller, "test-others"), store.VerdictDeny)
-	// The service reader carries no caller label: a reader account needs none.
 	for name, tc := range map[string]struct {
 		token string
 		want  []string
@@ -111,17 +110,15 @@ func TestABearerTheServiceDoesNotAcceptIsRefusedWithoutSayingWhy(t *testing.T) {
 	}
 	var refusals []string
 	for name, ctx := range map[string]context.Context{
-		"valid Kubernetes bearer":                  as(t, validKubernetesToken),
-		"no bearer":                                presenting(t),
-		"a token for another audience":             as(t, otherAudience),
-		"two bearers":                              presenting(t, "Bearer "+validKubernetesToken, "Bearer "+validKubernetesToken),
-		"another scheme":                           presenting(t, "Basic "+validKubernetesToken),
-		"an unknown token":                         as(t, "test-token-unknown"),
-		"an unlabeled account":                     as(t, unlabeledToken),
-		"an account outside the caller namespaces": as(t, outsiderToken),
-		"an expired operator token":                as(t, s.issuer.Token(t, map[string]any{"exp": time.Now().Add(-time.Hour).Unix()})),
-		"another issuer's token":                   as(t, s.issuer.Token(t, map[string]any{"iss": "https://test-other-issuer.example/"})),
-		"an operator token for another party":      as(t, s.issuer.Token(t, map[string]any{"azp": "test-other-party"})),
+		"valid Kubernetes bearer":             as(t, validKubernetesToken),
+		"no bearer":                           presenting(t),
+		"a token for another audience":        as(t, otherAudience),
+		"two bearers":                         presenting(t, "Bearer "+validKubernetesToken, "Bearer "+validKubernetesToken),
+		"another scheme":                      presenting(t, "Basic "+validKubernetesToken),
+		"an unknown token":                    as(t, "test-token-unknown"),
+		"an expired operator token":           as(t, s.issuer.Token(t, map[string]any{"exp": time.Now().Add(-time.Hour).Unix()})),
+		"another issuer's token":              as(t, s.issuer.Token(t, map[string]any{"iss": "https://test-other-issuer.example/"})),
+		"an operator token for another party": as(t, s.issuer.Token(t, map[string]any{"azp": "test-other-party"})),
 	} {
 		_, err := s.client.ListActionRequests(ctx, &action_servicepb.ListActionRequestsRequest{})
 		wantCode(t, name, err, codes.Unauthenticated)
@@ -243,7 +240,7 @@ func TestConnectionDelegationUsesAnExactIdentityAndRechecksItOnActionStreams(t *
 	}
 	request := envelope(t, "connection-identity-submit", "test-group", "test-action", map[string]any{"target": "test-target"})
 	if _, err := s.client.SubmitActionRequest(delegated(identityRef), request); status.Code(err) != codes.Unauthenticated {
-		t.Fatalf("an Identity with no PolicyBinding was admitted through the labeled actor: %v", err)
+		t.Fatalf("an Identity with no PolicyBinding was admitted through the delegating actor: %v", err)
 	}
 
 	// The method allowlist is exact; the shared auth contract rejects legacy ServiceAccount callers.

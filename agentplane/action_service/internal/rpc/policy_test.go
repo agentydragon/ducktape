@@ -164,7 +164,7 @@ func TestIdleActionPolicyWatchEndsWhenCredentialIsRevoked(t *testing.T) {
 	wantCode(t, "revoked policy watch", err, codes.Unauthenticated)
 }
 
-// unboundAccount is an account no binding names, in a namespace no caller is in, with no ServiceAccount.
+// unboundAccount is an account no binding names.
 var unboundAccount = auth.Account{Namespace: "test-elsewhere", Name: "test-unbound"}
 
 func create(t *testing.T, object client.Object) {
@@ -235,8 +235,6 @@ func TestEachPrincipalReadsThePolicyOfTheAccountsItMayName(t *testing.T) {
 	namespace.policySet(t, "test-set", exactActions(testGroup, testAction))
 	for binding, account := range map[string]auth.Account{
 		"test-caller-binding": callerAccount, "test-other-binding": otherAccount,
-		"test-labeled-reader-binding": labeledReaderAccount, "test-reader-binding": readerAccount,
-		"test-unlabeled-binding": unlabeledAccount,
 	} {
 		namespace.binding(t, binding, account, "test-set")
 	}
@@ -254,21 +252,19 @@ func TestEachPrincipalReadsThePolicyOfTheAccountsItMayName(t *testing.T) {
 	}{
 		"its own, named by a caller":           {token: callerCertificate, subject: &callerAccount, whose: callerAccount, bindings: []string{"test-caller-binding"}},
 		"another account's, by a caller":       {token: callerCertificate, subject: &otherAccount, whose: otherAccount, bindings: []string{"test-other-binding"}},
-		"an unlabeled account's":               {token: callerCertificate, subject: &unlabeledAccount, whose: unlabeledAccount, bindings: []string{"test-unlabeled-binding"}},
 		"an account no binding names":          {token: callerCertificate, subject: &unboundAccount, whose: unboundAccount},
 		"a service reader has no policy grant": {token: secondReaderCertificate, code: codes.PermissionDenied},
-		"another account's, by a labeled reader": {
+		"another account's, by a service reader": {
 			token: secondReaderCertificate, subject: &callerAccount, code: codes.PermissionDenied,
 		},
 		"an account's, by an operator": {
 			token: s.operatorToken, subject: &callerAccount, whose: callerAccount, bindings: []string{"test-caller-binding"}, operator: true,
 		},
-		"an unlabeled reader's own":                        {token: readerCertificate, code: codes.PermissionDenied},
-		"another account's, by an unlabeled reader":        {token: readerCertificate, subject: &callerAccount, code: codes.PermissionDenied},
-		"an unlabeled workload's own":                      {token: unlabeledToken, code: codes.Unauthenticated},
-		"another account's, by an unlabeled workload":      {token: unlabeledToken, subject: &callerAccount, code: codes.Unauthenticated},
-		"an operator's own, which it has none of":          {token: s.operatorToken, code: codes.InvalidArgument},
-		"an account outside the caller namespaces, as own": {token: outsiderToken, code: codes.Unauthenticated},
+		"another service reader's own":                 {token: readerCertificate, code: codes.PermissionDenied},
+		"another account's, by another service reader": {token: readerCertificate, subject: &callerAccount, code: codes.PermissionDenied},
+		"a Kubernetes bearer's own":                    {token: validKubernetesToken, code: codes.Unauthenticated},
+		"another account's, by a Kubernetes bearer":    {token: validKubernetesToken, subject: &callerAccount, code: codes.Unauthenticated},
+		"an operator's own, which it has none of":      {token: s.operatorToken, code: codes.InvalidArgument},
 	} {
 		var subject *identitypb.ServiceAccount
 		if tc.subject != nil {

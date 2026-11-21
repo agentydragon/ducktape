@@ -1,8 +1,8 @@
 // Command actions is the Go Action Service, over the Action Service's PostgreSQL database. It serves Action,
 // operator, linkage, Web Push and health APIs over gRPC. It runs the dispatch worker, which
-// runs the Actions of the sandbox, orchestration_v1 and MCP groups, refreshes linked OAuth tokens, pushes requests
-// awaiting a Decision to operators' browsers when Web Push is configured, and keeps its policy index equal to the API
-// server's.
+// runs the Actions of the sandbox, orchestration_v1, session_delegation and MCP groups, refreshes linked OAuth tokens,
+// pushes requests awaiting a Decision to operators' browsers when Web Push is configured, and keeps its policy index
+// equal to the API server's.
 package main
 
 import (
