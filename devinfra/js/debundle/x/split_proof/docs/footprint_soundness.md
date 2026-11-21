@@ -12,9 +12,9 @@ accesses and updates attributed to its statements. Disjoint certified footprints
 then justify commutation, and commutation justifies a valid reordered split.
 
 The first implementation checks the actual summaries supplied by `Effects.footprints`
-after conversion to an `EsmSplit.Bundle`. It may reject a summary. Its theorem will
-say that every accepted summary covers the supported statement's behavior; it
-will not say that every invocation of Effects produces an acceptable summary.
+after conversion to an `EsmSplit.Bundle`. It may reject a summary. Its theorem
+says that every accepted summary covers the supported statement's behavior; it
+does not say that every invocation of Effects produces an acceptable summary.
 Overestimated reads, writes, or effects are conservative.
 
 JavaScript-to-CoreJS translation and emitted JavaScript still have the existing
@@ -55,6 +55,22 @@ and mutability checks on assignment targets. It must bound reads and writes,
 preserve the heap and world on successful execution, compose through sequencing,
 and justify commutation when writes are disjoint from the other operation's reads
 and writes. Linking must connect distinct names to distinct concrete binding cells.
+
+The abstract/concrete connection for this fragment is `bindingAddresses env names`:
+an abstract binding name denotes the cell found by `env.vars.lookup`. The
+`BindingSummary.readCells` and `writeCells` predicates lift name sets through that
+lookup. `declareTops_bundleEnv_injective` proves that distinct names in the linked
+bundle scope cannot alias a cell; it uses the actual allocation trace, including
+when the initial store is nonempty. Imported aliases are not assumed injective.
+
+`CellFootprint rd wr computation` requires each successful run to produce a finite
+assignment patch supported on `wr`. Replaying the computation from any state that
+agrees on the complete binding records in `rd ∪ wr` must return the same value and
+apply the same patch. Including `wr` in the agreement premise accounts for TDZ and
+mutability checks on assignment targets. The patch preserves heap, world, and
+output, and describes the exact resulting store rather than only lookup equality.
+This is a relation between certified name sets and concrete cells, not a simulation
+of the producer's entire abstract heap or memoization state.
 
 Binary operations and unary operations other than `typeof` use state-free value
 operations. Coercions that CoreJS does not model still return `unknown`; certifying

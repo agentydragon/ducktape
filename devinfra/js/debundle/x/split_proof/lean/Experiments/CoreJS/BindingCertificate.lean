@@ -5,11 +5,11 @@ import EsmSplit.Bundle
 # CoreJS: typed binding certificates for a small syntax fragment
 
 This checker compares the read and write summary of a CoreJS statement with the actual footprint stored in an
-`EsmSplit.Bundle`. It deliberately accepts only primitive values, variable reads, variable assignments, binary operations, heap-free unary operations, sequencing,
+`EsmSplit.Bundle`. It deliberately accepts only primitive values, variable reads, variable assignments, binary operations, heap-free unary operations, short-circuiting, conditionals, sequencing,
 expression statements, and declarations. Unsupported syntax has no summary and cannot receive a certificate.
 
-The target of a variable assignment contributes a write. A later semantic contract may account for the binding record
-read through this write; this syntactic summary does not claim that the target lookup itself is pure.
+The target of a variable assignment contributes a write. The semantic contract accounts for the binding record
+read through this write by requiring agreement on both read and write cells; the target lookup is not assumed pure.
 -/
 
 namespace CoreJS

@@ -42,12 +42,15 @@ The separate required `corejs_binding_differential_test` (`--bindings-only`) req
 declaration's module, while independent assignments change relative order. Every seed
 runs four families: literals/bindings, binary operations with writes in both operands,
 heap-free unary operations, and conditional/short-circuit branches. Each executes through the `moves (certified
-bindings)` slice and supplies a dependent variant that the real checker must reject.
+bindings)` slice. Each seed also supplies a dependency-bearing binding-assignment
+variant that the real checker must reject.
 The handwritten cases also copy and compare object references without inspecting
 their heap records during the moved statements, and check that `typeof` gains no permission. A mutation control obtains the actual Effects output, reloads it,
 then removes a required write and requires the semantic certificate to reject it.
-Successful certified splits receive the same four-way execution and exact final-state
-comparisons as the other proved moves. The broad `corejs_differential_test` retains
+Successful certified splits receive the same four-way execution and final model-state
+hash comparisons as the other proved moves. Exact final-state equality is the Lean
+theorem’s guarantee; the runtime hash comparison is a regression oracle with the
+omissions described above. The broad `corejs_differential_test` retains
 the interpreter families, linked graphs, opaque cases, and original named splits.
 Both targets run in CI; splitting their workloads keeps their coverage assertions
 and execution independent as the certificate families grow.
