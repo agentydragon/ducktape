@@ -108,7 +108,6 @@ py_test(
         "//openai_utils/testing:fixtures",
         "@pypi//openai",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
     ],
 )
@@ -139,7 +138,6 @@ py_test(
         "@pypi//httpx2",
         "@pypi//openai",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # keep: enables auto mode for async tests
         "@pypi//pytest_bazel",
     ],
 )
@@ -188,7 +186,6 @@ live_openai_py_test(
         "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
         "//openai_utils/testing:fixtures",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
     ],
 )

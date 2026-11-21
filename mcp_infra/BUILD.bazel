@@ -28,8 +28,6 @@ py_test(
     name = "test_persistence",
     size = "medium",
     srcs = ["test_persistence.py"],
-    data = [
-    ],
     requires_docker = True,
     deps = [
         ":persistence",
