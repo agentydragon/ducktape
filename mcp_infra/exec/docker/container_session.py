@@ -71,6 +71,8 @@ async def scoped_container(client: aiodocker.Docker, config: ContainerExecServer
     try:
         yield container_id
     finally:
+        # Shielded because a client disconnect can cancel the enclosing AnyIO scope (seen with an in-process
+        # FastMCP client); `asyncio.shield` would not help. See mcp_infra/AGENTS.md § MCP conventions.
         with anyio.CancelScope(shield=True):
             try:
                 container = await client.containers.get(container_id)
