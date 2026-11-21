@@ -122,7 +122,11 @@ Linux-to-systemd and guest request-to-completion time use CRI console
 timestamps, which include buffering. The prior production SSD reference and
 this worker-disk trial use different cache and background-load windows.
 Cold worker runs start with new executor disks and share the host's existing
-containerDisk image, registry mirror and upstream cache.
+containerDisk image, registry mirror and upstream cache. The trial kept
+Cloud-direct input staging on both media. The earlier OVH proxy trial measured
+Firecracker input staging with a different input tree and cache route.
+[Shared CAS proxy trial](../kvm_shared_cache_trial.md) ·
+[CI latency report](https://agentydragon.github.io/ducktape/latency/#kvm-cas)
 
 | Run                                                                                         | Verdict    | Worker prep, s | Input fetch, s | TestRunner, s | Fixture setup, s | Guest-ready spans, s |
 | ------------------------------------------------------------------------------------------- | ---------- | -------------: | -------------: | ------------: | ---------------: | -------------------- |
