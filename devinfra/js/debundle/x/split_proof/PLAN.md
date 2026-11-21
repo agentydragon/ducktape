@@ -31,14 +31,17 @@ The design is "untrusted search, trusted check". The footprint analysis is the o
    - _Success:_ commutation proved for closures, objects with prototypes, accessors and exceptions, and that fragment covers most of the units that get precise footprints today.
    - _Kill:_ the proof is not done within the budget set at the start, or coverage is under about half. Then the tested analysis stays, labelled as trusted.
 
-**Open decisions for the owner.** Whether to start the spike, and with what budget. Whether to fix F1 to F5 before or beside it. Whether a reviewed vendor table is worth its review cost before the rule in item 4 exists: alone it does not change which modules peel.
+5. **Keep the bundle's order explicitly, and let footprints remove it.** A planner that chains the modules by bare imports realizes any module order, and `Valid` checks its output as it checks `mkPlan`'s. On the large bundle that makes 2,372 of 2,793 modules of the reviewed tree valid whole, against 886 with today's planner ([`docs/lessons_learned.md`](docs/lessons_learned.md)). The chain is not what a person would write: each edge of it is then a candidate to drop, and dropping one is a claim that two modules commute, which is where a footprint, or a proof, is needed. This turns "is the split valid" from the hard question into the easy one, and makes precision a matter of how natural the imports look. Step 5 below is a special case.
+
+**Open decisions for the owner.** Whether to build the order-keeping planner of item 5 next: it is small, and it changes what the precision work is for. Whether to start the spike, and with what budget. Whether to fix F1 to F5 before or beside it. Whether a reviewed vendor table is worth its review cost before the rule in item 4 exists: alone it does not change which modules peel.
 
 ## Order of work
 
 1. Glue export names and chunk input (decided, in progress).
-2. F1 to F5.
-3. The spike of item 4, if started.
-4. Then by measured yield: per-unit reasons in `lower` ([`TODO.md`](TODO.md)), a vendor table by library family, a rule for decorator applications. A stack-safe interpreter comes before any analysis of library code.
+2. The order-keeping planner of item 5, if agreed.
+3. F1 to F5.
+4. The spike of item 4, if started.
+5. Then by measured yield: per-unit reasons in `lower` ([`TODO.md`](TODO.md)), a vendor table by library family, a rule for decorator applications. A stack-safe interpreter comes before any analysis of library code.
 
 ## More of debundle's cases through the Lean checker
 
