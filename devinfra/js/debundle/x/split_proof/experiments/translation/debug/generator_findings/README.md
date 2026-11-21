@@ -14,17 +14,6 @@ Each `FAIL … WRONG ACCEPT` is a finding that stands. A line that passes means 
 
 F6 is in none: no golden case reads through a Proxy whose traps write. The oracle sees every case here without a reorder: after the consuming unit the digest of `o` differs, and `o` is not in the unit's `writes`.
 
-## F5: the analysis does not finish
-
-[`stack_overflow.mjs`](stack_overflow.mjs) is a program that completes in Node, prints the same twice and has two units (a four-element array, and a labelled block with a `for (a0[0] of …)` loop that declares a class and builds an instance). `lower` and `translate` (run on the program against itself as one module) abort on it with `Stack overflow detected. Aborting.` (SIGABRT) instead of printing footprints or a verdict:
-
-```bash
-LOWER=../../lean/.lake/build/bin/lower node footprint_oracle.mjs debug/generator_findings/stack_overflow.mjs
-# crashes of lower 1
-```
-
-The oracle sweep met it in 1 of the 150 programs of its first run over the five families (this program is what `footprint_reduce.mjs --kind crash` made of that one), and `node fuzz.mjs --full-corpus --count 120 --seed 7 --trees 4 --avoid array-constructor` met it on bundle 5 (all four trees; `translate` ended with SIGABRT, which stopped the fuzzer until it learned to report `CHECKER CRASHES` at the end instead). [`stack_overflow_min.mjs`](stack_overflow_min.mjs) is the 284-character program that `lower` still dies on after statements and expressions were cut away by hand-written scratch reducers; it no longer completes in Node, but it parses. Cut one piece from it and `lower` finishes: the `static [0](…) {}` method of the class, `a0.unshift(…)`, `a0.reduce(…)` in the head of the loop, `a0[0] = this.f` in the constructor, `l68 = L48.s49`, `l68.f = L48`, or `new L48(0, 0)` as the source of the pattern. The cause is not found; it is a deep recursion in the abstract interpreter, and the pieces that each cure it (a class used before and after being stored into an array that a loop writes through a member target) point at a fixed point that grows. The analysis fails loudly, so nothing is accepted wrongly; the cost is that such a bundle has no verdict.
-
 ## What did not turn up
 
 Over these programs the oracle found no unit that changed a binding its footprint does not name (premise P3 on for the corpora of `fuzz.mjs` and for the libraries, off for Shift's programs; `--runs 2` for the generated ones), except the ones in the table above:

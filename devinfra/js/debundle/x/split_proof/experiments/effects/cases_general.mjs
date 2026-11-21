@@ -1388,4 +1388,47 @@ console.log(seen);
 `,
     [0, 1, 3, 2, 4]
   ),
+  // a standard function used as a conversion hook or as a protocol method reaches itself: the analysis ran out of stack on these
+  p3(
+    "an array that holds itself and has a toString is converted",
+    `
+const o = { n: 0 };
+const a = [];
+a.push(a);
+a.toString = function () { o.n++; return ""; };
+\`\${a}\`;
+console.log(o.n);
+`,
+    [0, 1, 2, 3, 5, 4]
+  ),
+  p3(
+    "an array that holds itself and a function under a computed key is joined",
+    `
+const o = { n: 0 };
+const a = [{ toString() { o.n++; return ""; } }];
+a.push(a);
+a[Symbol.for("tag")] = () => 1;
+a.join();
+console.log(o.n);
+`,
+    [0, 1, 2, 3, 5, 4]
+  ),
+  p3(
+    "exec is RegExp.prototype.test: the protocol calls itself",
+    `
+const o = { n: 0 };
+const r = { exec: RegExp.prototype.test, get lastIndex() { o.n++; return 0; } };
+try { RegExp.prototype.test.call(r, "x"); } catch { r.lastIndex; }
+console.log(o.n);
+`,
+    [0, 1, 3, 2]
+  ),
+  p3(
+    "a class kept in an array that a loop writes through a member target",
+    `
+const a0 = Array.of(false ? 2147483647 : 5, 2147483647 + 5);
+L1: { for (a0[0] of [7 & 10, a0.reduce((l46, l47) => l47, 0)]) { class L48 { constructor(p66, p67) { [a0[0], p66, a0[0]] = [\`plain\`.indexOf("\\u{1F600}"), this.f, a0[Math.abs(this.f | 0) % a0.length]]; } static ["m" + 51](p52, p53) {} } const l68 = new L48(L48.m51(4294967296, L48.s49), true ? L48.s49 : L48.s50); [l68.f = Object.entries(l68).reduce((l69, [l70, l71]) => l71, L48.s50), a0[0], l68.g = Math.min(4294967296, 1)] = [ L48.s49 >>> (1e-2 & 7), new L48(0, 1_000).g, undefined, ]; } a0.unshift(...[1.5 || 4294967296, a0.length]); }
+`,
+    [1, 0]
+  ),
 ];

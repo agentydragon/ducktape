@@ -228,8 +228,8 @@ structure St where
   /-- calls already run: (function, call site, arguments) -> (changes when it ended, result, writes, reads, world).
   A call repeated on a state that has not changed since would do nothing new, so its footprint is replayed. -/
   memo     : Std.HashMap (UInt64 × UInt64) (Nat × AV × Array Nat × Array String × Bool × Bool × AV) := {}
-  /-- how many getters and setters run one inside another (a standard function used as a getter can read itself) -/
-  accessorDepth : Nat := 0
+  /-- how many getters, setters, conversion hooks and protocol methods run one inside another (see `callHooks`) -/
+  hookDepth : Nat := 0
   dbg      : Array Nat := #[0, 0, 0, 0]
   /-- the hash of each piece of code, by address (see `codeHash`) -/
   codeHashes : Std.HashMap USize UInt64 := {}
@@ -724,6 +724,24 @@ def isStandardMember (k : String) : Bool :=
 
 mutual
 
+/-- Call functions that the language runs without a call expression (a getter, a setter, a conversion hook, a method a
+standard function calls through its protocol) on the object `recv`. A standard function used as one can reach itself
+without a level of the call chain in between: a getter that reads the property it is, `Array.prototype.toString` on an
+array that holds itself, an `exec` that is `RegExp.prototype.test`. So these calls are counted, and past the limit the
+functions are not run: they and the object are the world's. -/
+partial def callHooks (recv : Nat) (fns : AV) (args : List AV) (fr : Fr) (site : UInt64) : M AV := do
+  tick
+  if (← isBroke) then return AV.top
+  if (← get).hookDepth ≥ maxDepth then
+    escapeAV fns
+    escapeObj recv
+    setWorld "getters, setters and conversion hooks nested too deep"
+    return AV.top
+  modify fun s => { s with hookDepth := s.hookDepth + 1 }
+  let r ← callAll fns (AV.ofObj recv) args false fr site
+  modify fun s => { s with hookDepth := s.hookDepth - 1 }
+  return r
+
 /-- A getter or a setter runs on the object it was found for. The candidates that are program code are run, with the
 value for a setter. A world function, or a receiver the world holds when the world may have added accessors to it
 (`Premises.noWorldHooks` off), is unknown code. -/
@@ -741,15 +759,8 @@ partial def runAccessors (recv : Nat) (fns : AV) (args : List AV) (tag : String)
     escapeObj recv
     setWorld "getter or setter the world made"
   if programs.isEmpty then return (if unknown then AV.top else #[])
-  if (← get).accessorDepth ≥ maxDepth then
-    escapeAV fns
-    escapeObj recv
-    setWorld "getters and setters nested too deep"
-    return AV.top
-  modify fun s => { s with accessorDepth := s.accessorDepth + 1 }
   let cur := (← get).cur
-  let r ← callAll programs (AV.ofObj recv) args false cur (mixHash cur.site (hash tag))
-  modify fun s => { s with accessorDepth := s.accessorDepth - 1 }
+  let r ← callHooks recv programs args cur (mixHash cur.site (hash tag))
   return if unknown then r.join AV.top else r
 
 /-- Reading or assigning a property of an object the world holds: the world may have added accessors to it, which run
@@ -1396,13 +1407,13 @@ partial def convert (vs : List AV) (fr : Fr) (site : UInt64) : M Unit := do
             seen := seen.insert c
             for k in ["valueOf", "toString", "join"] do
               let f ← if ob.hook then hookFns ((← getVal c (some k)).join ob.any) else pure (ob.props.getD k #[])
-              unless f.isEmpty do let _ ← callAll f (AV.ofObj (c - 1)) [] false fr (mixHash site (hash k))
+              unless f.isEmpty do let _ ← callHooks (c - 1) f [] fr (mixHash site (hash k))
             if ob.kind matches .array then work := ob.any :: work
         | _ =>
           if ← chainHasHook (c - 1) then
             for k in ["valueOf", "toString"] do
               let f ← hookFns (← getVal c (some k))
-              unless f.isEmpty do let _ ← callAll f (AV.ofObj (c - 1)) [] false fr (mixHash site (hash k))
+              unless f.isEmpty do let _ ← callHooks (c - 1) f [] fr (mixHash site (hash k))
 
 /-- Whether converting the object may run a function: it or what it inherits has a hook. -/
 partial def chainHasHook (o : Nat) (seen : List Nat := []) : M Bool := do
@@ -1434,7 +1445,7 @@ partial def runProtocol (target : AV) (name : String) (args : List AV) (fr : Fr)
   for c in target do
     if c ≥ 2 then
       let fns ← hookFns (← getVal c (some name))
-      unless fns.isEmpty do let _ ← callAll fns (AV.ofObj (c - 1)) args false fr site
+      unless fns.isEmpty do let _ ← callHooks (c - 1) fns args fr site
 
 /-- A thenable the program defined has its `then` called when a promise is resolved with it (`await`, the value an async
 function returns). -/

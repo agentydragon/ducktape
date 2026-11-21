@@ -892,11 +892,23 @@ MUTANTS = {
         "        every := more\n        break\n      mkArr every",
         "`flat(Infinity)` of arrays nested seven deep",
     ),
-    "nested accessors are unbounded": (
+    "nested hooks are unbounded": (
         EFFECTS,
-        "  if (← get).accessorDepth ≥ maxDepth then",
+        "  if (← get).hookDepth ≥ maxDepth then",
         "  if false then",
         "a standard function used as a getter reads the getter it is",
+    ),
+    "conversion hooks are not counted": (
+        EFFECTS,
+        "              unless f.isEmpty do let _ ← callHooks (c - 1) f [] fr (mixHash site (hash k))",
+        "              unless f.isEmpty do let _ ← callAll f (AV.ofObj (c - 1)) [] false fr (mixHash site (hash k))",
+        "`Array.prototype.toString` on an array that holds itself",
+    ),
+    "protocol methods are not counted": (
+        EFFECTS,
+        "      unless fns.isEmpty do let _ ← callHooks (c - 1) fns args fr site",
+        "      unless fns.isEmpty do let _ ← callAll fns (AV.ofObj (c - 1)) args false fr site",
+        "an `exec` that is `RegExp.prototype.test`",
     ),
 }
 
