@@ -5,6 +5,16 @@ overlays and application payloads: [remainder backlog](../docs/cdk8s_remainder.m
 Remove entries when their acceptance conditions land; this is not a history of the
 conversion.
 
+## ESO store/consumer agreement
+
+The rendered-tree check validates known consumers, store conditions, and referent
+ServiceAccounts. It skips consumers with no explicit rendered namespace and cannot see
+runtime-created namespaces or labels. Account for Flux `targetNamespace` where known and
+report the remaining dynamic coverage limit; do not infer grants from consumers.
+
+Done: all resolvable consumers are checked and any unresolved cases are described without
+claiming the render proves live readiness or maintaining a duplicate provider roster.
+
 ## Fleet rule waivers
 
 The active Agentplane egress proxy (`agentplane/generation.py`) is exempt by design:
