@@ -36,7 +36,7 @@ else
   row "semver" semver 59 4
   row "lodash" lodash 670 6
   row "acorn" acorn 447 5
-  row "acorn, minified" acorn.min 374 5
-  row "zod, minified" zod.min 805 8
+  row "acorn, minified" acorn.min 447 5
+  row "zod, minified" zod.min 1072 8
   row "zod" zod 1072 8
 fi

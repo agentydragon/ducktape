@@ -66,14 +66,14 @@ The adapter resolves `binding` selectors and hole-free templates by exact AST sh
 
 - **Do not port the matcher.** 42 entries need holes, alpha-renaming and ranges. 24 need dataflow facts. debundle's resolver is a shape matcher plus a solver ([`docs/selector_resolution.md`](../../docs/selector_resolution.md)). A JS port would have to follow both.
 - **Read debundle's answer instead.** Run `debundle run` per entry and read the owner of every source unit. `modules.json` has `source_unit_ids` per module and `dependency_graph.json.gz` has `unit:N` nodes ([`docs/wire_format.md`](../../docs/wire_format.md)). Check whether the nodes carry input ranges. If not, add one side output to debundle: unit → input range → owner path.
-- The adapter maps units to statements (declarators after step 2) and writes the `lowersplit` spec as today.
+- The adapter maps units to statements (declarators, as in step 2) and writes the `lowersplit` spec as today.
 - This makes `Valid` an independent second opinion on debundle's gate for every spec debundle resolved.
 - The 12 refusal entries stay `refusal-test`.
 - Open: how the harness runs the `//devinfra/js/debundle:debundle` binary, and what one call costs.
 
-### 2. Declarator granularity and repeated `var` (6 comparable entries: 3 not run, 3 `strict-but-runs`; 2 more are refusal tests)
+### 2. Declarator granularity in the adapter, and repeated `var` (6 comparable entries: 3 not run, 3 `strict-but-runs`; 2 more are refusal tests)
 
-- Split `var`/`let`/`const a = …, b = …` into one statement per declarator before analysis. Both are sequential, so behavior is the same. debundle's units are declarators too. A destructuring declarator stays whole (debundle refuses to split one: `comma_list/destructure_split_across_modules_is_rejected`).
+- `lowering/dump.mjs` writes one statement per declarator of a `var`/`let`/`const` list, and a destructuring declarator stays whole (debundle refuses to split one: `comma_list/destructure_split_across_modules_is_rejected`). The adapter still parses on its own, a statement per list: take its statements from `lowerDump`, and let a template that matches a whole list claim each of its declarators.
 - `UniqueDefs` becomes "one module per name". Several `var` declarations of a name may sit in one module and keep their order, because they conflict. This changes `Semantics.lean`: the last declarer wins. `split_correct` needs a new proof.
 - Entries: 2 of the 4 `statement claimed by two modules` (the other 2 are refusal tests), `sibling_declarator_ownership`, and the 3 `UniqueDefs` rejections.
 

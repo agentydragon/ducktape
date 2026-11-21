@@ -96,6 +96,7 @@ The `Decidable` instances run the fast algorithms, compiled and in the kernel. T
 | `mkPlan` (untrusted)                  | list scans                                               | index maps; the same modules as before on 30 real splits                                                      |
 
 **Compiled, real bundles**, split into contiguous blocks (a timing workload; § 7 shows which block splits are valid). "Whole run" is parse JSON, footprints, `mkPlan` and the seven checks; every stage is in [`records/real_bundles_3_final.md`](records/real_bundles_3_final.md).
+The minified rows were measured with a declarator list as one statement; `dump.mjs` now writes these bundles as 447 and 1,072 statements.
 
 | Input             | Statements | Modules | Whole run before        | Whole run now | `ReadsClosed` now | Verdict                          |
 | ----------------- | ---------- | ------- | ----------------------- | ------------- | ----------------- | -------------------------------- |
@@ -156,6 +157,7 @@ same nodes, and the analysis that was my weakest trusted part (including the cal
 and later proved.
 
 [`dump.mjs`](lowering/dump.mjs) writes ESTree as JSON, with an independent oracle (`eslint-scope`) for each statement's free variables.
+A top-level `var`, `let` or `const` list of several declarators becomes one statement per declarator, so a spec can place them apart.
 [`Lower.lean`](../lean/Experiments/Lower.lean) (306 lines) reads it as `Lean.Json`, which is untyped, so **every** node type of JavaScript is representable.
 It scans what each statement declares, mentions and assigns. The scan is total and sound by construction:
 
@@ -169,16 +171,16 @@ Adding precision is the only way to get something wrong. So I compared against t
 
 | Bundle                                                      | Statements | Inert | Effect | Hoisted functions | Missed free names | Mis-classified eager | Exactly the oracle's set |
 | ----------------------------------------------------------- | ---------- | ----- | ------ | ----------------- | ----------------- | -------------------- | ------------------------ |
-| lodash (subset)                                             | 670        | 638   | 32     | 167               | 0                 | 0                    | 99.3%                    |
-| acorn                                                       | 447        | 156   | 291    | 42                | 0                 | 0                    | 99.8%                    |
-| semver (CJS)                                                | 59         | 58    | 1      | 0                 | 0                 | 0                    | 100%                     |
-| zod                                                         | 1,072      | 874   | 198    | 560               | 0                 | 0                    | 100%                     |
-| acorn, minified                                             | 374        | 84    | 290    | 42                | 0                 | 0                    | 99.7%                    |
-| zod, minified                                               | 805        | 688   | 117    | 560               | 0                 | 0                    | 100%                     |
-| scoping stress file ([`torture.mjs`](lowering/torture.mjs)) | 23         | 23    | 0      | 10                | 0                 | 0                    | 100%                     |
+| lodash (subset)                                             | 670        | 636   | 34     | 167               | 0                 | 0                    | 99.3%                    |
+| acorn                                                       | 447        | 155   | 292    | 42                | 0                 | 0                    | 99.8%                    |
+| semver (CJS)                                                | 59         | 57    | 2      | 0                 | 0                 | 0                    | 100%                     |
+| zod                                                         | 1,072      | 873   | 199    | 560               | 0                 | 0                    | 100%                     |
+| acorn, minified                                             | 447        | 155   | 292    | 42                | 0                 | 0                    | 99.8%                    |
+| zod, minified                                               | 1,072      | 873   | 199    | 560               | 0                 | 0                    | 100%                     |
+| scoping stress file ([`torture.mjs`](lowering/torture.mjs)) | 28         | 28    | 0      | 10                | 0                 | 0                    | 100%                     |
 | the 12-statement example                                    | 12         | 10    | 2      | 4                 | 0                 | 0                    | 100%                     |
 
-That is 3,427 real statements with no missed free variable. "Inert" and "effect" are the verdicts of `Effects.lean`; the oracle has none. On the example, `extract.mjs` (the first prototype, which counts every call as an effect) and the Lean analysis give identical footprints for 10 of 12 statements: the other two are the calls `register(…)`, where Lean sees that the callee only writes `registry`.
+That is 3,767 real statements with no missed free variable. A minified bundle has the statements of the readable one: its declarator lists are split. "Inert" and "effect" are the verdicts of `Effects.lean`; the oracle has none. On the example, `extract.mjs` (the first prototype, which counts every call as an effect) and the Lean analysis give identical footprints for 10 of 12 statements: the other two are the calls `register(…)`, where Lean sees that the callee only writes `registry`.
 No real bundle contained a node type the analysis does not recognize, so the fallback was exercised on a synthetic unknown node: it recorded the type and still collected every identifier below it.
 
 **Does a zero mean anything?** I injected bugs into `Lower.lean` and scored them against the oracle.
@@ -186,12 +188,12 @@ All six _unsound_ mutants were caught: skipping a member expression's object, `e
 and ignoring pattern defaults, letting parameters see body-level names, binding a catch parameter over the whole `try` (caught only by the stress file).
 One mutant, forgetting a catch parameter is local, is on the safe side and is correctly not flagged. The oracle is only as strong as its corpus.
 
-**What real bundles look like**, from the same runs. `Effects.lean` makes 929 of 3,427 statements effects (27%); the allow-list of the first version made 1,272 (37%):
+**What real bundles look like**, from the same runs. `Effects.lean` makes 1,018 of 3,767 statements effects (27%); the allow-list of the first version made 1,272 (37%):
 
-- acorn: 291 (minified, 290), of which 272 are `proto.method = function …`: a store into the prototype of an exported class, and the names a bundle exports start out held by the world;
-- semver: 1 (a call);
-- zod: 198, of which 183 are `var X = factory(…)` calls; minified, 117;
-- lodash: 32: 16 calls, 9 logical expressions, 4 conditionals, 2 member reads and an `if`.
+- acorn: 292 (minified too), of which 272 are `proto.method = function …`: a store into the prototype of an exported class, and the names a bundle exports start out held by the world;
+- semver: 2 (a call and a member read);
+- zod: 199 (minified too), of which 183 are `var X = factory(…)` calls;
+- lodash: 34: 17 calls, 9 logical expressions, 4 conditionals, 3 member reads and an `if`.
 
 The bundles also contain statements that assign to a top-level name (lodash 1, acorn 2, zod 7), which the model cannot place in another module.
 
