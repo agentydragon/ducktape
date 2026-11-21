@@ -10,10 +10,7 @@ py_library(
     name = "check_run",
     srcs = ["check_run.py"],
     visibility = ["//:__subpackages__"],
-    deps = [
-        "@pypi//pydantic",
-        "@pypi//pygithub",
-    ],
+    deps = ["@pypi//pygithub"],
 )
 
 py_binary(
@@ -392,6 +389,7 @@ py_library(
         ":issue_provenance",
     ],
     deps = [
+        ":check_run",
         ":metadata",
         ":render_common",
         "@pypi//jinja2",
