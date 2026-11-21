@@ -46,7 +46,7 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.forgejo import secret_copy
 from cluster.cdk8s.haku_ci import egress_gateway, runner_config
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.namespaces import PRIVILEGED_POD_SECURITY, Vpa
 
 # Staging egress's interception CA Bundle, named where it is defined.
 from cluster.cdk8s.public_coder import egress as public_coder_egress
@@ -578,9 +578,7 @@ def chart(app: App) -> Chart:
             # seccomp, so the namespace must enforce privileged. Safe because haku-ci is
             # operator-only (Haku has no RBAC here; only Flux applies), so the loosened level
             # grants Haku nothing.
-            "pod-security.kubernetes.io/enforce": "privileged",
-            "pod-security.kubernetes.io/warn": "privileged",
-            "pod-security.kubernetes.io/audit": "privileged",
+            **PRIVILEGED_POD_SECURITY,
         },
     )
     _add_egress_fence(chart)

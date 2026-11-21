@@ -14,7 +14,7 @@ from cluster.cdk8s import namespaces, pod_policy
 from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import loki
-from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.namespaces import PRIVILEGED_POD_SECURITY, Vpa
 
 NAME = "vector-talos-logs"
 NAMESPACE = "vector-talos-logs"
@@ -45,14 +45,10 @@ def chart(app: App) -> Chart:
         name=NAMESPACE,
         # Fixed-resource DaemonSet -- opt out of Goldilocks/VPA recommendations.
         vpa=Vpa.DISABLED,
-        labels={
-            # The receiver joins the host network so it can bind only host loopback;
-            # baseline forbids hostNetwork. This is an operator-only namespace: Flux is its
-            # sole writer, while the Alloy container itself remains unprivileged.
-            "pod-security.kubernetes.io/enforce": "privileged",
-            "pod-security.kubernetes.io/audit": "privileged",
-            "pod-security.kubernetes.io/warn": "privileged",
-        },
+        # The receiver joins the host network so it can bind only host loopback;
+        # baseline forbids hostNetwork. This is an operator-only namespace: Flux is its
+        # sole writer, while the Alloy container itself remains unprivileged.
+        labels=PRIVILEGED_POD_SECURITY,
     )
     daemonset = k8s.KubeDaemonSet(
         chart,
