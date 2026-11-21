@@ -50,7 +50,7 @@ def _values() -> dict[str, object]:
                         controlled_values=ControlledValues.REQUESTS_ONLY,
                         controlled_resources=("cpu", "memory"),
                         min_allowed={"cpu": _ADMISSION_CPU_REQUEST, "memory": "224Mi"},
-                        max_allowed={"cpu": "500m", "memory": _ADMISSION_MEMORY_LIMIT},
+                        max_allowed={"memory": _ADMISSION_MEMORY_LIMIT},
                     ),
                     ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
                 ),
