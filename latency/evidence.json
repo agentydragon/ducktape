@@ -23818,5 +23818,1119 @@
     "method": "Same-repository current PR heads targeting devel, joined from CI workflow runs created in this window to exact-head GitHub check-run IDs. Excludes superseded heads, forks and runs without an unambiguous PR match. From first observed workflow creation in this window through the last of the three current required statuses; times conditional on green. In-progress and very recent heads are right-censored."
   },
   "research_source_devel_commit": "2657cde824fb66cbe78c9d5c5cff01b72f8d1ad2",
-  "retained_baseline_snapshot": "c4f08c7721f603950152a3b0862475de201b7c1f"
+  "retained_baseline_snapshot": "c4f08c7721f603950152a3b0862475de201b7c1f",
+  "trial_pr_census": {
+    "window_utc": ["2026-11-20T22:35:50Z", "2026-11-21T01:54:27Z"],
+    "observed_at_utc": "2026-11-21T01:54:40+00:00",
+    "workflow_runs": 109,
+    "same_repository_run_heads": 109,
+    "eligible_prs": 82,
+    "ambiguous_head_associations": 0,
+    "gates": [
+      "Build artifacts + imports check",
+      "Pre-commit checks",
+      "bazel-ci / Test & Build"
+    ],
+    "overall": {
+      "outcomes": {
+        "incomplete": 10,
+        "green": 68,
+        "cancelled": 4
+      },
+      "n": 82,
+      "median_s": 196.0,
+      "p90_s": 507.0
+    },
+    "groups": {
+      "Agentplane backend": {
+        "outcomes": {
+          "green": 2
+        },
+        "n": 2,
+        "median_s": 929.5,
+        "p90_s": 1177.0
+      },
+      "Agentplane tests / fixtures": {
+        "outcomes": {
+          "green": 1
+        },
+        "n": 1,
+        "median_s": 173.0,
+        "p90_s": 173.0
+      },
+      "Documentation": {
+        "outcomes": {
+          "green": 8
+        },
+        "n": 8,
+        "median_s": 131.5,
+        "p90_s": 140.0
+      },
+      "Frontend": {
+        "outcomes": {
+          "green": 7,
+          "cancelled": 1,
+          "incomplete": 1
+        },
+        "n": 9,
+        "median_s": 173.0,
+        "p90_s": 305.0
+      },
+      "Large diff / unclassified": {
+        "outcomes": {
+          "green": 1
+        },
+        "n": 1,
+        "median_s": 134.0,
+        "p90_s": 134.0
+      },
+      "Other code / tooling": {
+        "outcomes": {
+          "incomplete": 2,
+          "green": 36,
+          "cancelled": 3
+        },
+        "n": 41,
+        "median_s": 245.5,
+        "p90_s": 507.0
+      },
+      "Other infrastructure": {
+        "outcomes": {
+          "green": 7,
+          "incomplete": 4
+        },
+        "n": 11,
+        "median_s": 141.0,
+        "p90_s": 237.0
+      },
+      "cdk8s infrastructure": {
+        "outcomes": {
+          "green": 6,
+          "incomplete": 3
+        },
+        "n": 9,
+        "median_s": 241.0,
+        "p90_s": 524.0
+      }
+    },
+    "rows": [
+      {
+        "pr": 18109,
+        "head": "ed2cd4d47f065d503580f8df67c92d9bcb5a91c7",
+        "group": "Other code / tooling",
+        "start": "2026-11-21T01:48:26Z",
+        "last": [],
+        "feedback_s": null,
+        "outcome": "incomplete",
+        "run_ids": [44852317167],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18222,
+        "head": "2b9e524cbce09bdce41118b2bbf7d9f49610b839",
+        "group": "Large diff / unclassified",
+        "start": "2026-11-21T01:24:04Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 134.0,
+        "outcome": "green",
+        "run_ids": [44849954908],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18287,
+        "head": "4dad1ed17b55408c5d87e46244c5e1bd2fd9f64d",
+        "group": "cdk8s infrastructure",
+        "start": "2026-11-20T22:51:51Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 524.0,
+        "outcome": "green",
+        "run_ids": [44832384445],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18315,
+        "head": "8c097dd400931396b76004bf7b5d92f592a8275d",
+        "group": "Agentplane backend",
+        "start": "2026-11-20T22:41:11Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 682.0,
+        "outcome": "green",
+        "run_ids": [44830968654],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18316,
+        "head": "829923bdab2a8b4ecaf429e4d7e0eddb65405ef0",
+        "group": "Other code / tooling",
+        "start": "2026-11-20T22:45:39Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 152.0,
+        "outcome": "green",
+        "run_ids": [44831560945],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18317,
+        "head": "d3397ba22e5804456b0bb92d12135143cda24760",
+        "group": "Agentplane tests / fixtures",
+        "start": "2026-11-20T22:46:28Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 173.0,
+        "outcome": "green",
+        "run_ids": [44831671500],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18318,
+        "head": "8948751e9911113f39b40e5750be6e514e20874a",
+        "group": "Other infrastructure",
+        "start": "2026-11-20T22:47:12Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 237.0,
+        "outcome": "green",
+        "run_ids": [44831768261],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18319,
+        "head": "3c3a294cb7ec5f40bd9736975d70605aa885df1a",
+        "group": "cdk8s infrastructure",
+        "start": "2026-11-20T22:48:13Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 226.0,
+        "outcome": "green",
+        "run_ids": [44831902751],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18320,
+        "head": "134cb8952a438d129330b929e0a146ed4c27c23f",
+        "group": "Other code / tooling",
+        "start": "2026-11-20T22:50:46Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 286.0,
+        "outcome": "green",
+        "run_ids": [44832241944],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18321,
+        "head": "8011b7f2797b1797d31fc0bb68f4a8e5d666f3b9",
+        "group": "cdk8s infrastructure",
+        "start": "2026-11-21T00:45:26Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 255.0,
+        "outcome": "green",
+        "run_ids": [44845921359],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18322,
+        "head": "31ba95be71b8b6022bc4fd74f61e7328a3ec492c",
+        "group": "Other code / tooling",
+        "start": "2026-11-20T22:54:55Z",
+        "last": [],
+        "feedback_s": null,
+        "outcome": "cancelled",
+        "run_ids": [44832780594],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18323,
+        "head": "aee861eba04d8d2ab914cb74fa2f4f46abe5f861",
+        "group": "Frontend",
+        "start": "2026-11-20T23:05:20Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 305.0,
+        "outcome": "green",
+        "run_ids": [44834142618],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18324,
+        "head": "0614cf552c765af3e1c129a95f02e6180c98f825",
+        "group": "Frontend",
+        "start": "2026-11-20T22:58:58Z",
+        "last": [],
+        "feedback_s": null,
+        "outcome": "cancelled",
+        "run_ids": [44833287917],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18326,
+        "head": "3cbce4e426efef145492b894a6e9f2d861bd6bf3",
+        "group": "Other code / tooling",
+        "start": "2026-11-20T22:59:40Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 178.0,
+        "outcome": "green",
+        "run_ids": [44833376496],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18327,
+        "head": "ac51650450ac8e7121e85055644e940135634516",
+        "group": "Agentplane backend",
+        "start": "2026-11-20T23:09:20Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 1177.0,
+        "outcome": "green",
+        "run_ids": [44834654983],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18328,
+        "head": "8c09a5386f191de364e61b66bc3a249b2b6cc9e9",
+        "group": "Other code / tooling",
+        "start": "2026-11-20T23:00:38Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 162.0,
+        "outcome": "green",
+        "run_ids": [44833506600],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18329,
+        "head": "9ee216c69228b0c222f9f525b61f820cec5cd0a9",
+        "group": "Frontend",
+        "start": "2026-11-20T23:01:38Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 196.0,
+        "outcome": "green",
+        "run_ids": [44833647371],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18330,
+        "head": "1795e20750b242819e0273519668b7f4d3b3bb92",
+        "group": "Other code / tooling",
+        "start": "2026-11-20T23:02:30Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 331.0,
+        "outcome": "green",
+        "run_ids": [44833760006],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18331,
+        "head": "08598a8e7b11918c7d5f48b9e2d5bb7aac3b8456",
+        "group": "Other code / tooling",
+        "start": "2026-11-20T23:04:50Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 396.0,
+        "outcome": "green",
+        "run_ids": [44834072598],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18332,
+        "head": "767c51b0540bdf7d1058f091c5cb9c0a71299052",
+        "group": "Other code / tooling",
+        "start": "2026-11-20T23:05:38Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 275.0,
+        "outcome": "green",
+        "run_ids": [44834182328],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18333,
+        "head": "215e2c967c2e330e37e55750502dc9e0dc9abc1b",
+        "group": "Other infrastructure",
+        "start": "2026-11-20T23:06:38Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 110.0,
+        "outcome": "green",
+        "run_ids": [44834311018],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18334,
+        "head": "6764d597afc0f871b4d88c5e6cdc6c91d06fc58d",
+        "group": "Other infrastructure",
+        "start": "2026-11-20T23:06:40Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 115.0,
+        "outcome": "green",
+        "run_ids": [44834315870],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18336,
+        "head": "5e4dd527efe1f16d2d1c3f38b11d409768be18b1",
+        "group": "Other code / tooling",
+        "start": "2026-11-20T23:07:30Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 261.0,
+        "outcome": "green",
+        "run_ids": [44834424095],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18337,
+        "head": "ff0a627d308110e497388dc31b8e66a948899aea",
+        "group": "Other code / tooling",
+        "start": "2026-11-20T23:09:36Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 161.0,
+        "outcome": "green",
+        "run_ids": [44834688897],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18338,
+        "head": "788f1798c7e08bb4e681c16c541b833002615220",
+        "group": "Frontend",
+        "start": "2026-11-20T23:10:32Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 173.0,
+        "outcome": "green",
+        "run_ids": [44834811043],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18339,
+        "head": "eabea19be256c460d108d6cbf1776fac846d1c30",
+        "group": "Other code / tooling",
+        "start": "2026-11-20T23:11:14Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 170.0,
+        "outcome": "green",
+        "run_ids": [44834900591],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18340,
+        "head": "97f66c2a1b601ad6be0f7cdd0d66f7ef14fd4044",
+        "group": "Frontend",
+        "start": "2026-11-20T23:12:02Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 187.0,
+        "outcome": "green",
+        "run_ids": [44835001814],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18341,
+        "head": "5b177a0ac78e50d151ec7b1c02e81eb826669de9",
+        "group": "Other code / tooling",
+        "start": "2026-11-20T23:13:13Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 500.0,
+        "outcome": "green",
+        "run_ids": [44835153877],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18342,
+        "head": "22048668f1d2d09f893b5df93fee0c7e2d81657a",
+        "group": "Other code / tooling",
+        "start": "2026-11-20T23:13:59Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 269.0,
+        "outcome": "green",
+        "run_ids": [44835247434],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18343,
+        "head": "da25789a1b23d0883b54538a38047477704abe8b",
+        "group": "Other code / tooling",
+        "start": "2026-11-20T23:14:43Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 371.0,
+        "outcome": "green",
+        "run_ids": [44835338945],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18344,
+        "head": "9c12a237aab4d9b8891883404360e86364aba3b3",
+        "group": "Other code / tooling",
+        "start": "2026-11-20T23:16:43Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 165.0,
+        "outcome": "green",
+        "run_ids": [44835589966],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18345,
+        "head": "7b3642bd8fbc9ab6468f75a222b86f8d0fc41c83",
+        "group": "Other code / tooling",
+        "start": "2026-11-20T23:17:42Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 277.0,
+        "outcome": "green",
+        "run_ids": [44835713131],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18346,
+        "head": "fab7f5ec7e790f03671e3228f57e0d075d318c4f",
+        "group": "Other code / tooling",
+        "start": "2026-11-20T23:17:44Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 229.0,
+        "outcome": "green",
+        "run_ids": [44835717996],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18347,
+        "head": "ff86d8e84987861457181717ed51ddc869dc644b",
+        "group": "Other code / tooling",
+        "start": "2026-11-21T00:19:03Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 565.0,
+        "outcome": "green",
+        "run_ids": [44842999476],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18348,
+        "head": "e4352bb2057f8d233f6880b8f9bd0e21418580b3",
+        "group": "Other code / tooling",
+        "start": "2026-11-20T23:20:40Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 325.0,
+        "outcome": "green",
+        "run_ids": [44836089398],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18349,
+        "head": "23c115af1a39902817f1aa43916951a2c6dfbcfb",
+        "group": "Other code / tooling",
+        "start": "2026-11-20T23:22:38Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 404.0,
+        "outcome": "green",
+        "run_ids": [44836334178],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18350,
+        "head": "adae7a00c074c68fa756ba429a34898f6706bec4",
+        "group": "Other code / tooling",
+        "start": "2026-11-20T23:26:20Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 507.0,
+        "outcome": "green",
+        "run_ids": [44836794088],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18351,
+        "head": "5c7a126251c2476685fa76f952ddb89f3f2a44d2",
+        "group": "Other code / tooling",
+        "start": "2026-11-20T23:26:22Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 141.0,
+        "outcome": "green",
+        "run_ids": [44836797575],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18352,
+        "head": "dafd445a609e3cb2e104e1ba37f9591e332b6294",
+        "group": "Other code / tooling",
+        "start": "2026-11-20T23:26:25Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 176.0,
+        "outcome": "green",
+        "run_ids": [44836802160],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18353,
+        "head": "0a2e651abd874e9c5cbfc01a47584e29cf8507a5",
+        "group": "Other code / tooling",
+        "start": "2026-11-20T23:28:13Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 170.0,
+        "outcome": "green",
+        "run_ids": [44837010225],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18354,
+        "head": "5ee5ee334234b60158537607d1680869d92e996d",
+        "group": "Other code / tooling",
+        "start": "2026-11-20T23:34:26Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 228.0,
+        "outcome": "green",
+        "run_ids": [44837782915],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18355,
+        "head": "fbd0fd1dff2883a8d8957129ca79b242a6e69b46",
+        "group": "Other code / tooling",
+        "start": "2026-11-20T23:35:40Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 219.0,
+        "outcome": "green",
+        "run_ids": [44837937896],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18356,
+        "head": "7109c90f469882cfc5d98ffcb2c00a21dc8a3b4c",
+        "group": "Documentation",
+        "start": "2026-11-20T23:35:42Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 128.0,
+        "outcome": "green",
+        "run_ids": [44837942812],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18357,
+        "head": "3586c15deea1aea511a97308facbb75f5b24ff3c",
+        "group": "Other code / tooling",
+        "start": "2026-11-20T23:35:43Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 582.0,
+        "outcome": "green",
+        "run_ids": [44837946433],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18358,
+        "head": "a044e3856402e21d77626e287ebb78e921186f8e",
+        "group": "Frontend",
+        "start": "2026-11-20T23:40:05Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 130.0,
+        "outcome": "green",
+        "run_ids": [44838463739],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18359,
+        "head": "2a915160d5d2e774f5072bc021fc6d98d610383e",
+        "group": "Other code / tooling",
+        "start": "2026-11-20T23:40:43Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 599.0,
+        "outcome": "green",
+        "run_ids": [44838542901],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18360,
+        "head": "10a662894ad8fbe1e89fe13caccd888c89a36448",
+        "group": "Documentation",
+        "start": "2026-11-20T23:41:46Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 139.0,
+        "outcome": "green",
+        "run_ids": [44838664880],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18361,
+        "head": "a1fa25e67430939727f248fa1ed9dd7ff44fdfe8",
+        "group": "Other code / tooling",
+        "start": "2026-11-21T00:17:31Z",
+        "last": [],
+        "feedback_s": null,
+        "outcome": "cancelled",
+        "run_ids": [44842831063],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18362,
+        "head": "32d5435a3601523895f8731f3a76f63f1ea63743",
+        "group": "Other infrastructure",
+        "start": "2026-11-20T23:45:02Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 140.0,
+        "outcome": "green",
+        "run_ids": [44839046294],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18363,
+        "head": "2759b413668476caea570d39ba497421689330e9",
+        "group": "Other code / tooling",
+        "start": "2026-11-20T23:45:43Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 483.0,
+        "outcome": "green",
+        "run_ids": [44839133579],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18364,
+        "head": "3d16334cf8aeac612924f5da774370523f49163f",
+        "group": "Other code / tooling",
+        "start": "2026-11-20T23:48:51Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 316.0,
+        "outcome": "green",
+        "run_ids": [44839502048],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18366,
+        "head": "8a2ba5d2f8763b081a0f3043598f86dd58e82f13",
+        "group": "Documentation",
+        "start": "2026-11-21T00:51:55Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 132.0,
+        "outcome": "green",
+        "run_ids": [44846610211],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18367,
+        "head": "8f47d463464ede28b6448ccf6f7352a1e3e7c805",
+        "group": "Other infrastructure",
+        "start": "2026-11-21T01:03:09Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 141.0,
+        "outcome": "green",
+        "run_ids": [44847783263],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18368,
+        "head": "4ad343d97d5c3871e9d1e3e5794ca031f546f745",
+        "group": "Other code / tooling",
+        "start": "2026-11-21T01:05:32Z",
+        "last": ["Pre-commit checks"],
+        "feedback_s": 476.0,
+        "outcome": "green",
+        "run_ids": [44848034894],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18369,
+        "head": "36b78081ae404d575f6c6bf47261c43ee050fbda",
+        "group": "Documentation",
+        "start": "2026-11-21T01:25:36Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 108.0,
+        "outcome": "green",
+        "run_ids": [44850105192],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18370,
+        "head": "71100cfee3725b2f8ea7e636803ad2980c717e68",
+        "group": "Other infrastructure",
+        "start": "2026-11-21T01:25:07Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 142.0,
+        "outcome": "green",
+        "run_ids": [44850055755],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18371,
+        "head": "806da2dd76266e7741043959990aa30b1e10c902",
+        "group": "Documentation",
+        "start": "2026-11-21T01:25:38Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 140.0,
+        "outcome": "green",
+        "run_ids": [44850107679],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18372,
+        "head": "1ffbc0e9b9d45fce2558cdef6cb0da8bc5b5cb04",
+        "group": "Other code / tooling",
+        "start": "2026-11-21T01:26:11Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 152.0,
+        "outcome": "green",
+        "run_ids": [44850159308],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18373,
+        "head": "7a90d5c23505e19f7fe35cf681601f954f1a7c31",
+        "group": "Documentation",
+        "start": "2026-11-21T01:28:07Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 131.0,
+        "outcome": "green",
+        "run_ids": [44850341453],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18374,
+        "head": "3fcb13befb75bb3211b67847bb81db23e38b62c5",
+        "group": "Documentation",
+        "start": "2026-11-21T01:28:37Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 134.0,
+        "outcome": "green",
+        "run_ids": [44850388876],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18375,
+        "head": "0fb9cb21ce8074fdf31882084ac3be5acd838f3b",
+        "group": "Other code / tooling",
+        "start": "2026-11-21T01:31:17Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 218.0,
+        "outcome": "green",
+        "run_ids": [44850655389],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18376,
+        "head": "2b28301deffd8fd2f1881f56cbd86c69b8b96dd5",
+        "group": "Frontend",
+        "start": "2026-11-21T01:32:14Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 162.0,
+        "outcome": "green",
+        "run_ids": [44850749819],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18377,
+        "head": "1857fcec16601abce9fdf740d90083c82c4970ad",
+        "group": "Other infrastructure",
+        "start": "2026-11-21T01:33:07Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 169.0,
+        "outcome": "green",
+        "run_ids": [44850835709],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18378,
+        "head": "bd1a99a82971e223fedecbac10c23a6f035bfebe",
+        "group": "cdk8s infrastructure",
+        "start": "2026-11-21T01:36:54Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 280.0,
+        "outcome": "green",
+        "run_ids": [44851203057],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18379,
+        "head": "543ee524c805d29115f7a285e5c28152c09eefe6",
+        "group": "Other code / tooling",
+        "start": "2026-11-21T01:38:02Z",
+        "last": [],
+        "feedback_s": null,
+        "outcome": "cancelled",
+        "run_ids": [44851316959],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18380,
+        "head": "6f5218899116a3baf974f539e895b17c27f5f8a4",
+        "group": "Documentation",
+        "start": "2026-11-21T01:38:48Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 115.0,
+        "outcome": "green",
+        "run_ids": [44851390514],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18381,
+        "head": "9977f033d63268ee1876b3ad85ecff05951d37fc",
+        "group": "Other code / tooling",
+        "start": "2026-11-21T01:39:45Z",
+        "last": ["Build artifacts + imports check"],
+        "feedback_s": 205.0,
+        "outcome": "green",
+        "run_ids": [44851480122],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18382,
+        "head": "b533ecba6452d7f1e7599c83993cf081365ece9d",
+        "group": "cdk8s infrastructure",
+        "start": "2026-11-21T01:42:05Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 196.0,
+        "outcome": "green",
+        "run_ids": [44851715799],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18383,
+        "head": "554442d4f97178a563265c5731b69babd793909f",
+        "group": "Frontend",
+        "start": "2026-11-21T01:41:48Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 156.0,
+        "outcome": "green",
+        "run_ids": [44851688694],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18384,
+        "head": "d212c5b3ff184b06d70d27f8cc2e470ca2e40f53",
+        "group": "Other code / tooling",
+        "start": "2026-11-21T01:42:41Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 122.0,
+        "outcome": "green",
+        "run_ids": [44851773716],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18385,
+        "head": "8bc4845332d6c8df4e9013e0eecd11c2f75498d9",
+        "group": "Other code / tooling",
+        "start": "2026-11-21T01:43:58Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 177.0,
+        "outcome": "green",
+        "run_ids": [44851892779],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18386,
+        "head": "b6930d3027f228cb7d51d7d387b851ff56fac959",
+        "group": "cdk8s infrastructure",
+        "start": "2026-11-21T01:45:21Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 227.0,
+        "outcome": "green",
+        "run_ids": [44852027829],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18387,
+        "head": "51db5588255ee129d51c349de47c820794cd2823",
+        "group": "Other code / tooling",
+        "start": "2026-11-21T01:46:02Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 230.0,
+        "outcome": "green",
+        "run_ids": [44852092091],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18388,
+        "head": "24ebef113f2a0ecbf0d1f9a92ac3cd6ac5728bf5",
+        "group": "Other infrastructure",
+        "start": "2026-11-21T01:47:10Z",
+        "last": [],
+        "feedback_s": null,
+        "outcome": "incomplete",
+        "run_ids": [44852199745],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18389,
+        "head": "1d131fd3eafe4dc83dd1bbe1d08e5d004259b20c",
+        "group": "Other infrastructure",
+        "start": "2026-11-21T01:48:38Z",
+        "last": [],
+        "feedback_s": null,
+        "outcome": "incomplete",
+        "run_ids": [44852335888],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18390,
+        "head": "42c2d175f0779c55bfa7a2788575b8a9c6ed3060",
+        "group": "Other code / tooling",
+        "start": "2026-11-21T01:50:25Z",
+        "last": [],
+        "feedback_s": null,
+        "outcome": "incomplete",
+        "run_ids": [44852507419],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18391,
+        "head": "85a7c97cb5af4f66c503cd14393ee17a3e8fd1d4",
+        "group": "cdk8s infrastructure",
+        "start": "2026-11-21T01:49:48Z",
+        "last": [],
+        "feedback_s": null,
+        "outcome": "incomplete",
+        "run_ids": [44852445364],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18392,
+        "head": "9d00a9ff5843ef8d1ce977a765b625644ea4be1b",
+        "group": "Other infrastructure",
+        "start": "2026-11-21T01:50:35Z",
+        "last": [],
+        "feedback_s": null,
+        "outcome": "incomplete",
+        "run_ids": [44852523601],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18393,
+        "head": "96a80284e607772f38a367e5f659a579eafc9c4d",
+        "group": "Frontend",
+        "start": "2026-11-21T01:51:34Z",
+        "last": [],
+        "feedback_s": null,
+        "outcome": "incomplete",
+        "run_ids": [44852615197],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18394,
+        "head": "44d1f52c8d9c04d6b95fe2fe1906720e3abf509a",
+        "group": "cdk8s infrastructure",
+        "start": "2026-11-21T01:52:28Z",
+        "last": [],
+        "feedback_s": null,
+        "outcome": "incomplete",
+        "run_ids": [44852701920],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18395,
+        "head": "c884fd24506278996d79811cb30fb651e739a2b6",
+        "group": "Other infrastructure",
+        "start": "2026-11-21T01:52:28Z",
+        "last": [],
+        "feedback_s": null,
+        "outcome": "incomplete",
+        "run_ids": [44852702696],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18396,
+        "head": "7d16bc0cb0f85362b72218acecdeb80e3fa8a6db",
+        "group": "cdk8s infrastructure",
+        "start": "2026-11-21T01:53:35Z",
+        "last": [],
+        "feedback_s": null,
+        "outcome": "incomplete",
+        "run_ids": [44852803904],
+        "run_attempts": [1]
+      }
+    ],
+    "method": "Same-repository current PR heads targeting devel, joined from CI workflow runs created in this window to exact-head GitHub check-run IDs. Excludes superseded heads, forks and runs without an unambiguous PR match. From first observed workflow creation in this window through the last of the three current required statuses; times conditional on green. In-progress and very recent heads are right-censored."
+  },
+  "kvm_shared_cache_trial": {
+    "experiment_pr": 18367,
+    "tracking_issue": 18365,
+    "tested_at_utc_date": "2026-11-21",
+    "experiment_commit": "6c48e88eaed6959cf67e4538faf9782bfb142709",
+    "archived_report": "https://github.com/agentydragon/ducktape/blob/f77bcd7cb05ce00e258ae332c0dc7f5de55ef926/devinfra/buildbuddy/debug/kvm_shared_cache_trial.md",
+    "proxy_host": "ovh-ns1001419",
+    "cache_proxy_version": "enterprise-v2.323.0",
+    "input_root": "63315318484c77e468323024384515199ac7c95e35a28223ca43bda379ae6932",
+    "input_files": 7467,
+    "logical_input_bytes": 2056368162,
+    "phase_clock": "Native BuildBuddy TestRunner input-fetch start to completion. One fresh action per displayed route and cache state.",
+    "staging": [
+      {
+        "label": "Cloud direct, fresh worker",
+        "host": "ovh-ns1001419",
+        "input_s": 8.71,
+        "bytes": 2056368162,
+        "files": 7467,
+        "invocation": "f0959a56-a935-4eb9-940d-0fe01339322b"
+      },
+      {
+        "label": "Cloud direct, fresh worker",
+        "host": "ovh-ns104952",
+        "input_s": 8.628,
+        "bytes": 2056368162,
+        "files": 7467,
+        "invocation": "72abc591-ddde-45e2-9a16-63402f768198"
+      },
+      {
+        "label": "Retained executor file cache",
+        "host": "ovh-ns1001419",
+        "input_s": 0.333,
+        "bytes": 0,
+        "files": 0,
+        "invocation": "281f2bb3-012c-43af-abf7-96149ee812f6"
+      },
+      {
+        "label": "Cold shared proxy, fresh worker",
+        "host": "ovh-ns104952",
+        "input_s": 19.045,
+        "bytes": 2056368162,
+        "files": 7467,
+        "invocation": "8fc3c7ca-d465-462d-b12a-d08ce6b0cc64"
+      },
+      {
+        "label": "Warm shared proxy, different fresh worker",
+        "host": "ovh-ns1001419",
+        "input_s": 9.292,
+        "bytes": 2056368162,
+        "files": 7467,
+        "invocation": "beef781b-c4dd-4e18-abd3-70f366b03a78"
+      },
+      {
+        "label": "Cloud-direct rollback, fresh worker",
+        "host": "ovh-ns104952",
+        "input_s": 8.726,
+        "bytes": 2056368162,
+        "files": 7467,
+        "invocation": "a06b8219-c37d-4386-8e41-35d31832fed0"
+      }
+    ],
+    "full_tests": [
+      {
+        "label": "direct-full",
+        "host": "ovh-ns1001419",
+        "invocation": "dd56d3f5-de39-438a-8a7f-59c572548213",
+        "cases": 2,
+        "failed_cases": 0
+      },
+      {
+        "label": "shared-full",
+        "host": "ovh-ns104952",
+        "invocation": "12aeefce-1f4c-462d-8b06-2241d421da3a",
+        "cases": 2,
+        "failed_cases": 0
+      }
+    ],
+    "cold_proxy": {
+      "upstream_byte_stream_reads": 1376,
+      "upstream_batch_read_blobs": 58,
+      "cached_byte_stream_reads": 12,
+      "cached_byte_stream_bytes": 1635383,
+      "upstream_metadata_and_auth_methods": [
+        "Authenticate",
+        "GetTree",
+        "SplitBlob"
+      ]
+    },
+    "warm_proxy": {
+      "upstream_byte_stream_reads": 0,
+      "upstream_batch_read_blobs": 0,
+      "cached_byte_stream_reads": 1388,
+      "cached_byte_stream_bytes": 816514268,
+      "upstream_metadata_and_auth_methods": [
+        "Authenticate",
+        "GetTree",
+        "SplitBlob"
+      ]
+    },
+    "egress_fault": {
+      "scope": "Proxy-only Cilium outbound TCP 443 deny. Hubble observed policy drops and some upstream RPCs still succeeded.",
+      "warm_cached_blob_bytes_verified": 5242910,
+      "warm_seed_invocation": "6656e026-986c-4d73-bca0-769c2c1f8d34",
+      "warm_guest_invocation": "9ef620f6-62bf-4127-ac46-594353e7719e",
+      "warm_guest_outcome": "Canceled at fault deadline after upstream GetTree and Authenticate errors. Any later physical completion followed egress restoration.",
+      "cold_guest_invocation": "78d8ce37-709b-4446-a231-ff17f6d2d43e",
+      "cold_guest_outcome": "Canceled at fault deadline. Direct Cloud served the new probe blob and the cold proxy returned zero bytes.",
+      "fresh_proxy_initial_key_fetch": "DeadlineExceeded",
+      "recovery": "Proxy logged TLS handshake resets and remained unready through one more restart and its 90-second readiness check. Cause unresolved."
+    },
+    "rollback_guest_cache_target_verified": true,
+    "all_trial_resources_and_storage_gone": true
+  }
 }
