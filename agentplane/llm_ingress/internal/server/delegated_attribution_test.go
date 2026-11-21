@@ -1,17 +1,14 @@
 package server
 
 import (
-	"crypto/tls"
 	"encoding/json"
 	"io"
 	"log/slog"
 	"maps"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
-	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
@@ -65,21 +62,7 @@ func TestServiceSamplerDelegationOverMTLS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ca := transporttesting.NewCA(t)
-	serverFiles := ca.Issue(t, peertls.LLMIngressURI)
-	serverTLS, err := serverFiles.WorkloadServerTLSConfigWithServices(peertls.LLMIngressURI, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	pair, err := tls.LoadX509KeyPair(serverFiles.CertFile, serverFiles.KeyFile)
-	if err != nil {
-		t.Fatal(err)
-	}
-	serverTLS.Certificates = []tls.Certificate{pair}
-	server := httptest.NewUnstartedServer(handler)
-	server.TLS = serverTLS
-	server.StartTLS()
-	t.Cleanup(server.Close)
+	server := serveIngressTestHandler(t, handler)
 	headers := delegatedHeaders(t, identity, sessionProvenance("00000000-0000-4000-8000-000000000077"))
 	headers.Del("Authorization")
 	for _, tc := range []struct {
@@ -93,34 +76,17 @@ func TestServiceSamplerDelegationOverMTLS(t *testing.T) {
 		{name: "bearer ambiguity", actor: peertls.CentralSamplerURI, bearer: true, want: http.StatusUnauthorized},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			var clientTLS *tls.Config
-			if tc.actor == "" {
-				clientTLS, err = (peertls.ClientTLS{CAFile: ca.RootFile, ServerURI: peertls.LLMIngressURI}).TLSConfig()
-			} else {
-				clientTLS, err = ca.Issue(t, tc.actor).ClientTLSConfig(peertls.LLMIngressURI)
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			transport := &http.Transport{TLSClientConfig: clientTLS}
-			t.Cleanup(transport.CloseIdleConnections)
-			client := &http.Client{Transport: transport}
 			callHeaders := headers.Clone()
 			if tc.bearer {
 				callHeaders.Set("Authorization", "Bearer test-token")
 			}
-			response, _ := request(t, client, http.MethodPost, server.URL+"/v1/responses", `{"model":"test"}`, callHeaders)
+			response, _ := request(t, server.client(t, tc.actor), http.MethodPost, server.URL+"/v1/responses", `{"model":"test"}`, callHeaders)
 			if response.StatusCode != tc.want {
 				t.Fatalf("status=%d,want=%d", response.StatusCode, tc.want)
 			}
 		})
 	}
-	clientTLS, err := ca.Issue(t, peertls.CentralSamplerURI).ClientTLSConfig(peertls.LLMIngressURI)
-	if err != nil {
-		t.Fatal(err)
-	}
-	client := &http.Client{Transport: &http.Transport{TLSClientConfig: clientTLS}}
-	t.Cleanup(client.CloseIdleConnections)
+	client := server.client(t, peertls.CentralSamplerURI)
 	for _, tc := range []struct {
 		name    string
 		headers http.Header

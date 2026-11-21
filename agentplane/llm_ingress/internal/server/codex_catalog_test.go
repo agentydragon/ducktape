@@ -55,12 +55,7 @@ func TestCodexCatalogIsServedAuthenticatedAndSignalledOnResponses(t *testing.T) 
 }
 
 func TestCodexCatalogEndpointWithoutCatalogIsNotForwarded(t *testing.T) {
-	caller := identityWorkload(t)
-	backend := newFakeLiteLLM()
-	backendServer := newBackendServer(t, backend)
-	ingress := newIngressTestServer(t, backendServer.URL)
-	client := ingress.client(t, caller.URI)
-	defer client.CloseIdleConnections()
+	backend, ingress, client := newIngressFixture(t)
 
 	catalog, _ := request(t, client, http.MethodGet, ingress.URL+codexCatalogPath, "", http.Header{})
 	responses, _ := request(t, client, http.MethodPost, ingress.URL+"/v1/responses", `{}`, http.Header{})
