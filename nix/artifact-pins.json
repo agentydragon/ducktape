@@ -29,8 +29,8 @@
       "sha256": "c7i18uXCEW5cObzp2EW68JQMxVLyisZl+yeXRs6zGmU="
     },
     "gmail-archiver": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/gmail-archiver-b72f1689b92f/gmail_archiver-0.1.0-py3-none-any.whl",
-      "sha256": "ty8WibkvabAvcBlC5rDs91V5yBVAA1luExsdTAB5yXo="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/gmail-archiver-bcccb02ec23f/gmail_archiver-0.1.0-py3-none-any.whl",
+      "sha256": "vMywLsI/NAHL8J/4FTMdGY2lBjCZnXW8q6A3w1zxFUI="
     },
     "vm-interact": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/vm-interact-acc38ab506a1/vm_interact-0.1.0-py3-none-any.whl",
@@ -53,12 +53,12 @@
       "sha256": "QMA1fu9Z3tm+uSvzXbw7oEt7mRAHFvu1qBTtA77Gc0U="
     },
     "aiquota-extension": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-10a3c60b5f54/aiquota.zip",
+      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-5b0a213cfc80/aiquota.zip",
       "sha256": "4VxsX5753ZrvoVy3Kuc61Ie58oR2ks08aphTM6EzbTY="
     },
     "aiquota": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-10a3c60b5f54/aiquota-0.1.0-py3-none-any.whl",
-      "sha256": "kbXgtJUumnBie2mxs6bSTJ47g6oxukQwpOMUiR62EU8="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-5b0a213cfc80/aiquota-0.1.0-py3-none-any.whl",
+      "sha256": "SYyu4Xwko7sT14xVESlcQjU4+9GUqsJx2qeGxoU8G+c="
     },
     "debundle": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-3770b2cd61fd/debundle",
