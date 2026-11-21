@@ -1167,6 +1167,26 @@ if (runSection(7)) {
   assert.equal(priorUpdateResult.result, "proved under assumptions", JSON.stringify(priorUpdateResult));
   assert.deepEqual(execute(priorUpdateSource, calls), { events: [], results: [6, 14] });
   assert.deepEqual(execute(join(priorUpdateOut, "entry.mjs"), calls), { events: [], results: [6, 14] });
+
+  const priorIncrementSource = join(root, "prior-increment-catch-source.mjs");
+  const priorIncrementOut = join(root, "prior-increment-catch-out");
+  await writeFile(
+    priorIncrementSource,
+    `let value = 3;\nlet other = 5;\nfunction compute(p) { let local = p; try { local++; throw value + local; } catch (caught) { local += caught; } return local; }\nexport { compute };\n`
+  );
+  assert.equal(cli("generate", priorIncrementSource, arithmeticSpec, priorIncrementOut).value.result, "generated");
+  const priorIncrementResult = cli("validate", priorIncrementSource, arithmeticSpec, priorIncrementOut).value;
+  assert.equal(priorIncrementResult.result, "proved under assumptions", JSON.stringify(priorIncrementResult));
+  assert.deepEqual(execute(priorIncrementSource, calls), { events: [], results: [5, 13] });
+  assert.deepEqual(execute(join(priorIncrementOut, "entry.mjs"), calls), { events: [], results: [5, 13] });
+  const priorIncrementLogic = join(priorIncrementOut, "logic.mjs");
+  const priorIncrementText = await readFile(priorIncrementLogic, "utf8");
+  assert.match(priorIncrementText, /local\+\+/);
+  await writeFile(priorIncrementLogic, priorIncrementText.replace("local++", "__split_local_0++"));
+  const importedIncrement = cli("validate", priorIncrementSource, arithmeticSpec, priorIncrementOut).value;
+  assert.notEqual(importedIncrement.result, "proved under assumptions", JSON.stringify(importedIncrement));
+  const oneCall = [{ name: "compute", args: [0] }];
+  assert.notDeepEqual(execute(priorIncrementSource, oneCall), execute(join(priorIncrementOut, "entry.mjs"), oneCall));
 }
 
 if (runSection(0)) {

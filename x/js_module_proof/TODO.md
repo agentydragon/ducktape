@@ -129,3 +129,10 @@ cover only part of the grammar and split space described below.
       browser fixture reaches `document.querySelector(...)` after its discarded
       directive; modeling that requires host calls and reference-valued results
       in the shared semantics, including their effects and observable identity.
+      A 2026-11-21 sample of `testing/frontend_visual/assets/frozen_clock.js`,
+      `study_casino/frontend/sync.js`, `devinfra/pr_visuals/gallery_sort.js`, and
+      `gnome/testing/fake-daemon.js` refused all three assignments per file at
+      generation: factory-call shape (3), existing imports (6), or a member
+      expression where an identifier was required (3). These are only twelve
+      candidate assignments, not a representative acceptance rate. Existing
+      imports need an explicit external-module and host-observation contract.

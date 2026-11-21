@@ -126,15 +126,17 @@ Functions may declare and call nonescaping local functions that capture and
 mutate surrounding numeric bindings. The checker rejects recursion, local
 function identities that escape, and cases where a captured name or the
 function itself could be shadowed at a call site.
-Returning or throwing functions may use a terminal `try`/`catch`, with no catch
-binding or an unused simple binding, optionally followed by `finally`. Both the
+Returning or throwing functions may use a terminal `try`/`catch`, optionally followed by `finally`. Both the
 try and catch blocks must return or throw using supported statements. A nonterminal try and catch
 may instead consist of supported assignments or updates, optionally ending
 in a throw, before execution continues. The finalizer consists of
 supported local assignments or updates; it runs after either completion, and
-an exception from its expressions replaces the pending completion. Used catch
-bindings and direct `return` or `throw` statements in the finalizer remain
-unsupported.
+an exception from its expressions replaces the pending completion. A used catch binding
+requires the try block to end in a numeric throw of an identifier, nonnegative safe
+integer literal, or an expression composed of those with `+` and `*`. Prior
+statements in that block are limited to numeric `=`, `+=`, `*=` and local `++`.
+Using a binding for other caught values and direct `return` or `throw` statements
+in the finalizer remain unsupported.
 Functions also support `for (let i = A; i < N; i++)` and inclusive `<=`
 bounds and either `i++` or `i += 1`, with literals `A` and `N` from 0 through
 8, at most eight iterations, and a block of supported local assignments or

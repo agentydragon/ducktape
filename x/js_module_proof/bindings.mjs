@@ -793,10 +793,13 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
           const last = parts.at(-1);
           const numericUpdate = (item) =>
             item.type === "ExpressionStatement" &&
-            item.expression.type === "AssignmentExpression" &&
-            ["=", "+=", "*="].includes(item.expression.operator) &&
-            item.expression.left.type === "Identifier" &&
-            numericThrow(item.expression.right);
+            ((item.expression.type === "AssignmentExpression" &&
+              ["=", "+=", "*="].includes(item.expression.operator) &&
+              item.expression.left.type === "Identifier" &&
+              numericThrow(item.expression.right)) ||
+              (item.expression.type === "UpdateExpression" &&
+                item.expression.operator === "++" &&
+                item.expression.argument.type === "Identifier"));
           check(
             last?.type === "ThrowStatement" && numericThrow(last.argument) && parts.slice(0, -1).every(numericUpdate),
             "used catch bindings require numeric updates followed by a numeric throw"

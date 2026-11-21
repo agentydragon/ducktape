@@ -1075,6 +1075,9 @@ export function makeLocalAliasCase(seed, index) {
                 block: {
                   type: "BlockStatement",
                   body: [
+                    ...(withCatchBinding && index >= 1717
+                      ? [expr({ type: "UpdateExpression", operator: "++", prefix: false, argument: id("offset") })]
+                      : []),
                     ...(withCatchBinding && index < 1621
                       ? []
                       : [
@@ -2440,6 +2443,12 @@ export async function runFuzz({
     aliasLoopCases: 0,
     aliasLoopComparedCases: 0,
     aliasLoopProvedCases: 0,
+    aliasTryCases: 0,
+    aliasTryComparedCases: 0,
+    aliasTryProvedCases: 0,
+    aliasBoundCatchCases: 0,
+    aliasBoundCatchComparedCases: 0,
+    aliasBoundCatchProvedCases: 0,
     loopShadowCases: 0,
     loopShadowComparedCases: 0,
     loopShadowUnknownCases: 0,
@@ -2692,6 +2701,8 @@ export async function runFuzz({
       if (input.composedAliasExpression) summary.composedAliasExpressionCases++;
       if (input.aliasBranch) summary.aliasBranchCases++;
       if (input.aliasLoop) summary.aliasLoopCases++;
+      if (input.withTry) summary.aliasTryCases++;
+      if (input.withCatchBinding) summary.aliasBoundCatchCases++;
       if (input.loopShadow) summary.loopShadowCases++;
       if (modules.some((module) => module.renameReexports)) summary.renamedReexportRequestedCases++;
       const importCount = modules.reduce((count, module) => count + module.imports.length, 0);
@@ -2905,6 +2916,8 @@ export async function runFuzz({
       if (input.composedAliasExpression) summary.composedAliasExpressionComparedCases++;
       if (input.aliasBranch) summary.aliasBranchComparedCases++;
       if (input.aliasLoop) summary.aliasLoopComparedCases++;
+      if (input.withTry) summary.aliasTryComparedCases++;
+      if (input.withCatchBinding) summary.aliasBoundCatchComparedCases++;
       if (input.loopShadow) summary.loopShadowComparedCases++;
       if (input.grammar === "alias" && input.numericArguments.length) {
         summary.parameterizedAliasComparedCases++;
@@ -3003,6 +3016,8 @@ export async function runFuzz({
           if (input.composedAliasExpression) summary.composedAliasExpressionProvedCases++;
           if (input.aliasBranch) summary.aliasBranchProvedCases++;
           if (input.aliasLoop) summary.aliasLoopProvedCases++;
+          if (input.withTry) summary.aliasTryProvedCases++;
+          if (input.withCatchBinding) summary.aliasBoundCatchProvedCases++;
           if (input.grammar === "alias" && input.numericArguments.length) summary.parameterizedAliasProvedCases++;
           if (input.grammar === "alias" && input.numericArguments.length > 1)
             summary.multipleParameterAliasProvedCases++;
