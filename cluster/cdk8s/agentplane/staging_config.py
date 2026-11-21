@@ -46,7 +46,7 @@ from cluster.cdk8s.agentplane.egress_staging_credentials import (
     PLAID_PGWEB_CREDENTIAL,
 )
 from cluster.cdk8s.monitoring.grafana_instance import GRAFANA_BASE_URL, TEMPO_DATASOURCE_UID
-from model_catalog.catalog import GPT6_LUNA_RESPONSES, OLLAMA_QWEN_IQ4XS_256K
+from model_catalog.catalog import GPT6_LUNA_RESPONSES, TABBYAPI_QWEN_STOCK
 from util.urls import HttpEndpointUrl
 
 _THREAD_PRESET_FINANCE_AGENT_CODEX = "finance-agent-codex"
@@ -172,7 +172,7 @@ def config(
     # forgejo-haku, haku-mailbox; finance-agent: forgejo-finance-agent, plaid-pgweb). Preset order
     # here is the launch form's order.
     #
-    # Haku launches on the stock EXL3 TabbyAPI checkpoint via its compatibility ID, with the 256K window
+    # Haku launches on the stock EXL3 TabbyAPI checkpoint with the 256K window
     # configured for the runner; the OpenAI-compatible wire carries reasoning effort.
     # Agentplane offers Qwen through the central sampler with standard Responses and JSON exec.
     # TODO(#9121): consider switching Haku back to a Claude default after validating the
@@ -181,7 +181,7 @@ def config(
     cfg.thread_presets[_THREAD_PRESET_HAKU_CODEX] = ThreadPreset(
         title="Haku",
         harness=Harness.CENTRAL_SAMPLER,
-        model=OLLAMA_QWEN_IQ4XS_256K.openai.id,
+        model=TABBYAPI_QWEN_STOCK.id,
         cwd="/state/workspaces/{session_id}/haku-state",
         reasoning_effort="medium",
         # Keep Haku's identity and run-procedure pointer aligned with its other runtimes.

@@ -536,7 +536,7 @@ ENV = Environment(
             for route in STAGING_APP_MODELS.central_sampler
         }
         | {
-            chat_completions_id(route): ModelConfig(
+            chat_completions_id(route, STAGING_APP_MODELS.central_sampler): ModelConfig(
                 connection="llm-ingress",
                 provider_model=route.id,
                 response_header_timeout_seconds=360

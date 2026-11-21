@@ -57,7 +57,7 @@ from cluster.cdk8s.agentplane.egress import (
     PACKAGES_POLICY,
     PUBLIC_CODER_VISUALS_POLICY,
 )
-from cluster.cdk8s.agentplane.model_selections import QWEN_CHAT_CANARY_ROUTE, HarnessRoutes, chat_completions_id
+from cluster.cdk8s.agentplane.model_selections import HarnessRoutes, chat_completions_id
 from model_catalog.catalog import Provider, Route
 from util.urls import HttpEndpointUrl
 
@@ -85,8 +85,6 @@ _PICKER_PROVIDER_NAMES = {
 
 def _picker_model_name(route: Route) -> str:
     """Append the serving provider to every Agentplane picker entry."""
-    if route == QWEN_CHAT_CANARY_ROUTE:
-        return "Qwen3.8 Flash-Next EXL3 2.68 bpw (256K) — TabbyAPI"
     provider = _PICKER_PROVIDER_NAMES[route.upstream.provider]
     return f"{route.display_name} — {provider}"
 
@@ -112,7 +110,7 @@ def model_catalog(models: HarnessRoutes, *, central_sampler_enabled: bool = Fals
     if central_sampler_enabled:
         sampler_ids = [route.id for route in models.central_sampler]
         for route in models.central_sampler_chat:
-            model_id = chat_completions_id(route)
+            model_id = chat_completions_id(route, models.central_sampler)
             if model_id not in options:
                 options[model_id] = ModelOption(
                     model=model_id,

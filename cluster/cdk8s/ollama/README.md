@@ -28,13 +28,10 @@ placement. After rollout, measure warm and peak VRAM on both cards while
 completing a cold prompt plus generation near the 256K limit through LiteLLM.
 Repeat with a fresh prefix after mixed requests.
 
-The LiteLLM compatibility IDs
-`ollama/{oai,olm}-chat/qwen3.8-flash-next-iq4xs-{128k,256k}` all use this
-deployment and select the stock checkpoint. Select
-`tabbyapi/oai-chat/qwen3.8-flash-next-abliterated` in LiteLLM or
-**Qwen3.8 Flash-Next Abliterated (EXL3 2.50 bpw) — TabbyAPI**
-in Agentplane staging's Codex and central sampler pickers. Codex uses
-LiteLLM's Responses bridge and the central sampler uses Chat Completions.
+Select `tabbyapi/oai-chat/qwen3.8-flash-next-exl3-256k` for the stock checkpoint
+or `tabbyapi/oai-chat/qwen3.8-flash-next-abliterated` for the abliterated checkpoint.
+Agentplane offers both in its Codex and central sampler pickers. Codex uses
+LiteLLM's Responses bridge and the central sampler also offers Chat Completions.
 Gatus probes the private
 `/v1/models` endpoint. LiteLLM handles client authentication.
 
@@ -176,8 +173,8 @@ exclusive host experiments before resuming this Deployment. Serving acceptance,
 throughput and tool-call results:
 [2026-09-27 run](../../docs/inference/runs/2026-09-27_ollama_ssd/README.md).
 
-LiteLLM derives the Qwen compatibility IDs and key allowlists from the shared
-model roster. When bound to Ollama, the 256K routes use
+When Ollama serving is restored and the corresponding LiteLLM routes are configured,
+the 256K routes can use
 `qwen3.8-flash-next-iq4xs-256k:latest`, an alias sharing all weight blobs with
 `num_ctx=262144`: Ollama's OpenAI-compatible API ignores native `options.num_ctx`, so
 the alias makes the context effective on both wires. A short prompt does not
