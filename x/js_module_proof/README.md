@@ -167,7 +167,9 @@ the globals are the same. Captured-frame writeback checks that reading the cells
 reconstructs the updated frame, and an axiom-free lemma relates successful
 writebacks of the same frame under different cell keys. A further one-call
 lemma connects evaluation and writeback to the machine's return and throw
-observations, assuming both writebacks succeed. The overall split certificate still uses the existing
+observations, assuming both writebacks succeed. A finite-sequence lemma relates
+paired calls to one captured environment under different cell keys when both
+machine runs complete. The overall split certificate still uses the existing
 factory-specific representation and does not yet prove preservation under
 arbitrary allocation renaming. A safe
 result proves equal modeled initialization and matching return values and

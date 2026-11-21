@@ -453,6 +453,40 @@ theorem executeCaptured_success {α : Type} (state : ExecutionState α)
   rw [written]
   rfl
 
+theorem executeCaptured_decompose {α : Type} (state next : ExecutionState α)
+    (captures : List (String × String)) (parameters : List String) (arguments : List Nat) (body : NumericExpr)
+    (noError : state.error = none) (noThrow : state.thrown = none)
+    (stepped : executeStep state (.invokeCaptured captures parameters arguments body) = some next) :
+    ∃ (result : ExpressionResult Nat)
+      (stored : { store : List (String × Nat) // loadCaptures store captures = some (result.locals.drop parameters.length) }),
+      evaluateCapturedFrame state.bindings state.captured captures parameters arguments body = some result ∧
+      storeCapturedFrame state.captured captures (result.locals.drop parameters.length) = some stored ∧
+      next = finishCapturedCall state stored.val result.completion := by
+  unfold executeStep at stepped
+  rw [noError, noThrow] at stepped
+  change (do
+    let frame ← evaluateCapturedFrame state.bindings state.captured captures parameters arguments body
+    let heap ← storeCapturedFrame state.captured captures (frame.locals.drop parameters.length)
+    pure (finishCapturedCall state heap.val frame.completion)) = some next at stepped
+  cases evaluated : evaluateCapturedFrame state.bindings state.captured captures parameters arguments body with
+  | none =>
+    rw [evaluated] at stepped
+    cases stepped
+  | some result =>
+    rw [evaluated] at stepped
+    change (do
+      let heap ← storeCapturedFrame state.captured captures (result.locals.drop parameters.length)
+      pure (finishCapturedCall state heap.val result.completion)) = some next at stepped
+    cases written : storeCapturedFrame state.captured captures (result.locals.drop parameters.length) with
+    | none =>
+      rw [written] at stepped
+      cases stepped
+    | some stored =>
+      rw [written] at stepped
+      change some (finishCapturedCall state stored.val result.completion) = some next at stepped
+      cases stepped
+      exact ⟨result, stored, rfl, written, rfl⟩
+
 theorem captured_paired_step_preserved {α : Type}
     (leftState rightState : ExecutionState α) (leftCapture rightCapture : List (String × String))
     (parameters : List String) (arguments : List Nat) (body : NumericExpr) (result : ExpressionResult Nat)
@@ -484,6 +518,82 @@ theorem captured_paired_step_preserved {α : Type}
   refine ⟨executeCaptured_success leftState leftCapture parameters arguments body result left noError noThrow evaluated leftWritten, ?_, step.2⟩
   exact executeCaptured_success rightState rightCapture parameters arguments body result right
     (sameError.symm.trans noError) (sameThrown.symm.trans noThrow) step.1 rightWritten
+
+def capturedStatesRelated {α : Type} (leftCapture rightCapture : List (String × String))
+    (left right : ExecutionState α) : Prop :=
+  left.bindings = right.bindings ∧ left.events = right.events ∧ left.replies = right.replies ∧
+    left.error = right.error ∧ left.returns = right.returns ∧ left.thrown = right.thrown ∧
+    relatedCapturedEnvironments left.captured right.captured leftCapture rightCapture
+
+theorem captured_unblocked_step_related {α : Type}
+    (leftCapture rightCapture : List (String × String)) (parameters : List String) (arguments : List Nat)
+    (body : NumericExpr) (left right leftNext rightNext : ExecutionState α)
+    (related : capturedStatesRelated leftCapture rightCapture left right)
+    (noError : left.error = none) (noThrow : left.thrown = none)
+    (leftStep : executeStep left (.invokeCaptured leftCapture parameters arguments body) = some leftNext)
+    (rightStep : executeStep right (.invokeCaptured rightCapture parameters arguments body) = some rightNext) :
+    capturedStatesRelated leftCapture rightCapture leftNext rightNext := by
+  obtain ⟨sameBindings, sameEvents, sameReplies, sameError, sameReturns, sameThrown, sameCaptures⟩ := related
+  obtain ⟨leftResult, leftStored, leftEvaluated, leftWritten, leftFinished⟩ :=
+    executeCaptured_decompose left leftNext leftCapture parameters arguments body noError noThrow leftStep
+  obtain ⟨rightResult, rightStored, rightEvaluated, rightWritten, rightFinished⟩ :=
+    executeCaptured_decompose right rightNext rightCapture parameters arguments body
+      (sameError.symm.trans noError) (sameThrown.symm.trans noThrow) rightStep
+  have sameEvaluation : evaluateCapturedFrame left.bindings left.captured leftCapture parameters arguments body =
+      evaluateCapturedFrame right.bindings right.captured rightCapture parameters arguments body := by
+    rw [← sameBindings]
+    exact captured_frame_evaluation_preserved left.bindings left.captured right.captured leftCapture rightCapture
+      parameters arguments body sameCaptures
+  have sameResult : leftResult = rightResult := Option.some.inj (leftEvaluated.symm.trans (sameEvaluation.trans rightEvaluated))
+  cases sameResult
+  rw [leftFinished, rightFinished]
+  exact captured_completion_preserved left right leftCapture rightCapture _ leftResult.completion leftStored rightStored
+    sameBindings sameEvents sameReplies sameError sameReturns sameThrown
+
+theorem captured_step_related {α : Type}
+    (leftCapture rightCapture : List (String × String)) (parameters : List String) (arguments : List Nat)
+    (body : NumericExpr) (left right leftNext rightNext : ExecutionState α)
+    (related : capturedStatesRelated leftCapture rightCapture left right)
+    (leftStep : executeStep left (.invokeCaptured leftCapture parameters arguments body) = some leftNext)
+    (rightStep : executeStep right (.invokeCaptured rightCapture parameters arguments body) = some rightNext) :
+    capturedStatesRelated leftCapture rightCapture leftNext rightNext := by
+  have sameError : left.error = right.error := related.2.2.2.1
+  have sameThrown : left.thrown = right.thrown := related.2.2.2.2.2.1
+  cases leftError : left.error with
+  | some error =>
+    have rightError : right.error = some error := sameError.symm.trans leftError
+    have leftBlocked : executeStep left (.invokeCaptured leftCapture parameters arguments body) = some left := by
+      unfold executeStep
+      rw [leftError]
+    have rightBlocked : executeStep right (.invokeCaptured rightCapture parameters arguments body) = some right := by
+      unfold executeStep
+      rw [rightError]
+    rw [leftBlocked] at leftStep
+    rw [rightBlocked] at rightStep
+    cases leftStep
+    cases rightStep
+    exact related
+  | none =>
+    cases leftThrown : left.thrown with
+    | some thrown =>
+      have rightError : right.error = none := sameError.symm.trans leftError
+      have rightThrown : right.thrown = some thrown := sameThrown.symm.trans leftThrown
+      have leftBlocked : executeStep left (.invokeCaptured leftCapture parameters arguments body) = some left := by
+        unfold executeStep
+        rw [leftError, leftThrown]
+        rfl
+      have rightBlocked : executeStep right (.invokeCaptured rightCapture parameters arguments body) = some right := by
+        unfold executeStep
+        rw [rightError, rightThrown]
+        rfl
+      rw [leftBlocked] at leftStep
+      rw [rightBlocked] at rightStep
+      cases leftStep
+      cases rightStep
+      exact related
+    | none =>
+      exact captured_unblocked_step_related leftCapture rightCapture parameters arguments body left right leftNext rightNext
+        related leftError leftThrown leftStep rightStep
 
 inductive RelatedOperations (relation : Operation → Operation → Prop) : List Operation → List Operation → Prop where
   | nil : RelatedOperations relation [] []
@@ -529,3 +639,25 @@ theorem runExecution_relation_preserved {α : Type}
         exact inductionHypothesis leftNext rightNext
           (preserve left right leftOp rightOp leftNext rightNext initial opRelated leftStep rightStep)
           leftRun rightRun
+
+inductive PairedCapturedOperation (leftCapture rightCapture : List (String × String)) : Operation → Operation → Prop where
+  | call (parameters : List String) (arguments : List Nat) (body : NumericExpr) :
+      PairedCapturedOperation leftCapture rightCapture (.invokeCaptured leftCapture parameters arguments body)
+        (.invokeCaptured rightCapture parameters arguments body)
+
+theorem captured_call_sequence_related {α : Type}
+    (leftCapture rightCapture : List (String × String)) (leftOps rightOps : List Operation)
+    (operations : RelatedOperations (PairedCapturedOperation leftCapture rightCapture) leftOps rightOps)
+    (left right leftFinal rightFinal : ExecutionState α)
+    (initial : capturedStatesRelated leftCapture rightCapture left right)
+    (leftRun : runExecution left leftOps = some leftFinal)
+    (rightRun : runExecution right rightOps = some rightFinal) :
+    capturedStatesRelated leftCapture rightCapture leftFinal rightFinal := by
+  apply runExecution_relation_preserved (capturedStatesRelated leftCapture rightCapture)
+    (PairedCapturedOperation leftCapture rightCapture) ?_ leftOps rightOps operations left right leftFinal rightFinal
+    initial leftRun rightRun
+  intro leftState rightState leftOp rightOp leftStateNext rightStateNext related operation leftStep rightStep
+  cases operation with
+  | call parameters arguments body =>
+    exact captured_step_related leftCapture rightCapture parameters arguments body leftState rightState leftStateNext
+      rightStateNext related leftStep rightStep

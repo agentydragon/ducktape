@@ -31,12 +31,15 @@ if (shard === 0) {
     encoding: "utf8",
     input:
       models +
-      "\n#print axioms runExecution_relation_preserved\n#print axioms executeCaptured_success\n#print axioms captured_paired_step_preserved\n",
+      "\n#print axioms runExecution_relation_preserved\n#print axioms executeCaptured_success\n#print axioms captured_paired_step_preserved\n#print axioms executeCaptured_decompose\n#print axioms captured_unblocked_step_related\n#print axioms captured_call_sequence_related\n",
   });
   assert.equal(modelCheck.status, 0, modelCheck.stdout + modelCheck.stderr);
   assert.match(modelCheck.stdout, /'runExecution_relation_preserved' does not depend on any axioms/);
   assert.match(modelCheck.stdout, /'executeCaptured_success' does not depend on any axioms/);
   assert.match(modelCheck.stdout, /'captured_paired_step_preserved' does not depend on any axioms/);
+  assert.match(modelCheck.stdout, /'executeCaptured_decompose' does not depend on any axioms/);
+  assert.match(modelCheck.stdout, /'captured_unblocked_step_related' does not depend on any axioms/);
+  assert.match(modelCheck.stdout, /'captured_call_sequence_related' does not depend on any axioms/);
 }
 if (shard < 2) {
   await writeFile(
@@ -782,6 +785,22 @@ example : (executeStep frameExampleLeft (.invokeCaptured [("value", "left-cell")
 example : (executeStep frameExampleRight (.invokeCaptured [("value", "right-cell")] ["delta"] [2] frameExampleBody)).map
     (fun state => (state.bindings, loadCaptures state.captured [("value", "right-cell")], state.returns)) =
     some ([("seed", 4)], some [("value", 9)], [some 9]) := by decide
+def frameExampleLeftFinal : ExecutionState Unit :=
+  ⟨[("seed", 4)], [], [], none, [some 9, some 14], none, [("left-cell", 14)]⟩
+def frameExampleRightFinal : ExecutionState Unit :=
+  ⟨[("seed", 4)], [], [], none, [some 9, some 14], none, [("right-cell", 14)]⟩
+example : capturedStatesRelated [("value", "left-cell")] [("value", "right-cell")]
+    frameExampleLeftFinal frameExampleRightFinal := by
+  refine captured_call_sequence_related [("value", "left-cell")] [("value", "right-cell")]
+    [.invokeCaptured [("value", "left-cell")] ["delta"] [2] frameExampleBody,
+     .invokeCaptured [("value", "left-cell")] ["delta"] [1] frameExampleBody]
+    [.invokeCaptured [("value", "right-cell")] ["delta"] [2] frameExampleBody,
+     .invokeCaptured [("value", "right-cell")] ["delta"] [1] frameExampleBody]
+    ?_ frameExampleLeft frameExampleRight frameExampleLeftFinal frameExampleRightFinal ?_ ?_ ?_
+  · exact .cons (.call ["delta"] [2] frameExampleBody) (.cons (.call ["delta"] [1] frameExampleBody) .nil)
+  · exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, ⟨[("value", 3)], rfl, rfl⟩⟩
+  · decide
+  · decide
 `,
   });
   assert.equal(replay.status, 0, replay.stdout + replay.stderr);
