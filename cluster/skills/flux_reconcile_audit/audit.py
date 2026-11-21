@@ -1,12 +1,7 @@
 #!/usr/bin/env python3
-"""Flux reconcile audit (v5 — history-first).
+"""Audit Kustomization reconcile history and HelmRelease conditions.
 
-Walks every Flux Kustomization + HelmRelease, classifies each into one of
-Broken / Slow-but-converges / Miswired-but-converges / Propagating /
-Suspended / Healthy. Primary signal is the per-revision `status.history`
-shipped by Flux 2.7+; Mimir / Loki / Events are optional supplements.
-
-Default mode reads only the live K8s API and runs in ~2-3 seconds.
+Mimir reconcile durations and Loki log counts are optional supplements.
 """
 
 from __future__ import annotations
@@ -23,7 +18,7 @@ from datetime import UTC, datetime, timedelta
 import httpx
 from kubernetes_asyncio import client, config
 
-from cluster.validation.flux import FluxKustomizationStatus, FluxReconcileHistoryEntry
+from cluster.validation.flux import FluxKustomizationStatus, FluxReconcileHistoryEntry, FluxStatus
 from cluster.validation.k8s import K8sMetadata
 
 logger = logging.getLogger(__name__)
@@ -85,7 +80,7 @@ class Resource:
     namespace: str
     name: str
     suspended: bool
-    status: FluxKustomizationStatus
+    status: FluxStatus
     bucket: str = "?"
     evidence: dict = field(default_factory=dict)
 
@@ -156,10 +151,11 @@ async def collect_universe(custom: client.CustomObjectsApi) -> list[Resource]:
         )
     )
     for (kind, _, _, _), resp in zip(flux_kinds, responses, strict=True):
+        status_model = FluxKustomizationStatus if kind == "Kustomization" else FluxStatus
         for it in resp.get("items", []):
             md = K8sMetadata.model_validate(it.get("metadata", {}))
             spec = it.get("spec", {}) or {}
-            status = FluxKustomizationStatus.model_validate(it.get("status", {}) or {})
+            status = status_model.model_validate(it.get("status") or {})
             out.append(
                 Resource(
                     kind=kind,
@@ -216,8 +212,10 @@ def classify(
         r.bucket = "Suspended"
         return
 
-    history_in = r.status.history_in_window(since)
-    latest = r.status.latest_history
+    status = r.status
+    kustomization = status if isinstance(status, FluxKustomizationStatus) else None
+    history_in = kustomization.history_in_window(since) if kustomization else []
+    latest = kustomization.latest_history if kustomization else None
     success_entries = [e for e in history_in if e.last_reconciled_status in SUCCESS_STATUSES]
     failure_entries = [e for e in history_in if e.last_reconciled_status in FAILURE_STATUSES]
 
@@ -236,11 +234,9 @@ def classify(
 
     last_was_failure = latest is not None and latest.last_reconciled_status in FAILURE_STATUSES
 
-    # Max in-window history duration is a proxy for p99 — we only have
-    # `lastReconciledDuration` per revision, not the full distribution. If
-    # Mimir has a real histogram-derived p99 we prefer that.
+    # Use the longest last reconcile in history as the threshold fallback.
     max_history_duration_s = max((e.duration_s for e in history_in), default=0.0)
-    p99 = p99_mimir if p99_mimir > 0 else max_history_duration_s
+    duration_s = p99_mimir if p99_mimir > 0 else max_history_duration_s
 
     # Underlying-resource attribution. Latest history doesn't carry the
     # error message, so we fall back to the current `Ready` condition's
@@ -258,7 +254,7 @@ def classify(
         "failure_entries": len(failure_entries),
         "successes_attempts": successes_attempts,
         "failures_attempts": failures_attempts,
-        "p99_s": p99,
+        "duration_s": duration_s,
         "max_history_duration_s": max_history_duration_s,
         "p99_mimir": p99_mimir,
         "loki_fail_supplement": loki_fail_supplement,
@@ -270,6 +266,20 @@ def classify(
         "culprit": culprit,
         "last_error": last_error,
     }
+
+    if kustomization is None:
+        reconciling = status.condition("Reconciling")
+        if ready and ready.status == "False":
+            r.bucket = "Propagating" if ready.reason == "DependencyNotReady" else "Broken"
+        elif reconciling and reconciling.status == "True":
+            r.bucket = "Propagating"
+        elif not ready or ready.status != "True":
+            r.bucket = "Unknown"
+        elif p99_mimir > 0 and p99_mimir >= slow_threshold_s:
+            r.bucket = "Slow"
+        else:
+            r.bucket = "Healthy"
+        return
 
     # Classification (first match wins).
     #
@@ -295,7 +305,7 @@ def classify(
         return
 
     # Slow: succeeded but took too long. Threshold is per-kind.
-    if len(success_entries) > 0 and p99 >= slow_threshold_s:
+    if len(success_entries) > 0 and duration_s >= slow_threshold_s:
         r.bucket = "Slow"
         return
 
@@ -377,9 +387,9 @@ def emit_report(
         by_bucket[r.bucket].append(r)
 
     print(f"# Flux Reconcile Audit — last {window}\n")
-    sources = ["status.history"]
+    sources = ["Kustomization reconcile history", "Flux conditions"]
     if use_mimir:
-        sources.append("Mimir (p99 fallback)")
+        sources.append("Mimir (p99 reconcile duration)")
     if use_loki:
         sources.append("Loki (long-window count fallback)")
     sources.append("label-selector probes")
@@ -391,7 +401,7 @@ def emit_report(
     )
     print("| Bucket | Count |")
     print("|---|---:|")
-    for b in ("Broken", "Miswired", "Slow", "Propagating", "Suspended", "Healthy"):
+    for b in ("Broken", "Miswired", "Slow", "Propagating", "Unknown", "Suspended", "Healthy"):
         print(f"| {b} | {len(by_bucket[b])} |")
     print()
 
@@ -400,10 +410,11 @@ def emit_report(
         ("Miswired", "## Miswired but converges"),
         ("Slow", "## Slow but converges"),
         ("Propagating", "## Propagating (transient)"),
+        ("Unknown", "## Unknown"),
         ("Suspended", "## Suspended (informational)"),
     ]:
         items = sorted(
-            by_bucket[b], key=lambda r: (-r.evidence.get("failures_attempts", 0), -r.evidence.get("p99_s", 0.0))
+            by_bucket[b], key=lambda r: (-r.evidence.get("failures_attempts", 0), -r.evidence.get("duration_s", 0.0))
         )
         if not items:
             continue
@@ -414,9 +425,12 @@ def emit_report(
             print(f"### {r.kind}/{r.name} (ns={r.namespace})\n")
             if ready:
                 print(f"- Current: Ready={ready.status}, reason=`{ready.reason or ''}`")
-            if ev.get("p99_s", 0) > 0:
-                src = "Mimir" if ev.get("p99_mimir", 0) > 0 else "history-max"
-                print(f"- p99 reconcile duration: {ev['p99_s']:.1f}s ({src})")
+            if ev.get("p99_mimir", 0) > 0:
+                print(f"- p99 reconcile duration: {ev['p99_mimir']:.1f}s (Mimir)")
+            elif ev.get("max_history_duration_s", 0) > 0:
+                print(
+                    f"- Longest recorded reconcile duration: {ev['max_history_duration_s']:.1f}s (Kustomization history)"
+                )
             if ev.get("failures_attempts") or ev.get("successes_attempts"):
                 extras = []
                 if ev.get("loki_fail_supplement"):
@@ -424,11 +438,14 @@ def emit_report(
                 if ev.get("loki_success_supplement"):
                     extras.append(f"loki-ok={ev['loki_success_supplement']}")
                 tag = f" ({', '.join(extras)})" if extras else ""
+                entries = ""
+                if isinstance(r.status, FluxKustomizationStatus):
+                    entries = f" across {ev['failure_entries']}+{ev['success_entries']} history entries"
                 print(
                     f"- Reconcile attempts in window: "
                     f"{ev['failures_attempts']} failed / "
                     f"{ev['successes_attempts']} succeeded"
-                    f" across {ev['failure_entries']}+{ev['success_entries']} history entries{tag}"
+                    f"{entries}{tag}"
                 )
             if ev.get("latest_status"):
                 rev = ev.get("latest_revision") or ""
@@ -447,7 +464,7 @@ def emit_report(
                 if len(err) > 400:
                     err = err[:400] + "…"
                 print(f"- Last error: `{err}`")
-            if r.status.history:
+            if isinstance(r.status, FluxKustomizationStatus) and r.status.history:
                 print("- History (most recent first):")
                 print(_format_history_table(r.status.history))
             lines = probe_managed_objects(r, probe_objs)
@@ -530,9 +547,7 @@ def main() -> None:
     ap.add_argument("--window", default="7d")
     ap.add_argument("--name", default=None)
     ap.add_argument(
-        "--include-mimir",
-        action="store_true",
-        help="Also pull p99 reconcile duration from Mimir (default: history-max only).",
+        "--include-mimir", action="store_true", help="Pull p99 reconcile duration from Mimir for both resource kinds."
     )
     ap.add_argument(
         "--include-loki",
