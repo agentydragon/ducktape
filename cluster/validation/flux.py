@@ -67,6 +67,7 @@ class FluxKustomizationSpec(BaseModel):
     # (no explicit namespace) in this namespace, so cross-namespace validation
     # needs it. Default "" means "unknown" — cross-namespace checks skip it.
     namespace: str = ""
+    target_namespace: str | None = None
     depends_on: list[DependsOn] = []
     health_checks: list[HealthCheck] = []
     source_ref: SourceRef | None = None
