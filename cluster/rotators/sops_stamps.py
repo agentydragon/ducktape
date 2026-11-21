@@ -1,5 +1,6 @@
 """Plaintext rotation stamps in SOPS-encrypted YAML."""
 
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -14,9 +15,9 @@ def unencrypted_stamps(sops_file: Path) -> dict[str, Any]:
     return yaml.safe_load(sops_file.read_text()) or {}
 
 
-def remaining_hours(sops_file: Path) -> float | None:
-    """Hours until the existing token expires, or None if absent/unstamped."""
-    expires = unencrypted_stamps(sops_file).get("expires_unencrypted")
+def remaining_hours(stamps: Mapping[str, Any]) -> float | None:
+    """Hours until the stamped expiry, or None if unstamped."""
+    expires = stamps.get("expires_unencrypted")
     if expires is None:
         return None
     return (datetime.fromisoformat(expires) - datetime.now(UTC)).total_seconds() / 3600

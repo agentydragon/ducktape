@@ -141,72 +141,37 @@ def test_config_rejects_missing_or_wrong_destination_fields(destination: dict[st
         )
 
 
-def test_kubernetes_only_empty_secret_publishes_without_sops_or_git_commit(monkeypatch):
+def _kubernetes_jwt(valid_for: timedelta) -> str:
+    return _make_jwt({"sub": "test-subject", "exp": int((datetime.now(UTC) + valid_for).timestamp())})
+
+
+@pytest.mark.parametrize(
+    ("pull", "valid_for", "mint_count"),
+    [
+        pytest.param(None, timedelta(days=365), 1, id="empty"),
+        pytest.param(["test-cache"], timedelta(days=365), 0, id="fresh"),
+        pytest.param(["stale-cache"], timedelta(days=365), 1, id="scope-drift"),
+        pytest.param(["test-cache"], timedelta(hours=2), 1, id="near-expiry"),
+    ],
+)
+def test_kubernetes_rotation_publishes_secret_version_without_git_output(
+    monkeypatch: pytest.MonkeyPatch, pull: list[str] | None, valid_for: timedelta, mint_count: int
+) -> None:
     token = _make_kubernetes_only_token()
-    jwt = _make_jwt({"sub": "test-subject", "exp": int((datetime.now(UTC) + timedelta(days=365)).timestamp())})
-    fake = _FakeKubernetesRun(jwt)
-    config = Config(tokens=[token])
-    monkeypatch.setattr(rotate.subprocess, "run", fake)
-
-    rotated = [entry.name for entry in config.tokens if rotate_one(entry, config)]
-
-    assert rotated == []
-    assert fake.mint_count == 1
-    assert fake.secret is not None
-    assert base64.b64decode(fake.secret["data"]["token"]).decode() == jwt
-    assert fake.workspace_values == ["test-secret-uid/2"]
-    assert all(jwt not in " ".join(call) for call in fake.calls)
-    assert not any(call[0] == "sops" for call in fake.calls)
-
-
-def test_kubernetes_only_fresh_secret_still_notifies_without_sops(monkeypatch):
-    token = _make_kubernetes_only_token()
-    jwt = _make_jwt({"sub": "test-subject", "exp": int((datetime.now(UTC) + timedelta(days=365)).timestamp())})
-    fake = _FakeKubernetesRun(jwt)
-    _seed_kubernetes_secret(fake, jwt, pull=["test-cache"], push=[])
+    renewed = _kubernetes_jwt(timedelta(days=730))
+    fake = _FakeKubernetesRun(renewed)
+    if pull is not None:
+        _seed_kubernetes_secret(fake, _kubernetes_jwt(valid_for), pull=pull, push=[])
     monkeypatch.setattr(rotate.subprocess, "run", fake)
 
     assert rotate_one(token, Config(tokens=[token])) is False
 
-    assert fake.mint_count == 0
-    assert fake.workspace_values == ["test-secret-uid/1"]
-    assert not any(call[0] == "sops" for call in fake.calls)
-
-
-def test_kubernetes_only_scope_drift_mints_without_sops_or_git_commit(monkeypatch):
-    token = _make_kubernetes_only_token()
-    old_jwt = _make_jwt({"sub": "test-subject", "exp": int((datetime.now(UTC) + timedelta(days=365)).timestamp())})
-    new_jwt = _make_jwt({"sub": "test-subject", "exp": int((datetime.now(UTC) + timedelta(days=730)).timestamp())})
-    fake = _FakeKubernetesRun(new_jwt)
-    _seed_kubernetes_secret(fake, old_jwt, pull=["stale-cache"], push=[])
-    config = Config(tokens=[token])
-    monkeypatch.setattr(rotate.subprocess, "run", fake)
-
-    rotated = [entry.name for entry in config.tokens if rotate_one(entry, config)]
-
-    assert rotated == []
-    assert fake.mint_count == 1
+    assert fake.mint_count == mint_count
     assert fake.secret is not None
-    assert base64.b64decode(fake.secret["data"]["token"]).decode() == new_jwt
-    assert fake.workspace_values == ["test-secret-uid/2"]
-    assert not any(call[0] == "sops" for call in fake.calls)
-
-
-def test_kubernetes_only_notification_retry_does_not_remint_or_write_sops(monkeypatch):
-    token = _make_kubernetes_only_token()
-    jwt = _make_jwt({"sub": "test-subject", "exp": int((datetime.now(UTC) + timedelta(days=365)).timestamp())})
-    fake = _FakeKubernetesRun(jwt)
-    _seed_kubernetes_secret(fake, jwt, pull=["test-cache"], push=[])
-    fake.fail_workspace_patch = True
-    monkeypatch.setattr(rotate.subprocess, "run", fake)
-
-    with pytest.raises(RuntimeError):
-        rotate_one(token, Config(tokens=[token]))
-    assert rotate_one(token, Config(tokens=[token])) is False
-
-    assert fake.mint_count == 0
-    assert sum("workspaces.opentofu.upbound.io" in call for call in fake.calls) == 2
-    assert fake.workspace_values == ["test-secret-uid/1"]
+    if mint_count:
+        assert base64.b64decode(fake.secret["data"]["token"]).decode() == renewed
+    assert fake.workspace_values == [f"test-secret-uid/{1 + mint_count}"]
+    assert all(renewed not in " ".join(call) for call in fake.calls)
     assert not any(call[0] == "sops" for call in fake.calls)
 
 
@@ -268,47 +233,25 @@ def test_mint_attic_token_empty_output_raises(monkeypatch):
         mint_attic_token(token, Config(tokens=[]))
 
 
-def test_rotate_one_skips_when_fresh_and_scope_matches(monkeypatch, tmp_path: Path):
-    sops_file = tmp_path / "t.yaml"
-    expires = datetime.now(UTC) + timedelta(hours=48)
-    # Stamp order deliberately differs from the config order: comparison is set-wise.
-    sops_file.write_text(
-        textwrap.dedent(f"""\
-            expires_unencrypted: "{expires:%Y-%m-%dT%H:%M:%SZ}"
-            pull_unencrypted: [gaffer, main]
-            push_unencrypted: []
-            attic_token: old
-            """)
-    )
-    token = Token(
-        name="x",
-        sub="x",
-        validity="1 year",
-        pull=["main", "gaffer"],
-        push=[],
-        destination=SopsDestination(sops_file=sops_file),
-    )
-    fake = _FakeRun(jwt="should-not-be-used")
-    monkeypatch.setattr(rotate.subprocess, "run", fake)
-    assert rotate_one(token, Config(tokens=[])) is False
-    assert not fake.calls  # no kubectl mint, no sops
-
-
-def test_rotate_one_rotates_on_scope_drift_despite_fresh_expiry(monkeypatch, tmp_path: Path):
-    # The #3001 scenario: token valid for months, but rotators.yaml grew push=[main, public]
-    # while the stamp still says push=[main] — must re-mint now, not in ~a year.
-    sops_file = tmp_path / "t.yaml"
+@pytest.mark.parametrize(
+    ("stamped_scope", "should_rotate"),
+    [
+        pytest.param(
+            {"pull_unencrypted": ["gaffer", "main"], "push_unencrypted": ["main", "public"]}, False, id="match"
+        ),
+        pytest.param({"pull_unencrypted": ["gaffer", "main"], "push_unencrypted": ["main"]}, True, id="drift"),
+        pytest.param({}, True, id="missing"),
+    ],
+)
+def test_fresh_sops_rotation_requires_matching_scope(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, stamped_scope: dict[str, list[str]], should_rotate: bool
+) -> None:
+    # #3001: a previous token may remain valid for months after scope changes.
+    sops_file = tmp_path / "token.yaml"
     expires = datetime.now(UTC) + timedelta(days=300)
     sops_file.write_text(
-        textwrap.dedent(f"""\
-            expires_unencrypted: "{expires:%Y-%m-%dT%H:%M:%SZ}"
-            pull_unencrypted: [gaffer, main]
-            push_unencrypted: [main]
-            attic_token: old
-            """)
+        yaml.safe_dump({"expires_unencrypted": f"{expires:%Y-%m-%dT%H:%M:%SZ}", "attic_token": "old", **stamped_scope})
     )
-    exp = int((datetime.now(UTC) + timedelta(days=365)).timestamp())
-    jwt = _make_jwt({"sub": "x", "exp": exp})
     token = Token(
         name="x",
         sub="x",
@@ -317,33 +260,16 @@ def test_rotate_one_rotates_on_scope_drift_despite_fresh_expiry(monkeypatch, tmp
         push=["main", "public"],
         destination=SopsDestination(sops_file=sops_file),
     )
-    fake = _FakeRun(jwt=jwt)
+    fake = _FakeRun(jwt=_make_jwt({"sub": "x", "exp": int((expires + timedelta(days=65)).timestamp())}))
     monkeypatch.setattr(rotate.subprocess, "run", fake)
     monkeypatch.setattr(sops, "prettier_format_yaml_in_place", lambda _: None)
-    assert rotate_one(token, Config(tokens=[])) is True
-    written = yaml.safe_load(sops_file.read_text())
-    assert written["push_unencrypted"] == ["main", "public"]
 
+    assert rotate_one(token, Config(tokens=[])) is should_rotate
 
-def test_rotate_one_rotates_when_scope_stamp_missing(monkeypatch, tmp_path: Path):
-    # Pre-scope-tracking file: fresh expiry but no pull/push stamps — one migration re-mint.
-    sops_file = tmp_path / "t.yaml"
-    expires = datetime.now(UTC) + timedelta(days=300)
-    sops_file.write_text(
-        textwrap.dedent(f"""\
-            expires_unencrypted: "{expires:%Y-%m-%dT%H:%M:%SZ}"
-            attic_token: old
-            """)
-    )
-    exp = int((datetime.now(UTC) + timedelta(days=365)).timestamp())
-    jwt = _make_jwt({"sub": "x", "exp": exp})
-    token = Token(
-        name="x", sub="x", validity="1 year", pull=["main"], push=[], destination=SopsDestination(sops_file=sops_file)
-    )
-    fake = _FakeRun(jwt=jwt)
-    monkeypatch.setattr(rotate.subprocess, "run", fake)
-    monkeypatch.setattr(sops, "prettier_format_yaml_in_place", lambda _: None)
-    assert rotate_one(token, Config(tokens=[])) is True
+    if should_rotate:
+        assert yaml.safe_load(sops_file.read_text())["push_unencrypted"] == ["main", "public"]
+    else:
+        assert not fake.calls
 
 
 def test_rotate_one_mints_and_writes_when_absent(monkeypatch, tmp_path: Path):
@@ -366,7 +292,7 @@ def test_rotate_one_mints_and_writes_when_absent(monkeypatch, tmp_path: Path):
 
 def test_kubernetes_destination_requires_the_precreated_secret(monkeypatch):
     token = _make_kubernetes_only_token()
-    jwt = _make_jwt({"sub": "test-subject", "exp": int((datetime.now(UTC) + timedelta(days=365)).timestamp())})
+    jwt = _kubernetes_jwt(timedelta(days=365))
     fake = _FakeKubernetesRun(jwt)
     fake.secret = None
     monkeypatch.setattr(rotate.subprocess, "run", fake)
@@ -378,10 +304,13 @@ def test_kubernetes_destination_requires_the_precreated_secret(monkeypatch):
     assert len(fake.calls) == 1
 
 
-def test_fresh_kubernetes_secret_retries_failed_notification_without_reminting(monkeypatch):
-    jwt = _make_jwt({"sub": "test-subject", "exp": int((datetime.now(UTC) + timedelta(days=365)).timestamp())})
+@pytest.mark.parametrize("mint_count", [0, 1], ids=["already-fresh", "mint-on-first-attempt"])
+def test_kubernetes_notification_retry_does_not_remint(monkeypatch: pytest.MonkeyPatch, mint_count: int) -> None:
+    jwt = _kubernetes_jwt(timedelta(days=365))
     token = _make_kubernetes_only_token()
     fake = _FakeKubernetesRun(jwt)
+    if not mint_count:
+        _seed_kubernetes_secret(fake, jwt, pull=["test-cache"], push=[])
     fake.fail_workspace_patch = True
     monkeypatch.setattr(rotate.subprocess, "run", fake)
 
@@ -390,28 +319,14 @@ def test_fresh_kubernetes_secret_retries_failed_notification_without_reminting(m
     assert jwt not in str(failure.value)
     assert rotate_one(token, Config(tokens=[])) is False
 
-    assert fake.mint_count == 1
+    assert fake.mint_count == mint_count
     assert sum("workspaces.opentofu.upbound.io" in call for call in fake.calls) == 2
-    assert fake.workspace_values == ["test-secret-uid/2"]
-
-
-def test_kubernetes_expiry_threshold_mints_even_when_scope_matches(monkeypatch):
-    near_expiry = _make_jwt({"sub": "test-subject", "exp": int((datetime.now(UTC) + timedelta(hours=2)).timestamp())})
-    renewed = _make_jwt({"sub": "test-subject", "exp": int((datetime.now(UTC) + timedelta(days=365)).timestamp())})
-    token = _make_kubernetes_only_token()
-    fake = _FakeKubernetesRun(renewed)
-    _seed_kubernetes_secret(fake, near_expiry, pull=["test-cache"], push=[])
-    monkeypatch.setattr(rotate.subprocess, "run", fake)
-
-    assert rotate_one(token, Config(tokens=[])) is False
-
-    assert fake.mint_count == 1
-    assert fake.secret is not None
-    assert base64.b64decode(fake.secret["data"]["token"]).decode() == renewed
+    assert fake.workspace_values == [f"test-secret-uid/{1 + mint_count}"]
+    assert not any(call[0] == "sops" for call in fake.calls)
 
 
 def test_failed_kubernetes_secret_patch_is_sanitized_and_retried(monkeypatch):
-    jwt = _make_jwt({"sub": "test-subject", "exp": int((datetime.now(UTC) + timedelta(days=365)).timestamp())})
+    jwt = _kubernetes_jwt(timedelta(days=365))
     token = _make_kubernetes_only_token()
     fake = _FakeKubernetesRun(jwt)
     fake.fail_secret_patch = True
@@ -427,7 +342,7 @@ def test_failed_kubernetes_secret_patch_is_sanitized_and_retried(monkeypatch):
 
 
 def test_kubernetes_secret_response_requires_uid_and_resource_version(monkeypatch):
-    jwt = _make_jwt({"sub": "test-subject", "exp": int((datetime.now(UTC) + timedelta(days=365)).timestamp())})
+    jwt = _kubernetes_jwt(timedelta(days=365))
     token = _make_kubernetes_only_token()
     fake = _FakeKubernetesRun(jwt)
     _seed_kubernetes_secret(fake, jwt, pull=["test-cache"], push=[])
