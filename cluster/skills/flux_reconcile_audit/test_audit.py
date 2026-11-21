@@ -22,7 +22,32 @@ def _custom_objects(**objects: list[dict]) -> client.CustomObjectsApi:
     [
         ([{"type": "Ready", "status": "False", "reason": "UpgradeFailed"}], 0, "Broken"),
         ([{"type": "Ready", "status": "False", "reason": "DependencyNotReady"}], 0, "Propagating"),
-        ([{"type": "Reconciling", "status": "True", "reason": "Progressing"}], 0, "Propagating"),
+        ([{"type": "Ready", "status": "False", "reason": "SourceNotReady"}], 0, "Propagating"),
+        (
+            [
+                {"type": "Ready", "status": "Unknown", "reason": "Progressing"},
+                {"type": "Reconciling", "status": "True", "reason": "Progressing"},
+            ],
+            0,
+            "Propagating",
+        ),
+        (
+            [
+                {"type": "Ready", "status": "False", "reason": "Progressing"},
+                {"type": "Reconciling", "status": "True", "reason": "Progressing"},
+            ],
+            0,
+            "Propagating",
+        ),
+        (
+            [
+                {"type": "Ready", "status": "False", "reason": "UpgradeFailed"},
+                {"type": "Reconciling", "status": "True", "reason": "ProgressingWithRetry"},
+            ],
+            0,
+            "Broken",
+        ),
+        ([{"type": "Stalled", "status": "True", "reason": "RetriesExceeded"}], 0, "Broken"),
         ([{"type": "Ready", "status": "True"}], 301, "Slow"),
         ([{"type": "Ready", "status": "True"}], 0, "Healthy"),
         ([], 0, "Unknown"),

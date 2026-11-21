@@ -268,9 +268,14 @@ def classify(
     }
 
     if kustomization is None:
+        stalled = status.condition("Stalled")
         reconciling = status.condition("Reconciling")
-        if ready and ready.status == "False":
-            r.bucket = "Propagating" if ready.reason == "DependencyNotReady" else "Broken"
+        if stalled and stalled.status == "True":
+            r.bucket = "Broken"
+            r.evidence["last_error"] = stalled.message or last_error
+        elif ready and ready.status == "False":
+            waiting = ready.reason in {"DependencyNotReady", "SourceNotReady", "Progressing", "HealthCheckCanceled"}
+            r.bucket = "Propagating" if waiting else "Broken"
         elif reconciling and reconciling.status == "True":
             r.bucket = "Propagating"
         elif not ready or ready.status != "True":
@@ -279,6 +284,8 @@ def classify(
             r.bucket = "Slow"
         else:
             r.bucket = "Healthy"
+        if r.bucket == "Propagating":
+            r.evidence.update(culprit=None, last_error=None)
         return
 
     # Classification (first match wins).

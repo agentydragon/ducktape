@@ -36,15 +36,15 @@ For Kustomizations, classification uses per-revision reconcile history within
 the window. For HelmReleases, classification uses current conditions and optional
 Mimir latency. HelmRelease history records deployments.
 
-| Bucket          | Kustomization                                                                       | HelmRelease                                                        |
-| --------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| **Suspended**   | `spec.suspend=true`.                                                                | `spec.suspend=true`.                                               |
-| **Broken**      | Latest reconcile entry failed.                                                      | `Ready=False` for a reason other than `DependencyNotReady`.        |
-| **Propagating** | `Ready=False reason=DependencyNotReady` and no failures in the window.              | Waiting on a dependency or reconciling without a reported failure. |
-| **Miswired**    | Earlier reconcile entries failed and the latest did not.                            | Requires ordered reconcile evidence.                               |
-| **Slow**        | A success in the window and p99 or longest last reconcile time meets the threshold. | `Ready=True` and Mimir p99 meets the threshold.                    |
-| **Unknown**     |                                                                                     | No Ready result and no active reconciliation reported.             |
-| **Healthy**     | Everything else.                                                                    | `Ready=True`.                                                      |
+| Bucket          | Kustomization                                                                       | HelmRelease                                                          |
+| --------------- | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| **Suspended**   | `spec.suspend=true`.                                                                | `spec.suspend=true`.                                                 |
+| **Broken**      | Latest reconcile entry failed.                                                      | `Stalled=True` or a failure in `Ready=False`.                        |
+| **Propagating** | `Ready=False reason=DependencyNotReady` and no failures in the window.              | Waiting on a prerequisite or reconciling without a reported failure. |
+| **Miswired**    | Earlier reconcile entries failed and the latest did not.                            | Requires ordered reconcile evidence.                                 |
+| **Slow**        | A success in the window and p99 or longest last reconcile time meets the threshold. | `Ready=True` and Mimir p99 meets the threshold.                      |
+| **Unknown**     |                                                                                     | No Ready result and no active reconciliation reported.               |
+| **Healthy**     | Everything else.                                                                    | `Ready=True`.                                                        |
 
 ## Data sources
 
