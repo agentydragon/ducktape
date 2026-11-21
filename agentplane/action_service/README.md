@@ -339,12 +339,15 @@ single-Execution claim and lease token, not the MCP connection, fence dispatch a
 attempt from being replayed.
 
 `cmd/main.go` builds a supervised `mcpexec.Executor` for each `catalog.MCPBinding`, a
-`sandbox.Executor` for each `catalog.PodBinding` and an `orchestrationv1.Executor` for each
-`catalog.OrchestrationBinding`. The MCP executor discovers upstream tools through
+`sandbox.Executor` for each `catalog.PodBinding`, an `orchestrationv1.Executor` for each
+`catalog.OrchestrationBinding` and a `sessiondelegation.Executor` for each
+`catalog.SessionDelegationBinding`. The MCP executor discovers upstream tools through
 its Go SDK session; Sandbox Actions come from the configured template roster and are offered after
 startup validation ([sandbox Actions](sandbox/README.md)). The orchestration Actions launch Session
 Sandboxes and drive their Sessions through the Session Dispatcher, a stopgap that acts with this
 service's own authority on each request's Decision ([orchestration Actions](orchestration_v1/README.md)).
+The session delegation Actions forward each request's Identity incarnation to the Environment Service,
+Session Dispatcher and History Service ([session delegation Actions](session_delegation/README.md)).
 Echo is only an explicitly injected test executor, never a production default.
 
 An empty catalog starts with no offered actions. An explicitly configured missing/non-file YAML
