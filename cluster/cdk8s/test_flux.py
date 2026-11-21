@@ -276,7 +276,6 @@ def test_secret_generator_builds_encrypted_payload_for_flux_post_build_decryptio
     documents = {document["kind"]: document for document in yaml.safe_load_all(result.stdout)}
     secret = documents["Secret"]
     cron_job = documents["CronJob"]
-    assert secret["kind"] == "Secret"
     assert secret["metadata"]["name"].startswith("session-backup-importer-credentials-")
     assert secret["metadata"]["namespace"] == "session-backup"
     assert list(secret["data"]) == ["session-backup.yaml"]

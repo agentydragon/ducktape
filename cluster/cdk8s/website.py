@@ -166,10 +166,9 @@ def _redirect(
 def website(
     chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization, kyverno: Kustomization
 ) -> Kustomization:
-    name = "website"
     return flux_kustomization(
         chart,
-        name,
+        _NAME,
         directory,
         timeout="5m",
         # Kyverno's failurePolicy: Fail webhooks admit the Deployment and HTTPRoute.

@@ -59,7 +59,7 @@ def chart(app: App) -> Chart:
         upgrade=HelmReleaseSpecUpgrade(crds=HelmReleaseSpecUpgradeCrds.SKIP),
         values={
             "featureGates": {"externalArtifact": True},
-            # Gitops Terraform CRs read the ducktape GitRepository in the Flux namespace.
+            # Gitops Terraform CRs read their module's `ExternalArtifact` in `flux.NAMESPACE`, not their own.
             "allowCrossNamespaceRefs": terraform.NAMESPACE != flux.NAMESPACE,
             "runner": {
                 "grpc": {"maxMessageSize": 50},  # MB, default 4 — defense against repo growth
