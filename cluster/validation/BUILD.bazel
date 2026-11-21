@@ -130,7 +130,6 @@ py_library(
         ":cluster",
         ":k8s",
         "//cluster/cdk8s:cilium_rule_sections",
-        "//cluster/cdk8s:manifest_roots",
     ],
 )
 
@@ -173,9 +172,7 @@ py_test(
     srcs = ["test_k8s.py"],
     deps = [
         ":k8s",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
 
@@ -264,13 +261,8 @@ py_test(
 py_test(
     name = "test_helm_templates",
     srcs = ["test_helm_templates.py"],
-    data = [
-        "//cluster/terraform/main:cilium-values.yaml",
-        "@multitool//tools/helm",
-    ],
     deps = [
         ":helm_templates",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -310,13 +302,10 @@ py_test(
         ":image_automation",
         ":k8s",
         ":kustomize",
-        "//cluster/cdk8s:manifest_roots",
-        "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@pypi//types_pyyaml",
-        "@rules_python//python/runfiles",
     ],
 )
 
