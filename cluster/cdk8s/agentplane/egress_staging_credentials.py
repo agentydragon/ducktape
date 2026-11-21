@@ -111,7 +111,6 @@ def add_staging_egress_credentials(scope: Construct, *, namespace: str, credenti
     inference_credentials(construct, reader=reader, credentials_namespace=credentials_namespace)
     add_gateway_resources(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     # Keep these grants in sync with the egress PolicySets in the named functions below.
-    # Local Gateways check the selected backend's identity/target port, even for a public hostname.
     NetworkPolicy(
         construct,
         "networkpolicy-egress-staging-credentials",
@@ -502,7 +501,6 @@ def _activitywatch_read(
     )
     credential = "activitywatch-read"
     host = "activitywatch-read.allegedly.works"
-    # Keep this policy in sync with its backend grant in add_staging_egress_credentials.
     _present(
         scope,
         ACTIVITYWATCH_READ_POLICY,
@@ -571,7 +569,6 @@ def _aiquota_read(scope: Construct, *, reader: ServiceAccount, namespace: str, c
         key=clickhouse.PASSWORD_KEY,
         target=_BASIC_PASSWORD,
     )
-    # Keep this policy in sync with its backend grants in add_staging_egress_credentials.
     PolicySet(
         scope,
         f"egresspolicy-{AIQUOTA_READ_POLICY}",
@@ -715,7 +712,6 @@ def _haku_mailbox(scope: Construct, *, reader: ServiceAccount, namespace: str, c
     )
     credential = "haku-mailbox"
     host = "haku-mailbox.allegedly.works"
-    # Keep this policy in sync with its backend grant in add_staging_egress_credentials.
     _present(
         scope,
         HAKU_MAILBOX_POLICY,
