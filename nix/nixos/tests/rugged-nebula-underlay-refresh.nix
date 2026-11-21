@@ -24,6 +24,11 @@ in
     expected = "5s";
   };
 
+  test_route_refresh_timer_accepts_event_bursts = {
+    expr = rugged.systemd.timers.${timerName}.unitConfig.StartLimitIntervalSec;
+    expected = 0;
+  };
+
   test_route_refresh_timer_is_not_started_at_boot = {
     expr = rugged.systemd.timers.${timerName}.wantedBy;
     expected = [ ];
