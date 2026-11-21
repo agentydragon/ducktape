@@ -23,18 +23,13 @@ def _cluster_with(doc: dict) -> ParsedCluster:
     return ParsedCluster(source_resources={Path("policy.yaml"): parse_k8s_resources([doc])})
 
 
-def _external_creds_cluster(repo_root: Path, supplier_docs: list[dict], consumer_docs: list[dict]) -> ParsedCluster:
+def _external_creds_cluster(repo_root: Path, consumer_docs: list[dict]) -> ParsedCluster:
     return ParsedCluster(
         flux_kustomizations={
             "external-secrets-config": FluxKustomizationSpec(path="./cluster/k8s/external-secrets/config"),
-            "external-creds": FluxKustomizationSpec(path="./cluster/k8s/external-creds"),
             "consumer": FluxKustomizationSpec(path="./cluster/k8s/consumer"),
         },
         build_results=[
-            KustomizeBuildResult(
-                kustomization_path=repo_root / "cluster/k8s/external-creds/kustomization.yaml",
-                resources=parse_k8s_resources(supplier_docs),
-            ),
             KustomizeBuildResult(
                 kustomization_path=repo_root / "cluster/k8s/external-secrets/config/kustomization.yaml",
                 resources=parse_k8s_resources([_central_store()]),
@@ -45,16 +40,6 @@ def _external_creds_cluster(repo_root: Path, supplier_docs: list[dict], consumer
             ),
         ],
     )
-
-
-def _source_binding() -> dict:
-    return {
-        "apiVersion": "rbac.authorization.k8s.io/v1",
-        "kind": "RoleBinding",
-        "metadata": {"name": "credential-consumer-reader", "namespace": "ducktape-flux"},
-        "roleRef": {"apiGroup": "rbac.authorization.k8s.io", "kind": "Role", "name": "credential-reader"},
-        "subjects": [{"kind": "ServiceAccount", "name": "external-creds-reader", "namespace": "consumer"}],
-    }
 
 
 def _central_store() -> dict:
@@ -164,19 +149,12 @@ def test_forgejo_image_namespace_missing_external_secret_is_flagged() -> None:
 
 
 def test_external_credential_central_store_passes(tmp_path: Path) -> None:
-    cluster = _external_creds_cluster(
-        tmp_path,
-        [
-            {"apiVersion": "v1", "kind": "Secret", "metadata": {"name": "credential", "namespace": "ducktape-flux"}},
-            _source_binding(),
-        ],
-        [_consumer_external_secret()],
-    )
+    cluster = _external_creds_cluster(tmp_path, [_consumer_external_secret()])
     assert check_external_credential_ownership(cluster, tmp_path) == []
 
 
 def test_external_credential_namespace_store_is_rejected(tmp_path: Path) -> None:
-    cluster = _external_creds_cluster(tmp_path, [_source_binding()], [_consumer_store()])
+    cluster = _external_creds_cluster(tmp_path, [_consumer_store()])
     errors = check_external_credential_ownership(cluster, tmp_path)
     assert any("use external-secrets-config's shared ClusterSecretStore" in error for error in errors)
 

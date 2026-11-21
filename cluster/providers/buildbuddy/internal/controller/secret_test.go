@@ -116,13 +116,13 @@ func TestSecretReferenceRestrictions(t *testing.T) {
 		t.Fatal("unexpected access to another source Secret")
 	}
 	valid := v1alpha1.ProviderCredentials{Source: xpv2.CredentialsSourceSecret, CommonCredentialSelectors: xpv2.CommonCredentialSelectors{SecretRef: &xpv2.SecretKeySelector{SecretReference: xpv2.SecretReference{Name: "credentials", Namespace: "test"}, Key: "api-key"}}}
-	if err := c.validateCredentials("test", valid); err != nil {
+	if err := validateProviderCredentials("test", "credentials", valid); err != nil {
 		t.Fatal(err)
 	}
 	for _, ref := range []xpv2.SecretReference{{Name: "other", Namespace: "test"}, {Name: "credentials", Namespace: "other"}} {
 		bad := valid
 		bad.SecretRef = &xpv2.SecretKeySelector{SecretReference: ref, Key: "api-key"}
-		if err := c.validateCredentials("test", bad); err == nil {
+		if err := validateProviderCredentials("test", "credentials", bad); err == nil {
 			t.Fatalf("unexpected access to %+v", ref)
 		}
 	}

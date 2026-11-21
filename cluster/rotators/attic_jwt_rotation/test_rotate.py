@@ -583,9 +583,6 @@ def test_kubernetes_secret_response_requires_uid_and_resource_version(monkeypatc
     assert jwt not in str(failure.value)
 
 
-# --- pygit2 git ops (clone_repo / commit_and_push) ---
-
-
 def make_token(name: str = "x", sops_file: str = "s.yaml", **kw: Any) -> Token:
     base: dict[str, Any] = {
         "name": name,

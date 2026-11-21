@@ -50,7 +50,10 @@ def test_token_audiences_normalizes_string_list_and_missing():
     assert token_audiences({}) == []
 
 
-def test_stamped_audiences_reads_yaml_list(tmp_path: Path):
+@pytest.mark.parametrize(
+    ("read_stamp", "expected"), [(stamped_audiences, ["a", "b"]), (stamped_claims, {"email": "haku@allegedly.works"})]
+)
+def test_stamp_reader_returns_its_own_stamp_or_none(read_stamp, expected, tmp_path: Path):
     f = tmp_path / "t.yaml"
     f.write_text(
         textwrap.dedent("""\
@@ -58,37 +61,15 @@ def test_stamped_audiences_reads_yaml_list(tmp_path: Path):
             audiences_unencrypted:
               - a
               - b
-            jwt: abc
-            """)
-    )
-    assert stamped_audiences(f) == ["a", "b"]
-
-
-def test_stamped_audiences_absent_is_none(tmp_path: Path):
-    f = tmp_path / "t.yaml"
-    f.write_text("jwt: abc\n")
-    assert stamped_audiences(f) is None
-    assert stamped_audiences(tmp_path / "absent.yaml") is None
-
-
-def test_stamped_claims_reads_yaml_dict(tmp_path: Path):
-    f = tmp_path / "t.yaml"
-    f.write_text(
-        textwrap.dedent("""\
-            expires_unencrypted: "2030-01-01T00:00:00Z"
             claims_unencrypted:
               email: haku@allegedly.works
             jwt: abc
             """)
     )
-    assert stamped_claims(f) == {"email": "haku@allegedly.works"}
-
-
-def test_stamped_claims_absent_is_none(tmp_path: Path):
-    f = tmp_path / "t.yaml"
+    assert read_stamp(f) == expected
     f.write_text("jwt: abc\n")
-    assert stamped_claims(f) is None
-    assert stamped_claims(tmp_path / "absent.yaml") is None
+    assert read_stamp(f) is None
+    assert read_stamp(tmp_path / "absent.yaml") is None
 
 
 def test_build_secret_manifest_carries_token_exp_under_configured_keys():

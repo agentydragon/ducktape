@@ -21,5 +21,6 @@ bookkeeping. Kubernetes-only tokens publish and notify, then return without a
 SOPS write or git commit.
 
 Generated configurations contain nested destinations with their default storage
-tags included. The Ducktape CI writer uses Kubernetes-only storage; per-host
-readers and the gaffer-private writer remain SOPS-backed.
+tags included. The Ducktape CI writer and reader and the gaffer-private CI writer
+use Kubernetes-only storage; every other token (the host and service readers)
+remains SOPS-backed.

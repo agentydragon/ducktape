@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import stat
 import subprocess
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -102,7 +101,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> int:
+def main() -> None:
     args = parse_args()
     repo_root = nebula_mesh.repo_root()
     output = args.output or Path("/tmp") / f"{args.host}.mobile-nebula.yaml"
@@ -113,9 +112,7 @@ def main() -> int:
 
     missing = [path for path in [ca_path, cert_path, key_path] if not path.exists()]
     if missing:
-        for path in missing:
-            print(f"missing: {path}", file=sys.stderr)
-        return 1
+        raise SystemExit("\n".join(f"missing: {path}" for path in missing))
 
     config = render_config(
         ca=ca_path.read_text(),
@@ -129,8 +126,7 @@ def main() -> int:
     output.write_text(config)
     output.chmod(stat.S_IRUSR | stat.S_IWUSR)
     print(output)
-    return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

@@ -84,7 +84,6 @@ class Resource:
     kind: str  # "Kustomization" | "HelmRelease"
     namespace: str
     name: str
-    api_version: str
     suspended: bool
     status: FluxKustomizationStatus
     bucket: str = "?"
@@ -147,16 +146,16 @@ async def loki_count_by_name(
 async def collect_universe(custom: client.CustomObjectsApi) -> list[Resource]:
     out: list[Resource] = []
     flux_kinds = [
-        ("Kustomization", "kustomize.toolkit.fluxcd.io/v1", "kustomize.toolkit.fluxcd.io", "v1", "kustomizations"),
-        ("HelmRelease", "helm.toolkit.fluxcd.io/v2", "helm.toolkit.fluxcd.io", "v2", "helmreleases"),
+        ("Kustomization", "kustomize.toolkit.fluxcd.io", "v1", "kustomizations"),
+        ("HelmRelease", "helm.toolkit.fluxcd.io", "v2", "helmreleases"),
     ]
     responses = await asyncio.gather(
         *(
             custom.list_cluster_custom_object(group=group, version=version, plural=plural)
-            for _, _, group, version, plural in flux_kinds
+            for _, group, version, plural in flux_kinds
         )
     )
-    for (kind, api_version, _, _, _), resp in zip(flux_kinds, responses, strict=True):
+    for (kind, _, _, _), resp in zip(flux_kinds, responses, strict=True):
         for it in resp.get("items", []):
             md = K8sMetadata.model_validate(it.get("metadata", {}))
             spec = it.get("spec", {}) or {}
@@ -166,7 +165,6 @@ async def collect_universe(custom: client.CustomObjectsApi) -> list[Resource]:
                     kind=kind,
                     namespace=md.namespace,
                     name=md.name,
-                    api_version=api_version,
                     suspended=bool(spec.get("suspend", False)),
                     status=status,
                 )

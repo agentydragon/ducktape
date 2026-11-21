@@ -45,7 +45,6 @@ class RotatedToken:
     credentials: ForgejoCredentials
     token_id: int | None
     token_name: str
-    token_last_eight: str
 
 
 def read_credentials(rotation: Rotation) -> ForgejoCredentials:
@@ -253,11 +252,7 @@ def rotate_one(client: httpx.Client, rotation: Rotation) -> RotatedToken | None:
     write_raw_token_sops_file(rotation, creds, token_data, now)
     write_tea_secret(rotation, creds, token_data)
     return RotatedToken(
-        rotation=rotation,
-        credentials=creds,
-        token_id=token_data.get("id"),
-        token_name=token_data["name"],
-        token_last_eight=token_data.get("token_last_eight") or token_data["sha1"][-8:],
+        rotation=rotation, credentials=creds, token_id=token_data.get("id"), token_name=token_data["name"]
     )
 
 

@@ -5,10 +5,6 @@ Tests that parse the cluster kustomization tree and check structural invariants
 All kustomizations are built with kustomize to validate they render correctly
 and to provide build results for resource-level checks. Direct-file contracts
 live in narrower sibling targets and do not pay this full-cluster setup cost.
-
-These Bazel tests are the single source of truth for cluster validation; the
-former `cluster-validate` pre-commit hook was removed in favor of running them
-(and the sibling `test_*.py` targets) in CI.
 """
 
 from __future__ import annotations
@@ -160,7 +156,7 @@ def test_controller_resources_have_health_checks(cluster: ParsedCluster, repo_ro
 
 
 def test_external_credential_ownership(cluster: ParsedCluster, repo_root: Path) -> None:
-    """Only the shared store reads external-creds, admitting exactly the source-approved namespaces."""
+    """Only the shared store reads external-creds."""
     errors = check_external_credential_ownership(cluster, repo_root)
     assert not errors, "\n".join(errors)
 
