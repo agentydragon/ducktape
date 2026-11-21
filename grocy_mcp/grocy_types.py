@@ -69,7 +69,6 @@ class ReadableEntityType(StrEnum):
     ``permission_hierarchy``).
     """
 
-    # ── Writeable ────────────────────────────────────────────────────────
     PRODUCTS = "products"
     PRODUCT_BARCODES = "product_barcodes"
     PRODUCT_GROUPS = "product_groups"
@@ -92,7 +91,6 @@ class ReadableEntityType(StrEnum):
     USERENTITIES = "userentities"
     USEROBJECTS = "userobjects"
     API_KEYS = "api_keys"
-    # ── Read-only (Grocy ExposedEntityNoEdit) ────────────────────────────
     STOCK = "stock"
     STOCK_LOG = "stock_log"
     STOCK_CURRENT_LOCATIONS = "stock_current_locations"

@@ -119,11 +119,9 @@ py_library(
     visibility = ["//grocy_mcp:__subpackages__"],
     deps = [
         ":grocy_container",
-        "//devinfra/oci",
         "//testing:container_logs",
-        "//third_party/containers:grocy",
-        "@pypi//opentelemetry_api",
         "@pypi//pytest",
+        "@pypi//testcontainers",
     ],
 )
 

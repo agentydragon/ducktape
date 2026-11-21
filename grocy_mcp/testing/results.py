@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from fastmcp.client import Client
+
 
 def unwrap_result(result: Any) -> Any:
     """Extract unwrapped structured content from a FastMCP CallToolResult.
@@ -17,3 +19,8 @@ def unwrap_result(result: Any) -> Any:
     if isinstance(sc, dict) and len(sc) == 1 and "result" in sc:
         return sc["result"]
     return sc
+
+
+async def call_tool(client: Client, name: str, arguments: dict[str, Any]) -> Any:
+    """Call a tool and return its unwrapped structured content (see `unwrap_result`)."""
+    return unwrap_result(await client.call_tool(name, arguments))

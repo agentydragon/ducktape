@@ -17,4 +17,5 @@ py_library(
 py_library(
     name = "results",
     srcs = ["results.py"],
+    deps = ["@pypi//fastmcp_slim"],
 )

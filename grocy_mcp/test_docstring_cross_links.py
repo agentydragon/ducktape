@@ -19,17 +19,6 @@ from grocy_mcp.mcp_types import ServerSettings
 from grocy_mcp.request_scoped_openapi import borrowed_http_client_provider
 from grocy_mcp.server import build_mcp
 
-# Tool-ish identifiers that appear in docstrings but aren't live tools — MCP
-# resources, type-alias names in cross-references, or FastMCP-generated
-# non-tool handles.
-_KNOWN_NON_TOOL_REFERENCES = {
-    "WriteableEntityType",
-    "ReadableEntityType",
-    "EditStockEntryField",
-    "EditProductField",
-    "EditShoppingListField",
-}
-
 # Tokens that appear backtick-quoted in tool descriptions but that no tool's
 # schema carries as a property name or enum value — function parameter names,
 # response dict keys, and OpenAPI tokens.
@@ -83,8 +72,7 @@ async def test_docstring_cross_links_resolve() -> None:
     actual_names = {t.name for t in tools}
     tool_ref_re = re.compile(r"`([a-z][a-z0-9_]*)`")
     known_non_tools = (
-        _KNOWN_NON_TOOL_REFERENCES
-        | PRODUCT_WRITABLE_FIELDS
+        PRODUCT_WRITABLE_FIELDS
         | _RESIDUAL_TOKENS
         | _schema_tokens([[tool.input_schema, tool.output_schema] for tool in tools])
     )

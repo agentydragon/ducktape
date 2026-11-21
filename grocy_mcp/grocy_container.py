@@ -5,8 +5,8 @@ from __future__ import annotations
 import logging
 import os
 import tempfile
-from collections.abc import Generator
-from contextlib import contextmanager
+from collections.abc import Callable, Generator
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
 import httpx
@@ -53,14 +53,11 @@ def grocy_custom_init_dir() -> Generator[str]:
         yield d
 
 
-def configure_grocy_container(container: DockerContainer, *, init_dir: str, data_dir: Path | None) -> None:
+def configure_grocy_container(container: DockerContainer, *, init_dir: str) -> None:
     """Apply the env / volume / port config every Grocy test container needs.
 
     `init_dir` is the tempdir from `grocy_custom_init_dir()`; it must stay
-    alive until the container exits. If `data_dir` is provided, it's
-    bind-mounted to Grocy's `/config/data`, so the SQLite DB lives at
-    `data_dir/grocy.db` on the host throughout the run — no post-hoc copy
-    needed. LinuxServer chowns the mount point on startup.
+    alive until the container exits.
     """
     if _host_network_enabled():
         container.with_kwargs(network_mode="host")
@@ -72,9 +69,6 @@ def configure_grocy_container(container: DockerContainer, *, init_dir: str, data
     container.with_env("GROCY_MODE", "production")
     container.with_env("GROCY_DISABLE_AUTH", "true")
     container.with_volume_mapping(init_dir, "/custom-cont-init.d", "ro")
-    if data_dir is not None:
-        data_dir.mkdir(parents=True, exist_ok=True)
-        container.with_volume_mapping(str(data_dir), "/config/data")
 
 
 def grocy_url(container: DockerContainer) -> str:
@@ -141,12 +135,21 @@ def wait_for_grocy_ready(container: DockerContainer, *, timeout_s: float = 60) -
 
 
 @contextmanager
-def run_grocy_container(*, data_dir: Path | None = None) -> Generator[DockerContainer]:
-    """Run a fresh Grocy container with auth disabled; yield it once ready."""
+def run_grocy_container(
+    *, make_container: Callable[[str], DockerContainer] = DockerContainer
+) -> Generator[DockerContainer]:
+    """Run a fresh Grocy container with auth disabled; yield it once ready.
+
+    `make_container` builds the container from the image reference, so the pytest fixture can supply a
+    `DockerContainer` subclass that streams logs to the test outputs.
+    """
     image_ref = load_oci_image(grocy.LAYOUT_RLOCATION)
-    with grocy_custom_init_dir() as init_dir:
-        container = DockerContainer(image_ref)
-        configure_grocy_container(container, init_dir=init_dir, data_dir=data_dir)
-        with container:
+    with ExitStack() as stack:
+        init_dir = stack.enter_context(grocy_custom_init_dir())
+        container = make_container(image_ref)
+        configure_grocy_container(container, init_dir=init_dir)
+        with tracer.start_as_current_span("grocy_container_start"):
+            stack.enter_context(container)
+        with tracer.start_as_current_span("wait_for_grocy_ready"):
             wait_for_grocy_ready(container)
-            yield container
+        yield container

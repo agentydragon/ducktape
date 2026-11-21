@@ -8,41 +8,20 @@ For non-test bring-up (the eval CLI), import from `grocy_container` directly.
 from __future__ import annotations
 
 from collections.abc import Generator
-from contextlib import contextmanager
 
 import pytest
-from opentelemetry import trace
+from testcontainers.core.container import DockerContainer
 
-from devinfra.oci.oci import load_oci_image
-from grocy_mcp.grocy_container import configure_grocy_container, grocy_custom_init_dir, grocy_url, wait_for_grocy_ready
+from grocy_mcp.grocy_container import grocy_url, run_grocy_container
 from testing.container_logs import LoggedContainer
-from third_party.containers import grocy
-
-tracer = trace.get_tracer(__name__)
-
-
-@contextmanager
-def run_logged_grocy_container() -> Generator[LoggedContainer]:
-    image_ref = load_oci_image(grocy.LAYOUT_RLOCATION)
-    with grocy_custom_init_dir() as init_dir:
-        container = LoggedContainer(image_ref, test_name="grocy")
-        configure_grocy_container(container, init_dir=init_dir, data_dir=None)
-        with tracer.start_as_current_span("grocy_container_start"):
-            container.__enter__()
-        try:
-            with tracer.start_as_current_span("wait_for_grocy_ready"):
-                wait_for_grocy_ready(container)
-            yield container
-        finally:
-            container.__exit__(None, None, None)
 
 
 @pytest.fixture(scope="session")
-def grocy_container() -> Generator[LoggedContainer]:
-    with run_logged_grocy_container() as container:
+def grocy_container() -> Generator[DockerContainer]:
+    with run_grocy_container(make_container=lambda image: LoggedContainer(image, test_name="grocy")) as container:
         yield container
 
 
 @pytest.fixture(scope="session")
-def grocy_base_url(grocy_container: LoggedContainer) -> str:
+def grocy_base_url(grocy_container: DockerContainer) -> str:
     return grocy_url(grocy_container)

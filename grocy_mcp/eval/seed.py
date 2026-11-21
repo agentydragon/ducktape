@@ -12,13 +12,10 @@ container, so no Authorization header is needed.
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
-
-logger = logging.getLogger(__name__)
 
 
 async def _create(client: httpx.AsyncClient, entity: str, body: dict[str, Any]) -> int:
@@ -43,10 +40,10 @@ async def _get_or_create_location(client: httpx.AsyncClient, name: str, *, is_fr
     return await _create(client, "locations", {"name": name, "is_freezer": int(is_freezer)})
 
 
-async def _get_or_create_qu(client: httpx.AsyncClient, name: str, name_plural: str | None = None) -> int:
+async def _get_or_create_qu(client: httpx.AsyncClient, name: str, name_plural: str) -> int:
     if (existing := await _lookup_by_name(client, "quantity_units", name)) is not None:
         return existing
-    return await _create(client, "quantity_units", {"name": name, "name_plural": name_plural or f"{name}s"})
+    return await _create(client, "quantity_units", {"name": name, "name_plural": name_plural})
 
 
 async def _get_or_create_product_group(client: httpx.AsyncClient, name: str) -> int:
@@ -76,17 +73,8 @@ async def _create_product(
     return await _create(client, "products", body)
 
 
-async def _add_stock(
-    client: httpx.AsyncClient,
-    product_id: int,
-    amount: float,
-    *,
-    best_before_date: str = "2099-12-31",
-    location_id: int | None = None,
-) -> None:
-    body: dict[str, Any] = {"amount": amount, "best_before_date": best_before_date, "transaction_type": "purchase"}
-    if location_id is not None:
-        body["location_id"] = location_id
+async def _add_stock(client: httpx.AsyncClient, product_id: int, amount: float) -> None:
+    body = {"amount": amount, "best_before_date": "2099-12-31", "transaction_type": "purchase"}
     r = await client.post(f"/stock/products/{product_id}/add", json=body)
     r.raise_for_status()
 
