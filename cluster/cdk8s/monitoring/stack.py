@@ -461,20 +461,15 @@ def monitoring_stack(
     monitoring_namespace: Kustomization,
     monitoring_crds: Kustomization,
     kyverno: Kustomization,
+    *,
+    health_checks: list[KustomizationSpecHealthChecks],
 ) -> Kustomization:
     return flux_kustomization(
         chart,
         "monitoring-stack",
         directory,
         wait=None,
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="helm.toolkit.fluxcd.io/v2",
-                kind="HelmRelease",
-                name="kube-prometheus-stack",
-                namespace=NAMESPACE,
-            )
-        ],
+        health_checks=health_checks,
         timeout="10m",
         depends_on=flux_kustomization_depends_on_many(
             monitoring_namespace,

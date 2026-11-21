@@ -327,18 +327,19 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def alloy(chart: Chart, directory: RenderedDirectory, monitoring_crds: Kustomization) -> Kustomization:
+def alloy(
+    chart: Chart,
+    directory: RenderedDirectory,
+    monitoring_crds: Kustomization,
+    *,
+    health_checks: list[KustomizationSpecHealthChecks],
+) -> Kustomization:
     return flux_kustomization(
         chart,
         _NAME,
         directory,
         wait=None,
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name=name, namespace=NAMESPACE
-            )
-            for name in (_NAME, _NODE_NAME, _JOURNAL_NAME, _SYSLOG_NAME)
-        ],
+        health_checks=health_checks,
         timeout="5m",
         # the chart's serviceMonitor
         depends_on=flux_kustomization_depends_on_many(monitoring_crds),
