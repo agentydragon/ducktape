@@ -54,7 +54,7 @@ def _deployment(chart: Chart) -> None:
             namespace=NAME,
             labels=SERVICE.pods.selector,
             annotations={
-                **namespaces.initial_memory_request_annotations(
+                **namespaces.initial_request_annotations(
                     ContainerPolicy.cpu_and_memory_requests_only(
                         "server",
                         cpu_floor=_CPU_REQUEST,

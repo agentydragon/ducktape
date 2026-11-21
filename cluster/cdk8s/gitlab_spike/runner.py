@@ -7,7 +7,7 @@ from python.runfiles import Runfiles
 
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.helm import helm_release, https_helm_repository
-from cluster.cdk8s.namespaces import initial_memory_request_annotations
+from cluster.cdk8s.namespaces import initial_request_annotations
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 from cluster.cdk8s.vpa_policy import ContainerPolicy
 
@@ -61,7 +61,7 @@ def chart(app: App) -> Chart:
             "concurrent": 2,
             "checkInterval": 5,
             # Opt in the runner manager Deployment. Peak startup working set was 142Mi.
-            "deploymentAnnotations": initial_memory_request_annotations(
+            "deploymentAnnotations": initial_request_annotations(
                 ContainerPolicy.memory_requests_only(
                     f"{NAME}-gitlab-runner", cpu_request=_CPU_REQUEST, memory_floor="160Mi", memory_limit=_MEMORY_LIMIT
                 )

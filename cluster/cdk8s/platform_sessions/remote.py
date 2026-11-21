@@ -43,7 +43,7 @@ from cluster.cdk8s.flux import (
     flux_kustomization_depends_on_many,
 )
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
-from cluster.cdk8s.namespaces import initial_memory_request_annotations
+from cluster.cdk8s.namespaces import initial_request_annotations
 from cluster.cdk8s.platform_sessions import config
 from cluster.cdk8s.providers.flux.image_policy import ImagePolicy
 from cluster.cdk8s.volume_claim import volume_claim
@@ -212,7 +212,7 @@ def _deployment(
         metadata=k8s.ObjectMeta(
             name=name,
             namespace=NAMESPACE,
-            annotations=initial_memory_request_annotations(vpa_policy) if vpa_policy is not None else None,
+            annotations=initial_request_annotations(vpa_policy) if vpa_policy is not None else None,
         ),
         spec=k8s.DeploymentSpec(
             replicas=1,

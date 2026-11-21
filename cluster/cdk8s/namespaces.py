@@ -66,7 +66,7 @@ class VpaProfile:
 _POLICY_LABELS = {_GOLDILOCKS_ENABLED_LABEL, VPA_UPDATE_MODE_LABEL, *AgentReadable}
 
 
-def initial_memory_request_annotations(*container_policies: ContainerPolicy) -> dict[str, str]:
+def initial_request_annotations(*container_policies: ContainerPolicy) -> dict[str, str]:
     """Opt a workload into admission-time sizing for the listed containers."""
     return {
         VPA_UPDATE_MODE_LABEL: Vpa.INITIAL,

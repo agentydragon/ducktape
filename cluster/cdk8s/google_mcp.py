@@ -111,7 +111,7 @@ class GoogleMcpApp(Construct):
                 name=NAME,
                 namespace=NAME,
                 labels=SERVICE.pods.selector,
-                annotations=namespaces.initial_memory_request_annotations(
+                annotations=namespaces.initial_request_annotations(
                     # Peak 30-day working set was 196Mi, including startup.
                     ContainerPolicy.cpu_and_memory_requests_only(
                         "server",

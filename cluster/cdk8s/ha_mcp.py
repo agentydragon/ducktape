@@ -184,7 +184,7 @@ class HaMcpApp(Construct):
                 namespace=_NAMESPACE,
                 labels=FACADE.pods.selector,
                 annotations={
-                    **namespaces.initial_memory_request_annotations(
+                    **namespaces.initial_request_annotations(
                         # Peak 30-day working set was 126Mi.
                         ContainerPolicy.cpu_and_memory_requests_only(
                             "ha-mcp",

@@ -56,7 +56,7 @@ def _deployment(chart: Chart) -> None:
             namespace=NAMESPACE,
             labels=_LABELS,
             annotations={
-                **namespaces.initial_memory_request_annotations(
+                **namespaces.initial_request_annotations(
                     # Peak 30-day working set was 36Mi.
                     ContainerPolicy.memory_requests_only(
                         "pgweb", cpu_request=_CPU_REQUEST, memory_floor="64Mi", memory_limit=_MEMORY_LIMIT

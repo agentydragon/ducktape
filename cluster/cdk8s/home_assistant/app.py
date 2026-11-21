@@ -43,7 +43,7 @@ from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.home_assistant.db import DATABASE
 from cluster.cdk8s.home_assistant.namespace import NAMESPACE
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.namespaces import initial_memory_request_annotations
+from cluster.cdk8s.namespaces import initial_request_annotations
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Rule, group
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from cluster.cdk8s.providers.volsync.replication_source import ReplicationSource
@@ -187,7 +187,7 @@ def _deployment(scope: Construct, configuration: ConfigMap, caddy_config: Config
             name=_NAME,
             namespace=NAMESPACE,
             labels=SERVICE.pods.selector,
-            annotations=initial_memory_request_annotations(
+            annotations=initial_request_annotations(
                 # Peak 30-day working sets were 475Mi and 35Mi.
                 ContainerPolicy.memory_requests_only(
                     _NAME,
