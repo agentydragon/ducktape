@@ -11,9 +11,9 @@ import time
 from typing import TYPE_CHECKING, Any
 
 import httpx
-from dbus_next.aio import MessageBus
-from dbus_next.constants import PropertyAccess
-from dbus_next.service import ServiceInterface, dbus_property, method, signal as dbus_signal
+from dbus_fast.aio import MessageBus
+from dbus_fast.constants import PropertyAccess
+from dbus_fast.service import ServiceInterface, dbus_property, method, signal as dbus_signal
 
 from util.network_monitor import NetworkMonitor
 
@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     DBusString = str
     DBusDouble = float
 else:
-    # dbus-next inspects runtime annotations for literal wire signatures.
+    # dbus-fast inspects runtime annotations for literal wire signatures.
     DBusString = "s"
     DBusDouble = "d"
 
