@@ -13,12 +13,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol, TextIO
 
-from agentplane.system_tests.vm import guest_logs, iotlb_capture
+from agentplane.system_tests.vm import iotlb_capture
+from agentplane.system_tests.vm.shutdown_diagnostic import SHUTDOWN_COMPLETE, SHUTDOWN_REQUESTED
 
 logger = logging.getLogger(__name__)
-
-SHUTDOWN_REQUESTED = b"AGENTPLANE_GUEST_SHUTDOWN_REQUESTED"
-SHUTDOWN_COMPLETE = guest_logs.SHUTDOWN_COMPLETE
 
 REQUEST_GRACE_SECONDS = 5.0
 SAMPLE_GAP_SECONDS = 2.0

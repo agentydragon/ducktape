@@ -185,8 +185,8 @@ py_library(
     name = "host_qemu",
     srcs = ["host_qemu.py"],
     deps = [
-        ":guest_logs",
         ":iotlb_capture",
+        ":shutdown_diagnostic",
     ],
 )
 
@@ -195,6 +195,7 @@ py_test(
     srcs = ["test_host_qemu.py"],
     deps = [
         ":host_qemu",
+        ":shutdown_diagnostic",
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "@pypi//pytest",
@@ -207,6 +208,7 @@ py_test(
     srcs = ["test_guest_logs.py"],
     deps = [
         ":guest_logs",
+        ":shutdown_diagnostic",
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "@pypi//pytest",
