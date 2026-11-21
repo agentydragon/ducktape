@@ -388,6 +388,54 @@ if (shards === 4 && shard === 0) {
   assert.equal(unchangedCatch.localImportAliasProvedCases, 1);
   assert.equal(unchangedCatch.equal, 1);
 }
+if (shards === 4 && shard === 1) {
+  const changedCatchBinding = await runFuzz({
+    seed: 773,
+    start: 1237,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "alias",
+    validateEvery: 1,
+  });
+  assert.match(makeLocalAliasCase(773, 1237).source, /catch \(caught\)/);
+  assert.equal(changedCatchBinding.mutatedDifferent, 1);
+  assert.equal(changedCatchBinding.mutatedVerdicts.unsafe, 1);
+  const unchangedCatchBinding = await runFuzz({
+    seed: 773,
+    start: 1237,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "alias",
+    mutationMode: "disabled",
+    validateEvery: 1,
+  });
+  assert.equal(unchangedCatchBinding.localImportAliasProvedCases, 1);
+  assert.equal(unchangedCatchBinding.equal, 1);
+}
+if (shards === 4 && shard === 1) {
+  const changedBoundCatch = await runFuzz({
+    seed: 773,
+    start: 1237,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "alias",
+    validateEvery: 1,
+  });
+  assert.match(makeLocalAliasCase(773, 1237).source, /catch \(caught\)/);
+  assert.equal(changedBoundCatch.mutatedDifferent, 1);
+  assert.equal(changedBoundCatch.mutatedVerdicts.unsafe, 1);
+  const unchangedBoundCatch = await runFuzz({
+    seed: 773,
+    start: 1237,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "alias",
+    mutationMode: "disabled",
+    validateEvery: 1,
+  });
+  assert.equal(unchangedBoundCatch.localImportAliasProvedCases, 1);
+  assert.equal(unchangedBoundCatch.equal, 1);
+}
 if (shards === 4 && shard === 3) {
   const changedTerminal = await runFuzz({
     seed: 773,

@@ -773,17 +773,29 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
   };
   const returning = (statement) => {
     if (statement?.type === "TryStatement") {
+      let caught = null;
       if (statement.handler?.param) {
-        const caught = identifier(statement.handler.param);
+        const candidate = identifier(statement.handler.param);
         const mentions = (node) => {
           if (!node || typeof node !== "object") return false;
-          if (node.type === "Identifier" && node.name === caught) return true;
+          if (node.type === "Identifier" && node.name === candidate) return true;
           return Object.values(node).some((value) => (Array.isArray(value) ? value.some(mentions) : mentions(value)));
         };
-        check(!mentions(statement.handler.body), "used catch bindings are unsupported");
+        if (mentions(statement.handler.body)) {
+          check(
+            statement.block.body.length === 1 &&
+              statement.block.body[0].type === "ThrowStatement" &&
+              statement.block.body[0].argument.type === "Identifier",
+            "used catch bindings require a single numeric throw"
+          );
+          caught = candidate;
+        }
       }
       let body = sequence(statement.block.body);
-      if (statement.handler) body = { kind: "catchError", body, handler: sequence(statement.handler.body.body) };
+      if (statement.handler)
+        body = caught
+          ? { kind: "catchBound", name: caught, body, handler: sequence(statement.handler.body.body) }
+          : { kind: "catchError", body, handler: sequence(statement.handler.body.body) };
       if (!statement.finalizer) return body;
       check(
         statement.finalizer.body.every((item) => item.type === "ExpressionStatement"),
@@ -844,6 +856,8 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
         return [...free(item.initial, bound), ...free(item.body, [item.name, ...bound])];
       case "catchError":
         return [...free(item.body, bound), ...free(item.handler, bound)];
+      case "catchBound":
+        return [...free(item.body, bound), ...free(item.handler, [item.name, ...bound])];
       case "finally":
         return [...free(item.body, bound), ...free(item.finalizer, bound)];
       case "followedBy":
@@ -1455,7 +1469,8 @@ function generateFiles(source, spec, names) {
             const isTryFinally = (statement) =>
               statement.type === "TryStatement" &&
               (statement.handler === null ||
-                (statement.handler.param === null && statement.handler.body.body.every(isWrite))) &&
+                ((statement.handler.param === null || statement.handler.param.type === "Identifier") &&
+                  statement.handler.body.body.every(isWrite))) &&
               statement.finalizer?.type === "BlockStatement" &&
               statement.block.body.every(
                 (item, index) =>
@@ -1539,11 +1554,11 @@ function generateFiles(source, spec, names) {
               }
               check(false, "local import renaming supports only pure returning expressions");
             };
-            const visitWrite = (item, shadowed = new Set()) => {
+            const visitWrite = (item, shadowed = new Set(), extraMutable = new Set()) => {
               const target =
                 item.expression.type === "AssignmentExpression" ? item.expression.left : item.expression.argument;
               check(
-                mutableNames.has(target.name) && !shadowed.has(target.name),
+                (mutableNames.has(target.name) && !shadowed.has(target.name)) || extraMutable.has(target.name),
                 "cannot write an imported or immutable binding"
               );
               if (item.expression.type === "AssignmentExpression") visit(item.expression.right, shadowed);
@@ -1555,7 +1570,11 @@ function generateFiles(source, spec, names) {
                   if (part.type === "ThrowStatement") visit(part.argument);
                   else visitWrite(part);
                 });
-                if (item.handler) item.handler.body.body.forEach((write) => visitWrite(write));
+                if (item.handler) {
+                  const caught = item.handler.param?.name;
+                  const catchNames = new Set(caught ? [caught] : []);
+                  item.handler.body.body.forEach((write) => visitWrite(write, catchNames, catchNames));
+                }
                 item.finalizer.body.forEach((write) => visitWrite(write));
               } else if (item.type === "ForStatement") {
                 const loopName = item.init.declarations[0].id.name;
@@ -1716,6 +1735,8 @@ function leanExpression(expression) {
       return `.local ${str(expression.name)} ${expression.mutable} (${leanExpression(expression.initial)}) (${leanExpression(expression.body)})`;
     case "catchError":
       return `.catchError (${leanExpression(expression.body)}) (${leanExpression(expression.handler)})`;
+    case "catchBound":
+      return `.catchBound ${str(expression.name)} (${leanExpression(expression.body)}) (${leanExpression(expression.handler)})`;
     case "finally":
       return `.finally (${leanExpression(expression.body)}) (${leanExpression(expression.finalizer)})`;
     case "followedBy":
@@ -2290,7 +2311,7 @@ theorem binding_export_difference :
       const body = expressionBound(expression.body, initial > bound ? initial : bound);
       return initial > body ? initial : body;
     }
-    if (expression.kind === "catchError") {
+    if (expression.kind === "catchError" || expression.kind === "catchBound") {
       const body = expressionBound(expression.body, bound);
       const handler = expressionBound(expression.handler, body > bound ? body : bound);
       return body > handler ? body : handler;

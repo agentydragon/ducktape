@@ -320,6 +320,7 @@ def expressionNames : NumericExpr → List String
   | .guard test consequent alternative => expressionNames test ++ expressionNames consequent ++ expressionNames alternative
   | .finally body finalizer => expressionNames body ++ expressionNames finalizer
   | .catchError body handler => expressionNames body ++ expressionNames handler
+  | .catchBound _ body handler => expressionNames body ++ expressionNames handler
   | .followedBy first continuation => expressionNames first ++ expressionNames continuation
   | .local _ _ initial body => expressionNames initial ++ expressionNames body
   | .assign name value body => [name] ++ expressionNames value ++ expressionNames body
@@ -353,6 +354,7 @@ def laterExpressionNames : NumericExpr → List String
   | .guard _ _ continuation => laterExpressionNames continuation
   | .finally _ _ => []
   | .catchError _ _ => []
+  | .catchBound _ _ _ => []
   | .followedBy _ continuation => laterExpressionNames continuation
   | .raise _ => []
   | .raisePrimitive _ => []
@@ -387,6 +389,7 @@ def argumentCount : NumericExpr → Option Nat
   | .guard _ _ _ => none
   | .finally _ _ => none
   | .catchError _ _ => none
+  | .catchBound _ _ _ => none
   | .followedBy _ _ => none
   | .local _ _ _ _ => none
   | .assign _ _ _ => none
@@ -419,6 +422,7 @@ def validNumericExpression : NumericExpr → Bool
       validNumericExpression test && validNumericExpression consequent && validNumericExpression continuation
   | .finally body finalizer => validNumericExpression body && validNumericExpression finalizer
   | .catchError body handler => validNumericExpression body && validNumericExpression handler
+  | .catchBound _ body handler => validNumericExpression body && validNumericExpression handler
   | .followedBy first continuation =>
     !(expressionNames first).any (fun name => (laterExpressionNames continuation).contains name) &&
       validNumericExpression first && validNumericExpression continuation
@@ -460,6 +464,7 @@ def validNumericArguments : NumericExpr → Bool
   | .guard _ _ _ => false
   | .finally _ _ => false
   | .catchError _ _ => false
+  | .catchBound _ _ _ => false
   | .followedBy _ _ => false
   | .local _ _ _ _ => false
   | .assign _ _ _ => false
@@ -490,6 +495,7 @@ def expressionFreeNames (bound : List String) : NumericExpr → List String
   | .guard test consequent alternative => expressionFreeNames bound test ++ expressionFreeNames bound consequent ++ expressionFreeNames bound alternative
   | .finally body finalizer => expressionFreeNames bound body ++ expressionFreeNames bound finalizer
   | .catchError body handler => expressionFreeNames bound body ++ expressionFreeNames bound handler
+  | .catchBound name body handler => expressionFreeNames bound body ++ expressionFreeNames (name :: bound) handler
   | .followedBy first continuation => expressionFreeNames bound first ++ expressionFreeNames bound continuation
   | .local name _ initial body => expressionFreeNames bound initial ++ expressionFreeNames (name :: bound) body
   | .assign name value body => (if bound.contains name then [] else [name]) ++ expressionFreeNames bound value ++ expressionFreeNames bound body
@@ -527,6 +533,7 @@ def validLocalWrites (bound : List (String × Bool)) : NumericExpr → Bool
   | .guard test consequent alternative => validLocalWrites bound test && validLocalWrites bound consequent && validLocalWrites bound alternative
   | .finally body finalizer => validLocalWrites bound body && validLocalWrites bound finalizer
   | .catchError body handler => validLocalWrites bound body && validLocalWrites bound handler
+  | .catchBound name body handler => validLocalWrites bound body && validLocalWrites ((name, true) :: bound) handler
   | .followedBy first continuation => validLocalWrites bound first && validLocalWrites bound continuation
   | .local name mutable initial body => validLocalWrites bound initial && validLocalWrites ((name, mutable) :: bound) body
   | .assign name value body => mutableLocal bound name && validLocalWrites bound value && validLocalWrites bound body
@@ -590,6 +597,7 @@ def expressionCalls : NumericExpr → List String
   | .guard test consequent alternative => expressionCalls test ++ expressionCalls consequent ++ expressionCalls alternative
   | .finally body finalizer => expressionCalls body ++ expressionCalls finalizer
   | .catchError body handler => expressionCalls body ++ expressionCalls handler
+  | .catchBound _ body handler => expressionCalls body ++ expressionCalls handler
   | .followedBy first continuation => expressionCalls first ++ expressionCalls continuation
   | .local _ _ initial body => expressionCalls initial ++ expressionCalls body
   | .assign _ value body => expressionCalls value ++ expressionCalls body
@@ -621,6 +629,7 @@ def matchingInvocations (source : List BindingStmt) : NumericExpr → Bool
   | .guard test consequent alternative => matchingInvocations source test && matchingInvocations source consequent && matchingInvocations source alternative
   | .finally body finalizer => matchingInvocations source body && matchingInvocations source finalizer
   | .catchError body handler => matchingInvocations source body && matchingInvocations source handler
+  | .catchBound _ body handler => matchingInvocations source body && matchingInvocations source handler
   | .followedBy first continuation => matchingInvocations source first && matchingInvocations source continuation
   | .local _ _ initial body => matchingInvocations source initial && matchingInvocations source body
   | .assign _ value body => matchingInvocations source value && matchingInvocations source body
@@ -1190,6 +1199,7 @@ def witnessedAppendArguments (tail : NumericExpr) : NumericExpr → Option Numer
   | .guard _ _ _ => none
   | .finally _ _ => none
   | .catchError _ _ => none
+  | .catchBound _ _ _ => none
   | .followedBy _ _ => none
   | .local _ _ _ _ => none
   | .assign _ _ _ => none
@@ -1235,6 +1245,11 @@ def witnessedExpressionFuel (modules : List BindingModule) : Nat → Nat → Lis
     some (.finally (← witnessedExpressionFuel modules fuel index bound left) (← witnessedExpressionFuel modules fuel index bound right))
   | fuel + 1, index, bound, .catchError left right => do
     some (.catchError (← witnessedExpressionFuel modules fuel index bound left) (← witnessedExpressionFuel modules fuel index bound right))
+  | fuel + 1, index, bound, .catchBound name body handler => do
+    let identitySafe := witnessedFreshAvailable modules name && !(bound.any fun binding => binding.2 == name)
+    let fresh := if identitySafe then name else witnessedFresh bound.length name
+    if !witnessedFreshAvailable modules fresh then none else
+      some (.catchBound fresh (← witnessedExpressionFuel modules fuel index bound body) (← witnessedExpressionFuel modules fuel index ((name, fresh) :: bound) handler))
   | fuel + 1, index, bound, .followedBy left right => do
     some (.followedBy (← witnessedExpressionFuel modules fuel index bound left) (← witnessedExpressionFuel modules fuel index bound right))
   | fuel + 1, index, bound, .argumentsCons left right => do
@@ -1308,6 +1323,7 @@ def simpleAliasNumericExpr : NumericExpr → Bool
   | .guard test yes no => simpleAliasNumericExpr test && simpleAliasNumericExpr yes && simpleAliasNumericExpr no
   | .finally body finalizer => simpleAliasNumericExpr body && simpleAliasNumericExpr finalizer
   | .catchError body handler => simpleAliasNumericExpr body && simpleAliasNumericExpr handler
+  | .catchBound _ body handler => simpleAliasNumericExpr body && simpleAliasNumericExpr handler
   | .followedBy first continuation => simpleAliasNumericExpr first && simpleAliasNumericExpr continuation
   | .local _ _ initial body =>
     simpleAliasNumericExpr initial && simpleAliasNumericExpr body

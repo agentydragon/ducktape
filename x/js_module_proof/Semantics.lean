@@ -46,6 +46,7 @@ inductive NumericExpr where
   | guard (test consequent continuation : NumericExpr)
   | finally (body finalizer : NumericExpr)
   | catchError (body handler : NumericExpr)
+  | catchBound (name : String) (body handler : NumericExpr)
   | followedBy (first continuation : NumericExpr)
   | local (name : String) (mutable : Bool) (initial body : NumericExpr)
   | assign (name : String) (value body : NumericExpr)
@@ -379,6 +380,25 @@ def evaluateExpression (locals globals : List (String × Nat)) : NumericExpr →
     match result.completion with
     | .error _ => evaluateExpression result.locals globals handler
     | .ok _ => pure result
+  | .catchBound name body handler => do
+    let result ← evaluateExpression locals globals body
+    match result.completion with
+    | .error (.number value) =>
+      let handled ← evaluateExpression ((name, value) :: result.locals) globals handler
+      match handled.locals with
+      | [] => none
+      | _ :: tail => pure ⟨tail, handled.completion⟩
+    | .error (.text _) => none
+    | .error (.negativeNumber _) => none
+    | .error .negativeZero => none
+    | .error .notANumber => none
+    | .error .positiveInfinity => none
+    | .error .negativeInfinity => none
+    | .error (.bigInteger _ _) => none
+    | .error (.boolean _) => none
+    | .error .nullValue => none
+    | .error .undefined => none
+    | .ok _ => pure result
   | .finally body finalizer => do
     let bodyResult ← evaluateExpression locals globals body
     let finalResult ← evaluateExpression bodyResult.locals globals finalizer
@@ -454,6 +474,7 @@ def evaluateArguments (locals globals : List (String × Nat)) : NumericExpr → 
   | .guard _ _ _ => none
   | .finally _ _ => none
   | .catchError _ _ => none
+  | .catchBound _ _ _ => none
   | .followedBy _ _ => none
   | .local _ _ _ _ => none
   | .assign _ _ _ => none
@@ -462,6 +483,16 @@ def evaluateArguments (locals globals : List (String × Nat)) : NumericExpr → 
   | .invoke _ _ _ _ => none
   | .invokeLocal _ _ _ _ => none
 end
+
+/- The caught numeric value shadows an outer local only within the handler. -/
+example : (evaluateExpression [("caught", 9)] []
+    (.catchBound "caught" (.raise (.literal 3)) (.name "caught"))).map
+      (fun result => (result.locals, match result.completion with | .ok value => some value | .error _ => none)) =
+    some ([("caught", 9)], some 3) := by decide
+
+/- Non-numeric caught values remain outside this numeric slice. -/
+example : evaluateExpression [] []
+    (.catchBound "caught" (.raisePrimitive (.text [120])) (.name "caught")) = none := by decide
 
 /- Captured cells belong to the same execution state as module bindings, but
    have their own store. An environment maps lexical names to cell identities. -/

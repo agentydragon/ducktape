@@ -1035,4 +1035,47 @@ if (runSection(6)) {
   assert.equal(catchRedirect.result, "unsafe", JSON.stringify(catchRedirect));
   assert.deepEqual(execute(catchSource, catchRedirect.calls), { events: [], results: [6] });
   assert.deepEqual(execute(join(catchOut, "entry.mjs"), catchRedirect.calls), { events: [], results: [10] });
+
+  const boundSource = join(root, "catch-bound-alias-source.mjs");
+  const boundOut = join(root, "catch-bound-alias-out");
+  await writeFile(
+    boundSource,
+    `let value = 3;\nlet other = 5;\nfunction compute(p) { let local = p; try { throw value; } catch (caught) { local += caught; } finally { local += value; } return local; }\nexport { compute };\n`
+  );
+  assert.equal(cli("generate", boundSource, finallySpec, boundOut).value.result, "generated");
+  const boundState = join(boundOut, "state.mjs");
+  await writeFile(boundState, (await readFile(boundState, "utf8")) + "export { other };\n");
+  const boundLogic = join(boundOut, "logic.mjs");
+  const boundText = await readFile(boundLogic, "utf8");
+  const boundResult = cli("validate", boundSource, finallySpec, boundOut).value;
+  assert.equal(boundResult.result, "proved under assumptions", JSON.stringify(boundResult));
+  assert.deepEqual(execute(boundSource, calls), { events: [], results: [6, 10] });
+  assert.deepEqual(execute(join(boundOut, "entry.mjs"), calls), { events: [], results: [6, 10] });
+  assert.match(boundText, /value as __split_local_0/);
+  await writeFile(boundLogic, boundText.replace("value as __split_local_0", "other as __split_local_0"));
+  const boundRedirect = cli("validate", boundSource, finallySpec, boundOut).value;
+  assert.equal(boundRedirect.result, "unsafe", JSON.stringify(boundRedirect));
+  assert.deepEqual(execute(boundSource, boundRedirect.calls), { events: [], results: [6] });
+  assert.deepEqual(execute(join(boundOut, "entry.mjs"), boundRedirect.calls), { events: [], results: [10] });
+
+  const nonnumericCatch = join(root, "nonnumeric-catch-alias-source.mjs");
+  await writeFile(
+    nonnumericCatch,
+    `let value = 3;\nlet other = 5;\nfunction compute(p) { let local = p; try { throw "x"; } catch (caught) { local += caught; } finally { local += value; } return local; }\nexport { compute };\n`
+  );
+  const refusedCatch = cli("generate", nonnumericCatch, finallySpec, join(root, "nonnumeric-catch-out")).value;
+  assert.equal(refusedCatch.result, "unknown");
+
+  const shadowCatch = join(root, "shadow-catch-alias-source.mjs");
+  const shadowCatchOut = join(root, "shadow-catch-alias-out");
+  await writeFile(
+    shadowCatch,
+    `let caught = 3;\nlet value = 5;\nfunction compute(p) { let local = p; try { throw value; } catch (caught) { local += caught; } finally { local += value; } return local + caught; }\nexport { compute };\n`
+  );
+  assert.equal(cli("generate", shadowCatch, finallySpec, shadowCatchOut).value.result, "generated");
+  const shadowCatchText = await readFile(join(shadowCatchOut, "logic.mjs"), "utf8");
+  assert.match(shadowCatchText, /local \+= caught/);
+  assert.match(shadowCatchText, /return local \+ __split_local_0/);
+  assert.deepEqual(execute(shadowCatch, calls), { events: [], results: [13, 17] });
+  assert.deepEqual(execute(join(shadowCatchOut, "entry.mjs"), calls), { events: [], results: [13, 17] });
 }

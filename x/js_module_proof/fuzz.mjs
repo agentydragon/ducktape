@@ -1052,6 +1052,7 @@ export function makeLocalAliasCase(seed, index) {
   const withFinally = numericBindings.length > 0 && index >= 949 && index % 96 === 85;
   const withThrownFinally = withFinally && index >= 1045;
   const withCaughtFinally = withThrownFinally && index >= 1141;
+  const withCatchBinding = withCaughtFinally && index >= 1237;
   const withLocal = numericBindings.length > 0 && ((index >= 61 && index % 48 === 13) || withFinally);
   const aliasLoop = numericBindings.length > 0 && index >= 781 && index % 96 === 13;
   const aliasBranch = numericBindings.length > 0 && index >= 397 && index % 96 === 13;
@@ -1072,19 +1073,23 @@ export function makeLocalAliasCase(seed, index) {
                 block: {
                   type: "BlockStatement",
                   body: [
-                    expr({
-                      type: "AssignmentExpression",
-                      operator: "+=",
-                      left: id("offset"),
-                      right: id("numericLeft"),
-                    }),
+                    ...(withCatchBinding
+                      ? []
+                      : [
+                          expr({
+                            type: "AssignmentExpression",
+                            operator: "+=",
+                            left: id("offset"),
+                            right: id("numericLeft"),
+                          }),
+                        ]),
                     ...(withThrownFinally ? [{ type: "ThrowStatement", argument: id("numericLeft") }] : []),
                   ],
                 },
                 handler: withCaughtFinally
                   ? {
                       type: "CatchClause",
-                      param: null,
+                      param: withCatchBinding ? id("caught") : null,
                       body: {
                         type: "BlockStatement",
                         body: [
@@ -1092,7 +1097,7 @@ export function makeLocalAliasCase(seed, index) {
                             type: "AssignmentExpression",
                             operator: "+=",
                             left: id("offset"),
-                            right: id("numericLeft"),
+                            right: id(withCatchBinding ? "caught" : "numericLeft"),
                           }),
                         ],
                       },
@@ -1307,6 +1312,7 @@ export function makeLocalAliasCase(seed, index) {
     withFinally,
     withThrownFinally,
     withCaughtFinally,
+    withCatchBinding,
     aliasBranch,
     aliasLoop,
     loopShadow,
