@@ -20175,5 +20175,38 @@
     "pdb_allowed_disruptions_each": 1,
     "constraint": "revision-scoped hard hostname spread, maxSkew=1, minDomains=2",
     "caveat": "No deliberate node failure was tested; readiness does not establish Notifications delivery or uninterrupted in-flight work."
+  },
+  "external_secrets_webhook_recreate": {
+    "inventory_observed_at_utc": "2026-11-20T22:55:54Z",
+    "pull_request": "https://github.com/agentydragon/ducktape/pull/18319",
+    "ready_replicas": 2,
+    "active_pods": 2,
+    "nodes": ["optiplex", "ovh-ns104952"],
+    "mode": "Recreate",
+    "webhook_policy": {
+      "containerName": "webhook",
+      "controlledResources": ["cpu", "memory"],
+      "controlledValues": "RequestsOnly",
+      "minAllowed": {
+        "cpu": "15m",
+        "memory": "256Mi"
+      },
+      "maxAllowed": {
+        "cpu": "100m",
+        "memory": "384Mi"
+      }
+    },
+    "pdb_healthy": 2,
+    "pdb_allowed_disruptions": 1,
+    "endpoints_ca_and_hostname_verified": 2,
+    "valid_external_secret_dry_run": "accepted",
+    "invalid_refresh_interval_dry_run": "denied by validating webhook",
+    "failure_policy": "Fail",
+    "timeout_seconds": 5,
+    "notes": "TLS and admission dry runs performed before the inventory collection; no eviction was induced.",
+    "recommender_verified_at_utc": "2026-11-20T23:00:49Z",
+    "vpa_generation": 3,
+    "recommender_observed_generation": 3,
+    "ready_replicas_after_recommender_cycle": 2
   }
 }

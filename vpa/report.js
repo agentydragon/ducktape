@@ -22,7 +22,7 @@ import { html, mount } from "../report.js";
 const source =
   "https://github.com/agentydragon/ducktape/blob/05a4c55db085311363fad8cce0ba4dfe3f4ecb0f/";
 const github = "https://github.com/agentydragon/ducktape/";
-const currentSource = github + "blob/e1763745011c20b11627d08ee485083c7fce576a/";
+const currentSource = github + "blob/a78ec26f653c73377901bb4b950070f990e51e4f/";
 const modeLabels = {
   Off: "Recommend",
   Initial: "Initial",
@@ -191,7 +191,7 @@ function Report() {
   useEffect(() => {
     Promise.all(
       ["./evidence.json", "./inventory.json"].map((url) =>
-        fetch(`${url}?v=20261120-2236`).then((r) => {
+        fetch(`${url}?v=20261120-2255`).then((r) => {
           if (!r.ok) throw new Error(`${url}: HTTP ${r.status}`);
           return r.json();
         }),
@@ -215,6 +215,26 @@ function Report() {
     return html`<${Container} py="xl"><${Text}>Loading VPA evidence…<//><//>`;
   const current = data.inventory;
   const counts = current.counts;
+  const missingRequestContainers = (row) =>
+    row.containers
+      .flatMap((c) => c.admitted)
+      .filter((p) => !p.requests.cpu || !p.requests.memory).length;
+  const piraeusMissing = current.workloads
+    .filter((row) => row.namespace === "piraeus-datastore")
+    .reduce((n, row) => n + missingRequestContainers(row), 0);
+  const seaweedMissing = current.workloads
+    .filter((row) => row.namespace === "seaweedfs-csi-system")
+    .reduce((n, row) => n + missingRequestContainers(row), 0);
+  const cnpgWithGaps = current.workloads.filter(
+    (row) =>
+      row.apiGroup === "postgresql.cnpg.io" &&
+      row.kind === "Cluster" &&
+      missingRequestContainers(row) > 0,
+  );
+  const cnpgMissing = cnpgWithGaps.reduce(
+    (n, row) => n + missingRequestContainers(row),
+    0,
+  );
   const chart = Object.entries(counts.vpa_modes).map(([mode, count]) => ({
     mode,
     count,
@@ -329,6 +349,17 @@ function Report() {
             uninterrupted in-flight work, and no deliberate node-failure test
             was performed.<//
           >
+          <${Text} component="p"
+            >At 22:55 UTC, the ${" "}<${Anchor} href=${github + "pull/18319"}
+              >External Secrets webhook<//
+            >${" "}used Recreate with CPU and memory requests bounded to 15–100m
+            and 256–384 MiB; its two replicas were Ready on separate hosts with
+            a PDB allowing one disruption. Both endpoints passed CA and hostname
+            verification; admission accepted a valid ExternalSecret and rejected
+            an invalid one. At 23:00 UTC the recommender had observed VPA
+            generation 3 and both replicas remained Ready. The webhook fails
+            closed; no eviction was induced.<//
+          >
           <${Text} component="p" mb=${0}
             >Website and Haku use revision-scoped hostname spread with
             minDomains 2: a second replica stays Pending when only one host is
@@ -406,10 +437,9 @@ function Report() {
             show usage or an OOM cause.<//
           >
           <${Text} component="p" mb=${0}
-            >The largest request gaps are Piraeus (63 containers) and SeaweedFS
-            CSI (16); another 42 PostgreSQL containers belong to 21 CNPG
-            clusters. Work through those with their operator owners. Search the
-            current inventory below for individual owners and containers.<//
+            >${`Request gaps include Piraeus (${piraeusMissing} containers) and SeaweedFS CSI (${seaweedMissing}); another ${cnpgMissing} PostgreSQL containers belong to ${cnpgWithGaps.length} CNPG clusters.`}${" "}
+            Work through those with their operator owners. Search the current
+            inventory below for individual owners and containers.<//
           >
         <//>
       <//>
@@ -438,10 +468,12 @@ function Report() {
             checking PDBs, endpoints, spread, capacity and rollout behavior.
             Keep singletons such as ntfy and CDviz in Initial until replacement
             is safe. Preserve VPAs already managing both requests and limits; do
-            not silently weaken their policies. Check service-specific recovery
-            and capacity before any further promotion to Recreate; PDBs do not
-            guarantee uninterrupted in-flight work. Storage work has a separate
-            owner.<//
+            not silently weaken their policies. For example, metrics-server's
+            current VPA controls both requests and limits and has no explicit
+            ceiling; review proportional limit changes and capacity before
+            enabling eviction. Check service-specific recovery and capacity
+            before further promotion: PDBs do not guarantee uninterrupted
+            in-flight work. Storage work has a separate owner.<//
           ><//
         >
         <${Paper} withBorder p="md" radius="md"
@@ -495,8 +527,8 @@ function Report() {
       <${Text} component="p"
         >The census was collected during the inventory window above; placement
         was observed at 20:28–20:30 UTC except where stated. The Flux source at
-        22:36 UTC was ${" "}<${Anchor} href=${currentSource}
-          >devel at e176374501<//
+        22:56 UTC was ${" "}<${Anchor} href=${currentSource}
+          >devel at a78ec26f65<//
         >${" "}; Git source and observed running state are distinct. The initial
         ${" "}<${Anchor} href=${source}>02:58 source revision<//>${" "} and
         historical metrics are retained in ${" "}<${Anchor}
