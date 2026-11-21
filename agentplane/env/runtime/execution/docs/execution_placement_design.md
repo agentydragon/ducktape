@@ -73,19 +73,30 @@ apply to the combined executor service and its current descendants; they do not 
 a separate workload boundary. Existing Runtime supervision already launches systemd transient
 services, applies CPU/memory/PID/I/O properties, owns their streams, and fences stale units.
 
-Prototype two ways to place a command before it executes:
+**Initial implementation: systemd-owned command services under a shared workload slice.** Runtime
+launches commands through the existing transient-unit supervision path and puts them under one
+aggregate command budget. Each command has a unit for lifecycle management; the slice, not a
+per-command limit, enforces the shared budget. This reuses manager ownership and fencing, but
+systemd becomes the parent: adapt the executor's direct-child wait, signal and stream semantics
+rather than assuming the existing launcher preserves them. Measure launch overhead and verify that
+background processes behave as specified.
 
-1. **Executor remains the parent.** A trusted Runtime-owned mechanism creates the workload cgroup
-   and provides the executor an authorized way to start children in it, for example using Linux
-   cgroup-v2 [`CLONE_INTO_CGROUP`](https://man7.org/linux/man-pages/man2/clone3.2.html) through
-   Go's [`CgroupFD`](https://pkg.go.dev/syscall#SysProcAttr) support. This could preserve the existing
-   direct-child wait and pipe model. Confirm actual guest kernel and permission requirements,
-   trusted FD acquisition and handoff, fork/exec error behavior, TTY handling, and whether a
-   non-root executor can place children without also giving commands authority to escape.
-2. **Systemd owns command services.** Runtime launches commands using the existing transient-unit
-   supervision path and puts them under a shared command budget. This reuses manager ownership
-   and unit fencing, but systemd becomes the parent: adapt the executor's direct-child wait,
-   signal and stream semantics rather than assuming the existing launcher preserves them.
+**Future alternative: executor-owned direct children.** A trusted Runtime-owned mechanism could
+create the workload cgroup and provide the executor an authorized way to start children in it,
+for example using Linux cgroup-v2
+[`CLONE_INTO_CGROUP`](https://man7.org/linux/man-pages/man2/clone3.2.html) through
+Go's [`CgroupFD`](https://pkg.go.dev/syscall#SysProcAttr) support. This could preserve the existing
+direct-child wait and pipe model. It needs actual guest kernel and permission checks, trusted FD
+handoff, fork/exec error handling, TTY support, and proof that non-root commands cannot escape.
+It remains a future choice, not an implementation prerequisite.
+
+VM and Firecracker guests currently depend on systemd for Runtime and native process supervision
+beyond this proposed workload boundary. Starting with systemd does not make that dependency an
+execution API or environment requirement: keep the command-placement contract and lifecycle
+semantics independent of systemd unit names and D-Bus. Reuse the existing supervision boundaries
+where they fit; do not add a speculative abstraction solely for a hypothetical backend. A future
+systemd-free guest would need an alternative owner for Runtime startup, resource placement,
+process observation, cleanup and stale-work fencing, not merely a different executor flag.
 
 Do not move a PID into a cgroup only after the target begins executing: a fast allocator can win
 the race and already charged pages need not move. Avoid granting the untrusted tool the ability
@@ -162,8 +173,9 @@ still loses its in-memory handles and cannot authorize replay.
 ## Staged work and acceptance
 
 1. **Guest proof.** Implement the smallest shared-cgroup prototype in a disposable VM; verify the
-   placement and owner/command cgroup identities, privilege boundary, cleanup and aggregate
-   accounting. Compare direct-child placement with systemd-owned launch before selecting one.
+   systemd-owned command services under one shared workload slice. Verify placement and
+   owner/command cgroup identities, privilege boundary, cleanup, aggregate accounting, and
+   process-launch overhead. Keep direct-child placement available for later evaluation.
 2. **Real OOM and lifecycle proof.** Set a small workload budget, trigger a kernel memcg OOM, and
    record `memory.events` and process/cgroup evidence. Show the owner remains alive, the same
    execution session handles a new command, and killed work is reported without replay. Cover
@@ -178,7 +190,7 @@ still loses its in-memory handles and cannot authorize replay.
    workspace state. Document which failures lose active handles and how operators verify the
    selected boundary. Keep the existing protocol-gap and Sandbox lifecycle tracking separate.
 
-Open decisions include the concrete placement authority, parent budget/headroom, shared-cgroup OOM
+Open decisions include the final systemd unit topology, parent budget/headroom, shared-cgroup OOM
 policy, treatment of unsupported environments and the Kubernetes API's acceptable reconnect
 semantics. These need proof and review; this document does not commit to a particular cgroup
-helper, systemd unit topology, or Pod privilege change.
+helper or Pod privilege change. A non-systemd guest remains a possible later direction.
