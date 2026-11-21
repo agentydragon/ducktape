@@ -266,7 +266,6 @@ py_library(
         ":namespace",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/clickhouse:client",
-        "//cluster/cdk8s/providers/grafana_operator:grafanadashboard",
         "//cluster/cdk8s/providers/grafana_operator:grafanadatasource",
         "@pypi//cdk8s",
         "@rules_python//python/runfiles",

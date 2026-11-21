@@ -15,12 +15,6 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetDeletionPolicy,
     ExternalSecretSpecTargetTemplate,
 )
-from grafana_grafanadashboard_crds.org.integreatly.grafana import (
-    GrafanaDashboard,
-    GrafanaDashboardSpec,
-    GrafanaDashboardSpecDatasources,
-    GrafanaDashboardSpecInstanceSelector,
-)
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitor,
     ServiceMonitorSpec,
@@ -35,6 +29,7 @@ from cluster.cdk8s import external_creds
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
+from cluster.cdk8s.monitoring import grafana_instance
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
@@ -280,17 +275,13 @@ def chart(app: App) -> Chart:
             scrape_timeout="15s",
         ),
     )
-    GrafanaDashboard(
+    grafana_instance.dashboard(
         chart,
-        "dashboard",
-        metadata=ApiObjectMetadata(name="github-exporter", namespace=_NAMESPACE),
-        spec=GrafanaDashboardSpec(
-            instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels={"dashboards": "grafana"}),
-            folder="GitHub",
-            json=(
-                Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/github_exporter/github-api-quotas.json"
-            ).read_text(),
-            datasources=[GrafanaDashboardSpecDatasources(input_name="DS_MIMIR", datasource_name="mimir")],
-        ),
+        "github-exporter",
+        datasources={"DS_MIMIR": "mimir"},
+        folder="GitHub",
+        json=(
+            Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/github_exporter/github-api-quotas.json"
+        ).read_text(),
     )
     return chart

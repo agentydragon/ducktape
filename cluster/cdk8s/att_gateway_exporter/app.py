@@ -11,12 +11,6 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
-from grafana_grafanadashboard_crds.org.integreatly.grafana import (
-    GrafanaDashboard,
-    GrafanaDashboardSpec,
-    GrafanaDashboardSpecDatasources,
-    GrafanaDashboardSpecInstanceSelector,
-)
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitor,
     ServiceMonitorSpecEndpoints,
@@ -196,22 +190,13 @@ def chart(app: App) -> Chart:
             )
         ),
     )
-    GrafanaDashboard(
+    grafana_instance.dashboard(
         chart,
-        "dashboard",
-        metadata=ApiObjectMetadata(name=NAME, namespace=_NAMESPACE),
-        spec=GrafanaDashboardSpec(
-            instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels=grafana_instance.INSTANCE_LABELS),
-            folder="Network",
-            datasources=[
-                GrafanaDashboardSpecDatasources(
-                    input_name="DS_LOKI", datasource_name=grafana_instance.LOKI_DATASOURCE_UID
-                ),
-                GrafanaDashboardSpecDatasources(input_name="DS_MIMIR", datasource_name="mimir"),
-            ],
-            json=(
-                Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/att_gateway_exporter/home-gateway.json"
-            ).read_text(),
-        ),
+        NAME,
+        datasources={"DS_LOKI": grafana_instance.LOKI_DATASOURCE_UID, "DS_MIMIR": "mimir"},
+        folder="Network",
+        json=(
+            Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/att_gateway_exporter/home-gateway.json"
+        ).read_text(),
     )
     return chart

@@ -285,7 +285,7 @@ def _datasources(chart: Chart) -> None:
     )
 
 
-def _dashboard(
+def dashboard(
     chart: Chart,
     name: str,
     *,
@@ -294,7 +294,8 @@ def _dashboard(
     json: str | None = None,
     grafana_com: GrafanaDashboardSpecGrafanaCom | None = None,
 ) -> None:
-    """`datasources` maps each input to its literal datasource name or UID substitution."""
+    """A GrafanaDashboard the Grafana instance selects; `datasources` maps each input to its literal
+    datasource name or UID substitution."""
     GrafanaDashboard(
         chart,
         f"dashboard-{name}",
@@ -319,7 +320,6 @@ class LocalDashboard:
     name: str
     folder: str
     datasources: tuple[tuple[str, str], ...]
-    filename: str
 
 
 @dataclass(frozen=True)
@@ -335,68 +335,50 @@ type Dashboard = LocalDashboard | GrafanaComDashboard
 
 
 _DASHBOARD_DEFINITIONS: tuple[Dashboard, ...] = (
-    LocalDashboard("authentik", "Cluster & Platform", (("DS_MIMIR", "mimir"),), "authentik.json"),
-    LocalDashboard("buildbuddy-executor-pool", "CI", (("DS_MIMIR", "mimir"),), "buildbuddy-executor-pool.json"),
+    LocalDashboard("authentik", "Cluster & Platform", (("DS_MIMIR", "mimir"),)),
+    LocalDashboard("buildbuddy-executor-pool", "CI", (("DS_MIMIR", "mimir"),)),
     LocalDashboard(
-        "zot-cache-image-pulls",
-        "Cluster & Platform",
-        (("DS_LOKI", LOKI_DATASOURCE_UID), ("DS_MIMIR", "mimir")),
-        "zot-cache-image-pulls.json",
+        "zot-cache-image-pulls", "Cluster & Platform", (("DS_LOKI", LOKI_DATASOURCE_UID), ("DS_MIMIR", "mimir"))
     ),
-    LocalDashboard(
-        "interface-flap-frequency",
-        "Network",
-        (("DS_LOKI", LOKI_DATASOURCE_UID), ("DS_MIMIR", "mimir")),
-        "interface-flap-frequency.json",
-    ),
-    LocalDashboard("node-memory", "Nodes & Hardware", (("DS_MIMIR", "mimir"),), "node-memory.json"),
-    LocalDashboard(
-        "cluster-storage-io",
-        "Storage",
-        (("DS_LOKI", LOKI_DATASOURCE_UID), ("DS_MIMIR", "mimir")),
-        "cluster-storage-io.json",
-    ),
-    LocalDashboard("s3-operations", "Storage", (("DS_MIMIR", "mimir"),), "s3-operations.json"),
-    LocalDashboard("cluster-disk-usage", "Storage", (("DS_MIMIR", "mimir"),), "cluster-disk-usage.json"),
-    LocalDashboard("piraeus-storage", "Storage", (("DS_MIMIR", "mimir"),), "piraeus-storage.json"),
-    LocalDashboard("storage-service-details", "Storage", (("DS_MIMIR", "mimir"),), "storage-service-details.json"),
-    LocalDashboard("io-pressure", "Storage", (("DS_MIMIR", "mimir"),), "io-pressure.json"),
-    LocalDashboard(
-        "home-network-overview",
-        "Network",
-        (("DS_LOKI", LOKI_DATASOURCE_UID), ("DS_MIMIR", "mimir")),
-        "home-network-overview.json",
-    ),
-    LocalDashboard("cpap-gateway-disk", "Cluster & Platform", (("DS_MIMIR", "mimir"),), "cpap-gateway-disk.json"),
-    LocalDashboard("flux-cluster", "Cluster & Platform", (("DS_MIMIR", "mimir"),), "flux-cluster.json"),
-    LocalDashboard("rugged-power", "Nodes & Hardware", (("DS_MIMIR", "mimir"),), "rugged-power.json"),
+    LocalDashboard("interface-flap-frequency", "Network", (("DS_LOKI", LOKI_DATASOURCE_UID), ("DS_MIMIR", "mimir"))),
+    LocalDashboard("node-memory", "Nodes & Hardware", (("DS_MIMIR", "mimir"),)),
+    LocalDashboard("cluster-storage-io", "Storage", (("DS_LOKI", LOKI_DATASOURCE_UID), ("DS_MIMIR", "mimir"))),
+    LocalDashboard("s3-operations", "Storage", (("DS_MIMIR", "mimir"),)),
+    LocalDashboard("cluster-disk-usage", "Storage", (("DS_MIMIR", "mimir"),)),
+    LocalDashboard("piraeus-storage", "Storage", (("DS_MIMIR", "mimir"),)),
+    LocalDashboard("storage-service-details", "Storage", (("DS_MIMIR", "mimir"),)),
+    LocalDashboard("io-pressure", "Storage", (("DS_MIMIR", "mimir"),)),
+    LocalDashboard("home-network-overview", "Network", (("DS_LOKI", LOKI_DATASOURCE_UID), ("DS_MIMIR", "mimir"))),
+    LocalDashboard("cpap-gateway-disk", "Cluster & Platform", (("DS_MIMIR", "mimir"),)),
+    LocalDashboard("flux-cluster", "Cluster & Platform", (("DS_MIMIR", "mimir"),)),
+    LocalDashboard("rugged-power", "Nodes & Hardware", (("DS_MIMIR", "mimir"),)),
     GrafanaComDashboard("cert-manager", "Cluster & Platform", (("datasource", "Mimir"),), 20842, 3),
     GrafanaComDashboard("cloudnative-pg", "Cluster & Platform", (("DS_PROMETHEUS", "Mimir"),), 20417, 3),
-    LocalDashboard("cilium-agent", "Network", (("DS_MIMIR", "mimir"),), "cilium-agent.json"),
-    LocalDashboard("etcd", "Cluster & Platform", (("DS_MIMIR", "mimir"),), "etcd.json"),
-    LocalDashboard("gpu", "Nodes & Hardware", (("DS_MIMIR", "mimir"),), "gpu.json"),
+    LocalDashboard("cilium-agent", "Network", (("DS_MIMIR", "mimir"),)),
+    LocalDashboard("etcd", "Cluster & Platform", (("DS_MIMIR", "mimir"),)),
+    LocalDashboard("gpu", "Nodes & Hardware", (("DS_MIMIR", "mimir"),)),
     # Node Exporter Full includes hwmon thresholds and fan-speed panels for every node-exporter target.
     GrafanaComDashboard("node-exporter-full", "Nodes & Hardware", (("ds_prometheus", "Mimir"),), 1860, 45),
 )
 
 
 def _dashboards(chart: Chart) -> None:
-    for dashboard in _DASHBOARD_DEFINITIONS:
-        if isinstance(dashboard, LocalDashboard):
-            _dashboard(
+    for definition in _DASHBOARD_DEFINITIONS:
+        if isinstance(definition, LocalDashboard):
+            dashboard(
                 chart,
-                dashboard.name,
-                datasources=dict(dashboard.datasources),
-                folder=dashboard.folder,
-                json=(_DASHBOARD_DIR / dashboard.filename).read_text(),
+                definition.name,
+                datasources=dict(definition.datasources),
+                folder=definition.folder,
+                json=(_DASHBOARD_DIR / f"{definition.name}.json").read_text(),
             )
         else:
-            _dashboard(
+            dashboard(
                 chart,
-                dashboard.name,
-                datasources=dict(dashboard.datasources),
-                folder=dashboard.folder,
-                grafana_com=GrafanaDashboardSpecGrafanaCom(id=dashboard.dashboard_id, revision=dashboard.revision),
+                definition.name,
+                datasources=dict(definition.datasources),
+                folder=definition.folder,
+                grafana_com=GrafanaDashboardSpecGrafanaCom(id=definition.dashboard_id, revision=definition.revision),
             )
 
 
