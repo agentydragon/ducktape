@@ -53,8 +53,6 @@ provider "authentik" {
   token = data.kubernetes_secret.authentik_bootstrap.data["AUTHENTIK_BOOTSTRAP_TOKEN"]
 }
 
-# --- Shared data sources ---
-
 data "authentik_flow" "implicit_consent" {
   slug = "default-provider-authorization-implicit-consent"
 }

@@ -22,8 +22,8 @@ data "forgejo_user" "agentydragon" {
 }
 
 locals {
-  # Public keys are duplicated from ssh_keys/*-forgejo.pub because tofu-controller
-  # executes only this Terraform module path, so file() cannot read repo-root files.
+  # Public keys are duplicated from ssh_keys/*-forgejo.pub because the Inline Workspace
+  # supplies only this module's HCL, so file() cannot read repo-root files.
   public_keys = {
     atlas  = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG6/fkFmt/yOWY0s+PHulmGoTh8kll0WHoL8NXWluTn/"
     iguana = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMZZ91cQfULMM/rcBcYGaJ4HSiGeD8/G140ElIToYvIV"
