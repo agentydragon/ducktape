@@ -311,7 +311,7 @@ function Report() {
     setSelection((previous) => ({ group, revision: previous.revision + 1 }));
 
   useEffect(() => {
-    fetch("./inventory.json?v=20261121-0500")
+    fetch("./inventory.json?v=20261121051641")
       .then((response) => {
         if (!response.ok)
           throw new Error(`Inventory request returned HTTP ${response.status}`);
@@ -457,6 +457,15 @@ function Report() {
           <//>
         <//>
       <//>
+
+      <${Text} id="staging-request-wave" mt="md">
+        <strong>Agentplane staging.</strong> All nine services in the CPU sizing
+        wave were 2/2 Ready and had CPU and memory recommendations in Initial.
+        Flux reported its VPA Kustomization Ready and Healthy at 05:16:41 UTC.
+        Check admitted requests and limits on natural Pod replacements.
+        ${" "}<${Anchor} href=${github + "pull/18487"}>Staging policy change<//
+        >.
+      <//>
     </section>
 
     <section id="remaining-work">
@@ -465,8 +474,8 @@ function Report() {
       <${Text} component="p">
         Counts are review queues from this snapshot. A workload can appear in
         both the resource and Recreate queues. Confirm ownership and restart
-        behavior before choosing the cohort. The staging service promotion and
-        rollout gates are tracked in the ${" "}<${Anchor}
+        behavior before choosing the cohort. Ownership and rollout gates are
+        tracked in the ${" "}<${Anchor}
           href=${github + "blob/devel/cluster/plans/vpa.md"}
           >cluster rollout plan<//
         >.
