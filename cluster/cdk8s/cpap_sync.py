@@ -199,14 +199,7 @@ def chart(app: App) -> Chart:
                                         capabilities=k8s.Capabilities(drop=["ALL"]),
                                         seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),
                                     ),
-                                    args=[
-                                        "--base-url",
-                                        _CARD.url,
-                                        "--git-url",
-                                        "$(GIT_REPO_URL)",
-                                        "--wifi-interface",
-                                        "",
-                                    ],
+                                    args=["--base-url", _CARD.url, "--git-url", "$(GIT_REPO_URL)"],
                                     env=[
                                         # The clone (initial re-seed: the card's full history) lands in
                                         # TMPDIR — keep it on the emptyDir, not the container layer.
