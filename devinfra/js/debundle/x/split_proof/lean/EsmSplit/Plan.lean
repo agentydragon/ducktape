@@ -32,6 +32,9 @@ structure Spec where
   every module orders its imports by it. When empty, imports follow where each module's code
   first appeared in the bundle. -/
   order   : List ModName := []
+  /-- The modules run in exactly this order, the entry last: in `order` when it is given, else in the order of their
+  first statements. `mkPlan` then adds the imports that make ES evaluation follow it (`Split.nest`). -/
+  sequential : Bool := false
   deriving Repr
 
 def Selector.claims (B : Bundle) (i : Nat) : Selector → Bool

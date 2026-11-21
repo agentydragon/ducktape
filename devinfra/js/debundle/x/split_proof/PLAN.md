@@ -33,16 +33,17 @@ The design is "untrusted search, trusted check". The footprint analysis is the o
    - _Success:_ commutation proved for closures, objects with prototypes, accessors and exceptions, and that fragment covers most of the units that get precise footprints today.
    - _Kill:_ the proof is not done within the budget set at the start, or coverage is under about half. Then the tested analysis stays, labelled as trusted.
 
-5. **Keep the bundle's order explicitly, and let footprints remove it.** A planner that chains the modules by bare imports realizes any module order, and `Valid` checks its output as it checks `mkPlan`'s. On the large bundle that makes 2,372 of 2,793 modules of the reviewed tree valid whole, against 886 with today's planner ([`docs/lessons_learned.md`](docs/lessons_learned.md)). The chain is not what a person would write: each edge of it is then a candidate to drop, and dropping one is a claim that two modules commute, which is where a footprint, or a proof, is needed. This turns "is the split valid" from the hard question into the easy one, and makes precision a matter of how natural the imports look. Step 5 below is a special case.
+5. **Let footprints remove the order that a sequence imposes.** A spec with `sequential` keeps the bundle's order by imports, and `Valid` checks the plan ([`README.md`](README.md)). On the large bundle that makes 2,367 of the 2,793 modules of the reviewed tree valid whole, and `lowersplit` accepts the split. It is not yet what a person would write: 629 of its 3,049 modules get imports they need only for the order (2,744 bare imports), and the imports nest 466 deep. Each such import is a candidate to drop, and dropping one is a claim that two modules commute, which is where a footprint, or a proof, is needed. First candidates: a module that only declares functions can run early without harm, so a forward mention of one needs no ordering import. This turns "is the split valid" from the hard question into the easy one, and makes precision a matter of how natural the imports look. Step 5 below is a special case.
 
-**Open decisions for the owner.** Whether to build the order-keeping planner of item 5 next: it is small, and it changes what the precision work is for. Whether to start the spike, and with what budget. Whether to fix F1 to F5 before or beside it. Whether a reviewed vendor table is worth its review cost before the rule in item 4 exists: alone it does not change which modules peel.
+**Open decisions for the owner.** Whether to start the spike, and with what budget. Whether to fix F1 to F5 before or beside it. Whether a reviewed vendor table is worth its review cost before the rule in item 4 exists: alone it does not change which modules peel.
 
 ## Order of work
 
-1. The order-keeping planner of item 5, if agreed.
-2. F1 to F6.
-3. The spike of item 4, if started.
-4. Then by measured yield: per-unit reasons in `lower` ([`TODO.md`](TODO.md)), a vendor table by library family, a rule for decorator applications. A stack-safe interpreter comes before any analysis of library code.
+1. Run an accepted split of the large bundle in a browser, with the private repository's load check: the emitted modules have only been syntax-checked.
+2. F1 to F6 (in progress).
+3. `import.meta` ([`SUPPORT.md`](SUPPORT.md)): the one common feature the tools refuse.
+4. Which rules fire per unit at start-up, then the spike of item 4, if started.
+5. Then by measured yield: fewer ordering imports (item 5): per-unit reasons in `lower` ([`TODO.md`](TODO.md)), a vendor table by library family, a rule for decorator applications. A stack-safe interpreter comes before any analysis of library code.
 
 ## More of debundle's cases through the Lean checker
 

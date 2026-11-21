@@ -26,7 +26,7 @@ function observe(dir, file, names) {
 }
 
 /** Dump `code`, split it by `modules` (the entry is `entry.mjs`) and write the result beside the bundle. */
-function split(name, { code, outside = {}, modules, force = false }) {
+function split(name, { code, outside = {}, modules, force = false, spec = {} }) {
   const dir = path.join(temp, name);
   mkdirSync(dir, { recursive: true });
   writeFileSync(path.join(dir, "probe.mjs"), PROBE);
@@ -34,7 +34,7 @@ function split(name, { code, outside = {}, modules, force = false }) {
   for (const [file, text] of Object.entries(outside)) writeFileSync(path.join(dir, file), text);
   const dump = lowerDump(code, acorn, eslintScope);
   writeFileSync(path.join(dir, "ast.json"), JSON.stringify(dump));
-  writeFileSync(path.join(dir, "spec.json"), JSON.stringify({ entry: "entry.mjs", modules }));
+  writeFileSync(path.join(dir, "spec.json"), JSON.stringify({ entry: "entry.mjs", modules, ...spec }));
   const checked = spawnSync(
     process.env.LOWERSPLIT,
     [path.join(dir, "ast.json"), path.join(dir, "spec.json"), dir, ...(force ? ["--force"] : [])],
@@ -160,6 +160,32 @@ export const three = 3;
     modules: { "entry.mjs": ["#0"] },
   });
   assert.equal(refused.checked.status, 3, refused.log);
+}
+
+// Modules that have to run in the bundle's order, though an early one mentions a later one: `a.mjs` calls `helper`
+// of `c.mjs`, so an import of `c.mjs` from `a.mjs` alone runs `c.mjs` first. With `sequential`, `c.mjs` is entered
+// first and imports `a.mjs` and `b.mjs` before its own code runs.
+{
+  const fixture = {
+    code: [
+      `const first = () => helper();`,
+      `console.log("a");`,
+      `console.log("b");`,
+      `function helper() { return 1; }`,
+      `console.log("c", first());`,
+      `console.log("end");`,
+      ``,
+    ].join("\n"),
+    modules: { "a.mjs": ["#0", "#1"], "b.mjs": ["#2"], "c.mjs": ["#3", "#4"], "entry.mjs": ["#5"] },
+  };
+  const unordered = split("sequential_off", fixture);
+  assert.equal(unordered.checked.status, 1, unordered.log);
+  assert.match(unordered.log, /FAIL +OrderOk/);
+  const { text } = same("sequential", { ...fixture, spec: { sequential: true } }, []);
+  assert.match(text("c.mjs"), /^import \{ first \} from "\.\/a\.mjs";\nimport "\.\/b\.mjs";\n/);
+  assert.match(text("entry.mjs"), /^import "\.\/c\.mjs";\n/);
+  // the same order, given by name
+  same("sequential_order", { ...fixture, spec: { sequential: true, order: ["a.mjs", "b.mjs", "c.mjs"] } }, []);
 }
 
 // Outside the model, refused before any check: a top-level `await` (the module that awaits lets a module imported
