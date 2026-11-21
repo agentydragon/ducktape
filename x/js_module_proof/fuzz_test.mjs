@@ -49,6 +49,13 @@ assert.deepEqual(
   [0]
 );
 assert.ok(Object.keys(shrunk.spec.modules).length <= 2);
+const relayShrinkInput = makeComposedCase(51981, 3);
+relayShrinkInput.spec.modules["relay.mjs"].reexports["state.mjs"].push("unused");
+const relayShrunk = await minimizeCase(relayShrinkInput, async (candidate) => {
+  const relay = candidate.spec.modules["relay.mjs"];
+  return Boolean(relay?.imports.includes("state.mjs") && relay.reexports?.["state.mjs"]?.includes("global"));
+});
+assert.deepEqual(relayShrunk.spec.modules["relay.mjs"].reexports["state.mjs"], ["global"]);
 const generatedObjects = Array.from({ length: 32 }, (_, i) => makeCase(123, 20 + 64 * i));
 assert.equal(new Set(generatedObjects.map((item) => Object.keys(item.spec.modules).length)).size, 2);
 assert.ok(

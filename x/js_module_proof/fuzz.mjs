@@ -1402,8 +1402,10 @@ export async function minimizeCase(input, fails) {
       if (name === current.spec.entry || current.spec.modules[name].statements.length) continue;
       const candidate = structuredClone(current);
       delete candidate.spec.modules[name];
-      for (const module of Object.values(candidate.spec.modules))
+      for (const module of Object.values(candidate.spec.modules)) {
         module.imports = module.imports.filter((dep) => dep !== name);
+        if (module.reexports) delete module.reexports[name];
+      }
       if (await fails(candidate)) {
         current = candidate;
         changed = true;
@@ -1414,12 +1416,31 @@ export async function minimizeCase(input, fails) {
     for (const [name, module] of Object.entries(current.spec.modules)) {
       for (let index = 0; index < module.imports.length; index++) {
         const candidate = structuredClone(current);
-        candidate.spec.modules[name].imports.splice(index, 1);
+        const [removed] = candidate.spec.modules[name].imports.splice(index, 1);
+        if (candidate.spec.modules[name].reexports) delete candidate.spec.modules[name].reexports[removed];
         if (await fails(candidate)) {
           current = candidate;
           changed = true;
           break;
         }
+      }
+      if (changed) break;
+    }
+    if (changed) continue;
+    for (const [name, module] of Object.entries(current.spec.modules)) {
+      for (const [dependency, bindings] of Object.entries(module.reexports ?? {})) {
+        for (let index = 0; index < bindings.length; index++) {
+          const candidate = structuredClone(current);
+          const remaining = candidate.spec.modules[name].reexports[dependency];
+          remaining.splice(index, 1);
+          if (!remaining.length) delete candidate.spec.modules[name].reexports[dependency];
+          if (await fails(candidate)) {
+            current = candidate;
+            changed = true;
+            break;
+          }
+        }
+        if (changed) break;
       }
       if (changed) break;
     }
