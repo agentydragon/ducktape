@@ -5,7 +5,6 @@ from pathlib import PurePosixPath
 from typing import Any, cast
 
 import pytest_bazel
-import yaml
 from cdk8s import App, Chart, Testing as Cdk8sTesting
 from more_itertools import one
 
@@ -34,17 +33,12 @@ from cluster.cdk8s.agentplane import (
 )
 from cluster.cdk8s.agentplane.environment import SessionDelegationProps
 from cluster.cdk8s.cert_manager.cluster_ca import WORKLOAD_ISSUER
-from cluster.cdk8s.testing.manifests import find_resource
+from cluster.cdk8s.testing.manifests import config_map_yaml, find_resource
 
 
 def _gateway_settings(documents: list[dict[str, Any]], container: dict[str, Any]) -> dict[str, Any]:
     """The Gateway's static settings come from its mounted file, without scalar environment overrides."""
-    file = cast(
-        dict[str, Any],
-        yaml.safe_load(
-            find_resource(documents, "ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"]
-        ),
-    )
+    file = config_map_yaml(documents, f"{runner_gateway.NAME}-settings", "settings.yaml")
     allowed_runtime_envs = {Settings.config_file_env, Settings.dispatcher_database_url_env}
     gateway_envs = {entry["name"] for entry in container["env"] if entry["name"].startswith("AGENTPLANE_SESSIONS_")}
     assert gateway_envs <= allowed_runtime_envs
@@ -187,12 +181,8 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
 
 def test_actions_delegation_is_explicit_for_each_receiving_backend(staging_manifests: list[dict[str, Any]]) -> None:
     namespace = staging.ENV.namespace
-    gateway = yaml.safe_load(
-        find_resource(staging_manifests, "ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"]
-    )
-    history = yaml.safe_load(
-        find_resource(staging_manifests, "ConfigMap", f"{history_service.NAME}-config")["data"]["config.yaml"]
-    )
+    gateway = config_map_yaml(staging_manifests, f"{runner_gateway.NAME}-settings", "settings.yaml")
+    history = config_map_yaml(staging_manifests, f"{history_service.NAME}-config", "config.yaml")
     assert history["policy_namespace"] == namespace
     gateway_delegation = gateway["dispatcher_service_delegation"]
     assert gateway_delegation["actors"] == [{"spiffe_id": ACTIONS_URI, "connection_provenance": False}]
@@ -238,9 +228,7 @@ def test_session_delegation_is_a_dispatcher_caller_without_wake_authority(scratc
     )
     chart = runner_gateway_workload.serving_chart(scratch_app, env=env)
     docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
-    settings = yaml.safe_load(
-        find_resource(docs, "ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"]
-    )
+    settings = config_map_yaml(docs, f"{runner_gateway.NAME}-settings", "settings.yaml")
     assert set(settings["dispatcher_service_callers"]) == {APP_URI, NOTIFICATIONS_URI}
     assert ACTIONS_URI not in settings.get("wake_service_callers", [])
 

@@ -83,8 +83,8 @@ HAKU_CI_BUILD_FETCH_POLICY = "haku-ci-build-fetch"
 # Package and code hosts for haku-jupyter, which runs as the haku-ui account (see the binding below).
 HAKU_NOTEBOOK_FETCH_POLICY = "haku-notebook-fetch"
 
-# Staging-only PolicySets. The `coinbase` PolicySet combines GET egress with the view-only Coinbase
-# key's Secret grant. The two Action PolicySet reads every preset binds by default live here too.
+# Staging-only Action PolicySets that the launch presets (staging_config.py) and the Identity
+# bindings below bind by name.
 GITHUB_IDENTITY_READS_SET = "github-identity-reads"
 SSH_READS_SET = "ssh-reads"
 ORCHESTRATION_PRESETS_SET = "orchestration-presets"
@@ -365,9 +365,8 @@ _TANA_READS_ACTIONS = [
     # keep-sorted end
 ]
 
-# Grocy SF's read-only surface, as haku-console's `grocy_reads` policy auto-approved it.
-# Reviewed exclusion: `open_product_stock` marks a product opened. New upstream tools stay manual
-# until reviewed here.
+# Grocy SF's read-only surface. Reviewed exclusion: `open_product_stock` marks a product opened.
+# New upstream tools stay manual until reviewed here.
 _GROCY_SF_READS_ACTIONS = [
     # keep-sorted start
     "entities_get",
@@ -715,47 +714,18 @@ def add_staging_action_policies(
     # own Forgejo password, so a sandbox of this caller's acts as haku across every repository that
     # account owns. It is here because the operator asked for it; it is not a default any caller
     # should inherit. `packages` is the opposite end: public mirrors, no credential, GET and HEAD.
-    # `google-readonly` substitutes Airlock's read-only Google token on Gmail, Calendar, Drive,
-    # Drive Activity, Tasks, Contacts, Docs, Sheets, Slides and YouTube reads
-    # (egress_staging_credentials.py). `grocy-sf-readonly` presents the app password of an Authentik
-    # service account with no Grocy permissions, as HTTP Basic, on GETs to Grocy's own REST API (see
-    # that module's `grocy-sf-readonly` egress PolicySet for why that's Grocy's API rather than the
-    # grocy-mcp-sf MCP server). `activitywatch-read` presents the ActivityWatch read route's bearer,
-    # which that route itself holds to reads, and `aiquota-read` aiquota's bearer on its read-only
-    # API. `haku-mailbox` presents the JWT of Haku's own mailbox: JMAP reads and changes that one
-    # mailbox and cannot send. It and `forgejo-haku` are Haku's credentials, bound here because
-    # claude-ai is the connection Haku runs through (haku/TODO.md). `coinbase` combines the named
-    # key Secret grant with GET egress; the Identity binding uses its pure-egress sibling alongside
-    # the caller's exact Kubernetes account grant. `plaid-diagnostics` grants read-only control-plane metadata
-    # in plaid-mcp and presents pgweb's HTTP Basic password only on its query API, so a sandbox of
-    # this caller's can inspect sync health and run SQL over the Plaid mirror as `plaid_ro`, which
-    # can only SELECT (agent_access_profiles.py, egress_staging_credentials.py).
-    # `mimir-reads` presents nothing either: GET on Mimir's Prometheus query API over the cluster Service.
-    # `github-downloads` presents nothing either: public GitHub downloads, GET and HEAD only.
-    # `github-clone` presents nothing either: the anonymous smart-HTTP git protocol
-    # (GET+POST to github.com only, scoped to the `info/refs`/`git-upload-pack` paths). Now a
-    # strict subset of `github-agentydragon-agent` below; kept bound so clone still works if
-    # that credential is ever unbound again.
-    # `github-agentydragon-agent` substitutes the same write-capable `agentydragon-agent` PAT
-    # `public-coder` already carries (egress.py): GET, POST, PUT, PATCH and DELETE to
-    # api.github.com, github.com, codeload.github.com and *.githubusercontent.com, no path limit.
-    # A sandbox of this caller's can therefore act as that bot across the whole GitHub REST API and
-    # git protocol -- not just clone/push, and not just create: it can edit and close what it
-    # opened -- by the operator's explicit choice, the same shape of tradeoff `forgejo-haku` above
-    # already accepts for Forgejo.
-    # `github-actions-logs` presents nothing either: GET-only to the Azure Blob Storage hosts
-    # a workflow run's job logs and artifacts 302 to, so a sandbox of this caller's can follow
-    # that redirect and read its own PR's CI output (egress.py).
-    # `buildbuddy` presents the shared BuildBuddy API key as the literal `x-buildbuddy-api-key`
-    # header/metadata value, letting this caller's sandboxes run `bazel --config=rbe` directly
-    # against BuildBuddy's remote cache and Remote Execution instead of needing bbr/BuildBuddy
-    # CLI tooling this namespace otherwise lacks (egress_staging_credentials.py).
+    # `github-clone` is a strict subset of `github-agentydragon-agent`; kept bound so clone still
+    # works if that credential is ever unbound again. `github-agentydragon-agent` (egress.py)
+    # substitutes a write-capable PAT with no path limit, so a sandbox of this caller's can act as
+    # that bot across the whole GitHub REST API and git protocol -- not just clone/push, and not
+    # just create: it can edit and close what it opened -- by the operator's explicit choice, the
+    # same shape of tradeoff `forgejo-haku` above already accepts for Forgejo.
     #
     # TODO: `forgejo-haku` and `haku-mailbox` stay bound here for now even though haku-agent
     # (below) exists specifically to run in-cluster Haku-like sandboxes: claude-ai is still the
     # identity the same *logical* Haku agent runs as from Claude.ai/Claude Code's own
-    # out-of-cluster infrastructure, so it still needs Haku's credentials. Revisit whether
-    # claude-ai should keep carrying them once haku-agent has been in use for a while.
+    # out-of-cluster infrastructure, so it still needs Haku's credentials (haku/TODO.md). Revisit
+    # whether claude-ai should keep carrying them once haku-agent has been in use for a while.
     _account_binding(
         scope,
         claude_ai,

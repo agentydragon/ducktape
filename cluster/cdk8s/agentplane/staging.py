@@ -1146,36 +1146,18 @@ def agentplane_staging(
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         health_checks=[
             *health_checks,
-            *[
+            *(
                 KustomizationSpecHealthChecks(
-                    api_version="external-secrets.io/v1",
-                    kind="ExternalSecret",
-                    name=name,
-                    namespace=ENV.egress.credentials_namespace,
+                    api_version="external-secrets.io/v1", kind="ExternalSecret", name=name, namespace=namespace
                 )
-                for name in (
-                    public_coder_egress.CLICKHOUSE_CREDENTIAL,
-                    public_coder_egress.MATRIX_CREDENTIAL,
-                    public_coder_egress.BRAVE_CREDENTIAL,
+                for namespace, name in (
+                    (ENV.egress.credentials_namespace, public_coder_egress.CLICKHOUSE_CREDENTIAL),
+                    (ENV.egress.credentials_namespace, public_coder_egress.MATRIX_CREDENTIAL),
+                    (ENV.egress.credentials_namespace, public_coder_egress.BRAVE_CREDENTIAL),
+                    (STAGING_NAMESPACE, _LITELLM_KEY_SECRET),
+                    (STAGING_NAMESPACE, _ANTHROPIC_API_KEY_SECRET),
+                    (STAGING_NAMESPACE, _OIDC_SESSION_SECRET),
                 )
-            ],
-            KustomizationSpecHealthChecks(
-                api_version="external-secrets.io/v1",
-                kind="ExternalSecret",
-                name=_LITELLM_KEY_SECRET,
-                namespace=STAGING_NAMESPACE,
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="external-secrets.io/v1",
-                kind="ExternalSecret",
-                name=_ANTHROPIC_API_KEY_SECRET,
-                namespace=STAGING_NAMESPACE,
-            ),
-            KustomizationSpecHealthChecks(
-                api_version="external-secrets.io/v1",
-                kind="ExternalSecret",
-                name=_OIDC_SESSION_SECRET,
-                namespace=STAGING_NAMESPACE,
             ),
         ],
         health_check_exprs=[

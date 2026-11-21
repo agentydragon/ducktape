@@ -1,6 +1,7 @@
 from collections.abc import Iterable
-from typing import Any
+from typing import Any, cast
 
+import yaml
 from more_itertools import one
 
 
@@ -18,3 +19,8 @@ def find_resource(
         and doc.get("metadata", {}).get("name") == name
         and (namespace is None or doc["metadata"].get("namespace") == namespace)
     )
+
+
+def config_map_yaml(documents: Iterable[dict[str, Any]], name: str, key: str) -> dict[str, Any]:
+    """The YAML mapping under `key` of the one ConfigMap named `name`."""
+    return cast(dict[str, Any], yaml.safe_load(find_resource(documents, "ConfigMap", name)["data"][key]))

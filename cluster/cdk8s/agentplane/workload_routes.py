@@ -6,19 +6,12 @@ from cluster.cdk8s.agentplane import actions, llm_ingress, runner_gateway
 
 
 def sidecar_routes(namespace: str) -> dict[str, WorkloadRoute]:
-    sessions = runner_gateway.sessions_service(namespace)
-    action_origin = actions.service(namespace)
-    action_destination = actions.service(namespace)
-    llm_origin = llm_ingress.service(namespace)
-    llm_destination = llm_ingress.service(namespace)
-    return {
-        f"{action_origin.fqdn}:{action_origin.port.number}": WorkloadRoute(
-            upstream=f"{action_destination.fqdn}:{action_destination.port.number}", server_uri=ACTIONS_URI
-        ),
-        f"{llm_origin.fqdn}:{llm_origin.port.number}": WorkloadRoute(
-            upstream=f"{llm_destination.fqdn}:{llm_destination.port.number}", server_uri=LLM_INGRESS_URI
-        ),
-        f"{sessions.fqdn}:{sessions.port.number}": WorkloadRoute(
-            upstream=f"{sessions.fqdn}:{sessions.port.number}", server_uri=SESSION_DISPATCHER_URI
-        ),
-    }
+    routes: dict[str, WorkloadRoute] = {}
+    for service, server_uri in (
+        (actions.service(namespace), ACTIONS_URI),
+        (llm_ingress.service(namespace), LLM_INGRESS_URI),
+        (runner_gateway.sessions_service(namespace), SESSION_DISPATCHER_URI),
+    ):
+        authority = f"{service.fqdn}:{service.port.number}"
+        routes[authority] = WorkloadRoute(upstream=authority, server_uri=server_uri)
+    return routes

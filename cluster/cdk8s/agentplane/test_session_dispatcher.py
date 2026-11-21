@@ -7,15 +7,13 @@ import yaml
 from more_itertools import one
 
 from cluster.cdk8s.agentplane import actions, app, notifications, runner_gateway, staging
-from cluster.cdk8s.testing.manifests import find_resource
+from cluster.cdk8s.testing.manifests import config_map_yaml, find_resource
 
 
 def test_dispatcher_sender_identity_and_service_routing(staging_manifests: list[dict[str, Any]]) -> None:
     pod = find_resource(staging_manifests, "Deployment", runner_gateway.NAME)["spec"]["template"]["spec"]
     container = one(pod["containers"])
-    settings = yaml.safe_load(
-        find_resource(staging_manifests, "ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"]
-    )
+    settings = config_map_yaml(staging_manifests, f"{runner_gateway.NAME}-settings", "settings.yaml")
     callers = set(settings["dispatcher_service_callers"])
     wakers = set(settings.get("wake_service_callers", []))
     senders = (app.NAME, notifications.NAME, actions.NAME)

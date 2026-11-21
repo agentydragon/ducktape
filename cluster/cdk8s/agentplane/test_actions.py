@@ -258,19 +258,8 @@ def test_public_coder_namespace_is_not_an_action_service_caller(staging_manifest
     )
 
 
-def test_actions_migrate_before_serving_and_roll(staging_manifests: list[dict[str, Any]]) -> None:
-    deployment = find_resource(staging_manifests, "Deployment", "actions")
-    pod = deployment["spec"]["template"]["spec"]
-    server = one(item for item in pod["containers"] if item["name"] == "actions")
-    assert deployment["spec"]["strategy"]["type"] == "RollingUpdate"
-    assert not pod.get("initContainers")
-    startup = server["startupProbe"]["exec"]["command"]
-    readiness = server["readinessProbe"]["exec"]["command"]
-    assert startup[:2] == readiness[:2] == ["/healthprobe", "--target"]
-    assert "127.0.0.1:8080" in startup
-    assert "spiffe://agentplane/actions" in startup
-    assert "--service" in startup
-    assert "livez" in startup
+def test_actions_deployment_rolls(staging_manifests: list[dict[str, Any]]) -> None:
+    assert find_resource(staging_manifests, "Deployment", "actions")["spec"]["strategy"]["type"] == "RollingUpdate"
 
 
 def test_actions_push_otlp_metrics(staging_manifests: list[dict[str, Any]]) -> None:

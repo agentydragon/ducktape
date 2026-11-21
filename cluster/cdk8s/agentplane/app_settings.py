@@ -62,17 +62,9 @@ from model_catalog.catalog import Provider, Route
 from util.urls import HttpEndpointUrl
 
 _THREAD_PRESET_PUBLIC_CODER_CODEX = "public-coder-codex"
+# Agentplane stores one effort list per model across both harnesses, so a route both serve keeps
+# only the efforts common to both.
 _COMMON_HARNESS_REASONING_EFFORTS = frozenset(("low", "medium", "high"))
-
-# CLIProxyAPI live probe (2026-10-19): 16 one-token `/v1/messages` requests with adaptive
-# thinking. Sonnet 4.6 (`low`/`medium`/`high`/`max`) and both Gemini routes
-# (`minimal`/`low`/`medium`/`high`) returned HTTP 200 at every route-declared effort. All
-# four Opus efforts returned 429 `Individual quota reached`, so those remain unverified.
-# Agentplane stores one effort list per model across both harnesses, so expose their common
-# values: low, medium, high.
-# Follow-up: `gemini-3.8-flash-high` returned HTTP 200 at low, medium, and high through
-# `/v1/messages` with adaptive thinking (one 4-token request per effort); minimal is not
-# declared for this model by the CLIProxyAPI registry.
 
 DUCKTAPE_PR_INSTRUCTIONS = Path(__file__).with_name("ducktape_pr_instructions.md").read_text(encoding="utf-8").strip()
 _PUBLIC_CODER_INSTRUCTIONS = "\n\n".join(

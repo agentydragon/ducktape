@@ -8,7 +8,6 @@ from typing import Any, cast
 
 import pytest
 import pytest_bazel
-import yaml
 from cdk8s import App, Chart, Testing as Cdk8sTesting  # not collected by pytest
 from cdk8s_plus_34 import k8s
 from more_itertools import one
@@ -20,7 +19,7 @@ from agentplane.net.peertls.config import LLM_INGRESS_URI
 from cluster.cdk8s.agentplane import llm_ingress, platform_routes, sandbox_pod, staging
 from cluster.cdk8s.agentplane.environment_sandbox import EnvironmentSandboxTemplate
 from cluster.cdk8s.pod_policy import workload_kind
-from cluster.cdk8s.testing.manifests import find_resource
+from cluster.cdk8s.testing.manifests import config_map_yaml, find_resource
 
 
 def _templates(docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -40,7 +39,6 @@ def _runner_pod(
     isolated_executor: bool,
     environment_runtime_resources: k8s.ResourceRequirements,
     executor_resources: k8s.ResourceRequirements | None,
-    session_reconcile_concurrency: int | None = None,
 ) -> dict[str, Any]:
     chart = Chart(app, "runner-template-test")
     EnvironmentSandboxTemplate(
@@ -51,7 +49,6 @@ def _runner_pod(
         image="example.invalid/runner",
         environment_runtime_resources=environment_runtime_resources,
         executor_resources=executor_resources,
-        session_reconcile_concurrency=session_reconcile_concurrency,
     )
     template = one(doc for doc in Cdk8sTesting.synth(chart) if doc["kind"] == "SandboxTemplate")
     return cast(dict[str, Any], template["spec"]["pod"]["spec"])
@@ -265,9 +262,7 @@ def test_pod_template_projects_the_buildbuddy_key_to_runner_and_executor(
     """The canonical key reaches the runner container and its isolated executor, and by name the harness
     children the runner spawns (agentplane/docs/buildbuddy_remote_auth.md). The egress sidecar, which
     holds a Session's bearers, gets neither. Every launch preset names this one template."""
-    presets = yaml.safe_load(find_resource(staging_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])[
-        "sandbox_presets"
-    ]
+    presets = config_map_yaml(staging_manifests, "app-config", "config.yaml")["sandbox_presets"]
     assert {preset["template"] for preset in presets.values()} == {staging.POD_TEMPLATE}
     key_copies = [
         doc
@@ -302,7 +297,7 @@ def test_pod_template_projects_the_buildbuddy_key_to_runner_and_executor(
 
 
 def test_staging_app_config_offers_ollama_smoke_routes(staging_manifests: list[dict[str, Any]]) -> None:
-    app_config = yaml.safe_load(find_resource(staging_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])
+    app_config = config_map_yaml(staging_manifests, "app-config", "config.yaml")
     ollama_routes = {model["model"] for model in app_config["models"]["models"] if model["model"].startswith("ollama/")}
     offered_routes = {route for routes in app_config["models"]["harnesses"].values() for route in routes}
     assert ollama_routes & offered_routes, "Agentplane staging must offer at least one Ollama route for smoke tests"
@@ -311,14 +306,8 @@ def test_staging_app_config_offers_ollama_smoke_routes(staging_manifests: list[d
 def test_launcher_relay_listens_on_every_interface_and_otherwise_matches_the_runner_sidecar(
     staging_manifests: list[dict[str, Any]],
 ) -> None:
-
-    def settings(name: str) -> dict[str, Any]:
-        return cast(
-            dict[str, Any], yaml.safe_load(find_resource(staging_manifests, "ConfigMap", name)["data"]["settings.yaml"])
-        )
-
-    runner_settings = settings(f"{staging.POD_TEMPLATE}-egress-sidecar")
-    launcher_settings = settings("launcher-relay-egress-sidecar")
+    runner_settings = config_map_yaml(staging_manifests, f"{staging.POD_TEMPLATE}-egress-sidecar", "settings.yaml")
+    launcher_settings = config_map_yaml(staging_manifests, "launcher-relay-egress-sidecar", "settings.yaml")
     assert runner_settings["listen_address"] == "127.0.0.1:3128"
     assert launcher_settings["listen_address"] == "0.0.0.0:3128"
     assert runner_settings["proxy"]["transport"]["mode"] == "tls"
@@ -361,12 +350,10 @@ def test_launcher_relay_listens_on_every_interface_and_otherwise_matches_the_run
 def test_llm_sidecar_route_uses_the_svid_listener(staging_manifests: list[dict[str, Any]]) -> None:
     pod = one(_templates(staging_manifests))["spec"]["pod"]["spec"]
     settings_volume = one(volume for volume in pod["volumes"] if volume["name"] == "egress-sidecar-settings")
-    settings_doc = find_resource(staging_manifests, "ConfigMap", settings_volume["configMap"]["name"])
-    settings = cast(dict[str, Any], yaml.safe_load(settings_doc["data"]["settings.yaml"]))
-    origin = llm_ingress.service(staging.ENV.namespace)
-    destination = llm_ingress.service(staging.ENV.namespace)
-    route = settings["workload_routes"][f"{origin.fqdn}:{origin.port.number}"]
-    assert route["upstream"] == f"{destination.fqdn}:{destination.pod_port}"
+    settings = config_map_yaml(staging_manifests, settings_volume["configMap"]["name"], "settings.yaml")
+    service = llm_ingress.service(staging.ENV.namespace)
+    route = settings["workload_routes"][f"{service.fqdn}:{service.port.number}"]
+    assert route["upstream"] == f"{service.fqdn}:{service.pod_port}"
     assert route["server_uri"] == LLM_INGRESS_URI
 
 

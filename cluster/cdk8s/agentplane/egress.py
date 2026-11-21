@@ -40,12 +40,6 @@ from cdk8s_plus_34 import (
     TaintEffect,
     Volume,
 )
-from cert_manager_crds.io.cert_manager import (
-    Certificate,
-    CertificateSpec,
-    CertificateSpecPrivateKeyRotationPolicy,
-    CertificateSpecUsages,
-)
 from constructs import Construct
 from trust_manager_crds.io.cert_manager.trust import (
     Bundle,
@@ -66,7 +60,15 @@ from agentplane.egress.settings import APIServer, Settings
 from agentplane.identity.auth.listener import TLS, Listener, SPIFFEAuth
 from agentplane.net.peertls.config import APP_URI, EGRESS_PROXY_URI
 from cluster.cdk8s import cilium, node_scheduling
-from cluster.cdk8s.agentplane import actions, database, environment_service, llm_ingress, notifications, runner_gateway
+from cluster.cdk8s.agentplane import (
+    actions,
+    database,
+    environment_service,
+    llm_ingress,
+    notifications,
+    runner_gateway,
+    workload_tls,
+)
 from cluster.cdk8s.agentplane.egress_credentials import BUILDBUDDY_API_KEY_SECRET, GITHUB_PAT_SECRET
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.kubernetes_account_ref import KubernetesAccountRef
@@ -83,7 +85,6 @@ from cluster.cdk8s.ollama import app as ollama
 from cluster.cdk8s.probes import tls_grpc_probe
 from cluster.cdk8s.providers.agentplane.egress_credential import Source
 from cluster.cdk8s.providers.agentplane.policy_set import AutoApproveIf, Rule
-from cluster.cdk8s.providers.cert_manager.certificate import CertificatePrivateKey
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
@@ -557,23 +558,13 @@ class Egress(Construct):
         self.memory_request = memory_request
         self.memory_limit = memory_limit
 
-        Certificate(
+        workload_tls.certificate(
             self,
             "svid-listener-certificate",
-            metadata=ApiObjectMetadata(name="agentplane-egress-proxy", namespace=self.env.namespace),
-            spec=CertificateSpec(
-                secret_name=PROXY_MTLS_SECRET,
-                uris=[EGRESS_PROXY_URI],
-                duration="24h",
-                renew_before="8h",
-                private_key=CertificatePrivateKey.ecdsa_p256(CertificateSpecPrivateKeyRotationPolicy.ALWAYS),
-                usages=[
-                    CertificateSpecUsages.DIGITAL_SIGNATURE,
-                    CertificateSpecUsages.CLIENT_AUTH,
-                    CertificateSpecUsages.SERVER_AUTH,
-                ],
-                issuer_ref=cluster_ca.WORKLOAD_ISSUER,
-            ),
+            env,
+            name="agentplane-egress-proxy",
+            secret_name=PROXY_MTLS_SECRET,
+            uri=EGRESS_PROXY_URI,
         )
 
         settings = Settings(

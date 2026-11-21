@@ -32,7 +32,7 @@ from agentplane.net.peertls.config import (
 from cluster.cdk8s.agentplane import egress, runner_gateway, staging
 from cluster.cdk8s.agentplane.sandbox_pod import SIDECAR_SETTINGS_VOLUME_NAME
 from cluster.cdk8s.cert_manager import cluster_ca
-from cluster.cdk8s.testing.manifests import find_resource
+from cluster.cdk8s.testing.manifests import config_map_yaml, find_resource
 
 Body = dict[str, Any]
 
@@ -185,7 +185,7 @@ def test_app_service_calls_use_its_mounted_svid(staging_manifests: list[Body]) -
     container = one(pod["containers"])
     volumes = {volume["name"]: volume for volume in pod["volumes"]}
     mounts = {PurePosixPath(m["mountPath"]): volumes[m["name"]] for m in container["volumeMounts"]}
-    settings = yaml.safe_load(find_resource(staging_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])
+    settings = config_map_yaml(staging_manifests, "app-config", "config.yaml")
     for name, server_uri in (
         ("egress_admin", EGRESS_PROXY_URI),
         ("runner_gateway", SANDBOX_CONTROLLER_URI),
