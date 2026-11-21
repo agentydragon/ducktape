@@ -324,19 +324,16 @@ function Report() {
             allowing one disruption. Metrics-server is also 2/2 Ready.<//
           >
           <${Text} component="p"
-            >At 21:56 UTC, the ${" "}<${Anchor} href=${github + "pull/18294"}
+            >On 20 November, the ${" "}<${Anchor} href=${github + "pull/18294"}
               >cert-manager CA injector<//
-            >${" "}had two Ready replicas on separate nodes and a PDB allowing
-            one disruption. Its VPA uses Recreate with memory requests bounded
-            to 224–512 MiB. At 22:04 UTC, the ${" "}<${Anchor}
-              href=${github + "pull/18300"}
-              >cert-manager controller and webhook<//
-            >${" "} also used Recreate: controller 2/2 Ready and webhook 3/3
-            Ready, each PDB allowing one disruption. All three webhook endpoints
-            passed CA-verified TLS, and server-side admission accepted a valid
-            certificate and denied an invalid one. Leader handoff can delay CA
-            injection or reconciliation; readiness does not prove informer sync,
-            and no eviction or handoff was tested.<//
+            >, ${" "}<${Anchor} href=${github + "pull/18300"}
+              >controller and webhook<//
+            >, and ${" "}<${Anchor} href=${github + "pull/18319"}
+              >External Secrets webhook<//
+            >
+            had multiple Ready replicas, PDBs permitting one disruption and
+            Recreate VPAs. Webhook endpoint and admission checks passed; no
+            eviction or leader handoff was tested.<//
           >
           <${Text} component="p"
             >At 22:36 UTC, all ten staging services in the ${" "}<${Anchor}
@@ -348,17 +345,6 @@ function Report() {
             but Pod readiness does not prove current Notifications delivery or
             uninterrupted in-flight work, and no deliberate node-failure test
             was performed.<//
-          >
-          <${Text} component="p"
-            >At 22:55 UTC, the ${" "}<${Anchor} href=${github + "pull/18319"}
-              >External Secrets webhook<//
-            >${" "}used Recreate with CPU and memory requests bounded to 15–100m
-            and 256–384 MiB; its two replicas were Ready on separate hosts with
-            a PDB allowing one disruption. Both endpoints passed CA and hostname
-            verification; admission accepted a valid ExternalSecret and rejected
-            an invalid one. At 23:00 UTC the recommender had observed VPA
-            generation 3 and both replicas remained Ready. The webhook fails
-            closed; no eviction was induced.<//
           >
           <${Text} component="p"
             >At 03:45 UTC on 21 November, the ${" "}<${Anchor}
