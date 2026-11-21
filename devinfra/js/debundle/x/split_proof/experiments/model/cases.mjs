@@ -422,16 +422,24 @@ export const cases = [
   },
 ];
 
-// Splits for `differential.mjs`: `lowersplit` must accept `spec` for the bundle `source`.
+// Splits for `differential.mjs`: what `lowersplit` must say of `spec` for the bundle `source`. `refused`: it rejects
+// the split. Otherwise it accepts it, and with `differs` the split does not behave like the bundle.
 export const splitCases = [
   {
-    // Premise P4 of `../effects/README.md`: the tool's verdict is for a bundle whose evaluation completes. A `throw` is
-    // not an effect to it, so the `throw` may move into a module that runs before the `console.log`. The split is
-    // accepted and prints nothing. `differs`: the test expects exactly that, and that the model agrees with Node on
-    // both programs.
-    name: "a throw moves before an effect",
+    // A `throw` that the analysis reaches is unknown code, so it keeps its place after the `console.log`.
+    name: "a throw does not move before an effect",
     source: `console.log("printed");\nthrow 1.5;\n`,
     spec: { entry: "entry.mjs", modules: { "entry.mjs": ["#0"], "m0.mjs": ["#1"] }, sequential: true },
+    refused: true,
+  },
+  {
+    // Premise P4 of `../effects/README.md`: the tool's verdict is for a bundle whose evaluation completes. An
+    // exception that the language raises itself in pure code is not an effect to the analysis, so the read of a
+    // property of `undefined` may move into a module that runs before the `console.log`. The split is accepted and
+    // prints nothing. `differs`: the test expects exactly that, and that the model agrees with Node on both programs.
+    name: "a TypeError of pure code moves before an effect",
+    source: `const o = { a: undefined };\nconsole.log("printed");\nconst w = o.a.b;\n`,
+    spec: { entry: "entry.mjs", modules: { "entry.mjs": ["#1"], "m0.mjs": ["#0", "#2"] } },
     differs: true,
   },
 ];

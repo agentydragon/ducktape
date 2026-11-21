@@ -487,14 +487,22 @@ structure World where
 - **Splits by the real tool.** Programs the model runs to the end are split by `lowersplit` under three specs each: consecutive pieces run in order, a random module for each statement with `sequential`, and the same with the order left to the imports. For every split it accepts, four runs must agree: the bundle in Node, the bundle in the model, the split in Node, the split in the model. The front end must also give every statement of the split the tokens it gave that statement of the bundle, and the model must run the modules in the order of the plan. With `--count 40 --seed 1 --splits 150`: 135 programs, 405 specs, 219 accepted (127 of the consecutive ones, 46 with `sequential`, 46 without). On 218 the four runs agree, 196 of those with the statements in the bundle's order. The model never differed from Node, and no accepted split of a bundle that ends normally differed from its bundle. No accepted split asked the world for anything else than its bundle did, or in another order.
 - The members the model gives the six prototypes are compared with Node's own, and every function of the table has to be a function of this Node.
 
-**A split that moves code is compared with its bundle only if the bundle ends normally.** The tool's verdict is for a bundle whose evaluation completes: premise P4 of [`effects/README.md`](effects/README.md). The test found the program that shows why, and keeps it as a named case (`splitCases` in [`model/cases.mjs`](model/cases.mjs)):
+**A split that moves code is compared with its bundle only if the bundle ends normally.** The tool's verdict is for a bundle whose evaluation completes: premise P4 of [`effects/README.md`](effects/README.md). Two named cases (`splitCases` in [`model/cases.mjs`](model/cases.mjs)) hold the line between what the tool orders and what the premise covers:
 
 ```js
 console.log("printed");
 throw 1.5;
 ```
 
-The spec puts the `throw` in a module of its own, which the entry imports, so it runs first and nothing is printed. `lowersplit` accepts: a `throw` is not an effect to it. The model agrees with Node on both programs. So the theorem for a split that moves code has P4 as a hypothesis ([`PLAN.md`](../PLAN.md) § Direction). A split that runs the statements in the bundle's order needs none, and the test compares such a split with its bundle however the bundle ends. In the run above, 2 accepted splits were outside P4 and both differ from their bundle: the named case, and the same program under a random spec.
+`lowersplit` must reject a spec that puts the `throw` in a module that runs first: a `throw` it reaches is unknown code and keeps its place.
+
+```js
+const o = { a: undefined };
+console.log("printed");
+const w = o.a.b;
+```
+
+Here the spec puts the first and the third statement in a module of their own, which the entry imports, so the `TypeError` is raised first and nothing is printed. `lowersplit` accepts: an exception that the language raises itself in pure code is not an effect to it. The model agrees with Node on both programs. So the theorem for a split that moves code has P4 as a hypothesis ([`PLAN.md`](../PLAN.md) § Direction). A split that runs the statements in the bundle's order needs none, and the test compares such a split with its bundle however the bundle ends.
 
 The low share of generated units is the finding of [`SUPPORT.md`](../SUPPORT.md) again: no small fragment covers what programs use. The model is for proving rules about a core, not for running the inputs.
 

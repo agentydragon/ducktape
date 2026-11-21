@@ -1872,6 +1872,62 @@ console.log(seen);
 `,
     [0, 1, 3, 2, 4]
   ),
+  // a `throw` that is reached may end the evaluation: it is unknown code, so it keeps its place among the effects and
+  // among the declarations that the world can still see afterwards
+  p3(
+    "a guard that throws stays after the effect before it",
+    `
+const root = 0;
+console.log("before");
+if (!root) throw new Error("no root");
+`,
+    [0, 2, 1]
+  ),
+  p3(
+    "a call of a function that throws stays after the effect before it",
+    `
+function invariant(c) { if (!c) throw new Error("stop"); }
+const root = 0;
+console.log("before");
+invariant(root);
+`,
+    [0, 1, 3, 2]
+  ),
+  p3(
+    "a declaration that an escaped callback reads does not cross a throw",
+    `
+const hold = { f: null };
+process.on("exit", () => { let v; try { v = late; } catch { v = "not yet"; } console.log(v); });
+if (!hold.f) throw new Error("stop");
+const late = 1;
+`,
+    [0, 1, 3, 2]
+  ),
+  // the same call is caught in one place and not in another
+  p3(
+    "a call that throws, first under a try and then outside one",
+    `
+function fail(c) { if (!c) throw new Error("stop"); }
+function check(c) { fail(c); }
+try { check(0); } catch (e) {}
+console.log("before");
+check(0);
+`,
+    [0, 1, 2, 4, 3]
+  ),
+  {
+    // precision: a `throw` that a `catch` around it takes does not end the evaluation, here or in a function it calls
+    name: "a throw that a catch takes is not an effect",
+    premises: { noWorldHooks: true },
+    source: `
+function fail() { throw new Error("stop"); }
+let caught = 0;
+try { fail(); } catch (e) { caught = 1; }
+const n = 2;
+console.log(caught, n);
+`.trimStart(),
+    reorders: [{ order: [0, 1, 3, 2, 4], behavior: "same", accepted: true }],
+  },
   {
     // precision: the `prototype` of a class is not writable, so an instance of an exported class does not inherit from the world
     name: "an instance of an exported class is made without unknown code",
