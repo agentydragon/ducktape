@@ -280,7 +280,10 @@ func TestAcceptedVMRunnerCredentialPublishesIncarnation(t *testing.T) {
 	issued := acceptVMI(t, r, sandbox, "vmi-current")
 	vm := credentialTestVM(sandbox, issued.ID, "vmi-current", kubevirtv1.RunStrategyAlways)
 	vmi := credentialTestVMI(sandbox, "vmi-current", issued.ID)
-	launcher := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: sandbox.Namespace, Name: "virt-launcher-test", UID: "launcher-current"}}
+	launcher := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Namespace: sandbox.Namespace, Name: "virt-launcher-test", UID: "launcher-current"},
+		Spec:       corev1.PodSpec{NodeName: "test-node"},
+	}
 	for _, object := range []client.Object{vm, vmi} {
 		if err := c.Create(ctx, object); err != nil {
 			t.Fatal(err)
