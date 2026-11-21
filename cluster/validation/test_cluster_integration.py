@@ -67,7 +67,7 @@ def cluster(repo_root: Path) -> ParsedCluster:
     kusts = [kust for path, kust in parsed.kustomize_files.items() if path.parent.resolve() in specs_by_dir]
 
     artifact_specs = {
-        (resource.namespace, artifact.name): [(copy.source, copy.destination) for copy in artifact.copies]
+        (resource.namespace, artifact["name"]): [(copy["from"], copy["to"]) for copy in artifact.get("copy", [])]
         for resources in parsed.source_resources.values()
         for resource in resources
         if isinstance(resource, ArtifactGeneratorResource)

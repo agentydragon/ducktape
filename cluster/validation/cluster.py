@@ -107,7 +107,7 @@ def _index_source(resource: K8sResource, sources: set[tuple[str, str, str]]) -> 
     materialize as ExternalArtifacts in its own namespace."""
     if isinstance(resource, ArtifactGeneratorResource):
         for artifact in resource.spec.artifacts:
-            sources.add((EXTERNAL_ARTIFACT_KIND, resource.namespace, artifact.name))
+            sources.add((EXTERNAL_ARTIFACT_KIND, resource.namespace, artifact["name"]))
     elif resource.kind in FLUX_SOURCE_KINDS:
         sources.add((resource.kind, resource.namespace, resource.name))
 

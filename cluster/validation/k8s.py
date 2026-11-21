@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from pathlib import Path
+from typing import NotRequired, TypedDict
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
@@ -225,15 +226,12 @@ class ImagePolicyResource(K8sResource):
     """An image-automation `ImagePolicy`: what a `$imagepolicy` setter marker names."""
 
 
-class _ArtifactCopy(BaseModel):
-    source: str = Field(alias="from")
-    destination: str = Field(alias="to")
+_ArtifactCopy = TypedDict("_ArtifactCopy", {"from": str, "to": str})
 
 
-class _ArtifactGeneratorArtifact(BaseModel):
-    model_config = ConfigDict(extra="ignore")
+class _ArtifactGeneratorArtifact(TypedDict):
     name: str
-    copies: list[_ArtifactCopy] = Field(default_factory=list, alias="copy")
+    copy: NotRequired[list[_ArtifactCopy]]
 
 
 class ArtifactGeneratorSpec(BaseModel):
