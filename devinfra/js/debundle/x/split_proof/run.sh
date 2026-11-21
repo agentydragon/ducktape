@@ -7,7 +7,7 @@
 #   ./run.sh --experiments  also build experiments/ (mini-JS semantics, two-tier proofs)
 #   ./run.sh --lowering   also lower real bundles to ESTree, compute footprints in Lean, compare with eslint-scope
 #   ./run.sh --es-order   also compare the model's module evaluation order with Node on 500 random import graphs
-#   ./run.sh --splits     also check 2,740 splits of six real bundles and run each in Node (needs --lowering first; about 10 minutes)
+#   ./run.sh --splits     also check 2,892 splits of six real bundles and run each in Node (needs --lowering first; about 10 minutes)
 #   ./run.sh --debundle-cases  also run debundle's 207 e2e cases through the checker and write experiments/debundle_cases/results (about 10 seconds)
 #   ./run.sh --translation  also run the golden cases of the effect analysis (experiments/effects), then check that tampered output trees are rejected and renamed, reshuffled ones accepted (experiments/translation fixtures)
 #   ./run.sh --translation-fuzz  also fuzz the translation checker: every tree it accepts must behave like its bundle in Node (about 20 seconds; FUZZ_COUNT=N sets the bundles, default 150)

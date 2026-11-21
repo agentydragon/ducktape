@@ -288,7 +288,7 @@ Running `example/output/` in Node also found a bug in the first printer (no `exp
 4. what `grind` can write;
 5. how far the check scales, compiled and in the kernel;
 6. lowering the AST into Lean;
-7. 2,740 real splits (halves, single cuts, blocks, random placements), each run in Node;
+7. 2,892 real splits (halves, single cuts, blocks, random placements), each run in Node;
 8. how a proof is produced, with a strategy ladder;
 9. what already exists and what I would reuse;
 10. the module-order model against Node;

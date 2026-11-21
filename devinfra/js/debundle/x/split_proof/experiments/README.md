@@ -215,7 +215,7 @@ Run it: `./run.sh --lowering` (installs esbuild, lodash-es, acorn, zod, semver, 
 
 ## 7. Real splits: halves, cuts, blocks, random placements
 
-A bundle cannot be cut anywhere. This section runs the checker on 2,740 splits of six real bundles and runs each result in Node.
+A bundle cannot be cut anywhere. This section runs the checker on 2,892 splits of six real bundles and runs each result in Node.
 Run it with [`splits/run_all.sh`](splits/run_all.sh) (about 10 minutes, most of it the footprint analysis of `zod`, which runs once per bundle; after `./run.sh --lowering`).
 
 For every split, `lowersplit --force` checks it and writes the modules even when a check rejects it. Then [`splits/smoke.mjs`](splits/smoke.mjs) calls the
@@ -227,25 +227,25 @@ One JSON line per split is in [`splits/results/`](splits/results); [`results/sum
 | Strategy                                                                           | Splits    | Accepted  | Accepted, Node differs | Rejected, Node breaks | Rejected, Node fine | Failing checks (splits)                                  |
 | ---------------------------------------------------------------------------------- | --------- | --------- | ---------------------- | --------------------- | ------------------- | -------------------------------------------------------- |
 | halves: `[0, n/2)` and `[n/2, n)`, the second module is the entry                  | 6         | 6         | 0                      | 0                     | 0                   | –                                                        |
-| every single cut `[0, c)` and `[c, n)` (every 4th for zod, every cut for the rest) | 2,014     | 2,001     | 0                      | 10                    | 3                   | `AssignsHome` 13                                         |
-| 2–8 contiguous blocks                                                              | 42        | 26        | 0                      | 14                    | 2                   | `OrderOk` 16, `AssignsHome` 2                            |
-| each statement to a random one of 2, 3, 5 or 8 modules                             | 480       | 2         | 0                      | 476                   | 2                   | `OrderOk` 478, `AssignsHome` 370, `ExportNames` 158      |
-| single cuts with the _first_ module as the entry                                   | 198       | 0         | 0                      | 198                   | 0                   | `ExportOutsideEntry` 198, `OrderOk` 198, `AssignsHome` 1 |
-| **all**                                                                            | **2,740** | **2,035** | **0**                  | **698**               | **7**               |                                                          |
+| every single cut `[0, c)` and `[c, n)` (every 4th for zod, every cut for the rest) | 2,153     | 2,136     | 0                      | 14                    | 3                   | `AssignsHome` 17                                         |
+| 2–8 contiguous blocks                                                              | 42        | 26        | 0                      | 16                    | 0                   | `OrderOk` 16, `AssignsHome` 4                            |
+| each statement to a random one of 2, 3, 5 or 8 modules                             | 480       | 2         | 0                      | 476                   | 2                   | `OrderOk` 478, `AssignsHome` 378                         |
+| single cuts with the _first_ module as the entry                                   | 211       | 0         | 0                      | 211                   | 0                   | `ExportOutsideEntry` 211, `OrderOk` 211, `AssignsHome` 2 |
+| **all**                                                                            | **2,892** | **2,170** | **0**                  | **717**               | **5**               |                                                          |
 
-- **No accepted split behaved differently.** That is the soundness claim, tested on 2,035 accepted splits. It holds relative to the footprints and the front-end rules, and debundle's corpus later showed those incomplete (§ 11): a `var` nested in a top-level block, and an entry export name that collides with a glue export.
+- **No accepted split behaved differently.** That is the soundness claim, tested on 2,170 accepted splits. It holds relative to the footprints and the front-end rules, and debundle's corpus later showed those incomplete (§ 11): a `var` nested in a top-level block, and an entry export name that collides with a glue export.
 - **Halving is mostly fine, which I did not expect.** With the entry in the second half, the entry imports the first half. If the first half refers back to the second
   (a function calling a helper declared later), it imports it too, and the cycle is cut at the entry. The order of the bodies stays the bundle's order.
-  99.4% of the single cuts are accepted.
-- **A cut can still be invalid.** All 13 rejected single cuts fail `AssignsHome`: a statement assigns a top-level binding that now lives on the other side
+  99.2% of the single cuts are accepted.
+- **A cut can still be invalid.** All 17 rejected single cuts fail `AssignsHome`: a statement assigns a top-level binding that now lives on the other side
   (lodash cut at 422: statement 422 assigns `getTag`, declared by statement 421; acorn cut at 41: `warnedAboutEcmaVersion`). ES imports are read-only, so the assignment would throw.
-  Three of the 13 run fine in my smoke test, because the assignment sits in a path the test does not take.
+  Three of the 17 run fine in my smoke test, because the assignment sits in a path the test does not take.
 - **Three or more modules break the order.** A forward reference from block 0 to block 1 makes block 1 run first, because an import runs before the importer.
   Lodash and semver survive all 7 block splits. Acorn survives 5 of 7 and zod 1 of 7: the `proto.method = function …` stores of acorn and the `var X = factory(…)` calls of zod are effects (§ 13), and effects keep their order.
 - **Arbitrary placement almost never works:** 2 of 480 accepted (two semver placements, and Node agrees), and 476 break in Node. The other 2 are semver splits that reorder effects which do not show in the smoke test.
 - **Putting the entry in the wrong half loses the API.** The `export { … }` statement is a statement like any other; I had not checked that it stays in the entry module.
   `lowersplit` now rejects it (`ExportOutsideEntry`). Before this experiment the checker would have accepted a split with the exports in a non-entry module.
-- **The checker is conservative in 7 of 705 rejections** (1.0%): 3 reassignments that are not on the executed path, 2 block orders that happen to commute, and 2 random placements.
+- **The checker is conservative in 5 of 722 rejections** (0.7%): 3 reassignments that are not on the executed path and 2 random placements.
 
 ## 8. How a proof is produced
 
