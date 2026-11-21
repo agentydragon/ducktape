@@ -691,7 +691,7 @@ if (shard === 3) {
   const primitiveSource = join(root, "primitive-source.mjs");
   const primitiveSpec = join(root, "primitive-spec.json");
   const primitiveOut = join(root, "primitive-out");
-  const unicodeThrown = "café 🙂\n\t\0";
+  const unicodeThrown = "café 🙂\n\t\0\ud800!\udc00";
   await writeFile(
     primitiveSource,
     `let seed = 4;

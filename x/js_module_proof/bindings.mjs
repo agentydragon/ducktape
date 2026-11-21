@@ -19,13 +19,11 @@ const primitiveLiteral = (node) =>
   !node.regex &&
   !node.bigint &&
   (node.value === null || ["string", "boolean", "number"].includes(typeof node.value));
-const supportedText = (value) => typeof value === "string" && value.isWellFormed();
+const supportedText = (value) => typeof value === "string";
 const list = (values) => `[${values.join(", ")}]`;
 const str = JSON.stringify;
-const leanText = (value) =>
-  !/[^\p{L}\p{M}\p{N}\p{P}\p{S}\p{Zs}]/u.test(value)
-    ? str(value)
-    : `(String.ofList ${list(Array.from(value, (character) => `Char.ofNat ${character.codePointAt(0)}`))})`;
+// JavaScript strings are sequences of UTF-16 code units, not Unicode scalars.
+const leanText = (value) => list(Array.from({ length: value.length }, (_, index) => value.charCodeAt(index)));
 
 // One syntax-directed representation is used for both recorded and thrown
 // constants. Unsupported expressions are left to the ordinary expression parser.
@@ -1926,7 +1924,7 @@ theorem binding_aliased_future_calls (calls : ${aliasCallType}) :
           : []),
         "globalThis.record is a stable synchronous host function which returns normally without reentry or asynchronous effects",
         "Only initialization calls, their record observations, and calls through the entry exports after successful initialization are observed; loading, reflection, source text and identity are excluded",
-        "Supported thrown constants include signed safe integers, negative zero, 0/0, 1/0, -1/0, BigInt literals, booleans, null, undefined and well-formed Unicode strings; other numeric expressions remain nonnegative safe integers; a throw ends the observed call sequence",
+        "Supported thrown constants include signed safe integers, negative zero, 0/0, 1/0, -1/0, BigInt literals, booleans, null, undefined and UTF-16 strings; other numeric expressions remain nonnegative safe integers; a throw ends the observed call sequence",
       ],
     };
   }

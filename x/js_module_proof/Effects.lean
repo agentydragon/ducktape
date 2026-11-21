@@ -73,9 +73,20 @@ theorem checked_trace_sound (modules : List EffectModule) (entry : Nat) (events 
 
 /- Replies are supplied by the host in call order. `some error` throws; an
    exhausted reply list means subsequent calls return normally. -/
+/- ECMAScript strings contain UTF-16 code units, including surrogate pairs.
+   This adapter embeds the ordinary Unicode strings used by the effect graph. -/
+def stringCodeUnits (value : String) : List Nat :=
+  value.toList.flatMap fun character =>
+    let code := character.toNat
+    if code < 65536 then [code]
+    else [55296 + (code - 65536) / 1024, 56320 + (code - 65536) % 1024]
+
+example : stringCodeUnits "A🙂" = [65, 55357, 56898] := by decide
+
 def runEffects {α : Type} (events : List String) (replies : List (Option α)) : List String × Option α :=
-  match runExecution ⟨[], [], replies, none, [], none, []⟩ (events.map (fun event => Operation.recordLiteral (.text event))) with
-  | some state => (state.events.filterMap (fun event => match event with | .text value => some value | .number _ => none | .negativeNumber _ => none | .negativeZero => none | .notANumber => none | .positiveInfinity => none | .negativeInfinity => none | .bigInteger _ _ => none | .boolean _ => none | .nullValue => none | .undefined => none), state.error)
+  match runExecution ⟨[], [], replies, none, [], none, []⟩
+      (events.map (fun event => Operation.recordLiteral (.text (stringCodeUnits event)))) with
+  | some state => (events.take state.events.length, state.error)
   | none => ([], none)
 
 def outputBehavior {α : Type} (modules : List EffectModule) (entry : Nat)

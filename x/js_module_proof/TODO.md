@@ -91,10 +91,9 @@ cover only part of the grammar and split space described below.
       module loading, host behavior, numeric semantics and termination. Keep
       `unknown` when the checker cannot justify its claim, and document that Node
       fuzzing tests but does not prove the model's correspondence to ECMAScript.
-- [ ] Model JavaScript strings as UTF-16 code-unit sequences in the shared
-      semantics. String observations currently accept well-formed Unicode but
-      refuse unpaired surrogates; extend the frontend, Node witness encoding,
-      certificates and generated tests together before accepting those strings.
+- [x] Model observed and thrown JavaScript strings as UTF-16 code-unit sequences
+      in the shared semantics, including unpaired surrogates. Extend the frontend,
+      Node witness encoding, certificates and generated tests together.
 - [ ] Add real-world JavaScript fixtures as they become useful, alongside
       generated cases, and measure how often real assignments can be checked. Do not
       weaken the proof claim simply to increase the acceptance rate.

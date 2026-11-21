@@ -1,6 +1,6 @@
 /- Shared execution state and transitions for the supported subsets. -/
 inductive Observation where
-  | text (value : String)
+  | text (value : List Nat)
   | number (value : Nat)
   | negativeNumber (magnitude : Nat)
   | negativeZero

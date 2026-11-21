@@ -109,17 +109,20 @@ if (shards === 4 && shard === 0) {
   }
 }
 if (shards === 4 && shard === 3) {
-  const mutated = await runFuzz({
-    seed: 51981,
-    start: 16,
-    cases: 1,
-    outputDir: process.env.TEST_TMPDIR,
-    grammarMode: "composed",
-    validateEvery: 1,
-  });
-  assert.equal(mutated.mutationKinds.composedEffect, 1);
-  assert.equal(mutated.mutatedDifferent, 1);
-  assert.equal(mutated.mutatedVerdicts.unsafe, 1);
+  // 848 includes isolated UTF-16 surrogates in the recorded trace.
+  for (const start of [16, 848]) {
+    const mutated = await runFuzz({
+      seed: 51981,
+      start,
+      cases: 1,
+      outputDir: process.env.TEST_TMPDIR,
+      grammarMode: "composed",
+      validateEvery: 1,
+    });
+    assert.equal(mutated.mutationKinds.composedEffect, 1);
+    assert.equal(mutated.mutatedDifferent, 1);
+    assert.equal(mutated.mutatedVerdicts.unsafe, 1);
+  }
 }
 assert.deepEqual(makeCase(123, 42), makeCase(123, 42));
 assert.notDeepEqual(makeCase(123, 42), makeCase(124, 42));

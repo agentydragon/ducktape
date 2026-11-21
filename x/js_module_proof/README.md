@@ -118,7 +118,7 @@ Guards conservatively reject references to lexical declarations later in the sam
 block, including behind subsequent guards. Supported thrown
 values include safe-integer literals (including negative zero), the constant zero-divisions
 `0 / 0`, `1 / 0`, and `-1 / 0`, BigInt literals, booleans, `null`,
-`undefined` (written as `void 0`), and well-formed Unicode strings. Nonconstant
+`undefined` (written as `void 0`), and strings represented by their UTF-16 code units, including unpaired surrogates. Nonconstant
 numeric throw expressions remain subject to the nonnegative safe-integer restriction. A throw stops the observed call sequence
 while preserving its preceding trace. The checker conservatively rejects local
 temporal-dead-zone reads.
@@ -182,9 +182,9 @@ redeclare parameters. Nested or later function-scoped `var` declarations remain
 unsupported.
 Discarded string, number, boolean and null literals are modeled as no-ops.
 The same holds for `void`, `!`, and `typeof` applied directly to those literals.
-Direct `globalThis.record` calls with well-formed Unicode string literals
-produce string observations; initialization-order counterexamples include
-those strings. Unpaired UTF-16 surrogates remain unsupported.
+Direct `globalThis.record` calls with string literals produce UTF-16 code-unit
+observations, including unpaired surrogates; initialization-order counterexamples
+include those strings.
 Calls with boolean, null, or safe-integer literals, including negative zero, also produce
 observations and can appear in initialization-order witnesses.
 The constant forms `record(0 / 0)`, `record(1 / 0)`, and `record(-1 / 0)`

@@ -8,7 +8,7 @@ import { generateBindings, validateBindings } from "./bindings.mjs";
 // Adding grammar productions does not require changing the splitter's parser.
 const id = (name) => ({ type: "Identifier", name });
 const literal = (value) => ({ type: "Literal", value });
-const unicodeThrow = "café 🙂\n\t\0";
+const unicodeThrow = "café 🙂\n\t\0\ud800!\udc00";
 const expr = (expression) => ({ type: "ExpressionStatement", expression });
 const call = (callee, args = []) => ({ type: "CallExpression", callee, arguments: args });
 const variable = (name, value, kind = "let") => ({
@@ -690,7 +690,7 @@ function throwExpressions(variant) {
     case "null":
       return [literal(null), { type: "UnaryExpression", operator: "void", prefix: true, argument: literal(0) }];
     case "unicode":
-      return [literal(unicodeThrow), literal(`${unicodeThrow}!`)];
+      return [literal(unicodeThrow), literal(unicodeThrow.replace("\ud800", "\ud801"))];
     case "negative":
       return [negative(7), negative(8)];
     case "negativeZero":
@@ -1261,7 +1261,9 @@ export function makeComposedCase(seed, index) {
     : hasDiscardedLiteral
       ? [
           expr(discardedForms[Math.floor(index / 13) % discardedForms.length]),
-          recordLiteral(["start", 'quote "value"', "slash \\ path", "é 🙂\n\t\0", "👩‍💻"][Math.floor(index / 13) % 5]),
+          recordLiteral(
+            ["start\ud800!\udc00🙂", 'quote "value"', "slash \\ path", "é 🙂\n\t\0", "👩‍💻"][Math.floor(index / 13) % 5]
+          ),
           recordLiteral([0, true, false, null][Math.floor(index / 13) % 4]),
           recordUndefined(),
           recordNegative(1 + (index % 7)),
