@@ -33,6 +33,32 @@ as plaintext, which the operator accepted for this rollout. Existing external MC
 must authorize once after the service switch; reconnect through the app preserves the
 existing Connection identity after operator confirmation.
 
+## Native executor rollout
+
+The Pod and VM templates explicitly select the native execution backend. This records the
+staging choice; it is not a rollout gate: the Runtime already defaults to native when the
+implementation field is absent. The shared image automation can advance the runner disk before
+this documentation change merges. A template or image update applies to new Sandbox incarnations,
+not an already-running one.
+
+Before replacing a Sandbox, inventory active sessions, execution handles, and authored data.
+A backend restart loses execution handles and does not replay uncertain work. Sandbox deletion
+can also remove its owned PVCs; follow [staging data preservation](../../../agentplane/docs/staging_data_preservation.md)
+and preserve the workspace and state before any deletion. The operator can delete Sandboxes for
+this switchover, but that does not make authored contents disposable.
+
+Verify the runner-disk image tag and the staging root and delivery Flux revisions contain the
+intended implementation, then start a fresh disposable Pod Sandbox. Confirm that the Runtime and
+executor companion are ready and that an execution session can start a process, read output,
+write stdin, and read a file. Exercise the Codex WebSocket surface as well as the typed execution
+API. Repeat with a VM Sandbox if the VM template is in use. Check for backend restarts and failed
+or uncertain executions before replacing additional Sandboxes. Record the applied image, source
+revision, Sandbox identity and observed results.
+
+To select the Codex-backed implementation instead, change the template's `implementation` to
+`codex`, regenerate the staging manifest, and roll out a new Sandbox incarnation. Check the same
+execution flows after rollback. In-flight handles from the old backend cannot be resumed.
+
 ## Sessions and Environments rollout checks
 
 Check that the staging root and delivery Kustomizations have applied the intended source
