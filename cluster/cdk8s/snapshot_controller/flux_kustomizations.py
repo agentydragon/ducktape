@@ -15,6 +15,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 
 from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.flux import Kustomization, flux_kustomization
+from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL, Vpa
 
 
 def snapshot_controller(chart: Chart) -> Kustomization:
@@ -41,6 +42,8 @@ def snapshot_controller(chart: Chart) -> Kustomization:
                     metadata:
                       name: {name}
                       namespace: kube-system
+                      annotations:
+                        {VPA_UPDATE_MODE_LABEL}: {Vpa.AUTO}
                     spec:
                       strategy:
                         rollingUpdate:
