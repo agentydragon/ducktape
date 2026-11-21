@@ -13,6 +13,8 @@ declaration statement then only gives its binding a value.
 
 namespace CoreJS
 
+variable {W : World}
+
 /-- How a statement ends, when it does not throw. -/
 inductive Flow where
   | normal
@@ -27,30 +29,30 @@ inductive Ref where
   | frozen (x : Name)
   | prop (base key : Val)
 
-def getRef (call : Call) (env : Env) : Ref → M Val
+def getRef (call : Call W) (env : Env) : Ref → M W Val
   | .name x | .frozen x => readVar env x
   | .prop base key => getProp call base key
 
-def putRef (call : Call) (env : Env) : Ref → Val → M Unit
+def putRef (call : Call W) (env : Env) : Ref → Val → M W Unit
   | .name x, v => writeVar env x v
   | .frozen _, _ => throwErr .type "assignment to constant variable"
   | .prop base key, v => setProp call base key v
 
 /-- The scope the body of a function or a class sees: with a binding for its own name, if it has one (`self`). -/
-def selfScope (env : Env) (self : Bool) (name : Name) : M Env :=
+def selfScope (env : Env) (self : Bool) (name : Name) : M W Env :=
   if self then declare env [(name, { value := none, mutable := false })] else pure env
 
 /-- That binding gets its value once the function or class exists. -/
-def initSelf (env : Env) (self : Bool) (name : Name) (v : Val) : M Unit :=
+def initSelf (env : Env) (self : Bool) (name : Name) (v : Val) : M W Unit :=
   if self then initVar env name v else pure ()
 
 /-- The `prototype` of a function that can be constructed: a new object that points back to it. -/
-def addPrototype (a : Addr) : M Unit := do
+def addPrototype (a : Addr) : M W Unit := do
   let p ← alloc { proto := some objectProto, props := [("constructor", .data (.obj a) true false true)] }
   modifyObj a fun o => { o with props := o.props ++ [("prototype", .data (.obj p) true false false)] }
 
 /-- A function object for `f`, closed over `env`. -/
-def makeFunc (env : Env) (f : Func) : M Val := do
+def makeFunc (env : Env) (f : Func) : M W Val := do
   let env ← selfScope env f.self f.name
   let a ← alloc {
     proto := some functionProto, code := some (.closure f env []),
@@ -61,13 +63,13 @@ def makeFunc (env : Env) (f : Func) : M Val := do
   pure (.obj a)
 
 /-- Enter the scope of a statement list: its lexical names, and its function declarations with their values. -/
-def enterBlock (env : Env) (ss : List Stmt) : M Env := do
+def enterBlock (env : Env) (ss : List Stmt) : M W Env := do
   let env ← declare env ((lexDecls ss).map fun (x, mutable) => (x, { value := none, mutable }))
   (funDecls ss).forM fun f => do initVar env f.name (← makeFunc env f)
   pure env
 
 /-- Enter a function body: the parameters, the `var` names, then the scope of the body. An arrow keeps the `this` it closed over. -/
-def enterFunction (f : Func) (closed : Env) (this : Val) (args : List Val) : M Env := do
+def enterFunction (f : Func) (closed : Env) (this : Val) (args : List Val) : M W Env := do
   let params := f.params.zipIdx.map fun (x, i) => (x, { value := some (args.getD i .undef), mutable := true : Binding })
   let vars := ((varNamesOf f.body).eraseDups.filter (!f.params.contains ·)).map fun x =>
     (x, { value := some .undef, mutable := true : Binding })
@@ -75,7 +77,7 @@ def enterFunction (f : Func) (closed : Env) (this : Val) (args : List Val) : M E
   enterBlock env f.body
 
 /-- A copy of the innermost bindings of `names`: each turn of a `for` loop has its own (`CreatePerIterationEnvironment`). -/
-def copyBindings (env : Env) (names : List Name) : M Env := do
+def copyBindings (env : Env) (names : List Name) : M W Env := do
   let s ← getState
   declare env (names.filterMap fun x => do
     let b ← s.cellAt (← env.vars.lookup x)
@@ -83,7 +85,7 @@ def copyBindings (env : Env) (names : List Name) : M Env := do
 
 mutual
 
-def evalExpr : Nat → Env → Expr → M Val
+def evalExpr : Nat → Env → Expr → M W Val
   | 0, _, _ => outOfFuel
   | n + 1, env, e =>
     match e with
@@ -190,14 +192,14 @@ def evalExpr : Nat → Env → Expr → M Val
       let _ ← evalExpr n env a
       evalExpr n env b
 
-def evalArgs : Nat → Env → List Expr → M (List Val)
+def evalArgs : Nat → Env → List Expr → M W (List Val)
   | 0, _, _ => outOfFuel
   | _ + 1, _, [] => pure []
   | n + 1, env, e :: es => do
     let v ← evalExpr n env e
     pure (v :: (← evalArgs n env es))
 
-def evalTarget : Nat → Env → Target → M Ref
+def evalTarget : Nat → Env → Target → M W Ref
   | 0, _, _ => outOfFuel
   | _ + 1, _, .var x => pure (.name x)
   | _ + 1, _, .frozen x => pure (.frozen x)
@@ -206,7 +208,7 @@ def evalTarget : Nat → Env → Target → M Ref
     pure (.prop base (← evalExpr n env k))
 
 /-- The properties of an object literal, in order, on the new object at `a`. -/
-def evalProps : Nat → Env → Addr → List PropDef → M Unit
+def evalProps : Nat → Env → Addr → List PropDef → M W Unit
   | 0, _, _, _ => outOfFuel
   | _ + 1, _, _, [] => pure ()
   | n + 1, env, a, p :: ps => do
@@ -229,7 +231,7 @@ def evalProps : Nat → Env → Addr → List PropDef → M Unit
     evalProps n env a ps
 
 /-- The members of a class body: methods and accessors are defined now, the fields are returned with their keys. -/
-def evalMembers : Nat → Env → Addr → Addr → List ClassMember → M (List (Bool × String × Expr))
+def evalMembers : Nat → Env → Addr → Addr → List ClassMember → M W (List (Bool × String × Expr))
   | 0, _, _, _, _ => outOfFuel
   | _ + 1, _, _, _, [] => pure []
   | n + 1, env, proto, c, m :: ms => do
@@ -252,14 +254,14 @@ def evalMembers : Nat → Env → Addr → Addr → List ClassMember → M (List
     pure (field.toList ++ (← evalMembers n env proto c ms))
 
 /-- Fields, in order, on the object at `a`: each initializer runs in `env`, whose `this` is that object. -/
-def evalFields : Nat → Env → Addr → List (String × Expr) → M Unit
+def evalFields : Nat → Env → Addr → List (String × Expr) → M W Unit
   | 0, _, _, _ => outOfFuel
   | _ + 1, _, _, [] => pure ()
   | n + 1, env, a, (k, init) :: rest => do
     createData a k (← evalExpr n env init)
     evalFields n env a rest
 
-def callFn : Nat → Val → Val → List Val → M Val
+def callFn : Nat → Val → Val → List Val → M W Val
   | 0, _, _, _ => outOfFuel
   | n + 1, callee, this, args =>
     match callee with
@@ -271,13 +273,13 @@ def callFn : Nat → Val → Val → List Val → M Val
         match ← execStmts n env f.body with
         | .ret v => pure v
         | _ => pure .undef
-      | some (.host name) => unknown s!"host function {name} is called"
+      | some (.host name) => hostCall name this args
       | none => throwErr .type "not a function"
-    | .host name => unknown s!"host value {name} is called"
+    | .host name => hostCall name this args
     | _ => throwErr .type "not a function"
 
 /-- `new callee(args)`: a new object whose prototype is `callee.prototype`, the fields, then the body with it as `this`. -/
-def construct : Nat → Val → List Val → M Val
+def construct : Nat → Val → List Val → M W Val
   | 0, _, _ => outOfFuel
   | n + 1, callee, args =>
     match callee with
@@ -299,7 +301,7 @@ def construct : Nat → Val → List Val → M Val
     | .host name => unknown s!"host value {name} is constructed"
     | _ => throwErr .type "not a constructor"
 
-def execStmt : Nat → Env → Stmt → M Flow
+def execStmt : Nat → Env → Stmt → M W Flow
   | 0, _, _ => outOfFuel
   | n + 1, env, s =>
     match s with
@@ -346,7 +348,7 @@ def execStmt : Nat → Env → Stmt → M Flow
           | jump => pure jump) s
       | r => r
 
-def execStmts : Nat → Env → List Stmt → M Flow
+def execStmts : Nat → Env → List Stmt → M W Flow
   | 0, _, _ => outOfFuel
   | _ + 1, _, [] => pure .normal
   | n + 1, env, s :: ss => do
@@ -355,7 +357,7 @@ def execStmts : Nat → Env → List Stmt → M Flow
     | jump => pure jump
 
 /-- The turns of a `for` loop. `fresh` are the names of its `let` declaration: every turn gets its own copy. -/
-def loop : Nat → Env → List Name → Expr → Expr → Stmt → M Flow
+def loop : Nat → Env → List Name → Expr → Expr → Stmt → M W Flow
   | 0, _, _, _, _, _ => outOfFuel
   | n + 1, env, fresh, test, update, body => do
     if !(← lift (toBoolean (← evalExpr n env test))) then pure .normal else
@@ -386,11 +388,12 @@ source order, a module after the modules it imports, a module that was entered a
 ends). The order does not depend on what the modules do, so it is computed first (`Program.evalOrder`).
 -/
 
-def initialState (regions : Nat) : State where
+def initialState (W : World) (regions : Nat) : State W where
   heap := #[builtins] ++ Array.replicate regions #[]
   cells := Array.replicate (regions + 1) #[]
   region := 0
   out := #[]
+  world := W.init
 
 def Program.find (P : Program) (name : String) : Option Module := P.modules.find? (·.name == name)
 
@@ -426,7 +429,7 @@ def Program.regions (P : Program) : Nat :=
   (P.modules.flatMap fun m => m.body.map (·.1 + 1)).foldl max 0
 
 /-- Run `m` in the region of the statement with identity `id`. A run that does not end well stays there. -/
-def inRegion {α : Type} (id : Nat) (m : M α) : M α := do
+def inRegion {α : Type} (id : Nat) (m : M W α) : M W α := do
   modifyState fun s => { s with region := id + 1 }
   let a ← m
   modifyState fun s => { s with region := 0 }
@@ -438,7 +441,7 @@ def Stmt.bindings (s : Stmt) : List (Name × Binding) :=
     (lexDecls [s]).map fun (x, mutable) => (x, { value := none, mutable })
 
 /-- The bindings of each statement, made in its region: its identity with its names and where they are. -/
-def declareTops : List Top → M (List (Nat × List (Name × Addr)))
+def declareTops : List Top → M W (List (Nat × List (Name × Addr)))
   | [] => pure []
   | t :: rest => do
     let frame ← inRegion t.id (newCells t.stmt.bindings)
@@ -488,23 +491,23 @@ def Program.scopes (P : Program) (frames : List (Nat × List (Name × Addr))) : 
     pure ((m, { vars := m.scope frames ++ imported, this := .undef }) :: (← P.scopes frames rest))
 
 /-- A declared function gets its value, in the region of its declaration and the scope of its module. -/
-def initFunction (scopes : List (Module × Env)) (t : Top) : M Unit :=
+def initFunction (scopes : List (Module × Env)) (t : Top) : M W Unit :=
   match t.stmt, scopes.find? (·.1.name == t.home) with
   | .funDecl f, some (_, env) => inRegion t.id (do initVar env f.name (← makeFunc env f))
   | _, _ => pure ()
 
-def initFunctions (scopes : List (Module × Env)) : List Top → M Unit
+def initFunctions (scopes : List (Module × Env)) : List Top → M W Unit
   | [] => pure ()
   | t :: rest => do
     initFunction scopes t
     initFunctions scopes rest
 
 /-- Is every identity in use once? The bindings of a statement are looked up by it. -/
-def checkIdentities (tops : List Top) : M Unit :=
+def checkIdentities (tops : List Top) : M W Unit :=
   if (tops.map (·.id)).Nodup then pure () else unknown "model: two statements have one identity"
 
 /-- Link the program: the loaded modules with their scopes, in the order they run. -/
-def link (P : Program) : M (List (Module × Env)) := do
+def link (P : Program) : M W (List (Module × Env)) := do
   let tops := P.tops
   checkIdentities tops
   let frames ← declareTops tops
@@ -513,22 +516,22 @@ def link (P : Program) : M (List (Module × Env)) := do
   pure scopes
 
 /-- Run a top-level statement in its region. -/
-def runUnit (fuel : Nat) (env : Env) (id : Nat) (s : Stmt) : M Flow := inRegion id (execStmt fuel env s)
+def runUnit (fuel : Nat) (env : Env) (id : Nat) (s : Stmt) : M W Flow := inRegion id (execStmt fuel env s)
 
 /-- Run the statements of a module in order. Each has `fuel` for itself. -/
-def runBody (fuel : Nat) (env : Env) : List (Nat × Stmt) → M Unit
+def runBody (fuel : Nat) (env : Env) : List (Nat × Stmt) → M W Unit
   | [] => pure ()
   | (id, s) :: rest => do
     let _ ← runUnit fuel env id s
     runBody fuel env rest
 
-def runModules (fuel : Nat) : List (Module × Env) → M Unit
+def runModules (fuel : Nat) : List (Module × Env) → M W Unit
   | [] => pure ()
   | (m, env) :: rest => do
     runBody fuel env m.body
     runModules fuel rest
 
-def runProgram (fuel : Nat) (P : Program) : Res Unit :=
-  (do runModules fuel (← link P)) (initialState P.regions)
+def runProgram (W : World) (fuel : Nat) (P : Program) : Res W Unit :=
+  (do runModules fuel (← link P)) (initialState W P.regions)
 
 end CoreJS

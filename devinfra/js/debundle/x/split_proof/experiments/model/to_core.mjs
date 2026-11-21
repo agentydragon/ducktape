@@ -15,8 +15,9 @@
 // way, and `ids` gives a file other numbers: the ones its statements had in the bundle they were taken from.
 //
 // Anything outside the fragment is refused with the type of the node. So is a name the program does not declare and
-// the host defines (`Math`, `JSON`, `Error`, …): the model says nothing about what it holds. `allowHost` lets those
-// through as host values, to test that the model then stops with "unknown".
+// the host defines (`JSON`, `Error`, …), unless the model has a rule for it (`HOST_GLOBALS`): the model says nothing
+// about what it holds. `allowHost` lets those through as host values, to test that the model then stops with
+// "unknown".
 //
 // `**` is refused: the specification leaves its result to the implementation, and the C library's `pow` gives another
 // last bit than V8's for some operands.
@@ -72,9 +73,12 @@ const PRIMS = {
   },
 };
 
+/** The globals of the host that the model has a rule for (`hostFunctions` and `hostNamespaces` of `Value.lean`). */
+export const HOST_GLOBALS = ["Boolean", "Math", "Number", "String", "isFinite", "isNaN", "parseFloat", "parseInt"];
+
 const view = new DataView(new ArrayBuffer(8));
 /** The bits of a number, as 16 hexadecimal digits. */
-const bits = (x) => {
+export const bits = (x) => {
   view.setFloat64(0, x);
   return view.getBigUint64(0).toString(16).padStart(16, "0");
 };
@@ -309,7 +313,7 @@ export function toCore(source, { allowHost = false, ids = null, idBase = 0 } = {
         else if (node.name === "NaN" || node.name === "Infinity") emit("num", bits(globalThis[node.name]));
         else if (node.name === "arguments") refuse(node, "arguments");
         else if (!(node.name in globalThis)) emit("var", node.name);
-        else if (allowHost) emit("host", node.name);
+        else if (allowHost || HOST_GLOBALS.includes(node.name)) emit("host", node.name);
         else refuse(node, `the host global ${node.name}`);
         break;
       case "ThisExpression":

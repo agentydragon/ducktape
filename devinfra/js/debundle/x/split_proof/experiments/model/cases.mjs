@@ -1,6 +1,6 @@
 // Programs for `differential.mjs`, for what the generator rarely writes. Each runs in Node and in the model and must
-// print the same and end the same way. A case with `end: "unknown"` uses a value of the host (`allowHost`) or an
-// operation the model leaves to it; there only the model's ending is checked.
+// print the same and end the same way. A case with `end: "unknown"` uses a value of the host that the model has no
+// rule for (`allowHost`) or an operation the model leaves to the host; there only the model's ending is checked.
 export const cases = [
   {
     name: "getter on a prototype three levels up sees the receiver",
@@ -294,10 +294,100 @@ export const cases = [
     `,
   },
   {
-    name: "a call of a host function is unknown code",
-    source: `console.log("before"); const r = Math.sqrt(4); console.log("after", r);`,
+    name: "a call of a host function the world does not answer for is unknown code",
+    source: `console.log("before"); const r = JSON.stringify(4); console.log("after", r);`,
     allowHost: true,
     end: "unknown",
+  },
+  {
+    name: "the world: methods of a string",
+    source: `
+      const s = "  Hello, World  ";
+      const t = s.trim();
+      console.log(t.toUpperCase(), t.toLowerCase(), t.slice(1, -1), t.slice(-5), t.substring(7), t.at(-1));
+      console.log(t.indexOf("o"), t.lastIndexOf("o"), t.includes("World"), t.startsWith("Hell"), t.endsWith("x"));
+      console.log(t.charAt(1), t.charCodeAt(1), t.codePointAt(0), t.padStart(15, "*"), t.padEnd(15, "-") + "|");
+      console.log("ab".repeat(3), "a-b-c".replace("-", "+"), "a-b-c".replaceAll("-", "+"), "abc".concat(1, null, true));
+      console.log("b".localeCompare("a"), "x".search("x"), "\u00e9".normalize("NFD").length, t.length, t[0], t[99]);
+    `,
+  },
+  {
+    name: "the world: numbers, Math and the parsing functions",
+    source: `
+      const n = 1234.5678;
+      console.log(n.toFixed(2), n.toString(16), n.toString(2).length, n.toPrecision(3), n.toExponential(1), (255).toString(36));
+      console.log(Math.abs(-3), Math.max(1, "5", 3), Math.min(), Math.floor(-1.5), Math.round(2.5), Math.sign(-0), Math.hypot(3, 4));
+      console.log(Math.imul(65537, 65537), Math.clz32(1), Math.trunc(-7.9), Math.sqrt(2), Math.pow(2, 0.5), Math.atan2(1, 1));
+      console.log(parseInt("42px", 10), parseInt("ff", 16), parseFloat("3.5e2x"), isNaN("x"), isFinite("12"), Number("0x10"), Number(""));
+      console.log(Number.isInteger(5.0), Number.isSafeInteger(2 ** 3), Number.isNaN(NaN), Number.parseFloat("1.5"), Boolean(""), Boolean("0"));
+      console.log(String.fromCharCode(72, 105), String.fromCodePoint(955), true.toString(), (false).valueOf(), (5).valueOf());
+      const r = Math.random();
+      console.log(r >= 0, r < 1, Math.random() === r);
+    `.replace("2 ** 3", "8"),
+  },
+  {
+    name: "the world: a host function throws, caught and not",
+    source: `
+      try { "x".repeat(-1); } catch (e) { console.log("repeat caught"); }
+      try { (1).toFixed(101); } catch (e) { console.log("toFixed caught"); }
+      try { "x".normalize("bad"); } catch (e) { console.log("normalize caught"); }
+      try { String.fromCodePoint(-1); } catch (e) { console.log("fromCodePoint caught"); }
+      const slice = "abc".slice;
+      try { slice(1); } catch (e) { console.log("no receiver"); }
+      console.log("before");
+      (1).toString(99);
+    `,
+    end: "throw",
+  },
+  {
+    name: "the world: calls in a chain, each on the result of the one before",
+    source: `
+      console.log("abc".toString(), (12).toString(), true.toString());
+      console.log("a".concat("b").concat("c").length, "abc".slice(1).slice(1), "  x ".trim().padStart(3, "0"));
+    `,
+  },
+  {
+    name: "a method of a string called on an object hands the host an object",
+    source: `const o = { upper: "x".toUpperCase }; console.log("before"); o.upper();`,
+    end: "unknown",
+  },
+  {
+    name: "a property a string does not have is looked up on Object.prototype",
+    source: `
+      const top = Object.getPrototypeOf({});
+      console.log("abc".missing, (5).missing, true.missing, "abc"[7], "abc"["01"]);
+      top.missing = "found";
+      Object.defineProperty(top, "shout", { get() { return typeof this + ":" + this; }, configurable: true });
+      console.log("abc".missing, (5).missing, true.missing, "abc".shout, (5).shout, false.shout);
+      top[7] = "seven";
+      console.log("abc"[7], "abc"[1], "abc".length, "".length);
+      delete top.missing;
+      delete top.shout;
+      delete top[7];
+    `,
+  },
+  {
+    name: "the host is handed an object",
+    source: `console.log("abc".slice(1)); console.log("abc".replace("b", () => "x"));`,
+    end: "unknown",
+  },
+  {
+    name: "the host returns a string outside the Basic Multilingual Plane",
+    source: `console.log("before"); const s = String.fromCodePoint(128512); console.log(s.length);`,
+    end: "unknown",
+  },
+  {
+    name: "a member of a host global the world does not answer for",
+    source: `console.log(Math.abs(-1)); console.log(Math.PI);`,
+    end: "unknown",
+  },
+  {
+    name: "a host function is a value: stored, passed, called later",
+    source: `
+      const fns = { abs: Math.abs, parse: parseInt };
+      const apply = (f, x) => f(x);
+      console.log(apply(fns.abs, -2), apply(fns.parse, "7.9"), apply(Number, "3"), [Math.max][0](1, 2));
+    `,
   },
   {
     name: "a host value can be stored and passed, but not inspected",

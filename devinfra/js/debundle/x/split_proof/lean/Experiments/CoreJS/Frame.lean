@@ -10,43 +10,46 @@ object and every binding that existed before is unchanged, and nothing is printe
 
 namespace CoreJS
 
+variable {W : World}
+
 /-- `s'` has everything `s` has, unchanged: the objects, the bindings, the output. It may have more objects and bindings. -/
-structure Extends (s s' : State) : Prop where
+structure Extends (s s' : State W) : Prop where
   objs : ∀ a o, s.objAt a = some o → s'.objAt a = some o
   cells : ∀ a b, s.cellAt a = some b → s'.cellAt a = some b
   out : s'.out = s.out
   region : s'.region = s.region
+  world : s'.world = s.world
 
-theorem Extends.refl (s : State) : Extends s s := ⟨fun _ _ h => h, fun _ _ h => h, rfl, rfl⟩
+theorem Extends.refl (s : State W) : Extends s s := ⟨fun _ _ h => h, fun _ _ h => h, rfl, rfl, rfl⟩
 
-theorem Extends.trans {s t u : State} (h : Extends s t) (h' : Extends t u) : Extends s u :=
+theorem Extends.trans {s t u : State W} (h : Extends s t) (h' : Extends t u) : Extends s u :=
   ⟨fun a o ha => h'.objs a o (h.objs a o ha), fun a b ha => h'.cells a b (h.cells a b ha),
-    h'.out.trans h.out, h'.region.trans h.region⟩
+    h'.out.trans h.out, h'.region.trans h.region, h'.world.trans h.world⟩
 
 /-- An address that is free in `s` was free in everything `s` extends. -/
-theorem Extends.fresh {base s : State} (h : Extends base s) {a : Addr} (ha : s.objAt a = none) : base.objAt a = none := by
+theorem Extends.fresh {base s : State W} (h : Extends base s) {a : Addr} (ha : s.objAt a = none) : base.objAt a = none := by
   cases hb : base.objAt a with
   | none => rfl
   | some o => rw [h.objs a o hb] at ha; cases ha
 
-theorem Extends.freshCell {base s : State} (h : Extends base s) {a : Addr} (ha : s.cellAt a = none) :
+theorem Extends.freshCell {base s : State W} (h : Extends base s) {a : Addr} (ha : s.cellAt a = none) :
     base.cellAt a = none := by
   cases hb : base.cellAt a with
   | none => rfl
   | some o => rw [h.cells a o hb] at ha; cases ha
 
 /-- However the computation ended, its state extends `base`. -/
-def Res.Keeps {α : Type} (base : State) : Res α → Prop
+def Res.Keeps {α : Type} (base : State W) : Res W α → Prop
   | .ok _ s | .throw _ s | .unknown _ s => Extends base s
   | .fuel => True
 
-theorem keeps_bind {α β : Type} {m : M α} {f : α → M β} {base s : State} (hm : (m s).Keeps base)
+theorem keeps_bind {α β : Type} {m : M W α} {f : α → M W β} {base s : State W} (hm : (m s).Keeps base)
     (hf : ∀ a s', m s = .ok a s' → Extends base s' → (f a s').Keeps base) : ((m >>= f) s).Keeps base := by
   show (match m s with
     | .ok a s' => f a s'
     | .throw v s' => .throw v s'
     | .unknown why s' => .unknown why s'
-    | .fuel => .fuel : Res β).Keeps base
+    | .fuel => .fuel : Res W β).Keeps base
   cases h : m s with
   | ok a s' => rw [h] at hm; exact hf a s' h hm
   | throw v s' => rw [h] at hm; exact hm
@@ -54,13 +57,13 @@ theorem keeps_bind {α β : Type} {m : M α} {f : α → M β} {base s : State} 
   | fuel => trivial
 
 /-- What a sequence ended well with, step by step. -/
-theorem bind_ok {α β : Type} {m : M α} {f : α → M β} {s s' : State} {b : β} (h : (m >>= f) s = .ok b s') :
+theorem bind_ok {α β : Type} {m : M W α} {f : α → M W β} {s s' : State W} {b : β} (h : (m >>= f) s = .ok b s') :
     ∃ a t, m s = .ok a t ∧ f a t = .ok b s' := by
   have h' : (match m s with
     | .ok a s' => f a s'
     | .throw v s' => .throw v s'
     | .unknown why s' => .unknown why s'
-    | .fuel => .fuel : Res β) = .ok b s' := h
+    | .fuel => .fuel : Res W β) = .ok b s' := h
   cases hm : m s with
   | ok a t => rw [hm] at h'; exact ⟨a, t, rfl, h'⟩
   | throw v t => rw [hm] at h'; cases h'
@@ -68,37 +71,37 @@ theorem bind_ok {α β : Type} {m : M α} {f : α → M β} {s s' : State} {b : 
   | fuel => rw [hm] at h'; cases h'
 
 /-- A computation that reads the state and leaves it as it is. -/
-def Inert {α : Type} (m : M α) : Prop :=
+def Inert {α : Type} (m : M W α) : Prop :=
   ∀ s, match m s with
     | .ok _ s' | .throw _ s' | .unknown _ s' => s' = s
     | .fuel => True
 
-theorem Inert.keeps {α : Type} {m : M α} (h : Inert m) {base s : State} (hb : Extends base s) : (m s).Keeps base := by
+theorem Inert.keeps {α : Type} {m : M W α} (h : Inert m) {base s : State W} (hb : Extends base s) : (m s).Keeps base := by
   have := h s
   cases hm : m s <;> simp_all [Res.Keeps]
 
-theorem Inert.ok {α : Type} {m : M α} (h : Inert m) {s s' : State} {a : α} (hm : m s = .ok a s') : s' = s := by
+theorem Inert.ok {α : Type} {m : M W α} (h : Inert m) {s s' : State W} {a : α} (hm : m s = .ok a s') : s' = s := by
   have := h s
   rw [hm] at this
   exact this
 
-theorem inert_pure {α : Type} (a : α) : Inert (pure a : M α) := fun _ => rfl
-theorem inert_getState : Inert getState := fun _ => rfl
-theorem inert_throwVal {α : Type} (v : Val) : Inert (throwVal v : M α) := fun _ => rfl
-theorem inert_throwErr {α : Type} (k : ErrorKind) (msg : String) : Inert (throwErr k msg : M α) := fun _ => rfl
-theorem inert_unknown {α : Type} (why : String) : Inert (unknown why : M α) := fun _ => rfl
+theorem inert_pure {α : Type} (a : α) : Inert (pure a : M W α) := fun _ => rfl
+theorem inert_getState : Inert (getState : M W (State W)) := fun _ => rfl
+theorem inert_throwVal {α : Type} (v : Val) : Inert (throwVal v : M W α) := fun _ => rfl
+theorem inert_throwErr {α : Type} (k : ErrorKind) (msg : String) : Inert (throwErr k msg : M W α) := fun _ => rfl
+theorem inert_unknown {α : Type} (why : String) : Inert (unknown why : M W α) := fun _ => rfl
 
-theorem inert_lift {α : Type} (x : Except Abort α) : Inert (lift x) := by
+theorem inert_lift {α : Type} (x : Except Abort α) : Inert (lift x : M W α) := by
   intro s
   rcases x with (_ | _) | _ <;> rfl
 
-theorem inert_bind {α β : Type} {m : M α} {f : α → M β} (hm : Inert m) (hf : ∀ a, Inert (f a)) : Inert (m >>= f) := by
+theorem inert_bind {α β : Type} {m : M W α} {f : α → M W β} (hm : Inert m) (hf : ∀ a, Inert (f a)) : Inert (m >>= f) := by
   intro s
   show match (match m s with
     | .ok a s' => f a s'
     | .throw v s' => .throw v s'
     | .unknown why s' => .unknown why s'
-    | .fuel => .fuel : Res β) with
+    | .fuel => .fuel : Res W β) with
     | .ok _ s' | .throw _ s' | .unknown _ s' => s' = s
     | .fuel => True
   have h := hm s
@@ -111,12 +114,12 @@ theorem inert_bind {α β : Type} {m : M α} {f : α → M β} (hm : Inert m) (h
   | unknown why s' => rw [hms] at h; exact h
   | fuel => trivial
 
-theorem inert_getObj (a : Addr) : Inert (getObj a) := by
+theorem inert_getObj (a : Addr) : Inert (getObj a : M W Obj) := by
   intro s
   unfold getObj
   cases s.objAt a <;> rfl
 
-theorem inert_readVar (env : Env) (x : Name) : Inert (readVar env x) := by
+theorem inert_readVar (env : Env) (x : Name) : Inert (readVar env x : M W Val) := by
   unfold readVar
   split
   · exact inert_throwErr _ _
@@ -127,8 +130,8 @@ theorem inert_readVar (env : Env) (x : Name) : Inert (readVar env x) := by
 
 /-! ## The steps that change the state -/
 
-theorem objAt_push {s : State} {objs : Array Obj} (h : s.heap[s.region]? = some objs) (o : Obj) (a : Addr) :
-    ({ s with heap := s.heap.set! s.region (objs.push o) } : State).objAt a =
+theorem objAt_push {s : State W} {objs : Array Obj} (h : s.heap[s.region]? = some objs) (o : Obj) (a : Addr) :
+    ({ s with heap := s.heap.set! s.region (objs.push o) } : State W).objAt a =
       if a = ⟨s.region, objs.size⟩ then some o else s.objAt a := by
   have hlt : s.region < s.heap.size := by
     rcases Nat.lt_or_ge s.region s.heap.size with h' | h'
@@ -144,8 +147,8 @@ theorem objAt_push {s : State} {objs : Array Obj} (h : s.heap[s.region]? = some 
   · have hne : ¬ s.region = r := fun h' => hr h'.symm
     simp [State.objAt, hr, hne]
 
-theorem cellAt_push {s : State} {bs : Array Binding} (h : s.cells[s.region]? = some bs) (b : Binding) (a : Addr) :
-    ({ s with cells := s.cells.set! s.region (bs.push b) } : State).cellAt a =
+theorem cellAt_push {s : State W} {bs : Array Binding} (h : s.cells[s.region]? = some bs) (b : Binding) (a : Addr) :
+    ({ s with cells := s.cells.set! s.region (bs.push b) } : State W).cellAt a =
       if a = ⟨s.region, bs.size⟩ then some b else s.cellAt a := by
   have hlt : s.region < s.cells.size := by
     rcases Nat.lt_or_ge s.region s.cells.size with h' | h'
@@ -161,8 +164,8 @@ theorem cellAt_push {s : State} {bs : Array Binding} (h : s.cells[s.region]? = s
   · have hne : ¬ s.region = r := fun h' => hr h'.symm
     simp [State.cellAt, hr, hne]
 
-theorem objAt_modify (s : State) (a : Addr) (f : Obj → Obj) (a' : Addr) (h : a' ≠ a) :
-    ({ s with heap := s.heap.modify a.region (·.modify a.index f) } : State).objAt a' = s.objAt a' := by
+theorem objAt_modify (s : State W) (a : Addr) (f : Obj → Obj) (a' : Addr) (h : a' ≠ a) :
+    ({ s with heap := s.heap.modify a.region (·.modify a.index f) } : State W).objAt a' = s.objAt a' := by
   rcases a with ⟨r, i⟩
   rcases a' with ⟨r', i'⟩
   by_cases hr : r = r'
@@ -172,8 +175,8 @@ theorem objAt_modify (s : State) (a : Addr) (f : Obj → Obj) (a' : Addr) (h : a
     cases s.heap[r]? <;> simp [Array.getElem?_modify, hi]
   · simp [State.objAt, Array.getElem?_modify, hr]
 
-theorem cellAt_modify (s : State) (a : Addr) (f : Binding → Binding) (a' : Addr) (h : a' ≠ a) :
-    ({ s with cells := s.cells.modify a.region (·.modify a.index f) } : State).cellAt a' = s.cellAt a' := by
+theorem cellAt_modify (s : State W) (a : Addr) (f : Binding → Binding) (a' : Addr) (h : a' ≠ a) :
+    ({ s with cells := s.cells.modify a.region (·.modify a.index f) } : State W).cellAt a' = s.cellAt a' := by
   rcases a with ⟨r, i⟩
   rcases a' with ⟨r', i'⟩
   by_cases hr : r = r'
@@ -184,12 +187,12 @@ theorem cellAt_modify (s : State) (a : Addr) (f : Binding → Binding) (a' : Add
   · simp [State.cellAt, Array.getElem?_modify, hr]
 
 /-- `alloc` gives an address that was free, and extends the state. -/
-theorem alloc_ok {o : Obj} {s s' : State} {a : Addr} (h : alloc o s = .ok a s') : s.objAt a = none ∧ Extends s s' := by
+theorem alloc_ok {o : Obj} {s s' : State W} {a : Addr} (h : alloc o s = .ok a s') : s.objAt a = none ∧ Extends s s' := by
   unfold alloc at h
   split at h
   · rename_i objs hobjs
     cases h
-    refine ⟨by simp [State.objAt, hobjs], fun a' o' ha' => ?_, fun _ _ hc => hc, rfl, rfl⟩
+    refine ⟨by simp [State.objAt, hobjs], fun a' o' ha' => ?_, fun _ _ hc => hc, rfl, rfl, rfl⟩
     rw [objAt_push hobjs]
     split
     · rename_i heq
@@ -198,20 +201,20 @@ theorem alloc_ok {o : Obj} {s s' : State} {a : Addr} (h : alloc o s = .ok a s') 
     · exact ha'
   · cases h
 
-theorem alloc_keeps (o : Obj) {base s : State} (hb : Extends base s) : (alloc o s).Keeps base := by
+theorem alloc_keeps (o : Obj) {base s : State W} (hb : Extends base s) : (alloc o s).Keeps base := by
   cases h : alloc o s with
   | ok a s' => exact hb.trans (alloc_ok h).2
   | throw v s' => unfold alloc at h; split at h <;> cases h
   | unknown why s' => unfold alloc at h; split at h <;> cases h; exact hb
   | fuel => trivial
 
-theorem newCell_ok {b : Binding} {s s' : State} {a : Addr} (h : newCell b s = .ok a s') :
+theorem newCell_ok {b : Binding} {s s' : State W} {a : Addr} (h : newCell b s = .ok a s') :
     s.cellAt a = none ∧ Extends s s' := by
   unfold newCell at h
   split at h
   · rename_i bs hbs
     cases h
-    refine ⟨by simp [State.cellAt, hbs], fun _ _ ho => ho, fun a' b' ha' => ?_, rfl, rfl⟩
+    refine ⟨by simp [State.cellAt, hbs], fun _ _ ho => ho, fun a' b' ha' => ?_, rfl, rfl, rfl⟩
     rw [cellAt_push hbs]
     split
     · rename_i heq
@@ -221,30 +224,30 @@ theorem newCell_ok {b : Binding} {s s' : State} {a : Addr} (h : newCell b s = .o
   · cases h
 
 /-- A change to an object that `base` does not have keeps `base`. -/
-theorem modifyObj_keeps (a : Addr) (f : Obj → Obj) {base s : State} (hb : Extends base s) (ha : base.objAt a = none) :
+theorem modifyObj_keeps (a : Addr) (f : Obj → Obj) {base s : State W} (hb : Extends base s) (ha : base.objAt a = none) :
     (modifyObj a f s).Keeps base := by
-  refine ⟨fun a' o h => ?_, hb.cells, hb.out, hb.region⟩
+  refine ⟨fun a' o h => ?_, hb.cells, hb.out, hb.region, hb.world⟩
   have hne : a' ≠ a := fun heq => by rw [heq, ha] at h; cases h
   show State.objAt _ a' = some o
   rw [objAt_modify s a f a' hne]
   exact hb.objs a' o h
 
-theorem setCell_keeps (a : Addr) (v : Val) {base s : State} (hb : Extends base s) (ha : base.cellAt a = none) :
+theorem setCell_keeps (a : Addr) (v : Val) {base s : State W} (hb : Extends base s) (ha : base.cellAt a = none) :
     (setCell a v s).Keeps base := by
-  refine ⟨hb.objs, fun a' b h => ?_, hb.out, hb.region⟩
+  refine ⟨hb.objs, fun a' b h => ?_, hb.out, hb.region, hb.world⟩
   have hne : a' ≠ a := fun heq => by rw [heq, ha] at h; cases h
   show State.cellAt _ a' = some b
   rw [cellAt_modify s a _ a' hne]
   exact hb.cells a' b h
 
-theorem newCell_keeps (b : Binding) {base s : State} (hb : Extends base s) : (newCell b s).Keeps base := by
+theorem newCell_keeps (b : Binding) {base s : State W} (hb : Extends base s) : (newCell b s).Keeps base := by
   cases h : newCell b s with
   | ok a s' => exact hb.trans (newCell_ok h).2
   | throw v s' => unfold newCell at h; split at h <;> cases h
   | unknown why s' => unfold newCell at h; split at h <;> cases h; exact hb
   | fuel => trivial
 
-theorem newCells_keeps (bs : List (Name × Binding)) {base s : State} (hb : Extends base s) :
+theorem newCells_keeps (bs : List (Name × Binding)) {base s : State W} (hb : Extends base s) :
     (newCells bs s).Keeps base := by
   induction bs generalizing s with
   | nil => exact (inert_pure _).keeps hb
@@ -255,13 +258,13 @@ theorem newCells_keeps (bs : List (Name × Binding)) {base s : State} (hb : Exte
     refine keeps_bind (ih hb1) fun frame s2 _ hb2 => ?_
     exact (inert_pure _).keeps hb2
 
-theorem declare_keeps (env : Env) (bs : List (Name × Binding)) {base s : State} (hb : Extends base s) :
+theorem declare_keeps (env : Env) (bs : List (Name × Binding)) {base s : State W} (hb : Extends base s) :
     (declare env bs s).Keeps base := by
   unfold declare
   exact keeps_bind (newCells_keeps bs hb) fun frame s1 _ hb1 => (inert_pure _).keeps hb1
 
 /-- One declared name is first in the new scope, at an address that was free. -/
-theorem declare_one {env env' : Env} {x : Name} {b : Binding} {s s' : State}
+theorem declare_one {env env' : Env} {x : Name} {b : Binding} {s s' : State W}
     (h : declare env [(x, b)] s = .ok env' s') : ∃ c, env'.vars.lookup x = some c ∧ s.cellAt c = none := by
   unfold declare at h
   obtain ⟨frame, t, hf, h⟩ := bind_ok h
@@ -272,13 +275,13 @@ theorem declare_one {env env' : Env} {x : Name} {b : Binding} {s s' : State}
   cases h
   exact ⟨c, by simp, (newCell_ok hc).1⟩
 
-theorem initVar_keeps {env : Env} {x : Name} {c : Addr} (v : Val) {base s : State} (hb : Extends base s)
+theorem initVar_keeps {env : Env} {x : Name} {c : Addr} (v : Val) {base s : State W} (hb : Extends base s)
     (hx : env.vars.lookup x = some c) (hc : base.cellAt c = none) : (initVar env x v s).Keeps base := by
   unfold initVar
   rw [hx]
   exact setCell_keeps c v hb hc
 
-theorem selfScope_keeps (env : Env) (self : Bool) (x : Name) {base s : State} (hb : Extends base s) :
+theorem selfScope_keeps (env : Env) (self : Bool) (x : Name) {base s : State W} (hb : Extends base s) :
     (selfScope env self x s).Keeps base := by
   unfold selfScope
   split
@@ -286,7 +289,7 @@ theorem selfScope_keeps (env : Env) (self : Bool) (x : Name) {base s : State} (h
   · exact (inert_pure _).keeps hb
 
 /-- Giving a function or a class its own name writes a binding that `selfScope` made, so one `base` does not have. -/
-theorem initSelf_keeps {env env1 : Env} {self : Bool} {x : Name} (v : Val) {base s0 s1 s : State}
+theorem initSelf_keeps {env env1 : Env} {self : Bool} {x : Name} (v : Val) {base s0 s1 s : State W}
     (h : selfScope env self x s0 = .ok env1 s1) (h0 : Extends base s0) (hb : Extends base s) :
     (initSelf env1 self x v s).Keeps base := by
   unfold initSelf
@@ -298,12 +301,12 @@ theorem initSelf_keeps {env env1 : Env} {self : Bool} {x : Name} (v : Val) {base
     exact initVar_keeps v hb hc (h0.freshCell hfree)
   · exact (inert_pure _).keeps hb
 
-theorem addPrototype_keeps (a : Addr) {base s : State} (hb : Extends base s) (ha : base.objAt a = none) :
+theorem addPrototype_keeps (a : Addr) {base s : State W} (hb : Extends base s) (ha : base.objAt a = none) :
     (addPrototype a s).Keeps base := by
   unfold addPrototype
   exact keeps_bind (alloc_keeps _ hb) fun p s' _ hb' => modifyObj_keeps a _ hb' ha
 
-theorem makeFunc_keeps (env : Env) (f : Func) {base s : State} (hb : Extends base s) : (makeFunc env f s).Keeps base := by
+theorem makeFunc_keeps (env : Env) (f : Func) {base s : State W} (hb : Extends base s) : (makeFunc env f s).Keeps base := by
   unfold makeFunc
   refine keeps_bind (selfScope_keeps _ _ _ hb) fun env1 s1 h1 hb1 => ?_
   refine keeps_bind (alloc_keeps _ hb1) fun a s2 h2 hb2 => ?_
@@ -315,7 +318,7 @@ theorem makeFunc_keeps (env : Env) (f : Func) {base s : State} (hb : Extends bas
   · exact keeps_bind (initSelf_keeps _ h1 hb hb3) fun _ s4 _ hb4 => (inert_pure _).keeps hb4
 
 /-- A property defined on an object that `base` does not have. -/
-theorem defineOwn_keeps (a : Addr) (k : String) (d : Desc) {base s : State} (hb : Extends base s)
+theorem defineOwn_keeps (a : Addr) (k : String) (d : Desc) {base s : State W} (hb : Extends base s)
     (ha : base.objAt a = none) : (defineOwn a k d s).Keeps base := by
   unfold defineOwn
   refine keeps_bind ((inert_getObj a).keeps hb) fun o s1 _ hb1 => ?_
@@ -347,9 +350,9 @@ def allocOnlyProps : List PropDef → Bool
 end
 
 theorem allocOnly_keeps (n : Nat) :
-    (∀ env e base s, e.allocOnly = true → Extends base s → (evalExpr n env e s).Keeps base) ∧
-    (∀ env es base s, allocOnlyAll es = true → Extends base s → (evalArgs n env es s).Keeps base) ∧
-    (∀ env a ps base s, allocOnlyProps ps = true → Extends base s → base.objAt a = none →
+    (∀ env e (base s : State W), e.allocOnly = true → Extends base s → (evalExpr n env e s).Keeps base) ∧
+    (∀ env es (base s : State W), allocOnlyAll es = true → Extends base s → (evalArgs n env es s).Keeps base) ∧
+    (∀ env a ps (base s : State W), allocOnlyProps ps = true → Extends base s → base.objAt a = none →
       (evalProps n env a ps s).Keeps base) := by
   induction n with
   | zero =>
@@ -397,39 +400,40 @@ theorem allocOnly_keeps (n : Nat) :
 /-- **An expression that only allocates changes nothing that existed**, however it ends: with a value, with a throw
 (a name in its dead zone), or out of fuel. Every object and binding of `s` is in the final state unchanged, and the
 output is the same. -/
-theorem allocOnly_extends {e : Expr} (h : e.allocOnly = true) (fuel : Nat) (env : Env) (s : State) :
+theorem allocOnly_extends {e : Expr} (h : e.allocOnly = true) (fuel : Nat) (env : Env) (s : State W) :
     (evalExpr fuel env e s).Keeps s :=
   (allocOnly_keeps fuel).1 env e s s h (Extends.refl s)
 
 /-! ## A declaration whose initializer only allocates binds its name and nothing else -/
 
 /-- As `Extends`, but the binding at `c` may have a new value. -/
-structure ExtendsBut (c : Option Addr) (s s' : State) : Prop where
+structure ExtendsBut (c : Option Addr) (s s' : State W) : Prop where
   objs : ∀ a o, s.objAt a = some o → s'.objAt a = some o
   cells : ∀ a b, some a ≠ c → s.cellAt a = some b → s'.cellAt a = some b
   out : s'.out = s.out
   region : s'.region = s.region
+  world : s'.world = s.world
 
-theorem Extends.but {s s' : State} (h : Extends s s') (c : Option Addr) : ExtendsBut c s s' :=
-  ⟨h.objs, fun a b _ => h.cells a b, h.out, h.region⟩
+theorem Extends.but {s s' : State W} (h : Extends s s') (c : Option Addr) : ExtendsBut c s s' :=
+  ⟨h.objs, fun a b _ => h.cells a b, h.out, h.region, h.world⟩
 
-def Res.KeepsBut {α : Type} (c : Option Addr) (base : State) : Res α → Prop
+def Res.KeepsBut {α : Type} (c : Option Addr) (base : State W) : Res W α → Prop
   | .ok _ s | .throw _ s | .unknown _ s => ExtendsBut c base s
   | .fuel => True
 
-theorem Inert.keepsBut {α : Type} {m : M α} (h : Inert m) (c : Option Addr) {base s : State} (hb : Extends base s) :
+theorem Inert.keepsBut {α : Type} {m : M W α} (h : Inert m) (c : Option Addr) {base s : State W} (hb : Extends base s) :
     (m s).KeepsBut c base := by
   have := h.keeps hb
   cases hm : m s <;> rw [hm] at this <;> first | exact Extends.but this c | trivial
 
 /-- A step that keeps all but `c`, then steps that change nothing. -/
-theorem keepsBut_bind_inert {α β : Type} {m : M α} {f : α → M β} {c : Option Addr} {base s : State}
+theorem keepsBut_bind_inert {α β : Type} {m : M W α} {f : α → M W β} {c : Option Addr} {base s : State W}
     (hm : (m s).KeepsBut c base) (hf : ∀ a, Inert (f a)) : ((m >>= f) s).KeepsBut c base := by
   show (match m s with
     | .ok a s' => f a s'
     | .throw v s' => .throw v s'
     | .unknown why s' => .unknown why s'
-    | .fuel => .fuel : Res β).KeepsBut c base
+    | .fuel => .fuel : Res W β).KeepsBut c base
   cases h : m s with
   | ok a s' =>
     rw [h] at hm
@@ -441,36 +445,36 @@ theorem keepsBut_bind_inert {α β : Type} {m : M α} {f : α → M β} {c : Opt
   | fuel => trivial
 
 /-- Steps that keep everything, then one that keeps all but `c`. -/
-theorem keeps_bind_but {α β : Type} {m : M α} {f : α → M β} {c : Option Addr} {base s : State}
+theorem keeps_bind_but {α β : Type} {m : M W α} {f : α → M W β} {c : Option Addr} {base s : State W}
     (hm : (m s).Keeps base) (hf : ∀ a s', Extends base s' → (f a s').KeepsBut c base) :
     ((m >>= f) s).KeepsBut c base := by
   show (match m s with
     | .ok a s' => f a s'
     | .throw v s' => .throw v s'
     | .unknown why s' => .unknown why s'
-    | .fuel => .fuel : Res β).KeepsBut c base
+    | .fuel => .fuel : Res W β).KeepsBut c base
   cases h : m s with
   | ok a s' => rw [h] at hm; exact hf a s' hm
   | throw v s' => rw [h] at hm; exact hm.but c
   | unknown why s' => rw [h] at hm; exact hm.but c
   | fuel => trivial
 
-theorem setCell_keepsBut (c : Addr) (v : Val) {base s : State} (hb : Extends base s) :
+theorem setCell_keepsBut (c : Addr) (v : Val) {base s : State W} (hb : Extends base s) :
     (setCell c v s).KeepsBut (some c) base := by
-  refine ⟨hb.objs, fun a b hne h => ?_, hb.out, hb.region⟩
+  refine ⟨hb.objs, fun a b hne h => ?_, hb.out, hb.region, hb.world⟩
   have hne' : a ≠ c := fun heq => hne (by rw [heq])
   show State.cellAt _ a = some b
   rw [cellAt_modify s c _ a hne']
   exact hb.cells a b h
 
-theorem initVar_keepsBut (env : Env) (x : Name) (v : Val) {base s : State} (hb : Extends base s) :
+theorem initVar_keepsBut (env : Env) (x : Name) (v : Val) {base s : State W} (hb : Extends base s) :
     (initVar env x v s).KeepsBut (env.vars.lookup x) base := by
   unfold initVar
   cases env.vars.lookup x with
   | none => exact (inert_unknown _).keepsBut none hb
   | some c => exact setCell_keepsBut c v hb
 
-theorem writeVar_keepsBut (env : Env) (x : Name) (v : Val) {base s : State} (hb : Extends base s) :
+theorem writeVar_keepsBut (env : Env) (x : Name) (v : Val) {base s : State W} (hb : Extends base s) :
     (writeVar env x v s).KeepsBut (env.vars.lookup x) base := by
   unfold writeVar
   cases env.vars.lookup x with
@@ -479,7 +483,7 @@ theorem writeVar_keepsBut (env : Env) (x : Name) (v : Val) {base s : State} (hb 
     show (match s.cellAt c with
       | some { value := some _, mutable := true } => setCell c v
       | some { value := some _, mutable := false } => throwErr .type "assignment to constant variable"
-      | _ => throwErr .reference s!"cannot access '{x}' before initialization" : M Unit) s |>.KeepsBut (some c) base
+      | _ => throwErr .reference s!"cannot access '{x}' before initialization" : M W Unit) s |>.KeepsBut (some c) base
     generalize s.cellAt c = cell
     rcases cell with _ | ⟨_ | _, _ | _⟩
     · exact (inert_throwErr _ _).keepsBut _ hb
@@ -491,7 +495,7 @@ theorem writeVar_keepsBut (env : Env) (x : Name) (v : Val) {base s : State} (hb 
 /-- **A declaration whose initializer only allocates** leaves every object that existed as it was, prints nothing, and
 changes no binding but the one of its name. This is the footprint "binds `x`, no effect" for such a unit. -/
 theorem decl_allocOnly {e : Expr} (h : e.allocOnly = true) (fuel : Nat) (env : Env) (kind : DeclKind) (x : Name)
-    (s : State) : (execStmt fuel env (.decl kind x e) s).KeepsBut (env.vars.lookup x) s := by
+    (s : State W) : (execStmt fuel env (.decl kind x e) s).KeepsBut (env.vars.lookup x) s := by
   cases fuel with
   | zero => unfold execStmt; trivial
   | succ n =>
@@ -534,7 +538,7 @@ end
 neither reads the binding the other declares. Then if `i` then `j` ends well, `j` then `i` ends well in the same
 state. -/
 def AllocOnlyUnitsCommute : Prop :=
-  ∀ (fuel : Nat) (env : Env) (i j : Nat) (ki kj : DeclKind) (x y : Name) (e e' : Expr) (s s' : State), i ≠ j →
+  ∀ (fuel : Nat) (env : Env) (i j : Nat) (ki kj : DeclKind) (x y : Name) (e e' : Expr) (s s' : State W), i ≠ j →
     e.allocOnly = true → e'.allocOnly = true → env.vars.lookup x ≠ env.vars.lookup y →
     (∀ z ∈ e.readsNow, env.vars.lookup z ≠ env.vars.lookup y) →
     (∀ z ∈ e'.readsNow, env.vars.lookup z ≠ env.vars.lookup x) →

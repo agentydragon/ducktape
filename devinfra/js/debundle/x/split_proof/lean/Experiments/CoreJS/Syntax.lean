@@ -58,7 +58,7 @@ inductive Expr where
   | str (s : String)
   /-- A name: a binding in scope, or one that does not resolve (a `ReferenceError` when read). -/
   | var (x : Name)
-  /-- A global of the host. The model defines nothing about its value. -/
+  /-- A global of the host. `Value.lean` has the few the model has a rule for; the others are opaque. -/
   | host (name : String)
   | this
   | func (f : Func)

@@ -12,19 +12,21 @@ every rule of the interpreter keeps `⊑` when its parts do.
 
 namespace CoreJS
 
+variable {W : World}
+
 /-- `r'` is `r`, unless `r` is out of fuel. -/
-def Res.le {α : Type} (r r' : Res α) : Prop := r = .fuel ∨ r = r'
+def Res.le {α : Type} (r r' : Res W α) : Prop := r = .fuel ∨ r = r'
 
 /-- `m'` does what `m` does, in every state where `m` finishes. -/
-def M.le {α : Type} (m m' : M α) : Prop := ∀ s, (m s).le (m' s)
+def M.le {α : Type} (m m' : M W α) : Prop := ∀ s, (m s).le (m' s)
 
 @[inherit_doc] scoped infix:50 " ⊑ " => M.le
 
-theorem M.le_refl {α : Type} (m : M α) : m ⊑ m := fun _ => .inr rfl
+theorem M.le_refl {α : Type} (m : M W α) : m ⊑ m := fun _ => .inr rfl
 
-theorem M.le_outOfFuel {α : Type} (m : M α) : outOfFuel ⊑ m := fun _ => .inl rfl
+theorem M.le_outOfFuel {α : Type} (m : M W α) : outOfFuel ⊑ m := fun _ => .inl rfl
 
-theorem M.le_bind {α β : Type} {m m' : M α} {f f' : α → M β} (hm : m ⊑ m') (hf : ∀ a, f a ⊑ f' a) :
+theorem M.le_bind {α β : Type} {m m' : M W α} {f f' : α → M W β} (hm : m ⊑ m') (hf : ∀ a, f a ⊑ f' a) :
     (m >>= f) ⊑ (m' >>= f') := by
   intro s
   show Res.le (match m s with
@@ -45,14 +47,14 @@ theorem M.le_bind {α β : Type} {m m' : M α} {f f' : α → M β} (hm : m ⊑ 
     | unknown why s' => exact .inr rfl
     | fuel => exact .inl rfl
 
-theorem M.le_map {α β : Type} {m m' : M α} (f : α → β) (hm : m ⊑ m') : (f <$> m) ⊑ (f <$> m') :=
+theorem M.le_map {α β : Type} {m m' : M W α} (f : α → β) (hm : m ⊑ m') : (f <$> m) ⊑ (f <$> m') :=
   M.le_bind hm fun _ => M.le_refl _
 
-theorem M.le_discard {α : Type} {m m' : M α} (hm : m ⊑ m') : discard m ⊑ discard m' :=
+theorem M.le_discard {α : Type} {m m' : M W α} (hm : m ⊑ m') : discard m ⊑ discard m' :=
   M.le_bind hm fun _ => M.le_refl _
 
 /-- What a call does, compared for every callee, `this` and arguments. -/
-def Call.le (call call' : Call) : Prop := ∀ f this args, call f this args ⊑ call' f this args
+def Call.le (call call' : Call W) : Prop := ∀ f this args, call f this args ⊑ call' f this args
 
 /-- One step of a comparison: the same computation on both sides, a sequence, or a case split. -/
 syntax "mono_step" : tactic
@@ -64,50 +66,62 @@ macro_rules
     | with_reducible refine M.le_discard ?_
     | split)
 
-theorem getProp_le {call call' : Call} (h : Call.le call call') (base key : Val) :
-    getProp call base key ⊑ getProp call' base key := by
-  unfold getProp
+theorem getFrom_le {call call' : Call W} (h : Call.le call call') (a : Addr) (base : Val) (k : String) :
+    getFrom call a base k ⊑ getFrom call' a base k := by
+  unfold getFrom
   repeat' mono_step
   exact h _ _ _
 
-theorem setProp_le {call call' : Call} (h : Call.le call call') (base key v : Val) :
+theorem protoProp_le {call call' : Call W} (h : Call.le call call') (owner : String) (names : List String) (base : Val)
+    (k : String) : protoProp call owner names base k ⊑ protoProp call' owner names base k := by
+  unfold protoProp
+  split
+  · exact M.le_refl _
+  · exact getFrom_le h _ _ _
+
+theorem getProp_le {call call' : Call W} (h : Call.le call call') (base key : Val) :
+    getProp call base key ⊑ getProp call' base key := by
+  unfold getProp
+  repeat' first | exact getFrom_le h _ _ _ | exact protoProp_le h _ _ _ _ | mono_step
+
+theorem setProp_le {call call' : Call W} (h : Call.le call call') (base key v : Val) :
     setProp call base key v ⊑ setProp call' base key v := by
   unfold setProp
   repeat' mono_step
   exact h _ _ _
 
-theorem toDesc_le {call call' : Call} (h : Call.le call call') (v : Val) : toDesc call v ⊑ toDesc call' v := by
+theorem toDesc_le {call call' : Call W} (h : Call.le call call') (v : Val) : toDesc call v ⊑ toDesc call' v := by
   unfold toDesc
   repeat' first | exact getProp_le h _ _ | mono_step
 
-theorem prim_le {call call' : Call} (h : Call.le call call') (p : Prim) (args : List Val) :
+theorem prim_le {call call' : Call W} (h : Call.le call call') (p : Prim) (args : List Val) :
     prim call p args ⊑ prim call' p args := by
   unfold prim
   repeat' first | exact toDesc_le h _ | mono_step
 
-theorem getRef_le {call call' : Call} (h : Call.le call call') (env : Env) (r : Ref) :
+theorem getRef_le {call call' : Call W} (h : Call.le call call') (env : Env) (r : Ref) :
     getRef call env r ⊑ getRef call' env r := by
   cases r <;> first | exact M.le_refl _ | exact getProp_le h _ _
 
-theorem putRef_le {call call' : Call} (h : Call.le call call') (env : Env) (r : Ref) (v : Val) :
+theorem putRef_le {call call' : Call W} (h : Call.le call call') (env : Env) (r : Ref) (v : Val) :
     putRef call env r v ⊑ putRef call' env r v := by
   cases r <;> first | exact M.le_refl _ | exact setProp_le h _ _ _
 
 /-- Every function of the interpreter with the bound `n`, against the same with the bound `m`. -/
-structure Mono (n m : Nat) : Prop where
-  expr : ∀ env e, evalExpr n env e ⊑ evalExpr m env e
-  args : ∀ env es, evalArgs n env es ⊑ evalArgs m env es
-  target : ∀ env t, evalTarget n env t ⊑ evalTarget m env t
-  props : ∀ env a ps, evalProps n env a ps ⊑ evalProps m env a ps
-  members : ∀ env proto c ms, evalMembers n env proto c ms ⊑ evalMembers m env proto c ms
-  fields : ∀ env a fs, evalFields n env a fs ⊑ evalFields m env a fs
-  call : ∀ callee this args, callFn n callee this args ⊑ callFn m callee this args
-  construct : ∀ callee args, construct n callee args ⊑ construct m callee args
-  stmt : ∀ env s, execStmt n env s ⊑ execStmt m env s
-  stmts : ∀ env ss, execStmts n env ss ⊑ execStmts m env ss
-  loop : ∀ env fresh test update body, loop n env fresh test update body ⊑ loop m env fresh test update body
+structure Mono (W : World) (n m : Nat) : Prop where
+  expr : ∀ env e, (evalExpr n env e : M W _) ⊑ evalExpr m env e
+  args : ∀ env es, (evalArgs n env es : M W _) ⊑ evalArgs m env es
+  target : ∀ env t, (evalTarget n env t : M W _) ⊑ evalTarget m env t
+  props : ∀ env a ps, (evalProps n env a ps : M W _) ⊑ evalProps m env a ps
+  members : ∀ env proto c ms, (evalMembers n env proto c ms : M W _) ⊑ evalMembers m env proto c ms
+  fields : ∀ env a fs, (evalFields n env a fs : M W _) ⊑ evalFields m env a fs
+  call : ∀ callee this args, (callFn n callee this args : M W _) ⊑ callFn m callee this args
+  construct : ∀ callee args, (construct n callee args : M W _) ⊑ construct m callee args
+  stmt : ∀ env s, (execStmt n env s : M W _) ⊑ execStmt m env s
+  stmts : ∀ env ss, (execStmts n env ss : M W _) ⊑ execStmts m env ss
+  loop : ∀ env fresh test update body, (loop n env fresh test update body : M W _) ⊑ loop m env fresh test update body
 
-theorem Mono.callLe {n m : Nat} (h : Mono n m) : Call.le (callFn n) (callFn m) := h.call
+theorem Mono.callLe {n m : Nat} (h : Mono W n m) : Call.le (callFn n : Call W) (callFn m) := h.call
 
 /-- A part of a rule: one of the interpreter's functions with the smaller bound, or an operation that takes the call. -/
 syntax "mono_part " ident : tactic
@@ -135,41 +149,41 @@ macro_rules
   | `(tactic| mono $h) => `(tactic| repeat' first | mono_part $h | mono_step)
 
 section step
-variable {n m : Nat} (ih : Mono n m)
+variable {n m : Nat} (ih : Mono W n m)
 include ih
 
-theorem Mono.expr_succ (env : Env) (e : Expr) : evalExpr (n + 1) env e ⊑ evalExpr (m + 1) env e := by
+theorem Mono.expr_succ (env : Env) (e : Expr) : (evalExpr (n + 1) env e : M W _) ⊑ evalExpr (m + 1) env e := by
   cases e <;> unfold evalExpr <;> mono ih
 
-theorem Mono.args_succ (env : Env) (es : List Expr) : evalArgs (n + 1) env es ⊑ evalArgs (m + 1) env es := by
+theorem Mono.args_succ (env : Env) (es : List Expr) : (evalArgs (n + 1) env es : M W _) ⊑ evalArgs (m + 1) env es := by
   cases es <;> unfold evalArgs <;> mono ih
 
-theorem Mono.target_succ (env : Env) (t : Target) : evalTarget (n + 1) env t ⊑ evalTarget (m + 1) env t := by
+theorem Mono.target_succ (env : Env) (t : Target) : (evalTarget (n + 1) env t : M W _) ⊑ evalTarget (m + 1) env t := by
   cases t <;> unfold evalTarget <;> mono ih
 
 theorem Mono.props_succ (env : Env) (a : Addr) (ps : List PropDef) :
-    evalProps (n + 1) env a ps ⊑ evalProps (m + 1) env a ps := by
+    (evalProps (n + 1) env a ps : M W _) ⊑ evalProps (m + 1) env a ps := by
   cases ps <;> unfold evalProps <;> mono ih
 
 theorem Mono.members_succ (env : Env) (proto c : Addr) (ms : List ClassMember) :
-    evalMembers (n + 1) env proto c ms ⊑ evalMembers (m + 1) env proto c ms := by
+    (evalMembers (n + 1) env proto c ms : M W _) ⊑ evalMembers (m + 1) env proto c ms := by
   cases ms <;> unfold evalMembers <;> mono ih
 
 theorem Mono.fields_succ (env : Env) (a : Addr) (fs : List (String × Expr)) :
-    evalFields (n + 1) env a fs ⊑ evalFields (m + 1) env a fs := by
+    (evalFields (n + 1) env a fs : M W _) ⊑ evalFields (m + 1) env a fs := by
   cases fs <;> unfold evalFields <;> mono ih
 
 theorem Mono.call_succ (callee this : Val) (args : List Val) :
-    callFn (n + 1) callee this args ⊑ callFn (m + 1) callee this args := by
+    (callFn (n + 1) callee this args : M W _) ⊑ callFn (m + 1) callee this args := by
   unfold callFn
   mono ih
 
 theorem Mono.construct_succ (callee : Val) (args : List Val) :
-    CoreJS.construct (n + 1) callee args ⊑ CoreJS.construct (m + 1) callee args := by
+    (CoreJS.construct (n + 1) callee args : M W _) ⊑ CoreJS.construct (m + 1) callee args := by
   unfold CoreJS.construct
   mono ih
 
-theorem Mono.stmt_succ (env : Env) (s : Stmt) : execStmt (n + 1) env s ⊑ execStmt (m + 1) env s := by
+theorem Mono.stmt_succ (env : Env) (s : Stmt) : (execStmt (n + 1) env s : M W _) ⊑ execStmt (m + 1) env s := by
   cases s with
   | tryCatch body param handler =>
     unfold execStmt
@@ -204,17 +218,17 @@ theorem Mono.stmt_succ (env : Env) (s : Stmt) : execStmt (n + 1) env s ⊑ execS
   | decl kind x e => cases kind <;> unfold execStmt <;> mono ih
   | _ => unfold execStmt; mono ih
 
-theorem Mono.stmts_succ (env : Env) (ss : List Stmt) : execStmts (n + 1) env ss ⊑ execStmts (m + 1) env ss := by
+theorem Mono.stmts_succ (env : Env) (ss : List Stmt) : (execStmts (n + 1) env ss : M W _) ⊑ execStmts (m + 1) env ss := by
   cases ss <;> unfold execStmts <;> mono ih
 
 theorem Mono.loop_succ (env : Env) (fresh : List Name) (test update : Expr) (body : Stmt) :
-    CoreJS.loop (n + 1) env fresh test update body ⊑ CoreJS.loop (m + 1) env fresh test update body := by
+    (CoreJS.loop (n + 1) env fresh test update body : M W _) ⊑ CoreJS.loop (m + 1) env fresh test update body := by
   unfold CoreJS.loop
   mono ih
 
 end step
 
-theorem mono : ∀ n m, n ≤ m → Mono n m := by
+theorem mono : ∀ n m, n ≤ m → Mono W n m := by
   intro n
   induction n with
   | zero =>
@@ -233,17 +247,17 @@ theorem mono : ∀ n m, n ≤ m → Mono n m := by
         ih.construct_succ, ih.stmt_succ, ih.stmts_succ, ih.loop_succ⟩
 
 theorem runBody_le {n m : Nat} (h : n ≤ m) (env : Env) (body : List (Nat × Stmt)) :
-    runBody n env body ⊑ runBody m env body := by
+    (runBody n env body : M W _) ⊑ runBody m env body := by
   induction body with
   | nil => exact M.le_refl _
   | cons unit rest ih =>
     obtain ⟨id, s⟩ := unit
-    have hs := (mono n m h).stmt env s
+    have hs := (mono (W := W) n m h).stmt env s
     unfold runBody runUnit inRegion
     repeat' first | exact hs | exact ih | mono_step
 
 theorem runModules_le {n m : Nat} (h : n ≤ m) (linked : List (Module × Env)) :
-    runModules n linked ⊑ runModules m linked := by
+    (runModules n linked : M W _) ⊑ runModules m linked := by
   induction linked with
   | nil => exact M.le_refl _
   | cons first rest ih =>
@@ -251,19 +265,19 @@ theorem runModules_le {n m : Nat} (h : n ≤ m) (linked : List (Module × Env)) 
     exact M.le_bind (runBody_le h env md.body) fun _ => ih
 
 /-- **More fuel never changes a run that finished.** -/
-theorem fuel_mono {n m : Nat} {P : Program} {r : Res Unit} (h : runProgram n P = r) (hr : r ≠ .fuel) (hnm : n ≤ m) :
-    runProgram m P = r := by
-  have hle : (runProgram n P).le (runProgram m P) :=
-    M.le_bind (M.le_refl _) (fun linked => runModules_le hnm linked) (initialState P.regions)
+theorem fuel_mono {n m : Nat} {P : Program} {r : Res W Unit} (h : runProgram W n P = r) (hr : r ≠ .fuel)
+    (hnm : n ≤ m) : runProgram W m P = r := by
+  have hle : (runProgram W n P).le (runProgram W m P) :=
+    M.le_bind (M.le_refl _) (fun linked => runModules_le hnm linked) (initialState W P.regions)
   rcases hle with hf | he
   · exact absurd (h ▸ hf) hr
   · exact he ▸ h
 
 /-- The program ends with `r`: some bound on the depth is enough. -/
-def Ends (P : Program) (r : Res Unit) : Prop := ∃ n, runProgram n P = r ∧ r ≠ .fuel
+def Ends (W : World) (P : Program) (r : Res W Unit) : Prop := ∃ n, runProgram W n P = r ∧ r ≠ .fuel
 
 /-- A program ends in at most one way. -/
-theorem Ends.unique {P : Program} {r r' : Res Unit} (h : Ends P r) (h' : Ends P r') : r = r' := by
+theorem Ends.unique {P : Program} {r r' : Res W Unit} (h : Ends W P r) (h' : Ends W P r') : r = r' := by
   obtain ⟨n, hn, hr⟩ := h
   obtain ⟨n', hn', hr'⟩ := h'
   rw [← fuel_mono hn hr (Nat.le_max_left n n'), ← fuel_mono hn' hr' (Nat.le_max_right n n')]
