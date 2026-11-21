@@ -1,6 +1,6 @@
 # gazelle:ignore
 
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "cluster",
@@ -11,8 +11,25 @@ py_library(
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/providers/cnpg:cluster",
+        "//cluster/cdk8s/providers/cnpg:database",
         "@pypi//cdk8s",
         "@pypi//constructs",
+    ],
+)
+
+py_test(
+    name = "test_cluster",
+    srcs = ["test_cluster.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":cluster",
+        "//:conftest",
+        "//cluster/cdk8s:conftest",
+        "//cluster/cdk8s/providers/cnpg:database",
+        "@pypi//cdk8s",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 

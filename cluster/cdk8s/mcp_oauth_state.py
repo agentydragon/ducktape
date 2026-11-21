@@ -18,10 +18,9 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecManagedRolesPasswordSecret,
 )
 from cnpg_database_crds.io.cnpg.postgresql import (
-    Database,
+    Database as CnpgDatabase,
     DatabaseSpec,
     DatabaseSpecCluster,
-    DatabaseSpecDatabaseReclaimPolicy,
     DatabaseSpecEnsure,
 )
 from external_secret_store_crds.io.external_secrets import ClusterSecretStoreSpecProviderKubernetesAuthServiceAccount
@@ -161,7 +160,7 @@ def _db_chart(app: App) -> Chart:
             url_key="uri",
         )
 
-    cluster.cluster(
+    postgres = cluster.cluster(
         chart,
         "cluster",
         ref=DATABASE,
@@ -187,29 +186,24 @@ def _db_chart(app: App) -> Chart:
     backup.CnpgBackup(chart, "db-backup", ref=DATABASE, retention="30d")
 
     for store in STORES:
-        Database(
+        cluster.Database(
             chart,
             f"database-{store.id}",
             # CNPG's Database CR metadata.name is a Kubernetes DNS name; the
             # PostgreSQL database name in spec may still contain underscores.
             metadata=ApiObjectMetadata(name=f"mcp-oauth-{store.id}-database", namespace=NAMESPACE),
-            spec=DatabaseSpec(
-                cluster=DatabaseSpecCluster(name=DATABASE.name),
-                name=store.database,
-                owner=store.role,
-                # OAuth associations may be recreated after a deliberate reset, but pruning this
-                # Database CR should not silently remove its backing database.
-                database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.RETAIN,
-            ),
+            cluster=postgres,
+            name=store.database,
+            owner=store.role,
         )
         _consumer_secret_access(chart, store)
 
-    Database(
+    CnpgDatabase(
         chart,
         "database-plaid-db-tombstone",
         metadata=ApiObjectMetadata(name=f"mcp-oauth-{_RETIRED_PLAID_DB.id}-database", namespace=NAMESPACE),
         spec=DatabaseSpec(
-            cluster=DatabaseSpecCluster(name=DATABASE.name),
+            cluster=DatabaseSpecCluster(name=postgres.name),
             name=_RETIRED_PLAID_DB.database,
             owner=_RETIRED_PLAID_DB.role,
             ensure=DatabaseSpecEnsure.ABSENT,

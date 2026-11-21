@@ -13,13 +13,7 @@ from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ClusterRole, ClusterRolePolicyRule, ServiceAccount, k8s
-from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecPostgresql
-from cnpg_database_crds.io.cnpg.postgresql import (
-    Database,
-    DatabaseSpec,
-    DatabaseSpecCluster,
-    DatabaseSpecDatabaseReclaimPolicy,
-)
+from cnpg_cluster_crds.io.cnpg.postgresql import Cluster, ClusterSpecPostgresql
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
@@ -158,8 +152,8 @@ ROTATORS_CONFIG_MAP = ConfigMapArgs(
 )
 
 
-def _database(scope: Construct) -> None:
-    cluster.cluster(
+def _database(scope: Construct) -> Cluster:
+    return cluster.cluster(
         scope,
         "db",
         ref=DATABASE,
@@ -197,17 +191,14 @@ def _service(scope: Construct) -> None:
     )
 
 
-def _local_server(scope: Construct) -> None:
-    Database(
+def _local_server(scope: Construct, postgres: Cluster) -> None:
+    cluster.Database(
         scope,
         "local-database",
         metadata=ApiObjectMetadata(name=_NEXT_DATABASE_SECRET, namespace=NAMESPACE),
-        spec=DatabaseSpec(
-            cluster=DatabaseSpecCluster(name=DATABASE.name),
-            name="attic_local",
-            owner="attic",
-            database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.RETAIN,
-        ),
+        cluster=postgres,
+        name="attic_local",
+        owner="attic",
     )
     reader = k8s.KubeServiceAccount(
         scope, "local-db-reader", metadata=k8s.ObjectMeta(name="attic-local-db-reader", namespace=NAMESPACE)
@@ -568,8 +559,8 @@ def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.AUTO)
     pull_credentials.forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
-    _database(chart)
+    postgres = _database(chart)
     _service(chart)
     _rotation(chart)
-    _local_server(chart)
+    _local_server(chart, postgres)
     return chart

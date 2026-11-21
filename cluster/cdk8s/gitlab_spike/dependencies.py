@@ -13,14 +13,7 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecManagedRoles,
     ClusterSpecManagedRolesPasswordSecret,
 )
-from cnpg_database_crds.io.cnpg.postgresql import (
-    Database,
-    DatabaseSpec,
-    DatabaseSpecCluster,
-    DatabaseSpecDatabaseReclaimPolicy,
-    DatabaseSpecExtensions,
-    DatabaseSpecExtensionsEnsure,
-)
+from cnpg_database_crds.io.cnpg.postgresql import DatabaseSpecExtensions, DatabaseSpecExtensionsEnsure
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetTemplate,
@@ -54,7 +47,7 @@ def _databases(chart: Chart) -> None:
         port=app.GITLAB_DB.rw.port.number,
         database=app.PRAEFECT_DATABASE,
     )
-    cluster.cluster(
+    postgres = cluster.cluster(
         chart,
         "gitlab-cluster",
         ref=app.GITLAB_DB,
@@ -76,33 +69,27 @@ def _databases(chart: Chart) -> None:
         wal_archive=True,
     )
     backup.CnpgBackup(chart, "gitlab-backup", ref=app.GITLAB_DB, retention="30d")
-    Database(
+    cluster.Database(
         chart,
         "praefect-database",
         metadata=ApiObjectMetadata(name="praefect", namespace=app.NAMESPACE),
-        spec=DatabaseSpec(
-            cluster=DatabaseSpecCluster(name=app.GITLAB_DB.name),
-            name=app.PRAEFECT_DATABASE,
-            owner=app.PRAEFECT_DATABASE,
-            database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.RETAIN,
-        ),
+        cluster=postgres,
+        name=app.PRAEFECT_DATABASE,
+        owner=app.PRAEFECT_DATABASE,
     )
     # Adopt the bootstrap-created database so CNPG installs and keeps these extensions.
     # Retain prevents deleting the Database CR from deleting GitLab's data.
-    Database(
+    cluster.Database(
         chart,
         "gitlab-extensions",
         metadata=ApiObjectMetadata(name="gitlab-extensions", namespace=app.NAMESPACE),
-        spec=DatabaseSpec(
-            cluster=DatabaseSpecCluster(name=app.GITLAB_DB.name),
-            name=app.GITLAB_DATABASE,
-            owner=app.GITLAB_DATABASE,
-            database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.RETAIN,
-            extensions=[
-                DatabaseSpecExtensions(name=name, ensure=DatabaseSpecExtensionsEnsure.PRESENT)
-                for name in ("amcheck", "pg_trgm", "btree_gist")
-            ],
-        ),
+        cluster=postgres,
+        name=app.GITLAB_DATABASE,
+        owner=app.GITLAB_DATABASE,
+        extensions=[
+            DatabaseSpecExtensions(name=name, ensure=DatabaseSpecExtensionsEnsure.PRESENT)
+            for name in ("amcheck", "pg_trgm", "btree_gist")
+        ],
     )
 
 
