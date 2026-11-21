@@ -1,9 +1,8 @@
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
-load("@rules_python//python:defs.bzl", "py_binary")
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env")
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
     name = "models",
@@ -122,7 +121,6 @@ py_test(
 
 py_binary(
     name = "desktop_bin",
-    imports = [".."],
     main_module = "aiquota.desktop",
     visibility = ["//visibility:public"],
     deps = [":desktop_lib"],
@@ -166,13 +164,9 @@ py_library(
 
 py_binary(
     name = "aiquota",
-    imports = [".."],
     main_module = "aiquota.cli",
     visibility = ["//aiquota:__subpackages__"],
-    deps = [
-        ":cli_lib",
-        "@pypi//typer",
-    ],
+    deps = [":cli_lib"],
 )
 
 py_library(
@@ -190,7 +184,6 @@ py_library(
 
 py_binary(
     name = "server",
-    imports = [".."],
     main_module = "aiquota.server_main",
     visibility = ["//visibility:public"],
     deps = [":server_main"],
@@ -205,7 +198,6 @@ aspect_py_binary(
 # Prints the OpenAPI schema artifact consumed by the frontend's file-input converter.
 py_binary(
     name = "export_schema_bin",
-    imports = [".."],
     main_module = "aiquota.export_schema",
     visibility = ["//aiquota/frontend:__pkg__"],
     deps = [":export_schema"],

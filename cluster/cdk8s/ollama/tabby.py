@@ -210,7 +210,7 @@ def add_tabbyapi(scope: Construct) -> None:
         metadata=k8s.ObjectMeta(name=SWITCHING_SERVICE, namespace=NAMESPACE, labels=_PODS.selector),
         spec=k8s.ServiceSpec(selector={**_PODS.selector, **_SWITCHING_LABEL}, ports=[SERVICE.port.k8s_service_port()]),
     )
-    # LiteLLM authenticates client requests. Gatus only needs the model-list health check.
+    # LiteLLM authenticates clients; Gatus probes health and Alloy scrapes metrics.
     k8s.KubeNetworkPolicy(
         scope,
         "tabbyapi-ingress",
@@ -222,10 +222,16 @@ def add_tabbyapi(scope: Construct) -> None:
                 k8s.NetworkPolicyIngressRule(
                     from_=[
                         k8s.NetworkPolicyPeer(
-                            namespace_selector=k8s.LabelSelector(match_labels={"kubernetes.io/metadata.name": name}),
+                            namespace_selector=k8s.LabelSelector(
+                                match_labels={"kubernetes.io/metadata.name": namespace}
+                            ),
                             pod_selector=k8s.LabelSelector(match_labels={"app.kubernetes.io/name": name}),
                         )
-                        for name in ("litellm", "gatus")
+                        for namespace, name in (
+                            ("litellm", "litellm"),
+                            ("gatus", "gatus"),
+                            ("monitoring", "alloy-node"),
+                        )
                     ],
                     ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(SERVICE.pod_port), protocol="TCP")],
                 )

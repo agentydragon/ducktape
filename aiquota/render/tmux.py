@@ -1,7 +1,6 @@
 """Compact tmux status summary, using the shared provider window selection."""
 
-from aiquota.models import AllQuotas, ProviderQuota
-from aiquota.render.view_model import ProviderView, to_view
+from aiquota.render.view_model import ProviderView
 
 # Nerd Font cod-sparkle (U+EC10), the de-facto "AI" glyph in dev tooling.
 _AI_GLYPH = "\uec10"
@@ -19,13 +18,7 @@ TINT_FG = {
 }
 
 
-def render_provider(pq: ProviderQuota) -> str:
-    return _render_provider(to_view(AllQuotas(providers=[pq], fetched_at=pq.last_output.fetched_at)).providers[0])
-
-
 def _render_provider(pq: ProviderView) -> str:
-    if pq.provider in _API_PROVIDERS:
-        return ""
     prefix = PROVIDER_PREFIX.get(pq.provider, pq.provider[0].upper())
     windows = pq.display_windows
     index = pq.summary_index
@@ -60,9 +53,4 @@ def _render_provider(pq: ProviderView) -> str:
 
 def render_view(providers: list[ProviderView]) -> str:
     segments = [_render_provider(provider) for provider in providers if provider.provider not in _API_PROVIDERS]
-    return f"{_AI_GLYPH} " + " ".join(segments) if segments else ""
-
-
-def render(providers: list[ProviderQuota]) -> str:
-    segments = [render_provider(provider) for provider in providers if provider.provider not in _API_PROVIDERS]
     return f"{_AI_GLYPH} " + " ".join(segments) if segments else ""
