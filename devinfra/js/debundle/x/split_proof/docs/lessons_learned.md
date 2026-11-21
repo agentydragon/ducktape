@@ -53,6 +53,7 @@ Numbers are for one production bundle of 9,707 units and its reviewed tree of 2,
 - **Library code is out of reach.** On the 20,032-unit vendor chunk `lower` aborts with a stack overflow. In the first 3,000 units, one store to `window.Promise` makes every unit that is not a function declaration touch the world.
 
 - **Fixing six wrong rules cost little on the large bundle.** With the fixes for F1 to F6, 1,653 units touch the world (1,584 before) and 1,634 of them run unknown code (1,558). 9,633 of the 9,709 footprints are the same, and no unit stopped being an effect. The new effects are operations on a value the world made: `const a = imported.name` is unknown code now, since the import may be a `Proxy` or have a getter. At module level almost nothing moved: 886 modules still peel together, and 2,366 fit whole in bundle order (2,367), which `lowersplit` accepts. The obligation counts above were not measured again. Counting a `throw` that the analysis reaches as unknown code then changed one unit of the 9,709: the guard `if (!root) throw …` behind the lookup of the application's root element.
+- **Measure a rejected sound rule again after other fixes.** Dropping premise P3 cost 30% more units that touch the world before the fixes for F1 to F6, and 6% after: 1,751 against 1,654, with the same 886 modules peeling together and 2,364 instead of 2,366 kept whole in bundle order. The fixes had already made most of the units P3 covered unknown code.
 
 ## What the inputs require
 
