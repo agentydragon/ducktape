@@ -24,7 +24,6 @@ class K8sMetadata(BaseModel):
     name: str = ""
     namespace: str = ""
     labels: dict[str, str] = Field(default_factory=dict)
-    annotations: dict[str, str] = Field(default_factory=dict)
 
 
 class Condition(BaseModel):
@@ -41,8 +40,6 @@ class Condition(BaseModel):
     status: str  # "True" / "False" / "Unknown"
     reason: str | None = None
     message: str | None = None
-    last_transition_time: str | None = None
-    observed_generation: int | None = None
 
 
 class K8sResource(BaseModel):
@@ -153,13 +150,8 @@ class SandboxTemplateResource(K8sResource):
         return [self.spec.pod_template.spec]
 
 
-class ImageRepositorySpec(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    image: str = ""
-
-
 class ImageRepositoryResource(K8sResource):
-    spec: ImageRepositorySpec = Field(default_factory=ImageRepositorySpec)
+    """An image-automation `ImageRepository`: `image_automation` matches them to Receiver references by name."""
 
 
 class SecretRef(BaseModel):
@@ -203,16 +195,6 @@ class RoleBindingResource(K8sResource):
     subjects: list[RoleBindingSubject] = Field(default_factory=list)
 
 
-class PolicyBindingSpec(BaseModel):
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
-
-    policy_sets: list[str] = Field(default_factory=list)
-
-
-class PolicyBindingResource(K8sResource):
-    spec: PolicyBindingSpec = Field(default_factory=PolicyBindingSpec)
-
-
 class SecretStoreKubernetesProvider(BaseModel):
     model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
 
@@ -235,26 +217,12 @@ class SecretStoreResource(K8sResource):
     spec: SecretStoreSpec = Field(default_factory=SecretStoreSpec)
 
 
-class ExternalSecretStoreRef(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    kind: str = "SecretStore"
-    name: str = ""
-
-
-class ExternalSecretSpec(BaseModel):
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
-
-    secret_store_ref: ExternalSecretStoreRef = Field(default_factory=ExternalSecretStoreRef)
-
-
 class ExternalSecretResource(K8sResource):
-    spec: ExternalSecretSpec = Field(default_factory=ExternalSecretSpec)
+    """An External Secrets `ExternalSecret`: `checks` looks up the ones a namespace has by name."""
 
 
 class GitRepositorySpec(BaseModel):
     model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
-    url: str = ""
     provider: str | None = None
     secret_ref: SecretRef | None = None
 
@@ -348,7 +316,6 @@ _KIND_MODELS: dict[str, type[K8sResource]] = {
     "DaemonSet": PodTemplateWorkloadResource,
     "Deployment": PodTemplateWorkloadResource,
     "Job": PodTemplateWorkloadResource,
-    "PolicyBinding": PolicyBindingResource,
     "SandboxTemplate": SandboxTemplateResource,
     "StatefulSet": PodTemplateWorkloadResource,
     "VirtualMachine": PodTemplateWorkloadResource,

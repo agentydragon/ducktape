@@ -23,15 +23,9 @@ class _CamelCaseModel(BaseModel):
     model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
 
 
-class GeneratorOptions(_CamelCaseModel):
-    disable_name_suffix_hash: bool = False
-
-
 class ConfigMapGeneratorEntry(_CamelCaseModel):
     name: str
-    namespace: str = ""
     files: list[Path] = []
-    options: GeneratorOptions = Field(default_factory=GeneratorOptions)
 
 
 class PatchEntry(_CamelCaseModel):
@@ -45,11 +39,9 @@ class KustomizeFile(_CamelCaseModel):
         description="Absolute path to the kustomization file itself (injected by parser), or where "
         "kustomize-controller writes the one it generates (`flux_generated_kustomization`)"
     )
-    namespace: str = ""
     resources: list[Path] = []
     patches: list[PatchEntry] = []
     config_map_generator: list[ConfigMapGeneratorEntry] = []
-    generator_options: GeneratorOptions = Field(default_factory=GeneratorOptions)
 
     def _resolve(self, rel: Path) -> Path:
         return (self.path.parent / rel).resolve()

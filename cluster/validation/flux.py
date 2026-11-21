@@ -88,26 +88,6 @@ class FluxKustomizationSpec(BaseModel):
         return (repo_root / rel).resolve()
 
 
-class InventoryEntry(BaseModel):
-    """One applied resource in a Kustomization's status.inventory.
-
-    `id` format is `<namespace>_<name>_<group>_<kind>` (empty namespace for
-    cluster-scoped resources). `v` is the apiVersion."""
-
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
-
-    id: str
-    v: str = ""
-
-
-class Inventory(BaseModel):
-    """Flux Kustomization.status.inventory wrapper."""
-
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
-
-    entries: list[InventoryEntry] = []
-
-
 def parse_go_duration(s: str | None) -> float:
     """Convert a Flux Go duration to seconds; a missing duration is zero.
 
@@ -133,7 +113,7 @@ class FluxReconcileHistoryEntry(BaseModel):
       (`ReconciliationSucceeded`, `HealthCheckFailed`, `ReconciliationFailed`, …).
     - `last_reconciled_duration` — Go-style duration of the most recent attempt
       (`parse_go_duration` available for converting to seconds).
-    - `first_reconciled` / `last_reconciled` — first/last attempt timestamps.
+    - `last_reconciled` — timestamp of the most recent attempt.
 
     Notes:
 
@@ -145,8 +125,6 @@ class FluxReconcileHistoryEntry(BaseModel):
 
     model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
 
-    digest: str = ""
-    first_reconciled: datetime | None = None
     last_reconciled: datetime | None = None
     last_reconciled_duration: str | None = None
     last_reconciled_status: str = ""
@@ -165,18 +143,12 @@ class FluxReconcileHistoryEntry(BaseModel):
 class FluxKustomizationStatus(BaseModel):
     """Parsed status from a live Flux Kustomization CR (live API responses only;
     YAML on disk doesn't carry status). Same shape works for HelmRelease too —
-    the conditions / history / lastAppliedRevision / lastAttemptedRevision
-    fields are identical."""
+    the conditions / history fields are identical."""
 
     model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
 
     conditions: list[Condition] = []
     history: list[FluxReconcileHistoryEntry] = []
-    inventory: Inventory | None = None
-    last_applied_revision: str | None = None
-    last_attempted_revision: str | None = None
-    last_handled_reconcile_at: str | None = None
-    observed_generation: int | None = None
 
     def condition(self, type_: str) -> Condition | None:
         """Return the first condition with the given type, or None."""
