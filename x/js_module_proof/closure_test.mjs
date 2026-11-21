@@ -970,6 +970,72 @@ example : evaluateExpression [] [] (.bitXor (.literal 2147483648) (.literal 0)) 
   assert.notDeepEqual(execute(source, shiftUnsafe.calls), execute(join(out, "entry.mjs"), shiftUnsafe.calls));
 }
 
+if (shard === 2) {
+  const source = join(root, "signed-shifts.mjs");
+  const spec = join(root, "signed-shifts.json");
+  const out = join(root, "signed-shifts-out");
+  await writeFile(
+    source,
+    `function left(x, count) { return x << count; }
+function right(x, count) { return x >> count; }
+function leftAssign(x) { let value = x; value <<= 33; return value; }
+function rightAssign(x) { let value = x; value >>= 33; return value; }
+export { left, right, leftAssign, rightAssign };
+`
+  );
+  await writeFile(
+    spec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "functions.mjs": { imports: [], statements: [0, 1, 2, 3] },
+        "entry.mjs": { imports: ["functions.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", source, spec, out).result, "generated");
+  const proof = cli("validate", source, spec, out);
+  assert.equal(proof.result, "proved under assumptions", JSON.stringify(proof));
+  const calls = [
+    { name: "left", args: [4294967297, 33] },
+    { name: "left", args: [1073741824, 2] },
+    { name: "right", args: [4294967297, 32] },
+    { name: "right", args: [2147483647, 31] },
+    { name: "leftAssign", args: [3] },
+    { name: "rightAssign", args: [7] },
+  ];
+  const trace = execute(source, calls);
+  assert.deepEqual(trace.results, [{ value: 2 }, { value: 0 }, { value: 1 }, { value: 0 }, { value: 6 }, { value: 3 }]);
+  assert.deepEqual(execute(join(out, "entry.mjs"), calls), trace);
+  const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
+    encoding: "utf8",
+    input:
+      models +
+      proof.certificate +
+      `
+theorem signed_shift_observation :
+  ((sourceBindingState bindingSource).bind (fun state =>
+    (publicCallableTable bindingSource bindingExports).bind (fun table =>
+      runArgumentCalls table state [("left", [4294967297, 33]), ("left", [1073741824, 2]), ("right", [4294967297, 32]), ("right", [2147483647, 31]), ("leftAssign", [3]), ("rightAssign", [7])]))).map
+    (fun state => state.returns) = some [some 2, some 0, some 1, some 0, some 6, some 3] := by decide
+#print axioms signed_shift_observation
+example : evaluateExpression [] [] (.shiftLeft (.literal 1) (.literal 31)) = none := by decide
+example : evaluateExpression [] [] (.shiftRight (.literal 2147483648) (.literal 1)) = none := by decide
+`,
+  });
+  assert.equal(replay.status, 0, replay.stdout + replay.stderr);
+  assert.match(replay.stdout, /'signed_shift_observation' does not depend on any axioms/);
+  const emitted = join(out, "functions.mjs");
+  const original = await readFile(emitted, "utf8");
+  for (const operator of ["<<", ">>"]) {
+    await writeFile(emitted, original.replace(`x ${operator} count`, `x ${operator} 1`));
+    const unsafe = cli("validate", source, spec, out);
+    assert.equal(unsafe.result, "unsafe", JSON.stringify(unsafe));
+    assert.notDeepEqual(execute(source, unsafe.calls), execute(join(out, "entry.mjs"), unsafe.calls));
+  }
+}
+
 if (shard === 14) {
   const logicalSource = join(root, "logical-values.mjs");
   const logicalSpec = join(root, "logical-values.json");

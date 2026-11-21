@@ -937,8 +937,8 @@ export function makeComposedCase(seed, index) {
       const choices =
         operator === "&"
           ? masks
-          : operator === ">>>"
-            ? [0, 1, 31, 32, 33, 4294967297]
+          : [">>>", "<<", ">>"].includes(operator)
+            ? [0, 1, 2, 32, 33, 4294967297]
             : [0, 1, 15, 4294967296, 4294967297];
       return choices[rand(choices.length)];
     };
@@ -950,7 +950,7 @@ export function makeComposedCase(seed, index) {
         return rand(3) ? id(names[rand(names.length)]) : literal(rand(4));
       }
       if (rand(7) === 0) {
-        const operator = ["&", "|", "^", ">>>"][rand(4)];
+        const operator = ["&", "|", "^", ">>>", "<<", ">>"][rand(6)];
         return {
           type: "BinaryExpression",
           operator,
@@ -1014,7 +1014,7 @@ export function makeComposedCase(seed, index) {
         visible.declare(name);
         if (mutable && rand(2)) {
           const mode = rand(5);
-          const bitOperator = ["&", "|", "^", ">>>"][rand(4)];
+          const bitOperator = ["&", "|", "^", ">>>", "<<", ">>"][rand(6)];
           body.push(
             expr({
               type: "AssignmentExpression",

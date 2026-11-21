@@ -33,6 +33,8 @@ inductive NumericExpr where
   | bitOr (left right : NumericExpr)
   | bitXor (left right : NumericExpr)
   | unsignedShift (left right : NumericExpr)
+  | shiftLeft (left right : NumericExpr)
+  | shiftRight (left right : NumericExpr)
   | equal (left right : NumericExpr)
   | less (left right : NumericExpr)
   | greater (left right : NumericExpr)
@@ -286,6 +288,30 @@ def evaluateExpression (locals globals : List (String × Nat)) : NumericExpr →
       | .ok rightValue =>
         let bits := (leftValue % 4294967296) / (2 ^ (rightValue % 32))
         pure ⟨rightResult.locals, .ok bits⟩
+  | .shiftLeft left right => do
+    let leftResult ← evaluateExpression locals globals left
+    match leftResult.completion with
+    | .error value => pure ⟨leftResult.locals, .error value⟩
+    | .ok leftValue =>
+      let rightResult ← evaluateExpression leftResult.locals globals right
+      match rightResult.completion with
+      | .error value => pure ⟨rightResult.locals, .error value⟩
+      | .ok rightValue =>
+        let bits := (leftValue * 2 ^ (rightValue % 32)) % 4294967296
+        if bits < 2147483648 then pure ⟨rightResult.locals, .ok bits⟩ else none
+  | .shiftRight left right => do
+    let leftResult ← evaluateExpression locals globals left
+    match leftResult.completion with
+    | .error value => pure ⟨leftResult.locals, .error value⟩
+    | .ok leftValue =>
+      let rightResult ← evaluateExpression leftResult.locals globals right
+      match rightResult.completion with
+      | .error value => pure ⟨rightResult.locals, .error value⟩
+      | .ok rightValue =>
+        let bits := leftValue % 4294967296
+        if bits < 2147483648 then
+          pure ⟨rightResult.locals, .ok (bits / (2 ^ (rightValue % 32)))⟩
+        else none
   | .divide left right => do
     let leftResult ← evaluateExpression locals globals left
     match leftResult.completion with
@@ -413,6 +439,8 @@ def evaluateArguments (locals globals : List (String × Nat)) : NumericExpr → 
   | .bitOr _ _ => none
   | .bitXor _ _ => none
   | .unsignedShift _ _ => none
+  | .shiftLeft _ _ => none
+  | .shiftRight _ _ => none
   | .equal _ _ => none
   | .less _ _ => none
   | .greater _ _ => none
