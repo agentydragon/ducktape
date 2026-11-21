@@ -27,6 +27,10 @@ const models = (
   await Promise.all(["Semantics.lean", "Effects.lean", "Bindings.lean"].map((n) => readFile(join(here, n), "utf8")))
 ).join("\n");
 if (shard === 7) {
+  const root = await mkdtemp(join(process.env.TEST_TMPDIR, "reexport-proof-"));
+  const source = join(root, "source.mjs");
+  const spec = join(root, "spec.json");
+  const out = join(root, "out");
   await writeFile(source, "let value = 4;\nfunction calculate(x) { return x + value; }\nexport { calculate };\n");
   const relaySpec = {
     kind: "bindings",
