@@ -1,8 +1,8 @@
 {
-  "validated_at_utc": "2026-11-20T23:06:45.855928+00:00",
+  "validated_at_utc": "2026-11-21T02:03:54.525233+00:00",
   "validation_scope": "RBE Chromium preview of the exact report, evidence, shared assets and root navigation",
-  "invocation": "00bcf219-2245-48e7-9ffc-58c1c39d3e06",
-  "invocation_url": "https://app.buildbuddy.io/invocation/00bcf219-2245-48e7-9ffc-58c1c39d3e06",
+  "invocation": "b8378197-df31-4631-9b34-03641a1ea583",
+  "invocation_url": "https://app.buildbuddy.io/invocation/b8378197-df31-4631-9b34-03641a1ea583",
   "target": "//devinfra/ci/x/latency_report_preview:test_preview",
   "cases": [
     "test_preview[desktop-light]",
@@ -13,34 +13,34 @@
   "screenshots_digest_verified": 40,
   "section_screenshot_sha256": {
     "kvm-cas": {
-      "test_preview[mobile-dark]": "32d708f9218dce2d8a270080b23ef76d5dd56a0b7f9685a47651e68ea2b641aa",
-      "test_preview[mobile-light]": "c0b120f97e4864b8e24dc059068ebf311cb81df56b645c907a09510a0c186cd4",
-      "test_preview[desktop-light]": "d689e5ee0d9fdd931c9784226f1825de07752a1d212d21fbf38237782a33e78c",
-      "test_preview[desktop-dark]": "c881335e5d08018b4d86dd6e94b226f195f9df2fa6732e7c6e9034749580c1ad"
+      "test_preview[mobile-dark]": "13eb1965a54b87938edb888a24a13a516c4b91ecffb0f6ac1be75fa8237cde60",
+      "test_preview[mobile-light]": "c3917b59d98a7659b45d0bc0809c6059e68ced5797c223777033ab0fb06e45d0",
+      "test_preview[desktop-light]": "6b8856b03d2979858bbcd9bd5638948af7e1b1dca4917f29f837785c3c9c39df",
+      "test_preview[desktop-dark]": "74eb2f67f3ba82cd73dedd94bfb3ce0ce61f361a9ca95d096848d26e06c61b61"
     },
     "firecracker-overlap": {
-      "test_preview[mobile-dark]": "b3422757bf06865567a13335d744841a1a6c0b047f1fdbd6e52becda912ed0e0",
-      "test_preview[mobile-light]": "721424cf851ab274cc0a3c7d99c3d22970e97890392f7ac2862730c2606e9ba7",
-      "test_preview[desktop-dark]": "d912f207c440a4d6dc3650c2851578feaaa75dc989c8509501c2aabc2303c36b",
-      "test_preview[desktop-light]": "fe7284330ba2421100c9372d9097370c47f711fe213d75c4e1ca033d27a91358"
+      "test_preview[mobile-dark]": "437d4fa1b982e224f949edd1f4f4f4c304e18669a753dbb9360b54e00a329c77",
+      "test_preview[mobile-light]": "be0f434d14229c61861ec5fcb897e10b6becd2cd99d9604f882454efe11cb611",
+      "test_preview[desktop-dark]": "4382210973d0f1f72d72b6a31fc50df34b1305b353784972c13b2139f2689b1a",
+      "test_preview[desktop-light]": "b588ac5af5432e3b01eb2243c80501dbbbcfe1bf01a86013f8269ed8395f8804"
     },
     "weekly-trend": {
       "test_preview[desktop-dark]": "bb6419da1c0ffe961ef097886cc4f90ab36fa9dea176ae28db2fd63b36b833ff",
-      "test_preview[mobile-dark]": "033cdc4b6b8b4fbc8833ad3c3b851655b5614e71644ad495e5af89e43e9a65a6",
-      "test_preview[mobile-light]": "8d4cf5c16d0fa607d02e7255a5bb3443b390882972c9cf61cb84da850fccebd1",
+      "test_preview[mobile-dark]": "7c9dddb56efd9b520ceed23945ba05d92cf28aed832f77c5798c6e77ebb03612",
+      "test_preview[mobile-light]": "82ed4e4741f8cd1ac2db4b3769043d1938ef13fe15c2ddbf0619e9595ebedc5b",
       "test_preview[desktop-light]": "27d3648bffdc39fc51bb5d968e1fd2ff0936dd63cc559c3048d9ea33c0d01bdf"
     },
     "report": {
-      "test_preview[mobile-dark]": "344863101a791c16fa5576f6476e80f2c97060028f72ee864449166089faed7c",
-      "test_preview[desktop-light]": "5d4eb60210579729ec2c8dac7b6bff7152081faeb09421715e765b7a51cc28bb",
-      "test_preview[desktop-dark]": "4014d364dd89c440ef84a6dd2b48c559cc12c6965362a51558df8372f77d5d5c",
-      "test_preview[mobile-light]": "71eee06554adb681900c04f8502ddfa8d59e7043a85babd7526571a30583f896"
+      "test_preview[mobile-dark]": "001243bcdc611ecbfda269f2d3366e7bb57c73f232ed8b0c7dd11aecbf2e8430",
+      "test_preview[desktop-light]": "1fa324f90b669b12dc8dd105bbbc7b1cc8b1c93ee91839dd881a0fb1a9c9dff6",
+      "test_preview[desktop-dark]": "d33657b4c7cb38c3f4540bff4ee25eb87fa912e37b7ada7128edbdd7b174bdc2",
+      "test_preview[mobile-light]": "3f4316f4a7318d7fcabb33dfe493dbf049afa5e350fd22ac897d23986bc9a673"
     }
   },
   "rendered_sha256": {
-    "index.html": "6f5b12df5ac1be2a5ee6c592d603e804482170733b66879c84dc617505cc91e1",
-    "latency/index.html": "950fd845580600f3349849a8c00c0560b1cb3263804be7437e2e6c0c575ab718",
-    "latency/evidence.json": "7eed3e7223bd7658bb5d96aba4b34b8b789426b8975fba957f9d36092ef40a0a",
+    "index.html": "aeea0d4ce9a21ec4a842310fa101cc2441db8322a4a6a9b9f43cff4ac888a53b",
+    "latency/index.html": "986202b23299d585d0fea48d5b64be8cb1e5716f40fa98b09c0f92bf5df8d51c",
+    "latency/evidence.json": "8ab94db5e264842677aa573455da99102e3ac4921e550fde7bb0bce18a41fea6",
     "report.js": "ebc2503d323c1b760bec2df6f33b8e8a1e220275ccd5d199ac730551b045bef8",
     "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf"
   },
@@ -48,7 +48,7 @@
     "Manifest content hashes for the report and evidence",
     "Live CDN charts and chart data",
     "Desktop and mobile in both themes",
-    "Live color preference, disclosures, navigation and page overflow",
+    "Live color preference, cache-trial receipts, census, disclosures, navigation and page overflow",
     "Visual review of the CAS and Firecracker sections, weekly trend and report"
   ]
 }

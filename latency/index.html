@@ -63,14 +63,15 @@
       import { BarChart, LineChart } from "@mantine/charts";
       import { html, mount } from "../report.js?v=ebc2503d323c1b76";
       const response = await fetch(
-        "./evidence.json?v=7eed3e7223bd7658bb5d96aba4b34b8b789426b8975fba957f9d36092ef40a0a",
+        "./evidence.json?v=8ab94db5e264842677aa573455da99102e3ac4921e550fde7bb0bce18a41fea6",
       );
       if (!response.ok) throw new Error(`Evidence HTTP ${response.status}`);
       const evidence = await response.json();
       const podAdmission = evidence.managed_pod_admission;
       const cas = evidence.cas_followup;
       const overlap = evidence.firecracker_overlap;
-      const census = evidence.current_pr_census;
+      const census = evidence.trial_pr_census;
+      const cacheTrial = evidence.kvm_shared_cache_trial;
       const gh = "https://github.com/agentydragon/ducktape";
       const source = evidence.source_devel_commit;
       const post = "after shadow retired";
@@ -145,10 +146,10 @@
               ${link("../", "Ducktape reports")}
               <${Title} order=${1} mt="md" mb="xs">PR time to green<//>
               <${Text} size="lg">Across 13–19 November, 247 of 350 sampled heads reached green. Median ${time(evidence.weekly_feedback.pooled.median_s)} · p90 ${time(evidence.weekly_feedback.pooled.p90_s)} among those heads, including five successful reruns.<//>
-              <${Text} c="dimmed" size="sm" mt="sm">Seven complete UTC days · Backend cutover follow-up updated 20 November · Inspected devel ${evidence.source_devel_commit}<//>
+              <${Text} c="dimmed" size="sm" mt="sm">Seven complete UTC days · KVM cache trial updated 21 November<//>
               <${Group} gap="md" mt="xs">${link("./evidence.json", "Evidence")}${link("./manifest.json", "Manifest")}<//>
-              <${Text} mt="sm">In the 21:12–22:35 UTC refresh on 20 November, all ${census.eligible_prs} current exact heads with an unambiguous CI-to-PR match were green at observation. Median ${time(census.overall.median_s)} · p90 ${time(census.overall.p90_s)}. The workflow frame contained ${census.workflow_runs} runs. Includes one Agentplane backend head. ${pr(18297)}<//>
-              <${Text} c="dimmed" size="sm">The refresh excludes superseded and unmatched heads. The weekly graph retains its seven complete UTC days and original population.<//>
+              <${Text} mt="sm">In the 22:35–01:54 UTC refresh on 20–21 November, ${census.overall.outcomes.green} of ${census.eligible_prs} current exact PR heads reached required green. Median ${time(census.overall.median_s)} · p90 ${time(census.overall.p90_s)} among the green heads. At collection ${census.overall.outcomes.incomplete} were incomplete and ${census.overall.outcomes.cancelled} were canceled.<//>
+              <${Text} c="dimmed" size="sm">The refresh reviewed ${census.workflow_runs} workflow runs, excluding superseded and unmatched heads. The weekly graph retains its seven complete UTC days and original population.<//>
             </header>
             <section id="weekly-trend">
               <${Title} order=${2}>Daily time to green · 13–19 November<//>
@@ -294,7 +295,22 @@
               <${Text} size="sm" c="dimmed" mt="sm">Queue sample 01:40–21:06 UTC on 20 November. The capped target-history extension added five originating actions to the retained PR sample and excluded two shared links. An independent workflow census from 21:12:39 to 21:44 UTC found 14 successful, one canceled and two in-progress CI runs at collection, including superseded heads. The exact-head distribution above retains its original window. Route reviewed at devel ${podAdmission.inspected_source_devel_commit}.<//>
             </section>
             <section id="kvm-cas">
-              <${Title} order=${2}>A shared KVM cache can serve repeated CAS reads<///>
+              <${Title} order=${2}>KVM kept direct Cloud after the cache trial<///>
+              <${Text} my="sm">Fresh Cloud-direct workers fetched the identical 7,467-file Firecracker input tree in 8.63–8.71s. The warm shared proxy took 9.29s on its own host, with a different worker from the one that filled it. The cold fill crossed hosts and took 19.05s. All four runs used empty executor file caches. ${link(cacheTrial.archived_report, "Experiment report")} · ${pr(cacheTrial.experiment_pr)}<//>
+              ${table(
+                ["Cache path", "Input fetch", "Receiving host", "BuildBuddy"],
+                cacheTrial.staging.map((row) => [
+                  row.label,
+                  seconds(row.input_s),
+                  row.host,
+                  build(row.invocation, "Invocation"),
+                ]),
+                520,
+              )}
+              <${Text} my="sm">The warm proxy served 1,388 ByteStream hits and 816,514,268 compressed bytes. It made zero upstream ByteStream reads or BatchReadBlobs calls during that sample. GetTree, SplitBlob and authentication still reached Cloud. Both full two-case runs passed with warm executor file caches. ${build(cacheTrial.full_tests[0].invocation, "Full direct run")} · ${build(cacheTrial.full_tests[1].invocation, "Full shared run")}<//>
+              <${Text} my="sm">During a proxy-only egress fault, a standalone client verified a cached blob. The warm guest still hit metadata and authentication errors, and both guest probes were canceled at their fault deadlines. The restarted proxy failed its readiness check after egress was restored. Direct rollback fetched the same inputs in 8.73s. The trial pool, proxy, policies and disks were removed. ${build(cacheTrial.egress_fault.warm_guest_invocation, "Warm fault")} · ${build(cacheTrial.egress_fault.cold_guest_invocation, "Cold fault")}<//>
+              <${Text} c="dimmed" size="sm" mb="sm">One fresh action per route and cache state. These measurements cover input staging in this pool. Fleet tail latency remains unmeasured. Required KVM CI stays on Cloud direct. Per-node caches are deferred.<//>
+              <${Accordion} variant="contained"><${Accordion.Item} value="earlier-cas"><${Accordion.Control}>Earlier CAS stalls and loopback replay<//><${Accordion.Panel}>
               <${Text} my="sm">On #18106, VM and Firecracker each spent about 9m42s fetching inputs on different workers. Their download bitmaps resolve to the same four unique blobs. The 62.5 MiB Action Service layer accounted for 99.989% of the bytes. Both actions passed. A Gateway crash test caused the rerun. ${pr(18106)} · ${build(cas.pr_invocation, "First Bazel attempt")}<//>
               ${table(
                 [
@@ -331,7 +347,8 @@
                 625,
               )}
               <${Text} size="sm" mt="sm">BuildBuddy Enterprise Cache Proxy v2.323.0 filled an empty Pebble store, then served all eight repeat reads locally with zero additional upstream ByteStream calls. The cold fill made 53 upstream ByteStream RPCs for four client requests, including chunk reads. After a proxy restart with the same disk, four more reads hit locally. The restarted process contacted hosted authentication. Both direct controls were healthy. The proxy and clients ran on the same developer host, so these timings establish cache behavior and give no cluster or PR latency estimate.<//>
-              <${Text} my="sm">Pilot one internal SSD-backed proxy near the KVM workers. Use an isolated two-worker pool. Fill on one worker, then execute the same inputs on a second with an empty worker file cache. Compare direct, proxy miss and proxy hit phases with native input-fetch clocks, hit ratio and upstream retries. Capture BatchReadBlobs and GetTree alongside ByteStream. The replay exercised ByteStream only. Point only the pilot workers’ <code>executor.cache_target</code> at the proxy. Keep BuildBuddy Cloud as the authoritative cache and scheduler. The existing worker egress policy needs an explicit route to the internal service. ${link(cas.proxy_docs, "BuildBuddy Cache Proxy")} · ${link(cas.executor_config, "Worker configuration")}<//>
+                <${Text} mt="sm" size="sm">${link(cas.proxy_docs, "BuildBuddy Cache Proxy")} · ${link(cas.executor_config, "Worker configuration")}<//>
+              <//><//><//>
             </section>
             <section id="firecracker-overlap">
               <${Title} order=${2}>Firecracker case overlap on a warm KVM runner<///>
@@ -468,14 +485,7 @@
                 ["Priority", "Change or test", "Expected effect and boundary"],
                 [
                   [
-                    "1 · Shared KVM cache",
-                    html`Pilot a persistent BuildBuddy Cache Proxy with two
-                    isolated workers and identical inputs.
-                    ${link("#kvm-cas", "Replay and incident clocks")}`,
-                    "Two different workers spent about 9m42s on the same downloads on #18106. A proxy could remove repeated upstream reads for cached blobs. The CI gain and fleet hit rate need a cluster comparison.",
-                  ],
-                  [
-                    "2 · Managed Pod queue",
+                    "1 · Managed Pod queue",
                     html`Track recurrence in required CI and obtain provider
                     admission reasons and eligible capacity for an overlapping
                     burst.
@@ -483,7 +493,7 @@
                     "Two of 12 successful first-attempt backend heads with physical test records show minute-scale feedback headroom. Snapshot restore errors require their own recovery evidence.",
                   ],
                   [
-                    "3 · Firecracker scenario overlap",
+                    "2 · Firecracker scenario overlap",
                     html`${overlap.action}
                     ${link("#firecracker-overlap", "Matched KVM comparison")}`,
                     "Three of 12 earlier first-pass backend heads had Firecracker as latest physical finisher. Other gates and action stages constrain any PR-level saving.",
