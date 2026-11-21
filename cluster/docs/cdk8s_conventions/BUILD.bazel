@@ -1,0 +1,26 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "render",
+    srcs = ["render.py"],
+    data = [
+        "page.css",
+        "page.js",
+        "proposal.html.j2",
+        "proposal.json",
+    ],
+    imports = ["../../.."],
+    deps = [
+        "//util/bazel:workspace",
+        "@pypi//jinja2",
+        "@pypi//markupsafe",
+        "@pypi//pydantic",
+    ],
+)
+
+py_binary(
+    name = "render_bin",
+    imports = ["../../.."],
+    main_module = "cluster.docs.cdk8s_conventions.render",
+    deps = [":render"],
+)
