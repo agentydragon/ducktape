@@ -18,6 +18,7 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.platform_sessions import remote
+from cluster.cdk8s.reflector import mirror_annotations
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.volume_claim import volume_claim
 
@@ -52,16 +53,7 @@ def chart(app: App) -> Chart:
         ("thrive-scraper", "thrive-scraper"),
         ("thrive-read", "agentplane-staging-egress-credentials"),
     ):
-        annotations = (
-            None
-            if target is None
-            else {
-                "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
-                "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": target,
-                "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
-                "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": target,
-            }
-        )
+        annotations = None if target is None else mirror_annotations([target])
         mint_bearer_secret(
             chart,
             f"{name}-bearer",

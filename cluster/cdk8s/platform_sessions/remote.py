@@ -34,6 +34,7 @@ from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
 from cluster.cdk8s import pod_policy
 from cluster.cdk8s.cert_manager import cluster_ca
 from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import (
     ConfigMapArgs,
@@ -189,10 +190,7 @@ def _container_security() -> k8s.SecurityContext:
 
 
 def _resources(*, memory_request: str = "128Mi", memory_limit: str = "1Gi") -> k8s.ResourceRequirements:
-    return k8s.ResourceRequirements(
-        requests={"cpu": k8s.Quantity.from_string(_CPU_REQUEST), "memory": k8s.Quantity.from_string(memory_request)},
-        limits={"cpu": k8s.Quantity.from_string("1"), "memory": k8s.Quantity.from_string(memory_limit)},
-    )
+    return container_resources(cpu=_CPU_REQUEST, memory=memory_request, cpu_limit="1", memory_limit=memory_limit)
 
 
 def _deployment(

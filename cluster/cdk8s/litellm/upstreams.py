@@ -31,8 +31,6 @@ class UpstreamBinding:
 
 
 _OLLAMA_BASE = "http://ollama.ollama.svc.cluster.local:11434"
-# Emit the rugged endpoint and bearer-token wiring for cluster access.
-RUGGED_LOCAL_LLM_ENABLED = True
 RUGGED_LOCAL_LLM_SERVICE = "rugged-local-llm"
 RUGGED_LOCAL_LLM_SECRET = "rugged-local-llm-bearer-token"
 RUGGED_LOCAL_LLM_PORT = 18080  # must match rugged's NixOS bearer proxy listener

@@ -81,45 +81,15 @@ def _values() -> dict[str, object]:
                     "matchLabelKeys": ["pod-template-hash"],
                 }
             ],
-            # Use kyverno's INTERNAL cert management, not external cert-manager.
-            #
-            # WHY: Kyverno's startup sequence (cmd/kyverno/main.go:922-934) is:
-            #   1. server.Run()      — HTTPS server starts on :9443
-            #   2. le.Run()          — leader election
-            #   3. certmanager ctrl  — creates CA + TLS secrets (leader controller, line 304)
-            #   4. webhook ctrl      — creates VWC with caBundle (leader controller, line 305)
-            #
-            # With internal certs (enabled=false):
-            #   The webhook-controller (pkg/controllers/webhook/controller.go:621-634)
-            #   creates the VWC dynamically by reading the CA secret and calling
-            #   vwcClient.Create(). This only happens AFTER the certmanager controller
-            #   creates certs in step 3. So VWC existence = webhook ready to serve.
-            #   The readiness probe (pkg/utils/runtime/utils.go:52) validates TLS
-            #   certs against CA — returns 200 only when certs are valid.
-            #   The TLS server uses GetCertificate callback (pkg/webhooks/server.go:277)
-            #   reading from informer cache — auto-refreshes, no static files.
-            #
-            # With cert-manager (enabled=true):
-            #   The Helm chart creates cert-manager Certificate resources as static
-            #   templates (templates/admission-controller/cert-manager-certificates.yaml).
-            #   cert-manager must issue certs before kyverno can serve TLS, adding a
-            #   dependency on cert-manager. But the VWC is still created dynamically
-            #   by the webhook-controller — the problem is that the Deployment readiness
-            #   probe passes as soon as cert-manager provisions the TLS secret, BEFORE
-            #   the webhook-controller has created the VWC. This causes a window where
-            #   Flux marks kyverno as Ready (Deployment available) but the VWC doesn't
-            #   exist yet — then the VWC appears moments later and the API server
-            #   starts routing admission requests while downstream HelmReleases are
-            #   already being installed, causing webhook timeouts.
-            #
-            # Trust model: Only the API server calls webhooks. The VWC contains the
-            # caBundle field — the API server uses it to verify kyverno's self-signed
-            # TLS cert. No cluster-wide trust or cert-manager needed.
-            #
-            # Refs:
-            #   Source: github.com/kyverno/kyverno (cloned at /code/github.com/kyverno/kyverno)
-            #   Flux kstatus treats VWC as "unknown"=pass: https://github.com/fluxcd/flux2/issues/4346
-            #   Kyverno webhook timeouts blocking workloads: https://github.com/kyverno/kyverno/issues/1950
+            # Kyverno's internal certificates, not cert-manager. The webhook controller creates the
+            # ValidatingWebhookConfiguration only after the certificate controller has made the CA
+            # and TLS Secrets, so that configuration exists exactly when the webhook can serve. With
+            # cert-manager the Deployment turns Ready once the TLS Secret exists, before the
+            # configuration does. Flux's kstatus treats the missing configuration as passing
+            # (https://github.com/fluxcd/flux2/issues/4346), so downstream HelmReleases install while
+            # admission starts routing and their webhook calls time out
+            # (https://github.com/kyverno/kyverno/issues/1950). Only the API server calls the
+            # webhooks, verifying the self-signed certificate through the configuration's caBundle.
             "certManager": {"enabled": False},
         },
         # Background controller for policy reports

@@ -59,6 +59,7 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
+from cluster.cdk8s.reflector import mirror_annotations
 from cluster.cdk8s.secret_ref import SecretKey, SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from util.settings_contract import checked_value, env_name
@@ -168,13 +169,7 @@ class Aiquota(Construct):
             deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
             template=ExternalSecretSpecTargetTemplate(
                 metadata=ExternalSecretSpecTargetTemplateMetadata(
-                    annotations={
-                        "description": mirror.description,
-                        "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
-                        "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": mirror.namespace,
-                        "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
-                        "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": mirror.namespace,
-                    }
+                    annotations={"description": mirror.description, **mirror_annotations([mirror.namespace])}
                 )
             ),
         )

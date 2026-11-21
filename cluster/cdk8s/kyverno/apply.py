@@ -42,7 +42,7 @@ def apply_policy(
     Offline `kyverno apply` never loads `context[].apiCall` entries, so a policy that needs one is not testable here.
 
     `json_payload` passes the file as `--json` instead of `--resource`: for a `policies.kyverno.io`
-    policy in `evaluation.mode: JSON` (see `test_utils.policy(json_mode=True)`), the only way to
+    policy in `evaluation.mode: JSON` (see `apply_inputs.policy(json_mode=True)`), the only way to
     evaluate a custom-resource kind, because offline `kyverno apply` cannot map a CRD's kind to a
     resource ("failed to map gvk to gvr") and has no flag to load the CRD.
     """

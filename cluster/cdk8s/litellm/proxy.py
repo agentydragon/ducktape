@@ -63,7 +63,6 @@ from cluster.cdk8s.litellm import database
 from cluster.cdk8s.litellm.config import CONFIG_MAP_NAME, ConfigMapSpec, proxy_configs
 from cluster.cdk8s.litellm.database import NAMESPACE
 from cluster.cdk8s.litellm.upstreams import (
-    RUGGED_LOCAL_LLM_ENABLED,
     RUGGED_LOCAL_LLM_KEY_ENV,
     RUGGED_LOCAL_LLM_PORT,
     RUGGED_LOCAL_LLM_SECRET,
@@ -79,7 +78,6 @@ from cluster.scripts.nebula_mesh import Mesh
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 APP_DIR = f"{HAND_WRITTEN_ROOT}/litellm/app"
 _HTTP = Port(name="http", number=4000)
-# The namespace the proxy runs in and reads its Secrets from.
 # The proxy's admin key: its env and its ServiceMonitor's scrape bearer.
 _MASTER_KEY = SecretRef(namespace=NAMESPACE, name="litellm-master-key").key("api-key")
 _LANGFUSE_OTEL_CONFIG = SecretRef(namespace=NAMESPACE, name="litellm-langfuse-otel-config")
@@ -190,15 +188,8 @@ def proxy_specs() -> tuple[ProxySpec, ...]:
                     SecretRef(namespace=NAMESPACE, name="tana-firebase-refresh-token").key("refresh_token"),
                     optional=True,
                 ),
-                *(
-                    (
-                        _SecretEnv(
-                            RUGGED_LOCAL_LLM_KEY_ENV,
-                            SecretRef(namespace=NAMESPACE, name=RUGGED_LOCAL_LLM_SECRET).key("token"),
-                        ),
-                    )
-                    if RUGGED_LOCAL_LLM_ENABLED
-                    else ()
+                _SecretEnv(
+                    RUGGED_LOCAL_LLM_KEY_ENV, SecretRef(namespace=NAMESPACE, name=RUGGED_LOCAL_LLM_SECRET).key("token")
                 ),
             ),
             startup_failure_threshold=36,
@@ -413,8 +404,7 @@ class LiteLLMServiceMonitor(Construct):
 def _chart(app: App, mesh: Mesh) -> Chart:
     (spec,) = proxy_specs()  # only one LiteLLM proxy today; extend proxy_specs() when a second lands
     chart = Chart(app, spec.name, disable_resource_name_hashes=True)
-    if RUGGED_LOCAL_LLM_ENABLED:
-        _rugged_local_llm_endpoint(chart, mesh)
+    _rugged_local_llm_endpoint(chart, mesh)
     LiteLLMProxy(chart, "proxy", spec)
     LiteLLMServiceMonitor(chart, "monitoring", service(spec))
     return chart

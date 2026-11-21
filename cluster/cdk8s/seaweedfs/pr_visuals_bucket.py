@@ -53,10 +53,9 @@ def chart(app: App) -> Chart:
 def seaweedfs_pr_visuals_bucket(
     chart: Chart, directory: RenderedDirectory, seaweedfs_operator: Kustomization
 ) -> Kustomization:
-    name = "seaweedfs-pr-visuals-bucket"
     return flux_kustomization(
         chart,
-        name,
+        "seaweedfs-pr-visuals-bucket",
         directory,
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         interval="1h",

@@ -26,8 +26,10 @@ from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.ollama import tabby
 from cluster.cdk8s.ollama.tabby_endpoint import NAMESPACE
+from cluster.cdk8s.reflector import mirror_annotations
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.volume_claim import volume_claim
 
 # Avoid colliding with this module's ollama Flux constructor.
 from model_catalog import ollama as models
@@ -52,8 +54,6 @@ _NGINX_CONF = "nginx.conf"
 _MODELS_DIR = "/models"
 _SSD_MODELS_DIR = "/ssd-models"
 _SCRIPTS_DIR = "/scripts"
-# Pause this Deployment before exclusive host inference experiments.
-_PAUSED_FOR_HOST_EXPERIMENTS = False
 
 
 def _namespace(scope: Construct) -> None:
@@ -73,25 +73,21 @@ def _namespace(scope: Construct) -> None:
 
 def _claims(scope: Construct) -> None:
     # Both on wyrm2's own Piraeus pools, which pins Ollama to the GPU host.
-    k8s.KubePersistentVolumeClaim(
+    volume_claim(
         scope,
         "piraeus-models",
-        metadata=k8s.ObjectMeta(name=_MODELS_CLAIM, namespace=NAMESPACE),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="piraeus-hdd-local",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("200Gi")}),
-        ),
+        name=_MODELS_CLAIM,
+        namespace=NAMESPACE,
+        storage_class="piraeus-hdd-local",
+        size="200Gi",
     )
-    k8s.KubePersistentVolumeClaim(
+    volume_claim(
         scope,
         "piraeus-ssd-models",
-        metadata=k8s.ObjectMeta(name=_SSD_MODELS_CLAIM, namespace=NAMESPACE),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="piraeus-ssd-local",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("100Gi")}),
-        ),
+        name=_SSD_MODELS_CLAIM,
+        namespace=NAMESPACE,
+        storage_class="piraeus-ssd-local",
+        size="100Gi",
     )
 
 
@@ -366,12 +362,7 @@ def _direct_token(scope: Construct) -> None:
         refresh="8760h",
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
-        target_annotations={
-            "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
-            "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": "claude-sandbox",
-            "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
-            "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": "claude-sandbox",
-        },
+        target_annotations=mirror_annotations(["claude-sandbox"]),
     )
 
 
@@ -423,8 +414,7 @@ def chart(app: App) -> Chart:
         listener=None,
     )
     _rbac(chart)
-    if not _PAUSED_FOR_HOST_EXPERIMENTS:
-        _setup_job(chart, scripts)
+    _setup_job(chart, scripts)
     _direct_token(chart)
     tabby.add_tabbyapi(chart)
     return chart

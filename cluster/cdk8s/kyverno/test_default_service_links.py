@@ -9,7 +9,7 @@ import pytest_bazel
 from cdk8s import App
 
 from cluster.cdk8s.kyverno.apply import apply_policy
-from cluster.cdk8s.kyverno.test_utils import manifest, policy
+from cluster.cdk8s.kyverno.apply_inputs import manifest, policy
 
 
 @pytest.fixture

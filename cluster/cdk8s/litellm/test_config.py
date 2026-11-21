@@ -16,7 +16,7 @@ from litellm.litellm_core_utils.litellm_logging import (
 from litellm.proxy.litellm_pre_call_utils import LiteLLMProxyRequestSetup
 
 from cluster.cdk8s.litellm.config import main_proxy_config, model_entry
-from cluster.cdk8s.litellm.proxy import proxy_specs
+from cluster.cdk8s.litellm.proxy import _LiteralEnv, _SecretEnv, proxy_specs
 from cluster.cdk8s.litellm.secrets import LANGFUSE_EXPORTERS_TEMPLATE
 from cluster.cdk8s.litellm.upstreams import RUGGED_LOCAL_LLM_API_BASE, RUGGED_LOCAL_LLM_KEY_ENV
 from model_catalog.catalog import (
@@ -99,9 +99,9 @@ def test_route_timeouts_are_projected_independently() -> None:
 
 def test_langfuse_exporter_is_model_call_scoped_and_console_without_secret(monkeypatch: pytest.MonkeyPatch) -> None:
     [spec] = proxy_specs()
-    env = {entry.name: getattr(entry, "value", None) for entry in spec.env}
+    env = {entry.name: entry.value for entry in spec.env if isinstance(entry, _LiteralEnv)}
     config = main_proxy_config()
-    secret_env = {entry.name for entry in spec.env if getattr(entry, "optional", False)}
+    secret_env = {entry.name for entry in spec.env if isinstance(entry, _SecretEnv) and entry.optional}
     assert "EXPORTERS" in secret_env
     assert config["litellm_settings"]["callbacks"] == ["otel", "prometheus"]
     assert config["callback_settings"]["otel"]["mapper_names"] == ["langfuse"]
@@ -109,8 +109,7 @@ def test_langfuse_exporter_is_model_call_scoped_and_console_without_secret(monke
     # LiteLLM's own settings loader reads the Deployment's literal env; ESO renders the Go
     # template in EXPORTERS, so any credential string stands in for it here.
     for name, value in env.items():
-        if value is not None:
-            monkeypatch.setenv(name, value)
+        monkeypatch.setenv(name, value)
     without_secret = OpenTelemetryV2Config()
     assert [exporter.kind for exporter in without_secret.exporters] == ["console"]
 
