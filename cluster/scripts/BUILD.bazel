@@ -2,12 +2,22 @@
 # Cluster utility scripts (non-validation).
 # Validators are in //cluster/validation/.
 
-load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
-# Verify Authentik authentication works end-to-end
+# Probe Authentik's native password flow
 py_binary(
     name = "check_authentik_login",
     srcs = ["check_authentik_login.py"],
+)
+
+py_test(
+    name = "test_check_authentik_login",
+    srcs = ["test_check_authentik_login.py"],
+    deps = [
+        ":check_authentik_login",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )
 
 py_binary(
