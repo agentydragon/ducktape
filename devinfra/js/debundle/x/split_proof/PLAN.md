@@ -24,6 +24,10 @@ The design is "untrusted search, trusted check". The footprint analysis is the o
    - `Effects.lean` stays, as the untrusted proposer. A wrong proposal is then rejected instead of accepted.
    - Anything outside the fragment is unknown code under one stated assumption: it reads and changes only what it can reach. The inputs use nearly the whole language and standard library, so the fragment cannot be "what the inputs use".
    - This does not decide program equivalence. The check stays a sufficient condition; the change is that the condition is proved.
+   - **It can be gradual, because the rules are already Lean code.** A rule is proved against the model for the part of JavaScript the model covers; a rule that is not proved yet stays, as a named assumption. The soundness theorem is then "sound if these named rules are", and the list shrinks one rule at a time. Three things have to exist before the first rule can be proved:
+     - what a footprint means in the model (the invariant that relates the interpreter's abstract values to real states); every rule's proof is a step of it, so it comes first;
+     - rules that can be taken one at a time: a typed syntax tree and total functions instead of `partial` ones over JSON ([`TODO.md`](TODO.md)), with one definition per construct;
+     - a ledger: the interpreter records which rules a unit's footprint used, and a verdict prints the unproved ones. "Units whose footprint used only proved rules" is then the measure of progress, and how often a rule fires on the large bundle orders the proofs.
 
 4. **Run it as a spike with a kill rule**, so it cannot become open-ended.
    - _First measurement:_ which constructs run during module start-up on the large bundle. Only that code needs a precise model, and it may be much smaller than the syntax the inputs contain.
