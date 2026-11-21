@@ -1118,7 +1118,8 @@ def witnessedImportsStable (modules : List BindingModule) : Bool :=
 def witnessedName (modules : List BindingModule) (index : Nat) (bound : List String) (name : String) : Option String :=
   if bound.contains name then some name else do
     let resolved ← resolveActualReference modules index name
-    declaredName resolved.2.2
+    let target ← declaredName resolved.2.2
+    if bound.contains target then none else some target
 
 def witnessedExpression (modules : List BindingModule) (index : Nat) (bound : List String) : NumericExpr → Option NumericExpr
   | .literal value => some (.literal value)

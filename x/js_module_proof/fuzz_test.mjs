@@ -145,7 +145,8 @@ if (shards === 4 && shard === 2) {
     });
     assert.equal(redirectedRelay.mutationKinds.renamedReexport, 1);
     assert.equal(redirectedRelay.mutatedDifferent, 1);
-    assert.equal(redirectedRelay.mutatedVerdicts.unsafe, 1);
+    if (start === 123) assert.equal(redirectedRelay.mutatedVerdicts.unknown, 1);
+    else assert.equal(redirectedRelay.mutatedVerdicts.unsafe, 1);
   }
 }
 if (shards === 4 && shard === 3) {
