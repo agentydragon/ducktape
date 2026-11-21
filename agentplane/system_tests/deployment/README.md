@@ -3,7 +3,8 @@
 This package owns shared chart additions and rendering support, fresh application workloads, database and identity
 fixtures, per-action tracing, and the pytest deployment adapter. Retained node setup belongs to
 [`k3s/`](../k3s/README.md); VM runtime, storage and guest images belong to
-[`vm/`](../vm/README.md). The guide below describes how these parts compose into a running stack.
+[`vm/`](../vm/README.md). The [VM fixture options](vm_fixture_architecture.md) cover the
+isolation boundary, measurements by cache state and alternatives to the current topology.
 
 The disposable stack used by the [CI system test suites](../README.md): the Agentplane services on a
 bare k3s inside the suite's own RBE action (no Cilium), which PR CI runs like any test.
@@ -34,11 +35,12 @@ kubelet evicted a Pod on `imagefs.available`; with cleanup it stayed at 44.1%.
 During imports, using half of a group's starting filesystem headroom triggers an intermediate
 sweep. Filesystem checks avoid a CRI round trip for each unchanged or small image import.
 
-Pod, Dispatcher, MCP, VM and real-model system-test targets explicitly retain live k3s and cert-manager/trust-manager in hosted BuildBuddy RBE snapshots. VM targets
-also retain KubeVirt and Kyverno. This is the default for Pod, Dispatcher, all MCP suites,
-normal/manual/profile VM suites and real-model tests; there are no separate persistence variants.
-The existing manual/live tags still determine which suites run in CI, and real-model tests require
-`OPENAI_API_KEY`.
+Pod, Dispatcher, MCP, and real-model targets permit BuildBuddy to retain live K3s and PKI in
+managed RBE snapshots. The managed VM comparison and diagnostic targets that opt in also retain
+KubeVirt and Kyverno. The required `test_vm` uses a retained Docker runner on the self-hosted KVM
+pool with its own ext4 data mount. The manual `test_vm_kvm` starts a fresh control plane and
+can reuse the worker's image store. Manual and live tags determine target selection, and
+real-model tests require `OPENAI_API_KEY`.
 
 The required Firecracker suite retains K3s and PKI on a private ext4 disk in its Docker runner.
 It removes its per-action KVM device-plugin namespace before certifying the baseline clean.
@@ -53,8 +55,8 @@ when setup or a scenario fails. Local BuildBuddy credentials and `CI` do not ena
 If an action without permission restores a previously retained snapshot, it first stops the server
 identified by the ownership marker, then starts and tears down its own fresh node.
 
-Pod/MCP/real-model suites share one tmpfs snapshot family; VM suites share a separate disk-backed
-family with the VM resource estimate. Baseline fingerprints include the layer mode, k3s, CRDs,
+Pod/MCP/real-model suites share one tmpfs snapshot family. Managed VM suites with retention
+use a separate disk-backed snapshot family. Baseline fingerprints include the layer mode, k3s, CRDs,
 `baseline.py`, its bootstrap, iptables and release helpers, `pki_infrastructure.py`,
 `certificates.py`, and PKI releases/images. VM stacks also include `vm/infrastructure.py` and VM
 releases/images/configuration. `stack.py` owns fresh workload orchestration and cleanup;
