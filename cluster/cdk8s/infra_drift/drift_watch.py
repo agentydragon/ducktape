@@ -133,7 +133,13 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def infra_drift(chart: Chart, directory: RenderedDirectory, tofu_controller: Kustomization) -> Kustomization:
+def infra_drift(
+    chart: Chart,
+    directory: RenderedDirectory,
+    tofu_controller: Kustomization,
+    *,
+    health_checks: list[KustomizationSpecHealthChecks],
+) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
@@ -142,13 +148,6 @@ def infra_drift(chart: Chart, directory: RenderedDirectory, tofu_controller: Kus
         timeout="10m",
         # Ready tracks the plan, so a drift finding shows up here as a NotReady
         # Kustomization — README § Reading a plan.
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="infra.contrib.fluxcd.io/v1alpha2",
-                kind="Terraform",
-                name=NAME,
-                namespace=terraform.NAMESPACE,
-            )
-        ],
+        health_checks=health_checks,
         depends_on=flux_kustomization_depends_on_many(tofu_controller),
     )

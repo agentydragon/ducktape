@@ -353,8 +353,16 @@ def generate_manifests(root: Path) -> None:
         wait=None,
         timeout="2m",
     )
+    kube_api_proxy_app = App()
+    kube_api_proxy_chart = kube_api_proxy.chart(kube_api_proxy_app)
     kube_api_proxy_artifact = artifact("kube-api-proxy", kube_api_proxy.OUTPUT_DIR)
-    kube_api_proxy.kube_api_proxy(flux_chart, write_directory(root, kube_api_proxy_artifact, kube_api_proxy.chart))
+    flux.flux_kustomization(
+        flux_chart,
+        kube_api_proxy.NAME,
+        write_directory(root, kube_api_proxy_artifact, app=kube_api_proxy_app),
+        wait=None,
+        health_checks=flux.health_checks(kube_api_proxy_chart, ["Deployment", "HTTPRoute"]),
+    )
     kubevirt_cdi_operator_artifact = artifact("kubevirt-cdi-operator", kubevirt_operators.CDI_OPERATOR_DIR)
     cdi_operator_kustomization = flux.flux_kustomization(
         flux_chart,
@@ -449,8 +457,16 @@ def generate_manifests(root: Path) -> None:
         wait=None,
         timeout="10m",
     )
+    valkey_app = App()
+    valkey_chart = valkey.chart(valkey_app)
     valkey_artifact = artifact("valkey", valkey.OUTPUT_DIR)
-    valkey_kustomization = valkey.valkey(flux_chart, write_directory(root, valkey_artifact, valkey.chart))
+    valkey_kustomization = flux.flux_kustomization(
+        flux_chart,
+        valkey.NAME,
+        write_directory(root, valkey_artifact, app=valkey_app),
+        wait=None,
+        health_checks=flux.health_checks(valkey_chart, ["HelmRelease"]),
+    )
     gaffer_private_source_artifact = artifact("gaffer-private-source", gaffer_private_source.OUTPUT_DIR)
     gaffer_private_source.gaffer_private_source(
         flux_chart,
@@ -655,9 +671,14 @@ def generate_manifests(root: Path) -> None:
             "(parked) worker."
         ),
     )
+    claude_rbac_app = App()
+    claude_rbac_chart = agent_rbac_base.chart(claude_rbac_app)
     claude_rbac_artifact = artifact("claude-rbac", agent_rbac_base.OUTPUT_DIR)
     claude_rbac_kustomization = agent_rbac_base.claude_rbac(
-        flux_chart, write_directory(root, claude_rbac_artifact, agent_rbac_base.chart), kyverno_policies_kustomization
+        flux_chart,
+        write_directory(root, claude_rbac_artifact, app=claude_rbac_app),
+        kyverno_policies_kustomization,
+        health_checks=flux.health_checks(claude_rbac_chart, ["Namespace"]),
     )
     vpa_artifact = artifact("vpa", vpa.OUTPUT_DIR)
     vpa_kustomization = flux.flux_kustomization(
@@ -1044,9 +1065,14 @@ def generate_manifests(root: Path) -> None:
         write_directory(root, external_dns_records_artifact, functools.partial(external_dns.records_chart, mesh=mesh)),
         depends_on=[flux.flux_kustomization_depends_on(external_dns_kustomization)],
     )
+    infra_drift_app = App()
+    infra_drift_chart = drift_watch.chart(infra_drift_app)
     infra_drift_artifact = artifact("infra-drift", drift_watch.OUTPUT_DIR)
     drift_watch.infra_drift(
-        flux_chart, write_directory(root, infra_drift_artifact, drift_watch.chart), tofu_controller_kustomization
+        flux_chart,
+        write_directory(root, infra_drift_artifact, app=infra_drift_app),
+        tofu_controller_kustomization,
+        health_checks=flux.health_checks(infra_drift_chart, ["Terraform"]),
     )
     alloy_otlp_bearer_artifact = artifact("alloy-otlp-bearer", alloy_otlp_bearer.OUTPUT_DIR)
     flux.flux_kustomization(
