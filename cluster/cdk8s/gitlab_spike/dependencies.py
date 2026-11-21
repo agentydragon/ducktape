@@ -192,6 +192,8 @@ def _object_storage(chart: Chart) -> None:
                 f"  bucket: {name}\n"
                 "  pathstyle: true\n"
                 "  checksum_disabled: true\n"
+                # Omit the driver's default ACL; SeaweedFS requires WriteAcp for explicit ACLs.
+                "  objectownership: true\n"
                 "redirect:\n"
                 "  disable: true\n"
             )

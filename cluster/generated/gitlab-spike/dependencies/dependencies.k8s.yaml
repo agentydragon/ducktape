@@ -1006,6 +1006,7 @@ spec:
             bucket: gitlab-spike-registry
             pathstyle: true
             checksum_disabled: true
+            objectownership: true
           redirect:
             disable: true
       engineVersion: v2
