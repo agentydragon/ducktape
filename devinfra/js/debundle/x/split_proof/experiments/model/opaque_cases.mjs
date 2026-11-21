@@ -17,6 +17,46 @@ const r = (k) => ["r", k];
 
 export const opaqueCases = [
   {
+    name: "opaque code reaches a declaration through a captured binding",
+    source: `
+      const read = () => value;
+      const box = { read };
+      const value = true;
+      const [observed] = [box.read()];
+      console.log(observed);
+    `,
+    // The opaque statement mentions box, not value. Its call reaches value through read's closure.
+    // Names of statement 3: observed, box.
+    scripts: {
+      "3/0": [
+        ["readVar", 1],
+        ["get", r(2), ["s", "read"]],
+        ["call", r(3), r(2)],
+        ["initVar", 0, r(4)],
+      ],
+    },
+  },
+  {
+    name: "moving a declaration past an opaque callback exposes its dead zone",
+    source: `
+      const read = () => value;
+      const box = { read };
+      const [observed] = [box.read()];
+      const value = true;
+      console.log(observed);
+    `,
+    end: "throw",
+    // The same pair as above, reversed. Disjoint direct names do not justify this move.
+    scripts: {
+      "2/0": [
+        ["readVar", 1],
+        ["get", r(2), ["s", "read"]],
+        ["call", r(3), r(2)],
+        ["initVar", 0, r(4)],
+      ],
+    },
+  },
+  {
     name: "a destructuring declaration reads an object of the program",
     source: `
       const o = { a: 1, b: 2 };
