@@ -127,8 +127,14 @@ Agentless K3s can host the API without kubelet, containerd or CNI. Upstream mark
 mode experimental and documents the need for an egress selector when connecting to workload
 webhooks. A separate agent still has to run the real Pods, KubeVirt device plugin and guests.
 Reusing this API could move its startup off the critical path. Image storage and unpacking still
-belong to the worker running the Pods.
-[K3s agentless server documentation](https://docs.k3s.io/advanced#running-agentless-servers-experimental)
+belong to the worker running the Pods. Apache-2.0 k0smotron is another self-hosted option.
+It manages a child k0s control plane in Pods and joins separate workers. The child would
+install its own KubeVirt and PKI. It preserves one real API and owner chain, with extra
+operator, worker and storage lifecycle to run. Prefer the existing K3s prototype if the
+goal is a single persistent test cluster.
+[K3s agentless servers](https://docs.k3s.io/advanced#running-agentless-servers-experimental) ·
+[k0smotron source and license](https://github.com/k0sproject/k0smotron) ·
+[k0smotron worker joins](https://docs.k0smotron.io/stable/join-nodes/)
 
 vCluster's shared-node design runs the virtual control plane in a Pod and synchronizes selected
 objects to the host API. Host KubeVirt reconciles host-side VM and VMI objects, creates the
@@ -136,13 +142,19 @@ launcher and uses the host's device plugin and KVM. This isolates API state, whi
 share the host node's kernel and rely on host admission and RBAC after translation. The built-in
 KubeVirt integration requires Enterprise and is outside the no-payment constraint. Generic custom
 resource sync is offered on the no-cost Platform-licensed tier and compiled out of the OSS image.
-Neither path has demonstrated fidelity for this fixture. A custom bridge would need to preserve
-VM/VMI/Pod owner UIDs and status, PVC/Secret/ConfigMap and service-account references, admission
-and console evidence, and deletion and finalizers across APIs. Compare that maintenance cost
-against direct namespaces and a dedicated K3s cluster before building it.
+Generic sync copies a CRD schema and mirrors namespaced writes asynchronously. It supports
+reference patches. KubeVirt's interactive console is an aggregated API subresource outside
+ordinary CRD sync. Host-generated VMIs and launcher Pods have host UIDs, while the guest identity
+and launcher checks require the live host `Pod → VMI → VM → Sandbox → WorkloadCredential` chain
+and its accepted VMI binding. A CRD mirror alone gives no evidence that host-generated objects,
+owner UIDs, status, Secret/PVC references and finalizers make a correct round trip. Moving the
+identity-sensitive controllers to the host to avoid that translation would retain most of the
+direct design and add a syncer. Keep generic sync open if another use justifies a virtual API.
 [vCluster architecture](https://www.vcluster.com/docs/vcluster/overview/architecture) ·
 [KubeVirt integration and admission](https://www.vcluster.com/docs/vcluster/integrations/kubevirt) ·
-[OSS and Free tier licensing](https://www.vcluster.com/docs/vcluster/overview/oss-vs-free)
+[OSS and Free tier licensing](https://www.vcluster.com/docs/vcluster/overview/oss-vs-free) ·
+[Generic sync behavior](https://www.vcluster.com/docs/vcluster/manage/custom-resources) ·
+[KubeVirt console authorization](https://kubevirt.io/user-guide/user_workloads/accessing_virtual_machines/)
 
 ## Main-cluster trial gates
 
@@ -164,8 +176,8 @@ shared fixture still needs these gates:
   identities. Tests of cluster RBAC, CRDs, operator upgrades or admission changes need the
   isolated API. Both VM cases read a fixture Secret to check its metadata and public certificate.
   Preserve those assertions through trusted observation of the run's public certificate and
-  ownership metadata. Keep production credentials, private keys and registry-write authority
-  outside the driver.
+  ownership metadata. Keep production credentials, workload service keys and registry-write
+  authority outside the driver.
   [Fixture chart](fixture_chart.py) · [Fixture lifecycle](stack.py) ·
   [Runner certificate assertions](../scenarios/runner_credentials.py) ·
   [Kubernetes RBAC guidance](https://kubernetes.io/docs/concepts/security/rbac-good-practices/)
@@ -196,23 +208,80 @@ shared fixture still needs these gates:
   relevant versions and use fresh executions for the comparison.
   [Fixture image inputs](../k3s/defs.bzl) · [Import checks](README.md)
 
-## Next comparisons
+## Proposed first shared-fixture comparison
 
-1. Sample ordinary required actions on SSD with the existing receipts. Group by cold worker,
-   warm image store with fresh fixture and verified retained baseline. Record revision, worker
-   and runner IDs, import skips, memory/eviction and cleanup outcomes. Compare queue, input,
-   setup, guest readiness, scenarios and teardown on their own clocks before estimating PR
-   feedback savings. Use the manual fresh path as a matched control.
-2. Use checked-in rendered manifests and read-only API discovery to inventory cluster-scoped
-   writes, operator configuration, admission scopes and eligible KVM/storage nodes. Run the
-   prototype permission checker only with an explicitly scoped observer in a disposable
-   test cluster. For a virtual API, first check a supported no-payment implementation against the
-   existing launcher policy's ownership chain and VM/PVC/Secret reference map. A separate API
-   with no workable mapping cannot exercise this suite. Verify intended admission, denied cross-run access and actual raw-block
-   reclamation there before giving any action main-cluster access.
-3. If that contract can be met, run a separate manual, disposable shared-cluster comparison at
-   the same revision. Keep both harness cases, guest identity, relay and storage checks, and
-   UID-correlated ACPI and cleanup proof. Compare a cold node, a warm node and two overlapping
-   runs, including a killed driver. Include image publishing, allocation, cleanup and orphan
-   recovery in the cost. Compare against a verified warm retained action, since that is work
-   the current design already avoids.
+Start with direct KubeVirt in a disposable cluster, with a single leased run from a reviewed
+revision. This tests the proposed main-cluster topology without introducing a resource syncer or
+giving a PR workflow cluster access. Keep the required Bazel lane as the comparison baseline.
+If a separate API and kernel boundary remain necessary, use a dedicated K3s worker VM and
+share its operators across runs. A privileged K3s node Pod shares its backing host kernel.
+
+Begin with an offline render and permission inventory. Assign every cluster-scoped object,
+issuer reference, firmware and volume reference, and driver API call to a trusted installer
+or to a tenant identity. Carry only the required VM cases into the disposable comparison.
+
+1. **Publish an exact fixture.** Build the existing fixture applications, Runner disk, boot
+   kernel and guest root from one revision. Have a trusted publisher copy the declared OCI
+   layouts to a test registry and return manifest digests. Render a shared-fixture profile
+   with typed run namespaces, storage classes, test issuer/trust, and endpoints. Pin those
+   digests in Deployments, templates, the VM kernel boot, container disks and relay. Record the
+   approved manifest bundle and operator versions alongside the revision. The allocator
+   applies approved fixture resources. Verify observed Pod and launcher init-container image
+   IDs against the published layouts.
+   [VM image groups](../suites/BUILD.bazel) · [Fixture recipe](../suites/suite_recipe.py)
+2. **Prepare one tenant.** Reuse the parked allocator's Lease and namespace UID model. Make
+   application, egress credentials, delegated Kubernetes accounts and tracing addresses
+   run-scoped. Apply CPU, memory, ephemeral storage, PVC and VM/VMI count quotas, image and
+   storage allowlists, KVM test-node placement and default-deny network rules before any
+   workloads. Wire only same-run App, Dispatcher, model, OTLP, DNS and necessary Kubernetes
+   API paths. The present renderer discards Cilium policies for bare K3s. Render explicit test
+   policy for the host CNI. Keep host-sensitive exceptions limited to the verified KubeVirt
+   launcher and its required devices and mounts. Provision raw block for workspace and
+   Filesystem for state, with reclaim proven on both.
+   [Allocator](../x/shared_cluster/allocation.py) · [Bare-K3s finalization](fixture_finalization.py)
+3. **Keep cluster authority out of the job.** Start pinned KubeVirt, cert-manager and Kyverno
+   once. The trusted installer owns CRDs, supported storage classes, and namespaced/cluster
+   admission. The workload credential issuer hardcodes the `ClusterIssuer` kind. For the
+   disposable comparison, use a unique test-only issuer and CA from the installer, restricted
+   to the run's Certificate requests. Mount the run's public trust bundle explicitly. The
+   fixture and production reuse service SPIFFE URIs, so they need separate issuer CAs and
+   trust bundles. The Policy Controller watches ClusterRoleBindings and its chart grants
+   cluster-wide writes. The VM fixture's tool grant is a namespaced RoleBinding.
+   Prove the reviewed controller can run with required reads and without cluster-binding
+   writes in the disposable lab. For production, give PR-built controllers a namespace-only
+   reconciliation mode and scoped RBAC, or keep that controller trusted and record the coverage
+   difference. Tenant RBAC and admission must also reject production issuer references.
+   [Credential record issuer](../../identity/credentials/issuer/certificate.go) ·
+   [Policy Controller manager](../../policy_controller/cmd/main.go) ·
+   [Certificate admission](../../../cluster/cdk8s/agentplane/workload_certificate_admission.py) ·
+   [Policy Controller RBAC](../../../cluster/cdk8s/agentplane/policy_controller_rbac.py)
+4. **Run both existing cases from a Job.** Add a deployment adapter for the existing driver and
+   cases. An unprivileged in-cluster Job uses the fixture's App token and an independently
+   issued, short-lived fixture-CA client credential for the allowed App role. Its API account
+   observes its own Sandbox, VM/VMI, Pod status and logs. The current driver reads the App
+   service Secret and port-forwards to Dispatcher. Connect to the fixture's service DNS
+   with the Job's projected client credential. Keep the scripted model and trace receiver
+   reachable only within the run. Preserve public certificate and owner checks through trusted filtered
+   evidence. Follow `guest-console-log` by actual launcher Pod UID before deletion and require
+   the same supervision and ACPI shutdown markers. Interactive `virtctl console` is a separate
+   read/write terminal stream. Keep it out of the driver role. Keep node-level diagnostics
+   available in the isolated Bazel lane.
+   [Existing cases](../suites/test_vm.py) · [Dispatcher transport](../driver/dispatcher_transport.py) ·
+   [Guest shutdown proof](../vm/guest_logs.py) · [App-driven cleanup](../driver/app_sandbox.py)
+5. **Prove isolation and reclamation before comparing time.** Inspect exact effective RBAC
+   and admission in the disposable environment. Require allowed launcher creation, verified
+   KVM, raw-block and virtiofs semantics, both turns with the existing trace checks, successful
+   graceful deletion, and no cross-tenant reads, credentials, traffic or sensitive workload
+   admission. Run an interrupted-driver case: a trusted reaper stops owned Sandboxes through the
+   App API while their controllers still run, then deletes the recorded namespace and cluster
+   object UIDs. Keep the lease until VM, VMI, Pods, claims and underlying storage are gone.
+   Fail an incomplete or forced shutdown rather than count cleanup as passed.
+
+Then compare cold and warm node caches and two overlapping leases against a warm retained
+BuildBuddy action at the same revision. Count image build/publish, lease wait, pull/unpack, app
+setup, guest readiness, scenarios, diagnostics and cleanup separately. Verify candidate changes
+against the recorded operator, policy and storage versions. The shared route has no measured
+speedup and its operational cost includes the publisher, allocator, evidence collector and
+reaper. A future required check would need an explicit cache key for external fixture inputs or
+fresh execution and a CI signal for infrastructure failure. The initial comparison is manual
+and keeps the existing PR coverage in place.
