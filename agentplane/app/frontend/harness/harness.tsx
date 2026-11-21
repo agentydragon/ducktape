@@ -10,8 +10,7 @@ import {
 import { AutosuspendBlockerSchema } from "../../../proto/environment_lifecycle_pb";
 /**
  * Visual-test harness: Python configures canned data and explicitly mounts the app. No scene registry.
- * `fetch` (stubbed by network.ts, imported first so the
- * app's client captures the stub) answers API, Electric Shape, event stream and watch routes.
+ * `fetch` (stubbed by network.ts, imported first) answers API, Electric Shape, event stream and watch routes.
  */
 import {
   electricLive,
