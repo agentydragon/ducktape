@@ -18,7 +18,6 @@ from agentplane.app.testing.gateway_fixtures import (
 from agentplane.app.testing.history import SessionHistory
 from agentplane.app.testing.replication_process import AppProcess, GatewayAccess, SandboxesAccess, app_process
 from agentplane.app.testing.thread_test_support import ThreadHTTP
-from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.fixtures import (
     history_on,
     history_service,
@@ -114,11 +113,6 @@ def history_writer_namespaces(sandbox: SandboxCluster, namespace: SandboxNamespa
 async def history(history_service: GoHistoryService) -> AsyncIterator[History]:
     async with History(history_service) as history:
         yield history
-
-
-@pytest.fixture
-def history_client(history_service: GoHistoryService) -> HistoryServiceClient:
-    return history_service.reader
 
 
 @pytest.fixture
