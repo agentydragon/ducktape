@@ -27,10 +27,7 @@ py_library(
     name = "alloy_otlp_bearer_token",
     srcs = ["alloy_otlp_bearer_token.py"],
     data = ["//tf/gitops/alloy-otlp-bearer-token:inline_source"],
-    visibility = [
-        "//cluster/cdk8s:__pkg__",
-        "//cluster/cdk8s/authentik:__pkg__",
-    ],
+    visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:opentofu",

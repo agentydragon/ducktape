@@ -75,8 +75,8 @@ def loki_datasource() -> common.DataSourceRef:
     return common.DataSourceRef(type_val="loki", uid="${DS_LOKI}")
 
 
-def loki_query(expr: str, legend: str | None = None, ref_id: str = "A") -> loki.Dataquery:
-    query = loki.Dataquery().datasource(loki_datasource()).expr(expr).ref_id(ref_id)
+def loki_query(expr: str, legend: str | None = None) -> loki.Dataquery:
+    query = loki.Dataquery().datasource(loki_datasource()).expr(expr).ref_id("A")
     if legend is not None:
         query.legend_format(legend)
     return query
@@ -171,10 +171,10 @@ def clickhouse_datasource() -> common.DataSourceRef:
     return common.DataSourceRef(type_val="grafana-clickhouse-datasource", uid="clickhouse")
 
 
-def clickhouse_query(sql: str, format: int = 0, ref_id: str = "A") -> UnknownDataquery:
+def clickhouse_query(sql: str, format: int = 0) -> UnknownDataquery:
     # The SDK has no ClickHouse query model; keep the plugin's native query shape.
     return UnknownDataquery(
-        {"datasource": clickhouse_datasource(), "format": format, "queryType": "sql", "rawSql": sql, "refId": ref_id}
+        {"datasource": clickhouse_datasource(), "format": format, "queryType": "sql", "rawSql": sql, "refId": "A"}
     )
 
 
@@ -255,10 +255,10 @@ def topk_variable(label: str) -> dashboard.VariableModel:
     )
 
 
-def gateway_error_queries(interface: str, window: str, *, legend_prefix: str = "") -> list[Dataquery]:
+def gateway_error_queries(interface: str, *, legend_prefix: str = "") -> list[Dataquery]:
     return [
         mimir_query(
-            f"increase(att_gateway_{interface}_{direction}_{kind}_total[{window}])",
+            f"increase(att_gateway_{interface}_{direction}_{kind}_total[5m])",
             legend=f"{legend_prefix}{label} {kind}",
             ref_id=chr(ord("A") + index),
         ).build()
