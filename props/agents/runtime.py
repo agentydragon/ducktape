@@ -50,18 +50,14 @@ def get_current_agent_run(session: Session) -> AgentRun:
     return agent_run
 
 
-def fetch_snapshot(dest_dir: Path, db: Database) -> Path:
-    """Fetch snapshot for current critic agent to specified directory.
-
-    Returns the dest_dir path (for template convenience).
-    """
+def fetch_snapshot(dest_dir: Path, db: Database) -> None:
+    """Fetch snapshot for current critic agent to specified directory."""
     with db.session() as session:
         agent_run = get_current_agent_run(session)
         critic_config = agent_run.critic_config()
         snapshot_slug = critic_config.example.snapshot_slug
 
     fetch_snapshot_to_path(snapshot_slug, dest_dir, db)
-    return dest_dir
 
 
 def setup_logging() -> None:

@@ -28,10 +28,9 @@ from dataclasses import dataclass
 from uuid import UUID
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import create_async_engine
 
+from props.db.async_database import AsyncDatabase
 from props.db.config import DatabaseConfig
-from util.db_url import async_engine_url
 
 _SALT_ENV_VAR = "PROPS_AGENT_PASSWORD_SALT"
 
@@ -98,26 +97,19 @@ async def ensure_agent_role(db_config: DatabaseConfig, agent_run_id: UUID) -> Ag
 
     logger.info("Ensuring agent role exists: %s", username)
 
-    engine = create_async_engine(async_engine_url(db_config.url), echo=False)
+    async with AsyncDatabase(db_config) as db, db.session() as session:
+        # Check if role exists
+        result = await session.execute(text("SELECT 1 FROM pg_roles WHERE rolname = :username"), {"username": username})
+        role_exists = result.scalar() is not None
 
-    try:
-        async with engine.begin() as conn:
-            # Check if role exists
-            result = await conn.execute(
-                text("SELECT 1 FROM pg_roles WHERE rolname = :username"), {"username": username}
-            )
-            role_exists = result.scalar() is not None
-
-            if not role_exists:
-                # Create role with password
-                escaped_password = password.replace("'", "''")
-                quoted_username = _quote_ident(username)
-                await conn.execute(text(f"CREATE ROLE {quoted_username} WITH LOGIN PASSWORD '{escaped_password}'"))
-                await conn.execute(text(f"GRANT agent_base TO {quoted_username}"))
-                logger.info("Created agent role: %s", username)
-            else:
-                logger.debug("Agent role exists: %s", username)
-    finally:
-        await engine.dispose()
+        if not role_exists:
+            # Create role with password
+            escaped_password = password.replace("'", "''")
+            quoted_username = _quote_ident(username)
+            await session.execute(text(f"CREATE ROLE {quoted_username} WITH LOGIN PASSWORD '{escaped_password}'"))
+            await session.execute(text(f"GRANT agent_base TO {quoted_username}"))
+            logger.info("Created agent role: %s", username)
+        else:
+            logger.debug("Agent role exists: %s", username)
 
     return AgentCredentials(username=username, password=password)

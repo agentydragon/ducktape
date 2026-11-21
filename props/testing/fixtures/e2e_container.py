@@ -202,7 +202,7 @@ async def _make_stack(
             with db.session() as session:
                 sync_model_metadata_with_session(session, config)
                 session.commit()
-            deps = BackendDeps(config=config, registry_proxy_config=registry_proxy_config, backend_url=backend_url)
+            deps = BackendDeps(config=config, registry_proxy_config=registry_proxy_config)
 
             async with (
                 AsyncDatabase(db.config) as proxy_db,

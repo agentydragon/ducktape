@@ -30,6 +30,7 @@ from props.agents.runtime import (
     get_current_agent_run_id,
     render_system_prompt,
     render_template_string,
+    setup_logging,
 )
 from props.core.models.examples import WholeSnapshotExample
 from props.db.database import Database
@@ -276,7 +277,7 @@ async def _run_agent_loop(system_prompt: str, db: Database) -> int:
 
 async def main() -> int:
     """Main entry point for critic agent."""
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    setup_logging()
 
     logger.info("Critic agent starting")
     db = Database.from_env()

@@ -30,7 +30,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from openai_utils.api_shape import LLMApiShape
 from openai_utils.model import ResponseUsage
 from props.backend.auth import parse_credentials, validate_postgres_credentials_async
-from props.backend.deps import Config
 from props.config import LLMProxyConfig, UpstreamConfig
 from props.db.async_database import AsyncDatabase
 from props.db.models import AgentRun, AgentRunBudgetStatus, AgentRunStatus, LLMRequest, ModelMetadata
@@ -133,6 +132,14 @@ async def _check_budget(session: AsyncSession, agent_run_id: UUID, budget_usd: f
         raise HTTPException(
             status_code=429, detail=f"Budget exceeded: spent ${status.tree_spent_usd:.4f} of ${budget_usd:.2f} budget"
         )
+
+
+def get_config(request: Request) -> LLMProxyConfig:
+    """Get the upstream config that `props.llm_proxy.app` stores in app state."""
+    return request.app.state.config  # type: ignore[no-any-return]
+
+
+Config = Annotated[LLMProxyConfig, Depends(get_config)]
 
 
 async def require_llm_access(request: Request, admin_db: ProxyDb) -> LLMAccess:

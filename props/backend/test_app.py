@@ -83,7 +83,6 @@ def backend(
     deps = backend_app.BackendDeps(
         config=config,
         registry_proxy_config=RegistryProxyConfig(host="registry.invalid", port=5000),
-        backend_url=config.backend_url,
         grader_model="test-grader",
     )
     return backend_app.create_app(deps=deps), events, executor_started, allow_executor, state
