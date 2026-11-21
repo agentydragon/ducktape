@@ -175,7 +175,12 @@ using the actual initialized source and output states; it includes the theorem
 only when Lean verifies all its obligations without axioms. This supplementary
 theorem relates exported-call runs when both runs complete. Lean checks that
 the actual callable tables pair exported names, parameter lists and bodies,
-while allowing different capture keys. The acceptance proof still requires
+while allowing different capture keys. A further theorem constructs a matching
+run from one successful run if writebacks agree for every related state. Equal
+loaded values alone do not establish that condition: different alias patterns
+can make checked writeback succeed on only one side. The certificate still
+assumes writeback agreement; deriving it from allocation invariants is future
+work. The acceptance proof still requires
 equal initialized states and callable tables,
 uses the factory-specific representation, and does not yet prove preservation
 under arbitrary allocation renaming. A safe

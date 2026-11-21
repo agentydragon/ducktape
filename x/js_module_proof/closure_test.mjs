@@ -31,12 +31,19 @@ if (shard === 0) {
     encoding: "utf8",
     input:
       models +
-      "\n#print axioms runExecution_relation_preserved\n#print axioms executeCaptured_success\n#print axioms captured_paired_step_preserved\n#print axioms executeCaptured_decompose\n#print axioms captured_unblocked_step_related\n#print axioms captured_call_sequence_related\n#print axioms lookup_update_other\n#print axioms lookup_store_other\n#print axioms load_store_disjoint\n#print axioms storeCapturedFrame_origin\n#print axioms captured_step_preserves_disjoint\n#print axioms captured_step_preserves_watched\n#print axioms two_captured_call_sequence_related\n#print axioms paired_captured_table_call\n#print axioms two_captured_argument_calls_related\n#print axioms related_argument_call_operations\n#print axioms decideRelatedCapturedEnvironments\n#print axioms decideCapturesDisjoint\n" +
+      "\n#print axioms runExecution_relation_preserved\n#print axioms executeCaptured_success\n#print axioms captured_paired_step_preserved\n#print axioms executeCaptured_decompose\n#print axioms captured_unblocked_step_related\n#print axioms captured_call_sequence_related\n#print axioms lookup_update_other\n#print axioms lookup_store_other\n#print axioms load_store_disjoint\n#print axioms storeCapturedFrame_origin\n#print axioms captured_step_preserves_disjoint\n#print axioms captured_step_preserves_watched\n#print axioms two_captured_call_sequence_related\n#print axioms two_captured_call_sequence_simulates\n#print axioms runExecution_simulates\n#print axioms captured_step_simulates\n#print axioms paired_captured_table_call\n#print axioms two_captured_argument_calls_related\n#print axioms related_argument_call_operations\n#print axioms decideRelatedCapturedEnvironments\n#print axioms decideCapturesDisjoint\n" +
       'example : relatedCapturedEnvironments [("a", 3)] [("b", 3)] [("x", "a")] [("x", "b")] := by decide\n' +
       'example : ¬ relatedCapturedEnvironments [("a", 3)] [("b", 4)] [("x", "a")] [("x", "b")] := by decide\n' +
       'example : ¬ relatedCapturedEnvironments [] [] [("x", "a")] [("x", "b")] := by decide\n' +
       'example : capturesDisjoint [("x", "a"), ("y", "b")] [("z", "c")] := by decide\n' +
       'example : ¬ capturesDisjoint [("x", "a"), ("y", "b")] [("z", "b")] := by decide\n' +
+      'example : relatedCapturedEnvironments [("a", 0)] [("b", 0), ("c", 0)] [("x", "a"), ("y", "a")] [("x", "b"), ("y", "c")] := by decide\n' +
+      'example : capturedStatesRelated [("x", "a"), ("y", "a")] [("x", "b"), ("y", "c")] (⟨[], [], [], none, [], none, [("a", 0)]⟩ : ExecutionState Unit) (⟨[], [], [], none, [], none, [("b", 0), ("c", 0)]⟩ : ExecutionState Unit) := by decide\n' +
+      'example : (storeCapturedFrame [("a", 0)] [("x", "a"), ("y", "a")] [("x", 1), ("y", 0)]).isSome = false := by decide\n' +
+      'example : (storeCapturedFrame [("b", 0), ("c", 0)] [("x", "b"), ("y", "c")] [("x", 1), ("y", 0)]).isSome = true := by decide\n' +
+      'example : ¬ capturedWritebacksAgree [("a", 0)] [("b", 0), ("c", 0)] [("x", "a"), ("y", "a")] [("x", "b"), ("y", "c")] := by intro agree; have h := agree [("x", 1), ("y", 0)]; cases h\n' +
+      'example : (executeStep (⟨[], [], [], none, [], none, [("a", 0)]⟩ : ExecutionState Unit) (.invokeCaptured [("x", "a"), ("y", "a")] [] [] (.assign "x" (.literal 1) (.literal 0)))).isSome = false := by decide\n' +
+      'example : (executeStep (⟨[], [], [], none, [], none, [("b", 0), ("c", 0)]⟩ : ExecutionState Unit) (.invokeCaptured [("x", "b"), ("y", "c")] [] [] (.assign "x" (.literal 1) (.literal 0)))).isSome = true := by decide\n' +
       'example : argumentCallOperationLists [("f", .captured [("x", "cell")] ["n"] (.name "n"))] [("f", [2]), ("f", [3])] = some [[.invokeCaptured [("x", "cell")] ["n"] [2] (.name "n")], [.invokeCaptured [("x", "cell")] ["n"] [3] (.name "n")]] := by decide\n' +
       'example : argumentCallOperationLists [("f", .captured [] ["n"] (.name "n"))] [("missing", [2])] = none := by decide\n' +
       'example : argumentCallOperationLists [("f", .captured [] ["n"] (.name "n"))] [("f", [])] = none := by decide\n' +
@@ -56,6 +63,9 @@ if (shard === 0) {
   assert.match(modelCheck.stdout, /'captured_step_preserves_disjoint' does not depend on any axioms/);
   assert.match(modelCheck.stdout, /'captured_step_preserves_watched' does not depend on any axioms/);
   assert.match(modelCheck.stdout, /'two_captured_call_sequence_related' does not depend on any axioms/);
+  assert.match(modelCheck.stdout, /'two_captured_call_sequence_simulates' does not depend on any axioms/);
+  assert.match(modelCheck.stdout, /'runExecution_simulates' does not depend on any axioms/);
+  assert.match(modelCheck.stdout, /'captured_step_simulates' does not depend on any axioms/);
   assert.match(modelCheck.stdout, /'paired_captured_table_call' does not depend on any axioms/);
   assert.match(modelCheck.stdout, /'two_captured_argument_calls_related' does not depend on any axioms/);
   assert.match(modelCheck.stdout, /'related_argument_call_operations' does not depend on any axioms/);
@@ -743,6 +753,7 @@ export { first, second };
   assert.equal(independentReplay.status, 0, independentReplay.stdout + independentReplay.stderr);
   assert.match(independentReplay.stdout, /'binding_future_calls' does not depend on any axioms/);
   assert.match(independentReplay.stdout, /'binding_two_captured_calls' does not depend on any axioms/);
+  assert.match(independentReplay.stdout, /'binding_two_captured_calls_simulate' does not depend on any axioms/);
   assert.match(independentReplay.stdout, /'binding_exported_captured_calls' does not depend on any axioms/);
   await writeFile(
     source,

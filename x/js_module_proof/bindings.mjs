@@ -994,6 +994,22 @@ theorem binding_two_captured_calls (leftOps rightOps : List Operation)
   exact two_captured_call_sequence_related binding_source_first binding_output_first binding_source_second binding_output_second
     binding_source_captures_disjoint binding_output_captures_disjoint leftOps rightOps operations
     binding_source_state binding_output_state leftFinal rightFinal binding_captured_initial_related leftRun rightRun
+theorem binding_two_captured_calls_simulate (leftOps rightOps : List Operation)
+    (operations : RelatedOperations (PairedTwoCapturedOperation binding_source_first binding_output_first
+      binding_source_second binding_output_second) leftOps rightOps)
+    (writebacks : ∀ left right : ExecutionState Unit,
+      twoCapturedStatesRelated binding_source_first binding_output_first binding_source_second binding_output_second left right →
+      capturedWritebacksAgree left.captured right.captured binding_source_first binding_output_first ∧
+      capturedWritebacksAgree left.captured right.captured binding_source_second binding_output_second)
+    (leftFinal : ExecutionState Unit)
+    (leftRun : runExecution binding_source_state leftOps = some leftFinal) :
+    ∃ rightFinal, runExecution binding_output_state rightOps = some rightFinal ∧
+      twoCapturedStatesRelated binding_source_first binding_output_first binding_source_second binding_output_second
+        leftFinal rightFinal := by
+  exact two_captured_call_sequence_simulates binding_source_first binding_output_first binding_source_second binding_output_second
+    binding_source_captures_disjoint binding_output_captures_disjoint writebacks leftOps rightOps operations
+    binding_source_state binding_output_state leftFinal binding_captured_initial_related leftRun
+#print axioms binding_two_captured_calls_simulate
 theorem binding_captured_tables_paired : PairedCapturedTables binding_source_first binding_output_first
     binding_source_second binding_output_second binding_source_table binding_output_table := by
   apply PairedCapturedTables.cons
@@ -1078,6 +1094,7 @@ theorem binding_exported_captured_calls (calls : List (String × List Nat))
         "binding_output_captures_disjoint",
         "binding_captured_initial_related",
         "binding_two_captured_calls",
+        "binding_two_captured_calls_simulate",
         "binding_exported_captured_calls",
         "binding_captured_tables_paired",
       ].every((name) => has(relationProof, name));

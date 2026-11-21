@@ -857,6 +857,72 @@ theorem captured_step_related {α : Type}
       exact captured_unblocked_step_related leftCapture rightCapture parameters arguments body left right leftNext rightNext
         related leftError leftThrown leftStep rightStep
 
+/- A common loaded frame is insufficient when two lexical names alias the same
+   cell on only one side: checked writeback can reject one store and accept the
+   other. This condition isolates the additional allocation invariant needed
+   for a total simulation. -/
+def capturedWritebacksAgree (leftStore rightStore : List (String × Nat))
+    (leftCapture rightCapture : List (String × String)) : Prop :=
+  ∀ values, (storeCapturedFrame leftStore leftCapture values).isSome =
+    (storeCapturedFrame rightStore rightCapture values).isSome
+
+theorem captured_step_simulates {α : Type}
+    (leftCapture rightCapture : List (String × String)) (parameters : List String) (arguments : List Nat)
+    (body : NumericExpr) (left right leftNext : ExecutionState α)
+    (related : capturedStatesRelated leftCapture rightCapture left right)
+    (writebacks : capturedWritebacksAgree left.captured right.captured leftCapture rightCapture)
+    (leftStep : executeStep left (.invokeCaptured leftCapture parameters arguments body) = some leftNext) :
+    ∃ rightNext, executeStep right (.invokeCaptured rightCapture parameters arguments body) = some rightNext ∧
+      capturedStatesRelated leftCapture rightCapture leftNext rightNext := by
+  have sameError : left.error = right.error := related.2.2.2.1
+  have sameThrown : left.thrown = right.thrown := related.2.2.2.2.2.1
+  cases leftError : left.error with
+  | some error =>
+    have rightError : right.error = some error := sameError.symm.trans leftError
+    have leftBlocked : executeStep left (.invokeCaptured leftCapture parameters arguments body) = some left := by
+      unfold executeStep
+      rw [leftError]
+    have rightBlocked : executeStep right (.invokeCaptured rightCapture parameters arguments body) = some right := by
+      unfold executeStep
+      rw [rightError]
+    rw [leftBlocked] at leftStep
+    cases leftStep
+    exact ⟨right, rightBlocked, related⟩
+  | none =>
+    cases leftThrown : left.thrown with
+    | some thrown =>
+      have rightError : right.error = none := sameError.symm.trans leftError
+      have rightThrown : right.thrown = some thrown := sameThrown.symm.trans leftThrown
+      have leftBlocked : executeStep left (.invokeCaptured leftCapture parameters arguments body) = some left := by
+        unfold executeStep
+        rw [leftError, leftThrown]
+        rfl
+      have rightBlocked : executeStep right (.invokeCaptured rightCapture parameters arguments body) = some right := by
+        unfold executeStep
+        rw [rightError, rightThrown]
+        rfl
+      rw [leftBlocked] at leftStep
+      cases leftStep
+      exact ⟨right, rightBlocked, related⟩
+    | none =>
+      obtain ⟨result, leftStored, evaluated, written, finished⟩ :=
+        executeCaptured_decompose left leftNext leftCapture parameters arguments body leftError leftThrown leftStep
+      have sameEvaluation : evaluateCapturedFrame left.bindings left.captured leftCapture parameters arguments body =
+          evaluateCapturedFrame right.bindings right.captured rightCapture parameters arguments body := by
+        rw [← related.1]
+        exact captured_frame_evaluation_preserved left.bindings left.captured right.captured leftCapture rightCapture
+          parameters arguments body related.2.2.2.2.2.2
+      have rightEvaluated := sameEvaluation.symm.trans evaluated
+      have writebackExists := writebacks (result.locals.drop parameters.length)
+      rw [written] at writebackExists
+      cases rightWritten : storeCapturedFrame right.captured rightCapture (result.locals.drop parameters.length) with
+      | none => rw [rightWritten] at writebackExists; cases writebackExists
+      | some rightStored =>
+        have rightStep := executeCaptured_success right rightCapture parameters arguments body result rightStored
+          (sameError.symm.trans leftError) (sameThrown.symm.trans leftThrown) rightEvaluated rightWritten
+        exact ⟨_, rightStep, captured_step_related leftCapture rightCapture parameters arguments body left right leftNext _
+          related leftStep rightStep⟩
+
 inductive RelatedOperations (relation : Operation → Operation → Prop) : List Operation → List Operation → Prop where
   | nil : RelatedOperations relation [] []
   | cons {left right leftTail rightTail} : relation left right → RelatedOperations relation leftTail rightTail →
@@ -901,6 +967,36 @@ theorem runExecution_relation_preserved {α : Type}
         exact inductionHypothesis leftNext rightNext
           (preserve left right leftOp rightOp leftNext rightNext initial opRelated leftStep rightStep)
           leftRun rightRun
+
+/- Unlike the two-completed-runs lemma, this constructs the matching run from
+   a one-step simulation. The premise must cover every reachable related state. -/
+theorem runExecution_simulates {α : Type}
+    (stateRel : ExecutionState α → ExecutionState α → Prop)
+    (operationRel : Operation → Operation → Prop)
+    (simulate : ∀ left right leftOp rightOp leftNext,
+      stateRel left right → operationRel leftOp rightOp → executeStep left leftOp = some leftNext →
+      ∃ rightNext, executeStep right rightOp = some rightNext ∧ stateRel leftNext rightNext)
+    (leftOps rightOps : List Operation) (operations : RelatedOperations operationRel leftOps rightOps)
+    (left right leftFinal : ExecutionState α) (initial : stateRel left right)
+    (leftRun : runExecution left leftOps = some leftFinal) :
+    ∃ rightFinal, runExecution right rightOps = some rightFinal ∧ stateRel leftFinal rightFinal := by
+  induction operations generalizing left right with
+  | nil =>
+    change some left = some leftFinal at leftRun
+    cases leftRun
+    exact ⟨right, rfl, initial⟩
+  | @cons leftOp rightOp leftTail rightTail opRelated tailsRelated inductionHypothesis =>
+    change (executeStep left leftOp).bind (fun next => runExecution next leftTail) = some leftFinal at leftRun
+    cases leftStep : executeStep left leftOp with
+    | none => rw [leftStep] at leftRun; cases leftRun
+    | some leftNext =>
+      rw [leftStep] at leftRun
+      obtain ⟨rightNext, rightStep, nextRelated⟩ := simulate left right leftOp rightOp leftNext initial opRelated leftStep
+      obtain ⟨rightFinal, rightRun, finalRelated⟩ := inductionHypothesis leftNext rightNext nextRelated leftRun
+      refine ⟨rightFinal, ?_, finalRelated⟩
+      change (executeStep right rightOp).bind (fun next => runExecution next rightTail) = some rightFinal
+      rw [rightStep]
+      exact rightRun
 
 inductive PairedCapturedOperation (leftCapture rightCapture : List (String × String)) : Operation → Operation → Prop where
   | call (parameters : List String) (arguments : List Nat) (body : NumericExpr) :
@@ -996,3 +1092,41 @@ theorem two_captured_call_sequence_related {α : Type}
       (captures_disjoint_symmetric leftFirst leftSecond leftDisjoint)
       (captures_disjoint_symmetric rightFirst rightSecond rightDisjoint) leftStep rightStep
     exact ⟨capturedStates_related_with_environment leftSecond rightSecond leftFirst rightFirst leftNext rightNext pair.1 pair.2, pair.1⟩
+
+/- When the allocation invariant guarantees writeback agreement in every
+   related state, an entire successful two-closure run has a matching run. -/
+theorem two_captured_call_sequence_simulates {α : Type}
+    (leftFirst rightFirst leftSecond rightSecond : List (String × String))
+    (leftDisjoint : capturesDisjoint leftFirst leftSecond) (rightDisjoint : capturesDisjoint rightFirst rightSecond)
+    (writebacks : ∀ left right : ExecutionState α,
+      twoCapturedStatesRelated leftFirst rightFirst leftSecond rightSecond left right →
+      capturedWritebacksAgree left.captured right.captured leftFirst rightFirst ∧
+      capturedWritebacksAgree left.captured right.captured leftSecond rightSecond)
+    (leftOps rightOps : List Operation)
+    (operations : RelatedOperations (PairedTwoCapturedOperation leftFirst rightFirst leftSecond rightSecond) leftOps rightOps)
+    (left right leftFinal : ExecutionState α)
+    (initial : twoCapturedStatesRelated leftFirst rightFirst leftSecond rightSecond left right)
+    (leftRun : runExecution left leftOps = some leftFinal) :
+    ∃ rightFinal, runExecution right rightOps = some rightFinal ∧
+      twoCapturedStatesRelated leftFirst rightFirst leftSecond rightSecond leftFinal rightFinal := by
+  apply runExecution_simulates (twoCapturedStatesRelated leftFirst rightFirst leftSecond rightSecond)
+    (PairedTwoCapturedOperation leftFirst rightFirst leftSecond rightSecond) ?_ leftOps rightOps operations
+    left right leftFinal initial leftRun
+  intro leftState rightState leftOp rightOp leftNext related operation leftStep
+  cases operation with
+  | first parameters arguments body =>
+    obtain ⟨rightNext, rightStep, active⟩ := captured_step_simulates leftFirst rightFirst parameters arguments body
+      leftState rightState leftNext related.1 (writebacks leftState rightState related).1 leftStep
+    have pair := captured_step_preserves_pair leftFirst rightFirst leftSecond rightSecond parameters arguments body
+      leftState rightState leftNext rightNext related.1 related.2.2.2.2.2.2.2 leftDisjoint rightDisjoint leftStep rightStep
+    exact ⟨rightNext, rightStep, pair.1,
+      capturedStates_related_with_environment leftFirst rightFirst leftSecond rightSecond leftNext rightNext pair.1 pair.2⟩
+  | second parameters arguments body =>
+    obtain ⟨rightNext, rightStep, active⟩ := captured_step_simulates leftSecond rightSecond parameters arguments body
+      leftState rightState leftNext related.2 (writebacks leftState rightState related).2 leftStep
+    have pair := captured_step_preserves_pair leftSecond rightSecond leftFirst rightFirst parameters arguments body
+      leftState rightState leftNext rightNext related.2 related.1.2.2.2.2.2.2
+      (captures_disjoint_symmetric leftFirst leftSecond leftDisjoint)
+      (captures_disjoint_symmetric rightFirst rightSecond rightDisjoint) leftStep rightStep
+    exact ⟨rightNext, rightStep,
+      capturedStates_related_with_environment leftSecond rightSecond leftFirst rightFirst leftNext rightNext pair.1 pair.2, pair.1⟩
