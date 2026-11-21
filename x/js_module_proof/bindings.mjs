@@ -1452,6 +1452,12 @@ function generateFiles(source, spec, names) {
               terminal.alternate &&
               returnBranch(terminal.consequent) &&
               returnBranch(terminal.alternate);
+            const isTryFinally = (statement) =>
+              statement.type === "TryStatement" &&
+              statement.handler === null &&
+              statement.finalizer?.type === "BlockStatement" &&
+              statement.block.body.every(isWrite) &&
+              statement.finalizer.body.every(isWrite);
             const isLoop = (statement) =>
               statement.type === "ForStatement" &&
               statement.init?.type === "VariableDeclaration" &&
@@ -1482,7 +1488,8 @@ function generateFiles(source, spec, names) {
                     statement.type === "VariableDeclaration" ||
                     isWrite(statement) ||
                     isBranch(statement) ||
-                    isLoop(statement)
+                    isLoop(statement) ||
+                    isTryFinally(statement)
                 ),
               "local import renaming supports only local declarations and assignments"
             );
@@ -1539,7 +1546,10 @@ function generateFiles(source, spec, names) {
             };
             for (const item of prefix) {
               if (item.type === "VariableDeclaration") visit(item.declarations[0].init);
-              else if (item.type === "ForStatement") {
+              else if (item.type === "TryStatement") {
+                item.block.body.forEach((write) => visitWrite(write));
+                item.finalizer.body.forEach((write) => visitWrite(write));
+              } else if (item.type === "ForStatement") {
                 const loopName = item.init.declarations[0].id.name;
                 check(!localNames.has(loopName), "ambiguous loop binding");
                 item.body.body.forEach((write) => visitWrite(write, new Set([loopName])));

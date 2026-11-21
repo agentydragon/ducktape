@@ -308,6 +308,30 @@ if (shards === 4 && shard === 0) {
   assert.equal(unchangedComposed.composedAliasExpressionProvedCases, 1);
   assert.equal(unchangedComposed.equal, 1);
 }
+if (shards === 4 && shard === 2) {
+  const changedFinally = await runFuzz({
+    seed: 773,
+    start: 949,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "alias",
+    validateEvery: 1,
+  });
+  assert.match(makeLocalAliasCase(773, 949).source, /finally/);
+  assert.equal(changedFinally.mutatedDifferent, 1);
+  assert.equal(changedFinally.mutatedVerdicts.unsafe, 1);
+  const unchangedFinally = await runFuzz({
+    seed: 773,
+    start: 949,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "alias",
+    mutationMode: "disabled",
+    validateEvery: 1,
+  });
+  assert.equal(unchangedFinally.localImportAliasProvedCases, 1);
+  assert.equal(unchangedFinally.equal, 1);
+}
 if (shards === 4 && shard === 3) {
   const changedTerminal = await runFuzz({
     seed: 773,

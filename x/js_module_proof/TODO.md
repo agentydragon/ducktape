@@ -86,7 +86,8 @@ cover only part of the grammar and split space described below.
       models for the fuzzer or for individual syntax features.
 - [ ] Extend renamed local imports beyond simple readers, records, calls, local
       addition updates, and numeric functions with parameters, `let` or `const` locals, local
-      assignments, conditional updates, bounded loops, and short-circuit values.
+      assignments, conditional updates, bounded loops, nonthrowing `try`/`finally`,
+      and short-circuit values.
       The generator and an axiom-free acceptance certificate cover these cases,
       including relayed imports; the AST fuzzer also redirects reader imports to
       check unsafe witnesses.

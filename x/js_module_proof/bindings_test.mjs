@@ -946,3 +946,44 @@ if (runSection(1)) {
   const shadowResult = cli("validate", loopSource, loopSpec, shadowOut).value;
   assert.ok(["proved under assumptions", "unknown"].includes(shadowResult.result), JSON.stringify(shadowResult));
 }
+
+if (runSection(1)) {
+  const finallySource = join(root, "finally-alias-source.mjs");
+  const finallySpec = join(root, "finally-alias-spec.json");
+  const finallyOut = join(root, "finally-alias-out");
+  await writeFile(
+    finallySource,
+    `let value = 3;\nlet other = 5;\nfunction compute(p) { let local = p; try { local += value; } finally { local += value; } return local; }\nexport { compute };\n`
+  );
+  await writeFile(
+    finallySpec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0, 1] },
+        "logic.mjs": { imports: ["state.mjs"], statements: [2], renameLocalImports: true },
+        "entry.mjs": { imports: ["logic.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", finallySource, finallySpec, finallyOut).value.result, "generated");
+  const finallyState = join(finallyOut, "state.mjs");
+  await writeFile(finallyState, (await readFile(finallyState, "utf8")) + "export { other };\n");
+  const finallyLogic = join(finallyOut, "logic.mjs");
+  const finallyText = await readFile(finallyLogic, "utf8");
+  const finallyResult = cli("validate", finallySource, finallySpec, finallyOut).value;
+  assert.equal(finallyResult.result, "proved under assumptions", JSON.stringify(finallyResult));
+  const calls = [
+    { name: "compute", args: [0] },
+    { name: "compute", args: [4] },
+  ];
+  assert.deepEqual(execute(finallySource, calls), { events: [], results: [6, 10] });
+  assert.deepEqual(execute(join(finallyOut, "entry.mjs"), calls), { events: [], results: [6, 10] });
+  assert.match(finallyText, /value as __split_local_0/);
+  await writeFile(finallyLogic, finallyText.replace("value as __split_local_0", "other as __split_local_0"));
+  const redirected = cli("validate", finallySource, finallySpec, finallyOut).value;
+  assert.equal(redirected.result, "unsafe", JSON.stringify(redirected));
+  assert.deepEqual(execute(finallySource, redirected.calls), { events: [], results: [6] });
+  assert.deepEqual(execute(join(finallyOut, "entry.mjs"), redirected.calls), { events: [], results: [10] });
+}

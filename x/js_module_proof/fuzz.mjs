@@ -1049,7 +1049,8 @@ export function makeLocalAliasCase(seed, index) {
     (body, parameter) => ({ type: "BinaryExpression", operator: "+", left: body, right: id(parameter) }),
     numericExpression
   );
-  const withLocal = numericBindings.length > 0 && index >= 61 && index % 48 === 13;
+  const withFinally = numericBindings.length > 0 && index >= 949 && index % 96 === 85;
+  const withLocal = numericBindings.length > 0 && ((index >= 61 && index % 48 === 13) || withFinally);
   const aliasLoop = numericBindings.length > 0 && index >= 781 && index % 96 === 13;
   const aliasBranch = numericBindings.length > 0 && index >= 397 && index % 96 === 13;
   const loopShadow = aliasLoop && index >= 877;
@@ -1062,6 +1063,36 @@ export function makeLocalAliasCase(seed, index) {
   const computedBody = withLocal
     ? [
         localDeclaration,
+        ...(withFinally
+          ? [
+              {
+                type: "TryStatement",
+                block: {
+                  type: "BlockStatement",
+                  body: [
+                    expr({
+                      type: "AssignmentExpression",
+                      operator: "+=",
+                      left: id("offset"),
+                      right: id("numericLeft"),
+                    }),
+                  ],
+                },
+                handler: null,
+                finalizer: {
+                  type: "BlockStatement",
+                  body: [
+                    expr({
+                      type: "AssignmentExpression",
+                      operator: "+=",
+                      left: id("offset"),
+                      right: id("numericRight"),
+                    }),
+                  ],
+                },
+              },
+            ]
+          : []),
         ...(index >= 205 && index % 96 === 13
           ? [
               expr({
@@ -1254,6 +1285,7 @@ export function makeLocalAliasCase(seed, index) {
     numericLeftIndex: bindings.length + updateBindings.length,
     numericArguments,
     composedAliasExpression,
+    withFinally,
     aliasBranch,
     aliasLoop,
     loopShadow,
