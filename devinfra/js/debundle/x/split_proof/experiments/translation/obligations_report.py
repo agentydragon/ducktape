@@ -10,7 +10,7 @@ This groups them by the directory of the output tree that holds each unit.
 
 First, how the obligations divide by the set of reasons a pair has. With `--footprints` (the output of `lower`), also
 how many names each unit may write, and how many obligations involve a unit that may write at least W names (default
-1000): a unit that runs unknown code is taken to write every name that escapes anywhere in the bundle.
+1000): a unit that runs unknown code is taken to write every import and every name that escapes anywhere in the bundle.
 
 Then, for every directory (the first N segments of a module's directory, default 2): its units, how many of them touch
 the world (with `--footprints`), the obligations between two of its units (inside) and between one of its units and a
