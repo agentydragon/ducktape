@@ -130,7 +130,17 @@ private def keysObject : Obj :=
 /-- Own-key enumeration returns keys in order without executing a getter. -/
 theorem keys_without_callback :
     perform (callFn 0) (construct 0) 0 [] (.keys (.handle 0)) (objectState keysObject) =
-      .ok (.keys ["z", "accessor", "a"]) (objectState keysObject) := rfl
+      .ok (.keys ["z", "accessor", "a"]) (objectState keysObject) := by
+  have hz : arrayIndex? "z" = none := by
+    simp [arrayIndex?, String.toNat?, String.Slice.toNat?, String.Slice.isNat]
+  have haccessor : arrayIndex? "accessor" = none := by
+    simp [arrayIndex?, String.toNat?, String.Slice.toNat?, String.Slice.isNat]
+  have ha : arrayIndex? "a" = none := by
+    simp [arrayIndex?, String.toNat?, String.Slice.toNat?, String.Slice.isNat]
+  have hkeys : ownPropertyKeys keysObject.props = ["z", "accessor", "a"] := by
+    simp [ownPropertyKeys, keysObject, hz, haccessor, ha]
+  change Res.ok (Told.keys (ownPropertyKeys keysObject.props)) (objectState keysObject) = _
+  rw [hkeys]
 
 private def aliasState (initialized : Bool) : State readOnceWorld where
   heap := #[#[{ proto := none, props := [] }], #[]]
