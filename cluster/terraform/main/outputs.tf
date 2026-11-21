@@ -1,5 +1,3 @@
-# KUBECONFIG & ACCESS
-
 output "kubeconfig" {
   description = "Generated kubeconfig for cluster access (patched with real endpoint)"
   value = replace(
@@ -26,8 +24,6 @@ output "optiplex_worker_machine_configuration" {
   value       = data.talos_machine_configuration.home_worker["optiplex"].machine_configuration
   sensitive   = true
 }
-
-# WYRM2 (NixOS dev env)
 
 output "wyrm2" {
   description = "Wyrm2 VM info"
