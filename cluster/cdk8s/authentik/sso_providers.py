@@ -17,6 +17,8 @@ def chart(app: App) -> Chart:
         module_name=NAME,
         identity_name=KUBERNETES_IDENTITY,
         schema=terraform.gitops_state_schema(NAME),
+        # Remove after #18568's Secret address leaves the state and the Workspace is Synced.
+        secret_retirements={"authentik": ("paperless-sso-providers",)},
         secret_accesses=(
             (
                 "authentik-secrets",

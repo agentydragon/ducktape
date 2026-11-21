@@ -240,6 +240,15 @@ rules:
       - delete
   - apiGroups:
       - ""
+    resourceNames:
+      - paperless-sso-providers
+    resources:
+      - secrets
+    verbs:
+      - get
+      - delete
+  - apiGroups:
+      - ""
     resources:
       - secrets
     verbs:

@@ -3,7 +3,7 @@
 Design, source-change path and Kubernetes identities: cluster/docs/crossplane-opentofu-artifact-triggers.md.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ApiResource, Role, RolePolicyRule, Secret, ServiceAccount
@@ -148,8 +148,9 @@ def secret_access(
     namespace: str,
     read: Sequence[str] = (),
     write: Sequence[str] = (),
+    retire: Sequence[str] = (),
 ) -> None:
-    """Secret GET and named writes; CREATE cannot be resourceNames-scoped in Kubernetes RBAC."""
+    """Grant named Secret access. Only active writers get namespace-wide CREATE."""
     role = Role(
         scope,
         id,
@@ -166,6 +167,12 @@ def secret_access(
                 )
                 for name in write
             ],
+            *[
+                RolePolicyRule(
+                    resources=[Secret.from_secret_name(scope, f"{id}-retire-{name}", name)], verbs=["get", "delete"]
+                )
+                for name in retire
+            ],
             *([RolePolicyRule(resources=[ApiResource.SECRETS], verbs=["create"])] if write else []),
         ],
     )
@@ -179,6 +186,7 @@ def gitops_workspace_chart(
     identity_name: str,
     schema: str,
     secret_accesses: Sequence[tuple[str, str, Sequence[str], Sequence[str]]],
+    secret_retirements: Mapping[str, Sequence[str]] | None = None,
 ) -> Chart:
     """Build the standard crossplane-prefixed chart for a managed GitOps Workspace.
 
@@ -188,8 +196,19 @@ def gitops_workspace_chart(
     chart_name = f"crossplane-{module_name}"
     chart = Chart(app, chart_name, disable_resource_name_hashes=True)
     identity = kubernetes_service_account(chart, identity_name)
+    retirements = dict(secret_retirements or {})
     for access_id, namespace, reads, writes in secret_accesses:
-        secret_access(chart, access_id, identity=identity, namespace=namespace, read=reads, write=writes)
+        secret_access(
+            chart,
+            access_id,
+            identity=identity,
+            namespace=namespace,
+            read=reads,
+            write=writes,
+            retire=retirements.pop(namespace, ()),
+        )
+    for namespace, names in retirements.items():
+        secret_access(chart, f"{namespace}-retiring-secrets", identity=identity, namespace=namespace, retire=names)
     gitops_workspace(
         chart,
         "workspace",

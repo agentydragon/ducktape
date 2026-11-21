@@ -119,6 +119,8 @@ def agentydragon_repos_chart(app: App) -> Chart:
         identity_name=AGENTYDRAGON_REPOS_IDENTITY,
         # This root's state predates its current module name. Keep its historical schema.
         schema="forgejo_codex",
+        # Remove after #18575's Secret address leaves the state and the Workspace is Synced.
+        secret_retirements={"agents-infra": ("forgejo-token-mint-codex-pod",)},
         secret_accesses=(("forgejo-agentydragon-repos-forgejo-secrets", "forgejo", ("forgejo-admin-password",), ()),),
     )
 
