@@ -29,9 +29,9 @@ class TestMatchableOccurrences:
     The critic_scopes_expected_to_recall becomes match_file_restriction in the DB.
     """
 
-    def test_file_local_tp_matched_from_same_file(self, session, test_trivial_snapshot):
+    def test_file_local_tp_matched_from_same_file(self, synced_test_session, test_trivial_snapshot):
         """A file-local TP is matchable when the file array contains that file."""
-        result = session.execute(
+        result = synced_test_session.execute(
             text("""
                 SELECT tp_id, tp_occurrence_id, fp_id, fp_occurrence_id
                 FROM matchable_occurrences(:snapshot, ARRAY['subtract.py'])
@@ -45,9 +45,9 @@ class TestMatchableOccurrences:
         # tp-001 has occurrence in subtract.py with critic_scopes_expected_to_recall: [[subtract.py]]
         assert "tp-001" in tp_ids, f"Expected tp-001 in matchable TPs, got: {tp_ids}"
 
-    def test_multiple_files_match_their_local_tps(self, session, test_trivial_snapshot):
+    def test_multiple_files_match_their_local_tps(self, synced_test_session, test_trivial_snapshot):
         """Multiple files should match their respective file-local TPs."""
-        result = session.execute(
+        result = synced_test_session.execute(
             text("""
                 SELECT tp_id, tp_occurrence_id
                 FROM matchable_occurrences(:snapshot, ARRAY['subtract.py', 'add.py'])
@@ -62,9 +62,9 @@ class TestMatchableOccurrences:
         assert "tp-001" in tp_ids, "tp-001 should be matchable from {subtract.py, add.py}"
         assert "tp-002" in tp_ids, "tp-002 should be matchable from {subtract.py, add.py}"
 
-    def test_empty_file_array_only_matches_unrestricted(self, session, test_trivial_snapshot):
+    def test_empty_file_array_only_matches_unrestricted(self, synced_test_session, test_trivial_snapshot):
         """Empty file array should only match unrestricted (NULL) occurrences."""
-        result = session.execute(
+        result = synced_test_session.execute(
             text("""
                 SELECT tp_id, tp_occurrence_id, fp_id, fp_occurrence_id
                 FROM matchable_occurrences(:snapshot, ARRAY[]::VARCHAR[])
@@ -75,7 +75,7 @@ class TestMatchableOccurrences:
         # Check that all returned occurrences are unrestricted
         for row in result:
             if row.tp_id:
-                is_unrestricted = session.execute(
+                is_unrestricted = synced_test_session.execute(
                     text("""
                         SELECT match_file_restriction IS NULL
                         FROM true_positive_occurrences

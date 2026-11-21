@@ -36,10 +36,6 @@ py_library(
     ],
 )
 
-# =============================================================================
-# In-container agent main entry point (snapshot grader)
-# =============================================================================
-
 py_library(
     name = "main",
     srcs = ["main.py"],
@@ -111,10 +107,6 @@ py_python3_symlink(
     binary_name = "grader_bin",
 )
 
-# =============================================================================
-# Library targets
-# =============================================================================
-
 py_library(
     name = "drift_handler",
     srcs = ["drift_handler.py"],
@@ -140,15 +132,10 @@ py_library(
     ],
 )
 
-# =============================================================================
-# Tests
-# =============================================================================
-
 py_test(
     name = "test_notification_middleware",
     srcs = ["test_notification_middleware.py"],
     deps = [
-        ":conftest",
         ":notification_middleware",
         "//:conftest",
         "//props:conftest",
@@ -169,7 +156,6 @@ py_test(
     exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
-        ":conftest",
         "//:conftest",
         "//props:conftest",
         "//props/db:models",
@@ -194,7 +180,6 @@ py_test(
     exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
-        ":conftest",
         "//:conftest",
         "//props:conftest",
         "//props/testing/fixtures:db",
@@ -216,7 +201,6 @@ py_test(
     exec_properties = CONTAINER_E2E_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
-        ":conftest",
         ":drift_handler",
         ":tools",
         "//:conftest",
@@ -244,7 +228,6 @@ py_test(
     exec_properties = CONTAINER_E2E_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
-        ":conftest",
         ":drift_handler",
         ":tools",
         "//:conftest",
@@ -273,7 +256,6 @@ py_test(
     exec_properties = CONTAINER_E2E_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
-        ":conftest",
         ":drift_handler",
         ":tools",
         "//:conftest",
@@ -301,7 +283,6 @@ py_test(
     exec_properties = CONTAINER_E2E_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
-        ":conftest",
         "//:conftest",
         "//openai_utils/testing:responses",
         "//props:conftest",
@@ -315,10 +296,6 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
-
-# =============================================================================
-# Container image (snapshot grader)
-# =============================================================================
 
 oci_image(
     name = "image",
@@ -348,14 +325,23 @@ oci_push(
     repository = "localhost:8000/grader",
 )
 
-py_library(
-    name = "conftest",
-    testonly = True,
-    srcs = ["conftest.py"],
-    visibility = ["//props:__subpackages__"],
+py_test(
+    name = "test_grader_tools",
+    size = "medium",
+    srcs = ["test_grader_tools.py"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
+    requires_docker = True,
     deps = [
-        "//props/db:database",
-        "@pypi//pytest",
-        "@pypi//sqlalchemy",
+        ":main",
+        ":tools",
+        "//:conftest",
+        "//props:conftest",
+        "//props/db:models",
+        "//props/db:snapshots",
+        "//props/testing/fixtures:db",
+        "//props/testing/fixtures:ground_truth",
+        "//props/testing/fixtures:runs",
+        "//testing:postgres_fixtures",
+        "@pypi//pytest_bazel",
     ],
 )
