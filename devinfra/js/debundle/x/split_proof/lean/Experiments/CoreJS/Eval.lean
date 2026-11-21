@@ -62,6 +62,55 @@ def makeFunc (env : Env) (f : Func) : M W Val := do
   initSelf env f.self f.name (.obj a)
   pure (.obj a)
 
+/-- A function whose body is part `part` of the opaque code `code`, closed over `cells`. -/
+def makeOpaque (code part : Nat) (cells : List (Option Addr)) (name : String) (length : Nat) (constructor : Bool) :
+    M W Val := do
+  let a ← alloc {
+    proto := some functionProto, code := some (.opaque code part cells),
+    props := [("length", .data (.num (Float.ofNat length)) false false true),
+      ("name", .data (.str name) false false true)] }
+  (if constructor then addPrototype a else pure ())
+  pure (.obj a)
+
+/-- What a request of the world does, given what a call and `new` do. -/
+def perform (call : Call W) (construct : Val → List Val → M W Val) (code : Nat) (cells : List (Option Addr)) :
+    Request → M W Told
+  | .readVar i => do pure (.value (← toW (← readCell (← opaqueCell cells i))))
+  | .writeVar i v => do
+    writeCell (← opaqueCell cells i) (← fromW v)
+    pure (.value (.prim .undef))
+  | .initVar i v => do
+    setCell (← opaqueCell cells i) (← fromW v)
+    pure (.value (.prim .undef))
+  | .get o k => do pure (.value (← toW (← getProp call (← fromW o) (← fromW k))))
+  | .set o k v => do
+    setProp call (← fromW o) (← fromW k) (← fromW v)
+    pure (.value (.prim .undef))
+  | .delete o k => do pure (.value (← toW (← deleteProp (← fromW o) (← fromW k))))
+  | .has k o => do pure (.value (← toW (← hasProp (← fromW k) (← fromW o))))
+  | .keys o => do pure (.keys (← ownKeys (← fromW o)))
+  | .call f this args => do pure (.value (← toW (← call (← fromW f) (← fromW this) (← args.mapM fromW))))
+  | .construct f args => do pure (.value (← toW (← construct (← fromW f) (← args.mapM fromW))))
+  | .newObject proto => do
+    let parent ← match proto with
+      | none => pure (some objectProto)
+      | some p => some <$> requireObj "object prototype" (← fromW p)
+    pure (.value (← toW (.obj (← alloc { proto := parent, props := [] }))))
+  | .newFunction part name length constructor => do
+    pure (.value (← toW (← makeOpaque code part cells name length constructor)))
+  | .prim p args => do pure (.value (← toW (← prim call p (← args.mapM fromW))))
+  | .done _ | .throw _ | .unknown _ => unknown "model: an ending is not a request"
+
+/-- How the world is told what a request ended with. -/
+def toldOf : Except Val Told → M W Told
+  | .ok told => pure told
+  | .error v => do pure (.threw (← toW v))
+
+/-- The bindings an opaque statement is handed, in the order of `opaqueNames`. -/
+def opaqueCells (env : Env) (decls : List (Name × DeclKind)) (funs : List (Name × Nat × Bool)) (free : List Name) :
+    List (Option Addr) :=
+  (opaqueNames decls funs free).map fun x => env.vars.lookup x
+
 /-- Enter the scope of a statement list: its lexical names, and its function declarations with their values. -/
 def enterBlock (env : Env) (ss : List Stmt) : M W Env := do
   let env ← declare env ((lexDecls ss).map fun (x, mutable) => (x, { value := none, mutable }))
@@ -282,6 +331,8 @@ def callFn : Nat → Val → Val → List Val → M W Val
         | .ret v => pure v
         | _ => pure .undef
       | some (.host name) => hostCall name this args
+      | some (.opaque code part cells) => do
+        converse n code cells (.run code part (← toW callee) (← toW this) (← args.mapM toW) false)
       | none => throwErr .type "not a function"
     | .host name => hostCall name this args
     | _ => throwErr .type "not a function"
@@ -303,6 +354,12 @@ def construct : Nat → Val → List Val → M W Val
         | .ret (.obj r) => pure (.obj r)
         | .ret (.error kind msg) => pure (.error kind msg)
         | .ret (.host name) => unknown s!"host value {name} is inspected"
+        | _ => pure (.obj this)
+      | some (.opaque code part cells) => do
+        let proto ← getProp (callFn n) callee (.str "prototype")
+        let this ← alloc { proto := some (match proto with | .obj p => p | _ => objectProto), props := [] }
+        match ← converse n code cells (.run code part (← toW callee) (← toW (.obj this)) (← args.mapM toW) true) with
+        | .obj r => pure (.obj r)
         | _ => pure (.obj this)
       | some (.host name) => unknown s!"host function {name} is constructed"
       | none => throwErr .type "not a constructor"
@@ -355,6 +412,9 @@ def execStmt : Nat → Env → Stmt → M W Flow
           | .normal => throwVal v
           | jump => pure jump) s
       | r => r
+    | .opaque code decls funs free => do
+      let _ ← converse n code (opaqueCells env decls funs free) (.run code 0 (.prim .undef) (← toW env.this) [] false)
+      pure .normal
 
 def execStmts : Nat → Env → List Stmt → M W Flow
   | 0, _, _ => outOfFuel
@@ -363,6 +423,19 @@ def execStmts : Nat → Env → List Stmt → M W Flow
     match ← execStmt n env s with
     | .normal => execStmts n env ss
     | jump => pure jump
+
+/-- A conversation with the world about the opaque code `code`, which was handed `cells`: each request of the world
+is carried out with the smaller bound, until the world ends the code. -/
+def converse : Nat → Nat → List (Option Addr) → Told → M W Val
+  | 0, _, _, _ => outOfFuel
+  | n + 1, code, cells, told => do
+    match ← talk told with
+    | .done v => fromW v
+    | .throw v => throwVal (← fromW v)
+    | .unknown why => unknown why
+    | req => do
+      let told ← toldOf (← attempt (perform (callFn n) (construct n) code cells req))
+      converse n code cells told
 
 /-- The turns of a `for` loop. `fresh` are the names of its `let` declaration: every turn gets its own copy. -/
 def loop : Nat → Env → List Name → Expr → Expr → Stmt → M W Flow
@@ -401,7 +474,7 @@ def initialState (W : World) (regions : Nat) : State W where
   cells := Array.replicate (regions + 1) #[]
   region := 0
   out := #[]
-  world := W.init
+  world := { state := W.init, handed := #[] }
 
 def Program.find (P : Program) (name : String) : Option Module := P.modules.find? (·.name == name)
 
@@ -438,7 +511,11 @@ def inRegion {α : Type} (id : Nat) (m : M W α) : M W α := do
 
 /-- The bindings a top-level statement declares: its `var` names start as `undefined`, the others uninitialized. -/
 def Stmt.bindings (s : Stmt) : List (Name × Binding) :=
-  ((varNamesOf [s]).eraseDups.map fun x => (x, { value := some .undef, mutable := true })) ++
+  match s with
+  | .opaque _ decls funs _ =>
+    (decls.map fun (x, kind) => (x, { value := if kind == .var then some .undef else none, mutable := kind != .const })) ++
+      funs.map fun (x, _) => (x, { value := none, mutable := true })
+  | s => ((varNamesOf [s]).eraseDups.map fun x => (x, { value := some .undef, mutable := true })) ++
     (lexDecls [s]).map fun (x, mutable) => (x, { value := none, mutable })
 
 /-- The bindings of each statement, made in its region: its identity with its names and where they are. -/
@@ -496,9 +573,17 @@ module after module, and the statements of a module in order. -/
 def unitsOf (linked : List (Module × Env)) : List (Nat × Stmt × Env) :=
   linked.flatMap fun (m, env) => m.body.map fun (id, s) => (id, s, env)
 
+/-- The functions an opaque statement declares get their values: function `k` is part `k` of its code. -/
+def initOpaque (code : Nat) (cells : List (Option Addr)) (env : Env) : List (Name × Nat × Bool) → Nat → M W Unit
+  | [], _ => pure ()
+  | (x, length, constructor) :: rest, part => do
+    initVar env x (← makeOpaque code part cells x length constructor)
+    initOpaque code cells env rest (part + 1)
+
 /-- A declared function gets its value, in the region of its declaration and the scope of its module. -/
 def initFunction : Nat × Stmt × Env → M W Unit
   | (id, .funDecl f, env) => inRegion id (do initVar env f.name (← makeFunc env f))
+  | (id, .opaque code decls funs free, env) => inRegion id (initOpaque code (opaqueCells env decls funs free) env funs 1)
   | _ => pure ()
 
 def initFunctions : List (Nat × Stmt × Env) → M W Unit
