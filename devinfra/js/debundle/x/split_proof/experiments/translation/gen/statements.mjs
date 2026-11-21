@@ -432,7 +432,7 @@ export function install(g) {
       const forms = [
         () => `[${e()}, ${e()}${g.chance(0.5) ? `, ${e()}` : ""}]`,
         () => `Array.of(${e()}, ${e()})`,
-        ...(g.avoid.has("array-constructor") ? [] : [() => `new Array(${pick(["1", "2", "3"])}).fill(${e()})`]),
+        () => `new Array(${pick(["1", "2", "3"])}).fill(${e()})`,
         () => `[${e()}].concat([${e()}])`,
         () =>
           elem === "num"

@@ -303,7 +303,7 @@ export function install(g) {
   g.makers.push({
     name: "proxy",
     w: 4,
-    ok: (g) => !g.avoid.has("proxy") && counters(g.topScope()).length > 0 && plainObjects(g.topScope()).length > 0,
+    ok: (g) => counters(g.topScope()).length > 0 && plainObjects(g.topScope()).length > 0,
     make: (g) => {
       const s = g.topScope();
       const target = pick(plainObjects(s));

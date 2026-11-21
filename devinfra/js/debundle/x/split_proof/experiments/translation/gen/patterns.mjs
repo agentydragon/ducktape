@@ -517,12 +517,13 @@ export function install(g) {
       const forms = [
         `if (${x} != null) ${x}.a ??= ${N(s, 1)};`,
         `if (${x} != null) { ${x}.a ||= ${N(s, 1)}; ${x}["a"] &&= ${N(s, 1)}; }`,
-        ...(g.avoid.has("optional-delete") ? [] : [`delete ${x}?.a;`, `delete ${x}?.["b"];`]),
+        `delete ${x}?.a;`,
+        `delete ${x}?.["b"];`,
         `${x}?.a;`,
         `if (${x} != null) ${x}.b += "z";`,
       ];
       if (m.type.inner) forms.push(`if (${x}?.inner) ${x}.inner.x += ${N(s, 1)};`);
-      if (m.type.inner && !g.avoid.has("optional-delete")) forms.push(`delete ${x}?.inner?.x;`);
+      if (m.type.inner) forms.push(`delete ${x}?.inner?.x;`);
       if (m.type.method) forms.push(`${x}?.f?.(${N(s, 1)});`);
       if (m.mutable)
         forms.push(

@@ -1,15 +1,15 @@
 // Oracle for the footprints of `Effects.lean`: run a program unit by unit in Node and compare, after every unit, what each
 // module-scope binding reaches with what `lower` says the unit may write.
 //
-//   node footprint_oracle.mjs <program.mjs> [--premises premises.json] [--runs 2] [--strict] [--json]
+//   node footprint_oracle.mjs <program.mjs> [--premises premises.json] [--runs 2] [--json]
 //
 // A unit is a top-level statement, or one declarator of a variable list, as in `frontend.mjs`. The program is rewritten to
 // call the harness (`oracle_harness.mjs`) before the first unit and after each one; the harness digests what every
 // top-level binding reaches. A binding whose digest changed during unit `i` must be bound by the unit: a name it declares,
 // or one in its `writes`. A unit that changed a binding and is not in either is a **wrong footprint** (`unwritten`): a
 // split that moves a reader of the binding across that unit is accepted by `translate` and run differently by Node. For a
-// unit that is an effect the same gap is reported as `unlisted`: its `writes` need not name the binding for the unit to be
-// ordered against other effects, but a pure reader of the binding can still cross it. Also checked: a unit that printed or
+// unit that is an effect the same gap is reported as `unlisted`: the unit is ordered against other effects without naming the
+// binding, but a pure reader of the binding can still cross it, so it is as wrong. Also checked: a unit that printed or
 // added a global must be an effect, and a name a unit initializes must be one it declares.
 //
 // What the oracle cannot see, and so cannot check:
@@ -277,8 +277,7 @@ async function main() {
   const option = (name, fallback) => (args.includes(`--${name}`) ? args[args.indexOf(`--${name}`) + 1] : fallback);
   const valueOptions = ["--premises", "--runs"];
   const file = args.find((a, i) => !a.startsWith("--") && !valueOptions.includes(args[i - 1]));
-  if (!file)
-    throw new Error("usage: footprint_oracle.mjs <program.mjs> [--premises file] [--runs N] [--strict] [--json]");
+  if (!file) throw new Error("usage: footprint_oracle.mjs <program.mjs> [--premises file] [--runs N] [--json]");
   const premisesFile = option("premises", undefined);
   const result = await checkProgram(readFileSync(file, "utf8"), {
     premises: premisesFile ? JSON.parse(readFileSync(premisesFile, "utf8")) : { noWorldHooks: true },
@@ -300,8 +299,7 @@ async function main() {
       console.log(`  premise P1 does not hold: the program patches ${result.patched.slice(0, 5).join(", ")}`);
     for (const f of result.findings) console.log(`  ${describe(f)}`);
   }
-  const hard = result.findings.filter((f) => f.kind !== "unlisted" || args.includes("--strict"));
-  process.exit(hard.length > 0 ? 1 : 0);
+  process.exit(result.findings.length > 0 ? 1 : 0);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) await main();
