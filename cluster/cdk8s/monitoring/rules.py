@@ -159,7 +159,10 @@ _FLUX = [
     *(
         Rule.alert(
             f"Flux{kind}NotReady",
-            (_PROMQL_DIR / f"flux-{filename}-not-ready-warning.promql").read_text(),
+            (
+                f'kube_customresource_flux_{kind.lower()}_ready{{status!="True"}} == 1\n'
+                f"unless on (namespace, name) (kube_customresource_flux_{kind.lower()}_suspended == 1)\n"
+            ),
             for_="15m",
             labels={"severity": "warning"},
             summary=f"Flux {kind} " + "{{ $labels.namespace }}/{{ $labels.name }} is not Ready",
@@ -169,11 +172,7 @@ _FLUX = [
                 "for more than 15 minutes."
             ),
         )
-        for kind, filename in (
-            ("Kustomization", "kustomization"),
-            ("HelmRelease", "helm-release"),
-            ("GitRepository", "git-repository"),
-        )
+        for kind in ("Kustomization", "HelmRelease", "GitRepository")
     ),
     Rule.alert(
         "FluxMainGitRepositoryArtifactLarge",

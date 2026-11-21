@@ -15,7 +15,7 @@ from flux_helm.io.fluxcd.toolkit.helm import HelmReleaseSpecUpgrade, HelmRelease
 from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.namespaces import PRIVILEGED_POD_SECURITY, Vpa
 
 NAME = "seaweedfs-csi"
 NAMESPACE = "seaweedfs-csi-system"
@@ -196,11 +196,7 @@ def chart(app: App) -> Chart:
         name=NAMESPACE,
         vpa=Vpa.RECOMMEND,
         # CSI driver needs hostPath, hostPID, SYS_ADMIN, and privileged containers.
-        labels={
-            "pod-security.kubernetes.io/enforce": "privileged",
-            "pod-security.kubernetes.io/audit": "privileged",
-            "pod-security.kubernetes.io/warn": "privileged",
-        },
+        labels=PRIVILEGED_POD_SECURITY,
     )
     source = GitRepository(
         chart,

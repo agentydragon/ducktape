@@ -27,7 +27,7 @@ from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.namespaces import PRIVILEGED_POD_SECURITY, Vpa
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -60,17 +60,7 @@ _READ_TOKEN = SecretRef(namespace=_NAMESPACE, name="activitywatch-read-token").k
 
 
 def _namespace(scope: Construct) -> None:
-    namespaces.namespace(
-        scope,
-        "namespace",
-        name=_NAMESPACE,
-        vpa=Vpa.AUTO,
-        labels={
-            "pod-security.kubernetes.io/enforce": "privileged",
-            "pod-security.kubernetes.io/audit": "privileged",
-            "pod-security.kubernetes.io/warn": "privileged",
-        },
-    )
+    namespaces.namespace(scope, "namespace", name=_NAMESPACE, vpa=Vpa.AUTO, labels=PRIVILEGED_POD_SECURITY)
 
 
 def _http_probe(path: str, port: int, *, initial_delay_seconds: int, period_seconds: int) -> k8s.Probe:

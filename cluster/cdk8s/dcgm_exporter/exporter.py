@@ -19,7 +19,7 @@ from cluster.cdk8s import namespaces
 from cluster.cdk8s.dcgm_exporter import counters
 from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.namespaces import PRIVILEGED_POD_SECURITY, Vpa
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint
 
 NAME = "dcgm-exporter"
@@ -41,12 +41,8 @@ def chart(app: App) -> Chart:
         name=NAMESPACE,
         # Fixed-resource DaemonSet -- opt out of Goldilocks/VPA recommendations.
         vpa=Vpa.DISABLED,
-        labels={
-            # GPU exporter runs with the nvidia runtimeClass and host GPU device injection.
-            "pod-security.kubernetes.io/enforce": "privileged",
-            "pod-security.kubernetes.io/audit": "privileged",
-            "pod-security.kubernetes.io/warn": "privileged",
-        },
+        # GPU exporter runs with the nvidia runtimeClass and host GPU device injection.
+        labels=PRIVILEGED_POD_SECURITY,
     )
     k8s.KubeDaemonSet(
         chart,

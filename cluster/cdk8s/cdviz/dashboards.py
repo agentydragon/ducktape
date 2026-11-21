@@ -3,11 +3,6 @@
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ServiceAccount
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
-from grafana_grafanadashboard_crds.org.integreatly.grafana import (
-    GrafanaDashboard,
-    GrafanaDashboardSpec,
-    GrafanaDashboardSpecInstanceSelector,
-)
 from grafana_grafanadatasource_crds.org.integreatly.grafana import (
     GrafanaDatasource,
     GrafanaDatasourceSpec,
@@ -87,14 +82,5 @@ def chart(app: App) -> Chart:
         ),
     )
     for name in ("ci-workflow-timings", "ci-commit-feedback"):
-        GrafanaDashboard(
-            chart,
-            name,
-            metadata=ApiObjectMetadata(name=name, namespace=_NAMESPACE),
-            spec=GrafanaDashboardSpec(
-                instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels=grafana_instance.INSTANCE_LABELS),
-                folder="CI",
-                json=(_DASHBOARDS / f"{name}.json").read_text(),
-            ),
-        )
+        grafana_instance.dashboard(chart, name, folder="CI", json=(_DASHBOARDS / f"{name}.json").read_text())
     return chart

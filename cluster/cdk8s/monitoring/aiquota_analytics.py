@@ -3,11 +3,6 @@
 from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from grafana_grafanadashboard_crds.org.integreatly.grafana import (
-    GrafanaDashboard,
-    GrafanaDashboardSpec,
-    GrafanaDashboardSpecInstanceSelector,
-)
 from grafana_grafanadatasource_crds.org.integreatly.grafana import (
     GrafanaDatasource,
     GrafanaDatasourceSpec,
@@ -66,16 +61,12 @@ def chart(app: App) -> Chart:
             ),
         ),
     )
-    GrafanaDashboard(
+    grafana_instance.dashboard(
         chart,
-        "dashboard",
-        metadata=ApiObjectMetadata(name="aiquota-history", namespace=NAMESPACE),
-        spec=GrafanaDashboardSpec(
-            instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels=grafana_instance.INSTANCE_LABELS),
-            folder="Analytics",
-            json=(
-                Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/monitoring/dashboards/aiquota-history.json"
-            ).read_text(),
-        ),
+        "aiquota-history",
+        folder="Analytics",
+        json=(
+            Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/monitoring/dashboards/aiquota-history.json"
+        ).read_text(),
     )
     return chart

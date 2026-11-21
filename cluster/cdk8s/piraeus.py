@@ -21,7 +21,7 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, oci_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import mimir
-from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.namespaces import PRIVILEGED_POD_SECURITY, Vpa
 
 NAMESPACE = "piraeus-datastore"
 OPERATOR_OUTPUT_DIR = f"{GENERATED_ROOT}/piraeus/operator"
@@ -201,17 +201,7 @@ def _auto_diskful_storage_class(name: str, pool: str, reclaim_policy: str) -> di
 def operator_chart(app: App) -> Chart:
     """Install the pinned operator and its CRDs before the separate cluster chart."""
     chart = Chart(app, "piraeus-operator", disable_resource_name_hashes=True)
-    namespaces.namespace(
-        chart,
-        "namespace",
-        name=NAMESPACE,
-        vpa=Vpa.RECOMMEND,
-        labels={
-            "pod-security.kubernetes.io/enforce": "privileged",
-            "pod-security.kubernetes.io/audit": "privileged",
-            "pod-security.kubernetes.io/warn": "privileged",
-        },
-    )
+    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.RECOMMEND, labels=PRIVILEGED_POD_SECURITY)
     repository = oci_helm_repository(
         chart, "piraeus-operator", "flux-system", url="oci://ghcr.io/piraeusdatastore/piraeus-operator"
     )

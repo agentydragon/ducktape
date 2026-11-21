@@ -23,6 +23,12 @@ from cluster.cdk8s.vpa_policy import (
 _GOLDILOCKS_ENABLED_LABEL = "goldilocks.fairwinds.com/enabled"
 VPA_UPDATE_MODE_LABEL = "goldilocks.fairwinds.com/vpa-update-mode"
 _VPA_MIN_REPLICAS_ANNOTATION = "goldilocks.fairwinds.com/vpa-min-replicas"
+# The `privileged` Pod Security level in all three modes; each call site says why it needs it.
+PRIVILEGED_POD_SECURITY: Mapping[str, str] = {
+    "pod-security.kubernetes.io/enforce": "privileged",
+    "pod-security.kubernetes.io/audit": "privileged",
+    "pod-security.kubernetes.io/warn": "privileged",
+}
 
 
 class Vpa(StrEnum):

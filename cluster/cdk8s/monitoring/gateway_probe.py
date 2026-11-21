@@ -30,7 +30,7 @@ from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import (
     PrometheusRuleSpecGroupsRules,
 )
 
-from cluster.cdk8s import node_scheduling
+from cluster.cdk8s import node_scheduling, pod_policy
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -79,8 +79,8 @@ _CONFIG = {
 CONFIG_MAP = ConfigMapArgs(name=f"{_NAME}-config", namespace=NAMESPACE, data={_CONFIG_FILE: yaml.safe_dump(_CONFIG)})
 
 
-def _daemon_set(scope: Chart, nodes: list[str]) -> None:
-    k8s.KubeDaemonSet(
+def _daemon_set(scope: Chart, nodes: list[str]) -> k8s.KubeDaemonSet:
+    return k8s.KubeDaemonSet(
         scope,
         "daemonset",
         metadata=k8s.ObjectMeta(name=_NAME, namespace=NAMESPACE, labels=_LABELS),
@@ -109,10 +109,7 @@ def _daemon_set(scope: Chart, nodes: list[str]) -> None:
                     automount_service_account_token=False,
                     # The image sets no USER, so it would otherwise run as root.
                     security_context=k8s.PodSecurityContext(
-                        run_as_user=65534,
-                        run_as_group=65534,
-                        run_as_non_root=True,
-                        seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),
+                        run_as_user=65534, run_as_group=65534, run_as_non_root=True
                     ),
                     containers=[
                         k8s.Container(
@@ -126,11 +123,7 @@ def _daemon_set(scope: Chart, nodes: list[str]) -> None:
                                 ),
                                 period_seconds=10,
                             ),
-                            security_context=k8s.SecurityContext(
-                                allow_privilege_escalation=False,
-                                read_only_root_filesystem=True,
-                                capabilities=k8s.Capabilities(drop=["ALL"]),
-                            ),
+                            security_context=k8s.SecurityContext(read_only_root_filesystem=True),
                             volume_mounts=[k8s.VolumeMount(name="config", mount_path=_CONFIG_DIR, read_only=True)],
                             resources=container_resources(cpu="10m", memory="32Mi", memory_limit="64Mi"),
                         )
@@ -215,7 +208,7 @@ def chart(app: App, mesh: Mesh) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
     public_nodes = mesh.public_kubernetes_nodes()
     nodes = sorted(public_nodes)
-    _daemon_set(chart, nodes)
+    pod_policy.harden(_daemon_set(chart, nodes))
     PodMonitor(
         chart,
         "pod-monitor",

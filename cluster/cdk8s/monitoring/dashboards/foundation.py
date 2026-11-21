@@ -4,6 +4,7 @@ from collections.abc import Mapping, Sequence
 
 from grafana_foundation_sdk.builders import loki, prometheus, timeseries
 from grafana_foundation_sdk.builders.common import VizLegendOptions, VizTooltipOptions
+from grafana_foundation_sdk.builders.dashboard import QueryVariable
 from grafana_foundation_sdk.cog.runtime import UnknownDataquery
 from grafana_foundation_sdk.cog.variants import Dataquery
 from grafana_foundation_sdk.models import (  # Builder/model name collision.
@@ -74,8 +75,8 @@ def loki_datasource() -> common.DataSourceRef:
     return common.DataSourceRef(type_val="loki", uid="${DS_LOKI}")
 
 
-def loki_query(expr: str, legend: str | None = None, ref_id: str = "A") -> loki.Dataquery:
-    query = loki.Dataquery().datasource(loki_datasource()).expr(expr).ref_id(ref_id)
+def loki_query(expr: str, legend: str | None = None) -> loki.Dataquery:
+    query = loki.Dataquery().datasource(loki_datasource()).expr(expr).ref_id("A")
     if legend is not None:
         query.legend_format(legend)
     return query
@@ -170,10 +171,10 @@ def clickhouse_datasource() -> common.DataSourceRef:
     return common.DataSourceRef(type_val="grafana-clickhouse-datasource", uid="clickhouse")
 
 
-def clickhouse_query(sql: str, format: int = 0, ref_id: str = "A") -> UnknownDataquery:
+def clickhouse_query(sql: str, format: int = 0) -> UnknownDataquery:
     # The SDK has no ClickHouse query model; keep the plugin's native query shape.
     return UnknownDataquery(
-        {"datasource": clickhouse_datasource(), "format": format, "queryType": "sql", "rawSql": sql, "refId": ref_id}
+        {"datasource": clickhouse_datasource(), "format": format, "queryType": "sql", "rawSql": sql, "refId": "A"}
     )
 
 
@@ -206,6 +207,23 @@ def mimir_multi_variable(
     )
 
 
+def mimir_multi_query_variable(name: str, label: str, query: str) -> QueryVariable:
+    """`mimir_multi_variable`'s builder twin, since `Dashboard.with_variable` takes builders: multi-select,
+    All by default and matching anything, unsorted."""
+    return (
+        QueryVariable(name)
+        .label(label)
+        .datasource(mimir())
+        .definition(query)
+        .query(query)
+        .include_all(True)
+        .multi(True)
+        .all_value(".*")
+        .refresh(dashboard.VariableRefresh.ON_DASHBOARD_LOAD)
+        .current(dashboard.VariableOption(text="All", value=["$__all"]))
+    )
+
+
 def storage_tier_variable() -> dashboard.VariableModel:
     return dashboard.VariableModel(
         type_val=dashboard.VariableType.CUSTOM,
@@ -221,10 +239,26 @@ def storage_tier_variable() -> dashboard.VariableModel:
     )
 
 
-def gateway_error_queries(interface: str, window: str, *, legend_prefix: str = "") -> list[Dataquery]:
+def topk_variable(label: str) -> dashboard.VariableModel:
+    """The `$topk` row-count choice that a panel's `topk(${topk}, ...)` reads."""
+    return dashboard.VariableModel(
+        type_val=dashboard.VariableType.CUSTOM,
+        name="topk",
+        label=label,
+        query="10,25,50",
+        current=dashboard.VariableOption(text="10", value="10"),
+        options=[
+            dashboard.VariableOption(selected=True, text="10", value="10"),
+            dashboard.VariableOption(selected=False, text="25", value="25"),
+            dashboard.VariableOption(selected=False, text="50", value="50"),
+        ],
+    )
+
+
+def gateway_error_queries(interface: str, *, legend_prefix: str = "") -> list[Dataquery]:
     return [
         mimir_query(
-            f"increase(att_gateway_{interface}_{direction}_{kind}_total[{window}])",
+            f"increase(att_gateway_{interface}_{direction}_{kind}_total[5m])",
             legend=f"{legend_prefix}{label} {kind}",
             ref_id=chr(ord("A") + index),
         ).build()

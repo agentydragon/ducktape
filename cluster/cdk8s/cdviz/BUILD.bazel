@@ -105,7 +105,6 @@ py_library(
         "//cluster/cdk8s/monitoring:grafana_instance",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
-        "//cluster/cdk8s/providers/grafana_operator:grafanadashboard",
         "//cluster/cdk8s/providers/grafana_operator:grafanadatasource",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",

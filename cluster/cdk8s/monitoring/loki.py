@@ -13,7 +13,7 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import grafana_helmrepository
-from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.namespaces import PRIVILEGED_POD_SECURITY, Vpa
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.seaweedfs import s3
 from cluster.cdk8s.vpa_policy import (
@@ -36,17 +36,7 @@ _GOLDILOCKS_OFF = {"goldilocks.fairwinds.com/enabled": "false"}
 
 
 def _storage(chart: Chart) -> None:
-    namespaces.namespace(
-        chart,
-        "namespace",
-        name=NAME,
-        vpa=Vpa.INITIAL,
-        labels={
-            "pod-security.kubernetes.io/enforce": "privileged",
-            "pod-security.kubernetes.io/audit": "privileged",
-            "pod-security.kubernetes.io/warn": "privileged",
-        },
-    )
+    namespaces.namespace(chart, "namespace", name=NAME, vpa=Vpa.INITIAL, labels=PRIVILEGED_POD_SECURITY)
     # Single bucket "loki" carrying chunks, ruler, and admin sub-paths
     # (Loki splits them internally by key prefix). See the HelmRelease's
     # `storage.bucketNames` — all three point at the same bucket.
