@@ -937,11 +937,21 @@ def callableOperations (callable : PublicCallable) (arguments : List Nat) : Opti
     if parameters.length == arguments.length then some [.invokeCaptured captures parameters arguments body]
     else none
 
+def argumentCallOperations (table : List (String × PublicCallable)) (call : String × List Nat) : Option (List Operation) := do
+  let entry ← table.find? (fun entry => entry.1 == call.1)
+  callableOperations entry.2 call.2
+
+def argumentCallOperationLists (table : List (String × PublicCallable)) :
+    List (String × List Nat) → Option (List (List Operation))
+  | [] => some []
+  | call :: rest => do
+    let operations ← argumentCallOperations table call
+    let tail ← argumentCallOperationLists table rest
+    some (operations :: tail)
+
 def runArgumentCalls (table : List (String × PublicCallable)) (state : ExecutionState Unit)
     (calls : List (String × List Nat)) : Option (ExecutionState Unit) := do
-  let operations ← calls.mapM (fun call => do
-    let entry ← table.find? (fun entry => entry.1 == call.1)
-    callableOperations entry.2 call.2)
+  let operations ← argumentCallOperationLists table calls
   runExecution state operations.flatten
 
 theorem argument_calls_preserved (left right : Option (ExecutionState Unit))
@@ -951,3 +961,82 @@ theorem argument_calls_preserved (left right : Option (ExecutionState Unit))
     left.bind (fun state => leftTable.bind (fun table => runArgumentCalls table state calls)) =
       right.bind (fun state => rightTable.bind (fun table => runArgumentCalls table state calls)) := by
   rw [same, sameTable]
+
+/- Relate the flattened machine operations obtained by resolving each exported
+   call through two callable tables. The per-call premise can account for
+   different private capture keys while requiring the same public behavior. -/
+theorem related_operations_append (relation : Operation → Operation → Prop)
+    (left right leftTail rightTail : List Operation)
+    (head : RelatedOperations relation left right) (tail : RelatedOperations relation leftTail rightTail) :
+    RelatedOperations relation (left ++ leftTail) (right ++ rightTail) := by
+  induction head with
+  | nil => exact tail
+  | cons pair rest ih => exact .cons pair ih
+
+theorem related_argument_call_operations (relation : Operation → Operation → Prop)
+    (leftTable rightTable : List (String × PublicCallable))
+    (perCall : ∀ call left right, argumentCallOperations leftTable call = some left →
+      argumentCallOperations rightTable call = some right → RelatedOperations relation left right)
+    (calls : List (String × List Nat)) (leftLists rightLists : List (List Operation))
+    (leftCalls : argumentCallOperationLists leftTable calls = some leftLists)
+    (rightCalls : argumentCallOperationLists rightTable calls = some rightLists) :
+    RelatedOperations relation leftLists.flatten rightLists.flatten := by
+  induction calls generalizing leftLists rightLists with
+  | nil =>
+    change some [] = some leftLists at leftCalls
+    change some [] = some rightLists at rightCalls
+    cases leftCalls
+    cases rightCalls
+    exact .nil
+  | cons call rest ih =>
+    change (argumentCallOperations leftTable call).bind (fun ops =>
+      (argumentCallOperationLists leftTable rest).bind (fun tail => some (ops :: tail))) = some leftLists at leftCalls
+    change (argumentCallOperations rightTable call).bind (fun ops =>
+      (argumentCallOperationLists rightTable rest).bind (fun tail => some (ops :: tail))) = some rightLists at rightCalls
+    cases leftHead : argumentCallOperations leftTable call with
+    | none => rw [leftHead] at leftCalls; cases leftCalls
+    | some leftOps =>
+      cases rightHead : argumentCallOperations rightTable call with
+      | none => rw [rightHead] at rightCalls; cases rightCalls
+      | some rightOps =>
+        cases leftRest : argumentCallOperationLists leftTable rest with
+        | none => rw [leftHead, leftRest] at leftCalls; cases leftCalls
+        | some leftTail =>
+          cases rightRest : argumentCallOperationLists rightTable rest with
+          | none => rw [rightHead, rightRest] at rightCalls; cases rightCalls
+          | some rightTail =>
+            rw [leftHead, leftRest] at leftCalls
+            rw [rightHead, rightRest] at rightCalls
+            cases leftCalls
+            cases rightCalls
+            exact related_operations_append relation leftOps rightOps leftTail.flatten rightTail.flatten
+              (perCall call leftOps rightOps leftHead rightHead) (ih leftTail rightTail leftRest rightRest)
+
+/- Exported calls preserve the two-environment relation when each pair of
+   table lookups yields corresponding captured operations and both runs return. -/
+theorem two_captured_argument_calls_related
+    (leftFirst rightFirst leftSecond rightSecond : List (String × String))
+    (leftDisjoint : capturesDisjoint leftFirst leftSecond) (rightDisjoint : capturesDisjoint rightFirst rightSecond)
+    (leftTable rightTable : List (String × PublicCallable))
+    (perCall : ∀ call leftOps rightOps, argumentCallOperations leftTable call = some leftOps →
+      argumentCallOperations rightTable call = some rightOps →
+      RelatedOperations (PairedTwoCapturedOperation leftFirst rightFirst leftSecond rightSecond) leftOps rightOps)
+    (calls : List (String × List Nat)) (left right leftFinal rightFinal : ExecutionState Unit)
+    (initial : twoCapturedStatesRelated leftFirst rightFirst leftSecond rightSecond left right)
+    (leftRun : runArgumentCalls leftTable left calls = some leftFinal)
+    (rightRun : runArgumentCalls rightTable right calls = some rightFinal) :
+    twoCapturedStatesRelated leftFirst rightFirst leftSecond rightSecond leftFinal rightFinal := by
+  change (argumentCallOperationLists leftTable calls).bind (fun ops => runExecution left ops.flatten) = some leftFinal at leftRun
+  change (argumentCallOperationLists rightTable calls).bind (fun ops => runExecution right ops.flatten) = some rightFinal at rightRun
+  cases leftCalls : argumentCallOperationLists leftTable calls with
+  | none => rw [leftCalls] at leftRun; cases leftRun
+  | some leftOps =>
+    cases rightCalls : argumentCallOperationLists rightTable calls with
+    | none => rw [rightCalls] at rightRun; cases rightRun
+    | some rightOps =>
+      rw [leftCalls] at leftRun
+      rw [rightCalls] at rightRun
+      exact two_captured_call_sequence_related leftFirst rightFirst leftSecond rightSecond leftDisjoint rightDisjoint
+        leftOps.flatten rightOps.flatten
+        (related_argument_call_operations _ leftTable rightTable perCall calls leftOps rightOps leftCalls rightCalls)
+        left right leftFinal rightFinal initial leftRun rightRun
