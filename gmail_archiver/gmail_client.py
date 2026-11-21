@@ -5,7 +5,7 @@ import json
 import logging
 import re
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from itertools import batched
@@ -152,13 +152,7 @@ def _return_last_message_batch[T](retry_state: RetryCallState) -> _MessageBatchA
 
 
 class GmailClient:
-    """Wrapper around Gmail API for email archival operations.
-
-    TODO: Add a `modify_labels_batch` method that uses batchModify for bulk label
-    operations (add/remove multiple labels at once). Callers currently call batchModify
-    on `service` directly, and ad-hoc scripts loop through messages individually, which
-    is slow - batchModify can process up to 1000 messages per call.
-    """
+    """Wrapper around Gmail API for email archival operations."""
 
     def __init__(self, token_file: Path):
         self.token_file = token_file
@@ -400,3 +394,15 @@ class GmailClient:
     def delete_label(self, label_id: str) -> None:
         """Delete a label by ID."""
         self.service.users().labels().delete(userId="me", id=label_id).execute()
+
+    def modify_labels_batch(
+        self, message_ids: list[str], *, add_label_ids: Collection[str], remove_label_ids: Collection[str]
+    ) -> None:
+        """Add and remove label IDs (not names), at most 1000 messages per `batchModify` call (Gmail's limit)."""
+        for batch in batched(message_ids, 1000, strict=False):
+            body: dict[str, list[str]] = {"ids": list(batch)}
+            if add_label_ids:
+                body["addLabelIds"] = list(add_label_ids)
+            if remove_label_ids:
+                body["removeLabelIds"] = list(remove_label_ids)
+            self.service.users().messages().batchModify(userId="me", body=body).execute()

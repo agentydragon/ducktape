@@ -228,6 +228,7 @@ py_test(
         ":models",
         "//:conftest",
         "@pypi//google_api_python_client",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

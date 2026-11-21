@@ -118,19 +118,12 @@ def autoclean_inbox(dry_run: DryRunDefaultTrueOption = True, token_file: TokenFi
         # Execute each unique action signature in batches
         total_processed = 0
         for sig, msg_ids in combined.group_by_signature().items():
-            batch_size = 1000
-            add_ids = [ensure_label_id(lbl) for lbl in sig.labels_to_add]
-            remove_ids = [ensure_label_id(lbl) for lbl in sig.labels_to_remove]
-
-            for batch in batched(msg_ids, batch_size, strict=False):
-                body: dict = {"ids": list(batch)}
-                if add_ids:
-                    body["addLabelIds"] = add_ids
-                if remove_ids:
-                    body["removeLabelIds"] = remove_ids
-
-                client.service.users().messages().batchModify(userId="me", body=body).execute()
-                total_processed += len(batch)
+            client.modify_labels_batch(
+                msg_ids,
+                add_label_ids=[ensure_label_id(lbl) for lbl in sig.labels_to_add],
+                remove_label_ids=[ensure_label_id(lbl) for lbl in sig.labels_to_remove],
+            )
+            total_processed += len(msg_ids)
 
         console.print(f"[green]✓[/green] Executed {total_processed} label operation(s)")
     elif dry_run:
