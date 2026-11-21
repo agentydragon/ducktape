@@ -272,3 +272,25 @@ py_wheel(
     visibility = ["//visibility:public"],
     deps = [":network_monitor_pkg"],
 )
+
+py_library(
+    name = "openapi_schema",
+    srcs = ["openapi_schema.py"],
+    visibility = [
+        "//finance/augur/api:__pkg__",
+        "//study_casino:__pkg__",
+    ],
+    deps = ["@pypi//pydantic"],
+)
+
+py_test(
+    name = "test_openapi_schema",
+    srcs = ["test_openapi_schema.py"],
+    deps = [
+        ":openapi_schema",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
