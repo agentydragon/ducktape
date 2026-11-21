@@ -54,8 +54,6 @@ _NGINX_CONF = "nginx.conf"
 _MODELS_DIR = "/models"
 _SSD_MODELS_DIR = "/ssd-models"
 _SCRIPTS_DIR = "/scripts"
-# Pause this Deployment before exclusive host inference experiments.
-_PAUSED_FOR_HOST_EXPERIMENTS = False
 
 
 def _namespace(scope: Construct) -> None:
@@ -416,8 +414,7 @@ def chart(app: App) -> Chart:
         listener=None,
     )
     _rbac(chart)
-    if not _PAUSED_FOR_HOST_EXPERIMENTS:
-        _setup_job(chart, scripts)
+    _setup_job(chart, scripts)
     _direct_token(chart)
     tabby.add_tabbyapi(chart)
     return chart
