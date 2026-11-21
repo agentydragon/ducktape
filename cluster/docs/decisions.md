@@ -425,8 +425,9 @@ applications").
   remains; the secret manifest stays parked.
 - **osm-mcp**: `cluster/parked/osm-mcp/` — decommissioned; its Flux Kustomization
   is removed from the active bundle. The third-party Go MCP server
-  (`github.com/NERVsystems/osmmcp`) build wrapper (`third_party/osmmcp/`) stays live
-  and unparked, but its image is no longer on the publish roster or tracked by Flux.
+  (`github.com/NERVsystems/osmmcp`) build wrapper (`third_party/osmmcp/` and its Go module
+  entries in `devinfra/bazel/go.MODULE.bazel`) was deleted; its image is off the publish
+  roster and not tracked by Flux, and a revival restores the wrapper from `ca1ec04d75`.
   Already unwired from haku-console's tool config since 2026-07-19
   (routing-profile bug), so it had no live consumer.
 - **codex-nix-pod, codex-nix-image-pod, codex-nix-pvc-uid-pod**:
