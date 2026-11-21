@@ -23,7 +23,7 @@ from PIL import Image
 from agentplane.env import config as configuration
 from agentplane.env.e2e.testing import launches
 from agentplane.env.e2e.testing.gateway import serve_gateway
-from agentplane.env.e2e.testing.history_tunnel import history_tunnel
+from agentplane.env.e2e.testing.history_ingress import history_ingress
 from agentplane.env.e2e.testing.process import RunningRunner
 from agentplane.env.runtime.execution import executor_pb2, executor_pb2_grpc
 from agentplane.env.runtime.execution.testing.codex_exec_server_container import (
@@ -145,17 +145,12 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                 ),
             )
             async with (
-                history_tunnel(history.ingress_target) as history_proxy,
+                history_ingress(history.ingress_target) as ingress,
                 RunningRunner(
                     config,
                     runner_gateway,
                     history=history.reader,
-                    ingress_endpoint=configuration.Endpoint(
-                        target=history.ingress_target,
-                        svid=configuration.SVIDEndpoint(
-                            server_uri="spiffe://agentplane/history-ingress", proxy_address=history_proxy
-                        ),
-                    ),
+                    ingress_endpoint=ingress,
                     control_endpoint=control,
                     observe_control=False,
                     controller_credentials=gateway.environment_service.channel_credentials(SANDBOX_CONTROLLER_URI),
