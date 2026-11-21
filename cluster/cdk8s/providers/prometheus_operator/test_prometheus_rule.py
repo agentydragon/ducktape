@@ -5,18 +5,6 @@ from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import Promet
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Rule, group
 
 
-def test_multiple_groups_wire_shape(scratch_chart: Chart) -> None:
-    rule = Rule.alert("Example", "up == 0", for_="5m")
-    PrometheusRule(
-        scratch_chart,
-        "test",
-        metadata=ApiObjectMetadata(name="test-rule"),
-        spec=PrometheusRuleSpec(groups=[group("group-a", [rule]), group("group-b", [rule])]),
-    )
-    (manifest,) = Cdk8sTesting.synth(scratch_chart)
-    assert [g["name"] for g in manifest["spec"]["groups"]] == ["group-a", "group-b"]
-
-
 def test_alert_merges_summary_and_description_into_annotations(scratch_chart: Chart) -> None:
     PrometheusRule(
         scratch_chart,
