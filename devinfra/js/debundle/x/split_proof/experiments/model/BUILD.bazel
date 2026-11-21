@@ -12,6 +12,7 @@ js_library(
     name = "sources",
     srcs = [
         "cases.mjs",
+        "generate.mjs",
         "module_cases.mjs",
         "opaque_cases.mjs",
         "to_core.mjs",

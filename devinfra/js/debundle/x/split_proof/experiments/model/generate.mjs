@@ -1,0 +1,165 @@
+// Bounded CoreJS programs. Every selected family executes; no unit filtering or unknown-code retry.
+// Prefix units 0 and 1 are independent allocations. Swapping them is a required real-emitter move control.
+export function generatedCases(seed) {
+  let state = seed >>> 0;
+  const pick = (xs) => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return xs[state % xs.length];
+  };
+  const num = () => pick([1, 2, 3, 5, 7]);
+  const expression = (depth) => {
+    if (depth === 0) return String(num());
+    const left = expression(depth - 1);
+    const right = expression(depth - 1);
+    return pick([
+      `(${left} + ${right})`,
+      `(${left} * ${right})`,
+      `(${left} ^ ${right})`,
+      `(${left} < ${right} ? ${left} : ${right})`,
+      `(${left} && ${right})`,
+      `(${left} ?? ${right})`,
+      `(~${left})`,
+    ]);
+  };
+  const n = num();
+  const limit = num();
+  const families = {
+    expressions: `
+      let value = ${expression(3)};
+      value += ${num()}; value ^= ${num()};
+      console.log(value++, --value, !value, typeof value, String(value), null == undefined);
+    `,
+    closures: `
+      let captured = ${n};
+      function factory(step) { let privateValue = captured; return () => { privateValue += step; return privateValue; }; }
+      const next = factory(${num()});
+      const holder = { next, read() { return captured + this.next(); } };
+      captured += ${num()};
+      console.log(holder.read(), next(), captured, factory.name, factory.length);
+    `,
+    objects: `
+      let writes = 0;
+      const base = { inherited: ${n} };
+      const object = Object.create(base);
+      Object.defineProperty(object, "value", { get() { return writes; }, set(v) { writes = v; }, configurable: true });
+      object.value = ${num()};
+      console.log(object.value, "value" in object, delete object.value, object.value, object.inherited);
+      Object.setPrototypeOf(object, null);
+      console.log(object.inherited, Object.getPrototypeOf(object));
+    `,
+    arrays: `
+      const array = [${n}, [${num()}, ${num()}], "value"];
+      const same = array;
+      console.log(array[0], array[1][0], array[1].length, array.length, same === array);
+      console.log(0 in array, 9 in array, array[9], Object.getPrototypeOf(array) === Object.getPrototypeOf([]));
+    `,
+    classes: `
+      class Box {
+        static count = 0;
+        field = ${n};
+        constructor(value) { this.value = value; Box.count++; }
+        get total() { return this.field + this.value; }
+        set total(value) { this.value = value - this.field; }
+        read = () => this.total;
+      }
+      const box = new Box(${num()});
+      box.total = ${num()};
+      const read = box.read;
+      console.log(read(), Box.count, Box.name, box.constructor === Box);
+    `,
+    control: `
+      let value = 0;
+      const saved = {};
+      for (let i = 0; i < ${limit}; i++) { saved[i] = () => i; if (i === 1) continue; value += i; }
+      let left = ${limit};
+      while (left > 0) { left--; if (left === 1) break; value++; }
+      value++;
+      console.log(value, left, saved[0](), saved[${limit - 1}]());
+    `,
+    exceptions: `
+      let trace = "";
+      function finish() { try { throw ${n}; } catch (e) { trace += e; return e; } finally { trace += "f"; } }
+      function override() { try { return ${n}; } finally { return ${num()}; } }
+      console.log(finish(), override(), trace);
+      try { null.x; } catch (e) { console.log("engine error caught"); }
+      console.log("after catch");
+    `,
+    host: `
+      console.log(Math.max(${n}, ${num()}), parseInt("${num()}2", 10), " abc ".trim().toUpperCase());
+      try { "x".repeat(-${n}); } catch (e) { console.log("host error caught"); }
+      console.log((123).toFixed(${n % 3}), String.fromCharCode(65 + ${n}));
+    `,
+  };
+  return Object.entries(families).map(([family, body]) => {
+    const [allocation, observation] =
+      family === "objects"
+        ? [`{ value: ${n} }`, "independent.value"]
+        : family === "arrays"
+          ? [`[${n}]`, "independent[0]"]
+          : [`() => ${n}`, "independent()"];
+    return {
+      name: `core generator ${family} seed ${seed}`,
+      family,
+      source: `const independent = ${allocation};\nconst first = ${num()};\n${body}\nconsole.log("${family}:${seed}", ${observation}, first);`,
+    };
+  });
+}
+
+// Linked programs are kept whole too: live updates in a diamond, caught TDZ in a cycle, and an uncaught exit.
+export function generatedModuleCases(seed) {
+  const n = 1 + ((seed >>> 0) % 7);
+  return [
+    {
+      name: `linked live diamond seed ${seed}`,
+      files: {
+        "main.mjs": `import { value as local, bump } from "./state.mjs"; import { read } from "./reader.mjs";
+          console.log(local, read()); bump(); console.log(local, read());`,
+        "state.mjs": `export let value = ${n}; export function bump() { value += ${n}; }`,
+        "reader.mjs": `import { value } from "./state.mjs"; export function read() { return value; }`,
+      },
+    },
+    {
+      name: `linked cycle caught dead zone seed ${seed}`,
+      files: {
+        "main.mjs": `import "./early.mjs"; export let value = ${n}; export function read() { return value; }
+          console.log("initialized", read());`,
+        "early.mjs": `import { read } from "./main.mjs";
+          try { read(); } catch (e) { console.log("caught dead zone"); }`,
+      },
+    },
+    {
+      name: `linked abrupt completion seed ${seed}`,
+      end: "throw",
+      files: {
+        "main.mjs": `import "./early.mjs"; import "./unreached.mjs"; console.log("unreached main");`,
+        "early.mjs": `console.log("before throw", ${n}); throw ${n};`,
+        "unreached.mjs": `console.log("unreached dependency");`,
+      },
+    },
+  ];
+}
+
+export function generatedOpaqueCase(seed) {
+  const n = 1 + ((seed >>> 0) % 7);
+  const callback = seed % 2 === 0 ? `throw value;` : `return value + ${n};`;
+  return {
+    name: `opaque closure callback ${seed % 2 === 0 ? "caught throw" : "normal return"} seed ${seed}`,
+    source: `
+      const pick = ({ value }) => add(value);
+      const independent = ${n};
+      const add = (value) => { ${callback} };
+      try { console.log(pick({ value: ${n} })); } catch (e) { console.log("caught", e); }
+      console.log("after", independent);
+    `,
+    // The opaque closure captures add before its initializer runs, then reenters it after initialization.
+    scripts: {
+      "0/1": [
+        ["get", ["r", 2], ["s", "value"]],
+        ["readVar", 1],
+        ["call", ["r", 4], ["u"], ["r", 3]],
+        ["done", ["r", 5]],
+      ],
+    },
+    move: true,
+  };
+}
