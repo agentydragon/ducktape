@@ -62,5 +62,3 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
-
-# Collect all library targets for ruff

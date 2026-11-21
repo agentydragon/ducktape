@@ -21,6 +21,7 @@ from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from props.agents.af.exec_tool import make_exec_tool
 from props.agents.af.tools import direct_tools
 from props.agents.critic_dev.grading import wait_until_graded
+from props.agents.runtime import WORKSPACE
 from props.core.eval_api_models import CriticRunStatus, GradingStatusResponse, RunCriticRequest, StartCriticResponse
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus
@@ -34,9 +35,6 @@ TEXT_OUTPUT_REMINDER = (
     "Use start_critic, wait_until_critic_completed, and wait_until_graded to evaluate agents, "
     "then keep iterating."
 )
-
-# Default workspace path
-WORKSPACE = Path("/workspace")
 
 
 class ReportFailureArgs(OpenAIStrictModeBaseModel):

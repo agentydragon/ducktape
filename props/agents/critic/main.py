@@ -24,6 +24,7 @@ from props.agents.af.loop import make_agent, run_until_done
 from props.agents.af.middleware import terminate_after_tools
 from props.agents.af.tools import direct_tools
 from props.agents.runtime import (
+    WORKSPACE,
     fetch_snapshot,
     get_current_agent_run,
     get_current_agent_run_id,
@@ -92,8 +93,6 @@ class ListIssuesResponse(BaseModel):
 
 
 logger = logging.getLogger(__name__)
-
-WORKSPACE = Path("/workspace")
 
 # Reminder sent when agent outputs text instead of using tools
 TEXT_OUTPUT_REMINDER = (

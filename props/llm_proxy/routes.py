@@ -16,7 +16,6 @@ Features:
 
 from __future__ import annotations
 
-import logging
 import os
 import time
 from dataclasses import dataclass
@@ -36,8 +35,6 @@ from props.config import LLMProxyConfig, UpstreamConfig
 from props.db.async_database import AsyncDatabase
 from props.db.models import AgentRun, AgentRunBudgetStatus, AgentRunStatus, LLMRequest, ModelMetadata
 from props.llm_proxy.database import ProxyDb
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -172,12 +169,7 @@ async def require_llm_access(request: Request, admin_db: ProxyDb) -> LLMAccess:
         )
 
 
-def _extract_responses_usage(response_body: dict[str, Any] | None) -> LLMUsageCounts:
-    if response_body is None:
-        return LLMUsageCounts()
-    usage_body = response_body.get("usage")
-    if not isinstance(usage_body, dict):
-        return LLMUsageCounts()
+def _extract_responses_usage(usage_body: dict[str, Any]) -> LLMUsageCounts:
     usage = ResponseUsage.model_validate(usage_body)
     return LLMUsageCounts(
         input_tokens=usage.input_tokens,
@@ -186,12 +178,7 @@ def _extract_responses_usage(response_body: dict[str, Any] | None) -> LLMUsageCo
     )
 
 
-def _extract_chat_completions_usage(response_body: dict[str, Any] | None) -> LLMUsageCounts:
-    if response_body is None:
-        return LLMUsageCounts()
-    usage_body = response_body.get("usage")
-    if not isinstance(usage_body, dict):
-        return LLMUsageCounts()
+def _extract_chat_completions_usage(usage_body: dict[str, Any]) -> LLMUsageCounts:
     input_details = usage_body.get("prompt_tokens_details")
     cached_tokens = input_details.get("cached_tokens") if isinstance(input_details, dict) else None
     return LLMUsageCounts(
@@ -203,7 +190,7 @@ def _extract_chat_completions_usage(response_body: dict[str, Any] | None) -> LLM
     )
 
 
-def _extract_anthropic_usage(response_body: dict[str, Any] | None) -> LLMUsageCounts:
+def _extract_anthropic_usage(usage_body: dict[str, Any]) -> LLMUsageCounts:
     """Extract token usage from an Anthropic Messages response.
 
     Anthropic reports `input_tokens` *excluding* cached/cache-creation tokens, unlike
@@ -211,11 +198,6 @@ def _extract_anthropic_usage(response_body: dict[str, Any] | None) -> LLMUsageCo
     `input_tokens` to be the full prompt total (it subtracts `cached_input_tokens` to
     price the non-cached portion), so we add the cache buckets back into `input_tokens`.
     """
-    if response_body is None:
-        return LLMUsageCounts()
-    usage_body = response_body.get("usage")
-    if not isinstance(usage_body, dict):
-        return LLMUsageCounts()
 
     def _int(key: str) -> int:
         value = usage_body.get(key)
@@ -232,13 +214,16 @@ def _extract_anthropic_usage(response_body: dict[str, Any] | None) -> LLMUsageCo
 
 
 def _extract_usage(api_shape: LLMApiShape, response_body: dict[str, Any] | None) -> LLMUsageCounts:
+    usage_body = response_body.get("usage") if response_body is not None else None
+    if not isinstance(usage_body, dict):
+        return LLMUsageCounts()
     match api_shape:
         case LLMApiShape.RESPONSES:
-            return _extract_responses_usage(response_body)
+            return _extract_responses_usage(usage_body)
         case LLMApiShape.CHAT_COMPLETIONS:
-            return _extract_chat_completions_usage(response_body)
+            return _extract_chat_completions_usage(usage_body)
         case LLMApiShape.ANTHROPIC:
-            return _extract_anthropic_usage(response_body)
+            return _extract_anthropic_usage(usage_body)
 
 
 def _upstream_auth_headers(api_shape: LLMApiShape, api_key: str) -> dict[str, str]:
@@ -268,9 +253,7 @@ async def _log_request(
     latency_ms: int,
 ) -> None:
     """Log LLM request to database with token usage extracted from response."""
-    usage = LLMUsageCounts()
-    if response_body is not None and error is None:
-        usage = _extract_usage(api_shape, response_body)
+    usage = LLMUsageCounts() if error is not None else _extract_usage(api_shape, response_body)
     llm_request = LLMRequest(
         agent_run_id=agent_run_id,
         model=model,
@@ -388,21 +371,11 @@ async def _proxy_request(
                 headers=_upstream_auth_headers(api_shape, upstream.api_key),
                 timeout=UPSTREAM_TIMEOUT_SECONDS,
             )
-        except httpx.TimeoutException:
-            latency_ms = int((time.monotonic() - start_time) * 1000)
-            async with admin_db.session() as session:
-                await _log_request(
-                    session=session,
-                    agent_run_id=access.agent_run_id,
-                    model=request_model,
-                    api_shape=api_shape,
-                    request_body=body,
-                    response_body=None,
-                    error="Upstream timeout",
-                    latency_ms=latency_ms,
-                )
-            raise HTTPException(status_code=504, detail="Upstream timeout")
         except httpx.RequestError as e:
+            if isinstance(e, httpx.TimeoutException):
+                status_code, upstream_error, detail = 504, "Upstream timeout", "Upstream timeout"
+            else:
+                status_code, upstream_error, detail = 502, str(e), f"Upstream error: {e}"
             latency_ms = int((time.monotonic() - start_time) * 1000)
             async with admin_db.session() as session:
                 await _log_request(
@@ -412,10 +385,10 @@ async def _proxy_request(
                     api_shape=api_shape,
                     request_body=body,
                     response_body=None,
-                    error=str(e),
+                    error=upstream_error,
                     latency_ms=latency_ms,
                 )
-            raise HTTPException(status_code=502, detail=f"Upstream error: {e}")
+            raise HTTPException(status_code=status_code, detail=detail)
 
     latency_ms = int((time.monotonic() - start_time) * 1000)
 

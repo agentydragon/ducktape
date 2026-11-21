@@ -9,15 +9,12 @@ Handles:
 from __future__ import annotations
 
 import base64
-import logging
 import os
 import re
 from dataclasses import dataclass
 from urllib.parse import urlsplit
 
 from props.core.agent_types import AgentType
-
-logger = logging.getLogger(__name__)
 
 # Builtin image tag - used by all Bazel oci_push targets
 BUILTIN_TAG = "latest"
