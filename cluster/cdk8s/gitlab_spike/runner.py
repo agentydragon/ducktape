@@ -6,23 +6,24 @@ from cilium_crds.io.cilium import CiliumNetworkPolicySpecEndpointSelector
 from python.runfiles import Runfiles
 
 from cluster.cdk8s import cilium, node_scheduling
+from cluster.cdk8s.gitlab_spike import app as gitlab
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.namespaces import initial_request_annotations
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 from cluster.cdk8s.vpa_policy import ContainerPolicy
 
 NAME = "gitlab-spike-runner"
-NAMESPACE = "gitlab-spike-ci"
 _CPU_REQUEST = "100m"
 _MEMORY_LIMIT = "512Mi"
 
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
+    namespace = gitlab.RUNNER_NAMESPACE
     ServiceAccount(
         chart,
         "job-account",
-        metadata=ApiObjectMetadata(name="gitlab-spike-job", namespace=NAMESPACE),
+        metadata=ApiObjectMetadata(name="gitlab-spike-job", namespace=namespace),
         automount_token=False,
     )
     # The Helm chart uses this dedicated service account for the manager; jobs use a different one.
@@ -34,12 +35,14 @@ def chart(app: App) -> Chart:
         NetworkPolicy(
             chart,
             f"egress-{name}",
-            metadata=ApiObjectMetadata(name=f"{NAME}-{name}", namespace=NAMESPACE),
+            metadata=ApiObjectMetadata(name=f"{NAME}-{name}", namespace=namespace),
             endpoint_selector=CiliumNetworkPolicySpecEndpointSelector(match_labels=selector),
             egress=[
                 cilium.dns_egress(resolves=["*"]),
-                EgressRule.to_endpoints({"k8s:io.kubernetes.pod.namespace": "gitlab-spike"}, 8181, 5000),
-                cilium.egress_via_gateway("gitlab-spike.allegedly.works", "registry-gitlab-spike.allegedly.works"),
+                EgressRule.to_endpoints(
+                    {"k8s:io.kubernetes.pod.namespace": gitlab.NAMESPACE}, gitlab.WEB.pod_port, gitlab.REGISTRY.pod_port
+                ),
+                cilium.egress_via_gateway(gitlab.HOSTNAME, gitlab.REGISTRY_HOSTNAME),
                 *(
                     [EgressRule.to_entities(Entity.KUBE_APISERVER, ports=[443, 6443])]
                     if api_access
@@ -50,14 +53,14 @@ def chart(app: App) -> Chart:
     helm_release(
         chart,
         NAME,
-        NAMESPACE,
-        repository=https_helm_repository(chart, NAME, NAMESPACE, url="https://charts.gitlab.io"),
+        namespace,
+        repository=https_helm_repository(chart, NAME, namespace, url="https://charts.gitlab.io"),
         chart="gitlab-runner",
         version="0.94.1",
         interval="15m",
         timeout="10m",
         values={
-            "gitlabUrl": "http://gitlab-spike-webservice-default.gitlab-spike.svc:8181",
+            "gitlabUrl": gitlab.WEB.url,
             "concurrent": 2,
             "checkInterval": 5,
             # Opt in the runner manager Deployment. Peak startup working set was 142Mi.

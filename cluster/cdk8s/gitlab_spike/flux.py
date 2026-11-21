@@ -14,6 +14,7 @@ from cluster.cdk8s import terraform
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import CNPG_DATABASE_READY
 from cluster.cdk8s.gitlab_spike import runner
+from cluster.cdk8s.gitlab_spike.app import RUNNER_NAMESPACE
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 GITOPS_NAME = "gitlab-spike-gitops"
@@ -114,7 +115,7 @@ def integrations(chart: Chart, directory: RenderedDirectory, gitops: Kustomizati
                 api_version="helm.toolkit.fluxcd.io/v2",
                 kind="HelmRelease",
                 name=runner.NAME,
-                namespace=runner.NAMESPACE,
+                namespace=RUNNER_NAMESPACE,
             )
         ],
         depends_on=flux_kustomization_depends_on_many(gitops),
