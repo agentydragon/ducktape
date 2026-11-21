@@ -73,6 +73,8 @@ def openapi_schema(document: dict[str, Any]) -> dict[str, Any]:
     spec = document["spec"]
     (version,) = spec["versions"]
     schema = version["schema"]["openAPIV3Schema"]
+    if not isinstance(schema, dict):
+        raise ValueError("openAPIV3Schema must be an object")
     properties = schema.setdefault("properties", {})
     for field, value in (("apiVersion", f"{spec['group']}/{version['name']}"), ("kind", spec["names"]["kind"])):
         properties.setdefault(field, {})["const"] = value
