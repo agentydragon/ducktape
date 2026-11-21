@@ -332,9 +332,10 @@ def checkFootprints (program : Program) (lines : List String) : Except String St
     ("problems", Json.arr (problems.map Json.str))]).compress
 
 /-- **Which statements have a proved footprint** (`Fragment.lean`): the statements that do nothing when they run, and
-the declarations whose initializers only allocate. With the footprints of `lower`, it also counts how the analysis
-describes those declarations: as an effect or as writing a name (more than is proved: imprecise, not wrong), and
-whether it lists every name the initializer reads among the names it reads while it runs or declares (if not, a
+the others that only allocate: declarations whose initializers only allocate, opaque statements that only make
+functions. With the footprints of `lower` (one line per identity), it also counts how the analysis
+describes those statements: as an effect or as writing a name (more than is proved: imprecise, not wrong), and
+whether it lists every name the statement reads among the names it reads while it runs or declares (if not, a
 finding). One line of JSON. -/
 def moveCensus (program : Program) (lines : Option (List String)) : Except String String := do
   let body := program.modules.flatMap (·.body)
@@ -343,25 +344,30 @@ def moveCensus (program : Program) (lines : Option (List String)) : Except Strin
   let fps ← (lines.getD []).mapM Json.parse
   let mut opaques := 0
   let mut inert : Nat := 0
+  let mut inertEffect : Nat := 0
   let mut allocs : Nat := 0
   let mut effect : Nat := 0
   let mut writes : Nat := 0
   let mut findings : Array String := #[]
   for (i, s) in body do
     if let .opaque .. := s then opaques := opaques + 1
-    if s.inert then inert := inert + 1
-    if let some (_, e) := s.allocDecl then
+    if s.inert then
+      inert := inert + 1
+      if let some fp := fps[i]? then
+        if (fp.getObjValAs? Bool "effect").toOption == some true then inertEffect := inertEffect + 1
+    else if let some (_, reads) := s.allocs then
       allocs := allocs + 1
       if let some fp := fps[i]? then
         if (fp.getObjValAs? Bool "effect").toOption == some true then effect := effect + 1
         if !(← names fp "writes").isEmpty then writes := writes + 1
         let known := (← names fp "defs") ++ (← names fp "eager")
-        match e.readsNow.filter (!known.contains ·) with
+        match reads.filter (!known.contains ·) with
         | [] => pure ()
         | missing => findings := findings.push s!"{i}: reads {missing.eraseDups}, which the footprint does not list"
   let counts : List (String × Json) := [("units", (body.length : Nat)), ("opaque", (opaques : Nat)),
     ("inert", (inert : Nat)), ("allocate", (allocs : Nat))]
-  let analysis : List (String × Json) := [("allocate_effect", (effect : Nat)), ("allocate_writes", (writes : Nat)),
+  let analysis : List (String × Json) := [("inert_effect", (inertEffect : Nat)), ("allocate_effect", (effect : Nat)),
+    ("allocate_writes", (writes : Nat)),
     ("findings", Json.arr (findings.map Json.str))]
   pure (Json.mkObj (counts ++ if lines.isSome then analysis else [])).compress
 

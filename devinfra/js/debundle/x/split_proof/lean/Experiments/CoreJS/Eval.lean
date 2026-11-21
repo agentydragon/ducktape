@@ -111,6 +111,17 @@ def opaqueCells (env : Env) (decls : List (Name × DeclKind)) (funs : List (Name
     List (Option Addr) :=
   (opaqueNames decls funs free).map fun x => env.vars.lookup x
 
+/-- What an opaque statement that only makes functions does: its `k`-th declaration gets a new function, part
+`part + k` of the code, as a declaration with that function as its initializer would. -/
+def initClosures (code : Nat) (cells : List (Option Addr)) (env : Env) :
+    List (Name × DeclKind) → List (String × Nat × Bool) → Nat → M W Unit
+  | [], [], _ => pure ()
+  | (x, kind) :: decls, (name, length, constructor) :: fns, part => do
+    let v ← makeOpaque code part cells name length constructor
+    (if kind == .var then writeVar env x v else initVar env x v)
+    initClosures code cells env decls fns (part + 1)
+  | _, _, _ => unknown "model: an opaque statement has as many functions as declarations"
+
 /-- Enter the scope of a statement list: its lexical names, and its function declarations with their values. -/
 def enterBlock (env : Env) (ss : List Stmt) : M W Env := do
   let env ← declare env ((lexDecls ss).map fun (x, mutable) => (x, { value := none, mutable }))
@@ -412,8 +423,11 @@ def execStmt : Nat → Env → Stmt → M W Flow
           | .normal => throwVal v
           | jump => pure jump) s
       | r => r
-    | .opaque code decls funs free => do
+    | .opaque code decls funs free .world => do
       let _ ← converse n code (opaqueCells env decls funs free) (.run code 0 (.prim .undef) (← toW env.this) [] false)
+      pure .normal
+    | .opaque code decls funs free (.closures fns) => do
+      initClosures code (opaqueCells env decls funs free) env decls fns (funs.length + 1)
       pure .normal
 
 def execStmts : Nat → Env → List Stmt → M W Flow
@@ -512,7 +526,7 @@ def inRegion {α : Type} (id : Nat) (m : M W α) : M W α := do
 /-- The bindings a top-level statement declares: its `var` names start as `undefined`, the others uninitialized. -/
 def Stmt.bindings (s : Stmt) : List (Name × Binding) :=
   match s with
-  | .opaque _ decls funs _ =>
+  | .opaque _ decls funs _ _ =>
     (decls.map fun (x, kind) => (x, { value := if kind == .var then some .undef else none, mutable := kind != .const })) ++
       funs.map fun (x, _) => (x, { value := none, mutable := true })
   | s => ((varNamesOf [s]).eraseDups.map fun x => (x, { value := some .undef, mutable := true })) ++
@@ -583,7 +597,7 @@ def initOpaque (code : Nat) (cells : List (Option Addr)) (env : Env) : List (Nam
 /-- A declared function gets its value, in the region of its declaration and the scope of its module. -/
 def initFunction : Nat × Stmt × Env → M W Unit
   | (id, .funDecl f, env) => inRegion id (do initVar env f.name (← makeFunc env f))
-  | (id, .opaque code decls funs free, env) => inRegion id (initOpaque code (opaqueCells env decls funs free) env funs 1)
+  | (id, .opaque code decls funs free _, env) => inRegion id (initOpaque code (opaqueCells env decls funs free) env funs 1)
   | _ => pure ()
 
 def initFunctions : List (Nat × Stmt × Env) → M W Unit

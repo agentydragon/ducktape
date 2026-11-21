@@ -46,22 +46,26 @@ def readsNowProps : List PropDef → List Name
   | _ :: ps => readsNowProps ps
 end
 
-/-- A statement that does nothing when it runs: its work is done when the program is linked. -/
+/-- A statement that does nothing when it runs: its work is done when the program is linked. An opaque statement that
+declares only functions is one. -/
 def Stmt.inert : Stmt → Bool
-  | .funDecl _ | .varDecl _ => true
+  | .funDecl _ | .varDecl _ | .opaque _ [] _ _ (.closures []) => true
   | _ => false
 
-/-- A declaration whose initializer only allocates: its name and its initializer. -/
-def Stmt.allocDecl : Stmt → Option (Name × Expr)
-  | .decl _ x e => if e.allocOnly then some (x, e) else none
+/-- A statement that only allocates and gives its own bindings their values: the names it declares and the names it
+reads when it runs. A declaration whose initializer only allocates, and an opaque statement that only makes
+functions, which reads none. -/
+def Stmt.allocs : Stmt → Option (List Name × List Name)
+  | .decl _ x e => if e.allocOnly then some ([x], e.readsNow) else none
+  | .opaque _ decls funs _ (.closures _) => some (decls.map (·.1) ++ funs.map (·.1), [])
   | _ => none
 
-/-- Two statements whose order does not matter: one does nothing when it runs, or both are declarations whose
-initializers only allocate and neither reads the name the other declares. -/
+/-- Two statements whose order does not matter: one does nothing when it runs, or both only allocate and neither
+reads a name the other declares. -/
 def mayMove (a b : Stmt) : Bool :=
   a.inert || b.inert ||
-    match a.allocDecl, b.allocDecl with
-    | some (x, e), some (y, e') => !e.readsNow.contains y && !e'.readsNow.contains x
+    match a.allocs, b.allocs with
+    | some (xs, rs), some (ys, rs') => !rs.any ys.contains && !rs'.any xs.contains
     | _, _ => false
 
 /-- Statements `i` and `j` of the bundle `ss` may run in either order. -/

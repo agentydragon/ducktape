@@ -238,6 +238,10 @@ theorem Mono.stmt_succ (env : Env) (s : Stmt) : (execStmt (n + 1) env s : M W _)
         mono ih
       | _ => exact .inr rfl
   | decl kind x e => cases kind <;> unfold execStmt <;> mono ih
+  | «opaque» code decls funs free run =>
+    cases run with
+    | world => unfold execStmt; mono ih
+    | closures fns => unfold execStmt; exact M.le_refl _
   | _ => unfold execStmt; mono ih
 
 theorem Mono.stmts_succ (env : Env) (ss : List Stmt) : (execStmts (n + 1) env ss : M W _) ⊑ execStmts (m + 1) env ss := by
