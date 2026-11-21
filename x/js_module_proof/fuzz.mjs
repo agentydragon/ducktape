@@ -1372,6 +1372,13 @@ export function makeLocalAliasCase(seed, index) {
   };
 }
 
+// Keep the externally visible case index for replay while sampling several
+// exception shapes densely instead of waiting 96 cases for each one.
+export function makeExceptionCase(seed, index) {
+  const variedSeed = (seed ^ Math.imul(index, 0x9e3779b9)) >>> 0;
+  return makeLocalAliasCase(variedSeed, 1237 + 96 * (index % 7));
+}
+
 export function makeComposedCase(seed, index) {
   const rand = random(seed ^ 0xc04f053, index);
   const globalCount = 1 + rand(4);
@@ -2389,7 +2396,8 @@ export async function runFuzz({
     throw new Error("unsafe shrink attempts must be a nonnegative integer");
   if (!["enabled", "disabled"].includes(mutationMode)) throw new Error("unknown mutation mode");
   if (!["pattern", "independent"].includes(splitMode)) throw new Error("unknown split mode");
-  if (!["pattern", "composed", "async", "alias"].includes(grammarMode)) throw new Error("unknown grammar mode");
+  if (!["pattern", "composed", "async", "alias", "exception"].includes(grammarMode))
+    throw new Error("unknown grammar mode");
   if (!Number.isSafeInteger(shards) || shards < 1 || !Number.isSafeInteger(shard) || shard < 0 || shard >= shards)
     throw new Error("shard must be an integer between 0 and shards - 1");
   await mkdir(outputDir, { recursive: true });
@@ -2455,6 +2463,7 @@ export async function runFuzz({
     catchShadowCases: 0,
     catchShadowComparedCases: 0,
     catchShadowProvedCases: 0,
+    catchShadowUnknownCases: 0,
     loopShadowCases: 0,
     loopShadowComparedCases: 0,
     loopShadowUnknownCases: 0,
@@ -2606,43 +2615,47 @@ export async function runFuzz({
           ? makeComposedCase(seed, index)
           : grammarMode === "async"
             ? makeAsyncCase(seed, index)
-            : grammarMode === "alias"
-              ? makeLocalAliasCase(seed, index)
-              : makeCase(seed, index);
+            : grammarMode === "exception"
+              ? makeExceptionCase(seed, index)
+              : grammarMode === "alias"
+                ? makeLocalAliasCase(seed, index)
+                : makeCase(seed, index);
       const input = splitMode === "independent" ? independentSplit(generated, seed, index) : generated;
       const plannedMutation =
-        input.grammar === "alias" && input.independentSplit && input.withTopNoop
-          ? "independentRemovedNoopChangedFunction"
-          : input.grammar === "alias" && input.independentSplit && index % 96 === 13
-            ? "independentRemoveEffect"
-            : input.grammar === "alias" && input.independentSplit && index % 96 === 85
-              ? "independentRecordValue"
-              : input.grammar === "alias" && input.independentSplit && index % 48 === 37
-                ? "independentExtraEffect"
-                : input.grammar === "alias" && input.independentSplit && (index % 12 === 1 || index % 24 === 5)
-                  ? "independentNumericInitializer"
-                  : input.grammar === "alias" && !input.independentSplit && index % 12 === 1
-                    ? "localAliasNumericRedirect"
-                    : input.grammar === "alias" && !input.independentSplit && index % 12 === 3
-                      ? "localAliasInitRedirect"
-                      : input.grammar === "alias" && !input.independentSplit && index % 12 === 4
-                        ? "localAliasUpdateRedirect"
-                        : input.grammar === "alias" && !input.independentSplit && index % 6 === 2
-                          ? "localAliasRedirect"
-                          : input.grammar === "composed" && !input.independentSplit && index % 64 === 59
-                            ? "renamedReexport"
-                            : input.grammar === "composed" && !input.independentSplit && index % 64 === 23
-                              ? "throwValue"
-                              : input.grammar === "composed" &&
-                                  !input.independentSplit &&
-                                  input.hasDiscardedLiteral &&
-                                  index % 52 === 16
-                                ? "composedEffect"
-                                : !["composed", "async", "alias"].includes(input.grammar) &&
+        grammarMode === "exception" && !input.independentSplit
+          ? "localAliasNumericRedirect"
+          : input.grammar === "alias" && input.independentSplit && input.withTopNoop
+            ? "independentRemovedNoopChangedFunction"
+            : input.grammar === "alias" && input.independentSplit && index % 96 === 13
+              ? "independentRemoveEffect"
+              : input.grammar === "alias" && input.independentSplit && index % 96 === 85
+                ? "independentRecordValue"
+                : input.grammar === "alias" && input.independentSplit && index % 48 === 37
+                  ? "independentExtraEffect"
+                  : input.grammar === "alias" && input.independentSplit && (index % 12 === 1 || index % 24 === 5)
+                    ? "independentNumericInitializer"
+                    : input.grammar === "alias" && !input.independentSplit && index % 12 === 1
+                      ? "localAliasNumericRedirect"
+                      : input.grammar === "alias" && !input.independentSplit && index % 12 === 3
+                        ? "localAliasInitRedirect"
+                        : input.grammar === "alias" && !input.independentSplit && index % 12 === 4
+                          ? "localAliasUpdateRedirect"
+                          : input.grammar === "alias" && !input.independentSplit && index % 6 === 2
+                            ? "localAliasRedirect"
+                            : input.grammar === "composed" && !input.independentSplit && index % 64 === 59
+                              ? "renamedReexport"
+                              : input.grammar === "composed" && !input.independentSplit && index % 64 === 23
+                                ? "throwValue"
+                                : input.grammar === "composed" &&
                                     !input.independentSplit &&
-                                    index % 8 === 2
-                                  ? ["binding", "effect", "function", "export", "import"][Math.floor(index / 8) % 5]
-                                  : null;
+                                    input.hasDiscardedLiteral &&
+                                    index % 52 === 16
+                                  ? "composedEffect"
+                                  : !["composed", "async", "alias"].includes(input.grammar) &&
+                                      !input.independentSplit &&
+                                      index % 8 === 2
+                                    ? ["binding", "effect", "function", "export", "import"][Math.floor(index / 8) % 5]
+                                    : null;
       const mutation = mutationMode === "disabled" ? null : plannedMutation;
       if (plannedMutation === "composedEffect") input.calls = [];
       if (plannedMutation === "throwValue") input.calls = [{ name: "fuzzThrower", args: [1] }];
@@ -3062,6 +3075,7 @@ export async function runFuzz({
         } else if (verdict.result === "unknown") {
           summary.unknown++;
           if (input.loopShadow) summary.loopShadowUnknownCases++;
+          if (input.catchShadow) summary.catchShadowUnknownCases++;
           summary.unknownCases.push({
             index,
             reason: verdict.reason,
@@ -3144,7 +3158,7 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.
       !opts["--output-dir"]
     )
       throw new Error(
-        "usage: fuzz.mjs --output-dir DIR [--seed UINT32] [--start N] [--cases N] [--validate-every N] [--shard N --shards N] [--splits pattern|independent] [--grammar pattern|composed|async|alias] [--mutations enabled|disabled] [--shrink-unsafe-attempts N]"
+        "usage: fuzz.mjs --output-dir DIR [--seed UINT32] [--start N] [--cases N] [--validate-every N] [--shard N --shards N] [--splits pattern|independent] [--grammar pattern|composed|async|alias|exception] [--mutations enabled|disabled] [--shrink-unsafe-attempts N]"
       );
     console.log(
       JSON.stringify(

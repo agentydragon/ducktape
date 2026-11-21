@@ -387,6 +387,10 @@ remove initialization events; use `--mutations disabled` to check the unchanged 
 Later case indices also compose seeded arithmetic and conditional expression
 trees; their generated, Node-compared, and Lean-proved counts are reported
 separately.
+Use `--grammar exception` to concentrate every case on a used numeric catch
+binding, varying the throw expression, local updates, finalizer, shadowing, and
+seeded surrounding expressions. It supports both split modes and deterministic
+case-index replay like the other grammars.
 
 ```sh
 nix develop .#js-module-proof

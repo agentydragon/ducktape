@@ -101,9 +101,10 @@ cover only part of the grammar and split space described below.
       numeric expressions have Node-reproduced Lean counterexamples, including
       initialization observations. Witness lowering alpha-renames locals to
       preserve their identities when redirected module bindings share a spelling.
-      A loop-local or catch-bound name may shadow an imported name during
-      generation, but the accepted-case comparison can still return `unknown` for this alpha-renaming;
-      prove a suitable correspondence before accepting it.
+      Generated loop-local and catch-bound names can shadow imported names;
+      Lean retains the original local name only when resolving the body does
+      not capture an imported binding, and otherwise uses a fresh name.
+      Extend acceptance to remaining alpha-renaming cases.
       Witness lowering follows actual callee bodies in their own module scope,
       including changed callees with extra arguments or unused missing parameters;
       extend it to observed missing arguments, captured closures and other statement forms.

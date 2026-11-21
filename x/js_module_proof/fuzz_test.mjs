@@ -7,11 +7,49 @@ if (process.env.ACORN_RLOCATION)
   process.env.JS_MODULE_PROOF_ACORN = resolve(process.env.TEST_SRCDIR, process.env.ACORN_RLOCATION);
 process.env.JS_MODULE_PROOF_LEAN = resolve(process.env.TEST_SRCDIR, process.env.LEAN_RLOCATION);
 if (process.env.TEST_SHARD_STATUS_FILE) await writeFile(process.env.TEST_SHARD_STATUS_FILE, "");
-const { execute, independentSplit, makeCase, makeComposedCase, makeLocalAliasCase, minimizeCase, runFuzz } =
-  await import("./fuzz.mjs");
+const {
+  execute,
+  independentSplit,
+  makeCase,
+  makeComposedCase,
+  makeExceptionCase,
+  makeLocalAliasCase,
+  minimizeCase,
+  runFuzz,
+} = await import("./fuzz.mjs");
 const { assessCorpus } = await import("./real_corpus.mjs");
 const shard = Number(process.env.TEST_SHARD_INDEX ?? 0);
 const shards = Number(process.env.TEST_TOTAL_SHARDS ?? 1);
+if (shards === 4 && shard === 0) {
+  const exceptions = Array.from({ length: 7 }, (_, index) => makeExceptionCase(773, index));
+  assert.ok(exceptions.every((input) => input.withCatchBinding));
+  assert.equal(exceptions.filter((input) => input.catchShadow).length, 1);
+  assert.equal(makeExceptionCase(773, 3).source, makeExceptionCase(773, 3).source);
+  assert.notEqual(makeExceptionCase(773, 3).source, makeExceptionCase(774, 3).source);
+  const generated = await runFuzz({
+    seed: 773,
+    start: 1,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "exception",
+    mutationMode: "disabled",
+    validateEvery: 1,
+  });
+  assert.equal(generated.aliasBoundCatchComparedCases, 1);
+  assert.equal(generated.aliasBoundCatchProvedCases, 1);
+  assert.equal(generated.equal, 1);
+  const redirected = await runFuzz({
+    seed: 773,
+    start: 2,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "exception",
+    validateEvery: 1,
+  });
+  assert.equal(redirected.mutationKinds.localAliasNumericRedirect, 1);
+  assert.equal(redirected.mutatedDifferent, 1);
+  assert.equal(redirected.mutatedVerdicts.unsafe, 1);
+}
 if (shards === 4) {
   const aliases = await runFuzz({
     seed: 773,
@@ -277,7 +315,7 @@ if (shards === 4 && shard === 2) {
   assert.equal(shadowLoop.loopShadowCases, 1);
   assert.equal(shadowLoop.loopShadowComparedCases, 1);
   assert.equal(shadowLoop.equal, 1);
-  assert.equal(shadowLoop.loopShadowUnknownCases + shadowLoop.proved, 1);
+  assert.equal(shadowLoop.aliasLoopProvedCases, 1);
 }
 if (shards === 4 && shard === 0) {
   const composedA = makeLocalAliasCase(773, 997);
@@ -555,7 +593,7 @@ if (shards === 4 && shard === 2) {
   const unchangedCatchShadow = await runFuzz({ ...shadowOptions, mutationMode: "disabled" });
   assert.equal(unchangedCatchShadow.catchShadowComparedCases, 1);
   assert.equal(unchangedCatchShadow.equal, 1);
-  assert.equal(unchangedCatchShadow.proved + unchangedCatchShadow.unknown, 1);
+  assert.equal(unchangedCatchShadow.catchShadowProvedCases, 1);
 }
 if (shards === 4 && shard === 3) {
   const changedTerminal = await runFuzz({

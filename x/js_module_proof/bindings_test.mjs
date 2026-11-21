@@ -1189,6 +1189,47 @@ if (runSection(7)) {
   assert.notDeepEqual(execute(priorIncrementSource, oneCall), execute(join(priorIncrementOut, "entry.mjs"), oneCall));
 }
 
+if (runSection(1)) {
+  const source = join(root, "catch-capture-source.mjs");
+  const spec = join(root, "catch-capture-spec.json");
+  const out = join(root, "catch-capture-out");
+  await writeFile(
+    source,
+    `let original = 3;\nlet alternate = 5;\nfunction compute() { let local = 0; try { throw original; } catch (alternate) { local += alternate; local += original; } return local; }\nexport { compute };\n`
+  );
+  await writeFile(
+    spec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0, 1] },
+        "logic.mjs": { imports: ["state.mjs"], statements: [2], renameLocalImports: true },
+        "entry.mjs": { imports: ["logic.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", source, spec, out).value.result, "generated");
+  const state = join(out, "state.mjs");
+  await writeFile(state, (await readFile(state, "utf8")) + "export { alternate };\n");
+  const logic = join(out, "logic.mjs");
+  const text = await readFile(logic, "utf8");
+  assert.match(text, /original as __split_local_0/);
+  const unchanged = cli("validate", source, spec, out).value;
+  assert.equal(unchanged.result, "proved under assumptions", JSON.stringify(unchanged));
+  await writeFile(logic, text.replace("original as __split_local_0", "alternate as __split_local_0"));
+  const redirected = cli("validate", source, spec, out).value;
+  assert.equal(redirected.result, "unsafe", JSON.stringify(redirected));
+  assert.deepEqual(execute(source, redirected.calls), { events: [], results: [6] });
+  assert.deepEqual(execute(join(out, "entry.mjs"), redirected.calls), { events: [], results: [10] });
+  const axioms = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
+    encoding: "utf8",
+    input: models + "\n#print axioms witnessedExpressionFuel\n",
+  });
+  assert.equal(axioms.status, 0, axioms.stdout + axioms.stderr);
+  assert.match(axioms.stdout, /'witnessedExpressionFuel' does not depend on any axioms/);
+}
+
 if (runSection(0)) {
   const insertedSource = join(root, "inserted-event-source.mjs");
   const insertedSpec = join(root, "inserted-event-spec.json");

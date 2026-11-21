@@ -1246,10 +1246,15 @@ def witnessedExpressionFuel (modules : List BindingModule) : Nat → Nat → Lis
   | fuel + 1, index, bound, .catchError left right => do
     some (.catchError (← witnessedExpressionFuel modules fuel index bound left) (← witnessedExpressionFuel modules fuel index bound right))
   | fuel + 1, index, bound, .catchBound name body handler => do
-    let identitySafe := witnessedFreshAvailable modules name && !(bound.any fun binding => binding.2 == name)
-    let fresh := if identitySafe then name else witnessedFresh bound.length name
-    if !witnessedFreshAvailable modules fresh then none else
-      some (.catchBound fresh (← witnessedExpressionFuel modules fuel index bound body) (← witnessedExpressionFuel modules fuel index ((name, fresh) :: bound) handler))
+    let transformedBody ← witnessedExpressionFuel modules fuel index bound body
+    let identity := if bound.any (fun binding => binding.2 == name) then none else
+      witnessedExpressionFuel modules fuel index ((name, name) :: bound) handler
+    match identity with
+    | some transformedHandler => some (.catchBound name transformedBody transformedHandler)
+    | none =>
+      let fresh := witnessedFresh bound.length name
+      if !witnessedFreshAvailable modules fresh then none else
+        some (.catchBound fresh transformedBody (← witnessedExpressionFuel modules fuel index ((name, fresh) :: bound) handler))
   | fuel + 1, index, bound, .followedBy left right => do
     some (.followedBy (← witnessedExpressionFuel modules fuel index bound left) (← witnessedExpressionFuel modules fuel index bound right))
   | fuel + 1, index, bound, .argumentsCons left right => do
@@ -1259,10 +1264,15 @@ def witnessedExpressionFuel (modules : List BindingModule) : Nat → Nat → Lis
   | fuel + 1, index, bound, .guard test consequent alternative => do
     some (.guard (← witnessedExpressionFuel modules fuel index bound test) (← witnessedExpressionFuel modules fuel index bound consequent) (← witnessedExpressionFuel modules fuel index bound alternative))
   | fuel + 1, index, bound, .local name mutable initial body => do
-    let identitySafe := witnessedFreshAvailable modules name && !(bound.any fun binding => binding.2 == name)
-    let fresh := if identitySafe then name else witnessedFresh bound.length name
-    if !witnessedFreshAvailable modules fresh then none else
-      some (.local fresh mutable (← witnessedExpressionFuel modules fuel index bound initial) (← witnessedExpressionFuel modules fuel index ((name, fresh) :: bound) body))
+    let transformedInitial ← witnessedExpressionFuel modules fuel index bound initial
+    let identity := if bound.any (fun binding => binding.2 == name) then none else
+      witnessedExpressionFuel modules fuel index ((name, name) :: bound) body
+    match identity with
+    | some transformedBody => some (.local name mutable transformedInitial transformedBody)
+    | none =>
+      let fresh := witnessedFresh bound.length name
+      if !witnessedFreshAvailable modules fresh then none else
+        some (.local fresh mutable transformedInitial (← witnessedExpressionFuel modules fuel index ((name, fresh) :: bound) body))
   | fuel + 1, index, bound, .assign name value body => do
     some (.assign (← witnessedName modules index bound name) (← witnessedExpressionFuel modules fuel index bound value) (← witnessedExpressionFuel modules fuel index bound body))
   | fuel + 1, index, bound, .raise value => (witnessedExpressionFuel modules fuel index bound value).map NumericExpr.raise
@@ -1289,12 +1299,21 @@ def witnessedExpressionFuel (modules : List BindingModule) : Nat → Nat → Lis
 def witnessedExpression (modules : List BindingModule) (index : Nat) (bound : List (String × String)) (expression : NumericExpr) : Option NumericExpr :=
   witnessedExpressionFuel modules 1024 index bound expression
 
-/- A local that could capture a resolved global or an enclosing local is
-   renamed instead of being retained. -/
+/- A local may retain the spelling of a global when its body does not read
+   that global through another module-local name. -/
 example : witnessedExpression
     [{ imports := [], exports := [], statements := [.variable "x" 1], assignment := [0] }]
     0 [] (.local "x" false (.literal 0) (.name "x")) =
-    some (.local "#" false (.literal 0) (.name "#")) := by decide
+    some (.local "x" false (.literal 0) (.name "x")) := by decide
+
+/- A redirected import would be captured by that spelling, so use a fresh
+   local and preserve the global reference. -/
+example : witnessedExpression
+    [{ imports := [], exports := ["x"], statements := [.variable "x" 1], assignment := [0] },
+     { imports := [{ dependency := 0, locals := ["alias"], links := [("alias", "x")], reexports := [] }],
+       exports := [], statements := [], assignment := [] }]
+    1 [] (.local "x" false (.literal 0) (.add (.name "x") (.name "alias"))) =
+    some (.local "#" false (.literal 0) (.add (.name "#") (.name "x"))) := by decide
 
 example : witnessedExpression [] 0 [("outer", "x")]
     (.local "x" false (.literal 0) (.name "x")) =
