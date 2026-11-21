@@ -68,6 +68,7 @@ class FluxKustomizationSpec(BaseModel):
     # needs it. Default "" means "unknown" — cross-namespace checks skip it.
     namespace: str = ""
     target_namespace: str | None = None
+    manifest_path: Path | None = Field(default=None, exclude=True)
     depends_on: list[DependsOn] = []
     health_checks: list[HealthCheck] = []
     source_ref: SourceRef | None = None
@@ -207,6 +208,7 @@ def parse_flux_kustomizations(flux_file: Path) -> dict[str, FluxKustomizationSpe
             results[parsed.metadata.name] = parsed.spec.model_copy(
                 update={
                     "namespace": parsed.metadata.namespace,
+                    "manifest_path": flux_file,
                     "parked": parsed.metadata.annotations.get("ducktape.org/parked") == "true",
                 }
             )

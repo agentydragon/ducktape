@@ -2,14 +2,15 @@
 
 Tests that parse the cluster kustomization tree and check structural invariants
 (no orphaned files, valid dependencies, health checks on controller resources).
-All kustomizations are built with kustomize to validate they render correctly
-and to provide build results for resource-level checks. Direct-file contracts
-live in narrower sibling targets and do not pay this full-cluster setup cost.
+Use the pinned Flux CLI in dry-run mode for local owners with targetNamespace and
+plain Kustomize for the other local owners. The latter builds omit Flux-level
+patches. Live decryption and post-build variable sources are outside both paths.
 """
 
 from __future__ import annotations
 
 import asyncio
+import shutil
 import tempfile
 from contextlib import ExitStack
 from pathlib import Path
@@ -17,6 +18,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 import yaml
+from python.runfiles import Runfiles
 
 from cluster.validation.checks import (
     check_cilium_policy_rules_nonempty,
@@ -29,7 +31,7 @@ from cluster.validation.checks import (
 )
 from cluster.validation.cluster import ParsedCluster, parse_cluster
 from cluster.validation.dependencies import validate_dependencies
-from cluster.validation.flux import EXTERNAL_ARTIFACT_KIND
+from cluster.validation.flux import EXTERNAL_ARTIFACT_KIND, FluxKustomizationSpec
 from cluster.validation.flux_bootstrap_auth import check_flux_bootstrap_auth
 from cluster.validation.health_checks import check_controller_health_checks, check_retry_policy
 from cluster.validation.image_automation import (
@@ -37,7 +39,7 @@ from cluster.validation.image_automation import (
     check_image_policy_markers,
     check_no_flow_mappings_where_flux_writes,
 )
-from cluster.validation.k8s import ArtifactGeneratorResource, K8sResource
+from cluster.validation.k8s import ArtifactGeneratorResource, K8sResource, parse_k8s_resources
 from cluster.validation.kustomize import (
     KustomizeBuildResult,
     KustomizeFile,
@@ -53,19 +55,43 @@ def _local_flux_kust_names(parsed: ParsedCluster, repo_root: Path) -> set[str]:
     return {name for name, spec in parsed.active_flux_kustomizations.items() if spec.local_dir(repo_root)}
 
 
-@pytest.fixture(scope="session")
-def cluster(repo_root: Path) -> ParsedCluster:
-    """Parse cluster and build flux-referenced kustomizations (hard failure on any build error)."""
+async def _build_namespace_override(
+    owner: str, spec: FluxKustomizationSpec, directory: Path, source_root: Path
+) -> list[K8sResource]:
+    assert spec.manifest_path is not None
+    # Flux CLI 2.4 rewrites the root kustomization temporarily. Each owner gets its own
+    # source copy so nested resources still resolve and overlapping owners cannot race.
+    with tempfile.TemporaryDirectory(prefix="flux-namespace-") as scratch:
+        source = Path(scratch) / "source"
+        shutil.copytree(source_root, source)
+        flux = Runfiles.CreateOrRaise().root() / "multitool/tools/flux/flux"
+        process = await asyncio.create_subprocess_exec(
+            flux,
+            "build",
+            "kustomization",
+            owner,
+            "--namespace",
+            spec.namespace,
+            "--kustomization-file",
+            spec.manifest_path,
+            "--path",
+            source / directory.relative_to(source_root),
+            "--dry-run",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await process.communicate()
+        if process.returncode != 0:
+            raise RuntimeError(f"Flux build failed for {spec.namespace}/{owner}: {stderr.decode()}")
+    return parse_k8s_resources(yaml.safe_load_all(stdout))
+
+
+def _build_cluster(repo_root: Path) -> ParsedCluster:
     parsed = parse_cluster(repo_root)
 
     # Build all local flux-referenced kustomizations (including suspended — kustomize
     # build should still succeed). Only validation checks filter suspended.
-    specs_by_dir = {
-        directory: spec
-        for spec in parsed.flux_kustomizations.values()
-        if (directory := spec.local_dir(repo_root)) is not None
-    }
-    kusts = [kust for path, kust in parsed.kustomize_files.items() if path.parent.resolve() in specs_by_dir]
+    kusts_by_dir = {path.parent.resolve(): kust for path, kust in parsed.kustomize_files.items()}
 
     artifact_specs = {
         (resource.namespace, artifact["name"]): [(copy["from"], copy["to"]) for copy in artifact.get("copy", [])]
@@ -104,30 +130,48 @@ def cluster(repo_root: Path) -> ParsedCluster:
             staged_artifacts[key] = staging_root
 
         async def _build_all() -> list[KustomizeBuildResult]:
-            async def _build(kust: KustomizeFile) -> KustomizeBuildResult:
-                spec = specs_by_dir[kust.path.parent.resolve()]
+            # At most one additional copy of a manifest tree, even when several owners share it.
+            namespace_build = asyncio.Semaphore(1)
+
+            async def _build(owner: str, spec: FluxKustomizationSpec, kust: KustomizeFile) -> KustomizeBuildResult:
+                source_root = repo_root
+                build_file = kust
                 source_ref = spec.source_ref
-                if source_ref is None or source_ref.kind != EXTERNAL_ARTIFACT_KIND:
-                    return await run_kustomize_build(kust)
+                if source_ref is not None and source_ref.kind == EXTERNAL_ARTIFACT_KIND:
+                    artifact_namespace = source_ref.namespace or spec.namespace
+                    if staged_root := staged_artifacts.get((artifact_namespace, source_ref.name)):
+                        relative = kust.path.relative_to(repo_root)
+                        staged_path = staged_root / relative
+                        if not staged_path.is_file():
+                            raise FileNotFoundError(
+                                f"ExternalArtifact {artifact_namespace}/{source_ref.name} does not contain {relative}"
+                            )
+                        source_root = staged_root
+                        build_file = KustomizeFile(path=staged_path)
 
-                artifact_namespace = source_ref.namespace or spec.namespace
-                staged_root = staged_artifacts.get((artifact_namespace, source_ref.name))
-                if staged_root is None:
-                    return await run_kustomize_build(kust)
+                if spec.target_namespace:
+                    async with namespace_build:
+                        resources = await _build_namespace_override(owner, spec, build_file.path.parent, source_root)
+                else:
+                    resources = (await run_kustomize_build(build_file)).resources
+                return KustomizeBuildResult(kustomization_path=kust.path, flux_owner=owner, resources=resources)
 
-                staged_path = staged_root / kust.path.relative_to(repo_root)
-                if not staged_path.is_file():
-                    raise FileNotFoundError(
-                        f"ExternalArtifact {artifact_namespace}/{source_ref.name} does not contain "
-                        f"{staged_path.relative_to(staged_root)}"
-                    )
-                staged_result = await run_kustomize_build(KustomizeFile(path=staged_path))
-                return staged_result.model_copy(update={"kustomization_path": kust.path})
-
-            return await asyncio.gather(*[_build(kust) for kust in kusts])
+            return await asyncio.gather(
+                *[
+                    _build(owner, spec, kusts_by_dir[directory])
+                    for owner, spec in parsed.flux_kustomizations.items()
+                    if (directory := spec.local_dir(repo_root)) is not None and directory in kusts_by_dir
+                ]
+            )
 
         parsed.build_results = asyncio.run(_build_all())
     return parsed
+
+
+@pytest.fixture(scope="session")
+def cluster(repo_root: Path) -> ParsedCluster:
+    """Parse cluster and build flux-referenced kustomizations (hard failure on any build error)."""
+    return _build_cluster(repo_root)
 
 
 def test_all_local_flux_kustomizations_have_build_results(cluster: ParsedCluster, repo_root: Path) -> None:
@@ -158,6 +202,100 @@ def test_external_credential_ownership(cluster: ParsedCluster, repo_root: Path) 
 def test_external_secret_store_wiring(cluster: ParsedCluster) -> None:
     errors = check_external_secret_store_wiring(cluster)
     assert not errors, "\n".join(errors)
+
+
+def test_external_secret_store_wiring_uses_each_flux_owners_target_namespace(tmp_path: Path) -> None:
+    def write(relative: str, *documents: dict) -> None:
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(yaml.safe_dump_all(documents))
+
+    def owner(name: str, directory: str, target_namespace: str | None = None) -> dict:
+        spec = {"path": f"./cluster/generated/{directory}"}
+        if target_namespace is not None:
+            spec["targetNamespace"] = target_namespace
+        return {
+            "apiVersion": "kustomize.toolkit.fluxcd.io/v1",
+            "kind": "Kustomization",
+            "metadata": {"name": name, "namespace": "flux-system"},
+            "spec": spec,
+        }
+
+    write(
+        "cluster/k8s/flux/kustomizations.k8s.yaml",
+        owner("first", "secrets", "allowed"),
+        owner("second", "secrets", "denied"),
+        owner("unspecified", "secrets"),
+        owner("namespaces", "namespaces"),
+        owner("policy", "policy", "operator"),
+    )
+    secret_spec = {
+        "secretStoreRef": {"kind": "ClusterSecretStore", "name": "shared"},
+        "data": [{"secretKey": "fixture", "remoteRef": {"key": "fixture"}}],
+    }
+    write(
+        "cluster/generated/secrets/resources.yaml",
+        {
+            "apiVersion": "external-secrets.io/v1",
+            "kind": "ExternalSecret",
+            "metadata": {"name": "implicit"},
+            "spec": secret_spec,
+        },
+        {
+            "apiVersion": "external-secrets.io/v1",
+            "kind": "ExternalSecret",
+            "metadata": {"name": "explicit", "namespace": "allowed"},
+            "spec": secret_spec,
+        },
+        {"apiVersion": "v1", "kind": "ServiceAccount", "metadata": {"name": "referent"}},
+    )
+    write(
+        "cluster/generated/namespaces/resources.yaml",
+        {"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "allowed", "labels": {"team": "approved"}}},
+        {"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "denied"}},
+    )
+    write(
+        "cluster/generated/policy/resources.yaml",
+        {"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "source-operator"}},
+        {
+            "apiVersion": "external-secrets.io/v1",
+            "kind": "ClusterSecretStore",
+            "metadata": {"name": "shared"},
+            "spec": {
+                "conditions": [{"namespaceSelector": {"matchLabels": {"team": "approved"}}}],
+                "provider": {"kubernetes": {"auth": {"serviceAccount": {"name": "referent"}}}},
+            },
+        },
+        {
+            "apiVersion": "external-secrets.io/v1",
+            "kind": "ClusterExternalSecret",
+            "metadata": {"name": "cluster-consumer"},
+            "spec": {"namespaces": ["allowed"], "externalSecretSpec": secret_spec},
+        },
+    )
+    # The two targeted owners share one directory. The source Kustomization
+    # also remains available to an owner with no namespace override.
+    for directory in ("secrets", "namespaces", "policy"):
+        write(
+            f"cluster/generated/{directory}/kustomization.yaml",
+            {"apiVersion": "kustomize.config.k8s.io/v1beta1", "kind": "Kustomization", "resources": ["resources.yaml"]},
+        )
+
+    parsed = _build_cluster(tmp_path)
+    builds = parsed.flux_kust_resources(tmp_path)
+    assert {
+        owner_name: {resource.namespace for resource in builds[owner_name] if resource.kind == "ExternalSecret"}
+        for owner_name in ("first", "second", "unspecified")
+    } == {"first": {"allowed"}, "second": {"denied"}, "unspecified": {"", "allowed"}}
+    assert {resource.name: resource.namespace for resource in builds["policy"] if resource.kind == "Namespace"} == {
+        "operator": ""
+    }
+    errors = check_external_secret_store_wiring(parsed)
+    assert len(errors) == 2
+    for secret in ("implicit", "explicit"):
+        assert any(
+            f"ExternalSecret '{secret}' in namespace 'denied' is denied by ClusterSecretStore" in e for e in errors
+        )
 
 
 def test_forgejo_image_namespaces_are_reflected(cluster: ParsedCluster) -> None:

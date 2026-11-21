@@ -123,10 +123,12 @@ such file is listed; `flux_kustomization` derives it from the `RenderedDirectory
 `ExternalSecret` objects are generated outright; they carry only a pointer at a store key.
 Whole-tree validation checks referenced ESO stores and their namespace conditions and,
 for Kubernetes-provider referent authentication, the consuming namespace's
-ServiceAccount. It skips ExternalSecrets without an explicit rendered namespace and
-evaluates ClusterExternalSecret selectors against rendered Namespace labels only.
-Namespaces and labels created outside the render, Go regexes Python cannot parse, and
-live store, ServiceAccount, or secret readiness remain outside its proof.
+ServiceAccount. Each local Flux owner with a `targetNamespace` is built independently
+with the pinned Flux CLI in dry-run mode. Other local builds use plain Kustomize and
+omit Flux-level patches. Validation skips ExternalSecrets still missing a namespace
+and evaluates ClusterExternalSecret selectors against rendered Namespace labels.
+External source trees, runtime substitutions and labels, unsupported Go regexes,
+and live secret readiness are outside this check.
 
 Fleet rules run on every App `generation.write_app` writes, over all its charts together;
 strategic-merge patch files are not checked. Their
