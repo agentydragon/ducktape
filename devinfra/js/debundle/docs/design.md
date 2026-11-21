@@ -4232,18 +4232,33 @@ contract is in <../SPEC.md>
 
 ## File references
 
-Entry points (the rest of the tree hangs off these; per-concern file
-rosters live in the directories, not here):
-
-- <../pipeline.rs> — fixed transform composition.
-- <../facts/> — `StatementFacts` analyzer (<../facts/analyze.rs>).
-- <../graph/> — dependency graph, `ModuleQuotient`, and the canonical I-graph
-  builders.
-- <../realizability/mod.rs> — the realizability gate (`check_realizability`).
-- <../validation.rs> — `validate_assignment`: renders the verdict as cycle
-  reports.
-- <../lowering/> — main splitting transform.
-- <../atomic_groups.rs> — source-unit hard colocation groups.
+- [`cli/mod.rs`](../cli/mod.rs) dispatches commands. [`transform_command.rs`](../transform_command.rs)
+  and [`analyze_command.rs`](../analyze_command.rs) turn CLI inputs into typed
+  requests.
+- [`pipeline.rs`](../pipeline.rs) composes the transform stages.
+  [`prepare_chunks.rs`](../prepare_chunks.rs) parses and indexes a
+  [`SourceProgram`](../artifacts/source_program.rs).
+- [`spec/spec_tree.rs`](../spec/spec_tree.rs) compiles the authoring tree.
+  [`spec_resolution.rs`](../spec_resolution.rs) projects claims into the shared
+  [selector resolver](../selectors/resolution/).
+- [`facts/analyze.rs`](../facts/analyze.rs) analyzes `StatementFacts`.
+  [`facts/sync_effects/execution_index.rs`](../facts/sync_effects/execution_index.rs)
+  collects synchronous execution facts with the adjacent value model and
+  interpreter. [`facts/abstract_domain/builtins.rs`](../facts/abstract_domain/builtins.rs)
+  models native operations.
+- [`graph/`](../graph/) builds dependency graphs and module quotients.
+  [`atomic_groups.rs`](../atomic_groups.rs) computes source-unit colocation
+  groups. [`peel/`](../peel/) searches residual placements.
+- [`assignment_assembly.rs`](../assignment_assembly.rs) assembles claims.
+  [`realizability/mod.rs`](../realizability/mod.rs) checks realizability and
+  [`validation.rs`](../validation.rs) reports assignment verdicts.
+- [`lowering/`](../lowering/) splits accepted assignments. [`vendor/`](../vendor/)
+  prepares substitutions. Finalized [`EmissionFiles`](../artifacts/emission_files.rs)
+  own the output files and indexes.
+- [`reconstruction.rs`](../reconstruction.rs) validates finalized files,
+  including exports, vendor consumers, and unresolved claims.
+  [`artifacts/write_tree.rs`](../artifacts/write_tree.rs) renders accepted scripts
+  from the resulting `ValidatedPlan` and writes output reports.
 
 ## Conventions for updating this doc
 

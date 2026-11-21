@@ -47,8 +47,10 @@ reach an escaped object, and reads them too.
 
 Premises (assumed, not checked; `premiseLines` prints them with every verdict):
 P1 and P3 (`Intrinsics.lean`);
-P4 the bundle's evaluation completes, which is premise A6 of `debundle/docs/design.md`: nothing throws out of the top
-level, so a unit that merely might throw is not an effect for that reason;
+P4 the bundle's evaluation completes, which is premise A6 of `debundle/docs/design.md`. A `throw` statement that the
+analysis reaches outside every `try` with a `catch` is not under this premise: its unit is unknown code. The premise is about the exceptions the language
+raises itself in code that is otherwise pure (a property of `undefined`, a name in its dead zone, a call of something
+that is not a function) and about evaluation that does not end;
 P5 no other chunk runs while this top level runs, except through callbacks this chunk gave the world;
 and the vendor table (`Premises`).
 -/
@@ -209,6 +211,9 @@ structure St where
   prem     : Premises := {}
   usedVendor : Std.HashSet String := {}
   thrown   : AV := #[]
+  /-- how many `try` blocks with a `catch` are around the code that runs, through every call: a `throw` under one is
+  caught -/
+  guarded  : Nat := 0
   unit     : Nat := 0
   /-- of the unit being run -/
   writes   : Std.HashSet Nat := {}
@@ -696,9 +701,11 @@ def newFrame (fr : Fr) (names : List String) : M Fr := do
 
 /-! ## Calls into the world, and what the world may run -/
 
-/-- Run `run` with the unit's footprint accumulators empty, merge them back, and remember the call. -/
+/-- Run `run` with the unit's footprint accumulators empty, merge them back, and remember the call. A call under a
+`try` with a `catch` is remembered apart: a `throw` it reaches is caught there and ends the evaluation elsewhere. -/
 def withMemo (key : UInt64 × UInt64) (run : M AV) : M AV := do
   let s ← get
+  let key := if s.guarded == 0 then key else (key.1, mixHash key.2 0x67756172)
   match s.memo[key]? with
   | some (c, r, ws, rs, w, u, th) =>
     if c == s.changes then
@@ -1273,10 +1280,6 @@ partial def applySummary (s : Summary) (thisV : AV) (args : List AV) (fr : Fr) (
     setAV thisV none (AV.joinAll args)
   for (src, dst) in s.store do setAV (pos dst) none (pos src)
   -- copying a property reads it: a getter the source has runs
-  for (src, dst) in s.copies do
-    let v ← contentsOf (pos src)
-    setAV (pos dst) none v
-    noteProps (pos dst) v
   if let some (first, dst) := s.copiesRest then
     for i in [first:args.length + 1] do
       let v ← contentsOf (pos i)
@@ -1919,6 +1922,10 @@ partial def exec (fr : Fr) (s : Json) : M Unit := do
   | "ThrowStatement" =>
     let v ← eval fr (fld s "argument")
     modify fun st => { st with thrown := st.thrown.join v }
+    -- a `throw` that no `catch` around it takes may end the evaluation of the bundle: what ran before it is all that
+    -- ran, so the unit keeps its place among the effects, and among the units that declare what the world can still
+    -- see afterwards
+    if (← get).guarded == 0 then setWorld "a throw"
   | "IfStatement" =>
     let _ ← eval fr (fld s "test")
     exec fr (fld s "consequent")
@@ -1959,8 +1966,12 @@ partial def exec (fr : Fr) (s : Json) : M Unit := do
       let _ ← eval fr (fld s "test")
       exec fr (fld s "body")
   | "TryStatement" =>
-    exec fr (fld s "block")
     let h := fld s "handler"
+    if isNull h then exec fr (fld s "block")
+    else
+      modify fun st => { st with guarded := st.guarded + 1 }
+      exec fr (fld s "block")
+      modify fun st => { st with guarded := st.guarded - 1 }
     unless isNull h do
       let param := fld h "param"
       let fr' ← newFrame fr (binders param)
@@ -2090,7 +2101,7 @@ def analyze (units : Array Json) (imports : Std.HashMap String (String × String
     let mut steps : Array Nat := #[]
     let mut gaveUp := 0
     for (u, i) in units.toList.zipIdx do
-      modify fun s => { s with unit := i, writes := {}, reads := {}, world := false, unk := false, why := "", whyUnk := "", callLabel := "", fuel := budget, broke := false, thrown := #[], cur := { path := UInt64.ofNat (i + 1) } }
+      modify fun s => { s with unit := i, writes := {}, reads := {}, world := false, unk := false, why := "", whyUnk := "", callLabel := "", fuel := budget, broke := false, thrown := #[], guarded := 0, cur := { path := UInt64.ofNat (i + 1) } }
       exec { path := UInt64.ofNat (i + 1) } u
       if (← get).broke then
         gaveUp := gaveUp + 1
@@ -2229,7 +2240,7 @@ def premiseLines (prem : Premises) (r : Result) : List String :=
   ["  analysis premises (assumed, not checked):",
    "    P1 nothing the analysis cannot see patches the intrinsics (`Object`, `Array`, `Map`, `Promise`, …)",
    s!"    P3 the world defines no accessors or conversion hooks on program objects: {prem.noWorldHooks}",
-   "    P4 evaluation completes (no uncaught exception, no hang)",
+   "    P4 evaluation completes (no exception that the language raises itself in pure code, no hang)",
    "    P5 no other chunk runs during evaluation except through callbacks this chunk gave the world",
    s!"    vendor: {r.used.size} imports assumed to only allocate{if r.used.isEmpty then "" else ": " ++ ", ".intercalate r.used.toList}"]
   ++ (if r.patches.isEmpty then [] else

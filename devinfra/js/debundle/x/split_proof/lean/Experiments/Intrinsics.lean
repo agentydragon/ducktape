@@ -39,7 +39,7 @@ defined is run (`Effects.convert`).
 Positions in a summary: `0` is the receiver (`this`), `i + 1` is argument `i`.
 
 A standard function may also run the program's code through a protocol: it calls a callback (`calls`), iterates its
-argument (`iterates`), reads the properties of an argument, so that a getter runs (`readsContents`, `copies`), or calls a
+argument (`iterates`), reads the properties of an argument, so that a getter runs (`readsContents`, `copiesRest`), or calls a
 method by name (`callsMethods`: `test` calls `exec`, `replace` calls the `Symbol.replace` of its pattern). A row says
 which, and nothing else runs. A protocol the row does not list is a limit of the rules:
 `experiments/effects/debug/general_known_gaps` has a program for each one known.
@@ -119,9 +119,6 @@ structure Summary where
   world  : Bool := false
   /-- positions the environment keeps: the objects there escape -/
   retains : List Nat := []
-  /-- `(from, to)`: the properties of the objects at `from` are read, so that a getter the program defined runs, and
-      stored into the objects at `to` (`Object.assign`) -/
-  copies : List (Nat × Nat) := []
   /-- positions whose properties it reads, so that a getter the program defined runs (`Object.prototype.toString`
       reads `Symbol.toStringTag`) -/
   readsContents : List Nat := []

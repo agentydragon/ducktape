@@ -1,7 +1,7 @@
 # Agent workspace image: disposable interactive workspaces for operator-driven
-# LLM tasks. Kept independent of the Haku dispatch plane. Built by
-# .github/workflows/agent-workspace-image.yml (Dockerfile, not Bazel oci_image:
-# the npm CLI installs need a package manager at build time).
+# LLM tasks. Kept independent of the Haku dispatch plane. A Dockerfile, not a Bazel
+# oci_image: the npm CLI installs need a package manager at build time. No CI job builds
+# it while the standalone workspace pool is retired (cluster/k8s/agents/agent-sandbox/README.md).
 #
 # The image holds NO credentials: the LiteLLM virtual key arrives via the
 # SandboxTemplate's env (reflected Secret).

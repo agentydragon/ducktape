@@ -216,8 +216,8 @@ py_test(
 )
 
 py_library(
-    name = "ollama_catalog",
-    srcs = ["ollama_catalog.py"],
+    name = "tabbyapi_catalog",
+    srcs = ["tabbyapi_catalog.py"],
     deps = [
         "//agentplane/env/runtime:harness",
         "//agentplane/proto:session_pb2",
@@ -227,10 +227,10 @@ py_library(
 )
 
 py_test(
-    name = "test_ollama_catalog",
-    srcs = ["test_ollama_catalog.py"],
+    name = "test_tabbyapi_catalog",
+    srcs = ["test_tabbyapi_catalog.py"],
     deps = [
-        ":ollama_catalog",
+        ":tabbyapi_catalog",
         "//:conftest",
         "//agentplane/proto:session_pb2",
         "//agentplane/sandboxes/runtimeconfig:model_catalog",

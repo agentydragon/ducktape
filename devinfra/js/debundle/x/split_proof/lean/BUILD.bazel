@@ -165,6 +165,8 @@ lean_binary(
         exclude = [
             "Experiments/CoreJS/Frame.lean",
             "Experiments/CoreJS/Fuel.lean",
+            "Experiments/CoreJS/Scope.lean",
+            "Experiments/CoreJS/Split.lean",
         ],
     ) + ["Experiments/CoreJSMain.lean"],
     entry = "Experiments/CoreJSMain.lean",
@@ -174,22 +176,35 @@ lean_binary(
 lean_axiom_test(
     name = "corejs_axioms_test",
     srcs = [
+        "EsmSplit/Bundle.lean",
+        "EsmSplit/Plan.lean",
         "Experiments/CoreJS/Eval.lean",
         "Experiments/CoreJS/Frame.lean",
         "Experiments/CoreJS/Fuel.lean",
         "Experiments/CoreJS/Number.lean",
+        "Experiments/CoreJS/Scope.lean",
+        "Experiments/CoreJS/Split.lean",
         "Experiments/CoreJS/Syntax.lean",
         "Experiments/CoreJS/Value.lean",
     ],
     imports = [
         "Experiments.CoreJS.Frame",
         "Experiments.CoreJS.Fuel",
+        "Experiments.CoreJS.Scope",
+        "Experiments.CoreJS.Split",
     ],
     theorems = [
         "CoreJS.allocOnly_extends",
         "CoreJS.decl_allocOnly",
         "CoreJS.fuel_mono",
         "CoreJS.Ends.unique",
+        "CoreJS.same",
+        "CoreJS.runUnit_agree",
+        "CoreJS.capture_faithful",
+        "CoreJS.order_kept_preserves",
+        "CoreJS.split_holds_statements",
+        "CoreJS.split_scopes_agree",
+        "CoreJS.valid_order_kept_preserves",
     ],
 )
 

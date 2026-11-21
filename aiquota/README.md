@@ -89,14 +89,34 @@ timestamps. A NetworkManager online transition interrupts backoff or a stalled
 stream so the daemon can reconnect immediately; regular backoff remains active
 when network monitoring is unavailable.
 
-Responses use `Cache-Control: no-store`. The service keeps the most recent
-snapshot in process memory (default 120 seconds). One background quota collector
-runs at the configured poll interval (default 300 seconds), even when ClickHouse
-is not configured and no clients are connected. Authenticated GETs may refresh an
-expired in-memory snapshot on demand; each newly fetched snapshot is published to
-all active event streams. When ClickHouse is configured, that same collector also
-persists each snapshot and readiness continues to wait for the first successful
-write.
+## Provider polling
+
+The API server reads its polling policy from `/etc/aiquota/config.toml`
+(or the path in `AIQUOTA_CONFIG`) at startup. For example, this sets a
+10-minute quota interval with provider calls limited to the scheduled collectors.
+
+```toml
+[polling]
+poll_interval_seconds = 600
+history_interval_seconds = 3600
+refresh_on_read = false
+```
+
+The quota collector starts immediately and waits `poll_interval_seconds` after
+each collection (default 300 seconds). It runs with or without ClickHouse and
+whether or not clients are connected. With ClickHouse configured, the collector
+persists its snapshots and readiness waits for the first successful write.
+
+By default, `refresh_on_read` is true. Authenticated quota and raw GETs or a new
+event stream can refresh an in-memory snapshot once it reaches
+`cache_ttl_seconds` (default 120 seconds). With `refresh_on_read = false`, these
+endpoints serve the latest collector snapshot and return HTTP 503 until the first
+one is available. The response header is `Cache-Control: no-store` in both modes.
+Each new snapshot is published to all active event streams.
+
+Explicit TOML intervals override `AIQUOTA_POLL_INTERVAL_SECONDS`,
+`AIQUOTA_HISTORY_INTERVAL_SECONDS`, and `AIQUOTA_CACHE_TTL_SECONDS` respectively.
+Restart the API server to apply changes.
 
 ## Presentation
 
@@ -137,8 +157,9 @@ provider precision remains in the underlying response. Forecasts extrapolate ave
 since the window started.
 The meter fill shows quota used and its tick shows elapsed window time.
 
-Provider observations become stale after ten minutes (two default collector intervals),
-or immediately when falling back after a provider error. Transport connection state is
+Provider observations become stale after ten minutes or two configured quota poll
+intervals, whichever is longer. They become stale immediately when falling back
+after a provider error. Transport connection state is
 separate from provider freshness. CLI server failures retain the selected cached reading,
 show an offline warning, and refresh countdowns without fetching providers or choosing a
 different snapshot. Stale forecasts are suppressed. Current paid/extra signals, including
@@ -185,7 +206,7 @@ GET https://chatgpt.com/backend-api/wham/rate-limit-reset-credits
 per day for the last twelve months. `rate-limit-reset-credits` returns each
 granted reset credit with its type, status and grant time. Both restate their
 whole series on every call, so the first successful poll backfills the period
-before aiquota existed, and a slower `AIQUOTA_HISTORY_INTERVAL_SECONDS`
+before aiquota existed, and a slower `history_interval_seconds`
 (default hourly) collects them without rewriting an unchanged year every five
 minutes.
 

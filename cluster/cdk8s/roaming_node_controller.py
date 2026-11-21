@@ -86,8 +86,8 @@ def _deployment(chart: Chart) -> None:
                     " first renewal."
                 ),
                 **namespaces.initial_request_annotations(
-                    ContainerPolicy.memory_requests_only(
-                        "controller", cpu_request="10m", memory_floor="64Mi", memory_limit="80Mi"
+                    ContainerPolicy.cpu_and_memory_requests_only(
+                        "controller", cpu_floor="10m", memory_floor="64Mi", memory_ceiling="80Mi"
                     )
                 ),
             },

@@ -58,7 +58,7 @@ inductive Expr where
   | str (s : String)
   /-- A name: a binding in scope, or one that does not resolve (a `ReferenceError` when read). -/
   | var (x : Name)
-  /-- A global of the host. The model defines nothing about its value. -/
+  /-- A global of the host. `Value.lean` has the few the model has a rule for; the others are opaque. -/
   | host (name : String)
   | this
   | func (f : Func)
@@ -194,5 +194,101 @@ def funDecls (ss : List Stmt) : List Func :=
   ss.filterMap fun
     | .funDecl f => some f
     | _ => none
+
+/-- The initializers of the fields of a class body, in order. -/
+def fieldInits : List ClassMember → List Expr
+  | [] => []
+  | .field _ _ init :: ms => init :: fieldInits ms
+  | _ :: ms => fieldInits ms
+
+/-! ## Free names: the names of the scope around it that a piece of code can mean
+
+A name is free in a piece of code when the code mentions it outside every scope of its own that declares it. The
+scopes are the interpreter's: a function (its parameters, its `var` names, the declarations of its body, its own name
+if it has one), a block, the head of a `for`, a `catch` parameter, a class that sees its name. A declaration counts
+as a mention of the name it declares: it is the scope around it that holds the binding.
+-/
+
+/-- The names a statement list declares in its own scope. -/
+def lexNames (ss : List Stmt) : List Name := (lexDecls ss).map (·.1)
+
+mutual
+
+def Expr.free : Expr → List Name
+  | .undef | .null | .bool _ | .num _ | .str _ | .host _ | .this => []
+  | .var x => [x]
+  | .func f => f.free
+  | .obj props => freeProps props
+  | .arr elems => freeExprs elems
+  | .cls name self ctor members => (ctor.free ++ freeMembers members).filter fun x => !(self && x == name)
+  | .get o k => o.free ++ k.free
+  | .hasProp k o => k.free ++ o.free
+  | .delete o k => o.free ++ k.free
+  | .assign t rhs => t.free ++ rhs.free
+  | .assignOp t _ rhs => t.free ++ rhs.free
+  | .assignLogical t _ rhs => t.free ++ rhs.free
+  | .update t _ _ => t.free
+  | .call f args => f.free ++ freeExprs args
+  | .callMethod o k args => o.free ++ (k.free ++ freeExprs args)
+  | .new f args => f.free ++ freeExprs args
+  | .prim _ args => freeExprs args
+  | .unary _ e => e.free
+  | .binary _ a b => a.free ++ b.free
+  | .logical _ a b => a.free ++ b.free
+  | .cond c t e => c.free ++ (t.free ++ e.free)
+  | .seq a b => a.free ++ b.free
+
+def Target.free : Target → List Name
+  | .var x | .frozen x => [x]
+  | .member o k => o.free ++ k.free
+
+def PropDef.free : PropDef → List Name
+  | .init k v => k.free ++ v.free
+  | .getter k f | .setter k f => k.free ++ f.free
+  | .proto v => v.free
+
+def ClassMember.free : ClassMember → List Name
+  | .method _ k f | .getter _ k f | .setter _ k f => k.free ++ f.free
+  | .field _ k init => k.free ++ init.free
+
+/-- The names of the scope around a function that its code can mean. -/
+def Func.free : Func → List Name
+  | .mk name _ self params body =>
+    (freeStmts body).filter fun x =>
+      !(params.contains x || (varNamesOf body).contains x || (lexNames body).contains x || (self && x == name))
+
+def Stmt.free : Stmt → List Name
+  | .expr e | .ret e | .throw e => e.free
+  | .decl _ x e => x :: e.free
+  | .varDecl x => [x]
+  | .funDecl f => f.name :: f.free
+  | .ite c t e => c.free ++ (t.free ++ e.free)
+  | .block ss => (freeStmts ss).filter fun x => !(lexNames ss).contains x
+  | .loop init test update body =>
+    (init.free ++ (test.free ++ (update.free ++ body.free))).filter fun x => !(lexNames [init]).contains x
+  | .brk | .cont => []
+  | .tryCatch body param handler => body.free ++ handler.free.filter fun x => !(param == some x)
+  | .tryFinally body finalizer => body.free ++ finalizer.free
+
+def freeExprs : List Expr → List Name
+  | [] => []
+  | e :: es => e.free ++ freeExprs es
+
+def freeProps : List PropDef → List Name
+  | [] => []
+  | p :: ps => p.free ++ freeProps ps
+
+def freeMembers : List ClassMember → List Name
+  | [] => []
+  | m :: ms => m.free ++ freeMembers ms
+
+def freeStmts : List Stmt → List Name
+  | [] => []
+  | s :: ss => s.free ++ freeStmts ss
+
+end
+
+/-- The names a function's code can mean in the scope it is made in, its own name included: what it closes over. -/
+def Func.closes (f : Func) : List Name := if f.self then f.name :: f.free else f.free
 
 end CoreJS

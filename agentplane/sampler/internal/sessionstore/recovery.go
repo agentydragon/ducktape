@@ -463,9 +463,6 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerKey string, expecte
 		if err != nil {
 			return err
 		}
-		if len(unresolved) == 0 && !liveCell && !liveProcess && rejectedCallID == "" {
-			return protocol.ErrPrecondition
-		}
 		var reconciliation *eventpb.Event
 		if pendingSampling {
 			// Provider output enters model context atomically at Finish. Do not infer that
@@ -518,6 +515,9 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerKey string, expecte
 			}
 		}
 		notice := "An operator recovered this session after reviewing its boundary evidence. Unfinished JavaScript cells and executor operations were abandoned without replay; their remote outcome is unknown. The continuation uses a new JavaScript session, so prior store()/load() values and live-cell handles are unavailable. Recreate any required state in a new exec cell before continuing."
+		if len(unresolved) == 0 && !liveCell && !liveProcess && rejectedCallID == "" && len(calls) == 0 {
+			notice = "An operator recovered this session after reviewing its boundary evidence. No unresolved runtime handles or intents remained at recovery; earlier unknown outcomes are not confirmed and no operation was replayed. The continuation uses a new JavaScript session, so prior store()/load() values are unavailable."
+		}
 		if pendingSampling {
 			notice = "An operator abandoned an interrupted provider response after reviewing its retained request and stream evidence. The provider may have completed or charged for the request; its completion and external effects are unknown. The observed stream prefix was not committed as model output, and no sampler tool call from this response was dispatched. The response will not be replayed. Continue from the last committed conversation after new user input. This recovery starts a fresh JavaScript session; prior store()/load() values are unavailable."
 		}

@@ -3,6 +3,7 @@
 use alphavantage_converter::AlphaVantageConverter;
 use asset::Asset;
 use chrono::prelude::*;
+use clap::Parser;
 use config::{Config, ConverterConfig, SourceConfig};
 use converter::Converter;
 use denomination::Denomination;
@@ -22,7 +23,6 @@ use std::ffi::OsStr;
 use std::fs::File;
 use std::io::prelude::*;
 use std::path::Path;
-use structopt::StructOpt;
 use term_table::{Table, TableStyle, row::Row, table_cell::Alignment, table_cell::TableCell};
 
 // TODO: cache conversions
@@ -400,7 +400,7 @@ async fn model_and_show(
 #[tokio::main]
 async fn main() {
     env_logger::init();
-    let opt = Opt::from_args();
+    let opt = Opt::parse();
     trace!("Options: {opt:?}");
 
     let xdg_dirs = xdg::BaseDirectories::with_prefix("worthy");

@@ -164,7 +164,6 @@ def chart(app: App) -> Chart:
                 # source would make that exact-file copy fail.
                 "secrets/shared/",
                 "agentplane/crds/manifests/",
-                "cluster/charts/browsertrix/",
                 "props/deploy/",
                 f"{TF_GITOPS_ROOT}/",
             ],

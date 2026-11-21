@@ -94,8 +94,8 @@ def _deployment(chart: Chart) -> None:
             labels=SERVICE.pods.selector,
             annotations={
                 **namespaces.initial_request_annotations(
-                    ContainerPolicy.memory_requests_only(
-                        "proxy", cpu_request="50m", memory_floor="128Mi", memory_limit="160Mi"
+                    ContainerPolicy.cpu_and_memory_requests_only(
+                        "proxy", cpu_floor="50m", memory_floor="128Mi", memory_ceiling="160Mi"
                     )
                 ),
                 "description": (

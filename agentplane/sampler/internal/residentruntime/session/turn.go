@@ -105,7 +105,10 @@ func (r *Driver) advance(ctx context.Context, owner sessionstore.Owner, live *li
 		return sessionstore.TurnCompact, nil
 	}
 	config, configured := r.settings.Models[session.Model]
-	if !configured || conversation.API != config.API {
+	if !configured {
+		return "", &protocol.KnownFailureError{Message: "The selected model route is no longer configured. Choose an available model to continue."}
+	}
+	if conversation.API != config.API {
 		return "", protocol.ErrPrecondition
 	}
 

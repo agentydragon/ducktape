@@ -6,10 +6,10 @@ from collections.abc import Callable
 from types import TracebackType
 from typing import Self
 
-from dbus_next import Message
-from dbus_next.aio import MessageBus
-from dbus_next.constants import BusType, MessageType
-from dbus_next.errors import DBusError
+from dbus_fast import Message
+from dbus_fast.aio import MessageBus
+from dbus_fast.constants import BusType, MessageType
+from dbus_fast.errors import DBusError
 
 logger = logging.getLogger(__name__)
 

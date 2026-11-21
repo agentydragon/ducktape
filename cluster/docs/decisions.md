@@ -404,6 +404,8 @@ applications").
   its configuration remains in Git.
 - **InvenTree**: `cluster/parked/inventree/` — decommissioned; its four Flux
   Kustomizations are removed from the active bundle, and the revival package remains in Git.
+  Its `rai_plugin` image (`//inventree_utils/rai_plugin:image`) left the publish roster
+  (`devinfra/ci/image_targets.json`, restore the `inventree` entry from `c995ec223a`).
 - **Authelia**: `cluster/parked/authelia/` — decommissioned SSO alternative
   experiment; its Flux Kustomization is removed from the active bundle and manifests
   remain for manual revival. Authentik is the active SSO provider.
@@ -423,8 +425,9 @@ applications").
   remains; the secret manifest stays parked.
 - **osm-mcp**: `cluster/parked/osm-mcp/` — decommissioned; its Flux Kustomization
   is removed from the active bundle. The third-party Go MCP server
-  (`github.com/NERVsystems/osmmcp`) build wrapper (`third_party/osmmcp/`) stays live
-  and unparked, but its image is no longer on the publish roster or tracked by Flux.
+  (`github.com/NERVsystems/osmmcp`) build wrapper (`third_party/osmmcp/` and its Go module
+  entries in `devinfra/bazel/go.MODULE.bazel`) was deleted; its image is off the publish
+  roster and not tracked by Flux, and a revival restores the wrapper from `ca1ec04d75`.
   Already unwired from haku-console's tool config since 2026-07-19
   (routing-profile bug), so it had no live consumer.
 - **codex-nix-pod, codex-nix-image-pod, codex-nix-pvc-uid-pod**:

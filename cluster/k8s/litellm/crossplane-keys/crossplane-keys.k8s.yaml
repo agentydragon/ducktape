@@ -189,10 +189,6 @@ spec:
       - mistral/oai-chat/mistral-vibe-cli-with-tools
       - mistral/oai-chat/voxtral-small-2507
       - mistral/oai-chat/voxtral-small-latest
-      - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
-      - ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k
-      - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
-      - ollama/olm-chat/qwen3.8-flash-next-iq4xs-256k
       - ollama/oai-chat/gpt-oss-20b-128k
       - ollama/olm-chat/gpt-oss-20b-128k
       - ollama/olm-chat/gpt-oss-20b-256k
@@ -202,6 +198,7 @@ spec:
       - ollama/olm-chat/gpt-oss-120b-128k
       - ollama/oai-chat/gemma4-31b-it-q8_0-128k
       - ollama/olm-chat/gemma4-31b-it-q8_0-128k
+      - tabbyapi/oai-chat/qwen3.8-flash-next-exl3-256k
       - rugged-local/oai-chat/qwen3-4b-instruct-2507-q4-k-m
       - rugged-local/oai-chat/gemma4-e4b
       - rugged-local/oai-chat/gemma4-e2b-it-qat-long-128k-experimental
@@ -341,10 +338,6 @@ spec:
       - mistral/oai-chat/mistral-vibe-cli-with-tools
       - mistral/oai-chat/voxtral-small-2507
       - mistral/oai-chat/voxtral-small-latest
-      - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
-      - ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k
-      - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
-      - ollama/olm-chat/qwen3.8-flash-next-iq4xs-256k
       - ollama/oai-chat/gpt-oss-20b-128k
       - ollama/olm-chat/gpt-oss-20b-128k
       - ollama/olm-chat/gpt-oss-20b-256k
@@ -354,6 +347,7 @@ spec:
       - ollama/olm-chat/gpt-oss-120b-128k
       - ollama/oai-chat/gemma4-31b-it-q8_0-128k
       - ollama/olm-chat/gemma4-31b-it-q8_0-128k
+      - tabbyapi/oai-chat/qwen3.8-flash-next-exl3-256k
       - rugged-local/oai-chat/qwen3-4b-instruct-2507-q4-k-m
       - rugged-local/oai-chat/gemma4-e4b
       - rugged-local/oai-chat/gemma4-e2b-it-qat-long-128k-experimental
@@ -476,10 +470,6 @@ spec:
       - antigravity/ant-messages/gemini-3.8-flash-high
       - antigravity/ant-messages/gemini-3.1-flash-image
       - antigravity/ant-messages/gpt-oss-120b-medium
-      - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
-      - ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k
-      - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
-      - ollama/olm-chat/qwen3.8-flash-next-iq4xs-256k
       - ollama/oai-chat/gpt-oss-20b-128k
       - ollama/olm-chat/gpt-oss-20b-128k
       - ollama/olm-chat/gpt-oss-20b-256k
@@ -489,6 +479,7 @@ spec:
       - ollama/olm-chat/gpt-oss-120b-128k
       - ollama/oai-chat/gemma4-31b-it-q8_0-128k
       - ollama/olm-chat/gemma4-31b-it-q8_0-128k
+      - tabbyapi/oai-chat/qwen3.8-flash-next-exl3-256k
       - tabbyapi/oai-chat/qwen3.8-flash-next-abliterated
   providerConfigRef:
     kind: ProviderConfig

@@ -10,7 +10,7 @@
 #   ./run.sh --splits     also check 2,892 splits of six real bundles and run each in Node (needs --lowering first; about 10 minutes)
 #   ./run.sh --debundle-cases  also run debundle's 207 e2e cases through the checker and write experiments/debundle_cases/results (about 10 seconds)
 #   ./run.sh --translation  also run the golden cases of the effect analysis (experiments/effects), then check that tampered output trees are rejected and renamed, reshuffled ones accepted (experiments/translation fixtures)
-#   ./run.sh --model      also run the CoreJS model (lean/Experiments/CoreJS) against Node: hand-written cases, programs of several modules and 240 generated programs cut down to its fragment (about 10 seconds)
+#   ./run.sh --model      also run the CoreJS model (lean/Experiments/CoreJS) against Node: hand-written cases, programs of several modules, 240 generated programs cut down to its fragment, and splits of them by lowersplit (about a minute)
 #   ./run.sh --translation-fuzz  also fuzz the translation checker: every tree it accepts must behave like its bundle in Node (about 20 seconds; FUZZ_COUNT=N sets the bundles, default 150)
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -127,7 +127,8 @@ fi
 
 if [[ " $* " == *" --model "* ]]; then
   step "CoreJS: the executable model of a core of JavaScript, against Node"
-  (cd lean && lake build corejs evalorder Experiments.CoreJS.Frame Experiments.CoreJS.Fuel)
+  (cd lean && lake build corejs lowersplit evalorder Experiments.CoreJS.Frame Experiments.CoreJS.Split)
+  (cd experiments/translation && cp package.json.in package.json && npm ci --no-audit --no-fund --silent)
   (cd experiments/model && cp package.json.in package.json && npm ci --no-audit --no-fund --silent \
-    && node differential.mjs --count 40 --seed 1)
+    && node differential.mjs --count 40 --seed 1 --splits 150)
 fi

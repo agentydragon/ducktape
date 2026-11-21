@@ -222,7 +222,6 @@ py_test(
     name = "test_service",
     size = "medium",
     srcs = ["test_service.py"],
-    data = ["//finance/plaid/spend/ui:bundle"],
     exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [

@@ -95,8 +95,8 @@ client budget, not provider capacity. The resolved budget is persisted with the 
 its harness. See the [lookup contract](../agentplane/llm_ingress/README.md#per-model-client-configuration)
 for no-override and failure behavior.
 
-The cluster override selection is only Qwen IQ4_XS 128K/256K, both wires: 131072 and
-262144 respectively. The active GPT subscription routes do **not** receive 872000
+The stock and abliterated TabbyAPI Qwen routes have a 262144-token client override.
+The active GPT subscription routes do **not** receive 872000
 or 372000 merely because a wrapper or OpenClaw uses those values.
 
 - Claude adapter sets `CLAUDE_CODE_MAX_CONTEXT_TOKENS` when an override exists.

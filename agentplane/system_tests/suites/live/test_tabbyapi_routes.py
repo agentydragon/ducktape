@@ -1,4 +1,4 @@
-"""Manual live smoke of Ollama routes offered by the deployed model catalog."""
+"""Manual live smoke of TabbyAPI routes offered by the deployed model catalog."""
 
 from __future__ import annotations
 
@@ -14,8 +14,8 @@ from agentplane.proto import event_pb2, session_pb2
 from agentplane.sandboxes.runtimeconfig.model_catalog import ModelCatalog
 from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver.agent import Agent
-from agentplane.system_tests.driver.ollama_catalog import ollama_cases
 from agentplane.system_tests.driver.sandbox import Sandboxes
+from agentplane.system_tests.driver.tabbyapi_catalog import tabbyapi_cases
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep //agentplane/system_tests:app_fixtures
@@ -42,7 +42,7 @@ async def _exercise_case(
     try:
         offered = catalog.harnesses[Harness(session_pb2.Harness.Name(harness))]
         assert route in offered, f"route absent from offered models for {case_id}"
-        view = await sandbox("systest-ollama-smoke")
+        view = await sandbox("systest-tabbyapi-smoke")
         evidence["sandbox"] = view.target.name
         agent = await Agent.create(
             client, dispatcher, sandbox=view.target.name, sandbox_uid=view.target.uid, harness=harness, model=route
@@ -50,7 +50,7 @@ async def _exercise_case(
         evidence["thread_id"] = str(agent.thread_id)
         async with asyncio.timeout(300):
             turn = await agent.run(
-                "Use your shell tool to run `pwd` and `printf 'OLLAMA_SMOKE_TOOL_OK\\n'`. "
+                "Use your shell tool to run `pwd` and `printf 'TABBYAPI_SMOKE_TOOL_OK\\n'`. "
                 "Then reply briefly with the working directory you observed."
             )
         evidence["turn_status"] = event_pb2.TurnStatus.Name(turn.status) if turn.status is not None else None
@@ -84,7 +84,7 @@ async def _exercise_case(
             }
         )
         assert turn.tool_outputs, "no completed tool output was recorded"
-        assert any("OLLAMA_SMOKE_TOOL_OK" in output for output in turn.tool_outputs), (
+        assert any("TABBYAPI_SMOKE_TOOL_OK" in output for output in turn.tool_outputs), (
             "shell tool did not return the requested marker"
         )
         assert "/state/work" in "\n".join(turn.tool_outputs), "shell tool did not report the expected working directory"
@@ -95,20 +95,20 @@ async def _exercise_case(
         evidence["error"] = str(error)[:500]
         raise
     finally:
-        (undeclared_outputs_dir() / f"ollama-smoke-{case_id}.json").write_text(json.dumps(evidence, indent=2))
-        hold_seconds = min(max(int(os.environ.get("OLLAMA_SMOKE_HOLD_SECONDS", "0")), 0), 30)
+        (undeclared_outputs_dir() / f"tabbyapi-smoke-{case_id}.json").write_text(json.dumps(evidence, indent=2))
+        hold_seconds = min(max(int(os.environ.get("TABBYAPI_SMOKE_HOLD_SECONDS", "0")), 0), 30)
         if hold_seconds:
             await asyncio.sleep(hold_seconds)
 
 
-async def test_ollama_tool_call(client: Client, dispatcher: SessionDispatcherClient, sandbox: Sandboxes) -> None:
+async def test_tabbyapi_tool_call(client: Client, dispatcher: SessionDispatcherClient, sandbox: Sandboxes) -> None:
     catalog = await client.models()
-    cases = ollama_cases(catalog)
-    selected = os.environ.get("OLLAMA_SMOKE_CASE")
+    cases = tabbyapi_cases(catalog)
+    selected = os.environ.get("TABBYAPI_SMOKE_CASE")
     if selected:
         cases = [case for case in cases if _id(case) == selected]
         if not cases:
-            raise ValueError(f"unknown OLLAMA_SMOKE_CASE: {selected}")
+            raise ValueError(f"unknown TABBYAPI_SMOKE_CASE: {selected}")
     for harness, route in cases:
         await _exercise_case(client, dispatcher, sandbox, catalog, harness, route)
 

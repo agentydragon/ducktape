@@ -53,6 +53,7 @@ from devinfra.pr_visuals.metadata import (
 )
 from devinfra.pr_visuals.pull_request import find_reviewable_pull_request
 from devinfra.pr_visuals.render_common import classification_totals, test_impact_key
+from devinfra.pr_visuals.targets import list_ci_failures
 from devinfra.pr_visuals.visual_diff import compare_pngs
 from devinfra.testing.output_records import output_key
 
@@ -291,40 +292,6 @@ def wait_for_test_invocations(
         if remaining <= 0:
             return "incomplete"
         wait(min(INVOCATION_POLL_SECONDS, remaining))
-
-
-def list_ci_failures(invocations: list[str], *, bbapi: Path = Path("bbapi"), run: Runner = subprocess.run) -> list[str]:
-    """Return failed Bazel target labels, best-effort, from linked invocations.
-
-    A failed ``bazel test`` still uploads the artifacts for targets that completed
-    before the failure.  BuildBuddy's target summaries are the durable source for
-    identifying the targets that did not complete successfully; individual linked
-    invocations may disappear before the publisher gets to them, so an unavailable
-    query is intentionally not fatal to visual publication.
-    """
-    failures: set[str] = set()
-    for invocation in invocations:
-        result = run([bbapi, "target", invocation, "--json"], check=False, text=True, capture_output=True)
-        if result.returncode != 0:
-            continue
-        try:
-            payload = json.loads(result.stdout)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(payload, dict):
-            continue
-        for group in payload.get("targetGroups") or []:
-            if not isinstance(group, dict):
-                continue
-            for target in group.get("targets") or []:
-                if not isinstance(target, dict):
-                    continue
-                if target.get("status") == "FAILED":
-                    metadata = target.get("metadata")
-                    label = metadata.get("label") if isinstance(metadata, dict) else None
-                    if isinstance(label, str):
-                        failures.add(label)
-    return sorted(failures)
 
 
 def target_slug(label: str, *, repository: str) -> str:

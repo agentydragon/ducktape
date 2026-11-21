@@ -23,6 +23,7 @@ from model_catalog.catalog import (
     RUGGED_LOCAL_EXPERIMENTAL_ROUTES,
     SERVED_ROUTES,
     TABBYAPI_QWEN_ABLITERATED,
+    TABBYAPI_QWEN_STOCK,
     Route,
     RouteAlias,
 )
@@ -39,6 +40,7 @@ CHEAP_EXPERIMENTS_ROUTES = (
     *GEMINI_EMBEDDING_ROUTES,
     *MISTRAL_ROUTES,
     *OLLAMA_CHAT_ROUTES,
+    TABBYAPI_QWEN_STOCK,
     *RUGGED_LOCAL_CANDIDATE_ROUTES,
     *RUGGED_LOCAL_EXPERIMENTAL_ROUTES,
     HAIKU_API,
@@ -77,7 +79,7 @@ KEY_MODEL_LANES = {
     "gemini_client_models": ModelLaneRoutes(allowed=GEMINI_ROUTES, fallbacks=(GEMINI_FLASH_LITE,)),
     "antigravity_client_models": ModelLaneRoutes(allowed=ANTIGRAVITY_ROUTES),
     "ollama_chat_client_models": ModelLaneRoutes(allowed=OLLAMA_CHAT_ROUTES),
-    "tabbyapi_chat_client_models": ModelLaneRoutes(allowed=(TABBYAPI_QWEN_ABLITERATED,)),
+    "tabbyapi_chat_client_models": ModelLaneRoutes(allowed=(TABBYAPI_QWEN_STOCK, TABBYAPI_QWEN_ABLITERATED)),
     "cheap_experiments_models": ModelLaneRoutes(allowed=CHEAP_EXPERIMENTS_ROUTES),
 }
 

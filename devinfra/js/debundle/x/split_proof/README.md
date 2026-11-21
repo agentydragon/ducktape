@@ -22,6 +22,8 @@ bbr test //devinfra/js/debundle/x/split_proof/lean:axioms_test //devinfra/js/deb
 Bazel and Lake both read the Lean version from `lean/lean-toolchain`. The other experiments in
 `run.sh` are not yet Bazel targets.
 
+`lowersplit … --plan <file>` also writes the plan as JSON: the order in which the modules run and the statements of each module, by their numbers in the bundle. The test of the CoreJS model reads it ([`experiments/README.md`](experiments/README.md) § 14).
+
 ## The example
 
 Input, [`example/input/bundle.mjs`](example/input/bundle.mjs). It has 12 top-level statements, numbered 0–11:
@@ -134,16 +136,16 @@ It is not "the programs are equivalent". JavaScript is never formalized.
 
 `Valid` is a conjunction of decidable checks ([`Plan.lean`](lean/EsmSplit/Plan.lean)):
 
-| Check                       | Says                                                                                                     |
-| --------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `Faithful`                  | each statement sits in exactly the module the spec names; no selector is dangling                        |
-| `Linkable`                  | each import names a binding another module exports; no name is bound twice; each glue export is declared |
-| `ExportsUnique`             | no module exports a name twice: its glue keeps clear of the names its own `export` statements publish    |
-| `Hygienic`                  | each name a statement mentions resolves, through imports, to the declaration it had in the bundle        |
-| `AssignsHome`               | code that assigns a name sits in the module that declares it (ES imports are read-only)                  |
-| `Permutes`                  | the split runs every statement exactly once                                                              |
-| `OrderOk`                   | in the order the split runs them, conflicting statements keep their bundle order                         |
-| `UniqueDefs`, `ReadsClosed` | side conditions: one flat scope; read sets are closed under calls                                        |
+| Check                       | Says                                                                                                                  |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `Faithful`                  | each statement sits in exactly the module the spec names; no selector is dangling                                     |
+| `Linkable`                  | each import names a binding another module declares and exports; no name is bound twice; each glue export is declared |
+| `ExportsUnique`             | no module exports a name twice: its glue keeps clear of the names its own `export` statements publish                 |
+| `Hygienic`                  | each name a statement mentions resolves, through imports, to the declaration it had in the bundle                     |
+| `AssignsHome`               | code that assigns a name sits in the module that declares it (ES imports are read-only)                               |
+| `Permutes`                  | the split runs every statement exactly once                                                                           |
+| `OrderOk`                   | in the order the split runs them, conflicting statements keep their bundle order                                      |
+| `UniqueDefs`, `ReadsClosed` | side conditions: one flat scope; read sets are closed under calls                                                     |
 
 A statement **binds** the names it declares and the names it may assign (`writes`: reassigned variables, objects whose contents it changes,
 including what the functions it calls change; unknown code lists them all). These named mutable things are _cells_.

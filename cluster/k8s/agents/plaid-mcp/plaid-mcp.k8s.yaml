@@ -159,6 +159,8 @@ kind: Deployment
 metadata:
   annotations:
     description: Plaid Link UI authenticates users with Authentik OIDC; verified webhooks queue transaction syncs, with the daily Cron catching up the mirror.
+    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "plaid-web", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "50m", "memory": "384Mi"}, "controlledResources": ["cpu", "memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
+    goldilocks.fairwinds.com/vpa-update-mode: initial
   labels:
     app.kubernetes.io/name: plaid-mcp
   name: plaid-mcp

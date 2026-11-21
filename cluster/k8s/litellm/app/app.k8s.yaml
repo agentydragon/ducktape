@@ -48,50 +48,6 @@ metadata:
 data:
   config.yaml: |
     model_list:
-      - model_name: ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
-        litellm_params:
-          model: hosted_vllm/qwen38-exl3-268
-          api_base: http://tabbyapi.ollama.svc:5000/v1
-          api_key: tabbyapi
-          allowed_openai_params:
-            - reasoning_effort
-          use_chat_completions_api: true
-        model_info:
-          mode: chat
-          supports_function_calling: true
-      - model_name: ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k
-        litellm_params:
-          model: hosted_vllm/qwen38-exl3-268
-          api_base: http://tabbyapi.ollama.svc:5000/v1
-          api_key: tabbyapi
-          allowed_openai_params:
-            - reasoning_effort
-          use_chat_completions_api: true
-        model_info:
-          mode: chat
-          supports_function_calling: true
-      - model_name: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
-        litellm_params:
-          model: hosted_vllm/qwen38-exl3-268
-          api_base: http://tabbyapi.ollama.svc:5000/v1
-          api_key: tabbyapi
-          allowed_openai_params:
-            - reasoning_effort
-          use_chat_completions_api: true
-        model_info:
-          mode: chat
-          supports_function_calling: true
-      - model_name: ollama/olm-chat/qwen3.8-flash-next-iq4xs-256k
-        litellm_params:
-          model: hosted_vllm/qwen38-exl3-268
-          api_base: http://tabbyapi.ollama.svc:5000/v1
-          api_key: tabbyapi
-          allowed_openai_params:
-            - reasoning_effort
-          use_chat_completions_api: true
-        model_info:
-          mode: chat
-          supports_function_calling: true
       - model_name: ollama/oai-chat/gpt-oss-20b-128k
         litellm_params:
           model: openai/gpt-oss:20b
@@ -173,6 +129,17 @@ data:
           extra_body:
             options:
               num_ctx: 131072
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: tabbyapi/oai-chat/qwen3.8-flash-next-exl3-256k
+        litellm_params:
+          model: hosted_vllm/qwen38-exl3-268
+          api_base: http://tabbyapi-model-switching.ollama.svc:5000/v1
+          api_key: tabbyapi
+          allowed_openai_params:
+            - reasoning_effort
+          use_chat_completions_api: true
         model_info:
           mode: chat
           supports_function_calling: true

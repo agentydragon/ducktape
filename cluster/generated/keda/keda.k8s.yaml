@@ -60,6 +60,17 @@ spec:
             target:
               kind: Deployment
               name: keda-operator-metrics-apiserver
+          - patch: |
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: keda-operator
+                annotations:
+                  goldilocks.fairwinds.com/vpa-update-mode: initial
+                  goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "keda-operator", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "50m", "memory": "128Mi"}, "maxAllowed": {"memory": "256Mi"}, "controlledResources": ["cpu", "memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
+            target:
+              kind: Deployment
+              name: keda-operator
   upgrade:
     crds: CreateReplace
     remediation:

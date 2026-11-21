@@ -65,7 +65,7 @@ one deployment go here; reusable service scripts live with the workload
 ## Current state
 
 TabbyAPI serves Qwen3.8 Flash-Next EXL3 on both RTX 5090s on `wyrm2`.
-The existing LiteLLM aliases select the stock 2.68 bpw checkpoint. The
+The stock TabbyAPI route selects the 2.68 bpw checkpoint. The
 abliterated 2.50 bpw route switches the same server to a second checkpoint.
 The server runs one generation at a time with a 262,144-token window and
 8 GiB RAM and 16 GiB NVMe prefix caches. Ollama is scaled to zero and its

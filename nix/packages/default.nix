@@ -274,7 +274,7 @@ let
     pname = "ducktape-network-monitor";
     description = "Shared NetworkManager D-Bus monitor";
     importsCheck = [ "util.network_monitor" ];
-    propagatedBuildInputs = with python314Packages; [ dbus-next ];
+    propagatedBuildInputs = with python314Packages; [ dbus-fast ];
   };
 
   ducktape-git-hooks = mkWheel {

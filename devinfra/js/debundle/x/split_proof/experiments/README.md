@@ -430,15 +430,17 @@ The obligations are effect-effect pairs the tree runs in the opposite order from
 
 | File                                                    | Holds                                                                                                                   | Lines |
 | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ----: |
-| [`Syntax.lean`](../lean/Experiments/CoreJS/Syntax.lean) | the typed syntax tree, modules, and which names a scope declares                                                        |   198 |
+| [`Syntax.lean`](../lean/Experiments/CoreJS/Syntax.lean) | the typed syntax tree, modules, which names a scope declares, and the free names of a piece of code                     |   294 |
 | [`Number.lean`](../lean/Experiments/CoreJS/Number.lean) | `Number::toString`, `StringToNumber`, `%`, `ToInt32`, exactly, on the bits of a `Float`                                 |   170 |
-| [`Value.lean`](../lean/Experiments/CoreJS/Value.lean)   | values, the heap, bindings, conversions, operators, property operations, the standard functions                         |   596 |
-| [`Eval.lean`](../lean/Experiments/CoreJS/Eval.lean)     | the interpreter: eleven mutually recursive functions, and how a program is linked and run                               |   534 |
-| [`Frame.lean`](../lean/Experiments/CoreJS/Frame.lean)   | the proof of the allocation rule below                                                                                  |   547 |
-| [`Fuel.lean`](../lean/Experiments/CoreJS/Fuel.lean)     | more fuel never changes a run that finished                                                                             |   274 |
-| [`Decode.lean`](../lean/Experiments/CoreJS/Decode.lean) | reads a program; [`Run.lean`](../lean/Experiments/CoreJS/Run.lean) is the `corejs` executable                           |   342 |
-| [`model/to_core.mjs`](model/to_core.mjs)                | the front end: acorn's trees to the model's syntax, or a refusal with the node type                                     |   681 |
-| [`model/differential.mjs`](model/differential.mjs)      | the test against Node, with [`model/cases.mjs`](model/cases.mjs) and [`model/module_cases.mjs`](model/module_cases.mjs) |   991 |
+| [`Value.lean`](../lean/Experiments/CoreJS/Value.lean)   | values, the heap, bindings, conversions, operators, property operations, the world and its table of functions           |   743 |
+| [`Eval.lean`](../lean/Experiments/CoreJS/Eval.lean)     | the interpreter: eleven mutually recursive functions, and how a program is linked and run                               |   536 |
+| [`Frame.lean`](../lean/Experiments/CoreJS/Frame.lean)   | the proof of the allocation rule below                                                                                  |   551 |
+| [`Fuel.lean`](../lean/Experiments/CoreJS/Fuel.lean)     | more fuel never changes a run that finished                                                                             |   280 |
+| [`Scope.lean`](../lean/Experiments/CoreJS/Scope.lean)   | code sees a scope only through its free names                                                                           |   596 |
+| [`Split.lean`](../lean/Experiments/CoreJS/Split.lean)   | a split that keeps the order ends as the bundle does                                                                    |   227 |
+| [`Decode.lean`](../lean/Experiments/CoreJS/Decode.lean) | reads a program; [`Run.lean`](../lean/Experiments/CoreJS/Run.lean) is the `corejs` executable and its world             |   490 |
+| [`model/to_core.mjs`](model/to_core.mjs)                | the front end: acorn's trees to the model's syntax, or a refusal with the node type                                     |   685 |
+| [`model/differential.mjs`](model/differential.mjs)      | the test against Node, with [`model/cases.mjs`](model/cases.mjs) and [`model/module_cases.mjs`](model/module_cases.mjs) | 1,437 |
 
 **What it covers.** Strict-mode module code. Numbers, strings, booleans, `undefined`, `null`. `var`, `let`, `const` with hoisting and the temporal dead zone. Functions, arrows and methods as closures; calls with `this`, method calls, `new`. Object literals with data properties, getters, setters and `__proto__`; array literals (read only). Classes without `extends`: methods, accessors, instance and static fields. Property read, write, `delete` and `in` along the prototype chain, with getters and setters run on the receiver. `Object.defineProperty` with the specification's validation, `Object.create`, `Object.getPrototypeOf`, `Object.setPrototypeOf`. `throw`, `try`, `catch`, `finally`; `if`, `for`, `while`, `break`, `continue`, `return`. The operators except `**` and `instanceof`; `typeof`; template literals; `console.log` of primitives.
 
@@ -450,23 +452,60 @@ The obligations are effect-effect pairs the tree runs in the opposite order from
 - _The order of evaluation_ is the specification's for modules without a top-level `await`: depth-first over the `import`s in source order, a module after the modules it imports, a module that was entered already skipped. It does not depend on what the modules do, so the model computes it first (`Program.evalOrder`) and then runs the bodies. A throw ends the run.
 - A program of one module is the case `Program.single`.
 
-**Unknown code is an outcome, not a guess.** A run ends with a value, a thrown value, out of fuel, or `unknown`: it reached code the model does not define. A global of the host (`Math`) is an opaque value; storing it is fine, and calling it, reading its properties or converting it ends the run as `unknown`. So do the methods of `Object.prototype`, `Function.prototype` and `Array.prototype` (which exist in the model's heap, as host values under their real names), a property of a string other than `length` and an index, a write to an array, the conversion of an object to a primitive (`valueOf` and `toString` are not run), and `console.log` of an object. What unknown code may change is not modelled yet.
+**Unknown code is an outcome, not a guess.** A run ends with a value, a thrown value, out of fuel, or `unknown`: it reached code the model does not define. A value of the host can be stored and passed; converting or comparing it ends the run as `unknown`. So do a call of a host function the world does not answer for (below), the methods of `Object.prototype`, `Function.prototype` and `Array.prototype` (which exist in the model's heap, as host values under their real names), a write to an array, the conversion of an object to a primitive (`valueOf` and `toString` are not run), and `console.log` of an object. What unknown code may change is not modelled yet.
 
-**What the front end refuses**, each with the node type: destructuring, spread, default and rest parameters, `arguments`, generators, `async`, `class … extends`, private names, static blocks, labels, `switch`, `do`, `for`-`in`, `for`-`of`, optional chains, tagged templates, regular expressions, BigInt, `import * as`, `export … from`, an import attribute, an import of anything but a relative path, `import()`, `import.meta`, `**`, `instanceof`, a string outside the Basic Multilingual Plane (the model counts code points, JavaScript code units), a function under a computed key (its `name` would be computed at run time), and any name the program does not declare and the host defines. The model ends `unknown` for a module that exports a name it imports.
+**The world is a parameter.** A host function that works on primitives is in the model without a definition. The model runs in a `World`:
+
+```lean
+structure World where
+  σ : Type
+  init : σ
+  step : (fn : String) → (this : Primitive) → (args : List Primitive) → σ → HostResult × σ
+```
+
+- A world has a state of its own and one deterministic step: the host function `fn`, called with a receiver and arguments, ends with a primitive, a thrown primitive or a thrown error of some kind, and leaves the next state. The state of the model holds the state of the world (`State W`).
+- _Which functions the model asks the world about_ is a table in [`Value.lean`](../lean/Experiments/CoreJS/Value.lean) (`worldFunction`), 88 of them: 32 methods of strings, 5 of numbers, 2 of booleans, which take their receiver; the 35 functions of `Math`, 6 of `Number`, 2 of `String`, and `Boolean`, `Number`, `isFinite`, `isNaN`, `parseFloat`, `parseInt`, which do not. The claim for each is: called with a primitive receiver and primitive arguments, it returns a primitive or throws, and it reads and changes nothing the program can reach. Left out on purpose: `match`, `matchAll` and `split`, which return objects.
+- _Anything that would hand the host an object_ ends the run as `unknown` in this stage: an object as receiver or argument, and a host function that is not in the table.
+- _How a program gets such a function._ A property that a string, a number or a boolean does not have itself is a member of its prototype, a host value under its real name, when the prototype has that name; otherwise it is looked up on `Object.prototype`, which the program can change, and a getter found there runs with the primitive as `this`. `Math.abs` is a read of a member of a host global. A program that had replaced one of these would have ended as `unknown` at the write.
+- _Strings._ A string the world returns with a character outside the Basic Multilingual Plane ends the run as `unknown`, for the reason the front end refuses such a literal.
+- **Everything proved about the model holds for every world**: `fuel_mono`, `Ends.unique` and the allocation rule take `W` as a parameter and say nothing about it.
+
+**What the front end refuses**, each with the node type: destructuring, spread, default and rest parameters, `arguments`, generators, `async`, `class … extends`, private names, static blocks, labels, `switch`, `do`, `for`-`in`, `for`-`of`, optional chains, tagged templates, regular expressions, BigInt, `import * as`, `export … from`, an import attribute, an import of anything but a relative path, `import()`, `import.meta`, `**`, `instanceof`, a string outside the Basic Multilingual Plane (the model counts code points, JavaScript code units), a function under a computed key (its `name` would be computed at run time), and any name the program does not declare and the host defines, except the eight globals the model has a rule for (`Math`, `Number`, `String`, `Boolean`, `isFinite`, `isNaN`, `parseFloat`, `parseInt`). The model ends `unknown` for a module that exports a name it imports.
 
 **Addresses, and the identity of a statement.** An object or a binding lives at `(region, index)`. JavaScript cannot observe an address, so any choice of unused ones is faithful.
 
 - Every top-level statement of a program carries an _identity_, a number no other statement of the program has. The statement with identity `i` owns region `i + 1`. Its bindings and, for a function declaration, its function are made there when the program is linked, and what it allocates when it runs goes there too.
 - So where a statement allocates depends on its identity and on nothing else: not on its module, and not on what ran before it. Two statements that only allocate end in equal states in either order, with no renaming of addresses.
-- A program that is split into modules keeps the identities of its statements. The front end numbers the top-level statements of a file as [`lowering/dump_core.mjs`](lowering/dump_core.mjs) numbers a bundle's (a declaration list counts once for each name), and takes other numbers for a file when told.
+- A program that is split into modules keeps the identities of its statements. The front end numbers the top-level statements of a file as [`lowering/dump_core.mjs`](lowering/dump_core.mjs) numbers a bundle's (a declaration list counts once for each name), and takes other numbers for a file when told: `lowersplit --plan` writes, for each module, the bundle statements it holds.
+- A closure keeps only the bindings of the names its code can mean (`Env.capture` of `Func.closes`, the free names of the function). So two scopes that give those names the same bindings give the same closure, and a function made in a module of a split is the object it is in the bundle.
 - Linking visits the statements of all modules in the order of their identities, not module by module. No program code runs while a program is linked, so that order cannot be observed, and it makes the state after linking independent of how the statements are divided into modules.
 
-**Checked against Node** by `./run.sh --model`, and in CI by `corejs_differential_test` (72 generated programs). Both sides must print the same lines and end the same way (a thrown primitive by value, an error by its kind).
+**Checked against Node** by `./run.sh --model` (about a minute), and in CI by `corejs_differential_test` (72 generated programs and 24 split programs, about 100 seconds). Both sides must print the same lines and end the same way (a thrown primitive by value, an error by its kind).
 
-- 31 hand-written cases for what the generator rarely writes: a getter three prototypes up, a setter that throws, `finally` overriding `return`, `delete` of a missing and of a fixed property, a method with another `this`, closures over a loop variable, `var` hoisting, the dead zone, descriptor validation, a getter put on `Object.prototype`, class fields, number printing. Seven of them must end `unknown`.
+**The world of the test is Node, as a recording.** Every program runs in Node first, with the 88 functions wrapped; each call that a file of the program makes with a primitive receiver and primitive arguments is written down with how it ended. The model then runs in the world that answers exactly those calls in that order (`replay` in [`Run.lean`](../lean/Experiments/CoreJS/Run.lean)). So the model has to make the calls Node made, the same function with the same receiver and arguments in the same order, and it gets Node's answers. A call that is not the next recorded one fails the test; so does a recorded call the model did not make before it ended, and a listed function that returns an object. `Math.random` needs nothing special: its answers are in the recording.
+
+- 41 hand-written cases for what the generator rarely writes: a getter three prototypes up, a setter that throws, `finally` overriding `return`, `delete` of a missing and of a fixed property, a method with another `this`, closures over a loop variable, `var` hoisting, the dead zone, descriptor validation, a getter put on `Object.prototype`, class fields, number printing; and for the world: methods of strings and numbers, `Math`, the parsing functions, a host function that throws, a property of a string found on `Object.prototype`, a host function stored and called later. Eleven of them must end `unknown`, among them a host function that is handed an object and one that returns a string outside the Basic Multilingual Plane.
 - 19 hand-written programs of several modules: a live binding read after the exporter assigned it, a function called before the body of its module ran, the dead zone and `var` across modules, bare imports, a cycle of three, export and import under other names, a module imported twice, a missing export, an assigned import (also in its dead zone), default exports, a module that throws, modules in directories. For each, the order in which the model runs the modules is also compared with `Plan.evalOrder` of the proved checker (the `evalorder` executable): they agree on all 19.
-- Programs of [`translation/gen`](translation/gen/). The generator leans on the standard library, so the front end accepts no whole program. A program is cut down to the units the front end accepts alone and whose names are still declared; a unit where the model then reaches unknown code is dropped and the program is run again. Of 2,040 programs (340 for each of the six sets of families, seeds 1000 to 1339): 52,652 units, 21,931 accepted alone (42%), 4,665 left in the programs that ran (9%). 387 programs had no unit left. The other 1,653 agree with Node, all of them.
-- The members the model gives the three prototypes are compared with Node's own.
+- Programs of [`translation/gen`](translation/gen/). The generator leans on the standard library, so the front end accepts no whole program. A program is cut down to the units the front end accepts alone and whose names are still declared; a unit where the model then reaches unknown code is dropped and the program is run again. Of 2,040 programs (340 for each of the six sets of families, seeds 1000 to 1339): 52,652 units, 24,890 accepted alone (47%), 9,000 left in the programs that ran (17%). 123 programs had no unit left. The other 1,917 agree with Node, all of them, and the model made every host call Node made (3,529 in this run, those of the hand-written cases included). Before the world was a parameter, 4,665 units (9%) were left and 387 programs had none: a method of a string ended the run. What ends it most often now is a method of an array, which takes an object.
+- **Splits by the real tool.** Programs the model runs to the end are split by `lowersplit` under three specs each: consecutive pieces run in order, a random module for each statement with `sequential`, and the same with the order left to the imports. For every split it accepts, four runs must agree: the bundle in Node, the bundle in the model, the split in Node, the split in the model. The front end must also give every statement of the split the tokens it gave that statement of the bundle, and the model must run the modules in the order of the plan. With `--count 40 --seed 1 --splits 150`: 135 programs, 405 specs, 219 accepted (127 of the consecutive ones, 46 with `sequential`, 46 without). On 218 the four runs agree, 196 of those with the statements in the bundle's order. The model never differed from Node, and no accepted split of a bundle that ends normally differed from its bundle. No accepted split asked the world for anything else than its bundle did, or in another order. Every accepted split that runs the statements in the bundle's order was also run in the world its bundle recorded, and ended in the bundle's state: every object and binding at the same address, by a hash of the whole state (189 of 189 in a run of `--count 40 --seed 1 --splits 150`).
+- The members the model gives the six prototypes are compared with Node's own, and every function of the table has to be a function of this Node.
+
+**A split that moves code is compared with its bundle only if the bundle ends normally.** The tool's verdict is for a bundle whose evaluation completes: premise P4 of [`effects/README.md`](effects/README.md). Two named cases (`splitCases` in [`model/cases.mjs`](model/cases.mjs)) hold the line between what the tool orders and what the premise covers:
+
+```js
+console.log("printed");
+throw 1.5;
+```
+
+`lowersplit` must reject a spec that puts the `throw` in a module that runs first: a `throw` it reaches is unknown code and keeps its place.
+
+```js
+const o = { a: undefined };
+console.log("printed");
+const w = o.a.b;
+```
+
+Here the spec puts the first and the third statement in a module of their own, which the entry imports, so the `TypeError` is raised first and nothing is printed. `lowersplit` accepts: an exception that the language raises itself in pure code is not an effect to it. The model agrees with Node on both programs. So the theorem for a split that moves code has P4 as a hypothesis ([`PLAN.md`](../PLAN.md) § Direction). A split that runs the statements in the bundle's order needs none, and the test compares such a split with its bundle however the bundle ends.
 
 The low share of generated units is the finding of [`SUPPORT.md`](../SUPPORT.md) again: no small fragment covers what programs use. The model is for proving rules about a core, not for running the inputs.
 
@@ -475,23 +514,50 @@ One disagreement was found on the way: `x ** 2` differed from Node in the last b
 **What is proved** ([`Frame.lean`](../lean/Experiments/CoreJS/Frame.lean), on Lean's three standard axioms). The shape `Expr.allocOnly`: a literal, a name, a function, an object literal of named data properties, an array literal, nested.
 
 ```lean
-theorem allocOnly_extends (h : e.allocOnly = true) (fuel : Nat) (env : Env) (s : State) :
+theorem allocOnly_extends {W : World} (h : e.allocOnly = true) (fuel : Nat) (env : Env) (s : State W) :
     (evalExpr fuel env e s).Keeps s
-theorem decl_allocOnly (h : e.allocOnly = true) (fuel : Nat) (env : Env) (kind : DeclKind) (x : Name) (s : State) :
-    (execStmt fuel env (.decl kind x e) s).KeepsBut (env.vars.lookup x) s
+theorem decl_allocOnly {W : World} (h : e.allocOnly = true) (fuel : Nat) (env : Env) (kind : DeclKind) (x : Name)
+    (s : State W) : (execStmt fuel env (.decl kind x e) s).KeepsBut (env.vars.lookup x) s
 ```
 
-However the expression ends, every object and binding that existed is unchanged and nothing is printed; what it made is new. A declaration with such an initializer changes no binding but its own. This is the footprint "binds its name, no effect", proved for that shape.
+However the expression ends, every object and binding that existed is unchanged, nothing is printed and the world is in the state it was in; what it made is new. A declaration with such an initializer changes no binding but its own. This is the footprint "binds its name, no effect", proved for that shape.
 
 [`Fuel.lean`](../lean/Experiments/CoreJS/Fuel.lean) proves that the bound on the depth is only a bound:
 
 ```lean
-theorem fuel_mono (h : runProgram n P = r) (hr : r ≠ .fuel) (hnm : n ≤ m) : runProgram m P = r
-def Ends (P : Program) (r : Res Unit) : Prop := ∃ n, runProgram n P = r ∧ r ≠ .fuel
-theorem Ends.unique (h : Ends P r) (h' : Ends P r') : r = r'
+theorem fuel_mono {W : World} (h : runProgram W n P = r) (hr : r ≠ .fuel) (hnm : n ≤ m) : runProgram W m P = r
+def Ends (W : World) (P : Program) (r : Res W Unit) : Prop := ∃ n, runProgram W n P = r ∧ r ≠ .fuel
+theorem Ends.unique {W : World} (h : Ends W P r) (h' : Ends W P r') : r = r'
 ```
 
 A run that ends with a value, a throw or unknown code ends the same way with any larger bound, so a program ends in at most one way. The proof compares the two runs rule by rule; no rule of the interpreter had to change for it.
+
+[`Scope.lean`](../lean/Experiments/CoreJS/Scope.lean) proves that code sees a scope only through the names that are free in it. `Agree N env env'` says that two scopes have the same `this` and give every name of `N` the same binding, or none.
+
+```lean
+theorem same : ∀ n, Same W n
+theorem runUnit_agree (h : Agree s.free env env') (fuel id : Nat) : runUnit fuel env id s = runUnit fuel env' id s
+theorem capture_faithful (n : Nat) (env : Env) (s : Stmt) (N : List Name) (hN : ∀ x ∈ s.free, x ∈ N) :
+    execStmt n (env.capture N) s = execStmt n env s
+```
+
+`Same W n` is that statement for each of the nine functions of the interpreter that take a scope: with `Agree` on the free names of the code, the two computations are equal, for every bound and every world. They are equal as functions of the state, results and final states included, not related up to something: a closure made on either side keeps the same bindings. `capture_faithful` is the reason closures may keep so little: code runs in the kept bindings as it runs in the scope.
+
+[`Split.lean`](../lean/Experiments/CoreJS/Split.lean) proves the first slice of the theorem of [`PLAN.md`](../PLAN.md), a split that keeps the order:
+
+```lean
+def ScopesAgree (P P' : Program) : Prop :=
+  ∀ frames, FramesOf P.tops frames → ∃ L L', P.scopes frames P.loaded = .ok L ∧ P'.scopes frames P'.loaded = .ok L' ∧
+    SameUnits (unitsOf L) (unitsOf L') ∧ (unitsOf L).Pairwise fun a b => a.1 ≤ b.1
+theorem order_kept_preserves {P P' : Program} (hregions : P.regions = P'.regions) (htops : P.tops = P'.tops)
+    (hscopes : ScopesAgree P P') : (∀ r, Ends W P r → Ends W P' r) ∧ (∀ r, Ends W P' r → Ends W P r)
+```
+
+- _What it says._ Two programs that hold the same statements under the same identities (`htops`, `hregions`), run them in the same order, the order of the identities, and give every statement a scope that agrees with its scope in the other program on the names it mentions (`ScopesAgree`), end the same way in every world. A bundle and a split of it that keeps the order are two such programs.
+- **`≈` is equality.** A result is how the run ended (normally, with a thrown value, at unknown code) and the state it ended in: what was printed, the state of the world, every object and every binding. The theorem says the two results are equal. Nothing is related up to a renaming. What differs between the two programs, the scopes of their modules, is not part of a result.
+- _The hypotheses._ `htops` and `hregions` are equalities of lists and numbers that the tool can compute. `ScopesAgree` speaks about every choice of addresses for the bindings, so it is not a check as it stands.
+- **For a plan that `Valid` accepts**, `valid_order_kept_preserves` is the theorem with no further hypotheses than footprints that say what the text says (`FootprintsOfSyntax`). It rests on two facts. `split_holds_statements`: `splitProgram`, the program `Module.render` writes for a plan, has the bundle's statements when the plan keeps the order; the model's order of evaluation is `Plan.visit` (`split_visit`). `split_scopes_agree`: the scopes of `splitProgram` agree with the bundle's. The second is the substance: an import resolves, through the export it names, to the binding of the one statement that declares the name. It needs the exporting module to declare the name, which `Linkable` asks: the model does not follow an `export` statement that publishes a name its module imports.
+- _What the test adds._ The conclusion, the same final state, holds on every order-kept split the real tool produced in the test (above). It also checks the model against `Valid`: a split the test finds wrong would be a counterexample to `valid_order_kept_preserves` or to `FootprintsOfSyntax`.
 
 Not proved: the allocation rule for classes (the model runs them; the proof does not cover them yet), that such an expression never ends `unknown`, and that two such declarations commute. The last is written down as `AllocOnlyUnitsCommute`. It needs one more lemma, that the value depends only on the bindings the expression reads.
 
@@ -502,3 +568,21 @@ Not proved: the allocation rule for classes (the model runs them; the proof does
 - Lean's `do` notation copies the rest of a block into both branches of an `if` in the middle of it. Rules written that way did not match the sequencing lemma, and three helpers (`selfScope`, `initSelf`, `addPrototype`) were split out. New rules should keep each `if` inside a helper.
 - `Float` has no equations in Lean. That costs nothing here, since a frame fact never looks at a number.
 - A proof that walks every rule of the interpreter (`fuel_mono`) is short when it is one tactic that takes a rule apart into sequences and case splits and closes each part with the hypothesis for the smaller bound. It has to match terms without unfolding definitions (`with_reducible`), or the elaborator unfolds the interpreter itself.
+- A relation between two runs is cheap when it can be equality. The scope theorem compares runs in two different scopes, and would have needed a relation between heaps, because a closure holds its scope. Making the closure keep only the bindings its code names turned the relation into equality, and the proof into the same walk over the rules as `fuel_mono`.
+- Where the rest of a rule depends on what the first part returned (the name an assignment target gave, the names a new frame declares), the sequencing lemma has to hand the continuation that fact (`M.bind_congr_ok`); a plain congruence does not.
+- Taking the world as a parameter cost no proof: `State W` threads through every definition, and the lemmas never look at `W`.
+
+**The world, stage two: a design, not built.** Stage one stops where the host would be handed an object. Stage two is host code that receives objects and functions, may read and write what it was handed, and may call functions it was handed.
+
+- _The model keeps the list of addresses the world has been handed_, in the order it got them, and the world names an object only by its position in that list. The world then has no way to write down any other address, so "it touches only what it can reach" holds by construction and needs no assumption.
+- _A host call becomes a conversation._ The world's step returns a request and a next state: return a value, throw one, read or write a property of object `k`, call object `k`, make a new object. The model carries the request out (a call runs program code, on the fuel of the host call) and steps the world again with the answer. An object the world gets back from a read joins the list.
+- _What it gives the proofs:_ a frame lemma for unknown code. A host call changes only objects on the list, objects reachable from them, and what the functions it calls change. That is the statement the second footprint rule of [`PLAN.md`](../PLAN.md) needs.
+- _The recording stays the test's world._ Node's side of a conversation can be written down the same way, with a proxy around every object that is handed over.
+
+What building stage one says to change in that design:
+
+- _A class for each function, not only a list._ Stage one has two classes: takes its receiver, or does not. The table should say per function what it may do: "a function of its arguments", "reads its receiver's own properties", "calls its argument". The step of a function of the first class would not see the state of the world at all.
+- _That class is what a split that moves code needs._ With one world state, two host calls can never change places: the test compares the calls a split makes with its bundle's, in order, for that reason. Moving `Math.abs` past `Math.max` is sound only because neither reads or changes the world, and the world type has to be able to say so.
+- _Host functions should be objects._ `Val.host` is a name, so `typeof Math.abs` and `Math.abs === Math.abs` end as `unknown`. In stage two a host function is on the heap, with host code, so it has an identity and properties and can be handed back to the host.
+- _Strings should be code units._ The boundary showed the gap: the host returns strings the model cannot hold. With strings as sequences of UTF-16 code units, nothing the host returns is outside the model, and the front end no longer refuses literals.
+- _Errors are objects the host makes._ Stage one keeps them opaque (`Val.error`), which is why a caught error cannot be inspected. In stage two they are objects the world asks the model to make.
