@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 import pytest_bazel
 from kubernetes_asyncio import client
 from kubernetes_asyncio.client import ApiException
 
-from cluster.controllers.vm_image_restart import controller
+from cluster.controllers.vm_image_restart import controller, kubernetes_watch
 from cluster.controllers.vm_image_restart.settings import Settings
 
 _NOW = datetime(2026, 9, 30, 12, 0, tzinfo=UTC)
@@ -245,6 +248,46 @@ async def test_invalid_persisted_state_is_ignored() -> None:
     core.state = '{"generation":"not-an-integer"}'
 
     assert await controller._read_state(core, _SETTINGS) is None
+
+
+async def test_watch_relists_and_uses_the_list_resource_version(monkeypatch: pytest.MonkeyPatch) -> None:
+    name = _SETTINGS.target_vm_name
+    obj = {"metadata": {"name": name}}
+    store: dict[str, dict[str, Any]] = {}
+    changed = asyncio.Event()
+    api = Mock(spec=client.CustomObjectsApi)
+    api.list_namespaced_custom_object = AsyncMock(
+        side_effect=[
+            {"items": [obj], "metadata": {"resourceVersion": "100"}},
+            {"items": [], "metadata": {"resourceVersion": "200"}},
+        ]
+    )
+    watcher = Mock()
+
+    async def stream(*args: Any, resource_version: str, **kwargs: Any) -> AsyncIterator[dict[str, Any]]:
+        assert kwargs["field_selector"] == f"metadata.name={name}"
+        assert isinstance(kwargs["timeout_seconds"], int)
+        assert changed.is_set()
+        changed.clear()
+        if resource_version == "100":
+            assert store == {name: obj}
+            updated = {**obj, "status": {"phase": "Running"}}
+            yield {"type": "MODIFIED", "object": updated}
+            assert store == {name: updated}
+            assert changed.is_set()
+            changed.clear()
+        else:
+            assert resource_version == "200"
+            assert store == {}
+            raise asyncio.CancelledError
+
+    watcher.stream = stream
+    monkeypatch.setattr(kubernetes_watch.watch, "Watch", lambda: watcher)
+    with pytest.raises(asyncio.CancelledError):
+        await kubernetes_watch.watch_kubevirt_resource(
+            api, _SETTINGS.target_namespace, "virtualmachineinstances", name, store, changed
+        )
+    assert watcher.stop.call_count == 2
 
 
 if __name__ == "__main__":
