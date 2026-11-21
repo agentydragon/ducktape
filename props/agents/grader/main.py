@@ -65,7 +65,6 @@ from props.db.models import (
     IssueCluster,
     IssueClusterMember,
     ReportedIssue,
-    ReportedIssueOccurrence,
     TruePositive,
     TruePositiveOccurrenceORM,
 )
@@ -145,17 +144,11 @@ def _create_grader_tools(grader_run_id: UUID, snapshot_slug: SnapshotSlug, state
             if not issue:
                 raise ValueError(f"Issue not found: {args.run}/{args.issue_id}")
 
-            occs = (
-                session.query(ReportedIssueOccurrence)
-                .filter_by(agent_run_id=args.run, reported_issue_id=args.issue_id)
-                .all()
-            )
-
             return IssueDetails(
                 issue_id=issue.issue_id,
                 critique_run_id=issue.agent_run_id,
                 rationale=issue.rationale,
-                occurrences=[OccurrenceInfo(locations=list(occ.locations or [])) for occ in occs],
+                occurrences=[OccurrenceInfo(locations=list(occ.locations)) for occ in issue.occurrences],
             )
 
     def show_tp(args: ShowTPArgs) -> GTDetails:
