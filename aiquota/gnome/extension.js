@@ -1063,7 +1063,8 @@ const QuotaIndicator = GObject.registerClass(
       for (const p of this._providers) {
         const groups = readingGroups(p.state);
         const single = groups.length === 1;
-        const inlineBalance = !isApiProvider(p.id) || (single && !groups[0].name);
+        const inlineBalance =
+          !isApiProvider(p.id) || (single && !groups[0].name && p.providerId !== "anthropic_platform");
         this._renderProviderHeader(
           p.header,
           p.state.label || p.label,
