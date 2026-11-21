@@ -558,9 +558,14 @@ class BrowserProxy:
                 for key, value in response.headers.raw
                 if key.lower() not in (b"transfer-encoding", b"connection")
             ]
+            # Generated gRPC facades can use application/json for NDJSON watch responses.
+            # Honor the requested stream format, including watch RPCs whose names do not end in :watch.
+            requested_ndjson = any(
+                key.lower() == b"accept" and b"application/x-ndjson" in value.lower() for key, value in scope["headers"]
+            )
             streaming = response.headers.get("content-type", "").startswith(
                 ("text/event-stream", "application/x-ndjson")
-            ) or (path.endswith(":watch") and response.is_success)
+            ) or (response.is_success and (requested_ndjson or path.endswith(":watch")))
             selected = self.gate is not None and path.endswith("/sync/entities")
             started = False
             if streaming and not selected:

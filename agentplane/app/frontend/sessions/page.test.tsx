@@ -5,6 +5,7 @@ import {
   ThreadCommandOutcome,
   ThreadFeedStatus,
   FeedStatus,
+  SessionSummarySchema,
   type ThreadEntity,
 } from "../../../history_service/api/history/history_service_pb";
 import { AutosuspendBlockerSchema } from "../../../proto/environment_lifecycle_pb";
@@ -52,7 +53,7 @@ import {
   changeReasoningEffort,
   interruptTurn,
   getThread,
-  listThreadWindow,
+  listThreadMetadata,
 } from "./client";
 import { resumeSandbox } from "../sandboxes/client";
 import { historyRows, rowKey } from "./history_rows";
@@ -93,7 +94,7 @@ vi.mock("./client", async (importOriginal) => ({
   changeReasoningEffort: vi.fn(),
   interruptTurn: vi.fn(),
   getThread: vi.fn(),
-  listThreadWindow: vi.fn(),
+  listThreadMetadata: vi.fn(),
 }));
 vi.mock("../sandboxes/client", async (importOriginal) => ({
   ...(await importOriginal<typeof SandboxClientModule>()),
@@ -198,7 +199,7 @@ beforeEach(() => {
       langfuseSearch: langfuseSearchSettings ?? undefined,
     })
   );
-  vi.mocked(getThread).mockResolvedValue(THREAD);
+  vi.mocked(getThread).mockImplementation(async () => sharedThreadView());
   vi.spyOn(appConfigClient, "listModels").mockResolvedValue(
     testModelCatalog([{ model: "test-model", displayName: "Test Model", reasoningEfforts: TEST_REASONING_EFFORTS }], [])
   );
@@ -247,7 +248,7 @@ beforeEach(() => {
       if (
         url.pathname === "/upstream/dispatcher/v1/sessions:watch" ||
         url.pathname === "/upstream/app/v1/threads:watch" ||
-        url.pathname === "/upstream/history/v1/session-summaries:watch"
+        url.pathname === "/upstream/history/v1/session-summaries:watchSelected"
       ) {
         const stream = new ServedWatch(String(input), init?.signal ?? undefined);
         if (url.pathname === "/upstream/dispatcher/v1/sessions:watch") {
@@ -257,18 +258,23 @@ beforeEach(() => {
         } else if (url.pathname === "/upstream/app/v1/threads:watch") {
           stream.send({ changed: {}, updatesConnected: true });
         } else {
-          stream.send({ changed: {} });
+          const ids = url.searchParams.getAll("session_ids");
+          stream.send({
+            snapshot: {
+              summaries: (threadRows ?? [sharedThreadView()])
+                .filter((row) => ids.includes(row.metadata.threadId))
+                .map((row) => toJson(SessionSummarySchema, row.summary)),
+            },
+          });
         }
         return Promise.resolve(stream.response);
       }
     }
     return sandboxFetch(input, init);
   });
-  vi.mocked(listThreadWindow).mockImplementation(async () => ({
-    threads: threadRows ?? [sharedThreadView()],
-    more: false,
-    archived_count: 0,
-  }));
+  vi.mocked(listThreadMetadata).mockImplementation(
+    async () => new Map((threadRows ?? [sharedThreadView()]).map((row) => [row.metadata.threadId, row.metadata]))
+  );
 });
 
 afterEach(async () => {

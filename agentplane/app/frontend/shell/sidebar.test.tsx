@@ -1,6 +1,7 @@
 import type * as ThreadClientModule from "../sessions/client";
 // @vitest-environment happy-dom
 import { toJson } from "@bufbuild/protobuf";
+import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 import {
   SandboxPhase,
   EnvironmentDescriptorSchema,
@@ -15,8 +16,8 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import { listThreadWindow } from "../sessions/client";
-import { FeedStatus } from "../../../history_service/api/history/history_service_pb";
+import { listThreadMetadata } from "../sessions/client";
+import { FeedStatus, SessionSummarySchema } from "../../../history_service/api/history/history_service_pb";
 import { SessionSchema } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 import { HarnessAttachment_State } from "../../../harness_host/harness_host_pb";
 import { HarnessState, LaunchOutcome, SetupState } from "../../../proto/session_pb";
@@ -37,7 +38,7 @@ type ThreadView = ThreadClientModule.ThreadView;
 
 vi.mock("../sessions/client", async (importOriginal) => ({
   ...(await importOriginal<typeof ThreadClientModule>()),
-  listThreadWindow: vi.fn(),
+  listThreadMetadata: vi.fn(),
 }));
 
 const fetchMock = vi.hoisted(() => {
@@ -228,7 +229,7 @@ async function render(
       if (
         url.pathname === "/upstream/dispatcher/v1/sessions:watch" ||
         url.pathname === "/upstream/app/v1/threads:watch" ||
-        url.pathname === "/upstream/history/v1/session-summaries:watch"
+        url.pathname === "/upstream/history/v1/session-summaries:watchSelected"
       ) {
         const watch = new ServedWatch(String(input), init?.signal ?? undefined);
         threadServed.push(watch);
@@ -242,7 +243,14 @@ async function render(
           } else if (url.pathname === "/upstream/app/v1/threads:watch") {
             watch.send({ changed: {}, updatesConnected: true });
           } else {
-            watch.send({ changed: {} });
+            const ids = url.searchParams.getAll("session_ids");
+            watch.send({
+              snapshot: {
+                summaries: listedThreads
+                  .filter((row) => ids.includes(row.metadata.threadId))
+                  .map((row) => toJson(SessionSummarySchema, row.summary)),
+              },
+            });
           }
         }
         return Promise.resolve(watch.response);
@@ -250,23 +258,9 @@ async function render(
     }
     return eventFetch(input, init);
   });
-  vi.mocked(listThreadWindow).mockImplementation(async (listing, openThreadId) => {
-    const matching = listedThreads.filter(
-      (candidate) =>
-        (listing.includeArchived || !candidate.metadata.archived) &&
-        (listing.search === null ||
-          (candidate.metadata.name ?? "").toLowerCase().includes(listing.search.toLowerCase()))
-    );
-    const visible = matching.slice(0, listing.limit);
-    const openThread = listedThreads.find((candidate) => candidate.metadata.threadId === openThreadId);
-    if (openThread && !visible.some((candidate) => candidate.metadata.threadId === openThread.metadata.threadId))
-      visible.push(openThread);
-    return {
-      threads: visible,
-      more: matching.length > listing.limit,
-      archived_count: listedThreads.filter((candidate) => candidate.metadata.archived).length,
-    };
-  });
+  vi.mocked(listThreadMetadata).mockImplementation(
+    async () => new Map(listedThreads.map((row) => [row.metadata.threadId, row.metadata]))
+  );
   fetchMock.mockImplementation((request: Request) => {
     const url = new URL(request.url);
     if (url.pathname === "/upstream/app-config/v1/models") {
@@ -678,9 +672,11 @@ it("hides archived threads until the switch is toggled, and archives a thread fr
 });
 
 it("grows the window a page at a time and narrows it to a search", async () => {
-  const threads = Array.from({ length: 51 }, (_, index) =>
-    sandboxThread(`t-${index}`, `Listed thread ${index}`, "demo")
-  );
+  const threads = Array.from({ length: 51 }, (_, index) => {
+    const row = sandboxThread(`t-${index}`, `Listed thread ${index}`, "demo");
+    row.session!.createdAt = timestampFromDate(new Date(Date.parse("2026-01-01T00:00:00Z") - index * 1000));
+    return row;
+  });
   await render(threads, { demo: sandbox("demo") });
   expect(container.textContent).not.toContain("Listed thread 50");
 
@@ -793,7 +789,7 @@ it.each([
     observedHostedSession("t-1", { harnessState: HarnessAttachment_State.STARTING }),
     "Wait for the harness to start before archiving",
   ],
-  [undefined, "Wait for Session activity to be known before archiving"],
+  [{ sessionId: "t-1", status: { activity: undefined } }, "Wait for Session activity to be known before archiving"],
 ] as const)("blocks archiving while Dispatcher Session work is visible: %o", async (session, reason) => {
   await render(
     [
