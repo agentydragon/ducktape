@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 import pytest_bazel
 
@@ -11,10 +9,8 @@ from cluster.validation.checks import check_sops_decryption_blocks
 from cluster.validation.cluster import ParsedCluster
 from cluster.validation.flux import Decryption, FluxKustomizationSpec
 from cluster.validation.k8s import SecretRef, parse_k8s_resources
-from cluster.validation.kustomize import KustomizeBuildResult
 
 _NAME = "synthetic"
-_PATH = "./cluster/k8s/synthetic"
 
 
 def _sops_secret() -> dict:
@@ -36,19 +32,9 @@ def _plain_secret() -> dict:
     }
 
 
-def _cluster(tmp_path: Path, secret_doc: dict, spec: FluxKustomizationSpec) -> ParsedCluster:
-    """Build a ParsedCluster whose single flux kustomization renders `secret_doc`.
-
-    `spec.local_dir(tmp_path)` must resolve to the build result's kustomization dir, so the
-    build result lives at `<tmp_path>/cluster/k8s/synthetic/kustomization.yaml`."""
+def _cluster(secret_doc: dict, spec: FluxKustomizationSpec) -> ParsedCluster:
     return ParsedCluster(
-        flux_kustomizations={_NAME: spec},
-        build_results=[
-            KustomizeBuildResult(
-                kustomization_path=tmp_path / "cluster/k8s/synthetic/kustomization.yaml",
-                resources=parse_k8s_resources([secret_doc]),
-            )
-        ],
+        flux_kustomizations={_NAME: spec}, rendered_resources={_NAME: parse_k8s_resources([secret_doc])}
     )
 
 
@@ -62,11 +48,11 @@ def _cluster(tmp_path: Path, secret_doc: dict, spec: FluxKustomizationSpec) -> P
     ids=["no-decryption", "provider-without-secretRef", "provider-with-secretRef"],
 )
 def test_sops_secret_requires_a_configured_decryption_key(
-    tmp_path: Path, decryption: Decryption | None, expected_error: str | None
+    decryption: Decryption | None, expected_error: str | None
 ) -> None:
     """Covers litellm-keys-tf (#2797): provider without secretRef leaves ciphertext unusable."""
-    spec = FluxKustomizationSpec(path=_PATH, decryption=decryption)
-    errors = check_sops_decryption_blocks(_cluster(tmp_path, _sops_secret(), spec), tmp_path)
+    spec = FluxKustomizationSpec(decryption=decryption)
+    errors = check_sops_decryption_blocks(_cluster(_sops_secret(), spec))
     if expected_error is None:
         assert errors == []
     else:
@@ -75,17 +61,16 @@ def test_sops_secret_requires_a_configured_decryption_key(
         assert expected_error in errors[0]
 
 
-def test_plain_secret_without_decryption_is_ok(tmp_path: Path) -> None:
-    cluster = _cluster(tmp_path, _plain_secret(), FluxKustomizationSpec(path=_PATH))
+def test_plain_secret_without_decryption_is_ok() -> None:
+    cluster = _cluster(_plain_secret(), FluxKustomizationSpec())
 
-    assert check_sops_decryption_blocks(cluster, tmp_path) == []
+    assert check_sops_decryption_blocks(cluster) == []
 
 
-def test_suspended_kustomization_with_sops_is_skipped(tmp_path: Path) -> None:
-    spec = FluxKustomizationSpec(path=_PATH, suspend=True)
-    cluster = _cluster(tmp_path, _sops_secret(), spec)
+def test_suspended_kustomization_with_sops_is_skipped() -> None:
+    cluster = _cluster(_sops_secret(), FluxKustomizationSpec(suspend=True))
 
-    assert check_sops_decryption_blocks(cluster, tmp_path) == []
+    assert check_sops_decryption_blocks(cluster) == []
 
 
 if __name__ == "__main__":

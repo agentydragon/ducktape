@@ -41,18 +41,12 @@ from cluster.validation.image_automation import (
 )
 from cluster.validation.k8s import ArtifactGeneratorResource, K8sResource, parse_k8s_resources
 from cluster.validation.kustomize import (
-    KustomizeBuildResult,
     KustomizeFile,
     flux_generated_kustomization,
     parse_kustomize_file,
     run_kustomize_build,
     stage_artifact_copies,
 )
-
-
-def _local_flux_kust_names(parsed: ParsedCluster, repo_root: Path) -> set[str]:
-    """Active flux kustomization names whose spec.path points into a local manifest root."""
-    return {name for name, spec in parsed.active_flux_kustomizations.items() if spec.local_dir(repo_root)}
 
 
 async def _build_namespace_override(
@@ -129,11 +123,13 @@ def _build_cluster(repo_root: Path) -> ParsedCluster:
                 raise ValueError(f"failed to stage ExternalArtifact {key}: {error}") from error
             staged_artifacts[key] = staging_root
 
-        async def _build_all() -> list[KustomizeBuildResult]:
+        async def _build_all() -> dict[str, list[K8sResource]]:
             # At most one additional copy of a manifest tree, even when several owners share it.
             namespace_build = asyncio.Semaphore(1)
 
-            async def _build(owner: str, spec: FluxKustomizationSpec, kust: KustomizeFile) -> KustomizeBuildResult:
+            async def _build(
+                owner: str, spec: FluxKustomizationSpec, kust: KustomizeFile
+            ) -> tuple[str, list[K8sResource]]:
                 source_root = repo_root
                 build_file = kust
                 source_ref = spec.source_ref
@@ -153,18 +149,19 @@ def _build_cluster(repo_root: Path) -> ParsedCluster:
                     async with namespace_build:
                         resources = await _build_namespace_override(owner, spec, build_file.path.parent, source_root)
                 else:
-                    resources = (await run_kustomize_build(build_file)).resources
-                return KustomizeBuildResult(kustomization_path=kust.path, flux_owner=owner, resources=resources)
+                    resources = await run_kustomize_build(build_file)
+                return owner, resources
 
-            return await asyncio.gather(
-                *[
+            rendered = await asyncio.gather(
+                *(
                     _build(owner, spec, kusts_by_dir[directory])
                     for owner, spec in parsed.flux_kustomizations.items()
                     if (directory := spec.local_dir(repo_root)) is not None and directory in kusts_by_dir
-                ]
+                )
             )
+            return dict(rendered)
 
-        parsed.build_results = asyncio.run(_build_all())
+        parsed.rendered_resources = asyncio.run(_build_all())
     return parsed
 
 
@@ -176,26 +173,25 @@ def cluster(repo_root: Path) -> ParsedCluster:
 
 def test_all_local_flux_kustomizations_have_build_results(cluster: ParsedCluster, repo_root: Path) -> None:
     """Every flux kustomization pointing to a local path must have a build result."""
-    covered = set(cluster.flux_kust_resources(repo_root))
-    expected = _local_flux_kust_names(cluster, repo_root)
-    missing = sorted(expected - covered)
+    expected = {name for name, spec in cluster.active_flux_kustomizations.items() if spec.local_dir(repo_root)}
+    missing = sorted(expected - cluster.flux_kust_resources().keys())
     assert not missing, "Flux kustomizations with no build result:\n" + "\n".join(f"  {m}" for m in missing)
 
 
-def test_no_dependency_errors(cluster: ParsedCluster, repo_root: Path) -> None:
+def test_no_dependency_errors(cluster: ParsedCluster) -> None:
     """Operator prerequisites are dependencies; every sourceRef resolves."""
-    errors = validate_dependencies(cluster, repo_root)
+    errors = validate_dependencies(cluster)
     assert not errors, "\n".join(errors)
 
 
-def test_controller_resources_have_health_checks(cluster: ParsedCluster, repo_root: Path) -> None:
-    errors = check_controller_health_checks(cluster, repo_root)
+def test_controller_resources_have_health_checks(cluster: ParsedCluster) -> None:
+    errors = check_controller_health_checks(cluster)
     assert not errors, "\n".join(errors)
 
 
-def test_external_credential_ownership(cluster: ParsedCluster, repo_root: Path) -> None:
+def test_external_credential_ownership(cluster: ParsedCluster) -> None:
     """Only the shared store reads external-creds."""
-    errors = check_external_credential_ownership(cluster, repo_root)
+    errors = check_external_credential_ownership(cluster)
     assert not errors, "\n".join(errors)
 
 
@@ -282,7 +278,7 @@ def test_external_secret_store_wiring_uses_each_flux_owners_target_namespace(tmp
         )
 
     parsed = _build_cluster(tmp_path)
-    builds = parsed.flux_kust_resources(tmp_path)
+    builds = parsed.flux_kust_resources()
     assert {
         owner_name: {resource.namespace for resource in builds[owner_name] if resource.kind == "ExternalSecret"}
         for owner_name in ("first", "second", "unspecified")
@@ -293,9 +289,13 @@ def test_external_secret_store_wiring_uses_each_flux_owners_target_namespace(tmp
     errors = check_external_secret_store_wiring(parsed)
     assert len(errors) == 2
     for secret in ("implicit", "explicit"):
-        assert any(
-            f"ExternalSecret '{secret}' in namespace 'denied' is denied by ClusterSecretStore" in e for e in errors
-        )
+        [error] = [
+            error
+            for error in errors
+            if f"ExternalSecret '{secret}' in namespace 'denied' is denied by ClusterSecretStore" in error
+        ]
+        assert "second" in error
+        assert "./cluster/generated/secrets" in error
 
 
 def test_forgejo_image_namespaces_are_reflected(cluster: ParsedCluster) -> None:
@@ -322,10 +322,10 @@ def test_image_policy_markers_resolve(cluster: ParsedCluster, k8s_dir: Path) -> 
 
 
 def test_agent_binding_delegation_dependencies_follow_namespace_owners(
-    cluster: ParsedCluster, staging_policy_sets: dict[str, list[dict]], k8s_dir: Path, repo_root: Path
+    cluster: ParsedCluster, staging_policy_sets: dict[str, list[dict]], k8s_dir: Path
 ) -> None:
     """Delegated binding applies follow the namespace owner that creates their targets."""
-    retained_resources = cluster.flux_kust_resources(repo_root, include_suspended=True)
+    retained_resources = cluster.flux_kust_resources(include_suspended=True)
     namespace_owners: dict[str, set[str]] = {}
     for owner, resources in retained_resources.items():
         for resource in resources:
@@ -400,9 +400,9 @@ def test_flux_bootstrap_sources_need_no_decrypted_auth(k8s_dir: Path) -> None:
     assert not errors, "\n".join(errors)
 
 
-def test_sops_secrets_have_decryption_block(cluster: ParsedCluster, repo_root: Path) -> None:
+def test_sops_secrets_have_decryption_block(cluster: ParsedCluster) -> None:
     """Active flux kustomizations rendering a SOPS Secret must declare decryption.provider: sops."""
-    errors = check_sops_decryption_blocks(cluster, repo_root)
+    errors = check_sops_decryption_blocks(cluster)
     assert not errors, "\n".join(errors)
 
 
@@ -436,18 +436,14 @@ def bootstrap_resources(k8s_dir: Path) -> list[K8sResource]:
         parse_kustomize_file(k8s_dir / "flux/flux-system/kustomization.yaml"),
         flux_generated_kustomization(k8s_dir / "flux/ducktape-flux"),
     )
-    return [resource for root in bootstrap_roots for resource in asyncio.run(run_kustomize_build(root)).resources]
+    return [resource for root in bootstrap_roots for resource in asyncio.run(run_kustomize_build(root))]
 
 
 @pytest.fixture(scope="module")
-def agent_permission_resources(
-    cluster: ParsedCluster, bootstrap_resources: list[K8sResource], repo_root: Path
-) -> list[K8sResource]:
+def agent_permission_resources(cluster: ParsedCluster, bootstrap_resources: list[K8sResource]) -> list[K8sResource]:
     # Suspension stops reconciliation, not the grants already present in a retained namespace.
     resources = [
-        resource
-        for group in cluster.flux_kust_resources(repo_root, include_suspended=True).values()
-        for resource in group
+        resource for group in cluster.flux_kust_resources(include_suspended=True).values() for resource in group
     ]
     resources.extend(bootstrap_resources)
     return resources

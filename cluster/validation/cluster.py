@@ -17,7 +17,6 @@ from cluster.validation.flux import (
 )
 from cluster.validation.k8s import ArtifactGeneratorResource, K8sResource, parse_k8s_resource_file
 from cluster.validation.kustomize import (
-    KustomizeBuildResult,
     KustomizeFile,
     flux_generated_kustomization,
     has_kustomization_file,
@@ -69,7 +68,8 @@ class ParsedCluster:
     # flux-system/, and the ExternalArtifacts ArtifactGenerators declare. Used by
     # sourceRef validation — see dependencies.check_source_references.
     flux_sources: set[tuple[str, str, str]] = field(default_factory=set)
-    build_results: list[KustomizeBuildResult] = field(default_factory=list)
+    # Each Flux owner can render a shared directory differently (e.g. targetNamespace).
+    rendered_resources: dict[str, list[K8sResource]] = field(default_factory=dict)
 
     # Directed graph of Flux kustomization dependencies.
     # Edge A->B means kustomization A depends on B (A must start after B is ready).
@@ -88,21 +88,13 @@ class ParsedCluster:
         """Flux kustomizations that are not suspended."""
         return {name: spec for name, spec in self.flux_kustomizations.items() if not spec.suspend}
 
-    def flux_kust_resources(self, repo_root: Path, *, include_suspended: bool = False) -> dict[str, list[K8sResource]]:
+    def flux_kust_resources(self, *, include_suspended: bool = False) -> dict[str, list[K8sResource]]:
         """Map Flux owners to built resources; suspension retains deployed authorization objects."""
-        build_by_owner = {r.flux_owner: r.resources for r in self.build_results if r.flux_owner is not None}
-        build_by_dir: dict[Path, list[K8sResource]] = {
-            r.kustomization_path.parent.resolve(): r.resources for r in self.build_results if r.flux_owner is None
+        return {
+            name: resources
+            for name, resources in self.rendered_resources.items()
+            if not (spec := self.flux_kustomizations[name]).parked and (include_suspended or not spec.suspend)
         }
-        result: dict[str, list[K8sResource]] = {}
-        for name, spec in self.flux_kustomizations.items():
-            if spec.parked or (spec.suspend and not include_suspended):
-                continue
-            if name in build_by_owner:
-                result[name] = build_by_owner[name]
-            elif (kust_dir := spec.local_dir(repo_root)) and kust_dir in build_by_dir:
-                result[name] = build_by_dir[kust_dir]
-        return result
 
 
 def _index_source(resource: K8sResource, sources: set[tuple[str, str, str]]) -> None:
