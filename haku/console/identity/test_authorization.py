@@ -512,7 +512,7 @@ async def test_database_outage_maps_to_authority_unavailable() -> None:
             await authority.list_agents(operator_id=uuid4())
 
 
-async def test_sqlalchemy_pool_timeout_maps_to_authority_unavailable(db_url: str, harness: Harness) -> None:
+async def test_sqlalchemy_pool_timeout_maps_to_authority_unavailable(harness: Harness) -> None:
 
     async def time_out() -> None:
         raise SQLAlchemyTimeoutError("connection pool exhausted")
@@ -521,7 +521,7 @@ async def test_sqlalchemy_pool_timeout_maps_to_authority_unavailable(db_url: str
         await harness.authority._database_call(time_out)
 
 
-async def test_host_unreachable_maps_to_authority_unavailable(db_url: str, harness: Harness) -> None:
+async def test_host_unreachable_maps_to_authority_unavailable(harness: Harness) -> None:
     """asyncpg can raise a bare OSError (e.g. EHOSTUNREACH) that isn't a ConnectionError subclass."""
 
     async def no_route_to_host() -> None:
