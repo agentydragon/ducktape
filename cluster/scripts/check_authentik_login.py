@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify Authentik authentication works end-to-end.
+"""Check Authentik's native username/password login flow.
 
 Exercises the full challenge-response login flow against the Authentik API:
   1. GET  flow executor → identification challenge
@@ -10,18 +10,16 @@ Retrieves the user password from kubectl and connects to Authentik via
 kubectl port-forward. Exits 0 on success, 1 on failure.
 
 Usage:
-    python3 cluster/scripts/check_authentik_login.py
-    python3 cluster/scripts/check_authentik_login.py --user akadmin --secret-ns authentik --secret-name authentik-admin-password --secret-key AUTHENTIK_BOOTSTRAP_PASSWORD
+    bb run //cluster/scripts:check_authentik_login
+    bb run //cluster/scripts:check_authentik_login -- --user akadmin --secret-name authentik-admin-password --secret-key AUTHENTIK_BOOTSTRAP_PASSWORD
 """
 
 from __future__ import annotations
 
 import argparse
 import base64
-import http.cookiejar
 import json
 import subprocess
-import sys
 import time
 import urllib.error
 import urllib.request
@@ -57,79 +55,42 @@ def start_port_forward(namespace: str, service: str, local_port: int, remote_por
 
 
 def authentik_login(base_url: str, flow_slug: str, uid: str, password: str) -> bool:
-    """Exercise the full Authentik challenge-response login flow.
-
-    Returns True on successful login, False on failure.
-    """
-    cj = http.cookiejar.CookieJar()
-    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
-
+    """Advance through the password flow using one cookie session."""
+    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor())
     flow_url = f"{base_url}/api/v3/flows/executor/{flow_slug}/"
-
-    # Step 1: GET flow executor → identification challenge
-    print(f"  GET {flow_url}")
-    req = urllib.request.Request(flow_url, headers={"Accept": "application/json"})
-    with opener.open(req) as resp:
-        data = json.loads(resp.read())
-
-    component = data.get("component", "")
-    print(f"  Stage: {component}")
-    if component != "ak-stage-identification":
-        print(f"  ERROR: Expected ak-stage-identification, got {component}")
-        print(f"  Response: {json.dumps(data, indent=2)}")
-        return False
-
-    # Step 2: POST uid_field → password challenge
-    payload = json.dumps({"uid_field": uid}).encode()
-    print(f"  POST uid_field={uid}")
-    req = urllib.request.Request(
-        flow_url, data=payload, headers={"Accept": "application/json", "Content-Type": "application/json"}
-    )
-    with opener.open(req) as resp:
-        data = json.loads(resp.read())
-
-    component = data.get("component", "")
-    print(f"  Stage: {component}")
-    if component != "ak-stage-password":
-        print(f"  ERROR: Expected ak-stage-password, got {component}")
-        print(f"  Response: {json.dumps(data, indent=2)}")
-        return False
-
-    # Step 3: POST password → redirect on success
-    payload = json.dumps({"password": password}).encode()
-    print("  POST password=***")
-    req = urllib.request.Request(
-        flow_url, data=payload, headers={"Accept": "application/json", "Content-Type": "application/json"}
-    )
-    try:
-        with opener.open(req) as resp:
-            data = json.loads(resp.read())
-    except urllib.error.HTTPError as e:
-        body = e.read().decode()
-        print(f"  ERROR: HTTP {e.code}: {body}")
-        return False
-
-    component = data.get("component", "")
-    print(f"  Stage: {component}")
-
-    if component == "xak-flow-redirect":
-        return True
-
-    # Could be another stage (e.g. MFA) or an error
-    print(f"  ERROR: Unexpected component after password: {component}")
-    print(f"  Response: {json.dumps(data, indent=2)}")
-    return False
+    print(f"  Flow executor: {flow_url}")
+    for payload, expected_component in (
+        (None, "ak-stage-identification"),
+        ({"uid_field": uid}, "ak-stage-password"),
+        ({"password": password}, "xak-flow-redirect"),
+    ):
+        headers = {"Accept": "application/json"}
+        body = None
+        if payload is not None:
+            headers["Content-Type"] = "application/json"
+            body = json.dumps(payload).encode()
+        req = urllib.request.Request(flow_url, data=body, headers=headers)
+        try:
+            with opener.open(req, timeout=30) as resp:
+                component = json.load(resp).get("component")
+        except urllib.error.HTTPError as exc:
+            print(f"  ERROR: HTTP {exc.code} {exc.reason} waiting for {expected_component}")
+            return False
+        if component != expected_component:
+            print(f"  ERROR: Expected {expected_component}, got {component}")
+            return False
+        print(f"  Stage: {component}")
+    return True
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Check Authentik login flow")
-    parser.add_argument("--user", default="agentydragon@gmail.com", help="Username or email to log in with")
-    parser.add_argument(
-        "--secret-ns", default="flux-system", help="Namespace of the K8s secret containing the password"
-    )
-    parser.add_argument("--secret-name", default="agentydragon-user-password", help="Name of the K8s secret")
-    parser.add_argument("--secret-key", default="user_password", help="Key within the secret")
-    parser.add_argument("--flow-slug", default="custom-authentication-flow", help="Authentik flow slug to exercise")
+    parser = argparse.ArgumentParser(description=__doc__)
+    # Native user and password Secret are wired by tf/gitops/sso-providers/main.tf.
+    parser.add_argument("--user", default="agentydragon", help="Username or email to log in with")
+    parser.add_argument("--secret-ns", default="authentik", help="Namespace of the K8s secret containing the password")
+    parser.add_argument("--secret-name", default="authentik-user-password", help="Name of the K8s secret")
+    parser.add_argument("--secret-key", default="USER_PASSWORD", help="Key within the secret")
+    parser.add_argument("--flow-slug", default="default-authentication-flow", help="Authentik flow slug to exercise")
     parser.add_argument("--local-port", type=int, default=19080, help="Local port for kubectl port-forward")
     parser.add_argument("--url", default=None, help="Direct Authentik URL (skips port-forward)")
     args = parser.parse_args()
@@ -137,10 +98,6 @@ def main() -> None:
     # Get password
     print(f"Reading password from {args.secret_ns}/{args.secret_name}:{args.secret_key}...")
     password = get_password_from_k8s(args.secret_ns, args.secret_name, args.secret_key)
-    if not password:
-        print("ERROR: Empty password retrieved")
-        sys.exit(1)
-    print("  Password retrieved successfully")
 
     # Set up connectivity
     port_forward_proc = None
@@ -153,14 +110,10 @@ def main() -> None:
 
     try:
         print(f"Exercising login flow ({args.flow_slug}) as {args.user}...")
-        success = authentik_login(base_url, args.flow_slug, args.user, password)
-
-        if success:
-            print("LOGIN SUCCESSFUL")
-            sys.exit(0)
-        else:
+        if not authentik_login(base_url, args.flow_slug, args.user, password):
             print("LOGIN FAILED")
-            sys.exit(1)
+            raise SystemExit(1)
+        print("LOGIN SUCCESSFUL")
     finally:
         if port_forward_proc:
             port_forward_proc.terminate()

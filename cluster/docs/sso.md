@@ -1,5 +1,10 @@
 # SSO Integration (Authentik)
 
+To diagnose native password login, run `bb run //cluster/scripts:check_authentik_login` from
+the repo devshell. The probe uses the Terraform-managed local user and its
+Kubernetes Secret, then checks the default Authentik flow over a port-forward.
+Use a browser to check Google sign-in or MFA.
+
 ## Two provider management patterns
 
 ### TF-managed providers (preferred)

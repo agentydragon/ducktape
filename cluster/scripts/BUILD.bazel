@@ -2,17 +2,42 @@
 # Cluster utility scripts (non-validation).
 # Validators are in //cluster/validation/.
 
-load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
-# Verify Authentik authentication works end-to-end
+# Probe Authentik's native password flow
 py_binary(
     name = "check_authentik_login",
     srcs = ["check_authentik_login.py"],
 )
 
+py_test(
+    name = "test_check_authentik_login",
+    srcs = ["test_check_authentik_login.py"],
+    deps = [
+        ":check_authentik_login",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_binary(
     name = "ovh_hil_availability",
     srcs = ["ovh_hil_availability.py"],
+)
+
+py_library(
+    name = "hcloud_server_types",
+    srcs = ["hcloud_server_types.py"],
+    deps = [
+        "@pypi//more_itertools",
+        "@pypi//pydantic",
+    ],
+)
+
+py_binary(
+    name = "hcloud_server_types_bin",
+    main_module = "cluster.scripts.hcloud_server_types",
+    deps = [":hcloud_server_types"],
 )
 
 # Typed loader for nebula-mesh.json. Shared by render_mobile_nebula_config and
