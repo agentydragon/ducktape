@@ -1167,6 +1167,7 @@ export function makeComposedCase(seed, index) {
       ? [
           expr(discardedForms[Math.floor(index / 13) % discardedForms.length]),
           recordLiteral(["start", 'quote "value"', "slash \\ path", ""][Math.floor(index / 13) % 4]),
+          recordLiteral([0, true, false, null][Math.floor(index / 13) % 4]),
         ]
       : [];
   const ast = {
@@ -1196,6 +1197,7 @@ export function makeComposedCase(seed, index) {
     grammar: "composed",
     hasDiscardedLiteral,
     hasTextObservation: hasDiscardedLiteral,
+    hasPrimitiveObservation: hasDiscardedLiteral,
     hasReexportRelay: index % 8 === 3,
     earlyVar,
     hasLocalVar,
@@ -1648,6 +1650,9 @@ export async function runFuzz({
     textObservationCases: 0,
     textObservationComparedCases: 0,
     textObservationProvedCases: 0,
+    primitiveObservationCases: 0,
+    primitiveObservationComparedCases: 0,
+    primitiveObservationProvedCases: 0,
     varCases: 0,
     varGeneratedCases: 0,
     varComparedCases: 0,
@@ -1766,6 +1771,7 @@ export async function runFuzz({
       if (hasVar) summary.varCases++;
       if (input.hasDiscardedLiteral) summary.discardedLiteralCases++;
       if (input.hasTextObservation) summary.textObservationCases++;
+      if (input.hasPrimitiveObservation) summary.primitiveObservationCases++;
       if (input.hasReexportRelay && !input.independentSplit) summary.reexportRelayCases++;
       if (input.hasLocalVar) summary.localVarCases++;
       if (input.earlyVar) summary.earlyVarCases++;
@@ -1960,6 +1966,7 @@ export async function runFuzz({
       summary.compared++;
       if (input.hasDiscardedLiteral) summary.discardedLiteralComparedCases++;
       if (input.hasTextObservation) summary.textObservationComparedCases++;
+      if (input.hasPrimitiveObservation) summary.primitiveObservationComparedCases++;
       if (input.hasReexportRelay && !input.independentSplit) summary.reexportRelayComparedCases++;
       if (hasVar) summary.varComparedCases++;
       if (input.hasLocalVar) summary.localVarComparedCases++;
@@ -2043,6 +2050,7 @@ export async function runFuzz({
           summary.proved++;
           if (input.hasDiscardedLiteral) summary.discardedLiteralProvedCases++;
           if (input.hasTextObservation) summary.textObservationProvedCases++;
+          if (input.hasPrimitiveObservation) summary.primitiveObservationProvedCases++;
           if (input.hasReexportRelay && !input.independentSplit) summary.reexportRelayProvedCases++;
           if (hasVar) summary.varProvedCases++;
           if (input.hasLocalVar) summary.localVarProvedCases++;

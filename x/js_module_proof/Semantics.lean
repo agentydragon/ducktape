@@ -2,6 +2,8 @@
 inductive Observation where
   | text (value : String)
   | number (value : Nat)
+  | boolean (value : Bool)
+  | nullValue
   | undefined
   deriving DecidableEq, Repr
 
@@ -62,6 +64,7 @@ inductive Operation where
   | readCell
   | readSnapshot
   | recordText (value : String)
+  | recordLiteral (value : Observation)
   | recordCell
   | declareBinding (name : String) (value : Nat)
   | copyBinding (target source : String)
@@ -1012,6 +1015,7 @@ def executeStep {α : Type} (state : ExecutionState α) (operation : Operation) 
       let value ← state.snapshot
       pure { state with events := state.events ++ [.number value] }
     | .recordText value => some (recordObservation state (.text value))
+    | .recordLiteral value => some (recordObservation state value)
     | .recordCell => do
       let value ← state.cell
       pure (recordObservation state (.number value))

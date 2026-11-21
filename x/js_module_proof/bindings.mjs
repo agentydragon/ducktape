@@ -1113,6 +1113,13 @@ function statement(node) {
   const arg = expr.arguments[0];
   if (arg?.type === "Literal" && typeof arg.value === "string" && !/[^\x20-\x7e]/.test(arg.value))
     return { kind: "recordText", value: arg.value };
+  if (
+    arg?.type === "Literal" &&
+    !arg.regex &&
+    !arg.bigint &&
+    (arg.value === null || typeof arg.value === "boolean" || (Number.isSafeInteger(arg.value) && arg.value >= 0))
+  )
+    return { kind: "recordPrimitive", value: arg.value };
   if (arg?.type === "CallExpression" && !arg.optional && arg.arguments.length === 0)
     return { kind: "recordCall", name: identifier(arg.callee) };
   return { kind: "record", name: identifier(arg) };
@@ -1485,6 +1492,8 @@ function leanStatement(item) {
       return ".discardedLiteral";
     case "recordText":
       return `.recordText ${str(item.value)}`;
+    case "recordPrimitive":
+      return `.recordPrimitive (${item.value === null ? ".nullValue" : typeof item.value === "boolean" ? `.boolean ${item.value}` : `.number ${item.value}`})`;
     case "variable":
     case "hoistedVariable":
       return `.${item.kind} ${str(item.name)} ${item.value}`;
@@ -1930,6 +1939,8 @@ theorem binding_export_difference :
         !trace.events.every(
           (value) =>
             undefinedValue(value) ||
+            value === null ||
+            typeof value === "boolean" ||
             (typeof value === "string" && !/[^\x20-\x7e]/.test(value)) ||
             (Number.isSafeInteger(value) && value >= 0)
         )
@@ -1937,7 +1948,15 @@ theorem binding_export_difference :
         return null;
       return list(
         trace.events.map((value) =>
-          undefinedValue(value) ? ".undefined" : typeof value === "string" ? `.text ${str(value)}` : `.number ${value}`
+          undefinedValue(value)
+            ? ".undefined"
+            : value === null
+              ? ".nullValue"
+              : typeof value === "boolean"
+                ? `.boolean ${value}`
+                : typeof value === "string"
+                  ? `.text ${str(value)}`
+                  : `.number ${value}`
         )
       );
     };

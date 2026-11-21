@@ -168,6 +168,8 @@ def counterOperation (state : State) (operation : Operation) : State × Option N
         | [] => match event with
           | .number n => some n
           | .text _ => none
+          | .boolean _ => none
+          | .nullValue => none
           | .undefined => none
     (next, value)
 
