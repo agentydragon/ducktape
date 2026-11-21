@@ -2230,3 +2230,19 @@ func TestDescribeLegacyCreateSessionConfiguration(t *testing.T) {
 		t.Fatalf("legacy binding lost: %v", described)
 	}
 }
+
+func TestRecoverBlockedSessionWithoutRemainingHandles(t *testing.T) {
+	store, session, owner := claimedSession(t)
+	if err := store.FailExecution(t.Context(), owner, session.ID, nil, errors.New("legacy unclassified failure")); err != nil {
+		t.Fatal(err)
+	}
+	blocked, err := store.GetSession(t.Context(), session.ID, "fixture-account")
+	if err != nil || !blocked.Blocked {
+		t.Fatalf("blocked=%+v err=%v", blocked, err)
+	}
+	expireLease(t, store, session)
+	recovered, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", blocked.Cursor, "Reviewed retained boundary evidence", "")
+	if err != nil || recovered.Blocked {
+		t.Fatalf("recovered=%+v err=%v", recovered, err)
+	}
+}

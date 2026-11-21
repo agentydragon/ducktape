@@ -104,7 +104,7 @@ func Prepare(store Content, snapshot Snapshot, preparation Preparation) (Recipe,
 			}
 		} else {
 			var err error
-			profile, err = chatcompletions.PrepareNextProfile(store, profile, preparation.SessionEffort)
+			profile, err = chatcompletions.PrepareNextProfile(store, profile, preparation.ModelConfig.ProviderModel, preparation.SessionEffort)
 			if err != nil {
 				return Recipe{}, err
 			}

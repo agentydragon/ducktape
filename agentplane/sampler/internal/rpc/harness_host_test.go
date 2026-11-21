@@ -2,6 +2,7 @@ package rpc
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,7 +14,9 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/residentruntime"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionconfig"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionstore"
+	samplersettings "github.com/agentydragon/ducktape/agentplane/sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/testsupport"
+	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -276,3 +279,79 @@ func (s *hostTransport) SetHeader(header metadata.MD) error {
 }
 func (s *hostTransport) SendHeader(header metadata.MD) error { return s.SetHeader(header) }
 func (s *hostTransport) SetTrailer(metadata.MD) error        { return nil }
+
+func TestRemovedChatRouteCanSwitchToConfiguredChatRoute(t *testing.T) {
+	h, _ := newHostFixture(t)
+	chat := samplersettings.ModelConfig{Connection: "provider", ProviderModel: "old-provider-model", API: protocol.APIStyleChatCompletions, ExecEncoding: protocol.ExecEncodingJSON, ReasoningEfforts: []string{""}}
+	h.Sampler.Settings.Models["old-chat"] = chat
+	chat.ProviderModel = "replacement-provider-model"
+	h.Sampler.Settings.Models["new-chat"] = chat
+	ctx := grpc.NewContextWithServerTransportStream(serviceContext(t, peertls.SessionsURI), &hostTransport{})
+	request := hostCreateRequest()
+	request.Spec.Model = "old-chat"
+	if _, err := h.CreateSession(ctx, request); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.SubmitInput(ctx, &harnesshostpb.SubmitInputRequest{SessionId: request.SessionId, CommandId: "old-input", Text: "remember this"}); err != nil {
+		t.Fatal(err)
+	}
+	session, err := h.Sampler.Store.GetSession(t.Context(), request.SessionId, peertls.SessionsURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, err := h.Sampler.Store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	command, err := h.Sampler.Store.NextCommand(t.Context(), owner, session.ID)
+	if err != nil || command == nil || command.ID != "old-input" {
+		t.Fatalf("old input=%v err=%v", command, err)
+	}
+	delete(h.Sampler.Settings.Models, "old-chat")
+	if _, err := h.ChangeModel(ctx, &harnesshostpb.ChangeModelRequest{SessionId: request.SessionId, CommandId: "while-active", Model: "new-chat"}); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("active turn: %v", err)
+	}
+	if err := h.Sampler.Store.FailExecution(t.Context(), owner, session.ID, &command.ID, &protocol.KnownFailureError{Message: "The selected model route is no longer configured."}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.SubmitInput(ctx, &harnesshostpb.SubmitInputRequest{SessionId: request.SessionId, CommandId: "input-before-switch", Text: "hello"}); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("input with missing route: %v", err)
+	}
+	if _, err := h.ChangeModel(ctx, &harnesshostpb.ChangeModelRequest{SessionId: request.SessionId, CommandId: "wrong-protocol", Model: "test-model"}); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("incompatible protocol: %v", err)
+	}
+	if _, err := h.ChangeModel(ctx, &harnesshostpb.ChangeModelRequest{SessionId: request.SessionId, CommandId: "change", Model: "new-chat"}); err != nil {
+		t.Fatal(err)
+	}
+	// Queued input is validated against the replacement, before the model change drains.
+	if _, err := h.SubmitInput(ctx, &harnesshostpb.SubmitInputRequest{SessionId: request.SessionId, CommandId: "input-after-switch", Text: "continue"}); err != nil {
+		t.Fatal(err)
+	}
+	command, err = h.Sampler.Store.NextCommand(t.Context(), owner, session.ID)
+	if err != nil || command == nil || command.ID != "change" {
+		t.Fatalf("model change=%v err=%v", command, err)
+	}
+	session, err = h.Sampler.Store.GetSession(t.Context(), session.ID, peertls.SessionsURI)
+	if err != nil || session.Model != "new-chat" || session.Blocked {
+		t.Fatalf("session=%+v err=%v", session, err)
+	}
+	command, err = h.Sampler.Store.NextCommand(t.Context(), owner, session.ID)
+	if err != nil || command == nil || command.ID != "input-after-switch" {
+		t.Fatalf("continuation=%v err=%v", command, err)
+	}
+	conversation, err := h.Sampler.Store.Read(t.Context(), owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	records, err := conversation.Context().Records()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var history strings.Builder
+	for _, record := range records {
+		history.Write(record)
+	}
+	if !strings.Contains(history.String(), "remember this") || !strings.Contains(history.String(), "continue") {
+		t.Fatalf("conversation records=%s", history.String())
+	}
+}
