@@ -6,7 +6,6 @@ import pty
 import re
 import stat
 import subprocess
-import tarfile
 import threading
 import time
 from pathlib import Path
@@ -18,7 +17,7 @@ from python.runfiles import Runfiles
 # gazelle:include_dep @pypi//protobuf
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.proto import identity_pb2
-from agentplane.system_tests.vm import boot_rcu
+from agentplane.system_tests.vm import boot_rcu, guest_busybox
 
 
 def _readiness_view(*, pod_namespace: str = "scope") -> environment_service_pb2.EnvironmentDescriptor:
@@ -356,13 +355,7 @@ def test_guest_records_preserve_exact_reporter_receipts_on_shared_tty(tmp_path: 
     busybox_tar = runfiles.Rlocation(os.environ["BOOT_RCU_BUSYBOX_RLOCATION"])
     assert script is not None
     assert busybox_tar is not None
-    busybox = tmp_path / "busybox"
-    with tarfile.open(busybox_tar) as archive:
-        member = next(member for member in archive if member.name.endswith("bin/busybox"))
-        source = archive.extractfile(member)
-        assert source is not None
-        busybox.write_bytes(source.read())
-    busybox.chmod(0o755)
+    busybox = guest_busybox.extract(busybox_tar, tmp_path)
     env = os.environ | {
         "AGENTPLANE_BOOT_RCU_BUSYBOX": str(busybox),
         "AGENTPLANE_BOOT_RCU_SAMPLES": "20",
@@ -448,13 +441,7 @@ def test_guest_window_argument_selects_360_bounded_samples(tmp_path: Path) -> No
     busybox_tar = runfiles.Rlocation(os.environ["BOOT_RCU_BUSYBOX_RLOCATION"])
     assert script is not None
     assert busybox_tar is not None
-    busybox = tmp_path / "busybox"
-    with tarfile.open(busybox_tar) as archive:
-        member = next(member for member in archive if member.name.endswith("bin/busybox"))
-        source = archive.extractfile(member)
-        assert source is not None
-        busybox.write_bytes(source.read())
-    busybox.chmod(0o755)
+    busybox = guest_busybox.extract(busybox_tar, tmp_path)
     cmdline = tmp_path / "cmdline"
     cmdline.write_text("console=ttyS0 agentplane.boot-rcu-observe=1 agentplane.boot-rcu-observe-window=360\n")
     env = os.environ | {

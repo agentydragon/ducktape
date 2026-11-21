@@ -368,6 +368,7 @@ py_test(
     },
     deps = [
         ":boot_rcu",
+        ":guest_busybox",
         "//:conftest",
         "//agentplane/environments/v1:environment_service_pb2",
         "//agentplane/proto:identity_pb2",
@@ -618,6 +619,7 @@ py_test(
     },
     main = "test_cgroup_pilot_trace.py",
     deps = [
+        ":guest_busybox",
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "@pypi//pytest_bazel",
@@ -645,6 +647,7 @@ py_test(
     },
     main = "test_delegated_cgroup_stress.py",
     deps = [
+        ":guest_busybox",
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "@pypi//pytest_bazel",
@@ -666,6 +669,7 @@ py_test(
     },
     main = "test_shutdown_sysrq.py",
     deps = [
+        ":guest_busybox",
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "@pypi//pytest_bazel",
@@ -812,4 +816,9 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
+)
+
+py_library(
+    name = "guest_busybox",
+    srcs = ["guest_busybox.py"],
 )
