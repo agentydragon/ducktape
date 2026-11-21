@@ -12,7 +12,7 @@ All agent loops run inside Docker containers. Each container is a self-contained
 Host Scaffold                      Container
 ─────────────                      ─────────
 AgentRegistry (agent_registry.py)
-├─ Create temp DB user
+├─ Create DB role (persistent)
 ├─ [Subagent spawn endpoint for critic-dev]
 └─ Create container ─────────────> Container starts (image entrypoint)
                                    ├─ Fetch snapshot from Postgres (critic, grader)

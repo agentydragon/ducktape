@@ -112,7 +112,7 @@ BACKUP_PLAIN_OPT = typer.Option(False, "--plain", help="Output plain SQL instead
 
 
 def cmd_db_backup(output: Path | None = BACKUP_OUTPUT_OPT, plain: bool = BACKUP_PLAIN_OPT) -> None:
-    """Create a database backup. Uses PG* environment variables set by devenv."""
+    """Create a database backup. Uses PG* environment variables set by direnv."""
     console = Console()
 
     # Determine output path
