@@ -179,6 +179,17 @@
     7d: 100% used  ↻ 23h 58m          exhausted
   '''
 # ---
+# name: test_renders_shared_fixture[multiple_accounts]
+  '''
+  Codex · main · Pro
+    5h:  35% used  ↻ 3h 30m  exhausts ~42m before reset
+  
+  Codex · alt · Plus
+    Stale data · last observed 5m ago
+    Refresh failed · showing available data
+    5h:  80% used  ↻ 3h 15m
+  '''
+# ---
 # name: test_renders_shared_fixture[observed_account_2026_11_04]
   '''
   Subscriptions
