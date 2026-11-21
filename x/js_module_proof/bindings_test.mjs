@@ -294,6 +294,17 @@ if (runSection(1)) {
   assert.equal(checkedExpression.result, "proved under assumptions", JSON.stringify(checkedExpression));
   assert.deepEqual(execute(expressionSource, ["compute"]), { events: [3], results: [3] });
   assert.deepEqual(execute(join(expressionOut, "entry.mjs"), ["compute"]), execute(expressionSource, ["compute"]));
+
+  const unsupportedArguments = join(root, "record-unsupported-arguments.mjs");
+  await writeFile(
+    unsupportedArguments,
+    `let seed = 2;\nfunction compute(value) { return seed + value; }\nglobalThis.record(compute(9));\nexport { compute };\n`
+  );
+  assert.equal(
+    cli("generate", unsupportedArguments, expressionSpec, join(root, "record-unsupported-out")).value.result,
+    "unknown"
+  );
+  assert.deepEqual(execute(unsupportedArguments, [{ name: "compute", args: [9] }]), { events: [11], results: [11] });
 }
 
 if (runSection(0)) {
@@ -328,4 +339,36 @@ if (runSection(0)) {
   assert.deepEqual(redirected.calls, [{ name: "call", args: [0] }]);
   assert.deepEqual(execute(calleeSource, redirected.calls), { events: [], results: [1] });
   assert.deepEqual(execute(join(calleeOut, "entry.mjs"), redirected.calls), { events: [], results: [2] });
+}
+
+if (runSection(1)) {
+  const largeSource = join(root, "unsafe-number-source.mjs");
+  const largeSpec = join(root, "unsafe-number-spec.json");
+  const largeOut = join(root, "unsafe-number-out");
+  await writeFile(
+    largeSource,
+    `let seed = 9007199254740991;\nfunction compute() { return (seed + 1) - seed; }\nglobalThis.record(compute());\nexport { compute };\n`
+  );
+  await writeFile(
+    largeSpec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0] },
+        "logic.mjs": { imports: ["state.mjs"], statements: [1, 2] },
+        "entry.mjs": { imports: ["logic.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", largeSource, largeSpec, largeOut).value.result, "generated");
+  const logicPath = join(largeOut, "logic.mjs");
+  const logic = await readFile(logicPath, "utf8");
+  assert.match(logic, /seed \+ 1/);
+  await writeFile(logicPath, logic.replace("seed + 1", "seed + 3"));
+  assert.deepEqual(execute(largeSource, []), { events: [1], results: [] });
+  assert.deepEqual(execute(join(largeOut, "entry.mjs"), []), { events: [3], results: [] });
+  const checked = cli("validate", largeSource, largeSpec, largeOut).value;
+  assert.equal(checked.result, "unknown", JSON.stringify(checked));
+  assert.match(checked.detail, /numeric bounds/);
 }

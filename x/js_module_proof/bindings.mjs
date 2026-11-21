@@ -1974,9 +1974,136 @@ theorem binding_export_difference :
     if (checked.status === 0 && has(checked, "binding_export_difference"))
       return { result: "unsafe", original, output, certificate };
   }
+  // Saturate bounds so a syntactically large expression cannot construct an
+  // exponentially large BigInt while checking whether it exceeds the limit.
+  const witnessLimit = BigInt(Number.MAX_SAFE_INTEGER);
+  const capWitnessBound = (value) => (value > witnessLimit ? witnessLimit + 1n : value);
+  const expressionBound = (expression, bound) => {
+    if (expression.kind === "literal") return capWitnessBound(BigInt(expression.value));
+    if (expression.kind === "name") return bound;
+    if (expression.kind === "add")
+      return capWitnessBound(expressionBound(expression.left, bound) + expressionBound(expression.right, bound));
+    if (expression.kind === "equal" || expression.kind === "less" || expression.kind === "greater") {
+      const left = expressionBound(expression.left, bound);
+      const right = expressionBound(expression.right, bound);
+      return [1n, left, right].reduce((a, b) => (a > b ? a : b));
+    }
+    if (expression.kind === "multiply") {
+      const left = expressionBound(expression.left, bound);
+      const right = expressionBound(expression.right, bound);
+      return capWitnessBound([left, right, left * right].reduce((a, b) => (a > b ? a : b)));
+    }
+    if (["unsignedShift", "shiftLeft", "shiftRight"].includes(expression.kind)) {
+      const left = expressionBound(expression.left, bound);
+      const right = expressionBound(expression.right, bound);
+      return [left, right, 4294967295n].reduce((a, b) => (a > b ? a : b));
+    }
+    if (expression.kind === "bitOr" || expression.kind === "bitXor") {
+      const left = expressionBound(expression.left, bound);
+      const right = expressionBound(expression.right, bound);
+      return capWitnessBound(left + right);
+    }
+    if (["remainder", "divide", "bitAnd"].includes(expression.kind)) {
+      const left = expressionBound(expression.left, bound);
+      const right = expressionBound(expression.right, bound);
+      return left > right ? left : right;
+    }
+    if (expression.kind === "subtract") {
+      const left = expressionBound(expression.left, bound);
+      const right = expressionBound(expression.right, bound);
+      return left > right ? left : right;
+    }
+    if (expression.kind === "conditional" || expression.kind === "guard")
+      return [expression.test, expression.consequent, expression.alternative]
+        .map((part) => expressionBound(part, bound))
+        .reduce((a, b) => (a > b ? a : b));
+    if (expression.kind === "local") {
+      const initial = expressionBound(expression.initial, bound);
+      const body = expressionBound(expression.body, initial > bound ? initial : bound);
+      return initial > body ? initial : body;
+    }
+    if (expression.kind === "catchError") {
+      const body = expressionBound(expression.body, bound);
+      const handler = expressionBound(expression.handler, body > bound ? body : bound);
+      return body > handler ? body : handler;
+    }
+    if (expression.kind === "finally") {
+      const body = expressionBound(expression.body, bound);
+      const finalizer = expressionBound(expression.finalizer, body > bound ? body : bound);
+      return body > finalizer ? body : finalizer;
+    }
+    if (expression.kind === "followedBy") {
+      const first = expressionBound(expression.first, bound);
+      const continuation = expressionBound(expression.continuation, first > bound ? first : bound);
+      return first > continuation ? first : continuation;
+    }
+    if (expression.kind === "assign") {
+      const value = expressionBound(expression.value, bound);
+      const body = expressionBound(expression.body, value > bound ? value : bound);
+      return value > body ? value : body;
+    }
+    if (expression.kind === "raise") return expressionBound(expression.value, bound);
+    if (expression.kind === "raiseConstant") return 0n;
+    if (expression.kind === "invoke" || expression.kind === "invokeLocal") {
+      const args = expression.arguments.map((argument) => expressionBound(argument, bound));
+      const callBound = args.reduce((largest, value) => (value > largest ? value : largest), bound);
+      const body = expressionBound(expression.body, callBound);
+      return body > callBound ? body : callBound;
+    }
+    throw new Error("unknown expression");
+  };
+  // The Lean arithmetic model is conditional on exact JavaScript integers.
+  // Bound both extracted programs, including initialization-call arguments,
+  // before accepting a concrete Node difference as a certified witness.
+  const witnessNumbersBounded = (calls) => {
+    const sourceItems = source.statements.map((item) => item.ast);
+    const outputItems = actual.flatMap((module) => module.statements);
+    const programs = [sourceItems, outputItems];
+    let maximum = 2;
+    for (const item of programs.flat()) {
+      if (["variable", "hoistedVariable", "constant"].includes(item.kind)) maximum = Math.max(maximum, item.value);
+      if (["recordCall", "capturedClosure"].includes(item.kind))
+        for (const value of item.arguments) maximum = Math.max(maximum, value);
+    }
+    for (const call of calls)
+      if (typeof call !== "string") for (const value of call.args) maximum = Math.max(maximum, value);
+    const initialCalls = Math.max(
+      ...programs.map((items) => items.filter((item) => ["call", "recordCall"].includes(item.kind)).length)
+    );
+    const limit = witnessLimit;
+    let bound = BigInt(maximum) << BigInt(initialCalls + calls.length + 1);
+    if (bound > limit) return false;
+    const factories = [];
+    for (const item of programs.flat()) {
+      if (item.kind === "expressionFunction" && expressionBound(item.expression, bound) > limit) return false;
+      if (item.kind === "capturedFactory") {
+        let localBound = bound;
+        for (const local of item.locals) {
+          const initial = expressionBound(local.initial, localBound);
+          if (initial > localBound) localBound = initial;
+          if (localBound > limit) return false;
+        }
+        factories.push(item.body);
+        if (expressionBound(item.body, localBound) > limit) return false;
+        if (localBound > bound) bound = localBound;
+      }
+    }
+    for (let i = 0; i < calls.length; i++) {
+      for (const body of factories) {
+        const next = expressionBound(body, bound);
+        if (next > bound) bound = next;
+        if (bound > limit) return false;
+      }
+    }
+    return true;
+  };
   const different = `\ntheorem binding_difference : sourceBindingState bindingSource ≠ witnessedOutputState bindingSource bindingModules bindingEntry := by decide\n#print axioms binding_difference\n`;
   let witnessFailure = proof.stdout || proof.stderr;
   const witnessed = (original, output, calls) => {
+    if (!witnessNumbersBounded(calls)) {
+      witnessFailure = "numeric bounds could not establish safe-integer witness execution";
+      return null;
+    }
     const events = (trace) => {
       const undefinedValue = (value) =>
         value && typeof value === "object" && value.undefined === true && Object.keys(value).length === 1;
@@ -2148,80 +2275,7 @@ theorem binding_export_difference :
       })
     : callable.map((name) => [name]);
   if (!hasExpressions) for (const first of callable) for (const second of callable) candidates.push([first, second]);
-  const expressionBound = (expression, bound) => {
-    if (expression.kind === "literal") return BigInt(expression.value);
-    if (expression.kind === "name") return bound;
-    if (expression.kind === "add")
-      return expressionBound(expression.left, bound) + expressionBound(expression.right, bound);
-    if (expression.kind === "equal" || expression.kind === "less" || expression.kind === "greater") {
-      const left = expressionBound(expression.left, bound);
-      const right = expressionBound(expression.right, bound);
-      return [1n, left, right].reduce((a, b) => (a > b ? a : b));
-    }
-    if (expression.kind === "multiply") {
-      const left = expressionBound(expression.left, bound);
-      const right = expressionBound(expression.right, bound);
-      return [left, right, left * right].reduce((a, b) => (a > b ? a : b));
-    }
-    if (["unsignedShift", "shiftLeft", "shiftRight"].includes(expression.kind)) {
-      const left = expressionBound(expression.left, bound);
-      const right = expressionBound(expression.right, bound);
-      return [left, right, 4294967295n].reduce((a, b) => (a > b ? a : b));
-    }
-    if (expression.kind === "bitOr" || expression.kind === "bitXor") {
-      const left = expressionBound(expression.left, bound);
-      const right = expressionBound(expression.right, bound);
-      return left + right;
-    }
-    if (["remainder", "divide", "bitAnd"].includes(expression.kind)) {
-      const left = expressionBound(expression.left, bound);
-      const right = expressionBound(expression.right, bound);
-      return left > right ? left : right;
-    }
-    if (expression.kind === "subtract") {
-      const left = expressionBound(expression.left, bound);
-      const right = expressionBound(expression.right, bound);
-      return left > right ? left : right;
-    }
-    if (expression.kind === "conditional" || expression.kind === "guard")
-      return [expression.test, expression.consequent, expression.alternative]
-        .map((part) => expressionBound(part, bound))
-        .reduce((a, b) => (a > b ? a : b));
-    if (expression.kind === "local") {
-      const initial = expressionBound(expression.initial, bound);
-      const body = expressionBound(expression.body, initial > bound ? initial : bound);
-      return initial > body ? initial : body;
-    }
-    if (expression.kind === "catchError") {
-      const body = expressionBound(expression.body, bound);
-      const handler = expressionBound(expression.handler, body > bound ? body : bound);
-      return body > handler ? body : handler;
-    }
-    if (expression.kind === "finally") {
-      const body = expressionBound(expression.body, bound);
-      const finalizer = expressionBound(expression.finalizer, body > bound ? body : bound);
-      return body > finalizer ? body : finalizer;
-    }
-    if (expression.kind === "followedBy") {
-      const first = expressionBound(expression.first, bound);
-      const continuation = expressionBound(expression.continuation, first > bound ? first : bound);
-      return first > continuation ? first : continuation;
-    }
-    if (expression.kind === "assign") {
-      const value = expressionBound(expression.value, bound);
-      const body = expressionBound(expression.body, value > bound ? value : bound);
-      return value > body ? value : body;
-    }
-    if (expression.kind === "raise") return expressionBound(expression.value, bound);
-    if (expression.kind === "raiseConstant") return 0n;
-    if (expression.kind === "invoke" || expression.kind === "invokeLocal") {
-      const args = expression.arguments.map((argument) => expressionBound(argument, bound));
-      const callBound = args.reduce((largest, value) => (value > largest ? value : largest), bound);
-      const body = expressionBound(expression.body, callBound);
-      return body > callBound ? body : callBound;
-    }
-    throw new Error("unknown expression");
-  };
+
   for (const calls of candidates.slice(0, 64)) {
     if (hasExpressions) {
       const definition = resolveCapturedDefinition(localName(calls[0].name));
