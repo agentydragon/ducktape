@@ -123,8 +123,8 @@ def build_settings(config: Config) -> SettingsResponse:
 def build_calibration_info(catalog: MarketCatalog | None, catalog_config: CalibrationCatalogConfig) -> CalibrationInfo:
     """The deployment's calibration catalog info (`GET /api/calibration`).
 
-    Issuers are derived from the parsed catalog (the config no longer names a single issuer);
-    `catalog` is None only when the deployment loaded no calibration catalog.
+    Issuers are derived from the parsed catalog; `catalog` is None only when the deployment
+    loaded no calibration catalog.
     """
     issuers = sorted(catalog.referenced_issuers()) if catalog is not None else []
     label = catalog_config.label or (", ".join(issuers) if issuers else "calibration catalog")
