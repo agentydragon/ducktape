@@ -84,14 +84,14 @@ def test_runner_pod_gives_codex_a_private_executor_with_shared_paths(staging_man
     assert runner["command"] == ["/run/agentplane/environment/bin/agentplane-environment-runtime"]
     assert runner["args"] == ["--config", CONFIG_FILE, "--launch-file", LAUNCH_FILE]
     config = _runner_configuration(staging_manifests, pod)
-    assert config["environment"]["kind"] == "pod"
     assert config["environment"]["supervision"] == "pid1"
     assert config["environment"]["executor"]["implementation"] == "native"
     assert config["environment"]["executor"]["placement"] == "direct"
+    assert config["environment"]["executor"]["owner"]["kind"] == "companion"
     assert executor["command"] == ["/run/agentplane/environment/bin/agentplane-execution-service"]
     args = executor["args"]
     assert args[0] == "companion"
-    assert args[args.index("--socket") + 1] == config["environment"]["executor"]["socket"]
+    assert args[args.index("--socket") + 1] == config["environment"]["executor"]["owner"]["socket"]
     assert args[args.index("--listen") + 1] == config["environment"]["executor"]["url"]
     assert args[args.index("--binary") + 1] == "/run/agentplane/environment/bin/agentplane-execution-service"
     health_port = int(args[args.index("--health-listen") + 1].removeprefix(":"))

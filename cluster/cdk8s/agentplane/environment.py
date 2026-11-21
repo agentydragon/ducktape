@@ -18,7 +18,7 @@ from agentplane.action_service.catalog import ActionGroup, Key
 from agentplane.action_service.mcp_settings import McpClientMetadataSettings, McpOAuthServer
 from agentplane.action_service.orchestration_v1.binding import LaunchPreset
 from agentplane.app.settings import Settings
-from agentplane.env.config import GuestResources, VMExecutorPlacement
+from agentplane.env.config import Executor, GuestResources
 from agentplane.identity.operator.settings import OperatorOidcSettings
 from agentplane.llm_ingress.models import AttributionConfig, ModelConfig, default_attribution
 from agentplane.notification_service.settings import NoticeDebounceSettings
@@ -227,7 +227,7 @@ class Environment:
     vm_storage_class: str | None = None
     # Guest sizing and Runner cgroup budgets shared by the VM template and guest config seed.
     vm_resources: GuestResources | None = None
-    vm_executor_placement: VMExecutorPlacement | None = None
+    vm_executor: Executor | None = None
     # Opt-in: trusted KVM launcher with same-Pod RAM checkpoints.
     firecracker_sandboxes: bool = False
     # Whether runner Pods delegate Codex command execution to a companion with its own PID namespace.

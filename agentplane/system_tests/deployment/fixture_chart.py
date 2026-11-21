@@ -65,7 +65,7 @@ from agentplane.action_service.catalog import ActionGroup
 from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.app.oidc import OIDCSettings
 from agentplane.app.settings import FrontendConfig, LangfuseSearchSettings, Settings, TraceSearchSettings
-from agentplane.env.config import CodexReadiness
+from agentplane.env.config import CodexReadiness, Executor, SystemdExecutorOwner
 from agentplane.env.runtime.harness import Harness
 from agentplane.identity.operator.settings import OperatorOidcSettings
 from agentplane.net.peertls.config import (
@@ -458,7 +458,9 @@ def environment(
         vm_sandboxes=runtime is SandboxRuntime.KUBEVIRT,
         firecracker_sandboxes=runtime is SandboxRuntime.FIRECRACKER,
         vm_resources=vm_configuration.RESOURCES if runtime is not SandboxRuntime.POD else None,
-        vm_executor_placement="systemd" if runtime is not SandboxRuntime.POD else None,
+        vm_executor=Executor(url="ws://127.0.0.1:4501", owner=SystemdExecutorOwner(), placement="systemd")
+        if runtime is not SandboxRuntime.POD
+        else None,
         vm_console_autologin=True,
     )
 

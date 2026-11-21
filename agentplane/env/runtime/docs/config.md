@@ -39,7 +39,7 @@ Environment Runtime environment changes or state ownership begins.
 
 ## File fields
 
-`environment-runtime.json` is a strict JSON object with `version: 2`.
+`environment-runtime.json` is a strict JSON object with `version: 3`.
 
 | Field                             | Meaning                                                                                                                                                                                                                                     |
 | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -129,15 +129,24 @@ connection per server stream. Typed unary process and file calls use the returne
 The adapter retains the existing per-Environment Runtime open-connection and per-native-frame limits, without adding
 persistence, operation receipts or execution configuration.
 
-`environment` has exactly one discriminator, `kind`:
+`environment.supervision` selects how Runtime supervises local children.
 
-- `kind: "pod"`: required `supervision` (`pid1` for a private container PID namespace),
-  plus optional `executor` with loopback `url`, absolute ownership `socket` and `placement: "direct"`.
-  Kubernetes owns the container resource limits.
-- `kind: "vm"`: required `resources`, non-root `agent_uid`/`agent_gid`, absolute `block_devices`,
-  optional `console_autologin` (false when omitted), and optional `executor` with loopback `url`.
-  Select `placement: "direct"` for commands inside the executor's service cgroup, or `placement: "systemd"`
-  for native commands in separate transient units under the shared `agentplane-commands.slice`.
+- `"pid1"` uses the Runtime process as PID 1 in its private PID namespace. Kubernetes owns
+  the container resource limits.
+- `"systemd"` requires `resources`, non-root `agent_uid` and `agent_gid`, and absolute
+  `block_devices`. `console_autologin` defaults to false.
+
+Both supervision modes support an optional `executor` with required loopback `url`, `owner` and
+`placement`. The `owner` starts and fences the executor service process. `placement` controls
+where that executor runs native commands.
+
+| Owner                                       | Required settings                                                                          | Allowed placement                                    |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
+| `{"kind": "companion", "socket": "/run/…"}` | PID 1 Runtime supervision and an absolute ownership socket to the separate companion PID 1 | `direct`                                             |
+| `{"kind": "systemd"}`                       | systemd Runtime supervision and the guest's `resources.executor` budget                    | `direct` or `systemd` with the native implementation |
+
+`placement: "direct"` runs commands in the executor process domain. `placement: "systemd"` runs
+native commands in separate transient units under the shared `agentplane-commands.slice`.
 
 The VM `resources` object contains `guest_memory_bytes`, `guest_vcpu_count`, `os_reserve_bytes`,
 `service_memory_high_bytes`, `service_memory_max_bytes`, `service_cpu_quota_micros`,
@@ -155,9 +164,12 @@ must be `ws://127.0.0.1:<nonzero port>`. `CODEX_EXEC_SERVER_URL` belongs to Envi
 the harness environment. Lifecycle, recovery and scope are documented in
 [Codex executor isolation](../execution/docs/codex_executor.md).
 
-An executor configuration must specify `placement`. For a configuration that previously omitted it,
-set `placement: "direct"` to preserve its execution behavior. Enabling `systemd` placement in VM
-templates also requires a guest image containing `agentplane-commands.slice`.
+Version 3 replaces `environment.kind` with explicit `environment.supervision`, moves
+the companion socket under `executor.owner`, and requires `owner` and `placement` for
+every configured executor. Version 2 and version 3 readers reject the other wire version.
+Deploy the matching runner disk, VM root image, and ConfigMaps in one cutover.
+The VM root consumes `environment.supervision` in its boot settings and supplies
+`agentplane-commands.slice`.
 
 ## Shared layout
 

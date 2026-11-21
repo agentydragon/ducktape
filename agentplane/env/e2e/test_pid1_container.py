@@ -23,7 +23,7 @@ from agentplane.env.config import (
     Endpoint,
     EnvironmentRuntimeControl,
     EnvironmentVariables,
-    PodEnvironment,
+    PID1Environment,
 )
 from agentplane.env.e2e.testing import launches
 from agentplane.env.e2e.testing.gateway import Gateway
@@ -183,14 +183,14 @@ async def test_production_runner_selects_pid1(
     host_control = _container_control(gateway, tmp_path)
     sandbox = gateway.sandbox.identity
     config = Configuration(
-        version=2,
+        version=3,
         state_dir="/proof/state",
         initialization_cwd="/proof/state",
         control=host_control,
         ingress=Endpoint(target="127.0.0.1:8081", bearer="unused-ingress-token"),
         platform_instructions="PID1 proof",
         harness_environment=EnvironmentVariables(values={"PATH": "/bin:/usr/bin"}),
-        environment=PodEnvironment(supervision="pid1"),
+        environment=PID1Environment(supervision="pid1"),
     )
     (tmp_path / "environment-runtime.json").write_text(config.model_dump_json(exclude_none=True))
     (tmp_path / "launch.json").write_text(
@@ -252,7 +252,7 @@ async def test_production_pid1_embedded_host_reaps_setup(
     state.mkdir()
     (state / "workspaces").mkdir()
     config = Configuration(
-        version=2,
+        version=3,
         state_dir="/proof/state",
         initialization_cwd="/proof/state",
         workspace_root="/proof/state/workspaces",
@@ -263,7 +263,7 @@ async def test_production_pid1_embedded_host_reaps_setup(
             values={"PATH": "/bin:/usr/bin", "HOME": "/proof/state", "OPENAI_API_KEY": "test-key"}
         ),
         codex=Codex(binary="/bin/false", base_url="http://127.0.0.1:8082/v1", token_env="OPENAI_API_KEY"),
-        environment=PodEnvironment(supervision="pid1"),
+        environment=PID1Environment(supervision="pid1"),
     )
     (tmp_path / "environment-runtime.json").write_text(config.model_dump_json(exclude_none=True))
     (tmp_path / "launch.json").write_text(json.dumps({"sandbox": sandbox.model_dump()}))

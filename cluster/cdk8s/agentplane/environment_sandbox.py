@@ -34,12 +34,13 @@ from agentplane.env.config import (
     LAUNCH_FILE,
     Codex,
     CodexReadiness,
+    CompanionExecutorOwner,
     Configuration,
-    ContainerExecutor,
     Endpoint,
     EnvironmentRuntimeControl,
+    Executor,
     Harness,
-    PodEnvironment,
+    PID1Environment,
     SVIDEndpoint,
 )
 from agentplane.net.peertls.config import HISTORY_SERVICE_URI, MTLS, TLS
@@ -272,7 +273,7 @@ class EnvironmentSandboxTemplate(Construct):
         )
         llm_url = llm_ingress.proxied_url(self.env.namespace)
         config = Configuration(
-            version=2,
+            version=3,
             session_reconcile_concurrency=self.session_reconcile_concurrency,
             codex_readiness=self.codex_readiness,
             state_dir=_STATE_DIR,
@@ -303,10 +304,13 @@ class EnvironmentSandboxTemplate(Construct):
             ),
             claude=Harness(binary="/bin/claude", base_url=llm_url, token_env="ANTHROPIC_AUTH_TOKEN"),
             codex=Codex(binary="/bin/codex", base_url=f"{llm_url}/v1", token_env="OPENAI_API_KEY"),
-            environment=PodEnvironment(
+            environment=PID1Environment(
                 supervision="pid1",
-                executor=ContainerExecutor(
-                    url=_EXECUTOR_URL, socket=_EXECUTOR_SOCKET, implementation="native", placement="direct"
+                executor=Executor(
+                    url=_EXECUTOR_URL,
+                    owner=CompanionExecutorOwner(socket=_EXECUTOR_SOCKET),
+                    implementation="native",
+                    placement="direct",
                 )
                 if self.env.isolated_codex_executor
                 else None,

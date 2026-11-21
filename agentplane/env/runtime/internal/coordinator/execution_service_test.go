@@ -21,6 +21,7 @@ func TestRuntimeExecutionServiceConfigCarriesResolvedReadiness(t *testing.T) {
 		Launch:             configuration.SandboxLaunch{Sandbox: configuration.SandboxIdentity{Namespace: "test-namespace", Name: "test-sandbox", UID: "test-sandbox-uid"}},
 		HarnessEnvironment: map[string]string{"PATH": "/usr/bin"},
 		CodexExecServer: &codexexecserver.Config{
+			Owner: codexexecserver.OwnerCompanion, Placement: codexexecserver.PlacementDirect,
 			URL: "ws://127.0.0.1:4501", ContainerSocket: "/run/executor.sock", Readiness: want,
 		},
 	}
@@ -112,7 +113,7 @@ func TestFencedExecutionBackendLossLogsCauseAndRemainsRecoverable(t *testing.T) 
 	backendLoss := errors.Join(service.ErrFencedBackendLoss, errors.New(lossReason))
 	config := service.Config{
 		Namespace: "test-namespace", SandboxName: "test-sandbox", SandboxUID: "test-sandbox-uid",
-		IncarnationUID: "test-incarnation", Backend: "systemd",
+		IncarnationUID: "test-incarnation", Owner: codexexecserver.OwnerSystemd, Placement: codexexecserver.PlacementDirect,
 	}
 	handle := newExecutionServiceHandle(config, func(context.Context, service.Config, func(executorpb.ExecutorServer, context.Context)) error {
 		return backendLoss

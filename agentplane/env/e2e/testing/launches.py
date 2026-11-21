@@ -11,14 +11,15 @@ from python.runfiles import Runfiles
 
 from agentplane.env.config import (
     Codex,
+    CompanionExecutorOwner,
     Configuration,
-    ContainerExecutor,
     DebugCheckpoint,
     Endpoint,
     EnvironmentRuntimeControl,
     EnvironmentVariables,
+    Executor,
     Harness,
-    PodEnvironment,
+    PID1Environment,
 )
 from agentplane.env.e2e.testing.config import NativeLaunch, RunnerTestConfig, SandboxLaunch
 from agentplane.native.claude.testing import model as claude_model
@@ -132,8 +133,8 @@ def runner_command(
     claude = claude_launch(endpoint) if harness == session_pb2.HARNESS_CLAUDE else None
     codex = codex_launch(endpoint) if harness == session_pb2.HARNESS_CODEX else None
     config = Configuration(
-        version=2,
-        environment=PodEnvironment(supervision="pid1"),
+        version=3,
+        environment=PID1Environment(supervision="pid1"),
         state_dir=str(state_dir),
         initialization_cwd=str(state_dir),
         control=control,
@@ -177,7 +178,7 @@ def command(
         json.dumps({"sandbox": config.launch.sandbox.model_dump(), "bootstrap": config.launch.bootstrap})
     )
     file = Configuration(
-        version=2,
+        version=3,
         state_dir=str(config.state_dir),
         initialization_cwd=str(config.state_dir),
         control=control,
@@ -193,11 +194,11 @@ def command(
         codex=Codex(binary=str(config.codex.binary), base_url=config.codex.base_url, token_env="OPENAI_API_KEY")
         if config.codex
         else None,
-        environment=PodEnvironment(
+        environment=PID1Environment(
             supervision="pid1",
-            executor=ContainerExecutor(
+            executor=Executor(
                 url=config.codex_executor_url,
-                socket=str(config.codex_executor_socket),
+                owner=CompanionExecutorOwner(socket=str(config.codex_executor_socket)),
                 implementation=config.executor_implementation,
                 placement="direct",
                 limits=config.executor_limits,
