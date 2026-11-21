@@ -1032,6 +1032,8 @@ export function makeLocalAliasCase(seed, index) {
     numericExpression
   );
   const withLocal = numericBindings.length > 0 && index >= 61 && index % 48 === 13;
+  const loopShadow = numericBindings.length > 0 && index >= 877 && index % 96 === 13;
+  const loopName = loopShadow ? "numericLeft" : "loopIndex";
   const localDeclaration = {
     type: "VariableDeclaration",
     kind: index % 96 === 61 ? "const" : "let",
@@ -1090,9 +1092,9 @@ export function makeLocalAliasCase(seed, index) {
           ? [
               {
                 type: "ForStatement",
-                init: declaration("loopIndex", literal(0)),
-                test: { type: "BinaryExpression", operator: "<", left: id("loopIndex"), right: literal(2) },
-                update: { type: "UpdateExpression", operator: "++", argument: id("loopIndex"), prefix: false },
+                init: declaration(loopName, literal(0)),
+                test: { type: "BinaryExpression", operator: "<", left: id(loopName), right: literal(2) },
+                update: { type: "UpdateExpression", operator: "++", argument: id(loopName), prefix: false },
                 body: {
                   type: "BlockStatement",
                   body: [
@@ -1100,7 +1102,7 @@ export function makeLocalAliasCase(seed, index) {
                       type: "AssignmentExpression",
                       operator: "+=",
                       left: id("offset"),
-                      right: id("numericLeft"),
+                      right: id(loopShadow ? loopName : "numericLeft"),
                     }),
                   ],
                 },
@@ -1231,6 +1233,7 @@ export function makeLocalAliasCase(seed, index) {
     grammar: "alias",
     numericLeftIndex: bindings.length + updateBindings.length,
     numericArguments,
+    loopShadow,
     unsupported: false,
     cyclic: false,
     invalidAssignment: false,
@@ -2275,6 +2278,9 @@ export async function runFuzz({
     multipleParameterAliasCases: 0,
     multipleParameterAliasComparedCases: 0,
     multipleParameterAliasProvedCases: 0,
+    loopShadowCases: 0,
+    loopShadowComparedCases: 0,
+    loopShadowUnknownCases: 0,
     parameterizedAliasComparedCases: 0,
     parameterizedAliasWithLocalImportComparedCases: 0,
     parameterizedAliasFunctionImportComparedCases: 0,
@@ -2500,6 +2506,7 @@ export async function runFuzz({
       if (modules.some((module) => module.renameLocalImports)) summary.localImportAliasRequestedCases++;
       if (input.grammar === "alias" && input.numericArguments.length) summary.parameterizedAliasCases++;
       if (input.grammar === "alias" && input.numericArguments.length > 1) summary.multipleParameterAliasCases++;
+      if (input.loopShadow) summary.loopShadowCases++;
       if (modules.some((module) => module.renameReexports)) summary.renamedReexportRequestedCases++;
       const importCount = modules.reduce((count, module) => count + module.imports.length, 0);
       summary.moduleCountCases[modules.length] = (summary.moduleCountCases[modules.length] ?? 0) + 1;
@@ -2709,6 +2716,7 @@ export async function runFuzz({
       }
       if (hasGeneratedImportAlias) summary.importAliasComparedCases++;
       if (hasGeneratedLocalImportAlias) summary.localImportAliasComparedCases++;
+      if (input.loopShadow) summary.loopShadowComparedCases++;
       if (input.grammar === "alias" && input.numericArguments.length) {
         summary.parameterizedAliasComparedCases++;
         if (input.numericArguments.length > 1) summary.multipleParameterAliasComparedCases++;
@@ -2837,6 +2845,7 @@ export async function runFuzz({
           });
         } else if (verdict.result === "unknown") {
           summary.unknown++;
+          if (input.loopShadow) summary.loopShadowUnknownCases++;
           summary.unknownCases.push({
             index,
             reason: verdict.reason,

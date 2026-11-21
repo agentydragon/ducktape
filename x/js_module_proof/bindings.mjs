@@ -1497,50 +1497,58 @@ function generateFiles(source, spec, names) {
                 .map((declaration) => declaration.declarations[0].id.name),
             ]);
             const edits = [];
-            const visit = (expression) => {
+            const visit = (expression, shadowed = new Set()) => {
               if (expression?.type === "Literal") return;
               if (expression?.type === "Identifier") {
-                if (renamed.includes(expression.name) && !localNames.has(expression.name)) edits.push(expression);
+                if (
+                  renamed.includes(expression.name) &&
+                  !localNames.has(expression.name) &&
+                  !shadowed.has(expression.name)
+                )
+                  edits.push(expression);
                 return;
               }
               if (
                 expression?.type === "BinaryExpression" ||
                 (expression?.type === "LogicalExpression" && ["&&", "||"].includes(expression.operator))
               ) {
-                visit(expression.left);
-                visit(expression.right);
+                visit(expression.left, shadowed);
+                visit(expression.right, shadowed);
                 return;
               }
               if (expression?.type === "ConditionalExpression") {
-                visit(expression.test);
-                visit(expression.consequent);
-                visit(expression.alternate);
+                visit(expression.test, shadowed);
+                visit(expression.consequent, shadowed);
+                visit(expression.alternate, shadowed);
                 return;
               }
               if (expression?.type === "UnaryExpression" && expression.operator === "!") {
-                visit(expression.argument);
+                visit(expression.argument, shadowed);
                 return;
               }
               check(false, "local import renaming supports only pure returning expressions");
             };
-            const visitWrite = (item) => {
+            const visitWrite = (item, shadowed = new Set()) => {
               const target =
                 item.expression.type === "AssignmentExpression" ? item.expression.left : item.expression.argument;
-              check(mutableNames.has(target.name), "cannot write an imported or immutable binding");
-              if (item.expression.type === "AssignmentExpression") visit(item.expression.right);
+              check(
+                mutableNames.has(target.name) && !shadowed.has(target.name),
+                "cannot write an imported or immutable binding"
+              );
+              if (item.expression.type === "AssignmentExpression") visit(item.expression.right, shadowed);
             };
             for (const item of prefix) {
               if (item.type === "VariableDeclaration") visit(item.declarations[0].init);
               else if (item.type === "ForStatement") {
                 const loopName = item.init.declarations[0].id.name;
-                check(!localNames.has(loopName) && !renamed.includes(loopName), "ambiguous loop binding");
-                item.body.body.forEach(visitWrite);
+                check(!localNames.has(loopName), "ambiguous loop binding");
+                item.body.body.forEach((write) => visitWrite(write, new Set([loopName])));
               } else if (item.type === "IfStatement") {
                 visit(item.test);
                 const earlyReturn = returnBranch(item.consequent);
                 if (earlyReturn) visit(earlyReturn.argument);
-                else item.consequent.body.forEach(visitWrite);
-                if (item.alternate) item.alternate.body.forEach(visitWrite);
+                else item.consequent.body.forEach((write) => visitWrite(write));
+                if (item.alternate) item.alternate.body.forEach((write) => visitWrite(write));
               } else visitWrite(item);
             }
             if (terminalIf) {

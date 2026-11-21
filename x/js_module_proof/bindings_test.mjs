@@ -15,6 +15,7 @@ const shards = Number(process.env.TEST_TOTAL_SHARDS ?? "1");
 const runSection = (index) => shards === 1 || shard === index;
 const source = join(here, "example/bindings/original.mjs");
 const cli = (...args) => {
+  console.error(`[bindings_test] ${args[0]} ${args[1]}`);
   const child = spawnSync(process.execPath, [join(here, "main.mjs"), ...args], { encoding: "utf8" });
   return { status: child.status, value: JSON.parse(child.stdout || child.stderr) };
 };
@@ -307,7 +308,7 @@ if (runSection(1)) {
   assert.deepEqual(execute(unsupportedArguments, [{ name: "compute", args: [9] }]), { events: [11], results: [11] });
 }
 
-if (runSection(0)) {
+if (runSection(5)) {
   const aliasSource = join(root, "renamed-local-source.mjs");
   const aliasSpec = join(root, "renamed-local-spec.json");
   const aliasOut = join(root, "renamed-local-out");
@@ -491,7 +492,7 @@ if (runSection(0)) {
   assert.equal(nonnumeric.stdout.trim(), "function");
 }
 
-if (runSection(2)) {
+if (runSection(4)) {
   const generatedSpec = {
     kind: "bindings",
     entry: "entry.mjs",
@@ -935,7 +936,13 @@ if (runSection(1)) {
     loopSource,
     `let i = 3;\nlet other = 5;\nfunction compute(p) { let local = p; for (let i = 0; i < 2; i++) { local += i; } return local + i; }\nexport { compute };\n`
   );
-  const ambiguous = cli("generate", loopSource, loopSpec, join(root, "ambiguous-loop-alias-out")).value;
-  assert.equal(ambiguous.result, "unknown");
-  assert.match(ambiguous.reason, /ambiguous loop binding/);
+  const shadowOut = join(root, "shadow-loop-alias-out");
+  assert.equal(cli("generate", loopSource, loopSpec, shadowOut).value.result, "generated");
+  const shadowLogic = await readFile(join(shadowOut, "logic.mjs"), "utf8");
+  assert.match(shadowLogic, /local \+= i/);
+  assert.match(shadowLogic, /return local \+ __split_local_0/);
+  assert.deepEqual(execute(loopSource, calls), { events: [], results: [4, 8] });
+  assert.deepEqual(execute(join(shadowOut, "entry.mjs"), calls), { events: [], results: [4, 8] });
+  const shadowResult = cli("validate", loopSource, loopSpec, shadowOut).value;
+  assert.ok(["proved under assumptions", "unknown"].includes(shadowResult.result), JSON.stringify(shadowResult));
 }

@@ -96,6 +96,9 @@ cover only part of the grammar and split space described below.
       numeric expressions have Node-reproduced Lean counterexamples, including
       initialization observations. Witness lowering alpha-renames locals to
       preserve their identities when redirected module bindings share a spelling.
+      A loop-local name may shadow an imported name during generation, but the
+      accepted-case comparison can still return `unknown` for this alpha-renaming;
+      prove a suitable correspondence before accepting it.
       Witness lowering follows actual callee bodies in their own module scope,
       including changed callees with extra arguments or unused missing parameters;
       extend it to observed missing arguments, captured closures and other statement forms.
