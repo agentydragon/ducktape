@@ -162,6 +162,7 @@ def test_qemu_sample_selects_exact_pod_cgroup_and_bounds_threads(tmp_path: Path,
     assert len(result["threads"]) == 1
     assert boot_rcu._sample_qemu(tmp_path, "absent") == {
         "matching_qemu_processes": 0,
+        "processes_scanned": 2,
         "process_scan_truncated": False,
         "process_scan_incomplete": False,
     }
@@ -182,6 +183,7 @@ def test_qemu_scan_reports_unreadable_process_as_incomplete(tmp_path: Path, monk
     monkeypatch.setattr(Path, "read_text", unreadable)
     assert boot_rcu._sample_qemu(tmp_path, "target") == {
         "matching_qemu_processes": 0,
+        "processes_scanned": 1,
         "process_scan_truncated": False,
         "process_scan_incomplete": True,
     }
