@@ -685,14 +685,7 @@ def _any_prunable(command: _Command, findings: _Findings) -> bool:
     )
 
 
-async def _apply(
-    command: _Command,
-    options: _Options,
-    findings: _Findings,
-    *,
-    session_bases: Sequence[Path],
-    progress: _ProgressReporter,
-) -> bool:
+async def _apply(command: _Command, options: _Options, findings: _Findings, *, session_bases: Sequence[Path]) -> bool:
     """Remove what `command` shows, in dependency order; returns whether every step succeeded.
 
     Worktrees go first so branches they hold are freed and their bases orphan, and bases before the
@@ -776,7 +769,7 @@ async def run(command: _Command, options: _Options, *, repo: Path | None, pr_sou
 
     if multiple:
         print()
-    if not await _apply(command, options, findings, session_bases=session_bases, progress=progress):
+    if not await _apply(command, options, findings, session_bases=session_bases):
         raise SystemExit(1)
 
 
