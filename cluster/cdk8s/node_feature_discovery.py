@@ -25,15 +25,28 @@ def chart(app: App) -> Chart:
         vpa=VpaProfile(
             Vpa.INITIAL,
             (
-                ContainerPolicy.memory_requests_only(
-                    "gc", cpu_request="10m", memory_floor="128Mi", memory_limit="256Mi"
+                ContainerPolicy(
+                    container_name="gc",
+                    controlled_values=ControlledValues.REQUESTS_ONLY,
+                    controlled_resources=("cpu", "memory"),
+                    min_allowed={"cpu": "10m", "memory": "128Mi"},
+                    max_allowed={"cpu": "25m", "memory": "256Mi"},
                 ),
-                ContainerPolicy.memory_requests_only(
-                    "master", cpu_request="100m", memory_floor="128Mi", memory_limit="256Mi"
+                ContainerPolicy(
+                    container_name="master",
+                    controlled_values=ControlledValues.REQUESTS_ONLY,
+                    controlled_resources=("cpu", "memory"),
+                    min_allowed={"cpu": "100m", "memory": "128Mi"},
+                    max_allowed={"cpu": "150m", "memory": "256Mi"},
                 ),
                 # The worker's 30-day working-set peak was ~68 MiB, above its 64 MiB template request.
-                ContainerPolicy.memory_requests_only(
-                    "worker", cpu_request="5m", memory_floor="96Mi", memory_limit="128Mi"
+                # The worker can burst beyond its scheduling request during discovery.
+                ContainerPolicy(
+                    container_name="worker",
+                    controlled_values=ControlledValues.REQUESTS_ONLY,
+                    controlled_resources=("cpu", "memory"),
+                    min_allowed={"cpu": "5m", "memory": "96Mi"},
+                    max_allowed={"cpu": "100m", "memory": "128Mi"},
                 ),
                 ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
             ),
