@@ -311,7 +311,7 @@ function Report() {
     setSelection((previous) => ({ group, revision: previous.revision + 1 }));
 
   useEffect(() => {
-    fetch("./inventory.json?v=20261121-0500")
+    fetch("./inventory.json?v=20261121051641")
       .then((response) => {
         if (!response.ok)
           throw new Error(`Inventory request returned HTTP ${response.status}`);
@@ -457,6 +457,28 @@ function Report() {
           <//>
         <//>
       <//>
+
+      <${Stack} id="staging-request-wave" gap="xs" mt="md">
+        <${Text}>
+          <strong>Agentplane staging.</strong> All nine services in the merged
+          CPU sizing wave were 2/2 Ready and had CPU and memory recommendations
+          in Initial. Flux reported the VPA Kustomization Ready and Healthy at
+          05:16:41 UTC. All nine uncapped CPU targets were below their
+          configured ceilings in this snapshot. ${" "}<${Anchor}
+            href=${github + "pull/18487"}
+            >Staging policy change<//
+          >.
+        <//>
+        <${Text}>
+          The placement model left 95m CPU on the tightest OVH worker with the
+          eight worker-only services at all request ceilings, one replica each,
+          the two ingress replicas on separate control-plane hosts, and
+          noncohort reservations fixed at their 05:04 UTC values. Before raising
+          a ceiling, compare uncapped recommendations with bounds and recheck
+          node reservations and Pending Pods. On natural replacements, verify
+          admitted CPU and memory requests and limits.
+        <//>
+      <//>
     </section>
 
     <section id="remaining-work">
@@ -465,8 +487,8 @@ function Report() {
       <${Text} component="p">
         Counts are review queues from this snapshot. A workload can appear in
         both the resource and Recreate queues. Confirm ownership and restart
-        behavior before choosing the cohort. The staging service promotion and
-        rollout gates are tracked in the ${" "}<${Anchor}
+        behavior before choosing the cohort. Ownership and rollout gates are
+        tracked in the ${" "}<${Anchor}
           href=${github + "blob/devel/cluster/plans/vpa.md"}
           >cluster rollout plan<//
         >.

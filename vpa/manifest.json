@@ -1,10 +1,10 @@
 {
-  "source_devel_commit": "e825a3630d19b0c6b995087b9979d3507decc289",
-  "audited_at_utc": "2026-11-21 05:00:48 UTC",
-  "snapshot_utc": "2026-11-21T05:00:48Z",
+  "source_devel_commit": "b3824f2237ec27bc377a0a9fa9639c644451ca5b",
+  "audited_at_utc": "2026-11-21 05:16:41 UTC",
+  "snapshot_utc": "2026-11-21T05:16:41Z",
   "scope": "Current Kubernetes VPA policies, workload owners, metrics samples and rollout review cohorts. Earlier evidence retains its original observation window.",
-  "report_html_sha256": "9880f64a0ba493b5bb7f3bf295e28bcc8defbe3224dcaf8250a2d8372963ad04",
-  "report_script_sha256": "2040c83a171d974f16c70af0c72bdfea4eba70cbe3f6bfee3d88df7037a8e182",
+  "report_html_sha256": "0d66c8dc2a09b9feb2916cc8c8c987095f9fd6d08d31aef91418d3f06d123e10",
+  "report_script_sha256": "6793c2c40430ad0e471a8f3fb1962896f749687dabb738b8fc759ccd3b3a3475",
   "evidence_sha256": "c69cc4092a6f9640579e2dce32e0f2f37af78498b947522c2320f49698a86a28",
   "architecture_source_devel_commit": "d81bd68165097b089cace9ae168b6e8f202f1b7e",
   "architecture_reviewed_at_utc": "2026-11-20T03:36:52Z",
@@ -45,12 +45,12 @@
   "current_state_observed_at_utc": "2026-11-20T20:30:00Z",
   "current_state_source_devel_commit": "7514082e13cff17faa64056a67b285c7e259f3e2",
   "pod_resources_observed_at_utc": "2026-11-20T20:34:45Z",
-  "current_inventory_collection_started_utc": "2026-11-21T05:00:34Z",
-  "current_inventory_collection_finished_utc": "2026-11-21T05:00:48Z",
-  "flux_source_observed_at_utc": "2026-11-21T05:00:48Z",
-  "inventory_sha256": "7018d277fff2c43f5a788762ee235e7277e7a24e959645b0caae826f0ebfb2e8",
+  "current_inventory_collection_started_utc": "2026-11-21T05:16:26Z",
+  "current_inventory_collection_finished_utc": "2026-11-21T05:16:41Z",
+  "flux_source_observed_at_utc": "2026-11-21T05:16:41Z",
+  "inventory_sha256": "fbc85f26119ad11c03a0aea4e9d9a13c5ec095021bb6be6dae9c52ed7b1787f6",
   "inventory_collector_sha256": "2e9ddc1e228afc13ca9e434678431c9d45af626d5ffd814210ae33ebeeb222ce",
-  "current_inventory_flux_source_devel_commit": "e825a3630d19b0c6b995087b9979d3507decc289",
+  "current_inventory_flux_source_devel_commit": "b3824f2237ec27bc377a0a9fa9639c644451ca5b",
   "secret_store_hourly_scan_verified_at_utc": "2026-11-20T21:17:28Z",
   "study_casino_initial_verified_at_utc": "2026-11-20T21:20:49Z",
   "platform_sessions_provider_initial_verified_at_utc": "2026-11-20T21:31:31Z",
@@ -72,5 +72,33 @@
   "archived_evidence_snapshot_utc": "2026-11-20T02:58:40Z",
   "archived_evidence_source_devel_commit": "05a4c55db085311363fad8cce0ba4dfe3f4ecb0f",
   "archived_evidence_seven_day_queries_end_utc": "2026-11-20T03:03:48.752000+00:00",
-  "current_inventory_seven_day_queries_end_utc": "2026-11-21T05:00:39Z"
+  "current_inventory_seven_day_queries_end_utc": "2026-11-21T05:16:31Z",
+  "staging_request_wave": {
+    "policy_pr": 18487,
+    "policy_source_devel_commit": "b3824f2237ec27bc377a0a9fa9639c644451ca5b",
+    "flux_kustomization": "ducktape-flux/agentplane-staging-vpa",
+    "flux": {
+      "observed_utc": "2026-11-21T05:16:41Z",
+      "generation": 1,
+      "observed_generation": 1,
+      "applied_revision": "latest@sha256:0bf9ad8d692d53213338eb195816645f997b4fd6a3154f9aed31faf0d725db4f",
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "observed_generation": 1
+        },
+        {
+          "type": "Healthy",
+          "status": "True",
+          "observed_generation": 1
+        }
+      ]
+    },
+    "capacity_model": {
+      "noncohort_reservations_observed_utc": "2026-11-21T05:04Z",
+      "tightest_ovh_worker_remaining_millicores": 95,
+      "scope": "Eight worker-only services at their CPU and memory ceilings per OVH worker, one replica each. Two ingress replicas placed on separate OVH control-plane hosts. Noncohort reservations held fixed."
+    }
+  }
 }
