@@ -10,10 +10,11 @@
 <lessons_learned/2026_03_07_talosctl_upgrade_hostname_loss.md> for platform-specific
 configuration and the full-plan warning.
 
-### Stale podCIDR After Node Hostname Change
+### Stale podCIDR After Node Hostname Change or Recreate
 
-**Symptoms**: Pods can't reach ClusterIP services; Longhorn `ManagerPodDown`; cascade to
-ESO secret sync. Pods have IPs outside node's `spec.podCIDR`.
+**Symptoms**: Pods can't reach ClusterIP services (`no route to host`); cascade to ESO
+secret sync. Pods have IPs outside node's `spec.podCIDR`: a hostname change or recreate
+gives the node a fresh podCIDR, and Cilium then routes only the new range.
 
 **Fix**: Delete pods with old-CIDR IPs -- DaemonSets recreate with correct IPs.
 

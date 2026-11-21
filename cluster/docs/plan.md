@@ -431,4 +431,3 @@ CNPG is 2-instance primary+standby. Low priority -- survives single-node failure
 
 - <bootstrap.md>
 - <troubleshooting.md>
-- <lessons_learned/2025_11_28_eso_password_generator_desync.md>
