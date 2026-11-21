@@ -95,72 +95,44 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 	action := request.Action.Name
 	switch action {
 	case contract.ActionListLaunchPresets:
-		if _, err := e.inputs.ListLaunchPresets.Decode(request.Arguments); err != nil {
-			return store.ExecutionOutcome{}, err
-		}
-		return worker.Succeeded(PresetList{Presets: e.presets}, nil)
+		return run(ctx, request, e.inputs.ListLaunchPresets, func(context.Context, contract.NoArgs) (PresetList, error) {
+			return PresetList{Presets: e.presets}, nil
+		})
 	case contract.ActionLaunchSandbox:
-		args, err := e.inputs.LaunchSandbox.Decode(request.Arguments)
-		if err != nil {
-			return store.ExecutionOutcome{}, err
-		}
-		return worker.Succeeded(e.launch(ctx, request.Caller, args))
+		return run(ctx, request, e.inputs.LaunchSandbox, func(ctx context.Context, args contract.LaunchArgs) (Launched, error) {
+			return e.launch(ctx, request.Caller, args)
+		})
 	case contract.ActionCreateSession:
-		args, err := e.inputs.CreateSession.Decode(request.Arguments)
-		if err != nil {
-			return store.ExecutionOutcome{}, err
-		}
-		return worker.Succeeded(e.createSession(ctx, args))
+		return run(ctx, request, e.inputs.CreateSession, e.createSession)
 	case contract.ActionSubmitInput:
-		args, err := e.inputs.SubmitInput.Decode(request.Arguments)
-		if err != nil {
-			return store.ExecutionOutcome{}, err
-		}
-		return worker.Succeeded(e.submitInput(ctx, args))
+		return run(ctx, request, e.inputs.SubmitInput, e.submitInput)
 	case contract.ActionInterruptTurn:
-		args, err := e.inputs.InterruptTurn.Decode(request.Arguments)
-		if err != nil {
-			return store.ExecutionOutcome{}, err
-		}
-		return worker.Succeeded(e.interruptTurn(ctx, args))
+		return run(ctx, request, e.inputs.InterruptTurn, e.interruptTurn)
 	case contract.ActionChangeModel:
-		args, err := e.inputs.ChangeModel.Decode(request.Arguments)
-		if err != nil {
-			return store.ExecutionOutcome{}, err
-		}
-		return worker.Succeeded(e.changeModel(ctx, args))
+		return run(ctx, request, e.inputs.ChangeModel, e.changeModel)
 	case contract.ActionChangeReasoningEffort:
-		args, err := e.inputs.ChangeReasoningEffort.Decode(request.Arguments)
-		if err != nil {
-			return store.ExecutionOutcome{}, err
-		}
-		return worker.Succeeded(e.changeReasoningEffort(ctx, args))
+		return run(ctx, request, e.inputs.ChangeReasoningEffort, e.changeReasoningEffort)
 	case contract.ActionReadTurns:
-		args, err := e.inputs.ReadTurns.Decode(request.Arguments)
-		if err != nil {
-			return store.ExecutionOutcome{}, err
-		}
-		return worker.Succeeded(e.readTurns(ctx, args))
+		return run(ctx, request, e.inputs.ReadTurns, e.readTurns)
 	case contract.ActionWaitForTurn:
-		args, err := e.inputs.WaitForTurn.Decode(request.Arguments)
-		if err != nil {
-			return store.ExecutionOutcome{}, err
-		}
-		return worker.Succeeded(e.waitForTurn(ctx, args))
+		return run(ctx, request, e.inputs.WaitForTurn, e.waitForTurn)
 	case contract.ActionGetSession:
-		args, err := e.inputs.GetSession.Decode(request.Arguments)
-		if err != nil {
-			return store.ExecutionOutcome{}, err
-		}
-		return worker.Succeeded(e.getSession(ctx, args))
+		return run(ctx, request, e.inputs.GetSession, e.getSession)
 	case contract.ActionListSessions:
-		args, err := e.inputs.ListSessions.Decode(request.Arguments)
-		if err != nil {
-			return store.ExecutionOutcome{}, err
-		}
-		return worker.Succeeded(e.listSessions(ctx, args))
+		return run(ctx, request, e.inputs.ListSessions, e.listSessions)
 	default:
 		// The catalog admitted it, so this is a roster that grew without a branch here.
 		return worker.Failed(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_UNKNOWN_ACTION, fmt.Sprintf("this executor has no %q", action)), nil
 	}
+}
+
+// run decodes the request's arguments with input and succeeds with what act answers for them.
+func run[Args, Result any](
+	ctx context.Context, request store.ExecutionRequest, input catalog.Input[Args], act func(context.Context, Args) (Result, error),
+) (store.ExecutionOutcome, error) {
+	args, err := input.Decode(request.Arguments)
+	if err != nil {
+		return store.ExecutionOutcome{}, err
+	}
+	return worker.Succeeded(act(ctx, args))
 }
