@@ -12,6 +12,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -30,7 +31,7 @@ type Service struct {
 	objects            client.WithWatch
 	sandboxes          *sandboxreader.Reader
 	readerServiceIDs   []string
-	readerServices     map[string]struct{}
+	readerServices     sets.Set[string]
 	writerServices     []string
 }
 
@@ -53,14 +54,10 @@ func New(
 	if err != nil {
 		return nil, err
 	}
-	readerServiceSet := make(map[string]struct{}, len(readerServices))
-	for _, caller := range readerServices {
-		readerServiceSet[caller] = struct{}{}
-	}
 	return &Service{
 		namespace: namespace, workloadNamespaces: slices.Sorted(slices.Values(workloadNamespaces)), objects: objects,
 		sandboxes:        sandboxes,
-		readerServiceIDs: slices.Clone(readerServices), readerServices: readerServiceSet, writerServices: slices.Clone(writerServices),
+		readerServiceIDs: slices.Clone(readerServices), readerServices: sets.New(readerServices...), writerServices: slices.Clone(writerServices),
 	}, nil
 }
 
@@ -108,7 +105,7 @@ func (s *Service) requireReader(ctx context.Context) error {
 	if !ok {
 		return status.Error(codes.Unauthenticated, "service caller required")
 	}
-	if _, allowed := s.readerServices[service.Caller.SPIFFEID]; !allowed {
+	if !s.readerServices.Has(service.Caller.SPIFFEID) {
 		return status.Error(codes.PermissionDenied, "service cannot read policy resources")
 	}
 	return nil

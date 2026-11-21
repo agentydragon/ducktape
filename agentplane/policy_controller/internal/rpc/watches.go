@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"slices"
 	"time"
 
@@ -263,10 +264,11 @@ func (s *Service) watch(ctx context.Context, list client.ObjectList) (watch.Inte
 	return result, nil
 }
 
-func unavailable(ctx context.Context, _ error) error {
+func unavailable(ctx context.Context, err error) error {
 	if ctx.Err() != nil {
 		return status.FromContextError(ctx.Err()).Err()
 	}
+	slog.WarnContext(ctx, "PolicyService watch unavailable", "error", err)
 	return status.Error(codes.Unavailable, "policy watch unavailable; reconnect for a snapshot")
 }
 
