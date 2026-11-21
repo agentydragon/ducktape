@@ -23,12 +23,8 @@ holds a file the generator did not write. Conventions for writing a generator: <
 Most active Kubernetes resources under these two roots are generated. Hand-written
 overlays, application payloads and project-owned deployment packages remain; their
 treatment is tracked in [the remainder backlog](cdk8s_remainder.md).
-The experimental `cluster/cdk8s/x/render_diff.py` can compare final Kustomize resources
-across revisions. Run it manually with
-`bb run //cluster/cdk8s/x:render_diff_bin -- origin/devel HEAD --repo "$PWD"` in the
-devshell. It omits `postBuild` substitution, compares encrypted Secrets as ciphertext,
-and leaves foreign branch-tracking sources unrendered. Its cache is
-`~/.cache/render-diff` (`--cache-dir` overrides it).
+Review generated manifest changes in the PR diff. A future separate manifest branch may
+justify [render comparisons in CI](../cdk8s/TODO.md#ci-render-diffs-if-manifests-move-to-a-separate-branch).
 
 **One generated file per directory.** A directory's generated resources are all in
 `<directory name>.k8s.yaml`: its one writer, `generation.write_charts` (which
