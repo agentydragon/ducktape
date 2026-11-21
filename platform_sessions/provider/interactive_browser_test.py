@@ -49,6 +49,20 @@ class FakeWebSocket:
         self.disconnected.set()
 
 
+class FakePage:
+    def __init__(self, url: str) -> None:
+        self.url = url
+        self.navigations: list[str] = []
+        self.closes = 0
+
+    def goto(self, url: str, **kwargs: Any) -> None:
+        del kwargs
+        self.navigations.append(url)
+
+    def close(self) -> None:
+        self.closes += 1
+
+
 def runtime(tmp_path: Path, **kwargs: Any) -> InteractiveBrowserRuntime:
     result = InteractiveBrowserRuntime(
         profile_dir=tmp_path / "profile", initial_url="https://example.test/login", owner_token=_TOKEN, **kwargs
@@ -78,19 +92,10 @@ async def admitted_viewer(
 
 def test_blank_start_does_not_navigate(tmp_path: Path) -> None:
     browser = InteractiveBrowserRuntime(profile_dir=tmp_path / "profile", owner_token=_TOKEN)
-    navigations: list[str] = []
-
-    class Page:
-        url = "about:blank"
-
-        def goto(self, url: str, **kwargs: Any) -> None:
-            del kwargs
-            navigations.append(url)
-
-    page = Page()
+    page = FakePage("about:blank")
     context = SimpleNamespace(pages=[page])
     browser._prepare_initial_page(context)
-    assert navigations == []
+    assert page.navigations == []
     assert context.pages == [page]
 
     with pytest.raises(ValueError, match="fixed HTTPS URL"):
@@ -99,43 +104,21 @@ def test_blank_start_does_not_navigate(tmp_path: Path) -> None:
 
 def test_blank_start_quiesces_restored_pages_before_reporting_ready(tmp_path: Path) -> None:
     browser = InteractiveBrowserRuntime(profile_dir=tmp_path / "profile", owner_token=_TOKEN)
-    navigations: list[str] = []
-    closed: list[str] = []
-
-    class Page:
-        def __init__(self, name: str) -> None:
-            self.name = name
-            self.url = "https://example.test/login"
-
-        def goto(self, url: str, **kwargs: Any) -> None:
-            del kwargs
-            navigations.append(url)
-
-        def close(self) -> None:
-            closed.append(self.name)
-
-    first = Page("first")
-    extra = Page("extra")
+    first = FakePage("https://example.test/login")
+    extra = FakePage("https://example.test/login")
     browser._prepare_initial_page(SimpleNamespace(pages=[first, extra]))
-    assert closed == ["extra"]
-    assert navigations == ["about:blank"]
+    assert (first.closes, extra.closes) == (0, 1)
+    assert first.navigations == ["about:blank"]
+    assert extra.navigations == []
 
 
 def test_explicit_initial_url_navigates_blank_startup_page(tmp_path: Path) -> None:
     browser = InteractiveBrowserRuntime(
         profile_dir=tmp_path / "profile", owner_token=_TOKEN, initial_url="https://example.test/login"
     )
-    navigations: list[str] = []
-
-    class Page:
-        url = "about:blank"
-
-        def goto(self, url: str, **kwargs: Any) -> None:
-            del kwargs
-            navigations.append(url)
-
-    browser._prepare_initial_page(SimpleNamespace(pages=[Page()]))
-    assert navigations == ["https://example.test/login"]
+    page = FakePage("about:blank")
+    browser._prepare_initial_page(SimpleNamespace(pages=[page]))
+    assert page.navigations == ["https://example.test/login"]
 
 
 @pytest.mark.asyncio
