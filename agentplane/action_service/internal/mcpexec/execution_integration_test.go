@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/testing/eventually"
 	"github.com/agentydragon/ducktape/agentplane/testing/jsonassert"
@@ -95,9 +96,6 @@ func TestAnExecutionReadsTheToolsAgainBeforeItCallsOne(t *testing.T) {
 		{"whose schema the arguments no longer match", &mcp.Tool{Name: "test_echo", InputSchema: json.RawMessage(
 			`{"type": "object", "properties": {"text": {"type": "integer"}}}`,
 		)}, action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INCOMPATIBLE_ACTION_SCHEMA},
-		{"whose schema is no longer a JSON Schema", &mcp.Tool{Name: "test_echo", InputSchema: json.RawMessage(
-			`{"type": "object", "properties": {"text": {"type": 1}}}`,
-		)}, action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_MCP_INVALID_SCHEMA},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			before, after := &calls{}, &calls{}
@@ -105,7 +103,7 @@ func TestAnExecutionReadsTheToolsAgainBeforeItCallsOne(t *testing.T) {
 			first.AddTool(&mcp.Tool{Name: "test_echo", InputSchema: textSchema}, answering(before, textResult("test text")))
 			// A stateless server sends no notification, and the tools are read again every five minutes: the
 			// group offers the first server's tool while the Execution reads the second's.
-			f, u, s := offered(t, first, &mcp.StreamableHTTPOptions{Stateless: true}, executorTiming(), "test_echo")
+			f, u, _ := offered(t, first, &mcp.StreamableHTTPOptions{Stateless: true}, executorTiming(), "test_echo")
 			second := newServer()
 			if test.now != nil {
 				second.AddTool(test.now, answering(after, textResult("test text")))
@@ -119,13 +117,27 @@ func TestAnExecutionReadsTheToolsAgainBeforeItCallsOne(t *testing.T) {
 			if len(before.made()) != 0 || len(after.made()) != 0 {
 				t.Error("a tool was called")
 			}
-			if test.kind == action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_MCP_INVALID_SCHEMA {
-				awaitGroup(t, s.groups, unavailableFor(
-					action_servicepb.McpUnavailableReason_MCP_UNAVAILABLE_REASON_INVALID_CATALOG, anyDetail,
-				))
-			}
 		})
 	}
+}
+
+func TestAnExecutionForwardsArgumentsWhenTheCurrentSchemaCannotBeCompiled(t *testing.T) {
+	before, after := &calls{}, &calls{}
+	first := newServer()
+	first.AddTool(&mcp.Tool{Name: "test_echo", InputSchema: textSchema}, answering(before, textResult("unused")))
+	f, u, s := offered(t, first, &mcp.StreamableHTTPOptions{Stateless: true}, executorTiming(), "test_echo")
+	second := newServer()
+	second.AddTool(&mcp.Tool{Name: "test_echo", InputSchema: json.RawMessage(
+		`{"type":"object","properties":{"text":{"type":1}}}`,
+	)}, answering(after, textResult("test text")))
+	u.server.Store(second)
+	f.await(t, f.allowed(t, "test_echo", `{"text":"test text"}`), action_servicepb.ActionState_ACTION_STATE_SUCCEEDED)
+	if made := after.made(); len(made) != 1 {
+		t.Fatalf("the backend received %d calls, want 1", len(made))
+	}
+	awaitGroup(t, s.groups, func(g *catalog.Group) bool {
+		return offering("test_echo")(g) && g.Actions["test_echo"].InputSchemaWarning != ""
+	})
 }
 
 func TestASessionThatFailsUnderACallEndsItUnknownAndIsReplaced(t *testing.T) {

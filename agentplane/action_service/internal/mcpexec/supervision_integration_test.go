@@ -90,7 +90,7 @@ func TestTheGroupReadsTheToolsAgainEveryRefresh(t *testing.T) {
 	awaitGroup(t, groups, offering("test_second"))
 }
 
-func TestAToolTheCatalogCannotHoldIsLeftOutAndTheOthersAreOffered(t *testing.T) {
+func TestAToolWithAnUnusableSchemaAndOtherToolsAreOffered(t *testing.T) {
 	mixed := newServer()
 	mixed.AddTool(&mcp.Tool{Name: "test_good", InputSchema: objectSchema}, answering(&calls{}, textResult("unused")))
 	mixed.AddTool(&mcp.Tool{
@@ -99,27 +99,33 @@ func TestAToolTheCatalogCannotHoldIsLeftOutAndTheOthersAreOffered(t *testing.T) 
 	u := newUpstream(t, mixed, &mcp.StreamableHTTPOptions{Stateless: true})
 	groups := mcpGroup(t, httpConfig(u.url()))
 	supervise(t, groups, nil, executorTiming())
-	awaitGroup(t, groups, offering("test_good"))
+	g := awaitGroup(t, groups, offering("test_good", "test_invalid"))
+	if g.Actions["test_invalid"].InputSchemaWarning == "" || g.Actions["test_good"].InputSchemaWarning != "" {
+		t.Errorf("warnings = %v", g.Actions)
+	}
 }
 
-func TestAToolListOfOnlyToolsTheCatalogCannotHoldWithdrawsTheGroupUntilItIsFixed(t *testing.T) {
+func TestAWarningClearsWhenTheServersSchemaIsFixed(t *testing.T) {
 	invalid := newServer()
 	invalid.AddTool(&mcp.Tool{
 		Name: "test_invalid", InputSchema: json.RawMessage(`{"type": "object", "properties": {"test": {"type": 1}}}`),
 	}, answering(&calls{}, textResult("unused")))
 	u := newUpstream(t, invalid, &mcp.StreamableHTTPOptions{Stateless: true})
 	groups := mcpGroup(t, httpConfig(u.url()))
-	supervise(t, groups, nil, executorTiming())
-	g := awaitGroup(t, groups, unavailableAndRetryingFor(action_servicepb.McpUnavailableReason_MCP_UNAVAILABLE_REASON_INVALID_CATALOG,
-		func(detail string) bool { return strings.Contains(detail, "test_invalid") }))
-	if len(g.Actions) != 0 || g.Health.RetryAt == nil || g.Health.Failures == 0 {
-		t.Errorf("the withdrawn group offers %v with health %v", g.Actions, g.Health)
+	timing := executorTiming()
+	timing.Refresh = 50 * time.Millisecond
+	supervise(t, groups, nil, timing)
+	g := awaitGroup(t, groups, offering("test_invalid"))
+	if g.Actions["test_invalid"].InputSchemaWarning == "" {
+		t.Fatal("unusable schema has no warning")
 	}
 
 	fixed := newServer()
-	fixed.AddTool(&mcp.Tool{Name: "test_fixed", InputSchema: objectSchema}, answering(&calls{}, textResult("unused")))
+	fixed.AddTool(&mcp.Tool{Name: "test_invalid", InputSchema: objectSchema}, answering(&calls{}, textResult("unused")))
 	u.server.Store(fixed)
-	awaitGroup(t, groups, offering("test_fixed"))
+	awaitGroup(t, groups, func(g *catalog.Group) bool {
+		return offering("test_invalid")(g) && g.Actions["test_invalid"].InputSchemaWarning == ""
+	})
 }
 
 func TestAServerThatIsDownLeavesItsGroupUnavailableUntilItIsBack(t *testing.T) {
