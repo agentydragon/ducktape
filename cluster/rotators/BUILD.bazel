@@ -37,3 +37,23 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "git_publish",
+    srcs = ["git_publish.py"],
+    visibility = [
+        "//cluster/rotators/authentik_jwt_rotation:__pkg__",
+        "//cluster/rotators/forgejo_token_rotation:__pkg__",
+    ],
+)
+
+py_test(
+    name = "test_git_publish",
+    srcs = ["test_git_publish.py"],
+    deps = [
+        ":git_publish",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

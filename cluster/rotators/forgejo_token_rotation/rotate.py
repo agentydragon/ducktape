@@ -13,7 +13,6 @@ the old token is left intact.
 
 import logging
 import os
-import subprocess
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -25,6 +24,7 @@ import typer
 import yaml
 
 from cluster.rotators.forgejo_token_rotation.config import Config, Rotation, TeaSecretOutput
+from cluster.rotators.git_publish import github_remote, push_outputs, sparse_checkout
 from cluster.rotators.sops import write_sops_yaml
 from cluster.rotators.sops_stamps import unencrypted_stamps
 
@@ -289,35 +289,8 @@ def prune_old_tokens(client: httpx.Client, rotated: list[RotatedToken]) -> None:
             delete_token(client, result.credentials, token)
 
 
-def sparse_clone(config: Config, github_pat: str) -> None:
-    """Init + sparse-fetch only .sops.yaml and the configured outputs into cwd."""
-    remote = f"https://x-access-token:{github_pat}@github.com/{config.github_repo}.git"
-    sparse_paths = [config.sops_config, *(str(r.sops_file) for r in config.rotations)]
-    sparse_paths += [str(r.tea_secret.path) for r in config.rotations if r.tea_secret]
-    subprocess.run(["git", "init", "-q"], check=True)
-    subprocess.run(["git", "remote", "add", "origin", remote], check=True)
-    subprocess.run(["git", "config", "core.sparseCheckout", "true"], check=True)
-    Path(".git/info/sparse-checkout").write_text("\n".join(sparse_paths) + "\n")
-    subprocess.run(["git", "fetch", "-q", "--depth=1", "--no-tags", "origin", "devel"], check=True)
-    subprocess.run(["git", "checkout", "-q", "FETCH_HEAD"], check=True)
-
-
-def commit_and_push(config: Config, rotated: list[RotatedToken]) -> bool:
-    subprocess.run(["git", "config", "user.name", config.git_author_name], check=True)
-    subprocess.run(["git", "config", "user.email", config.git_author_email], check=True)
-    for result in rotated:
-        subprocess.run(["git", "add", "--", str(result.rotation.sops_file)], check=True)
-        if result.rotation.tea_secret:
-            subprocess.run(["git", "add", "--", str(result.rotation.tea_secret.path)], check=True)
-    if subprocess.run(["git", "diff", "--cached", "--quiet"], check=False).returncode == 0:
-        logger.info("tokens minted but SOPS outputs are unchanged on disk; nothing to commit")
-        return False
-    message = f"chore: rotate forgejo tea tokens ({datetime.now(UTC):%Y-%m-%d}): "
-    message += ", ".join(result.rotation.name for result in rotated)
-    subprocess.run(["git", "commit", "-q", "-m", message], check=True)
-    subprocess.run(["git", "push", "-q", "origin", "HEAD:devel"], check=True)
-    logger.info("pushed: %s", ", ".join(result.rotation.name for result in rotated))
-    return True
+def _output_paths(rotation: Rotation) -> list[Path]:
+    return [rotation.sops_file, rotation.tea_secret.path] if rotation.tea_secret else [rotation.sops_file]
 
 
 def main(
@@ -331,7 +304,10 @@ def main(
     repo_dir = Path("/tmp/repo")
     repo_dir.mkdir()
     os.chdir(repo_dir)
-    sparse_clone(config, github_pat)
+    sparse_checkout(
+        github_remote(config.github_repo, github_pat),
+        [config.sops_config, *(path for rotation in config.rotations for path in _output_paths(rotation))],
+    )
 
     rotated: list[RotatedToken] = []
     failed: list[str] = []
@@ -346,7 +322,13 @@ def main(
                 failed.append(rotation.name)
 
         if rotated:
-            pushed = commit_and_push(config, rotated)
+            pushed = push_outputs(
+                (path for result in rotated for path in _output_paths(result.rotation)),
+                author_name=config.git_author_name,
+                author_email=config.git_author_email,
+                subject="forgejo tea tokens",
+                names=(result.rotation.name for result in rotated),
+            )
             if pushed:
                 prune_old_tokens(client, rotated)
         else:

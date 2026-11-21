@@ -11,7 +11,6 @@ import base64
 import json
 import logging
 import os
-import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any
@@ -21,6 +20,7 @@ import typer
 import yaml
 
 from cluster.rotators.authentik_jwt_rotation.config import AUTH_BASE, Config, K8sSecretOutput, Probe, Rotation
+from cluster.rotators.git_publish import github_remote, push_outputs, sparse_checkout
 from cluster.rotators.sops import write_sops_yaml
 from cluster.rotators.sops_stamps import remaining_hours, unencrypted_stamps
 
@@ -278,34 +278,8 @@ def write_k8s_secret(out: K8sSecretOutput, token: str, exp_epoch: int) -> None:
     write_sops_yaml(path=out.path, document=build_secret_manifest(out, token, exp_epoch))
 
 
-def sparse_clone(config: Config, github_pat: str) -> None:
-    """Init + sparse-fetch only .sops.yaml and the rotations' sops_files into cwd."""
-    remote = f"https://x-access-token:{github_pat}@github.com/{config.github_repo}.git"
-    sparse_paths = [config.sops_config, *(str(r.sops_file) for r in config.rotations)]
-    sparse_paths += [str(r.k8s_secret.path) for r in config.rotations if r.k8s_secret]
-    subprocess.run(["git", "init", "-q"], check=True)
-    subprocess.run(["git", "remote", "add", "origin", remote], check=True)
-    subprocess.run(["git", "config", "core.sparseCheckout", "true"], check=True)
-    Path(".git/info/sparse-checkout").write_text("\n".join(sparse_paths) + "\n")
-    subprocess.run(["git", "fetch", "-q", "--depth=1", "--no-tags", "origin", "devel"], check=True)
-    subprocess.run(["git", "checkout", "-q", "FETCH_HEAD"], check=True)
-
-
-def commit_and_push(config: Config, rotated: list[str]) -> None:
-    subprocess.run(["git", "config", "user.name", config.git_author_name], check=True)
-    subprocess.run(["git", "config", "user.email", config.git_author_email], check=True)
-    for rotation in config.rotations:
-        if rotation.name in rotated:
-            subprocess.run(["git", "add", "--", str(rotation.sops_file)], check=True)
-            if rotation.k8s_secret:
-                subprocess.run(["git", "add", "--", str(rotation.k8s_secret.path)], check=True)
-    if subprocess.run(["git", "diff", "--cached", "--quiet"], check=False).returncode == 0:
-        logger.info("tokens minted but SOPS files unchanged on disk (unexpected); nothing to commit")
-        return
-    message = f"chore: rotate authentik JWTs ({datetime.now(UTC):%Y-%m-%d}): {', '.join(rotated)}"
-    subprocess.run(["git", "commit", "-q", "-m", message], check=True)
-    subprocess.run(["git", "push", "-q", "origin", "HEAD:devel"], check=True)
-    logger.info("pushed: %s", ", ".join(rotated))
+def _output_paths(rotation: Rotation) -> list[Path]:
+    return [rotation.sops_file, rotation.k8s_secret.path] if rotation.k8s_secret else [rotation.sops_file]
 
 
 def main(
@@ -319,7 +293,10 @@ def main(
     repo_dir = Path("/tmp/repo")
     repo_dir.mkdir()
     os.chdir(repo_dir)
-    sparse_clone(config, github_pat)
+    sparse_checkout(
+        github_remote(config.github_repo, github_pat),
+        [config.sops_config, *(path for rotation in config.rotations for path in _output_paths(rotation))],
+    )
 
     # Isolate entries: one broken rotation must not starve the others (a bad
     # entry otherwise stalls every token in the cluster until someone notices).
@@ -336,7 +313,13 @@ def main(
                 failed.append(rotation.name)
 
     if rotated:
-        commit_and_push(config, rotated)
+        push_outputs(
+            (path for rotation in config.rotations if rotation.name in rotated for path in _output_paths(rotation)),
+            author_name=config.git_author_name,
+            author_email=config.git_author_email,
+            subject="authentik JWTs",
+            names=rotated,
+        )
     else:
         logger.info("no rotations needed this cycle")
     if failed:
