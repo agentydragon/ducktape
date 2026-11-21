@@ -1143,4 +1143,16 @@ if (runSection(7)) {
   assert.equal(catchOnlyResult.result, "proved under assumptions", JSON.stringify(catchOnlyResult));
   assert.deepEqual(execute(catchOnlySource, calls), { events: [], results: [3, 7] });
   assert.deepEqual(execute(join(catchOnlyOut, "entry.mjs"), calls), { events: [], results: [3, 7] });
+
+  const mutableCatchSource = join(root, "mutable-catch-source.mjs");
+  const mutableCatchOut = join(root, "mutable-catch-out");
+  await writeFile(
+    mutableCatchSource,
+    `let value = 3;\nlet other = 5;\nfunction compute(p) { let local = p; try { throw value; } catch (caught) { caught += value; local += caught; } return local; }\nexport { compute };\n`
+  );
+  assert.equal(cli("generate", mutableCatchSource, arithmeticSpec, mutableCatchOut).value.result, "generated");
+  const mutableCatchResult = cli("validate", mutableCatchSource, arithmeticSpec, mutableCatchOut).value;
+  assert.equal(mutableCatchResult.result, "proved under assumptions", JSON.stringify(mutableCatchResult));
+  assert.deepEqual(execute(mutableCatchSource, calls), { events: [], results: [6, 10] });
+  assert.deepEqual(execute(join(mutableCatchOut, "entry.mjs"), calls), { events: [], results: [6, 10] });
 }

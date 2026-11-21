@@ -1108,6 +1108,16 @@ export function makeLocalAliasCase(seed, index) {
                       body: {
                         type: "BlockStatement",
                         body: [
+                          ...(withCatchBinding && index >= 1525
+                            ? [
+                                expr({
+                                  type: "AssignmentExpression",
+                                  operator: "+=",
+                                  left: id("caught"),
+                                  right: id("numericRight"),
+                                }),
+                              ]
+                            : []),
                           expr({
                             type: "AssignmentExpression",
                             operator: "+=",
