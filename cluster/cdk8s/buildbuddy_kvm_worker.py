@@ -55,14 +55,13 @@ from cluster.cdk8s.oci_cache import zot
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Rule, group
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
+from cluster.cdk8s.service_ref import Port
 
 NAME = "buildbuddy-kvm-worker"
 NAMESPACE = "buildbuddy-executor"
 # The executor serves Prometheus metrics here (BuildBuddy's default monitoring port), on the guest.
-_METRICS_PORT = 9090
-_METRICS_PORT_NAME = "metrics"
-_NODE_METRICS_PORT = 9100
-_NODE_METRICS_PORT_NAME = "node-metrics"
+_METRICS = Port(name="metrics", number=9090)
+_NODE_METRICS = Port(name="node-metrics", number=9100)
 _METRICS_SERVICE = f"{NAME}-metrics"
 # Leave time after BuildBuddy's 24h action timeout for guest services and poweroff.
 _VM_SHUTDOWN_GRACE_SECONDS = 87_000
@@ -76,7 +75,7 @@ AUTOSCALER_OUTPUT_DIR = f"{GENERATED_ROOT}/{AUTOSCALER_NAME}"
 # One task can have reservations on several executors. This is a demand proxy,
 # not a count of distinct queued tasks. The assigned CPU gauge is present even
 # before the first task; the queue gauge is created only after a group queues.
-_METRICS_TARGET = f'namespace="{NAMESPACE}",service="{_METRICS_SERVICE}",endpoint="{_METRICS_PORT_NAME}"'
+_METRICS_TARGET = f'namespace="{NAMESPACE}",service="{_METRICS_SERVICE}",endpoint="{_METRICS.name}"'
 _WORKER_PODS = (
     f'max by (namespace, pod) (kube_pod_info{{namespace="{NAMESPACE}",'
     f'created_by_kind="VirtualMachineInstance",created_by_name=~"{NAME}-[0-9]+"}})'
@@ -293,7 +292,7 @@ def chart(app: App) -> Chart:
         endpoint_selector=_WORKER_LABELS,
         ingress=[
             IngressRule.from_endpoints(
-                cilium.endpoint_labels("monitoring", "alloy-node"), ports=[_METRICS_PORT, _NODE_METRICS_PORT]
+                cilium.endpoint_labels("monitoring", "alloy-node"), ports=[_METRICS.number, _NODE_METRICS.number]
             )
         ],
         egress=[
@@ -308,20 +307,7 @@ def chart(app: App) -> Chart:
         metadata=k8s.ObjectMeta(name=_METRICS_SERVICE, namespace=NAMESPACE, labels=_WORKER_LABELS),
         spec=k8s.ServiceSpec(
             selector=_WORKER_LABELS,
-            ports=[
-                k8s.ServicePort(
-                    name=_METRICS_PORT_NAME,
-                    port=_METRICS_PORT,
-                    target_port=k8s.IntOrString.from_number(_METRICS_PORT),
-                    protocol="TCP",
-                ),
-                k8s.ServicePort(
-                    name=_NODE_METRICS_PORT_NAME,
-                    port=_NODE_METRICS_PORT,
-                    target_port=k8s.IntOrString.from_number(_NODE_METRICS_PORT),
-                    protocol="TCP",
-                ),
-            ],
+            ports=[_METRICS.k8s_service_port(), _NODE_METRICS.k8s_service_port()],
             type="ClusterIP",
         ),
     )
@@ -331,7 +317,7 @@ def chart(app: App) -> Chart:
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
         spec=ServiceMonitorSpec(
             selector=ServiceMonitorSpecSelector(match_labels=_WORKER_LABELS),
-            endpoints=[Endpoint.plain(port=_METRICS_PORT_NAME), Endpoint.plain(port=_NODE_METRICS_PORT_NAME)],
+            endpoints=[Endpoint.plain(port=_METRICS.name), Endpoint.plain(port=_NODE_METRICS.name)],
         ),
     )
     PrometheusRule(

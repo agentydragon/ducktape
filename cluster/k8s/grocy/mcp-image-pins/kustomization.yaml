@@ -2,4 +2,4 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
   - name: git.allegedly.works/ducktape-ci/grocy-mcp
-    newTag: devel-20261121020653-70e1b2a # {"$imagepolicy": "flux-system:grocy-mcp-oidc-server:tag"}
+    newTag: devel-20261121120603-f7fbc8c # {"$imagepolicy": "flux-system:grocy-mcp-oidc-server:tag"}

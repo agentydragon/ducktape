@@ -80,7 +80,7 @@ def add_service(scope: Construct, env: Environment) -> None:
         scope,
         "sessions-service",
         metadata=k8s.ObjectMeta(name=sessions.name, namespace=env.namespace, labels=sessions.labels),
-        spec=k8s.ServiceSpec(selector=runner_gateway.SESSIONS_ROUTING_LABELS, ports=[sessions.port.k8s_service_port()]),
+        spec=k8s.ServiceSpec(selector=runner_gateway.SESSIONS_ROUTING_LABELS, ports=[sessions.k8s_service_port()]),
     )
 
 

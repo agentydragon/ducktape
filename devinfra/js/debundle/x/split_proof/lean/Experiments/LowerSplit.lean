@@ -1,11 +1,14 @@
 import EsmSplit.Cli
 import Experiments.Effects
+import Experiments.CoreJS.Decode
+import Experiments.CoreJS.Split
+import Std.Data.HashMap
 import Std.Data.HashSet
 
 /-!
 # AST + spec in; modules, verdict and a kernel certificate out.
 
-    lowersplit <bundle.json> <spec.json> <outdir> [--lean <Generated.lean>] [--replicate <K>] [--premises <file> | --footprints <file>] [--plan <file>] [--force]
+    lowersplit <bundle.json> <spec.json> <outdir> [--lean <Generated.lean>] [--replicate <K>] [--premises <file> | --footprints <file>] [--plan <file>] [--corejs <program.json>] [--force]
 
 `bundle.json` is acorn's ESTree with trusted scope/literal metadata (`experiments/lowering/dump.mjs`). Lean computes the footprints
 (`Effects.lean`, under the premises in the file, if any), plans the split, runs the checks, writes the modules, and with `--lean` writes a
@@ -14,6 +17,8 @@ The bundle may import from outside modules; those are loaded first, in their ord
 `--force` writes the modules even when a check rejects the split, to see what Node does with them.
 `--plan` writes the plan beside the modules, as JSON: `{"order": […], "modules": {name: [statement, …]}}` has the order
 in which the modules run (`Plan.evalOrder`) and the statements of each module, by their numbers in the bundle.
+`--corejs` reads the bundle in the CoreJS model (`experiments/translation/core_program.mjs`), so that the verdict can
+name the proved slice that covers the split (`sliceLines`).
 `--replicate K` is for timing: K renamed copies of the bundle (the spec must cover K times as many statements).
 -/
 
@@ -179,11 +184,143 @@ def loadFootprints (path : String) (asts : Array Json) : IO (Array Lower.Footpri
     out := out.push f
   return out
 
+/-! ## Which proved slice covers the split -/
+
+partial def anyNode (p : Json → Bool) (j : Json) : Bool := p j || (Lower.children j).any (anyNode p)
+
+/-- Does `j` read `import.meta` other than in `new URL("/absolute", import.meta.url)`? That one resolves against the
+origin, whichever file the statement is in (as `translate` reads it). -/
+partial def readsMeta (j : Json) : Bool :=
+  let args := Lower.items (Lower.fld j "arguments")
+  let callee := Lower.fld j "callee"
+  if Lower.typ j == "NewExpression" && Lower.typ callee == "Identifier" && Lower.str (Lower.fld callee "name") == "URL"
+      && Lower.str (Lower.fld callee "k") == "G" && args.size == 2 && Lower.typ args[0]! == "Literal"
+      && (Lower.str (Lower.fld args[0]! "lit")).startsWith "s:/" && Lower.typ args[1]! == "MemberExpression"
+      && Lower.fld args[1]! "computed" == Json.bool false && Lower.typ (Lower.fld args[1]! "object") == "MetaProperty"
+      && Lower.str (Lower.fld (Lower.fld args[1]! "property") "name") == "url" then false
+  else (Lower.typ j == "MetaProperty" && Lower.str (Lower.fld (Lower.fld j "meta") "name") == "import")
+    || (Lower.children j).any readsMeta
+
+/-- The bundle as the order-kept slice reads it: without its `import`s of outside modules. Such an `import` binds names
+of the world before any statement runs, wherever it stands, and is an empty statement to the analysis
+(`Effects.dumpUnits`): it declares nothing and nothing mentions it. Leaving it out of the bundle, of the spec and so
+of the plan changes no other statement, module, import or export, which `withoutImports` checks; then the split it
+writes is the split of the bundle without them. -/
+structure WithoutImports where
+  /-- the new number of each statement, `none` for an `import` -/
+  rank : Array (Option Nat)
+  /-- the number in the bundle of each new number -/
+  kept : Array Nat
+  B : Bundle
+  S : Spec
+  P : Plan
+
+def withoutImports (asts : Array Json) (B : Bundle) (S : Spec) : WithoutImports :=
+  let kept := (List.range asts.size).filter fun i => Lower.typ (asts.getD i Json.null) != "ImportDeclaration"
+  let rank := kept.zipIdx.foldl (fun (r : Array (Option Nat)) (i, k) => r.set! i (some k)) (Array.replicate asts.size none)
+  let B' := kept.map B.stmt
+  let S' := { S with modules := S.modules.map fun (m, sels) => (m, sels.filterMap fun
+    | .stmt i => (rank.getD i none).map .stmt
+    | .name u => some (.name u)) }
+  { rank, kept := kept.toArray, B := B', S := S', P := mkPlan B' S' }
+
+/-- What differs between the plan and the plan without the outside `import`s, other than those statements. -/
+def importsMatter (P : Plan) (w : WithoutImports) : Option String :=
+  if P.evalOrder != w.P.evalOrder then some "the module order" else
+  if P.mods.length != w.P.mods.length then some "the modules" else
+  (P.mods.zip w.P.mods).findSome? fun (m, m') =>
+    if m.name != m'.name then some "the modules"
+    else if m.stmts.filterMap (w.rank.getD · none) != m'.stmts then some s!"the statements of {m.name}"
+    else if m.imports != m'.imports then some s!"the imports of {m.name}"
+    else if m.exports != m'.exports then some s!"the exports of {m.name}"
+    else none
+
+/-- The bundle in the model, `ss` of `CoreJS.Program.single ss`, from the front end's program
+(`experiments/translation/core_program.mjs`): statement `k` is the one the front end gave the identity of the `k`-th
+statement that is not an outside `import`. Where the front end gave no statement of the model, the bundle's statement
+does nothing when it runs (an `export { … }` list, `;`, `debugger`), and the model has an empty block in its place:
+`FootprintsOfSyntax` then asks that its footprint declare nothing. -/
+def modelBundle (asts : Array Json) (rank : Array (Option Nat)) (prog : CoreJS.Program) :
+    Except String (List CoreJS.Stmt × Nat) := do
+  let [m] := prog.modules | throw s!"it has {prog.modules.length} modules, and the bundle is one"
+  unless m.imports.isEmpty do throw "its module imports: an outside module has to be part of the world"
+  let mut byId : Std.HashMap Nat CoreJS.Stmt := {}
+  for (i, s) in m.body do
+    if i ≥ asts.size then throw s!"it has a statement {i}, and the bundle has {asts.size}"
+    if byId.contains i then throw s!"it has two statements {i}"
+    if (rank.getD i none).isNone then throw s!"it has a statement {i}, an `import` of the bundle"
+    byId := byId.insert i s
+  let kept := (List.range asts.size).filter fun i => (rank.getD i none).isSome
+  let ss ← kept.mapM fun i =>
+    pure ((byId[i]?).getD (.block []))
+  pure (ss, kept.length - (kept.filter byId.contains).length)
+
+/-- The first statement whose footprint does not say what its text says, to explain a failed `FootprintsOfSyntax`. -/
+def footprintProblem (B : Bundle) (kept : Array Nat) (ss : List CoreJS.Stmt) : Option String :=
+  let fps := B.toArray
+  ss.zipIdx.findSome? fun (s, k) =>
+    let f := fps.getD k default
+    let i := kept.getD k k
+    let declared := s.bindings.map (·.1)
+    if !(f.defs.all declared.contains && declared.all f.defs.contains) then
+      some s!"statement {i}: the footprint declares {f.defs}, the statement {declared}"
+    else match s.free.filter fun x => !(f.defs.contains x || f.eager.contains x || f.lazy.contains x) with
+      | [] => none
+      | missing => some s!"statement {i} mentions {missing.eraseDups}, which its footprint does not list"
+
+/-- **Which proved slice of the end-to-end theorem covers the split**, and what it rests on; or what it lacks. One
+slice is proved: `CoreJS.valid_order_kept_preserves`, for a plan that keeps the bundle's order. Its hypotheses are
+`Valid`, `OrderKept` and `FootprintsOfSyntax`, each decided here as the theorem states it, of the bundle without its
+outside `import`s (`WithoutImports`). -/
+def sliceLines (asts : Array Json) (B : Bundle) (S : Spec) (P : Plan) (checked : Bool) (replicated : Bool)
+    (model? : Option (String × Except String CoreJS.Program)) : List String :=
+  let name := "order kept (`CoreJS.valid_order_kept_preserves`)"
+  let dynamicImport := asts.any (anyNode (Lower.typ · == "ImportExpression"))
+  let metaUrl := asts.any (anyNode (Lower.typ · == "MetaProperty"))
+  let covered : Except String (List String) := do
+    if replicated then throw "the bundle as it is, not `--replicate`"
+    unless checked do throw "the split to pass the checks above"
+    if let some i := asts.findIdx? readsMeta then
+      throw s!"a bundle that does not read `import.meta`, which names the file a statement is in (statement {i}), other than in `new URL(\"/absolute\", import.meta.url)`"
+    if dynamicImport && P.mods.any (·.name.contains '/') then
+      throw "every module in one directory, since the bundle has `import()`, which resolves against the file"
+    let imports := (asts.filter (Lower.typ · == "ImportDeclaration")).size
+    let w := if imports == 0 then { rank := (Array.range asts.size).map some, kept := Array.range asts.size, B, S, P }
+      else withoutImports asts B S
+    if imports > 0 then
+      if let some what := importsMatter P w then
+        throw s!"the outside `import`s to change nothing else when left out, and they change {what}"
+      unless decide (Valid w.B w.S w.P) do throw "the split without the outside `import`s to pass the checks"
+    unless decide (w.P.execOrder = List.range w.B.length) do
+      let first := (w.P.execOrder.zip (List.range w.B.length)).find? fun (a, b) => a != b
+      throw s!"the plan to keep the order (OrderKept){match first with
+        | some (a, b) => s!": statement {w.kept.getD a a} runs where statement {w.kept.getD b b} does" | none => ""}"
+    let some (path, prog) := model? | throw "the bundle in the model, to check FootprintsOfSyntax: `--corejs <program.json>`"
+    let (ss, nothing) ← match prog >>= modelBundle asts w.rank with
+      | .ok r => pure r
+      | .error e => throw s!"the bundle in the model, and {path} is not: {e}"
+    unless decide (CoreJS.OrderKept ss w.P) do throw "the plan to keep the order (OrderKept)"
+    unless decide (CoreJS.FootprintsOfSyntax ss w.B) do
+      throw s!"FootprintsOfSyntax: {(footprintProblem w.B w.kept ss).getD "it fails"}"
+    let nOpaque := ss.countP fun | .opaque .. => true | _ => false
+    pure ([s!"  proved slice: {name}: in the model, the split ends as the bundle does, for every world"]
+      ++ (if imports == 0 then [] else
+        [s!"    of the bundle without its `import`s of outside modules ({imports}), which bind before any statement runs; the split without them is the same otherwise"])
+      ++ [s!"    Valid: the nine checks{if imports == 0 then " above" else ", again"}",
+      s!"    OrderKept: the modules run the {ss.length} statements in the bundle's order",
+      s!"    FootprintsOfSyntax: against {path}: {ss.length - nOpaque - nothing} statements in the model's syntax, {nOpaque} opaque, {nothing} that do nothing (an `export` list, `;`, `debugger`)",
+      s!"    trusted: the model; the front end's reading of the scope; outside modules are part of the world{if dynamicImport then "; `import()` is opaque, faithful since every module is in one directory" else ""}{if metaUrl then "; `new URL(\"/absolute\", import.meta.url)` resolves against the origin" else ""}",
+      "    not among its hypotheses: the footprint analysis and its premises"])
+  match covered with
+  | .ok lines => lines
+  | .error why => [s!"  proved slice: none. {name} needs {why}"]
+
 def main (args : List String) : IO UInt32 := do
   let (replicate?, args) := Effects.takeFlag "--replicate" args
   let (premPath?, args) := Effects.takeFlag "--premises" args
   let (fpPath?, args) := Effects.takeFlag "--footprints" args
   let (planPath?, args) := Effects.takeFlag "--plan" args
+  let (corejsPath?, args) := Effects.takeFlag "--corejs" args
   if premPath?.isSome && fpPath?.isSome then
     throw (IO.userError "--footprints and --premises: the footprints rest on the premises `lower` ran under")
   let prem ← Effects.loadPremises premPath?
@@ -192,7 +329,7 @@ def main (args : List String) : IO UInt32 := do
   let (bundlePath, specPath, out, leanOut?) ← match args with
     | [b, s, o] => pure (b, s, o, none)
     | [b, s, o, "--lean", l] => pure (b, s, o, some l)
-    | _ => do IO.eprintln "usage: lowersplit <bundle.json> <spec.json> <outdir> [--lean <file>] [--replicate <K>] [--premises <file> | --footprints <file>] [--plan <file>] [--force]"; throw (IO.userError "usage")
+    | _ => do IO.eprintln "usage: lowersplit <bundle.json> <spec.json> <outdir> [--lean <file>] [--replicate <K>] [--premises <file> | --footprints <file>] [--plan <file>] [--corejs <program.json>] [--force]"; throw (IO.userError "usage")
   let tStart ← IO.monoMsNow
   let lap (what : String) (t0 : Nat) : IO Nat := do
     let t ← IO.monoMsNow
@@ -243,6 +380,9 @@ def main (args : List String) : IO UInt32 := do
   let t4 ← lap "mkPlan" t3
   let ok ← report B S P
   let t5 ← lap "all checks" t4
+  let model? ← corejsPath?.mapM fun (p : String) => do
+    pure (p, Json.parse (← IO.FS.readFile p) >>= CoreJS.Decode.program)
+  for line in sliceLines asts B S P (ok && !bad) replicate?.isSome model? do IO.println line
   if let some l := leanOut? then
     if bad then
       IO.println "  no kernel certificate: the front-end rule above failed, and Lean does not check it"

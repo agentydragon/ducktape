@@ -14,7 +14,7 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 
-from cluster.cdk8s import namespaces
+from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts
@@ -80,7 +80,7 @@ def _deployment(chart: Chart) -> None:
                 spec=k8s.PodSpec(
                     automount_service_account_token=False,
                     # The replicated HDD class permits remote access only within hil-ovh.
-                    node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
+                    node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                     security_context=k8s.PodSecurityContext(
                         fs_group=65532, seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")
                     ),
@@ -186,7 +186,7 @@ def chart(app: App) -> Chart:
                 # Authenticated public entrypoint. The HTTPRoute for oci-cache.allegedly.works
                 # targets this port; in-cluster Docker mirrors must use the unauthenticated
                 # `http` port above.
-                _PUBLIC_AUTH.port.k8s_service_port(),
+                _PUBLIC_AUTH.k8s_service_port(),
             ],
         ),
     )

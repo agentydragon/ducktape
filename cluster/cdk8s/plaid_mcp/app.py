@@ -255,7 +255,7 @@ def chart(app: App) -> Chart:
         chart,
         "service",
         metadata=k8s.ObjectMeta(name=_WEB.name, namespace=NAMESPACE, labels=_WEB.labels),
-        spec=k8s.ServiceSpec(selector=_WEB.pods.selector, ports=[_WEB.port.k8s_service_port()], type="ClusterIP"),
+        spec=k8s.ServiceSpec(selector=_WEB.pods.selector, ports=[_WEB.k8s_service_port()], type="ClusterIP"),
     )
     https_route(
         chart,

@@ -31,7 +31,7 @@ from tofu_controller.io.fluxcd.contrib.infra import (
     TerraformSpecStoreReadablePlan,
 )
 
-from cluster.cdk8s import terraform
+from cluster.cdk8s import node_scheduling, terraform
 from cluster.cdk8s.cert_manager import cluster_ca
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.home_lan import HOME_LAN
@@ -48,8 +48,6 @@ TOFU_PASSWORD_FILE = "tofu-password.sops.yaml"
 # tf/gitops/home-switch/main.tf and bootstrap.sh read these Secrets and keys by name.
 MONITORING_PASSWORD = SecretRef(namespace=NAMESPACE, name="home-switch-monitoring").key("password")
 TLS_SECRET = "home-switch-tls"
-# The switch is reachable only from the home LAN; OptiPlex is the cluster node on it.
-_HOME_LAN = {"topology.kubernetes.io/zone": "home-lan"}
 # main.tf's provider `ca_certificate` reads the bundle here.
 _CA_BUNDLE_DIR = "/etc/cluster-ca"
 
@@ -120,7 +118,8 @@ def chart(app: App, module: ArtifactGeneratorSpecArtifacts, agentplane_ssh_publi
         auto_apply=False,
         # Secret-bearing attributes come from Secrets, so the plan masks them.
         store_readable_plan=TerraformSpecStoreReadablePlan.HUMAN,
-        node_selector=_HOME_LAN,
+        # Only home LAN nodes can reach the switch.
+        node_selector=node_scheduling.HOME_LAN_NODE_SELECTOR,
         volumes=[
             TerraformSpecRunnerPodTemplateSpecVolumes(
                 name="cluster-ca", config_map=TerraformSpecRunnerPodTemplateSpecVolumesConfigMap(name=cluster_ca.BUNDLE)

@@ -13,6 +13,7 @@ from cdk8s_plus_34 import ConfigMap, k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from python.runfiles import Runfiles
 
+from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.gateway import https_route
@@ -89,7 +90,7 @@ def _deployment(chart: Chart) -> None:
                     ),
                     topology_spread_constraints=[
                         k8s.TopologySpreadConstraint(
-                            topology_key="topology.kubernetes.io/zone",
+                            topology_key=node_scheduling.ZONE_LABEL,
                             max_skew=1,
                             # A single eligible zone can keep both replicas on different hosts.
                             min_domains=1,
@@ -207,7 +208,7 @@ def chart(app: App) -> Chart:
         chart,
         "service",
         metadata=k8s.ObjectMeta(name=_SERVICE.name, namespace=NAMESPACE),
-        spec=k8s.ServiceSpec(selector=_SERVICE.pods.selector, ports=[_SERVICE.port.k8s_service_port()]),
+        spec=k8s.ServiceSpec(selector=_SERVICE.pods.selector, ports=[_SERVICE.k8s_service_port()]),
     )
     return chart
 

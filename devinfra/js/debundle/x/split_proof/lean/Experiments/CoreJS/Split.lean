@@ -215,6 +215,22 @@ def FootprintsOfSyntax (ss : List Stmt) (B : EsmSplit.Bundle) : Prop :=
     (∀ x, x ∈ (B.stmt i).defs ↔ x ∈ s.bindings.map (·.1)) ∧
     ∀ x ∈ s.free, x ∈ (B.stmt i).defs ∨ x ∈ (B.stmt i).eager ++ (B.stmt i).lazy
 
+/-- `FootprintsOfSyntax` statement by statement, which Lean can decide: the verdict of `lowersplit` decides it. -/
+theorem footprintsOfSyntax_iff (ss : List Stmt) (B : EsmSplit.Bundle) :
+    FootprintsOfSyntax ss B ↔ B.length = ss.length ∧ ∀ i (h : i < ss.length),
+      (∀ x ∈ (B.stmt i).defs, x ∈ ss[i].bindings.map (·.1)) ∧ (∀ x ∈ ss[i].bindings.map (·.1), x ∈ (B.stmt i).defs) ∧
+      ∀ x ∈ ss[i].free, x ∈ (B.stmt i).defs ∨ x ∈ (B.stmt i).eager ++ (B.stmt i).lazy := by
+  unfold FootprintsOfSyntax
+  refine and_congr Iff.rfl ⟨fun h i hi => ?_, fun h i s hs => ?_⟩
+  · have := h i ss[i] (List.getElem?_eq_getElem hi)
+    exact ⟨fun x hx => (this.1 x).1 hx, fun x hx => (this.1 x).2 hx, this.2⟩
+  · obtain ⟨hi, rfl⟩ := List.getElem?_eq_some_iff.1 hs
+    obtain ⟨h1, h2, h3⟩ := h i hi
+    exact ⟨fun x => ⟨h1 x, h2 x⟩, h3⟩
+
+instance (ss : List Stmt) (B : EsmSplit.Bundle) : Decidable (FootprintsOfSyntax ss B) :=
+  decidable_of_iff _ (footprintsOfSyntax_iff ss B).symm
+
 /-! ## The statements of the split -/
 
 section statements

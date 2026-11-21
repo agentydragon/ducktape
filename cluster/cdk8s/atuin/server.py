@@ -91,7 +91,7 @@ def _server(chart: Chart) -> None:
         chart,
         "service",
         metadata=k8s.ObjectMeta(name=SERVER.name, namespace=NAMESPACE),
-        spec=k8s.ServiceSpec(selector=SERVER.pods.selector, ports=[SERVER.port.k8s_service_port()], type="ClusterIP"),
+        spec=k8s.ServiceSpec(selector=SERVER.pods.selector, ports=[SERVER.k8s_service_port()], type="ClusterIP"),
     )
     https_route(
         chart,
