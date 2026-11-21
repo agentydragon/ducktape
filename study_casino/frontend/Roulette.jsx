@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 
 import { COLORS, SectionTitle, WinBurst } from "./shared.jsx";
 
@@ -9,9 +9,10 @@ const WHEEL = [
 ];
 const RED = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]);
 
-function numColor(n) {
-  if (n === 0) return "green";
-  return RED.has(n) ? "red" : "black";
+// Fill for a wheel pocket or a result chip: green zero, otherwise red or black.
+function pocketFill(n) {
+  if (n === 0) return "#1e6e3e";
+  return RED.has(n) ? COLORS.red : COLORS.black;
 }
 
 // Module-level (not defined inside Roulette's render) so React keeps the
@@ -140,7 +141,6 @@ export function Roulette({ offline, credits, spinRoulette }) {
                 y1 = Math.sin(sRad) * r;
               const x2 = Math.cos(eRad) * r,
                 y2 = Math.sin(eRad) * r;
-              const fill = num === 0 ? "#1e6e3e" : RED.has(num) ? COLORS.red : COLORS.black;
               const textAngle = i * anglePer - 90;
               const tx = Math.cos((textAngle * Math.PI) / 180) * 108;
               const ty = Math.sin((textAngle * Math.PI) / 180) * 108;
@@ -148,7 +148,7 @@ export function Roulette({ offline, credits, spinRoulette }) {
                 <g key={i}>
                   <path
                     d={`M 0 0 L ${x1} ${y1} A ${r} ${r} 0 0 1 ${x2} ${y2} Z`}
-                    fill={fill}
+                    fill={pocketFill(num)}
                     stroke={COLORS.goldDim}
                     strokeWidth="0.5"
                   />
@@ -192,12 +192,7 @@ export function Roulette({ offline, credits, spinRoulette }) {
                 alignItems: "center",
                 gap: 8,
                 padding: "8px 20px",
-                background:
-                  numColor(result.number) === "red"
-                    ? COLORS.red
-                    : numColor(result.number) === "black"
-                      ? COLORS.black
-                      : "#1e6e3e",
+                background: pocketFill(result.number),
                 border: `1px solid ${COLORS.gold}`,
                 color: COLORS.cream,
                 fontWeight: 700,
@@ -243,12 +238,7 @@ export function Roulette({ offline, credits, spinRoulette }) {
                   width: 24,
                   height: 24,
                   borderRadius: "50%",
-                  background:
-                    numColor(h.number) === "red"
-                      ? COLORS.red
-                      : numColor(h.number) === "black"
-                        ? COLORS.black
-                        : "#1e6e3e",
+                  background: pocketFill(h.number),
                   color: COLORS.cream,
                   display: "flex",
                   alignItems: "center",

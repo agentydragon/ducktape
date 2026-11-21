@@ -10,8 +10,8 @@ npm_link_all_packages(name = "node_modules")
 # visual-regression test harness. The two woff2 files are latin-subset
 # variable fonts (Playfair Display v40 / Outfit v15, OFL-licensed); fonts.css
 # wires them into @font-face declarations the React component expects. The
-# files live under public/ so Vite copies them to dist/ verbatim during the
-# production build.
+# files live under public/ so `spa_bundle` copies them to dist/ verbatim during
+# the production build.
 filegroup(
     name = "casino_fonts",
     srcs = [
@@ -187,7 +187,6 @@ js_library(
     ],
 )
 
-#
 # esbuild bundles main.jsx → dist/main.js; index.html (referencing /main.js) and
 # the public/ tree (manifest, icon, fonts) are copied in alongside. Served
 # verbatim by the FastAPI app's StaticFiles mount.
@@ -201,7 +200,6 @@ spa_bundle(
     deps = [":main"],
 )
 
-#
 # Renders the StudyCasino component with mocked state and publishes the
 # screenshot for PR visual review (publishOnly — no checked-in baselines).
 # Python tests in test_visual.py own readiness and capture.

@@ -67,7 +67,8 @@ import/reset) and `POST /casino/{slots,roulette,blackjack}/*`; reads include `/c
   without replaying the mutation.
 - Historical rows keep their literals: `game_events` before 2026-05-07 have
   `source="client_reported"` (`server_resolved` after), pre-cutover `ledger_events` have
-  `source="legacy_client_sync"`; both stay in `events.py` so old rows deserialize.
+  `source="legacy_client_sync"`; both stay in `models.py` (`GameEventSource`, `LedgerEventSource`)
+  so old rows deserialize. Do not write a migration that rewrites them.
 - Casino RNG is a deterministic HMAC-SHA256 stream; the DB stores seed material and each call's
   parameters/result, while the versioned `STUDY_CASINO_RNG_SECRET` stays outside it and is
   needed to replay.

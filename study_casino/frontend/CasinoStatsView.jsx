@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback } from "react";
 
 import { COLORS, AdminUserPicker, ErrorBanner, SectionTitle } from "./shared.jsx";
 import { fetchCasinoStats, useCasinoState } from "./sync.js";

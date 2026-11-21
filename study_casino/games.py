@@ -61,17 +61,16 @@ RED = {1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36}
 class SlotSymbol:
     id: str
     glyph: str
-    color: str
     weight: int
     payout: int
 
 
 SLOT_SYMBOLS = [
-    SlotSymbol(id="seven", glyph="7", color="#e8b84a", weight=1, payout=50),
-    SlotSymbol(id="star", glyph="★", color="#e8b84a", weight=3, payout=20),
-    SlotSymbol(id="diamond", glyph="◆", color="#6fc4e8", weight=5, payout=10),
-    SlotSymbol(id="spade", glyph="♠", color="#f5e8c7", weight=9, payout=5),
-    SlotSymbol(id="club", glyph="♣", color="#f5e8c7", weight=14, payout=3),
+    SlotSymbol(id="seven", glyph="7", weight=1, payout=50),
+    SlotSymbol(id="star", glyph="★", weight=3, payout=20),
+    SlotSymbol(id="diamond", glyph="◆", weight=5, payout=10),
+    SlotSymbol(id="spade", glyph="♠", weight=9, payout=5),
+    SlotSymbol(id="club", glyph="♣", weight=14, payout=3),
 ]
 SLOT_WEIGHTS = [symbol.weight for symbol in SLOT_SYMBOLS]
 
@@ -284,16 +283,10 @@ def theoretical_bucket_rtp() -> dict[tuple[str, str], tuple[float, float]]:
     n_pockets = len(WHEEL)
     for bet_type in get_args(RouletteBetType):
         bet_number = 0 if bet_type == "number" else None
-        wins = sum(1 for num in WHEEL if _roulette_win(num, bet_type, bet_number)[0])
+        pockets = [_roulette_win(num, bet_type, bet_number) for num in WHEEL]
+        wins = sum(won for won, _ in pockets)
         # All winning multipliers are constant per bet_type — pull mult from any winning pocket.
-        mult = next(
-            (
-                _roulette_win(num, bet_type, bet_number)[1]
-                for num in WHEEL
-                if _roulette_win(num, bet_type, bet_number)[0]
-            ),
-            0,
-        )
+        mult = next((pocket_mult for won, pocket_mult in pockets if won), 0)
         p_win = wins / n_pockets
         rtp = p_win * mult
         out[("roulette", bet_type)] = (p_win, rtp)

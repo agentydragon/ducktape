@@ -26,7 +26,7 @@ def test_replaying_seed_material_reproduces_roulette_result_and_calls():
     settlement = spin_roulette(1, "red", None, rng)
     audit = rng.audit()
 
-    replay = AuditedRandom.from_seed_material_json(
+    replay = AuditedRandom(
         secret=_SECRET,
         rng_version=audit.rng_version,
         rng_key_id=audit.rng_key_id,
@@ -57,7 +57,7 @@ def test_blackjack_shuffle_replays_exact_shoe_order():
     shoe = make_shoe(rng)
     audit = rng.audit()
 
-    replay = AuditedRandom.from_seed_material_json(
+    replay = AuditedRandom(
         secret=_SECRET,
         rng_version=audit.rng_version,
         rng_key_id=audit.rng_key_id,
