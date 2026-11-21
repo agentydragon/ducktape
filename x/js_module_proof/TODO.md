@@ -85,8 +85,8 @@ cover only part of the grammar and split space described below.
       on accepted, unsafe and unsupported examples. Avoid adding independent formal
       models for the fuzzer or for individual syntax features.
 - [ ] Extend the checked entry-export alias mappings to imports, captured exports,
-      and non-entry modules. Check actual reexports and preserve multiple public
-      names for the same live binding; extend the generator and counterexample
+      and non-entry modules. Extend multiple public names to live captured
+      bindings; extend the generator and counterexample
       certificates instead of treating renamed exports as unrelated declarations.
 - [ ] State and test each slice's observation boundary and assumptions, including
       module loading, host behavior, numeric semantics and termination. Keep

@@ -172,7 +172,7 @@ for some synchronous nested functions, parameters, blocks and branches after
 checking their lexical free references and rejecting imported writes. The
 validator returns `unknown` for those candidates; generation is not a proof.
 Public exports must be functions. The entry module may rename an exported
-function, provided each declaration has one public name and the source has no
+function, including under multiple public names, provided the source has no
 modeled captured closures. Imports and non-entry exports use unaliased names.
 Source declarations have unique names, function
 writes must target a mutable local binding, and each module preserves its assigned

@@ -685,8 +685,15 @@ def moduleValid (source : List BindingStmt) (modules : List BindingModule) (inde
     names.all (fun name => names.count name == 1) &&
     module.statements.all (validRefs source modules index)
 
+/- A declaration may be exported under multiple public names; the module graph
+   tracks each underlying local once, while public mappings retain every name. -/
+def uniqueBindingNames : List String → List String
+  | [] => []
+  | name :: rest =>
+    if rest.contains name then uniqueBindingNames rest else name :: uniqueBindingNames rest
+
 def publicNames (module : BindingModule) : List String :=
-  module.exports ++ module.imports.flatMap (fun i => i.reexports)
+  uniqueBindingNames (module.exports ++ module.imports.flatMap (fun i => i.reexports))
 
 /- A declaration's identity is its index in the original statement list.
    Resolve against the extracted module statements and imports, not the

@@ -1086,7 +1086,15 @@ export { calculate as compute };
     duplicate,
     (await readFile(source, "utf8")).replace("calculate as compute", "calculate as compute, calculate as second")
   );
-  assert.equal(cli("generate", duplicate, spec, join(root, "export-alias-duplicate-out")).result, "unknown");
+  const duplicateOut = join(root, "export-alias-duplicate-out");
+  assert.equal(cli("generate", duplicate, spec, duplicateOut).result, "generated");
+  assert.equal(cli("validate", duplicate, spec, duplicateOut).result, "proved under assumptions");
+  const duplicateCalls = [
+    { name: "compute", args: [3] },
+    { name: "second", args: [4] },
+  ];
+  assert.deepEqual(execute(duplicate, duplicateCalls), execute(join(duplicateOut, "entry.mjs"), duplicateCalls));
+  assert.deepEqual(execute(duplicate, duplicateCalls).results, [{ value: 7 }, { value: 8 }]);
   const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
     encoding: "utf8",
     input:
@@ -1109,6 +1117,94 @@ theorem alias_observation :
   const unsafe = cli("validate", source, spec, out);
   assert.equal(unsafe.result, "unsafe", JSON.stringify(unsafe));
   assert.notDeepEqual(execute(source, []).exports, execute(entry, []).exports);
+  await writeFile(entry, (await readFile(entry, "utf8")).replace("as wrong", "as compute"));
+  const functions = join(out, "functions.mjs");
+  await writeFile(functions, (await readFile(functions, "utf8")).replace("x + base", "x + 1"));
+  const bodyUnsafe = cli("validate", source, spec, out);
+  assert.equal(bodyUnsafe.result, "unsafe", JSON.stringify(bodyUnsafe));
+  assert.notDeepEqual(execute(source, bodyUnsafe.calls), execute(entry, bodyUnsafe.calls));
+}
+
+if (shard === 2) {
+  const source = join(root, "alias-live-cell.mjs");
+  const spec = join(root, "alias-live-cell.json");
+  const out = join(root, "alias-live-cell-out");
+  await writeFile(
+    source,
+    `let count = 0;
+let amount = 1;
+function increment() { count += amount; }
+function read() { return count; }
+export { increment as first, increment as second, read };
+`
+  );
+  await writeFile(
+    spec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0, 1, 2, 3] },
+        "entry.mjs": { imports: ["state.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", source, spec, out).result, "generated");
+  const proof = cli("validate", source, spec, out);
+  assert.equal(proof.result, "proved under assumptions", JSON.stringify(proof));
+  const calls = ["first", "second", "read"];
+  const trace = execute(source, calls);
+  assert.deepEqual(trace, execute(join(out, "entry.mjs"), calls));
+  assert.deepEqual(trace.results.at(-1), { value: 2 });
+  const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
+    encoding: "utf8",
+    input:
+      models +
+      proof.certificate +
+      `
+theorem alias_live_cell :
+  ((sourceBindingState bindingSource).bind (fun state =>
+    (publicFunctionTable bindingSource bindingExports).bind (fun table =>
+      (aliasPublicTable table bindingPublicMappings).bind (fun aliases =>
+        runExportedCalls aliases state ["first", "second", "read"])))).map
+    (fun state => state.returns) = some [none, none, some 2] := by decide
+#print axioms alias_live_cell
+`,
+  });
+  assert.equal(replay.status, 0, replay.stdout + replay.stderr);
+  assert.match(replay.stdout, /'alias_live_cell' does not depend on any axioms/);
+}
+
+if (shard === 2) {
+  const source = join(root, "alias-wrong-owner.mjs");
+  const spec = join(root, "alias-wrong-owner.json");
+  const out = join(root, "alias-wrong-owner-out");
+  await writeFile(
+    source,
+    `function first() { return 1; }
+function second() { return 2; }
+export { first as a, second as b };
+`
+  );
+  await writeFile(
+    spec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "functions.mjs": { imports: [], statements: [0, 1] },
+        "entry.mjs": { imports: ["functions.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", source, spec, out).result, "generated");
+  assert.equal(cli("validate", source, spec, out).result, "proved under assumptions");
+  const entry = join(out, "entry.mjs");
+  await writeFile(entry, (await readFile(entry, "utf8")).replace("first as a", "second as a"));
+  const unsafe = cli("validate", source, spec, out);
+  assert.equal(unsafe.result, "unsafe", JSON.stringify(unsafe));
+  assert.deepEqual(execute(source, []).exports, execute(entry, []).exports);
+  assert.notDeepEqual(execute(source, unsafe.calls), execute(entry, unsafe.calls));
 }
 
 if (shard === 14) {

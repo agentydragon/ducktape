@@ -1103,8 +1103,7 @@ function sourceAst(text) {
     statements.length > 0 && statements.length <= 20 && exports.length > 0,
     "expected up to twenty statements and public exports"
   );
-  check(new Set(exports).size === exports.length, "multiple public aliases of one declaration are unsupported");
-  return { statements, exports, mappings };
+  return { statements, exports: [...new Set(exports)], mappings };
 }
 
 function readSpec(spec, count) {
@@ -1778,7 +1777,6 @@ theorem binding_export_difference :
       if (checked.status === 0 && has(checked, "binding_export_difference"))
         return { result: "unsafe", original, output, certificate };
     }
-    return { result: "unknown", reason: "aliased export difference could not be witnessed" };
   }
   const different = `\ntheorem binding_difference : sourceBindingState bindingSource ≠ outputBindingState bindingSource bindingModules bindingEntry := by decide\n#print axioms binding_difference\n`;
   let witnessFailure = proof.stdout || proof.stderr;
@@ -1809,8 +1807,8 @@ theorem binding_export_difference :
         : leanStrings(calls);
       const table = hasExpressions ? "publicCallableTable" : "publicFunctionTable";
       const runner = hasExpressions ? "runArgumentCalls" : "runExportedCalls";
-      left = `((sourceBindingState bindingSource).bind (fun state => (${table} bindingSource bindingExports).bind (fun table => ${runner} table state ${leanCalls}))).map (fun state => (state.events, state.returns))`;
-      right = `((outputBindingState bindingSource bindingModules bindingEntry).bind (fun state => (${table} (outputDefinitions bindingModules) bindingExports).bind (fun table => ${runner} table state ${leanCalls}))).map (fun state => (state.events, state.returns))`;
+      left = `((sourceBindingState bindingSource).bind (fun state => (${table} bindingSource bindingExports).bind (fun table => (aliasPublicTable table bindingPublicMappings).bind (fun aliases => ${runner} aliases state ${leanCalls})))).map (fun state => (state.events, state.returns))`;
+      right = `((outputBindingState bindingSource bindingModules bindingEntry).bind (fun state => (${table} (outputDefinitions bindingModules) (bindingOutputMappings.map Prod.fst)).bind (fun table => (aliasPublicTable table bindingOutputMappings).bind (fun aliases => ${runner} aliases state ${leanCalls})))).map (fun state => (state.events, state.returns))`;
       expectedLeft = `some (${sourceEvents}, ${sourceReturns})`;
       expectedRight = `some (${outputEvents}, ${outputReturns})`;
     }
@@ -1852,9 +1850,11 @@ theorem binding_export_difference :
     1
   );
   const initialCalls = source.statements.filter((item) => ["call", "recordCall"].includes(item.ast.kind)).length;
-  const callable = source.exports.filter(
-    (name) => !source.statements.some((item) => item.ast.kind === "thrower" && item.ast.name === name)
-  );
+  const callable = source.mappings
+    .filter(
+      (mapping) => !source.statements.some((item) => item.ast.kind === "thrower" && item.ast.name === mapping.local)
+    )
+    .map((mapping) => mapping.public);
   const resolveCapturedDefinition = (name) => {
     const seen = new Set();
     let definition = source.statements.find((item) => item.ast.name === name)?.ast;
@@ -1865,9 +1865,10 @@ theorem binding_export_difference :
     }
     return definition;
   };
+  const localName = (name) => source.mappings.find((mapping) => mapping.public === name)?.local ?? name;
   const candidates = hasExpressions
     ? callable.flatMap((name) => {
-        const definition = resolveCapturedDefinition(name);
+        const definition = resolveCapturedDefinition(localName(name));
         const factory =
           definition?.kind === "capturedClosure"
             ? source.statements.find((item) => item.ast.name === definition.factory)?.ast
@@ -1955,7 +1956,7 @@ theorem binding_export_difference :
   };
   for (const calls of candidates.slice(0, 64)) {
     if (hasExpressions) {
-      const definition = resolveCapturedDefinition(calls[0].name);
+      const definition = resolveCapturedDefinition(localName(calls[0].name));
       const bound = BigInt(Math.max(maximum, 2)) << BigInt(initialCalls + 1);
       if (
         definition?.kind === "expressionFunction" &&

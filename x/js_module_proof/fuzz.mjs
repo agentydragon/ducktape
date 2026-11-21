@@ -1110,6 +1110,7 @@ export function makeComposedCase(seed, index) {
   const functionNames = Array.from({ length: 1 + rand(3) }, (_, i) => (i ? `calculate${i}` : "calculate"));
   const functions = functionNames.map(makeFunction);
   const publicFunctionNames = functionNames.map((name, i) => (index % 3 === 0 && i === 0 ? `public_${name}` : name));
+  const extraAlias = index % 6 === 0 ? "second_calculate" : null;
   const ast = {
     type: "Program",
     sourceType: "module",
@@ -1118,14 +1119,18 @@ export function makeComposedCase(seed, index) {
       ...functions,
       {
         type: "ExportNamedDeclaration",
-        specifiers: functionNames.map((name, i) => ({
-          type: "ExportSpecifier",
-          local: id(name),
-          exported: id(publicFunctionNames[i]),
-        })),
+        specifiers: [
+          ...functionNames.map((name, i) => ({
+            type: "ExportSpecifier",
+            local: id(name),
+            exported: id(publicFunctionNames[i]),
+          })),
+          ...(extraAlias ? [{ type: "ExportSpecifier", local: id(functionNames[0]), exported: id(extraAlias) }] : []),
+        ],
       },
     ],
   };
+  const callNames = extraAlias ? [...publicFunctionNames, extraAlias] : publicFunctionNames;
   return {
     ast,
     source: print(ast),
@@ -1144,7 +1149,7 @@ export function makeComposedCase(seed, index) {
       },
     },
     calls: Array.from({ length: 1 + rand(4) }, () => ({
-      name: publicFunctionNames[rand(publicFunctionNames.length)],
+      name: callNames[rand(callNames.length)],
       args: [rand(5)],
     })),
   };
