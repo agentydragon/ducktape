@@ -9,8 +9,8 @@ from typing import cast
 import httpx
 import pytest
 import pytest_bazel
-from dbus_next.aio import MessageBus
-from dbus_next.service import ServiceInterface
+from dbus_fast.aio import MessageBus
+from dbus_fast.service import ServiceInterface
 from httpx_sse import ServerSentEvent
 from pydantic import SecretStr
 
@@ -69,6 +69,14 @@ class SignalRecorder:
         self.messages.append(args)
 
 
+def record_signals(interface: ServiceInterface) -> SignalRecorder:
+    """Attach a recorder in place of a bus connection. `_add_bus` is dbus-fast's private API; its method-handler
+    factory is never called because no method is invoked."""
+    recorder = SignalRecorder()
+    ServiceInterface._add_bus(interface, cast(MessageBus, recorder), lambda *_: lambda *_: None)
+    return recorder
+
+
 class OneChunkStream(httpx.AsyncByteStream):
     def __init__(self, chunk: bytes) -> None:
         self.chunk = chunk
@@ -101,8 +109,7 @@ async def test_view_event_updates_dbus_and_raw_offline_cache(tmp_path: Path) -> 
     cache = QuotaCache(tmp_path / "quotas.json")
     daemon = QuotaDaemon(Config(remote_api=RemoteAPISettings(url="https://example.test")), cache=cache)
     try:
-        recorder = SignalRecorder()
-        ServiceInterface._add_bus(daemon.bus_interface, cast(MessageBus, recorder))
+        recorder = record_signals(daemon.bus_interface)
         introspection = daemon.bus_interface.introspect()
 
         assert [(method.name, method.out_signature) for method in introspection.methods] == [("GetView", "s")]
@@ -193,8 +200,7 @@ async def test_stream_reconnects_and_keeps_latest_cache(tmp_path: Path, monkeypa
         cache=cache,
         http=http,
     )
-    recorder = SignalRecorder()
-    ServiceInterface._add_bus(daemon.bus_interface, cast(MessageBus, recorder))
+    recorder = record_signals(daemon.bus_interface)
     statuses: list[tuple[str, str]] = []
     set_status = daemon.set_status
 
@@ -240,7 +246,7 @@ async def test_stream_cancellation_stops_backoff(tmp_path: Path, monkeypatch: py
         cache=cache,
         http=http,
     )
-    ServiceInterface._add_bus(daemon.bus_interface, cast(MessageBus, SignalRecorder()))
+    record_signals(daemon.bus_interface)
     retry_scheduled = asyncio.Event()
     set_next_retry = daemon._set_next_retry
 
@@ -277,8 +283,7 @@ async def test_network_recovery_wakes_backoff_and_cancels_stuck_stream_without_o
         Config(remote_api=RemoteAPISettings(url="https://example.test", bearer_token=SecretStr("test-token"))),
         cache=QuotaCache(tmp_path / "quotas.json"),
     )
-    recorder = SignalRecorder()
-    ServiceInterface._add_bus(daemon.bus_interface, cast(MessageBus, recorder))
+    recorder = record_signals(daemon.bus_interface)
     first_attempt_failed = asyncio.Event()
     retry_scheduled = asyncio.Event()
     backoff_woken = asyncio.Event()

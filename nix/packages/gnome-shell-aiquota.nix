@@ -20,7 +20,7 @@ python314Packages.buildPythonApplication {
     with python314Packages;
     [
       atomicwrites
-      dbus-next
+      dbus-fast
       httpx
       httpx-sse
       platformdirs

@@ -31,7 +31,7 @@ python314Packages.buildPythonApplication {
     aiohttp
     authlib
     babel
-    dbus-next
+    dbus-fast
     httpx
     httpx2
     pydantic

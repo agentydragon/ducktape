@@ -73,7 +73,6 @@ manifest:
     cyclopts: cyclopts
     dateutil: python_dateutil
     dbus_fast: dbus_fast
-    dbus_next: dbus_next
     debugpy: debugpy
     defusedxml: defusedxml
     distro: distro
@@ -432,4 +431,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 1e9a00c8f02988e1ed58eff1b64541c84084cd25ffa6c71aa125897adfe24513
+integrity: 39866ae4285d41d19c64019f100106c4028dee1ca1d05c8fabffaf4265bbcf9d

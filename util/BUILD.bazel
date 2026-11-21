@@ -243,7 +243,7 @@ py_library(
     name = "network_monitor",
     srcs = ["network_monitor.py"],
     visibility = ["//visibility:public"],
-    deps = ["@pypi//dbus_next"],
+    deps = ["@pypi//dbus_fast"],
 )
 
 py_test(
@@ -252,7 +252,7 @@ py_test(
     deps = [
         ":network_monitor",
         "//:conftest",
-        "@pypi//dbus_next",
+        "@pypi//dbus_fast",
         "@pypi//pytest_bazel",
     ],
 )
@@ -267,7 +267,7 @@ py_wheel(
     name = "network_monitor_wheel",
     distribution = "ducktape-network-monitor",
     python_requires = ">=3.14",
-    requires = ["dbus-next>=0.2.3"],
+    requires = ["dbus-fast>=4.0.0"],
     version = "0.1.0",
     visibility = ["//visibility:public"],
     deps = [":network_monitor_pkg"],
