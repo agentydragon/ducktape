@@ -34,10 +34,9 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/infra-drift"
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    # Dedicated source: the shared flux-system GitRepository sparse-checks-out only
-    # deployment paths (cluster/k8s/, tf/gitops/, ...), so cluster/terraform/ is absent from
-    # its artifact and the runner fails with "terraform path not found". Its sparseCheckout
-    # cannot be extended either: gotk-sync.yaml is flux-generated and marked DO NOT EDIT.
+    # Dedicated source: the shared flux-system GitRepository sparse-checks-out deployment
+    # paths, so its artifact lacks cluster/terraform/. The root also needs a repo-root file,
+    # which sparseCheckout cannot select; the filtered source keeps it out of the shared artifact.
     source = GitRepository(
         chart,
         "source",
