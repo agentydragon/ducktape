@@ -29,10 +29,11 @@ from props.agents.critic_dev.testing.orchestration_fixtures import (
     ORCHESTRATION_CRITIC_MODEL,
     ORCHESTRATION_GRADER_MODEL,
     ORCHESTRATION_OPTIMIZER_MODEL,
+    critic_dev_optimizer,
 )
 from props.agents.grader.testing.mocks import GraderMock
 from props.agents.grader.tools import ClusterMemberSpec
-from props.core.agent_types import AgentType, TargetMetric
+from props.core.agent_types import AgentType
 from props.core.ids import DefinitionId
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus
@@ -122,23 +123,7 @@ async def test_optimizer_orchestrates_critic(
     }
     async with e2e_stack(mocks, images=[critic_dev_optimize_image, critic_image, grader_image]) as stack:
         digests.update(stack.image_digests)
-        # Start snapshot grader in background - it will sleep until there's drift
-        grader_handle = await stack.registry.start_snapshot_grader(
-            image=stack.resolved_images["grader"], snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL
-        )
-
-        async with grader_handle:
-            # Run critic-dev optimizer - this triggers the full orchestration
-            # The snapshot grader running in background will process edges when critic completes
-            run_id = await stack.registry.run_critic_dev_optimize(
-                image=stack.resolved_images["critic_dev_optimize"],
-                budget=1.0,
-                optimizer_model=ORCHESTRATION_OPTIMIZER_MODEL,
-                critic_model=ORCHESTRATION_CRITIC_MODEL,
-                target_metric=TargetMetric.WHOLE_REPO,
-                timeout_seconds=120,
-            )
-
+        async with critic_dev_optimizer(stack, snapshot_slug) as run_id:
             logger.info(f"Orchestration test: critic-dev optimizer completed with run_id={run_id}")
 
             # Verify optimizer run status
