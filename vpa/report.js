@@ -311,7 +311,7 @@ function Report() {
     setSelection((previous) => ({ group, revision: previous.revision + 1 }));
 
   useEffect(() => {
-    fetch("./inventory.json?v=20261121055334")
+    fetch("./inventory.json?v=20261121065658")
       .then((response) => {
         if (!response.ok)
           throw new Error(`Inventory request returned HTTP ${response.status}`);
@@ -398,6 +398,7 @@ function Report() {
     <//>
     <${Group} gap="md" my="md">
       <${Anchor} href="#current-state">Coverage<//>
+      <${Anchor} href="#rollout-status">Rollout checks<//>
       <${Anchor} href="#remaining-work">Next waves<//>
       <${Anchor} href="#inventory">Search inventory<//>
       <${Anchor} href="#sources">Evidence<//>
@@ -457,60 +458,77 @@ function Report() {
           <//>
         <//>
       <//>
+    </section>
 
-      <${Stack} id="staging-request-wave" gap="xs" mt="md">
-        <${Text}>
-          <strong>Agentplane staging.</strong> All nine services in the merged
-          CPU sizing wave were 2/2 Ready and had CPU and memory recommendations
-          in Initial. Flux reported the VPA Kustomization Ready and Healthy at
-          05:16:41 UTC. All nine uncapped CPU targets were below their ceilings
-          configured at that observation. ${" "}<${Anchor}
-            href=${github + "pull/18487"}
-            >Staging policy change<//
+    <section id="rollout-status">
+      <${Title} order=${2} mt="xl">Verify the latest rollouts<//>
+      <${Stack} gap="sm" mt="sm">
+        <${Text} id="application-wave">
+          <strong>Eight application policies.</strong> At 06:58:34 UTC,
+          Electric, Study Casino and the GitLab exporter had the new Initial CPU
+          and memory policy. They still awaited recommendations on those
+          generations. Five Goldilocks VPAs still had older policies even though
+          the Deployment annotations had changed: CDViz collector, Home
+          Assistant, Plaid pgweb, Plaid Spend and the GitLab runner manager. By
+          07:00:24 UTC Home Assistant had also converged, and all four updated
+          VPAs had current CPU targets. Scoped Goldilocks reconciliation at
+          07:11 UTC brought CDViz, Plaid pgweb, Plaid Spend and the GitLab
+          runner manager onto the new policy. The audit found unchanged
+          unrelated VPA specs, Pod UIDs and Ready endpoints. At 07:12:53 UTC all
+          eight policies matched, with four recommendation updates still
+          pending. After the 07:15 cycle, all eight had current CPU and memory
+          targets at 07:16 UTC. All four newly reconciled targets passed
+          owner-matched server dry runs with unchanged limits and init
+          containers. Check admitted requests and readiness on ordinary
+          replacements. ${" "}<${Anchor} href=${github + "pull/18519"}
+            >Application batch<//
           >.
         <//>
-        <${Text}>
-          The earlier placement model left 95m CPU on the tightest OVH worker
-          with the eight worker-only services at all request ceilings, one
-          replica each, the two ingress replicas on separate control-plane
-          hosts, and noncohort reservations fixed at their 05:04 UTC values.
-          Before overlapping rollouts, compare current recommendations and
-          recheck node reservations and Pending Pods. On natural replacements,
-          verify admitted CPU and memory requests and limits.
+        <${Text} id="staging-frontend">
+          <strong>Agentplane staging frontend.</strong> Both VPA-initiated
+          replacements became Ready in sequence by 06:46:31 UTC. Two Ready
+          endpoints on separate OVH workers had 15m CPU and 100 MiB memory
+          requests. RequestsOnly preserved the 128 MiB limit. The PDB again
+          allowed one disruption. ${" "}<${Anchor} href=${github + "pull/18523"}
+            >Frontend rollout<//
+          >.
         <//>
-      <//>
-
-      <${Text} id="flux-request-wave" mt="md">
-        <strong>Flux controllers.</strong> Seven singleton Deployments were 1/1
-        Ready with Initial policies for CPU and memory requests. The policy
-        Kustomization was Ready and Healthy at 05:53:35 UTC. After the 06:00
-        recommender cycle, all seven owner-matched server dry runs applied
-        recommendations and kept the existing limits at 06:00:29 UTC. All seven
-        incumbent Pods kept their resources and restart counts. Kustomize and
-        source requested 977m and 920m in the dry runs, above the earlier
-        placement estimates of 631m and 502m. At 06:02:04 UTC, substituting all
-        seven admitted requests on their existing hosts left 1,167m CPU on the
-        tightest affected host with other reservations fixed. Verify actual
-        scheduling on ordinary replacements. ${" "}<${Anchor}
-          href=${github + "pull/18494"}
-          >Flux policy and recovery<//
-        >.
-      <//>
-      <${Text} id="worker-loss-placement" mt="md">
-        <strong>Overlapping rollouts during worker loss.</strong> The 06:06:43
-        UTC model applied all 29 current recommendations and included the third
-        Loki and Kyverno replicas. All 16 modeled single-OVH-worker-loss
-        placements fit with two staging surges across surviving OVH workers and
-        five Flux surges on an eligible home node. The lowest surviving CPU
-        headroom was 319m, falling to 41m under selected simultaneous historical
-        CPU peaks. The lowest memory headroom was 1,942 MiB, or 1,534 MiB with
-        the selected Loki peak. An extra 977m Kustomize surge would exceed the
-        tightest worker's remaining CPU. The model held other reservations
-        fixed. Avoid overlapping surges if the home node is unavailable or the
-        survivor is near that CPU margin. Two Loki replicas can continue serving
-        while the third waits for a third eligible OVH host. Platform providers
-        with local capture volumes on the lost worker remain pinned there.
-        ${" "}<${Anchor} href="./manifest.json">Placement model details<//>.
+        <${Text} id="snapshot-controller">
+          <strong>Snapshot controller.</strong> At 06:59 UTC, two replicas were
+          Ready on separate OVH workers, the leader lease renewed and the PDB
+          allowed one disruption. Its Recreate policy retained
+          RequestsAndLimits. Generation 2 was pending at 06:59 UTC and had
+          current targets of 15m CPU and 100 MiB memory after the 07:00 cycle.
+          The isolated handoff completed an in-flight snapshot. Confirm ordinary
+          controller recovery and scheduled snapshot completion before relying
+          on that rehearsal. ${" "}<${Anchor} href=${github + "pull/18499"}
+            >Controller policy and rehearsal<//
+          >.
+        <//>
+        <${Text} id="admission-availability">
+          <strong>VPA admission availability.</strong> Three Ready webhook
+          endpoints were on distinct hosts at 06:57 UTC. The PDB required two
+          and allowed one disruption at 06:59 UTC. The webhook's Ignore policy
+          and five-second timeout still allow template admission when the
+          webhook is unavailable. ${" "}<${Anchor} href=${github + "pull/18531"}
+            >Webhook rollout<//
+          >. ${" "}Seven Flux controllers already passed Initial admission dry
+          runs. Kustomize and source requested 977m and 920m CPU at the 06:00
+          check. ${" "}<${Anchor} href=${github + "pull/18494"}
+            >Flux sizing and recovery<//
+          >.
+        <//>
+        <${Text} id="virtualization-wave">
+          <strong>KubeVirt and CDI.</strong> At 06:47:18 UTC, all six Initial
+          VPAs had current recommendations. All six owner-matched dry runs
+          applied their CPU and memory requests with unchanged limits and all
+          nine incumbent Pods stayed Ready. Virt-controller admitted about 283
+          MiB, below its sampled 332 MiB startup working set. Check actual
+          reservations and startup on natural replacements. ${" "}<${Anchor}
+            href=${github + "pull/18518"}
+            >Controller sizing<//
+          >.
+        <//>
       <//>
     </section>
 
@@ -547,35 +565,46 @@ function Report() {
               <//>`,
           )}
       <//>
-      <${Text} id="ha-replica-wave" mt="md">
-        <strong>Loki read and Kyverno cleanup.</strong> Both reached 3/3 Ready
-        replicas on distinct hosts in Initial. Their PDBs each allowed one
-        disruption at 05:53:35 UTC. The rollout check observed three Ready
-        endpoints per service, successful reads on all three Loki Pods, and
-        completed Kyverno cleanup migration with a renewing lease. Evaluate
-        recovery through a replacement before promoting either to Recreate.
-        ${" "}<${Anchor} href=${github + "pull/18495"}>Replica rollout<//>.
-      <//>
-      <${Text} id="nfd-request-wave" mt="md">
-        <strong>Node Feature Discovery.</strong> The GC, master and worker
-        gained CPU sizing after the census. At 06:01:59 UTC, all three VPAs had
-        observed their current Initial policies and recommended 15m CPU. Check
-        admission and worker readiness on natural replacements. ${" "}<${Anchor}
-          href=${github + "pull/18493"}
-          >NFD policy change<//
-        >.
-      <//>
-      <${Text} id="platform-request-wave" mt="md">
-        <strong>Platform Sessions and MCP.</strong> At 06:01:59 UTC, all ten
-        post-census Initial policies had CPU and memory recommendations. All
-        nine staging services also had current targets with their explicit CPU
-        bounds removed. Existing memory floors raised recommendations from about
-        156 to 416 MiB for BlueShield, 105 to 192 MiB for kubectl passthrough
-        MCP, and 100 to 256 MiB for staging Sessions. Review what those
-        reservations buy during ordinary replacements. ${" "}<${Anchor}
-          href=${github + "pull/18492"}
-          >Platform and staging policy change<//
-        >.
+      <${Title} order=${3} mt="lg">Open rollout decisions<//>
+      <${Stack} id="open-rollout-decisions" gap="sm" mt="sm">
+        <${Text}>
+          <strong>Ready for review at 07:00 UTC.</strong> Four static
+          application Deployments can add Initial sizing with explicit owners.
+          Central Sampler starts in Off; its Initial follow-up needs actual CPU
+          recommendations and OVH placement. GitLab Shell separates Helm CPU
+          requests from its memory VPA while preserving the HPA metric.
+          ${" "}<${Anchor} href=${github + "pull/18543"}>Static applications<//>
+          ${" · "}<${Anchor} href=${github + "pull/18553"}>Sampler gate<//>
+          ${" · "}<${Anchor} href=${github + "pull/18549"}>GitLab Shell<//>.
+        <//>
+        <${Text}>
+          <strong>Evidence still needed.</strong> Rails needs headroom for a
+          concurrent 3 GiB Sidekiq surge. CDI operator needs stable leader
+          renewal and virt-handler needs per-node replacement evidence under VM
+          demand. Tofu needs a representative apply on its current image. Loki
+          read needs tail reconnect and memory-pressure evidence.
+          ${" "}<${Anchor} href=${github + "pull/18555"}>Rails<//>
+          ${" · "}<${Anchor} href=${github + "pull/18528"}
+            >CDI operator and virt-handler<//
+          >
+          ${" · "}<${Anchor} href=${github + "pull/18498"}>Tofu<//>
+          ${" · "}<${Anchor} href=${github + "pull/18542"}>Loki read<//>.
+        <//>
+        <${Text} id="worker-loss-placement">
+          <strong>Schedule overlapping surges with a placement check.</strong>
+          ${" "}The KubeVirt/CDI model left 190m CPU in its tightest feasible
+          single-OVH-worker-loss case. Two cases failed when selected earlier
+          CPU peaks coincided, with an 88m deficit in the tightest case. The
+          later static-application model reached 62 MiB of memory headroom in
+          one placement. These estimates hold unrelated reservations fixed.
+          Recheck with actual new Pod requests and active rollouts.
+          ${" "}<${Anchor} href=${github + "pull/18518"}
+            >Controller placement<//
+          >
+          ${" · "}<${Anchor} href=${github + "pull/18543"}
+            >Application placement<//
+          >.
+        <//>
       <//>
       <${Title} order=${3} mt="lg">Apply these gates across the wave<//>
       <${Stack} gap="sm" mt="sm">
@@ -590,9 +619,8 @@ function Report() {
         <${Text}>
           <strong>Admission and capacity.</strong> Verify recommendations and
           bounds with owner-backed admission checks, then inspect newly admitted
-          Pods. Budget concurrent rollout surge against eligible nodes. Keep
-          template request floors to cover admission misses or missing
-          recommendations.
+          Pods. Budget concurrent rollout surge against eligible nodes. Template
+          requests cover admission without a recommendation.
         <//>
         <${Text}>
           <strong>Custom and dynamic ownership.</strong>${" "}
@@ -614,10 +642,9 @@ function Report() {
                 ? `The registry was ${registry.readyReplicas}/${registry.desiredReplicas} Ready on ${registry.readyPodNodes.length} hosts in ${mode(registry)}. The admitted registry requests were ${registryRequests.join(" or ") || "unavailable"}.`
                 : "The current inventory has no registry Deployment row."
             }
-            ${" "}Its CPU-utilization HPA and 96–128 MiB memory-request VPA can
-            coexist. The S3 fix omits the explicit object ACL. The earlier 04:40
-            UTC check fetched an authenticated image manifest from each Pod.
-            Image push and disruption recovery remain unverified.
+            ${" "}Registry uses CPU utilization. Shell, Sidekiq and Webservice
+            use absolute CPU quantities. Keep CPU out of their VPA policies.
+            Verify actual replacement capacity for memory changes.
           <//>
           <${Group} gap="sm">
             <${Anchor} href=${github + "pull/18477"}>Registry S3 ACL change<//>
@@ -689,10 +716,12 @@ function Report() {
           records the workloads present during the collection window.
         <//>
         <${Text}>
-          Kyverno retains ownership of existing policy reports. The earlier
-          SecretStore check observed 60 pass reports for 60 current
-          ClusterSecretStore UIDs after its v1 match repaired background scans.
-          Use the dated evidence for that observation.
+          The earlier rollout evidence retains its original timestamps. The
+          preceding report covers the seven Flux controllers, Loki and Kyverno
+          placement, staging, Platform/MCP and NFD. ${" "}<${Anchor}
+            href=${github + "blob/10bbb9e753/vpa/report.js"}
+            >Previous rollout evidence<//
+          >.
         <//>
         <${Group} gap="sm">
           <${Anchor} href="./inventory.json">Snapshot inventory<//>
