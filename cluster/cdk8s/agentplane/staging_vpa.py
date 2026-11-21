@@ -1,4 +1,4 @@
-"""Memory request sizing for the static Agentplane staging services.
+"""Resource request sizing for the static Agentplane staging services.
 
 The namespace opts out of Goldilocks because it also contains dynamic Sandboxes.
 These VPAs are Flux-owned and target only the listed Deployments.
@@ -22,26 +22,30 @@ from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 NAME = "agentplane-staging-vpa"
 OUTPUT_DIR = f"{GENERATED_ROOT}/agentplane-staging/vpa"
 
-# (Deployment, container, minimum request, maximum request). These bounded
-# ceilings limit the effect on OVH scheduling; the Pod memory limits are unchanged.
+# (Deployment, container, memory bounds, optional CPU bounds).
+# CPU floors preserve the Deployment reservations. CPU ceilings leave margin above
+# measured demand while bounding the extra reservation on OVH workers.
 _WORKLOADS = (
-    ("actions", "actions", "128Mi", "160Mi"),
-    ("app", "app", "128Mi", "160Mi"),
-    ("electric", "electric", "448Mi", "576Mi"),
-    ("environments", "environments", "64Mi", "112Mi"),
-    ("frontend", "frontend", "32Mi", "40Mi"),
-    ("history-service", "history-service", "128Mi", "256Mi"),
-    ("llm-ingress", "ingress", "128Mi", "160Mi"),
-    ("mcp-edge", "mcp-edge", "128Mi", "160Mi"),
-    ("notifications", "notifications", "128Mi", "160Mi"),
-    ("policy-controller", "policy-controller", "64Mi", "112Mi"),
-    ("sessions", "sessions", "256Mi", "320Mi"),
+    ("actions", "actions", ("128Mi", "160Mi"), ("50m", "75m")),
+    ("app", "app", ("128Mi", "160Mi"), ("50m", "350m")),
+    ("electric", "electric", ("448Mi", "576Mi"), None),
+    ("environments", "environments", ("64Mi", "112Mi"), ("10m", "50m")),
+    ("frontend", "frontend", ("32Mi", "40Mi"), None),
+    ("history-service", "history-service", ("128Mi", "256Mi"), ("20m", "1025m")),
+    ("llm-ingress", "ingress", ("128Mi", "160Mi"), ("50m", "75m")),
+    ("mcp-edge", "mcp-edge", ("128Mi", "160Mi"), ("50m", "75m")),
+    ("notifications", "notifications", ("128Mi", "160Mi"), ("50m", "600m")),
+    ("policy-controller", "policy-controller", ("64Mi", "112Mi"), ("10m", "25m")),
+    ("sessions", "sessions", ("256Mi", "320Mi"), ("100m", "150m")),
 )
 
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    for deployment, container, floor, ceiling in _WORKLOADS:
+    for deployment, container, memory, cpu in _WORKLOADS:
+        bounds = {"memory": memory}
+        if cpu is not None:
+            bounds["cpu"] = cpu
         VerticalPodAutoscaler(
             chart,
             deployment,
@@ -57,17 +61,19 @@ def chart(app: App) -> Chart:
                     container_policies=[
                         VerticalPodAutoscalerSpecResourcePolicyContainerPolicies(
                             container_name=container,
-                            controlled_resources=["memory"],
+                            controlled_resources=sorted(bounds),
                             controlled_values="RequestsOnly",
                             min_allowed={
-                                "memory": VerticalPodAutoscalerSpecResourcePolicyContainerPoliciesMinAllowed.from_string(
+                                resource: VerticalPodAutoscalerSpecResourcePolicyContainerPoliciesMinAllowed.from_string(
                                     floor
                                 )
+                                for resource, (floor, _) in bounds.items()
                             },
                             max_allowed={
-                                "memory": VerticalPodAutoscalerSpecResourcePolicyContainerPoliciesMaxAllowed.from_string(
+                                resource: VerticalPodAutoscalerSpecResourcePolicyContainerPoliciesMaxAllowed.from_string(
                                     ceiling
                                 )
+                                for resource, (_, ceiling) in bounds.items()
                             },
                         ),
                         # Future sidecars do not silently acquire a resource policy.
