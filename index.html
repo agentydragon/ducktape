@@ -194,7 +194,11 @@
                 <${Anchor} href="latency/#kvm-placement">wyrm2<//>
                 ${"."} ${" The "}<${Anchor} href="latency/#kvm-work-disk"
                   >work-disk comparison<//
-                >${" measures SSD and HDD on that host."}
+                >${" measures SSD and HDD on that host. The "}
+                <${Anchor} href="latency/#kvm-retained-vm-ssd"
+                  >SSD retention trial<//
+                >
+                ${" measures time and writes in the required VM suite."}
               <//>
               <${ManifestStamp} src=${"latency/manifest.json"} />
               <${Text} component="p" my="sm">

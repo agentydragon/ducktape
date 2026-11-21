@@ -2,11 +2,11 @@
   "source_devel_commit": "a1bef327a08b51a34c26825a49d6a9620b8f3ac6",
   "window_start_utc": "2026-11-13T00:00:00Z",
   "window_end_utc": "2026-11-21T14:32:52.380066Z",
-  "published_at_utc": "2026-11-21T14:37:37.127392+00:00",
+  "published_at_utc": "2026-11-21T15:27:24.117179+00:00",
   "attribution": "not collected",
-  "report_sha256": "44c2f9477c46eb5f7638f8cf5c6e8f0e49487b7655ebc9d2bc38ed7ba5aa3777",
-  "evidence_sha256": "e4153b2053a9a050865503d5ae4892f63aa8c0606380ad3a5bc901cc53fe93a6",
-  "previous_report_commit": "4bc3ada82394dd7597653ccd5467fd93e602f68c",
+  "report_sha256": "c66961c1f48b72f96a12b224d25cc3a3088c96e0006e6c1fe6a6f6173a903cec",
+  "evidence_sha256": "4050123d3661f34c8c3dd45e28fa82b242cb133e2449d81f6a6b1c27a533f89f",
+  "previous_report_commit": "d957ce71b404054f9824a8632ac97c46cde1484f",
   "feedback_clock": "Earliest observed PR CI workflow creation on the exact SHA to all three required check contexts accepted",
   "visual_validation": "visual-validation.json",
   "weekly_feedback_window_utc": [
@@ -38,7 +38,7 @@
     "pr_census_window_utc": ["2026-11-21T01:54:27Z", "2026-11-21T03:53:13Z"],
     "browser_invocation": "136ac02e-4470-43ca-a0c0-501092d7e76e"
   },
-  "visual_validation_sha256": "e8e5ef669aa9bcad9e67d083a600b1ac06b6a1083f3f785527e4a092911b4f1e",
+  "visual_validation_sha256": "287ffac142278ee1c05ce19f52b2f15ccf7b874d6f8caf2e3c08d9914c478810",
   "kvm_worker_placement": {
     "evidence_key": "kvm_worker_placement",
     "source_commit": "0d1f154903b9e9c58b1c7fb5f4484651b800caf2",
@@ -58,5 +58,15 @@
     ],
     "tracking_pr": "https://github.com/agentydragon/ducktape/pull/18689",
     "browser_invocation": "20fa8eda-26fc-45cb-953e-b4cd5f9edcd1"
+  },
+  "kvm_retained_vm_ssd": {
+    "evidence_key": "kvm_retained_vm_ssd",
+    "source_commit": "5451c306fc0e81ed1c7e89583c078995dd0b01d7",
+    "comparison_window_utc": [
+      "2026-11-21T14:56:59+00:00",
+      "2026-11-21T15:26:19+00:00"
+    ],
+    "tracking_pr": "https://github.com/agentydragon/ducktape/pull/18701",
+    "browser_invocation": "196dff60-e236-4125-8170-9d3e1217df37"
   }
 }

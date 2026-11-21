@@ -63,7 +63,7 @@
       import { BarChart, LineChart } from "@mantine/charts";
       import { html, mount } from "../report.js?v=ebc2503d323c1b76";
       const response = await fetch(
-        "./evidence.json?v=e4153b2053a9a050865503d5ae4892f63aa8c0606380ad3a5bc901cc53fe93a6",
+        "./evidence.json?v=4050123d3661f34c8c3dd45e28fa82b242cb133e2449d81f6a6b1c27a533f89f",
       );
       if (!response.ok) throw new Error(`Evidence HTTP ${response.status}`);
       const evidence = await response.json();
@@ -82,6 +82,7 @@
       const cacheTrial = evidence.kvm_shared_cache_trial;
       const kvmPlacement = evidence.kvm_worker_placement;
       const kvmWorkDisk = evidence.kvm_work_disk_trial;
+      const retainedVm = evidence.kvm_retained_vm_ssd;
       const gh = "https://github.com/agentydragon/ducktape";
       const source = evidence.source_devel_commit;
       const post = "after shadow retired";
@@ -93,6 +94,15 @@
       const prior = `${gh}/blob/${evidence.prior_report_commit}/latency`;
       const seconds = (v) =>
         v == null ? "Unknown" : `${Number(v.toFixed(2))}s`;
+      const writes = (phase) => {
+        if (!phase) return "—";
+        if (phase.written_gib != null)
+          return `${phase.written_gib.toFixed(2)} GiB`;
+        if (phase.written_bracket_gib == null) return "Unknown";
+        if (phase.written_bracket_gib === 0) return "0 GiB";
+        const roundedUp = Math.ceil(phase.written_bracket_gib * 100) / 100;
+        return `≤${roundedUp.toFixed(2)} GiB`;
+      };
       const time = (v) => {
         if (v == null) return "Unknown";
         const s = Math.round(v);
@@ -156,7 +166,7 @@
               ${link("../", "Ducktape reports")}
               <${Title} order=${1} mt="md" mb="xs">PR time to green<//>
               <${Text} size="lg">Across 13–19 November, 247 of 350 sampled heads reached green. Median ${time(evidence.weekly_feedback.pooled.median_s)} · p90 ${time(evidence.weekly_feedback.pooled.p90_s)} among those heads, including five successful reruns.<//>
-              <${Text} c="dimmed" size="sm" mt="sm">Seven complete UTC days · KVM work-disk comparison added 21 November<//>
+              <${Text} c="dimmed" size="sm" mt="sm">Seven complete UTC days · KVM storage follow-ups added 21 November<//>
               <${Group} gap="md" mt="xs">${link("./evidence.json", "Evidence")}${link("./manifest.json", "Manifest")}<//>
               <${Text} mt="sm">In the ${hhmm(census.window_utc[0])}–${hhmm(census.window_utc[1])} UTC refresh on 21 November, ${census.overall.outcomes.green ?? 0} of ${census.eligible_prs} current exact PR heads reached required green. Median ${time(census.overall.median_s)} · p90 ${time(census.overall.p90_s)} among the green heads. At collection ${census.eligible_prs - (census.overall.outcomes.green ?? 0)} heads had yet to reach green.<//>
               <${Text} c="dimmed" size="sm">The refresh reviewed ${census.workflow_runs} workflow runs. It excludes superseded and unmatched heads. The weekly chart retains its original population.<//>
@@ -264,7 +274,7 @@
                 350,
               )}
               <${Text} mt="sm">Another wyrm2 worker was booting during the first pair. In the second pair both wyrm2 scenarios passed. One guest's shutdown grace period expired and KubeVirt forcibly stopped it. The shutdown census also found earlier forced stops on an OVH worker. ${pr(18674)} shutdown census. A separate profiled wyrm2 repeat passed in ${seconds(kvmPlacement.profiled_repeat.process_seconds)}. ${build(kvmPlacement.profiled_repeat.invocation, "Profiled repeat")}<//>
-              <${Text} mt="sm">The OVH control plane uses an Intel bare-metal host. Wyrm2 uses AMD hardware with an extra Proxmox layer. CPU, storage paths and load also differ, so these runs leave the cause of the gap unresolved. Warm recycled VM performance and placement effects on required-check feedback remain unmeasured.<//>
+              <${Text} mt="sm">The OVH control plane uses an Intel bare-metal host. Wyrm2 uses AMD hardware with an extra Proxmox layer. CPU, storage paths and load also differ, so these runs leave the cause of the gap unresolved. The trial leaves placement effects on the retained suite and required-check feedback open.<//>
               <${Text} mt="sm">Keep wyrm2 eligible and revisit placement if shutdown failures recur. ${link("#kvm-work-disk", "Same-host SSD and HDD trial")}<//>
               <${Text} size="sm" c="dimmed" mt="sm">21 November UTC · <code>${kvmPlacement.target}</code> · ${link(`${gh}/tree/${kvmPlacement.source_commit}/agentplane/system_tests/x/vm_kvm`, "Test source")}<//>
             </section>
@@ -345,7 +355,49 @@
               <//>
               <${Text} my="sm">${kvmWorkDisk.capacity}<//>
               <${Text} my="sm">${kvmWorkDisk.cleanup}<//>
-              <${Text} size="sm" c="dimmed" my="sm">21 November UTC · ${link(kvmWorkDisk.tracking_pr, "Trial evidence and operating record")}<//>
+              <${Text} size="sm" c="dimmed" my="sm">21 November UTC · ${link(kvmWorkDisk.tracking_pr, "Trial evidence and operating record")} · ${link("#kvm-retained-vm-ssd", "Required VM suite on SSD")}<//>
+            </section>
+            <section id="kvm-retained-vm-ssd">
+              <${Title} order=${2}>Cold and retained VM fixtures on SSD<//>
+              <${Text} my="sm">${retainedVm.finding}<//>
+              ${table(
+                ["TestRunner", "Process", "SSD work-disk writes"],
+                retainedVm.comparisons.map((row) => [
+                  build(row.invocation, row.label),
+                  seconds(row.process_seconds),
+                  `${row.process_written_gib.toFixed(2)} GiB`,
+                ]),
+                350,
+              )}
+              <${Text} my="sm">${retainedVm.method}<//>
+              <${Accordion} variant="contained" my="md">
+                <${Accordion.Item} value="retained-work-disk">
+                  <${Accordion.Control}>Time and work-disk writes by phase<//>
+                  <${Accordion.Panel}>
+                    <${Text} my="sm">${retainedVm.phase_note}<//>
+                    ${table(
+                      [
+                        "Phase",
+                        "Cold time",
+                        "Cold writes",
+                        "Retained time",
+                        "Retained writes",
+                      ],
+                      retainedVm.phases.map((row) => [
+                        row.label,
+                        row.seed ? seconds(row.seed.seconds) : "—",
+                        writes(row.seed),
+                        row.warm ? seconds(row.warm.seconds) : "—",
+                        writes(row.warm),
+                      ]),
+                      640,
+                    )}
+                    <${Text} my="sm">${retainedVm.host_note}<//>
+                  <//>
+                <//>
+              <//>
+              <${Text} my="sm">${retainedVm.impact}<//>
+              <${Text} size="sm" c="dimmed" my="sm">21 November UTC · ${link(retainedVm.tracking_pr, "Trial evidence and operating record")} · ${link("./evidence.json", "Counter boundaries and image import spans")} · ${build(retainedVm.disposal_invocation, "Disposal")}<//>
             </section>
             <section id="managed-pod">
               <${Title} order=${2}>Two PR heads had over a minute of Pod queue headroom<//>

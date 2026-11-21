@@ -28985,5 +28985,2529 @@
       ]
     },
     "cleanup_receipt": "Production was fully Ready in 127 of 127 samples during the monitored interval. After the final action, the canary was idle and drained. Both work claims, VMs, VolumeAttachments, runtime configuration and the trial pull secret were removed. SSD PV pvc-6b6f6e4f-a4d8-4c1a-8aab-ab6aa626c4fa reclaimed automatically. An ownership and detach check confirmed the HDD Retain PV pvc-7f559530-66ea-4c3a-97b4-5897a1e46ca0 before removing its PV and LINSTOR resource. LINSTOR showed wyrm2's HDD pool free space rise from 325.21 GiB to 341.69 GiB."
+  },
+  "kvm_retained_vm_ssd": {
+    "tracking_pr": "https://github.com/agentydragon/ducktape/pull/18701",
+    "target": "//agentplane/system_tests/suites:test_vm",
+    "source_commit": "5451c306fc0e81ed1c7e89583c078995dd0b01d7",
+    "comparison_window_utc": [
+      "2026-11-21T14:56:59+00:00",
+      "2026-11-21T15:26:19+00:00"
+    ],
+    "comparisons": [
+      {
+        "label": "Cold seed",
+        "invocation": "2c96930a-37fc-4880-a693-97b0ddcfe27f",
+        "process_seconds": 508.9174,
+        "process_written_gib": 7.794261932373047,
+        "process_read_gib": 4.85228157043457
+      },
+      {
+        "label": "Retained reuse",
+        "invocation": "63d2489f-cf0b-476a-a3e2-88752c53e45c",
+        "process_seconds": 357.1845,
+        "process_written_gib": 1.0691146850585938,
+        "process_read_gib": 2.6674365997314453
+      }
+    ],
+    "phases": [
+      {
+        "label": "One-time worker startup",
+        "seed": {
+          "seconds": 199.0,
+          "written_gib": 4.467555999755859,
+          "read_gib": 0.005398750305175781,
+          "written_bracket_gib": 4.467555999755859
+        },
+        "warm": null
+      },
+      {
+        "label": "Worker prep",
+        "seed": {
+          "seconds": 54.3193,
+          "written_gib": 1.3756065368652344,
+          "read_gib": 0.0,
+          "written_bracket_gib": 1.5382003784179688
+        },
+        "warm": {
+          "seconds": 0.0957,
+          "written_gib": null,
+          "read_gib": null,
+          "written_bracket_gib": 0.0
+        }
+      },
+      {
+        "label": "Input staging",
+        "seed": {
+          "seconds": 57.7388,
+          "written_gib": 2.7648582458496094,
+          "read_gib": 0.000141143798828125,
+          "written_bracket_gib": 3.4534034729003906
+        },
+        "warm": {
+          "seconds": 0.5069,
+          "written_gib": null,
+          "read_gib": null,
+          "written_bracket_gib": 0.0108642578125
+        }
+      },
+      {
+        "label": "TestRunner startup before fixture setup",
+        "seed": {
+          "seconds": 9.9329,
+          "written_gib": 0.1093292236328125,
+          "read_gib": 0.041484832763671875,
+          "written_bracket_gib": 0.6356315612792969
+        },
+        "warm": {
+          "seconds": 8.3108,
+          "written_gib": 0.003932952880859375,
+          "read_gib": 0.061862945556640625,
+          "written_bracket_gib": 0.016918182373046875
+        }
+      },
+      {
+        "label": "Fixture setup",
+        "seed": {
+          "seconds": 227.4982,
+          "written_gib": 7.0329132080078125,
+          "read_gib": 3.467540740966797,
+          "written_bracket_gib": 7.035930633544922
+        },
+        "warm": {
+          "seconds": 65.6522,
+          "written_gib": 0.4275932312011719,
+          "read_gib": 0.7726020812988281,
+          "written_bracket_gib": 0.43230438232421875
+        }
+      },
+      {
+        "label": "Nested image import envelope",
+        "seed": {
+          "seconds": 204.8833,
+          "written_gib": 6.117881774902344,
+          "read_gib": 3.36688232421875,
+          "written_bracket_gib": 6.601478576660156
+        },
+        "warm": null
+      },
+      {
+        "label": "Cases and pre-cleanup diagnostics",
+        "seed": {
+          "seconds": 239.2622,
+          "written_gib": 0.5374031066894531,
+          "read_gib": 0.9186992645263672,
+          "written_bracket_gib": 0.5438575744628906
+        },
+        "warm": {
+          "seconds": 249.844,
+          "written_gib": 0.4817161560058594,
+          "read_gib": 0.9769344329833984,
+          "written_bracket_gib": 0.4917144775390625
+        }
+      },
+      {
+        "label": "Fixture cleanup",
+        "seed": {
+          "seconds": 28.3356,
+          "written_gib": 0.09617233276367188,
+          "read_gib": 0.00522613525390625,
+          "written_bracket_gib": 0.11159896850585938
+        },
+        "warm": {
+          "seconds": 30.2913,
+          "written_gib": 0.13884735107421875,
+          "read_gib": 0.02667236328125,
+          "written_bracket_gib": 0.1476287841796875
+        }
+      },
+      {
+        "label": "TestRunner tail after fixture cleanup",
+        "seed": {
+          "seconds": 3.8885,
+          "written_gib": null,
+          "read_gib": null,
+          "written_bracket_gib": 0.0145111083984375
+        },
+        "warm": {
+          "seconds": 3.0863,
+          "written_gib": 0.00353240966796875,
+          "read_gib": 0.6757621765136719,
+          "written_bracket_gib": 0.0060882568359375
+        }
+      },
+      {
+        "label": "Output upload",
+        "seed": {
+          "seconds": 0.5346,
+          "written_gib": null,
+          "read_gib": null,
+          "written_bracket_gib": 0.005916595458984375
+        },
+        "warm": {
+          "seconds": 0.6116,
+          "written_gib": null,
+          "read_gib": null,
+          "written_bracket_gib": 0.00118255615234375
+        }
+      }
+    ],
+    "finding": "Reusing the live K3s fixture on one isolated SSD worker cut TestRunner time by 151.7s. Work-disk writes fell from 7.79 to 1.07 GiB (86% less). Fixture setup accounted for 6.61 GiB of that difference.",
+    "method": "Both uncached runs used the same required VM action and passed the Claude and Codex cases. The Docker process, K3s API and operators survived the handoff. The namespace, database and fixture credentials were recreated.",
+    "phase_note": "QEMU sampled the canary work disk about every two seconds. The table uses samples inside each phase. The cold import envelope overlaps fixture setup. Worker startup includes the worker image and reaches Ready once. The container disk is outside the QEMU work-disk counters.",
+    "host_note": "Whole-device SSD samples include concurrent wyrm2 workloads. In the cold process the node recorded 9.20 GiB written over 480s at 42.8% busy, with 5.4% node I/O PSI some. In the retained process it recorded 0.95 GiB written over 300s at 19.3% busy, with 2.9% node I/O PSI some.",
+    "impact": "The cold fixture streamed 25 images. The retained fixture streamed none, validated 14 existing images and left 11 baseline images in place. The test still deploys workloads, runs both nested guests, and cleans up. Production was 2/2 Ready in 44 of 44 samples. The canary retained runner and work claim were removed. Fleet reuse rate, PR-feedback savings and the HDD retained path remain unmeasured.",
+    "disposal_invocation": "97707a54-1297-4b86-8165-136de539aeb1",
+    "cleanup_proof": {
+      "discard_requested": true,
+      "last_measured_action": "21bcf848-8d03-4f42-89cb-1f396815c3d3",
+      "disposal_action": "b3c20b42-c4ab-418e-b949-914b5f48551a",
+      "retained_runner_and_loop_absent": true,
+      "idle_assigned_milli_cpu": 0,
+      "idle_tasks": 0,
+      "owned_ssd_pv_and_linstor_resource_reclaimed": "pvc-e12c17aa-05aa-40d7-819d-76c49b9e5eef",
+      "completed_at_utc": "2026-11-21T15:26:19+00:00"
+    },
+    "production": {
+      "ready": 44,
+      "samples": 44,
+      "latest_cleanup_utc": "2026-11-21T15:26:19+00:00"
+    },
+    "provenance": {
+      "pool": "kvm-retained-ssd-trial",
+      "host": "wyrm2",
+      "worker_host_id": "9685dfd2-299d-4740-b5a4-1f3be7b96d7f",
+      "executor_id": "804601a7-452a-4146-9918-e851d3e02423",
+      "worker_image": "git.allegedly.works/ducktape-ci/buildbuddy-kvm-worker-spike@sha256:8490616944d9817efd3a756a22ad54824639e3d615c7fd3de76deb9b053a0268",
+      "reclaimed_volume": "pvc-e12c17aa-05aa-40d7-819d-76c49b9e5eef",
+      "action_only_source_override": "Pool=kvm-retained-ssd-trial"
+    },
+    "runner_and_fixture_reuse": {
+      "action_receipt_chain": true,
+      "retained_runner_checks": [
+        "runner_instance",
+        "container_hostname",
+        "pid_namespace",
+        "mount_namespace",
+        "cgroup_namespace",
+        "mount_identity"
+      ],
+      "mountinfo_receipts": [
+        "469 504 7:0 / /var/lib/k3s-recycled rw,relatime - ext4 /dev/loop0 rw",
+        "469 504 7:0 / /var/lib/k3s-recycled rw,relatime shared:408 - ext4 /dev/loop0 rw"
+      ],
+      "retained_baseline_checks": [
+        "fingerprint",
+        "k3s",
+        "vm_controller_uids",
+        "pki_controller_uids"
+      ],
+      "k3s_identity_fields": [
+        "boot_id",
+        "namespace_uid",
+        "node_internal_ip",
+        "node_uid",
+        "pid",
+        "process_start_ticks"
+      ],
+      "refreshed_resources": [
+        "namespace_uid",
+        "collector_namespace_uid",
+        "postgres_pod_uid",
+        "root_certificate_uid",
+        "root_secret_uid",
+        "workspace_storage_class_uid"
+      ],
+      "both_cleanup_complete": true,
+      "workspace_loop_devices_released_per_run": 2,
+      "runner_same": {
+        "runner_instance": "306e28a3-da42-4ae4-b315-115402937427",
+        "container_hostname": "75d69f73073e",
+        "pid_namespace": "pid:[4026532692]",
+        "mount_namespace": "mnt:[4026532689]",
+        "cgroup_namespace": "cgroup:[4026532693]"
+      },
+      "baseline_same": {
+        "fingerprint": "d66e586d4c7d7aa05f9e1cd4ee014e65731abc90da92104a505432a3959c0c69",
+        "k3s": {
+          "boot_id": "ac146d78-d0fb-4909-8d12-b12211f22e3a",
+          "pid": 46,
+          "process_start_ticks": "33283",
+          "namespace_uid": "2c5c60ef-29d3-42d5-a35b-e0d4a4931cf4",
+          "node_uid": "e0936659-7414-46f7-9380-3a4b65e0aee5",
+          "node_internal_ip": "172.17.0.2"
+        },
+        "vm_controller_uids": {
+          "apps/v1/deployments/kubevirt/virt-operator": "26ec3e78-b1d0-4f38-85ec-ad0160996450",
+          "apps/v1/deployments/kubevirt/virt-api": "26b0299c-c242-4cd0-be30-cd0462015b22",
+          "apps/v1/deployments/kubevirt/virt-controller": "f03a8faf-ab87-4b74-9343-ec4ae61871f5",
+          "apps/v1/daemonsets/kubevirt/virt-handler": "8e6c1b00-eebc-4895-bbc1-a27667a95b49",
+          "apps/v1/deployments/kyverno/kyverno-admission-controller": "984ad34d-3adb-42e3-a1d0-2f577621620e",
+          "kubevirt.io/v1/kubevirts/kubevirt/kubevirt": "f160895e-e671-4776-8043-58408ce7da78"
+        },
+        "pki_controller_uids": {
+          "cert-manager-cainjector": "c2ca7553-883f-435d-b335-c4118fb274ee",
+          "cert-manager": "d004fb52-69d6-4dcc-9cf3-abc55d23497d",
+          "cert-manager-webhook": "ad6ad886-e1cc-477d-854a-e1d49b78feef",
+          "trust-manager": "006a8818-c394-48ed-982d-571dd4d0976c"
+        }
+      },
+      "resource_uid_pairs": {
+        "namespace_uid": [
+          "8602406a-fe3d-444c-9d4a-73ca6e4ce3c9",
+          "169a948e-72bb-488e-887d-88d18b559e83"
+        ],
+        "collector_namespace_uid": [
+          "c52341c3-7a71-4d3d-97c9-e7ac462b6f86",
+          "c5d741b7-c72c-490e-ab67-240bcf14f5a1"
+        ],
+        "postgres_pod_uid": [
+          "4bbb15ae-1193-4976-a054-2b9f82b4f09f",
+          "98395745-2065-4526-9be1-32f293caa58f"
+        ],
+        "root_certificate_uid": [
+          "c6e25a84-d7c4-4b06-ad8a-97cc903ef638",
+          "dc3e23f4-ba02-4279-ba90-64eeb8c27f16"
+        ],
+        "root_secret_uid": [
+          "1cc71415-42c6-46ab-8308-75c6d8ea1cc9",
+          "06bc916b-f5a0-4a50-b0c5-948a51a69903"
+        ],
+        "workspace_storage_class_uid": [
+          "c3e3889e-1b92-4951-a813-a00c0018bdc3",
+          "6ec7df79-97c7-4d6f-a0dc-a0ffc42c825c"
+        ]
+      },
+      "action_chain": [
+        "2a43ac28-d7e8-4eb0-b8a5-13740d88baa6",
+        "21bcf848-8d03-4f42-89cb-1f396815c3d3"
+      ],
+      "test_action_and_input_identical": true,
+      "docker_id": "75d69f73073e135581a7935c5e591a5cdd5fb361f6ae04a509bce57d572e154f",
+      "docker_hostname": "75d69f73073e",
+      "docker_pid_in_worker": 1497,
+      "docker_pid_start_ticks": 32373,
+      "docker_status_at_both_observations": "paused"
+    },
+    "process_write_reduction_bounds_gib": [
+      6.713100433349609, 7.253971099853516
+    ],
+    "cold_only_infrastructure_images": [
+      "ghcr.io/kyverno/kyverno:v1.19.1",
+      "ghcr.io/kyverno/kyvernopre:v1.19.1",
+      "quay.io/jetstack/cert-manager-cainjector:v1.21.2",
+      "quay.io/jetstack/cert-manager-controller:v1.21.2",
+      "quay.io/jetstack/cert-manager-webhook:v1.21.2",
+      "quay.io/jetstack/trust-manager:v0.25.0",
+      "quay.io/kubevirt/virt-api:v1.8.2",
+      "quay.io/kubevirt/virt-controller:v1.8.2",
+      "quay.io/kubevirt/virt-handler:v1.8.2",
+      "quay.io/kubevirt/virt-launcher:v1.8.2",
+      "quay.io/kubevirt/virt-operator:v1.8.2"
+    ],
+    "fixture_setup_write_reduction_bounds_bytes": [7087349760, 7095648256],
+    "qemu_evidence": {
+      "method": "QEMU vdb monotonic counters sampled about every two seconds. Interior samples give a lower bound over the corresponding wall interval. Bracketing samples include up to one sample of I/O on each side. Parent and nested phases overlap. Writes are temporal guest disk I/O, not per-file attribution or physical device writes.",
+      "disk": "vdb",
+      "samples": 833,
+      "median_sample_interval_s": 2.0254,
+      "max_sample_interval_s": 2.5875,
+      "boot": {
+        "label": "Fresh worker through scheduler-backed Ready",
+        "start_utc": "2026-11-21T14:57:55.583734795Z",
+        "end_utc": "2026-11-21T15:00:18+00:00",
+        "wall_s": 142.4163,
+        "inside": {
+          "start_utc": "2026-11-21T14:57:55.583734795Z",
+          "end_utc": "2026-11-21T15:00:17.561455248Z",
+          "sample_seconds": 141.9777,
+          "rd_req": 359,
+          "rd_bytes": 5796864,
+          "wr_req": 5114,
+          "wr_bytes": 4797001728,
+          "flush_operations": 385,
+          "rd_total_times": 48693786,
+          "wr_total_times": 500321955727,
+          "flush_total_times": 2694834634
+        },
+        "bracket": {
+          "start_utc": "2026-11-21T14:57:55.583734795Z",
+          "end_utc": "2026-11-21T15:00:19.583596738Z",
+          "sample_seconds": 143.9999,
+          "rd_req": 359,
+          "rd_bytes": 5796864,
+          "wr_req": 5114,
+          "wr_bytes": 4797001728,
+          "flush_operations": 385,
+          "rd_total_times": 48693786,
+          "wr_total_times": 500321955727,
+          "flush_total_times": 2694834634
+        },
+        "request_to_ready_s": 199.0,
+        "request_start_utc": "2026-11-21T14:56:59+00:00"
+      },
+      "runs": [
+        {
+          "label": "seed",
+          "invocation": "2c96930a-37fc-4880-a693-97b0ddcfe27f",
+          "source_commit": "5451c306fc0e81ed1c7e89583c078995dd0b01d7",
+          "build_provenance": [
+            {
+              "COMMIT_SHA": "3e4344c0ea4694cc07620f91cfe3b27507d7c512",
+              "DISABLE_TARGET_TRACKING": "true"
+            }
+          ],
+          "action_digest": {
+            "hash": "2d29a08e04f173ae27b2f3f7786ab1bfaa52f9df9528d7baad79d1122f0adcab",
+            "sizeBytes": "2007"
+          },
+          "command_digest": {
+            "hash": "54152c3e6f1099428be6fd71645ff12969f5061802652519b9f44f82b4aa34bc",
+            "sizeBytes": "5907"
+          },
+          "worker_host_id": "9685dfd2-299d-4740-b5a4-1f3be7b96d7f",
+          "input_root_digest": {
+            "hash": "3653a08ac5d3bc6e9cce4bc38f96cf8bdbe18b9a9dd2daae25f5ca95af7d4c81",
+            "sizeBytes": "165"
+          },
+          "action_image": "docker://ghcr.io/agentydragon/rbe-container-image@sha256:c73af98850208e2a898120f9992f4cb8c320c488bc3f3c8607cc06ace96be3c5",
+          "outcome": "cold",
+          "fixture_cleanup": "complete",
+          "both_scenarios_passed": true,
+          "case_clock": {
+            "test_vm_scenarios[claude]": 230.4135,
+            "test_vm_scenarios[codex]": 234.386
+          },
+          "queue_seconds": null,
+          "download_files": 7515,
+          "download_logical_bytes": 2945048350,
+          "phases": [
+            {
+              "label": "Worker prep",
+              "start_utc": "2026-11-21T15:01:14.684788Z",
+              "end_utc": "2026-11-21T15:02:09.004073Z",
+              "wall_s": 54.3193,
+              "inside": {
+                "start_utc": "2026-11-21T15:01:16.216299366Z",
+                "end_utc": "2026-11-21T15:02:07.019679169Z",
+                "sample_seconds": 50.8034,
+                "rd_req": 0,
+                "rd_bytes": 0,
+                "wr_req": 2822,
+                "wr_bytes": 1477046272,
+                "flush_operations": 210,
+                "rd_total_times": 0,
+                "wr_total_times": 156015453290,
+                "flush_total_times": 1323863501
+              },
+              "bracket": {
+                "start_utc": "2026-11-21T15:01:14.193187371Z",
+                "end_utc": "2026-11-21T15:02:09.046463269Z",
+                "sample_seconds": 54.8533,
+                "rd_req": 0,
+                "rd_bytes": 0,
+                "wr_req": 3232,
+                "wr_bytes": 1651630080,
+                "flush_operations": 269,
+                "rd_total_times": 0,
+                "wr_total_times": 186785730431,
+                "flush_total_times": 1674921078
+              }
+            },
+            {
+              "label": "Input staging",
+              "start_utc": "2026-11-21T15:02:09.004073Z",
+              "end_utc": "2026-11-21T15:03:06.742858Z",
+              "wall_s": 57.7388,
+              "inside": {
+                "start_utc": "2026-11-21T15:02:09.046463269Z",
+                "end_utc": "2026-11-21T15:03:06.051882227Z",
+                "sample_seconds": 57.0054,
+                "rd_req": 37,
+                "rd_bytes": 151552,
+                "wr_req": 4067,
+                "wr_bytes": 2968743936,
+                "flush_operations": 44,
+                "rd_total_times": 867750039,
+                "wr_total_times": 563478674515,
+                "flush_total_times": 363393017
+              },
+              "bracket": {
+                "start_utc": "2026-11-21T15:02:07.019679169Z",
+                "end_utc": "2026-11-21T15:03:08.074149889Z",
+                "sample_seconds": 61.0545,
+                "rd_req": 37,
+                "rd_bytes": 151552,
+                "wr_req": 5183,
+                "wr_bytes": 3708063744,
+                "flush_operations": 94,
+                "rd_total_times": 867750039,
+                "wr_total_times": 689944953338,
+                "flush_total_times": 710122686
+              }
+            },
+            {
+              "label": "Complete TestRunner",
+              "start_utc": "2026-11-21T15:03:06.742859Z",
+              "end_utc": "2026-11-21T15:11:35.660278Z",
+              "wall_s": 508.9174,
+              "inside": {
+                "start_utc": "2026-11-21T15:03:08.074149889Z",
+                "end_utc": "2026-11-21T15:11:33.775611478Z",
+                "sample_seconds": 505.7015,
+                "rd_req": 50945,
+                "rd_bytes": 5210097664,
+                "wr_req": 71720,
+                "wr_bytes": 8369025024,
+                "flush_operations": 29972,
+                "rd_total_times": 60763947157,
+                "wr_total_times": 1048574948103,
+                "flush_total_times": 165862832375
+              },
+              "bracket": {
+                "start_utc": "2026-11-21T15:03:06.051882227Z",
+                "end_utc": "2026-11-21T15:11:35.799748769Z",
+                "sample_seconds": 509.7479,
+                "rd_req": 65535,
+                "rd_bytes": 6489851904,
+                "wr_req": 72501,
+                "wr_bytes": 8936845312,
+                "flush_operations": 29998,
+                "rd_total_times": 67854187672,
+                "wr_total_times": 1144299100122,
+                "flush_total_times": 166051488667
+              }
+            },
+            {
+              "label": "Output upload",
+              "start_utc": "2026-11-21T15:11:35.660280Z",
+              "end_utc": "2026-11-21T15:11:36.194903Z",
+              "wall_s": 0.5346,
+              "inside": null,
+              "bracket": {
+                "start_utc": "2026-11-21T15:11:33.775611478Z",
+                "end_utc": "2026-11-21T15:11:37.818315456Z",
+                "sample_seconds": 4.0427,
+                "rd_req": 16461,
+                "rd_bytes": 1369681920,
+                "wr_req": 69,
+                "wr_bytes": 6352896,
+                "flush_operations": 30,
+                "rd_total_times": 7607665702,
+                "wr_total_times": 75824657,
+                "flush_total_times": 168167583
+              }
+            },
+            {
+              "label": "TestRunner startup before fixture setup",
+              "start_utc": "2026-11-21T15:03:06.742859Z",
+              "end_utc": "2026-11-21T15:03:16.675738Z",
+              "wall_s": 9.9329,
+              "inside": {
+                "start_utc": "2026-11-21T15:03:08.074149889Z",
+                "end_utc": "2026-11-21T15:03:16.160550529Z",
+                "sample_seconds": 8.0864,
+                "rd_req": 1960,
+                "rd_bytes": 44544000,
+                "wr_req": 441,
+                "wr_bytes": 117391360,
+                "flush_operations": 53,
+                "rd_total_times": 717125152,
+                "wr_total_times": 29876139433,
+                "flush_total_times": 265375257
+              },
+              "bracket": {
+                "start_utc": "2026-11-21T15:03:06.051882227Z",
+                "end_utc": "2026-11-21T15:03:18.181492250Z",
+                "sample_seconds": 12.1296,
+                "rd_req": 2162,
+                "rd_bytes": 64339968,
+                "wr_req": 1172,
+                "wr_bytes": 682504192,
+                "flush_operations": 61,
+                "rd_total_times": 808263283,
+                "wr_total_times": 125584324796,
+                "flush_total_times": 347669461
+              }
+            },
+            {
+              "label": "Fixture setup",
+              "start_utc": "2026-11-21T15:03:16.675738Z",
+              "end_utc": "2026-11-21T15:07:04.173899Z",
+              "wall_s": 227.4982,
+              "inside": {
+                "start_utc": "2026-11-21T15:03:18.181492250Z",
+                "end_utc": "2026-11-21T15:07:03.935646882Z",
+                "sample_seconds": 225.7542,
+                "rd_req": 32757,
+                "rd_bytes": 3723243520,
+                "wr_req": 46561,
+                "wr_bytes": 7551533056,
+                "flush_operations": 20754,
+                "rd_total_times": 49311318377,
+                "wr_total_times": 978073324742,
+                "flush_total_times": 113691702190
+              },
+              "bracket": {
+                "start_utc": "2026-11-21T15:03:16.160550529Z",
+                "end_utc": "2026-11-21T15:07:05.961059024Z",
+                "sample_seconds": 229.8005,
+                "rd_req": 32968,
+                "rd_bytes": 3743481856,
+                "wr_req": 46725,
+                "wr_bytes": 7554772992,
+                "flush_operations": 20756,
+                "rd_total_times": 49416461312,
+                "wr_total_times": 978129456495,
+                "flush_total_times": 113720788003
+              }
+            },
+            {
+              "label": "Cases and pre-cleanup diagnostics",
+              "start_utc": "2026-11-21T15:07:04.173899Z",
+              "end_utc": "2026-11-21T15:11:03.436105Z",
+              "wall_s": 239.2622,
+              "inside": {
+                "start_utc": "2026-11-21T15:07:05.961059024Z",
+                "end_utc": "2026-11-21T15:11:03.417276220Z",
+                "sample_seconds": 237.4562,
+                "rd_req": 10972,
+                "rd_bytes": 986445824,
+                "wr_req": 20627,
+                "wr_bytes": 577032192,
+                "flush_operations": 7737,
+                "rd_total_times": 8020470975,
+                "wr_total_times": 35794680021,
+                "flush_total_times": 46168170113
+              },
+              "bracket": {
+                "start_utc": "2026-11-21T15:07:03.935646882Z",
+                "end_utc": "2026-11-21T15:11:05.437190225Z",
+                "sample_seconds": 241.5015,
+                "rd_req": 11034,
+                "rd_bytes": 989218816,
+                "wr_req": 20917,
+                "wr_bytes": 583962624,
+                "flush_operations": 7748,
+                "rd_total_times": 8089786145,
+                "wr_total_times": 36374293304,
+                "flush_total_times": 46264559709
+              }
+            },
+            {
+              "label": "Fixture cleanup",
+              "start_utc": "2026-11-21T15:11:03.436105Z",
+              "end_utc": "2026-11-21T15:11:31.771734Z",
+              "wall_s": 28.3356,
+              "inside": {
+                "start_utc": "2026-11-21T15:11:05.437190225Z",
+                "end_utc": "2026-11-21T15:11:31.735600134Z",
+                "sample_seconds": 26.2984,
+                "rd_req": 447,
+                "rd_bytes": 5611520,
+                "wr_req": 3691,
+                "wr_bytes": 103264256,
+                "flush_operations": 1417,
+                "rd_total_times": 343282313,
+                "wr_total_times": 3323839115,
+                "flush_total_times": 5641195219
+              },
+              "bracket": {
+                "start_utc": "2026-11-21T15:11:03.417276220Z",
+                "end_utc": "2026-11-21T15:11:33.775611478Z",
+                "sample_seconds": 30.3583,
+                "rd_req": 5045,
+                "rd_bytes": 435625984,
+                "wr_req": 3927,
+                "wr_bytes": 119828480,
+                "flush_operations": 1426,
+                "rd_total_times": 2609889718,
+                "wr_total_times": 4774672154,
+                "flush_total_times": 5708499002
+              }
+            },
+            {
+              "label": "TestRunner tail after fixture cleanup",
+              "start_utc": "2026-11-21T15:11:31.771734Z",
+              "end_utc": "2026-11-21T15:11:35.660278Z",
+              "wall_s": 3.8885,
+              "inside": null,
+              "bracket": {
+                "start_utc": "2026-11-21T15:11:31.735600134Z",
+                "end_utc": "2026-11-21T15:11:35.799748769Z",
+                "sample_seconds": 4.0641,
+                "rd_req": 19135,
+                "rd_bytes": 1707438080,
+                "wr_req": 160,
+                "wr_bytes": 15581184,
+                "flush_operations": 18,
+                "rd_total_times": 9301537554,
+                "wr_total_times": 943318165,
+                "flush_total_times": 106362088
+              }
+            }
+          ],
+          "images": {
+            "evaluated": 25,
+            "streamed": 25,
+            "streamed_envelope": {
+              "label": "Nested image import envelope",
+              "start_utc": "2026-11-21T15:03:28.691339Z",
+              "end_utc": "2026-11-21T15:06:53.574625Z",
+              "wall_s": 204.8833,
+              "inside": {
+                "start_utc": "2026-11-21T15:03:30.322364915Z",
+                "end_utc": "2026-11-21T15:06:51.797327609Z",
+                "sample_seconds": 201.475,
+                "rd_req": 31171,
+                "rd_bytes": 3615162368,
+                "wr_req": 44176,
+                "wr_bytes": 6569025536,
+                "flush_operations": 18736,
+                "rd_total_times": 44260532253,
+                "wr_total_times": 833658867200,
+                "flush_total_times": 110487377058
+              },
+              "bracket": {
+                "start_utc": "2026-11-21T15:03:28.297827190Z",
+                "end_utc": "2026-11-21T15:06:53.823966214Z",
+                "sample_seconds": 205.5261,
+                "rd_req": 31606,
+                "rd_bytes": 3637305344,
+                "wr_req": 45093,
+                "wr_bytes": 7088283648,
+                "flush_operations": 19199,
+                "rd_total_times": 48045810259,
+                "wr_total_times": 921310658732,
+                "flush_total_times": 111312351046
+              }
+            },
+            "timings": [
+              {
+                "image": "ghcr.io/kyverno/kyverno:v1.19.1",
+                "start_utc": "2026-11-21T15:03:28.691339Z",
+                "end_utc": "2026-11-21T15:03:34.348244Z",
+                "seconds": 5.6569,
+                "skipped": false
+              },
+              {
+                "image": "ghcr.io/kyverno/kyvernopre:v1.19.1",
+                "start_utc": "2026-11-21T15:03:34.348703Z",
+                "end_utc": "2026-11-21T15:03:38.769592Z",
+                "seconds": 4.4209,
+                "skipped": false
+              },
+              {
+                "image": "quay.io/kubevirt/virt-api:v1.8.2",
+                "start_utc": "2026-11-21T15:03:38.770160Z",
+                "end_utc": "2026-11-21T15:03:57.572101Z",
+                "seconds": 18.8019,
+                "skipped": false
+              },
+              {
+                "image": "quay.io/kubevirt/virt-controller:v1.8.2",
+                "start_utc": "2026-11-21T15:03:57.572486Z",
+                "end_utc": "2026-11-21T15:04:03.646411Z",
+                "seconds": 6.0739,
+                "skipped": false
+              },
+              {
+                "image": "quay.io/kubevirt/virt-handler:v1.8.2",
+                "start_utc": "2026-11-21T15:04:03.646989Z",
+                "end_utc": "2026-11-21T15:04:21.120817Z",
+                "seconds": 17.4738,
+                "skipped": false
+              },
+              {
+                "image": "quay.io/kubevirt/virt-launcher:v1.8.2",
+                "start_utc": "2026-11-21T15:04:21.121283Z",
+                "end_utc": "2026-11-21T15:04:40.807904Z",
+                "seconds": 19.6866,
+                "skipped": false
+              },
+              {
+                "image": "quay.io/kubevirt/virt-operator:v1.8.2",
+                "start_utc": "2026-11-21T15:04:40.808709Z",
+                "end_utc": "2026-11-21T15:04:46.754600Z",
+                "seconds": 5.9459,
+                "skipped": false
+              },
+              {
+                "image": "quay.io/jetstack/cert-manager-cainjector:v1.21.2",
+                "start_utc": "2026-11-21T15:04:47.752147Z",
+                "end_utc": "2026-11-21T15:04:59.326849Z",
+                "seconds": 11.5747,
+                "skipped": false
+              },
+              {
+                "image": "quay.io/jetstack/cert-manager-controller:v1.21.2",
+                "start_utc": "2026-11-21T15:04:59.327220Z",
+                "end_utc": "2026-11-21T15:05:08.764894Z",
+                "seconds": 9.4377,
+                "skipped": false
+              },
+              {
+                "image": "quay.io/jetstack/cert-manager-webhook:v1.21.2",
+                "start_utc": "2026-11-21T15:05:08.765413Z",
+                "end_utc": "2026-11-21T15:05:14.530728Z",
+                "seconds": 5.7653,
+                "skipped": false
+              },
+              {
+                "image": "quay.io/jetstack/trust-manager:v0.25.0",
+                "start_utc": "2026-11-21T15:05:14.531075Z",
+                "end_utc": "2026-11-21T15:05:17.357258Z",
+                "seconds": 2.8262,
+                "skipped": false
+              },
+              {
+                "image": "git.allegedly.works/ducktape-ci/agentplane-action-service:unset",
+                "start_utc": "2026-11-21T15:05:19.417360Z",
+                "end_utc": "2026-11-21T15:05:33.083131Z",
+                "seconds": 13.6658,
+                "skipped": false
+              },
+              {
+                "image": "git.allegedly.works/ducktape-ci/agentplane-app:unset",
+                "start_utc": "2026-11-21T15:05:33.084095Z",
+                "end_utc": "2026-11-21T15:05:38.869892Z",
+                "seconds": 5.7858,
+                "skipped": false
+              },
+              {
+                "image": "git.allegedly.works/ducktape-ci/agentplane-egress-proxy:unset",
+                "start_utc": "2026-11-21T15:05:38.870410Z",
+                "end_utc": "2026-11-21T15:05:44.727411Z",
+                "seconds": 5.857,
+                "skipped": false
+              },
+              {
+                "image": "git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset",
+                "start_utc": "2026-11-21T15:05:44.727925Z",
+                "end_utc": "2026-11-21T15:05:49.344687Z",
+                "seconds": 4.6168,
+                "skipped": false
+              },
+              {
+                "image": "git.allegedly.works/ducktape-ci/agentplane-environments:unset",
+                "start_utc": "2026-11-21T15:05:49.345223Z",
+                "end_utc": "2026-11-21T15:05:54.873149Z",
+                "seconds": 5.5279,
+                "skipped": false
+              },
+              {
+                "image": "git.allegedly.works/ducktape-ci/agentplane-history-service:unset",
+                "start_utc": "2026-11-21T15:05:54.874015Z",
+                "end_utc": "2026-11-21T15:06:00.693296Z",
+                "seconds": 5.8193,
+                "skipped": false
+              },
+              {
+                "image": "git.allegedly.works/ducktape-ci/agentplane-llm-ingress:unset",
+                "start_utc": "2026-11-21T15:06:00.694129Z",
+                "end_utc": "2026-11-21T15:06:05.028594Z",
+                "seconds": 4.3345,
+                "skipped": false
+              },
+              {
+                "image": "git.allegedly.works/ducktape-ci/agentplane-notification-service:unset",
+                "start_utc": "2026-11-21T15:06:05.028972Z",
+                "end_utc": "2026-11-21T15:06:09.589880Z",
+                "seconds": 4.5609,
+                "skipped": false
+              },
+              {
+                "image": "git.allegedly.works/ducktape-ci/agentplane-policy-controller:unset",
+                "start_utc": "2026-11-21T15:06:09.590219Z",
+                "end_utc": "2026-11-21T15:06:13.579695Z",
+                "seconds": 3.9895,
+                "skipped": false
+              },
+              {
+                "image": "git.allegedly.works/ducktape-ci/agentplane-postgres:unset",
+                "start_utc": "2026-11-21T15:06:13.580250Z",
+                "end_utc": "2026-11-21T15:06:19.135399Z",
+                "seconds": 5.5551,
+                "skipped": false
+              },
+              {
+                "image": "git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset",
+                "start_utc": "2026-11-21T15:06:19.136083Z",
+                "end_utc": "2026-11-21T15:06:24.323241Z",
+                "seconds": 5.1872,
+                "skipped": false
+              },
+              {
+                "image": "git.allegedly.works/ducktape-ci/agentplane-sessions:unset",
+                "start_utc": "2026-11-21T15:06:24.324490Z",
+                "end_utc": "2026-11-21T15:06:29.836597Z",
+                "seconds": 5.5121,
+                "skipped": false
+              },
+              {
+                "image": "git.allegedly.works/ducktape-ci/agentplane-vm-guest-boot:unset",
+                "start_utc": "2026-11-21T15:06:30.625708Z",
+                "end_utc": "2026-11-21T15:06:32.523786Z",
+                "seconds": 1.8981,
+                "skipped": false
+              },
+              {
+                "image": "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root:unset",
+                "start_utc": "2026-11-21T15:06:32.524075Z",
+                "end_utc": "2026-11-21T15:06:53.574625Z",
+                "seconds": 21.0505,
+                "skipped": false
+              }
+            ]
+          },
+          "boot_readiness": [124.5445, 118.4762],
+          "mirror_base_commit": "3e4344c0ea4694cc07620f91cfe3b27507d7c512",
+          "mirror_patch_digest": "899925a97cb8d3844f71f26f6a88673b1babbe5658263581e9a58f0f9d07dd25",
+          "receipt_sha256": {
+            "recycled-runner.json": "bad03239592baee0507e3adc361d94bf421a74b7d611424fdf21f1d9d145c5bc",
+            "persistence-suite.json": "ceac802b0bf96a0bcfaec2eb1fe922a1f502af46380038c961f28e996486e3d6",
+            "test-spans.jsonl": "93058991874255e5800b9273e7f687f5965612dedbefb3e94dce5aaae1e44fc1"
+          }
+        },
+        {
+          "label": "warm",
+          "invocation": "63d2489f-cf0b-476a-a3e2-88752c53e45c",
+          "source_commit": "5451c306fc0e81ed1c7e89583c078995dd0b01d7",
+          "build_provenance": [
+            {
+              "COMMIT_SHA": "8fb562e0d72f42bb17440f153f1b90fdc44c5505",
+              "DISABLE_TARGET_TRACKING": "true"
+            }
+          ],
+          "action_digest": {
+            "hash": "2d29a08e04f173ae27b2f3f7786ab1bfaa52f9df9528d7baad79d1122f0adcab",
+            "sizeBytes": "2007"
+          },
+          "command_digest": {
+            "hash": "54152c3e6f1099428be6fd71645ff12969f5061802652519b9f44f82b4aa34bc",
+            "sizeBytes": "5907"
+          },
+          "worker_host_id": "9685dfd2-299d-4740-b5a4-1f3be7b96d7f",
+          "input_root_digest": {
+            "hash": "3653a08ac5d3bc6e9cce4bc38f96cf8bdbe18b9a9dd2daae25f5ca95af7d4c81",
+            "sizeBytes": "165"
+          },
+          "action_image": "docker://ghcr.io/agentydragon/rbe-container-image@sha256:c73af98850208e2a898120f9992f4cb8c320c488bc3f3c8607cc06ace96be3c5",
+          "outcome": "warm",
+          "fixture_cleanup": "complete",
+          "both_scenarios_passed": true,
+          "case_clock": {
+            "test_vm_scenarios[claude]": 237.4842,
+            "test_vm_scenarios[codex]": 244.6764
+          },
+          "queue_seconds": null,
+          "download_files": 0,
+          "download_logical_bytes": 0,
+          "phases": [
+            {
+              "label": "Worker prep",
+              "start_utc": "2026-11-21T15:12:40.343092Z",
+              "end_utc": "2026-11-21T15:12:40.438823Z",
+              "wall_s": 0.0957,
+              "inside": null,
+              "bracket": {
+                "start_utc": "2026-11-21T15:12:38.497663869Z",
+                "end_utc": "2026-11-21T15:12:40.520655028Z",
+                "sample_seconds": 2.023,
+                "rd_req": 0,
+                "rd_bytes": 0,
+                "wr_req": 0,
+                "wr_bytes": 0,
+                "flush_operations": 0,
+                "rd_total_times": 0,
+                "wr_total_times": 0,
+                "flush_total_times": 0
+              }
+            },
+            {
+              "label": "Input staging",
+              "start_utc": "2026-11-21T15:12:40.438823Z",
+              "end_utc": "2026-11-21T15:12:40.945772Z",
+              "wall_s": 0.5069,
+              "inside": null,
+              "bracket": {
+                "start_utc": "2026-11-21T15:12:38.497663869Z",
+                "end_utc": "2026-11-21T15:12:42.546136770Z",
+                "sample_seconds": 4.0485,
+                "rd_req": 3063,
+                "rd_bytes": 221044736,
+                "wr_req": 78,
+                "wr_bytes": 11665408,
+                "flush_operations": 44,
+                "rd_total_times": 1933877719,
+                "wr_total_times": 180199871,
+                "flush_total_times": 262912408
+              }
+            },
+            {
+              "label": "Complete TestRunner",
+              "start_utc": "2026-11-21T15:12:40.945772Z",
+              "end_utc": "2026-11-21T15:18:38.130284Z",
+              "wall_s": 357.1845,
+              "inside": {
+                "start_utc": "2026-11-21T15:12:42.546136770Z",
+                "end_utc": "2026-11-21T15:18:37.477943941Z",
+                "sample_seconds": 354.9318,
+                "rd_req": 38945,
+                "rd_bytes": 2864138240,
+                "wr_req": 36307,
+                "wr_bytes": 1147953152,
+                "flush_operations": 14960,
+                "rd_total_times": 29342480086,
+                "wr_total_times": 57071008015,
+                "flush_total_times": 57491222086
+              },
+              "bracket": {
+                "start_utc": "2026-11-21T15:12:40.520655028Z",
+                "end_utc": "2026-11-21T15:18:39.503071240Z",
+                "sample_seconds": 358.9824,
+                "rd_req": 43384,
+                "rd_bytes": 3224246272,
+                "wr_req": 36418,
+                "wr_bytes": 1160888320,
+                "flush_operations": 15010,
+                "rd_total_times": 31935328885,
+                "wr_total_times": 57307247855,
+                "flush_total_times": 57784929891
+              }
+            },
+            {
+              "label": "Output upload",
+              "start_utc": "2026-11-21T15:18:38.130285Z",
+              "end_utc": "2026-11-21T15:18:38.741931Z",
+              "wall_s": 0.6116,
+              "inside": null,
+              "bracket": {
+                "start_utc": "2026-11-21T15:18:37.477943941Z",
+                "end_utc": "2026-11-21T15:18:39.503071240Z",
+                "sample_seconds": 2.0251,
+                "rd_req": 1376,
+                "rd_bytes": 139063296,
+                "wr_req": 33,
+                "wr_bytes": 1269760,
+                "flush_operations": 6,
+                "rd_total_times": 658971080,
+                "wr_total_times": 56039969,
+                "flush_total_times": 30795397
+              }
+            },
+            {
+              "label": "TestRunner startup before fixture setup",
+              "start_utc": "2026-11-21T15:12:40.945772Z",
+              "end_utc": "2026-11-21T15:12:49.256552Z",
+              "wall_s": 8.3108,
+              "inside": {
+                "start_utc": "2026-11-21T15:12:42.546136770Z",
+                "end_utc": "2026-11-21T15:12:48.640655106Z",
+                "sample_seconds": 6.0945,
+                "rd_req": 2921,
+                "rd_bytes": 66424832,
+                "wr_req": 167,
+                "wr_bytes": 4222976,
+                "flush_operations": 16,
+                "rd_total_times": 1097275370,
+                "wr_total_times": 426057832,
+                "flush_total_times": 106985590
+              },
+              "bracket": {
+                "start_utc": "2026-11-21T15:12:40.520655028Z",
+                "end_utc": "2026-11-21T15:12:50.666527726Z",
+                "sample_seconds": 10.1459,
+                "rd_req": 7164,
+                "rd_bytes": 450961408,
+                "wr_req": 261,
+                "wr_bytes": 18165760,
+                "flush_operations": 66,
+                "rd_total_times": 3564641617,
+                "wr_total_times": 653094495,
+                "flush_total_times": 411027934
+              }
+            },
+            {
+              "label": "Fixture setup",
+              "start_utc": "2026-11-21T15:12:49.256552Z",
+              "end_utc": "2026-11-21T15:13:54.908711Z",
+              "wall_s": 65.6522,
+              "inside": {
+                "start_utc": "2026-11-21T15:12:50.666527726Z",
+                "end_utc": "2026-11-21T15:13:53.614873352Z",
+                "sample_seconds": 62.9483,
+                "rd_req": 13753,
+                "rd_bytes": 829575168,
+                "wr_req": 11773,
+                "wr_bytes": 459124736,
+                "flush_operations": 6354,
+                "rd_total_times": 15011387264,
+                "wr_total_times": 24329389960,
+                "flush_total_times": 27159428532
+              },
+              "bracket": {
+                "start_utc": "2026-11-21T15:12:48.640655106Z",
+                "end_utc": "2026-11-21T15:13:55.637440731Z",
+                "sample_seconds": 66.9968,
+                "rd_req": 14949,
+                "rd_bytes": 994062336,
+                "wr_req": 11979,
+                "wr_bytes": 464183296,
+                "flush_operations": 6360,
+                "rd_total_times": 15581072962,
+                "wr_total_times": 24816032790,
+                "flush_total_times": 27200558468
+              }
+            },
+            {
+              "label": "Cases and pre-cleanup diagnostics",
+              "start_utc": "2026-11-21T15:13:54.908711Z",
+              "end_utc": "2026-11-21T15:18:04.752720Z",
+              "wall_s": 249.844,
+              "inside": {
+                "start_utc": "2026-11-21T15:13:55.637440731Z",
+                "end_utc": "2026-11-21T15:18:03.076547834Z",
+                "sample_seconds": 247.4391,
+                "rd_req": 12369,
+                "rd_bytes": 1048975360,
+                "wr_req": 20015,
+                "wr_bytes": 517238784,
+                "flush_operations": 7374,
+                "rd_total_times": 8133839570,
+                "wr_total_times": 24251015371,
+                "flush_total_times": 27063192078
+              },
+              "bracket": {
+                "start_utc": "2026-11-21T15:13:53.614873352Z",
+                "end_utc": "2026-11-21T15:18:05.099675752Z",
+                "sample_seconds": 251.4848,
+                "rd_req": 12392,
+                "rd_bytes": 1050413056,
+                "wr_req": 20598,
+                "wr_bytes": 527974400,
+                "flush_operations": 7504,
+                "rd_total_times": 8173463465,
+                "wr_total_times": 24866718197,
+                "flush_total_times": 27459125168
+              }
+            },
+            {
+              "label": "Fixture cleanup",
+              "start_utc": "2026-11-21T15:18:04.752720Z",
+              "end_utc": "2026-11-21T15:18:35.044004Z",
+              "wall_s": 30.2913,
+              "inside": {
+                "start_utc": "2026-11-21T15:18:05.099675752Z",
+                "end_utc": "2026-11-21T15:18:33.426832150Z",
+                "sample_seconds": 28.3272,
+                "rd_req": 829,
+                "rd_bytes": 28639232,
+                "wr_req": 3677,
+                "wr_bytes": 149086208,
+                "flush_operations": 1080,
+                "rd_total_times": 452978869,
+                "wr_total_times": 7287906014,
+                "flush_total_times": 2724552860
+              },
+              "bracket": {
+                "start_utc": "2026-11-21T15:18:03.076547834Z",
+                "end_utc": "2026-11-21T15:18:35.451972162Z",
+                "sample_seconds": 32.3754,
+                "rd_req": 836,
+                "rd_bytes": 29081600,
+                "wr_req": 4106,
+                "wr_bytes": 158515200,
+                "flush_operations": 1210,
+                "rd_total_times": 456405594,
+                "wr_total_times": 7501737187,
+                "flush_total_times": 3120485950
+              }
+            },
+            {
+              "label": "TestRunner tail after fixture cleanup",
+              "start_utc": "2026-11-21T15:18:35.044004Z",
+              "end_utc": "2026-11-21T15:18:38.130284Z",
+              "wall_s": 3.0863,
+              "inside": {
+                "start_utc": "2026-11-21T15:18:35.451972162Z",
+                "end_utc": "2026-11-21T15:18:37.477943941Z",
+                "sample_seconds": 2.026,
+                "rd_req": 7870,
+                "rd_bytes": 725594112,
+                "wr_req": 40,
+                "wr_bytes": 3792896,
+                "flush_operations": 0,
+                "rd_total_times": 4073886590,
+                "wr_total_times": 76164835,
+                "flush_total_times": 0
+              },
+              "bracket": {
+                "start_utc": "2026-11-21T15:18:33.426832150Z",
+                "end_utc": "2026-11-21T15:18:39.503071240Z",
+                "sample_seconds": 6.0762,
+                "rd_req": 9246,
+                "rd_bytes": 864657408,
+                "wr_req": 109,
+                "wr_bytes": 6537216,
+                "flush_operations": 6,
+                "rd_total_times": 4732857670,
+                "wr_total_times": 170139189,
+                "flush_total_times": 30795397
+              }
+            }
+          ],
+          "images": {
+            "evaluated": 14,
+            "streamed": 0,
+            "streamed_envelope": null,
+            "timings": [
+              {
+                "image": "git.allegedly.works/ducktape-ci/agentplane-action-service:unset",
+                "start_utc": "2026-11-21T15:12:55.641104Z",
+                "end_utc": "2026-11-21T15:12:55.641134Z",
+                "seconds": 0.0,
+                "skipped": true
+              },
+              {
+                "image": "git.allegedly.works/ducktape-ci/agentplane-app:unset",
+                "start_utc": "2026-11-21T15:12:55.641415Z",
+                "end_utc": "2026-11-21T15:12:55.641508Z",
+                "seconds": 0.0001,
+                "skipped": true
+              },
+              {
+                "image": "git.allegedly.works/ducktape-ci/agentplane-egress-proxy:unset",
+                "start_utc": "2026-11-21T15:12:55.641810Z",
+                "end_utc": "2026-11-21T15:12:55.641823Z",
+                "seconds": 0.0,
+                "skipped": true
+              },
+              {
+                "image": "git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset",
+                "start_utc": "2026-11-21T15:12:55.641970Z",
+                "end_utc": "2026-11-21T15:12:55.641979Z",
+                "seconds": 0.0,
+                "skipped": true
+              },
+              {
+                "image": "git.allegedly.works/ducktape-ci/agentplane-environments:unset",
+                "start_utc": "2026-11-21T15:12:55.642107Z",
+                "end_utc": "2026-11-21T15:12:55.642123Z",
+                "seconds": 0.0,
+                "skipped": true
+              },
+              {
+                "image": "git.allegedly.works/ducktape-ci/agentplane-history-service:unset",
+                "start_utc": "2026-11-21T15:12:55.642271Z",
+                "end_utc": "2026-11-21T15:12:55.642286Z",
+                "seconds": 0.0,
+                "skipped": true
+              },
+              {
+                "image": "git.allegedly.works/ducktape-ci/agentplane-llm-ingress:unset",
+                "start_utc": "2026-11-21T15:12:55.642417Z",
+                "end_utc": "2026-11-21T15:12:55.642556Z",
+                "seconds": 0.0001,
+                "skipped": true
+              },
+              {
+                "image": "git.allegedly.works/ducktape-ci/agentplane-notification-service:unset",
+                "start_utc": "2026-11-21T15:12:55.642774Z",
+                "end_utc": "2026-11-21T15:12:55.642785Z",
+                "seconds": 0.0,
+                "skipped": true
+              },
+              {
+                "image": "git.allegedly.works/ducktape-ci/agentplane-policy-controller:unset",
+                "start_utc": "2026-11-21T15:12:55.642931Z",
+                "end_utc": "2026-11-21T15:12:55.642948Z",
+                "seconds": 0.0,
+                "skipped": true
+              },
+              {
+                "image": "git.allegedly.works/ducktape-ci/agentplane-postgres:unset",
+                "start_utc": "2026-11-21T15:12:55.643089Z",
+                "end_utc": "2026-11-21T15:12:55.643104Z",
+                "seconds": 0.0,
+                "skipped": true
+              },
+              {
+                "image": "git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset",
+                "start_utc": "2026-11-21T15:12:55.643239Z",
+                "end_utc": "2026-11-21T15:12:55.643257Z",
+                "seconds": 0.0,
+                "skipped": true
+              },
+              {
+                "image": "git.allegedly.works/ducktape-ci/agentplane-sessions:unset",
+                "start_utc": "2026-11-21T15:12:55.643400Z",
+                "end_utc": "2026-11-21T15:12:55.643416Z",
+                "seconds": 0.0,
+                "skipped": true
+              },
+              {
+                "image": "git.allegedly.works/ducktape-ci/agentplane-vm-guest-boot:unset",
+                "start_utc": "2026-11-21T15:12:56.563125Z",
+                "end_utc": "2026-11-21T15:12:56.563134Z",
+                "seconds": 0.0,
+                "skipped": true
+              },
+              {
+                "image": "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root:unset",
+                "start_utc": "2026-11-21T15:12:56.563186Z",
+                "end_utc": "2026-11-21T15:12:56.563190Z",
+                "seconds": 0.0,
+                "skipped": true
+              }
+            ]
+          },
+          "boot_readiness": [132.3053, 124.3313],
+          "mirror_base_commit": "8fb562e0d72f42bb17440f153f1b90fdc44c5505",
+          "mirror_patch_digest": "57292980ce8e6053b1ad5df63223f4f1b309444a87ac27c95ce27e6a1ce017b7",
+          "receipt_sha256": {
+            "recycled-runner.json": "f5ac2195841ae47801c44d2577073ca9d7e73a42ffb8ab9529aa25b30aa7c88a",
+            "persistence-suite.json": "7a4620c341dc763d19a1cafad4e6b517123648aa66f18dc9df9ecc2c86465c42",
+            "test-spans.jsonl": "c553d95666bc571c7cc2334be2f268ca64bc7e16296b0ab07c84bf37220e32d2"
+          }
+        },
+        {
+          "label": "dispose",
+          "invocation": "97707a54-1297-4b86-8165-136de539aeb1",
+          "source_commit": "5451c306fc0e81ed1c7e89583c078995dd0b01d7",
+          "build_provenance": [
+            {
+              "COMMIT_SHA": "2ade0f32fe99b93a3d90499147a4adbe5a58a764",
+              "DISABLE_TARGET_TRACKING": "true"
+            }
+          ],
+          "action_digest": {
+            "hash": "21e9ede8b84bef45efd87f040032f07e92099e362f0c82b6a1a7dcf2f34fe58b",
+            "sizeBytes": "2007"
+          },
+          "command_digest": {
+            "hash": "a817fe5d023aeab804cf57bff6db6d6026c04e8db45a86a3c3117d39c6cf8df7",
+            "sizeBytes": "5934"
+          },
+          "worker_host_id": "9685dfd2-299d-4740-b5a4-1f3be7b96d7f",
+          "input_root_digest": {
+            "hash": "3653a08ac5d3bc6e9cce4bc38f96cf8bdbe18b9a9dd2daae25f5ca95af7d4c81",
+            "sizeBytes": "165"
+          },
+          "action_image": "docker://ghcr.io/agentydragon/rbe-container-image@sha256:c73af98850208e2a898120f9992f4cb8c320c488bc3f3c8607cc06ace96be3c5",
+          "outcome": "warm",
+          "fixture_cleanup": "complete",
+          "both_scenarios_passed": true,
+          "case_clock": {
+            "test_vm_scenarios[claude]": 237.9738,
+            "test_vm_scenarios[codex]": 241.2573
+          },
+          "queue_seconds": null,
+          "download_files": 0,
+          "download_logical_bytes": 0,
+          "phases": [
+            {
+              "label": "Worker prep",
+              "start_utc": "2026-11-21T15:20:02.720982Z",
+              "end_utc": "2026-11-21T15:20:03.269079Z",
+              "wall_s": 0.5481,
+              "inside": null,
+              "bracket": {
+                "start_utc": "2026-11-21T15:20:02.487555636Z",
+                "end_utc": "2026-11-21T15:20:04.510049853Z",
+                "sample_seconds": 2.0225,
+                "rd_req": 3307,
+                "rd_bytes": 179826688,
+                "wr_req": 57,
+                "wr_bytes": 7696384,
+                "flush_operations": 27,
+                "rd_total_times": 1429914011,
+                "wr_total_times": 38987457,
+                "flush_total_times": 68264934
+              }
+            },
+            {
+              "label": "Input staging",
+              "start_utc": "2026-11-21T15:20:03.269079Z",
+              "end_utc": "2026-11-21T15:20:03.758501Z",
+              "wall_s": 0.4894,
+              "inside": null,
+              "bracket": {
+                "start_utc": "2026-11-21T15:20:02.487555636Z",
+                "end_utc": "2026-11-21T15:20:04.510049853Z",
+                "sample_seconds": 2.0225,
+                "rd_req": 3307,
+                "rd_bytes": 179826688,
+                "wr_req": 57,
+                "wr_bytes": 7696384,
+                "flush_operations": 27,
+                "rd_total_times": 1429914011,
+                "wr_total_times": 38987457,
+                "flush_total_times": 68264934
+              }
+            },
+            {
+              "label": "Complete TestRunner",
+              "start_utc": "2026-11-21T15:20:03.758502Z",
+              "end_utc": "2026-11-21T15:25:45.270915Z",
+              "wall_s": 341.5124,
+              "inside": {
+                "start_utc": "2026-11-21T15:20:04.510049853Z",
+                "end_utc": "2026-11-21T15:25:43.268091933Z",
+                "sample_seconds": 338.758,
+                "rd_req": 30773,
+                "rd_bytes": 2125232128,
+                "wr_req": 39367,
+                "wr_bytes": 1087504384,
+                "flush_operations": 16063,
+                "rd_total_times": 23085711860,
+                "wr_total_times": 43541203107,
+                "flush_total_times": 42801799950
+              },
+              "bracket": {
+                "start_utc": "2026-11-21T15:20:02.487555636Z",
+                "end_utc": "2026-11-21T15:25:45.288765386Z",
+                "sample_seconds": 342.8012,
+                "rd_req": 34127,
+                "rd_bytes": 2305320960,
+                "wr_req": 39506,
+                "wr_bytes": 1096273920,
+                "flush_operations": 16121,
+                "rd_total_times": 24542910945,
+                "wr_total_times": 43624836585,
+                "flush_total_times": 42925691209
+              }
+            },
+            {
+              "label": "Output upload",
+              "start_utc": "2026-11-21T15:25:45.270915Z",
+              "end_utc": "2026-11-21T15:25:45.800308Z",
+              "wall_s": 0.5294,
+              "inside": null,
+              "bracket": {
+                "start_utc": "2026-11-21T15:25:43.268091933Z",
+                "end_utc": "2026-11-21T15:25:47.312396392Z",
+                "sample_seconds": 4.0443,
+                "rd_req": 305,
+                "rd_bytes": 3153920,
+                "wr_req": 321,
+                "wr_bytes": 18636800,
+                "flush_operations": 61,
+                "rd_total_times": 116880126,
+                "wr_total_times": 725097112,
+                "flush_total_times": 146904972
+              }
+            },
+            {
+              "label": "TestRunner startup before fixture setup",
+              "start_utc": "2026-11-21T15:20:03.758502Z",
+              "end_utc": "2026-11-21T15:20:11.187585Z",
+              "wall_s": 7.4291,
+              "inside": {
+                "start_utc": "2026-11-21T15:20:04.510049853Z",
+                "end_utc": "2026-11-21T15:20:10.632433988Z",
+                "sample_seconds": 6.1224,
+                "rd_req": 3752,
+                "rd_bytes": 101965824,
+                "wr_req": 1038,
+                "wr_bytes": 32661504,
+                "flush_operations": 326,
+                "rd_total_times": 1652784796,
+                "wr_total_times": 1386579010,
+                "flush_total_times": 787343299
+              },
+              "bracket": {
+                "start_utc": "2026-11-21T15:20:02.487555636Z",
+                "end_utc": "2026-11-21T15:20:12.655050156Z",
+                "sample_seconds": 10.1675,
+                "rd_req": 8550,
+                "rd_bytes": 471724032,
+                "wr_req": 1095,
+                "wr_bytes": 40357888,
+                "flush_operations": 353,
+                "rd_total_times": 3682383867,
+                "wr_total_times": 1425566467,
+                "flush_total_times": 855608233
+              }
+            },
+            {
+              "label": "Fixture setup",
+              "start_utc": "2026-11-21T15:20:11.187585Z",
+              "end_utc": "2026-11-21T15:21:01.160021Z",
+              "wall_s": 49.9724,
+              "inside": {
+                "start_utc": "2026-11-21T15:20:12.655050156Z",
+                "end_utc": "2026-11-21T15:20:59.280888359Z",
+                "sample_seconds": 46.6258,
+                "rd_req": 12824,
+                "rd_bytes": 777428992,
+                "wr_req": 11398,
+                "wr_bytes": 386510848,
+                "flush_operations": 6329,
+                "rd_total_times": 14106933192,
+                "wr_total_times": 12164931058,
+                "flush_total_times": 15143668273
+              },
+              "bracket": {
+                "start_utc": "2026-11-21T15:20:10.632433988Z",
+                "end_utc": "2026-11-21T15:21:01.299473047Z",
+                "sample_seconds": 50.667,
+                "rd_req": 14350,
+                "rd_bytes": 969416704,
+                "wr_req": 11464,
+                "wr_bytes": 389677056,
+                "flush_operations": 6341,
+                "rd_total_times": 14726292475,
+                "wr_total_times": 12254543690,
+                "flush_total_times": 15175346232
+              }
+            },
+            {
+              "label": "Cases and pre-cleanup diagnostics",
+              "start_utc": "2026-11-21T15:21:01.160021Z",
+              "end_utc": "2026-11-21T15:25:06.860056Z",
+              "wall_s": 245.7,
+              "inside": {
+                "start_utc": "2026-11-21T15:21:01.299473047Z",
+                "end_utc": "2026-11-21T15:25:06.846934830Z",
+                "sample_seconds": 245.5475,
+                "rd_req": 11826,
+                "rd_bytes": 1008924672,
+                "wr_req": 21791,
+                "wr_bytes": 546631680,
+                "flush_operations": 7657,
+                "rd_total_times": 6294577303,
+                "wr_total_times": 25814399386,
+                "flush_total_times": 23252677274
+              },
+              "bracket": {
+                "start_utc": "2026-11-21T15:20:59.280888359Z",
+                "end_utc": "2026-11-21T15:25:08.870109492Z",
+                "sample_seconds": 249.5892,
+                "rd_req": 11874,
+                "rd_bytes": 1011968000,
+                "wr_req": 22094,
+                "wr_bytes": 554487808,
+                "flush_operations": 7724,
+                "rd_total_times": 6321209973,
+                "wr_total_times": 25976742247,
+                "flush_total_times": 23411959632
+              }
+            },
+            {
+              "label": "Fixture cleanup",
+              "start_utc": "2026-11-21T15:25:06.860056Z",
+              "end_utc": "2026-11-21T15:25:36.037169Z",
+              "wall_s": 29.1771,
+              "inside": {
+                "start_utc": "2026-11-21T15:25:08.870109492Z",
+                "end_utc": "2026-11-21T15:25:35.178663471Z",
+                "sample_seconds": 26.3086,
+                "rd_req": 57,
+                "rd_bytes": 1765376,
+                "wr_req": 3106,
+                "wr_bytes": 92815360,
+                "flush_operations": 1071,
+                "rd_total_times": 54444620,
+                "wr_total_times": 3475159196,
+                "flush_total_times": 2153339127
+              },
+              "bracket": {
+                "start_utc": "2026-11-21T15:25:06.846934830Z",
+                "end_utc": "2026-11-21T15:25:37.200211001Z",
+                "sample_seconds": 30.3533,
+                "rd_req": 93,
+                "rd_bytes": 4751360,
+                "wr_req": 3391,
+                "wr_bytes": 99332096,
+                "flush_operations": 1126,
+                "rd_total_times": 71570042,
+                "wr_total_times": 3591049643,
+                "flush_total_times": 2280943526
+              }
+            },
+            {
+              "label": "TestRunner tail after fixture cleanup",
+              "start_utc": "2026-11-21T15:25:36.037169Z",
+              "end_utc": "2026-11-21T15:25:45.270915Z",
+              "wall_s": 9.2337,
+              "inside": {
+                "start_utc": "2026-11-21T15:25:37.200211001Z",
+                "end_utc": "2026-11-21T15:25:43.268091933Z",
+                "sample_seconds": 6.0679,
+                "rd_req": 752,
+                "rd_bytes": 40173568,
+                "wr_req": 1683,
+                "wr_bytes": 19202048,
+                "flush_operations": 613,
+                "rd_total_times": 340487244,
+                "wr_total_times": 494631378,
+                "flush_total_times": 1305489619
+              },
+              "bracket": {
+                "start_utc": "2026-11-21T15:25:35.178663471Z",
+                "end_utc": "2026-11-21T15:25:45.288765386Z",
+                "sample_seconds": 10.1101,
+                "rd_req": 822,
+                "rd_bytes": 42434560,
+                "wr_req": 1813,
+                "wr_bytes": 22102016,
+                "flush_operations": 644,
+                "rd_total_times": 377939293,
+                "wr_total_times": 582437617,
+                "flush_total_times": 1361115944
+              }
+            }
+          ],
+          "images": {
+            "evaluated": 14,
+            "streamed": 0,
+            "streamed_envelope": null,
+            "timings": [
+              {
+                "image": "git.allegedly.works/ducktape-ci/agentplane-action-service:unset",
+                "start_utc": "2026-11-21T15:20:17.148023Z",
+                "end_utc": "2026-11-21T15:20:17.148031Z",
+                "seconds": 0.0,
+                "skipped": true
+              },
+              {
+                "image": "git.allegedly.works/ducktape-ci/agentplane-app:unset",
+                "start_utc": "2026-11-21T15:20:17.148089Z",
+                "end_utc": "2026-11-21T15:20:17.148136Z",
+                "seconds": 0.0,
+                "skipped": true
+              },
+              {
+                "image": "git.allegedly.works/ducktape-ci/agentplane-egress-proxy:unset",
+                "start_utc": "2026-11-21T15:20:17.148234Z",
+                "end_utc": "2026-11-21T15:20:17.148241Z",
+                "seconds": 0.0,
+                "skipped": true
+              },
+              {
+                "image": "git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset",
+                "start_utc": "2026-11-21T15:20:17.148299Z",
+                "end_utc": "2026-11-21T15:20:17.148304Z",
+                "seconds": 0.0,
+                "skipped": true
+              },
+              {
+                "image": "git.allegedly.works/ducktape-ci/agentplane-environments:unset",
+                "start_utc": "2026-11-21T15:20:17.148338Z",
+                "end_utc": "2026-11-21T15:20:17.148341Z",
+                "seconds": 0.0,
+                "skipped": true
+              },
+              {
+                "image": "git.allegedly.works/ducktape-ci/agentplane-history-service:unset",
+                "start_utc": "2026-11-21T15:20:17.148369Z",
+                "end_utc": "2026-11-21T15:20:17.148371Z",
+                "seconds": 0.0,
+                "skipped": true
+              },
+              {
+                "image": "git.allegedly.works/ducktape-ci/agentplane-llm-ingress:unset",
+                "start_utc": "2026-11-21T15:20:17.148399Z",
+                "end_utc": "2026-11-21T15:20:17.148401Z",
+                "seconds": 0.0,
+                "skipped": true
+              },
+              {
+                "image": "git.allegedly.works/ducktape-ci/agentplane-notification-service:unset",
+                "start_utc": "2026-11-21T15:20:17.148519Z",
+                "end_utc": "2026-11-21T15:20:17.148526Z",
+                "seconds": 0.0,
+                "skipped": true
+              },
+              {
+                "image": "git.allegedly.works/ducktape-ci/agentplane-policy-controller:unset",
+                "start_utc": "2026-11-21T15:20:17.148587Z",
+                "end_utc": "2026-11-21T15:20:17.148591Z",
+                "seconds": 0.0,
+                "skipped": true
+              },
+              {
+                "image": "git.allegedly.works/ducktape-ci/agentplane-postgres:unset",
+                "start_utc": "2026-11-21T15:20:17.148622Z",
+                "end_utc": "2026-11-21T15:20:17.148625Z",
+                "seconds": 0.0,
+                "skipped": true
+              },
+              {
+                "image": "git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset",
+                "start_utc": "2026-11-21T15:20:17.148652Z",
+                "end_utc": "2026-11-21T15:20:17.148654Z",
+                "seconds": 0.0,
+                "skipped": true
+              },
+              {
+                "image": "git.allegedly.works/ducktape-ci/agentplane-sessions:unset",
+                "start_utc": "2026-11-21T15:20:17.148679Z",
+                "end_utc": "2026-11-21T15:20:17.148681Z",
+                "seconds": 0.0,
+                "skipped": true
+              },
+              {
+                "image": "git.allegedly.works/ducktape-ci/agentplane-vm-guest-boot:unset",
+                "start_utc": "2026-11-21T15:20:17.911716Z",
+                "end_utc": "2026-11-21T15:20:17.911724Z",
+                "seconds": 0.0,
+                "skipped": true
+              },
+              {
+                "image": "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root:unset",
+                "start_utc": "2026-11-21T15:20:17.911774Z",
+                "end_utc": "2026-11-21T15:20:17.911778Z",
+                "seconds": 0.0,
+                "skipped": true
+              }
+            ]
+          },
+          "boot_readiness": [124.1095, 129.9638],
+          "mirror_base_commit": "2ade0f32fe99b93a3d90499147a4adbe5a58a764",
+          "mirror_patch_digest": "9d08f703a00319538b9bcb90d038dfeeca84bdf699d3a30379504704741a1c12",
+          "receipt_sha256": {
+            "recycled-runner.json": "bbfe91dd72d0af39a019e21c2389087dfdce772b9015036676fe52964871b4d5",
+            "persistence-suite.json": "20023c2c8af73300222f11bf421dcaf3ff5720998693d3fb12b7ba11fcfd5ccc",
+            "test-spans.jsonl": "e4dcc5dbb49984f790be77a12b33bbbe7afc1256379e26839fcce3b6a3fb02ed"
+          }
+        }
+      ]
+    },
+    "node_evidence": {
+      "device_serials": {
+        "vdh": "piraeus-ssd"
+      },
+      "method": "Differences of monotonic node-exporter counters on original Mimir scrapes. Inside uses first and last scrapes within the interval, and bracket uses the nearest before and after. Their deltas bound whole-device activity during the interval. Device accounting includes every user of that virtual device. The TestRunner and image-import windows overlap. Node pressure includes all processes.",
+      "scopes": [
+        {
+          "label": "worker",
+          "phase": "Boot request through Ready",
+          "start_utc": "2026-11-21T14:56:59+00:00",
+          "end_utc": "2026-11-21T15:00:18+00:00",
+          "wall_seconds": 199.0,
+          "devices": {
+            "vdh": {
+              "inside": {
+                "first_sample_utc": "2026-11-21T14:57:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T14:59:23.276000+00:00",
+                "sample_interval_s": 120.0,
+                "read_bytes": 13066240.0,
+                "written_bytes": 2328956928.0,
+                "busy_seconds": 10.374,
+                "read_seconds": 0.106,
+                "write_seconds": 22.74,
+                "reads": 797.0,
+                "writes": 40895.0
+              },
+              "bracket": {
+                "first_sample_utc": "2026-11-21T14:56:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T15:00:23.276000+00:00",
+                "sample_interval_s": 240.0,
+                "read_bytes": 59193344.0,
+                "written_bytes": 5330749440.0,
+                "busy_seconds": 19.903,
+                "read_seconds": 0.323,
+                "write_seconds": 51.318,
+                "reads": 1656.0,
+                "writes": 95307.0
+              }
+            }
+          },
+          "node_pressure": {
+            "inside": {
+              "first_sample_utc": "2026-11-21T14:57:23.276000+00:00",
+              "last_sample_utc": "2026-11-21T14:59:23.276000+00:00",
+              "sample_interval_s": 120.0,
+              "io_some_seconds": 4.9036,
+              "io_full_seconds": 4.2806,
+              "cpu_some_seconds": 2.0171
+            },
+            "bracket": {
+              "first_sample_utc": "2026-11-21T14:56:23.276000+00:00",
+              "last_sample_utc": "2026-11-21T15:00:23.276000+00:00",
+              "sample_interval_s": 240.0,
+              "io_some_seconds": 9.8903,
+              "io_full_seconds": 8.7819,
+              "cpu_some_seconds": 3.4636
+            }
+          }
+        },
+        {
+          "label": "seed",
+          "phase": "Worker prep",
+          "start_utc": "2026-11-21T15:01:14.684788Z",
+          "end_utc": "2026-11-21T15:02:09.004073Z",
+          "wall_seconds": 54.319,
+          "devices": {
+            "vdh": {
+              "inside": null,
+              "bracket": {
+                "first_sample_utc": "2026-11-21T15:00:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T15:02:23.276000+00:00",
+                "sample_interval_s": 120.0,
+                "read_bytes": 7958528.0,
+                "written_bytes": 2402959360.0,
+                "busy_seconds": 22.912,
+                "read_seconds": 0.04,
+                "write_seconds": 16.236,
+                "reads": 83.0,
+                "writes": 44745.0
+              }
+            }
+          },
+          "node_pressure": {
+            "inside": null,
+            "bracket": {
+              "first_sample_utc": "2026-11-21T15:00:23.276000+00:00",
+              "last_sample_utc": "2026-11-21T15:02:23.276000+00:00",
+              "sample_interval_s": 120.0,
+              "io_some_seconds": 4.4088,
+              "io_full_seconds": 3.8336,
+              "cpu_some_seconds": 0.9529
+            }
+          }
+        },
+        {
+          "label": "seed",
+          "phase": "Input staging",
+          "start_utc": "2026-11-21T15:02:09.004073Z",
+          "end_utc": "2026-11-21T15:03:06.742858Z",
+          "wall_seconds": 57.739,
+          "devices": {
+            "vdh": {
+              "inside": null,
+              "bracket": {
+                "first_sample_utc": "2026-11-21T15:01:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T15:03:23.276000+00:00",
+                "sample_interval_s": 120.0,
+                "read_bytes": 75038720.0,
+                "written_bytes": 6153961472.0,
+                "busy_seconds": 27.54,
+                "read_seconds": 0.586,
+                "write_seconds": 48.123,
+                "reads": 2335.0,
+                "writes": 112262.0
+              }
+            }
+          },
+          "node_pressure": {
+            "inside": null,
+            "bracket": {
+              "first_sample_utc": "2026-11-21T15:01:23.276000+00:00",
+              "last_sample_utc": "2026-11-21T15:03:23.276000+00:00",
+              "sample_interval_s": 120.0,
+              "io_some_seconds": 4.5782,
+              "io_full_seconds": 4.001,
+              "cpu_some_seconds": 1.2247
+            }
+          }
+        },
+        {
+          "label": "seed",
+          "phase": "Complete TestRunner",
+          "start_utc": "2026-11-21T15:03:06.742859Z",
+          "end_utc": "2026-11-21T15:11:35.660278Z",
+          "wall_seconds": 508.917,
+          "devices": {
+            "vdh": {
+              "inside": {
+                "first_sample_utc": "2026-11-21T15:03:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T15:11:23.276000+00:00",
+                "sample_interval_s": 480.0,
+                "read_bytes": 4751366144.0,
+                "written_bytes": 9883586560.0,
+                "busy_seconds": 205.405,
+                "read_seconds": 25.943,
+                "write_seconds": 223.821,
+                "reads": 45638.0,
+                "writes": 314366.0
+              },
+              "bracket": {
+                "first_sample_utc": "2026-11-21T15:02:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T15:12:23.276000+00:00",
+                "sample_interval_s": 600.0,
+                "read_bytes": 6628308992.0,
+                "written_bytes": 13700145152.0,
+                "busy_seconds": 236.434,
+                "read_seconds": 33.439,
+                "write_seconds": 258.668,
+                "reads": 70060.0,
+                "writes": 385866.0
+              }
+            }
+          },
+          "node_pressure": {
+            "inside": {
+              "first_sample_utc": "2026-11-21T15:03:23.276000+00:00",
+              "last_sample_utc": "2026-11-21T15:11:23.276000+00:00",
+              "sample_interval_s": 480.0,
+              "io_some_seconds": 25.9013,
+              "io_full_seconds": 23.4433,
+              "cpu_some_seconds": 4.195
+            },
+            "bracket": {
+              "first_sample_utc": "2026-11-21T15:02:23.276000+00:00",
+              "last_sample_utc": "2026-11-21T15:12:23.276000+00:00",
+              "sample_interval_s": 600.0,
+              "io_some_seconds": 29.5573,
+              "io_full_seconds": 26.7074,
+              "cpu_some_seconds": 5.3838
+            }
+          }
+        },
+        {
+          "label": "seed",
+          "phase": "Output upload",
+          "start_utc": "2026-11-21T15:11:35.660280Z",
+          "end_utc": "2026-11-21T15:11:36.194903Z",
+          "wall_seconds": 0.535,
+          "devices": {
+            "vdh": {
+              "inside": null,
+              "bracket": {
+                "first_sample_utc": "2026-11-21T15:11:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T15:12:23.276000+00:00",
+                "sample_interval_s": 60.0,
+                "read_bytes": 1805922304.0,
+                "written_bytes": 57765888.0,
+                "busy_seconds": 14.562,
+                "read_seconds": 6.934,
+                "write_seconds": 2.672,
+                "reads": 22138.0,
+                "writes": 3621.0
+              }
+            }
+          },
+          "node_pressure": {
+            "inside": null,
+            "bracket": {
+              "first_sample_utc": "2026-11-21T15:11:23.276000+00:00",
+              "last_sample_utc": "2026-11-21T15:12:23.276000+00:00",
+              "sample_interval_s": 60.0,
+              "io_some_seconds": 1.5208,
+              "io_full_seconds": 1.3698,
+              "cpu_some_seconds": 0.507
+            }
+          }
+        },
+        {
+          "label": "seed",
+          "phase": "TestRunner startup before fixture setup",
+          "start_utc": "2026-11-21T15:03:06.742859Z",
+          "end_utc": "2026-11-21T15:03:16.675738Z",
+          "wall_seconds": 9.933,
+          "devices": {
+            "vdh": {
+              "inside": null,
+              "bracket": {
+                "first_sample_utc": "2026-11-21T15:02:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T15:03:23.276000+00:00",
+                "sample_interval_s": 60.0,
+                "read_bytes": 71020544.0,
+                "written_bytes": 3758792704.0,
+                "busy_seconds": 16.467,
+                "read_seconds": 0.562,
+                "write_seconds": 32.175,
+                "reads": 2284.0,
+                "writes": 67879.0
+              }
+            }
+          },
+          "node_pressure": {
+            "inside": null,
+            "bracket": {
+              "first_sample_utc": "2026-11-21T15:02:23.276000+00:00",
+              "last_sample_utc": "2026-11-21T15:03:23.276000+00:00",
+              "sample_interval_s": 60.0,
+              "io_some_seconds": 2.1352,
+              "io_full_seconds": 1.8944,
+              "cpu_some_seconds": 0.6818
+            }
+          }
+        },
+        {
+          "label": "seed",
+          "phase": "Fixture setup",
+          "start_utc": "2026-11-21T15:03:16.675738Z",
+          "end_utc": "2026-11-21T15:07:04.173899Z",
+          "wall_seconds": 227.498,
+          "devices": {
+            "vdh": {
+              "inside": {
+                "first_sample_utc": "2026-11-21T15:03:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T15:06:23.276000+00:00",
+                "sample_interval_s": 180.0,
+                "read_bytes": 2090713088.0,
+                "written_bytes": 6268919808.0,
+                "busy_seconds": 119.909,
+                "read_seconds": 9.388,
+                "write_seconds": 132.6,
+                "reads": 18605.0,
+                "writes": 188289.0
+              },
+              "bracket": {
+                "first_sample_utc": "2026-11-21T15:02:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T15:07:23.276000+00:00",
+                "sample_interval_s": 300.0,
+                "read_bytes": 3837313024.0,
+                "written_bytes": 12660789248.0,
+                "busy_seconds": 169.951,
+                "read_seconds": 21.662,
+                "write_seconds": 206.924,
+                "reads": 36386.0,
+                "writes": 323546.0
+              }
+            }
+          },
+          "node_pressure": {
+            "inside": {
+              "first_sample_utc": "2026-11-21T15:03:23.276000+00:00",
+              "last_sample_utc": "2026-11-21T15:06:23.276000+00:00",
+              "sample_interval_s": 180.0,
+              "io_some_seconds": 13.3972,
+              "io_full_seconds": 12.1827,
+              "cpu_some_seconds": 1.7095
+            },
+            "bracket": {
+              "first_sample_utc": "2026-11-21T15:02:23.276000+00:00",
+              "last_sample_utc": "2026-11-21T15:07:23.276000+00:00",
+              "sample_interval_s": 300.0,
+              "io_some_seconds": 19.6184,
+              "io_full_seconds": 17.7426,
+              "cpu_some_seconds": 2.8419
+            }
+          }
+        },
+        {
+          "label": "seed",
+          "phase": "Cases and pre-cleanup diagnostics",
+          "start_utc": "2026-11-21T15:07:04.173899Z",
+          "end_utc": "2026-11-21T15:11:03.436105Z",
+          "wall_seconds": 239.262,
+          "devices": {
+            "vdh": {
+              "inside": {
+                "first_sample_utc": "2026-11-21T15:07:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T15:10:23.276000+00:00",
+                "sample_interval_s": 180.0,
+                "read_bytes": 961564672.0,
+                "written_bytes": 684093440.0,
+                "busy_seconds": 40.455,
+                "read_seconds": 4.407,
+                "write_seconds": 36.896,
+                "reads": 10553.0,
+                "writes": 42515.0
+              },
+              "bracket": {
+                "first_sample_utc": "2026-11-21T15:06:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T15:11:23.276000+00:00",
+                "sample_interval_s": 300.0,
+                "read_bytes": 2660653056.0,
+                "written_bytes": 3614666752.0,
+                "busy_seconds": 85.496,
+                "read_seconds": 16.555,
+                "write_seconds": 91.221,
+                "reads": 27033.0,
+                "writes": 126077.0
+              }
+            }
+          },
+          "node_pressure": {
+            "inside": {
+              "first_sample_utc": "2026-11-21T15:07:23.276000+00:00",
+              "last_sample_utc": "2026-11-21T15:10:23.276000+00:00",
+              "sample_interval_s": 180.0,
+              "io_some_seconds": 6.6879,
+              "io_full_seconds": 5.9953,
+              "cpu_some_seconds": 1.6373
+            },
+            "bracket": {
+              "first_sample_utc": "2026-11-21T15:06:23.276000+00:00",
+              "last_sample_utc": "2026-11-21T15:11:23.276000+00:00",
+              "sample_interval_s": 300.0,
+              "io_some_seconds": 12.5041,
+              "io_full_seconds": 11.2605,
+              "cpu_some_seconds": 2.4855
+            }
+          }
+        },
+        {
+          "label": "seed",
+          "phase": "Fixture cleanup",
+          "start_utc": "2026-11-21T15:11:03.436105Z",
+          "end_utc": "2026-11-21T15:11:31.771734Z",
+          "wall_seconds": 28.336,
+          "devices": {
+            "vdh": {
+              "inside": null,
+              "bracket": {
+                "first_sample_utc": "2026-11-21T15:10:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T15:12:23.276000+00:00",
+                "sample_interval_s": 120.0,
+                "read_bytes": 1829431296.0,
+                "written_bytes": 355262464.0,
+                "busy_seconds": 26.028,
+                "read_seconds": 7.37,
+                "write_seconds": 14.848,
+                "reads": 23121.0,
+                "writes": 19805.0
+              }
+            }
+          },
+          "node_pressure": {
+            "inside": null,
+            "bracket": {
+              "first_sample_utc": "2026-11-21T15:10:23.276000+00:00",
+              "last_sample_utc": "2026-11-21T15:12:23.276000+00:00",
+              "sample_interval_s": 120.0,
+              "io_some_seconds": 3.251,
+              "io_full_seconds": 2.9695,
+              "cpu_some_seconds": 0.9046
+            }
+          }
+        },
+        {
+          "label": "seed",
+          "phase": "TestRunner tail after fixture cleanup",
+          "start_utc": "2026-11-21T15:11:31.771734Z",
+          "end_utc": "2026-11-21T15:11:35.660278Z",
+          "wall_seconds": 3.889,
+          "devices": {
+            "vdh": {
+              "inside": null,
+              "bracket": {
+                "first_sample_utc": "2026-11-21T15:11:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T15:12:23.276000+00:00",
+                "sample_interval_s": 60.0,
+                "read_bytes": 1805922304.0,
+                "written_bytes": 57765888.0,
+                "busy_seconds": 14.562,
+                "read_seconds": 6.934,
+                "write_seconds": 2.672,
+                "reads": 22138.0,
+                "writes": 3621.0
+              }
+            }
+          },
+          "node_pressure": {
+            "inside": null,
+            "bracket": {
+              "first_sample_utc": "2026-11-21T15:11:23.276000+00:00",
+              "last_sample_utc": "2026-11-21T15:12:23.276000+00:00",
+              "sample_interval_s": 60.0,
+              "io_some_seconds": 1.5208,
+              "io_full_seconds": 1.3698,
+              "cpu_some_seconds": 0.507
+            }
+          }
+        },
+        {
+          "label": "seed",
+          "phase": "Nested image import envelope",
+          "start_utc": "2026-11-21T15:03:28.691339Z",
+          "end_utc": "2026-11-21T15:06:53.574625Z",
+          "wall_seconds": 204.883,
+          "devices": {
+            "vdh": {
+              "inside": {
+                "first_sample_utc": "2026-11-21T15:04:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T15:06:23.276000+00:00",
+                "sample_interval_s": 120.0,
+                "read_bytes": 1835401216.0,
+                "written_bytes": 4109512704.0,
+                "busy_seconds": 79.503,
+                "read_seconds": 8.39,
+                "write_seconds": 90.634,
+                "reads": 16338.0,
+                "writes": 127431.0
+              },
+              "bracket": {
+                "first_sample_utc": "2026-11-21T15:03:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T15:07:23.276000+00:00",
+                "sample_interval_s": 240.0,
+                "read_bytes": 3766292480.0,
+                "written_bytes": 8901996544.0,
+                "busy_seconds": 153.484,
+                "read_seconds": 21.1,
+                "write_seconds": 174.749,
+                "reads": 34102.0,
+                "writes": 255667.0
+              }
+            }
+          },
+          "node_pressure": {
+            "inside": {
+              "first_sample_utc": "2026-11-21T15:04:23.276000+00:00",
+              "last_sample_utc": "2026-11-21T15:06:23.276000+00:00",
+              "sample_interval_s": 120.0,
+              "io_some_seconds": 8.0167,
+              "io_full_seconds": 7.2446,
+              "cpu_some_seconds": 1.2552
+            },
+            "bracket": {
+              "first_sample_utc": "2026-11-21T15:03:23.276000+00:00",
+              "last_sample_utc": "2026-11-21T15:07:23.276000+00:00",
+              "sample_interval_s": 240.0,
+              "io_some_seconds": 17.4832,
+              "io_full_seconds": 15.8482,
+              "cpu_some_seconds": 2.1601
+            }
+          }
+        },
+        {
+          "label": "warm",
+          "phase": "Worker prep",
+          "start_utc": "2026-11-21T15:12:40.343092Z",
+          "end_utc": "2026-11-21T15:12:40.438823Z",
+          "wall_seconds": 0.096,
+          "devices": {
+            "vdh": {
+              "inside": null,
+              "bracket": {
+                "first_sample_utc": "2026-11-21T15:12:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T15:13:23.276000+00:00",
+                "sample_interval_s": 60.0,
+                "read_bytes": 1236062208.0,
+                "written_bytes": 374841344.0,
+                "busy_seconds": 21.385,
+                "read_seconds": 10.678,
+                "write_seconds": 24.93,
+                "reads": 20709.0,
+                "writes": 18315.0
+              }
+            }
+          },
+          "node_pressure": {
+            "inside": null,
+            "bracket": {
+              "first_sample_utc": "2026-11-21T15:12:23.276000+00:00",
+              "last_sample_utc": "2026-11-21T15:13:23.276000+00:00",
+              "sample_interval_s": 60.0,
+              "io_some_seconds": 2.4264,
+              "io_full_seconds": 2.2154,
+              "cpu_some_seconds": 0.4206
+            }
+          }
+        },
+        {
+          "label": "warm",
+          "phase": "Input staging",
+          "start_utc": "2026-11-21T15:12:40.438823Z",
+          "end_utc": "2026-11-21T15:12:40.945772Z",
+          "wall_seconds": 0.507,
+          "devices": {
+            "vdh": {
+              "inside": null,
+              "bracket": {
+                "first_sample_utc": "2026-11-21T15:12:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T15:13:23.276000+00:00",
+                "sample_interval_s": 60.0,
+                "read_bytes": 1236062208.0,
+                "written_bytes": 374841344.0,
+                "busy_seconds": 21.385,
+                "read_seconds": 10.678,
+                "write_seconds": 24.93,
+                "reads": 20709.0,
+                "writes": 18315.0
+              }
+            }
+          },
+          "node_pressure": {
+            "inside": null,
+            "bracket": {
+              "first_sample_utc": "2026-11-21T15:12:23.276000+00:00",
+              "last_sample_utc": "2026-11-21T15:13:23.276000+00:00",
+              "sample_interval_s": 60.0,
+              "io_some_seconds": 2.4264,
+              "io_full_seconds": 2.2154,
+              "cpu_some_seconds": 0.4206
+            }
+          }
+        },
+        {
+          "label": "warm",
+          "phase": "Complete TestRunner",
+          "start_utc": "2026-11-21T15:12:40.945772Z",
+          "end_utc": "2026-11-21T15:18:38.130284Z",
+          "wall_seconds": 357.185,
+          "devices": {
+            "vdh": {
+              "inside": {
+                "first_sample_utc": "2026-11-21T15:13:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T15:18:23.276000+00:00",
+                "sample_interval_s": 300.0,
+                "read_bytes": 1146284032.0,
+                "written_bytes": 1021190144.0,
+                "busy_seconds": 57.944,
+                "read_seconds": 7.207,
+                "write_seconds": 52.284,
+                "reads": 14826.0,
+                "writes": 60094.0
+              },
+              "bracket": {
+                "first_sample_utc": "2026-11-21T15:12:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T15:19:23.276000+00:00",
+                "sample_interval_s": 420.0,
+                "read_bytes": 3284002816.0,
+                "written_bytes": 1509654528.0,
+                "busy_seconds": 90.783,
+                "read_seconds": 22.033,
+                "write_seconds": 80.353,
+                "reads": 47417.0,
+                "writes": 81384.0
+              }
+            }
+          },
+          "node_pressure": {
+            "inside": {
+              "first_sample_utc": "2026-11-21T15:13:23.276000+00:00",
+              "last_sample_utc": "2026-11-21T15:18:23.276000+00:00",
+              "sample_interval_s": 300.0,
+              "io_some_seconds": 8.5586,
+              "io_full_seconds": 7.575,
+              "cpu_some_seconds": 3.307
+            },
+            "bracket": {
+              "first_sample_utc": "2026-11-21T15:12:23.276000+00:00",
+              "last_sample_utc": "2026-11-21T15:19:23.276000+00:00",
+              "sample_interval_s": 420.0,
+              "io_some_seconds": 12.1586,
+              "io_full_seconds": 10.8677,
+              "cpu_some_seconds": 4.167
+            }
+          }
+        },
+        {
+          "label": "warm",
+          "phase": "Output upload",
+          "start_utc": "2026-11-21T15:18:38.130285Z",
+          "end_utc": "2026-11-21T15:18:38.741931Z",
+          "wall_seconds": 0.612,
+          "devices": {
+            "vdh": {
+              "inside": null,
+              "bracket": {
+                "first_sample_utc": "2026-11-21T15:18:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T15:19:23.276000+00:00",
+                "sample_interval_s": 60.0,
+                "read_bytes": 901656576.0,
+                "written_bytes": 113623040.0,
+                "busy_seconds": 11.454,
+                "read_seconds": 4.148,
+                "write_seconds": 3.139,
+                "reads": 11882.0,
+                "writes": 2975.0
+              }
+            }
+          },
+          "node_pressure": {
+            "inside": null,
+            "bracket": {
+              "first_sample_utc": "2026-11-21T15:18:23.276000+00:00",
+              "last_sample_utc": "2026-11-21T15:19:23.276000+00:00",
+              "sample_interval_s": 60.0,
+              "io_some_seconds": 1.1735,
+              "io_full_seconds": 1.0773,
+              "cpu_some_seconds": 0.4394
+            }
+          }
+        },
+        {
+          "label": "warm",
+          "phase": "TestRunner startup before fixture setup",
+          "start_utc": "2026-11-21T15:12:40.945772Z",
+          "end_utc": "2026-11-21T15:12:49.256552Z",
+          "wall_seconds": 8.311,
+          "devices": {
+            "vdh": {
+              "inside": null,
+              "bracket": {
+                "first_sample_utc": "2026-11-21T15:12:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T15:13:23.276000+00:00",
+                "sample_interval_s": 60.0,
+                "read_bytes": 1236062208.0,
+                "written_bytes": 374841344.0,
+                "busy_seconds": 21.385,
+                "read_seconds": 10.678,
+                "write_seconds": 24.93,
+                "reads": 20709.0,
+                "writes": 18315.0
+              }
+            }
+          },
+          "node_pressure": {
+            "inside": null,
+            "bracket": {
+              "first_sample_utc": "2026-11-21T15:12:23.276000+00:00",
+              "last_sample_utc": "2026-11-21T15:13:23.276000+00:00",
+              "sample_interval_s": 60.0,
+              "io_some_seconds": 2.4264,
+              "io_full_seconds": 2.2154,
+              "cpu_some_seconds": 0.4206
+            }
+          }
+        },
+        {
+          "label": "warm",
+          "phase": "Fixture setup",
+          "start_utc": "2026-11-21T15:12:49.256552Z",
+          "end_utc": "2026-11-21T15:13:54.908711Z",
+          "wall_seconds": 65.652,
+          "devices": {
+            "vdh": {
+              "inside": null,
+              "bracket": {
+                "first_sample_utc": "2026-11-21T15:12:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T15:14:23.276000+00:00",
+                "sample_interval_s": 120.0,
+                "read_bytes": 1505400832.0,
+                "written_bytes": 775704576.0,
+                "busy_seconds": 41.227,
+                "read_seconds": 12.247,
+                "write_seconds": 45.211,
+                "reads": 24229.0,
+                "writes": 41574.0
+              }
+            }
+          },
+          "node_pressure": {
+            "inside": null,
+            "bracket": {
+              "first_sample_utc": "2026-11-21T15:12:23.276000+00:00",
+              "last_sample_utc": "2026-11-21T15:14:23.276000+00:00",
+              "sample_interval_s": 120.0,
+              "io_some_seconds": 5.8165,
+              "io_full_seconds": 5.2257,
+              "cpu_some_seconds": 1.3774
+            }
+          }
+        },
+        {
+          "label": "warm",
+          "phase": "Cases and pre-cleanup diagnostics",
+          "start_utc": "2026-11-21T15:13:54.908711Z",
+          "end_utc": "2026-11-21T15:18:04.752720Z",
+          "wall_seconds": 249.844,
+          "devices": {
+            "vdh": {
+              "inside": {
+                "first_sample_utc": "2026-11-21T15:14:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T15:17:23.276000+00:00",
+                "sample_interval_s": 180.0,
+                "read_bytes": 815765504.0,
+                "written_bytes": 383926272.0,
+                "busy_seconds": 26.401,
+                "read_seconds": 4.941,
+                "write_seconds": 20.865,
+                "reads": 9730.0,
+                "writes": 22650.0
+              },
+              "bracket": {
+                "first_sample_utc": "2026-11-21T15:13:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T15:18:23.276000+00:00",
+                "sample_interval_s": 300.0,
+                "read_bytes": 1146284032.0,
+                "written_bytes": 1021190144.0,
+                "busy_seconds": 57.944,
+                "read_seconds": 7.207,
+                "write_seconds": 52.284,
+                "reads": 14826.0,
+                "writes": 60094.0
+              }
+            }
+          },
+          "node_pressure": {
+            "inside": {
+              "first_sample_utc": "2026-11-21T15:14:23.276000+00:00",
+              "last_sample_utc": "2026-11-21T15:17:23.276000+00:00",
+              "sample_interval_s": 180.0,
+              "io_some_seconds": 4.0764,
+              "io_full_seconds": 3.5851,
+              "cpu_some_seconds": 1.9628
+            },
+            "bracket": {
+              "first_sample_utc": "2026-11-21T15:13:23.276000+00:00",
+              "last_sample_utc": "2026-11-21T15:18:23.276000+00:00",
+              "sample_interval_s": 300.0,
+              "io_some_seconds": 8.5586,
+              "io_full_seconds": 7.575,
+              "cpu_some_seconds": 3.307
+            }
+          }
+        },
+        {
+          "label": "warm",
+          "phase": "Fixture cleanup",
+          "start_utc": "2026-11-21T15:18:04.752720Z",
+          "end_utc": "2026-11-21T15:18:35.044004Z",
+          "wall_seconds": 30.291,
+          "devices": {
+            "vdh": {
+              "inside": null,
+              "bracket": {
+                "first_sample_utc": "2026-11-21T15:17:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T15:19:23.276000+00:00",
+                "sample_interval_s": 120.0,
+                "read_bytes": 962836480.0,
+                "written_bytes": 350023680.0,
+                "busy_seconds": 23.155,
+                "read_seconds": 4.845,
+                "write_seconds": 14.277,
+                "reads": 13458.0,
+                "writes": 17160.0
+              }
+            }
+          },
+          "node_pressure": {
+            "inside": null,
+            "bracket": {
+              "first_sample_utc": "2026-11-21T15:17:23.276000+00:00",
+              "last_sample_utc": "2026-11-21T15:19:23.276000+00:00",
+              "sample_interval_s": 120.0,
+              "io_some_seconds": 2.2657,
+              "io_full_seconds": 2.0568,
+              "cpu_some_seconds": 0.8268
+            }
+          }
+        },
+        {
+          "label": "warm",
+          "phase": "TestRunner tail after fixture cleanup",
+          "start_utc": "2026-11-21T15:18:35.044004Z",
+          "end_utc": "2026-11-21T15:18:38.130284Z",
+          "wall_seconds": 3.086,
+          "devices": {
+            "vdh": {
+              "inside": null,
+              "bracket": {
+                "first_sample_utc": "2026-11-21T15:18:23.276000+00:00",
+                "last_sample_utc": "2026-11-21T15:19:23.276000+00:00",
+                "sample_interval_s": 60.0,
+                "read_bytes": 901656576.0,
+                "written_bytes": 113623040.0,
+                "busy_seconds": 11.454,
+                "read_seconds": 4.148,
+                "write_seconds": 3.139,
+                "reads": 11882.0,
+                "writes": 2975.0
+              }
+            }
+          },
+          "node_pressure": {
+            "inside": null,
+            "bracket": {
+              "first_sample_utc": "2026-11-21T15:18:23.276000+00:00",
+              "last_sample_utc": "2026-11-21T15:19:23.276000+00:00",
+              "sample_interval_s": 60.0,
+              "io_some_seconds": 1.1735,
+              "io_full_seconds": 1.0773,
+              "cpu_some_seconds": 0.4394
+            }
+          }
+        }
+      ]
+    }
   }
 }
