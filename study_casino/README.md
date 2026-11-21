@@ -12,7 +12,7 @@ winnings are never re-gambled. React PWA installable on Windows (Edge/Chrome) an
 - `games.py` / `rng.py`: server-side slots, roulette, blackjack rules and audited RNG
 - `credit_award.py`, `credit_constants.py`: millicredit accounting, streak/daily bonus (credit
   system v2) and its tunables
-- `state.py` / `actions.py` / `events.py`: wire models (reads, action results, event reads)
+- `state.py` / `actions.py` / `events.py`: wire models (reads, action results, game outcomes)
 - `export_schema.py`: schema-only app printing OpenAPI to `:frontend_openapi_json`; the frontend
   generates and compiles `//study_casino/frontend/lib:schema_zod`
   (`schema_zod.js` and `.d.ts`)
