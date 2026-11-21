@@ -644,3 +644,17 @@ js_test(
     entry_point = _MODEL + ":differential",
     env = _COREJS_DIFFERENTIAL_ENV,
 )
+
+# Bounded public-workload investigation; reports refusals without treating them as proof failures.
+js_test(
+    name = "excalidraw_certificate_census",
+    size = "large",
+    timeout = "long",
+    data = _COREJS_DIFFERENTIAL_DATA + ["//devinfra/js/debundle/excalidraw:bundle"],
+    entry_point = "debug/excalidraw_certificates/run.mjs",
+    env = dict(
+        _COREJS_DIFFERENTIAL_ENV,
+        EXCALIDRAW_OUTPUTS = "$(rootpaths //devinfra/js/debundle/excalidraw:bundle)",
+    ),
+    tags = ["manual"],
+)

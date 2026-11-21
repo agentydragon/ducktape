@@ -10,7 +10,7 @@ import Std.Data.HashSet
 /-!
 # AST + spec in; modules, verdict and a kernel certificate out.
 
-    lowersplit <bundle.json> <spec.json> <outdir> [--lean <Generated.lean>] [--replicate <K>] [--premises <file> | --footprints <file>] [--plan <file>] [--corejs <program.json>] [--force]
+    lowersplit <bundle.json> <spec.json> <outdir> [--lean <Generated.lean>] [--replicate <K>] [--premises <file> | --footprints <file>] [--plan <file>] [--corejs <program.json>] [--move-report <file>] [--force]
 
 `bundle.json` is acorn's ESTree with trusted scope/literal metadata (`experiments/lowering/dump.mjs`). Lean computes the footprints
 (`Effects.lean`, under the premises in the file, if any), plans the split, runs the checks, writes the modules, and with `--lean` writes a
@@ -21,6 +21,8 @@ The bundle may import from outside modules; those are loaded first, in their ord
 in which the modules run (`Plan.evalOrder`) and the statements of each module, by their numbers in the bundle.
 `--corejs` reads the bundle in the CoreJS model (`experiments/translation/core_program.mjs`), so that the verdict can
 name the proved slice that covers the split (`sliceLines`): order kept, or moves.
+`--move-report` writes diagnostic statement categories and up to 64 failing inverted pairs in original unit IDs.
+It does not certify a split: the verdict still requires all frontend and plan premises.
 `--replicate K` is for timing: K renamed copies of the bundle (the spec must cover K times as many statements).
 -/
 
@@ -290,6 +292,33 @@ def movesFailures (allows : Nat → Nat → Bool) (order : Array Nat) : Nat × N
 inside the counts below, and the verdict did not finish in 10 minutes. -/
 @[noinline] def footprintsOk (ss : List CoreJS.Stmt) (B : Bundle) : Bool := decide (CoreJS.FootprintsOfSyntax ss B)
 
+/-- Diagnostic evidence only: pair permissions do not establish the frontend and plan premises. -/
+def moveReport (asts : Array Json) (B : Bundle) (S : Spec) (P : Plan)
+    (prog : CoreJS.Program) : Except String Json := do
+  let w := if asts.any (Lower.typ · == "ImportDeclaration") then withoutImports asts B S
+    else { rank := (Array.range asts.size).map some, kept := Array.range asts.size, B, S, P }
+  let (ss, _) ← modelBundle asts w.rank prog
+  let certs := CoreJS.bindingCertificateTab ss w.B
+  let allows := CoreJS.certifiedMayMoveAt ss.toArray w.B.toArray w.B.readsTab certs
+  let order := w.P.execOrder.toArray
+  let (inverted, failed, _) := movesFailures allows order
+  let mut examples : Array Json := #[]
+  for x in [:order.size] do
+    for y in [x+1:order.size] do
+      let a := order[x]!
+      let b := order[y]!
+      if b < a && !allows a b && examples.size < 64 then
+        examples := examples.push (toJson [w.kept.getD a a, w.kept.getD b b])
+  let rows := ss.zipIdx.map fun (s, i) => Json.mkObj [
+    ("id", toJson (w.kept.getD i i)),
+    ("opaque", toJson (match s with | .opaque .. => true | _ => false)),
+    ("inert", toJson s.inert), ("allocatesOnly", toJson s.allocs.isSome),
+    ("bindingSummary", toJson s.bindingSummary.isSome),
+    ("bindingCertificate", toJson (certs.getD i false))]
+  return Json.mkObj [("footprintsOfSyntax", toJson (footprintsOk ss w.B)),
+    ("statements", toJson rows), ("invertedPairs", toJson inverted),
+    ("failedPairs", toJson failed), ("failedPairExamples", toJson examples)]
+
 /-- How many statements are opaque, inert, and only allocate without being inert. -/
 @[noinline] def modelCounts (ss : List CoreJS.Stmt) : Nat × Nat × Nat :=
   (ss.countP fun | .opaque .. => true | _ => false, ss.countP (·.inert), ss.countP fun s => !s.inert && s.allocs.isSome)
@@ -372,6 +401,7 @@ def main (args : List String) : IO UInt32 := do
   let (fpPath?, args) := Effects.takeFlag "--footprints" args
   let (planPath?, args) := Effects.takeFlag "--plan" args
   let (corejsPath?, args) := Effects.takeFlag "--corejs" args
+  let (moveReportPath?, args) := Effects.takeFlag "--move-report" args
   if premPath?.isSome && fpPath?.isSome then
     throw (IO.userError "--footprints and --premises: the footprints rest on the premises `lower` ran under")
   let prem ← Effects.loadPremises premPath?
@@ -380,7 +410,7 @@ def main (args : List String) : IO UInt32 := do
   let (bundlePath, specPath, out, leanOut?) ← match args with
     | [b, s, o] => pure (b, s, o, none)
     | [b, s, o, "--lean", l] => pure (b, s, o, some l)
-    | _ => do IO.eprintln "usage: lowersplit <bundle.json> <spec.json> <outdir> [--lean <file>] [--replicate <K>] [--premises <file> | --footprints <file>] [--plan <file>] [--corejs <program.json>] [--force]"; throw (IO.userError "usage")
+    | _ => do IO.eprintln "usage: lowersplit <bundle.json> <spec.json> <outdir> [--lean <file>] [--replicate <K>] [--premises <file> | --footprints <file>] [--plan <file>] [--corejs <program.json>] [--move-report <file>] [--force]"; throw (IO.userError "usage")
   let tStart ← IO.monoMsNow
   let lap (what : String) (t0 : Nat) : IO Nat := do
     let t ← IO.monoMsNow
@@ -433,6 +463,13 @@ def main (args : List String) : IO UInt32 := do
   let t5 ← lap "all checks" t4
   let model? ← corejsPath?.mapM fun (p : String) => do
     pure (p, Json.parse (← IO.FS.readFile p) >>= CoreJS.Decode.program)
+  if let some path := moveReportPath? then
+    let report := match model? with
+      | none => Except.error "--move-report needs --corejs"
+      | some (_, decoded) => decoded >>= moveReport asts B S P
+    IO.FS.writeFile path ((match report with
+      | .ok value => value
+      | .error reason => Json.mkObj [("error", toJson reason)]).compress ++ "\n")
   for line in sliceLines asts B S P (ok && !bad) replicate?.isSome model? do IO.println line
   if let some l := leanOut? then
     if bad then
