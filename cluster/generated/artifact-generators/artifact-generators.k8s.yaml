@@ -908,6 +908,11 @@ spec:
       name: vpa
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/flux-system-vpa/**"
+          to: "@artifact/cluster/generated/flux-system-vpa/"
+      name: flux-system-vpa
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/generated/agentplane-staging/vpa/**"
           to: "@artifact/cluster/generated/agentplane-staging/vpa/"
       name: agentplane-staging-vpa
