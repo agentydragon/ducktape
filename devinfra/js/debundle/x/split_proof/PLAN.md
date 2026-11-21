@@ -9,6 +9,13 @@ The design is "untrusted search, trusted check". The footprint analysis is the o
 
 **Decided (2026-11-21).** The model of item 3 is built up as a longer-term investment beside fixing the known wrong rules. Its first slice exists, and the first rule proved against it is the allocation rule of item 4.
 
+**The theorem to reach.** Two statements about the model, for programs inside its fragment:
+
+- _A derived footprint is true._ If the rules derive footprint `fp` for unit `u`, then every run of `u` in the model reads and changes only what `fp` lists. A rule that is not proved yet is a named assumption of this statement, and the list shrinks one rule at a time.
+- _True footprints justify the move._ Two units whose true footprints do not conflict end in the same state in either order. With `Valid → Correct`, an accepted split then behaves like the bundle.
+
+The rules may be as cautious as they like: "runs unknown code" is always true. They may not be wrong. The first statement is about the code that derives footprints, so that code has to be total functions over the model's syntax; `Effects.lean` is `partial` over JSON, and Lean can prove nothing about it. The proved rules therefore start as a new derivation over `CoreJS` that answers "unknown code" except where a rule is proved, beginning with the allocation rule, and `Effects.lean` stays in use until the proved derivation covers what it covers. A unit where the proved derivation says "effect" and `Effects.lean` says "none" is a finding.
+
 **Proposed, not decided.**
 
 1. **No new precision rules in the unproved interpreter**, beyond the one or two that a measurement shows are blocking. Each such rule is one more unproved claim that a construct commutes. Fixing a wrong rule is always in scope: F1 to F3 in [`generator_findings`](experiments/translation/debug/generator_findings/README.md) are open, and so are F4 and F5 of ducktape#18429.
