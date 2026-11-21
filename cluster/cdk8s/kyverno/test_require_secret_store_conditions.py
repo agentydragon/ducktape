@@ -10,7 +10,7 @@ from cdk8s import App, Testing as Cdk8sTesting  # pytest would collect `Testing`
 
 from cluster.cdk8s.kyverno import policies
 from cluster.cdk8s.kyverno.apply import apply_policy
-from cluster.cdk8s.kyverno.test_utils import manifest, policy
+from cluster.cdk8s.kyverno.apply_inputs import manifest, policy
 
 
 @pytest.fixture

@@ -76,14 +76,6 @@ py_proto_library_with_mypy_stubs(
 # gazelle:resolve py agentplane.action_service.api.contracts.action_service_pb2 //agentplane/action_service/api/contracts:action_service_pb2
 # gazelle:resolve py agentplane.environments.v1.environment_service_pb2 //agentplane/environments/v1:environment_service_pb2
 
-genrule(
-    name = "openapi_schema",
-    outs = ["openapi.json"],
-    cmd = "$(location //agentplane/app/cmd:export_schema_bin) --export-openapi > $@",
-    tools = ["//agentplane/app/cmd:export_schema_bin"],
-    visibility = ["//agentplane/app/frontend:__pkg__"],
-)
-
 py_library(
     name = "presets",
     srcs = ["presets.py"],
@@ -447,7 +439,6 @@ py_test(
     size = "medium",
     srcs = ["test_thread_window_browser.py"],
     exec_properties = _BROWSER_IMAGE_EXEC_PROPERTIES,
-    main = "test_thread_window_browser.py",
     requires_docker = True,
     deps = [
         "//:conftest",
@@ -680,7 +671,6 @@ py_library(
         "//agentplane/app/testing:history",
         "//agentplane/app/testing:replication_process",
         "//agentplane/app/testing:thread_test_support",
-        "//agentplane/history_service:client",
         "//agentplane/history_service/testing:fixtures",
         "//agentplane/history_service/testing:go_service",
         "//agentplane/history_service/testing:history",

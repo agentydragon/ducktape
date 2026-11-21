@@ -119,9 +119,6 @@ func (h *pid1ProcessHandle) reap() {
 }
 
 func (h *pid1ProcessHandle) Wait(ctx context.Context) (int, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	select {
 	case <-h.waitDone:
 		return h.waitCode, h.waitErr
@@ -131,9 +128,6 @@ func (h *pid1ProcessHandle) Wait(ctx context.Context) (int, error) {
 }
 
 func (h *pid1ProcessHandle) Stop(ctx context.Context) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	select {
 	case <-h.waitDone:
 		_, err := h.Wait(ctx)

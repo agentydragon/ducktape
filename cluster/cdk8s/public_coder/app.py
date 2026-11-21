@@ -24,6 +24,7 @@ from agentplane.egress.resources import placeholder_of
 from cluster.cdk8s import agent_access_profiles as access, namespaces
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.config_format import json_config
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
@@ -39,6 +40,7 @@ from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.public_coder import config as public_coder_config, egress as public_coder_egress, egress_proxy_url
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.volume_claim import volume_claim
 
 _CONFIG_MAP_NAME = "config"
 _NAME = "public-coder-agent"
@@ -254,19 +256,13 @@ def _openclaw_container() -> k8s.Container:
             # where the next roll discards them.
             k8s.VolumeMount(name="diagnostics", mount_path="/diag"),
         ],
-        resources=k8s.ResourceRequirements(
-            requests={"cpu": k8s.Quantity.from_string("250m"), "memory": k8s.Quantity.from_string("768Mi")},
-            limits={
-                "cpu": k8s.Quantity.from_string("2"),
-                # openclaw/default.nix pins --max-old-space-size at exactly what this limit
-                # derives today, so the two move together. The gap is not slack: it carries
-                # native allocations, and it has to absorb the transient growth when V8 raises its
-                # own limit to serialize a near-heap-limit snapshot. Raising this silently raises
-                # nothing -- the heap is pinned -- but lowering it below that headroom turns a
-                # clean heap-limit abort into an OOMKill.
-                "memory": k8s.Quantity.from_string("4Gi"),
-            },
-        ),
+        # openclaw/default.nix pins --max-old-space-size at exactly what the memory limit
+        # derives today, so the two move together. The gap is not slack: it carries
+        # native allocations, and it has to absorb the transient growth when V8 raises its
+        # own limit to serialize a near-heap-limit snapshot. Raising the limit silently raises
+        # nothing -- the heap is pinned -- but lowering it below that headroom turns a
+        # clean heap-limit abort into an OOMKill.
+        resources=container_resources(cpu="250m", memory="768Mi", cpu_limit="2", memory_limit="4Gi"),
     )
 
 
@@ -330,13 +326,7 @@ def _deployment(scope: Construct) -> None:
                         k8s.Container(
                             name="seed-config",
                             image=_IMAGE,
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("10m"),
-                                    "memory": k8s.Quantity.from_string("32Mi"),
-                                },
-                                limits={"memory": k8s.Quantity.from_string("64Mi")},
-                            ),
+                            resources=container_resources(cpu="10m", memory="32Mi", memory_limit="64Mi"),
                             command=["sh", "-c", _SEED_CONFIG_SCRIPT],
                             volume_mounts=[
                                 k8s.VolumeMount(name="cfg", mount_path="/cfg"),
@@ -371,28 +361,23 @@ def _deployment(scope: Construct) -> None:
 
 
 def _claims(scope: Construct) -> None:
-    k8s.KubePersistentVolumeClaim(
+    volume_claim(
         scope,
         "state-v2",
-        metadata=k8s.ObjectMeta(
-            name=_STATE_CLAIM_NAME,
-            namespace=NAMESPACE,
-            annotations={
-                "kustomize.toolkit.fluxcd.io/prune": "disabled",
-                "description": (
-                    "Worker-local replacement for the archived Public Coder OpenClaw state. "
-                    "WaitForFirstConsumer binds it to ovh-ns102453 when the one-off restore Pod is created; "
-                    "it must not be mounted by the Deployment before restore."
-                ),
-            },
-        ),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="local-path-ovh-hdd",
-            # local-path does not enforce PVC requests as quotas; this request leaves headroom for
-            # the durable agent workspace and normal growth.
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("80Gi")}),
-        ),
+        name=_STATE_CLAIM_NAME,
+        namespace=NAMESPACE,
+        annotations={
+            "kustomize.toolkit.fluxcd.io/prune": "disabled",
+            "description": (
+                "Worker-local replacement for the archived Public Coder OpenClaw state. "
+                "WaitForFirstConsumer binds it to ovh-ns102453 when the one-off restore Pod is created; "
+                "it must not be mounted by the Deployment before restore."
+            ),
+        },
+        storage_class="local-path-ovh-hdd",
+        # local-path does not enforce PVC requests as quotas; this request leaves headroom for
+        # the durable agent workspace and normal growth.
+        size="80Gi",
     )
     # Node's diagnostic output for the gateway: heap snapshots and fatal-error reports, written
     # here by the --diagnostic-dir/--report-directory flags in openclaw/default.nix.
@@ -412,44 +397,34 @@ def _claims(scope: Construct) -> None:
     #
     # Deliberately outside the VolSync backup set (public_coder/backup.py, which covers the state
     # claim): disposable investigation artifacts.
-    k8s.KubePersistentVolumeClaim(
+    volume_claim(
         scope,
         "diagnostics",
-        metadata=k8s.ObjectMeta(
-            name=_DIAGNOSTICS_CLAIM_NAME,
-            namespace=NAMESPACE,
-            annotations={
-                "kustomize.toolkit.fluxcd.io/prune": "disabled",
-                "description": "Heap snapshots and Node diagnostic reports for the OpenClaw gateway",
-            },
-        ),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="local-path-ovh-hdd",
-            # A snapshot is roughly heap-sized and the heap is capped at 2 GiB, so this holds
-            # several plus the reports. Snapshots are read in pairs and deleted once analysed;
-            # local-path does not enforce the request as a quota.
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("20Gi")}),
-        ),
+        name=_DIAGNOSTICS_CLAIM_NAME,
+        namespace=NAMESPACE,
+        annotations={
+            "kustomize.toolkit.fluxcd.io/prune": "disabled",
+            "description": "Heap snapshots and Node diagnostic reports for the OpenClaw gateway",
+        },
+        storage_class="local-path-ovh-hdd",
+        # A snapshot is roughly heap-sized and the heap is capped at 2 GiB, so this holds
+        # several plus the reports. Snapshots are read in pairs and deleted once analysed;
+        # local-path does not enforce the request as a quota.
+        size="20Gi",
     )
     # Keep the SSH session audit trail after retiring the devbox route. These recordings are
     # separate from guest state and remain available for later review.
-    k8s.KubePersistentVolumeClaim(
+    volume_claim(
         scope,
         "sshpiper-recordings",
-        metadata=k8s.ObjectMeta(
-            name="public-coder-agent-sshpiper-recordings",
-            namespace=NAMESPACE,
-            annotations={
-                "kustomize.toolkit.fluxcd.io/prune": "disabled",
-                "description": "Retained audit recordings from the retired public-coder SSH route.",
-            },
-        ),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="local-path-ovh",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("5Gi")}),
-        ),
+        name="public-coder-agent-sshpiper-recordings",
+        namespace=NAMESPACE,
+        annotations={
+            "kustomize.toolkit.fluxcd.io/prune": "disabled",
+            "description": "Retained audit recordings from the retired public-coder SSH route.",
+        },
+        storage_class="local-path-ovh",
+        size="5Gi",
     )
 
 

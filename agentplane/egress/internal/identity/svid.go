@@ -12,14 +12,9 @@ import (
 
 // ResolveSVID rechecks the live WorkloadCredential the peer certificate names on every request. Only
 // the record supplies the Identity subject and the Pod its owner accepted as provenance. A standing record, with no owner and no binding,
-// proves no Pod, so decisions record no source Pod.
+// proves no Pod, so decisions record no source Pod. state must carry a peer certificate, which
+// Authenticator.Authenticate checks, and records must be set, which NewAuthenticator requires.
 func ResolveSVID(ctx context.Context, state *tls.ConnectionState, records *resolver.Resolver) (auth.IdentityPrincipal, error) {
-	if state == nil || len(state.PeerCertificates) == 0 {
-		return auth.IdentityPrincipal{}, &Rejection{Reason: decision.TokenRejected, Detail: "invalid SVID peer certificate"}
-	}
-	if records == nil {
-		return auth.IdentityPrincipal{}, &Rejection{Reason: decision.Unavailable, Detail: "SVID authentication is not configured"}
-	}
 	resolved, err := records.Resolve(ctx, state.PeerCertificates[0])
 	if errors.Is(err, resolver.ErrUnavailable) {
 		return auth.IdentityPrincipal{}, &Rejection{Reason: decision.Unavailable, Detail: "live WorkloadCredential lookup failed"}

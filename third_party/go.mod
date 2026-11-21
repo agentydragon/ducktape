@@ -54,9 +54,6 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.5.0
 )
 
-// Direct dependencies for the Agentplane BFF HTTP API.
-require github.com/danielgtaylor/huma/v2 v2.39.1
-
 // Direct dependencies for the generated HTTP facades of agentplane services
 require github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0
 

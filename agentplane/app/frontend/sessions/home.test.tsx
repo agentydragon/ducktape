@@ -3,12 +3,11 @@ import type * as ThreadClientModule from "./client";
 import { toJson } from "@bufbuild/protobuf";
 import { EnvironmentDescriptorSchema } from "../../../environments/v1/environment_service_pb";
 import { readySandbox } from "../testing/sandbox";
-import { MantineProvider } from "@mantine/core";
 import { act } from "react";
-import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
+import { cleanupMounted, renderWithMantine } from "../../../../util/frontend/testing/react";
 import { listThreadMetadata } from "./client";
 import { SessionSchema } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 import { SessionSummarySchema } from "../../../history_service/api/history/history_service_pb";
@@ -25,11 +24,9 @@ vi.mock("./client", async (importOriginal) => ({
   listThreadMetadata: vi.fn(),
 }));
 
-let root: ReturnType<typeof createRoot>;
 let container: HTMLDivElement;
 afterEach(async () => {
-  await act(async () => root.unmount());
-  container.remove();
+  await cleanupMounted();
   vi.useRealTimers();
   vi.clearAllMocks();
   vi.unstubAllGlobals();
@@ -118,22 +115,15 @@ async function render(): Promise<string[]> {
   vi.mocked(listThreadMetadata).mockImplementation(
     async () => new Map(THREADS.map((row) => [row.metadata.threadId, row.metadata]))
   );
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-  await act(async () =>
-    root.render(
-      <MantineProvider env="test">
-        <MemoryRouter>
-          <RoutedThreadsLiveProvider>
-            <SandboxesLiveProvider>
-              <Sidebar settingsOpen={false} onOpenSettings={() => undefined} open onClose={() => undefined} />
-              <Home />
-            </SandboxesLiveProvider>
-          </RoutedThreadsLiveProvider>
-        </MemoryRouter>
-      </MantineProvider>
-    )
+  container = await renderWithMantine(
+    <MemoryRouter>
+      <RoutedThreadsLiveProvider>
+        <SandboxesLiveProvider>
+          <Sidebar settingsOpen={false} onOpenSettings={() => undefined} open onClose={() => undefined} />
+          <Home />
+        </SandboxesLiveProvider>
+      </RoutedThreadsLiveProvider>
+    </MemoryRouter>
   );
   return threadStreams;
 }

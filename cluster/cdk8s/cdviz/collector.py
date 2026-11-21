@@ -11,15 +11,10 @@ from cluster.cdk8s.cdviz import config, timescale
 from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL, Vpa
+from cluster.cdk8s.namespaces import initial_request_annotations
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 from cluster.cdk8s.volume_claim import volume_claim
-from cluster.cdk8s.vpa_policy import (
-    VPA_RESOURCE_POLICY_ANNOTATION,
-    ContainerPolicy,
-    ControlledValues,
-    resource_policy_annotation,
-)
+from cluster.cdk8s.vpa_policy import ContainerPolicy
 
 OUTPUT_DIR = f"{config.OUTPUT_DIR}/app"
 IMAGE = (
@@ -75,18 +70,9 @@ def chart(app: App) -> Chart:
         metadata=k8s.ObjectMeta(
             name=config.COLLECTOR.name,
             namespace=config.NAMESPACE,
-            annotations={
-                VPA_UPDATE_MODE_LABEL: Vpa.INITIAL,
-                VPA_RESOURCE_POLICY_ANNOTATION: resource_policy_annotation(
-                    # Keep the declared CPU request while piloting memory adjustments.
-                    ContainerPolicy(
-                        container_name=config.COLLECTOR.name,
-                        controlled_values=ControlledValues.REQUESTS_ONLY,
-                        controlled_resources=("memory",),
-                    ),
-                    ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
-                ),
-            },
+            annotations=initial_request_annotations(
+                ContainerPolicy.cpu_and_memory_requests_only(config.COLLECTOR.name)
+            ),
         ),
         spec=k8s.DeploymentSpec(
             replicas=1,

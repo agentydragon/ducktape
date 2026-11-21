@@ -138,7 +138,7 @@ spec:
     checkInterval: 5
     concurrent: 2
     deploymentAnnotations:
-      goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "gitlab-spike-runner-gitlab-runner", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "100m", "memory": "160Mi"}, "maxAllowed": {"cpu": "100m", "memory": "512Mi"}, "controlledResources": ["memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
+      goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "gitlab-spike-runner-gitlab-runner", "controlledValues": "RequestsOnly", "minAllowed": {"memory": "160Mi"}, "controlledResources": ["cpu", "memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
       goldilocks.fairwinds.com/vpa-update-mode: initial
     gitlabUrl: http://gitlab-spike-webservice-default.gitlab-spike.svc:8181
     nodeSelector:

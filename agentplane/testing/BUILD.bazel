@@ -1,7 +1,6 @@
 load("//devinfra/python:defs.bzl", "py_library")
 
 _TEST_VISIBILITY = [
-    "//agentplane/action_service:__pkg__",
     "//agentplane/app:__pkg__",
     "//agentplane/app/testing:__pkg__",
     "//agentplane/sampler:__pkg__",
@@ -12,7 +11,6 @@ _TEST_VISIBILITY = [
     "//agentplane/env/e2e:__subpackages__",
     "//agentplane/grpc:__pkg__",
     "//agentplane/history_service/testing:__pkg__",
-    "//agentplane/llm_ingress:__pkg__",
     "//agentplane/session_dispatcher:__subpackages__",
     "//agentplane/sandboxes:__subpackages__",
     "//agentplane/system_tests:__subpackages__",
@@ -28,7 +26,6 @@ package(
 
 py_library(
     name = "codex_fixtures",
-    testonly = True,
     srcs = ["codex_fixtures.py"],
     data = ["@agentplane_codex_cli_linux_x64//:files"],
     deps = [
@@ -131,7 +128,6 @@ py_library(
 
 py_library(
     name = "sandbox_fixtures",
-    testonly = True,
     srcs = ["sandbox_fixtures.py"],
     visibility = [
         "//agentplane/env/e2e:__pkg__",
@@ -147,7 +143,6 @@ py_library(
 
 py_library(
     name = "native_gateway_fixtures",
-    testonly = True,
     srcs = ["native_gateway_fixtures.py"],
     deps = [
         ":kubernetes_apiserver",
@@ -167,7 +162,6 @@ py_library(
 
 py_library(
     name = "native_service_fixtures",
-    testonly = True,
     srcs = ["native_service_fixtures.py"],
     visibility = ["//agentplane/x/native_contracts:__pkg__"],
     deps = [
@@ -177,7 +171,7 @@ py_library(
         "//agentplane/env/e2e/testing:config",
         "//agentplane/env/e2e/testing:fixtures",
         "//agentplane/env/e2e/testing:gateway",
-        "//agentplane/env/e2e/testing:history_tunnel",
+        "//agentplane/env/e2e/testing:history_ingress",
         "//agentplane/env/e2e/testing:launches",
         "//agentplane/env/e2e/testing:model_config",
         "//agentplane/env/e2e/testing:process_fixtures",
@@ -198,8 +192,6 @@ py_library(
         "//agentplane/env/e2e:__pkg__",
         "//agentplane/history_service/fold:__pkg__",
         "//agentplane/sampler:__pkg__",
-        "//agentplane/sandboxes:__pkg__",
-        "//agentplane/sandboxes/testing:__pkg__",
         "//agentplane/session_dispatcher:__pkg__",
         "//agentplane/x/runner_layering:__pkg__",
     ],

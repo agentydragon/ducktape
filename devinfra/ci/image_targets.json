@@ -5,11 +5,6 @@
       "test": "//ai_session_archive/...",
       "registry": "forgejo"
     },
-    "ai-session-archive-migrator": {
-      "target": "//ai_session_archive:migrate_image",
-      "test": "//ai_session_archive:test_database_migrate",
-      "registry": "forgejo"
-    },
     "ai-session-archive-web": {
       "target": "//ai_session_archive:web_image",
       "test": "//ai_session_archive/...",

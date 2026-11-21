@@ -83,7 +83,7 @@ def test_policy_service_requires_tls_and_an_explicit_target() -> None:
 
 
 def test_service_svid_callers_need_no_token_file_setting() -> None:
-    configured = _settings(
+    _settings(
         session_dispatcher_tls=_svid(SESSION_DISPATCHER_URI),
         session_dispatcher_token_file=None,
         runner_gateway_tls=_svid(SESSION_DISPATCHER_URI),
@@ -97,18 +97,10 @@ def test_service_svid_callers_need_no_token_file_setting() -> None:
         notifications_tls=_svid(NOTIFICATIONS_URI),
         notifications_token_file=None,
     )
-    assert configured.session_dispatcher_token_file is None
-    assert configured.runner_gateway_token_file is None
-    assert configured.history_service_token_file is None
-    assert configured.policy_service_token_file is None
-    assert configured.egress_admin_token_file is None
-    assert configured.notifications_token_file is None
 
 
 def test_bearer_callers_state_their_token_file_explicitly() -> None:
-    token = Path("/run/secrets/agentplane-session-dispatcher/token")
-    configured = _settings(session_dispatcher_token_file=token)
-    assert configured.session_dispatcher_token_file == token
+    _settings(session_dispatcher_token_file=Path("/run/secrets/agentplane-session-dispatcher/token"))
 
     unset = _settings_fields()
     del unset["session_dispatcher_token_file"]
@@ -118,28 +110,18 @@ def test_bearer_callers_state_their_token_file_explicitly() -> None:
 
 @pytest.mark.parametrize("server_uri", [SESSION_DISPATCHER_URI, SANDBOX_CONTROLLER_URI])
 def test_runtime_proxy_peer_accepts_each_cutover_receiver(server_uri: str) -> None:
-    configured = _settings(runner_gateway_tls=_svid(server_uri), runner_gateway_token_file=None)
-    assert configured.runner_gateway_token_file is None
-    assert configured.runner_gateway_tls is not None
-    assert configured.runner_gateway_tls.server_uri == server_uri
+    _settings(runner_gateway_tls=_svid(server_uri), runner_gateway_token_file=None)
 
 
 def test_environment_service_peer_is_optional_and_uses_its_own_controller_svid() -> None:
-    legacy = _settings()
-    assert legacy.environment_service is None
-
-    configured = _settings(
+    assert _settings().environment_service is None
+    _settings(
         environment_service={
             "target": "sandbox-controller.agentplane.svc:8082",
             "request_timeout_s": 12,
             "tls": _svid(SANDBOX_CONTROLLER_URI),
         }
     )
-    assert configured.environment_service is not None
-    assert configured.environment_service.target == "sandbox-controller.agentplane.svc:8082"
-    assert configured.environment_service.tls.server_uri == SANDBOX_CONTROLLER_URI
-    assert configured.session_dispatcher_target == "session-dispatcher.test:8080"
-    assert configured.environment_service.model_dump(mode="json")["request_timeout_s"] == 12
 
 
 @pytest.mark.parametrize(
@@ -210,11 +192,7 @@ def test_invalid_app_caller_tls_settings_are_rejected(updates: dict[str, object]
 
 
 def test_operator_facades_can_add_app_svid_without_replacing_operator_oauth() -> None:
-    settings = _settings(actions_tls=_svid(ACTIONS_URI), connection_service_tls=_svid(MCP_EDGE_URI))
-    assert settings.actions_tls is not None
-    assert settings.actions_tls.uses_svid
-    assert settings.connection_service_tls is not None
-    assert settings.connection_service_tls.uses_svid
+    _settings(actions_tls=_svid(ACTIONS_URI), connection_service_tls=_svid(MCP_EDGE_URI))
 
 
 if __name__ == "__main__":

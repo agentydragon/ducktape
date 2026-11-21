@@ -11,7 +11,6 @@ from tenacity import Retrying, stop_after_delay, wait_fixed
 
 from agentplane.system_tests.vm.guest_logs import (
     CONSOLES_ENV,
-    SHUTDOWN_COMPLETE,
     SUPERVISION_FAILED,
     SUPERVISION_PASSED,
     GuestBootError,
@@ -21,6 +20,7 @@ from agentplane.system_tests.vm.guest_logs import (
     check_boot,
     systemd_supervision_passed,
 )
+from agentplane.system_tests.vm.shutdown_diagnostic import SHUTDOWN_COMPLETE
 
 MARKER = "2026-10-27T21:41:13.112914838Z stdout F " + SHUTDOWN_COMPLETE.decode() + "\n"
 BOOT_EVIDENCE = """2026-10-27T21:41:13Z stdout F AGENTPLANE_BOOT_EVIDENCE_BEGIN

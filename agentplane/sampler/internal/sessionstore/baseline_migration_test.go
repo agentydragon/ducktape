@@ -5,7 +5,6 @@ import (
 	"sync"
 	"testing"
 
-	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionconfig"
 	"github.com/agentydragon/ducktape/agentplane/sampler/migrations"
 	"github.com/google/uuid"
@@ -48,12 +47,7 @@ func TestMigrationDeletesRetainedPreIdentitySamplerSessions(t *testing.T) {
 	missingIdentity := openSessionForStore(t, store, "")
 	retiredPrincipal := openSessionForStore(t, store, "")
 	for _, session := range []*Session{retained, missingIdentity, retiredPrincipal} {
-		if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{
-			CommandId: uuid.NewString(),
-			Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "fixture input"}},
-		}, "fixture-account", nil); err != nil {
-			t.Fatal(err)
-		}
+		admitInput(t, store, session.ID, uuid.NewString(), "fixture input")
 		if _, err := store.DB().ExecContext(t.Context(), `INSERT INTO sampler_export_checkpoint(session_id,destination,cursor)
 			VALUES($1,'fixture-history',1)`, session.ID); err != nil {
 			t.Fatal(err)

@@ -424,7 +424,7 @@ func (r *Session) Detach(ctx context.Context) error {
 	r.detachOnce.Do(func() {
 		// Unregister first. The host reader adds delegates only while holding the
 		// manager lock, so no Add can race with the Wait below.
-		r.manager.detach(r)
+		r.manager.failBinding(r, errors.New("code-mode session detached"))
 		r.mu.Lock()
 		r.detached = true
 		for _, cancel := range r.delegates {

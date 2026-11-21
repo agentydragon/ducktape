@@ -962,6 +962,8 @@ a block StorageClass does not itself make Pod and VM layouts interchangeable. Se
 ```mermaid
 flowchart LR
     ENVIRONMENT_SUSPEND_MODES_DESIGN[Decision: distinct suspend and resume modes]
+    FIRECRACKER_INTEGRATION_DESIGN[Decision: Firecracker integration and privilege boundary]
+    FIRECRACKER_INTEGRATION_DESIGN -. related lifecycle contract .-> ENVIRONMENT_SUSPEND_MODES_DESIGN
     VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM]
     ENVIRONMENT_SUSPEND_MODES_DESIGN --> VM_RAM_SUSPEND
     VM_CONSOLE_DEFERRED_ATTACH[Unscheduled: attach the console when a starting VM becomes attachable]
@@ -970,6 +972,60 @@ flowchart LR
     STATE_VOLUME_BLOCK -. related .-> VM_RAM_SUSPEND
     LOCAL_BAZEL[Unscheduled: bounded local Bazel client in VM]
 ```
+
+### `FIRECRACKER_INTEGRATION_DESIGN` — choose Firecracker integration and privilege boundary
+
+**Decision; unscheduled; operator request, 2026-11-20.** Decide how Agentplane should run and
+manage Firecracker Sandboxes in the cluster, including whether to build on an existing integration.
+The current [Firecracker backend](../docs/firecracker_sandboxes.md) runs one launcher Pod per guest;
+its network setup needs privileges that staging's baseline Pod Security policy rejects. KubeVirt
+already uses privileged infrastructure while its launcher Pods can be unprivileged. Do not assume a
+Talos API-server exemption or a new controller is the only solution.
+
+Compare at least these patterns and their costs:
+
+- Keep our launcher, with launcher Pods in a dedicated privileged infrastructure namespace. A
+  controller's namespace does not exempt Pods created in another namespace; decide whether the
+  existing controller can own this or a separate controller provides a useful authority boundary.
+  Work through cross-namespace PVCs, Secrets, identity, network policy, ownership and cleanup;
+  Pods cannot directly mount another namespace's PVCs or Secrets, and namespaced owner references
+  cannot cross namespaces.
+- Keep launcher Pods in their current namespace, using a narrowly constrained admission exception;
+  assess the scope and operational cost of API-server exemptions and replacement policy, including
+  the proposal in [#18428](https://github.com/agentydragon/ducktape/pull/18428).
+- Follow the KubeVirt pattern: a trusted node-side helper or networking integration performs the
+  privileged setup and fencing while the launcher has reduced privileges. Account for device
+  access, TAP and firewall lifecycle, the helper's authority, and the complexity of an extra
+  node service. Consider other container runtime or Kubernetes integration patterns as well.
+- Evaluate existing systems, including [OpenSandbox Fast Sandbox](https://github.com/opensandbox-group/fast-sandbox)
+  and its [checkpoint design](https://github.com/opensandbox-group/OpenSandbox/blob/main/docs/architecture/fast-sandbox/checkpoints.md),
+  as well as [Kata](https://github.com/kata-containers/kata-containers),
+  [Cocoon](https://github.com/cocoonstack/cocoon-operator),
+  [Setec](https://github.com/zeroroot-ai/setec), and
+  [SPACE](https://github.com/perplexityai/SPACE). Check maintenance and actual implemented behavior,
+  not just advertised features; consider a bounded Fast Sandbox trial if it can resolve material
+  uncertainties. Distinguish an integration usable as-is, an adaptable component, and an
+  architectural reference. [firecracker-containerd](https://github.com/firecracker-microvm/firecracker-containerd)
+  is archived; recheck the state of each candidate when investigating.
+
+Compare security and control-plane trust, node changes, scheduling and KVM, operational and
+maintenance burden, resource accounting, workspace and persistent storage, guest networking and
+egress, and rollout and cleanup. For suspend/resume, compare process and RAM preservation,
+checkpoint storage and consistency, Pod/node loss, identity and credentials, clock repair,
+network/admission fencing and recovery from interrupted operations. The current same-Pod behavior
+is a baseline, not a requirement to retain its limitations; identify any contract changes and
+their migration. Coordinate with `ENVIRONMENT_SUSPEND_MODES_DESIGN`, `VM_RAM_SUSPEND`, and
+`SANDBOX_QUIESCENCE_DESIGN` without making their independent work wait on this investigation.
+
+**Rollout references:** [#18428](https://github.com/agentydragon/ducktape/pull/18428) proposes
+the admission exception and is closed pending this decision. The staging launch preset
+[#18421](https://github.com/agentydragon/ducktape/pull/18421) and launcher memory changes
+[#18443](https://github.com/agentydragon/ducktape/pull/18443) and
+[#18482](https://github.com/agentydragon/ducktape/pull/18482) have already merged.
+
+**Exit:** a reviewed comparison and recommendation, with a bounded experiment where needed,
+explicit authority and lifecycle boundaries, security tradeoffs and unresolved gaps. Select any
+implementation and rollout work separately; this decision does not authorize a particular backend.
 
 ### `VM_INTRA_SANDBOX_HARDENING` — optional process and state hardening inside one Sandbox
 
@@ -1749,6 +1805,9 @@ flowchart TD
     ENVIRONMENT_READINESS_WAIT[Unscheduled: bounded CLI and Action/MCP readiness waits]
     AGENT_EXECUTOR_LOSS_NOTICE[Unscheduled: tell agents when executor restarts or kills lose their processes]
     CENTRAL_EXECUTOR_LIFECYCLE_DESIGN[Decision: central Session execution and Sandbox lifecycle]
+    SANDBOX_QUIESCENCE_DESIGN[Decision: Sandbox stop, Session settlement and unused-Sandbox deletion]
+    CENTRAL_EXECUTOR_LIFECYCLE_DESIGN -. related execution lifetime .-> SANDBOX_QUIESCENCE_DESIGN
+    VM_RAM_SUSPEND -. related suspend semantics .-> SANDBOX_QUIESCENCE_DESIGN
     RUNNER_BUSY_TRACKING -. related .-> CENTRAL_EXECUTOR_LIFECYCLE_DESIGN
     AGENT_RESUME_NOTICE -. related .-> CENTRAL_EXECUTOR_LIFECYCLE_DESIGN
     RUNNER_BUSY_TRACKING -. related .-> AGENT_RESUME_NOTICE
@@ -2070,6 +2129,42 @@ resume/lifecycle controls, or a combination; no approach is selected. Map existi
 authorization ownership before choosing. The selected design must honor wake policy and Sandbox UID
 and incarnation fences, preserve uncertain outcomes without replay, and cover suspended requests,
 long-running processes, disconnect/recovery and eventual idleness.
+
+### `SANDBOX_QUIESCENCE_DESIGN` — redesign Sandbox stopping and Session settlement
+
+**Decision; unscheduled.** Redesign the ownership and protocol for suspend, resume and deletion
+across the Sandbox Controller, Session Dispatcher, Gateway, Environment Runtime, Execution Service
+and History. Separate deciding the fate of Sessions and queued commands from stopping processes,
+sealing Runtime journals, delivering their final History cursors, and removing workloads and
+volumes. Consider whether Dispatcher should coordinate the Sessions that might belong to a Sandbox;
+do not assume it owns all Runtime work or select a particular protocol yet. Coordinate with
+`SESSION_DELETION_FENCE`, `CENTRAL_EXECUTOR_LIFECYCLE_DESIGN` and the suspend-mode decision without
+making this redesign a prerequisite for their existing work.
+
+**Desired outcome:** ideally, deletion of a Sandbox that has never received commands or Session
+commands should not need to start or quiesce an Environment Runtime. Establish what durable,
+exact-Sandbox and incarnation evidence would prove that is safe, including whether a Runtime ran
+but admitted no work; do not restrict the goal to a Pod that was never scheduled. Account for
+bootstrap and setup, direct Execution calls, Session creation and retained journals, and any
+other work outside the Dispatcher. Fence new admission and concurrent forwarding before making a
+no-work decision; distinguish known-unsent work from possibly forwarded or admitted work and
+preserve unknown outcomes without replay. A Dispatcher acknowledgment proves journal admission,
+not completed effects or History delivery, and an absent or disconnected Runtime is not proof it
+never ran. Preserve existing journal, History, process-fencing and authored-data guarantees when
+the evidence is uncertain, including after controller takeover or an incarnation replacement.
+
+Compare Pod, KubeVirt and Firecracker lifecycles. Firecracker RAM suspension retains processes and
+needs its admission barrier and checkpoint semantics; a launcher reporting `suspended` can mean
+either a cold, never-booted guest or a completed checkpoint. Cover the scheduler bind versus stop
+race, lost acknowledgments, startup and bootstrap races, prior unsealed incarnations, crash and
+reconnect, queued but unsent commands, and deletion of a genuinely unused Sandbox. The observed
+unscheduled staging VM that remained in quiescence is a concrete motivating case;
+[#18530](https://github.com/agentydragon/ducktape/pull/18530) is a narrower VM fix, not the
+redesign's exit criterion.
+
+**Exit:** a reviewed ownership and race contract identifying each durable proof and service
+boundary, the unused-Sandbox deletion behavior, and a testable migration from current guarantees.
+Select implementation separately after that decision.
 
 ### `SESSION_ACTIVITY_STREAM` — the notification service delivers on a Session's idle time
 
@@ -3698,8 +3793,8 @@ Dispatch reviewed migrations separately, rather than coupling them to package-di
 #### Authentication: waiting on a decision
 
 - **Pod-bound checks per route** ([identity plan open question 1](identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits)):
-  `IsPodBound` gates privilege in Dispatcher (`dispatcher/api.go`) and the lifecycle manager
-  (`environments/lifecycle/policy.go`). Once every workload is an Identity SVID with a
+  Dispatcher and the lifecycle manager no longer gate privilege on `IsPodBound`, which has no
+  caller left. Once every workload is an Identity SVID with a
   per-incarnation credential, each route decides whether a Pod proof still adds anything; the
   checks that do not are deleted then.
 
@@ -3712,25 +3807,6 @@ the database and role in place (`ALTER DATABASE`/`ALTER ROLE ... RENAME`) and ha
 `Database` and managed role adopt the new names; recreating the database under a new name would copy
 the log. Verify the History Service and Electric reconnect with no data movement. Update the
 `history_service/internal/migrations/migrations.go` and `cluster/cdk8s/agentplane/history_service.py` docstrings.
-
-## 16. Standard idioms over hand-rolled mechanisms
-
-From the 2026-10-30 idiom audit; `SAMPLER_JOURNAL_DIET` awaits the operator's view.
-
-```mermaid
-flowchart LR
-    SAMPLER_JOURNAL_DIET[Decision: what the sampler journals]
-```
-
-### `SAMPLER_JOURNAL_DIET` — what the sampler journals
-
-**Decision; operator to weigh in.** At the 2026-10-30 audit (re-check before starting), every
-sampling intent stored the full Responses request body (`sessionstore` `Store.Begin`) and nothing
-read it beyond its kind, with no deletion, so storage grows
-with turns × context. Every streamed provider event was journaled as a `BoundaryRecord` in its own
-locking transaction, then again inside the intent's result and again in failure evidence. Options:
-store kind plus a conversation reference and journal raw events once (recommended); batch per-event
-writes or keep only item-done and terminal events; or keep everything and add retention.
 
 ## 17. Two binaries and the Go layout
 

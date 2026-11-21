@@ -67,10 +67,9 @@ def snapshot_controller(chart: Chart) -> Kustomization:
 
 
 def snapshot_controller_crds(chart: Chart) -> Kustomization:
-    name = "snapshot-controller-crds"
     return flux_kustomization(
         chart,
-        name,
+        "snapshot-controller-crds",
         KustomizationSpecSourceRef(
             kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY,
             name="external-snapshotter-source",

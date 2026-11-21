@@ -117,16 +117,7 @@ def chart(app: App) -> Chart:
             "nodeSelector": {"topology.kubernetes.io/region": "hil"},
             "webhooks": {
                 "replicaCount": 2,
-                "affinity": {
-                    "podAntiAffinity": {
-                        "requiredDuringSchedulingIgnoredDuringExecution": [
-                            {
-                                "labelSelector": {"matchLabels": {"app": "keda-admission-webhooks"}},
-                                "topologyKey": "kubernetes.io/hostname",
-                            }
-                        ]
-                    }
-                },
+                "affinity": node_scheduling.one_per_host({"app": "keda-admission-webhooks"}),
             },
             "metricsServer": {"replicaCount": 2},
             "topologySpreadConstraints": {

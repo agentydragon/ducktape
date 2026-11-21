@@ -223,6 +223,7 @@ ts_library(
     tsconfig = ":tsconfig",
     visibility = [
         "//agentplane/app/frontend/identities:__pkg__",
+        "//agentplane/app/frontend/sandboxes:__pkg__",
         "//agentplane/app/frontend/sessions:__pkg__",
         "//ai_session_archive/frontend:__pkg__",
         "//devinfra/claude/session_export/frontend:__pkg__",

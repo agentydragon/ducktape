@@ -42,6 +42,7 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.litellm.database import NAMESPACE
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
+from cluster.cdk8s.reflector import mirror_annotations
 from model_catalog.policies import AGENTPLANE_STAGING_MODEL_LANES, KEY_MODEL_LANES
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/litellm/crossplane-keys"
@@ -234,10 +235,7 @@ def chart(app: App) -> Chart:
             budget_duration="30d",
             annotations={
                 "description": "LiteLLM virtual key for the codex-pod agent (chatgpt-sub/oai-responses/gpt-6-* models only); reflected into codex-pod as LITELLM_API_KEY",
-                "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
-                "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": "codex-pod",
-                "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
-                "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": "codex-pod",
+                **mirror_annotations(["codex-pod"]),
             },
         ),
         _DynamicKey(
@@ -252,10 +250,7 @@ def chart(app: App) -> Chart:
             consumer="public-coder-agent",
             annotations={
                 "description": "LiteLLM virtual key for public-coder-agent OpenClaw and least-credential runner-proxy-mediated Haku Console Codex shells; Gemini chat models, plus embeddings",
-                "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
-                "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": "public-coder-agent,haku-console",
-                "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
-                "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": "public-coder-agent,haku-console",
+                **mirror_annotations(["public-coder-agent", "haku-console"]),
             },
         ),
         _DynamicKey(
@@ -266,10 +261,7 @@ def chart(app: App) -> Chart:
             data_key="CODEX_LITELLM_KEY",
             annotations={
                 "description": "GPT-6-only LiteLLM Messages key for codex-pod; reflected as CODEX_LITELLM_KEY",
-                "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
-                "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": "codex-pod",
-                "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
-                "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": "codex-pod",
+                **mirror_annotations(["codex-pod"]),
             },
         ),
         _DynamicKey(
@@ -278,10 +270,7 @@ def chart(app: App) -> Chart:
             consumer="retired standalone Codex workspaces; key retained for future use",
             annotations={
                 "description": "LiteLLM virtual key for a future Codex workspace lane (chatgpt-sub/oai-responses/gpt-6-* models only); reflected into agent-workspaces if restored",
-                "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
-                "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": "agent-workspaces",
-                "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
-                "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": "agent-workspaces",
+                **mirror_annotations(["agent-workspaces"]),
             },
         ),
     ]

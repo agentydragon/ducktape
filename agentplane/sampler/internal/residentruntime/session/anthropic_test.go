@@ -33,12 +33,7 @@ import (
 )
 
 func TestAnthropicStreamPersistsNativeHistoryObservationsWithSourceLinks(t *testing.T) {
-	store := runtimetesting.NewStore(t, integrationDatabase)
-	session := runtimetesting.OpenSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, session, owner := runtimetesting.ClaimedSession(t, integrationDatabase)
 	intentID, _, err := store.Begin(t.Context(), owner, sessionstore.IntentPayload{Kind: sessionstore.PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
 	if err != nil {
 		t.Fatal(err)
@@ -184,12 +179,7 @@ func TestAnthropicRequestLoggingFailurePreventsDispatch(t *testing.T) {
 }
 
 func TestAnthropicEvidenceFailureAfterPrefixLeavesIntentUnresolved(t *testing.T) {
-	store := runtimetesting.NewStore(t, integrationDatabase)
-	session := runtimetesting.OpenSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, session, owner := runtimetesting.ClaimedSession(t, integrationDatabase)
 	intent, _, err := store.Begin(t.Context(), owner, sessionstore.IntentPayload{Kind: sessionstore.PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
 	if err != nil {
 		t.Fatal(err)
@@ -284,12 +274,7 @@ func TestAnthropicEvidenceFailureAfterPrefixLeavesIntentUnresolved(t *testing.T)
 }
 
 func TestAnthropicInvalidBlockStartIsPersistedWithoutHistoryObservation(t *testing.T) {
-	store := runtimetesting.NewStore(t, integrationDatabase)
-	session := runtimetesting.OpenSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, session, owner := runtimetesting.ClaimedSession(t, integrationDatabase)
 	intentID, _, err := store.Begin(t.Context(), owner, sessionstore.IntentPayload{Kind: sessionstore.PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
 	if err != nil {
 		t.Fatal(err)

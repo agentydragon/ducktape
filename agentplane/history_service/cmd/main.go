@@ -186,9 +186,7 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	if err != nil {
 		return err
 	}
-	if security != nil {
-		options = append(options, grpc.Creds(security))
-	}
+	options = append(options, grpc.Creds(security))
 	server := grpc.NewServer(options...)
 	historypb.RegisterHistoryServiceServer(server, service)
 	healthServer := health.NewServer()

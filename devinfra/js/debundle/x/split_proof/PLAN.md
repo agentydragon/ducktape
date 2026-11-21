@@ -7,7 +7,36 @@ Goal: turn a minified production bundle into readable modules, with a machine-ch
 
 The design is "untrusted search, trusted check". The footprint analysis is the one place that breaks it: `Effects.lean` is unproved, and the checker believes it.
 
-**Decided (2026-11-21).** The model of item 3 is being built now, as a longer-term investment beside fixing the known wrong rules. The first rule to prove against it is the allocation rule of item 4.
+**Decided (2026-11-21).** The model of item 3 is built up as a longer-term investment beside fixing the known wrong rules. Its first slice exists, and the first rule proved against it is the allocation rule of item 4.
+
+**The theorem to reach.** It does not mention footprints. `split` is the whole tool as one total function: it takes a program and a spec and returns the split program, or refuses.
+
+```lean
+-- More fuel never changes a run that finished.
+theorem fuel_mono : run n P = r → r ≠ .fuel → n ≤ m → run m P = r
+-- "P ends with r": some amount of fuel is enough. By `fuel_mono` there is at most one such r.
+def Ends (P) (r) := ∃ n, run n P = r ∧ r ≠ .fuel
+theorem split_preserves : InFragment P → split P spec = some P' →
+    (∀ r, Ends P r → ∃ r', Ends P' r' ∧ r ≈ r') ∧ (∀ r', Ends P' r' → ∃ r, Ends P r ∧ r ≈ r')
+```
+
+The two directions together say that one program runs forever exactly when the other does. A program that prints and then runs forever is not compared: the model keeps no output of an unfinished run. `≈` is "the same to an observer": the same interaction with the world and final states that later code cannot tell apart. For a reorder inside one program that is equality. For modules it is a relation, and it is part of what a reader has to trust.
+
+`run` is the model, `CoreJS`. `InFragment` is a check on the program's text; it may be "the tool derives a footprint other than unknown code for these units". What the tool calls footprints, `Valid` and the conflict rule are then inside the proof, and a reader has to trust only the model, `≈` and this statement.
+
+Inside the proof, two lemmas carry it, for programs in the fragment:
+
+- _A derived footprint is true:_ a unit reads and changes only what its footprint lists. This needs no new definition. [`Meaning`](lean/EsmSplit/Semantics.lean) already has the shape (a statement without effects is a function of the values it reads), and "real JavaScript is assumed to fit" is assumption 2 of [`README.md`](README.md) § What is not proved. The work is to show that `CoreJS` fits it for the fragment.
+- _True footprints justify the move:_ this is `Valid → Correct`, proved.
+
+A proof for a narrow fragment is worth having, and two fragments are better than one: each is its own `InFragment`, and a verdict of the tool says which one covered the split, or that none did.
+
+What the statement forces:
+
+- **`split` has to be total Lean code.** `Effects.lean` is `partial` over JSON and Lean can prove nothing about it. So the fragment's footprints come from a new derivation over `CoreJS`'s syntax that answers "unknown code" except where a rule is proved, beginning with the allocation rule. `Effects.lean` stays in use outside the fragment, unproved, until the derivation covers what it covers. A unit where the derivation says "effect" and `Effects.lean` says "none" is a finding.
+- **`run P'` needs modules in the model.** `CoreJS` has no `import`. A first version compares `P` with the units of `P'` in the order the split evaluates them (`Plan.visit`, tested against Node, not derived from a model).
+- **A run that reaches unknown code says nothing after that point.** The first version covers programs that stay inside the model. Real bundles do not: 1,584 of the large bundle's 9,707 units touch the world. The vendor code is in the bundle's chunks, so it can be part of the program; then only the host is unknown. Either way the model has to take the world as a parameter, a function that may read and change what it is given and nothing else, and the theorem holds for every world.
+- **The standard library cannot be defined function by function.** Start-up runs little code and most of the language ([`docs/lessons_learned.md`](docs/lessons_learned.md) § The first slice of a model): about 110 standard functions by name, regular expressions among them. They enter the model as part of the world, each with a stated class of behaviour ("a function of its primitive arguments", "reads its receiver", "may call its argument"). That table stays an assumption about the engine, tested and not proved.
 
 **Proposed, not decided.**
 
@@ -30,8 +59,11 @@ The design is "untrusted search, trusted check". The footprint analysis is the o
      - a ledger: the interpreter records which rules a unit's footprint used, and a verdict prints the unproved ones. "Units whose footprint used only proved rules" is then the measure of progress, and how often a rule fires on the large bundle orders the proofs.
 
 4. **Run it as a spike with a kill rule**, so it cannot become open-ended.
-   - _First measurement:_ which constructs run during module start-up on the large bundle. Only that code needs a precise model, and it may be much smaller than the syntax the inputs contain.
-   - _First rule to prove:_ a unit that only allocates has no footprint beyond the name it declares. Such a unit is built from literals, names, object and array literals, function and arrow expressions and plain classes; it runs no code but its own and changes nothing that existed. 7,123 of the 9,707 units of the large bundle have this shape ([`allocate_only_census.mjs`](experiments/translation/allocate_only_census.mjs)), and the modules that peel today are made of them. The hard part is what "the same result" means: two such units in the other order create the same objects at other addresses, so states are equal only up to a renaming of object identities. Settling that is the first piece of what a footprint means.
+   - _Exists:_ the model, `CoreJS` ([`experiments/README.md`](experiments/README.md) § 14): closures, objects with prototypes and accessors, plain classes and exceptions, as a total interpreter tested against Node, with unknown code as an outcome of its own.
+   - _First rule, proved in part:_ a unit that only allocates has no footprint beyond the name it declares. Proved for one unit built from literals, names, functions, object and array literals: it changes nothing that existed and binds only its name. 7,123 of the 9,707 units of the large bundle only allocate ([`allocate_only_census.mjs`](experiments/translation/allocate_only_census.mjs)); that count includes plain classes, which the proof does not cover yet.
+   - _Addresses are settled by the model:_ two such units in the other order create the same objects. The model gives each unit a region of its own to allocate in, so the two orders end in equal states and no renaming of object identities is needed.
+   - _Next:_ the same rule for plain classes; that two such units commute (`AllocOnlyUnitsCommute` in [`Frame.lean`](lean/Experiments/CoreJS/Frame.lean), stated, not proved); then what a footprint means in this model, the invariant that relates `Effects.lean`'s abstract values to its states, including what unknown code may change.
+   - _What the model covers next, from the measurement of start-up:_ modules; the world as a parameter, standard functions included; `class … extends`, which every start-up evaluates; then the syntax that runs rarely in an application chunk (spread, destructuring, optional chains, `for`-`of`).
    - _Second rule:_ unknown code cannot write a name declared later, except through an object that escaped earlier. It is the largest lever the peel probe measured, and it needs a statement of what unknown code may change.
    - _Success:_ commutation proved for closures, objects with prototypes, accessors and exceptions, and that fragment covers most of the units that get precise footprints today.
    - _Kill:_ the proof is not done within the budget set at the start, or coverage is under about half. Then the tested analysis stays, labelled as trusted.
@@ -43,10 +75,11 @@ The design is "untrusted search, trusted check". The footprint analysis is the o
 ## Order of work
 
 1. F1 to F6 (in progress).
-2. The model of item 3: a first slice checked against Node (in progress), then the allocation rule of item 4.
-3. `import.meta` ([`SUPPORT.md`](SUPPORT.md)): the one common feature the tools refuse.
-4. Which rules fire per unit at start-up: it decides what the model covers after the first slice.
-5. Then by measured yield: fewer ordering imports (item 5): per-unit reasons in `lower` ([`TODO.md`](TODO.md)), a vendor table by library family, a rule for decorator applications. A stack-safe interpreter comes before any analysis of library code.
+2. In the model: modules, and the world as a parameter. Every slice of `split_preserves` needs both.
+3. Two slices of `split_preserves`, independent of each other: a split that keeps the bundle's order, which needs no footprint rule; and units that only allocate may move, which needs the allocation rule of item 4 for plain classes and the commutation of two units.
+4. `import.meta` ([`SUPPORT.md`](SUPPORT.md)): the one common feature the tools refuse.
+5. Which rules fire per unit at start-up: it orders the rules to prove after the allocation rule.
+6. Then by measured yield: fewer ordering imports (item 5): per-unit reasons in `lower` ([`TODO.md`](TODO.md)), a vendor table by library family, a rule for decorator applications. A stack-safe interpreter comes before any analysis of library code.
 
 ## More of debundle's cases through the Lean checker
 

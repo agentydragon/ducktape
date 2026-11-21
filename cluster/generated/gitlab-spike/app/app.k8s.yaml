@@ -46,13 +46,16 @@ spec:
       gitlab-exporter:
         deployment:
           annotations:
-            goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies":[{"containerName":"gitlab-exporter","controlledValues":"RequestsOnly","minAllowed":{"cpu":"75m","memory":"96Mi"},"maxAllowed":{"cpu":"75m","memory":"128Mi"},"controlledResources":["memory"]},{"containerName":"*","controlledValues":"RequestsOnly","mode":"Off"}]}'
+            goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies":[{"containerName":"gitlab-exporter","controlledValues":"RequestsOnly","controlledResources":["cpu","memory"]},{"containerName":"*","controlledValues":"RequestsOnly","mode":"Off"}]}'
             goldilocks.fairwinds.com/vpa-update-mode: initial
       gitlab-shell:
         deployment:
           annotations:
-            goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies":[{"containerName":"gitlab-shell","controlledValues":"RequestsOnly","minAllowed":{"cpu":"20m","memory":"96Mi"},"maxAllowed":{"cpu":"50m","memory":"128Mi"},"controlledResources":["cpu","memory"]},{"containerName":"*","controlledValues":"RequestsOnly","mode":"Off"}]}'
+            goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies":[{"containerName":"gitlab-shell","controlledValues":"RequestsOnly","minAllowed":{"cpu":"23m"},"maxAllowed":{"cpu":"23m"},"controlledResources":["memory"]},{"containerName":"*","controlledValues":"RequestsOnly","mode":"Off"}]}'
             goldilocks.fairwinds.com/vpa-update-mode: auto
+        resources:
+          requests:
+            cpu: 23m
       praefect:
         affinity:
           podAntiAffinity:

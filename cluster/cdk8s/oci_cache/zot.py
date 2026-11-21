@@ -182,12 +182,7 @@ def chart(app: App) -> Chart:
                 # backend targetPort (5000), not this Service port. So haku-ci's force-proxy
                 # egress allows 5000 explicitly (see haku_ci/runner.py).
                 # Plain HTTP.
-                k8s.ServicePort(
-                    name=HTTP.port.name,
-                    port=HTTP.port.number,
-                    target_port=k8s.IntOrString.from_number(HTTP.pod_port),
-                    protocol="TCP",
-                ),
+                HTTP.k8s_service_port(),
                 # Authenticated public entrypoint. The HTTPRoute for oci-cache.allegedly.works
                 # targets this port; in-cluster Docker mirrors must use the unauthenticated
                 # `http` port above.

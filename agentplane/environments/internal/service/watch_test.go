@@ -21,6 +21,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
+	"github.com/agentydragon/ducktape/agentplane/testing/testscheme"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -28,7 +29,6 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/watch"
@@ -148,17 +148,7 @@ func newWatchFixtureWithReadHook(t *testing.T, afterRead func(context.Context, c
 	if err != nil {
 		t.Fatal(err)
 	}
-	scheme := runtime.NewScheme()
-	if err := sandboxapi.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
-	}
-	if err := corev1.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
-	}
-	if err := policyapi.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
-	}
-	objects, err := client.NewWithWatch(watchAPI.Config, client.Options{Scheme: scheme})
+	objects, err := client.NewWithWatch(watchAPI.Config, client.Options{Scheme: testscheme.New(t)})
 	if err != nil {
 		t.Fatal(err)
 	}

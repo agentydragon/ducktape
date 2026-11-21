@@ -7,7 +7,7 @@ This is an experiment. It does not use the `debundle` code; nothing here imports
 
 [`SUPPORT.md`](SUPPORT.md) lists what a debundler built on this has to support (the syntax and the standard and host features that the real inputs use) and what it does not (a top-level `await`, a name declared twice in one list, and what the tools refuse today). It is a requirement, not a claim that the experiment meets it.
 
-Run everything with `./run.sh` (add `--controls`, `--fuzz`, `--experiments`, `--lowering`, `--es-order` or `--splits`).
+Run everything with `./run.sh` (add `--controls`, `--fuzz`, `--experiments`, `--lowering`, `--es-order`, `--splits` or `--model`).
 It needs `nix`, `node` and `npm`. Lean 4.35 and gcc come from `nixpkgs`. A clean build takes about 20 s, the first `./run.sh` about a minute.
 `run.sh` copies each `package.json.in` to `package.json` before `npm ci`; the repository's CI treats a committed `package.json` as a change to the whole build graph.
 
@@ -275,6 +275,8 @@ Running `example/output/` in Node also found a bug in the first printer (no `exp
 10. the module-order model against Node;
 11. debundle's 207 e2e cases through the checker, with causes for the ones that do not work ([`experiments/debundle_cases/`](experiments/debundle_cases/README.md), plan in [`PLAN.md`](PLAN.md)).
 12. translation validation: is an output tree the bundle, renamed and reshuffled? ([`experiments/translation/`](experiments/translation/README.md)).
+13. footprints by abstract interpretation ([`experiments/effects/`](experiments/effects/README.md)).
+14. an executable model of a core of JavaScript, tested against Node, and the first footprint rule proved in it.
 
 ## Files
 
@@ -291,7 +293,7 @@ Running `example/output/` in Node also found a bug in the first printer (no `exp
 | `lean/EsmSplit/Controls.lean`  | buggy-splitter plans, semantic non-vacuity                                                                                                                                                                                   |
 | `lean/EsmSplit/Audit.lean`     | `#print axioms`                                                                                                                                                                                                              |
 | `lean/Main.lean`               | the `render` executable                                                                                                                                                                                                      |
-| `lean/Experiments/`            | experiments: mini-JS semantics, two tiers, lowering, strategy ladder, module order, translation checker                                                                                                                      |
+| `lean/Experiments/`            | experiments: mini-JS semantics, two tiers, lowering, strategy ladder, module order, translation checker, the CoreJS model                                                                                                    |
 | `extract/`                     | JavaScript front end for the example (`extract.mjs`)                                                                                                                                                                         |
 | `example/`                     | the 12-statement bundle, its spec, one variant that must pass, three controls that must fail                                                                                                                                 |
 | `fuzz/`                        | fuzzer and mutation test                                                                                                                                                                                                     |

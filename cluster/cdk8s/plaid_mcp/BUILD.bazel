@@ -5,7 +5,6 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 py_library(
     name = "app",
     srcs = ["app.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":db",
         "//cluster/cdk8s:container_resources",

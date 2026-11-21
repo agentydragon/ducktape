@@ -10,7 +10,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/environments/internal/service/management"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
-	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -164,7 +163,6 @@ func (s *Service) SetEnvironmentIdentity(ctx context.Context, request *environme
 func managementError(ctx context.Context, err error) error {
 	var missing *management.SandboxNotFoundError
 	var invalid *management.InvalidSandboxError
-	var launcherPolicy *management.LauncherPolicySetError
 	var conflict *management.SandboxConflictError
 	var running *management.SandboxRunningError
 	var unknown *management.SandboxModeUnknownError
@@ -174,8 +172,6 @@ func managementError(ctx context.Context, err error) error {
 		return status.FromContextError(err).Err()
 	case errors.As(err, &missing), apierrors.IsNotFound(err):
 		return status.Error(codes.NotFound, err.Error())
-	case errors.As(err, &launcherPolicy):
-		return managementRefusal(codes.InvalidArgument, "LAUNCHER_POLICY_SET", err.Error())
 	case errors.As(err, &invalid):
 		return status.Error(codes.InvalidArgument, err.Error())
 	case apierrors.IsInvalid(err):
@@ -188,12 +184,4 @@ func managementError(ctx context.Context, err error) error {
 		slog.ErrorContext(ctx, "environment management failed", "error", err)
 		return status.Error(codes.Unavailable, "environment management is unavailable")
 	}
-}
-
-func managementRefusal(code codes.Code, reason, message string) error {
-	result, err := status.New(code, message).WithDetails(&errdetails.ErrorInfo{Reason: reason, Domain: "agentplane.environments"})
-	if err != nil {
-		return status.Error(codes.Internal, "could not encode Environment refusal")
-	}
-	return result.Err()
 }

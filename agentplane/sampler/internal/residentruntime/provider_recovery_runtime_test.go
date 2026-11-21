@@ -68,15 +68,6 @@ func startProviderSamplingRuntime(t *testing.T, store *sessionstore.Store, setti
 	return runtime, stop
 }
 
-func admitProviderSamplingCommand(t *testing.T, store *sessionstore.Store, sessionID, commandID, text string) {
-	t.Helper()
-	if _, err := store.Admit(t.Context(), sessionID, &commandpb.Command{
-		CommandId: commandID, Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: text}},
-	}, "fixture-account", nil); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func waitProviderAttemptStatus(t *testing.T, store *sessionstore.Store, kind sessionstore.IntentKind, commandID string, attemptNo int, want string) string {
 	t.Helper()
 	var id string
@@ -172,7 +163,7 @@ func TestRuntimeSamplingRetriesFrozenBodyAfter429AndPartialStream(t *testing.T) 
 	session := runtimetesting.OpenSessionForStore(t, store, "")
 	const commandID = "sampling-retry-after-partial-stream"
 	const input = "original sampling input must appear once"
-	admitProviderSamplingCommand(t, store, session.ID, commandID, input)
+	runtimetesting.AdmitInput(t, store, session.ID, commandID, input)
 
 	requests := make(chan []byte, 3)
 	var count atomic.Int32
@@ -274,7 +265,7 @@ func TestRuntimeTerminalSamplingFailureLeavesNextInputUsable(t *testing.T) {
 			session := runtimetesting.OpenSessionForStore(t, store, "")
 			const failedCommandID = "permanent-sampling-failure"
 			const failedInput = "input whose provider route is rejected"
-			admitProviderSamplingCommand(t, store, session.ID, failedCommandID, failedInput)
+			runtimetesting.AdmitInput(t, store, session.ID, failedCommandID, failedInput)
 
 			requests := make(chan []byte, tc.attempts+1)
 			var count atomic.Int32
@@ -316,7 +307,7 @@ func TestRuntimeTerminalSamplingFailureLeavesNextInputUsable(t *testing.T) {
 
 			const nextCommandID = "input-after-permanent-sampling-failure"
 			const nextInput = "next accepted input remains usable"
-			admitProviderSamplingCommand(t, store, session.ID, nextCommandID, nextInput)
+			runtimetesting.AdmitInput(t, store, session.ID, nextCommandID, nextInput)
 			runtime.Wake(session.ID)
 			nextBody := receiveProviderRequest(t, requests)
 			if !strings.Contains(string(nextBody), nextInput) {
@@ -347,7 +338,7 @@ func TestRuntimeProviderBackoffReleasesPermitAndIgnoresRepeatedWake(t *testing.T
 	waitingSession := runtimetesting.OpenSessionForStore(t, store, "")
 	const waitingCommandID = "provider-waiting-command"
 	const waitingInput = "provider attempt waiting for backoff"
-	admitProviderSamplingCommand(t, store, waitingSession.ID, waitingCommandID, waitingInput)
+	runtimetesting.AdmitInput(t, store, waitingSession.ID, waitingCommandID, waitingInput)
 
 	var requestCount atomic.Int32
 	firstRequest := make(chan []byte, 1)
@@ -407,7 +398,7 @@ func TestRuntimeProviderBackoffReleasesPermitAndIgnoresRepeatedWake(t *testing.T
 
 	readySession := runtimetesting.OpenSessionForStore(t, store, "")
 	const readyCommandID = "ready-session-command"
-	admitProviderSamplingCommand(t, store, readySession.ID, readyCommandID, "separate ready Session input")
+	runtimetesting.AdmitInput(t, store, readySession.ID, readyCommandID, "separate ready Session input")
 	runtime.Wake(readySession.ID)
 	var readyBody []byte
 	select {
@@ -450,7 +441,7 @@ func TestRuntimeInterruptDuringProviderBackoffPreventsRetry(t *testing.T) {
 	store := runtimetesting.NewStore(t, integrationDatabase)
 	session := runtimetesting.OpenSessionForStore(t, store, "")
 	const commandID = "interrupted-provider-turn"
-	admitProviderSamplingCommand(t, store, session.ID, commandID, "provider request canceled by user")
+	runtimetesting.AdmitInput(t, store, session.ID, commandID, "provider request canceled by user")
 	var requestCount atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if _, err := io.Copy(io.Discard, r.Body); err != nil {
@@ -502,7 +493,7 @@ func TestRuntimeReconcilesLostProviderOwnerWithFreshSamplingContext(t *testing.T
 	session := runtimetesting.OpenSessionForStore(t, store, "")
 	const commandID = "sampling-after-owner-loss"
 	const input = "continue after provider owner loss"
-	admitProviderSamplingCommand(t, store, session.ID, commandID, input)
+	runtimetesting.AdmitInput(t, store, session.ID, commandID, input)
 	manager, _ := newFakeCodeModeManager(t)
 	priorHostID := "00000000-0000-4000-8000-000000000001"
 	if manager.InstanceID() == priorHostID {

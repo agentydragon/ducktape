@@ -15,10 +15,9 @@ def oci_cache(
     monitoring_crds: Kustomization,
     piraeus_cluster: Kustomization,
 ) -> Kustomization:
-    name = "oci-cache"
     return flux_kustomization(
         chart,
-        name,
+        "oci-cache",
         artifact,
         timeout="5m",
         # Do not delete the cache namespace if this Flux owner is removed later.

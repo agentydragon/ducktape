@@ -36,7 +36,6 @@ ts_library(
         "//agentplane/action_service/api/contracts:operator_action_service_pb",
         "//agentplane/app/frontend/actions:action_client",
         "//agentplane/app/frontend/actions:call_tool_result",
-        "//agentplane/app/frontend/transport:client",
         "//agentplane/app/frontend/transport:query",
     ],
 )

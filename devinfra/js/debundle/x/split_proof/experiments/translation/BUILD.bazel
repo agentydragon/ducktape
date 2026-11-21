@@ -572,3 +572,24 @@ js_test(
     ],
     entry_point = "footprint_reduce_test.mjs",
 )
+
+# The CoreJS model (`lean/Experiments/CoreJS`) against Node, on hand-written cases and on programs of `gen/` cut down to
+# the model's fragment: both must print the same and end the same way.
+_MODEL = "//devinfra/js/debundle/x/split_proof/experiments/model"
+
+js_test(
+    name = "corejs_differential_test",
+    args = [
+        "--count",
+        "12",
+        "--seed",
+        "1",
+    ],
+    data = glob(["gen/*.mjs"]) + [
+        _MODEL + ":sources",
+        "//:node_modules/acorn",
+        "//devinfra/js/debundle/x/split_proof/lean:corejs",
+    ],
+    entry_point = _MODEL + ":differential",
+    env = {"COREJS": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:corejs)"},
+)

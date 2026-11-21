@@ -134,7 +134,6 @@ py_library(
 py_library(
     name = "filer_db",
     srcs = ["filer_db.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s/cnpg:cluster",
@@ -148,7 +147,6 @@ py_library(
 py_library(
     name = "s3_config",
     srcs = ["s3_config.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s/external_secrets:kubernetes_store",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
@@ -165,6 +163,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":s3",
+        "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:disruption_budget",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:gateway",
