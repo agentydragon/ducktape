@@ -71,14 +71,12 @@ a wave as a group; do not impose a serial PR-and-observation cycle per workload.
   is not HPA-controlled and the observed range supports useful bounds. Apply
   `Initial` to compatible uncovered services in reviewed namespaces, including
   request gaps; leave automatic eviction as a separate choice.
-- A first broad candidate is the nine replicated Agentplane staging services
-  already in `Initial`: `actions`, `app`, `environments`, `history-service`,
-  `llm-ingress`, `mcp-edge`, `notifications`, `policy-controller`, and
-  `sessions`. Review CPU observations, startup needs and per-node headroom as a
-  cohort; preserve their current memory policies and no-eviction mode. Electric,
-  frontend, dynamic Sandboxes and other untargeted staging workloads have
-  different ownership or availability requirements and are not implicitly in
-  that cohort.
+- Review admitted CPU requests on ordinary replacements for the nine replicated
+  Agentplane staging services already expanded in
+  [#18487](https://github.com/agentydragon/ducktape/pull/18487). Track uncapped
+  recommendations and per-node headroom before raising ceilings. Review Electric,
+  frontend, and dynamic Sandboxes separately for their own availability and
+  ownership requirements.
 - In parallel, classify the larger `monitoring` and `kube-system` Initial fleets,
   MCP/application singletons, and Goldilocks-disabled namespaces. The 2026-11-21
   snapshot has 31 monitoring and 12 kube-system Initial active controllers;

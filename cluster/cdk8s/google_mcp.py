@@ -113,8 +113,12 @@ class GoogleMcpApp(Construct):
                 labels=SERVICE.pods.selector,
                 annotations=namespaces.initial_memory_request_annotations(
                     # Peak 30-day working set was 196Mi, including startup.
-                    ContainerPolicy.memory_requests_only(
-                        "server", cpu_request=_CPU_REQUEST, memory_floor="224Mi", memory_limit=_MEMORY_LIMIT
+                    ContainerPolicy.cpu_and_memory_requests_only(
+                        "server",
+                        cpu_floor=_CPU_REQUEST,
+                        cpu_ceiling="75m",
+                        memory_floor="224Mi",
+                        memory_ceiling=_MEMORY_LIMIT,
                     )
                 ),
             ),

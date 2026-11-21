@@ -429,16 +429,20 @@ def _provider_workload(chart: Chart, instance: str, *, provider_type: str, recor
     vpa_policy: ContainerPolicy | None
     match instance:
         case "anthropic" | "chatgpt" | "openai":
-            vpa_policy = ContainerPolicy.memory_requests_only(
-                "provider", cpu_request=_CPU_REQUEST, memory_floor="128Mi", memory_limit="192Mi"
+            vpa_policy = ContainerPolicy.cpu_and_memory_requests_only(
+                "provider",
+                cpu_floor=_CPU_REQUEST,
+                cpu_ceiling="125m" if instance == "chatgpt" else "75m",
+                memory_floor="128Mi",
+                memory_ceiling="192Mi",
             )
         case "blueshield":
-            vpa_policy = ContainerPolicy.memory_requests_only(
-                "provider", cpu_request=_CPU_REQUEST, memory_floor="416Mi", memory_limit="512Mi"
+            vpa_policy = ContainerPolicy.cpu_and_memory_requests_only(
+                "provider", cpu_floor=_CPU_REQUEST, cpu_ceiling="125m", memory_floor="416Mi", memory_ceiling="512Mi"
             )
         case "quest-scheduler":
-            vpa_policy = ContainerPolicy.memory_requests_only(
-                "provider", cpu_request=_CPU_REQUEST, memory_floor="576Mi", memory_limit="704Mi"
+            vpa_policy = ContainerPolicy.cpu_and_memory_requests_only(
+                "provider", cpu_floor=_CPU_REQUEST, cpu_ceiling="75m", memory_floor="576Mi", memory_ceiling="704Mi"
             )
         case _:
             vpa_policy = None
@@ -638,8 +642,8 @@ def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
             ),
         ],
         selector_name=GATEWAY,
-        vpa_policy=ContainerPolicy.memory_requests_only(
-            "gateway", cpu_request=_CPU_REQUEST, memory_floor="64Mi", memory_limit="96Mi"
+        vpa_policy=ContainerPolicy.cpu_and_memory_requests_only(
+            "gateway", cpu_floor=_CPU_REQUEST, cpu_ceiling="75m", memory_floor="64Mi", memory_ceiling="96Mi"
         ),
     )
     _service(

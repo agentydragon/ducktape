@@ -186,11 +186,12 @@ class HaMcpApp(Construct):
                 annotations={
                     **namespaces.initial_memory_request_annotations(
                         # Peak 30-day working set was 126Mi.
-                        ContainerPolicy.memory_requests_only(
+                        ContainerPolicy.cpu_and_memory_requests_only(
                             "ha-mcp",
-                            cpu_request=_CPU_REQUEST,
+                            cpu_floor=_CPU_REQUEST,
+                            cpu_ceiling="75m",
                             memory_floor="256Mi",
-                            memory_limit=f"{_BACKEND_MEMORY_LIMIT_MIB}Mi",
+                            memory_ceiling=f"{_BACKEND_MEMORY_LIMIT_MIB}Mi",
                         )
                     ),
                     "description": (
