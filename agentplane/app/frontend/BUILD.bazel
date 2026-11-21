@@ -368,8 +368,10 @@ agentplane_visual_test(
 
 ts_library(
     name = "harness_network",
+    testonly = True,
     srcs = ["harness/network.ts"],
     tsconfig = TSCONFIG,
+    deps = ["//agentplane/app/frontend/sessions/testing:electric_entity"],
 )
 
 agentplane_vitest_test(

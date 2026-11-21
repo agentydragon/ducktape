@@ -3508,19 +3508,6 @@ routes.push(
     },
   ],
   [
-    "POST",
-    /^\/upstream\/history\/v1\/sessions:batchGetSummaries$/,
-    (_match, _query, _signal, body) => {
-      const request = body === undefined ? {} : (JSON.parse(body) as { sessionIds?: string[] });
-      const wanted = new Set(request.sessionIds ?? []);
-      return {
-        summaries: THREADS_WITH_SANDBOXES.map(mapThread)
-          .filter((thread) => wanted.has(thread.metadata.threadId))
-          .map((thread) => toJson(SessionSummarySchema, thread.summary)),
-      };
-    },
-  ],
-  [
     "GET",
     /^\/upstream\/history\/v1\/sessions\/([0-9a-f-]+)\/observations$/,
     (_match, query) => historyObservationPage(query),

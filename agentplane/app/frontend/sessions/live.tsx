@@ -29,7 +29,6 @@ export type ThreadsSnapshot = {
   sandbox_uid?: string;
 };
 
-export type { ThreadListing };
 const DISABLED_CONNECTION: StreamConnection = { phase: "live", since: 0 };
 
 export const THREAD_PAGE = 50;
