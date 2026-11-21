@@ -6,6 +6,12 @@ load("//testing/frontend_visual:py_visual_test.bzl", "py_visual_test")
 
 # gazelle:exclude test_gallery_visual.py
 
+js_library(
+    name = "gallery_sort_js",
+    srcs = ["gallery_sort.js"],
+    visibility = ["//x/js_module_proof:__pkg__"],
+)
+
 py_library(
     name = "check_run",
     srcs = ["check_run.py"],

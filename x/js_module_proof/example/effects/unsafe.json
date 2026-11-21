@@ -1,0 +1,9 @@
+{
+  "kind": "effects",
+  "entry": "entry.mjs",
+  "modules": {
+    "a.mjs": { "imports": [], "statements": [0, 2] },
+    "b.mjs": { "imports": ["a.mjs"], "statements": [1] },
+    "entry.mjs": { "imports": ["b.mjs"], "statements": [] }
+  }
+}

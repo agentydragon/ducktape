@@ -1,0 +1,237 @@
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_test")
+
+js_binary(
+    name = "checker",
+    data = [
+        "Bindings.lean",
+        "Combined.lean",
+        "Counter.lean",
+        "Effects.lean",
+        "Semantics.lean",
+        "bindings.mjs",
+        "checker.mjs",
+        "combined.mjs",
+        "effects.mjs",
+        "//:node_modules/acorn",
+    ],
+    entry_point = "main.mjs",
+)
+
+js_test(
+    name = "end_to_end_test",
+    data = [
+        "Bindings.lean",
+        "Combined.lean",
+        "Counter.lean",
+        "Effects.lean",
+        "Semantics.lean",
+        "bindings.mjs",
+        "checker.mjs",
+        "combined.mjs",
+        "effects.mjs",
+        "main.mjs",
+        "//:node_modules/acorn",
+        "@lean_dist//:lean_bin",
+        "@lean_dist//:runtime",
+    ] + glob(["example/**"]),
+    entry_point = "end_to_end_test.mjs",
+    env = {"LEAN_RLOCATION": "$(rlocationpath @lean_dist//:lean_bin)"},
+    no_copy_to_bin = [
+        "@lean_dist//:lean_bin",
+        "@lean_dist//:runtime",
+    ],
+)
+
+js_test(
+    name = "corpus_test",
+    data = [
+        "Counter.lean",
+        "Effects.lean",
+        "Semantics.lean",
+        "checker.mjs",
+        "//:node_modules/acorn",
+        "@lean_dist//:lean_bin",
+        "@lean_dist//:runtime",
+    ],
+    entry_point = "corpus_test.mjs",
+    env = {"LEAN_RLOCATION": "$(rlocationpath @lean_dist//:lean_bin)"},
+    no_copy_to_bin = [
+        "@lean_dist//:lean_bin",
+        "@lean_dist//:runtime",
+    ],
+    shard_count = 4,
+)
+
+js_test(
+    name = "initialization_order_test",
+    data = [
+        "Bindings.lean",
+        "Combined.lean",
+        "Counter.lean",
+        "Effects.lean",
+        "Semantics.lean",
+        "bindings.mjs",
+        "checker.mjs",
+        "combined.mjs",
+        "effects.mjs",
+        "main.mjs",
+        "//:node_modules/acorn",
+        "@lean_dist//:lean_bin",
+        "@lean_dist//:runtime",
+    ],
+    entry_point = "initialization_order_test.mjs",
+    env = {"LEAN_RLOCATION": "$(rlocationpath @lean_dist//:lean_bin)"},
+    no_copy_to_bin = [
+        "@lean_dist//:lean_bin",
+        "@lean_dist//:runtime",
+    ],
+)
+
+js_test(
+    name = "effect_graph_corpus_test",
+    data = [
+        "Effects.lean",
+        "Semantics.lean",
+        "effects.mjs",
+        "//:node_modules/acorn",
+        "@lean_dist//:lean_bin",
+        "@lean_dist//:runtime",
+    ],
+    entry_point = "effect_graph_corpus_test.mjs",
+    env = {"LEAN_RLOCATION": "$(rlocationpath @lean_dist//:lean_bin)"},
+    no_copy_to_bin = [
+        "@lean_dist//:lean_bin",
+        "@lean_dist//:runtime",
+    ],
+    shard_count = 4,
+)
+
+js_test(
+    name = "combined_behavior_test",
+    data = [
+        "Bindings.lean",
+        "Combined.lean",
+        "Effects.lean",
+        "Semantics.lean",
+        "bindings.mjs",
+        "checker.mjs",
+        "combined.mjs",
+        "effects.mjs",
+        "main.mjs",
+        "//:node_modules/acorn",
+        "@lean_dist//:lean_bin",
+        "@lean_dist//:runtime",
+    ] + glob(["example/combined/**"]),
+    entry_point = "combined_behavior_test.mjs",
+    env = {"LEAN_RLOCATION": "$(rlocationpath @lean_dist//:lean_bin)"},
+    no_copy_to_bin = [
+        "@lean_dist//:lean_bin",
+        "@lean_dist//:runtime",
+    ],
+)
+
+js_test(
+    name = "bindings_test",
+    data = [
+        "Bindings.lean",
+        "Effects.lean",
+        "Semantics.lean",
+        "bindings.mjs",
+        "checker.mjs",
+        "combined.mjs",
+        "effects.mjs",
+        "main.mjs",
+        "//:node_modules/acorn",
+        "@lean_dist//:lean_bin",
+        "@lean_dist//:runtime",
+    ] + glob(["example/bindings/**"]),
+    entry_point = "bindings_test.mjs",
+    env = {"LEAN_RLOCATION": "$(rlocationpath @lean_dist//:lean_bin)"},
+    no_copy_to_bin = [
+        "@lean_dist//:lean_bin",
+        "@lean_dist//:runtime",
+    ],
+    shard_count = 8,
+)
+
+js_test(
+    name = "binding_graph_corpus_test",
+    data = [
+        "Bindings.lean",
+        "Effects.lean",
+        "Semantics.lean",
+        "bindings.mjs",
+        "checker.mjs",
+        "combined.mjs",
+        "effects.mjs",
+        "main.mjs",
+        "//:node_modules/acorn",
+        "@lean_dist//:lean_bin",
+        "@lean_dist//:runtime",
+    ] + glob(["example/bindings/**"]),
+    entry_point = "binding_graph_corpus_test.mjs",
+    env = {"LEAN_RLOCATION": "$(rlocationpath @lean_dist//:lean_bin)"},
+    no_copy_to_bin = [
+        "@lean_dist//:lean_bin",
+        "@lean_dist//:runtime",
+    ],
+    shard_count = 12,
+)
+
+js_test(
+    name = "fuzz_test",
+    # The Lean-backed generated graphs have exceeded the default test memory.
+    size = "large",
+    data = [
+        "Bindings.lean",
+        "Effects.lean",
+        "Semantics.lean",
+        "bindings.mjs",
+        "example/bindings/original.mjs",
+        "fuzz.mjs",
+        "real_corpus.mjs",
+        "//:node_modules/acorn",
+        "//devinfra/pr_visuals:gallery_sort_js",
+        "@lean_dist//:lean_bin",
+        "@lean_dist//:runtime",
+    ],
+    entry_point = "fuzz_test.mjs",
+    env = {
+        "LEAN_RLOCATION": "$(rlocationpath @lean_dist//:lean_bin)",
+    },
+    no_copy_to_bin = [
+        "@lean_dist//:lean_bin",
+        "@lean_dist//:runtime",
+    ],
+    shard_count = 4,
+)
+
+js_test(
+    name = "closure_test",
+    size = "medium",
+    data = [
+        "Bindings.lean",
+        "Combined.lean",
+        "Counter.lean",
+        "Effects.lean",
+        "Semantics.lean",
+        "bindings.mjs",
+        "checker.mjs",
+        "combined.mjs",
+        "effects.mjs",
+        "fuzz.mjs",
+        "main.mjs",
+        "//:node_modules/acorn",
+        "@lean_dist//:lean_bin",
+        "@lean_dist//:runtime",
+    ],
+    entry_point = "closure_test.mjs",
+    env = {
+        "LEAN_RLOCATION": "$(rlocationpath @lean_dist//:lean_bin)",
+    },
+    no_copy_to_bin = [
+        "@lean_dist//:lean_bin",
+        "@lean_dist//:runtime",
+    ],
+    shard_count = 16,
+)

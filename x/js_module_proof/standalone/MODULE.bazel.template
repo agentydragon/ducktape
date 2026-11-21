@@ -1,0 +1,29 @@
+module(name = "js_module_proof_spike")
+
+bazel_dep(name = "aspect_rules_js", version = "3.4.1")
+bazel_dep(name = "rules_nodejs", version = "6.7.5")
+
+node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node")
+node.toolchain(node_version = "22.22.2")
+
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+http_archive(
+    name = "acorn_dist",
+    build_file_content = "exports_files([\"dist/acorn.js\"], visibility = [\"//visibility:public\"])",
+    integrity = "sha512-lGq+9yr1/GuAWaVYIHRjvvySG5/4VfKIvC8EWxStPdcDh/Ka7FG3twP6v4d5BkravUilhIAsG4Qj83t02LWUPQ==",
+    strip_prefix = "package",
+    urls = ["https://registry.npmjs.org/acorn/-/acorn-8.18.0.tgz"],
+)
+
+http_archive(
+    name = "lean_dist",
+    build_file_content = """
+package(default_visibility = ["//visibility:public"])
+filegroup(name = "lean_bin", srcs = ["bin/lean"])
+filegroup(name = "runtime", srcs = glob(["bin/**", "lib/**"]))
+""",
+    sha256 = "357acb30fca2212986fdc8b83dbe88e8f5610efc060f6e3515079c56a92d276f",
+    strip_prefix = "lean-4.29.1-linux",
+    urls = ["https://github.com/leanprover/lean4/releases/download/v4.29.1/lean-4.29.1-linux.zip"],
+)
