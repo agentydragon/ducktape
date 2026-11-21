@@ -14,7 +14,6 @@ from cdk8s import Chart
 from kubernetes_asyncio import client as k8s_client
 from more_itertools import one
 from python.runfiles import Runfiles
-from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from agentplane.testing.kubernetes_apiserver import dry_run_admitted, kubernetes_apiserver, wait_until_refused
 from cluster.cdk8s.gateway import add_agent_gateway_admission
@@ -44,12 +43,7 @@ async def test_agent_route_admission(scratch_chart: Chart) -> None:
     crd = yaml.safe_load(await asyncio.to_thread(crd_path.read_text))
 
     async with kubernetes_apiserver() as server:
-        extensions = k8s_client.ApiextensionsV1Api(server.api)
-        await extensions.create_custom_resource_definition(crd)
-        async for attempt in AsyncRetrying(stop=stop_after_delay(30), wait=wait_fixed(0.1), reraise=True):
-            with attempt:
-                installed = await extensions.read_custom_resource_definition(crd["metadata"]["name"])
-                assert any(c.type == "Established" and c.status == "True" for c in installed.status.conditions or [])
+        await server.install_crds(crd)
 
         core = k8s_client.CoreV1Api(server.api)
         objects = k8s_client.CustomObjectsApi(server.api)

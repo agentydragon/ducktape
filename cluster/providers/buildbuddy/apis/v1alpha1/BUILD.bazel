@@ -51,7 +51,6 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
-        "@pypi//tenacity",
         "@rules_python//python/runfiles",
     ],
 )
