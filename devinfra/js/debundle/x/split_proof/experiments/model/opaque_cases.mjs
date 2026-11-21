@@ -15,7 +15,66 @@ import { bits } from "./to_core.mjs";
 const num = (x) => ["d", bits(x)];
 const r = (k) => ["r", k];
 
+const keyBoundaryObject = { tail: 1, 10: 10, 2: 2, "01": 1, "-0": 0, 4294967295: 5, 4294967294: 4, 0: 0 };
+const beforeReinsert = Object.getOwnPropertyNames(keyBoundaryObject);
+delete keyBoundaryObject.tail;
+keyBoundaryObject.tail = 2;
+const afterReinsert = Object.getOwnPropertyNames(keyBoundaryObject);
+
 export const opaqueCases = [
+  {
+    name: "own key array-index boundaries and string reinsertion follow Node",
+    source: `
+      const box = { tail: 1, 10: 10, 2: 2, "01": 1, "-0": 0, 4294967295: 5, 4294967294: 4, 0: 0 };
+      const [first] = [Object.getOwnPropertyNames(box)[0]];
+      delete box.tail;
+      box.tail = 2;
+      const [last] = [Object.getOwnPropertyNames(box).at(-1)];
+      console.log(first, last);
+    `,
+    scripts: {
+      "1/0": [
+        ["readVar", 2],
+        ["keys", r(2)],
+        ["initVar", 0, ["s", "0"]],
+      ],
+      "4/0": [
+        ["readVar", 2],
+        ["keys", r(2)],
+        ["initVar", 0, ["s", "tail"]],
+      ],
+    },
+    expectedKeys: { "1/0": [beforeReinsert], "4/0": [afterReinsert] },
+  },
+  {
+    name: "opaque own keys match Node ordering and do not invoke accessors",
+    source: `
+      const box = { z: 1, 7: 7, 2: 2, a: 3, get unused() { throw "getter must not run"; } };
+      const [first] = [Object.getOwnPropertyNames(box)[0]];
+      console.log(first);
+    `,
+    scripts: {
+      "1/0": [
+        ["readVar", 2],
+        ["keys", r(2)],
+        ["initVar", 0, ["s", "2"]],
+      ],
+    },
+    // Computed by Node itself, independently of CoreJS's ownKeys.
+    expectedKeys: {
+      "1/0": [
+        Object.getOwnPropertyNames({
+          z: 1,
+          7: 7,
+          2: 2,
+          a: 3,
+          get unused() {
+            throw "getter must not run";
+          },
+        }),
+      ],
+    },
+  },
   {
     name: "opaque code reaches a declaration through a captured binding",
     source: `
@@ -172,5 +231,5 @@ export const opaqueCases = [
 export const scriptsOf = (c) =>
   Object.entries(c.scripts).map(([key, steps]) => {
     const [code, part] = key.split("/").map(Number);
-    return { code, part, steps };
+    return { code, part, steps, expectedKeys: c.expectedKeys?.[key] ?? [] };
   });
