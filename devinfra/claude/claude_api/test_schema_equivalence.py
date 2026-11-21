@@ -15,7 +15,6 @@ from typing import Any
 
 import pytest
 import pytest_bazel
-from pydantic import TypeAdapter
 from python.runfiles import Runfiles
 
 from devinfra.claude.claude_api.hooks.output import HookOutput
@@ -89,16 +88,19 @@ def zod_schema() -> dict[str, Any]:
     return _load_zod_json_schema()
 
 
+@pytest.fixture(scope="module")
+def pydantic_schema() -> dict[str, Any]:
+    return inline_refs(HookOutput.model_json_schema(mode="serialization"))
+
+
 def test_zod_json_schema_loads(zod_schema: dict[str, Any]) -> None:
     props = zod_schema["properties"]
     assert "continue" in props
     assert "hookSpecificOutput" in props
 
 
-def test_top_level_structure_matches_zod(zod_schema: dict[str, Any]) -> None:
+def test_top_level_structure_matches_zod(zod_schema: dict[str, Any], pydantic_schema: dict[str, Any]) -> None:
     """Top-level properties and additionalProperties match between Zod and Pydantic."""
-    pydantic_schema = inline_refs(TypeAdapter(HookOutput).json_schema(mode="serialization"))
-
     zod_props = set(zod_schema.get("properties", {}).keys())
     pydantic_props = set(pydantic_schema.get("properties", {}).keys())
 
@@ -113,10 +115,8 @@ def test_top_level_structure_matches_zod(zod_schema: dict[str, Any]) -> None:
     assert zod_ap == pydantic_ap, f"additionalProperties mismatch: Zod={zod_ap}, Pydantic={pydantic_ap}"
 
 
-def test_common_fields_match(zod_schema: dict[str, Any]) -> None:
+def test_common_fields_match(zod_schema: dict[str, Any], pydantic_schema: dict[str, Any]) -> None:
     """Common (non-hookSpecificOutput) fields match between Zod and Pydantic."""
-    pydantic_schema = inline_refs(TypeAdapter(HookOutput).json_schema(mode="serialization"))
-
     common_fields = {"continue", "suppressOutput", "stopReason", "decision", "reason", "systemMessage"}
     for field in common_fields:
         zod_field = _normalize(zod_schema["properties"][field])
@@ -129,10 +129,9 @@ def test_common_fields_match(zod_schema: dict[str, Any]) -> None:
             )
 
 
-def test_all_zod_variants_covered(zod_schema: dict[str, Any]) -> None:
+def test_all_zod_variants_covered(zod_schema: dict[str, Any], pydantic_schema: dict[str, Any]) -> None:
     """Every Zod hookSpecificOutput variant has a Pydantic counterpart."""
     zod_variants = _extract_variants(zod_schema["properties"]["hookSpecificOutput"])
-    pydantic_schema = inline_refs(TypeAdapter(HookOutput).json_schema(mode="serialization"))
     pydantic_variants = _extract_variants(pydantic_schema["properties"]["hookSpecificOutput"])
 
     missing = set(zod_variants) - set(pydantic_variants)
@@ -142,10 +141,9 @@ def test_all_zod_variants_covered(zod_schema: dict[str, Any]) -> None:
 @pytest.mark.parametrize(
     "event_name", sorted(_extract_variants(_load_zod_json_schema()["properties"]["hookSpecificOutput"]))
 )
-def test_variant_matches_zod(zod_schema: dict[str, Any], event_name: str) -> None:
+def test_variant_matches_zod(zod_schema: dict[str, Any], pydantic_schema: dict[str, Any], event_name: str) -> None:
     """Each hookSpecificOutput variant matches between Zod and Pydantic."""
     zod_variants = _extract_variants(zod_schema["properties"]["hookSpecificOutput"])
-    pydantic_schema = inline_refs(TypeAdapter(HookOutput).json_schema(mode="serialization"))
     pydantic_variants = _extract_variants(pydantic_schema["properties"]["hookSpecificOutput"])
 
     if event_name not in pydantic_variants:

@@ -252,6 +252,7 @@ py_test(
         ":store",
         "//:conftest",
         "//devinfra/claude:conftest",
+        "//testing:sqlalchemy_engines",
         "@pypi//alembic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

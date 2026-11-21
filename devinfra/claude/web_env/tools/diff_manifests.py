@@ -1,17 +1,8 @@
 """Compare two NDJSON filesystem manifests with narrow exclusion support.
 
 Default: bit-for-bit comparison. Exclusions are loaded from a YAML/JSON config
-file and apply *very narrow* rules:
-
-  - "skip_paths": ["/var/log", "/dev"]
-      Paths under these prefixes are ignored entirely.
-
-  - "hash_may_differ": ["/opt/rbenv/versions/**", "/root/.cargo/**"]
-      Both sides must have the file, but sha256 may differ (compiled artifacts).
-
-  - "only_in_live": ["/process_api", "/usr/local/bin/environment-manager"]
-      These paths are expected to only exist in the live container
-      (proprietary binaries not reproducible from public sources).
+file (schema: `manifest.Exclusions`; categories: devinfra/claude/web_env/README.md)
+and apply *very narrow* rules.
 
 Usage:
     bazel run //devinfra/claude/web_env/tools:diff_manifests_bin -- live.ndjson built.ndjson
@@ -339,7 +330,7 @@ def _generate_pattern_section(hits: PatternHits, excl: Exclusions, total_exclude
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Compare two filesystem manifests (NDJSON or TSV)")
+    parser = argparse.ArgumentParser(description="Compare two NDJSON filesystem manifests")
     parser.add_argument("left", help="Left manifest (e.g., live container)")
     parser.add_argument("right", help="Right manifest (e.g., built container)")
     parser.add_argument("--left-label", default="live")
