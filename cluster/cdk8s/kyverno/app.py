@@ -99,11 +99,11 @@ def _values() -> dict[str, object]:
             "priorityClassName": "system-cluster-critical",
             # Peak 30-day working set was 191Mi during startup.
             "annotations": initial_request_annotations(
-                ContainerPolicy.memory_requests_only(
+                ContainerPolicy.cpu_and_memory_requests_only(
                     "controller",
-                    cpu_request=_BACKGROUND_CPU_REQUEST,
+                    cpu_floor=_BACKGROUND_CPU_REQUEST,
                     memory_floor="208Mi",
-                    memory_limit=_BACKGROUND_MEMORY_LIMIT,
+                    memory_ceiling=_BACKGROUND_MEMORY_LIMIT,
                 )
             ),
             "resources": {
@@ -136,11 +136,11 @@ def _values() -> dict[str, object]:
             "priorityClassName": "system-cluster-critical",
             # Peak 30-day working set was 123Mi, close to the existing 128Mi limit.
             "annotations": initial_request_annotations(
-                ContainerPolicy.memory_requests_only(
+                ContainerPolicy.cpu_and_memory_requests_only(
                     "controller",
-                    cpu_request=_CLEANUP_CPU_REQUEST,
+                    cpu_floor=_CLEANUP_CPU_REQUEST,
                     memory_floor="124Mi",
-                    memory_limit=_CLEANUP_MEMORY_LIMIT,
+                    memory_ceiling=_CLEANUP_MEMORY_LIMIT,
                 )
             ),
             "resources": {
@@ -154,11 +154,11 @@ def _values() -> dict[str, object]:
             "priorityClassName": "system-cluster-critical",
             # Preserve the existing 256Mi reservation. Peak 30-day working set was 204Mi.
             "annotations": initial_request_annotations(
-                ContainerPolicy.memory_requests_only(
+                ContainerPolicy.cpu_and_memory_requests_only(
                     "controller",
-                    cpu_request=_REPORTS_CPU_REQUEST,
+                    cpu_floor=_REPORTS_CPU_REQUEST,
                     memory_floor=_REPORTS_MEMORY_REQUEST,
-                    memory_limit=_REPORTS_MEMORY_LIMIT,
+                    memory_ceiling=_REPORTS_MEMORY_LIMIT,
                 )
             ),
             "resources": {

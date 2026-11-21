@@ -77,7 +77,7 @@ spec:
           maxUnavailable: 0
     backgroundController:
       annotations:
-        goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "controller", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "50m", "memory": "208Mi"}, "maxAllowed": {"cpu": "50m", "memory": "256Mi"}, "controlledResources": ["memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
+        goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "controller", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "50m", "memory": "208Mi"}, "maxAllowed": {"memory": "256Mi"}, "controlledResources": ["cpu", "memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
         goldilocks.fairwinds.com/vpa-update-mode: initial
       enabled: true
       priorityClassName: system-cluster-critical
@@ -91,7 +91,7 @@ spec:
           memory: 64Mi
     cleanupController:
       annotations:
-        goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "controller", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "10m", "memory": "124Mi"}, "maxAllowed": {"cpu": "10m", "memory": "128Mi"}, "controlledResources": ["memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
+        goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "controller", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "10m", "memory": "124Mi"}, "maxAllowed": {"memory": "128Mi"}, "controlledResources": ["cpu", "memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
         goldilocks.fairwinds.com/vpa-update-mode: initial
       enabled: true
       podDisruptionBudget:
@@ -135,7 +135,7 @@ spec:
         registry: ghcr.io
     reportsController:
       annotations:
-        goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "controller", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "100m", "memory": "256Mi"}, "maxAllowed": {"cpu": "100m", "memory": "512Mi"}, "controlledResources": ["memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
+        goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "controller", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "100m", "memory": "256Mi"}, "maxAllowed": {"memory": "512Mi"}, "controlledResources": ["cpu", "memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
         goldilocks.fairwinds.com/vpa-update-mode: initial
       enabled: true
       priorityClassName: system-cluster-critical

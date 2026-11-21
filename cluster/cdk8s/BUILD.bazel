@@ -1350,6 +1350,7 @@ py_library(
     name = "keda",
     srcs = ["keda.py"],
     deps = [
+        ":config_format",
         ":helm",
         ":manifest_roots",
         ":namespaces",
