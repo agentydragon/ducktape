@@ -1611,6 +1611,7 @@ py_library(
         ":gateway",
         ":manifest_roots",
         ":namespaces",
+        ":node_scheduling",
         ":service_ref",
         ":vpa_policy",
         "//cluster/cdk8s/providers/flux:kustomization",
