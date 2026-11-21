@@ -32,6 +32,7 @@ from cilium_envoyconfig_crds.io.cilium import (
 )
 from constructs import Construct
 
+# Aliased because this module's own `dns_egress` binds `KUBE_DNS_LABELS` to the generic rule.
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, Protocol, dns_egress as _dns_egress
 from cluster.cdk8s.service_ref import Pods, ServiceRef
 

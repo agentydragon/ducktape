@@ -59,12 +59,12 @@ py_library(
     srcs = ["buildbuddy_provider.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        ":crossplane",
         ":flux",
         ":manifest_roots",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/providers/crossplane:deploymentruntimeconfig",
         "//cluster/cdk8s/providers/crossplane:provider",
-        "//cluster/cdk8s/providers/flux:kustomization",
         "@pypi//cdk8s",
     ],
 )
