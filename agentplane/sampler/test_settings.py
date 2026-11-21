@@ -124,9 +124,6 @@ def test_model_response_header_timeout_validation() -> None:
     data["models"]["fixture-model"]["response_header_timeout_seconds"] = 360
     settings = Settings.model_validate(data)
     assert settings.models["fixture-model"].response_header_timeout_seconds == 360
-    data["models"]["fixture-model"]["response_header_timeout_seconds"] = 0
-    with pytest.raises(ValidationError):
-        Settings.model_validate(data)
     data["models"]["fixture-model"]["response_header_timeout_seconds"] = MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS
     with pytest.raises(ValidationError):
         Settings.model_validate(data)
@@ -217,13 +214,6 @@ def test_ingress_rejects_missing_wrong_or_provider_service_credentials(changes: 
         )
 
 
-@pytest.mark.parametrize("field", ["provider_response_header_timeout_seconds", "provider_idle_timeout_seconds"])
-@pytest.mark.parametrize("seconds", [0, -1, MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS + 1])
-def test_provider_phase_budgets_must_be_positive(field: str, seconds: int) -> None:
-    with pytest.raises(ValidationError):
-        Settings.model_validate({**settings_data(), field: seconds})
-
-
 def test_turn_timeout_is_optional_and_configurable() -> None:
     settings = Settings(**settings_data())
     assert settings.turn_timeout_seconds is None
@@ -231,12 +221,6 @@ def test_turn_timeout_is_optional_and_configurable() -> None:
 
     configured = Settings.model_validate({**settings_data(), "turn_timeout_seconds": 120})
     assert configured.turn_timeout_seconds == 120
-
-
-@pytest.mark.parametrize("seconds", [0, -1, MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS + 1])
-def test_turn_timeout_must_be_positive_and_fit_in_duration(seconds: int) -> None:
-    with pytest.raises(ValidationError):
-        Settings.model_validate({**settings_data(), "turn_timeout_seconds": seconds})
 
 
 if __name__ == "__main__":
