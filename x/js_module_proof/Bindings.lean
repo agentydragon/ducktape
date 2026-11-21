@@ -1102,9 +1102,8 @@ def outputDefinitions (modules : List BindingModule) : List BindingStmt :=
 
 /- For a counterexample, resolve a simple reader's imported reference using the
    actual output graph. Other operations continue to use the shared executor. -/
-/- Inlined calls carry bodies from their own modules. Until witness lowering
-   follows that module context, keep those bodies only when every import still
-   resolves to its expected declaration. -/
+/- If imports are unchanged, existing expression syntax needs no witness
+   rewriting. Otherwise each inlined call is resolved in its callee's module. -/
 def witnessedImportsStable (modules : List BindingModule) : Bool :=
   modules.all fun module => module.imports.all fun imported =>
     (importedMappings imported).all fun link =>
@@ -1113,12 +1112,18 @@ def witnessedImportsStable (modules : List BindingModule) : Bool :=
       | none => false
 
 /- Rewrite free names in a restricted expression using the actual module graph.
-   Local bindings and parameters shadow imports. Calls to another top-level
-   function are left unsupported here because its body belongs to another module. -/
+   Local bindings and parameters shadow imports. Inlined calls are checked
+   against the actual callee declaration and lowered in that module's scope. -/
 /- Fresh internal local names contain `#`, which the frontend does not admit in
    JavaScript binding names. Preserve the nearest binding when scopes shadow. -/
 def witnessedFresh (depth : Nat) (_name : String) : String :=
   String.ofList (List.replicate (depth + 1) '#')
+
+def witnessedFreshAvailable (modules : List BindingModule) (name : String) : Bool :=
+  modules.all fun module => module.statements.all fun statement => declaredName statement != some name
+
+example : witnessedFreshAvailable
+    [{ imports := [], exports := [], statements := [.variable "#" 1], assignment := [0] }] "#" = false := by decide
 
 def witnessedParameters (parameters : List String) (bound : List (String × String)) : List (String × String) :=
   (parameters.zip (List.range parameters.length)).map fun pair =>
@@ -1177,16 +1182,26 @@ def witnessedExpression (modules : List BindingModule) (index : Nat) (bound : Li
     some (.guard (← witnessedExpression modules index bound test) (← witnessedExpression modules index bound consequent) (← witnessedExpression modules index bound alternative))
   | .local name mutable initial body => do
     let fresh := witnessedFresh bound.length name
-    some (.local fresh mutable (← witnessedExpression modules index bound initial) (← witnessedExpression modules index ((name, fresh) :: bound) body))
+    if !witnessedFreshAvailable modules fresh then none else
+      some (.local fresh mutable (← witnessedExpression modules index bound initial) (← witnessedExpression modules index ((name, fresh) :: bound) body))
   | .assign name value body => do
     some (.assign (← witnessedName modules index bound name) (← witnessedExpression modules index bound value) (← witnessedExpression modules index bound body))
   | .raise value => (witnessedExpression modules index bound value).map NumericExpr.raise
   | .raisePrimitive value => some (.raisePrimitive value)
   | .argumentsNil => some .argumentsNil
-  | .invoke _ _ _ _ => none
+  | .invoke name parameters arguments body => do
+    let resolved ← resolveActualReference modules index name
+    let target ← declaredName resolved.2.2
+    let actual ← callableSyntax [resolved.2.2] target
+    if !decide (actual = (parameters, body)) then none else do
+      let renamed := witnessedParameters parameters []
+      if !renamed.all (fun binding => witnessedFreshAvailable modules binding.2) then none else
+        some (.invoke target (renamed.map Prod.snd) (← witnessedExpression modules index bound arguments)
+          (← witnessedExpression modules resolved.1 renamed.reverse body))
   | .invokeLocal name parameters arguments body => do
     let renamed := witnessedParameters parameters bound
-    some (.invokeLocal name (renamed.map Prod.snd) (← witnessedExpression modules index bound arguments) (← witnessedExpression modules index (renamed.reverse ++ bound) body))
+    if !renamed.all (fun binding => witnessedFreshAvailable modules binding.2) then none else
+      some (.invokeLocal name (renamed.map Prod.snd) (← witnessedExpression modules index bound arguments) (← witnessedExpression modules index (renamed.reverse ++ bound) body))
 
 /- The explicit cases avoid the axiom-using matcher generated for a catch-all
    that returns the original inductive value. -/
@@ -1203,12 +1218,12 @@ def witnessedOutputStatement (modules : List BindingModule) (index : Nat) : Bind
   | .thrower name value => some (.thrower name value)
   | .expressionFunction name parameters body =>
     let references := freeExpressionNames parameters body ++ expressionCalls body
-    if !(expressionCalls body).isEmpty && !witnessedImportsStable modules then none
-    else if references.all (fun reference => (witnessedName modules index [] reference) == some reference) then
+    if witnessedImportsStable modules && references.all (fun reference => (witnessedName modules index [] reference) == some reference) then
       some (.expressionFunction name parameters body)
     else do
       let renamed := witnessedParameters parameters []
-      some (.expressionFunction name (renamed.map Prod.snd) (← witnessedExpression modules index renamed.reverse body))
+      if !renamed.all (fun binding => witnessedFreshAvailable modules binding.2) then none else
+        some (.expressionFunction name (renamed.map Prod.snd) (← witnessedExpression modules index renamed.reverse body))
   | .capturedFactory name parameters locals closureParameters body => some (.capturedFactory name parameters locals closureParameters body)
   | .capturedClosure name factory arguments keys => some (.capturedClosure name factory arguments keys)
   | .capturedAlias name target => some (.capturedAlias name target)

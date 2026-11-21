@@ -370,13 +370,16 @@ modulo N, so independent workers cover the same range without overlap.
 Failure artifacts include source, assignment, generated files,
 Node observations and, if available, the validator verdict. Unexpected failures
 also include a phase and error record. Cases with a Node difference and an unknown or unvalidated verdict are retained
-for investigation; other non-failing cases are removed. A split that
+for investigation. Certified unsafe cases are retained with their Lean verdict and
+independently reproduced Node witness; `certifiedWitnesses` lists their relative
+artifact paths and calls. Other non-failing cases are removed. A split that
 is proved but differs in Node, whether mutated or unmodified, is reduced by removing statements, calls, empty
 modules and imports while preserving that failure, with the result saved under
 `minimized/`. The fuzzer keeps files only inside the chosen output directory.
 Lean checking is expensive: `--validate-every N` selects a reproducible
 approximately 1/N sample for validation while still splitting and running all
-supported cases in Node. The summary distinguishes unvalidated cases, unknowns,
+supported cases in Node. Use `--mutations disabled` to replay the same generated
+inputs and splits without deliberate output changes. The summary distinguishes unvalidated cases, unknowns,
 proved results, unsafe witnesses and Node differences. A Node difference in an
 unvalidated or unknown case is useful evidence, not itself a validator error.
 The oracle records primitive returns, thrown values and exception names, and

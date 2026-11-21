@@ -1248,18 +1248,34 @@ export function makeComposedCase(seed, index) {
       )
     );
   }
+  const crossModuleReader = index % 512 === 379;
   if (index % 64 === 59) {
-    functionNames.unshift("fuzzRelayRead");
-    const initExpressionReader = index % 512 === 315;
-    const expressionReader = index % 128 === 123 && index % 256 !== 251;
-    const body = initExpressionReader
-      ? [returnNode({ type: "BinaryExpression", operator: "+", left: id("global"), right: literal(1) })]
-      : expressionReader
-        ? [
+    if (crossModuleReader) {
+      functionNames.unshift("fuzzRelayHelper");
+      functions.unshift(
+        functionNode(
+          "fuzzRelayHelper",
+          ["parameter"],
+          [
             declaration("global1", id("parameter")),
             returnNode({ type: "BinaryExpression", operator: "+", left: id("global"), right: id("global1") }),
           ]
-        : [returnNode(id("global"))];
+        )
+      );
+    }
+    functionNames.unshift("fuzzRelayRead");
+    const initExpressionReader = index % 512 === 315;
+    const expressionReader = index % 128 === 123 && index % 256 !== 251;
+    const body = crossModuleReader
+      ? [returnNode(call(id("fuzzRelayHelper"), [id("parameter")]))]
+      : initExpressionReader
+        ? [returnNode({ type: "BinaryExpression", operator: "+", left: id("global"), right: literal(1) })]
+        : expressionReader
+          ? [
+              declaration("global1", id("parameter")),
+              returnNode({ type: "BinaryExpression", operator: "+", left: id("global"), right: id("global1") }),
+            ]
+          : [returnNode(id("global"))];
     functions.unshift(functionNode("fuzzRelayRead", expressionReader ? ["parameter"] : [], body));
   }
   const publicFunctionNames = functionNames.map((name, i) =>
@@ -1381,12 +1397,22 @@ export function makeComposedCase(seed, index) {
               },
             }
           : {}),
+        ...(crossModuleReader
+          ? { "helper.mjs": { imports: ["relay2.mjs"], statements: [prefix.length + globals.length + 1] } }
+          : {}),
         "logic.mjs": {
-          imports: [index % 16 === 11 ? "relay2.mjs" : index % 8 === 3 ? "relay.mjs" : "state.mjs"],
+          imports: [
+            index % 16 === 11 ? "relay2.mjs" : index % 8 === 3 ? "relay.mjs" : "state.mjs",
+            ...(crossModuleReader ? ["helper.mjs"] : []),
+          ],
           aliasImports: index % 4 === 0 || index % 32 === 11,
           statements: [
             ...(observeRelayAtInit ? [prefix.length + globals.length] : []),
-            ...functionNames.map((_, index) => prefix.length + globals.length + Number(observeRelayAtInit) + index),
+            ...functionNames.flatMap((_, position) =>
+              crossModuleReader && position === 1
+                ? []
+                : [prefix.length + globals.length + Number(observeRelayAtInit) + position]
+            ),
           ],
         },
         "entry.mjs": { imports: ["logic.mjs"], statements: [] },
@@ -1781,7 +1807,9 @@ export async function runFuzz({
   shards = 1,
   splitMode = "pattern",
   grammarMode = "pattern",
+  mutationMode = "enabled",
 }) {
+  if (!["enabled", "disabled"].includes(mutationMode)) throw new Error("unknown mutation mode");
   if (!["pattern", "independent"].includes(splitMode)) throw new Error("unknown split mode");
   if (!["pattern", "composed", "async"].includes(grammarMode)) throw new Error("unknown grammar mode");
   if (!Number.isSafeInteger(shards) || shards < 1 || !Number.isSafeInteger(shard) || shard < 0 || shard >= shards)
@@ -1800,6 +1828,7 @@ export async function runFuzz({
     cases: 0,
     splitMode,
     grammarMode,
+    mutationMode,
     asyncSourceExecuted: 0,
     asyncRefused: 0,
     nodeVersion: process.version,
@@ -1956,15 +1985,22 @@ export async function runFuzz({
             : makeCase(seed, index);
       const input = splitMode === "independent" ? independentSplit(generated, seed, index) : generated;
       const mutation =
-        input.grammar === "composed" && !input.independentSplit && index % 64 === 59
-          ? "renamedReexport"
-          : input.grammar === "composed" && !input.independentSplit && index % 64 === 23
-            ? "throwValue"
-            : input.grammar === "composed" && !input.independentSplit && input.hasDiscardedLiteral && index % 52 === 16
-              ? "composedEffect"
-              : !["composed", "async"].includes(input.grammar) && !input.independentSplit && index % 8 === 2
-                ? ["binding", "effect", "function", "export", "import"][Math.floor(index / 8) % 5]
-                : null;
+        mutationMode === "disabled"
+          ? null
+          : input.grammar === "composed" && !input.independentSplit && index % 64 === 59
+            ? "renamedReexport"
+            : input.grammar === "composed" && !input.independentSplit && index % 64 === 23
+              ? "throwValue"
+              : input.grammar === "composed" &&
+                  !input.independentSplit &&
+                  input.hasDiscardedLiteral &&
+                  index % 52 === 16
+                ? "composedEffect"
+                : !["composed", "async"].includes(input.grammar) && !input.independentSplit && index % 8 === 2
+                  ? ["binding", "effect", "function", "export", "import"][Math.floor(index / 8) % 5]
+                  : null;
+      if (mutationMode === "disabled" && index % 512 === 379 && input.grammar === "composed")
+        input.calls = [{ name: "fuzzRelayRead", args: [0] }];
       if (mutation === "composedEffect") input.calls = [];
       if (mutation === "throwValue") input.calls = [{ name: "fuzzThrower", args: [1] }];
       if (mutation === "renamedReexport")
@@ -2388,6 +2424,7 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.
             "--shards",
             "--splits",
             "--grammar",
+            "--mutations",
           ].includes(key)
       )
     )
@@ -2411,7 +2448,7 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.
       !opts["--output-dir"]
     )
       throw new Error(
-        "usage: fuzz.mjs --output-dir DIR [--seed UINT32] [--start N] [--cases N] [--validate-every N] [--shard N --shards N] [--splits pattern|independent] [--grammar pattern|composed|async]"
+        "usage: fuzz.mjs --output-dir DIR [--seed UINT32] [--start N] [--cases N] [--validate-every N] [--shard N --shards N] [--splits pattern|independent] [--grammar pattern|composed|async] [--mutations enabled|disabled]"
       );
     console.log(
       JSON.stringify(
@@ -2424,6 +2461,7 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.
           shards,
           splitMode: opts["--splits"] ?? "pattern",
           grammarMode: opts["--grammar"] ?? "pattern",
+          mutationMode: opts["--mutations"] ?? "enabled",
           outputDir: resolve(opts["--output-dir"]),
         }),
         null,

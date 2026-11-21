@@ -134,7 +134,19 @@ if (shards === 4 && shard === 2) {
   assert.equal(renamedRelay.renamedReexportGeneratedCases, 1);
   assert.equal(renamedRelay.renamedReexportComparedCases, 1);
   assert.equal(renamedRelay.renamedReexportProvedCases, 1);
-  for (const start of [59, 123, 187, 251, 315]) {
+  const unchangedCall = await runFuzz({
+    seed: 51981,
+    start: 379,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "composed",
+    mutationMode: "disabled",
+    validateEvery: 1,
+  });
+  assert.equal(unchangedCall.equal, 1);
+  assert.equal(unchangedCall.mutated, 0);
+  assert.equal(unchangedCall.unmodifiedVerdicts.proved, 1);
+  for (const start of [59, 123, 187, 251, 315, 379]) {
     const redirectedRelay = await runFuzz({
       seed: 51981,
       start,
@@ -146,7 +158,7 @@ if (shards === 4 && shard === 2) {
     assert.equal(redirectedRelay.mutationKinds.renamedReexport, 1);
     assert.equal(redirectedRelay.mutatedDifferent, 1);
     assert.equal(redirectedRelay.mutatedVerdicts.unsafe, 1);
-    if (start === 123) {
+    if (start === 123 || start === 379) {
       assert.deepEqual(redirectedRelay.certifiedWitnesses[0].calls, [{ name: "fuzzRelayRead", args: [0] }]);
       await access(join(process.env.TEST_TMPDIR, redirectedRelay.certifiedWitnesses[0].artifactPath, "verdict.json"));
       const witness = JSON.parse(
@@ -183,6 +195,10 @@ assert.ok(Object.values(scopedCandidate.spec.modules).filter((module) => module.
 await assert.rejects(
   runFuzz({ seed: 1, cases: 1, outputDir: process.env.TEST_TMPDIR, shard: 2, shards: 2 }),
   /shard must/
+);
+await assert.rejects(
+  runFuzz({ seed: 1, cases: 1, outputDir: process.env.TEST_TMPDIR, mutationMode: "invalid" }),
+  /unknown mutation mode/
 );
 const shrinkInput = makeCase(123, 0);
 const keptNode = JSON.stringify(shrinkInput.ast.body[0]);
