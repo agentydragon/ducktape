@@ -491,7 +491,11 @@ func (e *Executor) call(ctx context.Context, request store.ExecutionRequest, lea
 			e.wake()
 		}
 	}
-	if !tool.matches(request.Arguments) {
+	if err := tool.checkArguments(request.Arguments); err != nil {
+		if errors.Is(err, catalog.ErrPatternEvaluation) {
+			slog.WarnContext(ctx, "MCP action schema pattern could not be evaluated", "group", e.key, "tool", name)
+			return worker.Failed(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INTERNAL, "action schema could not be evaluated"), nil
+		}
 		return worker.Failed(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INCOMPATIBLE_ACTION_SCHEMA, "arguments no longer match the current tool schema"), nil
 	}
 	if err := lease.Renew(ctx); err != nil {

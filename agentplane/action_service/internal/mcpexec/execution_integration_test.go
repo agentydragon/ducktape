@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -304,5 +305,25 @@ func TestADrainLetsTheCallInFlightFinishWhileItsLeaseAndItsExecutorAreKeptAlive(
 	}
 	if ended := u.ended.Load(); ended != 1 {
 		t.Errorf("the session was ended %d times once the executor stopped", ended)
+	}
+}
+
+// A timeout checking the live schema must not be presented as a schema change or call the tool.
+func TestPatternEvaluationFailureIsInternal(t *testing.T) {
+	const schema = `{"type":"object","properties":{"value":{"not":{"pattern":"^(?=a)(a+)+$"}}}}`
+	calls := &calls{}
+	server := newServer()
+	server.AddTool(&mcp.Tool{Name: "test_tool", InputSchema: json.RawMessage(schema)}, answering(calls, textResult("unused")))
+	f, _, _ := offered(t, server, nil, executorTiming(), "test_tool")
+	args, err := json.Marshal(map[string]any{"value": strings.Repeat("a", 96) + "!"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := f.await(t, f.allowed(t, "test_tool", string(args)), action_servicepb.ActionState_ACTION_STATE_FAILED)
+	if kind := errorKind(t, request); kind != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INTERNAL {
+		t.Errorf("kind %v, want internal", kind)
+	}
+	if got := calls.made(); len(got) != 0 {
+		t.Errorf("tool called %d times", len(got))
 	}
 }

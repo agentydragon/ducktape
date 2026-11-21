@@ -70,6 +70,9 @@ require (
 	github.com/invopop/jsonschema v0.14.0
 )
 
+// Direct dependency for JSON Schema patterns in Agentplane Action Service.
+require github.com/dlclark/regexp2/v2 v2.13.2
+
 // Direct dependencies for agentplane/action_service/internal/admission/policies
 require github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 
