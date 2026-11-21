@@ -854,6 +854,9 @@ export function independentSplit(input, seed, index) {
   const entry = "entry.mjs";
   const modules = Object.fromEntries([...names, entry].map((name) => [name, { imports: [], statements: [] }]));
   const owners = [...names, entry];
+  owners.forEach((name, moduleIndex) => {
+    if ((index + moduleIndex) % 5 === 0) modules[name].aliasImports = true;
+  });
   const statements = input.ast.body.filter((node) => node.type !== "ExportNamedDeclaration");
   // Include ordered partitions with complete earlier-module imports as well as
   // unconstrained random graphs. This samples plausible splits without deriving

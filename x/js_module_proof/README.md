@@ -301,8 +301,8 @@ module and import counts, including cases that are later refused. It also counts
 the actual generation refusal messages, separate from requested split categories.
 Use `--splits independent` to repartition generated statements independently of
 their grammar and sample acyclic graphs, cycles, and deliberately duplicated
-statement assignments, and some ordered partitions with imports of every earlier
-module. The summary records requested categories, ordered partitions, and refusals;
+statement assignments, some ordered partitions with imports of every earlier
+module, and independent choices of import aliases. The summary records requested categories, ordered partitions, and refusals;
 an acyclic graph can still have missing dependencies or other invalid links.
 Use `--grammar composed` to generate bounded expression trees and nested
 returning branches and catch clauses from visible lexical names, with

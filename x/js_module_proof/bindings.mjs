@@ -1775,25 +1775,23 @@ theorem binding_aliased_future_calls (calls : ${aliasCallType}) :
       ],
     };
   }
-  if (source.mappings.some((item) => item.local !== item.public)) {
-    const original = execute(sourcePath);
-    const output = execute(resolve(out, spec.entry));
-    const name = [...new Set([...original.exports, ...output.exports])].find(
-      (item) => original.exports.includes(item) !== output.exports.includes(item)
-    );
-    if (name) {
-      const certificate =
-        witnessPrefix +
-        `
+  const original = execute(sourcePath);
+  const output = execute(resolve(out, spec.entry));
+  const name = [...new Set([...original.exports, ...output.exports])].find(
+    (item) => original.exports.includes(item) !== output.exports.includes(item)
+  );
+  if (name) {
+    const certificate =
+      witnessPrefix +
+      `
 theorem binding_export_difference :
   (bindingPublicMappings.map Prod.snd).contains ${str(name)} ≠
     (bindingOutputMappings.map Prod.snd).contains ${str(name)} := by decide
 #print axioms binding_export_difference
 `;
-      const checked = runLean(certificate);
-      if (checked.status === 0 && has(checked, "binding_export_difference"))
-        return { result: "unsafe", original, output, certificate };
-    }
+    const checked = runLean(certificate);
+    if (checked.status === 0 && has(checked, "binding_export_difference"))
+      return { result: "unsafe", original, output, certificate };
   }
   const different = `\ntheorem binding_difference : sourceBindingState bindingSource ≠ outputBindingState bindingSource bindingModules bindingEntry := by decide\n#print axioms binding_difference\n`;
   let witnessFailure = proof.stdout || proof.stderr;
@@ -1847,8 +1845,6 @@ theorem binding_export_difference :
         : (checked.stdout || checked.stderr).slice(-6000);
     return null;
   };
-  const original = execute(sourcePath);
-  const output = execute(resolve(out, spec.entry));
   if (JSON.stringify(original) !== JSON.stringify(output)) {
     const certificate = witnessed(original, output, []);
     if (certificate) return { result: "unsafe", original, output, certificate };

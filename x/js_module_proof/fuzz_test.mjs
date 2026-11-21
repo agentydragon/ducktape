@@ -216,6 +216,8 @@ if (shards === 4 && shard === 0) {
     campaign.refused
   );
   assert.equal(campaign.splitMode, "independent");
+  assert.ok(campaign.importAliasRequestedCases > 0);
+  assert.ok(campaign.importAliasGeneratedCases > 0);
   assert.deepEqual(campaign.independentRequested, { acyclic: 24, cyclic: 4, invalidAssignment: 4 });
   assert.equal(campaign.independentOrdered, 4);
   assert.ok(campaign.independentOrderedRefused <= campaign.independentOrdered);
@@ -281,6 +283,15 @@ if (shards === 4 && shard === 0) {
   assert.equal(result.parameterCases, 1);
   assert.equal(result.parameterCompared, 1);
   assert.equal(result.parameterProved, 1);
+  const changedExport = await runFuzz({
+    seed: 123,
+    start: 26,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    validateEvery: 1,
+  });
+  assert.equal(changedExport.mutationKinds.export, 1);
+  assert.equal(changedExport.mutatedVerdicts.unsafe, 1);
   const objectCase = await runFuzz({ seed: 123, start: 20, cases: 1, outputDir: process.env.TEST_TMPDIR });
   assert.equal(objectCase.objectCases, 1);
   assert.equal(objectCase.objectSourceExecuted, 1);
