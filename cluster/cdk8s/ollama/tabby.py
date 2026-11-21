@@ -100,7 +100,6 @@ def _deploy(scope: Construct, config: ConfigMap) -> None:
                         k8s.Container(
                             name=NAME,
                             image=_IMAGE,
-                            args=["tabbyapi_serve.py", "--host", "0.0.0.0"],
                             ports=[SERVICE.port.k8s_container_port()],
                             security_context=k8s.SecurityContext(
                                 allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
@@ -130,12 +129,6 @@ def _deploy(scope: Construct, config: ConfigMap) -> None:
                                 ],
                                 k8s.VolumeMount(
                                     name="config", mount_path="/app/config.yml", sub_path="config.yml", read_only=True
-                                ),
-                                k8s.VolumeMount(
-                                    name="config",
-                                    mount_path="/app/tabbyapi_serve.py",
-                                    sub_path="tabbyapi_serve.py",
-                                    read_only=True,
                                 ),
                                 *[
                                     k8s.VolumeMount(
@@ -187,7 +180,6 @@ def add_tabbyapi(scope: Construct) -> None:
         metadata=ApiObjectMetadata(name=f"{NAME}-config", namespace=NAMESPACE),
         data={
             "config.yml": (sources / "tabbyapi-config.yml").read_text(),
-            "tabbyapi_serve.py": (sources / "tabbyapi_serve.py").read_text(),
             "chat_template.jinja": (sources / "tabbyapi-chat-template.jinja").read_text(),
         },
     )

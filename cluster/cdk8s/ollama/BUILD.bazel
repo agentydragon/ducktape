@@ -76,7 +76,6 @@ py_library(
     data = [
         "tabbyapi-chat-template.jinja",
         "tabbyapi-config.yml",
-        "tabbyapi_serve.py",
     ],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
@@ -95,21 +94,4 @@ py_library(
     name = "tabby_endpoint",
     srcs = ["tabby_endpoint.py"],
     visibility = ["//cluster/cdk8s/litellm:__pkg__"],
-)
-
-py_library(
-    name = "tabbyapi_serve",
-    srcs = ["tabbyapi_serve.py"],
-    deps = ["@pypi//starlette"],
-)
-
-py_test(
-    name = "test_tabbyapi_serve",
-    srcs = ["test_tabbyapi_serve.py"],
-    deps = [
-        ":tabbyapi_serve",
-        "//:conftest",
-        "@pypi//pytest_bazel",
-        "@pypi//starlette",
-    ],
 )
