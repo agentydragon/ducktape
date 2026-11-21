@@ -178,9 +178,9 @@ Function bodies may also start with initialized `var` declarations when their
 initializers do not read a not-yet-initialized local and their names do not
 redeclare parameters. Nested or later function-scoped `var` declarations remain
 unsupported.
-An expression statement containing the literal `"use strict"` is modeled as
-a no-op: all source and emitted files are ECMAScript modules, which are already
-strict. Other string expression statements remain unsupported.
+Discarded string, number, boolean and null literals are modeled as no-ops.
+This includes `"use strict"`: all source and emitted files are ECMAScript
+modules, which are already strict. RegExp and BigInt literals remain unsupported.
 Public exports must be functions. The entry module may rename an exported
 function, including under multiple public names and captured closures. A module assignment may set `aliasImports: true` to import dependencies through
 generated public aliases while retaining their original local names. A non-entry

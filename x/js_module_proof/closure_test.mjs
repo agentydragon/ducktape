@@ -50,10 +50,18 @@ if (shard === 6) {
   assert.equal(cli("generate", directiveSource, directiveSpec, directiveOut).result, "generated");
   const proof = cli("validate", directiveSource, directiveSpec, directiveOut);
   assert.equal(proof.result, "proved under assumptions", JSON.stringify(proof));
-  assert.match(proof.certificate, /\.strictDirective/);
+  assert.match(proof.certificate, /\.discardedLiteral/);
   assert.deepEqual(execute(join(directiveOut, "entry.mjs"), ["read"]), execute(directiveSource, ["read"]));
   const file = join(directiveOut, "function.mjs");
-  await writeFile(file, (await readFile(file, "utf8")).replace('"use strict"', '"use asm"'));
+  const text = await readFile(file, "utf8");
+  await writeFile(file, text.replace('"use strict"', "true"));
+  assert.equal(cli("validate", directiveSource, directiveSpec, directiveOut).result, "proved under assumptions");
+  assert.deepEqual(execute(join(directiveOut, "entry.mjs"), ["read"]), execute(directiveSource, ["read"]));
+  await writeFile(file, text.replace('"use strict"', "[]"));
+  assert.equal(cli("validate", directiveSource, directiveSpec, directiveOut).result, "unknown");
+  await writeFile(file, text.replace('"use strict"', "/x/"));
+  assert.equal(cli("validate", directiveSource, directiveSpec, directiveOut).result, "unknown");
+  await writeFile(file, text.replace('"use strict"', "1n"));
   assert.equal(cli("validate", directiveSource, directiveSpec, directiveOut).result, "unknown");
 }
 if (shard === 7) {

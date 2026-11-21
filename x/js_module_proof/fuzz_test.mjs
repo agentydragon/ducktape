@@ -24,9 +24,9 @@ if (shards === 4 && shard === 1) {
   assert.equal(relay.reexportRelayGeneratedCases, 1);
   assert.equal(relay.reexportRelayComparedCases, 1);
   assert.equal(relay.reexportRelayProvedCases, 1);
-  assert.equal(relay.strictDirectiveCases, 1);
-  assert.equal(relay.strictDirectiveComparedCases, 1);
-  assert.equal(relay.strictDirectiveProvedCases, 1);
+  assert.equal(relay.discardedLiteralCases, 1);
+  assert.equal(relay.discardedLiteralComparedCases, 1);
+  assert.equal(relay.discardedLiteralProvedCases, 1);
 }
 assert.deepEqual(makeCase(123, 42), makeCase(123, 42));
 assert.notDeepEqual(makeCase(123, 42), makeCase(124, 42));
@@ -475,6 +475,10 @@ console.log(JSON.stringify(bulk));
 // Run structural sampling after the Lean-backed cases to limit peak memory.
 const parse = createRequire(import.meta.url)(process.env.JS_MODULE_PROOF_ACORN ?? "acorn").parse;
 const composedPrograms = Array.from({ length: 128 }, (_, i) => makeComposedCase(917, i));
+assert.deepEqual(
+  new Set(composedPrograms.filter((item) => item.hasDiscardedLiteral).map((item) => item.ast.body[0].expression.value)),
+  new Set(["use strict", true, null, 42])
+);
 assert.ok(new Set(composedPrograms.map((item) => item.source)).size > 120);
 assert.ok(composedPrograms.some((item) => item.source.includes(" as public_calculate")));
 assert.ok(composedPrograms.some((item) => item.source.includes(" as second_calculate")));

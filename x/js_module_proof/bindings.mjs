@@ -967,9 +967,11 @@ function candidateStatement(node, functions) {
   if (
     node.type === "ExpressionStatement" &&
     node.expression.type === "Literal" &&
-    node.expression.value === "use strict"
+    !node.expression.regex &&
+    !node.expression.bigint &&
+    (node.expression.value === null || ["string", "boolean", "number"].includes(typeof node.expression.value))
   )
-    return { kind: "strictDirective" };
+    return { kind: "discardedLiteral" };
   try {
     const recognized = statement(node);
     if (recognized.kind === "closure" && functions?.has(recognized.factory)) {
@@ -1473,8 +1475,8 @@ function leanExpression(expression) {
 }
 function leanStatement(item) {
   switch (item.kind) {
-    case "strictDirective":
-      return ".strictDirective";
+    case "discardedLiteral":
+      return ".discardedLiteral";
     case "variable":
     case "hoistedVariable":
       return `.${item.kind} ${str(item.name)} ${item.value}`;
