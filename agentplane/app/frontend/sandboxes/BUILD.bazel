@@ -328,11 +328,8 @@ agentplane_vitest_test(
         ":list",
         ":live",
         "//:node_modules/@bufbuild/protobuf",
-        "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
         "//:node_modules/react",
-        "//:node_modules/react-dom",
         "//:node_modules/react-router",
         "//:node_modules/vitest",
         "//agentplane/app:app_service_pb",
@@ -341,6 +338,7 @@ agentplane_vitest_test(
         "//agentplane/app/frontend/testing:watch",
         "//agentplane/environments/v1:environment_service_pb",
         "//agentplane/proto:session_pb",
+        "//util/frontend:react_test_utils",
     ],
 )
 
