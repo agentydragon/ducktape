@@ -1440,9 +1440,14 @@ function generateFiles(source, spec, names) {
                   (statement) =>
                     statement.type === "VariableDeclaration" ||
                     (statement.type === "ExpressionStatement" &&
-                      statement.expression.type === "AssignmentExpression" &&
-                      ["=", "+="].includes(statement.expression.operator) &&
-                      statement.expression.left.type === "Identifier")
+                      ((statement.expression.type === "AssignmentExpression" &&
+                        ["=", "+=", "*=", "-=", "%=", "/=", "&=", "|=", "^=", ">>>=", "<<=", ">>="].includes(
+                          statement.expression.operator
+                        ) &&
+                        statement.expression.left.type === "Identifier") ||
+                        (statement.expression.type === "UpdateExpression" &&
+                          ["++", "--"].includes(statement.expression.operator) &&
+                          statement.expression.argument.type === "Identifier")))
                 ),
               "local import renaming supports only local declarations and assignments"
             );
@@ -1486,8 +1491,10 @@ function generateFiles(source, spec, names) {
             for (const item of prefix) {
               if (item.type === "VariableDeclaration") visit(item.declarations[0].init);
               else {
-                check(mutableNames.has(item.expression.left.name), "cannot write an imported or immutable binding");
-                visit(item.expression.right);
+                const target =
+                  item.expression.type === "AssignmentExpression" ? item.expression.left : item.expression.argument;
+                check(mutableNames.has(target.name), "cannot write an imported or immutable binding");
+                if (item.expression.type === "AssignmentExpression") visit(item.expression.right);
               }
             }
             visit(statements.at(-1).argument);

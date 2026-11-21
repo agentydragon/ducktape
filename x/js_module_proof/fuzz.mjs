@@ -1041,7 +1041,17 @@ export function makeLocalAliasCase(seed, index) {
     ? [
         localDeclaration,
         ...(index >= 205 && index % 96 === 13
-          ? [expr({ type: "AssignmentExpression", operator: "+=", left: id("offset"), right: id("numericRight") })]
+          ? [
+              expr({
+                type: "AssignmentExpression",
+                operator: index >= 301 ? "*=" : "+=",
+                left: id("offset"),
+                right: id("numericRight"),
+              }),
+              ...(index >= 301
+                ? [expr({ type: "UpdateExpression", operator: "++", argument: id("offset"), prefix: false })]
+                : []),
+            ]
           : []),
         returnNode({ type: "BinaryExpression", operator: "+", left: id("offset"), right: numericBody }),
       ]

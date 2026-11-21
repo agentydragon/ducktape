@@ -369,6 +369,13 @@ if (runSection(0)) {
   const unsupported = cli("generate", expressionSource, expressionSpec, join(root, "unsupported-renamed-local-out"));
   assert.equal(unsupported.value.result, "unknown");
   assert.match(unsupported.value.reason, /cannot write an imported (?:or immutable )?binding/);
+  await writeFile(
+    expressionSource,
+    `let value = 3;\nfunction read(arg) { let local = arg; value++; return local; }\nexport { read };\n`
+  );
+  const importedUpdate = cli("generate", expressionSource, expressionSpec, join(root, "imported-update-out"));
+  assert.equal(importedUpdate.value.result, "unknown");
+  assert.match(importedUpdate.value.reason, /cannot write an imported (?:or immutable )?binding/);
 
   const observedSource = join(root, "observed-renamed-local-source.mjs");
   const observedSpec = join(root, "observed-renamed-local-spec.json");

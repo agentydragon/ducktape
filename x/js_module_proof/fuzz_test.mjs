@@ -163,6 +163,32 @@ if (shards === 4 && shard === 2) {
   assert.equal(unchangedWrite.equal, 1);
 }
 if (shards === 4 && shard === 3) {
+  const changedCompound = await runFuzz({
+    seed: 773,
+    start: 301,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "alias",
+    validateEvery: 1,
+  });
+  const compoundSource = makeLocalAliasCase(773, 301).source;
+  assert.match(compoundSource, /offset \*= numericRight/);
+  assert.match(compoundSource, /offset\+\+/);
+  assert.equal(changedCompound.mutatedDifferent, 1);
+  assert.equal(changedCompound.mutatedVerdicts.unsafe, 1);
+  const unchangedCompound = await runFuzz({
+    seed: 773,
+    start: 301,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "alias",
+    mutationMode: "disabled",
+    validateEvery: 1,
+  });
+  assert.equal(unchangedCompound.localImportAliasProvedCases, 1);
+  assert.equal(unchangedCompound.equal, 1);
+}
+if (shards === 4 && shard === 3) {
   const changedValue = await runFuzz({
     seed: 773,
     start: 49,
