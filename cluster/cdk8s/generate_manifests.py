@@ -1014,12 +1014,17 @@ def generate_manifests(root: Path) -> None:
         description="Make Route 53 credentials available to the Crossplane domain delegation Workspace.",
     )
     route53_domain_delegation_artifact = artifact(route53_domain_delegation.NAME, route53_domain_delegation.OUTPUT_DIR)
-    route53_domain_delegation.resources(
+    opentofu.workspace_kustomization(
         flux_chart,
+        route53_domain_delegation.NAME,
         write_directory(root, route53_domain_delegation_artifact, route53_domain_delegation.chart),
-        crossplane_opentofu_provider_kustomization,
-        tofu_state_db_kustomization,
-        dns_automation_kustomization,
+        depends_on=[
+            crossplane_opentofu_provider_kustomization,
+            tofu_state_db_kustomization,
+            dns_automation_kustomization,
+        ],
+        timeout="10m",
+        description="Manage Route 53 domain registration and nameserver delegation using the existing dns_records state.",
     )
     external_dns_artifact = artifact("external-dns", external_dns.OUTPUT_DIR)
     external_dns_kustomization = flux.flux_kustomization(
@@ -1169,11 +1174,13 @@ def generate_manifests(root: Path) -> None:
     forgejo_haku_state_artifact = artifact(
         forgejo_crossplane_roots.HAKU_STATE_NAME, forgejo_crossplane_roots.output_dir("haku-state")
     )
-    forgejo_haku_state_kustomization = forgejo_crossplane_roots.resources(
+    forgejo_haku_state_kustomization = opentofu.workspace_kustomization(
         flux_chart,
+        forgejo_crossplane_roots.HAKU_STATE_NAME,
         write_directory(root, forgejo_haku_state_artifact, forgejo_crossplane_roots.haku_state_chart),
         forgejo_gitops_artifact,
-        module_name="haku-state",
+        timeout="10m",
+        description="Manage the haku-state Forgejo root with its existing OpenTofu state.",
         depends_on=[
             crossplane_opentofu_provider_kustomization,
             tofu_state_db_kustomization,
@@ -1183,11 +1190,13 @@ def generate_manifests(root: Path) -> None:
     forgejo_budget_ledger_artifact = artifact(
         forgejo_crossplane_roots.BUDGET_LEDGER_NAME, forgejo_crossplane_roots.output_dir("budget-ledger")
     )
-    forgejo_crossplane_roots.resources(
+    opentofu.workspace_kustomization(
         flux_chart,
+        forgejo_crossplane_roots.BUDGET_LEDGER_NAME,
         write_directory(root, forgejo_budget_ledger_artifact, forgejo_crossplane_roots.budget_ledger_chart),
         forgejo_gitops_artifact,
-        module_name="budget-ledger",
+        timeout="10m",
+        description="Manage the budget-ledger Forgejo root with its existing OpenTofu state.",
         depends_on=[
             crossplane_opentofu_provider_kustomization,
             tofu_state_db_kustomization,
@@ -1197,11 +1206,13 @@ def generate_manifests(root: Path) -> None:
     forgejo_cpap_data_artifact = artifact(
         forgejo_crossplane_roots.CPAP_DATA_NAME, forgejo_crossplane_roots.output_dir("cpap-data")
     )
-    forgejo_crossplane_roots.resources(
+    opentofu.workspace_kustomization(
         flux_chart,
+        forgejo_crossplane_roots.CPAP_DATA_NAME,
         write_directory(root, forgejo_cpap_data_artifact, forgejo_crossplane_roots.cpap_data_chart),
         forgejo_gitops_artifact,
-        module_name="cpap-data",
+        timeout="10m",
+        description="Manage the cpap-data Forgejo root with its existing OpenTofu state.",
         depends_on=[
             crossplane_opentofu_provider_kustomization,
             tofu_state_db_kustomization,
@@ -1211,11 +1222,13 @@ def generate_manifests(root: Path) -> None:
     forgejo_finance_agent_artifact = artifact(
         forgejo_crossplane_roots.FINANCE_AGENT_NAME, forgejo_crossplane_roots.output_dir("finance-agent")
     )
-    forgejo_crossplane_roots.resources(
+    opentofu.workspace_kustomization(
         flux_chart,
+        forgejo_crossplane_roots.FINANCE_AGENT_NAME,
         write_directory(root, forgejo_finance_agent_artifact, forgejo_crossplane_roots.finance_agent_chart),
         forgejo_gitops_artifact,
-        module_name="finance-agent",
+        timeout="10m",
+        description="Manage the finance-agent Forgejo root with its existing OpenTofu state.",
         depends_on=[
             crossplane_opentofu_provider_kustomization,
             tofu_state_db_kustomization,
@@ -1226,11 +1239,13 @@ def generate_manifests(root: Path) -> None:
         forgejo_crossplane_roots.AGENTYDRAGON_REPOS_NAME,
         forgejo_crossplane_roots.output_dir("forgejo-agentydragon-repos"),
     )
-    forgejo_crossplane_roots.resources(
+    opentofu.workspace_kustomization(
         flux_chart,
+        forgejo_crossplane_roots.AGENTYDRAGON_REPOS_NAME,
         write_directory(root, forgejo_agentydragon_repos_artifact, forgejo_crossplane_roots.agentydragon_repos_chart),
         forgejo_gitops_artifact,
-        module_name="forgejo-agentydragon-repos",
+        timeout="10m",
+        description="Manage the forgejo-agentydragon-repos Forgejo root with its existing OpenTofu state.",
         depends_on=[
             crossplane_opentofu_provider_kustomization,
             tofu_state_db_kustomization,
@@ -1240,11 +1255,13 @@ def generate_manifests(root: Path) -> None:
     crossplane_forgejo_agentydragon_artifact = artifact(
         crossplane_forgejo_agentydragon.NAME, crossplane_forgejo_agentydragon.OUTPUT_DIR
     )
-    crossplane_forgejo_agentydragon.resources(
+    opentofu.workspace_kustomization(
         flux_chart,
+        crossplane_forgejo_agentydragon.NAME,
         write_directory(root, crossplane_forgejo_agentydragon_artifact, crossplane_forgejo_agentydragon.chart),
-        crossplane_opentofu_provider_kustomization,
-        tofu_state_db_kustomization,
+        depends_on=[crossplane_opentofu_provider_kustomization, tofu_state_db_kustomization],
+        timeout="10m",
+        description="Manage Forgejo SSH keys with their existing OpenTofu state.",
     )
     monitoring_stack_artifact = artifact("monitoring-stack", monitoring_stack.OUTPUT_DIR)
     monitoring_stack_kustomization = monitoring_stack.monitoring_stack(

@@ -5,7 +5,6 @@ from __future__ import annotations
 from cdk8s import App, Chart
 
 from cluster.cdk8s import opentofu, terraform
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "crossplane-forgejo-agentydragon"
@@ -28,18 +27,3 @@ def chart(app: App) -> Chart:
         management_policies=["Observe", "Create", "Update"],
     )
     return chart
-
-
-def resources(
-    flux_chart: Chart, directory: RenderedDirectory, opentofu_provider: Kustomization, tofu_state_db: Kustomization
-) -> Kustomization:
-    """Apply the Workspace after its provider and state backend are ready."""
-    return flux_kustomization(
-        flux_chart,
-        NAME,
-        directory,
-        timeout="10m",
-        depends_on=flux_kustomization_depends_on_many(opentofu_provider, tofu_state_db),
-        health_check_exprs=[opentofu.WORKSPACE_HEALTH_CHECK_EXPR],
-        description="Manage Forgejo SSH keys with their existing OpenTofu state.",
-    )

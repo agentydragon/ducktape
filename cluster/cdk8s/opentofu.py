@@ -40,7 +40,7 @@ from cluster.cdk8s.tofu_state import db
 NAMESPACE = "crossplane-system"
 RUNTIME_SERVICE_ACCOUNT = "crossplane-opentofu"
 KUBECONFIG_DIRECTORY = "/etc/opentofu/kubernetes"
-WORKSPACE_HEALTH_CHECK_EXPR = KustomizationSpecHealthCheckExprs(
+_WORKSPACE_HEALTH_CHECK_EXPR = KustomizationSpecHealthCheckExprs(
     api_version="opentofu.upbound.io/v1beta1",
     kind="Workspace",
     current=(
@@ -207,21 +207,30 @@ def workspace_kustomization(
     chart: Chart,
     name: str,
     directory: RenderedDirectory,
-    source: ArtifactGeneratorSpecArtifacts,
+    source: ArtifactGeneratorSpecArtifacts | None = None,
     *,
     depends_on: Sequence[Kustomization],
     timeout: str = "20m",
+    description: str | None = None,
 ) -> Kustomization:
-    """Create a Workspace Kustomization that consumes its ExternalArtifact path."""
+    """Use the directory's artifact unless a shared parent artifact supplies it."""
+    source_ref: RenderedDirectory | KustomizationSpecSourceRef = directory
+    path = None
+    decryption = None
+    if source is not None:
+        source_ref = KustomizationSpecSourceRef(
+            kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=source.name, namespace=flux.NAMESPACE
+        )
+        path = f"./{artifact_directory(directory.artifact)}"
+        decryption = directory.decryption
     return flux_kustomization(
         chart,
         name,
-        KustomizationSpecSourceRef(
-            kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=source.name, namespace=flux.NAMESPACE
-        ),
-        path=f"./{artifact_directory(directory.artifact)}",
-        decryption=directory.decryption,
+        source_ref,
+        path=path,
+        decryption=decryption,
         timeout=timeout,
         depends_on=flux_kustomization_depends_on_many(*depends_on),
-        health_check_exprs=[WORKSPACE_HEALTH_CHECK_EXPR],
+        health_check_exprs=[_WORKSPACE_HEALTH_CHECK_EXPR],
+        description=description,
     )
