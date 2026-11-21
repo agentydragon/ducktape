@@ -1023,7 +1023,8 @@ export function makeLocalAliasCase(seed, index) {
       consequent: { type: "BinaryExpression", operator: "+", left: id("numericLeft"), right: literal(1) },
       alternate: id("numericRight"),
     },
-  ][Math.floor(index / 12) % 4];
+    { type: "LogicalExpression", operator: "||", left: id("numericLeft"), right: id("numericRight") },
+  ][Math.floor(index / 12) % 5];
   const numericParameters = index % 8 !== 5 ? [] : index % 16 === 13 ? ["numericOther"] : ["argument", "otherArgument"];
   const numericArguments = numericParameters.map((_, index) => index + 1);
   const numericBody = numericParameters.reduce(

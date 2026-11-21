@@ -90,6 +90,30 @@ if (shards === 4 && shard === 0) {
   assert.equal(unchangedUpdate.localImportAliasProvedCases, 1);
   assert.equal(unchangedUpdate.equal, 1);
 }
+if (shards === 4 && shard === 3) {
+  const changedValue = await runFuzz({
+    seed: 773,
+    start: 49,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "alias",
+    validateEvery: 1,
+  });
+  assert.match(makeLocalAliasCase(773, 49).source, /return \(numericLeft \|\| numericRight\)/);
+  assert.equal(changedValue.mutatedDifferent, 1);
+  assert.equal(changedValue.mutatedVerdicts.unsafe, 1);
+  const unchangedValue = await runFuzz({
+    seed: 773,
+    start: 49,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "alias",
+    mutationMode: "disabled",
+    validateEvery: 1,
+  });
+  assert.equal(unchangedValue.localImportAliasProvedCases, 1);
+  assert.equal(unchangedValue.equal, 1);
+}
 if (shards === 4 && (shard === 2 || shard === 3)) {
   const start = shard === 2 ? 13 : 25;
   const changedNumeric = await runFuzz({

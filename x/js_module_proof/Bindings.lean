@@ -1244,7 +1244,8 @@ def witnessedExpressionFuel (modules : List BindingModule) : Nat → Nat → Lis
   | fuel + 1, index, bound, .guard test consequent alternative => do
     some (.guard (← witnessedExpressionFuel modules fuel index bound test) (← witnessedExpressionFuel modules fuel index bound consequent) (← witnessedExpressionFuel modules fuel index bound alternative))
   | fuel + 1, index, bound, .local name mutable initial body => do
-    let fresh := witnessedFresh bound.length name
+    let identitySafe := witnessedFreshAvailable modules name && !(bound.any fun binding => binding.2 == name)
+    let fresh := if identitySafe then name else witnessedFresh bound.length name
     if !witnessedFreshAvailable modules fresh then none else
       some (.local fresh mutable (← witnessedExpressionFuel modules fuel index bound initial) (← witnessedExpressionFuel modules fuel index ((name, fresh) :: bound) body))
   | fuel + 1, index, bound, .assign name value body => do
@@ -1273,7 +1274,19 @@ def witnessedExpressionFuel (modules : List BindingModule) : Nat → Nat → Lis
 def witnessedExpression (modules : List BindingModule) (index : Nat) (bound : List (String × String)) (expression : NumericExpr) : Option NumericExpr :=
   witnessedExpressionFuel modules 1024 index bound expression
 
-/- Pure expressions have no local binders to alpha-rename. -/
+/- A local that could capture a resolved global or an enclosing local is
+   renamed instead of being retained. -/
+example : witnessedExpression
+    [{ imports := [], exports := [], statements := [.variable "x" 1], assignment := [0] }]
+    0 [] (.local "x" false (.literal 0) (.name "x")) =
+    some (.local "#" false (.literal 0) (.name "#")) := by decide
+
+example : witnessedExpression [] 0 [("outer", "x")]
+    (.local "x" false (.literal 0) (.name "x")) =
+    some (.local "##" false (.literal 0) (.name "##")) := by decide
+
+/- Pure expressions may contain immutable local bindings, including frontend-
+   generated temporaries for short-circuit values. -/
 def simpleAliasNumericExpr : NumericExpr → Bool
   | .literal _ => true
   | .name _ => true
@@ -1296,7 +1309,8 @@ def simpleAliasNumericExpr : NumericExpr → Bool
   | .finally _ _ => false
   | .catchError _ _ => false
   | .followedBy _ _ => false
-  | .local _ _ _ _ => false
+  | .local _ mutable initial body =>
+    !mutable && simpleAliasNumericExpr initial && simpleAliasNumericExpr body
   | .assign _ _ _ => false
   | .raise _ => false
   | .raisePrimitive _ => false

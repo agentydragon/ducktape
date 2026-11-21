@@ -588,6 +588,35 @@ if (runSection(2)) {
   ];
   assert.deepEqual(execute(logicalSource, logicalCalls), { events: [], results: [3, 5] });
   assert.deepEqual(execute(join(logicalOut, "entry.mjs"), logicalCalls), { events: [], results: [3, 5] });
+
+  const logicalValueSource = join(root, "logical-value-alias-source.mjs");
+  const logicalValueSpec = join(root, "logical-value-alias-spec.json");
+  const logicalValueOut = join(root, "logical-value-alias-out");
+  await writeFile(
+    logicalValueSource,
+    `let value = 0;\nlet other = 3;\nfunction compute(p) { return value || p; }\nexport { compute };\n`
+  );
+  generatedSpec.modules["state.mjs"].statements = [0, 1];
+  generatedSpec.modules["logic.mjs"].statements = [2];
+  await writeFile(logicalValueSpec, JSON.stringify(generatedSpec));
+  assert.equal(cli("generate", logicalValueSource, logicalValueSpec, logicalValueOut).value.result, "generated");
+  const logicalValueState = join(logicalValueOut, "state.mjs");
+  await writeFile(logicalValueState, (await readFile(logicalValueState, "utf8")) + "export { other };\n");
+  const logicalValue = cli("validate", logicalValueSource, logicalValueSpec, logicalValueOut).value;
+  assert.equal(logicalValue.result, "proved under assumptions", JSON.stringify(logicalValue));
+  assert.deepEqual(execute(logicalValueSource, logicalCalls), { events: [], results: [0, 2] });
+  assert.deepEqual(execute(join(logicalValueOut, "entry.mjs"), logicalCalls), { events: [], results: [0, 2] });
+  const logicalValueLogic = join(logicalValueOut, "logic.mjs");
+  const logicalValueText = await readFile(logicalValueLogic, "utf8");
+  assert.match(logicalValueText, /value as __split_local_0/);
+  await writeFile(logicalValueLogic, logicalValueText.replace("value as __split_local_0", "other as __split_local_0"));
+  const logicalValueRedirect = cli("validate", logicalValueSource, logicalValueSpec, logicalValueOut).value;
+  assert.equal(logicalValueRedirect.result, "unsafe", JSON.stringify(logicalValueRedirect));
+  assert.deepEqual(execute(logicalValueSource, logicalValueRedirect.calls), { events: [], results: [0] });
+  assert.deepEqual(execute(join(logicalValueOut, "entry.mjs"), logicalValueRedirect.calls), {
+    events: [],
+    results: [3],
+  });
 }
 
 if (runSection(0)) {
