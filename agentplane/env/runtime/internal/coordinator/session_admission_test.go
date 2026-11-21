@@ -604,11 +604,7 @@ func TestCloseSettlesAfterInitialOperationPublicationFailure(t *testing.T) {
 	if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("failed initial operation launched the native harness: stat err=%v", err)
 	}
-	owner, err := openTestRuntimeStore(r.config.StateDir)
-	if err != nil {
-		t.Fatalf("settled cleanup retained the environment owner: %v", err)
-	}
-	_ = owner.Close()
+	requireOwnerReleased(t, r.config.StateDir, "settled cleanup retained the environment owner")
 }
 
 func TestCloseReportsTeardownOperationPublicationFailure(t *testing.T) {
