@@ -26,7 +26,7 @@ export async function sweep(label, programs, { premises, runs, jobs, keep, timeo
     invalid: {},
     units: 0,
     changed: 0,
-    findings: { unwritten: 0, unlisted: 0, global: 0, printed: 0, "foreign-definition": 0 },
+    findings: { unwritten: 0, unlisted: 0, global: 0, printed: 0, "foreign-definition": 0, crash: 0 },
     withFindings: [],
     tail: 0,
     patchers: 0,
@@ -72,7 +72,7 @@ export function print(tally) {
   const f = tally.findings;
   console.log(
     `${tally.label}: ${tally.valid}/${tally.programs} valid inputs, ${tally.units} units, ${tally.changed} changes seen; ` +
-      `unwritten ${f.unwritten}, unlisted ${f.unlisted}, global ${f.global}, printed ${f.printed}, foreign definitions ${f["foreign-definition"]}; ` +
+      `unwritten ${f.unwritten}, unlisted ${f.unlisted}, global ${f.global}, printed ${f.printed}, foreign definitions ${f["foreign-definition"]}, crashes of lower ${f.crash}; ` +
       `${tally.tail} bindings changed after the last unit; ${tally.patchers} programs patch a standard object (premise P1)`
   );
   for (const [reason, n] of Object.entries(tally.invalid)) console.log(`    ${n} not valid: ${reason}`);

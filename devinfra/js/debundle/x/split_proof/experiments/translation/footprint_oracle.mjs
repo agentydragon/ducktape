@@ -142,6 +142,9 @@ async function runOnce(text, dir, tag, timeoutMs) {
   return { report };
 }
 
+/** `lower` ran and did not finish: an exit code other than 0, or a signal (the analysis ran out of stack, say). */
+export class LowerFailure extends Error {}
+
 /** The footprints `lower` computes for the program, one per unit. */
 export function footprintsOf(file, { lower = defaultLower(), premises = { noWorldHooks: true }, dir }) {
   const bundle = path.join(dir, "bundle.json");
@@ -149,7 +152,8 @@ export function footprintsOf(file, { lower = defaultLower(), premises = { noWorl
   writeFileSync(bundle, JSON.stringify(frontBundle(file)));
   writeFileSync(premisesFile, JSON.stringify(premises));
   const r = spawnSync(lower, [bundle, "--premises", premisesFile], { encoding: "utf8", maxBuffer: 1 << 28 });
-  if (r.status !== 0) throw new Error(`lower exited ${r.status}: ${r.stderr}`);
+  if (r.error) throw r.error;
+  if (r.status !== 0) throw new LowerFailure(`lower exited ${r.status ?? r.signal}: ${r.stderr}`);
   return r.stdout
     .trim()
     .split("\n")
@@ -162,6 +166,7 @@ export function footprintsOf(file, { lower = defaultLower(), premises = { noWorl
  * Kinds: `unwritten` (a binding changed, not declared or written by the unit, and the unit is not an effect),
  * `unlisted` (the same, for an effect), `global` (a global added or changed by a unit that is not an effect), `printed`
  * (output by a unit that is not an effect), `foreign-definition` (a binding initialized by a unit that does not declare it).
+ * `checkProgram` adds `crash`: `lower` itself did not finish on a valid program.
  */
 export function compare(units, footprints, report) {
   const findings = [];
@@ -230,7 +235,24 @@ export async function checkProgram(
     if (seen.invalid) return seen;
     const original = path.join(dir, "program.mjs");
     writeFileSync(original, source);
-    const footprints = footprintsOf(original, { lower, premises, dir });
+    let footprints;
+    try {
+      footprints = footprintsOf(original, { lower, premises, dir });
+    } catch (error) {
+      if (!(error instanceof LowerFailure)) throw error;
+      // the analysis itself fails on a valid program: a finding about it, with no footprint to compare
+      const name = error.message.split("\n").filter(Boolean).slice(0, 2).join(" | ");
+      return {
+        units: seen.units.length,
+        names: seen.names.length,
+        changed: 0,
+        findings: [{ unit: -1, kind: "crash", name, source: "" }],
+        tail: seen.report.tail,
+        patched: seen.report.patched,
+        footprints: [],
+        report: seen.report,
+      };
+    }
     if (footprints.length !== seen.units.length)
       throw new Error(`the oracle sees ${seen.units.length} units, lower ${footprints.length}`);
     return {
@@ -272,7 +294,7 @@ async function main() {
     console.log(
       `${result.units} units, ${result.names} bindings, ${result.changed} changes seen; ` +
         `unwritten ${count("unwritten")}, unlisted ${count("unlisted")}, global ${count("global")}, printed ${count("printed")}, ` +
-        `foreign definitions ${count("foreign-definition")}; ${result.tail.length} bindings changed after the last unit`
+        `foreign definitions ${count("foreign-definition")}, crashes of lower ${count("crash")}; ${result.tail.length} bindings changed after the last unit`
     );
     if (result.patched.length > 0)
       console.log(`  premise P1 does not hold: the program patches ${result.patched.slice(0, 5).join(", ")}`);

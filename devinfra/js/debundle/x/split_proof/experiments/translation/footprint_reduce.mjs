@@ -4,8 +4,8 @@
 //
 // The program is read one unit per line (what `gen/` writes). A candidate is the program without some of the lines; it
 // keeps the finding if it is still a valid input (it completes and is deterministic) and the unit with the same text is
-// still reported with the same kind and name. `reduceLines` is delta debugging over the lines. Only whole lines are
-// removed: shrinking what is inside a unit is left to a person.
+// still reported with the same kind and name. A `crash` of `lower` belongs to no unit: any crash keeps it. `reduceLines` is
+// delta debugging over the lines. Only whole lines are removed: shrinking what is inside a unit is left to a person.
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { checkProgram } from "./footprint_oracle.mjs";
@@ -58,10 +58,12 @@ async function main() {
     const result = await checkProgram(candidate.join("\n") + "\n", { premises, runs: 1 });
     return (
       !result.invalid &&
-      result.findings.some((f) => f.kind === target.kind && f.name === target.name && f.source === target.source)
+      result.findings.some(
+        (f) => f.kind === target.kind && (f.kind === "crash" || (f.name === target.name && f.source === target.source))
+      )
     );
   };
-  const keep = new Set(lines.flatMap((l, i) => (l === target.source ? [i] : [])));
+  const keep = new Set(lines.flatMap((l, i) => (target.source !== "" && l === target.source ? [i] : [])));
   const reduced = await reduceLines(lines, holds, keep);
   const text = reduced.join("\n") + "\n";
   const out = option("out", undefined);

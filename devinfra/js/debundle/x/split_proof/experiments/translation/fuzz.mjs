@@ -1242,6 +1242,7 @@ async function main() {
   const wrongAccepts = [];
   const assumedAccepts = [];
   const wrongRejects = [];
+  const checkerCrashes = []; // trees on which the checker ended with a signal (it ran out of stack, say)
   let invalidBundles = 0;
   let refused = 0;
   const bump = (key) => (tally[key] = (tally[key] ?? 0) + 1);
@@ -1322,10 +1323,19 @@ async function main() {
         continue;
       }
       writeFileSync(certJson, JSON.stringify({ pairs: plan.mapping }));
-      const [checked, ran] = await Promise.all([
-        run(translate, [bundleJson, outputJson, certJson, "--premises", premisesJson]),
-        run(process.execPath, [path.join(treeDir, "entry.js")]),
-      ]);
+      let checked;
+      let ran;
+      try {
+        [checked, ran] = await Promise.all([
+          run(translate, [bundleJson, outputJson, certJson, "--premises", premisesJson]),
+          run(process.execPath, [path.join(treeDir, "entry.js")]),
+        ]);
+      } catch (error) {
+        // a checker that does not finish on a valid bundle is a finding about it, reported after the run, not a stop
+        if (!error.message.startsWith(`${translate} `)) throw error;
+        checkerCrashes.push({ round, tree: t, message: error.message.replace(/^.* terminated by /, "terminated by ") });
+        continue;
+      }
       const tree = behavior(ran);
       const same = sameBehavior(reference, tree);
       const outcome = checkerVerdicts.get(checked.status);
@@ -1521,7 +1531,10 @@ async function main() {
     .sort((a, b) => b[1] - a[1])
     .slice(0, 8))
     console.log(`  ${k}x ${reason}`);
+  console.log(`CHECKER CRASHES: ${checkerCrashes.length}`);
+  for (const c of checkerCrashes.slice(0, 5)) console.log(`  bundle ${c.round} tree ${c.tree}: ${c.message}`);
   if (wrongAccepts.length > 0) throw new Error(`${wrongAccepts.length} wrong accepts`);
+  if (checkerCrashes.length > 0) throw new Error(`${checkerCrashes.length} crashes of the checker`);
   if (args.includes("--require-accepted") && cell("accept", "same") === 0)
     throw new Error("no accepted tree matched its bundle");
 }
