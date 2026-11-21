@@ -72,41 +72,6 @@ data:
           provider: !KeyOf adsb-provider
           meta_description: "Aircraft tracking via ADS-B"
           meta_launch_url: "https://adsb.allegedly.works"
-  agents-mitmproxy-sso-retire.yaml: |
-    version: 1
-    metadata:
-      name: Retire Agents Mitmproxy SSO
-      labels:
-        blueprints.goauthentik.io/description: "Delete the parked agent mitmproxy traffic viewer application and proxy provider"
-
-    entries:
-      - model: authentik_core.application
-        state: absent
-        identifiers:
-          slug: agents-mitmproxy
-
-      - model: authentik_providers_proxy.proxyprovider
-        state: absent
-        identifiers:
-          name: agents-mitmproxy
-  airlock-sso-retire.yaml: |
-    version: 1
-    metadata:
-      name: Retire Airlock public OIDC client
-      labels:
-        blueprints.goauthentik.io/description: >-
-          Delete the old browser-side public client; Airlock now owns a confidential server-side OIDC client.
-
-    entries:
-      - model: authentik_core.application
-        state: absent
-        identifiers:
-          slug: airlock
-
-      - model: authentik_providers_oauth2.oauth2provider
-        state: absent
-        identifiers:
-          name: airlock
   alertmanager-sso.yaml: |
     version: 1
     metadata:
@@ -147,23 +112,6 @@ data:
           target: !KeyOf alertmanager-app
           group: !Find [authentik_core.group, [name, authentik Admins]]
           order: 0
-  claude-diagnostics-retire.yaml: |
-    version: 1
-    metadata:
-      name: Retire Claude diagnostics service account
-      labels:
-        blueprints.goauthentik.io/description: "Delete the retired Claude diagnostics role and group"
-
-    entries:
-      - model: authentik_core.group
-        state: absent
-        identifiers:
-          name: claude-diagnostics
-
-      - model: authentik_rbac.role
-        state: absent
-        identifiers:
-          name: claude-diagnostics
   embedded-outpost.yaml: |
     version: 1
     metadata:
@@ -203,23 +151,6 @@ data:
             - !Find [authentik_providers_proxy.proxyprovider, [name, public-coder-agent]]
             - !Find [authentik_providers_proxy.proxyprovider, [name, sdr]]
             # keep-sorted end
-  fava-sso-retire.yaml: |
-    version: 1
-    metadata:
-      name: Retire Fava SSO
-      labels:
-        blueprints.goauthentik.io/description: "Delete the decommissioned Fava application and proxy provider"
-
-    entries:
-      - model: authentik_core.application
-        state: absent
-        identifiers:
-          slug: fava
-
-      - model: authentik_providers_proxy.proxyprovider
-        state: absent
-        identifiers:
-          name: fava
   goldilocks-sso.yaml: |
     version: 1
     metadata:
@@ -260,40 +191,6 @@ data:
           target: !KeyOf goldilocks-app
           group: !Find [authentik_core.group, [name, authentik Admins]]
           order: 0
-  google-workspace-mcp-sso-retire.yaml: |
-    version: 1
-    metadata:
-      name: Retire Google Workspace MCP SSO
-      labels:
-        blueprints.goauthentik.io/description: "Delete the decommissioned Google Workspace MCP application and proxy provider"
-
-    entries:
-      - model: authentik_core.application
-        state: absent
-        identifiers:
-          slug: google-workspace-mcp
-
-      - model: authentik_providers_proxy.proxyprovider
-        state: absent
-        identifiers:
-          name: google-workspace-mcp
-  haku-openclaw-spike-sso-retire.yaml: |
-    version: 1
-    metadata:
-      name: Retire Haku OpenClaw Spike SSO
-      labels:
-        blueprints.goauthentik.io/description: "Delete the decommissioned Haku OpenClaw spike application and proxy provider"
-
-    entries:
-      - model: authentik_core.application
-        state: absent
-        identifiers:
-          slug: haku-openclaw-spike
-
-      - model: authentik_providers_proxy.proxyprovider
-        state: absent
-        identifiers:
-          name: haku-openclaw-spike
   haku-ui-sso.yaml: |
     version: 1
     metadata:
