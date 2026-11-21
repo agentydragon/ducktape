@@ -49,7 +49,6 @@ from devinfra.pr_visuals.publisher import (
     build_bundle,
     collect_visual_tests,
     diff_check,
-    list_ci_failures,
     main as cli_main,
     materialize_visual_tests,
     publish_visual_review,
@@ -60,6 +59,7 @@ from devinfra.pr_visuals.publisher import (
     write_baseline_pointers,
 )
 from devinfra.pr_visuals.pull_request import PullRequestRef
+from devinfra.pr_visuals.targets import list_ci_failures
 from devinfra.pr_visuals.testing.outputs import Blob, output_observation, result_artifact
 from devinfra.testing.output_writer import BoundTestOutputs
 
@@ -776,26 +776,32 @@ def test_list_ci_failures_is_best_effort_and_deduplicates_labels() -> None:
     def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         if command[2] == "missing":
             return subprocess.CompletedProcess(command, 1, "", "not found")
+        if command[2] == "malformed":
+            return subprocess.CompletedProcess(command, 0, '{"targetGroups": 17}', "")
         return subprocess.CompletedProcess(
             command,
             0,
             json.dumps(
                 {
                     "targetGroups": [
+                        {"targets": 17},
                         {
                             "targets": [
                                 {"metadata": {"label": "//z:test"}, "status": "FAILED"},
                                 {"metadata": {"label": "//a:test"}, "status": "FAILED"},
                                 {"metadata": {"label": "//ok:test"}, "status": "PASSED"},
                             ]
-                        }
+                        },
                     ]
                 }
             ),
             "",
         )
 
-    assert list_ci_failures(["missing", "invocation", "invocation"], run=fake_run) == ["//a:test", "//z:test"]
+    assert list_ci_failures(["missing", "malformed", "invocation", "invocation"], run=fake_run) == [
+        "//a:test",
+        "//z:test",
+    ]
 
 
 def test_build_bundle_groups_tests_and_writes_target_pages(tmp_path: Path) -> None:
