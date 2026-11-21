@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -20,12 +21,35 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/native"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/settings"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/typedbackend"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
+
+type remoteCommand struct{ *supervision.RemoteCommand }
+
+func (p remoteCommand) Wait(ctx context.Context) (int, error) {
+	result, err := p.RemoteCommand.Wait(ctx)
+	return result.Code, err
+}
+
+func remoteLauncher(socket string) native.CommandLauncher {
+	return func(ctx context.Context, cmd *exec.Cmd, tty bool) (native.ManagedCommand, error) {
+		stdin, _ := cmd.Stdin.(*os.File)
+		stdout, _ := cmd.Stdout.(*os.File)
+		stderr, _ := cmd.Stderr.(*os.File)
+		command, err := supervision.StartRemoteCommand(ctx, socket, supervision.CommandConfig{
+			Path: cmd.Path, Argv: cmd.Args, Dir: cmd.Dir, Environment: cmd.Environ(), TTY: tty,
+		}, supervision.CommandFiles{Stdin: stdin, Stdout: stdout, Stderr: stderr})
+		if err != nil {
+			return nil, err
+		}
+		return remoteCommand{command}, nil
+	}
+}
 
 // runServer hosts both APIs in one supervised execution process and session registry.
 func runServer(args []string) int {
@@ -37,6 +61,7 @@ func runServer(args []string) int {
 	flags.SetOutput(io.Discard)
 	ws := flags.String("listen", "", "Codex WebSocket URL")
 	limitsJSON := flags.String("limits-json", "", "execution limit overrides as JSON")
+	commandSocket := flags.String("command-socket", "", "Runtime-owned command launcher socket")
 	if err := flags.Parse(args); err != nil || flags.NArg() != 0 {
 		return 64
 	}
@@ -49,7 +74,11 @@ func runServer(args []string) int {
 		fmt.Fprintln(os.Stderr, "execution limits:", err)
 		return 64
 	}
-	core, err := native.NewWithLimits(limits.Native)
+	var launcher native.CommandLauncher
+	if *commandSocket != "" {
+		launcher = remoteLauncher(*commandSocket)
+	}
+	core, err := native.NewWithLauncher(limits.Native, launcher)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "execution limits:", err)
 		return 64

@@ -24,7 +24,7 @@ func TestRuntimeExecutionServiceConfigCarriesResolvedReadiness(t *testing.T) {
 			URL: "ws://127.0.0.1:4501", ContainerSocket: "/run/executor.sock", Readiness: want,
 		},
 	}
-	resolved, err := runtimeExecutionServiceConfig(config, "test-incarnation", nil, nil)
+	resolved, err := runtimeExecutionServiceConfig(config, "test-incarnation", nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

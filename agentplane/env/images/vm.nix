@@ -154,6 +154,7 @@ let
         "agentplane.slice"
         "agentplane-workloads.slice"
         "agentplane-executors.slice"
+        "agentplane-commands.slice"
       ]
   );
 in

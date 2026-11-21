@@ -12,6 +12,7 @@ go_library(
 go_test(
     name = "native_test",
     srcs = [
+        "native_managed_test.go",
         "native_stdin_test.go",
         "native_test.go",
     ],

@@ -16,6 +16,8 @@ CA_BUNDLE = Path("/run/agentplane/trust/ca-certificates.crt")
 JAVA_TRUST_STORE = "/run/agentplane/trust/ca-certificates.p12"
 # Bound millisecond values before the Go loader converts them to signed nanosecond durations.
 _MAX_DURATION_MS = (2**63 - 1) // 1_000_000
+# Systemd takes an unsigned microsecond quota per second.
+_MAX_SYSTEMD_CPU_QUOTA_MICROS = (2**64 - 1) // 10
 
 
 class _RuntimeConfigModel(BaseModel):
@@ -77,7 +79,7 @@ class EnvironmentRuntimeControl(_RuntimeConfigModel):
 class ResourceLimits(_RuntimeConfigModel):
     """A cgroup-v2 budget; CPU quota is per fixed 100,000 microsecond period."""
 
-    cpu_quota_micros: int = Field(gt=0)
+    cpu_quota_micros: int = Field(gt=0, le=_MAX_SYSTEMD_CPU_QUOTA_MICROS)
     memory_max_bytes: int = Field(gt=0)
     pids_max: int = Field(gt=0)
     read_bps: int = Field(gt=0)
@@ -99,6 +101,7 @@ class GuestResources(_RuntimeConfigModel):
     aggregate: ResourceLimits
     process: ResourceLimits
     executor: ResourceLimits | None = None
+    executor_workload: ResourceLimits | None = None
 
     @model_validator(mode="after")
     def internally_consistent(self) -> GuestResources:
@@ -114,15 +117,19 @@ class GuestResources(_RuntimeConfigModel):
             raise ValueError("aggregate CPU quota must not exceed service CPU quota")
         if self.aggregate.pids_max > self.service_pids_max:
             raise ValueError("aggregate PID max must not exceed service PID max")
-        if self.executor is not None:
-            if self.executor.memory_max_bytes > self.service_memory_high_bytes - self.aggregate.memory_max_bytes:
-                raise ValueError("harness and executor memory caps must fit below service memory high")
-            if self.executor.pids_max >= self.service_pids_max - self.aggregate.pids_max:
-                raise ValueError(
-                    "harness and executor PID caps must leave room for Environment Runtime and supervisors"
-                )
-            if self.executor.cpu_quota_micros > self.service_cpu_quota_micros:
-                raise ValueError("executor CPU quota must fit within Environment Runtime service quota")
+        memory_headroom = self.service_memory_high_bytes - self.aggregate.memory_max_bytes
+        pids_headroom = self.service_pids_max - self.aggregate.pids_max
+        for name, limits in (("executor", self.executor), ("executor workload", self.executor_workload)):
+            if limits is None:
+                continue
+            if limits.memory_max_bytes > memory_headroom:
+                raise ValueError(f"{name} memory cap must fit within remaining service memory high")
+            if limits.pids_max >= pids_headroom:
+                raise ValueError(f"{name} PID cap must leave room for Environment Runtime and supervisors")
+            if limits.cpu_quota_micros > self.service_cpu_quota_micros:
+                raise ValueError(f"{name} CPU quota must fit within Environment Runtime service quota")
+            memory_headroom -= limits.memory_max_bytes
+            pids_headroom -= limits.pids_max
         if self.process.memory_max_bytes > self.aggregate.memory_max_bytes:
             raise ValueError("process memory max must not exceed aggregate memory max")
         if self.process.cpu_quota_micros > self.aggregate.cpu_quota_micros:
@@ -253,6 +260,7 @@ class Executor(_RuntimeConfigModel):
 
 class ContainerExecutor(Executor):
     socket: str
+    placement: Literal["direct"]
 
     @field_validator("socket")
     @classmethod
@@ -262,8 +270,19 @@ class ContainerExecutor(Executor):
         return value
 
 
+type VMExecutorPlacement = Literal["direct", "systemd"]
+
+
 class VMExecutor(Executor):
     """Loopback exec-server endpoint supervised by the guest systemd manager."""
+
+    placement: VMExecutorPlacement
+
+    @model_validator(mode="after")
+    def systemd_requires_native(self) -> Self:
+        if self.placement == "systemd" and self.implementation != "native":
+            raise ValueError("systemd executor placement requires the native implementation")
+        return self
 
 
 class PodEnvironment(_RuntimeConfigModel):
@@ -287,6 +306,9 @@ class VMEnvironment(_RuntimeConfigModel):
             raise ValueError("block-device paths must be absolute")
         if (self.executor is None) != (self.resources.executor is None):
             raise ValueError("executor endpoint and resource budget must be supplied together")
+        systemd_placement = self.executor is not None and self.executor.placement == "systemd"
+        if systemd_placement != (self.resources.executor_workload is not None):
+            raise ValueError("systemd executor placement and executor workload budget must be supplied together")
         return self
 
 

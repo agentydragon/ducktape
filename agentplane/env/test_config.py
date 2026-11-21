@@ -173,33 +173,46 @@ def test_runner_accepts_model_config_target() -> None:
         {"environment": {"kind": "pod"}},
         {"environment": {"kind": "pod", "supervision": "unknown"}},
         {"environment": {"kind": "pod", "supervision": "pid1", "console_autologin": True}},
-        {"environment": {"kind": "pod", "supervision": "pid1", "executor": {"url": "ws://127.0.0.1:4501"}}},
         {
             "environment": {
                 "kind": "pod",
                 "supervision": "pid1",
-                "executor": {"url": "ws://0.0.0.0:4501", "socket": "/test/socket"},
+                "executor": {"url": "ws://127.0.0.1:4501", "socket": "/test/socket", "placement": "systemd"},
             }
         },
         {
             "environment": {
                 "kind": "pod",
                 "supervision": "pid1",
-                "executor": {"url": "ws://127.0.0.1:0", "socket": "/test/socket"},
+                "executor": {"url": "ws://127.0.0.1:4501", "placement": "direct"},
             }
         },
         {
             "environment": {
                 "kind": "pod",
                 "supervision": "pid1",
-                "executor": {"url": "ws://127.0.0.1:4501?", "socket": "/test/socket"},
+                "executor": {"url": "ws://0.0.0.0:4501", "socket": "/test/socket", "placement": "direct"},
             }
         },
         {
             "environment": {
                 "kind": "pod",
                 "supervision": "pid1",
-                "executor": {"url": "ws://127.0.0.1:4501", "socket": "relative"},
+                "executor": {"url": "ws://127.0.0.1:0", "socket": "/test/socket", "placement": "direct"},
+            }
+        },
+        {
+            "environment": {
+                "kind": "pod",
+                "supervision": "pid1",
+                "executor": {"url": "ws://127.0.0.1:4501?", "socket": "/test/socket", "placement": "direct"},
+            }
+        },
+        {
+            "environment": {
+                "kind": "pod",
+                "supervision": "pid1",
+                "executor": {"url": "ws://127.0.0.1:4501", "socket": "relative", "placement": "direct"},
             }
         },
         {"unexpected": "value"},
@@ -274,7 +287,7 @@ def _vm_environment() -> dict[str, object]:
     [
         {"resources": {**_resources(), "service_memory_max_bytes": 1_610_612_736}},
         {"resources": {**_resources(), "aggregate": _limits(memory=805_306_367, pids=768)}},
-        {"executor": {"url": "ws://127.0.0.1:4501"}},
+        {"executor": {"url": "ws://127.0.0.1:4501", "placement": "direct"}},
         {"resources": {**_resources(), "executor": _limits(memory=67_108_864, pids=128)}},
         {"agent_uid": 0},
         {"block_devices": ["relative"]},
@@ -288,16 +301,74 @@ def test_vm_environment_rejects_inconsistent_policy(updates: dict[str, object]) 
 def test_vm_executor_accepts_endpoint_with_budget() -> None:
     value = _vm_environment() | {
         "resources": {**_resources(), "executor": _limits(memory=67_108_864, pids=128)},
-        "executor": {"url": "ws://127.0.0.1:4501"},
+        "executor": {"url": "ws://127.0.0.1:4501", "placement": "direct"},
     }
     config = Configuration.model_validate(_configuration() | {"environment": value})
     assert isinstance(config.environment, VMEnvironment)
     assert config.environment.executor is not None
+    assert config.environment.executor.placement == "direct"
+
+
+@pytest.mark.parametrize("kind", ["pod", "vm"])
+@pytest.mark.parametrize("updates", [{}, {"placement": None}, {"placement": ""}, {"placement": "unknown"}])
+def test_executor_placement_must_be_explicit(kind: str, updates: dict[str, object]) -> None:
+    executor = {"url": "ws://127.0.0.1:4501"} | updates
+    environment: dict[str, object]
+    if kind == "pod":
+        environment = {"kind": "pod", "supervision": "pid1", "executor": executor | {"socket": "/run/executor.sock"}}
+    else:
+        environment = _vm_environment() | {
+            "resources": {**_resources(), "executor": _limits(memory=67_108_864, pids=128)},
+            "executor": executor,
+        }
+    with pytest.raises(ValidationError, match="placement"):
+        Configuration.model_validate(_configuration() | {"environment": environment})
+
+
+@pytest.mark.parametrize(
+    ("placement", "implementation", "workload", "error"),
+    [
+        ("systemd", "native", _limits(memory=33_554_432, pids=127), None),
+        ("systemd", "native", None, "budget must be supplied together"),
+        ("direct", "native", _limits(memory=33_554_432, pids=127), "budget must be supplied together"),
+        ("systemd", "codex", _limits(memory=33_554_432, pids=127), "requires the native implementation"),
+        ("systemd", "native", _limits(memory=33_554_433, pids=127), "remaining service memory high"),
+        ("systemd", "native", _limits(memory=33_554_432, pids=128), "leave room for Environment Runtime"),
+        ("systemd", "native", _limits(memory=0, pids=127), "greater than 0"),
+        (
+            "systemd",
+            "native",
+            {**_limits(memory=33_554_432, pids=127), "cpu_quota_micros": 100_001},
+            "fit within Environment Runtime service quota",
+        ),
+    ],
+)
+def test_vm_systemd_executor_requires_native_and_workload_headroom(
+    placement: str, implementation: str, workload: dict[str, object] | None, error: str | None
+) -> None:
+    value = _configuration() | {
+        "environment": _vm_environment()
+        | {
+            "resources": {
+                **_resources(),
+                "executor": _limits(memory=33_554_432, pids=128),
+                "executor_workload": workload,
+            },
+            "executor": {"url": "ws://127.0.0.1:4501", "implementation": implementation, "placement": placement},
+        }
+    }
+    if error is not None:
+        with pytest.raises(ValidationError, match=error):
+            Configuration.model_validate(value)
+    else:
+        encoded = json.loads(Configuration.model_validate(value).model_dump_json(exclude_none=True))
+        assert encoded["environment"]["executor"]["placement"] == "systemd"
+        assert encoded["environment"]["resources"]["executor_workload"] == workload
 
 
 @pytest.mark.parametrize("kind", ["pod", "vm"])
 def test_executor_settings(kind: str) -> None:
-    executor = {"url": "ws://127.0.0.1:4501", "limits": {"native": {"max_sessions": 3}}}
+    executor = {"url": "ws://127.0.0.1:4501", "placement": "direct", "limits": {"native": {"max_sessions": 3}}}
     environment: dict[str, object]
     if kind == "pod":
         environment = {"kind": "pod", "supervision": "pid1", "executor": executor | {"socket": "/run/executor.sock"}}

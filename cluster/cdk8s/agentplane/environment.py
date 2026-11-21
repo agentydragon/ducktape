@@ -18,7 +18,7 @@ from agentplane.action_service.catalog import ActionGroup, Key
 from agentplane.action_service.mcp_settings import McpClientMetadataSettings, McpOAuthServer
 from agentplane.action_service.orchestration_v1.binding import LaunchPreset
 from agentplane.app.settings import Settings
-from agentplane.env.config import GuestResources
+from agentplane.env.config import Configuration, GuestResources, VMExecutorPlacement
 from agentplane.identity.operator.settings import OperatorOidcSettings
 from agentplane.llm_ingress.models import AttributionConfig, ModelConfig, default_attribution
 from agentplane.notification_service.settings import NoticeDebounceSettings
@@ -227,6 +227,9 @@ class Environment:
     vm_storage_class: str | None = None
     # Guest sizing and Runner cgroup budgets shared by the VM template and guest config seed.
     vm_resources: GuestResources | None = None
+    vm_executor_placement: VMExecutorPlacement | None = None
+    # CLEANUP(added 2026-11-20): Remove once staging's agentplane-runner-disk pin accepts placement.
+    omit_executor_placement_from_config: bool = False
     # Opt-in: trusted KVM launcher with same-Pod RAM checkpoints.
     firecracker_sandboxes: bool = False
     # Whether runner Pods delegate Codex command execution to a companion with its own PID namespace.
@@ -254,3 +257,11 @@ class Environment:
                 raise ValueError("vm_storage_class cannot be empty")
             if not self.vm_sandboxes:
                 raise ValueError("vm_storage_class requires vm_sandboxes")
+
+
+def runtime_config_json(env: Environment, config: Configuration) -> str:
+    if env.omit_executor_placement_from_config and config.environment.executor is not None:
+        if config.environment.executor.placement != "direct":
+            raise ValueError("older runtime configuration supports only direct executor placement")
+        return config.model_dump_json(exclude_none=True, exclude={"environment": {"executor": {"placement"}}})
+    return config.model_dump_json(exclude_none=True)

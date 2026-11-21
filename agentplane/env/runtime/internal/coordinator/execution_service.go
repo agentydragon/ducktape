@@ -146,7 +146,7 @@ func (h *executionServiceHandle) serving() bool {
 }
 
 func (r *Runtime) startExecutionService(ctx context.Context, config Config, incarnationUID string) (executionHandle, error) {
-	serviceConfig, err := runtimeExecutionServiceConfig(config, incarnationUID, r.processes, r.executionSupervisor)
+	serviceConfig, err := runtimeExecutionServiceConfig(config, incarnationUID, r.processes, r.executionSupervisor, r.commandSupervisor)
 	if err != nil {
 		return nil, err
 	}
@@ -181,12 +181,13 @@ func (r *Runtime) startExecutionService(ctx context.Context, config Config, inca
 	return handle, nil
 }
 
-func runtimeExecutionServiceConfig(config Config, incarnationUID string, processes *supervision.Host, supervisor *supervision.Supervisor) (service.Config, error) {
+func runtimeExecutionServiceConfig(config Config, incarnationUID string, processes *supervision.Host, supervisor *supervision.Supervisor, commandSupervisor *supervision.Supervisor) (service.Config, error) {
 	if config.CodexExecServer == nil {
 		return service.Config{}, errors.New("Execution service requires a configured execution backend")
 	}
 	serviceConfig := service.Config{
-		ProcessHost: processes, Supervisor: supervisor,
+		ProcessHost: processes, Supervisor: supervisor, CommandSupervisor: commandSupervisor,
+		Placement: config.CodexExecServer.Placement,
 		Namespace: config.Launch.Sandbox.Namespace, SandboxName: config.Launch.Sandbox.Name,
 		SandboxUID: config.Launch.Sandbox.UID, IncarnationUID: incarnationUID,
 		StateDir:    filepath.Join(config.StateDir, "execution"),

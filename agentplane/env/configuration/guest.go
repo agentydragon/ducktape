@@ -19,6 +19,7 @@ type guestResources struct {
 	Aggregate              supervision.ResourceLimits  `json:"aggregate"`
 	Process                supervision.ResourceLimits  `json:"process"`
 	Executor               *supervision.ResourceLimits `json:"executor"`
+	ExecutorWorkload       *supervision.ResourceLimits `json:"executor_workload"`
 }
 
 func (r guestResources) Validate() error {
@@ -47,20 +48,30 @@ func (r guestResources) Validate() error {
 	if r.Aggregate.MemoryMaxBytes > r.ServiceMemoryHighBytes || r.Aggregate.PidsMax > r.ServicePidsMax || r.Aggregate.CPUQuotaMicros > r.ServiceCPUQuotaMicros {
 		return errors.New("aggregate limits must fit within Environment Runtime service limits")
 	}
-	if r.Executor != nil {
-		if err := r.Executor.Validate(); err != nil {
-			return fmt.Errorf("invalid executor limits: %w", err)
+	memoryHeadroom := r.ServiceMemoryHighBytes - r.Aggregate.MemoryMaxBytes
+	pidsHeadroom := r.ServicePidsMax - r.Aggregate.PidsMax
+	for _, budget := range []struct {
+		name   string
+		limits *supervision.ResourceLimits
+	}{{"executor", r.Executor}, {"executor workload", r.ExecutorWorkload}} {
+		limits := budget.limits
+		if limits == nil {
+			continue
 		}
-		// Subtraction keeps the combined-cap checks safe from integer overflow.
-		if r.Executor.MemoryMaxBytes > r.ServiceMemoryHighBytes-r.Aggregate.MemoryMaxBytes {
-			return errors.New("harness and executor memory caps must fit below service memory high")
+		if err := limits.Validate(); err != nil {
+			return fmt.Errorf("invalid %s limits: %w", budget.name, err)
 		}
-		if r.Executor.PidsMax >= r.ServicePidsMax-r.Aggregate.PidsMax {
-			return errors.New("harness and executor PID caps must leave room for Environment Runtime and supervisors")
+		if limits.MemoryMaxBytes > memoryHeadroom {
+			return fmt.Errorf("%s memory cap must fit within remaining service memory high", budget.name)
 		}
-		if r.Executor.CPUQuotaMicros > r.ServiceCPUQuotaMicros {
-			return errors.New("executor CPU quota must fit within Environment Runtime service quota")
+		if limits.PidsMax >= pidsHeadroom {
+			return fmt.Errorf("%s PID cap must leave room for Environment Runtime and supervisors", budget.name)
 		}
+		if limits.CPUQuotaMicros > r.ServiceCPUQuotaMicros {
+			return fmt.Errorf("%s CPU quota must fit within Environment Runtime service quota", budget.name)
+		}
+		memoryHeadroom -= limits.MemoryMaxBytes
+		pidsHeadroom -= limits.PidsMax
 	}
 	return nil
 }

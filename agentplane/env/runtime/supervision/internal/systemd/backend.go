@@ -28,23 +28,24 @@ type unitCondition struct {
 // BackendConfig is the immutable systemd and launch configuration for one
 // native process attempt.
 type BackendConfig struct {
-	Command        []string
-	Environment    []string
-	Dir            string
-	StopGrace      time.Duration
-	Scope          string
-	Slice          string
-	LifetimeMarker string
-	ParentUnit     string
-	LaunchReady    func() bool
-	Properties     func() ([]goSystemd.Property, error)
-	Identity       []goSystemd.Property
-	OpenConnection func() (*goSystemd.Conn, context.CancelFunc, error)
-	StartTransient func(context.Context, *goSystemd.Conn, string, []goSystemd.Property, chan<- string) (int, error)
-	ReapSnapshot   func(context.Context, *goSystemd.Conn, string) (UnitSnapshot, error)
-	StopUnit       func(context.Context, *goSystemd.Conn, string) (<-chan string, error)
-	ReferenceUnit  func(context.Context, string) (UnitReference, error)
-	Property       func(string, any) goSystemd.Property
+	Command         []string
+	RetainUntilStop bool
+	Environment     []string
+	Dir             string
+	StopGrace       time.Duration
+	Scope           string
+	Slice           string
+	LifetimeMarker  string
+	ParentUnit      string
+	LaunchReady     func() bool
+	Properties      func() ([]goSystemd.Property, error)
+	Identity        []goSystemd.Property
+	OpenConnection  func() (*goSystemd.Conn, context.CancelFunc, error)
+	StartTransient  func(context.Context, *goSystemd.Conn, string, []goSystemd.Property, chan<- string) (int, error)
+	ReapSnapshot    func(context.Context, *goSystemd.Conn, string) (UnitSnapshot, error)
+	StopUnit        func(context.Context, *goSystemd.Conn, string) (<-chan string, error)
+	ReferenceUnit   func(context.Context, string) (UnitReference, error)
+	Property        func(string, any) goSystemd.Property
 }
 
 // Backend creates a fresh, uniquely named systemd unit for each attempt.
@@ -100,33 +101,31 @@ func (b *Backend) Start(ctx context.Context) (*StartHandle, error) {
 		conn.Close()
 		cancelConnection()
 	}
-	stdinReader, stdinWriter, err := os.Pipe()
-	if err != nil {
-		closeConnection()
-		return nil, err
-	}
-	stdoutReader, stdoutWriter, err := os.Pipe()
-	if err != nil {
-		closeFiles(stdinReader, stdinWriter)
-		closeConnection()
-		return nil, err
-	}
-	stderrReader, stderrWriter, err := os.Pipe()
-	if err != nil {
-		closeFiles(stdinReader, stdinWriter, stdoutReader, stdoutWriter)
-		closeConnection()
-		return nil, err
-	}
 	if b.config.Properties == nil || b.config.Property == nil {
-		closeFiles(stdinReader, stdinWriter, stdoutReader, stdoutWriter, stderrReader, stderrWriter)
 		closeConnection()
 		return nil, errors.New("systemd unit properties are not configured")
 	}
 	properties, err := b.config.Properties()
 	if err != nil {
-		closeFiles(stdinReader, stdinWriter, stdoutReader, stdoutWriter, stderrReader, stderrWriter)
 		closeConnection()
 		return nil, err
+	}
+	var stdinWriter, stdoutReader, stderrReader *os.File
+	var child [3]*os.File
+	if !b.config.RetainUntilStop {
+		child, stdinWriter, stdoutReader, stderrReader, err = openPipes()
+		if err != nil {
+			closeConnection()
+			return nil, err
+		}
+	}
+	oomPolicy := "continue"
+	flags := []string{"no-env-expand"}
+	if b.config.RetainUntilStop {
+		// Preserve descendants and the raw leader status independently. The
+		// executor keeps the lease until the native process is reclaimed.
+		oomPolicy = "kill"
+		flags = append(flags, "ignore-failure")
 	}
 	properties = append(properties, b.config.Identity...)
 	name := b.config.Scope + uuid.NewString() + ".service"
@@ -139,16 +138,13 @@ func (b *Backend) Start(ctx context.Context) (*StartHandle, error) {
 		b.config.Property("Slice", b.config.Slice),
 		b.config.Property("BindsTo", []string{b.config.ParentUnit}),
 		b.config.Property("After", []string{b.config.ParentUnit}),
-		b.config.Property("RemainAfterExit", true),
+		b.config.Property("RemainAfterExit", !b.config.RetainUntilStop),
 		b.config.Property("CollectMode", "inactive"),
 		b.config.Property("Conditions", []unitCondition{{Type: "ConditionPathExists", Parameter: b.config.LifetimeMarker}}),
 		b.config.Property("AddRef", true),
-		b.config.Property("ExecStartEx", []execStart{{Path: b.config.Command[0], Arguments: b.config.Command, Flags: []string{"no-env-expand"}}}),
+		b.config.Property("ExecStartEx", []execStart{{Path: b.config.Command[0], Arguments: b.config.Command, Flags: flags}}),
 		b.config.Property("Environment", b.config.Environment),
 		b.config.Property("WorkingDirectory", b.config.Dir),
-		b.config.Property("StandardInputFileDescriptor", dbus.UnixFD(stdinReader.Fd())),
-		b.config.Property("StandardOutputFileDescriptor", dbus.UnixFD(stdoutWriter.Fd())),
-		b.config.Property("StandardErrorFileDescriptor", dbus.UnixFD(stderrWriter.Fd())),
 		b.config.Property("PrivateTmp", false),
 		b.config.Property("ProtectSystem", "strict"),
 		b.config.Property("ReadWritePaths", []string{"/state", "/tmp"}),
@@ -160,15 +156,41 @@ func (b *Backend) Start(ctx context.Context) (*StartHandle, error) {
 		b.config.Property("KillSignal", int32(15)),
 		b.config.Property("SendSIGKILL", true),
 		b.config.Property("TimeoutStopUSec", systemdStopTimeout(b.config.StopGrace)),
-		b.config.Property("OOMPolicy", "continue"),
+		b.config.Property("OOMPolicy", oomPolicy),
 	)
+
+	if b.config.RetainUntilStop {
+		properties = append(properties, b.config.Property("ExitType", "cgroup"))
+	}
+	for i, name := range [...]string{"StandardInputFileDescriptor", "StandardOutputFileDescriptor", "StandardErrorFileDescriptor"} {
+		if child[i] != nil {
+			properties = append(properties, b.config.Property(name, dbus.UnixFD(child[i].Fd())))
+		}
+	}
 
 	handle := newStartHandle(b, conn, cancelConnection, name, stdinWriter, stdoutReader, stderrReader)
 	handle.observeStart(StartPreparing, nil)
 	handle.updates = make(chan *goSystemd.PropertiesUpdate, 32)
 	handle.updateErrors = make(chan error, 1)
 	conn.SetPropertiesSubscriber(handle.updates, handle.updateErrors)
-	go handle.runStart(ctx, properties, stdinReader, stdoutWriter, stderrWriter)
+	go handle.runStart(ctx, properties, child)
 
 	return handle, nil
+}
+
+func openPipes() (child [3]*os.File, stdin, stdout, stderr *os.File, err error) {
+	child[0], stdin, err = os.Pipe()
+	if err != nil {
+		return
+	}
+	stdout, child[1], err = os.Pipe()
+	if err != nil {
+		closeFiles(child[0], stdin)
+		return
+	}
+	stderr, child[2], err = os.Pipe()
+	if err != nil {
+		closeFiles(child[0], stdin, stdout, child[1])
+	}
+	return
 }

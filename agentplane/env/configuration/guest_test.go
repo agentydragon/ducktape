@@ -48,6 +48,11 @@ func TestGuestResourcePropertiesModeValidatesSeedBeforeOutput(t *testing.T) {
 			configurationVMExecutor(env)
 			delete(env, "executor")
 		},
+		func(v map[string]any) {
+			env := v["environment"].(map[string]any)
+			configurationVMSystemdExecutor(env)
+			delete(env["resources"].(map[string]any), "executor_workload")
+		},
 	} {
 		invalid := validGuestConfiguration(t)
 		mutate(invalid)

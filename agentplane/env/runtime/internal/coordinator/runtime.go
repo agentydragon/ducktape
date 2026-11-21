@@ -153,6 +153,7 @@ type Runtime struct {
 	startupComplete        bool
 	harnessSupervisor      *supervision.Supervisor
 	executionSupervisor    *supervision.Supervisor
+	commandSupervisor      *supervision.Supervisor
 	harnessProcesses       *supervision.Host
 	sessionWorkers         sync.WaitGroup
 	sessionScripts         *scripts.Runner
@@ -306,6 +307,13 @@ func (r *Runtime) initializeLifecycle(ctx context.Context) error {
 				return err
 			}
 		}
+		if r.config.CodexExecServer != nil && r.config.CodexExecServer.Placement == codexexecserver.PlacementSystemd {
+			r.commandSupervisor, err = r.processes.DeclareSystemdScope(ctx, r.config.CodexExecServer.WorkloadLauncher, filepath.Join(r.config.StateDir, "commands"), r.config.Launch.Sandbox.UID, supervision.RuntimeOwner("execution-commands"))
+			if err != nil {
+				return err
+			}
+		}
+
 	} else {
 		r.harnessSupervisor = r.supervisor
 	}

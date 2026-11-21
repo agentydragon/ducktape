@@ -199,6 +199,7 @@ def command(
                 url=config.codex_executor_url,
                 socket=str(config.codex_executor_socket),
                 implementation=config.executor_implementation,
+                placement="direct",
                 limits=config.executor_limits,
             )
             if config.codex_executor_url is not None
