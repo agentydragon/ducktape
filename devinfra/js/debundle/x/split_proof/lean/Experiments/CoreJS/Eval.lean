@@ -33,17 +33,28 @@ def putRef (call : Call) (env : Env) : Ref → Val → M Unit
   | .name x, v => writeVar env x v
   | .prop base key, v => setProp call base key v
 
-/-- A function object for `f`, closed over `env`. One that can be constructed gets a `prototype`. -/
+/-- The scope the body of a function or a class sees: with a binding for its own name, if it has one (`self`). -/
+def selfScope (env : Env) (self : Bool) (name : Name) : M Env :=
+  if self then declare env [(name, { value := none, mutable := false })] else pure env
+
+/-- That binding gets its value once the function or class exists. -/
+def initSelf (env : Env) (self : Bool) (name : Name) (v : Val) : M Unit :=
+  if self then initVar env name v else pure ()
+
+/-- The `prototype` of a function that can be constructed: a new object that points back to it. -/
+def addPrototype (a : Addr) : M Unit := do
+  let p ← alloc { proto := some objectProto, props := [("constructor", .data (.obj a) true false true)] }
+  modifyObj a fun o => { o with props := o.props ++ [("prototype", .data (.obj p) true false false)] }
+
+/-- A function object for `f`, closed over `env`. -/
 def makeFunc (env : Env) (f : Func) : M Val := do
-  let env ← if f.self then declare env [(f.name, { value := none, mutable := false })] else pure env
+  let env ← selfScope env f.self f.name
   let a ← alloc {
     proto := some functionProto, code := some (.closure f env []),
     props := [("length", .data (.num (Float.ofNat f.params.length)) false false true),
       ("name", .data (.str f.name) false false true)] }
-  if f.kind == .normal then
-    let p ← alloc { proto := some objectProto, props := [("constructor", .data (.obj a) true false true)] }
-    modifyObj a fun o => { o with props := o.props ++ [("prototype", .data (.obj p) true false false)] }
-  if f.self then initVar env f.name (.obj a)
+  (if f.kind == .normal then addPrototype a else pure ())
+  initSelf env f.self f.name (.obj a)
   pure (.obj a)
 
 /-- Enter the scope of a statement list: its lexical names, and its function declarations with their values. -/
@@ -94,7 +105,7 @@ def evalExpr : Nat → Env → Expr → M Val
         props := items ++ [("length", .data (.num (Float.ofNat vs.length)) true false false)] }
       pure (.obj a)
     | .cls name self ctor members => do
-      let env ← if self then declare env [(name, { value := none, mutable := false })] else pure env
+      let env ← selfScope env self name
       let proto ← alloc { proto := some objectProto, props := [] }
       let c ← alloc {
         proto := some functionProto, code := some (.closure ctor env []),
@@ -105,7 +116,7 @@ def evalExpr : Nat → Env → Expr → M Val
       let fields ← evalMembers n env proto c members
       let perInstance := fields.filterMap fun (static, k, init) => if static then none else some (k, init)
       modifyObj c fun o => { o with code := some (.closure ctor env perInstance) }
-      if self then initVar env name (.obj c)
+      initSelf env self name (.obj c)
       evalFields n { env with this := .obj c } c (fields.filterMap fun (static, k, init) => if static then some (k, init) else none)
       pure (.obj c)
     | .get o k => do

@@ -127,7 +127,7 @@ fi
 
 if [[ " $* " == *" --model "* ]]; then
   step "CoreJS: the executable model of a core of JavaScript, against Node"
-  (cd lean && lake build corejs)
+  (cd lean && lake build corejs Experiments.CoreJS.Frame)
   (cd experiments/model && cp package.json.in package.json && npm ci --no-audit --no-fund --silent \
     && node differential.mjs --count 40 --seed 1)
 fi
