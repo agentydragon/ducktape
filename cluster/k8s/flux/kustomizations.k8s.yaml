@@ -894,6 +894,8 @@ spec:
         metadata:
           name: snapshot-controller
           namespace: kube-system
+          annotations:
+            goldilocks.fairwinds.com/vpa-update-mode: auto
         spec:
           strategy:
             rollingUpdate:
