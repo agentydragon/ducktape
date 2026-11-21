@@ -3957,6 +3957,18 @@ data:
           `cluster/cdk8s/agentplane/actions_staging_policies.py` and `cluster/docs/agent_rbac.md` in ducktape
           for current grant details, and `finance-agent/runbooks/data-access.md` for the private working recipe.
 
+          OVH US billing: the finance preset grants `get` on the named read-only Secret
+          `agentplane-staging/ovh-billing-credentials` and GET egress to the billing,
+          service and signing-clock endpoints on `api.us.ovhcloud.com`. Read the three
+          credential fields only in memory. For each GET, read `/1.0/auth/time` to correct
+          the clock, then set `X-Ovh-Application`, `X-Ovh-Consumer`, `X-Ovh-Timestamp`,
+          and `X-Ovh-Signature`. The signature is `$1$` followed by the hex SHA-1 of
+          `application_secret + "+" + consumer_key + "+GET+" + full_url + "++" + timestamp`.
+          Invoice reads start with `/1.0/me/bill` and its `/{billId}/details` children.
+          Never log or persist the credential, signatures or raw invoice exports. The key
+          permits invoice and service reads, not orders, renewals or other writes. Check
+          current Agentplane rules and effective Secret access before use.
+
           When contributing to the public `agentydragon/ducktape` repository, use the dedicated
           `agentydragon-agent` GitHub identity, not the operator's identity. Check the current Agentplane
           egress rules before GitHub access. The `github-agentydragon-agent` rule supplies a substituted PAT:
@@ -4101,6 +4113,7 @@ data:
           - kubernetes-inspection-reads
           - ducktape-pr-failed-jobs
           - coinbase-identity
+          - ovh-billing-identity
           - plaid-diagnostics-identity
           - k8s-account-haku
           - send-to-haku
@@ -4127,6 +4140,7 @@ data:
           - ssh-reads
           - gaffer-private-branch-and-pr-creation
           - coinbase-identity
+          - ovh-billing-identity
           - plaid-diagnostics-identity
           - k8s-account-finance-agent
           - ducktape-pr-failed-jobs
@@ -7738,6 +7752,7 @@ data:
                   - kubernetes-inspection-reads
                   - ducktape-pr-failed-jobs
                   - coinbase-identity
+                  - ovh-billing-identity
                   - plaid-diagnostics-identity
                   - k8s-account-haku
                   - send-to-haku
@@ -7782,6 +7797,7 @@ data:
                   - ssh-reads
                   - gaffer-private-branch-and-pr-creation
                   - coinbase-identity
+                  - ovh-billing-identity
                   - plaid-diagnostics-identity
                   - k8s-account-finance-agent
                   - ducktape-pr-failed-jobs
@@ -7898,6 +7914,18 @@ data:
                     the key, signed JWT, account identifiers, or raw response, and never trade or transfer. Consult
                     `cluster/cdk8s/agentplane/actions_staging_policies.py` and `cluster/docs/agent_rbac.md` in ducktape
                     for current grant details, and `finance-agent/runbooks/data-access.md` for the private working recipe.
+
+                    OVH US billing: the finance preset grants `get` on the named read-only Secret
+                    `agentplane-staging/ovh-billing-credentials` and GET egress to the billing,
+                    service and signing-clock endpoints on `api.us.ovhcloud.com`. Read the three
+                    credential fields only in memory. For each GET, read `/1.0/auth/time` to correct
+                    the clock, then set `X-Ovh-Application`, `X-Ovh-Consumer`, `X-Ovh-Timestamp`,
+                    and `X-Ovh-Signature`. The signature is `$1$` followed by the hex SHA-1 of
+                    `application_secret + "+" + consumer_key + "+GET+" + full_url + "++" + timestamp`.
+                    Invoice reads start with `/1.0/me/bill` and its `/{billId}/details` children.
+                    Never log or persist the credential, signatures or raw invoice exports. The key
+                    permits invoice and service reads, not orders, renewals or other writes. Check
+                    current Agentplane rules and effective Secret access before use.
 
                     When contributing to the public `agentydragon/ducktape` repository, use the dedicated
                     `agentydragon-agent` GitHub identity, not the operator's identity. Check the current Agentplane
@@ -10422,6 +10450,64 @@ spec:
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: KubernetesRoleSet
 metadata:
+  name: ovh-billing
+  namespace: agentplane-staging
+spec:
+  rules:
+    - namespaces:
+        - agentplane-staging
+      role:
+        kind: Role
+        name: ovh-billing-reader
+      type: role_binding
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: ovh-billing
+  namespace: agentplane-staging
+spec:
+  rules:
+    - namespaces:
+        - agentplane-staging
+      role:
+        kind: Role
+        name: ovh-billing-reader
+      type: kubernetes_role_binding
+    - hosts:
+        - api.us.ovhcloud.com
+      methods:
+        - GET
+      paths:
+        - /1.0/auth/time
+        - /1.0/me/bill
+        - /1.0/me/bill/**
+        - /1.0/service
+        - /1.0/service/**
+      type: egress
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: ovh-billing-identity
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - api.us.ovhcloud.com
+      methods:
+        - GET
+      paths:
+        - /1.0/auth/time
+        - /1.0/me/bill
+        - /1.0/me/bill/**
+        - /1.0/service
+        - /1.0/service/**
+      type: egress
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: KubernetesRoleSet
+metadata:
   name: plaid-diagnostics
   namespace: agentplane-staging
 spec:
@@ -11029,6 +11115,7 @@ spec:
     - public-inventory
     - cluster-diagnostics
     - coinbase
+    - ovh-billing
     - spend-policy-config
     - plaid-diagnostics
   serviceAccount:
@@ -11085,6 +11172,7 @@ spec:
     - cluster-diagnostics
     - haku-sandbox-write
     - coinbase
+    - ovh-billing
     - plaid-diagnostics
   serviceAccount:
     name: haku
@@ -11739,6 +11827,14 @@ rules:
       - rbac.authorization.k8s.io
     resourceNames:
       - claude-ai-sandbox-reader
+    resources:
+      - roles
+    verbs:
+      - bind
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resourceNames:
+      - ovh-billing-reader
     resources:
       - roles
     verbs:
@@ -12947,6 +13043,72 @@ subjects:
     kind: ServiceAccount
     name: claude-ai
     namespace: agentplane-staging
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: oidc-ksbx-groups:haku
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: haku:access-profile:haku
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: haku
+    namespace: haku-sandbox
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  annotations:
+    description: Read-only OVH billing credential for explicitly authorized agents.
+  name: ovh-billing-credentials
+  namespace: agentplane-staging
+spec:
+  data:
+    - remoteRef:
+        key: ovh-billing-credentials
+        property: application_key
+      secretKey: application_key
+    - remoteRef:
+        key: ovh-billing-credentials
+        property: application_secret
+      secretKey: application_secret
+    - remoteRef:
+        key: ovh-billing-credentials
+        property: consumer_key
+      secretKey: consumer_key
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-external-creds-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: ovh-billing-credentials
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ovh-billing-reader
+  namespace: agentplane-staging
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - ovh-billing-credentials
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ovh-billing-reader
+  namespace: agentplane-staging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ovh-billing-reader
+subjects:
   - apiGroup: rbac.authorization.k8s.io
     kind: Group
     name: oidc-ksbx-groups:haku

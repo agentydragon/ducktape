@@ -39,6 +39,7 @@ from cluster.cdk8s.providers.agentplane.policy_set import Rule
 
 RBAC_GROUP = "rbac.authorization.k8s.io"
 COINBASE_POLICY = "coinbase"
+OVH_BILLING_POLICY = "ovh-billing"
 PLAID_DIAGNOSTICS_POLICY = "plaid-diagnostics"
 SHARED_DIAGNOSTICS_POLICY = "shared-diagnostics"
 CLUSTER_DIAGNOSTICS_POLICY = "cluster-diagnostics"
@@ -128,6 +129,9 @@ def catalog() -> dict[str, KubernetesGrant]:
             namespace=spend.NAMESPACE,
             role_ref=RoleRef(kind="Role", name=spend.FINANCE_CONFIG_READER),
         ),
+        "ovh-billing-credentials": RoleBindingGrant(
+            kind="RoleBinding", namespace="agentplane-staging", role_ref=RoleRef(kind="Role", name="ovh-billing-reader")
+        ),
         "coinbase-credentials": RoleBindingGrant(
             kind="RoleBinding",
             namespace="agentplane-staging",
@@ -184,6 +188,7 @@ POLICY_SETS = {
     CLUSTER_DIAGNOSTICS_POLICY: ("cluster-diagnostics",),
     "haku-sandbox-write": ("haku-sandbox-write",),
     COINBASE_POLICY: ("coinbase-credentials",),
+    OVH_BILLING_POLICY: ("ovh-billing-credentials",),
     "spend-policy-config": ("spend-policy-config",),
     PLAID_DIAGNOSTICS_POLICY: (PLAID_DIAGNOSTICS_POLICY,),
 }
@@ -276,8 +281,20 @@ def covering_policy_sets(grants: Sequence[str]) -> list[str]:
 
 MANAGED_GRANTS = {
     "public-coder": PUBLIC_GRANTS,
-    "finance-agent": (*PUBLIC_GRANTS, "coinbase-credentials", "spend-policy-config", PLAID_DIAGNOSTICS_POLICY),
-    "haku": (*SHARED_DIAGNOSTICS, *HAKU_EXTRAS, "coinbase-credentials", PLAID_DIAGNOSTICS_POLICY),
+    "finance-agent": (
+        *PUBLIC_GRANTS,
+        "coinbase-credentials",
+        "ovh-billing-credentials",
+        "spend-policy-config",
+        PLAID_DIAGNOSTICS_POLICY,
+    ),
+    "haku": (
+        *SHARED_DIAGNOSTICS,
+        *HAKU_EXTRAS,
+        "coinbase-credentials",
+        "ovh-billing-credentials",
+        PLAID_DIAGNOSTICS_POLICY,
+    ),
 }
 STATIC_GRANTS = {
     # Independently scoped legacy OAuth identity, not an alias for the Haku profile. Widening it
@@ -290,7 +307,7 @@ STATIC_GRANTS = {
         "public-coder-volsync-status",
     ),
     # Preserve redundant narrow inventory bindings; Coinbase access is explicitly approved.
-    "haku": (*SHARED_DIAGNOSTICS, *PUBLIC_INVENTORY, *HAKU_EXTRAS, "coinbase-credentials"),
+    "haku": (*SHARED_DIAGNOSTICS, *PUBLIC_INVENTORY, *HAKU_EXTRAS, "coinbase-credentials", "ovh-billing-credentials"),
 }
 
 

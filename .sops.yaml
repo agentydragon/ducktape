@@ -143,6 +143,18 @@ creation_rules:
           - *admin
           - *cluster-secrets
 
+  # OVH billing: Flux applies the canonical Secret; workstations can decrypt it.
+  - path_regex: cluster/k8s/external-creds/ovh-billing-credentials\.sops\.yaml$
+    encrypted_regex: ^(data|stringData)$
+    key_groups:
+      - age:
+          - *admin
+          - *cluster-secrets
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
+
   # SF Public Library credentials: Flux applies the Secret, and the user's
   # workstations can decrypt it to update the card number and PIN.
   - path_regex: cluster/k8s/external-creds/sfpl-credentials\.sops\.yaml$
@@ -858,13 +870,12 @@ creation_rules:
           - *atlas-agentydragon
           - *iguana-agentydragon
 
-  # OVH US server-management and read-only billing credentials.
+  # OVH US server-management credential.
   # cluster-secrets: the infra-drift tf-runner (cluster/generated/infra-drift) needs
   # the ovh provider to configure during a plan. tf-runner-role already grants
   # cluster-wide secret read, so a narrow key here would buy nothing the runner
   # cannot already take.
-  - path_regex: secrets/ovh-(billing-)?credentials\.sops\.yaml$
-    # Keep instructions readable; add any future secret fields here too.
+  - path_regex: secrets/ovh-credentials\.sops\.yaml$
     encrypted_regex: ^(application_key|application_secret|consumer_key)$
     key_groups:
       - age:
