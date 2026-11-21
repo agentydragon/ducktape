@@ -871,7 +871,11 @@ if (shard === 13) {
     source,
     `function mask(x) { return x & 3; }
 function maskAssign(x) { let value = x; value &= 3; return value; }
-export { mask, maskAssign };
+function combine(x) { return x | 3; }
+function toggle(x) { return x ^ 3; }
+function combineAssign(x) { let value = x; value |= 3; return value; }
+function toggleAssign(x) { let value = x; value ^= 3; return value; }
+export { mask, maskAssign, combine, toggle, combineAssign, toggleAssign };
 `
   );
   await writeFile(
@@ -880,7 +884,7 @@ export { mask, maskAssign };
       kind: "bindings",
       entry: "entry.mjs",
       modules: {
-        "functions.mjs": { imports: [], statements: [0, 1] },
+        "functions.mjs": { imports: [], statements: [0, 1, 2, 3, 4, 5] },
         "entry.mjs": { imports: ["functions.mjs"], statements: [] },
       },
     })
@@ -893,9 +897,21 @@ export { mask, maskAssign };
     { name: "mask", args: [4294967297] },
     { name: "mask", args: [Number.MAX_SAFE_INTEGER] },
     { name: "maskAssign", args: [4294967298] },
+    { name: "combine", args: [4294967296] },
+    { name: "toggle", args: [4294967297] },
+    { name: "combineAssign", args: [4] },
+    { name: "toggleAssign", args: [4] },
   ];
   const trace = execute(source, calls);
-  assert.deepEqual(trace.results, [{ value: 1 }, { value: 3 }, { value: 2 }]);
+  assert.deepEqual(trace.results, [
+    { value: 1 },
+    { value: 3 },
+    { value: 2 },
+    { value: 3 },
+    { value: 2 },
+    { value: 7 },
+    { value: 7 },
+  ]);
   assert.deepEqual(execute(join(out, "entry.mjs"), calls), trace);
   const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
     encoding: "utf8",
@@ -906,28 +922,38 @@ export { mask, maskAssign };
 theorem bit_and_observation :
   ((sourceBindingState bindingSource).bind (fun state =>
     (publicCallableTable bindingSource bindingExports).bind (fun table =>
-      runArgumentCalls table state [("mask", [4294967297]), ("mask", [9007199254740991]), ("maskAssign", [4294967298])]))).map
-    (fun state => state.returns) = some [some 1, some 3, some 2] := by decide
+      runArgumentCalls table state [("mask", [4294967297]), ("mask", [9007199254740991]), ("maskAssign", [4294967298]), ("combine", [4294967296]), ("toggle", [4294967297]), ("combineAssign", [4]), ("toggleAssign", [4])]))).map
+    (fun state => state.returns) = some [some 1, some 3, some 2, some 3, some 2, some 7, some 7] := by decide
 #print axioms bit_and_observation
-#print axioms bitAndFuel
+#print axioms bitwiseFuel
 example : evaluateExpression [] [] (.bitAnd (.literal 2147483648) (.literal 2147483648)) = none := by decide
+example : evaluateExpression [] [] (.bitOr (.literal 2147483648) (.literal 0)) = none := by decide
+example : evaluateExpression [] [] (.bitXor (.literal 2147483648) (.literal 0)) = none := by decide
 `,
   });
   assert.equal(replay.status, 0, replay.stdout + replay.stderr);
   assert.match(replay.stdout, /'bit_and_observation' does not depend on any axioms/);
-  assert.match(replay.stdout, /'bitAndFuel' does not depend on any axioms/);
+  assert.match(replay.stdout, /'bitwiseFuel' does not depend on any axioms/);
   const emitted = join(out, "functions.mjs");
   const original = await readFile(emitted, "utf8");
-  await writeFile(emitted, original.replace("x & 3", "x & 1"));
-  const unsafe = cli("validate", source, spec, out);
-  assert.equal(unsafe.result, "unsafe", JSON.stringify(unsafe));
-  assert.notDeepEqual(execute(source, unsafe.calls), execute(join(out, "entry.mjs"), unsafe.calls));
-  const invalid = join(root, "bit-and-negative.mjs");
-  await writeFile(invalid, (await readFile(source, "utf8")).replace("x & 3", "2147483648 & 2147483648"));
-  const invalidOut = join(root, "bit-and-negative-out");
-  const generated = cli("generate", invalid, spec, invalidOut);
-  if (generated.result === "generated") assert.equal(cli("validate", invalid, spec, invalidOut).result, "unknown");
-  else assert.equal(generated.result, "unknown");
+  for (const operator of ["&", "|", "^"]) {
+    await writeFile(emitted, original.replace(`x ${operator} 3`, `x ${operator} 1`));
+    const unsafe = cli("validate", source, spec, out);
+    assert.equal(unsafe.result, "unsafe", JSON.stringify(unsafe));
+    assert.notDeepEqual(execute(source, unsafe.calls), execute(join(out, "entry.mjs"), unsafe.calls));
+    const invalid = join(root, `bit-negative-${operator.charCodeAt(0)}.mjs`);
+    await writeFile(
+      invalid,
+      (await readFile(source, "utf8")).replace(
+        `x ${operator} 3`,
+        `2147483648 ${operator} ${operator === "&" ? 2147483648 : 0}`
+      )
+    );
+    const invalidOut = join(root, `bit-negative-${operator.charCodeAt(0)}-out`);
+    const generated = cli("generate", invalid, spec, invalidOut);
+    if (generated.result === "generated") assert.equal(cli("validate", invalid, spec, invalidOut).result, "unknown");
+    else assert.equal(generated.result, "unknown");
+  }
 }
 
 if (shard === 14) {

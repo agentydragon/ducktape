@@ -17,6 +17,10 @@ inductive ThrownValue where
    the reported JavaScript safe-integer assumption, excluding negative zero.
    Remainder by zero and non-integral or zero-divisor division are outside
    the modeled numeric subset. -/
+inductive BitOp where
+  | and | or | xor
+  deriving DecidableEq, Repr
+
 inductive NumericExpr where
   | literal (value : Nat)
   | name (name : String)
@@ -26,6 +30,8 @@ inductive NumericExpr where
   | remainder (left right : NumericExpr)
   | divide (left right : NumericExpr)
   | bitAnd (left right : NumericExpr)
+  | bitOr (left right : NumericExpr)
+  | bitXor (left right : NumericExpr)
   | equal (left right : NumericExpr)
   | less (left right : NumericExpr)
   | greater (left right : NumericExpr)
@@ -165,14 +171,22 @@ structure ExpressionResult (α : Type) where
   locals : List (String × Nat)
   completion : Except ThrownValue α
 
-/- A bounded, axiom-free 32-bit AND. Higher input bits are discarded, as in
+/- A bounded, axiom-free bitwise operation. Higher bits are discarded, as in
    JavaScript's ToInt32 coercion. -/
-def bitAndFuel : Nat → Nat → Nat → Nat
-  | 0, _, _ => 0
-  | fuel + 1, left, right =>
-    if left == 0 || right == 0 then 0
-    else (if left % 2 == 1 && right % 2 == 1 then 1 else 0) +
-      2 * bitAndFuel fuel (left / 2) (right / 2)
+def bitwiseFuel : Nat → BitOp → Nat → Nat → Nat
+  | 0, _, _, _ => 0
+  | fuel + 1, op, left, right =>
+    let done := match op with
+      | .and => left == 0 || right == 0
+      | .or | .xor => left == 0 && right == 0
+    if done then 0 else
+      let a := left % 2 == 1
+      let b := right % 2 == 1
+      let bit := match op with
+        | .and => a && b
+        | .or => a || b
+        | .xor => a != b
+      (if bit then 1 else 0) + 2 * bitwiseFuel fuel op (left / 2) (right / 2)
 
 mutual
 def evaluateExpression (locals globals : List (String × Nat)) : NumericExpr → Option (ExpressionResult Nat)
@@ -236,7 +250,29 @@ def evaluateExpression (locals globals : List (String × Nat)) : NumericExpr →
       match rightResult.completion with
       | .error value => pure ⟨rightResult.locals, .error value⟩
       | .ok rightValue =>
-        let bits := bitAndFuel 32 leftValue rightValue
+        let bits := bitwiseFuel 32 .and leftValue rightValue
+        if bits < 2147483648 then pure ⟨rightResult.locals, .ok bits⟩ else none
+  | .bitOr left right => do
+    let leftResult ← evaluateExpression locals globals left
+    match leftResult.completion with
+    | .error value => pure ⟨leftResult.locals, .error value⟩
+    | .ok leftValue =>
+      let rightResult ← evaluateExpression leftResult.locals globals right
+      match rightResult.completion with
+      | .error value => pure ⟨rightResult.locals, .error value⟩
+      | .ok rightValue =>
+        let bits := bitwiseFuel 32 .or leftValue rightValue
+        if bits < 2147483648 then pure ⟨rightResult.locals, .ok bits⟩ else none
+  | .bitXor left right => do
+    let leftResult ← evaluateExpression locals globals left
+    match leftResult.completion with
+    | .error value => pure ⟨leftResult.locals, .error value⟩
+    | .ok leftValue =>
+      let rightResult ← evaluateExpression leftResult.locals globals right
+      match rightResult.completion with
+      | .error value => pure ⟨rightResult.locals, .error value⟩
+      | .ok rightValue =>
+        let bits := bitwiseFuel 32 .xor leftValue rightValue
         if bits < 2147483648 then pure ⟨rightResult.locals, .ok bits⟩ else none
   | .divide left right => do
     let leftResult ← evaluateExpression locals globals left
@@ -362,6 +398,8 @@ def evaluateArguments (locals globals : List (String × Nat)) : NumericExpr → 
   | .remainder _ _ => none
   | .divide _ _ => none
   | .bitAnd _ _ => none
+  | .bitOr _ _ => none
+  | .bitXor _ _ => none
   | .equal _ _ => none
   | .less _ _ => none
   | .greater _ _ => none

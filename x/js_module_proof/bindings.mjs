@@ -299,6 +299,16 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
   check(name !== "globalThis" && !parameters.includes("globalThis"), "unsupported globalThis binding");
   check(new Set(parameters).size === parameters.length, "duplicate parameters");
   check(node.body.body.length > 0, "expected a returning function body");
+  const binaryKinds = {
+    "+": "add",
+    "*": "multiply",
+    "-": "subtract",
+    "%": "remainder",
+    "/": "divide",
+    "&": "bitAnd",
+    "|": "bitOr",
+    "^": "bitXor",
+  };
   let logicalIndex = 0;
   const expression = (node) => {
     check(--budget.remaining >= 0, "expression expansion limit exceeded");
@@ -312,7 +322,7 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
       check(!localFunctions.has(value), "local function identity escapes");
       return { kind: "name", name: value };
     }
-    if (node?.type === "BinaryExpression" && ["+", "*", "-", "%", "/", "&"].includes(node.operator)) {
+    if (node?.type === "BinaryExpression" && Object.hasOwn(binaryKinds, node.operator)) {
       check(
         !["%", "/"].includes(node.operator) || node.right?.type !== "Literal" || node.right.value !== 0,
         "zero divisor"
@@ -327,26 +337,22 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
       )
         check(node.left.value % node.right.value === 0, "non-integral division");
       if (
-        node.operator === "&" &&
+        ["&", "|", "^"].includes(node.operator) &&
         node.left?.type === "Literal" &&
         node.right?.type === "Literal" &&
         Number.isSafeInteger(node.left.value) &&
         Number.isSafeInteger(node.right.value)
       )
-        check((node.left.value & node.right.value) >= 0, "negative bitwise result");
+        check(
+          (node.operator === "&"
+            ? node.left.value & node.right.value
+            : node.operator === "|"
+              ? node.left.value | node.right.value
+              : node.left.value ^ node.right.value) >= 0,
+          "negative bitwise result"
+        );
       return {
-        kind:
-          node.operator === "+"
-            ? "add"
-            : node.operator === "*"
-              ? "multiply"
-              : node.operator === "-"
-                ? "subtract"
-                : node.operator === "%"
-                  ? "remainder"
-                  : node.operator === "/"
-                    ? "divide"
-                    : "bitAnd",
+        kind: binaryKinds[node.operator],
         left: expression(node.left),
         right: expression(node.right),
       };
@@ -564,7 +570,7 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
       let name, value;
       if (
         assignment?.type === "AssignmentExpression" &&
-        ["=", "+=", "*=", "-=", "%=", "/=", "&="].includes(assignment.operator)
+        ["=", "+=", "*=", "-=", "%=", "/=", "&=", "|=", "^="].includes(assignment.operator)
       ) {
         name = identifier(assignment.left);
         check(
@@ -576,18 +582,7 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
         value = expression(assignment.right);
         if (assignment.operator !== "=")
           value = {
-            kind:
-              assignment.operator === "+="
-                ? "add"
-                : assignment.operator === "*="
-                  ? "multiply"
-                  : assignment.operator === "-="
-                    ? "subtract"
-                    : assignment.operator === "%="
-                      ? "remainder"
-                      : assignment.operator === "/="
-                        ? "divide"
-                        : "bitAnd",
+            kind: binaryKinds[assignment.operator.slice(0, -1)],
             left: { kind: "name", name },
             right: value,
           };
@@ -747,6 +742,8 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
       case "remainder":
       case "divide":
       case "bitAnd":
+      case "bitOr":
+      case "bitXor":
       case "equal":
       case "less":
       case "greater":
@@ -1273,6 +1270,8 @@ function leanExpression(expression) {
     case "remainder":
     case "divide":
     case "bitAnd":
+    case "bitOr":
+    case "bitXor":
     case "equal":
     case "less":
     case "greater":
@@ -1822,7 +1821,12 @@ theorem binding_captured_observations (calls : List (String × List Nat)) :
       const right = expressionBound(expression.right, bound);
       return [left, right, left * right].reduce((a, b) => (a > b ? a : b));
     }
-    if (expression.kind === "remainder" || expression.kind === "divide" || expression.kind === "bitAnd") {
+    if (expression.kind === "bitOr" || expression.kind === "bitXor") {
+      const left = expressionBound(expression.left, bound);
+      const right = expressionBound(expression.right, bound);
+      return left + right;
+    }
+    if (["remainder", "divide", "bitAnd"].includes(expression.kind)) {
       const left = expressionBound(expression.left, bound);
       const right = expressionBound(expression.right, bound);
       return left > right ? left : right;

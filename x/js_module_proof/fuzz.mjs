@@ -933,7 +933,10 @@ export function makeComposedCase(seed, index) {
     }
     let nextLocal = 0;
     const masks = [0, 1, 15, 2147483648, 4294967295, 4294967297];
-    const bitmask = () => masks[rand(masks.length)];
+    const bitmask = (operator) => {
+      const choices = operator === "&" ? masks : [0, 1, 15, 4294967296, 4294967297];
+      return choices[rand(choices.length)];
+    };
     const expression = (visible, depth, forbidden = null) => {
       if (useLocalFunction && depth > 0 && rand(6) === 0) return call(id("nested"), [literal(rand(4))]);
       if (depth === 0 || rand(3) === 0) {
@@ -941,13 +944,15 @@ export function makeComposedCase(seed, index) {
         if (!names.length) return literal(rand(4));
         return rand(3) ? id(names[rand(names.length)]) : literal(rand(4));
       }
-      if (rand(7) === 0)
+      if (rand(7) === 0) {
+        const operator = ["&", "|", "^"][rand(3)];
         return {
           type: "BinaryExpression",
-          operator: "&",
+          operator,
           left: expression(visible, depth - 1, forbidden),
-          right: literal(bitmask()),
+          right: literal(bitmask(operator)),
         };
+      }
       if (rand(7) === 0)
         return {
           type: "LogicalExpression",
@@ -1004,12 +1009,14 @@ export function makeComposedCase(seed, index) {
         visible.declare(name);
         if (mutable && rand(2)) {
           const mode = rand(5);
+          const bitOperator = ["&", "|", "^"][rand(3)];
           body.push(
             expr({
               type: "AssignmentExpression",
-              operator: mode === 0 ? "%=" : mode === 1 ? "&=" : "+=",
+              operator: mode === 0 ? "%=" : mode === 1 ? `${bitOperator}=` : "+=",
               left: id(name),
-              right: mode === 0 ? literal(1 + rand(4)) : mode === 1 ? literal(bitmask()) : expression(visible, 1),
+              right:
+                mode === 0 ? literal(1 + rand(4)) : mode === 1 ? literal(bitmask(bitOperator)) : expression(visible, 1),
             })
           );
         }

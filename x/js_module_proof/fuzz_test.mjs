@@ -400,6 +400,10 @@ assert.ok(composedPrograms.some((item) => item.source.includes(" && ")));
 assert.ok(composedPrograms.some((item) => item.source.includes(" || ")));
 assert.ok(composedPrograms.some((item) => item.source.includes(" & ")));
 assert.ok(composedPrograms.some((item) => item.source.includes(" &= ")));
+assert.ok(composedPrograms.some((item) => item.source.includes(" | ")));
+assert.ok(composedPrograms.some((item) => item.source.includes(" ^ ")));
+assert.ok(composedPrograms.some((item) => item.source.includes(" |= ")));
+assert.ok(composedPrograms.some((item) => item.source.includes(" ^= ")));
 assert.ok(composedPrograms.some((item) => item.source.includes("4294967297")));
 assert.ok(
   new Set(composedPrograms.map((item) => item.ast.body.filter((node) => node.type === "FunctionDeclaration").length))
