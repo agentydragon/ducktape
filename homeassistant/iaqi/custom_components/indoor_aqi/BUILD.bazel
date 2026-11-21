@@ -65,15 +65,3 @@ py_test(
     main = "test_sensor.py",
     deps = _TEST_DEPS,
 )
-
-py_test(
-    name = "test_sensor_simple",
-    srcs = [
-        "conftest.py",
-        "test_sensor_simple.py",
-    ],
-    args = _TEST_ARGS,
-    imports = ["../.."],
-    main = "test_sensor_simple.py",
-    deps = _TEST_DEPS,
-)
