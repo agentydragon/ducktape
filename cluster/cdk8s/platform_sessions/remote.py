@@ -58,6 +58,9 @@ PINS_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}-image-pins"
 GATEWAY = "platform-sessions-gateway"
 GATEWAY_PORT = Port(name="http", number=8080)
 PUBLIC_HOSTNAME = "platform-sessions.allegedly.works"
+_PROVIDER_HTTPS = Port(name="https", number=8443)
+_PROVIDER_GRPC = Port(name="grpc", number=8444)
+_PROVIDER_METRICS = Port(name="metrics", number=9091)
 SHARED_PROVIDERS_IMAGE = "platform-sessions-providers"
 REGISTRY = "git.allegedly.works/ducktape-ci"
 PROVIDERS = tuple(str(item["id"]) for item in config.INTEGRATIONS["integrations"])
@@ -107,8 +110,8 @@ def _connections_json(instances: tuple[str, ...]) -> str:
     return json.dumps(
         {
             instance: {
-                "origin": f"https://{_provider_dns(instance)}:8443",
-                "control_target": f"{_provider_dns(instance)}:8444",
+                "origin": f"https://{_provider_dns(instance)}:{_PROVIDER_HTTPS.number}",
+                "control_target": f"{_provider_dns(instance)}:{_PROVIDER_GRPC.number}",
                 "control_token_file": f"{_TOKEN_DIR}/{instance}/control",
                 "owner_token_file": f"{_TOKEN_DIR}/{instance}/owner",
                 "route_token_file": f"{_TOKEN_DIR}/{instance}/route",
@@ -335,7 +338,9 @@ def _provider_workload(chart: Chart, instance: str, *, provider_type: str, recor
         config_map=k8s.ConfigMapVolumeSource(name=CANARY_CONFIG.name if instance == "myquest-canary" else CONFIG.name),
     )
     tmp = k8s.Volume(name="tmp", empty_dir=k8s.EmptyDirVolumeSource())
-    provider_health_get = k8s.HttpGetAction(path="/healthz", scheme="HTTPS", port=k8s.IntOrString.from_string("https"))
+    provider_health_get = k8s.HttpGetAction(
+        path="/healthz", scheme="HTTPS", port=k8s.IntOrString.from_string(_PROVIDER_HTTPS.name)
+    )
     provider_health = k8s.Probe(http_get=provider_health_get)
     recorder_env = (
         [
@@ -457,7 +462,7 @@ def _provider_workload(chart: Chart, instance: str, *, provider_type: str, recor
                 "--instance-id",
                 instance,
                 "--control-address",
-                "0.0.0.0:8444",
+                f"0.0.0.0:{_PROVIDER_GRPC.number}",
                 "--control-token-file",
                 f"{_TOKEN_DIR}/control",
                 "--owner-token-file",
@@ -465,9 +470,9 @@ def _provider_workload(chart: Chart, instance: str, *, provider_type: str, recor
                 "--route-token-file",
                 f"{_TOKEN_DIR}/route",
                 "--http-port",
-                "8443",
+                str(_PROVIDER_HTTPS.number),
                 "--metrics-port",
-                "9091",
+                str(_PROVIDER_METRICS.number),
                 "--tls-cert",
                 "/var/run/provider-tls/tls.crt",
                 "--tls-key",
@@ -496,9 +501,8 @@ def _provider_workload(chart: Chart, instance: str, *, provider_type: str, recor
                 ),
             ],
             ports=[
-                k8s.ContainerPort(name="https", container_port=8443),
-                k8s.ContainerPort(name="grpc", container_port=8444),
-                k8s.ContainerPort(name="metrics", container_port=9091),
+                k8s.ContainerPort(name=port.name, container_port=port.number)
+                for port in (_PROVIDER_HTTPS, _PROVIDER_GRPC, _PROVIDER_METRICS)
             ],
             readiness_probe=provider_health,
             liveness_probe=provider_health,
@@ -541,8 +545,8 @@ def _provider_workload(chart: Chart, instance: str, *, provider_type: str, recor
         chart,
         instance,
         [
-            k8s.ServicePort(name="https", port=8443, target_port=k8s.IntOrString.from_string("https")),
-            k8s.ServicePort(name="grpc", port=8444, target_port=k8s.IntOrString.from_string("grpc")),
+            k8s.ServicePort(name=port.name, port=port.number, target_port=k8s.IntOrString.from_string(port.name))
+            for port in (_PROVIDER_HTTPS, _PROVIDER_GRPC)
         ],
         selector_name=name,
     )
@@ -553,7 +557,9 @@ def _provider_workload(chart: Chart, instance: str, *, provider_type: str, recor
         metadata=ApiObjectMetadata(name=instance, namespace=NAMESPACE),
         spec=PodMonitorSpec(
             selector=PodMonitorSpecSelector(match_labels={"app": name}),
-            pod_metrics_endpoints=[PodMonitorSpecPodMetricsEndpoints(port="metrics", path="/metrics", interval="1m")],
+            pod_metrics_endpoints=[
+                PodMonitorSpecPodMetricsEndpoints(port=_PROVIDER_METRICS.name, path="/metrics", interval="1m")
+            ],
         ),
     )
 
