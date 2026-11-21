@@ -219,7 +219,7 @@ func serveAuthoritySVIDServer(
 	queueStore := testStore(t, 10)
 	hub := testWatchHub(t, queueStore)
 	service := &Service{
-		Store: queueStore, DispatcherCallers: sets.New[auth.Account](),
+		Store:     queueStore,
 		Sandboxes: inventory, EnvironmentRules: environmentRules, PolicyReady: func() error { return nil },
 		Hub: hub, WatchLease: 10 * time.Second,
 	}
