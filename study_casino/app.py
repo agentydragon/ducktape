@@ -65,13 +65,7 @@ from study_casino.credit_award import (
     streak_multiplier,
 )
 from study_casino.deployment import build_deployment_info
-from study_casino.events import (
-    BlackjackOutcome,
-    BlackjackSettlementOutcome,
-    GameEventMutation,
-    GameEventRead,
-    LedgerEventRead,
-)
+from study_casino.events import BlackjackOutcome, BlackjackSettlementOutcome, GameEventMutation
 from study_casino.games import (
     RNG_VERSION,
     GameSettlement,
@@ -361,12 +355,6 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
     def admin_user_state(user: Annotated[str, Depends(admin_target_user)]) -> StateDump:
         return store.state_dump(user)
 
-    @app.get("/game-events")
-    def list_game_events(
-        username: Annotated[str, Depends(current_user_dep)], limit: Annotated[int, Query(ge=1, le=500)] = 100
-    ) -> list[GameEventRead]:
-        return store.list_game_events(username, limit=limit)
-
     @app.get("/casino/stats")
     def get_casino_stats(username: Annotated[str, Depends(current_user_dep)]) -> CasinoStats:
         return store.casino_stats(username)
@@ -374,12 +362,6 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
     @app.get("/admin/casino/stats")
     def admin_casino_stats(user: Annotated[str, Depends(admin_target_user)]) -> CasinoStats:
         return store.casino_stats(user)
-
-    @app.get("/ledger-events")
-    def list_ledger_events(
-        username: Annotated[str, Depends(current_user_dep)], limit: Annotated[int, Query(ge=1, le=500)] = 100
-    ) -> list[LedgerEventRead]:
-        return store.list_ledger_events(username, limit=limit)
 
     @app.post("/actions/session/complete")
     async def complete_session(
