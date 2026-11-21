@@ -2270,6 +2270,7 @@ py_library(
     name = "agent_rbac_test_support",
     testonly = True,
     srcs = ["agent_rbac_test_support.py"],
+    visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
 )
 
 py_test(
