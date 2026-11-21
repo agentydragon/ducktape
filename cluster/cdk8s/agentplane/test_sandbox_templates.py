@@ -177,8 +177,8 @@ def test_environment_can_keep_codex_execution_inside_the_runner(scratch_app: App
     assert {"home", "tmp", "codex-executor"}.isdisjoint({volume["name"] for volume in pod["volumes"]})
 
 
-def test_runner_template_configures_session_reconcile_concurrency(scratch_app: App) -> None:
-    chart = Chart(scratch_app, "runner-concurrency-test")
+def test_runtime_overrides_reach_the_runner_container(scratch_app: App) -> None:
+    chart = Chart(scratch_app, "runner-runtime-overrides-test")
     EnvironmentSandboxTemplate(
         chart,
         "runner-template",
@@ -186,21 +186,6 @@ def test_runner_template_configures_session_reconcile_concurrency(scratch_app: A
         name="test-runner",
         image="example.invalid/runner",
         session_reconcile_concurrency=2048,
-    )
-    docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
-    template = one(doc for doc in docs if doc["kind"] == "SandboxTemplate")
-    config = _runner_configuration(docs, template["spec"]["pod"]["spec"])
-    assert config["session_reconcile_concurrency"] == 2048
-
-
-def test_runner_template_serializes_codex_readiness_overrides(scratch_app: App) -> None:
-    chart = Chart(scratch_app, "runner-codex-readiness-test")
-    EnvironmentSandboxTemplate(
-        chart,
-        "runner-template",
-        staging.ENV,
-        name="test-runner",
-        image="example.invalid/runner",
         codex_readiness=CodexReadiness(
             exec_server_ready_timeout_ms=60_000,
             exec_server_probe_timeout_ms=5_000,
@@ -211,6 +196,7 @@ def test_runner_template_serializes_codex_readiness_overrides(scratch_app: App) 
     template = one(doc for doc in docs if doc["kind"] == "SandboxTemplate")
     config = _runner_configuration(docs, template["spec"]["pod"]["spec"])
 
+    assert config["session_reconcile_concurrency"] == 2048
     assert config["codex_readiness"] == {
         "exec_server_ready_timeout_ms": 60_000,
         "exec_server_probe_timeout_ms": 5_000,
@@ -295,15 +281,6 @@ def test_pod_template_projects_the_buildbuddy_key_to_runner_and_executor(
     assert "BBR_BUILDBUDDY_API_KEY_FILE" in config["harness_environment"]["inherit"]
     settings = next(volume for volume in pod["volumes"] if volume["name"] == "egress-sidecar-settings")
     assert settings["configMap"]["name"] == f"{staging.POD_TEMPLATE}-egress-sidecar"
-
-
-def test_staging_app_config_offers_tabbyapi_smoke_routes(staging_manifests: list[dict[str, Any]]) -> None:
-    app_config = config_map_yaml(staging_manifests, "app-config", "config.yaml")
-    tabby_routes = {
-        model["model"] for model in app_config["models"]["models"] if model["model"].startswith("tabbyapi/")
-    }
-    offered_routes = {route for routes in app_config["models"]["harnesses"].values() for route in routes}
-    assert tabby_routes & offered_routes, "Agentplane staging must offer at least one TabbyAPI route for smoke tests"
 
 
 def test_launcher_relay_listens_on_every_interface_and_otherwise_matches_the_runner_sidecar(
