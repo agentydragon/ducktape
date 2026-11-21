@@ -80,7 +80,7 @@ metadata:
       Bridges the gap between Cilium Gateway (TLS terminate) and the
       apiserver (requires HTTPS). Used by kubeapi.allegedly.works route.
     goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "nginx", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "10m", "memory": "16Mi"}, "maxAllowed": {"cpu": "10m", "memory": "24Mi"}, "controlledResources": ["memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
-    goldilocks.fairwinds.com/vpa-update-mode: initial
+    goldilocks.fairwinds.com/vpa-update-mode: auto
   name: kubeapi-proxy
   namespace: default
 spec:

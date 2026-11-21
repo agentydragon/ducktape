@@ -17,9 +17,9 @@ from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.namespaces import initial_memory_request_annotations
+from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL, Vpa, VpaProfile
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
-from cluster.cdk8s.vpa_policy import ContainerPolicy
+from cluster.cdk8s.vpa_policy import ContainerPolicy, ControlledValues
 
 NAME = "kube-api-proxy"
 NAMESPACE = "default"
@@ -56,12 +56,20 @@ def _deployment(chart: Chart) -> None:
                     "Bridges the gap between Cilium Gateway (TLS terminate) and the\n"
                     "apiserver (requires HTTPS). Used by kubeapi.allegedly.works route.\n"
                 ),
-                **initial_memory_request_annotations(
-                    # The working set peaked below 10Mi. Cap the global 100Mi recommendation floor.
-                    ContainerPolicy.memory_requests_only(
-                        "nginx", cpu_request=_NGINX_CPU_REQUEST, memory_floor=_NGINX_MEMORY_REQUEST, memory_limit="24Mi"
-                    )
-                ),
+                VPA_UPDATE_MODE_LABEL: Vpa.AUTO,
+                **VpaProfile(
+                    mode=Vpa.AUTO,
+                    container_policies=(
+                        # Cap the global 100Mi recommendation floor for this small proxy.
+                        ContainerPolicy.memory_requests_only(
+                            "nginx",
+                            cpu_request=_NGINX_CPU_REQUEST,
+                            memory_floor=_NGINX_MEMORY_REQUEST,
+                            memory_limit="24Mi",
+                        ),
+                        ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
+                    ),
+                ).annotations(),
             },
         ),
         spec=k8s.DeploymentSpec(
