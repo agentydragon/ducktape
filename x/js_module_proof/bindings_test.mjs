@@ -361,17 +361,14 @@ if (runSection(0)) {
   const expressionSpec = join(root, "unsupported-renamed-local-spec.json");
   await writeFile(
     expressionSource,
-    `let value = 3;\nfunction read(arg) { let local = arg; local += value; return local; }\nexport { read };\n`
+    `let value = 3;\nfunction read(arg) { let local = arg; value += local; return local; }\nexport { read };\n`
   );
   generatedSpec.modules["state.mjs"].statements = [0];
   generatedSpec.modules["logic.mjs"].statements = [1];
   await writeFile(expressionSpec, JSON.stringify(generatedSpec));
   const unsupported = cli("generate", expressionSource, expressionSpec, join(root, "unsupported-renamed-local-out"));
   assert.equal(unsupported.value.result, "unknown");
-  assert.match(
-    unsupported.value.reason,
-    /local import renaming supports only pure returning expressions and unwritten locals/
-  );
+  assert.match(unsupported.value.reason, /cannot write an imported (?:or immutable )?binding/);
 
   const observedSource = join(root, "observed-renamed-local-source.mjs");
   const observedSpec = join(root, "observed-renamed-local-spec.json");
@@ -802,4 +799,26 @@ if (runSection(1)) {
   assert.equal(letResult.result, "proved under assumptions", JSON.stringify(letResult));
   assert.deepEqual(execute(letSource, calls), { events: [], results: [6, 8] });
   assert.deepEqual(execute(join(letOut, "entry.mjs"), calls), { events: [], results: [6, 8] });
+
+  const writeSource = join(root, "local-write-alias-source.mjs");
+  const writeOut = join(root, "local-write-alias-out");
+  await writeFile(
+    writeSource,
+    `let value = 3;\nlet other = 5;\nfunction compute(p) { let local = p; local += value; return local; }\nexport { compute };\n`
+  );
+  assert.equal(cli("generate", writeSource, constSpec, writeOut).value.result, "generated");
+  const writeResult = cli("validate", writeSource, constSpec, writeOut).value;
+  assert.equal(writeResult.result, "proved under assumptions", JSON.stringify(writeResult));
+  assert.deepEqual(execute(writeSource, calls), { events: [], results: [3, 5] });
+  assert.deepEqual(execute(join(writeOut, "entry.mjs"), calls), { events: [], results: [3, 5] });
+  const writeLogic = join(writeOut, "logic.mjs");
+  const writeText = await readFile(writeLogic, "utf8");
+  assert.match(writeText, /local \+= __split_local_0/);
+  await writeFile(writeLogic, writeText.replace("local += __split_local_0", "__split_local_0 += local"));
+  const importedWrite = cli("validate", writeSource, constSpec, writeOut).value;
+  assert.notEqual(importedWrite.result, "proved under assumptions", JSON.stringify(importedWrite));
+  const writeScript = `import(${JSON.stringify(pathToFileURL(join(writeOut, "entry.mjs")).href)}).then(m => { try { m.compute(1); } catch (error) { console.log(error.name); } });`;
+  const writeNode = spawnSync(process.execPath, ["--input-type=module", "-e", writeScript], { encoding: "utf8" });
+  assert.equal(writeNode.status, 0, writeNode.stderr);
+  assert.equal(writeNode.stdout.trim(), "TypeError");
 }

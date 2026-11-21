@@ -1040,6 +1040,9 @@ export function makeLocalAliasCase(seed, index) {
   const computedBody = withLocal
     ? [
         localDeclaration,
+        ...(index >= 205 && index % 96 === 13
+          ? [expr({ type: "AssignmentExpression", operator: "+=", left: id("offset"), right: id("numericRight") })]
+          : []),
         returnNode({ type: "BinaryExpression", operator: "+", left: id("offset"), right: numericBody }),
       ]
     : [returnNode(numericBody)];

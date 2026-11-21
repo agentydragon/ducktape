@@ -1285,8 +1285,8 @@ example : witnessedExpression [] 0 [("outer", "x")]
     (.local "x" false (.literal 0) (.name "x")) =
     some (.local "##" false (.literal 0) (.name "##")) := by decide
 
-/- Pure expressions may contain unwritten local bindings, including frontend-
-   generated temporaries for short-circuit values. -/
+/- This expression subset permits local bindings and local writes; the
+   separate validity check confines writes to mutable locals. -/
 def simpleAliasNumericExpr : NumericExpr → Bool
   | .literal _ => true
   | .name _ => true
@@ -1311,7 +1311,7 @@ def simpleAliasNumericExpr : NumericExpr → Bool
   | .followedBy _ _ => false
   | .local _ _ initial body =>
     simpleAliasNumericExpr initial && simpleAliasNumericExpr body
-  | .assign _ _ _ => false
+  | .assign _ value body => simpleAliasNumericExpr value && simpleAliasNumericExpr body
   | .raise _ => false
   | .raisePrimitive _ => false
   | .argumentsNil => false
@@ -1500,7 +1500,8 @@ def simpleAliasStatement : BindingStmt → Bool
   | .function _ _ _ => true
   | .thrower _ _ => false
   | .expressionFunction _ parameters body =>
-    parameters.all (fun name => parameters.count name == 1) && simpleAliasNumericExpr body
+    parameters.all (fun name => parameters.count name == 1) && simpleAliasNumericExpr body &&
+      validLocalWrites (parameters.map (fun name => (name, true))) body
   | .capturedFactory _ _ _ _ _ => false
   | .capturedClosure _ _ _ _ => false
   | .capturedAlias _ _ => false
@@ -1508,6 +1509,12 @@ def simpleAliasStatement : BindingStmt → Bool
   | .closure _ _ => false
   | .wrapper _ _ => false
   | .recordCall _ _ => false
+
+/- A write may target a mutable local, but never an imported binding. -/
+example : simpleAliasStatement (.expressionFunction "f" []
+    (.local "x" true (.literal 0) (.assign "x" (.literal 1) (.name "x")))) = true := by decide
+example : simpleAliasStatement (.expressionFunction "f" []
+    (.assign "imported" (.literal 1) (.literal 0))) = false := by decide
 
 /- A table that merely fails on both sides is not evidence that a supported
    call behaves correctly. Require every modeled read and write to name the

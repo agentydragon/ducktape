@@ -1424,23 +1424,37 @@ function generateFiles(source, spec, names) {
           if (item.ast.kind === "expressionFunction") {
             const node = parseModule(statement)[0];
             const statements = node.body.body;
-            const declarations = statements.slice(0, -1);
+            const prefix = statements.slice(0, -1);
+            const declarations = prefix.filter((statement) => statement.type === "VariableDeclaration");
             check(
               node.params.every((parameter) => parameter.type === "Identifier") &&
                 statements.at(-1)?.type === "ReturnStatement" &&
                 declarations.every(
                   (declaration) =>
-                    declaration.type === "VariableDeclaration" &&
                     ["const", "let"].includes(declaration.kind) &&
                     declaration.declarations.length === 1 &&
                     declaration.declarations[0].id.type === "Identifier" &&
                     declaration.declarations[0].init
+                ) &&
+                prefix.every(
+                  (statement) =>
+                    statement.type === "VariableDeclaration" ||
+                    (statement.type === "ExpressionStatement" &&
+                      statement.expression.type === "AssignmentExpression" &&
+                      ["=", "+="].includes(statement.expression.operator) &&
+                      statement.expression.left.type === "Identifier")
                 ),
-              "local import renaming supports only pure returning expressions and unwritten locals"
+              "local import renaming supports only local declarations and assignments"
             );
             const localNames = new Set([
               ...node.params.map((parameter) => parameter.name),
               ...declarations.map((declaration) => declaration.declarations[0].id.name),
+            ]);
+            const mutableNames = new Set([
+              ...node.params.map((parameter) => parameter.name),
+              ...declarations
+                .filter((declaration) => declaration.kind === "let")
+                .map((declaration) => declaration.declarations[0].id.name),
             ]);
             const edits = [];
             const visit = (expression) => {
@@ -1469,7 +1483,13 @@ function generateFiles(source, spec, names) {
               }
               check(false, "local import renaming supports only pure returning expressions");
             };
-            for (const declaration of declarations) visit(declaration.declarations[0].init);
+            for (const item of prefix) {
+              if (item.type === "VariableDeclaration") visit(item.declarations[0].init);
+              else {
+                check(mutableNames.has(item.expression.left.name), "cannot write an imported or immutable binding");
+                visit(item.expression.right);
+              }
+            }
             visit(statements.at(-1).argument);
             check(
               renamed.every((name) => edits.some((edit) => edit.name === name)),
