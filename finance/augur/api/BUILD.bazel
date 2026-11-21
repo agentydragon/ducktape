@@ -179,6 +179,7 @@ py_library(
     srcs = ["catalog.py"],
     deps = [
         ":config",
+        ":schemas",
         ":wire",
         "//finance/augur/calibration:catalog",
         "//finance/augur/model:series",

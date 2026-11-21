@@ -2,7 +2,7 @@
 // rollouts (same expected-range-vs-observed shape as the model-vs-market table, but checked
 // against the run's own rollouts). Renders nothing when no bands are configured.
 
-import React, { useMemo } from "react";
+import { useMemo } from "react";
 
 import {
   sortSanityBands,

@@ -3,8 +3,6 @@
 // or polylines (>12) compare the normalized per-bucket market shares against the model's
 // per-bucket rollout shares at a date.
 
-import React from "react";
-
 import { fmtKl, fmtProb, klTextClass, PlatformBadge } from "./calibration_format";
 import type { fetchCalibrationRun } from "./client";
 

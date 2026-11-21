@@ -34,7 +34,7 @@ from finance.augur.product.wire import (
 )
 from finance.augur.sim.events import TlhOperation
 from finance.augur.sim.ids import AccountId, PortfolioId
-from finance.augur.sim.tlh import TlhAssumptions
+from finance.augur.sim.testing.tlh import NO_HARVEST
 
 VOO = SecuritySymbol("VOO")
 
@@ -58,13 +58,7 @@ def _product(augur_config: Config, catalog: CatalogResponse, *, index: str, acco
                 initial_cohorts=[
                     TlhCohort(value=Decimal(100_000), cost_basis=Decimal(100_000), purchase_month_index=-24)
                 ],
-                assumptions=TlhAssumptions(
-                    peak_annual_yield=0,
-                    floor_annual_yield=0,
-                    maturity_decay_exponent=1,
-                    drawdown_sensitivity=0,
-                    short_term_fraction=1,
-                ),
+                assumptions=NO_HARVEST,
             ),
         ),
         known_location_ids=catalog.location_ids,
