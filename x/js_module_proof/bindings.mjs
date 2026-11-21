@@ -994,19 +994,25 @@ theorem binding_two_captured_calls (leftOps rightOps : List Operation)
   exact two_captured_call_sequence_related binding_source_first binding_output_first binding_source_second binding_output_second
     binding_source_captures_disjoint binding_output_captures_disjoint leftOps rightOps operations
     binding_source_state binding_output_state leftFinal rightFinal binding_captured_initial_related leftRun rightRun
+theorem binding_captured_tables_paired : PairedCapturedTables binding_source_first binding_output_first
+    binding_source_second binding_output_second binding_source_table binding_output_table := by
+  apply PairedCapturedTables.cons
+  · exact PairedCapturedCallable.first _ _
+  · apply PairedCapturedTables.cons
+    · exact PairedCapturedCallable.second _ _
+    · exact PairedCapturedTables.nil
 theorem binding_exported_captured_calls (calls : List (String × List Nat))
-    (perCall : ∀ call leftOps rightOps, argumentCallOperations binding_source_table call = some leftOps →
-      argumentCallOperations binding_output_table call = some rightOps →
-      RelatedOperations (PairedTwoCapturedOperation binding_source_first binding_output_first
-        binding_source_second binding_output_second) leftOps rightOps)
     (leftFinal rightFinal : ExecutionState Unit)
     (leftRun : runArgumentCalls binding_source_table binding_source_state calls = some leftFinal)
     (rightRun : runArgumentCalls binding_output_table binding_output_state calls = some rightFinal) :
     twoCapturedStatesRelated binding_source_first binding_output_first binding_source_second binding_output_second
       leftFinal rightFinal := by
   exact two_captured_argument_calls_related binding_source_first binding_output_first binding_source_second binding_output_second
-    binding_source_captures_disjoint binding_output_captures_disjoint binding_source_table binding_output_table perCall calls
+    binding_source_captures_disjoint binding_output_captures_disjoint binding_source_table binding_output_table
+    (paired_captured_table_call binding_source_first binding_output_first binding_source_second binding_output_second
+      binding_source_table binding_output_table binding_captured_tables_paired) calls
     binding_source_state binding_output_state leftFinal rightFinal binding_captured_initial_related leftRun rightRun
+#print axioms binding_captured_tables_paired
 #print axioms binding_exported_captured_calls
 #print axioms binding_captured_environments_present
 #print axioms binding_source_captures_disjoint
@@ -1073,6 +1079,7 @@ theorem binding_exported_captured_calls (calls : List (String × List Nat))
         "binding_captured_initial_related",
         "binding_two_captured_calls",
         "binding_exported_captured_calls",
+        "binding_captured_tables_paired",
       ].every((name) => has(relationProof, name));
     return {
       result: "proved under assumptions",

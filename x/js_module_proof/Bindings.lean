@@ -1040,3 +1040,69 @@ theorem two_captured_argument_calls_related
         leftOps.flatten rightOps.flatten
         (related_argument_call_operations _ leftTable rightTable perCall calls leftOps rightOps leftCalls rightCalls)
         left right leftFinal rightFinal initial leftRun rightRun
+
+inductive PairedCapturedCallable
+    (leftFirst rightFirst leftSecond rightSecond : List (String × String)) : PublicCallable → PublicCallable → Prop where
+  | first (parameters : List String) (body : NumericExpr) :
+      PairedCapturedCallable leftFirst rightFirst leftSecond rightSecond
+        (.captured leftFirst parameters body) (.captured rightFirst parameters body)
+  | second (parameters : List String) (body : NumericExpr) :
+      PairedCapturedCallable leftFirst rightFirst leftSecond rightSecond
+        (.captured leftSecond parameters body) (.captured rightSecond parameters body)
+
+inductive PairedCapturedTables
+    (leftFirst rightFirst leftSecond rightSecond : List (String × String)) :
+    List (String × PublicCallable) → List (String × PublicCallable) → Prop where
+  | nil : PairedCapturedTables leftFirst rightFirst leftSecond rightSecond [] []
+  | cons (name : String) {left right leftTail rightTail} :
+      PairedCapturedCallable leftFirst rightFirst leftSecond rightSecond left right →
+      PairedCapturedTables leftFirst rightFirst leftSecond rightSecond leftTail rightTail →
+      PairedCapturedTables leftFirst rightFirst leftSecond rightSecond ((name, left) :: leftTail) ((name, right) :: rightTail)
+
+theorem paired_captured_callable_operations
+    (leftFirst rightFirst leftSecond rightSecond : List (String × String)) (left right : PublicCallable)
+    (paired : PairedCapturedCallable leftFirst rightFirst leftSecond rightSecond left right)
+    (arguments : List Nat) (leftOps rightOps : List Operation)
+    (leftCall : callableOperations left arguments = some leftOps)
+    (rightCall : callableOperations right arguments = some rightOps) :
+    RelatedOperations (PairedTwoCapturedOperation leftFirst rightFirst leftSecond rightSecond) leftOps rightOps := by
+  cases paired with
+  | first parameters body =>
+    change (if parameters.length == arguments.length then some [.invokeCaptured leftFirst parameters arguments body] else none) = some leftOps at leftCall
+    change (if parameters.length == arguments.length then some [.invokeCaptured rightFirst parameters arguments body] else none) = some rightOps at rightCall
+    cases enough : parameters.length == arguments.length with
+    | false => rw [enough] at leftCall; cases leftCall
+    | true =>
+      rw [enough] at leftCall rightCall
+      cases leftCall
+      cases rightCall
+      exact .cons (.first parameters arguments body) .nil
+  | second parameters body =>
+    change (if parameters.length == arguments.length then some [.invokeCaptured leftSecond parameters arguments body] else none) = some leftOps at leftCall
+    change (if parameters.length == arguments.length then some [.invokeCaptured rightSecond parameters arguments body] else none) = some rightOps at rightCall
+    cases enough : parameters.length == arguments.length with
+    | false => rw [enough] at leftCall; cases leftCall
+    | true =>
+      rw [enough] at leftCall rightCall
+      cases leftCall
+      cases rightCall
+      exact .cons (.second parameters arguments body) .nil
+
+theorem paired_captured_table_call
+    (leftFirst rightFirst leftSecond rightSecond : List (String × String)) (leftTable rightTable : List (String × PublicCallable))
+    (paired : PairedCapturedTables leftFirst rightFirst leftSecond rightSecond leftTable rightTable)
+    (call : String × List Nat) (leftOps rightOps : List Operation)
+    (leftCall : argumentCallOperations leftTable call = some leftOps)
+    (rightCall : argumentCallOperations rightTable call = some rightOps) :
+    RelatedOperations (PairedTwoCapturedOperation leftFirst rightFirst leftSecond rightSecond) leftOps rightOps := by
+  induction paired with
+  | nil => cases leftCall
+  | cons name callable tail ih =>
+    simp only [argumentCallOperations, List.find?_cons] at leftCall rightCall
+    cases nameMatches : (name == call.1) with
+    | false =>
+      rw [nameMatches] at leftCall rightCall
+      exact ih leftCall rightCall
+    | true =>
+      rw [nameMatches] at leftCall rightCall
+      exact paired_captured_callable_operations leftFirst rightFirst leftSecond rightSecond _ _ callable call.2 leftOps rightOps leftCall rightCall
