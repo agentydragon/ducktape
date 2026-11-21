@@ -39,6 +39,15 @@ func testStoreWithURL(t *testing.T, cap int) (*Store, string) {
 	return store, databaseURL
 }
 
+// connectStore opens a Store with queue capacity 3, the main store's in every test that calls it, on
+// its own single connection to databaseURL, and returns it with that connection's backend PID.
+func connectStore(t *testing.T, ctx context.Context, databaseURL string) (*Store, int) {
+	t.Helper()
+	db := postgres.Open(t, databaseURL)
+	db.SetMaxOpenConns(1)
+	return NewStore(db, 3), postgres.BackendPID(t, ctx, db)
+}
+
 var testStoreDatabaseURLs sync.Map // map[*sql.DB]string
 
 func testWatchHub(t *testing.T, store *Store) *wakeups.Hub {

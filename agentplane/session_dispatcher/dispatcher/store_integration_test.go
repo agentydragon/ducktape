@@ -1892,20 +1892,14 @@ func TestCommandAdmissionRechecksSessionAfterConcurrentDeletion(t *testing.T) {
 			if _, err := deletion.ExecContext(ctx, "DELETE FROM session WHERE session_id=$1", sessionID); err != nil {
 				t.Fatal(err)
 			}
-			var deletionPID int
-			if err := deletion.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&deletionPID); err != nil {
-				t.Fatal(err)
-			}
+			deletionPID := postgres.BackendPID(t, ctx, deletion)
 			db, err := sql.Open("postgres", databaseURL)
 			if err != nil {
 				t.Fatal(err)
 			}
 			defer db.Close()
 			db.SetMaxOpenConns(1)
-			var admissionPID int
-			if err := db.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&admissionPID); err != nil {
-				t.Fatal(err)
-			}
+			admissionPID := postgres.BackendPID(t, ctx, db)
 			result := make(chan error, 1)
 			go func() {
 				_, err := store.NewStore(db, 3).EnqueueForCaller(ctx, sessionID, "test-deletion", sandboxUID, input(uuid.NewString(), "input"), nil, admission)

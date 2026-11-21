@@ -44,13 +44,8 @@ func TestSessionWatchVersionsFollowSerializedCommitOrder(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	var firstPID, secondPID int
-	if err := first.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&firstPID); err != nil {
-		t.Fatal(err)
-	}
-	if err := second.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&secondPID); err != nil {
-		t.Fatal(err)
-	}
+	firstPID := postgres.BackendPID(t, ctx, first)
+	secondPID := postgres.BackendPID(t, ctx, second)
 	if _, err := first.ExecContext(ctx, "UPDATE session SET reason='writer-a' WHERE session_id=$1", ids[0]); err != nil {
 		t.Fatal(err)
 	}
