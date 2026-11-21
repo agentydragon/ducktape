@@ -474,10 +474,22 @@ console.log(JSON.stringify(bulk));
 
 // Run structural sampling after the Lean-backed cases to limit peak memory.
 const parse = createRequire(import.meta.url)(process.env.JS_MODULE_PROOF_ACORN ?? "acorn").parse;
-const composedPrograms = Array.from({ length: 128 }, (_, i) => makeComposedCase(917, i));
+const composedPrograms = Array.from({ length: 192 }, (_, i) => makeComposedCase(917, i));
 assert.deepEqual(
-  new Set(composedPrograms.filter((item) => item.hasDiscardedLiteral).map((item) => item.ast.body[0].expression.value)),
+  new Set(
+    composedPrograms
+      .filter((item) => item.hasDiscardedLiteral && item.ast.body[0].expression.type === "Literal")
+      .map((item) => item.ast.body[0].expression.value)
+  ),
   new Set(["use strict", true, null, 42])
+);
+assert.deepEqual(
+  new Set(
+    composedPrograms
+      .filter((item) => item.hasDiscardedLiteral && item.ast.body[0].expression.type === "UnaryExpression")
+      .map((item) => item.ast.body[0].expression.operator)
+  ),
+  new Set(["void", "!", "typeof"])
 );
 assert.ok(new Set(composedPrograms.map((item) => item.source)).size > 120);
 assert.ok(composedPrograms.some((item) => item.source.includes(" as public_calculate")));

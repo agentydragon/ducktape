@@ -964,12 +964,16 @@ function capturedClosure(node, functions) {
 }
 
 function candidateStatement(node, functions) {
+  const expression = node.type === "ExpressionStatement" ? node.expression : null;
+  const literal =
+    expression?.type === "UnaryExpression" && ["void", "!", "typeof"].includes(expression.operator)
+      ? expression.argument
+      : expression;
   if (
-    node.type === "ExpressionStatement" &&
-    node.expression.type === "Literal" &&
-    !node.expression.regex &&
-    !node.expression.bigint &&
-    (node.expression.value === null || ["string", "boolean", "number"].includes(typeof node.expression.value))
+    literal?.type === "Literal" &&
+    !literal.regex &&
+    !literal.bigint &&
+    (literal.value === null || ["string", "boolean", "number"].includes(typeof literal.value))
   )
     return { kind: "discardedLiteral" };
   try {

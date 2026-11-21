@@ -37,6 +37,8 @@ function print(node) {
       return node.name;
     case "Literal":
       return JSON.stringify(node.value);
+    case "UnaryExpression":
+      return `${node.operator}${node.operator === "!" ? "" : " "}${print(node.argument)}`;
     case "VariableDeclaration":
       return `${node.kind} ${node.declarations.map(print).join(", ")};`;
     case "VariableDeclarator":
@@ -1146,10 +1148,17 @@ export function makeComposedCase(seed, index) {
   const extraAlias = index % 6 === 0 ? "second_calculate" : null;
   const earlyVar = index % 14 === 0;
   const hasDiscardedLiteral = index % 13 === 3 && !earlyVar;
+  const discardedForms = [
+    ...["use strict", true, null, 42].map(literal),
+    { type: "UnaryExpression", operator: "void", prefix: true, argument: literal(0) },
+    { type: "UnaryExpression", operator: "!", prefix: true, argument: literal(true) },
+    { type: "UnaryExpression", operator: "typeof", prefix: true, argument: literal(null) },
+    { type: "UnaryExpression", operator: "void", prefix: true, argument: literal("ignored") },
+  ];
   const prefix = earlyVar
     ? [record(globals[0])]
     : hasDiscardedLiteral
-      ? [expr(literal(["use strict", true, null, 42][Math.floor(index / 13) % 4]))]
+      ? [expr(discardedForms[Math.floor(index / 13) % discardedForms.length])]
       : [];
   const ast = {
     type: "Program",

@@ -57,6 +57,11 @@ if (shard === 6) {
   await writeFile(file, text.replace('"use strict"', "true"));
   assert.equal(cli("validate", directiveSource, directiveSpec, directiveOut).result, "proved under assumptions");
   assert.deepEqual(execute(join(directiveOut, "entry.mjs"), ["read"]), execute(directiveSource, ["read"]));
+  await writeFile(file, text.replace('"use strict"', "void 0"));
+  assert.equal(cli("validate", directiveSource, directiveSpec, directiveOut).result, "proved under assumptions");
+  assert.deepEqual(execute(join(directiveOut, "entry.mjs"), ["read"]), execute(directiveSource, ["read"]));
+  await writeFile(file, text.replace('"use strict"', "void missing"));
+  assert.equal(cli("validate", directiveSource, directiveSpec, directiveOut).result, "unknown");
   await writeFile(file, text.replace('"use strict"', "[]"));
   assert.equal(cli("validate", directiveSource, directiveSpec, directiveOut).result, "unknown");
   await writeFile(file, text.replace('"use strict"', "/x/"));
