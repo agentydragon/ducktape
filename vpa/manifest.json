@@ -5,7 +5,7 @@
   "seven_day_queries_end_utc": "2026-11-20T03:03:48.752000+00:00",
   "scope": "Live VPA, workload, resource, scheduling and selected historical metrics snapshot; independently curated action plan.",
   "report_html_sha256": "8cf99f558c3ca594b394099d7a3c256183b71f3c1e39c3bab5d9eeef2935c775",
-  "report_script_sha256": "0871361076cea354d413d8efa2b1c8acc5ee788072274d2975dcbc91683e85fd",
+  "report_script_sha256": "93204f39a3bb21713dc25bad324d062702adbc7bd9544caecc2e833505db76e8",
   "evidence_sha256": "c69cc4092a6f9640579e2dce32e0f2f37af78498b947522c2320f49698a86a28",
   "architecture_source_devel_commit": "d81bd68165097b089cace9ae168b6e8f202f1b7e",
   "architecture_reviewed_at_utc": "2026-11-20T03:36:52Z",

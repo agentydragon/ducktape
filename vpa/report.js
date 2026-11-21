@@ -330,9 +330,8 @@ function Report() {
               >controller and webhook<//
             >, and ${" "}<${Anchor} href=${github + "pull/18319"}
               >External Secrets webhook<//
-            >
-            had multiple Ready replicas, PDBs permitting one disruption and
-            Recreate VPAs. Webhook endpoint and admission checks passed; no
+            >${" "}had multiple Ready replicas, PDBs permitting one disruption
+            and Recreate VPAs. Webhook endpoint and admission checks passed; no
             eviction or leader handoff was tested.<//
           >
           <${Text} component="p"
@@ -480,9 +479,8 @@ function Report() {
             ceiling; review proportional limit changes and capacity before
             enabling eviction. ${" "}<${Anchor} href=${github + "pull/18449"}
               >The proposed metrics-server change<//
-            >
-            preserves control of both. Check service-specific recovery and
-            capacity before further promotion: PDBs do not guarantee
+            >${" "}preserves control of both. Check service-specific recovery
+            and capacity before further promotion: PDBs do not guarantee
             uninterrupted in-flight work. Storage work has a separate owner.<//
           ><//
         >
