@@ -14,7 +14,12 @@ from kubernetes_asyncio import client as k8s_client
 from python.runfiles import Runfiles
 
 from agentplane.subjects import ServiceAccountRef
-from agentplane.testing.kubernetes_apiserver import dry_run_admitted, kubernetes_apiserver, wait_until_refused
+from agentplane.testing.kubernetes_apiserver import (
+    KubernetesApiServer,
+    dry_run_admitted,
+    kubernetes_apiserver,
+    wait_until_refused,
+)
 from cluster.cdk8s.agentplane import environment_firecracker, staging
 from cluster.cdk8s.agentplane.firecracker_admission import add_firecracker_admission
 from cluster.cdk8s.testing.manifests import find_resource
@@ -44,6 +49,47 @@ def _launcher(app: App) -> dict[str, Any]:
     return cast(dict[str, Any], json.loads(completed.stdout))
 
 
+async def _verify_unavailable_pss_denies_only_the_controller(
+    server: KubernetesApiServer, policy: dict[str, Any]
+) -> None:
+    # Register the policy's exact Kubernetes webhook settings with an unavailable backend.
+    settings = policy["spec"]["webhookConfiguration"]
+    name = "unavailable-pss.agentplane.allegedly.works"
+    webhook = {
+        "metadata": {"name": name},
+        "webhooks": [
+            {
+                "name": name,
+                "clientConfig": {"service": {"namespace": NAMESPACE, "name": "unavailable-pss"}},
+                "admissionReviewVersions": ["v1"],
+                "sideEffects": "None",
+                "timeoutSeconds": 2,
+                "rules": [{"operations": ["CREATE"], "apiGroups": [""], "apiVersions": ["v1"], "resources": ["pods"]}],
+                **settings,
+            }
+        ],
+    }
+    await k8s_client.AdmissionregistrationV1Api(server.api).create_validating_webhook_configuration(cast(Any, webhook))
+    pod = {"metadata": {"name": "ordinary"}, "spec": {"containers": [{"name": "app", "image": "registry.test/app"}]}}
+
+    async def admitted(user: str, namespace: str) -> bool:
+        async with server.impersonating(user) as client:
+            try:
+                await k8s_client.CoreV1Api(client).create_namespaced_pod(namespace, cast(Any, pod), dry_run="All")
+            except k8s_client.ApiException as error:
+                if error.status != 500 or not error.body:
+                    raise
+                message = json.loads(error.body)["message"]
+                if f'failed calling webhook "{name}"' not in message:
+                    raise
+                return False
+        return True
+
+    await wait_until_refused(lambda: admitted(CONTROLLER, NAMESPACE))
+    assert await admitted(OTHER, NAMESPACE)
+    assert await admitted(CONTROLLER, "test-unrelated-firecracker")
+
+
 async def test_only_the_controller_can_launch_the_firecracker_shape(scratch_chart: Chart, scratch_app: App) -> None:
     add_firecracker_admission(
         scratch_chart,
@@ -57,12 +103,13 @@ async def test_only_the_controller_can_launch_the_firecracker_shape(scratch_char
         await server.install_admission_policy(
             find_resource(manifests, "ValidatingAdmissionPolicy", launcher),
             find_resource(manifests, "ValidatingAdmissionPolicyBinding", launcher),
-            namespaces=[NAMESPACE],
+            namespaces=[NAMESPACE, "test-unrelated-firecracker"],
         )
         core = k8s_client.CoreV1Api(server.api)
-        await core.create_namespaced_service_account(
-            NAMESPACE, k8s_client.V1ServiceAccount(metadata=k8s_client.V1ObjectMeta(name="default"))
-        )
+        for namespace in (NAMESPACE, "test-unrelated-firecracker"):
+            await core.create_namespaced_service_account(
+                namespace, k8s_client.V1ServiceAccount(metadata=k8s_client.V1ObjectMeta(name="default"))
+            )
         admission = k8s_client.AdmissionregistrationV1Api(server.api)
         for name in (_PREFIX + "firecracker-config", _PREFIX + "actions-command-exec"):
             await admission.create_validating_admission_policy(
@@ -163,6 +210,10 @@ async def test_only_the_controller_can_launch_the_firecracker_shape(scratch_char
             await wait_until_refused(lambda: reaches_exec("environment-runtime"))
             assert not await reaches_exec(None)
             assert await reaches_exec("sandbox")
+
+        await _verify_unavailable_pss_denies_only_the_controller(
+            server, find_resource(manifests, "Policy", "firecracker-controller-baseline")
+        )
 
 
 if __name__ == "__main__":
