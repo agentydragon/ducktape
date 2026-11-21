@@ -1871,7 +1871,9 @@ theorem binding_aliased_future_calls (calls : ${aliasCallType}) :
       input: model + certificate,
     });
   const has = (result, name) => result.stdout.includes(`'${name}' does not depend on any axioms`);
-  const proof = runLean(prefix + same);
+  const proof = runLean(
+    prefix + same + `\n#eval IO.println s!"witness-calls-stable:{witnessedCallableImportsStable bindingModules}"\n`
+  );
   if (proof.error || proof.status === null)
     return {
       result: "unknown",
@@ -1978,7 +1980,7 @@ theorem binding_export_difference :
   // exponentially large BigInt while checking whether it exceeds the limit.
   const witnessLimit = BigInt(Number.MAX_SAFE_INTEGER);
   const capWitnessBound = (value) => (value > witnessLimit ? witnessLimit + 1n : value);
-  let witnessCallCeiling = null;
+  let witnessObservedCallBound = null;
   const expressionBound = (expression, bound) => {
     if (expression.kind === "literal") return capWitnessBound(BigInt(expression.value));
     if (expression.kind === "name") return bound;
@@ -2058,10 +2060,10 @@ theorem binding_export_difference :
         const value = expressionBound(argument, largest);
         return value > largest ? value : largest;
       }, bound);
-      // A redirected call can run a different body than the one embedded by
-      // the frontend. Each possible body is checked at the witness ceiling;
-      // refuse calls whose arguments or captured locals can exceed it.
-      if (witnessCallCeiling !== null && callBound > witnessCallCeiling) return witnessLimit + 1n;
+      // Track arguments of nested calls so redirected bodies are also checked
+      // at every input bound they can receive.
+      if (witnessObservedCallBound !== null && callBound > witnessObservedCallBound)
+        witnessObservedCallBound = callBound;
       const body = expressionBound(expression.body, callBound);
       return body > callBound ? body : callBound;
     }
@@ -2092,33 +2094,53 @@ theorem binding_export_difference :
     if (growthSteps >= 53) return false;
     let bound = BigInt(maximum) << BigInt(growthSteps);
     if (bound > limit) return false;
-    witnessCallCeiling = bound;
+    const items = programs.flat();
+    const callsStable = proof.stdout.includes("witness-calls-stable:true");
+    // Stable callable imports use the already-inlined bodies. Otherwise, a
+    // redirected call may select any output function; widen call inputs
+    // through at most one layer per function. Recursive redirected graphs
+    // cannot produce a finite witnessed Lean lowering and are rejected there.
+    const rounds = callsStable ? 1 : 1 + items.filter((item) => item.kind === "expressionFunction").length;
     try {
-      const factories = [];
-      for (const item of programs.flat()) {
-        if (item.kind === "expressionFunction" && expressionBound(item.expression, bound) > limit) return false;
-        if (item.kind === "capturedFactory") {
-          let localBound = bound;
-          for (const local of item.locals) {
-            const initial = expressionBound(local.initial, localBound);
-            if (initial > localBound) localBound = initial;
-            if (localBound > limit) return false;
+      for (let round = 0; round < rounds; round++) {
+        witnessObservedCallBound = callsStable ? null : bound;
+        const factories = [];
+        let stateBound = bound;
+        for (const item of items) {
+          if (item.kind === "expressionFunction") {
+            const resultBound = expressionBound(item.expression, bound);
+            if (resultBound > limit) return false;
+            // The replacement body can return a larger value than the
+            // frontend's inlined body. Later expressions may consume it.
+            if (witnessObservedCallBound !== null && resultBound > witnessObservedCallBound)
+              witnessObservedCallBound = resultBound;
           }
-          factories.push(item.body);
-          if (expressionBound(item.body, localBound) > limit) return false;
-          if (localBound > bound) bound = localBound;
+          if (item.kind === "capturedFactory") {
+            let localBound = bound;
+            for (const local of item.locals) {
+              const initial = expressionBound(local.initial, localBound);
+              if (initial > localBound) localBound = initial;
+              if (localBound > limit) return false;
+            }
+            factories.push(item.body);
+            if (expressionBound(item.body, localBound) > limit) return false;
+            if (localBound > stateBound) stateBound = localBound;
+          }
         }
-      }
-      for (let i = 0; i < calls.length; i++) {
-        for (const body of factories) {
-          const next = expressionBound(body, bound);
-          if (next > bound) bound = next;
-          if (bound > limit) return false;
+        for (let i = 0; i < calls.length; i++) {
+          for (const body of factories) {
+            const next = expressionBound(body, stateBound);
+            if (next > stateBound) stateBound = next;
+            if (stateBound > limit) return false;
+          }
         }
+        if (callsStable || witnessObservedCallBound <= bound) return true;
+        bound = witnessObservedCallBound;
+        if (bound > limit) return false;
       }
       return true;
     } finally {
-      witnessCallCeiling = null;
+      witnessObservedCallBound = null;
     }
   };
   const different = `\ntheorem binding_difference : sourceBindingState bindingSource ≠ witnessedOutputState bindingSource bindingModules bindingEntry := by decide\n#print axioms binding_difference\n`;

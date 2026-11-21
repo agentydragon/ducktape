@@ -1111,6 +1111,30 @@ def witnessedImportsStable (modules : List BindingModule) : Bool :=
       | some resolved => declaredName resolved.2.2 == some link.1
       | none => false
 
+/- Numeric call expansion only depends on imports resolving to callable
+   declarations. Redirected variables still use the same inlined callees. -/
+def witnessedCallableImportsStable (modules : List BindingModule) : Bool :=
+  modules.all fun module => module.imports.all fun imported =>
+    (importedMappings imported).all fun link =>
+      match resolveActualExportFuel modules (modules.length + 1) imported.dependency link.2 with
+      | some resolved =>
+        match resolved.2.2 with
+        | .expressionFunction _ _ _ | .reader _ _ => declaredName resolved.2.2 == some link.1
+        | _ => true
+      | none => false
+
+example : witnessedCallableImportsStable [
+    { imports := [], exports := ["y"], statements := [.variable "y" 1], assignment := [0] },
+    { imports := [{ dependency := 0, locals := ["x"], links := [("x", "y")], reexports := [] }],
+      exports := [], statements := [], assignment := [] }
+  ] = true := by decide
+
+example : witnessedCallableImportsStable [
+    { imports := [], exports := ["y"], statements := [.reader "y" "cell"], assignment := [0] },
+    { imports := [{ dependency := 0, locals := ["x"], links := [("x", "y")], reexports := [] }],
+      exports := [], statements := [], assignment := [] }
+  ] = false := by decide
+
 /- Rewrite free names in a restricted expression using the actual module graph.
    Local bindings and parameters shadow imports. Inlined calls resolve the actual callee declaration and are lowered in that
    module's scope, subject to a finite expansion bound. -/

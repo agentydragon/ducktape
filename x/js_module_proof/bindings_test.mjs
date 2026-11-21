@@ -356,6 +356,24 @@ if (runSection(0)) {
   const largeRedirect = cli("validate", largeArgumentSource, calleeSpec, largeArgumentOut).value;
   assert.equal(largeRedirect.result, "unknown", JSON.stringify(largeRedirect));
   assert.match(largeRedirect.detail, /numeric bounds/);
+
+  const largeReturnSource = join(root, "redirected-large-return-source.mjs");
+  const largeReturnOut = join(root, "redirected-large-return-out");
+  await writeFile(
+    largeReturnSource,
+    `function first(value) { return 1; }\nfunction second(value) { return 5000000000000000; }\nfunction call(value) { return first(value) + first(value); }\nexport { call };\n`
+  );
+  assert.equal(cli("generate", largeReturnSource, calleeSpec, largeReturnOut).value.result, "generated");
+  const largeReturnRelay = join(largeReturnOut, "relay.mjs");
+  await writeFile(
+    largeReturnRelay,
+    (await readFile(largeReturnRelay, "utf8")).replace("export { first }", "export { second as first }")
+  );
+  assert.deepEqual(execute(largeReturnSource, calls), { events: [], results: [2] });
+  assert.deepEqual(execute(join(largeReturnOut, "entry.mjs"), calls), { events: [], results: [10000000000000000] });
+  const largeReturn = cli("validate", largeReturnSource, calleeSpec, largeReturnOut).value;
+  assert.equal(largeReturn.result, "unknown", JSON.stringify(largeReturn));
+  assert.match(largeReturn.detail, /numeric bounds/);
 }
 
 if (runSection(1)) {

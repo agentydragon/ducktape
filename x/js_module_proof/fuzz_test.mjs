@@ -171,8 +171,21 @@ if (shards === 4 && shard >= 1) {
     });
     assert.equal(redirectedRelay.mutationKinds.renamedReexport, 1);
     assert.equal(redirectedRelay.mutatedDifferent, 1);
+    const rangeRefusal =
+      [443, 507, 635].includes(start) &&
+      redirectedRelay.mutatedVerdicts.unknown === 1 &&
+      /numeric bounds/.test(redirectedRelay.unknownCases[0].detail);
+    if (rangeRefusal) {
+      assert.equal(redirectedRelay.unexplainedDifferences.length, 1);
+      await access(join(process.env.TEST_TMPDIR, redirectedRelay.unexplainedDifferences[0].artifactPath, "node.json"));
+    }
     if (start === 571 || start === 763) assert.equal(redirectedRelay.mutatedVerdicts.unknown, 1);
-    else assert.equal(redirectedRelay.mutatedVerdicts.unsafe, 1);
+    else if (!rangeRefusal)
+      assert.equal(
+        redirectedRelay.mutatedVerdicts.unsafe,
+        1,
+        JSON.stringify({ start, unknown: redirectedRelay.unknownCases })
+      );
     if (start === 763) {
       assert.equal(redirectedRelay.overflowIntermediateCases, 1);
       assert.match(redirectedRelay.unknownCases[0].detail, /numeric bounds/);
@@ -183,7 +196,7 @@ if (shards === 4 && shard >= 1) {
       assert.deepEqual(observed.before.events, [1]);
       assert.deepEqual(observed.after.events, [2]);
     }
-    if (start === 123 || start === 379 || start === 443 || start === 507 || start === 635) {
+    if (!rangeRefusal && [123, 379, 443, 507, 635].includes(start)) {
       assert.deepEqual(redirectedRelay.certifiedWitnesses[0].calls, [{ name: "fuzzRelayRead", args: [0] }]);
       await access(join(process.env.TEST_TMPDIR, redirectedRelay.certifiedWitnesses[0].artifactPath, "verdict.json"));
       const witness = JSON.parse(

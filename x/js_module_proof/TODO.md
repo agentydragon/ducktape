@@ -99,7 +99,9 @@ cover only part of the grammar and split space described below.
       fuzzing tests but does not prove the model's correspondence to ECMAScript.
       The frontend's conservative numeric bounds are currently trusted code;
       formalize and prove their relationship to execution, including sequential
-      effects in operands and arguments, or replace them with a proved analysis.
+      effects in operands and arguments and redirected callees' argument and
+      return ranges, or replace them with a proved analysis. Narrow the current
+      whole-program widening to functions reachable from the witness.
 - [x] Model observed and thrown JavaScript strings as UTF-16 code-unit sequences
       in the shared semantics, including unpaired surrogates. Extend the frontend,
       Node witness encoding, certificates and generated tests together.
