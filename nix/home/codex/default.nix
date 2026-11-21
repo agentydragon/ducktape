@@ -75,6 +75,7 @@ let
       shell_tool = true; # enable `/shell`
       apply_patch_freeform = true; # freeform patch syntax
       memories = true; # experimental memory read/write pipeline
+      guardian_reuse_parent_compaction = true;
       # shell_snapshot ?  (keep off unless you want offline TUI snapshots)
     };
     # Persist command history to disk.
