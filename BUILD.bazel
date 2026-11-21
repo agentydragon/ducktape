@@ -64,7 +64,6 @@
 # gazelle:resolve py third_party.containers.timescaledb_pg18 //third_party/containers:timescaledb_pg18
 #
 # Bazel-provided libraries (not from PyPI)
-# gazelle:resolve py rules_python.python.runfiles @rules_python//python/runfiles
 # gazelle:resolve py python.runfiles @rules_python//python/runfiles
 # gazelle:resolve py pkg.private @rules_pkg//pkg/private:manifest
 #

@@ -6,12 +6,11 @@
 name: Nix images
 
 # Paths: devinfra/ci/nix_images.json's common_paths plus every image's paths (test_nix_images.py
-# checks the three lists agree with it).
+# checks the list agrees with it).
 on:
   push:
     branches: [devel]
-    paths:
-      # keep-sorted start
+    paths: &nix_image_paths # keep-sorted start
       - ".github/actions/finish-attic-upload/action.yml"
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/nix-images.yml"
@@ -54,92 +53,12 @@ on:
   # Same-repository PRs use pull_request directly. Fork PRs are skipped here (their secrets are
   # unavailable) and use pull_request_target below instead.
   pull_request:
-    paths:
-      # keep-sorted start
-      - ".github/actions/finish-attic-upload/action.yml"
-      - ".github/actions/setup-nix-attic/action.yml"
-      - ".github/workflows/nix-images.yml"
-      - ".github/workflows/trusted-fork-pr-context.yml"
-      - ".pre-commit-config.yaml"
-      - "agentplane/cli/package.nix"
-      - "agentplane/env/images/build.nix"
-      - "agentplane/env/images/container-disk.nix"
-      - "agentplane/env/images/ducktape_image_smoke.sh"
-      - "agentplane/env/images/ducktape_tools_check.nix"
-      - "agentplane/env/images/firecracker-image.nix"
-      - "agentplane/env/images/firecracker.nix"
-      - "agentplane/env/images/firecracker_guest_contract.json"
-      - "agentplane/env/images/home_prepare"
-      - "agentplane/env/images/image.nix"
-      - "agentplane/env/images/sandbox.nix"
-      - "agentplane/env/images/systemd/**"
-      - "agentplane/env/images/tools.nix"
-      - "agentplane/env/images/vm.nix"
-      - "agentplane/env/images/vm_guest_contract.json"
-      - "cpap/gateway/**"
-      - "devinfra/buildbuddy/kvm/worker/**"
-      - "devinfra/buildbuddy/kvm/x/nixos_worker/**"
-      - "devinfra/ci/nix_images.json"
-      - "devinfra/ci/nix_images.py"
-      - "devinfra/ci/pr_mergeability.py"
-      - "flake.lock"
-      - "flake.nix"
-      - "nix/artifact-pins.json"
-      - "nix/attic-pubkeys.json"
-      - "nix/flake/devtools.nix"
-      - "nix/flake/packages.nix"
-      - "nix/lib/nix-ld-image.nix"
-      - "nix/nixos/modules/base.nix"
-      - "nix/nixos/modules/vm-hardware.nix"
-      - "nix/packages/**"
-      - "ruff.toml"
-      - "website/**"
-      # keep-sorted end
+    paths: *nix_image_paths
   # Fork PRs use pull_request_target so the build can read the Attic cache. fork-context resolves
   # GitHub's merge commit and gates non-allowlisted authors with fork-ci-review before checkout.
   pull_request_target:
     branches: [devel]
-    paths:
-      # keep-sorted start
-      - ".github/actions/finish-attic-upload/action.yml"
-      - ".github/actions/setup-nix-attic/action.yml"
-      - ".github/workflows/nix-images.yml"
-      - ".github/workflows/trusted-fork-pr-context.yml"
-      - ".pre-commit-config.yaml"
-      - "agentplane/cli/package.nix"
-      - "agentplane/env/images/build.nix"
-      - "agentplane/env/images/container-disk.nix"
-      - "agentplane/env/images/ducktape_image_smoke.sh"
-      - "agentplane/env/images/ducktape_tools_check.nix"
-      - "agentplane/env/images/firecracker-image.nix"
-      - "agentplane/env/images/firecracker.nix"
-      - "agentplane/env/images/firecracker_guest_contract.json"
-      - "agentplane/env/images/home_prepare"
-      - "agentplane/env/images/image.nix"
-      - "agentplane/env/images/sandbox.nix"
-      - "agentplane/env/images/systemd/**"
-      - "agentplane/env/images/tools.nix"
-      - "agentplane/env/images/vm.nix"
-      - "agentplane/env/images/vm_guest_contract.json"
-      - "cpap/gateway/**"
-      - "devinfra/buildbuddy/kvm/worker/**"
-      - "devinfra/buildbuddy/kvm/x/nixos_worker/**"
-      - "devinfra/ci/nix_images.json"
-      - "devinfra/ci/nix_images.py"
-      - "devinfra/ci/pr_mergeability.py"
-      - "flake.lock"
-      - "flake.nix"
-      - "nix/artifact-pins.json"
-      - "nix/attic-pubkeys.json"
-      - "nix/flake/devtools.nix"
-      - "nix/flake/packages.nix"
-      - "nix/lib/nix-ld-image.nix"
-      - "nix/nixos/modules/base.nix"
-      - "nix/nixos/modules/vm-hardware.nix"
-      - "nix/packages/**"
-      - "ruff.toml"
-      - "website/**"
-      # keep-sorted end
+    paths: *nix_image_paths
   workflow_dispatch:
 
 concurrency:
