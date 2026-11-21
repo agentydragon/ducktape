@@ -210,8 +210,15 @@ if (shards === 4 && shard === 0) {
     validateEvery: 16,
   });
   assert.equal(campaign.generated + campaign.independentRefused, campaign.cases);
+  assert.ok(campaign.refused > 0);
+  assert.equal(
+    Object.values(campaign.refusalReasons).reduce((sum, count) => sum + count, 0),
+    campaign.refused
+  );
   assert.equal(campaign.splitMode, "independent");
   assert.deepEqual(campaign.independentRequested, { acyclic: 24, cyclic: 4, invalidAssignment: 4 });
+  assert.equal(campaign.independentOrdered, 4);
+  assert.ok(campaign.independentOrderedRefused <= campaign.independentOrdered);
   assert.deepEqual(makeComposedCase(1, 2), makeComposedCase(1, 2));
   const composed = await runFuzz({
     seed: 7,
@@ -222,6 +229,10 @@ if (shards === 4 && shard === 0) {
   });
   assert.equal(composed.compared, 16);
   assert.equal(composed.equal, 16);
+  assert.equal(
+    Object.values(composed.refusalReasons).reduce((sum, count) => sum + count, 0),
+    composed.refused
+  );
   assert.ok(composed.proved > 0);
   assert.ok(composed.astNodeCases.IfStatement > 0);
   const asyncCampaign = await runFuzz({ seed: 37, cases: 8, outputDir: process.env.TEST_TMPDIR, grammarMode: "async" });

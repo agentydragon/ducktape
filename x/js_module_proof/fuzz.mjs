@@ -845,15 +845,30 @@ export function independentSplit(input, seed, index) {
   const modules = Object.fromEntries([...names, entry].map((name) => [name, { imports: [], statements: [] }]));
   const owners = [...names, entry];
   const statements = input.ast.body.filter((node) => node.type !== "ExportNamedDeclaration");
-  statements.forEach((_, i) => modules[owners[rand(owners.length)]].statements.push(i));
+  // Include ordered partitions with complete earlier-module imports as well as
+  // unconstrained random graphs. This samples plausible splits without deriving
+  // dependencies from the split checker being tested.
+  const ordered = index % 8 === 2;
+  let rank = 0;
+  statements.forEach((_, i) => {
+    if (ordered) rank += rand(owners.length - rank);
+    modules[owners[ordered ? rank : rand(owners.length)]].statements.push(i);
+  });
   modules[entry].imports = shuffle(names, rand);
   for (let i = 1; i < names.length; i++)
-    for (let j = 0; j < i; j++) if (rand(2)) modules[names[i]].imports.push(names[j]);
+    for (let j = 0; j < i; j++) if (ordered || rand(2)) modules[names[i]].imports.push(names[j]);
   const cyclic = index % 8 === 1;
   const invalidAssignment = index % 8 === 0 && statements.length > 0;
   if (cyclic) modules[names[0]].imports.push(entry);
   if (invalidAssignment) modules[entry].statements.push(0);
-  return { ...input, spec: { kind: "bindings", entry, modules }, independentSplit: true, cyclic, invalidAssignment };
+  return {
+    ...input,
+    spec: { kind: "bindings", entry, modules },
+    independentSplit: true,
+    ordered,
+    cyclic,
+    invalidAssignment,
+  };
 }
 
 // Composes bounded expressions and statement sequences using names visible at
@@ -1402,6 +1417,8 @@ export async function runFuzz({
     nodeVersion: process.version,
     leanVersion,
     independentRefused: 0,
+    independentOrdered: 0,
+    independentOrderedRefused: 0,
     independentRequested: { acyclic: 0, cyclic: 0, invalidAssignment: 0 },
     independentRefusedByCategory: { acyclic: 0, cyclic: 0, invalidAssignment: 0 },
     // Count cases containing each construct, rather than occurrences: a deeply
@@ -1445,6 +1462,7 @@ export async function runFuzz({
     branchElse: 0,
     generated: 0,
     refused: 0,
+    refusalReasons: {},
     unsupportedCaseRefused: 0,
     invalidAssignmentCaseRefused: 0,
     compared: 0,
@@ -1490,7 +1508,10 @@ export async function runFuzz({
           ? ["binding", "effect", "function", "export", "import"][Math.floor(index / 8) % 5]
           : null;
       const independentCategory = input.invalidAssignment ? "invalidAssignment" : input.cyclic ? "cyclic" : "acyclic";
-      if (input.independentSplit) summary.independentRequested[independentCategory]++;
+      if (input.independentSplit) {
+        summary.independentRequested[independentCategory]++;
+        if (input.ordered) summary.independentOrdered++;
+      }
       const nodeTypes = new Set();
       const visit = (value) => {
         if (!value || typeof value !== "object") return;
@@ -1624,8 +1645,11 @@ export async function runFuzz({
       } catch (error) {
         if (!String(error).includes("unknown:")) throw error;
         summary.refused++;
+        const reason = error instanceof Error ? error.message : String(error);
+        summary.refusalReasons[reason] = (summary.refusalReasons[reason] ?? 0) + 1;
         if (input.independentSplit) {
           summary.independentRefused++;
+          if (input.ordered) summary.independentOrderedRefused++;
           summary.independentRefusedByCategory[independentCategory]++;
         } else if (input.invalidAssignment) summary.invalidAssignmentCaseRefused++;
         else if (input.unsupported) summary.unsupportedCaseRefused++;

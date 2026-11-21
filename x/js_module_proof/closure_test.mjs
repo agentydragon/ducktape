@@ -453,7 +453,7 @@ export { broken };
   assert.equal(execute(immutableSource, [{ name: "broken", args: [1] }]).error.name, "TypeError");
   const logic = join(parameterOut, "logic.mjs");
   await writeFile(logic, (await readFile(logic, "utf8")).replace("(a + b) + seed", "(a + b) + a"));
-  assert.equal(cli("validate", parameterSource, parameterSpec, parameterOut).result, "unknown");
+  assert.equal(cli("validate", parameterSource, parameterSpec, parameterOut).result, "unsafe");
   assert.notDeepEqual(execute(join(parameterOut, "entry.mjs"), calls), sourceTrace);
 }
 
@@ -575,7 +575,7 @@ export { call };
   assert.match(replay.stdout, /'binding_future_calls' does not depend on any axioms/);
   const state = join(callOut, "state.mjs");
   await writeFile(state, (await readFile(state, "utf8")).replace("return value + seed", "return value + 1"));
-  assert.equal(cli("validate", callSource, callSpec, callOut).result, "unknown");
+  assert.equal(cli("validate", callSource, callSpec, callOut).result, "unsafe");
   assert.notDeepEqual(execute(join(callOut, "entry.mjs"), calls), sourceTrace);
   const recursiveSource = join(root, "recursive-source.mjs");
   const recursiveSpec = join(root, "recursive-spec.json");
@@ -839,6 +839,19 @@ export { counter };
   });
   assert.equal(replay.status, 0, replay.stdout + replay.stderr);
   assert.match(replay.stdout, /'binding_captured_observations' does not depend on any axioms/);
+  const emitted = join(out, "state.mjs");
+  const originalOutput = await readFile(emitted, "utf8");
+  assert.ok(originalOutput.includes("value += 2"));
+  await writeFile(emitted, originalOutput.replace("value += 2", "value += 3"));
+  const witness = cli("validate", source, spec, out);
+  assert.equal(witness.result, "unsafe", JSON.stringify(witness));
+  assert.notDeepEqual(execute(source, witness.calls), execute(join(out, "entry.mjs"), witness.calls));
+  const witnessReplay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
+    encoding: "utf8",
+    input: models + witness.certificate,
+  });
+  assert.equal(witnessReplay.status, 0, witnessReplay.stdout + witnessReplay.stderr);
+  assert.match(witnessReplay.stdout, /'binding_witness_difference' does not depend on any axioms/);
   const unsupported = join(root, "catch-binding.mjs");
   await writeFile(unsupported, (await readFile(source, "utf8")).replace("catch {", "catch (e) {"));
   assert.equal(cli("generate", unsupported, spec, join(root, "catch-binding-out")).result, "unknown");
@@ -1339,7 +1352,7 @@ theorem twoFrameExample : twoCapturedStatesRelated [("value", "left-first")] [("
   assert.match(replay.stdout, /'captured_paired_step_preserved' does not depend on any axioms/);
   const emitted = join(out, "alias.mjs");
   await writeFile(emitted, (await readFile(emitted, "utf8")).replaceAll("first", "second"));
-  assert.equal(cli("validate", source, spec, out).result, "unknown");
+  assert.notEqual(cli("validate", source, spec, out).result, "proved under assumptions");
   assert.notDeepEqual(execute(join(out, "entry.mjs"), calls), trace);
   const tdzSource = join(root, "alias-tdz.mjs");
   const tdzSpec = join(root, "alias-tdz.json");
@@ -1486,7 +1499,7 @@ export { product, invoke };
   assert.match(replay.stdout, /'binding_future_calls' does not depend on any axioms/);
   const logic = join(out, "logic.mjs");
   await writeFile(logic, (await readFile(logic, "utf8")).replace("total *= factor", "total += factor"));
-  assert.equal(cli("validate", source, spec, out).result, "unknown");
+  assert.notEqual(cli("validate", source, spec, out).result, "proved under assumptions");
   assert.notDeepEqual(execute(join(out, "entry.mjs"), calls), trace);
 }
 
@@ -1729,12 +1742,12 @@ export { select, short, invert, conjunction, difference, greater, atMost, order 
   const changedSubtraction = originalLogic.replace("return value - 1", "return value - 2");
   assert.notEqual(changedSubtraction, originalLogic);
   await writeFile(logic, changedSubtraction);
-  assert.equal(cli("validate", source, spec, out).result, "unknown");
+  assert.notEqual(cli("validate", source, spec, out).result, "proved under assumptions");
   const subtractionCalls = [{ name: "difference", args: [4, 3] }];
   assert.notDeepEqual(execute(source, subtractionCalls), execute(join(out, "entry.mjs"), subtractionCalls));
   await writeFile(logic, originalLogic);
   await writeFile(logic, (await readFile(logic, "utf8")).replace("x < y", "x === y"));
-  assert.equal(cli("validate", source, spec, out).result, "unknown");
+  assert.notEqual(cli("validate", source, spec, out).result, "proved under assumptions");
   assert.notDeepEqual(execute(join(out, "entry.mjs"), calls), trace);
   const booleanSource = join(root, "boolean-return.mjs");
   const booleanSpec = join(root, "boolean-return.json");

@@ -282,10 +282,12 @@ broader-syntax cases, and records validator verdicts for mutated and unmodified
 output independently. A broader-syntax case can also have an invalid split, so
 its refusal does not by itself identify the cause.
 The summary counts cases containing each ESTree node type and groups cases by
-module and import counts, including cases that are later refused.
+module and import counts, including cases that are later refused. It also counts
+the actual generation refusal messages, separate from requested split categories.
 Use `--splits independent` to repartition generated statements independently of
 their grammar and sample acyclic graphs, cycles, and deliberately duplicated
-statement assignments. The summary records requested categories and refusals;
+statement assignments, and some ordered partitions with imports of every earlier
+module. The summary records requested categories, ordered partitions, and refusals;
 an acyclic graph can still have missing dependencies or other invalid links.
 Use `--grammar composed` to generate bounded expression trees and nested
 returning branches and catch clauses from visible lexical names, with

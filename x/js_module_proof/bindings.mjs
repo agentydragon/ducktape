@@ -1258,7 +1258,10 @@ export async function validateBindings(sourcePath, specPath, out) {
     return { result: "unknown", reason: "scoped output function execution is not modeled" };
   const terms = actual.map((module, i) => leanModule(module, spec.modules[names[i]].statements));
   const digest = (content) => createHash("sha256").update(content).digest("hex");
-  const prefix = `\n-- Source SHA256: ${digest(text)}\n-- Output SHA256: ${names.map((name, i) => `${name}=${digest(files[i])}`).join(" ")}\ndef bindingSource : List BindingStmt := ${list(source.statements.map((item) => leanStatement(item.ast)))}\ndef bindingExports : List String := ${leanStrings(source.exports)}\ndef bindingModules : List BindingModule := ${list(terms)}\ndef bindingEntry : Nat := ${names.indexOf(spec.entry)}\ntheorem binding_graph_valid : modulesValid bindingSource bindingExports bindingModules bindingEntry = true := by decide\ntheorem binding_source_ready : (sourceBindingState bindingSource).isSome = true := by decide\ntheorem binding_output_ready : (outputBindingState bindingSource bindingModules bindingEntry).isSome = true := by decide\n#print axioms lexical_nearest_binding\n#print axioms accepted_reference_owner\n#print axioms binding_graph_valid\n#print axioms binding_source_ready\n#print axioms binding_output_ready\n`;
+  const witnessPrefix = `\n-- Source SHA256: ${digest(text)}\n-- Output SHA256: ${names.map((name, i) => `${name}=${digest(files[i])}`).join(" ")}\ndef bindingSource : List BindingStmt := ${list(source.statements.map((item) => leanStatement(item.ast)))}\ndef bindingExports : List String := ${leanStrings(source.exports)}\ndef bindingModules : List BindingModule := ${list(terms)}\ndef bindingEntry : Nat := ${names.indexOf(spec.entry)}\ntheorem binding_source_ready : (sourceBindingState bindingSource).isSome = true := by decide\ntheorem binding_output_ready : (outputBindingState bindingSource bindingModules bindingEntry).isSome = true := by decide\n#print axioms lexical_nearest_binding\n#print axioms accepted_reference_owner\n#print axioms binding_source_ready\n#print axioms binding_output_ready\n`;
+  const prefix =
+    witnessPrefix +
+    `theorem binding_graph_valid : modulesValid bindingSource bindingExports bindingModules bindingEntry = true := by decide\n#print axioms binding_graph_valid\n`;
   const legacySame = `\ntheorem binding_initialization : sourceBindingState bindingSource = outputBindingState bindingSource bindingModules bindingEntry := by decide\ntheorem binding_public_table : publicFunctionTable bindingSource bindingExports = publicFunctionTable (outputDefinitions bindingModules) bindingExports := by decide\ntheorem binding_public_table_ready : (publicFunctionTable bindingSource bindingExports).isSome = true := by decide\ntheorem binding_future_calls (calls : List String) : (sourceBindingState bindingSource).bind (fun state => (publicFunctionTable bindingSource bindingExports).bind (fun table => runExportedCalls table state calls)) = (outputBindingState bindingSource bindingModules bindingEntry).bind (fun state => (publicFunctionTable (outputDefinitions bindingModules) bindingExports).bind (fun table => runExportedCalls table state calls)) := by\n  exact binding_calls_preserved _ _ _ _ binding_initialization binding_public_table calls\ntheorem binding_return_values (calls : List String) : ((sourceBindingState bindingSource).bind (fun state => (publicFunctionTable bindingSource bindingExports).bind (fun table => runExportedCalls table state calls))).map (fun state => state.returns) = ((outputBindingState bindingSource bindingModules bindingEntry).bind (fun state => (publicFunctionTable (outputDefinitions bindingModules) bindingExports).bind (fun table => runExportedCalls table state calls))).map (fun state => state.returns) := by\n  exact congrArg (fun result => result.map (fun state => state.returns)) (binding_future_calls calls)\ntheorem binding_throw_values (calls : List String) : ((sourceBindingState bindingSource).bind (fun state => (publicFunctionTable bindingSource bindingExports).bind (fun table => runExportedCalls table state calls))).map (fun state => state.thrown) = ((outputBindingState bindingSource bindingModules bindingEntry).bind (fun state => (publicFunctionTable (outputDefinitions bindingModules) bindingExports).bind (fun table => runExportedCalls table state calls))).map (fun state => state.thrown) := by\n  exact congrArg (fun result => result.map (fun state => state.thrown)) (binding_future_calls calls)\n#print axioms binding_throw_values\n#print axioms binding_initialization\n#print axioms binding_public_table\n#print axioms binding_public_table_ready\n#print axioms binding_future_calls\n#print axioms binding_return_values\n`;
   const hasExpressions = source.statements.some((item) =>
     ["expressionFunction", "capturedFactory", "capturedClosure", "capturedAlias"].includes(item.ast.kind)
@@ -1497,13 +1500,9 @@ theorem binding_captured_observations (calls : List (String × List Nat)) :
         : `Lean terminated by ${proof.signal ?? "unknown signal"}: ${(proof.stderr || proof.stdout || "").slice(-4000)}`,
     };
   if (
-    ![
-      "lexical_nearest_binding",
-      "accepted_reference_owner",
-      "binding_graph_valid",
-      "binding_source_ready",
-      "binding_output_ready",
-    ].every((name) => has(proof, name))
+    !["lexical_nearest_binding", "accepted_reference_owner", "binding_source_ready", "binding_output_ready"].every(
+      (name) => has(proof, name)
+    )
   )
     return {
       result: "unknown",
@@ -1604,14 +1603,17 @@ theorem binding_captured_observations (calls : List (String × List Nat)) :
       expectedRight = `some (${outputEvents}, ${outputReturns})`;
     }
     const witness = `\ntheorem binding_witness_original : ${left} = ${expectedLeft} := by decide\ntheorem binding_witness_output : ${right} = ${expectedRight} := by decide\ntheorem binding_witness_difference : ${left} ≠ ${right} := by decide\n#print axioms binding_witness_original\n#print axioms binding_witness_output\n#print axioms binding_witness_difference\n`;
-    const checked = runLean(prefix + different + witness);
-    if (
-      checked.status === 0 &&
-      ["binding_difference", "binding_witness_original", "binding_witness_output", "binding_witness_difference"].every(
-        (name) => has(checked, name)
-      )
-    )
-      return prefix + different + witness;
+    // Call observations can differ even when initialization states are equal,
+    // for example when an emitted function body has changed.
+    const initializationDifference = calls.length === 0 ? different : "";
+    const required = ["binding_witness_original", "binding_witness_output", "binding_witness_difference"];
+    if (initializationDifference) required.push("binding_difference");
+    // A changed emitted body can make modulesValid false. The witness only
+    // needs the extracted programs and a checked difference in observations;
+    // it must not assume the equivalence-side graph validation theorem.
+    const certificate = witnessPrefix + initializationDifference + witness;
+    const checked = runLean(certificate);
+    if (checked.status === 0 && required.every((name) => has(checked, name))) return certificate;
     witnessFailure =
       checked.status === null
         ? `Lean terminated by ${checked.signal ?? String(checked.error)}: ${(checked.stderr || checked.stdout || "").slice(-4000)}`
