@@ -23,7 +23,7 @@ Provider constraints in `tf/gitops/gitlab-spike/versions.tf.json` are generated 
 `BUILD.bazel`: run `bb run //tf/gitops/gitlab-spike:gen-tf-versions` after changing them.
 
 Praefect manages three separate Gitaly PVCs with one local HDD copy each on distinct OVH
-workers. GitLab and Praefect use separate databases and login roles in one three-instance
+workers. GitLab and Praefect use separate databases and login roles in one two-instance
 CNPG cluster, with 25 GiB SSD storage per instance and one coordinated CNPG backup stream.
 Gitaly cgroup isolation is disabled pending validation of the writable cgroup mount on Talos.
 The experimental Praefect chart and beta Kubernetes topology remain evaluation constraints.
