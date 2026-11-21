@@ -7,7 +7,7 @@ import pytest_bazel
 from python.runfiles import Runfiles
 
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
-from skills.freecad.conftest import assert_run_ok, copy_outputs
+from skills.freecad.conftest import Stage, StageRunner, assert_run_ok
 from skills.freecad.testing.compare import assert_dxf_equal, assert_pdf_equal, assert_png_equal, assert_svg_equal
 
 # The scripts below are driven by runfiles path; gazelle cannot see the dependency.
@@ -31,37 +31,16 @@ _GOLDEN_BACK_LEFT = "ducktape/skills/freecad/examples/bearing_block/back_left.pn
 
 
 @pytest.fixture(scope="module")
-def bearing_block_outputs(
-    runfiles: Runfiles, tmp_path_factory: pytest.TempPathFactory, freecad_run, freecad_gui
-) -> Path:
+def bearing_block_outputs(stage_runner: StageRunner) -> Path:
     """Build bearing block, export TechDraw, render perspectives."""
-    out_dir = tmp_path_factory.mktemp("bearing-block")
-    uo = undeclared_outputs_dir() / "bearing-block"
-    uo.mkdir(parents=True, exist_ok=True)
-
-    # Stage 1: Build the Part Design model (pure freecadcmd, no GUI)
-    runfiles_root = runfiles.root()
-    result = freecad_run(runfiles_root / _BUILD_SCRIPT, outdir=out_dir)
-    assert_run_ok(result, "build.py", uo, "build")
-
-    fcstd = out_dir / "bearing_block.FCStd"
-    assert fcstd.exists(), "FCStd not generated — see build.stderr in test outputs"
-
-    # Stage 2: Add TechDraw views + dimensions
-    result = freecad_gui(runfiles_root / _TECHDRAW_SCRIPT, outdir=out_dir, env={"INPUT": str(fcstd)})
-    assert_run_ok(result, "build_techdraw.py", uo, "techdraw")
-
-    # Stage 3: Export TechDraw to DXF/SVG/PDF
-    result = freecad_gui(runfiles_root / _EXPORT_SCRIPT, outdir=out_dir, env={"INPUT": str(fcstd)})
-    assert_run_ok(result, "export_page.py", uo, "export")
-
-    # Stage 4: Render multiple 3D perspectives
-    result = freecad_gui(runfiles_root / _RENDER_SCRIPT, outdir=out_dir, env={"INPUT": str(fcstd)})
-    assert_run_ok(result, "render_multi_angle.py", uo, "render")
-
-    copy_outputs(out_dir, uo)
-
-    return out_dir
+    return stage_runner.run(
+        "bearing-block",
+        Stage(_BUILD_SCRIPT, "build", gui=False),  # Part Design model, pure freecadcmd
+        Stage(_TECHDRAW_SCRIPT, "techdraw"),  # TechDraw views + dimensions
+        Stage(_EXPORT_SCRIPT, "export"),  # TechDraw to DXF/SVG/PDF
+        Stage(_RENDER_SCRIPT, "render"),  # multiple 3D perspectives
+        fcstd="bearing_block.FCStd",
+    )
 
 
 def test_techdraw_dxf_golden(runfiles: Runfiles, bearing_block_outputs: Path) -> None:

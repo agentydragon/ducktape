@@ -7,8 +7,7 @@ import pytest_bazel
 from PIL import Image
 from python.runfiles import Runfiles
 
-from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
-from skills.freecad.conftest import assert_run_ok, copy_outputs
+from skills.freecad.conftest import Stage, StageRunner
 from skills.freecad.testing.compare import assert_png_equal
 
 # The scripts below are driven by runfiles path; gazelle cannot see the dependency.
@@ -30,35 +29,16 @@ _DEBUG_MAX_DIFF = 0.05
 
 
 @pytest.fixture(scope="module")
-def debug_outputs(runfiles: Runfiles, tmp_path_factory: pytest.TempPathFactory, freecad_run, freecad_gui) -> Path:
+def debug_outputs(stage_runner: StageRunner) -> Path:
     """Build bearing block, add TechDraw, run debug renderers."""
-    out_dir = tmp_path_factory.mktemp("debug-renderers")
-    uo = undeclared_outputs_dir() / "debug-renderers"
-    uo.mkdir(parents=True, exist_ok=True)
-
-    # Build the Part Design model (pure freecadcmd, no GUI)
-    runfiles_root = runfiles.root()
-    result = freecad_run(runfiles_root / _BUILD_SCRIPT, outdir=out_dir)
-    assert_run_ok(result, "build.py", uo, "build")
-
-    fcstd = out_dir / "bearing_block.FCStd"
-    assert fcstd.exists(), "FCStd not generated — see build.stderr in test outputs"
-
-    # Add TechDraw views (needed for debug edges)
-    result = freecad_gui(runfiles_root / _TECHDRAW_SCRIPT, outdir=out_dir, env={"INPUT": str(fcstd)})
-    assert_run_ok(result, "build_techdraw.py", uo, "techdraw")
-
-    # Render debug edges (all views)
-    result = freecad_gui(runfiles_root / _DEBUG_EDGES_SCRIPT, outdir=out_dir, env={"INPUT": str(fcstd)})
-    assert_run_ok(result, "render_debug_edges.py", uo, "debug_edges")
-
-    # Render debug faces
-    result = freecad_gui(runfiles_root / _DEBUG_FACES_SCRIPT, outdir=out_dir, env={"INPUT": str(fcstd)})
-    assert_run_ok(result, "render_debug_faces.py", uo, "debug_faces")
-
-    copy_outputs(out_dir, uo)
-
-    return out_dir
+    return stage_runner.run(
+        "debug-renderers",
+        Stage(_BUILD_SCRIPT, "build", gui=False),  # Part Design model, pure freecadcmd
+        Stage(_TECHDRAW_SCRIPT, "techdraw"),  # TechDraw views, needed for debug edges
+        Stage(_DEBUG_EDGES_SCRIPT, "debug_edges"),  # all views
+        Stage(_DEBUG_FACES_SCRIPT, "debug_faces"),
+        fcstd="bearing_block.FCStd",
+    )
 
 
 def test_debug_edges_produces_png(runfiles: Runfiles, debug_outputs: Path) -> None:
