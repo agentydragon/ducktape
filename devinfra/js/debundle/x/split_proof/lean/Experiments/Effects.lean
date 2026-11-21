@@ -1280,10 +1280,6 @@ partial def applySummary (s : Summary) (thisV : AV) (args : List AV) (fr : Fr) (
     setAV thisV none (AV.joinAll args)
   for (src, dst) in s.store do setAV (pos dst) none (pos src)
   -- copying a property reads it: a getter the source has runs
-  for (src, dst) in s.copies do
-    let v ← contentsOf (pos src)
-    setAV (pos dst) none v
-    noteProps (pos dst) v
   if let some (first, dst) := s.copiesRest then
     for i in [first:args.length + 1] do
       let v ← contentsOf (pos i)
