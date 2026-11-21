@@ -880,6 +880,18 @@ MUTANTS = {
         "    if false then\n      let pair",
         "`for (const pair of map) pair[1].n = 1`",
     ),
+    "a long prototype chain reads as the world's value": (
+        EFFECTS,
+        '  if seen.length > 10 then return ← runAccessors (seen.getLast?.getD o) AV.top [] "get"',
+        "  if seen.length > 10 then return AV.top",
+        "a getter or a `toString` 12 prototypes up",
+    ),
+    "flat looks two levels deep": (
+        EFFECTS,
+        "        if more == every then break\n        every := more\n      mkArr every",
+        "        every := more\n        break\n      mkArr every",
+        "`flat(Infinity)` of arrays nested seven deep",
+    ),
     "nested accessors are unbounded": (
         EFFECTS,
         "  if (← get).accessorDepth ≥ maxDepth then",

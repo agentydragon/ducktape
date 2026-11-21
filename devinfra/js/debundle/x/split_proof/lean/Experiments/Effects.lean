@@ -776,7 +776,8 @@ partial def getVal (c : Nat) (key : Option String) (seen : List Nat := []) : M A
   -- a unit writes every name that reaches the world's objects, including the names of the imports (see `footprints`)
   if o == 0 then return AV.top
   if seen.contains o then return #[]
-  if seen.length > 10 then return AV.top
+  -- a chain of prototypes longer than is followed: a getter further up may run, on the object the read started from
+  if seen.length > 10 then return ← runAccessors (seen.getLast?.getD o) AV.top [] "get"
   let ob ← getObj o
   match ob.kind with
   | .world => return AV.top
@@ -1341,11 +1342,12 @@ partial def applySummary (s : Summary) (thisV : AV) (args : List AV) (fr : Fr) (
       let given := AV.joinAll args
       mkArr (((← contentsOf thisV).join given).join (← contentsOf given))
     | .flatLike p =>
-      let mut level ← contentsOf (pos p)
-      let mut every := level
-      for _ in [0:4] do
-        level ← contentsOf level
-        every := every.join level
+      -- arrays nest to any depth: until a level adds nothing
+      let mut every ← contentsOf (pos p)
+      repeat
+        let more := every.join (← contentsOf every)
+        if more == every then break
+        every := more
       mkArr every
     | .entriesOf p => mkArr (← mkArr ((← contentsOf (pos p)).join AV.prim))
     | .freshOfCallsFlat => mkArr (calledRet.join (← contentsOf calledRet))

@@ -1343,4 +1343,49 @@ console.log(seen);
 `,
     [0, 1, 3, 2, 4]
   ),
+  // limits of the analysis that are passed: a prototype chain longer than is followed, arrays nested deeper than `flat` looked
+  p3(
+    "a getter 11 prototypes up writes o",
+    `
+const o = { n: 0 };
+const p0 = { get g() { o.n = 1; return 1; } };
+${chain(11)}
+p11.g;
+console.log(o.n);
+`,
+    [...Array(13).keys(), 14, 13]
+  ),
+  p3(
+    "a toString 12 prototypes up runs in a template literal",
+    `
+const o = { n: 0 };
+const p0 = { toString() { o.n = 1; return "s"; } };
+${chain(12)}
+\`\${p12}\`;
+console.log(o.n);
+`,
+    [...Array(14).keys(), 15, 14]
+  ),
+  p3(
+    "a valueOf 12 prototypes up runs in an addition",
+    `
+const o = { n: 0 };
+const p0 = { valueOf() { o.n = 1; return 1; } };
+${chain(12)}
+p12 + 1;
+console.log(o.n);
+`,
+    [...Array(14).keys(), 15, 14]
+  ),
+  p3(
+    "flat(Infinity) reaches an element seven arrays deep",
+    `
+const o = { n: 0 };
+const flat = [[[[[[[o], 1], 2, 2], 3, 3, 3], 4, 4, 4, 4], 5, 5, 5, 5, 5], 6, 6, 6, 6, 6, 6].flat(Infinity);
+flat[0].n = 1;
+const seen = o.n;
+console.log(seen);
+`,
+    [0, 1, 3, 2, 4]
+  ),
 ];
