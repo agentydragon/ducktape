@@ -5,8 +5,8 @@
 // A `FAIL … WRONG ACCEPT` is a finding that stands. A line that passes means the author fixed it: move the case to
 // `experiments/effects/cases_general.mjs`. See README.md for the table of causes.
 //
-// Premise P3 is on: it is the setting of the fuzzers and of the large bundle. F1 and F2 are the same as existing golden
-// cases (`cases_general.mjs`) with a pure reader added, or with P3 on instead of off. F6 was found by `gen/`.
+// Premise P3 is on: it is the setting of the fuzzers and of the large bundle. F2 is an existing golden case
+// (`cases_general.mjs`) with P3 on instead of off. F6 was found by `gen/`.
 export const premises = { noWorldHooks: true };
 
 const finding = (name, source, order) => ({
@@ -16,51 +16,6 @@ const finding = (name, source, order) => ({
 });
 
 export const cases = [
-  // F1: the result of an iterator helper of a Map or Set iterator is a primitive for the analysis, and consuming it runs the callback
-  finding(
-    "F1 toArray of an iterator helper runs the callback of map",
-    `
-const o = { n: 0 };
-const mapped = new Map([["k", 1]]).values().map((x) => { o.n++; return x; });
-mapped.toArray();
-const seen = o.n;
-console.log(seen);
-`,
-    [0, 1, 3, 2, 4]
-  ),
-  finding(
-    "F1 next of an iterator helper runs the callback of map",
-    `
-const o = { n: 0 };
-const mapped = new Map([["k", 1]]).values().map((x) => { o.n++; return x; });
-mapped.next();
-const seen = o.n;
-console.log(seen);
-`,
-    [0, 1, 3, 2, 4]
-  ),
-  finding(
-    "F1 a spread of an iterator helper runs the callback of map",
-    `
-const o = { n: 0 };
-const mapped = new Set([1]).values().map((x) => { o.n++; return x; });
-[...mapped];
-const seen = o.n;
-console.log(seen);
-`,
-    [0, 1, 3, 2, 4]
-  ),
-  finding(
-    "F1 for-of over an iterator helper runs the callback of filter",
-    `
-const o = { n: 0 };
-const kept = new Set([1]).values().filter((x) => { o.n++; return true; });
-for (const x of kept) {}
-const seen = o.n;
-console.log(seen);
-`,
-    [0, 1, 3, 2, 4]
-  ),
   // F2: a getter that is more than 10 prototypes up is not run, and the read is not an effect (`getVal`, `seen.length > 10`)
   finding(
     "F2 a getter 11 prototypes up writes o",

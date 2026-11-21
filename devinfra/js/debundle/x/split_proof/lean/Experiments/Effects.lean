@@ -808,8 +808,12 @@ partial def getVal (c : Nat) (key : Option String) (seen : List Nat := []) : M A
       else if k == "prototype" && members.contains child then return AV.ofObj (← builtinObj child)
       else if k == "constructor" && path.endsWith ".prototype" then
         return AV.ofObj (← builtinObj (path.toRawSubstring.dropRight 10).toString)
-      -- the property exists but is not summarized: a call of it is a call into the world
-      else if members.contains child then return AV.top
+      -- the property exists but is not summarized: a call of it is a call into the world. A collection stands for its
+      -- iterators, so it also has the helpers of an iterator (`map`, `some`, `toArray`, …), which run their callbacks
+      -- at once or when the result is consumed
+      else if members.contains child
+          || ((path == "Map.prototype" || path == "Set.prototype") && members.contains ("Iterator.prototype." ++ k)) then
+        return AV.top
       -- a prototype has only the members it has
       else if path.endsWith ".prototype" then return #[]
       -- an unlisted member of a namespace or a constructor
@@ -935,6 +939,18 @@ partial def contentsOf (a : AV) : M AV := do
         parts := parts.push AV.top
       | _ => pure ()
   return AV.joinMany parts
+
+/-- What iterating the objects of `a` yields, as far as no code runs: what they hold, and for a collection also a pair
+that holds it. The entries of a `Map` and of a `Set` are `[key, value]` arrays, and a collection stands for each of its
+iterators (`keys`, `values`, `entries`), so any of them may be the one. -/
+partial def yieldOf (a : AV) : M AV := do
+  let mut r ← contentsOf a
+  for c in a do
+    if c ≥ 2 && (← getObj (c - 1)).kind matches .coll then
+      let pair ← alloc .array (some (mixHash 101 (UInt64.ofNat c)))
+      joinAny pair (← contentsOf #[c])
+      r := r.join (AV.ofObj pair)
+  return r
 
 /-- The keys and values inside the entries an iterable yields (`new Map(entries)`, `Object.fromEntries`): an array
 yields the pairs it holds, so they are in the contents of its contents; a collection yields its own keys and values. -/
@@ -1258,7 +1274,7 @@ partial def applySummary (s : Summary) (thisV : AV) (args : List AV) (fr : Fr) (
     -- a callback gets elements, indexes, keys, the receiver, an accumulator and a `this`, in an order that depends on the
     -- function: each parameter may hold any of them
     let others : AV := (thisV :: args).zipIdx.foldl (fun (acc : AV) (v, i) => if s.calls.contains i then acc else AV.join acc v) #[]
-    let given : AV := AV.join (AV.join (← contentsOf others) others) AV.prim
+    let given : AV := AV.join (AV.join (← yieldOf others) others) AV.prim
     for round in [0:(if s.accumulates then 2 else 1)] do
       let all := given.join calledRet
       for p in s.calls do
@@ -1273,7 +1289,9 @@ partial def applySummary (s : Summary) (thisV : AV) (args : List AV) (fr : Fr) (
     | .thisV => return thisV
     | .arg i => return pos (i + 1)
     | .contents p => contentsOf (pos p)
-    | .freshOf p => mkArr ((← contentsOf (pos p)).join (if s.returnsCalls then calledRet else #[]))
+    | .freshOf p =>
+      let held ← if s.iterates.contains p || s.optionalIterates.contains p then yieldOf (pos p) else contentsOf (pos p)
+      mkArr (held.join (if s.returnsCalls then calledRet else #[]))
     | .freshOfCalls => mkArr calledRet
     | .freshPrims => mkArr AV.prim
     | .freshProto p =>
@@ -1305,7 +1323,7 @@ partial def applySummary (s : Summary) (thisV : AV) (args : List AV) (fr : Fr) (
       return AV.ofObj o
     | .iterResultOf p =>
       let o ← alloc .plain (some (mixHash (mixHash fr.path site) 91))
-      joinProp o "value" (← contentsOf (pos p))
+      joinProp o "value" (← yieldOf (pos p))
       joinProp o "done" AV.prim
       return AV.ofObj o
     | .descriptorOf p =>
@@ -1336,7 +1354,7 @@ partial def applySummary (s : Summary) (thisV : AV) (args : List AV) (fr : Fr) (
       joinProto o (AV.ofObj (← builtinObj proto))
       -- `new Map(entries)` holds the keys and values inside the entries, `new Set(items)` the items
       if proto == "Map.prototype" then joinAny o (← entryContents (pos 1))
-      else if proto == "Set.prototype" then joinAny o (← contentsOf (pos 1))
+      else if proto == "Set.prototype" then joinAny o (← yieldOf (pos 1))
       else joinAny o (AV.joinAll args)
       if proto == "Error.prototype" then
         joinProp o "message" AV.prim
@@ -1496,7 +1514,7 @@ partial def iterate (v : AV) (optional : Bool := false) : M AV := do
       | .array | .coll =>
         -- unless the program stored a function under a key the analysis does not know: that may be a `Symbol.iterator`
         if ob.hook then r := r.join (← worldCall [AV.ofObj (c - 1)])
-        else r := r.join (← contentsOf (AV.ofObj (c - 1)))
+        else r := r.join (← yieldOf (AV.ofObj (c - 1)))
       | _ =>
         -- another object is iterable only through a `Symbol.iterator` the program defined, which is a computed key
         if optional && !(← mayHaveComputedKey (c - 1)) then r := r.join (← contentsOf (AV.ofObj (c - 1)))

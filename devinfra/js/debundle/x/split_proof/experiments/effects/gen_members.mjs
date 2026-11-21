@@ -45,6 +45,7 @@ const roots = [
   "Int32Array",
   "Float32Array",
   "Float64Array",
+  "Iterator",
 ];
 const out = new Set();
 const own = (o) => Object.getOwnPropertyNames(o);

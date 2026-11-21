@@ -82,7 +82,8 @@ inductive Ret where
   | flatLike (pos : Nat)
   /-- a new array of arrays holding what the objects at the position hold, and keys (`Object.entries`) -/
   | entriesOf (pos : Nat)
-  /-- a new object `{ value, done }` whose `value` holds what the objects at the position hold (what `next` returns) -/
+  /-- a new object `{ value, done }` whose `value` holds what iterating the objects at the position yields (what `next`
+      returns) -/
   | iterResultOf (pos : Nat)
   /-- a new array holding what the callbacks return and what those hold (`flatMap`) -/
   | freshOfCallsFlat
@@ -140,18 +141,11 @@ structure Summary where
   callsMethods : List (Nat × String × List Nat) := []
   deriving Inhabited
 
-/-- The iterator helpers (`map`, `filter`, …) of the iterator of a `Map` or a `Set`, which the collection stands for: they
-run their callbacks as the iterator is consumed, which the analysis does not follow, so a call is a call into the world
-that keeps its callbacks. -/
-def iteratorHelperRows : List (String × Summary) :=
-  ["map", "filter", "flatMap", "take", "drop", "reduce", "toArray", "some", "every", "find"].flatMap fun m =>
-    ["Map", "Set"].map fun c => (c ++ ".prototype." ++ m, { world := true, retains := [1, 2] })
-
 open Ret in
 /-- Rows by path. `X.prototype.m` is a method of every `X` instance; `prim.m` a method of a string, number, boolean,
 symbol or bigint. `Function.prototype.call`, `apply` and `bind` have rows so that reading them yields the function; the
 analysis runs them itself (`callBuiltin`). -/
-def table : Std.HashMap String Summary := Std.HashMap.ofList (([
+def table : Std.HashMap String Summary := Std.HashMap.ofList [
   -- Object
   ("Object.keys", { ret := freshPrims }),
   ("Object.getOwnPropertyNames", { ret := freshPrims }),
@@ -237,7 +231,8 @@ def table : Std.HashMap String Summary := Std.HashMap.ofList (([
   ("Map.prototype.set", { ret := thisV, muts := [0], storeArgs := true }),
   ("Map.prototype.has", {}), ("Map.prototype.delete", { muts := [0] }), ("Map.prototype.clear", { muts := [0] }),
   ("Map.prototype.forEach", { calls := [1] }),
-  -- the iterator of a collection is the collection: a live view of it, and `next` moves its cursor
+  -- the iterator of a collection is the collection: a live view of it, and `next` moves its cursor. The helpers of an
+  -- iterator (`map`, `some`, `toArray`, …) have no rows: `Effects.getVal` finds them as members without a summary
   ("Map.prototype.keys", { ret := thisV }), ("Map.prototype.values", { ret := thisV }),
   ("Map.prototype.entries", { ret := thisV }), ("Map.prototype.next", { ret := iterResultOf 0, muts := [0] }),
   ("Set.prototype.add", { ret := thisV, muts := [0], storeArgs := true }),
@@ -300,14 +295,14 @@ def table : Std.HashMap String Summary := Std.HashMap.ofList (([
   ("prim.startsWith", {}), ("prim.endsWith", {}), ("prim.padStart", {}), ("prim.padEnd", {}), ("prim.repeat", {}),
   ("prim.normalize", {}), ("prim.localeCompare", {}), ("prim.concat", {}), ("prim.toFixed", {}),
   ("prim.toPrecision", {}), ("prim.description", {}),
-  -- a pattern that is an object with a `Symbol.search`, `split`, `match`, `matchAll` or `replace` method gets the string
+  -- a pattern that is an object with a `Symbol.search`, `split`, `match` or `replace` method gets the string. (`matchAll`
+  -- returns an iterator, which has no model: no row)
   ("prim.search", { muts := [1], callsMethods := [(1, "@@search", [0])] }),
   ("prim.split", { ret := freshPrims, muts := [1], callsMethods := [(1, "@@split", [0, 2])] }),
   ("prim.match", { ret := freshPrims, muts := [1], callsMethods := [(1, "@@match", [0])] }),
-  ("prim.matchAll", { ret := freshPrims, muts := [1], callsMethods := [(1, "@@matchAll", [0])] }),
   ("prim.replace", { calls := [2], muts := [1], callsMethods := [(1, "@@replace", [0, 2])] }),
   ("prim.replaceAll", { calls := [2], muts := [1], callsMethods := [(1, "@@replace", [0, 2])] })
-] : List (String × Summary)) ++ iteratorHelperRows)
+]
 
 /-- Every own property of the standard objects, as `Path.member` (`prim.member` for what a string, number, boolean,
 symbol or bigint has), generated from Node by `experiments/effects/gen_members.mjs`. -/

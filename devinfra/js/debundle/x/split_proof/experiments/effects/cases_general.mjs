@@ -1188,4 +1188,159 @@ console.log(seen);
 `,
     [0, 1, 2, 4, 3, 5]
   ),
+  // iterators: the helpers of the iterator of a collection run their callbacks, at once or when the result is consumed, and the
+  // entries of a collection are pairs
+  p3(
+    "toArray of an iterator helper runs the callback of map",
+    `
+const o = { n: 0 };
+const mapped = new Map([["k", 1]]).values().map((x) => { o.n++; return x; });
+mapped.toArray();
+const seen = o.n;
+console.log(seen);
+`,
+    [0, 1, 3, 2, 4]
+  ),
+  p3(
+    "next of an iterator helper runs the callback of map",
+    `
+const o = { n: 0 };
+const mapped = new Map([["k", 1]]).values().map((x) => { o.n++; return x; });
+mapped.next();
+const seen = o.n;
+console.log(seen);
+`,
+    [0, 1, 3, 2, 4]
+  ),
+  p3(
+    "a spread of an iterator helper runs the callback of map",
+    `
+const o = { n: 0 };
+const mapped = new Set([1]).values().map((x) => { o.n++; return x; });
+[...mapped];
+const seen = o.n;
+console.log(seen);
+`,
+    [0, 1, 3, 2, 4]
+  ),
+  p3(
+    "for-of over an iterator helper runs the callback of filter",
+    `
+const o = { n: 0 };
+const kept = new Set([1]).values().filter((x) => { o.n++; return true; });
+for (const x of kept) {}
+const seen = o.n;
+console.log(seen);
+`,
+    [0, 1, 3, 2, 4]
+  ),
+  p3(
+    "some of a Set iterator runs its callback at once",
+    `
+const o = { n: 0 };
+new Set([1]).values().some(() => { o.n++; return true; });
+const seen = o.n;
+console.log(seen);
+`,
+    [0, 2, 1, 3]
+  ),
+  p3(
+    "reduce of a Map iterator runs its callback at once",
+    `
+const o = { n: 0 };
+new Map([["k", 1]]).keys().reduce((a) => { o.n++; return a; }, 0);
+const seen = o.n;
+console.log(seen);
+`,
+    [0, 2, 1, 3]
+  ),
+  p3(
+    "a helper of the iterator of matchAll runs its callback when it is consumed",
+    `
+const o = { n: 0 };
+const mapped = "ab".matchAll(/a/g).map((x) => { o.n++; return x; });
+[...mapped];
+const seen = o.n;
+console.log(seen);
+`,
+    [0, 1, 3, 2, 4]
+  ),
+  p3(
+    "next of the entries of a Map yields a pair that holds the value",
+    `
+const o = { n: 0 };
+const m = new Map([["k", o]]);
+m.entries().next().value[1].n = 1;
+const seen = o.n;
+console.log(seen);
+`,
+    [0, 1, 3, 2, 4]
+  ),
+  p3(
+    "a spread of a Map yields pairs that hold the values",
+    `
+const o = { n: 0 };
+const m = new Map([["k", o]]);
+[...m][0][1].n = 1;
+const seen = o.n;
+console.log(seen);
+`,
+    [0, 1, 3, 2, 4]
+  ),
+  p3(
+    "Array.from of a Map yields pairs that hold the values",
+    `
+const o = { n: 0 };
+const m = new Map([["k", o]]);
+Array.from(m)[0][1].n = 1;
+const seen = o.n;
+console.log(seen);
+`,
+    [0, 1, 3, 2, 4]
+  ),
+  p3(
+    "the entries of a Set are pairs that hold the element",
+    `
+const o = { n: 0 };
+const s = new Set([o]);
+Array.from(s.entries())[0][1].n = 1;
+const seen = o.n;
+console.log(seen);
+`,
+    [0, 1, 3, 2, 4]
+  ),
+  p3(
+    "for-of over a Map with a plain loop variable",
+    `
+const o = { n: 0 };
+const m = new Map([["k", o]]);
+for (const pair of m) pair[1].n = 1;
+const seen = o.n;
+console.log(seen);
+`,
+    [0, 1, 3, 2, 4]
+  ),
+  p3(
+    "a Set made from a Map holds pairs",
+    `
+const o = { n: 0 };
+const m = new Map([["k", o]]);
+const s = new Set(m);
+s.forEach((pair) => { pair[1].n = 1; });
+const seen = o.n;
+console.log(seen);
+`,
+    [0, 1, 2, 4, 3, 5]
+  ),
+  p3(
+    "the map function of Array.from gets the pairs of a Map",
+    `
+const o = { n: 0 };
+const m = new Map([["k", o]]);
+Array.from(m, (pair) => { pair[1].n = 1; });
+const seen = o.n;
+console.log(seen);
+`,
+    [0, 1, 3, 2, 4]
+  ),
 ];

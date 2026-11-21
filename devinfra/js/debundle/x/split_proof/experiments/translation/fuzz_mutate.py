@@ -862,6 +862,24 @@ MUTANTS = {
         "    if false && (match table[path]? with",
         "`new String(s)` is an object that holds what is stored in it",
     ),
+    "a collection has no iterator helpers": (
+        EFFECTS,
+        '&& members.contains ("Iterator.prototype." ++ k)) then',
+        "&& false) then",
+        "`set.values().some(f)` runs `f`, and `map.values().map(f).toArray()` does when it is consumed",
+    ),
+    "matchAll returns an array": (
+        INTRINSICS,
+        '("prim.split", {',
+        '("prim.matchAll", { ret := freshPrims }), ("prim.split", {',
+        "a helper of the iterator runs its callback when the result is consumed",
+    ),
+    "a collection yields no pairs": (
+        EFFECTS,
+        "    if c ≥ 2 && (← getObj (c - 1)).kind matches .coll then\n      let pair",
+        "    if false then\n      let pair",
+        "`for (const pair of map) pair[1].n = 1`",
+    ),
     "nested accessors are unbounded": (
         EFFECTS,
         "  if (← get).accessorDepth ≥ maxDepth then",
