@@ -31,15 +31,20 @@ func newTestStore(t testing.TB) *Store {
 	return store
 }
 
-func claimedSession(t *testing.T) (*Store, *Session, Owner) {
+func claim(t *testing.T, store *Store, session *Session) Owner {
 	t.Helper()
-	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
 	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return store, session, owner
+	return owner
+}
+
+func claimedSession(t *testing.T) (*Store, *Session, Owner) {
+	t.Helper()
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	return store, session, claim(t, store, session)
 }
 
 func expireLease(t *testing.T, store *Store, session *Session) {

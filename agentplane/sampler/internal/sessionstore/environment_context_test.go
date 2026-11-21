@@ -32,10 +32,7 @@ func TestEnvironmentContextPrecedesTurnInputAndFollowsChanges(t *testing.T) {
 	today := time.Date(2026, 1, 2, 12, 0, 0, 0, time.Local)
 	store.now = func() time.Time { return today }
 	session := openSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	owner := claim(t, store, session)
 	submit := func(id, text string) []responses.Item {
 		t.Helper()
 		admitInput(t, store, session.ID, id, text)
@@ -101,10 +98,7 @@ func TestCompactionReinjectsFullEnvironmentContextBeforeCompactionItem(t *testin
 	store := newTestStore(t)
 	store.now = func() time.Time { return time.Date(2026, 1, 2, 12, 0, 0, 0, time.Local) }
 	session := openSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	owner := claim(t, store, session)
 	bash := "bash"
 	if err := store.SetExecutorSession(t.Context(), owner, "fixture-executor-session", &bash); err != nil {
 		t.Fatal(err)

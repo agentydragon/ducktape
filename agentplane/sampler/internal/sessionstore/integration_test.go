@@ -154,10 +154,7 @@ func TestStoreSessionFreezesPlatformGuidanceAndRetainsRawBriefing(t *testing.T) 
 	if !proto.Equal(&storedRequest, request) {
 		t.Fatalf("stored opening rewrote the raw request: %v", &storedRequest)
 	}
-	owner, err := store.Claim(t.Context(), opened.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	owner := claim(t, store, opened)
 	if err := store.AppendInput(t.Context(), owner, "Fixture existing conversation input."); err != nil {
 		t.Fatal(err)
 	}
@@ -208,10 +205,7 @@ func TestStoreSessionFreezesPlatformGuidanceAndRetainsRawBriefing(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	freshOwner, err := store.Claim(t.Context(), fresh.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	freshOwner := claim(t, store, fresh)
 	freshConversation, err := store.Read(t.Context(), freshOwner)
 	if err != nil {
 		t.Fatal(err)
@@ -240,10 +234,7 @@ func TestStoreSessionWithoutPlatformGuidanceKeepsCallerPromptAcrossActivation(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	owner, err := store.Claim(t.Context(), opened.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	owner := claim(t, store, opened)
 	guide := "Fixture enabled platform guide."
 	reopened, err := store.CreateSession(t.Context(), request, "fixture-caller-uid", protocol.APIStyleResponses, &guide)
 	if err != nil {
@@ -268,10 +259,7 @@ func TestStoreFencesEveryWriteToTheLiveLeaseGeneration(t *testing.T) {
 	if err := store.Renew(t.Context(), owner, time.Minute); !errors.As(err, new(*LostOwnershipError)) {
 		t.Fatalf("expired owner renewed lease: %v", err)
 	}
-	newOwner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	newOwner := claim(t, store, session)
 	if newOwner.Generation != owner.Generation+1 {
 		t.Fatalf("generation=%d old=%d", newOwner.Generation, owner.Generation)
 	}
@@ -447,10 +435,7 @@ func TestStoreRecoverSessionAbandonsBlockedCellAndFencesOldOwner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	owner := claim(t, store, session)
 	shell := "bash"
 	if err := store.SetExecutorSession(t.Context(), owner, "fixture-old-executor-session", &shell); err != nil {
 		t.Fatal(err)
@@ -605,10 +590,7 @@ func TestStoreRecoverSessionAbandonsBlockedCellAndFencesOldOwner(t *testing.T) {
 		t.Fatal("recovery emitted no incarnation evidence")
 	}
 
-	newOwner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	newOwner := claim(t, store, session)
 	retained, err := store.Read(t.Context(), newOwner)
 	if err != nil {
 		t.Fatal(err)
@@ -671,10 +653,7 @@ func TestStoreRecoverSessionPreservesKnownRejectedCellResult(t *testing.T) {
 	if result["status"] != "rejected" || result["dispatched"] != false || result["reason"] != reason {
 		t.Fatalf("known result changed: %v", result)
 	}
-	newOwner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	newOwner := claim(t, store, session)
 	conversation, err := store.Read(t.Context(), newOwner)
 	if err != nil {
 		t.Fatal(err)
@@ -765,10 +744,7 @@ func TestStoreRecoverSessionAbandonsSoleUnresolvedSamplingIntent(t *testing.T) {
 	if _, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", blocked.Cursor-1, "reviewed provider request", ""); !errors.Is(err, protocol.ErrPrecondition) {
 		t.Fatalf("stale cursor recovered sampling: %v", err)
 	}
-	competingOwner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	competingOwner := claim(t, store, session)
 	if _, err := store.RecoverSession(t.Context(), session.ID, "fixture-account", blocked.Cursor, "reviewed provider request", ""); !errors.Is(err, protocol.ErrPrecondition) {
 		t.Fatalf("recovery raced through competing owner: %v", err)
 	}
@@ -797,10 +773,7 @@ func TestStoreRecoverSessionAbandonsSoleUnresolvedSamplingIntent(t *testing.T) {
 	if err := store.Finish(t.Context(), owner, intentID, map[string]any{"late": true}, nil, nil); !errors.As(err, new(*LostOwnershipError)) {
 		t.Fatalf("late provider completion wrote after recovery: %v", err)
 	}
-	newOwner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	newOwner := claim(t, store, session)
 	conversation, err := store.Read(t.Context(), newOwner)
 	if err != nil {
 		t.Fatal(err)
@@ -880,10 +853,7 @@ func TestStoreRecoverSessionRejectsCompactionAndSetupBoundaries(t *testing.T) {
 			}
 			store := newTestStore(t)
 			session := openSessionForStore(t, store, setup)
-			owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-			if err != nil {
-				t.Fatal(err)
-			}
+			owner := claim(t, store, session)
 			if kind == "setup" {
 				exitCode := 1
 				if err := store.FinishSetup(t.Context(), owner, session.ID, &exitCode); err != nil {
@@ -925,10 +895,7 @@ func TestStoreCodeHostLossNoticesOnceAndFencesPendingCalls(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-			if err != nil {
-				t.Fatal(err)
-			}
+			owner := claim(t, store, session)
 			previous, successor := uuid.NewString(), uuid.NewString()
 			encoding := protocol.ExecEncodingFreeform
 			if api == protocol.APIStyleAnthropicMessages {
@@ -960,10 +927,7 @@ func TestStoreCodeHostLossNoticesOnceAndFencesPendingCalls(t *testing.T) {
 			if err := store.Release(t.Context(), owner); err != nil {
 				t.Fatal(err)
 			}
-			newOwner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-			if err != nil {
-				t.Fatal(err)
-			}
+			newOwner := claim(t, store, session)
 			if err := store.StampCodeHostInstance(t.Context(), newOwner, successor); !errors.Is(err, codemode.ErrHostInstanceChanged) {
 				t.Fatalf("new host overwrote unacknowledged state loss: %v", err)
 			}
@@ -1006,10 +970,7 @@ func TestStoreCodeHostLossSettlesUnresolvedExecutorIntentAndUnblocks(t *testing.
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")
 	logged := testsupport.CaptureLogs(t)
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	owner := claim(t, store, session)
 	previous := uuid.NewString()
 	if err := store.StampCodeHostInstance(t.Context(), owner, previous); err != nil {
 		t.Fatal(err)
@@ -1036,10 +997,7 @@ func TestStoreCodeHostLossSettlesUnresolvedExecutorIntentAndUnblocks(t *testing.
 	if err != nil || len(recoverable) != 1 || recoverable[0] != session.ID {
 		t.Fatalf("blocked Session with a lost host was not selected: %v err=%v", recoverable, err)
 	}
-	newOwner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	newOwner := claim(t, store, session)
 	if changed, err := store.ReconcileCodeHostLoss(t.Context(), newOwner, successor, protocol.ExecEncodingFreeform); err != nil || !changed {
 		t.Fatalf("host loss with an unresolved intent did not settle: changed=%v err=%v", changed, err)
 	}
@@ -1095,10 +1053,7 @@ func TestStoreCodeHostLossAbandonsLiveProcessHandleWithRetainedEvidence(t *testi
 	if err := store.Release(t.Context(), owner); err != nil {
 		t.Fatal(err)
 	}
-	successor, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	successor := claim(t, store, session)
 	if changed, err := store.ReconcileCodeHostLoss(t.Context(), successor, uuid.NewString(), protocol.ExecEncodingFreeform); err != nil || !changed {
 		t.Fatalf("host loss with a live handle did not settle: changed=%v err=%v", changed, err)
 	}
@@ -1143,10 +1098,7 @@ func TestStoreStaleGenerationSamplingIntentIsAbandonedForResampling(t *testing.T
 			if err != nil || blocked != (len(recoverable) == 0) {
 				t.Fatalf("work scan selection: blocked=%v recoverable=%v err=%v", blocked, recoverable, err)
 			}
-			successor, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-			if err != nil {
-				t.Fatal(err)
-			}
+			successor := claim(t, store, session)
 			changed, err := store.ReconcileCodeHostLoss(t.Context(), successor, instance, protocol.ExecEncodingFreeform)
 			if err != nil || changed == blocked {
 				t.Fatalf("stale pending sampling settlement: blocked=%v changed=%v err=%v", blocked, changed, err)
@@ -1197,10 +1149,7 @@ func TestStoreCodeHostLossAfterSettledCellWithoutLiveHandles(t *testing.T) {
 	if err := store.Release(t.Context(), owner); err != nil {
 		t.Fatal(err)
 	}
-	successor, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	successor := claim(t, store, session)
 	changed, err := store.ReconcileCodeHostLoss(t.Context(), successor, uuid.NewString(), protocol.ExecEncodingFreeform)
 	if err != nil || !changed {
 		t.Fatalf("settled-cell host loss lacked notice: changed=%v err=%v", changed, err)
@@ -1234,10 +1183,7 @@ func TestStoreCodeHostLossLeavesUnrelatedPendingCallForDispatcher(t *testing.T) 
 	if err := store.Release(t.Context(), owner); err != nil {
 		t.Fatal(err)
 	}
-	successor, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	successor := claim(t, store, session)
 	instance := uuid.NewString()
 	if changed, err := store.ReconcileCodeHostLoss(t.Context(), successor, instance, protocol.ExecEncodingFreeform); err != nil || changed {
 		t.Fatalf("unrelated pending call was auto-settled: changed=%v err=%v", changed, err)
@@ -1407,10 +1353,7 @@ func TestCompletedCompactionReleasesCommandBeforeNextInput(t *testing.T) {
 	if err := store.Release(t.Context(), owner); err != nil {
 		t.Fatal(err)
 	}
-	owner, err = store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	owner = claim(t, store, session)
 	admitInput(t, store, session.ID, "after", "Continue")
 	command, err := store.NextCommand(t.Context(), owner, session.ID)
 	if err != nil || command == nil || command.ID != "after" {
@@ -1537,10 +1480,7 @@ func TestLateInterruptIsSettledWithItsTurn(t *testing.T) {
 					if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET lease_until=clock_timestamp()-interval '5 minutes' WHERE id=$1`, session.ConversationID); err != nil {
 						t.Fatal(err)
 					}
-					owner, err = store.Claim(t.Context(), session.ConversationID, time.Minute)
-					if err != nil {
-						t.Fatal(err)
-					}
+					owner = claim(t, store, session)
 					command, err = store.NextCommand(t.Context(), owner, session.ID)
 					if err != nil || command == nil || command.ID != "first" {
 						t.Fatalf("recovered command=%v err=%v", command, err)
@@ -1712,10 +1652,7 @@ func TestGooseInitializationPreservesRetainedState(t *testing.T) {
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")
 	admitInput(t, store, session.ID, "stored-command", "stored input")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	owner := claim(t, store, session)
 	if err := store.transaction(t.Context(), func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
 		if err != nil {
@@ -2228,10 +2165,7 @@ func TestInitialExecutorBindingRetainsHistoryAndCreationIdempotency(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	owner := claim(t, store, session)
 	defer func() { _ = store.Release(t.Context(), owner) }()
 	sandboxUID := request.GetExecutor().GetTarget().GetUid()
 	if err := store.BindInitialExecutorSession(t.Context(), owner, "other-sandbox", "verified-incarnation", "native-session", nil); !errors.Is(err, protocol.ErrPrecondition) {

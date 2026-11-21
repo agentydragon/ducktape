@@ -4,7 +4,6 @@ import (
 	"errors"
 	"strings"
 	"testing"
-	"time"
 
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 )
@@ -24,10 +23,7 @@ func TestHostSessionsTracksAdmissionAndSetup(t *testing.T) {
 	if err != nil || len(hidden) != 0 {
 		t.Fatalf("other owner's sessions=%v err=%v", hidden, err)
 	}
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	owner := claim(t, store, session)
 	if _, err := store.NextCommand(t.Context(), owner, session.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -36,10 +32,7 @@ func TestHostSessionsTracksAdmissionAndSetup(t *testing.T) {
 		t.Fatalf("active sessions=%v err=%v", sessions, err)
 	}
 	setup := openSessionForStore(t, store, "echo setup")
-	setupOwner, err := store.Claim(t.Context(), setup.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	setupOwner := claim(t, store, setup)
 	if _, err := store.StartSetup(t.Context(), setupOwner, setup.ID); err != nil {
 		t.Fatal(err)
 	}
