@@ -327,15 +327,7 @@ func gate(c config, d deps, callers grpcgate.Callers) (*grpcgate.Gate, error) {
 	var err error
 	options := grpcgate.Options{ErrorMapper: rpc.Failure, Callers: callers, ServiceReaders: c.ServiceReaders, OperatorServices: c.OperatorServices}
 	if c.ConnectionDelegationService != "" || c.SessionDelegationService != "" {
-		scheme := runtime.NewScheme()
-		if err := policyapi.AddToScheme(scheme); err != nil {
-			return nil, fmt.Errorf("register Policy API for delegated Identity checks: %w", err)
-		}
-		objects, err := client.New(d.Kube, client.Options{Scheme: scheme})
-		if err != nil {
-			return nil, fmt.Errorf("configure delegated Identity checks: %w", err)
-		}
-		identities, err := auth.KubernetesIdentityUIDs(objects, c.PolicyNamespace)
+		identities, err := auth.NewKubernetesIdentityUIDs(d.Kube, c.PolicyNamespace)
 		if err != nil {
 			return nil, fmt.Errorf("configure delegated Identity checks: %w", err)
 		}
