@@ -25,6 +25,21 @@ py_binary(
     srcs = ["ovh_hil_availability.py"],
 )
 
+py_library(
+    name = "hcloud_server_types",
+    srcs = ["hcloud_server_types.py"],
+    deps = [
+        "@pypi//more_itertools",
+        "@pypi//pydantic",
+    ],
+)
+
+py_binary(
+    name = "hcloud_server_types_bin",
+    main_module = "cluster.scripts.hcloud_server_types",
+    deps = [":hcloud_server_types"],
+)
+
 # Typed loader for nebula-mesh.json. Shared by render_mobile_nebula_config and
 # the validation test in //cluster/validation/.
 py_library(
