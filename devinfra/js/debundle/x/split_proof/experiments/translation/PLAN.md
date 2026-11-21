@@ -1,24 +1,18 @@
 # Plan: from "a valid translation" to nice code with a proof
 
-State: `translate` accepts a tree that is the bundle renamed and reshuffled, and lists **obligations**: pairs of conflicting units whose order changed. Units bind named cells (`Stmt.writes`), so a statement that assigns a variable, or changes an object, conflicts only with the ones that read or write it. The footprints still treat every call as touching everything, so almost every obligation is an effect-effect pair that an analysis could clear.
+State: `translate` accepts a tree that is the bundle renamed and reshuffled, and lists **obligations**: pairs of conflicting units whose order changed. Units bind named cells (`Stmt.writes`), so a statement that assigns a variable, or changes an object, conflicts only with the ones that read or write it. Footprints come from [`../effects/`](../effects/README.md), which runs the bundle's top level over abstract values. Almost every obligation left is an effect-effect pair of units that run code it cannot see.
 
 Acceptance for every step: the fixtures and mutants of `./run.sh --translation` still pass, and the step's own check shows the change on a real bundle.
 
 ## 1. Effect summaries: obligations become justified
 
-Today every call is an effect, so most calls that merely build a value count as reordered effects.
+Delivered: [`../effects/`](../effects/README.md) computes footprints by abstract interpretation, and `translate`, `lower` and `lowersplit` use it. On the large bundle there are 865,930 obligations with no assumption beyond the printed ones (2,059 effect units) and 669,532 with premise P3 (1,583 effect units). Every remaining obligation is an effect-effect pair of units that run code the analysis cannot see ([experiments § 13](../README.md#13-footprints-by-abstract-interpretation)). Left:
 
-**Design, in Lean, so that it does not break under a faint breeze.** The analysis computes a unit's `writes` and its `effect` from the code. Rules: (1) fail safe: anything not recognized touches everything, so a new bundle gets more obligations, never a wrong accept; (2) general rules about what code does, never a recognizer for an idiom or a name (no special case for a decorator helper); (3) few assumptions, kept as data, keyed by stable identities (package module and export path, never a minified name), printed with every verdict; (4) the composition rule is a theorem (`Semantics.exec_reorder`), the analysis rules are tested by the fuzzer and its mutation harness, and a rule gets a proof when it earns one.
-
-**Measured first, on a large real bundle, with a JavaScript prototype** (not sound, not kept): effect units that evaluate to a value only, or to writes of named cells, and the pairs of conflicting units that the committed tree runs in a different order. Coarse rule: 2,590 effect units, 338,640 inverted pairs. Reading the code alone (summaries of local functions and classes, parameter-sensitive, cells for the objects they mutate): 169,977. With "intrinsics are not patched": 128,781. With a reviewed table of 46 vendor functions that only allocate: 40,180 when unknown code conflicts with every cell and every other effect (the sound rule). With "operators run no user code": 8,137. What remains is 113 units that run unknown code (method calls on module-scope objects, fluent vendor chains, calls through values) plus 32 environment effects (`window`, `document`). Resolving the class of a module-scope object (class-hierarchy method lookup) and the origin of module-scope values would remove most of the 113.
-
-Two kinds of world: the **environment** (`window`, `console`, the DOM) orders only against other environment effects; **unknown code** (a call through an unknown value) may touch every cell and orders against everything that is not pure. An earlier version of the prototype conflated them and reported 746 pairs instead of 8,137.
-
-The assumption "operators run no user code" (`valueOf`, `toString`, `Symbol.toPrimitive` on operands of unknown type) buys the last 96% of the pairs. It stays a printed, switchable premise until a small primitive-type domain with interprocedural parameter types replaces it.
-
-- **Local functions:** infer a summary. Allocation and calls of pure functions are pure. A function that writes only to what it allocated is pure to its caller.
-- **Outside functions:** a table keyed by (module, export, members) with a summary (`pure, fresh result`, `reads`, `writes`). `translate --table` already prints the outside imports a tree relies on, so the table starts from that list. Agents draft the entries one package at a time, in parallel. A person reviews them. The checker prints which entries it used.
-- The result is a list of units that really have effects, each with the reason. Everything else commutes.
+- **A reviewed vendor table.** Imports from outside the tree are the world unless listed. One import is called by 511 effect units and 40 imports by about half of them; 40 entries (keyed by minified names, unreviewed) halve the obligations again, to 344,781. A real table is keyed by package and export path, never by a minified name; agents draft entries one package at a time and a person reviews them; the checker prints the entries it used. `translate --table` already lists the imports a tree relies on.
+- **Decorators and registrations.** 527 units apply a decorator helper to a class or a prototype, and all run unknown code because the decorators are vendor functions. A decorator only touches its target and a registry, so two such units on different targets commute. That is a hint (step 2), checked from the footprints.
+- **Cost and budget.** 114 s for 9,707 units; 135 units run out of the 100,000-step budget and fall back to unknown code. Profile with the real profilers before raising either.
+- **Fewer rules to trust.** Prove each rule of the interpreter against a small semantics of the fragment it mentions, starting with the ones the audit found wrong (calls that are run later or not looked into). The tests are Node-checked reorders and a fuzzer, not proofs.
+- **Premise review.** P3 (the world adds no accessors or conversion hooks to program objects) is what lets a property of an escaped object be read like any other; without it every such access is unknown code (865,930 obligations, 669,532 with it). Decide whether it holds for the libraries of each bundle (an observable-state library that defines accessors on instances would break it).
 
 ## 2. Hints for what is left
 
@@ -41,3 +35,12 @@ Only the entry's export list is checked. Other chunks import from the tree. Chec
 - A scope resolver in Lean, tested against `eslint-scope` on real bundles.
 - A proof that applying a bijective renaming to a plan preserves `Correct`, so the translation check implies the semantic theorem.
 - Re-exports and `export default` outside the entry (rejected today).
+
+## 7. A generator that can reach any program, and a footprint oracle
+
+The fuzzers use three generators, each narrow in its own way: 60 hand-written unit templates (`fuzz.mjs`), a scope-aware corpus of 20 AST node types (`ast_generator.mjs`), and a grammar fuzzer whose programs rarely do anything observable (`shift_fuzz_test.mjs`; premise P4 drops the ones that throw). The reorder oracle also sees a wrong footprint only when a reorder happens to change the output. Two additions:
+
+- **A generator whose range is the whole language.** Every valid ES2024 module has a nonzero chance of being generated. The programs terminate, do not throw, and leave their state observable (a final dump of every top-level binding, traces between units), and they have many top-level units that share state, because that is what a split reorders. Steer it by the analysis's own inventory: every construct `Effects.lean` evaluates and every row of `Intrinsics.lean` gets a production, plus constructs it does not understand, which must fall back to "touches the world". Grow it in families (statements, functions and generators, classes, patterns and spread, protocols such as `Symbol.iterator`, getters, `Proxy` and `Reflect`), each with a validity test (terminates, deterministic, does not throw, over many seeds) and coverage statistics.
+- **A footprint oracle.** Run a generated program unit by unit in Node and snapshot what each top-level name reaches before and after the unit. A name whose reachable state changed must be in the unit's `writes`, or the unit must be an effect. It sees writes that show as properties, not closure-private state and not reads; the reorder oracle covers the rest. It also runs on the real libraries (`lodash`, `acorn`, `semver`, `zod`).
+
+A wrong footprint the oracle finds becomes a runnable program under `experiments/effects/debug/` and a case in `experiments/effects/cases_general.mjs` once the analysis refuses it.

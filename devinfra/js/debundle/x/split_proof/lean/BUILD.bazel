@@ -68,48 +68,56 @@ diff_test(
     file2 = "//devinfra/js/debundle/x/split_proof/lean/generated:generate_instance",
 )
 
+# The checker's Lean sources, less the entry and the module that converts footprints to
+# statements, so the `no_writes` mutation test can swap in a changed `Translate.lean`.
+_TRANSLATE_BASE = [
+    "EsmSplit/Bundle.lean",
+    "EsmSplit/Cli.lean",
+    "EsmSplit/Correct.lean",
+    "EsmSplit/Fast.lean",
+    "EsmSplit/Plan.lean",
+    "EsmSplit/Render.lean",
+    "EsmSplit/Semantics.lean",
+    "EsmSplit/Split.lean",
+    "Experiments/Effects.lean",
+    "Experiments/IntrinsicMembers.lean",
+    "Experiments/Intrinsics.lean",
+    "Experiments/Lower.lean",
+    "Experiments/TranslateMain.lean",
+]
+
 lean_binary(
     name = "translate",
-    srcs = [
-        "EsmSplit/Bundle.lean",
-        "EsmSplit/Cli.lean",
-        "EsmSplit/Correct.lean",
-        "EsmSplit/Fast.lean",
-        "EsmSplit/Plan.lean",
-        "EsmSplit/Render.lean",
-        "EsmSplit/Semantics.lean",
-        "EsmSplit/Split.lean",
-        "Experiments/Lower.lean",
-        "Experiments/Translate.lean",
-        "Experiments/TranslateMain.lean",
-    ],
-    # lean_binary elaborates the entry on each call. Import the compiled checker.
+    srcs = _TRANSLATE_BASE + ["Experiments/Translate.lean"],
+    # `lean_binary` runs the entry with `lean --run` on each call: it elaborates the entry and interprets the checker,
+    # about ten times slower than the native build of `lake build`. The tests that call it are `medium` or larger.
     entry = "Experiments/TranslateMain.lean",
     visibility = ["//devinfra/js/debundle/x/split_proof/experiments/translation:__pkg__"],
 )
 
-# Source groups used only to compile deliberately unsound mutation-test
-# checkers. Production binaries continue to use the unmodified Lower.lean.
-filegroup(
-    name = "translation_mutation_base_sources",
+lean_binary(
+    name = "lower",
     srcs = [
-        "EsmSplit/Bundle.lean",
-        "EsmSplit/Cli.lean",
-        "EsmSplit/Correct.lean",
-        "EsmSplit/Fast.lean",
-        "EsmSplit/Plan.lean",
-        "EsmSplit/Render.lean",
-        "EsmSplit/Semantics.lean",
-        "EsmSplit/Split.lean",
-        "Experiments/Translate.lean",
-        "Experiments/TranslateMain.lean",
+        "Experiments/Effects.lean",
+        "Experiments/IntrinsicMembers.lean",
+        "Experiments/Intrinsics.lean",
+        "Experiments/Lower.lean",
+        "Experiments/LowerMain.lean",
     ],
+    entry = "Experiments/LowerMain.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/experiments/translation:__pkg__"],
+)
+
+# Source groups used only to compile the deliberately unsound `no_writes` checker.
+filegroup(
+    name = "translate_mutation_base_sources",
+    srcs = _TRANSLATE_BASE,
     visibility = ["//devinfra/js/debundle/x/split_proof/lean/mutants:__subpackages__"],
 )
 
 filegroup(
-    name = "lower_mutation_source",
-    srcs = ["Experiments/Lower.lean"],
+    name = "translate_mutation_source",
+    srcs = ["Experiments/Translate.lean"],
     visibility = ["//devinfra/js/debundle/x/split_proof/lean/mutants:__subpackages__"],
 )
 
@@ -123,6 +131,9 @@ lean_binary(
         "EsmSplit/Render.lean",
         "EsmSplit/Semantics.lean",
         "EsmSplit/Split.lean",
+        "Experiments/Effects.lean",
+        "Experiments/IntrinsicMembers.lean",
+        "Experiments/Intrinsics.lean",
         "Experiments/Lower.lean",
         "Experiments/LowerSplit.lean",
     ],
@@ -144,122 +155,6 @@ _PROOF_FIXTURE_SOURCES = [
     "Experiments/ProofFixture.lean",
     "//devinfra/js/debundle/x/split_proof/lean/generated:generate_proof_fixture",
 ]
-
-lean_axiom_test(
-    name = "inferred_identity_axioms_test",
-    srcs = _PROOF_SOURCES + [
-        "Experiments/InferredIdentity.lean",
-        "Experiments/LocalCall.lean",
-        "Experiments/MiniJS.lean",
-        "Experiments/QuietCrossing.lean",
-    ],
-    imports = ["Experiments.InferredIdentity"],
-    theorems = [
-        "MJS.stable_cstep",
-        "MJS.stable_exec",
-        "MJS.inferred_identity_reachable_quiet",
-        "MJS.eval_identity",
-        "MJS.anchored_quiet",
-        "MJS.anchored_step",
-        "MJS.anchored_exec",
-        "MJS.inferred_identity_plan_preserves",
-        "MJS.derived_identity_plan_preserves",
-        "MJS.InferredIdentityExample.accepted",
-        "MJS.InferredIdentityExample.automatically_discovered",
-        "MJS.InferredIdentityExample.reassigned_rejected",
-        "MJS.InferredIdentityExample.derived_reassigned_rejected",
-        "MJS.InferredIdentityExample.effectful_body_rejected",
-        "MJS.InferredIdentityExample.derived_effectful_body_rejected",
-        "MJS.InferredIdentityExample.effectful_argument_rejected",
-        "MJS.InferredIdentityExample.derived_effectful_argument_rejected",
-        "MJS.InferredIdentityExample.crossing_without_inference_rejected",
-        "MJS.InferredIdentityExample.crossing_preserves",
-    ],
-)
-
-lean_axiom_test(
-    name = "quiet_crossing_axioms_test",
-    srcs = _PROOF_SOURCES + ["Experiments/QuietCrossing.lean"],
-    imports = ["Experiments.QuietCrossing"],
-    theorems = [
-        "EsmSplit.Bundle.conditionalConflict_none",
-        "EsmSplit.Bundle.step_comm_conditional",
-        "EsmSplit.conditional_order_none",
-        "EsmSplit.Bundle.exec_reorder_conditional",
-        "EsmSplit.conditional_plan_preserves",
-        "EsmSplit.QuietCrossingExample.no_certificate_rejected",
-        "EsmSplit.QuietCrossingExample.proposed_quiet_accepted",
-        "EsmSplit.QuietCrossingExample.quiet_proved",
-        "EsmSplit.QuietCrossingExample.conditional_correct",
-        "EsmSplit.QuietCrossingExample.binding_dependency_rejected",
-        "EsmSplit.QuietCrossingExample.false_certificate_refuted",
-        "EsmSplit.QuietCrossingExample.generated_unsafe_rejected",
-    ],
-)
-
-lean_axiom_test(
-    name = "local_call_axioms_test",
-    srcs = [
-        "EsmSplit/Bundle.lean",
-        "EsmSplit/Semantics.lean",
-        "Experiments/LocalCall.lean",
-        "Experiments/MiniJS.lean",
-    ],
-    imports = ["Experiments.LocalCall"],
-    theorems = [
-        "MJS.inert_subst_num",
-        "MJS.local_call_world",
-        "MJS.local_call_inert_sound",
-        "MJS.local_call_reads",
-        "MJS.effectful_body_rejected",
-        "MJS.effectful_argument_rejected",
-        "MJS.effectful_call_changes_world",
-        "MJS.inert_identity_accepted",
-        "MJS.changed_binding_rejected",
-    ],
-)
-
-lean_axiom_test(
-    name = "identity_generated_axioms_test",
-    srcs = _PROOF_SOURCES + ["//devinfra/js/debundle/x/split_proof/lean/generated:generate_identity_certificate"],
-    imports = ["IdentityCertificate.Instance"],
-    theorems = [
-        "Generated.plan_valid",
-        "Generated.plan_correct",
-    ],
-)
-
-lean_axiom_test(
-    name = "property_read_axioms_test",
-    srcs = [
-        "EsmSplit/Bundle.lean",
-        "EsmSplit/Semantics.lean",
-        "Experiments/LocalCall.lean",
-        "Experiments/MiniJS.lean",
-        "Experiments/PropertyRead.lean",
-    ],
-    imports = ["Experiments.PropertyRead"],
-    theorems = [
-        "PropertyRead.read_no_accessor_preserves_trace",
-        "PropertyRead.own_data_read_ignores_prototype",
-        "PropertyRead.own_data_write_preserves_trace",
-        "PropertyRead.initialize_preserves_trace",
-        "PropertyRead.local_call_then_initialize_preserves_trace",
-        "PropertyRead.own_data_positive",
-        "PropertyRead.missing_argument_invokes_getter",
-        "PropertyRead.fresh_receiver_invokes_setter",
-        "PropertyRead.inherited_getter_rejected",
-        "PropertyRead.inherited_setter_rejected",
-        "PropertyRead.missing_read_depends_on_prototype",
-        "PropertyRead.prototype_mutation_invalidates_guard",
-        "PropertyRead.own_readonly_throws",
-        "PropertyRead.inherited_readonly_throws",
-        "PropertyRead.inherited_writable_creates_own",
-        "PropertyRead.throwing_getter_stops_write",
-        "PropertyRead.throwing_setter_preserves_prior_trace",
-        "PropertyRead.missing_setter_throws",
-    ],
-)
 
 lean_axiom_test(
     name = "proof_fixture_axioms_test",
@@ -284,6 +179,7 @@ lean_axiom_test(
         "ProofFixture.safe_inversion",
         "ProofFixture.hoisted_read_both_directions",
         "ProofFixture.hoisted_write_both_directions",
+        "ProofFixture.declared_write_both_directions",
         "ProofFixture.unsafe_inversion_rejected",
         "ProofFixture.preserves_model",
         "ProofFixture.rendered_base",
@@ -311,128 +207,4 @@ sh_test(
         "@nodejs_linux_amd64//:bin/node",
     ],
     use_bash_launcher = True,
-)
-
-lean_axiom_test(
-    name = "source_identity_axioms_test",
-    srcs = _PROOF_SOURCES + [
-        "Experiments/FrontendIdentityFixture.lean",
-        "Experiments/IdentityFixture.lean",
-        "Experiments/IdentityScan.lean",
-        "Experiments/InferredIdentity.lean",
-        "Experiments/LocalCall.lean",
-        "Experiments/Lower.lean",
-        "Experiments/MiniJS.lean",
-        "Experiments/MiniJSSource.lean",
-        "Experiments/QuietCrossing.lean",
-        "//devinfra/js/debundle/x/split_proof/lean/generated:generate_identity_fixture",
-        "//devinfra/js/debundle/x/split_proof/lean/generated:generate_identity_frontend",
-    ],
-    imports = [
-        "Experiments.FrontendIdentityFixture",
-        "Experiments.IdentityFixture",
-    ],
-    theorems = [
-        "FrontendIdentityFixture.discovered",
-        "FrontendIdentityFixture.crossing_preserves",
-        "IdentityFixture.source_accepted",
-        "IdentityFixture.extracted_footprints",
-        "IdentityFixture.automatically_discovered",
-        "IdentityFixture.crossing_preserves",
-    ],
-)
-
-lean_axiom_test(
-    name = "identity_scan_axioms_test",
-    srcs = [
-        "Experiments/IdentityScan.lean",
-        "Experiments/Lower.lean",
-    ],
-    imports = ["Experiments.IdentityScan"],
-    theorems = [
-        "IdentityScan.declaration_found",
-        "IdentityScan.malformed_binder_rejected",
-        "IdentityScan.different_binder_rejected",
-        "IdentityScan.call_found",
-        "IdentityScan.candidate_inferred",
-        "IdentityScan.candidate_extra_use_rejected",
-        "IdentityScan.candidate_eval_rejected",
-        "IdentityScan.no_candidate",
-        "IdentityScan.candidate_fuel_exhaustion",
-        "IdentityScan.count_two",
-        "IdentityScan.count_extra",
-        "IdentityScan.counts_saturate",
-        "IdentityScan.finds_eval",
-        "IdentityScan.exhaustion_refused",
-        "IdentityScan.no_candidate_needed",
-    ],
-)
-
-lean_axiom_test(
-    name = "fresh_closure_axioms_test",
-    srcs = ["Experiments/FreshClosure.lean"],
-    imports = ["Experiments.FreshClosure"],
-    theorems = [
-        "FreshClosure.make_step_commute",
-        "FreshClosure.inferred_swap_preserves_continuation",
-        "FreshClosure.allocated_closure_fresh",
-        "FreshClosure.allocated_set_fresh",
-        "FreshClosure.Examples.set_creation_accepted",
-        "FreshClosure.Examples.later_call_observes_argument",
-        "FreshClosure.Examples.changed_argument_rejected",
-        "FreshClosure.Examples.changed_argument_changes_call",
-        "FreshClosure.Examples.escape_rejected",
-        "FreshClosure.Examples.escape_changes_observation",
-        "FreshClosure.Examples.early_call_rejected",
-        "FreshClosure.Examples.early_call_changes_observation",
-        "FreshClosure.Examples.reentrant_constructor_rejected",
-        "FreshClosure.Examples.reentrant_constructor_changes_observation",
-        "FreshClosure.Examples.other_allocation_rejected",
-        "FreshClosure.Examples.other_allocation_changes_identity",
-    ],
-)
-
-lean_axiom_test(
-    name = "observed_initializer_axioms_test",
-    srcs = [
-        "EsmSplit/Bundle.lean",
-        "EsmSplit/Semantics.lean",
-        "Experiments/ObservedInitializer.lean",
-    ],
-    imports = ["Experiments.ObservedInitializer"],
-    theorems = [
-        "ObservedInitializer.independent_constants_do_not_conflict",
-        "ObservedInitializer.independent_constants_commute",
-        "ObservedInitializer.unknown_effect_remains_ordered",
-        "ObservedInitializer.binding_read_remains_ordered",
-        "ObservedInitializer.constant_arrow_do_not_conflict",
-        "ObservedInitializer.constant_arrow_commute",
-        "ObservedInitializer.arrow_allocations_remain_ordered",
-        "ObservedInitializer.captured_binding_remains_ordered",
-        "ObservedInitializer.constant_record_do_not_conflict",
-        "ObservedInitializer.constant_record_commute",
-    ],
-)
-
-filegroup(
-    name = "translate_mutation_base_sources",
-    srcs = [
-        "EsmSplit/Bundle.lean",
-        "EsmSplit/Cli.lean",
-        "EsmSplit/Correct.lean",
-        "EsmSplit/Fast.lean",
-        "EsmSplit/Plan.lean",
-        "EsmSplit/Render.lean",
-        "EsmSplit/Semantics.lean",
-        "EsmSplit/Split.lean",
-        "Experiments/Lower.lean",
-        "Experiments/TranslateMain.lean",
-    ],
-    visibility = ["//devinfra/js/debundle/x/split_proof/lean/mutants:__subpackages__"],
-)
-
-filegroup(
-    name = "translate_mutation_source",
-    srcs = ["Experiments/Translate.lean"],
-    visibility = ["//devinfra/js/debundle/x/split_proof/lean/mutants:__subpackages__"],
 )

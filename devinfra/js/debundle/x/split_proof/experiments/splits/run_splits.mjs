@@ -1,6 +1,6 @@
 // Many splits of one real bundle: what the Lean checker says, and what Node does with the split program.
 //
-//   node run_splits.mjs <bundle> <strategy> [--step N] [--seeds N] [--jobs N] [--out results.jsonl]
+//   node run_splits.mjs <bundle> <strategy> [--step N] [--seeds N] [--jobs N] [--footprints f.jsonl] [--out results.jsonl]
 //
 //   bundle    lodash | acorn | semver | zod | acorn.min | zod.min   (experiments/lowering/bundles/<bundle>.{json,mjs})
 //   strategy  halves | cuts | cuts_entry_first | blocks | random
@@ -9,12 +9,13 @@
 //             blocks: k = 2…8 contiguous blocks
 //             random: k ∈ {2, 3, 5, 8} modules, `seeds` random assignments each
 //
-// For each split: `lowersplit --force` (checks, writes the modules even when rejected), then
+// The bundle's footprints are computed once (`lower`, or the file given with `--footprints`); each split is checked
+// with `lowersplit --force --footprints` (checks, writes the modules even when rejected), then
 // `smoke.mjs` on the entry module. One JSON line per split:
 //   { bundle, strategy, args, verdict: "accept"|"reject", failed: [check…], node: "same"|"different"|"error", detail }
 // Soundness claim under test: no split that is accepted behaves differently.
 import { spawn } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile, appendFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -24,6 +25,7 @@ import { smoke } from "./smoke.mjs";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const lowering = path.join(here, "../lowering/bundles");
 const lowersplit = path.join(here, "../../lean/.lake/build/bin/lowersplit");
+const lower = path.join(here, "../../lean/.lake/build/bin/lower");
 
 const [bundle, strategy, ...rest] = process.argv.slice(2);
 const option = (name, fallback) => {
@@ -46,6 +48,17 @@ const run = (cmd, args) =>
     child.on("close", (code) => resolve({ code, stdout, stderr }));
   });
 
+// The analysis takes minutes on a big bundle and does not depend on the split: run it once.
+let work;
+async function analyze() {
+  const analysis = await run(lower, [path.join(lowering, `${bundle}.json`)]);
+  if (analysis.code !== 0) throw new Error(`lower exit ${analysis.code}: ${analysis.stderr.split("\n").pop()}`);
+  work = await mkdtemp(path.join(tmpdir(), "footprints_"));
+  const file = path.join(work, "footprints.jsonl");
+  await writeFile(file, analysis.stdout);
+  return file;
+}
+const footprints = option("footprints", null) ?? (await analyze());
 const bundleJson = JSON.parse(await readFile(path.join(lowering, `${bundle}.json`), "utf8"));
 const n = bundleJson.statements.length;
 const baseline = JSON.stringify(await smoke(family, path.join(lowering, `${bundle}.mjs`)));
@@ -62,7 +75,7 @@ else if (strategy === "random")
   for (const k of [2, 3, 5, 8]) for (let seed = 1; seed <= seeds; seed++) plans.push({ strategy, args: [k, seed] });
 else throw new Error(`unknown strategy ${strategy}`);
 
-await writeFile(out, "");
+const lines = [];
 const tally = {};
 let next = 0;
 async function worker() {
@@ -76,6 +89,8 @@ async function worker() {
         path.join(lowering, `${bundle}.json`),
         path.join(dir, "spec.json"),
         path.join(dir, "out"),
+        "--footprints",
+        footprints,
         "--force",
       ]);
       const failed = [...checked.stdout.matchAll(/^\s+FAIL\s+(.*)$/gm)].map(([, what]) =>
@@ -99,7 +114,7 @@ async function worker() {
         node,
         detail,
       };
-      await appendFile(out, `${JSON.stringify(line)}\n`);
+      lines.push(line);
       const key = `${verdict}/${node}`;
       tally[key] = (tally[key] ?? 0) + 1;
     } finally {
@@ -108,6 +123,17 @@ async function worker() {
   }
 }
 await Promise.all(Array.from({ length: jobs }, worker));
+// the workers finish in any order: one order for every run keeps a rerun's diff to what changed
+const order = (a, b) =>
+  a.args.length - b.args.length || a.args.reduce((d, x, i) => d || (x < b.args[i] ? -1 : x > b.args[i] ? 1 : 0), 0);
+await writeFile(
+  out,
+  lines
+    .sort(order)
+    .map((l) => `${JSON.stringify(l)}\n`)
+    .join("")
+);
+if (work) await rm(work, { recursive: true, force: true });
 console.log(`${bundle} ${strategy}: ${plans.length} splits`, tally);
 if (tally["accept/different"]) {
   console.error("UNSOUND: an accepted split behaves differently");

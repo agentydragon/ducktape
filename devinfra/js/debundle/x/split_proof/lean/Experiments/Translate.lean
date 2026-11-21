@@ -3,7 +3,7 @@ import Std.Data.HashMap
 import Std.Data.HashSet
 import EsmSplit.Cli
 import EsmSplit.Correct
-import Experiments.Lower
+import Experiments.Effects
 
 /-!
 # Is this output tree the bundle, renamed and reshuffled?
@@ -375,21 +375,32 @@ def translate (bundleJ outJ certJ : Json) : Except String Result := do
            metaUrls := ctx.metaUrls
            extraExports := extraExports }
 
-/-- The bundle as the checker sees it: one statement per unit, footprints from `Lower`. -/
+/-- The bundle as the checker sees it: one statement per unit, footprints from `Effects`. -/
 def bundleOfFootprints (fps : Array Lower.Footprint) : Bundle :=
   fps.toList.map fun f =>
-    { src := "", defs := f.defs, writes := f.writes, assigns := f.assigns, eager := f.eager, lazy := f.lazy, hoisted := f.hoisted, effect := f.effect, observedInit := f.observedInit, nonReentrant := f.nonReentrant }
+    { src := "", defs := f.defs, writes := f.writes, assigns := f.assigns, deps := f.deps, eager := f.eager, lazy := f.lazy, hoisted := f.hoisted, effect := f.effect }
 
-def bundleOf (units : Array Json) : Bundle :=
-  bundleOfFootprints (Lower.finalize (units.map Lower.analyzeTop))
+/-- Why two statements conflict, as the bits of `Bundle.conflictT`: 1 both touch the world, 2 `j` binds a name `i` reads,
+4 `i` binds a name `j` reads, 8 both bind a name. A pair conflicts if and only if some bit is set. -/
+def conflictReasons (arr : Array Stmt) (tab : Array EsmSplit.NameSet) (i j : Nat) : Nat :=
+  let a := arr.getD i default
+  let b := arr.getD j default
+  (if a.effect && b.effect then 1 else 0)
+    + (if !b.hoisted && b.binds.any (tab.getD i ∅).contains then 2 else 0)
+    + (if !a.hoisted && a.binds.any (tab.getD j ∅).contains then 4 else 0)
+    + (if !a.hoisted && !b.hoisted && a.binds.any b.binds.contains then 8 else 0)
 
-/-- Pairs of statements that conflict and that the plan runs in the opposite order from the bundle: what `OrderOk` rejects. -/
-def conflictInversions (B : Bundle) (P : Plan) : Nat × Array (Nat × Nat) := Id.run do
+/-- Pairs of statements that conflict and that the plan runs in the opposite order from the bundle (what `OrderOk`
+rejects): how many, five of them, and (if `all`) every one as `(runs first in the output, runs first in the bundle,
+reasons)`. -/
+def conflictInversions (B : Bundle) (P : Plan) (all : Bool := false) :
+    Nat × Array (Nat × Nat) × Array (Nat × Nat × Nat) := Id.run do
   let arr := B.toArray
   let tab := B.readsTab
   let ord := P.execOrder.toArray
   let mut count := 0
   let mut sample : Array (Nat × Nat) := #[]
+  let mut every : Array (Nat × Nat × Nat) := #[]
   for x in [0:ord.size] do
     for y in [x + 1:ord.size] do
       let a := ord[x]!
@@ -397,13 +408,16 @@ def conflictInversions (B : Bundle) (P : Plan) : Nat × Array (Nat × Nat) := Id
       if b < a && Bundle.conflictT arr tab b a then
         count := count + 1
         if sample.size < 5 then sample := sample.push (a, b)
-  return (count, sample)
+        if all then every := every.push (a, b, conflictReasons arr tab b a)
+  return (count, sample, every)
 
+/-- `translate <bundle.json> <output.json> <cert.json> [--table <file>] [--premises <file>] [--obligations <file>]` -/
 def main (args : List String) : IO UInt32 := do
-  let (table?, args) := match args with
-    | [b, o, c, "--table", t] => (some t, [b, o, c])
-    | l => (none, l)
-  let [bundlePath, outPath, certPath] := args | IO.eprintln "usage: translate <bundle.json> <output.json> <cert.json> [--table <file>]"; return 2
+  let (table?, args) := Effects.takeFlag "--table" args
+  let (premPath?, args) := Effects.takeFlag "--premises" args
+  let (obligationsPath?, args) := Effects.takeFlag "--obligations" args
+  let [bundlePath, outPath, certPath] := args | IO.eprintln "usage: translate <bundle.json> <output.json> <cert.json> [--table <file>] [--premises <file>] [--obligations <file>]"; return 2
+  let prem ← Effects.loadPremises premPath?
   let t0 ← IO.monoMsNow
   let read (p : String) : IO Json := do IO.ofExcept (Json.parse (← IO.FS.readFile p))
   let bundleJ ← read bundlePath
@@ -426,17 +440,10 @@ def main (args : List String) : IO UInt32 := do
     let t2 ← IO.monoMsNow
     -- Exports are removed from `units` by the frontend but may be observed by external modules.
     let exported := (arr (fld bundleJ "exports")).map fun e => str (fld e "local")
-    let (fps, identityScanExhausted) ← IO.lazyPure fun _ => Lower.finalizeWithScanStatus (units.map Lower.analyzeTop) exported
-    if identityScanExhausted then
-      IO.println "  identity inference disabled: annotated JSON exceeds scan depth limit"
+    let (fps, analysis) ← IO.lazyPure fun _ => Effects.footprints units (Effects.importsOf bundleJ) prem exported
+    for line in Effects.premiseLines prem analysis do IO.println line
     let B := bundleOfFootprints fps
-    for i in [:fps.size] do
-      if let some f := fps[i]? then
-        if let some name := f.inferredIdentity then
-          IO.println s!"  inferred identity call: unit {i}, binding `{name}` (trusted source analysis)"
-        if let some name := f.inferredFactory then
-          IO.println s!"  inferred closure factory: unit {i}, binding `{name}` (trusted source analysis; fresh allocation)"
-    IO.println s!"  [time] footprints: {(← IO.monoMsNow) - t2} ms; {(B.filter (·.effect)).length} of {B.length} units are effects"
+    IO.println s!"  [time] footprints: {(← IO.monoMsNow) - t2} ms; {(B.filter (·.effect)).length} of {B.length} units touch the world"
     let P := res.plan
     let order ← IO.lazyPure fun _ => P.evalOrder
     IO.println s!"  modules evaluated from the entry: {order.length} of {P.mods.length}"
@@ -449,9 +456,18 @@ def main (args : List String) : IO UInt32 := do
     let ordered ← timedCheck "OrderOk" fun _ => decide (OrderOk B P)
     if rs.all id && ordered then IO.println "PLAN SOUND"; return 0
     if !rs.all id then IO.println "PLAN NOT SOUND: a structural check failed"; return 1
-    let (n, sample) ← IO.lazyPure fun _ => conflictInversions B P
+    let (n, sample, every) ← IO.lazyPure fun _ => conflictInversions B P obligationsPath?.isSome
     IO.println s!"OBLIGATIONS: {n} pairs of conflicting units run in the opposite order from the bundle"
     for (a, b) in sample do IO.println s!"    unit {b} came first in the bundle; the output runs unit {a} before it"
+    if let some path := obligationsPath? then
+      let h ← IO.FS.Handle.mk path .write
+      for (a, b, r) in every do h.putStrLn s!"[{a},{b},{r}]"
+      h.flush
+      let by_ := [(1, "both touch the world"), (2, "the later binds a name the earlier reads"),
+                  (4, "the earlier binds a name the later reads"), (8, "both bind a name")].map fun (bit, what) =>
+        s!"{(every.filter fun (_, _, r) => r / bit % 2 == 1).size} {what}"
+      IO.println s!"  by reason (a pair can have several): {", ".intercalate by_}"
+      IO.println s!"  wrote every pair to {path} as [runs first in the output, runs first in the bundle, reasons]"
     return 4
 
 end Translate

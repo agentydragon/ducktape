@@ -78,7 +78,6 @@ if (process.argv[2] !== "--worker") {
     const safeSide = i % 4 >= 2 ? [1, 3 + shift] : [3 + shift];
     const emitted = emit(`safe-${i}`, safe, safeSide);
     assert.equal(emitted.result.status, 0, `${i}: ${emitted.result.stdout}\n${emitted.result.stderr}`);
-    assert.match(emitted.result.stdout, /inferred closure factory/, `safe ${i}`);
     const original = run(process.execPath, [source]);
     const split = run(process.execPath, [path.join(emitted.dir, "entry.mjs")]);
     assert.equal(original.status, 0, original.stderr);
@@ -109,7 +108,6 @@ if (process.argv[2] !== "--worker") {
     const rejected = emit(`unsafe-${i}`, bad, side);
     assert.equal(rejected.result.status, 1, `${i}: ${rejected.result.stdout}\n${rejected.result.stderr}`);
     assert.match(rejected.result.stdout, /FAIL\s+OrderOk/, `unsafe ${i}`);
-    assert.doesNotMatch(rejected.result.stdout, /inferred closure factory/, `unsafe ${i}`);
     assert(!existsSync(path.join(rejected.dir, "entry.mjs")), `unsafe ${i} emitted without --force`);
     const forced = emit(`forced-${i}`, bad, side, true);
     assert.equal(forced.result.status, 1, `forced ${i}`);

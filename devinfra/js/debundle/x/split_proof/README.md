@@ -156,6 +156,7 @@ It is not "the programs are equivalent". JavaScript is never formalized.
 
 A statement **binds** the names it declares and the names it may assign (`writes`: reassigned variables, objects whose contents it changes,
 including what the functions it calls change; unknown code lists them all). These named mutable things are _cells_.
+A statement may also read names it does not mention, through a function it calls that it reached through an object (`deps`); they order it like `eager` names do.
 Two statements **conflict** ([`Bundle.lean`](lean/EsmSplit/Bundle.lean)) if both have effects,
 or one reads a name the other binds (either direction), or both bind the same name.
 A hoisted `function` declaration never conflicts: it exists before any code runs.
@@ -185,13 +186,14 @@ The main development does not use `native_decide`, so the compiler is not truste
 
 ## What is not proved
 
-1. **Footprints.** [`extract/extract.mjs`](extract/extract.mjs) parses the bundle with `acorn` and computes, per statement, what it declares, what it reads eagerly, what it reads only inside function bodies, whether it is hoisted, whether it may have effects.
-   Anything not obviously inert counts as an effect: calls, member access, operators, reads of undeclared globals.
-   The names a statement may assign (`writes`) are the ones its own code assigns and, for a statement with effects, the ones assigned in every function body it may reach. `Lower.finalize` computes that closure; it is unverified like the rest of this item.
-   Before `writes` existed, a read of a reassigned variable could move across the assignment; the fuzzer of item 7 found it, and the model now orders them as cells.
-   A statement with effects also counts everything it mentions as eager, since a call may invoke a callback or an immediately invoked function. The first version missed this and accepted a split that throws on load; see [`experiments/README.md`](experiments/README.md).
-   A `var` inside a top-level block declares a module-scope name. The Lean front end missed this at first and accepted four splits from debundle's corpus that fail to load ([`experiments/debundle_cases/`](experiments/debundle_cases/README.md)).
-   It rejects syntax it does not model (classes, destructuring, reassigning a top-level binding, `eval`, `import.meta`, async). Read [`Instance.lean`](lean/EsmSplit/Instance.lean) to audit its output by eye; it is 12 lines.
+1. **Footprints.** [`Effects.lean`](lean/Experiments/Effects.lean) runs the bundle's top level once over abstract values and reports, per statement, whether it touches the world (`effect`), which names it may change (`writes`) and which names it reads through functions it calls but does not mention (`deps`).
+   [`Lower.lean`](lean/Experiments/Lower.lean) scans the same statement for what it declares, mentions eagerly or only inside function bodies, and assigns.
+   Code the interpreter can see is run, standard functions come from a table of summaries, and anything else is a call into the world: an effect, which keeps its order against every other effect.
+   A statement that touches only objects the program made is not an effect. One that touches the world also counts everything its closures mention as eager, since the world may call them.
+   The checker trusts the interpreter's rules and its printed premises ([`experiments/effects/`](experiments/effects/README.md): the intrinsics are not patched, evaluation completes, no other chunk runs meanwhile, and optionally that the world adds no accessors or hooks to program objects). Both are tested against Node, neither is proved:
+   golden cases with reorders, fuzzers over random bundles and splits, a mutation harness that removes one rule at a time. A wrong rule shows up as a wrong accept.
+   A `var` inside a top-level block declares a module-scope name ([`experiments/debundle_cases/`](experiments/debundle_cases/README.md)).
+   [`extract/extract.mjs`](extract/extract.mjs), which writes the example's Lean instance, has footprint rules of its own (a call is an effect) and models a much smaller syntax: it rejects classes, destructuring, reassigning a top-level binding, `eval`, `import.meta` and async. Read [`Instance.lean`](lean/EsmSplit/Instance.lean) to audit its output by eye; it is 12 lines. `lowersplit --lean` writes a certificate from the interpreter's footprints instead.
 2. **The frame assumption.** A statement without effects depends only on the values it may read. A statement with effects may also read and change the world. `Meaning` has exactly this type. Real JavaScript is assumed to fit.
    "May read" is the closure of reads through function bodies (`Bundle.reads`). Running a statement binds the names it declares and the names in `writes` to its value; a statement must list every name it may assign.
 3. **The ES order model**, `Plan.visit`: 10 lines. It matches Node on 500 random import graphs, 262 of them with cycles ([`experiments/README.md`](experiments/README.md) § 10). That is a test, not a proof.

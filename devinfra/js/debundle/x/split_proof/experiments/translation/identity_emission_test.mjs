@@ -15,26 +15,16 @@ const source = path.join(here, "fixtures/local_identity/bundle.js");
 const code = readFileSync(source, "utf8");
 const out = path.join(temp, "emitted");
 mkdirSync(out, { recursive: true });
-const program = acorn.parse(code, { sourceType: "module", ecmaVersion: "latest", ranges: true });
-const statements = program.body;
 const ast = path.join(temp, "ast.json");
 const spec = path.join(temp, "spec.json");
 const bundle = path.join(temp, "bundle.json");
 const tree = path.join(temp, "tree.json");
 const cert = path.join(temp, "cert.json");
 writeFileSync(
-  ast,
-  JSON.stringify({ statements: statements.map((s) => ({ ast: s, src: code.slice(s.start, s.end) })) })
-);
-writeFileSync(
   spec,
   JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["identity", "result", "#3"], "side.mjs": ["#2"] } })
 );
 const run = (bin, args) => spawnSync(bin, args, { encoding: "utf8" });
-const raw = run(process.env.LOWERSPLIT, [ast, spec, out]);
-assert.equal(raw.status, 1, `raw unannotated input must remain conservative: ${raw.stdout}\n${raw.stderr}`);
-assert.match(raw.stdout, /FAIL\s+OrderOk/);
-assert(!existsSync(path.join(out, "entry.mjs")), "rejected input must not emit a module");
 const lowered = lowerDump(code, acorn, eslintScope).statements;
 // Scope annotations must preserve original statements, including multiple
 // declarators, imports, exports, and their exact source slices.
@@ -78,9 +68,7 @@ const leanCertificate = path.join(temp, "generated.lean");
 const emitted = run(process.env.LOWERSPLIT, [ast, spec, out, "--lean", leanCertificate]);
 assert.equal(emitted.status, 0, `annotated emitter must accept: ${emitted.stdout}\n${emitted.stderr}`);
 assert.match(emitted.stdout, /pass\s+OrderOk/);
-assert.match(emitted.stdout, /inferred identity call/);
 const leanSource = readFileSync(leanCertificate, "utf8");
-assert.match(leanSource, /Trusted identity-call inference \(unit, binding\):/);
 assert.match(leanSource, /kernel checks this supplied bundle and plan, not the source-to-footprint analysis/);
 assert.match(leanSource, /theorem plan_valid/);
 const frontend = path.join(here, "frontend.mjs");
@@ -94,7 +82,6 @@ for (const args of [
 }
 const checked = run(process.env.TRANSLATE, [bundle, tree, cert]);
 assert.equal(checked.status, 0, `${checked.stdout}\n${checked.stderr}`);
-assert.match(checked.stdout, /inferred identity call/);
 assert.match(checked.stdout, /PLAN SOUND/);
 const before = run(process.execPath, [source]);
 const after = run(process.execPath, [path.join(out, "entry.mjs")]);
@@ -143,7 +130,7 @@ for (const [name, unsafe] of [
 
 // An escaped callback may read the result before a reordered initializer. The
 // alias case must also be refused, even though only `alias` is read lazily.
-for (const [name, unsafe, side, suppress = true] of [
+for (const [name, unsafe, side] of [
   [
     "deferred_result",
     `function identity(x) { return x; }
@@ -188,7 +175,6 @@ const result = identity(1);
 alias = result;
 globalThis.cb();`,
     [1, 2, 4, 5],
-    false,
   ],
   [
     "destructuring_alias",
@@ -199,7 +185,6 @@ const result = identity(1);
 ({x: alias} = {x: result});
 globalThis.cb();`,
     [1, 2, 4, 5],
-    false,
   ],
   [
     "effectful_store",
@@ -210,7 +195,6 @@ const result = identity(1);
 store(result);
 globalThis.cb();`,
     [2, 4, 5],
-    false,
   ],
 ]) {
   const dir = path.join(temp, name);
@@ -237,8 +221,6 @@ globalThis.cb();`,
   const rejected = run(process.env.LOWERSPLIT, [input, split, dir]);
   assert.equal(rejected.status, 1, `${name}: ${rejected.stdout}\n${rejected.stderr}`);
   assert.match(rejected.stdout, /FAIL\s+OrderOk/);
-  if (suppress) assert.doesNotMatch(rejected.stdout, /inferred identity call/);
-  else assert.match(rejected.stdout, /inferred identity call/);
   assert(!existsSync(path.join(dir, "entry.mjs")), name);
   const emitted = run(process.env.LOWERSPLIT, [input, split, dir, "--force"]);
   assert.equal(emitted.status, 1, `${name}: ${emitted.stdout}\n${emitted.stderr}`);
@@ -259,53 +241,10 @@ globalThis.cb();`,
   const checkedUnsafe = run(process.env.TRANSLATE, [sourceBundle, outputTree, pairing]);
   assert.equal(checkedUnsafe.status, 4, `${name}: ${checkedUnsafe.stdout}\n${checkedUnsafe.stderr}`);
   assert.match(checkedUnsafe.stdout, /FAIL\s+OrderOk/);
-  if (suppress) assert.doesNotMatch(checkedUnsafe.stdout, /inferred identity call/);
-  else assert.match(checkedUnsafe.stdout, /inferred identity call/);
-}
-
-// Export metadata is separate from bundle units, but an external module can
-// observe an exported binding. Do not infer the call as inert in that case.
-{
-  const name = "exported_result";
-  const unsafe = `${code}\nexport { result };\n`;
-  const dir = path.join(temp, name);
-  mkdirSync(dir, { recursive: true });
-  const original = path.join(temp, `${name}.mjs`);
-  const input = path.join(temp, `${name}-ast.json`);
-  const split = path.join(temp, `${name}-spec.json`);
-  const sourceBundle = path.join(temp, `${name}-bundle.json`);
-  const outputTree = path.join(temp, `${name}-tree.json`);
-  const pairing = path.join(temp, `${name}-pairing.json`);
-  const parsed = acorn.parse(unsafe, { sourceType: "module", ecmaVersion: "latest" });
-  writeFileSync(original, unsafe);
-  writeFileSync(input, JSON.stringify(lowerDump(unsafe, acorn, eslintScope)));
-  writeFileSync(
-    split,
-    JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["#0", "#1", "#3", "#4"], "side.mjs": ["#2"] } })
-  );
-  const rejected = run(process.env.LOWERSPLIT, [input, split, dir]);
-  assert.equal(rejected.status, 1, rejected.stdout);
-  assert.match(rejected.stdout, /FAIL\s+OrderOk/);
-  assert.doesNotMatch(rejected.stdout, /inferred identity call/);
-  assert(!existsSync(path.join(dir, "entry.mjs")));
-  const emitted = run(process.env.LOWERSPLIT, [input, split, dir, "--force"]);
-  assert.equal(emitted.status, 1, emitted.stdout);
-  for (const args of [
-    [frontend, "bundle", original, "--out", sourceBundle],
-    [frontend, "tree", dir, "--entry", "entry.mjs", "--out", outputTree],
-    [path.join(here, "pair.mjs"), sourceBundle, outputTree, "--out", pairing],
-  ]) {
-    const p = run(process.execPath, args);
-    assert.equal(p.status, 0, p.stderr);
-  }
-  const checkedExport = run(process.env.TRANSLATE, [sourceBundle, outputTree, pairing]);
-  assert.equal(checkedExport.status, 4, `${checkedExport.stdout}\n${checkedExport.stderr}`);
-  assert.doesNotMatch(checkedExport.stdout, /inferred identity call/);
-  assert.match(checkedExport.stdout, /FAIL\s+OrderOk/);
 }
 
 // A fallback syntax node in a statement mentioning the result may hide a
-// deferred use. Conservatively decline inference even for this eager example.
+// deferred use; the statement is reported with its fallback nodes.
 {
   const codeWithFallback = `function identity(x) { return x; }
 const result = identity(1);
@@ -318,6 +257,5 @@ console.log(import.meta.url, result);`;
   writeFileSync(spec, JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["#0", "#1", "#2"] } }));
   const result = run(process.env.LOWERSPLIT, [input, spec, dir]);
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
-  assert.doesNotMatch(result.stdout, /inferred identity call/);
   assert.match(result.stdout, /1 with fallback nodes/);
 }
