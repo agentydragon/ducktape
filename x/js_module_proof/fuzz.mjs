@@ -1049,11 +1049,11 @@ export function makeLocalAliasCase(seed, index) {
     (body, parameter) => ({ type: "BinaryExpression", operator: "+", left: body, right: id(parameter) }),
     numericExpression
   );
-  const withFinally = numericBindings.length > 0 && index >= 949 && index % 96 === 85;
-  const withThrownFinally = withFinally && index >= 1045;
-  const withCaughtFinally = withThrownFinally && index >= 1141;
-  const withCatchBinding = withCaughtFinally && index >= 1237;
-  const withLocal = numericBindings.length > 0 && ((index >= 61 && index % 48 === 13) || withFinally);
+  const withTry = numericBindings.length > 0 && index >= 949 && index % 96 === 85;
+  const withThrow = withTry && index >= 1045;
+  const withCatch = withThrow && index >= 1141;
+  const withCatchBinding = withCatch && index >= 1237;
+  const withLocal = numericBindings.length > 0 && ((index >= 61 && index % 48 === 13) || withTry);
   const aliasLoop = numericBindings.length > 0 && index >= 781 && index % 96 === 13;
   const aliasBranch = numericBindings.length > 0 && index >= 397 && index % 96 === 13;
   const loopShadow = aliasLoop && index >= 877;
@@ -1066,7 +1066,7 @@ export function makeLocalAliasCase(seed, index) {
   const computedBody = withLocal
     ? [
         localDeclaration,
-        ...(withFinally
+        ...(withTry
           ? [
               {
                 type: "TryStatement",
@@ -1083,7 +1083,7 @@ export function makeLocalAliasCase(seed, index) {
                             right: id("numericLeft"),
                           }),
                         ]),
-                    ...(withThrownFinally
+                    ...(withThrow
                       ? [
                           {
                             type: "ThrowStatement",
@@ -1101,7 +1101,7 @@ export function makeLocalAliasCase(seed, index) {
                       : []),
                   ],
                 },
-                handler: withCaughtFinally
+                handler: withCatch
                   ? {
                       type: "CatchClause",
                       param: withCatchBinding ? id("caught") : null,
@@ -1118,17 +1118,20 @@ export function makeLocalAliasCase(seed, index) {
                       },
                     }
                   : null,
-                finalizer: {
-                  type: "BlockStatement",
-                  body: [
-                    expr({
-                      type: "AssignmentExpression",
-                      operator: "+=",
-                      left: id("offset"),
-                      right: id("numericRight"),
-                    }),
-                  ],
-                },
+                finalizer:
+                  index >= 1429
+                    ? null
+                    : {
+                        type: "BlockStatement",
+                        body: [
+                          expr({
+                            type: "AssignmentExpression",
+                            operator: "+=",
+                            left: id("offset"),
+                            right: id("numericRight"),
+                          }),
+                        ],
+                      },
               },
             ]
           : []),
@@ -1324,9 +1327,9 @@ export function makeLocalAliasCase(seed, index) {
     numericLeftIndex: bindings.length + updateBindings.length,
     numericArguments,
     composedAliasExpression,
-    withFinally,
-    withThrownFinally,
-    withCaughtFinally,
+    withTry,
+    withThrow,
+    withCatch,
     withCatchBinding,
     aliasBranch,
     aliasLoop,
@@ -1334,7 +1337,7 @@ export function makeLocalAliasCase(seed, index) {
     unsupported: false,
     cyclic: false,
     invalidAssignment: false,
-    expectThrow: withThrownFinally && !withCaughtFinally,
+    expectThrow: withThrow && !withCatch,
     spec: {
       kind: "bindings",
       entry: "entry.mjs",

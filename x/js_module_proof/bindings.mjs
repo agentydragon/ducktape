@@ -1473,17 +1473,17 @@ function generateFiles(source, spec, names) {
               terminal.alternate &&
               returnBranch(terminal.consequent) &&
               returnBranch(terminal.alternate);
-            const isTryFinally = (statement) =>
+            const isTry = (statement) =>
               statement.type === "TryStatement" &&
               (statement.handler === null ||
                 ((statement.handler.param === null || statement.handler.param.type === "Identifier") &&
                   statement.handler.body.body.every(isWrite))) &&
-              statement.finalizer?.type === "BlockStatement" &&
+              (statement.finalizer === null ||
+                (statement.finalizer.type === "BlockStatement" && statement.finalizer.body.every(isWrite))) &&
               statement.block.body.every(
                 (item, index) =>
                   isWrite(item) || (index === statement.block.body.length - 1 && item.type === "ThrowStatement")
-              ) &&
-              statement.finalizer.body.every(isWrite);
+              );
             const isLoop = (statement) =>
               statement.type === "ForStatement" &&
               statement.init?.type === "VariableDeclaration" &&
@@ -1515,7 +1515,7 @@ function generateFiles(source, spec, names) {
                     isWrite(statement) ||
                     isBranch(statement) ||
                     isLoop(statement) ||
-                    isTryFinally(statement)
+                    isTry(statement)
                 ),
               "local import renaming supports only local declarations and assignments"
             );
@@ -1582,7 +1582,7 @@ function generateFiles(source, spec, names) {
                   const catchNames = new Set(caught ? [caught] : []);
                   item.handler.body.body.forEach((write) => visitWrite(write, catchNames, catchNames));
                 }
-                item.finalizer.body.forEach((write) => visitWrite(write));
+                if (item.finalizer) item.finalizer.body.forEach((write) => visitWrite(write));
               } else if (item.type === "ForStatement") {
                 const loopName = item.init.declarations[0].id.name;
                 check(!localNames.has(loopName), "ambiguous loop binding");
