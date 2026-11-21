@@ -7,8 +7,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	providerpb "github.com/agentydragon/ducktape/platform_sessions/provider/providerpb"
 )
 
 func TestProviderDocumentComesFromAuthenticatedProvider(t *testing.T) {
@@ -24,11 +22,7 @@ func TestProviderDocumentComesFromAuthenticatedProvider(t *testing.T) {
 	}))
 	defer providerHTTP.Close()
 	ca := trustedCAFile(t, providerHTTP)
-	fake := &fakeProvider{documentPath: "/internal/openapi/personal"}
-	service, err := New([]Provider{{Ref: &providerpb.InstanceRef{ProviderId: "chatgpt", InstanceId: "personal"}, Client: fake}})
-	if err != nil {
-		t.Fatal(err)
-	}
+	service := newTestService(t, &fakeProvider{documentPath: "/internal/openapi/personal"})
 	routeToken := strings.Repeat("r", 40)
 	consumer := strings.Repeat("b", 40)
 	handler, err := HTTPServer(context.Background(), service, HTTPConfig{Owner: testOwnerConfig(), Bearers: []Bearer{{Token: consumer, Routes: []Route{{Instance: "personal", Method: "GET", Path: "/x"}}}}, Providers: map[string]ProviderHTTPConfig{"personal": {ID: "personal", Origin: providerHTTP.URL, OwnerToken: ownerToken, RouteToken: routeToken, CAFile: ca, OperationTimeout: time.Minute}}})
