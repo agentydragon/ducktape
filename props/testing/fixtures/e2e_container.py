@@ -16,27 +16,6 @@ Environment variables:
     PROPS_E2E_HOST_HOSTNAME: Hostname for containers to reach host services.
         - Default: "host.docker.internal" (Docker bridge networking)
         - Set to "127.0.0.1" for host networking (e.g., CI with --network=host)
-
-Usage:
-    async def test_critic_completes(e2e_stack, all_files_scope, critic_image):
-        mock = make_critic_mock()
-        async with e2e_stack({DEFAULT_TEST_MODEL: mock}, images=[critic_image]) as stack:
-            image = await stack.registry.resolve_image(AgentType.CRITIC, BUILTIN_TAG)
-            run_id = await stack.registry.run_critic(
-                image=image,
-                example=all_files_scope,
-                model=stack.model,
-                timeout_seconds=60,
-                parent_run_id=None,
-                budget_usd=5.0,
-            )
-            # Assert on database state
-
-    # Multi-model usage:
-    async def test_orchestration(e2e_stack, ...):
-        mocks = {"optimizer-model": opt_mock, "critic-model": crit_mock}
-        async with e2e_stack(mocks, images=[...]) as stack:
-            ...
 """
 
 from __future__ import annotations

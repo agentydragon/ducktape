@@ -120,15 +120,6 @@ def _make_supervisor(
 ) -> tuple[GraderSupervisor, FakeRegistry]:
     registry = FakeRegistry(image=image)
 
-    @contextmanager
-    def fake_session() -> Any:
-        session = MagicMock()
-        session.query.return_value.all.return_value = [MagicMock(slug=s) for s in snapshot_slugs]
-        yield session
-
-    db = MagicMock()
-    db.session = fake_session
-
     db_config = MagicMock()
 
     async def fake_asyncpg_connect() -> FakeListenerConnection:
@@ -139,12 +130,13 @@ def _make_supervisor(
         registry=registry,  # type: ignore[arg-type]
         db_config=db_config,
         model="gpt-5-mini",
-        db=db,
+        db=MagicMock(),
         reconcile_debounce_s=reconcile_debounce_s,
         periodic_reconcile_s=0,  # no backstop loop in unit tests
         backoff_base_s=backoff_base_s,
         max_consecutive_failures=max_consecutive_failures,
     )
+    _set_snapshots(gs, snapshot_slugs)
     return gs, registry
 
 

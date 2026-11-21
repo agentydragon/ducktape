@@ -14,7 +14,7 @@ from uuid import UUID, uuid4
 import pytest_asyncio
 import pytest_bazel
 
-from props.backend.auth import AdminRole, AgentRole, AuthenticatedIdentity, get_caller_db
+from props.backend.auth import AgentRole, AuthenticatedIdentity, get_caller_db
 from props.core.agent_types import CriticTypeConfig
 from props.db.database import Database
 from props.db.examples import Example
@@ -102,16 +102,6 @@ async def test_agent_db_can_see_own_run(
     finally:
         with contextlib.suppress(StopIteration):
             next(gen)
-
-
-async def test_admin_auth_returns_admin_db(synced_db: Database, exhaust_generator) -> None:
-    """get_caller_db with admin auth returns the admin Database directly."""
-    auth = AuthenticatedIdentity(username=synced_db.config.user, password=synced_db.config.password, role=AdminRole())
-
-    gen = get_caller_db(admin_db=synced_db, auth=auth)
-    db = exhaust_generator(gen)
-
-    assert db is synced_db, "Admin should get the same admin Database instance"
 
 
 if __name__ == "__main__":

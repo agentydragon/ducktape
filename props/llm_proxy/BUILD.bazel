@@ -96,6 +96,7 @@ py_test(
         "//props:conftest",
         "@pypi//fastapi",
         "@pypi//httpx",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
