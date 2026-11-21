@@ -828,8 +828,7 @@ def bundleUnit (ss : List Stmt) (frames : List (Nat × List (Name × Addr))) (j 
 /-- A proposed move relation is sound when each allowed pair commutes in both directions in every linked scope.
 The hypothesis is semantic; it does not assume how a syntax check or footprint certificate established it. -/
 def MovesSound (W : World) (ss : List Stmt) (allows : Nat → Nat → Bool) : Prop :=
-  ∀ frames, FramesOf ((List.range ss.length).zip ss) frames →
-    (∀ q ∈ frames, ∀ p ∈ q.2, p.2.region = q.1 + 1) →
+  ∀ frames (s s' : State W), declareTops ((List.range ss.length).zip ss) s = .ok frames s' →
     ∀ n i j, i ≠ j → allows i j = true →
       Commute (unitStep n (bundleUnit ss frames i) : M W Flow) (unitStep n (bundleUnit ss frames j)) ∧
       Commute (unitStep n (bundleUnit ss frames j) : M W Flow) (unitStep n (bundleUnit ss frames i))
@@ -837,15 +836,20 @@ def MovesSound (W : World) (ss : List Stmt) (allows : Nat → Nat → Bool) : Pr
 /-- Independently proved move relations can be combined without changing the reordering argument. -/
 theorem MovesSound.or {ss : List Stmt} {a b : Nat → Nat → Bool}
     (ha : MovesSound W ss a) (hb : MovesSound W ss b) : MovesSound W ss (fun i j => a i j || b i j) := by
-  intro frames hF hreg n i j hij h
+  intro frames s s' hframes n i j hij h
   rcases Bool.or_eq_true.1 h with h | h
-  · exact ha frames hF hreg n i j hij h
-  · exact hb frames hF hreg n i j hij h
+  · exact ha frames s s' hframes n i j hij h
+  · exact hb frames s s' hframes n i j hij h
 
-/-- The existing syntax-based relation supplies the semantic move contract. -/
-theorem mayMove_sound {ss : List Stmt} {B : EsmSplit.Bundle}
-    (hfp : FootprintsOfSyntax ss B) (hud : EsmSplit.UniqueDefs B) : MovesSound W ss (MayMove ss) := by
-  intro frames hF hreg n i j hij hc
+/-- Syntax-based commutation needs only the names and regions of linked frames. -/
+theorem mayMove_commutes {ss : List Stmt} {B : EsmSplit.Bundle}
+    (hfp : FootprintsOfSyntax ss B) (hud : EsmSplit.UniqueDefs B)
+    (frames : List (Nat × List (Name × Addr)))
+    (hF : FramesOf ((List.range ss.length).zip ss) frames)
+    (hreg : ∀ q ∈ frames, ∀ p ∈ q.2, p.2.region = q.1 + 1) (n i j : Nat)
+    (hij : i ≠ j) (hc : MayMove ss i j = true) :
+    Commute (unitStep n (bundleUnit ss frames i) : M W Flow) (unitStep n (bundleUnit ss frames j)) ∧
+    Commute (unitStep n (bundleUnit ss frames j) : M W Flow) (unitStep n (bundleUnit ss frames i)) := by
   unfold MayMove at hc
   cases ha : ss[i]? with
   | none => simp [ha] at hc
@@ -857,6 +861,12 @@ theorem mayMove_sound {ss : List Stmt} {B : EsmSplit.Bundle}
       have hab := mayMove_commute (W := W) hfp hF hreg hud hij ha hb hc n
       have hba := mayMove_commute (W := W) hfp hF hreg hud (Ne.symm hij) hb ha (by rw [mayMove_symm]; exact hc) n
       simpa only [unitStep, bundleUnit, ha, hb, Option.getD_some] using And.intro hab hba
+
+/-- The existing syntax-based relation supplies the semantic move contract. -/
+theorem mayMove_sound {ss : List Stmt} {B : EsmSplit.Bundle}
+    (hfp : FootprintsOfSyntax ss B) (hud : EsmSplit.UniqueDefs B) : MovesSound W ss (MayMove ss) := by
+  intro frames s s' hframes
+  exact mayMove_commutes hfp hud frames (declareTops_names _ hframes) (declareTops_regions _ hframes)
 
 /-- Reordering needs semantic commutation, independently of the procedure that certifies allowed pairs.
 As with `Commute`, the conclusion concerns successful executions; it does not identify abrupt outcomes. -/
@@ -892,7 +902,7 @@ theorem reorder_units {ss : List Stmt} {B : EsmSplit.Bundle} {frames : List (Nat
     runUnits n (ord.map (bundleUnit ss frames)) s = .ok () s' ↔
       runUnits n ((List.range ss.length).map (bundleUnit ss frames)) s = .ok () s' :=
   reorder_units_of_commute n (bundleUnit ss frames) (MayMove ss)
-    (mayMove_sound hfp hud frames hF hreg n) hperm hmove s s'
+    (mayMove_commutes hfp hud frames hF hreg n) hperm hmove s s'
 
 /-! ## The theorem -/
 
@@ -932,7 +942,6 @@ theorem moves_preserve_run_of_sound {W : World} {ss : List Stmt} {B : EsmSplit.B
   rw [link_bind, link_bind, ← htops]
   refine bind_ok_congr (fun _ t _ => bind_ok_congr (fun frames t1 hframes => ?_)) () s
   have hF : FramesOf ((List.range ss.length).zip ss) frames := single_tops ss ▸ declareTops_names _ hframes
-  have hreg := declareTops_regions _ hframes
   obtain ⟨L', hL', hkeys, hagree⟩ := split_units_agree hvalid hfp hF
   have hL : (Program.single ss).scopes frames (Program.single ss).loaded =
       .ok [(bundleModule ss, bundleEnv ss frames)] := by rw [single_loaded]; rfl
@@ -983,7 +992,7 @@ theorem moves_preserve_run_of_sound {W : World} {ss : List Stmt} {B : EsmSplit.B
   rw [runUnits_same n hbundle, ← runUnits_same n hsplit]
   cases b
   exact (reorder_units_of_commute n (bundleUnit ss frames) allows
-    (hsound frames hF hreg n) hperm hmove t2 s').symm
+    (hsound frames t t1 (single_tops ss ▸ hframes) n) hperm hmove t2 s').symm
 
 /-- The syntax-based move checker instantiates the semantic program-equivalence theorem. -/
 theorem moves_preserve_run {W : World} {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec} {P : EsmSplit.Plan}

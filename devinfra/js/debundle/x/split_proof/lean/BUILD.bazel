@@ -238,6 +238,7 @@ lean_axiom_test(
         "CoreJS.valid_order_kept_preserves",
         "CoreJS.local_units_commute",
         "CoreJS.MovesSound.or",
+        "CoreJS.mayMove_commutes",
         "CoreJS.mayMove_sound",
         "CoreJS.reorder_units_of_commute",
         "CoreJS.moves_preserve_run_of_sound",

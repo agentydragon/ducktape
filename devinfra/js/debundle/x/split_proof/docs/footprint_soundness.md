@@ -24,8 +24,10 @@ free-name coverage; it does not prove the semantic correctness of either fronten
 ## Semantic interface
 
 [`MovesSound`](../lean/Experiments/CoreJS/Move.lean) separates the semantic premise
-from the procedure that establishes it. For each linked bundle scope and execution
-bound, every allowed pair must commute in both directions. The existing `MayMove`
+from the procedure that establishes it. For each bundle scope produced by a
+successful `declareTops` allocation and each execution bound, every allowed pair
+must commute in both directions. Using an actual allocation trace preserves the
+freshness evidence needed to connect distinct names to distinct cells. The existing `MayMove`
 relation satisfies this contract through `mayMove_sound`.
 
 `moves_preserve_run_of_sound` and `moves_preserve_of_sound` combine that contract
