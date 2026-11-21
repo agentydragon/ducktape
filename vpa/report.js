@@ -536,6 +536,15 @@ function Report() {
         recovery through a replacement before promoting either to Recreate.
         ${" "}<${Anchor} href=${github + "pull/18495"}>Replica rollout<//>.
       <//>
+      <${Text} id="nfd-request-wave" mt="md">
+        <strong>Node Feature Discovery.</strong> After this census, the GC,
+        master and worker policies moved to CPU and memory requests in Initial.
+        At 05:55:21 UTC the three live VPAs still awaited new CPU targets. Check
+        admission and worker readiness on natural replacements. ${" "}<${Anchor}
+          href=${github + "pull/18493"}
+          >NFD policy change<//
+        >.
+      <//>
       <${Title} order=${3} mt="lg">Apply these gates across the wave<//>
       <${Stack} gap="sm" mt="sm">
         <${Text}>
