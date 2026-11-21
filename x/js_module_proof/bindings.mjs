@@ -11,7 +11,7 @@ const check = (condition, reason) => {
   if (!condition) throw new Error(`unknown: ${reason}`);
 };
 const identifier = (node) => {
-  check(node?.type === "Identifier", "expected an identifier");
+  check(node?.type === "Identifier", `expected an identifier, got ${node?.type ?? "nothing"}`);
   return node.name;
 };
 const list = (values) => `[${values.join(", ")}]`;
