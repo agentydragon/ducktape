@@ -100,6 +100,11 @@ export const GENERATORS = [
   { id: "callback", title: "`fuzz.mjs --callback-corpus`", produce: fuzzBundles(["--callback-corpus"]), maxCount: 16 },
   { id: "ast", title: "`fuzz.mjs --ast-corpus`: `ast_generator.mjs`", produce: fuzzBundles(["--ast-corpus"]) },
   {
+    id: "full",
+    title: "`fuzz.mjs --full-corpus`: `gen/`, the generator of the whole language",
+    produce: fuzzBundles(["--full-corpus", ...(process.env.GEN_AVOID ? ["--avoid", process.env.GEN_AVOID] : [])]),
+  },
+  {
     id: "shift",
     title: "Shift module grammar (`shift_fuzz_test`)",
     produce: shiftPrograms({ script: false, modern: false }),

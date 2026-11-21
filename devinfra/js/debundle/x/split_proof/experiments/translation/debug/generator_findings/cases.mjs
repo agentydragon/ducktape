@@ -5,8 +5,8 @@
 // A `FAIL … WRONG ACCEPT` is a finding that stands. A line that passes means the author fixed it: move the case to
 // `experiments/effects/cases_general.mjs`. See README.md for the table of causes.
 //
-// Premise P3 is on: it is the setting of the fuzzers and of the large bundle. The first two findings are the same as
-// existing golden cases (`cases_general.mjs`) with a pure reader added, or with P3 on instead of off.
+// Premise P3 is on: it is the setting of the fuzzers and of the large bundle. F1 and F2 are the same as existing golden
+// cases (`cases_general.mjs`) with a pure reader added, or with P3 on instead of off. F3 was found by `gen/`.
 export const premises = { noWorldHooks: true };
 
 const finding = (name, source, order) => ({
@@ -82,5 +82,28 @@ p11.g;
 console.log(o.n);
 `,
     [...Array(13).keys(), 14, 13]
+  ),
+  // F3: `new Array(n)` and `Array(n)` are plain objects for the analysis (`("Array", { ret := fresh, … })`), so no array method is found
+  finding(
+    "F3 forEach of new Array(1).fill(7) runs a callback that writes o",
+    `
+const o = { n: 0 };
+const a = new Array(1).fill(7);
+a.forEach(() => { o.n++; });
+const seen = o.n;
+console.log(seen);
+`,
+    [0, 1, 3, 2, 4]
+  ),
+  finding(
+    "F3 Array(2).fill(o) stores o, and a write through the array writes o",
+    `
+const o = { n: 0 };
+const a = Array(2).fill(o);
+a[0].n = 1;
+const seen = o.n;
+console.log(seen);
+`,
+    [0, 1, 3, 2, 4]
   ),
 ];
