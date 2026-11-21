@@ -40,7 +40,7 @@ What the statement forces:
 
 **Proposed, not decided.**
 
-1. **No new precision rules in the unproved interpreter**, beyond the one or two that a measurement shows are blocking. Each such rule is one more unproved claim that a construct commutes. Fixing a wrong rule is always in scope: F1 to F3 in [`generator_findings`](experiments/translation/debug/generator_findings/README.md) are open, and so are F4 and F5 of ducktape#18429.
+1. **No new precision rules in the unproved interpreter**, beyond the one or two that a measurement shows are blocking. Each such rule is one more unproved claim that a construct commutes. Fixing a wrong rule is always in scope: F1 to F6 are fixed, and F7 in [`generator_findings`](experiments/translation/debug/generator_findings/README.md) is open (premise P3 and code the world runs).
 2. **When to stop chipping at the interpreter.** Two signals, measured after every round of fixes:
    - _Soundness does not converge._ Run the same independent attack and the footprint oracle again. If the count of new wrong footprints does not clearly fall, the analysis is not getting safer.
    - _Precision yield falls._ If the next rule unlocks only a few percent of the blocked peels, the rest is a long tail.
@@ -74,7 +74,7 @@ What the statement forces:
 
 ## Order of work
 
-1. F1 to F6 (in progress).
+1. F7: a rule that reads the text of escaped code for the constructs that add a hook to an existing object, measured on the large bundle before it is adopted.
 2. In the model: modules, and the world as a parameter. Every slice of `split_preserves` needs both.
 3. Two slices of `split_preserves`, independent of each other: a split that keeps the bundle's order, which needs no footprint rule; and units that only allocate may move, which needs the allocation rule of item 4 for plain classes and the commutation of two units.
 4. `import.meta` ([`SUPPORT.md`](SUPPORT.md)): the one common feature the tools refuse.
