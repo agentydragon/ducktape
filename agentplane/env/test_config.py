@@ -362,7 +362,7 @@ def test_executor_placement_must_be_explicit(kind: str, updates: dict[str, objec
 def test_executor_owner_must_match_the_supervision_requirements(
     kind: str, executor_updates: dict[str, object], error: str
 ) -> None:
-    environment = (
+    environment: dict[str, object] = (
         {"supervision": "pid1"}
         if kind == "pod"
         else _vm_environment() | {"resources": {**_resources(), "executor": _limits(memory=67_108_864, pids=128)}}
