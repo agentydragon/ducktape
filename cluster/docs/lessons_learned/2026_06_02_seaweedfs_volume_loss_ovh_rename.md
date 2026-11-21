@@ -2,7 +2,6 @@
 
 **Date**: 2026-06-02
 **Status**: Data loss confirmed. Recovery is partial (no backups for the affected buckets).
-**Supersedes**: <2026_06_02_loki_compactor_seaweedfs_replication_race.md> (which had the wrong RCA — replication race for a single object).
 
 ## TL;DR
 
