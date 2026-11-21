@@ -22,25 +22,7 @@ function handValue(cards) {
   return total;
 }
 
-function PlayingCard({ card, hidden }) {
-  if (hidden) {
-    return (
-      <div
-        style={{
-          width: 62,
-          height: 88,
-          background: `repeating-linear-gradient(45deg, ${COLORS.wine}, ${COLORS.wine} 6px, #3d1520 6px, #3d1520 12px)`,
-          border: `1.5px solid ${COLORS.gold}`,
-          borderRadius: 6,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <div style={{ width: 32, height: 48, border: `1px solid ${COLORS.goldDim}`, opacity: 0.6 }} />
-      </div>
-    );
-  }
+function PlayingCard({ card }) {
   const isRed = card.suit === "♥" || card.suit === "♦";
   const color = isRed ? "#c23030" : "#1a1a1a";
   return (
@@ -125,7 +107,7 @@ export function Blackjack({ offline, credits, blackjackDeal, blackjackHit, black
     setDealerHand(state.dealer_cards || []);
     setWager(state.current_wager || 0);
     // The server sends only the upcard while the hand is in progress; the
-    // hole-card placeholder is shown exactly while phase is "playing".
+    // dealer total reads "N + ?" exactly while phase is "playing".
     setHoleHidden(state.phase === "playing");
     if (state.phase === "done" && state.settlement) {
       const payout = state.settlement.payout_tokens || 0;
@@ -227,7 +209,7 @@ export function Blackjack({ offline, credits, blackjackDeal, blackjackHit, black
           </div>
           <div style={{ display: "flex", gap: 8, minHeight: 92, flexWrap: "wrap" }}>
             {dealerHand.map((c, i) => (
-              <PlayingCard key={`${c.rank}-${c.suit}-${i}`} card={c} hidden={i === 1 && holeHidden} />
+              <PlayingCard key={`${c.rank}-${c.suit}-${i}`} card={c} />
             ))}
           </div>
         </div>
