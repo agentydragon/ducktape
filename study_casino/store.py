@@ -122,7 +122,6 @@ class ActionMutation:
     game_event: GameEventMutation | None = None
     rng_audit: RngActionAudit | None = None
     rng_version: str | None = None
-    rules_version: str = RULES_VERSION
 
 
 @dataclass(frozen=True)
@@ -311,7 +310,7 @@ class SqlStore:
                 server_at_ms=now_ms,
                 action_type=action_type,
                 source="server_action",
-                rules_version=mutation.rules_version,
+                rules_version=RULES_VERSION,
                 rng_version=mutation.rng_version,
                 credits_before=before_credits,
                 credits_after=after_credits,
@@ -333,9 +332,6 @@ class SqlStore:
                     credits_after=after_credits,
                     tokens_before=before_tokens,
                     tokens_after=after_tokens,
-                    server_credits=after_credits,
-                    server_tokens=after_tokens,
-                    rules_version=mutation.rules_version,
                     rng_version=mutation.rng_version,
                 )
                 s.add(game_event_row)
@@ -489,9 +485,6 @@ class SqlStore:
         credits_after: int,
         tokens_before: int,
         tokens_after: int,
-        server_credits: int,
-        server_tokens: int,
-        rules_version: str,
         rng_version: str | None,
     ) -> GameEventRow:
         return GameEventRow(
@@ -508,10 +501,10 @@ class SqlStore:
             credits_after=credits_after,
             tokens_before=tokens_before,
             tokens_after=tokens_after,
-            server_credits=server_credits,
-            server_tokens=server_tokens,
+            server_credits=credits_after,
+            server_tokens=tokens_after,
             outcome_json=event.outcome.model_dump_json(),
-            rules_version=rules_version,
+            rules_version=RULES_VERSION,
             rng_version=rng_version,
         )
 

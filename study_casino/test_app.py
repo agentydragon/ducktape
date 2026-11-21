@@ -409,7 +409,7 @@ def test_roulette_spin_writes_replayable_rng_audit(tmp_path: Path, db_url: str) 
     assert json.loads(action.seed_material_json)["request_body"] == request
     assert json.loads(calls[0].result_json)["value"] == result["result_index"]
 
-    replay = AuditedRandom.from_seed_material_json(
+    replay = AuditedRandom(
         secret=_TEST_RNG_SECRET.encode(),
         rng_version=action.rng_version,
         rng_key_id=action.rng_key_id,
@@ -456,7 +456,7 @@ def test_blackjack_deal_rng_audit_replays_stored_shoe(tmp_path: Path, db_url: st
     assert action is not None
     assert calls
 
-    replay = AuditedRandom.from_seed_material_json(
+    replay = AuditedRandom(
         secret=_TEST_RNG_SECRET.encode(),
         rng_version=action.rng_version,
         rng_key_id=action.rng_key_id,
