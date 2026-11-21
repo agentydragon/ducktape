@@ -100,8 +100,10 @@ cover only part of the grammar and split space described below.
       The frontend's conservative numeric bounds are currently trusted code;
       formalize and prove their relationship to execution, including sequential
       effects in operands and arguments and redirected callees' argument and
-      return ranges, or replace them with a proved analysis. Narrow the current
-      whole-program widening to functions reachable from the witness.
+      return ranges, or replace them with a proved analysis. Lean-resolved
+      witness call graphs narrow widening for supported functions; extend that
+      precision to captured closures and graphs that currently fall back to a
+      whole-program bound.
 - [x] Model observed and thrown JavaScript strings as UTF-16 code-unit sequences
       in the shared semantics, including unpaired surrogates. Extend the frontend,
       Node witness encoding, certificates and generated tests together.

@@ -2069,6 +2069,89 @@ theorem binding_export_difference :
     }
     throw new Error("unknown expression");
   };
+  // Ask the existing Lean resolver for the call graph. The frontend supplies
+  // syntactic call sites and then follows only resolved declaration identities;
+  // an incomplete graph falls back to the conservative whole-program bound.
+  let witnessGraph;
+  const witnessReachableItems = (calls) => {
+    if (witnessGraph === undefined) {
+      const nodes = [];
+      const byIdentity = new Map();
+      const queries = [];
+      const rootQueries = new Map();
+      const directCalls = (expression, result = new Set()) => {
+        if (!expression || typeof expression !== "object") return result;
+        if (expression.kind === "invoke") {
+          result.add(expression.name);
+          for (const argument of expression.arguments) directCalls(argument, result);
+        } else {
+          for (const value of Object.values(expression)) {
+            if (Array.isArray(value)) for (const part of value) directCalls(part, result);
+            else directCalls(value, result);
+          }
+        }
+        return result;
+      };
+      for (const [moduleIndex, module] of actual.entries()) {
+        const assignments = spec.modules[names[moduleIndex]].statements;
+        if (assignments.length !== module.statements.length) return (witnessGraph = null);
+        for (const [position, statement] of module.statements.entries()) {
+          if (["capturedFactory", "capturedClosure", "capturedAlias"].includes(statement.kind))
+            return (witnessGraph = null);
+          const identity = `${moduleIndex}:${assignments[position]}`;
+          if (byIdentity.has(identity)) return (witnessGraph = null);
+          const index = nodes.length;
+          nodes.push({ statement, edges: [] });
+          byIdentity.set(identity, index);
+          if (statement.kind === "expressionFunction")
+            for (const name of directCalls(statement.expression))
+              queries.push({ kind: "edge", index, moduleIndex, name });
+          if (statement.kind === "recordCall")
+            queries.push({ kind: "initial", index, moduleIndex, name: statement.name });
+        }
+      }
+      for (const mapping of actual[entryIndex].mappings) queries.push({ kind: "public", name: mapping.public });
+      const program = queries
+        .map((query, index) => {
+          const resolved =
+            query.kind === "public"
+              ? `resolveActualExportFuel bindingModules (bindingModules.length + 1) bindingEntry ${str(query.name)}`
+              : `resolveActualReference bindingModules ${query.moduleIndex} ${str(query.name)}`;
+          return `#eval IO.println (match ${resolved} with | some result => s!"witness-edge:${index}:{result.1}:{result.2.1}" | none => "witness-edge:${index}:missing")`;
+        })
+        .join("\n");
+      const resolved = runLean(witnessPrefix + "\n" + program + "\n");
+      if (resolved.error || resolved.status !== 0 || typeof resolved.stdout !== "string") return (witnessGraph = null);
+      const lines = new Map();
+      for (const match of resolved.stdout.matchAll(/^witness-edge:(\d+):(\d+):(\d+)$/gm))
+        lines.set(Number(match[1]), `${match[2]}:${match[3]}`);
+      if (lines.size !== queries.length) return (witnessGraph = null);
+      for (const [index, query] of queries.entries()) {
+        const target = byIdentity.get(lines.get(index));
+        if (target === undefined) return (witnessGraph = null);
+        if (query.kind === "edge") nodes[query.index].edges.push(target);
+        else if (query.kind === "initial") nodes[query.index].edges.push(target);
+        else rootQueries.set(query.name, target);
+      }
+      witnessGraph = { nodes, roots: rootQueries };
+    }
+    if (!witnessGraph) return null;
+    const pending = witnessGraph.nodes.flatMap((node) => (node.statement.kind === "recordCall" ? node.edges : []));
+    for (const call of calls) {
+      const name = typeof call === "string" ? call : call.name;
+      const root = witnessGraph.roots.get(name);
+      if (root === undefined) return null;
+      pending.push(root);
+    }
+    const reachable = new Set();
+    while (pending.length) {
+      const index = pending.pop();
+      if (reachable.has(index)) continue;
+      reachable.add(index);
+      pending.push(...witnessGraph.nodes[index].edges);
+    }
+    return [...reachable].map((index) => witnessGraph.nodes[index].statement);
+  };
   // The Lean arithmetic model is conditional on exact JavaScript integers.
   // Bound both extracted programs, including initialization-call arguments,
   // before accepting a concrete Node difference as a certified witness.
@@ -2094,8 +2177,12 @@ theorem binding_export_difference :
     if (growthSteps >= 53) return false;
     let bound = BigInt(maximum) << BigInt(growthSteps);
     if (bound > limit) return false;
-    const items = programs.flat();
     const callsStable = proof.stdout.includes("witness-calls-stable:true");
+    const reachable = callsStable ? null : witnessReachableItems(calls);
+    if (reachable !== null)
+      for (const item of sourceItems)
+        if (item.kind === "expressionFunction" && expressionBound(item.expression, bound) > limit) return false;
+    const items = reachable ?? programs.flat();
     // Stable callable imports use the already-inlined bodies. Otherwise, a
     // redirected call may select any output function; widen call inputs
     // through at most one layer per function. Recursive redirected graphs

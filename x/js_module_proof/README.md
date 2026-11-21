@@ -272,6 +272,9 @@ as recorded events. Before certifying an unsafe witness, the checker also requir
 conservative numeric bounds for both extracted programs, including initialization
 calls; failure to establish those bounds returns `unknown`. This range analysis is
 implemented in the frontend and is part of the trusted boundary, not a Lean proof.
+For redirected calls, the checker queries the Lean resolver for a witness call
+graph and bounds the reachable functions; incomplete graphs and captured
+closures fall back to a whole-program bound.
 Semantically equivalent
 rewrites beyond this AST subset can return `unknown`. Counterexample lowering
 resolves actual imports and public exports, keeps local identities distinct, and
