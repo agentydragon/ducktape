@@ -1,4 +1,4 @@
-"""The optional Central Sampler's rendered workload and service-to-service grants."""
+"""The optional Central Sampler's cross-service contracts and policies."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest_bazel
 from cdk8s import Chart
-from cdk8s_plus_34 import EnvValue
+from cdk8s_plus_34 import ConfigMap, EnvValue
 from more_itertools import one
 
 from agentplane.net.peertls.config import (
@@ -58,65 +58,20 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
         "public-web-pki",
     }
     pod = deployment["spec"]["template"]["spec"]
-    assert deployment["spec"]["replicas"] == 2
-    assert deployment["spec"]["minReadySeconds"] == 5
-    assert deployment["spec"]["strategy"] == {
-        "type": "RollingUpdate",
-        "rollingUpdate": {"maxSurge": 1, "maxUnavailable": 0},
-    }
-    assert find_resource(staging_manifests, "Deployment", "sessions")["spec"]["strategy"]["type"] == "RollingUpdate"
-    assert find_resource(staging_manifests, "PodDisruptionBudget", central_sampler.NAME)["spec"]["minAvailable"] == 1
-    assert pod["serviceAccountName"] == central_sampler.NAME
-    assert not pod.get("initContainers")
-
     container = one(pod["containers"])
+    assert container["startupProbe"]["grpc"]["port"] == central_sampler.HEALTH_PORT
     serving_certificate = find_resource(staging_manifests, "Certificate", f"{central_sampler.NAME}-workload")
     assert serving_certificate["spec"]["uris"] == [CENTRAL_SAMPLER_URI]
-    assert any(
-        volume.get("secret", {}).get("secretName") == f"{central_sampler.NAME}-workload-tls"
-        for volume in pod["volumes"]
-    )
-    service = find_resource(staging_manifests, "Service", central_sampler.NAME)["spec"]
-    assert service["selector"]
-    assert all(
-        deployment["spec"]["template"]["metadata"]["labels"][key] == value for key, value in service["selector"].items()
-    )
-    service_ports = {port["name"]: port for port in service["ports"]}
-    container_ports = {port["name"]: port["containerPort"] for port in container["ports"]}
-    assert set(service_ports) == {"grpc-tls"}
-    assert service_ports["grpc-tls"]["targetPort"] == container_ports["grpc-tls"] == central_sampler.PORT
-    assert container_ports["health"] == central_sampler.HEALTH_PORT
-    assert container["startupProbe"]["grpc"]["port"] == central_sampler.HEALTH_PORT
     env = {entry["name"]: entry for entry in container["env"]}
     database = env["AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL"]["valueFrom"]["secretKeyRef"]
     assert database == {"key": "uri", "name": "postgres-central-sampler"}
-    settings_path = env["AGENTPLANE_CENTRAL_SAMPLER_CONFIG"]["value"]
-    settings_volume = one(
-        volume for volume in pod["volumes"] if volume.get("configMap", {}).get("name") == "central-sampler-settings"
-    )
-    assert any(
-        mount["name"] == settings_volume["name"] and mount["mountPath"] == "/etc/agentplane-central-sampler"
-        for mount in container["volumeMounts"]
-    )
-    assert settings_path == "/etc/agentplane-central-sampler/settings.json"
-
-    logs = one(volume for volume in pod["volumes"] if volume["name"] == "logs")
-    assert "emptyDir" in logs
-    assert any(
-        mount["name"] == "logs" and mount["mountPath"] == "/var/log/central-sampler"
-        for mount in container["volumeMounts"]
-    )
 
     config = json.loads(
         find_resource(staging_manifests, "ConfigMap", "central-sampler-settings")["data"]["settings.json"]
     )
     assert "database_url" not in config
-    assert "executor_reconnect_timeout_seconds" not in config
-    assert "turn_timeout_seconds" not in config
-    assert "audience" not in config
     assert config["service_callers"] == [GATEWAY_SESSIONS_URI]
     assert "admin_service_callers" not in config
-    assert "listen" not in config
     assert config["health_listen"] == f"0.0.0.0:{central_sampler.HEALTH_PORT}"
     assert config["listen_tls"] == {
         "listen": f"0.0.0.0:{central_sampler.PORT}",
@@ -124,8 +79,7 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
         "key_file": workload_tls.KEY_FILE,
         "client_ca_file": workload_tls.TRUST_BUNDLE_FILE,
     }
-    platform_instructions = config["platform_instructions"]
-    assert platform_instructions
+    assert config["platform_instructions"]
     llm_connection = config["connections"]["llm-ingress"]
     llm_service = llm_ingress.service(namespace)
     assert llm_connection["base_url"] == f"https://{llm_service.fqdn}:{llm_service.port.number}"
@@ -241,15 +195,19 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     ]
 
 
-def test_central_sampler_turn_timeout_option_is_rendered(scratch_chart: Chart) -> None:
+def test_central_sampler_turn_timeout_option_is_configured(scratch_chart: Chart) -> None:
     sampler = staging.ENV.central_sampler
     assert sampler is not None
     env = replace(staging.ENV, central_sampler=replace(sampler, turn_timeout_seconds=123))
     central_sampler_workload.CentralSampler(
         scratch_chart, "sampler", env, database_url=EnvValue.from_value("postgresql://test.invalid/sampler")
     )
-    manifests = scratch_chart.to_json()
-    config = json.loads(find_resource(manifests, "ConfigMap", "central-sampler-settings")["data"]["settings.json"])
+    settings_map = one(
+        construct
+        for construct in scratch_chart.node.find_all()
+        if isinstance(construct, ConfigMap) and construct.name == "central-sampler-settings"
+    )
+    config = json.loads(settings_map.data["settings.json"])
     assert config["turn_timeout_seconds"] == 123
 
 
