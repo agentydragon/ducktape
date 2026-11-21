@@ -74,9 +74,6 @@ func serve(ctx context.Context, c config, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	if tlsConfig == nil {
-		return errors.New("rpc.tls is required")
-	}
 	connState, err := peertls.ConfigureHTTPServerTLSExpiry(tlsConfig)
 	if err != nil {
 		return err
