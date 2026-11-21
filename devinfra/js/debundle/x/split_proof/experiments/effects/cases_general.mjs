@@ -588,6 +588,15 @@ console.log(o.n);
 `,
     [0, 1, 2, 4, 3]
   ),
+  c(
+    "String.raw reads a getter two levels into its argument",
+    `
+const o = { n: 0 };
+String.raw({ raw: { get length() { o.n = 1; return 0; } } });
+console.log(o.n);
+`,
+    [0, 2, 1]
+  ),
   // a pattern with the sticky or global flag writes its `lastIndex`
   c(
     "sticky match writes lastIndex",
@@ -642,5 +651,322 @@ wrapper(o);
 console.log(o.n);
 `,
     [0, 1, 2, 4, 3]
+  ),
+  // a call is run again unless the heap and the throws it left are known: the call memo replays only a run that grew nothing
+  c(
+    "memo: a replayed call drops the value it throws",
+    `
+const shared = { n: 0 };
+function f(b) { if (b) throw shared; }
+f(false);
+try { f(true); } catch (e) { e.n = 1; }
+console.log(shared.n);
+`,
+    [0, 1, 2, 4, 3]
+  ),
+  c(
+    "memo: a second identical call is replayed, not run, and would move the value one hop further",
+    `
+const o = { n: 0 };
+const s = { p: undefined, q: undefined, adv() { this.q = this.p; this.p = o; } };
+s.adv();
+s.adv();
+s.q.n = 1;
+console.log(o.n);
+`,
+    [0, 1, 2, 3, 5, 4]
+  ),
+  c(
+    "memo: a loop ends after one pass because the replayed call changes nothing",
+    `
+const o = { n: 0 };
+const s = { p: undefined, q: undefined, adv() { this.q = this.p; this.p = o; } };
+for (let i = 0; i < 2; i++) s.adv();
+s.q.n = 1;
+console.log(o.n);
+`,
+    [0, 1, 2, 4, 3]
+  ),
+  // a named read of an array or a collection finds what was stored without a name: under a computed key, by `defineProperty`
+  c(
+    "array: a value stored under a computed key is not found by a named read",
+    `
+const o = { n: 0 };
+const arr = [];
+arr["fo" + "o"] = o;
+arr.foo.n = 1;
+console.log(o.n);
+`,
+    [0, 1, 2, 4, 3]
+  ),
+  c(
+    "array: a function stored under a computed key is not called by a named call",
+    `
+const o = { n: 0 };
+const arr = [];
+arr["fo" + "o"] = () => { o.n = 1; };
+arr.foo();
+console.log(o.n);
+`,
+    [0, 1, 2, 4, 3]
+  ),
+  c(
+    "Map instance: a value stored under a computed key, read by name",
+    `
+const o = { n: 0 };
+const m = new Map();
+m["fo" + "o"] = o;
+m.foo.n = 1;
+console.log(o.n);
+`,
+    [0, 1, 2, 4, 3]
+  ),
+  c(
+    "array: Object.defineProperty value, read by name",
+    `
+const o = { n: 0 };
+const arr = [];
+Object.defineProperty(arr, "x", { value: o });
+arr.x.n = 1;
+console.log(o.n);
+`,
+    [0, 1, 2, 4, 3]
+  ),
+  c(
+    "array: a numeric literal key that is no index, read as a string",
+    `
+const o = { n: 0 };
+const arr = [];
+arr[-1] = o;
+arr["-1"].n = 1;
+console.log(o.n);
+`,
+    [0, 1, 2, 4, 3]
+  ),
+  // hooks of arrays and collections: installed by `Object.assign` or found on a replaced prototype
+  c(
+    "array: an own Symbol.iterator installed by Object.assign, then a spread",
+    `
+const o = { n: 0 };
+const arr = [1];
+Object.assign(arr, { [Symbol.iterator]() { o.n = 1; return [][Symbol.iterator](); } });
+[...arr];
+console.log(o.n);
+`,
+    [0, 1, 2, 4, 3]
+  ),
+  c(
+    "array: a toString found on a replaced prototype, converted by a template",
+    `
+const o = { n: 0 };
+const arr = [1];
+Object.setPrototypeOf(arr, { toString() { o.n = 1; return "x"; } });
+\`\${arr}\`;
+console.log(o.n);
+`,
+    [0, 1, 2, 4, 3]
+  ),
+  c(
+    "Map instance: a Symbol.iterator found on a replaced prototype, then a spread",
+    `
+const o = { n: 0 };
+const m = new Map([[1, 2]]);
+Object.setPrototypeOf(m, { [Symbol.iterator]() { o.n = 1; return [][Symbol.iterator](); } });
+[...m];
+console.log(o.n);
+`,
+    [0, 1, 2, 4, 3]
+  ),
+  // the fields of a derived class are initialized once `super()` has returned
+  c(
+    "derived field initializer reads a field that the parent set",
+    `
+const o = { n: 0 };
+class P { y = o; }
+class D extends P { x = this.y; }
+new D().x.n = 1;
+console.log(o.n);
+`,
+    [0, 1, 2, 4, 3]
+  ),
+  // static fields and static blocks run after every method of the class is defined
+  c(
+    "static field calls a static method that is defined later in the body",
+    `
+const o = { n: 0 };
+class A { static x = A.m(); static m() { o.n = 1; } }
+console.log(o.n);
+`,
+    [0, 2, 1]
+  ),
+  c(
+    "static block calls a static method that is defined later in the body",
+    `
+const o = { n: 0 };
+class A { static { A.m(); } static m() { o.n = 1; } }
+console.log(o.n);
+`,
+    [0, 2, 1]
+  ),
+  c(
+    "static field calls this.m() for a method that is defined later",
+    `
+const o = { n: 0 };
+class A { static x = this.m(); static m() { o.n = 1; } }
+console.log(o.n);
+`,
+    [0, 2, 1]
+  ),
+  // a parent constructor that returns an object makes it `this`
+  c(
+    "a parent constructor returns an object; the derived class has no constructor",
+    `
+const o = { n: 0 };
+class P { constructor() { return o; } }
+class D extends P {}
+new D().n = 1;
+console.log(o.n);
+`,
+    [0, 1, 2, 4, 3]
+  ),
+  c(
+    "a derived constructor writes this after super() returned an object",
+    `
+const o = { n: 0 };
+class P { constructor() { return o; } }
+class D extends P { constructor() { super(); this.n = 1; } }
+new D();
+console.log(o.n);
+`,
+    [0, 1, 2, 4, 3]
+  ),
+  c(
+    "the parent is a function that returns an object",
+    `
+const o = { n: 0 };
+function Base() { return o; }
+class D extends Base {}
+new D().n = 1;
+console.log(o.n);
+`,
+    [0, 1, 2, 4, 3]
+  ),
+  // parameter defaults do not see what the body declares
+  c(
+    "a parameter default names an outer variable that the body redeclares",
+    `
+const o = { n: 0 };
+function f(a = o) { var o; a.n = 1; }
+f();
+console.log(o.n);
+`,
+    [0, 1, 3, 2]
+  ),
+  c(
+    "a parameter default calls an outer function that the body redeclares",
+    `
+const o = { n: 0 };
+function g() { return o; }
+function f(a = g()) { function g() { return {}; } a.n = 1; }
+f();
+console.log(o.n);
+`,
+    [0, 1, 2, 4, 3]
+  ),
+  // function declarations in a `switch` case
+  c(
+    "a function declaration in a switch case is never bound",
+    `
+const o = { n: 0 };
+switch (1) { case 1: g(); function g() { o.n = 1; } }
+console.log(o.n);
+`,
+    [0, 2, 1]
+  ),
+  c(
+    "a function declared in a switch case, stored and called later",
+    `
+const o = { n: 0 };
+const reg = {};
+switch (1) { case 1: reg.f = g; function g() { o.n = 1; } }
+reg.f();
+console.log(o.n);
+`,
+    [0, 1, 2, 4, 3]
+  ),
+  // `super(…)` into a standard constructor builds the instance
+  c(
+    "class extends Map: the entries given to super are not held by the instance",
+    `
+const o = { n: 0 };
+class M extends Map {}
+new M([["k", o]]).get("k").n = 1;
+console.log(o.n);
+`,
+    [0, 1, 3, 2]
+  ),
+  c(
+    "class extends Set: the items given to super are not held by the instance",
+    `
+const o = { n: 0 };
+class S extends Set {}
+new S([o]).forEach((x) => { x.n = 1; });
+console.log(o.n);
+`,
+    [0, 1, 3, 2]
+  ),
+  // closures made at one site with different `this`, bound targets or arguments
+  c(
+    "bound functions of one site: the second bind replaces the first",
+    `
+const o = { n: 0 };
+function setN() { this.n = 1; }
+const bs = [setN.bind(o), setN.bind({})];
+bs.shift()();
+console.log(o.n);
+`,
+    [0, 1, 2, 4, 3]
+  ),
+  c(
+    "bound functions of one site with different arguments",
+    `
+const o = { n: 0 };
+function setN(t) { t.n = 1; }
+const bs = [setN.bind(null, o), setN.bind(null, {})];
+bs.shift()();
+console.log(o.n);
+`,
+    [0, 1, 2, 4, 3]
+  ),
+  c(
+    "arrows of one site made with different this: the second replaces the first",
+    `
+const o = { n: 0 };
+function mk() { return () => { this.n = 1; }; }
+const fs = [mk.call(o), mk.call({})];
+fs.shift()();
+console.log(o.n);
+`,
+    [0, 1, 2, 4, 3]
+  ),
+  // a standard function used as a conversion hook or an accessor does what its row says
+  c(
+    "valueOf is a standard function that mutates its receiver",
+    `
+const t = { 0: "a", length: 1, valueOf: Array.prototype.shift };
+t * 1;
+console.log(t.length);
+`,
+    [0, 2, 1]
+  ),
+  c(
+    "a getter is a standard function that mutates its receiver",
+    `
+const t = { 0: "a", length: 1 };
+Object.defineProperty(t, "x", { get: Array.prototype.pop });
+t.x;
+console.log(t.length);
+`,
+    [0, 1, 3, 2]
   ),
 ];

@@ -37,15 +37,6 @@ console.log(target.n);
     [0, 1, 3, 2]
   ),
   gap(
-    "String.raw reads a getter two levels into its argument",
-    `
-const o = { n: 0 };
-String.raw({ raw: { get length() { o.n = 1; return 0; } } });
-console.log(o.n);
-`,
-    [0, 2, 1]
-  ),
-  gap(
     "a static of Array called on a subclass constructs the subclass",
     `
 const o = { n: 0 };

@@ -227,7 +227,9 @@ structure St where
   changes  : Nat := 0
   /-- calls already run: (function, call site, arguments) -> (changes when it ended, result, writes, reads, world).
   A call repeated on a state that has not changed since would do nothing new, so its footprint is replayed. -/
-  memo     : Std.HashMap (UInt64 × UInt64) (Nat × AV × Array Nat × Array String × Bool × Bool) := {}
+  memo     : Std.HashMap (UInt64 × UInt64) (Nat × AV × Array Nat × Array String × Bool × Bool × AV) := {}
+  /-- how many getters and setters run one inside another (a standard function used as a getter can read itself) -/
+  accessorDepth : Nat := 0
   dbg      : Array Nat := #[0, 0, 0, 0]
   /-- the hash of each piece of code, by address (see `codeHash`) -/
   codeHashes : Std.HashMap USize UInt64 := {}
@@ -438,6 +440,20 @@ def primitivePrototypeValue : M AV := do
   for p in primitivePrototypes do r := r.join (AV.ofObj (← builtinObj p))
   return r
 
+/-- What one allocation site yields twice: a closure keeps everything the calls gave it (`this`, a bound target and
+arguments), and says whether that grew. -/
+def joinKind (a b : Kind) : Kind × Bool :=
+  match a, b with
+  | .func code scope t1, .func _ _ t2 =>
+    let t := t1.join t2
+    (.func code scope t, t != t1)
+  | .bound tg1 t1 as1, .bound tg2 t2 as2 =>
+    let tg := tg1.join tg2
+    let t := t1.join t2
+    let as := (List.range (max as1.length as2.length)).map fun i => AV.join (as1[i]?.getD #[]) (as2[i]?.getD #[])
+    (.bound tg t as, tg != tg1 || t != t1 || as != as1)
+  | _, _ => (b, false)
+
 /-- An object for an allocation site in the current unit. The same site yields the same object. Arrays, plain
 objects and functions start with their intrinsic prototype. (The state is updated in place: `get` followed by `set`
 would keep a second reference to the arrays and copy them on every allocation.) -/
@@ -447,7 +463,10 @@ def alloc (k : Kind) (key : Option UInt64) : M Nat := do
   match hit with
   | some o =>
     match k with
-    | .func .. | .klass .. | .bound .. => modObj o ({ · with kind := k })
+    | .func .. | .klass .. | .bound .. =>
+      let (nw, grew) := joinKind (← getObj o).kind k
+      modObj o ({ · with kind := nw })
+      if grew then modify fun s => { s with changes := s.changes + 1 }
     | _ => pure ()
     return o
   | none =>
@@ -568,6 +587,20 @@ def joinProto (o : Nat) (v : AV) : M Unit := do
   if nw.size != ob.proto.size then
     modObj o ({ · with proto := nw })
     bump
+  -- a prototype the program made may hold what an array or a collection does not have: a `Symbol.iterator`, a `toString`
+  if ob.kind matches .array | .coll then
+    for c in v do
+      if c ≥ 2 then
+        match (← getObj (c - 1)).kind with
+        | .builtin _ => pure ()
+        | _ => modObj o ({ · with hook := true })
+
+/-- A property (not an element) set on an array or a collection: a function stored there may be a hook (`Symbol.iterator`,
+`toString`). -/
+def noteProps (target : AV) (v : AV) : M Unit := do
+  if ← hasFunction v then
+    for c in target do
+      if c ≥ 2 && (← getObj (c - 1)).kind matches .array | .coll then modObj (c - 1) ({ · with hook := true })
 
 /-- Mark everything the code mentions as escaped, and note the unit as touching the world. -/
 def giveUp (why : String) (code : Json) : M Unit := do
@@ -657,10 +690,10 @@ def newFrame (fr : Fr) (names : List String) : M Fr := do
 def withMemo (key : UInt64 × UInt64) (run : M AV) : M AV := do
   let s ← get
   match s.memo[key]? with
-  | some (c, r, ws, rs, w, u) =>
+  | some (c, r, ws, rs, w, u, th) =>
     if c == s.changes then
       modify fun s => { s with writes := ws.foldl (·.insert ·) s.writes, reads := rs.foldl (·.insert ·) s.reads,
-                               world := s.world || w, unk := s.unk || u }
+                               world := s.world || w, unk := s.unk || u, thrown := s.thrown.join th }
       return r
   | none => pure ()
   let (w0, r0, wd0, u0) := (s.writes, s.reads, s.world, s.unk)
@@ -670,9 +703,15 @@ def withMemo (key : UInt64 × UInt64) (run : M AV) : M AV := do
   let (ws, rs, w, u) := (s2.writes, s2.reads, s2.world, s2.unk)
   modify fun s => { s with writes := ws.fold (·.insert ·) w0, reads := rs.fold (·.insert ·) r0, world := wd0 || w,
                            unk := u0 || u }
-  unless s2.broke do
-    modify fun s => { s with memo := s.memo.insert key (s.changes, res, ws.toArray, rs.toArray, w, u) }
+  -- a run that grew the heap is not a fixpoint: the same call may do more now, so it runs again before it is replayed
+  unless s2.broke || s2.changes != s.changes do
+    modify fun s => { s with memo := s.memo.insert key (s.changes, res, ws.toArray, rs.toArray, w, u, s2.thrown) }
   return res
+
+/-- Whether `k` names a member that arrays, collections or every object have (`push`, `get`, `size`, `length`,
+`hasOwnProperty`): a read of it is not a read of an element. -/
+def isStandardMember (k : String) : Bool :=
+  k == "length" || k == "size" || ["Array", "Map", "Set", "Object"].any fun p => members.contains (p ++ ".prototype." ++ k)
 
 mutual
 
@@ -686,15 +725,22 @@ partial def runAccessors (recv : Nat) (fns : AV) (args : List AV) (tag : String)
     if d == 1 then unknown := true
     else if d ≥ 2 then
       match (← getObj (d - 1)).kind with
-      | .func .. | .klass .. | .bound .. => programs := programs.join (AV.ofObj (d - 1))
+      | .func .. | .klass .. | .bound .. | .builtin _ => programs := programs.join (AV.ofObj (d - 1))
       | _ => pure ()
   if unknown then
     escapeAV fns
     escapeObj recv
     setWorld "getter or setter the world made"
   if programs.isEmpty then return (if unknown then AV.top else #[])
+  if (← get).accessorDepth ≥ maxDepth then
+    escapeAV fns
+    escapeObj recv
+    setWorld "getters and setters nested too deep"
+    return AV.top
+  modify fun s => { s with accessorDepth := s.accessorDepth + 1 }
   let cur := (← get).cur
   let r ← callAll programs (AV.ofObj recv) args false cur (mixHash cur.site (hash tag))
+  modify fun s => { s with accessorDepth := s.accessorDepth - 1 }
   return if unknown then r.join AV.top else r
 
 /-- Reading or assigning a property of an object the world holds: the world may have added accessors to it, which run
@@ -760,9 +806,10 @@ partial def getVal (c : Nat) (key : Option String) (seen : List Nat := []) : M A
       -- an unlisted member of a namespace or a constructor
       else return AV.top
   | _ =>
-    -- `any` of an array or a collection holds its elements, which a method or `length` is not
+    -- `any` of an array or a collection holds its elements and what was stored without a name; a member of the
+    -- standard prototypes or `length` is neither
     let isElements := ob.kind matches .array | .coll
-    let named := match key with | some k => isElements && !(k.all Char.isDigit) | none => false
+    let named := match key with | some k => isElements && isStandardMember k | none => false
     let mut r : AV := if named then #[] else ob.any
     match key with
     | some k =>
@@ -968,20 +1015,23 @@ partial def callFuncRun (code : Json) (scope : Scope) (cthis : AV) (thisV : AV) 
   let argJoin := AV.joinAll args
   let fr0 : Fr := { scope := scope, this := if isArrow then cthis else thisV, ret := some retCell,
                     path, site, depth := fr.depth + 1, klass := fr.klass }
-  let declared := (params.toList.flatMap binders) ++ selfName ++ (stmts.toList.flatMap varNames) ++ lexicalNames stmts
+  let paramNames := params.toList.flatMap binders
+  -- what the body declares; a name that is also a parameter is the parameter's binding
+  let bodyNames := ((stmts.toList.flatMap varNames) ++ lexicalNames stmts).filter (!paramNames.contains ·)
   -- `arguments` is a binding of the function, so an arrow function inside it reads it lexically
-  let bindsArguments := !isArrow && !declared.contains "arguments" && (← codeInfo code).1.contains "arguments"
-  let fr1 ← newFrame fr0 (if bindsArguments then "arguments" :: declared else declared)
+  let bindsArguments := !isArrow && !(paramNames ++ bodyNames).contains "arguments" && (← codeInfo code).1.contains "arguments"
+  -- the parameters, and the defaults that run in their scope, do not see what the body declares
+  let frP ← newFrame fr0 ((if bindsArguments then ["arguments"] else []) ++ selfName ++ paramNames)
   let outer := (← get).cur
-  modify fun s => { s with cur := fr1 }
+  modify fun s => { s with cur := frP }
   if bindsArguments then
-    if let some c := fr1.scope.head!.get? "arguments" then
+    if let some c := frP.scope.head!.get? "arguments" then
       let o ← alloc .array (some (mixHash path 67))
       joinAny o argJoin
       joinAny c (AV.ofObj o)
   if let some n := selfName.head? then
     -- a function expression's own name
-    if let some c := fr1.scope.head!.get? n then
+    if let some c := frP.scope.head!.get? n then
       let f ← alloc (.func code scope cthis) (some (← codeSite fr code))
       joinAny c (AV.ofObj f)
   -- a call with a spread passes `spreadArity` positions, each holding whatever the spread may: a parameter past them too
@@ -990,8 +1040,10 @@ partial def callFuncRun (code : Json) (scope : Scope) (cthis : AV) (thisV : AV) 
     if typ p == "RestElement" then
       let arr ← alloc .array (some (mixHash path (hash p)))
       joinAny arr (AV.joinAll (args.drop i))
-      bindPattern fr1 (fld p "argument") (AV.ofObj arr)
-    else bindPattern fr1 p (args[i]?.getD past)
+      bindPattern frP (fld p "argument") (AV.ofObj arr)
+    else bindPattern frP p (args[i]?.getD past)
+  let fr1 ← if bodyNames.isEmpty then pure frP else newFrame frP bodyNames
+  modify fun s => { s with cur := fr1 }
   if typ body == "BlockStatement" then
     hoistFns fr1 stmts
     for s in stmts do exec fr1 s
@@ -1008,6 +1060,20 @@ partial def callFuncRun (code : Json) (scope : Scope) (cthis : AV) (thisV : AV) 
     return AV.ofObj p
   return r
 
+/-- The instance fields of a class, run on `inst`: before the constructor for a base class, once `super(…)` has returned for
+a derived one. -/
+partial def initFields (cls : Nat) (inst : Nat) (fr : Fr) : M Unit := do
+  let .klass code scope := (← getObj cls).kind | return
+  let fr0 : Fr := { scope := scope, this := AV.ofObj inst, path := mixHash fr.path (hash (shallow code)), site := fr.site,
+                    depth := fr.depth, klass := some cls }
+  for m in items (fld (fld code "body") "body") do
+    if typ m == "PropertyDefinition" && !flag m "static" then
+      let v ← if isNull (fld m "value") then pure AV.prim else eval fr0 (fld m "value")
+      recWrite inst
+      match propKey m with
+      | some k => joinProp inst k v
+      | none => joinAny inst v
+
 /-- `new C(args)`: instance fields, then the constructor chain. -/
 partial def construct (cls : Nat) (inst : Nat) (args : List AV) (fr : Fr) (site : UInt64) : M AV := do
   tick
@@ -1020,14 +1086,9 @@ partial def construct (cls : Nat) (inst : Nat) (args : List AV) (fr : Fr) (site 
     let path := mixHash site (hash (shallow code))
     let fr0 : Fr := { scope := scope, this := AV.ofObj inst, path, site, depth := fr.depth + 1, klass := some cls }
     let members := items (fld (fld code "body") "body")
-    -- instance fields
-    for m in members do
-      if typ m == "PropertyDefinition" && !flag m "static" then
-        let v ← if isNull (fld m "value") then pure AV.prim else eval fr0 (fld m "value")
-        recWrite inst
-        match propKey m with
-        | some k => joinProp inst k v
-        | none => joinAny inst v
+    let derived := !isNull (fld code "superClass")
+    -- the fields of a base class exist before its constructor runs; those of a derived class, once `super(…)` returned
+    unless derived do initFields cls inst fr0
     let ctor := members.find? fun m => typ m == "MethodDefinition" && str (fld m "kind") == "constructor"
     match ctor with
     | some m =>
@@ -1036,8 +1097,7 @@ partial def construct (cls : Nat) (inst : Nat) (args : List AV) (fr : Fr) (site 
         (mixHash site 29)
       return (AV.ofObj inst).join r
     | none =>
-      if !isNull (fld code "superClass") then
-        let _ ← superCall fr0 args
+      if derived then return (AV.ofObj inst).join (← superCall fr0 args)
     return AV.ofObj inst
   | _ => return AV.ofObj inst
 
@@ -1056,17 +1116,27 @@ partial def superCall (fr : Fr) (args : List AV) : M AV := do
       | .klass .. => r := r.join (← construct (c - 1) inst args fr 31)
       | .func code scope cthis => r := r.join (← callFunc code scope cthis fr.this args fr 37)
       | .builtin path =>
-        -- a class object inherits from `Function.prototype`, which is not its superclass
-        unless path == "Function.prototype" do r := r.join (← callBuiltin path fr.this args fr 41)
+        -- a class object inherits from `Function.prototype`, which is not its superclass. A standard constructor builds
+        -- the object that is `this`: it holds what the constructor stored
+        unless path == "Function.prototype" do setAV fr.this none (← contentsOf (← callBuiltin path fr.this args fr 41))
       | _ => pure ()
   if ob.proto.isEmpty then r := r.join (← worldCall (fr.this :: args))
+  -- a parent constructor that returns another object makes it `this`, and the rest of the constructor writes that
+  -- object, which the analysis does not follow
+  let others := r.filter fun c => c ≥ 2 && c - 1 != inst
+  unless others.isEmpty do
+    escapeAV others
+    setWorld "a parent constructor returned another object"
+  initFields cls inst fr
   return r
 
 /-- The descriptors `d` define properties of the objects of `target`: their contents become the target's contents. A
 descriptor that may carry a getter or a setter makes the property an accessor: reading it runs code the analysis does
 not see. -/
 partial def defineFrom (target : AV) (d : AV) : M Unit := do
-  setAV target none (← contentsOf d)
+  let v ← contentsOf d
+  setAV target none v
+  noteProps target v
   let mut accessor := false
   for c in d do
     if c == 1 then accessor := true
@@ -1141,9 +1211,15 @@ partial def applySummary (s : Summary) (thisV : AV) (args : List AV) (fr : Fr) (
     setAV thisV none (AV.joinAll args)
   for (src, dst) in s.store do setAV (pos dst) none (pos src)
   -- copying a property reads it: a getter the source has runs
-  for (src, dst) in s.copies do setAV (pos dst) none (← contentsOf (pos src))
+  for (src, dst) in s.copies do
+    let v ← contentsOf (pos src)
+    setAV (pos dst) none v
+    noteProps (pos dst) v
   if let some (first, dst) := s.copiesRest then
-    for i in [first:args.length + 1] do setAV (pos dst) none (← contentsOf (pos i))
+    for i in [first:args.length + 1] do
+      let v ← contentsOf (pos i)
+      setAV (pos dst) none v
+      noteProps (pos dst) v
   for (dst, f) in s.accessors do
     setAV (pos dst) none (pos f)
     for c in pos dst do
@@ -1286,11 +1362,12 @@ partial def convert (vs : List AV) (fr : Fr) (site : UInt64) : M Unit := do
         match ob.kind with
         | .builtin _ => pure ()
         | .array | .coll =>
-          -- `Array.prototype.toString` calls `join`, which converts the elements. (`any` holds the elements, not methods.)
+          -- `Array.prototype.toString` calls `join`, which converts the elements. (`any` holds the elements, not methods:
+          -- unless the object has a hook, where a function stored without a name, and what it inherits, may be one.)
           unless seen.contains c do
             seen := seen.insert c
             for k in ["valueOf", "toString", "join"] do
-              let f := ob.props.getD k #[]
+              let f ← if ob.hook then hookFns ((← getVal c (some k)).join ob.any) else pure (ob.props.getD k #[])
               unless f.isEmpty do let _ ← callAll f (AV.ofObj (c - 1)) [] false fr (mixHash site (hash k))
             if ob.kind matches .array then work := ob.any :: work
         | _ =>
@@ -1309,8 +1386,9 @@ partial def chainHasHook (o : Nat) (seen : List Nat := []) : M Bool := do
     if p ≥ 2 && (← chainHasHook (p - 1) (o :: seen)) then return true
   return false
 
-/-- The candidates for a hook that are program code: the intrinsic ones run no program code, and a value the world
-made runs none by P3 (`Premises.noWorldHooks`; without it, the world is a callee). -/
+/-- The candidates for a hook: the functions of the program and the standard ones (a standard function used as a hook
+does what its row says: `valueOf: Array.prototype.shift` changes its receiver), and a value the world made runs no
+code by P3 (`Premises.noWorldHooks`; without it, the world is a callee). -/
 partial def hookFns (f : AV) : M AV := do
   let mut r : AV := #[]
   for d in f do
@@ -1318,7 +1396,7 @@ partial def hookFns (f : AV) : M AV := do
       unless (← get).prem.noWorldHooks do r := r.join AV.top
     else if d ≥ 2 then
       match (← getObj (d - 1)).kind with
-      | .func .. | .klass .. | .bound .. => r := r.join (AV.ofObj (d - 1))
+      | .func .. | .klass .. | .bound .. | .builtin _ => r := r.join (AV.ofObj (d - 1))
       | _ => pure ()
   return r
 
@@ -1577,7 +1655,10 @@ partial def evalClass (fr : Fr) (c : Json) : M AV := do
   let superProto ← if hasSuper then getAV superAV (some "prototype") else pure objProto
   joinProto P superProto
   let fr' : Fr := { fr with scope := scope', this := AV.ofObj C }
-  for m in items (fld (fld c "body") "body") do
+  let members := items (fld (fld c "body") "body")
+  -- every method and accessor is defined, and every computed key evaluated, in order; then the static fields and
+  -- blocks run, in order
+  for m in members do
     match typ m with
     | "MethodDefinition" =>
       let kind := str (fld m "kind")
@@ -1598,6 +1679,11 @@ partial def evalClass (fr : Fr) (c : Json) : M AV := do
     | "PropertyDefinition" =>
       if flag m "computed" then
         convert [← eval fr' (fld m "key")] fr' (shallow m)
+    | "StaticBlock" => pure ()
+    | t => giveUp t m
+  for m in members do
+    match typ m with
+    | "PropertyDefinition" =>
       if flag m "static" && !isNull (fld m "value") then
         let v ← eval fr' (fld m "value")
         recWrite C
@@ -1609,7 +1695,7 @@ partial def evalClass (fr : Fr) (c : Json) : M AV := do
       let fr'' ← newFrame fr' (lexicalNames stmts ++ stmts.toList.flatMap varNames)
       hoistFns fr'' stmts
       for s in stmts do exec fr'' s
-    | t => giveUp t m
+    | _ => pure ()
   return AV.ofObj C
 
 /-- How a callee is written, for the reason a call is a call into the world. -/
@@ -1674,9 +1760,7 @@ partial def assignTo (fr : Fr) (t : Json) (v : AV) : M Unit := do
       convert [← eval fr (fld t "property")] fr (shallow t)
     setAV o (memberKey t) v
     -- a function under a key the analysis does not know may be a `Symbol.iterator` or a conversion hook
-    if (memberKey t).isNone && (← hasFunction v) then
-      for c in o do
-        if c ≥ 2 then modObj (c - 1) ({ · with hook := true })
+    if (memberKey t).isNone then noteProps o v
   | _ => bindPattern fr t v
 
 /-- Bind a pattern (declaration, parameter, assignment target) to a value. -/
@@ -1820,7 +1904,9 @@ partial def exec (fr : Fr) (s : Json) : M Unit := do
   | "SwitchStatement" =>
     let _ ← eval fr (fld s "discriminant")
     let cases := items (fld s "cases")
-    let fr' ← newFrame fr (lexicalNames (cases.flatMap fun c => items (fld c "consequent")))
+    let bodies := cases.flatMap fun c => items (fld c "consequent")
+    let fr' ← newFrame fr (lexicalNames bodies)
+    hoistFns fr' bodies
     for c in cases do
       unless isNull (fld c "test") do let _ ← eval fr' (fld c "test")
       for t in items (fld c "consequent") do exec fr' t
