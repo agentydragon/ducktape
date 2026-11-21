@@ -1438,9 +1438,10 @@ function generateFiles(source, spec, names) {
                   statement.expression.argument.type === "Identifier"));
             const isBranch = (statement) =>
               statement.type === "IfStatement" &&
-              statement.alternate === null &&
               statement.consequent.type === "BlockStatement" &&
-              statement.consequent.body.every(isWrite);
+              statement.consequent.body.every(isWrite) &&
+              (statement.alternate === null ||
+                (statement.alternate.type === "BlockStatement" && statement.alternate.body.every(isWrite)));
             check(
               node.params.every((parameter) => parameter.type === "Identifier") &&
                 statements.at(-1)?.type === "ReturnStatement" &&
@@ -1504,6 +1505,7 @@ function generateFiles(source, spec, names) {
               else if (item.type === "IfStatement") {
                 visit(item.test);
                 item.consequent.body.forEach(visitWrite);
+                if (item.alternate) item.alternate.body.forEach(visitWrite);
               } else visitWrite(item);
             }
             visit(statements.at(-1).argument);

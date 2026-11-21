@@ -1069,7 +1069,20 @@ export function makeLocalAliasCase(seed, index) {
                     }),
                   ],
                 },
-                alternate: null,
+                alternate:
+                  index >= 493
+                    ? {
+                        type: "BlockStatement",
+                        body: [
+                          expr({
+                            type: "AssignmentExpression",
+                            operator: "+=",
+                            left: id("offset"),
+                            right: id("numericRight"),
+                          }),
+                        ],
+                      }
+                    : null,
               },
             ]
           : []),

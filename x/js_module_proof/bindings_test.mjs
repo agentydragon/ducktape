@@ -854,4 +854,16 @@ if (runSection(3)) {
   assert.equal(redirectedBranch.result, "unsafe", JSON.stringify(redirectedBranch));
   assert.deepEqual(execute(branchSource, redirectedBranch.calls), { events: [], results: [3] });
   assert.deepEqual(execute(join(branchOut, "entry.mjs"), redirectedBranch.calls), { events: [], results: [5] });
+
+  const elseSource = join(root, "else-alias-source.mjs");
+  const elseOut = join(root, "else-alias-out");
+  await writeFile(
+    elseSource,
+    `let value = 3;\nlet other = 5;\nfunction compute(p) { let local = p; if (value > p) { local += value; } else { local += p; } return local; }\nexport { compute };\n`
+  );
+  assert.equal(cli("generate", elseSource, constSpec, elseOut).value.result, "generated");
+  const elseResult = cli("validate", elseSource, constSpec, elseOut).value;
+  assert.equal(elseResult.result, "proved under assumptions", JSON.stringify(elseResult));
+  assert.deepEqual(execute(elseSource, branchCalls), { events: [], results: [3, 8] });
+  assert.deepEqual(execute(join(elseOut, "entry.mjs"), branchCalls), { events: [], results: [3, 8] });
 }
