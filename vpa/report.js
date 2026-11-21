@@ -311,7 +311,7 @@ function Report() {
     setSelection((previous) => ({ group, revision: previous.revision + 1 }));
 
   useEffect(() => {
-    fetch("./inventory.json?v=20261121091939")
+    fetch("./inventory.json?v=20261121093302")
       .then((response) => {
         if (!response.ok)
           throw new Error(`Inventory request returned HTTP ${response.status}`);
@@ -390,8 +390,8 @@ function Report() {
     <${Anchor} href="../">← All reports<//>
     <${Title} order=${1} mt="md">Cluster VPA rollout<//>
     <${Text} size="lg" mt="sm"
-      >Verify the recently merged Initial policies and review the gates for
-      Recreate CPU sizing and the agent-sandbox controller.<//
+      >Admission checks passed for both Initial waves. Follow natural Pod
+      replacements and review the Recreate and agent-sandbox rollout gates.<//
     >
     <${Text} size="sm" c="dimmed" mt="xs">
       ${`Kubernetes snapshot ${inventory.collection_started_utc} to ${inventory.collection_finished_utc}.`}
@@ -474,12 +474,14 @@ function Report() {
         ${" · "}<${Anchor} href="./manifest.json">Flux and VPA observations<//>.
       <//>
       <${Text} mt="sm" id="initial-cpu-rollout">
-        <strong>CPU sizing for seven Initial VPAs.</strong> ${" "} At 2026-11-21
-        09:19:17 UTC, all seven VPAs had reconciled to CPU and memory request
-        sizing. The recommender had yet to observe the new generations or
-        publish CPU targets. Verify owner-matched admission when targets arrive,
-        then follow natural replacements and cleanup-controller readiness.
-        ${" "}<${Anchor} href=${github + "pull/18592"}>Policy PR<//>.
+        <strong>CPU sizing for seven Initial VPAs.</strong> ${" "} At 09:30:31
+        UTC on November 21, all seven had current CPU and memory targets.
+        Owner-matched server dry runs admitted both requests and preserved
+        limits. All 16 Deployment Pods and their serving endpoint identities
+        were still in place at 09:31:07 UTC. Follow natural replacements and
+        watch Kyverno cleanup, whose 128 MiB target reaches its existing memory
+        limit. ${" "}<${Anchor} href=${github + "pull/18592"}>Policy PR<//>
+        ${" · "}<${Anchor} href="./manifest.json">Admission evidence<//>.
       <//>
     </section>
 
