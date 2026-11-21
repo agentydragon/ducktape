@@ -903,6 +903,29 @@ def publicCallable (statements : List BindingStmt) (name : String) : Option Publ
 def publicCallableTable (statements : List BindingStmt) (names : List String) : Option (List (String × PublicCallable)) :=
   names.mapM (fun name => (publicCallable statements name).map (fun callable => (name, callable)))
 
+def publicCapturedEnvironment (statements : List BindingStmt) (name : String) : Option (List (String × String)) :=
+  match findDefinition statements name with
+  | none => none
+  | some statement => match statement with
+    | .capturedClosure _ factory _ keys =>
+      match capturedFactoryData statements factory with
+      | some (parameters, locals, _, _) => some ((parameters ++ locals.map CapturedLocal.name).zip keys)
+      | none => none
+    | .variable _ _ => none
+    | .constant _ _ => none
+    | .function _ _ _ => none
+    | .reader _ _ => none
+    | .thrower _ _ => none
+    | .expressionFunction _ _ _ => none
+    | .capturedFactory _ _ _ _ _ => none
+    | .capturedAlias _ _ => none
+    | .factory _ _ _ => none
+    | .closure _ _ => none
+    | .wrapper _ _ => none
+    | .recordCall _ => none
+    | .call _ => none
+    | .record _ => none
+
 def callableOperations (callable : PublicCallable) (arguments : List Nat) : Option (List Operation) :=
   match callable with
   | .fixed operations => if arguments.isEmpty then some operations else none

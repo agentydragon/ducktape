@@ -169,9 +169,14 @@ writebacks of the same frame under different cell keys. A further one-call
 lemma connects evaluation and writeback to the machine's return and throw
 observations, assuming both writebacks succeed. A finite-sequence lemma relates
 interleaved calls to two disjoint captured environments under different cell
-keys when both machine runs complete. The overall split certificate still uses the existing
-factory-specific representation and does not yet prove preservation under
-arbitrary allocation renaming. A safe
+keys when both machine runs complete. For two direct captured exports, the
+validator also tries to include this relation in the generated certificate,
+using the actual initialized source and output states; it includes the theorem
+only when Lean verifies all its obligations without axioms. This supplementary
+theorem is conditional on paired machine operations and successful runs. The
+acceptance proof still requires equal initialized states and callable tables,
+uses the factory-specific representation, and does not yet prove preservation
+under arbitrary allocation renaming. A safe
 result proves equal modeled initialization and matching return values and
 state for any finite sequence of subsequent calls. Function return values are
 modeled separately from host-recorded events; ignored top-level call results

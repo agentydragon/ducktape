@@ -960,6 +960,45 @@ theorem binding_throw_values (calls : List (String × List Nat)) : ((sourceBindi
 #print axioms binding_future_calls
 #print axioms binding_return_values
 `;
+  const directCapturedExports = source.exports.filter((name) =>
+    source.statements.some((item) => item.ast.kind === "capturedClosure" && item.ast.name === name)
+  );
+  const twoCaptured = source.exports.length === 2 && directCapturedExports.length === 2;
+  const capturedRelation = twoCaptured
+    ? `
+def binding_source_first := (publicCapturedEnvironment bindingSource ${str(directCapturedExports[0])}).getD []
+def binding_source_second := (publicCapturedEnvironment bindingSource ${str(directCapturedExports[1])}).getD []
+def binding_output_first := (publicCapturedEnvironment (outputDefinitions bindingModules) ${str(directCapturedExports[0])}).getD []
+def binding_output_second := (publicCapturedEnvironment (outputDefinitions bindingModules) ${str(directCapturedExports[1])}).getD []
+def binding_source_state := (sourceBindingState bindingSource).getD (⟨[], [], [], none, [], none, []⟩ : ExecutionState Unit)
+def binding_output_state := (outputBindingState bindingSource bindingModules bindingEntry).getD (⟨[], [], [], none, [], none, []⟩ : ExecutionState Unit)
+theorem binding_captured_environments_present :
+    (publicCapturedEnvironment bindingSource ${str(directCapturedExports[0])}).isSome = true ∧
+    (publicCapturedEnvironment bindingSource ${str(directCapturedExports[1])}).isSome = true ∧
+    (publicCapturedEnvironment (outputDefinitions bindingModules) ${str(directCapturedExports[0])}).isSome = true ∧
+    (publicCapturedEnvironment (outputDefinitions bindingModules) ${str(directCapturedExports[1])}).isSome = true := by decide
+theorem binding_source_captures_disjoint : capturesDisjoint binding_source_first binding_source_second := by decide
+theorem binding_output_captures_disjoint : capturesDisjoint binding_output_first binding_output_second := by decide
+theorem binding_captured_initial_related : twoCapturedStatesRelated binding_source_first binding_output_first
+    binding_source_second binding_output_second binding_source_state binding_output_state := by decide
+theorem binding_two_captured_calls (leftOps rightOps : List Operation)
+    (operations : RelatedOperations (PairedTwoCapturedOperation binding_source_first binding_output_first
+      binding_source_second binding_output_second) leftOps rightOps)
+    (leftFinal rightFinal : ExecutionState Unit)
+    (leftRun : runExecution binding_source_state leftOps = some leftFinal)
+    (rightRun : runExecution binding_output_state rightOps = some rightFinal) :
+    twoCapturedStatesRelated binding_source_first binding_output_first binding_source_second binding_output_second
+      leftFinal rightFinal := by
+  exact two_captured_call_sequence_related binding_source_first binding_output_first binding_source_second binding_output_second
+    binding_source_captures_disjoint binding_output_captures_disjoint leftOps rightOps operations
+    binding_source_state binding_output_state leftFinal rightFinal binding_captured_initial_related leftRun rightRun
+#print axioms binding_captured_environments_present
+#print axioms binding_source_captures_disjoint
+#print axioms binding_output_captures_disjoint
+#print axioms binding_captured_initial_related
+#print axioms binding_two_captured_calls
+`
+    : "";
   const same = hasExpressions ? expressionSame : legacySame;
   const model = (
     await Promise.all(
@@ -1007,10 +1046,20 @@ theorem binding_throw_values (calls : List (String × List Nat)) : ((sourceBindi
       "binding_return_values",
       "binding_throw_values",
     ].every((name) => has(proof, name))
-  )
+  ) {
+    const relationProof = twoCaptured ? runLean(prefix + same + capturedRelation) : null;
+    const relationValid =
+      relationProof?.status === 0 &&
+      [
+        "binding_captured_environments_present",
+        "binding_source_captures_disjoint",
+        "binding_output_captures_disjoint",
+        "binding_captured_initial_related",
+        "binding_two_captured_calls",
+      ].every((name) => has(relationProof, name));
     return {
       result: "proved under assumptions",
-      certificate: prefix + same,
+      certificate: prefix + same + (relationValid ? capturedRelation : ""),
       assumptions: [
         "The Acorn-to-Lean AST conversion faithfully represents the actual source and output files",
         "The modeled module loading, linking and execution match ECMAScript for the supported syntax",
@@ -1025,8 +1074,9 @@ theorem binding_throw_values (calls : List (String × List Nat)) : ((sourceBindi
         "Supported thrown values are nonnegative safe integers, booleans, null, undefined or ASCII strings; a throw ends the observed call sequence",
       ],
     };
+  }
   const different = `\ntheorem binding_difference : sourceBindingState bindingSource ≠ outputBindingState bindingSource bindingModules bindingEntry := by decide\n#print axioms binding_difference\n`;
-  let witnessFailure;
+  let witnessFailure = proof.stdout || proof.stderr;
   const witnessed = (original, output, calls) => {
     const events = (trace) => {
       if (!trace.events.every((value) => Number.isSafeInteger(value) && value >= 0)) return null;

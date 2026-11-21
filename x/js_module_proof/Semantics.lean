@@ -271,6 +271,27 @@ def relatedCapturedEnvironments (leftStore rightStore : List (String × Nat))
   ∃ frame, loadCaptures leftStore leftCapture = some frame ∧
     loadCaptures rightStore rightCapture = some frame
 
+def decideRelatedCapturedEnvironments (leftStore rightStore : List (String × Nat))
+    (leftCapture rightCapture : List (String × String)) :
+    Decidable (relatedCapturedEnvironments leftStore rightStore leftCapture rightCapture) := by
+  unfold relatedCapturedEnvironments
+  cases leftResult : loadCaptures leftStore leftCapture with
+  | none =>
+    apply isFalse
+    intro ⟨frame, impossible, right⟩
+    cases impossible
+  | some frame =>
+    by_cases rightResult : loadCaptures rightStore rightCapture = some frame
+    · exact isTrue ⟨frame, rfl, rightResult⟩
+    · apply isFalse
+      intro ⟨other, equal, right⟩
+      cases equal
+      exact rightResult right
+
+instance (leftStore rightStore : List (String × Nat)) (leftCapture rightCapture : List (String × String)) :
+    Decidable (relatedCapturedEnvironments leftStore rightStore leftCapture rightCapture) :=
+  decideRelatedCapturedEnvironments leftStore rightStore leftCapture rightCapture
+
 def evaluateCapturedFrame (globals store : List (String × Nat)) (captures : List (String × String))
     (parameters : List String) (arguments : List Nat) (body : NumericExpr) : Option (ExpressionResult Nat) := do
   if parameters.length != arguments.length then none else
@@ -642,6 +663,55 @@ theorem captured_step_preserves_disjoint {α : Type}
 def capturesDisjoint (left right : List (String × String)) : Prop :=
   ∀ name key, (name, key) ∈ left → ∀ otherName otherKey, (otherName, otherKey) ∈ right → key ≠ otherKey
 
+def captureKeyAbsent (key : String) (captures : List (String × String)) : Prop :=
+  ∀ name other, (name, other) ∈ captures → key ≠ other
+
+def decideCaptureKeyAbsent (key : String) (captures : List (String × String)) :
+    Decidable (captureKeyAbsent key captures) :=
+  match captures with
+  | [] => isTrue (by intro name other member; cases member)
+  | (name, other) :: rest =>
+    if equal : key = other then
+      isFalse (by
+        intro absent
+        exact absent name other (List.Mem.head rest) equal)
+    else
+      match decideCaptureKeyAbsent key rest with
+      | isTrue tailAbsent => isTrue (by
+          intro candidate candidateKey member
+          cases member with
+          | head => exact equal
+          | tail _ tailMember => exact tailAbsent candidate candidateKey tailMember)
+      | isFalse tailPresent => isFalse (by
+          intro absent
+          apply tailPresent
+          intro candidate candidateKey tailMember
+          exact absent candidate candidateKey (List.Mem.tail _ tailMember))
+
+def decideCapturesDisjoint (left right : List (String × String)) : Decidable (capturesDisjoint left right) :=
+  match left with
+  | [] => isTrue (by intro name key member; cases member)
+  | (name, key) :: rest =>
+    match decideCaptureKeyAbsent key right, decideCapturesDisjoint rest right with
+    | isFalse present, _ => isFalse (by
+        intro disjoint
+        apply present
+        intro otherName otherKey otherMember
+        exact disjoint name key (List.Mem.head rest) otherName otherKey otherMember)
+    | isTrue absent, isFalse tailOverlaps => isFalse (by
+        intro disjoint
+        apply tailOverlaps
+        intro candidate candidateKey tailMember otherName otherKey otherMember
+        exact disjoint candidate candidateKey (List.Mem.tail _ tailMember) otherName otherKey otherMember)
+    | isTrue absent, isTrue tailDisjoint => isTrue (by
+        intro candidate candidateKey member otherName otherKey otherMember
+        cases member with
+        | head => exact absent otherName otherKey otherMember
+        | tail _ tailMember => exact tailDisjoint candidate candidateKey tailMember otherName otherKey otherMember)
+
+instance (left right : List (String × String)) : Decidable (capturesDisjoint left right) :=
+  decideCapturesDisjoint left right
+
 theorem captures_disjoint_symmetric (left right : List (String × String))
     (disjoint : capturesDisjoint left right) : capturesDisjoint right left := by
   intro name key member otherName otherKey otherMember
@@ -711,6 +781,11 @@ def capturedStatesRelated {α : Type} (leftCapture rightCapture : List (String �
   left.bindings = right.bindings ∧ left.events = right.events ∧ left.replies = right.replies ∧
     left.error = right.error ∧ left.returns = right.returns ∧ left.thrown = right.thrown ∧
     relatedCapturedEnvironments left.captured right.captured leftCapture rightCapture
+
+instance {α : Type} [DecidableEq α] (leftCapture rightCapture : List (String × String))
+    (left right : ExecutionState α) : Decidable (capturedStatesRelated leftCapture rightCapture left right) := by
+  unfold capturedStatesRelated
+  infer_instance
 
 theorem captured_unblocked_step_related {α : Type}
     (leftCapture rightCapture : List (String × String)) (parameters : List String) (arguments : List Nat)
@@ -882,6 +957,11 @@ theorem capturedStates_related_with_environment {α : Type}
 def twoCapturedStatesRelated {α : Type} (leftFirst rightFirst leftSecond rightSecond : List (String × String))
     (left right : ExecutionState α) : Prop :=
   capturedStatesRelated leftFirst rightFirst left right ∧ capturedStatesRelated leftSecond rightSecond left right
+
+instance {α : Type} [DecidableEq α] (leftFirst rightFirst leftSecond rightSecond : List (String × String))
+    (left right : ExecutionState α) : Decidable (twoCapturedStatesRelated leftFirst rightFirst leftSecond rightSecond left right) := by
+  unfold twoCapturedStatesRelated
+  infer_instance
 
 inductive PairedTwoCapturedOperation
     (leftFirst rightFirst leftSecond rightSecond : List (String × String)) : Operation → Operation → Prop where
