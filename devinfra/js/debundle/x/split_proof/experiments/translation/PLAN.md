@@ -35,3 +35,12 @@ Only the entry's export list is checked. Other chunks import from the tree. Chec
 - A scope resolver in Lean, tested against `eslint-scope` on real bundles.
 - A proof that applying a bijective renaming to a plan preserves `Correct`, so the translation check implies the semantic theorem.
 - Re-exports and `export default` outside the entry (rejected today).
+
+## 7. A generator that can reach any program, and a footprint oracle
+
+The fuzzers use three generators, each narrow in its own way: 60 hand-written unit templates (`fuzz.mjs`), a scope-aware corpus of 20 AST node types (`ast_generator.mjs`), and a grammar fuzzer whose programs rarely do anything observable (`shift_fuzz_test.mjs`; premise P4 drops the ones that throw). The reorder oracle also sees a wrong footprint only when a reorder happens to change the output. Two additions:
+
+- **A generator whose range is the whole language.** Every valid ES2024 module has a nonzero chance of being generated. The programs terminate, do not throw, and leave their state observable (a final dump of every top-level binding, traces between units), and they have many top-level units that share state, because that is what a split reorders. Steer it by the analysis's own inventory: every construct `Effects.lean` evaluates and every row of `Intrinsics.lean` gets a production, plus constructs it does not understand, which must fall back to "touches the world". Grow it in families (statements, functions and generators, classes, patterns and spread, protocols such as `Symbol.iterator`, getters, `Proxy` and `Reflect`), each with a validity test (terminates, deterministic, does not throw, over many seeds) and coverage statistics.
+- **A footprint oracle.** Run a generated program unit by unit in Node and snapshot what each top-level name reaches before and after the unit. A name whose reachable state changed must be in the unit's `writes`, or the unit must be an effect. It sees writes that show as properties, not closure-private state and not reads; the reorder oracle covers the rest. It also runs on the real libraries (`lodash`, `acorn`, `semver`, `zod`).
+
+A wrong footprint the oracle finds becomes a runnable program under `experiments/effects/debug/` and a case in `experiments/effects/cases_general.mjs` once the analysis refuses it.
