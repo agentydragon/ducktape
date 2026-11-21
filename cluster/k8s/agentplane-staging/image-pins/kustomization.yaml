@@ -2,7 +2,7 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
   - name: git.allegedly.works/ducktape-ci/agentplane-frontend
-    newTag: devel-20261121025613-094dfe0 # {"$imagepolicy": "flux-system:agentplane-frontend:tag"}
+    newTag: devel-20261121051713-e825a36 # {"$imagepolicy": "flux-system:agentplane-frontend:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-policy-controller
     newTag: devel-20261120204033-3a4cafa # {"$imagepolicy": "flux-system:agentplane-policy-controller:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-environments
@@ -14,7 +14,7 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-central-sampler
     newTag: devel-20261121025619-094dfe0 # {"$imagepolicy": "flux-system:agentplane-central-sampler:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-app
-    newTag: devel-20261121025717-094dfe0 # {"$imagepolicy": "flux-system:agentplane-app:tag"}
+    newTag: devel-20261121051736-e825a36 # {"$imagepolicy": "flux-system:agentplane-app:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sessions
     newTag: devel-20261120205951-cbf8551 # {"$imagepolicy": "flux-system:agentplane-sessions:tag"}
   - name: git.allegedly.works/ducktape-ci/environment-tools
@@ -28,11 +28,11 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-mcp-edge
     newTag: devel-20261121025623-094dfe0 # {"$imagepolicy": "flux-system:agentplane-mcp-edge:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-action-service
-    newTag: devel-20261121042936-7007e4d # {"$imagepolicy": "flux-system:agentplane-action-service:tag"}
+    newTag: devel-20261121051724-e825a36 # {"$imagepolicy": "flux-system:agentplane-action-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-notification-service
-    newTag: devel-20261121025630-094dfe0 # {"$imagepolicy": "flux-system:agentplane-notification-service:tag"}
+    newTag: devel-20261121051711-e825a36 # {"$imagepolicy": "flux-system:agentplane-notification-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-history-service
-    newTag: devel-20261120205757-cbf8551 # {"$imagepolicy": "flux-system:agentplane-history-service:tag"}
+    newTag: devel-20261121051719-e825a36 # {"$imagepolicy": "flux-system:agentplane-history-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-environment-firecracker
     newTag: devel-20261121025343-77cd80f # {"$imagepolicy": "flux-system:agentplane-environment-firecracker:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-firecracker-launcher
@@ -41,6 +41,6 @@ images:
     newTag: devel-20261121025456-77cd80f # {"$imagepolicy": "flux-system:agentplane-environment-vm:tag"}
   # The `agentplane` command disk beside the VM guest and as an image volume in the environment Pod.
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-disk
-    newTag: devel-20261121042151-8fc8746 # {"$imagepolicy": "flux-system:agentplane-runner-disk:tag"}
+    newTag: devel-20261121051745-e825a36 # {"$imagepolicy": "flux-system:agentplane-runner-disk:tag"}
 configurations:
   - kustomizeconfig
