@@ -326,6 +326,15 @@ standing `claude-ai` and `haku-agent` Identity bindings use the pure-egress `coi
 PolicySet with the `coinbase` role set on their named Kubernetes accounts; static Haku identities
 retain their direct RoleBinding. Public coder does not receive this access. Tests name the Secret
 scope, resource, verb, and object literally, not by a Role whose rules could grow.
+The `ovh-billing` PolicySet grants the finance-agent and Haku presets GET egress to
+OVH US invoice, service and signing-clock endpoints, and `get` on only
+`agentplane-staging/ovh-billing-credentials`. Static Haku identities have the same
+named Secret read to preserve the Haku permission parity. OVH request signatures
+are computed in memory; the provider credential itself permits billing/service
+reads only. Public coder and the standing Claude/agentplane identities do not get
+the credential. The source Secret is managed under `external-creds` and delivered
+by External Secrets Operator.
+
 Static Haku retains redundant narrow inventory bindings; managed Haku's broader
 cluster reader covers those rules without selecting the same Role names.
 

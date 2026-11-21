@@ -75,6 +75,7 @@ KUBERNETES_INSPECTION_READS_SET = "kubernetes-inspection-reads"
 # The `cluster-sops-read` Coinbase CDP key, which can only view (no trade, no transfer): the one
 # Haku's sandbox reads too. cluster/cdk8s/external_creds.py approves this namespace's copy.
 _COINBASE_SECRET = "coinbase-api-credentials"
+_OVH_BILLING_SECRET = "ovh-billing-credentials"
 _GITHUB_DOWNLOADS_POLICY = "github-downloads"
 MIMIR_READS_POLICY = "mimir-reads"
 # AnkiWeb sync for haku-anki, which runs as the haku-ui account (see the binding below).
@@ -96,6 +97,17 @@ HAKU_AGENT = StandingCaller(ServiceAccountRef(namespace=_NAMESPACE, name="haku-a
 def coinbase_egress_rules() -> list[PolicySetSpecRules]:
     """GET-only access to Coinbase; callers sign requests with the key held in Kubernetes."""
     return [Rule.egress(hosts=["api.coinbase.com"], methods=[PolicySetSpecRulesMethods.GET])]
+
+
+def ovh_billing_egress_rules() -> list[PolicySetSpecRules]:
+    """OVH billing reads and the server clock used for request signatures."""
+    return [
+        Rule.egress(
+            hosts=["api.us.ovhcloud.com"],
+            methods=[PolicySetSpecRulesMethods.GET],
+            paths=["/1.0/auth/time", "/1.0/me/bill", "/1.0/me/bill/**", "/1.0/service", "/1.0/service/**"],
+        )
+    ]
 
 
 # The Action PolicySets created below that the launch presets bind, named because a
@@ -623,6 +635,45 @@ def add_staging_action_policies(
             subject.imported(scope, f"coinbase-subject-{index}")
             for index, subject in enumerate(access.profile_subjects("coinbase-credentials"))
         ),
+    )
+    # OVH signatures include the request URL, timestamp and secret, so the sandbox must
+    # sign in memory. The key itself is limited by OVH to read-only billing/service paths.
+    ExternalSecret(
+        scope,
+        "ovh-billing-external-secret",
+        metadata=ApiObjectMetadata(
+            name=_OVH_BILLING_SECRET,
+            namespace=_NAMESPACE,
+            annotations={"description": "Read-only OVH billing credential for explicitly authorized agents."},
+        ),
+        refresh_interval="1h",
+        secret_store_ref=external_creds.STORE,
+        data=[
+            remote_data(_OVH_BILLING_SECRET, key) for key in ("application_key", "application_secret", "consumer_key")
+        ],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
+    )
+    ovh_billing_reader = Role(
+        scope,
+        "role-ovh-billing-reader",
+        metadata=ApiObjectMetadata(name="ovh-billing-reader", namespace=_NAMESPACE),
+        rules=[
+            RolePolicyRule(
+                resources=[Secret.from_secret_name(scope, "ovh-billing-secret", _OVH_BILLING_SECRET)], verbs=["get"]
+            )
+        ],
+    )
+    RoleBinding(
+        scope,
+        "rolebinding-ovh-billing-reader",
+        metadata=ApiObjectMetadata(name="ovh-billing-reader", namespace=_NAMESPACE),
+        role=ovh_billing_reader,
+    ).add_subjects(
+        *(
+            subject.imported(scope, f"ovh-billing-subject-{index}")
+            for index, subject in enumerate(access.profile_subjects("ovh-billing-credentials"))
+        )
     )
     sandbox_reader = Role(
         scope,

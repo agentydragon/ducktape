@@ -76,6 +76,11 @@ CREDENTIALS = (
         ),
     ),
     Credential(
+        secret_file="ovh-billing-credentials.sops.yaml",
+        secret_name="ovh-billing-credentials",
+        consumers=(ApprovedConsumer("agentplane-staging", "ovh-billing-credentials-agentplane-staging-reader"),),
+    ),
+    Credential(
         secret_file="coinbase-api-credentials.sops.yaml",
         secret_name="coinbase-api-credentials",
         consumers=(

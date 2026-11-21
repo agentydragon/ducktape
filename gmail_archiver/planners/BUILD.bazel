@@ -185,3 +185,18 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_aliexpress",
+    srcs = ["test_aliexpress.py"],
+    deps = [
+        ":aliexpress",
+        ":conftest",
+        "//:conftest",
+        "//gmail_api:labels",
+        "//gmail_archiver:inbox",
+        "//gmail_archiver:models",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
