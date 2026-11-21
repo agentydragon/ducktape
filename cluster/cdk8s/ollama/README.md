@@ -4,9 +4,11 @@
 
 TabbyAPI starts with Qwen3.8 Flash-Next EXL3 2.68-bit and can switch to the
 abliterated 2.50-bit checkpoint by request. Both use the two 5090s, a configured
-262,144-token context, and one active generation stream. Switching checkpoints
-waits for the current request to finish and reloads weights from NVMe.
-Matching prompt prefixes can be restored from the NVMe cache after the switch.
+262,144-token context, and one generation slot. TabbyAPI switches checkpoints
+by reloading weights from NVMe. Its model-loading lock does not cover the whole
+interval between preparing a request and starting its generation, so concurrent
+requests for different checkpoints can race with a switch. Matching prompt
+prefixes can be restored from the NVMe cache after the switch.
 
 TabbyAPI uses an 8 GiB pinned RAM prefix cache and a 16 GiB persistent NVMe
 prefix cache on `/games/tabbyapi-prefix-cache`. Kubernetes requests 20 GiB of
