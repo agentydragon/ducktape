@@ -216,6 +216,7 @@ export function toCore(
       const visit = (n) => {
         if (!n || typeof n !== "object") return;
         if (n.type === "Super") refuse(n, "super needs a method home object");
+        if (n.type === "MetaProperty" && n.meta.name === "new") refuse(n, "opaque invocation lacks new.target");
         for (const value of Object.values(n)) {
           if (Array.isArray(value)) value.forEach(visit);
           else if (value && typeof value === "object") visit(value);
@@ -258,11 +259,13 @@ export function toCore(
   }
 
   function classTree(node, name) {
-    if (node.superClass) refuse(node, "a class with extends");
+    if (node.superClass && node.body.body.some((m) => m.kind === "constructor" || m.type === "PropertyDefinition"))
+      refuse(node, "a derived class with an explicit constructor or fields");
     const self = node.id !== null;
     within(self ? [node.id.name] : [], () => {
       const ctor = node.body.body.find((m) => m.type === "MethodDefinition" && m.kind === "constructor");
-      if (ctor) func(ctor.value, name, "classCtor", true);
+      if (node.superClass) expr(node.superClass);
+      else if (ctor) func(ctor.value, name, "classCtor", true);
       else emit("func", name, "classCtor", false, [], 0);
       let count = 0;
       for (const member of node.body.body) {
@@ -290,7 +293,7 @@ export function toCore(
           }
         }
       }
-      emit("class", name, self, count);
+      emit(node.superClass ? "derivedClass" : "class", name, self, count);
     });
   }
 

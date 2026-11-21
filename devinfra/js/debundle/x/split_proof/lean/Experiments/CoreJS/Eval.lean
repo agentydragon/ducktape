@@ -147,6 +147,35 @@ def copyBindings (env : Env) (names : List Name) : M W Env := do
   let s ← getState
   declare env (boundCells s env names)
 
+/-- Constructor capability, without reading the user-visible `prototype` property. -/
+def isConstructor (v : Val) : M W Bool := do
+  match v with
+  | .obj a =>
+    match (← getObj a).code with
+    | some .derived => pure true
+    | some (.closure f _ _) => pure (f.kind == .normal || f.kind == .classCtor)
+    | some (.host name) => if name == "Function.prototype" then pure false else unknown "host constructor capability"
+    | some (.opaque ..) => unknown "opaque constructor capability"
+    | none => pure false
+  | .host _ => unknown "host constructor capability"
+  | _ => pure false
+
+/-- Heritage checks and the two prototype links, before allocating the class. -/
+def classParents (call : Call W) (base : Val) : M W (Addr × Option Addr) := do
+  match base with
+  | .null => pure (functionProto, none)
+  | _ => do
+    if !(← isConstructor base) then throwErr .type "superclass is not a constructor" else do
+    let p ← getProp call base (.str "prototype")
+    let pp ← match p with
+      | .null => pure none
+      | .obj a => pure (some a)
+      | .host _ => unknown "host superclass prototype"
+      | _ => throwErr .type "superclass prototype is not an object or null"
+    match base with
+    | .obj a => pure (a, pp)
+    | _ => unknown "host superclass"
+
 mutual
 
 def evalExpr : Nat → Env → Expr → M W Val
@@ -190,6 +219,20 @@ def evalExpr : Nat → Env → Expr → M W Val
       initSelf env self name (.obj c)
       evalFields n { env with this := .obj c } c
         (fields.filterMap fun ((static, k), init) => if static then some (k, init) else none)
+      pure (.obj c)
+    | .derived name self parent members => do
+      if !(fieldInits members).isEmpty then unknown "derived class fields" else do
+      let env ← selfScope env self name
+      let base ← evalExpr n env parent
+      let (ctorParent, protoParent) ← classParents (callFn n) base
+      let proto ← alloc { proto := protoParent, props := [] }
+      let c ← alloc {
+        proto := some ctorParent, code := some .derived,
+        props := [("length", .data (.num 0) false false true),
+          ("name", .data (.str name) false false true), ("prototype", .data (.obj proto) false false false)] }
+      modifyObj proto fun o => { o with props := [("constructor", .data (.obj c) true false true)] }
+      let _ ← evalMembers n env proto c members
+      initSelf env self name (.obj c)
       pure (.obj c)
     | .get o k => do
       let base ← evalExpr n env o
@@ -237,7 +280,7 @@ def evalExpr : Nat → Env → Expr → M W Val
       callFn n callee base (← evalArgs n env args)
     | .new f args => do
       let callee ← evalExpr n env f
-      construct n callee (← evalArgs n env args)
+      constructTarget n callee callee (← evalArgs n env args)
     | .prim p args => do prim (callFn n) p (← evalArgs n env args)
     | .unary .typeof (.var x) =>
       -- `typeof` of a name that does not resolve is "undefined"; in the dead zone it throws like any read
@@ -335,6 +378,7 @@ def callFn : Nat → Val → Val → List Val → M W Val
     match callee with
     | .obj a => do
       match (← getObj a).code with
+      | some .derived => throwErr .type "class constructor cannot be invoked without 'new'"
       | some (.closure f closed _) =>
         if f.kind == .classCtor then throwErr .type "class constructor cannot be invoked without 'new'" else do
         match f.opaqueBody with
@@ -354,16 +398,22 @@ def callFn : Nat → Val → Val → List Val → M W Val
     | .host name => hostCall name this args
     | _ => throwErr .type "not a function"
 
-/-- `new callee(args)`: a new object whose prototype is `callee.prototype`, the fields, then the body with it as `this`. -/
-def construct : Nat → Val → List Val → M W Val
-  | 0, _, _ => outOfFuel
-  | n + 1, callee, args =>
+/-- Default derived constructors preserve the original new target through the superclass chain. -/
+def constructTarget : Nat → Val → Val → List Val → M W Val
+  | 0, _, _, _ => outOfFuel
+  | n + 1, newTarget, callee, args =>
     match callee with
     | .obj a => do
       match (← getObj a).code with
+      | some .derived =>
+        match (← getObj a).proto with
+        | none => throwErr .type "superclass is not a constructor"
+        | some parent =>
+          if ← isConstructor (.obj parent) then constructTarget n newTarget (.obj parent) args
+          else throwErr .type "superclass is not a constructor"
       | some (.closure f closed fields) =>
         if f.kind != .normal && f.kind != .classCtor then throwErr .type "not a constructor" else do
-        let proto ← getProp (callFn n) callee (.str "prototype")
+        let proto ← getProp (callFn n) newTarget (.str "prototype")
         let this ← alloc { proto := some (match proto with | .obj p => p | _ => objectProto), props := [] }
         evalFields n { closed with this := .obj this } this fields
         let result ← match f.opaqueBody with
@@ -381,7 +431,7 @@ def construct : Nat → Val → List Val → M W Val
         | .host name => unknown s!"host value {name} is inspected"
         | _ => pure (.obj this)
       | some (.opaque code part cells) => do
-        let proto ← getProp (callFn n) callee (.str "prototype")
+        let proto ← getProp (callFn n) newTarget (.str "prototype")
         let this ← alloc { proto := some (match proto with | .obj p => p | _ => objectProto), props := [] }
         match ← converse n code cells (.run code part (← toW callee) (← toW (.obj this)) (← args.mapM toW) true) with
         | .obj r => pure (.obj r)
@@ -462,7 +512,7 @@ def converse : Nat → Nat → List (Option Addr) → Told → M W Val
     | .throw v => throwVal (← fromW v)
     | .unknown why => unknown why
     | req => do
-      let told ← toldOf (← attempt (perform (callFn n) (construct n) code cells req))
+      let told ← toldOf (← attempt (perform (callFn n) (fun callee args => constructTarget n callee callee args) code cells req))
       converse n code cells told
 
 /-- The turns of a `for` loop. `fresh` are the names of its `let` declaration: every turn gets its own copy. -/
@@ -479,6 +529,9 @@ def loop : Nat → Env → List Name → Expr → Expr → Stmt → M W Flow
       loop n env fresh test update body
 
 end
+
+def construct (n : Nat) (callee : Val) (args : List Val) : M W Val :=
+  constructTarget n callee callee args
 
 /-! ## Programs
 

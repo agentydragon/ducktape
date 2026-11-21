@@ -48,7 +48,7 @@
 // `COREJS`, `LOWERSPLIT` and `EVALORDER` are the executables (default: Lake's build).
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -56,16 +56,17 @@ import { format } from "node:util";
 import { kindOf } from "../translation/gen/core.mjs";
 import { generateProgram, renderProgram } from "../translation/gen/index.mjs";
 import { coreOf, coreProgramOf, dumpOf } from "../translation/split_dump.mjs";
-import { cases, splitCases, bindingSplitCases } from "./cases.mjs";
+import { cases, inheritanceCases, splitCases, bindingSplitCases } from "./cases.mjs";
 import {
   generatedCases,
+  generatedInheritanceCases,
   generatedModuleCases,
   generatedOpaqueCase,
   generatedOpaqueClassCase,
   generatedBindingCases,
 } from "./generate.mjs";
 import { moduleCases } from "./module_cases.mjs";
-import { opaqueCases, scriptsOf } from "./opaque_cases.mjs";
+import { opaqueCases, inheritanceOpaqueCases, scriptsOf } from "./opaque_cases.mjs";
 import { bits, HOST_GLOBALS, Refused, toCore, toCoreProgram } from "./to_core.mjs";
 
 const option = (name, fallback) => {
@@ -73,8 +74,19 @@ const option = (name, fallback) => {
   return i < 0 ? fallback : Number(process.argv[i + 1]);
 };
 const bindingOnly = process.argv.includes("--bindings-only");
-const count = option("count", 40);
-const firstSeed = option("seed", 1);
+const inheritanceOnly = process.argv.includes("--inheritance-only");
+assert(!(bindingOnly && inheritanceOnly), "select one differential suite");
+const broad = !bindingOnly && !inheritanceOnly;
+const selectedCases = bindingOnly ? [] : inheritanceOnly ? inheritanceCases : cases;
+const requestedCount = option("count", 40);
+const shards = Number(process.env.TEST_TOTAL_SHARDS ?? 1);
+const shard = Number(process.env.TEST_SHARD_INDEX ?? 0);
+assert(Number.isInteger(shards) && shards > 0 && Number.isInteger(shard) && shard >= 0 && shard < shards);
+assert(Number.isInteger(requestedCount) && requestedCount >= shards, "each shard needs at least one seed");
+const seedOffset = Math.floor((requestedCount * shard) / shards);
+const count = Math.floor((requestedCount * (shard + 1)) / shards) - seedOffset;
+const firstSeed = option("seed", 1) + seedOffset;
+if (process.env.TEST_SHARD_STATUS_FILE) writeFileSync(process.env.TEST_SHARD_STATUS_FILE, "");
 const splitPrograms = option("splits", 60);
 const show = process.argv.includes("--show");
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -85,8 +97,12 @@ const lower = process.env.LOWER ?? built("lower");
 const evalorder = process.env.EVALORDER ?? built("evalorder");
 const work = mkdtempSync(path.join(process.env.TEST_TMPDIR ?? os.tmpdir(), "corejs_differential_"));
 
+// Record the active case or batch if a subprocess or imported program wedges.
+const progress = path.join(process.env.TEST_UNDECLARED_OUTPUTS_DIR ?? work, "progress.log");
+const checkpoint = (label) => appendFileSync(progress, `${label}\n`);
+
 // The sets of `gen_validity_test.mjs`: each family with the ones before it.
-const SETS = bindingOnly
+const SETS = !broad
   ? []
   : [
       ["expressions", "statements"],
@@ -122,6 +138,7 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const sameRun = (a, b) => a.end === b.end && a.detail === b.detail && same(a.out, b.out);
 
 // The world: the host functions the model asks about, wrapped while a program runs in Node.
+checkpoint("reading host names");
 const hostNames = spawnSync(corejs, ["--host-names"], { encoding: "utf8" });
 assert.equal(hostNames.status, 0, `corejs --host-names failed: ${hostNames.stderr}`);
 const host = JSON.parse(hostNames.stdout);
@@ -232,7 +249,10 @@ const asked = (node) => node.world.map(({ fn, this: receiver, args }) => [fn, re
 
 /** Sets `job.node` to what the program of `job` does in Node, for all `jobs`. */
 async function runNode(jobs) {
-  for (const job of jobs) job.node = job.entry ? await runFileInNode(job.entry) : await runInNode(job.source);
+  for (const job of jobs) {
+    checkpoint(`Node: ${job.label}`);
+    job.node = job.entry ? await runFileInNode(job.entry) : await runInNode(job.source);
+  }
 }
 
 /** A translated module as a program of its own, statement `j` with the identity `j`. */
@@ -250,9 +270,11 @@ function runModel(jobs) {
   if (jobs.length === 0) return;
   const input = path.join(work, "programs.jsonl");
   writeFileSync(input, jobs.map((j) => JSON.stringify({ ...j.program, world: j.node.world })).join("\n") + "\n");
+  checkpoint(`CoreJS batch: ${jobs.map((j) => j.label).join("; ")}`);
   const started = Date.now();
   const model = spawnSync(corejs, [input], { encoding: "utf8", maxBuffer: 1 << 28 });
   modelSeconds += (Date.now() - started) / 1000;
+  checkpoint(`CoreJS returned: ${model.status}`);
   assert.equal(model.status, 0, `corejs failed: ${model.stderr}`);
   const lines = model.stdout.trimEnd().split("\n");
   assert.equal(lines.length, jobs.length, "corejs did not answer every program");
@@ -301,7 +323,7 @@ function slice(program, banned) {
 
 // { label, source, entry, program, node, result, expectEnd, set }: `program` is what `corejs` reads
 const jobs = [];
-for (const c of bindingOnly ? [] : cases) {
+for (const c of selectedCases) {
   const translated = accepted(c.source, { allowHost: c.allowHost ?? false });
   assert(translated !== null, `case ${c.name}: the front end refuses it`);
   jobs.push({
@@ -315,7 +337,7 @@ for (const c of bindingOnly ? [] : cases) {
 const bindingCases = bindingOnly
   ? Array.from({ length: count }, (_, i) => generatedBindingCases(firstSeed + i)).flat()
   : [];
-for (const c of bindingOnly ? [...bindingSplitCases, ...bindingCases] : splitCases) {
+for (const c of bindingOnly ? [...bindingSplitCases, ...bindingCases] : inheritanceOnly ? [] : splitCases) {
   const translated = accepted(c.source);
   assert(translated !== null, `split case ${c.name}: the front end refuses the bundle`);
   jobs.push({
@@ -327,7 +349,11 @@ for (const c of bindingOnly ? [...bindingSplitCases, ...bindingCases] : splitCas
     splitCase: c,
   });
 }
-const focused = bindingOnly ? [] : Array.from({ length: count }, (_, i) => generatedCases(firstSeed + i)).flat();
+const focused = bindingOnly
+  ? []
+  : Array.from({ length: count }, (_, i) =>
+      (inheritanceOnly ? generatedInheritanceCases : generatedCases)(firstSeed + i)
+    ).flat();
 for (const c of focused) {
   const translated = toCore(c.source);
   jobs.push({
@@ -339,8 +365,8 @@ for (const c of focused) {
     focused: c,
   });
 }
-const linked = bindingOnly ? [] : Array.from({ length: count }, (_, i) => generatedModuleCases(firstSeed + i)).flat();
-for (const c of bindingOnly ? [] : [...moduleCases, ...linked]) {
+const linked = !broad ? [] : Array.from({ length: count }, (_, i) => generatedModuleCases(firstSeed + i)).flat();
+for (const c of !broad ? [] : [...moduleCases, ...linked]) {
   const entry = path.join(writeFiles(c.files), "main.mjs");
   jobs.push({
     label: `modules: ${c.name}`,
@@ -357,7 +383,10 @@ for (const c of bindingOnly ? [] : [...moduleCases, ...linked]) {
 // Body fallback must not hide eager class work or unsupported invocation/home-object semantics.
 if (!bindingOnly) {
   for (const source of [
-    "class Box extends Base { method() { const [x] = []; } }",
+    "class Box extends Base { constructor() { super(); } }",
+    "class Box extends Base { field = 1; }",
+    "class Box extends Base { static field = 1; }",
+    "class Box { constructor() { this.target = new.target; } }",
     "class Box { [name]() { const [x] = []; } }",
     "class Box { static { sideEffect(); } method() { const [x] = []; } }",
     "class Box { method() { return super.value; } }",
@@ -378,11 +407,13 @@ if (!bindingOnly) {
 
 const allOpaqueCases = bindingOnly
   ? []
-  : [
-      ...opaqueCases,
-      ...Array.from({ length: count }, (_, i) => generatedOpaqueCase(firstSeed + i)),
-      ...Array.from({ length: count }, (_, i) => generatedOpaqueClassCase(firstSeed + i)),
-    ];
+  : inheritanceOnly
+    ? inheritanceOpaqueCases
+    : [
+        ...opaqueCases,
+        ...Array.from({ length: count }, (_, i) => generatedOpaqueCase(firstSeed + i)),
+        ...Array.from({ length: count }, (_, i) => generatedOpaqueClassCase(firstSeed + i)),
+      ];
 for (const c of allOpaqueCases) {
   const translated = coreOf(c.source);
   const bodies = translated.opaqueBodies ?? [];
@@ -480,7 +511,9 @@ function planOrder(program) {
   };
   const file = path.join(work, "graph.json");
   writeFileSync(file, JSON.stringify(graph));
+  checkpoint(`module order: ${program.entry}`);
   const run = spawnSync(evalorder, [file], { encoding: "utf8" });
+  checkpoint(`module order returned: ${run.status}`);
   assert.equal(run.status, 0, `evalorder failed: ${run.stderr}`);
   return run.stdout.trimEnd().split("\n");
 }
@@ -594,6 +627,7 @@ const splitJobs = [];
 
 /** Split the bundle of `job` by `spec`. An accepted split becomes a job; `named` is its entry of `splitCases`. */
 function split(job, bundle, dump, kind, spec, named) {
+  checkpoint(`split: ${job.label}, ${kind}`);
   const dir = writeFiles({
     "ast.json": JSON.stringify(dump),
     "spec.json": JSON.stringify(spec),
@@ -614,6 +648,7 @@ function split(job, bundle, dump, kind, spec, named) {
     ],
     { encoding: "utf8" }
   );
+  checkpoint(`split returned: ${run.status}`);
   const label = `${job.label}, split ${kind} ${JSON.stringify(spec)}`;
   if (named?.refused) {
     assert.equal(run.status, 1, `${label}: lowersplit does not reject it\n${run.stdout}\n${run.stderr}`);
@@ -836,7 +871,7 @@ for (const [owner, listed] of Object.entries(host.prototypes)) {
 
 rmSync(work, { recursive: true, force: true });
 console.log(
-  `mode: ${bindingOnly ? "binding certificates" : "CoreJS interpreter"}; cases: ${bindingOnly ? 0 : cases.length}; module cases: ${bindingOnly ? 0 : moduleCases.length} (${orders} orders compared with Plan.evalOrder); ` +
+  `mode: ${bindingOnly ? "binding certificates" : inheritanceOnly ? "default inheritance" : "CoreJS interpreter"}; cases: ${selectedCases.length}; module cases: ${broad ? moduleCases.length : 0} (${orders} orders compared with Plan.evalOrder); ` +
     `generated: ${count} programs for each set from seed ${firstSeed}`
 );
 console.table(summary);
@@ -880,7 +915,11 @@ console.log("whole CoreJS generator (no filtering):");
 console.table(focusedCoverage);
 assert.deepEqual(
   Object.keys(focusedCoverage).sort(),
-  bindingOnly ? [] : ["arrays", "classes", "closures", "control", "exceptions", "expressions", "host", "objects"],
+  bindingOnly
+    ? []
+    : inheritanceOnly
+      ? ["inheritance"]
+      : ["arrays", "classes", "closures", "control", "exceptions", "expressions", "host", "objects"],
   "the whole-program generator must execute each promised family"
 );
 assert(
@@ -893,7 +932,7 @@ assert(
 );
 assert.equal(
   jobs.filter((j) => j.linked).length,
-  bindingOnly ? 0 : count * 3,
+  broad ? count * 3 : 0,
   "each seed must run the diamond, cycle and abrupt module graphs"
 );
 console.log(`generated linked programs: ${linked.length}, compared with Node and Plan.evalOrder`);
@@ -904,7 +943,7 @@ assert.equal(
   "every opaque closure move must be accepted and executed"
 );
 const generatedClassJobs = jobs.filter((j) => j.opaqueCase?.generatedClass);
-assert.equal(generatedClassJobs.length, bindingOnly ? 0 : count, "every seed must generate an opaque class case");
+assert.equal(generatedClassJobs.length, broad ? count : 0, "every seed must generate an opaque class case");
 assert.equal(
   opaqueMoved.filter((j) => j.of.opaqueCase?.generatedClass).length,
   generatedClassJobs.length,

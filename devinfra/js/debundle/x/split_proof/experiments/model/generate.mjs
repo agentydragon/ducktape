@@ -262,3 +262,23 @@ export function generatedBindingCases(seed) {
     },
   ];
 }
+
+export function generatedInheritanceCases(seed) {
+  const n = 1 + ((seed >>> 0) % 7);
+  return [
+    {
+      name: `default inheritance seed ${seed}`,
+      family: "inheritance",
+      source: `
+      const independent = () => ${n};
+      const first = ${n + 1};
+      class Base { field = ${n}; constructor(value) { this.value = value; } }
+      class Middle extends Base {}
+      class Leaf extends Middle { read() { return this.field + this.value; } }
+      const instance = new Leaf(${n + 2});
+      console.log(instance.read(), Object.getPrototypeOf(instance) === Leaf.prototype,
+        Object.getPrototypeOf(Leaf) === Middle, Leaf.length, independent(), first);
+    `,
+    },
+  ];
+}

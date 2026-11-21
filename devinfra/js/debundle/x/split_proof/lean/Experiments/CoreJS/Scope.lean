@@ -432,6 +432,32 @@ theorem Same.cls_succ (env env' : Env) (name : String) (self : Bool) (ctor : Fun
       obtain ⟨rfl, rfl⟩ := hsome
       exact List.mem_append_right _ (fieldInits_free members _ (List.of_mem_zip hzip).2 x hx)
 
+theorem Same.derived_succ (env env' : Env) (name : String) (self : Bool) (parent : Expr) (members : List ClassMember)
+    (hN : Agree (Expr.derived name self parent members).free env env') :
+    (evalExpr (n + 1) env (.derived name self parent members) : M W _) =
+      evalExpr (n + 1) env' (.derived name self parent members) := by
+  simp only [evalExpr]
+  split
+  · rfl
+  · refine selfScope_congr (N' := (if self then [name] else []) ++ (parent.free ++ freeMembers members)) self name hN
+      (fun x hx => ?_) fun env1 env1' h1 => ?_
+    · rcases List.mem_append.1 hx with hx | hx
+      · cases self <;> simp at hx
+        exact Or.inr ⟨rfl, hx⟩
+      · by_cases hc : (self && x == name) = true
+        · simp only [Bool.and_eq_true, beq_iff_eq] at hc
+          exact Or.inr hc
+        · exact Or.inl (by
+            simp only [Expr.free, List.mem_filter]
+            exact ⟨hx, by cases h : (self && x == name) <;> simp_all⟩)
+    · have h2 : Agree (parent.free ++ freeMembers members) env1 env1' := h1.mono fun x hx => List.mem_append_right _ hx
+      refine M.bind_congr (ih.expr _ _ _ (h2.mono fun x hx => List.mem_append_left _ hx)) fun base => ?_
+      refine M.bind_congr rfl fun parents => ?_
+      refine M.bind_congr rfl fun proto => M.bind_congr rfl fun c => M.bind_congr rfl fun _ => ?_
+      refine M.bind_congr (ih.members _ _ _ _ _ (h2.mono fun x hx => List.mem_append_right _ hx)) fun _ => ?_
+      refine M.bind_congr ?_ fun _ => rfl
+      exact initSelf_agree self (.obj c) fun hs => h1.vars name (by simp [hs])
+
 set_option maxHeartbeats 1000000 in
 theorem Same.expr_succ (env env' : Env) (e : Expr) (hN : Agree e.free env env') :
     (evalExpr (n + 1) env e : M W _) = evalExpr (n + 1) env' e := by
@@ -454,6 +480,7 @@ theorem Same.expr_succ (env env' : Env) (e : Expr) (hN : Agree e.free env env') 
     refine ih.assign_like hN (by free_mem) fun r hr => ?_
     same ih hN
   | cls name self ctor members => exact ih.cls_succ env env' name self ctor members hN
+  | derived name self parent members => exact ih.derived_succ env env' name self parent members hN
   | unary op a =>
     cases op with
     | typeof =>

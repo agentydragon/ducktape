@@ -1,6 +1,94 @@
 // Programs for `differential.mjs`, for what the generator rarely writes. Each runs in Node and in the model and must
 // print the same and end the same way. A case with `end: "unknown"` uses a value of the host that the model has no
 // rule for (`allowHost`) or an operation the model leaves to the host; there only the model's ending is checked.
+export const inheritanceCases = [
+  {
+    name: "default derived constructors forward arguments and the final instance prototype",
+    source: `
+      class Base {
+        field = 4;
+        constructor(a, b) { this.value = a + b; }
+        read() { return this.value + this.field; }
+        static label() { return this.name; }
+      }
+      class Middle extends Base {}
+      class Leaf extends Middle { readLeaf() { return this.read(); } }
+      const leaf = new Leaf(2, 3);
+      console.log(leaf.readLeaf(), leaf.constructor === Leaf, Leaf.length, Leaf.label());
+      console.log(Object.getPrototypeOf(Leaf) === Middle,
+        Object.getPrototypeOf(Leaf.prototype) === Middle.prototype,
+        Object.getPrototypeOf(leaf) === Leaf.prototype);
+      try { Leaf(); } catch (e) { console.log("class call rejected"); }
+      try { new leaf.readLeaf(); } catch (e) { console.log("method new rejected"); }
+    `,
+  },
+  {
+    name: "default derived construction consults the current superclass without changing the instance prototype",
+    source: `
+      class Base { constructor(x) { this.value = x; } }
+      class Alternate { constructor(x) { this.value = x + 10; } }
+      class Derived extends Base {}
+      Object.setPrototypeOf(Derived, Alternate);
+      const value = new Derived(3);
+      console.log(value.value, Object.getPrototypeOf(value) === Derived.prototype,
+        Object.getPrototypeOf(Derived.prototype) === Base.prototype);
+      Object.setPrototypeOf(Derived, {});
+      try { new Derived(); } catch (e) { console.log("nonconstructor rejected"); }
+    `,
+  },
+  {
+    name: "default derived construction preserves base object returns and thrown completions",
+    source: `
+      class Base { constructor(x) { if (x < 0) throw x; if (x) return { replacement: x }; return 9; } }
+      class Derived extends Base {}
+      console.log(new Derived(2).replacement, Object.getPrototypeOf(new Derived(0)) === Derived.prototype);
+      try { new Derived(-1); } catch (e) { console.log(e); }
+    `,
+  },
+  {
+    name: "null heritage and null superclass prototype have distinct construction behavior",
+    source: `
+      class Empty extends null {}
+      console.log(Object.getPrototypeOf(Empty.prototype), Empty.length);
+      try { new Empty(); } catch (e) { console.log("null base rejected"); }
+      function Base() { this.value = 7; }
+      Base.prototype = null;
+      class Derived extends Base {}
+      console.log(Object.getPrototypeOf(Derived.prototype), new Derived().value,
+        Object.getPrototypeOf(new Derived()) === Derived.prototype);
+    `,
+  },
+  {
+    name: "heritage evaluation reads the prototype once and rejects invalid superclass values",
+    source: `
+      let count = 0;
+      function choose() { count++; return Base; }
+      function Base() {}
+      Base.prototype = { value: 4 };
+      class Derived extends choose() {}
+      Base.prototype = { value: 9 };
+      console.log(count, new Derived().value);
+      Base.prototype = 1;
+      try { const Bad = class extends Base {}; } catch (e) { console.log("bad prototype"); }
+      try { const Bad = class extends 1 {}; } catch (e) { console.log("bad base"); }
+      const arrow = () => 1;
+      Object.defineProperty(arrow, "prototype", { get() { count++; return {}; } });
+      try { const Bad = class extends arrow {}; } catch (e) { console.log("arrow rejected", count); }
+    `,
+  },
+  {
+    name: "derived class name is uninitialized in heritage and captured by methods",
+    source: `
+      class Base {}
+      const Derived = class Inner extends Base { self() { return Inner; } };
+      console.log(new Derived().self() === Derived);
+      try { const Invalid = class Inner extends Inner {}; } catch (e) { console.log("self TDZ"); }
+      let Later;
+      try { const Invalid = class extends Later {}; } catch (e) { console.log("undefined base"); }
+    `,
+  },
+];
+
 export const cases = [
   {
     name: "getter on a prototype three levels up sees the receiver",

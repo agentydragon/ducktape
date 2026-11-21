@@ -626,6 +626,24 @@ js_test(
     data = _COREJS_DIFFERENTIAL_DATA,
     entry_point = _MODEL + ":differential",
     env = _COREJS_DIFFERENTIAL_ENV,
+    shard_count = 2,
+)
+
+js_test(
+    name = "corejs_inheritance_differential_test",
+    size = "medium",
+    args = [
+        "--inheritance-only",
+        "--count",
+        "12",
+        "--seed",
+        "1",
+        "--splits",
+        "0",
+    ],
+    data = _COREJS_DIFFERENTIAL_DATA,
+    entry_point = _MODEL + ":differential",
+    env = _COREJS_DIFFERENTIAL_ENV,
 )
 
 js_test(

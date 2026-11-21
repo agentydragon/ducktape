@@ -158,6 +158,9 @@ def token (tag : String) (args : List Json) : D Unit := do
   | "class", [name, self, size] => do
     let members ← popMany popMember (← nat size)
     push (.expr (.cls (← str name) (← bool self) (← popFunc) members))
+  | "derivedClass", [name, self, size] => do
+    let members ← popMany popMember (← nat size)
+    push (.expr (.derived (← str name) (← bool self) (← popExpr) members))
   | "get", [] => do
     let k ← popExpr
     push (.expr (.get (← popExpr) k))

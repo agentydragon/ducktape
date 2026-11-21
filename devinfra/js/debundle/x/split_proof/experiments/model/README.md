@@ -5,10 +5,13 @@ then sends split plans through the real `lowersplit` emitter. CI:
 
 ```sh
 bbr test //devinfra/js/debundle/x/split_proof/experiments/translation:corejs_differential_test \
-  //devinfra/js/debundle/x/split_proof/experiments/translation:corejs_binding_differential_test
+  //devinfra/js/debundle/x/split_proof/experiments/translation:corejs_binding_differential_test \
+  //devinfra/js/debundle/x/split_proof/experiments/translation:corejs_inheritance_differential_test
 ```
 
-The fixed sample uses seeds 1–12. Appended `--test_arg=--count --test_arg=N`,
+The fixed sample uses seeds 1–12. The broad suite partitions those seeds across
+two Bazel shards; each shard also runs the handwritten cases and retains the
+configured random-plan budget. Appended `--test_arg=--count --test_arg=N`,
 `--test_arg=--seed --test_arg=S` and `--test_arg=--splits --test_arg=K` override its arguments.
 
 | Landed model feature                                              | Hand-written oracle                                                                                                                                    | Generated execution                                                                                                                                  |
@@ -18,13 +21,14 @@ The fixed sample uses seeds 1–12. Appended `--test_arg=--count --test_arg=N`,
 | Objects, descriptors, getters/setters, prototypes                 | `cases.mjs`: inherited accessors, descriptor validation, prototype changes                                                                             | Getter/setter mutation, deletion, inherited membership, prototype replacement.                                                                       |
 | Arrays                                                            | `cases.mjs`: nested literals, reads, length, deletion                                                                                                  | Nested reads, identity, bounds and membership. Writes still end `unknown`.                                                                           |
 | Plain classes                                                     | `cases.mjs`: constructor, fields, statics, methods, accessors, names, errors                                                                           | Instance/static fields, constructor, getters/setters, captured `this`.                                                                               |
+| Default derived classes                                           | `cases.mjs`: prototype links, dynamic superclass, null heritage, TDZ, returns/throws; `opaque_cases.mjs`: opaque base body                             | Multi-level forwarding, base fields, inherited methods, instance prototype, constructor length.                                                      |
 | Control flow and exceptions                                       | `cases.mjs`: loops, jumps, abrupt `finally`, TDZ, engine errors, thrown values                                                                         | Finite loops; caught primitive, engine and host exceptions; `finally` on return.                                                                     |
 | Primitive host calls                                              | `cases.mjs`: string/number/boolean methods, `Math`, parsing, throws, unknown boundaries                                                                | Primitive calls and chains; a caught host exception. Selected functions only.                                                                        |
 | Linked modules                                                    | [`module_cases.mjs`](module_cases.mjs): live bindings, cycles, hoisting/TDZ, import assignment, aliases, defaults, missing exports, evaluation failure | Live-binding diamond, cycle with caught TDZ, uncaught dependency exception. Aliases execute; defaults and frozen import targets remain manual-only.  |
 | Opaque statements and function bodies                             | [`opaque_cases.mjs`](opaque_cases.mjs): binding/property access, callbacks, explicit throws, allocation, construction, engine-error propagation        | Opaque parameter destructuring calls a captured model function, returning normally or throwing into a model catch.                                   |
 | Opaque closure-only moves                                         | `opaque_cases.mjs`: constructor closure                                                                                                                | A closure captures an uninitialized binding, crosses an independent declaration, and is invoked after initialization. Both callback endings execute. |
 
-[`generate.mjs`](generate.mjs) generates the eight whole-program families above without
+[`generate.mjs`](generate.mjs) generates the whole-program families above without
 discarding units or retrying after `unknown`. Every seed must complete in Node and the
 model, and must execute in an accepted reordered split whose verdict names the proved
 `moves` slice. The test requires every promised family and every generated linked graph
@@ -52,7 +56,7 @@ hash comparisons as the other proved moves. Exact final-state equality is the Le
 theorem’s guarantee; the runtime hash comparison is a regression oracle with the
 omissions described above. The broad `corejs_differential_test` retains
 the interpreter families, linked graphs, opaque cases, and original named splits.
-Both targets run in CI; splitting their workloads keeps their coverage assertions
+All three targets run in CI; splitting their workloads keeps their coverage assertions
 and execution independent as the certificate families grow.
 
 The broad [`translation/gen`](../translation/gen/) sample remains separate: the harness
@@ -81,7 +85,7 @@ function index within that unit (including modeled and nested functions).
 Class constructors still reject ordinary calls; methods and accessors still
 reject construction. Instance fields execute before the constructor body, and
 modeled eager keys/static initializers remain explicit. New body fallback does
-not handle `super`, async/generator functions, direct eval, or relocation-sensitive
+not handle `super`, `new.target`, async/generator functions, direct eval, or relocation-sensitive
 imports. A refused body cannot silently erase those restrictions.
 
 The allocation proof admits only fixed-string method/accessor keys and no fields.
@@ -96,3 +100,35 @@ accessors, stable part identities, and eager static/field behavior. Each generat
 seed also moves a class across an independent declaration, then constructs it and
 calls an opaque method. Every such split must use a proved move and agree in all
 four executions and in the final model-state hash.
+
+## Default derived classes
+
+The frontend models `class Derived extends Base { … }` when it has no explicit
+constructor or fields. Fixed-name methods/accessors may have opaque bodies under
+the same restrictions as plain classes. Heritage evaluates in the class-name TDZ;
+constructor validation precedes the `prototype` read. Null heritage and a null
+superclass prototype remain distinct.
+
+The implicit constructor follows its current internal prototype and forwards the
+original arguments and `newTarget` through the chain. The eventual base constructor
+allocates the receiver using `newTarget.prototype`, initializes its fields, and runs
+its body. Opaque bodies still receive the actual callee; body fallback refuses
+`new.target` because the world protocol does not carry it. Opaque/host superclass
+capabilities not represented by the model end `unknown`.
+
+Handwritten cases cover chains, both prototype links, constructor-prototype mutation,
+invalid heritage/prototypes, null heritage, TDZ, returned objects, exceptions,
+invocation restrictions, and opaque base bodies. The separate `corejs_inheritance_differential_test` (`--inheritance-only`) runs
+these cases and the generated `inheritance` family, executing a default-constructor
+chain for each of the same 12 seeds. Its required reordered split
+moves independent prefix allocations; it does not move the derived declaration.
+
+Derived creation has **no commutation permission yet**. The existing allocation
+rule's replay premise permits own-region object reads and selected lexical-cell
+reads. Reading an existing superclass/prototype requires an additional heap-read
+stability proof; adding only the superclass binding to `readsNow` is insufficient.
+
+The harness writes `progress.log` to Bazel's undeclared outputs, recording Node
+case labels, CoreJS batch boundaries, and module-order/split subprocess boundaries for timeout diagnosis. The inheritance
+suite has its own test budget; the original broad suite retains its seeds and
+split-plan budget.

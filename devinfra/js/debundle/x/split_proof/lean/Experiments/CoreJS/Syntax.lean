@@ -1,7 +1,7 @@
 /-!
 # CoreJS: the syntax of a core fragment of JavaScript
 
-Strict-mode module code: closures, objects with prototypes and accessors, plain classes, exceptions.
+Strict-mode module code: closures, objects with prototypes and accessors, plain/default-derived classes, exceptions.
 `experiments/model/to_core.mjs` produces these trees from acorn's ESTree and refuses the rest of the language.
 What the front end rewrites, so that one construct here has one rule:
 
@@ -75,6 +75,8 @@ inductive Expr where
   | arr (elems : List Expr)
   /-- `class name { … }`; `self` when the body sees the name. -/
   | cls (name : String) (self : Bool) (ctor : Func) (members : List ClassMember)
+  /-- A derived class with its implicit forwarding constructor and no fields. -/
+  | derived (name : String) (self : Bool) (parent : Expr) (members : List ClassMember)
   | get (o k : Expr)
   /-- `k in o`. -/
   | hasProp (k o : Expr)
@@ -252,6 +254,7 @@ def Expr.free : Expr → List Name
   | .obj props => freeProps props
   | .arr elems => freeExprs elems
   | .cls name self ctor members => (ctor.free ++ freeMembers members).filter fun x => !(self && x == name)
+  | .derived name self parent members => (parent.free ++ freeMembers members).filter fun x => !(self && x == name)
   | .get o k => o.free ++ k.free
   | .hasProp k o => k.free ++ o.free
   | .delete o k => o.free ++ k.free
