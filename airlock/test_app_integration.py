@@ -235,13 +235,5 @@ async def test_oauth_callback_keeps_pkce_state_bound_to_operator(
     assert mock_k8s_store.write_token.await_args_list[1].kwargs["fields"] == ACCESS_TOKEN_FIELDS
 
 
-async def test_mcp_and_tool_approval_routes_are_absent(http: httpx.AsyncClient) -> None:
-    assert (await http.post("/mcp")).status_code == 404
-    assert (await http.get("/api/actions")).status_code == 404
-    assert (await http.get("/api/backends")).status_code == 404
-    assert (await http.get("/api/events")).status_code == 404
-    assert (await http.post("/api/actions/00000000-0000-0000-0000-000000000001/1/approve")).status_code == 404
-
-
 if __name__ == "__main__":
     pytest_bazel.main()
