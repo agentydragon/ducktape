@@ -19,19 +19,23 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-REGISTRY = "git.allegedly.works"
-TAG = re.compile(r"devel-[0-9]{14}-[0-9a-f]{7}")
+_REGISTRY_PREFIX = re.escape("git.allegedly.works/")
+_DATED_TAG_SUFFIX = r"[0-9]{14}-[0-9a-f]{7}"
+_DIGEST = r"sha256:[0-9a-f]{64}"
+TAG = re.compile("devel-" + _DATED_TAG_SUFFIX)
 SHAPES = (
     ("dated-devel", TAG),
-    ("dated-main", re.compile(r"main-[0-9]{14}-[0-9a-f]{7}")),
-    ("pr-merge", re.compile(r"[0-9]+-merge-[0-9]{14}-[0-9a-f]{7}")),
-    ("digest", re.compile(r"sha256:[0-9a-f]{64}")),
+    ("dated-main", re.compile("main-" + _DATED_TAG_SUFFIX)),
+    ("pr-merge", re.compile(r"[0-9]+-merge-" + _DATED_TAG_SUFFIX)),
+    ("digest", re.compile(_DIGEST)),
     ("bare-hash", re.compile(r"[0-9a-f]{7,40}")),
     ("latest", re.compile(r"latest")),
     ("upload-session", re.compile(r"_upload")),
 )
-TOKEN = re.compile(r"devel-[0-9]{14}-[0-9a-f]{7}|sha256:[0-9a-f]{64}")
-REFERENCE = re.compile(re.escape(REGISTRY) + r"/([\w./-]+)[:@]([\w.:-]+)")
+# Git grep -E and log -G use the same ERE-compatible fragments as the scanner.
+TOKEN = re.compile(f"{TAG.pattern}|{_DIGEST}")
+_SOURCE_PATTERN = f"{_REGISTRY_PREFIX}|{TOKEN.pattern}"
+REFERENCE = re.compile(_REGISTRY_PREFIX + r"([\w./-]+)[:@]([\w.:-]+)")
 WORKLOADS = (
     "pods,deployments,statefulsets,daemonsets,replicasets,replicationcontrollers,"
     "jobs,cronjobs,podtemplates,sandboxtemplates.agentplane.allegedly.works,"
@@ -81,9 +85,8 @@ def scan_repo(spec: str, rollback_days: int, protection: Protection) -> dict[str
     repo = str(Path(path).resolve())
     ref = ref if separator else "HEAD"
     sha = run(["git", "-C", repo, "rev-parse", "--verify", f"{ref}^{{commit}}"]).strip()
-    pattern = r"git[.]allegedly[.]works/|devel-[0-9]{14}-[0-9a-f]{7}|sha256:[0-9a-f]{64}"
     result = subprocess.run(
-        ["git", "-C", repo, "grep", "-n", "-I", "-E", pattern, sha, "--", "."],
+        ["git", "-C", repo, "grep", "-n", "-I", "-E", _SOURCE_PATTERN, sha, "--", "."],
         capture_output=True,
         text=True,
         check=False,
@@ -108,7 +111,7 @@ def scan_repo(spec: str, rollback_days: int, protection: Protection) -> dict[str
                 "--unified=0",
                 "-p",
                 "-G",
-                pattern,
+                _SOURCE_PATTERN,
                 "--",
                 ".",
             ],

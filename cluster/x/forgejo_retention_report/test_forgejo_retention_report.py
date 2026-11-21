@@ -1,4 +1,6 @@
+import subprocess
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 import pytest_bazel
@@ -8,6 +10,7 @@ from cluster.x.forgejo_retention_report.forgejo_retention_report import (
     classify_shape,
     make_report,
     markdown,
+    scan_repo,
 )
 
 NOW = datetime(2026, 11, 8, tzinfo=UTC)
@@ -30,6 +33,26 @@ DIGEST = "sha256:" + "a" * 64
 )
 def test_classify_shape(version: str, shape: str) -> None:
     assert classify_shape(version) == shape
+
+
+def test_git_scan_protects_committed_and_rolled_back_references(tmp_path: Path) -> None:
+    git = ["git", "-C", str(tmp_path), "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test"]
+    subprocess.run([*git, "init", "-q"], check=True)
+    subprocess.run([*git, "remote", "add", "origin", "https://git.example.test/fixtures/repo.git"], check=True)
+    pins = tmp_path / "pins.yaml"
+    pins.write_text(f"digest: {DIGEST}\n")
+    subprocess.run([*git, "add", pins.name], check=True)
+    subprocess.run([*git, "commit", "-qm", "initial digest"], check=True)
+    tag = "devel-20260102000000-1234567"
+    pins.write_text(f"newTag: {tag}\nimage: git.allegedly.works/fixture/image:stable\n")
+    subprocess.run([*git, "commit", "-qam", "replace digest"], check=True)
+
+    protection = Protection()
+    source = scan_repo(str(tmp_path), rollback_days=1, protection=protection)
+    revision = source["revision"][:12]
+    assert f"git:{tmp_path.name}:{revision}:pins.yaml:1" in protection.tokens[tag]
+    assert f"git:{tmp_path.name}:{revision}:pins.yaml:2" in protection.references["fixture/image:stable"]
+    assert protection.tokens[DIGEST] == {f"rollback:{tmp_path.name}:{revision}:1d"}
 
 
 def _version(version_id: int, owner: str, name: str, version: str, *, internal: bool = False) -> dict:
