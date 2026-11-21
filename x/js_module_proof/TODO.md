@@ -88,7 +88,8 @@ cover only part of the grammar and split space described below.
       addition updates, and numeric functions with parameters, `let` or `const` locals, local
       assignments, conditional updates, bounded loops, `try`/`catch`/`finally` with numeric throws and restricted catch bindings,
       and short-circuit values.
-      A used catch binding currently requires numeric local updates followed by
+      A used catch binding currently requires restricted numeric local updates
+      (including `++`) followed by
       an identifier, numeric literal, or bounded addition/multiplication throw;
       extend this conservatively.
       The generator and an axiom-free acceptance certificate cover these cases,
@@ -100,8 +101,8 @@ cover only part of the grammar and split space described below.
       numeric expressions have Node-reproduced Lean counterexamples, including
       initialization observations. Witness lowering alpha-renames locals to
       preserve their identities when redirected module bindings share a spelling.
-      A loop-local name may shadow an imported name during generation, but the
-      accepted-case comparison can still return `unknown` for this alpha-renaming;
+      A loop-local or catch-bound name may shadow an imported name during
+      generation, but the accepted-case comparison can still return `unknown` for this alpha-renaming;
       prove a suitable correspondence before accepting it.
       Witness lowering follows actual callee bodies in their own module scope,
       including changed callees with extra arguments or unused missing parameters;

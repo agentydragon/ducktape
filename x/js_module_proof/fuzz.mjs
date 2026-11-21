@@ -1055,6 +1055,8 @@ export function makeLocalAliasCase(seed, index) {
   const withThrow = withTry && index >= 1045;
   const withCatch = withThrow && index >= 1141;
   const withCatchBinding = withCatch && index >= 1237;
+  const catchShadow = withCatchBinding && index >= 1813;
+  const catchName = catchShadow ? "numericLeft" : "caught";
   const withLocal = numericBindings.length > 0 && ((index >= 61 && index % 48 === 13) || withTry);
   const aliasLoop = numericBindings.length > 0 && index >= 781 && index % 96 === 13;
   const aliasBranch = numericBindings.length > 0 && index >= 397 && index % 96 === 13;
@@ -1109,7 +1111,7 @@ export function makeLocalAliasCase(seed, index) {
                 handler: withCatch
                   ? {
                       type: "CatchClause",
-                      param: withCatchBinding ? id("caught") : null,
+                      param: withCatchBinding ? id(catchName) : null,
                       body: {
                         type: "BlockStatement",
                         body: [
@@ -1118,7 +1120,7 @@ export function makeLocalAliasCase(seed, index) {
                                 expr({
                                   type: "AssignmentExpression",
                                   operator: "+=",
-                                  left: id("caught"),
+                                  left: id(catchName),
                                   right: id("numericRight"),
                                 }),
                               ]
@@ -1127,7 +1129,7 @@ export function makeLocalAliasCase(seed, index) {
                             type: "AssignmentExpression",
                             operator: "+=",
                             left: id("offset"),
-                            right: id(withCatchBinding ? "caught" : "numericLeft"),
+                            right: id(withCatchBinding ? catchName : "numericLeft"),
                           }),
                         ],
                       },
@@ -1347,6 +1349,7 @@ export function makeLocalAliasCase(seed, index) {
     withThrow,
     withCatch,
     withCatchBinding,
+    catchShadow,
     aliasBranch,
     aliasLoop,
     loopShadow,
@@ -2449,6 +2452,9 @@ export async function runFuzz({
     aliasBoundCatchCases: 0,
     aliasBoundCatchComparedCases: 0,
     aliasBoundCatchProvedCases: 0,
+    catchShadowCases: 0,
+    catchShadowComparedCases: 0,
+    catchShadowProvedCases: 0,
     loopShadowCases: 0,
     loopShadowComparedCases: 0,
     loopShadowUnknownCases: 0,
@@ -2703,6 +2709,7 @@ export async function runFuzz({
       if (input.aliasLoop) summary.aliasLoopCases++;
       if (input.withTry) summary.aliasTryCases++;
       if (input.withCatchBinding) summary.aliasBoundCatchCases++;
+      if (input.catchShadow) summary.catchShadowCases++;
       if (input.loopShadow) summary.loopShadowCases++;
       if (modules.some((module) => module.renameReexports)) summary.renamedReexportRequestedCases++;
       const importCount = modules.reduce((count, module) => count + module.imports.length, 0);
@@ -2918,6 +2925,7 @@ export async function runFuzz({
       if (input.aliasLoop) summary.aliasLoopComparedCases++;
       if (input.withTry) summary.aliasTryComparedCases++;
       if (input.withCatchBinding) summary.aliasBoundCatchComparedCases++;
+      if (input.catchShadow) summary.catchShadowComparedCases++;
       if (input.loopShadow) summary.loopShadowComparedCases++;
       if (input.grammar === "alias" && input.numericArguments.length) {
         summary.parameterizedAliasComparedCases++;
@@ -3018,6 +3026,7 @@ export async function runFuzz({
           if (input.aliasLoop) summary.aliasLoopProvedCases++;
           if (input.withTry) summary.aliasTryProvedCases++;
           if (input.withCatchBinding) summary.aliasBoundCatchProvedCases++;
+          if (input.catchShadow) summary.catchShadowProvedCases++;
           if (input.grammar === "alias" && input.numericArguments.length) summary.parameterizedAliasProvedCases++;
           if (input.grammar === "alias" && input.numericArguments.length > 1)
             summary.multipleParameterAliasProvedCases++;

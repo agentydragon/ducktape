@@ -538,6 +538,25 @@ if (shards === 4 && shard === 3) {
   assert.equal(unchangedPriorUpdate.localImportAliasProvedCases, 1);
   assert.equal(unchangedPriorUpdate.equal, 1);
 }
+if (shards === 4 && shard === 2) {
+  const shadowOptions = {
+    seed: 773,
+    start: 1813,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "alias",
+    validateEvery: 1,
+  };
+  assert.match(makeLocalAliasCase(773, 1813).source, /catch \(numericLeft\)/);
+  const changedCatchShadow = await runFuzz(shadowOptions);
+  assert.equal(changedCatchShadow.catchShadowComparedCases, 1);
+  assert.equal(changedCatchShadow.mutatedDifferent, 1);
+  assert.equal(changedCatchShadow.mutatedVerdicts.unsafe, 1);
+  const unchangedCatchShadow = await runFuzz({ ...shadowOptions, mutationMode: "disabled" });
+  assert.equal(unchangedCatchShadow.catchShadowComparedCases, 1);
+  assert.equal(unchangedCatchShadow.equal, 1);
+  assert.equal(unchangedCatchShadow.proved + unchangedCatchShadow.unknown, 1);
+}
 if (shards === 4 && shard === 3) {
   const changedTerminal = await runFuzz({
     seed: 773,

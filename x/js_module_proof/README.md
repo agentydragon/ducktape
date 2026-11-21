@@ -331,7 +331,9 @@ mutations cover binding initializers, function bodies, recorded effects,
 exports and import order, with separate counts for each kind. Coverage records
 renamed and multiply exported declarations, requested import aliases, and how
 many generated import aliases, top-level `var`, and local `var` cases were
-compared and proved.
+compared and proved. Separate generated, compared, and proved counters cover
+exception cases with used catch bindings and catch bindings that shadow an
+imported name.
 Some trials generate supported parameterized captured closures or counter
 closures and check safe and unsafe
 splits against Node and Lean. Other trials generate programs with nested,
