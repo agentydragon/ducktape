@@ -1,10 +1,11 @@
 import Experiments.CoreJS.Eval
+import Experiments.CoreJS.Fragment
 
 /-!
 # CoreJS: an expression that only allocates changes nothing that existed
 
-The first footprint rule proved against the model. `Expr.allocOnly` is the shape: literals, names, functions, object
-literals with named data properties, array literals. `allocOnly_extends`: however such an expression ends, every
+The first footprint rule proved against the model. `Expr.allocOnly` ([`Fragment.lean`](Fragment.lean)) is the shape:
+literals, names, functions, object literals with named data properties, array literals. `allocOnly_extends`: however such an expression ends, every
 object and every binding that existed before is unchanged, and nothing is printed. What it made is new.
 -/
 
@@ -331,23 +332,6 @@ theorem defineOwn_keeps (a : Addr) (k : String) (d : Desc) {base s : State W} (h
 
 /-! ## The shape, and the theorem -/
 
-mutual
-/-- An expression that only allocates: a literal, a name, a function, an object literal of named data properties or an array literal of such expressions. -/
-def Expr.allocOnly : Expr → Bool
-  | .undef | .null | .bool _ | .num _ | .str _ | .var _ | .host _ | .this | .func _ => true
-  | .obj props => allocOnlyProps props
-  | .arr elems => allocOnlyAll elems
-  | _ => false
-
-def allocOnlyAll : List Expr → Bool
-  | [] => true
-  | e :: es => e.allocOnly && allocOnlyAll es
-
-def allocOnlyProps : List PropDef → Bool
-  | [] => true
-  | .init (.str _) v :: ps => v.allocOnly && allocOnlyProps ps
-  | _ :: _ => false
-end
 
 theorem allocOnly_keeps (n : Nat) :
     (∀ env e (base s : State W), e.allocOnly = true → Extends base s → (evalExpr n env e s).Keeps base) ∧
@@ -506,44 +490,6 @@ theorem decl_allocOnly {e : Expr} (h : e.allocOnly = true) (fuel : Nat) (env : E
     all_goals
       refine keeps_bind_but (allocOnly_extends h n env s) fun v s1 hb1 => ?_
       exact keepsBut_bind_inert (initVar_keepsBut env x v hb1) fun _ => inert_pure _
-
-/-! ## Two such declarations: the statement, not proved
-
-`Extends` says what one unit leaves alone. That two units commute needs one more fact, that what an expression of this
-shape computes depends only on the bindings it reads, and then the two writes and the two sets of new objects have to
-be exchanged. The second step is where the address of an allocation matters. A unit allocates in its own region, so
-its new objects get the same addresses whichever unit ran first, and the claim below is an equality of states. With
-one shared counter it would hold only up to a renaming of addresses, and "the same state" would need a definition.
--/
-
-mutual
-/-- The names an expression that only allocates reads when it runs. A function reads none: it keeps bindings, not values. -/
-def Expr.readsNow : Expr → List Name
-  | .var x => [x]
-  | .obj props => readsNowProps props
-  | .arr elems => readsNowAll elems
-  | _ => []
-
-def readsNowAll : List Expr → List Name
-  | [] => []
-  | e :: es => e.readsNow ++ readsNowAll es
-
-def readsNowProps : List PropDef → List Name
-  | [] => []
-  | .init _ v :: ps => v.readsNow ++ readsNowProps ps
-  | _ :: ps => readsNowProps ps
-end
-
-/-- The statements with identities `i` and `j` declare different bindings by expressions that only allocate, and
-neither reads the binding the other declares. Then if `i` then `j` ends well, `j` then `i` ends well in the same
-state. -/
-def AllocOnlyUnitsCommute : Prop :=
-  ∀ (fuel : Nat) (env : Env) (i j : Nat) (ki kj : DeclKind) (x y : Name) (e e' : Expr) (s s' : State W), i ≠ j →
-    e.allocOnly = true → e'.allocOnly = true → env.vars.lookup x ≠ env.vars.lookup y →
-    (∀ z ∈ e.readsNow, env.vars.lookup z ≠ env.vars.lookup y) →
-    (∀ z ∈ e'.readsNow, env.vars.lookup z ≠ env.vars.lookup x) →
-    (runUnit fuel env i (.decl ki x e) >>= fun _ => runUnit fuel env j (.decl kj y e')) s = .ok .normal s' →
-    (runUnit fuel env j (.decl kj y e') >>= fun _ => runUnit fuel env i (.decl ki x e)) s = .ok .normal s'
 
 #print axioms allocOnly_extends
 #print axioms decl_allocOnly

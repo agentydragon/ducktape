@@ -165,6 +165,7 @@ lean_binary(
         exclude = [
             "Experiments/CoreJS/Frame.lean",
             "Experiments/CoreJS/Fuel.lean",
+            "Experiments/CoreJS/Move.lean",
             "Experiments/CoreJS/Scope.lean",
             "Experiments/CoreJS/Split.lean",
         ],
@@ -178,9 +179,12 @@ lean_axiom_test(
     srcs = [
         "EsmSplit/Bundle.lean",
         "EsmSplit/Plan.lean",
+        "EsmSplit/Semantics.lean",
         "Experiments/CoreJS/Eval.lean",
+        "Experiments/CoreJS/Fragment.lean",
         "Experiments/CoreJS/Frame.lean",
         "Experiments/CoreJS/Fuel.lean",
+        "Experiments/CoreJS/Move.lean",
         "Experiments/CoreJS/Number.lean",
         "Experiments/CoreJS/Scope.lean",
         "Experiments/CoreJS/Split.lean",
@@ -190,6 +194,7 @@ lean_axiom_test(
     imports = [
         "Experiments.CoreJS.Frame",
         "Experiments.CoreJS.Fuel",
+        "Experiments.CoreJS.Move",
         "Experiments.CoreJS.Scope",
         "Experiments.CoreJS.Split",
     ],
@@ -204,7 +209,11 @@ lean_axiom_test(
         "CoreJS.order_kept_preserves",
         "CoreJS.split_holds_statements",
         "CoreJS.split_scopes_agree",
+        "CoreJS.split_units_agree",
         "CoreJS.valid_order_kept_preserves",
+        "CoreJS.local_units_commute",
+        "CoreJS.moves_preserve_run",
+        "CoreJS.moves_preserve",
     ],
 )
 
