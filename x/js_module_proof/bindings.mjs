@@ -19,10 +19,13 @@ const primitiveLiteral = (node) =>
   !node.regex &&
   !node.bigint &&
   (node.value === null || ["string", "boolean", "number"].includes(typeof node.value));
-const supportedText = (value) =>
-  typeof value === "string" && value.isWellFormed() && !/[^\p{L}\p{M}\p{N}\p{P}\p{S}\p{Zs}]/u.test(value);
+const supportedText = (value) => typeof value === "string" && value.isWellFormed();
 const list = (values) => `[${values.join(", ")}]`;
 const str = JSON.stringify;
+const leanText = (value) =>
+  !/[^\p{L}\p{M}\p{N}\p{P}\p{S}\p{Zs}]/u.test(value)
+    ? str(value)
+    : `(String.ofList ${list(Array.from(value, (character) => `Char.ofNat ${character.codePointAt(0)}`))})`;
 
 // Conservative lexical analysis for generating candidate modules before the
 // corresponding execution semantics are supported by the proof checker. Each
@@ -1493,7 +1496,7 @@ function leanStatement(item) {
     case "discardedLiteral":
       return ".discardedLiteral";
     case "recordText":
-      return `.recordText ${str(item.value)}`;
+      return `.recordText ${leanText(item.value)}`;
     case "recordPrimitive":
       return `.recordPrimitive (${item.value === null ? ".nullValue" : typeof item.value === "boolean" ? `.boolean ${item.value}` : `.number ${item.value}`})`;
     case "recordUndefined":
@@ -1959,7 +1962,7 @@ theorem binding_export_difference :
               : typeof value === "boolean"
                 ? `.boolean ${value}`
                 : typeof value === "string"
-                  ? `.text ${str(value)}`
+                  ? `.text ${leanText(value)}`
                   : `.number ${value}`
         )
       );

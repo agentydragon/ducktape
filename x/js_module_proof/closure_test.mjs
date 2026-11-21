@@ -32,7 +32,7 @@ if (shard === 10) {
   const textSpec = join(textRoot, "spec.json");
   const safeOut = join(textRoot, "safe");
   const unsafeOut = join(textRoot, "unsafe");
-  const lastText = 'omega "quoted" \\ café 🙂';
+  const lastText = 'omega "quoted" \\ café 🙂\n\t\0';
   await writeFile(
     textSource,
     `globalThis.record("alpha");\nglobalThis.record(true);\nglobalThis.record(null);\nglobalThis.record(7);\nglobalThis.record(void 0);\nlet value = 4;\nglobalThis.record(${JSON.stringify(lastText)});\nfunction read() { return value; }\nexport { read };\n`
@@ -81,8 +81,6 @@ if (shard === 10) {
     JSON.stringify({ kind: "bindings", entry: "entry.mjs", modules: { "entry.mjs": { imports: [], statements: [0] } } })
   );
   assert.equal(cli("generate", textSource, textSpec, join(textRoot, "unsupported")).result, "unknown");
-  await writeFile(textSource, `globalThis.record(${JSON.stringify("newline\n")});\n`);
-  assert.equal(cli("generate", textSource, textSpec, join(textRoot, "control")).result, "unknown");
 }
 if (shard === 6) {
   const directiveRoot = await mkdtemp(join(process.env.TEST_TMPDIR, "directive-proof-"));
