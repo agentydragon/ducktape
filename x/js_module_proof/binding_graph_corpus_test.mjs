@@ -57,7 +57,10 @@ for (let i = 0; i < 36; i++) {
   const amount = `amount${i}`;
   const bump = `bump${i}`;
   const current = `current${i}`;
-  const initial = variant === 0 ? Number.MAX_SAFE_INTEGER - 8 : variant;
+  // Unsafe witnesses need a conservative bound for all intermediate values.
+  // Keep the near-limit input for the other graph patterns, but use a small
+  // value when this case specifically requires an unsafe certificate.
+  const initial = variant === 0 ? (mode === "unsafe" ? 1 : Number.MAX_SAFE_INTEGER - 8) : variant;
   const increment = (variant % 2) + 1;
   const declaration = `let ${cell} = ${initial};`;
   const other = `let ${amount} = ${increment};`;
@@ -150,6 +153,19 @@ for (let i = 0; i < 36; i++) {
   if (result.result === "unsafe") {
     const calls = result.calls ?? [];
     assert.notDeepEqual(execute(sourcePath, calls), execute(join(output, "entry.mjs"), calls), mode);
+  }
+  if (mode === "unsafe" && variant === 0) {
+    const nearLimit = `let ${cell} = ${Number.MAX_SAFE_INTEGER - 8};`;
+    const nearSource = join(root, "near-limit.mjs");
+    const nearOutput = join(root, "near-limit-output");
+    await mkdir(nearOutput);
+    await writeFile(nearSource, (await readFile(sourcePath, "utf8")).replace(declaration, nearLimit));
+    for (const [name, contents] of Object.entries(files))
+      await writeFile(join(nearOutput, name), contents.replace(declaration, nearLimit));
+    const nearResult = cli("validate", nearSource, specPath, nearOutput);
+    assert.equal(nearResult.result, "unknown", JSON.stringify(nearResult));
+    assert.match(nearResult.detail, /numeric bounds/);
+    assert.notDeepEqual(execute(nearSource, []).events, execute(join(nearOutput, "entry.mjs"), []).events);
   }
 
   const calls = [current, bump, current, bump, current];

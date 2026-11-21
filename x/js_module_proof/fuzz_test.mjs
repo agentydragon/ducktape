@@ -145,7 +145,7 @@ if (shards === 4 && shard === 2) {
 }
 if (shards === 4 && shard >= 1) {
   const safeCases = { 1: [], 2: [379, 443, 699], 3: [507, 571, 635] };
-  const redirectedCases = { 1: [59, 123, 187], 2: [251, 315, 379, 699], 3: [443, 507, 571, 635] };
+  const redirectedCases = { 1: [59, 123, 187], 2: [251, 315, 379, 699], 3: [443, 507, 571, 635, 763] };
   for (const start of safeCases[shard]) {
     const unchangedCall = await runFuzz({
       seed: 51981,
@@ -171,8 +171,18 @@ if (shards === 4 && shard >= 1) {
     });
     assert.equal(redirectedRelay.mutationKinds.renamedReexport, 1);
     assert.equal(redirectedRelay.mutatedDifferent, 1);
-    if (start === 571) assert.equal(redirectedRelay.mutatedVerdicts.unknown, 1);
+    if (start === 571 || start === 763) assert.equal(redirectedRelay.mutatedVerdicts.unknown, 1);
     else assert.equal(redirectedRelay.mutatedVerdicts.unsafe, 1);
+    if (start === 763) {
+      assert.equal(redirectedRelay.overflowIntermediateCases, 1);
+      assert.match(redirectedRelay.unknownCases[0].detail, /numeric bounds/);
+      const difference = redirectedRelay.unexplainedDifferences[0];
+      const observed = JSON.parse(
+        await readFile(join(process.env.TEST_TMPDIR, difference.artifactPath, "node.json"), "utf8")
+      );
+      assert.deepEqual(observed.before.events, [1]);
+      assert.deepEqual(observed.after.events, [2]);
+    }
     if (start === 123 || start === 379 || start === 443 || start === 507 || start === 635) {
       assert.deepEqual(redirectedRelay.certifiedWitnesses[0].calls, [{ name: "fuzzRelayRead", args: [0] }]);
       await access(join(process.env.TEST_TMPDIR, redirectedRelay.certifiedWitnesses[0].artifactPath, "verdict.json"));

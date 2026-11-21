@@ -1249,6 +1249,7 @@ export function makeComposedCase(seed, index) {
     );
   }
   const crossModuleReader = index % 512 === 379;
+  const overflowIntermediate = index % 1024 === 763;
   const missingArgument = index % 1024 === 571 || index % 1024 === 635;
   const unusedMissingArgument = index % 1024 === 635;
   const redirectedCallee = index % 512 === 443 || index % 512 === 507 || missingArgument;
@@ -1301,8 +1302,16 @@ export function makeComposedCase(seed, index) {
     functionNames.unshift("fuzzRelayRead");
     const initExpressionReader = index % 512 === 315;
     const expressionReader = (index % 128 === 123 && index % 256 !== 251) || redirectedCallee || index % 1024 === 699;
-    const body =
-      crossModuleReader || redirectedCallee
+    const body = overflowIntermediate
+      ? [
+          returnNode({
+            type: "BinaryExpression",
+            operator: "-",
+            left: { type: "BinaryExpression", operator: "+", left: id("global"), right: literal(2) },
+            right: id("global"),
+          }),
+        ]
+      : crossModuleReader || redirectedCallee
         ? [returnNode(call(id("fuzzRelayHelper"), [id("parameter")]))]
         : initExpressionReader
           ? [returnNode({ type: "BinaryExpression", operator: "+", left: id("global"), right: literal(1) })]
@@ -1356,7 +1365,15 @@ export function makeComposedCase(seed, index) {
     body: [
       ...prefix,
       ...globals.map((name, i) =>
-        variable(name, index % 64 === 59 && i < 2 ? i + 1 : rand(4), (index + i) % 7 === 0 ? "var" : "let")
+        variable(
+          name,
+          overflowIntermediate && i < 2
+            ? Number.MAX_SAFE_INTEGER - 2 * i
+            : index % 64 === 59 && i < 2
+              ? i + 1
+              : rand(4),
+          (index + i) % 7 === 0 ? "var" : "let"
+        )
       ),
       ...(observeRelayAtInit
         ? [
@@ -1390,6 +1407,7 @@ export function makeComposedCase(seed, index) {
     source: print(ast),
     grammar: "composed",
     redirectedCallee,
+    overflowIntermediate,
     throwVariant,
     hasDiscardedLiteral,
     hasTextObservation: hasDiscardedLiteral,
@@ -1942,6 +1960,7 @@ export async function runFuzz({
     astNodeCases: {},
     moduleCountCases: {},
     importCountCases: {},
+    overflowIntermediateCases: 0,
     renamedExportCases: 0,
     multiplePublicNameCases: 0,
     importAliasRequestedCases: 0,
@@ -2117,6 +2136,7 @@ export async function runFuzz({
         }
       };
       visit(input.ast);
+      if (input.overflowIntermediate) summary.overflowIntermediateCases++;
       if (hasVar) summary.varCases++;
       if (input.hasDiscardedLiteral) summary.discardedLiteralCases++;
       if (input.hasTextObservation) summary.textObservationCases++;

@@ -1978,45 +1978,54 @@ theorem binding_export_difference :
   // exponentially large BigInt while checking whether it exceeds the limit.
   const witnessLimit = BigInt(Number.MAX_SAFE_INTEGER);
   const capWitnessBound = (value) => (value > witnessLimit ? witnessLimit + 1n : value);
+  let witnessCallCeiling = null;
   const expressionBound = (expression, bound) => {
     if (expression.kind === "literal") return capWitnessBound(BigInt(expression.value));
     if (expression.kind === "name") return bound;
-    if (expression.kind === "add")
-      return capWitnessBound(expressionBound(expression.left, bound) + expressionBound(expression.right, bound));
-    if (expression.kind === "equal" || expression.kind === "less" || expression.kind === "greater") {
+    // A nested call can mutate a local observed by a later operand. Propagate
+    // the bound from left to right, just as JavaScript evaluates the operands.
+    const operands = () => {
       const left = expressionBound(expression.left, bound);
-      const right = expressionBound(expression.right, bound);
+      const right = expressionBound(expression.right, left > bound ? left : bound);
+      return [left, right];
+    };
+    if (expression.kind === "add") {
+      const [left, right] = operands();
+      return capWitnessBound(left + right);
+    }
+    if (expression.kind === "equal" || expression.kind === "less" || expression.kind === "greater") {
+      const [left, right] = operands();
       return [1n, left, right].reduce((a, b) => (a > b ? a : b));
     }
     if (expression.kind === "multiply") {
-      const left = expressionBound(expression.left, bound);
-      const right = expressionBound(expression.right, bound);
+      const [left, right] = operands();
       return capWitnessBound([left, right, left * right].reduce((a, b) => (a > b ? a : b)));
     }
     if (["unsignedShift", "shiftLeft", "shiftRight"].includes(expression.kind)) {
-      const left = expressionBound(expression.left, bound);
-      const right = expressionBound(expression.right, bound);
+      const [left, right] = operands();
       return [left, right, 4294967295n].reduce((a, b) => (a > b ? a : b));
     }
     if (expression.kind === "bitOr" || expression.kind === "bitXor") {
-      const left = expressionBound(expression.left, bound);
-      const right = expressionBound(expression.right, bound);
+      const [left, right] = operands();
       return capWitnessBound(left + right);
     }
     if (["remainder", "divide", "bitAnd"].includes(expression.kind)) {
-      const left = expressionBound(expression.left, bound);
-      const right = expressionBound(expression.right, bound);
+      const [left, right] = operands();
       return left > right ? left : right;
     }
     if (expression.kind === "subtract") {
-      const left = expressionBound(expression.left, bound);
-      const right = expressionBound(expression.right, bound);
+      const [left, right] = operands();
       return left > right ? left : right;
     }
-    if (expression.kind === "conditional" || expression.kind === "guard")
-      return [expression.test, expression.consequent, expression.alternative]
-        .map((part) => expressionBound(part, bound))
-        .reduce((a, b) => (a > b ? a : b));
+    if (expression.kind === "conditional" || expression.kind === "guard") {
+      const test = expressionBound(expression.test, bound);
+      const branchBound = test > bound ? test : bound;
+      return [
+        test,
+        expressionBound(expression.consequent, branchBound),
+        expressionBound(expression.alternative, branchBound),
+      ].reduce((a, b) => (a > b ? a : b));
+    }
     if (expression.kind === "local") {
       const initial = expressionBound(expression.initial, bound);
       const body = expressionBound(expression.body, initial > bound ? initial : bound);
@@ -2045,8 +2054,14 @@ theorem binding_export_difference :
     if (expression.kind === "raise") return expressionBound(expression.value, bound);
     if (expression.kind === "raiseConstant") return 0n;
     if (expression.kind === "invoke" || expression.kind === "invokeLocal") {
-      const args = expression.arguments.map((argument) => expressionBound(argument, bound));
-      const callBound = args.reduce((largest, value) => (value > largest ? value : largest), bound);
+      const callBound = expression.arguments.reduce((largest, argument) => {
+        const value = expressionBound(argument, largest);
+        return value > largest ? value : largest;
+      }, bound);
+      // A redirected call can run a different body than the one embedded by
+      // the frontend. Each possible body is checked at the witness ceiling;
+      // refuse calls whose arguments or captured locals can exceed it.
+      if (witnessCallCeiling !== null && callBound > witnessCallCeiling) return witnessLimit + 1n;
       const body = expressionBound(expression.body, callBound);
       return body > callBound ? body : callBound;
     }
@@ -2071,31 +2086,40 @@ theorem binding_export_difference :
       ...programs.map((items) => items.filter((item) => ["call", "recordCall"].includes(item.kind)).length)
     );
     const limit = witnessLimit;
-    let bound = BigInt(maximum) << BigInt(initialCalls + calls.length + 1);
+    const growthSteps = initialCalls + calls.length + 1;
+    // maximum is at least 2, so this is already beyond the safe range. Avoid
+    // allocating a huge BigInt for a program with many initialization calls.
+    if (growthSteps >= 53) return false;
+    let bound = BigInt(maximum) << BigInt(growthSteps);
     if (bound > limit) return false;
-    const factories = [];
-    for (const item of programs.flat()) {
-      if (item.kind === "expressionFunction" && expressionBound(item.expression, bound) > limit) return false;
-      if (item.kind === "capturedFactory") {
-        let localBound = bound;
-        for (const local of item.locals) {
-          const initial = expressionBound(local.initial, localBound);
-          if (initial > localBound) localBound = initial;
-          if (localBound > limit) return false;
+    witnessCallCeiling = bound;
+    try {
+      const factories = [];
+      for (const item of programs.flat()) {
+        if (item.kind === "expressionFunction" && expressionBound(item.expression, bound) > limit) return false;
+        if (item.kind === "capturedFactory") {
+          let localBound = bound;
+          for (const local of item.locals) {
+            const initial = expressionBound(local.initial, localBound);
+            if (initial > localBound) localBound = initial;
+            if (localBound > limit) return false;
+          }
+          factories.push(item.body);
+          if (expressionBound(item.body, localBound) > limit) return false;
+          if (localBound > bound) bound = localBound;
         }
-        factories.push(item.body);
-        if (expressionBound(item.body, localBound) > limit) return false;
-        if (localBound > bound) bound = localBound;
       }
-    }
-    for (let i = 0; i < calls.length; i++) {
-      for (const body of factories) {
-        const next = expressionBound(body, bound);
-        if (next > bound) bound = next;
-        if (bound > limit) return false;
+      for (let i = 0; i < calls.length; i++) {
+        for (const body of factories) {
+          const next = expressionBound(body, bound);
+          if (next > bound) bound = next;
+          if (bound > limit) return false;
+        }
       }
+      return true;
+    } finally {
+      witnessCallCeiling = null;
     }
-    return true;
   };
   const different = `\ntheorem binding_difference : sourceBindingState bindingSource ≠ witnessedOutputState bindingSource bindingModules bindingEntry := by decide\n#print axioms binding_difference\n`;
   let witnessFailure = proof.stdout || proof.stderr;

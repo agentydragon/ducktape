@@ -270,7 +270,9 @@ match, the validator also searches up to 64 sequences of one or two exported
 calls, comparing return prefixes and supported primitive thrown values as well
 as recorded events. Before certifying an unsafe witness, the checker also requires
 conservative numeric bounds for both extracted programs, including initialization
-calls; failure to establish those bounds returns `unknown`. Semantically equivalent
+calls; failure to establish those bounds returns `unknown`. This range analysis is
+implemented in the frontend and is part of the trusted boundary, not a Lean proof.
+Semantically equivalent
 rewrites beyond this AST subset can return `unknown`. Counterexample lowering
 resolves actual imports and public exports, keeps local identities distinct, and
 follows calls with bounded expansion. It can return `unknown` for duplicate

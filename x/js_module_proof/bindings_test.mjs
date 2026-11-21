@@ -339,6 +339,23 @@ if (runSection(0)) {
   assert.deepEqual(redirected.calls, [{ name: "call", args: [0] }]);
   assert.deepEqual(execute(calleeSource, redirected.calls), { events: [], results: [1] });
   assert.deepEqual(execute(join(calleeOut, "entry.mjs"), redirected.calls), { events: [], results: [2] });
+
+  const largeArgumentSource = join(root, "redirected-large-argument-source.mjs");
+  const largeArgumentOut = join(root, "redirected-large-argument-out");
+  await writeFile(
+    largeArgumentSource,
+    `function first(value) { return value; }\nfunction second(value) { return value * 2; }\nfunction call(value) { return first(value + 5000000000000000); }\nexport { call };\n`
+  );
+  assert.equal(cli("generate", largeArgumentSource, calleeSpec, largeArgumentOut).value.result, "generated");
+  const largeRelayPath = join(largeArgumentOut, "relay.mjs");
+  const largeRelay = await readFile(largeRelayPath, "utf8");
+  await writeFile(largeRelayPath, largeRelay.replace("export { first }", "export { second as first }"));
+  const calls = [{ name: "call", args: [0] }];
+  assert.deepEqual(execute(largeArgumentSource, calls), { events: [], results: [5000000000000000] });
+  assert.deepEqual(execute(join(largeArgumentOut, "entry.mjs"), calls), { events: [], results: [10000000000000000] });
+  const largeRedirect = cli("validate", largeArgumentSource, calleeSpec, largeArgumentOut).value;
+  assert.equal(largeRedirect.result, "unknown", JSON.stringify(largeRedirect));
+  assert.match(largeRedirect.detail, /numeric bounds/);
 }
 
 if (runSection(1)) {
@@ -369,6 +386,34 @@ if (runSection(1)) {
   assert.deepEqual(execute(largeSource, []), { events: [1], results: [] });
   assert.deepEqual(execute(join(largeOut, "entry.mjs"), []), { events: [3], results: [] });
   const checked = cli("validate", largeSource, largeSpec, largeOut).value;
+  assert.equal(checked.result, "unknown", JSON.stringify(checked));
+  assert.match(checked.detail, /numeric bounds/);
+}
+
+if (runSection(1)) {
+  const source = join(root, "unsafe-mutating-operand-source.mjs");
+  const spec = join(root, "unsafe-mutating-operand-spec.json");
+  const out = join(root, "unsafe-mutating-operand-out");
+  await writeFile(
+    source,
+    `function compute() { let x = 1; function bump() { x = 5000000000000000; return x; } return (bump() + x) - x; }\nglobalThis.record(compute());\nexport { compute };\n`
+  );
+  await writeFile(
+    spec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: { "entry.mjs": { imports: [], statements: [0, 1] } },
+    })
+  );
+  assert.equal(cli("generate", source, spec, out).value.result, "generated");
+  const output = join(out, "entry.mjs");
+  const text = await readFile(output, "utf8");
+  assert.match(text, /bump\(\) \+ x/);
+  await writeFile(output, text.replace("bump() + x", "bump() + x + 2"));
+  assert.deepEqual(execute(source, []), { events: [5000000000000000], results: [] });
+  assert.deepEqual(execute(output, []), { events: [5000000000000002], results: [] });
+  const checked = cli("validate", source, spec, out).value;
   assert.equal(checked.result, "unknown", JSON.stringify(checked));
   assert.match(checked.detail, /numeric bounds/);
 }
