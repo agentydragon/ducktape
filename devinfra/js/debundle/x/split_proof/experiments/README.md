@@ -365,14 +365,15 @@ debundle does the same job without Lean. Its corpus ([`e2e/cases`](../../../e2e/
 [`debundle_cases/run_cases.mjs`](debundle_cases/run_cases.mjs) translates each spec, runs `lowersplit --force`, runs the original and the emitted entry in Node, and compares.
 Run it with `./run.sh --debundle-cases` (about 10 s). Details, causes and the plan: [`debundle_cases/README.md`](debundle_cases/README.md), [`PLAN.md`](../PLAN.md).
 
-| Outcome                                                                                  | Entries |
-| ---------------------------------------------------------------------------------------- | ------- |
-| both accept, same stdout                                                                 | 69      |
-| both reject (`atomic_conflict` 8, `cycle` 7)                                             | 15      |
-| I reject, debundle accepts (6 would run, 1 does not load)                                | 7       |
-| I accept and the output differs                                                          | 0       |
-| refusal tests (debundle's error text)                                                    | 13      |
-| not run: the adapter cannot translate the spec (selectors, chunks, imports, comma lists) | 103     |
+| Outcome                                                                                    | Entries |
+| ------------------------------------------------------------------------------------------ | ------- |
+| both accept, same stdout                                                                   | 69      |
+| both reject (`atomic_conflict` 8, `cycle` 7)                                               | 15      |
+| I reject, debundle accepts (6 would run, 1 does not load)                                  | 7       |
+| I accept and the output differs                                                            | 0       |
+| refusal tests (debundle's error text)                                                      | 7       |
+| not run: the adapter cannot translate the spec (selectors, chunks, imports, comma lists)   | 103     |
+| refused by `lowersplit`: a direct `eval` or a top-level `await`; debundle rejects them too | 6       |
 
 - **It found two soundness gaps in my front end,** both fixed: a `var` nested in a top-level block (4 entries accepted, then they fail with `ReferenceError` or `SyntaxError`), and an entry export name that collides with a glue export (1 entry accepted, then `SyntaxError`; the glue now exports under a fresh name, and `ExportsUnique` checks it).
 - **14 of the 15 expected rejections fail `OrderOk`,** and 14 of the 15 break when written anyway. Where we disagree, debundle models more: purity (3), repeated `var` (3), and an import for evaluation order (1).

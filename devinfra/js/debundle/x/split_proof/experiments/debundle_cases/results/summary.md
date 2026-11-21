@@ -10,8 +10,8 @@
 | agree-reject      | 0                | 8                                | 7                      | 0                       | 15    |
 | strict-but-runs   | 6                | 0                                | 0                      | 0                       | 6     |
 | strict-and-breaks | 1                | 0                                | 0                      | 0                       | 1     |
-| refusal-test      | 0                | 0                                | 0                      | 13                      | 13    |
-| unsupported       | 77               | 1                                | 2                      | 23                      | 103   |
+| refusal-test      | 0                | 0                                | 0                      | 7                       | 7     |
+| unsupported       | 77               | 1                                | 2                      | 29                      | 109   |
 
 ## What the runs check
 
@@ -30,6 +30,7 @@
 | -------------------------------------------------- | ----- | ---------------- | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | source_matches with syntactic holes                | 26    | 25               | 1                | `emission/decorator_helpers/use_site`, `emission/makes_decorate/kind_constraint/spec`                                                         |
 | several input chunks                               | 12    | 11               | 1                | `emission/catchall_export_consumer/spec`, `emission/cross_chunk_readable_imports/competing_targets/spec`                                      |
+| statement kind the model rejects                   | 10    | 4                | 6                | `admission/direct_eval_in_a_renamed_chunk_is_rejected/spec`, `admission/direct_eval_inside_function_body_is_rejected/spec`                    |
 | source_matches matches no statement                | 8     | 8                | 0                | `emission/cross_ref/delegator/resolved_anchor_order`, `emission/global_selector_assignment/individual/spec`                                   |
 | selector passed_to_call                            | 7     | 3                | 4                | `emission/passed_to_call/ambiguous/spec`, `emission/passed_to_call/argument_index/spec`                                                       |
 | selector member_of_module                          | 6     | 3                | 3                | `emission/member_of_module/ambiguous/spec`, `emission/member_of_module/delegator/spec`                                                        |
@@ -38,7 +39,6 @@
 | selector reads_member                              | 4     | 1                | 3                | `emission/reads_member/ambiguous/spec`, `emission/reads_member/helper/spec`                                                                   |
 | source_matches template is not one statement       | 4     | 4                | 0                | `emission/syntactic_holes/commented_source_range/spec`, `emission/syntactic_holes/exported_declaration_range/spec`                            |
 | statement claimed by two modules                   | 4     | 1                | 3                | `emission/comma_list/destructure_split_across_modules_is_rejected/spec`, `emission/hoisted_var/left_right_ownership/statement_binding_owners` |
-| statement kind the model rejects                   | 4     | 4                | 0                | `emission/chunk_rename_peeled_import/spec`, `emission/chunk_renames/named_imports/spec`                                                       |
 | annotations                                        | 3     | 3                | 0                | `emission/lowering/source_match_annotations/spec`, `emission/makes_decorate/shared_helper/annotation`                                         |
 | anonymous_statements with syntactic holes          | 3     | 3                | 0                | `emission/syntactic_holes/anonymous_statement_hole/spec`, `emission/syntactic_holes/empty_statement_run/spec`                                 |
 | input does not parse as a module                   | 3     | 0                | 3                | `admission/with_block_is_rejected_at_parse/spec`, `emission/duplicate_declaration/function_rejected/spec`                                     |
@@ -65,9 +65,9 @@
 | Area               | Entries | Agree | Strict | Unsound or lenient | Refusal tests | Not run |
 | ------------------ | ------- | ----- | ------ | ------------------ | ------------- | ------- |
 | emission           | 140     | 43    | 3      | 0                  | 5             | 89      |
-| realizability      | 26      | 14    | 1      | 0                  | 4             | 7       |
+| realizability      | 26      | 14    | 1      | 0                  | 1             | 10      |
 | initialization     | 24      | 21    | 2      | 0                  | 0             | 1       |
-| admission          | 11      | 3     | 0      | 0                  | 4             | 4       |
+| admission          | 11      | 3     | 0      | 0                  | 1             | 7       |
 | native_collections | 3       | 3     | 0      | 0                  | 0             | 0       |
 | purity             | 2       | 0     | 0      | 0                  | 0             | 2       |
 | callbacks          | 1       | 0     | 1      | 0                  | 0             | 0       |

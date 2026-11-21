@@ -101,17 +101,30 @@ def isRequest (s : Json) : Bool :=
   Lower.typ s == "ImportDeclaration"
     || (Lower.typ s == "ExportNamedDeclaration" && !Lower.isNull (Lower.fld s "source"))
 
-/-- The statement awaits while its module is evaluated: an `await`, a `for await` or an `await using` outside every
-function. Module evaluation is then no longer one sequence (a module that is imported later can run before the
-awaiting one finishes), which `Plan.visit` does not model. -/
-partial def awaitsAtTopLevel (j : Json) : Bool :=
+/-- Why a statement is outside what the model covers, if it is.
+
+- A top-level `await` (an `await`, a `for await` or an `await using` outside every function): module evaluation is no
+  longer one sequence, since a module that is imported later can run before the awaiting one finishes. `Plan.visit`
+  does not model that.
+- A top-level `using`: its disposal runs when the module ends, which no statement stands for.
+- A direct `eval`, anywhere: the code it runs reaches the bindings around it by their spelling, so a split can part it
+  from a name that no statement mentions. An `eval` that is shadowed or optional is refused with it. -/
+partial def outsideModel (inFn : Bool) (j : Json) : Option String :=
+  let below (inFn : Bool) := (Lower.children j).findSome? (outsideModel inFn)
   match Lower.typ j with
-  | "FunctionDeclaration" | "FunctionExpression" | "ArrowFunctionExpression" => false
-  | "AwaitExpression" => true
-  | "ForOfStatement" => Lower.flag j "await" || (Lower.children j).any awaitsAtTopLevel
+  | "FunctionDeclaration" | "FunctionExpression" | "ArrowFunctionExpression" => below true
+  | "AwaitExpression" => if inFn then below inFn else some "a top-level `await`"
+  | "ForOfStatement" => if Lower.flag j "await" && !inFn then some "a top-level `await`" else below inFn
   | "VariableDeclaration" =>
-    Lower.str (Lower.fld j "kind") == "await using" || (Lower.children j).any awaitsAtTopLevel
-  | _ => (Lower.children j).any awaitsAtTopLevel
+    let kind := Lower.str (Lower.fld j "kind")
+    if kind == "await using" && !inFn then some "a top-level `await`"
+    else if kind == "using" && !inFn then some "a top-level `using`"
+    else below inFn
+  | "CallExpression" =>
+    let callee := Lower.fld j "callee"
+    if Lower.typ callee == "Identifier" && Lower.str (Lower.fld callee "name") == "eval" then some "a direct `eval`"
+    else below inFn
+  | _ => below inFn
 
 /-- The declarations that give a module the names it uses out of one top-level `import` declaration, with the
 original source, attributes and `imported as local` spelling. -/
@@ -191,8 +204,8 @@ def main (args : List String) : IO UInt32 := do
       IO.eprintln "unsupported top-level statement: ExportAllDeclaration"; return 3
     if Lower.typ s == "ImportDeclaration" && Lower.isNull (Lower.fld (Lower.fld s "source") "lit") then
       IO.eprintln "unsupported top-level statement: an ImportDeclaration whose source has no `lit` (not a dump of `dump.mjs`)"; return 3
-    if awaitsAtTopLevel s then
-      IO.eprintln "unsupported: a top-level `await`"; return 3
+    if let some what := outsideModel false s then
+      IO.eprintln s!"unsupported: {what}"; return 3
   let units := Effects.dumpUnits j
   let exported := units.toList.flatMap Lower.exportedBindings
   let fps ← match fpPath? with
