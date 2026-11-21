@@ -145,17 +145,14 @@ terminating a backend, prove it is an orphan on the **current CNPG primary**; se
 <lessons_learned/2026_07_11_tofu_pg_orphaned_session_lock.md> for the state matrix, SQL,
 and safe recovery.
 
-The Kubernetes-backend stale-Lease failure mode is historical. Current PG-backed lock
-diagnosis and recovery are covered by
-<lessons_learned/2026_07_11_tofu_pg_orphaned_session_lock.md>; the March note
-<lessons_learned/2026_03_18_tofu_controller_stale_state_locks.md> preserves the old incident.
+Deleting `lock-tfstate-*` Leases was the recovery for the retired Kubernetes state backend;
+it does not apply to PG state.
 
 ## Secrets & Auth Issues
 
 ### Resource ID Desync After Wiping a Backing Datastore
 
-Generalization of the Authentik-DB-wipe failure mode (see
-<lessons_learned/2026_02_18_authentik_tf_state_lifecycle_coupling.md>): any
+Generalization of the Authentik-DB-wipe failure mode: any
 tofu-controller `Terraform` CR that manages resources inside another stateful
 system (Authentik DB, Forgejo DB, etc.) will go into
 `Unable to read user/object … not found with id N` if that backing system is
@@ -183,10 +180,8 @@ Recovery (PG-backend CRs — current default):
 4. `flux resume kustomization -n flux-system <name>` and watch a fresh
    plan-and-apply.
 
-The Kubernetes-backend secret deletion and Vault-based variants (retired 2026-04-19)
-are historical; don't use those recovery steps. See
-<lessons_learned/2026_02_18_authentik_tf_state_lifecycle_coupling.md> for the original
-incident and historical procedure.
+State loss re-mints `random_password` values: a consumer that persisted the old one at
+init (write-once DB password, bootstrap token) diverges from the new Secret.
 
 ### SOPS Decryption Failure
 
@@ -382,12 +377,9 @@ Rationale lives next to the Jobs themselves — see
 
 ## Removing a CRD Operator (Uninstall Runbook)
 
-Distilled from the Longhorn uninstall incident
-(<lessons_learned/2026_05_13_longhorn_uninstall.md>). "Suspend the Flux resource
-
-- delete some pods by hand" is **not**
-  equivalent to an uninstall. Cluster-scoped admission webhooks make the order
-  matter, and Helm/chart-specific uninstall hooks exist for a reason.
+Distilled from the 2026-05 Longhorn uninstall. Suspending the Flux resource and deleting
+some pods by hand is **not** equivalent to an uninstall. Cluster-scoped admission webhooks
+make the order matter, and Helm/chart-specific uninstall hooks exist for a reason.
 
 ### Standard order for removing a CRD operator
 
@@ -456,7 +448,8 @@ Distilled from the Longhorn uninstall incident
 
 ### Emergency unblock (webhook is already wedging the cluster)
 
-If you arrive _after_ the zombie webhook is already rejecting unrelated PVCs:
+If you arrive _after_ the zombie webhook is already rejecting unrelated PVCs
+(`failed calling webhook "<name>": … connect: operation not permitted`):
 
 ```bash
 kubectl patch validatingwebhookconfiguration <name> --type=json \
