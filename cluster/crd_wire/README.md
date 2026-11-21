@@ -1,6 +1,6 @@
 # CRD-derived Python wire types
 
-`bbr test //cluster/x/crd_wire:test_wire` generates external-key `TypedDict` types from the
+`bbr test //cluster/crd_wire:test_wire` generates external-key `TypedDict` types from the
 installed Flux `ArtifactGenerator` CRD and the Go-derived Agentplane `SandboxTemplate` CRD.
 The test loads both committed `ArtifactGenerator` resources and the Pod, VM and Firecracker
 `SandboxTemplate` resources from staging. The Bazel action consumes the same schema files
@@ -40,10 +40,14 @@ schemas also use OpenAPI and Kubernetes extensions. An integer-or-string field, 
 nullability, constrained CEL comprehensions, list map uniqueness, defaulting and server-side
 field ownership require their own handling before widening this prototype to other CRDs.
 A SandboxTemplate specifying both `pod` and `vm` passes the prototype's structural check
-and fails CEL in the [existing admission test](../../../agentplane/crds/test_sandbox_admission.py). Opaque objects such as Pod templates carry a dictionary type;
+and fails CEL in the [existing admission test](../../agentplane/crds/test_sandbox_admission.py). Opaque objects such as Pod templates carry a dictionary type;
 `workspaceVolume.claim`'s typed surface exposes the known key while retaining the raw fields
 for callers that operate on the original dictionary.
 
-Production callers keep their current parsing and partial-input behavior. In particular,
-the cluster checker applies additional artifact-copy rules and its callers decide how to
-handle missing or incomplete resources. Full-object validation is a separate policy choice.
+The Pod, VM and Firecracker cdk8s builders use the generated `StateVolume` to share
+the same volume shape as the CRD, and Firecracker checks its backend spec against the
+generated `Firecracker` type. Workspace claim fields still pass through as a dictionary
+so fields Kubernetes preserves can be set by the builders.
+
+Cluster validation continues to accept partial ArtifactGenerator input. Its source index
+can use an artifact name even when the document has no copy directives or source list.

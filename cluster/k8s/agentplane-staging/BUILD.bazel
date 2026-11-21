@@ -1,6 +1,6 @@
 exports_files(
     ["agentplane-staging.k8s.yaml"],
-    visibility = ["//cluster/x/crd_wire:__pkg__"],
+    visibility = ["//cluster/crd_wire:__pkg__"],
 )
 
 # The cluster-wide validators build this directory's Kustomization and inspect its files.

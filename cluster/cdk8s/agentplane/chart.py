@@ -50,6 +50,7 @@ from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME as REGIS
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
+from cluster.crd_wire.sandbox_template import StateVolume
 
 RUNNER_TRUST_BUNDLE = cluster_ca.BUNDLE
 RUNNER_TRUST_BUNDLE_KEY = cluster_ca.BUNDLE_KEY
@@ -205,11 +206,11 @@ def environment_chart(
             template_name=environment_template_name,
             settings_config_map=relay_settings,
         )
-        state_volume = runner_template.spec["stateVolume"]
+        state_volume = runner_template.state_volume
         state_claim = {**state_volume["claim"], "volumeMode": "Filesystem"}
         if env.vm_storage_class is not None:
             state_claim["storageClassName"] = env.vm_storage_class
-        vm_state_volume = {**state_volume, "claim": state_claim}
+        vm_state_volume: StateVolume = {**state_volume, "claim": state_claim}
         vm_config = ConfigMap(
             runner_scope,
             "environment-vm-config",
@@ -234,16 +235,20 @@ def environment_chart(
             labels=environment_sandbox.ENVIRONMENT_RUNTIME_LABELS,
             state_volume=vm_state_volume,
             workspace_volume=environment_sandbox.workspace_volume_spec(
-                vm_state_volume, layout_type="BlockFilesystem", storage_class=env.vm_storage_class
+                state_claim, layout_type="BlockFilesystem", storage_class=env.vm_storage_class
             ),
         )
     if env.firecracker_sandboxes:
-        state_volume = runner_template.spec["stateVolume"]
+        state_volume = runner_template.state_volume
         claim = {**state_volume["claim"], "volumeMode": "Filesystem", "resources": {"requests": {"storage": "100Gi"}}}
         if env.vm_storage_class is not None:
             claim["storageClassName"] = env.vm_storage_class
-        firecracker_state = {**state_volume, "claim": claim, "layout": {"type": "RawDiskImage", "filesystem": "ext4"}}
-        firecracker_workspace = environment_sandbox.workspace_volume_spec(firecracker_state, layout_type="RawDiskImage")
+        firecracker_state: StateVolume = {
+            **state_volume,
+            "claim": claim,
+            "layout": {"type": "RawDiskImage", "filesystem": "ext4"},
+        }
+        firecracker_workspace = environment_sandbox.workspace_volume_spec(claim, layout_type="RawDiskImage")
         firecracker_workspace["claim"]["resources"] = state_volume["claim"]["resources"]
         guest_gateway = environment_firecracker.GATEWAY
         environment_firecracker.EnvironmentFirecrackerTemplate(

@@ -21,6 +21,7 @@ from cluster.cdk8s.agentplane.environment_guest import guest_config_data
 from cluster.cdk8s.config_format import json_config
 from cluster.cdk8s.providers.cilium.network_policy import Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.settings_file import SettingsFile
+from cluster.crd_wire.sandbox_template import Firecracker, StateVolume
 from util.settings_contract import validate_settings_fragment
 
 NAME = "environment-firecracker"
@@ -37,7 +38,7 @@ class EnvironmentFirecrackerTemplate(Construct):
         env: Environment,
         *,
         labels: Mapping[str, str],
-        state_volume: dict[str, Any],
+        state_volume: StateVolume,
         workspace_volume: dict[str, Any],
         runner_image: str,
         platform_instructions: str,
@@ -166,19 +167,15 @@ class EnvironmentFirecrackerTemplate(Construct):
             kind="SandboxTemplate",
             metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
         )
+        firecracker: Firecracker = {
+            "pod": sandbox_pod.render_pod_template(labels, pod),
+            "bootImage": BOOT_IMAGE,
+            "runnerImage": runner_image,
+            "vcpuCount": resources.guest_vcpu_count,
+            "memoryMiB": resources.guest_memory_bytes // (1024 * 1024),
+        }
         self.template.add_json_patch(
             JsonPatch.add(
-                "/spec",
-                {
-                    "firecracker": {
-                        "pod": sandbox_pod.render_pod_template(labels, pod),
-                        "bootImage": BOOT_IMAGE,
-                        "runnerImage": runner_image,
-                        "vcpuCount": resources.guest_vcpu_count,
-                        "memoryMiB": resources.guest_memory_bytes // (1024 * 1024),
-                    },
-                    "stateVolume": state_volume,
-                    "workspaceVolume": workspace_volume,
-                },
+                "/spec", {"firecracker": firecracker, "stateVolume": state_volume, "workspaceVolume": workspace_volume}
             )
         )

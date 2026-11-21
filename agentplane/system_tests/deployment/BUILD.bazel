@@ -1,3 +1,4 @@
+# gazelle:resolve py cluster.crd_wire.sandbox_template //cluster/crd_wire:sandbox_template_wire
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 # gazelle:resolve py agentplane.environments.v1.environment_service_pb2 //agentplane/environments/v1:environment_service_pb2
@@ -304,6 +305,7 @@ py_library(
         "//cluster/cdk8s/providers/cert_manager:certificate_private_key",
         "//cluster/cdk8s/providers/cert_manager:clusterissuer",
         "//cluster/cdk8s/providers/kubevirt:virtualmachine",
+        "//cluster/crd_wire:sandbox_template_wire",
         "//model_catalog:catalog",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",

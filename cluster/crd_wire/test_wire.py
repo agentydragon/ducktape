@@ -14,8 +14,8 @@ from pydantic.errors import PydanticSchemaGenerationError
 from python.runfiles import Runfiles
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifactsCopy
 
-from cluster.x.crd_wire.artifact_generator import ArtifactGenerator
-from cluster.x.crd_wire.sandbox_template import SandboxTemplate
+from cluster.crd_wire.artifact_generator import ArtifactGenerator
+from cluster.crd_wire.sandbox_template import SandboxTemplate
 
 
 def _objects(runfiles_root: Path, filename: str, kind: str) -> list[dict[str, Any]]:
@@ -41,14 +41,14 @@ def templates(runfiles: Runfiles) -> list[dict[str, Any]]:
 @pytest.fixture
 def artifact_schema(runfiles: Runfiles) -> Draft7Validator:
     return Draft7Validator(
-        json.loads((runfiles.root() / "ducktape/cluster/x/crd_wire/artifact_generator.json").read_text())
+        json.loads((runfiles.root() / "ducktape/cluster/crd_wire/artifact_generator.json").read_text())
     )
 
 
 @pytest.fixture
 def sandbox_schema(runfiles: Runfiles) -> Draft7Validator:
     return Draft7Validator(
-        json.loads((runfiles.root() / "ducktape/cluster/x/crd_wire/sandbox_template.json").read_text())
+        json.loads((runfiles.root() / "ducktape/cluster/crd_wire/sandbox_template.json").read_text())
     )
 
 

@@ -2,7 +2,7 @@ exports_files(
     ["gotk-components.yaml"],
     visibility = [
         "//cluster/cdk8s/providers/source_watcher:__pkg__",
-        "//cluster/x/crd_wire:__pkg__",
+        "//cluster/crd_wire:__pkg__",
     ],
 )
 

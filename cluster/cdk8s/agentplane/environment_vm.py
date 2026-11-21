@@ -34,6 +34,7 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
 from agentplane.crd_group import GROUP
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.kubevirt.virtual_machine import container_disk_template
+from cluster.crd_wire.sandbox_template import StateVolume
 
 NAME = "environment-vm"
 ROOT_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-environment-vm:unset"  # image-pins/ sets the tag
@@ -63,7 +64,7 @@ class EnvironmentVmTemplate(Construct):
         root_image: str,
         config_map: ConfigMap,
         labels: dict[str, str],
-        state_volume: dict[str, Any],
+        state_volume: StateVolume,
         workspace_volume: dict[str, Any],
         firmware: VirtualMachineSpecTemplateSpecDomainFirmware | None = None,
         root_disk_serial: str | None = None,

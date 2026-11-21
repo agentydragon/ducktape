@@ -155,6 +155,7 @@ from cluster.cdk8s.cert_manager.cluster_ca import add_workload_ca
 from cluster.cdk8s.providers.agentplane.policy_set import Rule
 from cluster.cdk8s.providers.cert_manager.certificate import CertificatePrivateKey
 from cluster.cdk8s.service_ref import Pods, ServiceRef
+from cluster.crd_wire.sandbox_template import StateVolume
 from model_catalog.catalog import GPT6_LUNA_RESPONSES, HAIKU_API, Route
 
 
@@ -920,13 +921,13 @@ def add_vm_templates(
     launcher_relay.LauncherRelayPolicy(
         scope, "launcher-relay", namespace=env.namespace, template_name=POD_TEMPLATE, settings_config_map=relay_settings
     )
-    state_volume = runner_template.spec["stateVolume"]
+    state_volume = runner_template.state_volume
     state_claim = {**state_volume["claim"], "volumeMode": "Filesystem"}
     if env.vm_storage_class is not None:
         state_claim["storageClassName"] = env.vm_storage_class
-    vm_state_volume = {**state_volume, "claim": state_claim}
+    vm_state_volume: StateVolume = {**state_volume, "claim": state_claim}
     workspace_volume = environment_sandbox.workspace_volume_spec(
-        vm_state_volume, layout_type="BlockFilesystem", storage_class=block_storage.STORAGE_CLASS
+        state_claim, layout_type="BlockFilesystem", storage_class=block_storage.STORAGE_CLASS
     )
     config_data = environment_guest.guest_config_data(
         env,
@@ -997,12 +998,16 @@ def add_firecracker_template(
 ) -> None:
     """Compose the opt-in Firecracker template beside its runner Pod template."""
     scope = chart
-    state_volume = runner_template.spec["stateVolume"]
+    state_volume = runner_template.state_volume
     claim = {**state_volume["claim"], "volumeMode": "Filesystem", "resources": {"requests": {"storage": "100Gi"}}}
     if env.vm_storage_class is not None:
         claim["storageClassName"] = env.vm_storage_class
-    firecracker_state = {**state_volume, "claim": claim, "layout": {"type": "RawDiskImage", "filesystem": "ext4"}}
-    workspace_volume = environment_sandbox.workspace_volume_spec(firecracker_state, layout_type="RawDiskImage")
+    firecracker_state: StateVolume = {
+        **state_volume,
+        "claim": claim,
+        "layout": {"type": "RawDiskImage", "filesystem": "ext4"},
+    }
+    workspace_volume = environment_sandbox.workspace_volume_spec(claim, layout_type="RawDiskImage")
     workspace_volume["claim"]["resources"] = state_volume["claim"]["resources"]
     guest_gateway = environment_firecracker.GATEWAY
     environment_firecracker.EnvironmentFirecrackerTemplate(

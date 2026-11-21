@@ -19,11 +19,12 @@ from cluster.cdk8s.agentplane.kubernetes_account_ref import shared_diagnostics
 from cluster.cdk8s.agentplane.platform_instructions import agent_cli_environment, platform_instructions, service_urls
 from cluster.cdk8s.pod_policy import harden, pod_spec
 from cluster.cdk8s.testing.manifests import config_map_yaml, find_resource
+from cluster.crd_wire.sandbox_template import StateVolume
 
 
 def test_firecracker_mounts_stay_on_the_correct_side(scratch_app: App) -> None:
     chart = Chart(scratch_app, "firecracker-test")
-    state = {
+    state: StateVolume = {
         "name": "state",
         "claim": {"storageClassName": "test-storage", "volumeMode": "Filesystem"},
         "layout": {"type": "RawDiskImage", "filesystem": "ext4"},
@@ -34,7 +35,7 @@ def test_firecracker_mounts_stay_on_the_correct_side(scratch_app: App) -> None:
         replace(staging.ENV, firecracker_sandboxes=True),
         labels={"app.kubernetes.io/name": "agentplane-environment-runtime"},
         state_volume=state,
-        workspace_volume=environment_sandbox.workspace_volume_spec(state, layout_type="RawDiskImage"),
+        workspace_volume=environment_sandbox.workspace_volume_spec(state["claim"], layout_type="RawDiskImage"),
         runner_image="registry.test/runner@sha256:123",
         platform_instructions="test platform",
         harness_env={"EXAMPLE": "hello"},
@@ -81,7 +82,7 @@ def test_firecracker_mounts_stay_on_the_correct_side(scratch_app: App) -> None:
 def test_firecracker_native_grpc_urls_use_the_guest_relay_gateway(scratch_app: App) -> None:
     chart = Chart(scratch_app, "firecracker-grpc-routes")
     env = replace(staging.ENV, firecracker_sandboxes=True)
-    pod_state: dict[str, Any] = {
+    pod_state: StateVolume = {
         "name": "state",
         "claim": {
             "storageClassName": "piraeus-hdd-local",
@@ -90,12 +91,14 @@ def test_firecracker_native_grpc_urls_use_the_guest_relay_gateway(scratch_app: A
         },
         "layout": {"type": "DirectoryTree"},
     }
-    firecracker_state: dict[str, Any] = {
+    firecracker_state: StateVolume = {
         **pod_state,
         "claim": {**pod_state["claim"], "volumeMode": "Filesystem", "resources": {"requests": {"storage": "100Gi"}}},
         "layout": {"type": "RawDiskImage", "filesystem": "ext4"},
     }
-    firecracker_workspace = environment_sandbox.workspace_volume_spec(firecracker_state, layout_type="RawDiskImage")
+    firecracker_workspace = environment_sandbox.workspace_volume_spec(
+        firecracker_state["claim"], layout_type="RawDiskImage"
+    )
     firecracker_workspace["claim"]["resources"] = pod_state["claim"]["resources"]
     environment_firecracker.EnvironmentFirecrackerTemplate(
         chart,

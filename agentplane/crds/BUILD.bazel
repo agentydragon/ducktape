@@ -15,7 +15,7 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 exports_files(
     ["manifests/crd-sandboxtemplates.yaml"],
-    visibility = ["//cluster/x/crd_wire:__pkg__"],
+    visibility = ["//cluster/crd_wire:__pkg__"],
 )
 
 filegroup(

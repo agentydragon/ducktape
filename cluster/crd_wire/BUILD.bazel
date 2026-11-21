@@ -60,10 +60,16 @@ genrule(
 ]
 
 py_library(
-    name = "wire",
-    srcs = [
-        ":artifact_generator_codegen",
-        ":sandbox_template_codegen",
+    name = "artifact_generator_wire",
+    srcs = [":artifact_generator_codegen"],
+)
+
+py_library(
+    name = "sandbox_template_wire",
+    srcs = [":sandbox_template_codegen"],
+    visibility = [
+        "//agentplane/system_tests/deployment:__pkg__",
+        "//cluster/cdk8s/agentplane:__pkg__",
     ],
 )
 
@@ -79,7 +85,8 @@ py_test(
     ],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
-        ":wire",
+        ":artifact_generator_wire",
+        ":sandbox_template_wire",
         "//:conftest",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//jsonschema",
