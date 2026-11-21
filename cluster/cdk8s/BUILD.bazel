@@ -1059,6 +1059,7 @@ py_library(
         "//cluster/cdk8s/cli_proxy_api",
         "//cluster/cdk8s/clickhouse:client",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
+        "//cluster/cdk8s/platform_sessions:app",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
         "//cluster/cdk8s/providers/prometheus_operator:service_monitor",

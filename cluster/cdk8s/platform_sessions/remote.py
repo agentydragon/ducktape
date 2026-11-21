@@ -47,6 +47,7 @@ from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import initial_request_annotations
 from cluster.cdk8s.platform_sessions import config
 from cluster.cdk8s.providers.flux.image_policy import ImagePolicy
+from cluster.cdk8s.service_ref import Port
 from cluster.cdk8s.volume_claim import volume_claim
 from cluster.cdk8s.vpa_policy import ContainerPolicy
 
@@ -55,6 +56,8 @@ NAME = "platform-sessions-remote"
 OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}"
 PINS_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}-image-pins"
 GATEWAY = "platform-sessions-gateway"
+GATEWAY_PORT = Port(name="http", number=8080)
+PUBLIC_HOSTNAME = "platform-sessions.allegedly.works"
 SHARED_PROVIDERS_IMAGE = "platform-sessions-providers"
 REGISTRY = "git.allegedly.works/ducktape-ci"
 PROVIDERS = tuple(str(item["id"]) for item in config.INTEGRATIONS["integrations"])
@@ -591,7 +594,9 @@ def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
             ],
         ),
     )
-    gateway_health = k8s.Probe(http_get=k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_string("http")))
+    gateway_health = k8s.Probe(
+        http_get=k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_string(GATEWAY_PORT.name))
+    )
     _deployment(
         chart,
         "gateway",
@@ -600,7 +605,7 @@ def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
             image=_GW_IMAGE,
             env_from=[k8s.EnvFromSource(secret_ref=k8s.SecretEnvSource(name="platform-sessions-oidc"))],
             env=[
-                k8s.EnvVar(name="PLATFORM_SESSIONS_PUBLIC_BASE_URL", value="https://platform-sessions.allegedly.works"),
+                k8s.EnvVar(name="PLATFORM_SESSIONS_PUBLIC_BASE_URL", value=f"https://{PUBLIC_HOSTNAME}"),
                 k8s.EnvVar(name="SSL_CERT_FILE", value="/var/run/public-web-pki/ca-certificates.crt"),
                 _config_env(
                     "PLATFORM_SESSIONS_INTEGRATION_CONFIG", "gateway-integrations.json", config_map=CANARY_CONFIG
@@ -608,7 +613,7 @@ def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
                 _config_env("PLATFORM_SESSIONS_BEARERS", "bearers.json"),
                 _config_env("PLATFORM_SESSIONS_PROVIDER_CONNECTIONS", "connections.json", config_map=CANARY_CONFIG),
             ],
-            ports=[k8s.ContainerPort(name="http", container_port=8080)],
+            ports=[k8s.ContainerPort(name=GATEWAY_PORT.name, container_port=GATEWAY_PORT.number)],
             readiness_probe=gateway_health,
             liveness_probe=gateway_health,
             resources=_resources(),
@@ -643,7 +648,13 @@ def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
     _service(
         chart,
         "gateway",
-        [k8s.ServicePort(name="http", port=8080, target_port=k8s.IntOrString.from_string("http"))],
+        [
+            k8s.ServicePort(
+                name=GATEWAY_PORT.name,
+                port=GATEWAY_PORT.number,
+                target_port=k8s.IntOrString.from_string(GATEWAY_PORT.name),
+            )
+        ],
         selector_name=GATEWAY,
     )
 
