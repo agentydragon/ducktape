@@ -376,6 +376,18 @@ function Report() {
             reconciliation trigger. These observations do not prove an eviction,
             leader handoff or failover.<//
           >
+          <${Text} component="p"
+            >At 04:40 UTC, the GitLab registry used ${" "}<${Anchor}
+              href=${github + "pull/18465"}
+              >Recreate<//
+            >${" "}after its ${" "}<${Anchor} href=${github + "pull/18477"}
+              >S3 ACL fix<//
+            >. Both replacement Pods were Ready on separate hosts with 50m CPU
+            and 100 MiB memory requests; each returned the expected
+            authenticated image manifest. The PDB allowed one disruption and the
+            CPU HPA had a valid metric. Image push and failure recovery were not
+            tested.<//
+          >
           <${Text} component="p" mb=${0}
             >Website and Haku use revision-scoped hostname spread with
             minDomains 2: a second replica stays Pending when only one host is
@@ -464,20 +476,6 @@ function Report() {
       <span id="batches"></span>
       <${Title} order=${2} mt="xl">Remaining work<//>
       <${Stack} gap="md" mt="md">
-        <${Paper} withBorder p="md" radius="md">
-          <${Title} order=${3} size="h4">GitLab registry VPA<//>
-          <${Text} component="p" mb=${0}
-            >After the ${" "}<${Anchor} href=${github + "pull/18477"}
-              >S3 ACL fix<//
-            >, both registry replacements were Ready on separate hosts at 04:35
-            UTC on 21 November. Each had a 50m CPU and 100 MiB memory request
-            and returned the expected authenticated image manifest. The PDB
-            allowed one disruption and the CPU HPA had a valid metric. The
-            ${" "}<${Anchor} href=${github + "pull/18465"}>Recreate follow-up<//
-            >${" "}is ready for review; image push and failure recovery have not
-            been tested here.<//
-          >
-        <//>
         <${Paper} withBorder p="md" radius="md"
           ><${Title} order=${3} size="h4"
             >1. Expand coverage in useful batches<//
