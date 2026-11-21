@@ -103,18 +103,6 @@ _LIVENESS_HEALTH_SERVICE = "livez"
 # admission policy refuses that controller's use sets naming any other host, which the controller's
 # TestManagedAccountUseIsAdmitted envtest checks.
 KUBERNETES_HOST = "kubernetes.default.svc.cluster.local"
-# The in-cluster Forgejo, plain HTTP, so the proxy reads the request without bumping TLS.
-# It is the name to prefer: the public name below would hairpin out through the Gateway and back
-# for a Service one hop away.
-FORGEJO_HOST = forgejo.HTTP.fqdn
-# The same Service under the shorter names its search path resolves (haku-ci's runners spell it
-# `forgejo-http.forgejo`). The proxy matches a request's host on the exact string,
-# so a spelling left out is refused `no-rule` although it dials the same address.
-FORGEJO_HOST_ALIASES = (forgejo.HTTP.host, f"{forgejo.HTTP.name}.{forgejo.HTTP.pods.namespace}")
-# Forgejo by its public name: HTTPS through the Gateway, resolving to public addresses.
-FORGEJO_PUBLIC_HOST = "git.allegedly.works"
-# Home Assistant's in-cluster Service, plain HTTP. The proxy matches requests on this exact string.
-HOME_ASSISTANT_HOST = home_assistant.SERVICE.fqdn
 # The trust bundles' ConfigMap key.
 CA_BUNDLE_KEY = "ca-certificates.crt"
 # The workload CA, which verifies the forward listener's client SVIDs and the proxy's own SVID.

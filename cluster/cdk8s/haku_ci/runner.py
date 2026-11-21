@@ -43,10 +43,11 @@ from keda_triggerauthentication_crds.sh.keda import (
 
 from cluster.cdk8s import cilium, namespaces
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.forgejo import secret_copy
+from cluster.cdk8s.forgejo import app as forgejo, secret_copy
 from cluster.cdk8s.haku_ci import egress_gateway, runner_config
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import PRIVILEGED_POD_SECURITY, Vpa
+from cluster.cdk8s.oci_cache import zot
 
 # Staging egress's interception CA Bundle, named where it is defined.
 from cluster.cdk8s.public_coder import egress as public_coder_egress
@@ -64,7 +65,7 @@ _AUTH = "forgejo"
 # The hand-written SOPS Secret (haku/forgejo-tea) Reflector copies into NAMESPACE for KEDA.
 FORGEJO_TOKEN_SECRET = "haku-forgejo-tea"
 FORGEJO_TOKEN_KEY = "token"
-_FORGEJO_URL = "http://forgejo-http.forgejo:3000"
+_FORGEJO_URL = f"http://{forgejo.SHORT_HTTP_HOST}:{forgejo.HTTP.port.number}"
 _EGRESS = egress_gateway.service(NAMESPACE)
 # The fully qualified name: job containers resolve with dind's `svc.cluster.local` search list only.
 _PROXY_URL = f"http://{_EGRESS.fqdn}:{_EGRESS.port.number}"
@@ -87,7 +88,7 @@ _PROXY_ENV = {
     "HTTP_PROXY": _PROXY_URL,
     "HTTPS_PROXY": _PROXY_URL,
     "NO_PROXY": "127.0.0.1,localhost,host.docker.internal,*.allegedly.works,.allegedly.works,"
-    "forgejo-http.forgejo,forgejo-http.forgejo.svc.cluster.local,.forgejo,.svc.cluster.local,10.0.0.0/8",
+    f"{forgejo.SHORT_HTTP_HOST},{forgejo.HTTP.fqdn},.{forgejo.HTTP.pods.namespace},.svc.cluster.local,10.0.0.0/8",
 }
 # Trust Agentplane egress's interception CA, in the runner and every job container.
 # TODO: dedupe with the same CA env-var lists in agentplane/sandbox_pod.py and public_coder/app.py.
@@ -221,15 +222,9 @@ def _add_egress_fence(chart: Chart) -> None:
         name="haku-ci-force-proxy-egress",
         namespaces=[NAMESPACE],
         proxy=egress_gateway.service(NAMESPACE),
-        # All cluster-internal traffic (bypasses the proxy via NO_PROXY). This is how the
-        # runner reaches the in-cluster Forgejo git + OCI registry (forgejo-http.forgejo:3000)
-        # it clones source from, pushes images to, and long-polls for jobs, plus the
-        # oci-cache Zot mirror for dind base-image pulls.
-        # GOTCHA: Cilium's socket-LB translates a ClusterIP:port to backend podIP:targetPort
-        # *before* egress policy is enforced, so the port here must be the backend
-        # targetPort, not the Service port. oci-cache's Service is :80 but its pods listen on
-        # 5000 -- hence 5000, not 80, is what unblocks dind->oci-cache.
-        cluster_ports=[80, 443, 3000, 5000],
+        # NO_PROXY keeps internal Forgejo (git, image pushes, long polls) and Zot mirror traffic direct.
+        # Cilium enforces egress after socket-LB translates Service ports to backend Pod ports.
+        cluster_ports=[80, 443, forgejo.HTTP.pod_port, zot.HTTP.pod_port],
         kube_apiserver=False,
     )
 
@@ -264,10 +259,10 @@ def _dind() -> InitContainer:
             # docker.io (+ its CDN fronts) directly -- that's why haku-ci-build-fetch holds no Docker
             # Hub host. The mirror serves Docker Hub at its root and fetches
             # from origin under oci-cache's own egress. `.svc.cluster.local` so NO_PROXY routes it
-            # direct (not via the proxy); insecure-registry because oci-cache is plain HTTP on :80.
+            # direct (not via the proxy); insecure-registry because oci-cache is plain HTTP.
             # Classic dockerd only mirrors Docker Hub -- ghcr/quay would go via the proxy (not admitted).
-            "--registry-mirror=http://oci-cache.oci-cache.svc.cluster.local",
-            "--insecure-registry=oci-cache.oci-cache.svc.cluster.local",
+            f"--registry-mirror={zot.MIRROR_URL}",
+            f"--insecure-registry={zot.MIRROR_AUTHORITY}",
             # RootlessKit's slirp4netns forwards container DNS queries to CoreDNS as-is, and the
             # resolv.conf it gives dockerd carries no search list, so without this a container
             # cannot resolve a `<service>.<namespace>` name -- among them `forgejo-http.forgejo`,

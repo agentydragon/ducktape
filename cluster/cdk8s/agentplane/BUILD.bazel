@@ -1152,7 +1152,6 @@ py_library(
     name = "egress_staging_credentials",
     srcs = ["egress_staging_credentials.py"],
     deps = [
-        ":egress",
         ":egress_credentials",
         "//agentplane/crds:egresscredential",
         "//agentplane/crds:policyset",
@@ -1162,6 +1161,7 @@ py_library(
         "//cluster/cdk8s/authentik:app",
         "//cluster/cdk8s/clickhouse:client",
         "//cluster/cdk8s/external_secrets:single_secret_store",
+        "//cluster/cdk8s/forgejo:app",
         "//cluster/cdk8s/haku:mailbox",
         "//cluster/cdk8s/home_assistant:app",
         "//cluster/cdk8s/monitoring:mimir",

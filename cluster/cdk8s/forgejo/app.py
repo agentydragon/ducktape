@@ -53,6 +53,8 @@ HTTP = ServiceRef(
     port=Port(name="http", number=3000),
     pods=Pods(namespace=NAMESPACE, labels=tuple(_RELEASE_LABELS.items())),
 )
+# Existing Forgejo runner registrations use this spelling in their server URL.
+SHORT_HTTP_HOST = f"{HTTP.name}.{HTTP.pods.namespace}"
 _SSH = ServiceRef(name="forgejo-ssh", port=Port(name="ssh", number=2222), pods=HTTP.pods)
 _VALKEY = f"redis://{cache.MASTER.host}:{cache.MASTER.port.number}/0"
 _CLUSTER_CA_MOUNT = {"name": "cluster-ca", "mountPath": "/etc/ssl/certs/cluster-ca", "readOnly": True}

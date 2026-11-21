@@ -30,6 +30,9 @@ _NAME = "zot"
 _PODS = Pods(namespace=_NAMESPACE, labels=(("app.kubernetes.io/name", _NAME),))
 # Zot's plain-HTTP registry on the `oci-cache` Service, where in-cluster Docker mirrors point.
 HTTP = ServiceRef(name=_NAMESPACE, port=Port(name="http", number=80), pods=_PODS, target_port=5000)
+# Docker's insecure-registry option needs an authority; mirror endpoints need its URL.
+MIRROR_AUTHORITY = HTTP.fqdn if HTTP.port.number == 80 else f"{HTTP.fqdn}:{HTTP.port.number}"
+MIRROR_URL = f"http://{MIRROR_AUTHORITY}"
 # The nginx sidecar's authenticated port on the same Service.
 _PUBLIC_AUTH = ServiceRef(name=_NAMESPACE, port=Port(name="public-auth", number=8080), pods=_PODS)
 

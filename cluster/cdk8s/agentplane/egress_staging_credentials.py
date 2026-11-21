@@ -30,7 +30,6 @@ from constructs import Construct
 
 from cluster.cdk8s import cilium
 from cluster.cdk8s.activitywatch import app as activitywatch
-from cluster.cdk8s.agentplane.egress import FORGEJO_HOST, FORGEJO_HOST_ALIASES, FORGEJO_PUBLIC_HOST, HOME_ASSISTANT_HOST
 from cluster.cdk8s.agentplane.egress_credentials import (
     EXTERNAL_CREDS_READER,
     EXTERNAL_CREDS_STORE,
@@ -42,8 +41,9 @@ from cluster.cdk8s.aiquota import AGENTPLANE_STAGING_BEARER, SERVICE as AIQUOTA_
 from cluster.cdk8s.authentik import app as authentik
 from cluster.cdk8s.clickhouse import client as clickhouse
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
+from cluster.cdk8s.forgejo import app as forgejo
 from cluster.cdk8s.haku import mailbox
-from cluster.cdk8s.home_assistant.app import AGENTPLANE_READER_TOKEN
+from cluster.cdk8s.home_assistant import app as home_assistant
 from cluster.cdk8s.monitoring import mimir
 from cluster.cdk8s.plaid_mcp import pgweb as plaid_pgweb
 from cluster.cdk8s.platform_sessions import app as platform_sessions
@@ -238,11 +238,13 @@ def _forgejo_rules(credential: str) -> list[PolicySetSpecRules]:
     # smart-HTTP (clone, fetch and push), the REST API, and the web UI. That holds under every
     # name: the host list decides which spellings reach the Service, not what the password may do.
     return [
-        _rule(credential, FORGEJO_HOST, *FORGEJO_HOST_ALIASES, cluster_internal=True),
+        # The proxy matches hostnames exactly. Keep the DNS spellings used by cluster clients,
+        # so they can use plain HTTP without hairpinning through the public Gateway.
+        _rule(credential, forgejo.HTTP.fqdn, forgejo.HTTP.host, forgejo.SHORT_HTTP_HOST, cluster_internal=True),
         # The public name is a rule of its own so it stays off `cluster_internal`: it resolves to
         # public addresses, and were it ever to resolve into the cluster the proxy's refusal of
         # private addresses should still stop the password going there.
-        _rule(credential, FORGEJO_PUBLIC_HOST),
+        _rule(credential, forgejo.HOSTNAME),
     ]
 
 
@@ -442,8 +444,8 @@ def _home_assistant_readonly(
         "home-assistant",
         reader=reader,
         credentials_namespace=credentials_namespace,
-        source_namespace=AGENTPLANE_READER_TOKEN.secret_namespace,
-        source=AGENTPLANE_READER_TOKEN.secret_name,
+        source_namespace=home_assistant.AGENTPLANE_READER_TOKEN.secret_namespace,
+        source=home_assistant.AGENTPLANE_READER_TOKEN.secret_name,
         key="token",
         target=credential,
     )
@@ -473,7 +475,7 @@ def home_assistant_read_egress_rules() -> list[PolicySetSpecRules]:
         # read-only group's, which covers every entity.
         _rule(
             HOME_ASSISTANT_READONLY_CREDENTIAL,
-            HOME_ASSISTANT_HOST,
+            home_assistant.SERVICE.fqdn,
             cluster_internal=True,
             method=PolicySetSpecRulesMethods.GET,
             paths=["/api/states", "/api/states/*", "/api/history/period/*"],

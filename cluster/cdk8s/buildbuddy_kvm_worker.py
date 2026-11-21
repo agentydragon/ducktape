@@ -254,7 +254,7 @@ def chart(app: App) -> Chart:
             "registries.yaml": yaml_config(
                 {
                     "mirrors": {
-                        registry: {"endpoint": [f"http://{zot.HTTP.fqdn}"], "rewrite": {"^(.*)$": f"{prefix}/$1"}}
+                        registry: {"endpoint": [zot.MIRROR_URL], "rewrite": {"^(.*)$": f"{prefix}/$1"}}
                         for registry, prefix in (
                             ("docker.io", "docker-hub"),
                             ("ghcr.io", "ghcr"),
@@ -291,11 +291,7 @@ def chart(app: App) -> Chart:
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
         endpoint_selector=_WORKER_LABELS,
         ingress=[alloy_endpoints.NODE.admit(_METRICS.number, _NODE_METRICS.number)],
-        egress=[
-            cilium.dns_egress(resolves=["*"]),
-            EgressRule.to_fqdns(*_HTTPS_HOSTS),
-            EgressRule.to_endpoints(cilium.endpoint_labels(zot.HTTP.pods.namespace, "zot"), zot.HTTP.pod_port),
-        ],
+        egress=[cilium.dns_egress(resolves=["*"]), EgressRule.to_fqdns(*_HTTPS_HOSTS), zot.HTTP.egress()],
     )
     k8s.KubeService(
         chart,
