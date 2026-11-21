@@ -8,7 +8,8 @@ use crate::facts::abstract_domain::heap::{
 };
 use crate::facts::{
     ChunkValueFlow, DynamicScopeFact, LocalClassConstructionProof, SetIterableProof,
-    analyze_chunk_structural, compute_shadowed_globals, top_level_item_views,
+    StructuralChunkAnalysis, analyze_chunk_structural, compute_shadowed_globals,
+    top_level_item_views,
 };
 use swc_common::{FileName, sync::Lrc};
 use swc_ecma_parser::{Parser, StringInput, Syntax, lexer::Lexer};
@@ -1221,30 +1222,34 @@ fn object_calls_shadowed_receiver_invoke() {
     );
 }
 
-/// Classify `expr_src` against a fully built `ChunkCodeGraph` for the
-/// wrapping `prefix` module, so chunk-top binding facts — including the
-/// primitive binding facts — are populated.
-fn classify_built(prefix: &str, expr_src: &str) -> Vec<Effect> {
-    let module = parse(&format!("{prefix}\nconst _ = {expr_src};"));
-    let structural = analyze_chunk_structural(&module, None);
-    let body = &structural.body;
-    let shadowed = &structural.shadowed;
-    let graph = ChunkCodeGraph::build_full_with_stable_vars(
-        body,
-        shadowed,
+/// The `ChunkCodeGraph` for `structural` with its stable numeric-`var`
+/// candidates and no declared-pure, imported or fluent inputs.
+fn stable_var_graph(structural: &StructuralChunkAnalysis<'_>) -> ChunkCodeGraph {
+    ChunkCodeGraph::build_full_with_stable_vars(
+        &structural.body,
+        &structural.shadowed,
         &BTreeSet::new(),
         &BTreeSet::new(),
         &BTreeMap::new(),
         &BTreeMap::new(),
         &BTreeSet::new(),
         &structural.stable_var_number_candidates,
-    );
+    )
+}
+
+/// Classify `expr_src` against a fully built `ChunkCodeGraph` for the
+/// wrapping `prefix` module, so chunk-top binding facts — including the
+/// primitive binding facts — are populated.
+fn classify_built(prefix: &str, expr_src: &str) -> Vec<Effect> {
+    let module = parse(&format!("{prefix}\nconst _ = {expr_src};"));
+    let structural = analyze_chunk_structural(&module, None);
+    let graph = stable_var_graph(&structural);
     let ModuleItem::Stmt(Stmt::Decl(Decl::Var(result))) = module.body.last().unwrap() else {
         panic!("expected final initializer");
     };
     classify_expr_purity(
         result.decls[0].init.as_deref().unwrap(),
-        shadowed,
+        &structural.shadowed,
         &BTreeSet::new(),
         &BTreeSet::new(),
         &graph,
@@ -1313,17 +1318,7 @@ fn stable_numeric_var_candidates_are_narrow_and_keep_throwing_arithmetic_unknown
     );
 
     let module = parse("var value = 1;");
-    let structural = analyze_chunk_structural(&module, None);
-    let graph = ChunkCodeGraph::build_full_with_stable_vars(
-        &structural.body,
-        &structural.shadowed,
-        &BTreeSet::new(),
-        &BTreeSet::new(),
-        &BTreeMap::new(),
-        &BTreeMap::new(),
-        &BTreeSet::new(),
-        &structural.stable_var_number_candidates,
-    );
+    let graph = stable_var_graph(&analyze_chunk_structural(&module, None));
     assert!(graph.primitive_bindings.contains("value"));
     assert_eq!(
         graph.binding_prims.kinds.get("value"),
@@ -1332,17 +1327,7 @@ fn stable_numeric_var_candidates_are_narrow_and_keep_throwing_arithmetic_unknown
     );
 
     let redeclared_module = parse("var value = 1; function value() {}");
-    let redeclared_structure = analyze_chunk_structural(&redeclared_module, None);
-    let redeclared_graph = ChunkCodeGraph::build_full_with_stable_vars(
-        &redeclared_structure.body,
-        &redeclared_structure.shadowed,
-        &BTreeSet::new(),
-        &BTreeSet::new(),
-        &BTreeMap::new(),
-        &BTreeMap::new(),
-        &BTreeSet::new(),
-        &redeclared_structure.stable_var_number_candidates,
-    );
+    let redeclared_graph = stable_var_graph(&analyze_chunk_structural(&redeclared_module, None));
     assert!(!redeclared_graph.primitive_bindings.contains("value"));
 
     for prefix in [
@@ -1375,17 +1360,7 @@ fn stable_numeric_var_candidates_are_narrow_and_keep_throwing_arithmetic_unknown
 #[test]
 fn stable_numeric_var_facts_do_not_cross_function_shadowing() {
     let module = parse("var value = 1; function read(value) { return value + 1; }");
-    let structural = analyze_chunk_structural(&module, None);
-    let graph = ChunkCodeGraph::build_full_with_stable_vars(
-        &structural.body,
-        &structural.shadowed,
-        &BTreeSet::new(),
-        &BTreeSet::new(),
-        &BTreeMap::new(),
-        &BTreeMap::new(),
-        &BTreeSet::new(),
-        &structural.stable_var_number_candidates,
-    );
+    let graph = stable_var_graph(&analyze_chunk_structural(&module, None));
     assert!(
         graph
             .function_purity("read")
