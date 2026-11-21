@@ -141,7 +141,6 @@ jobs:
           password: ${{ github.token }}
 
       - name: Pin freecad_test
-        if: needs.freecad-image.result == 'success'
         run: |
           DIGEST=$(docker manifest inspect "$FREECAD_IMAGE:${{ needs.freecad-image.outputs.pin_tag }}" --verbose | \
             python3 -c "import json,sys; d=json.load(sys.stdin); d=d[0] if isinstance(d,list) else d; print(d['Descriptor']['digest'])")
