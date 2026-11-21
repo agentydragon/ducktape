@@ -222,10 +222,16 @@ def add_tabbyapi(scope: Construct) -> None:
                 k8s.NetworkPolicyIngressRule(
                     from_=[
                         k8s.NetworkPolicyPeer(
-                            namespace_selector=k8s.LabelSelector(match_labels={"kubernetes.io/metadata.name": namespace}),
+                            namespace_selector=k8s.LabelSelector(
+                                match_labels={"kubernetes.io/metadata.name": namespace}
+                            ),
                             pod_selector=k8s.LabelSelector(match_labels={"app.kubernetes.io/name": name}),
                         )
-                        for namespace, name in (("litellm", "litellm"), ("gatus", "gatus"), ("monitoring", "alloy-node"))
+                        for namespace, name in (
+                            ("litellm", "litellm"),
+                            ("gatus", "gatus"),
+                            ("monitoring", "alloy-node"),
+                        )
                     ],
                     ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(SERVICE.pod_port), protocol="TCP")],
                 )
