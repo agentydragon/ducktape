@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
+
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
@@ -56,7 +58,7 @@ func TestAToolTheCatalogCannotHoldDoesNotTakeTheOthersWithIt(t *testing.T) {
 		t.Errorf("skipped %v, want test_twice", skip)
 	}
 	badTool := tools["test_bad"]
-	if badTool.definition.InputSchemaWarning == "" || badTool.arguments != nil {
+	if badTool.definition.InputSchemaValidation.GetStatus() != action_servicepb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_NOT_ENFORCED || badTool.arguments != nil {
 		t.Fatal("bad schema did not receive an unvalidated warning")
 	}
 	if !badTool.matches(json.RawMessage(`{"test": 42}`)) || badTool.matches(json.RawMessage(`null`)) {
@@ -69,7 +71,7 @@ func TestAToolTheCatalogCannotHoldDoesNotTakeTheOthersWithIt(t *testing.T) {
 
 func TestAListOfOnlyToolsWithUnusableSchemasIsOffered(t *testing.T) {
 	bad := json.RawMessage(`{"type": "object", "properties": {"test": {"type": 1}}}`)
-	if tools, _, err := mirror([]*mcp.Tool{{Name: "test_bad", InputSchema: bad}}); err != nil || tools["test_bad"].definition.InputSchemaWarning == "" {
+	if tools, _, err := mirror([]*mcp.Tool{{Name: "test_bad", InputSchema: bad}}); err != nil || tools["test_bad"].definition.InputSchemaValidation.GetStatus() != action_servicepb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_NOT_ENFORCED {
 		t.Errorf("schema fallback = %v, %v", tools, err)
 	}
 }
@@ -77,11 +79,11 @@ func TestAListOfOnlyToolsWithUnusableSchemasIsOffered(t *testing.T) {
 func TestUnsupportedLookaheadRemainsDiscoverable(t *testing.T) {
 	schema := json.RawMessage(`{"type":"object","properties":{"email":{"type":"string","pattern":"^(?!\\\\.)"}}}`)
 	tools, _, err := mirror([]*mcp.Tool{{Name: "search_nodes", InputSchema: schema}})
-	if err != nil || tools["search_nodes"].definition.InputSchemaWarning == "" {
+	if err != nil || tools["search_nodes"].definition.InputSchemaValidation.GetStatus() != action_servicepb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_NOT_ENFORCED {
 		t.Fatalf("lookahead fallback = %v, %v", tools, err)
 	}
 	tools, _, err = mirror([]*mcp.Tool{{Name: "search_nodes", InputSchema: json.RawMessage(`{"type":"object"}`)}})
-	if err != nil || tools["search_nodes"].definition.InputSchemaWarning != "" || tools["search_nodes"].arguments == nil {
+	if err != nil || tools["search_nodes"].definition.InputSchemaValidation.GetStatus() != action_servicepb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_ENFORCED || tools["search_nodes"].arguments == nil {
 		t.Fatalf("corrected schema still has a warning = %v, %v", tools, err)
 	}
 }

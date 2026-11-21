@@ -136,7 +136,7 @@ func TestAnExecutionForwardsArgumentsWhenTheCurrentSchemaCannotBeCompiled(t *tes
 		t.Fatalf("the backend received %d calls, want 1", len(made))
 	}
 	awaitGroup(t, s.groups, func(g *catalog.Group) bool {
-		return offering("test_echo")(g) && g.Actions["test_echo"].InputSchemaWarning != ""
+		return offering("test_echo")(g) && g.Actions["test_echo"].InputSchemaValidation.GetStatus() == action_servicepb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_NOT_ENFORCED
 	})
 }
 

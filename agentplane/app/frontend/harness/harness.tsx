@@ -33,6 +33,8 @@ import {
   ListActionRequestHistoryResponseSchema,
   ActionState,
   ExecutorKind,
+  InputSchemaValidationStatus,
+  InputSchemaValidationReason,
   McpLifecycle,
   McpHealthSchema,
   McpUnavailableReason,
@@ -2729,7 +2731,11 @@ const MCP_GROUPS: ActionGroup[] = [
     actions: [
       create(ActionSchema, {
         name: "search_notes",
-        inputSchemaWarning: "Agentplane cannot validate arguments against this tool's input schema",
+        inputSchemaValidation: {
+          status: InputSchemaValidationStatus.NOT_ENFORCED,
+          reason: InputSchemaValidationReason.SCHEMA_COMPILE_FAILED,
+          detail: "Agentplane could not compile this tool's input schema.",
+        },
       }),
     ],
   }),

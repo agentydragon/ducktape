@@ -7,6 +7,7 @@ import { type StreamConnection } from "../../transport/stream_reader";
 import { displayableError } from "../../transport/client";
 import {
   ExecutorKind,
+  InputSchemaValidationStatus,
   McpLifecycle,
   McpUnavailableReason,
   type ActionGroup,
@@ -24,13 +25,17 @@ import { disconnectMcpLinkage, followMcpLinkages, startMcpLinkage } from "./mcp_
 type McpHealth = ActionGroup["health"];
 
 function SchemaWarnings({ group }: { group: ActionGroup }): JSX.Element | null {
-  const warnings = group.actions.filter((action) => action.inputSchemaWarning !== undefined);
+  const warnings = group.actions.filter(
+    (action) => action.inputSchemaValidation?.status === InputSchemaValidationStatus.NOT_ENFORCED
+  );
   if (warnings.length === 0) return null;
   return (
     <Alert color="yellow" title="Some tool arguments are not validated" mt="sm">
       {warnings.map((action) => (
         <Text key={action.name} size="sm">
-          {action.name}: {action.inputSchemaWarning}
+          {action.name}:{" "}
+          {action.inputSchemaValidation?.detail ??
+            "Agentplane cannot validate arguments against this tool's input schema."}
         </Text>
       ))}
     </Alert>

@@ -765,15 +765,33 @@ message Action {
   string name = 2;
   string description = 3;
   // The backend's input schema. When supported, admission and execution check it; a later schema change can still
-  // fail the request. See input_schema_warning when Agentplane cannot enforce it.
+  // fail the request. See input_schema_validation for whether Agentplane can enforce it.
   google.protobuf.Struct input_schema = 4;
   // A display name; absent when the backend gives none.
   optional string title = 5;
   // The backend's MCP behavior hints; absent when it gives none. Advisory: they shape how a client presents the
   // Action, never what the service allows.
   ToolAnnotations annotations = 6;
-  // Present when Agentplane cannot enforce the backend's schema. Policy checks still apply.
-  optional string input_schema_warning = 7;
+  // Status of Agentplane's tool-schema check. Missing or UNKNOWN never implies enforcement.
+  InputSchemaValidation input_schema_validation = 7;
+}
+
+// Whether Agentplane can enforce the tool's input schema; this does not describe policy validation.
+message InputSchemaValidation {
+  InputSchemaValidationStatus status = 1;
+  InputSchemaValidationReason reason = 2;
+  optional string detail = 3;
+}
+
+enum InputSchemaValidationStatus {
+  INPUT_SCHEMA_VALIDATION_STATUS_UNKNOWN = 0;
+  INPUT_SCHEMA_VALIDATION_STATUS_ENFORCED = 1;
+  INPUT_SCHEMA_VALIDATION_STATUS_NOT_ENFORCED = 2;
+}
+
+enum InputSchemaValidationReason {
+  INPUT_SCHEMA_VALIDATION_REASON_UNSPECIFIED = 0;
+  INPUT_SCHEMA_VALIDATION_REASON_SCHEMA_COMPILE_FAILED = 1;
 }
 
 // MCP tool behavior hints as the backend gave them; each is absent when the backend left it out.

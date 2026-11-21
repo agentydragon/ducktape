@@ -482,9 +482,9 @@ func (e *Executor) call(ctx context.Context, request store.ExecutionRequest, lea
 	if !offered {
 		return worker.Failed(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_UNKNOWN_ACTION, "action is no longer offered by the backend"), nil
 	}
-	if tool.definition.InputSchemaWarning != "" {
+	if tool.definition.InputSchemaValidation.GetStatus() == action_servicepb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_NOT_ENFORCED {
 		e.mu.Lock()
-		warned := e.actions[name].InputSchemaWarning != ""
+		warned := e.actions[name].InputSchemaValidation.GetStatus() == action_servicepb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_NOT_ENFORCED
 		e.mu.Unlock()
 		if !warned {
 			// Discovery may have preceded a backend schema change. Refresh the visible group warning promptly.

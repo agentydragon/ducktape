@@ -34,8 +34,8 @@ type ActionDefinition struct {
 	Description string
 	// InputSchema is the JSON Schema a submission's arguments are validated against: a JSON object.
 	InputSchema json.RawMessage
-	// InputSchemaWarning marks an external schema the service could not compile. Its arguments still go through policy.
-	InputSchemaWarning string
+	// InputSchemaValidation is the established status of the tool-schema check; nil means unknown.
+	InputSchemaValidation *action_servicepb.InputSchemaValidation
 	// Title is the Action's display name; nil when it has none.
 	Title *string
 	// Annotations are the MCP tool's behavior hints; nil when it gives none. They shape how a client presents the
@@ -463,7 +463,7 @@ func newAction(s actionSettings) (ActionDefinition, error) {
 	if err != nil {
 		return ActionDefinition{}, fmt.Errorf("input_schema %w", err)
 	}
-	action := ActionDefinition{Description: s.Description, InputSchema: schema, Title: s.Title}
+	action := ActionDefinition{Description: s.Description, InputSchema: schema, Title: s.Title, InputSchemaValidation: InspectSchema(schema)}
 	if a := s.Annotations; a != nil {
 		action.Annotations = &ToolAnnotations{
 			Title:           a.Title,

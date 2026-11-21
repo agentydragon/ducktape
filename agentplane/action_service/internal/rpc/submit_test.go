@@ -214,17 +214,22 @@ func TestUnvalidatedToolStillEnforcesArgumentPolicy(t *testing.T) {
 	groups := newCatalog(t, submissionCatalog)
 	groups.Update("test-broken", func(group *catalog.Group) {
 		definition := group.Actions["test-action"]
-		definition.InputSchemaWarning = "Agentplane cannot validate arguments"
+		definition.InputSchemaValidation = &action_servicepb.InputSchemaValidation{Status: action_servicepb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_NOT_ENFORCED, Reason: action_servicepb.InputSchemaValidationReason_INPUT_SCHEMA_VALIDATION_REASON_SCHEMA_COMPILE_FAILED}
 		group.Actions = map[string]catalog.ActionDefinition{"test-action": definition}
 	})
 	s := serveWith(t, groups)
+	inspected, err := s.client.GetAction(as(t, callerCertificate), &action_servicepb.GetActionRequest{GroupKey: "test-broken", ActionKey: "test-action"})
+	if err != nil || inspected.GetAction().GetInputSchemaValidation().GetStatus() != action_servicepb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_NOT_ENFORCED ||
+		inspected.GetAction().GetInputSchemaValidation().GetReason() != action_servicepb.InputSchemaValidationReason_INPUT_SCHEMA_VALIDATION_REASON_SCHEMA_COMPILE_FAILED {
+		t.Fatalf("unvalidated Action status = %v, %v", inspected, err)
+	}
 	s.bind(t, actionPolicy(policyapi.ActionPolicy{
 		Type: "argument_schema", Actions: map[string]policyapi.ActionNames{"test-broken": {"test-action"}},
 		Schema: &runtime.RawExtension{Raw: []byte(`{"type":"object","properties":{"safe":{"const":true}},"required":["safe"]}`)},
 	}))
 	denied := envelope(t, "test-unvalidated-denied", "test-broken", "test-action", map[string]any{"safe": false})
 	denied.DecidedOnly = true
-	_, err := s.submitAs(t, callerCertificate, denied)
+	_, err = s.submitAs(t, callerCertificate, denied)
 	wantCode(t, "an unvalidated tool that does not match its policy", err, codes.PermissionDenied)
 	allowedRequest := envelope(t, "test-unvalidated-allowed", "test-broken", "test-action", map[string]any{"safe": true})
 	allowedRequest.DecidedOnly = true

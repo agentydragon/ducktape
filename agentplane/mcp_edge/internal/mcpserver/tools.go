@@ -57,8 +57,33 @@ type getActionGroupInput struct {
 }
 
 type groupWarning struct {
-	Action  string `json:"action"`
-	Message string `json:"message"`
+	Action string `json:"action"`
+	Code   string `json:"code"`
+	Detail string `json:"detail"`
+}
+
+type schemaValidationView struct {
+	Status string  `json:"status"`
+	Reason *string `json:"reason,omitempty"`
+	Detail *string `json:"detail,omitempty"`
+}
+
+// schemaValidation translates a missing or unrecognized status to unknown, never to enforced.
+func schemaValidation(validation *pb.InputSchemaValidation) schemaValidationView {
+	view := schemaValidationView{Status: "unknown"}
+	switch validation.GetStatus() {
+	case pb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_ENFORCED:
+		view.Status = "enforced"
+	case pb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_NOT_ENFORCED:
+		view.Status = "not_enforced"
+		switch validation.GetReason() {
+		case pb.InputSchemaValidationReason_INPUT_SCHEMA_VALIDATION_REASON_SCHEMA_COMPILE_FAILED:
+			reason := "schema_compile_failed"
+			view.Reason = &reason
+		}
+		view.Detail = validation.Detail
+	}
+	return view
 }
 
 type groupHealth struct {
@@ -81,8 +106,8 @@ func (t *tools) getActionGroup(ctx context.Context, input getActionGroupInput) (
 		}
 		warnings := []groupWarning{}
 		for _, action := range group.GetActions() {
-			if action.InputSchemaWarning != nil {
-				warnings = append(warnings, groupWarning{Action: action.GetName(), Message: action.GetInputSchemaWarning()})
+			if action.GetInputSchemaValidation().GetStatus() == pb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_NOT_ENFORCED {
+				warnings = append(warnings, groupWarning{Action: action.GetName(), Code: "input_schema_not_enforced", Detail: action.GetInputSchemaValidation().GetDetail()})
 			}
 		}
 		slices.SortFunc(warnings, func(a, b groupWarning) int { return strings.Compare(a.Action, b.Action) })
@@ -230,16 +255,16 @@ func after(group, name string, cursor actionIdentity) bool {
 }
 
 type actionSummary struct {
-	Group              string                  `json:"group"`
-	Name               string                  `json:"name"`
-	Available          bool                    `json:"available"`
-	InputSchema        shown[*structpb.Struct] `json:"input_schema,omitzero"`
-	Description        shown[string]           `json:"description,omitzero"`
-	InputSchemaWarning *string                 `json:"input_schema_warning,omitempty"`
+	Group                 string                  `json:"group"`
+	Name                  string                  `json:"name"`
+	Available             bool                    `json:"available"`
+	InputSchema           shown[*structpb.Struct] `json:"input_schema,omitzero"`
+	Description           shown[string]           `json:"description,omitzero"`
+	InputSchemaValidation schemaValidationView    `json:"input_schema_validation"`
 }
 
 func summarize(group string, available bool, action *pb.Action, fields []string) actionSummary {
-	view := actionSummary{Group: group, Name: action.GetName(), Available: available, InputSchemaWarning: action.InputSchemaWarning}
+	view := actionSummary{Group: group, Name: action.GetName(), Available: available, InputSchemaValidation: schemaValidation(action.GetInputSchemaValidation())}
 	if slices.Contains(fields, "input_schema") {
 		view.InputSchema = show(object(action.GetInputSchema()))
 	}

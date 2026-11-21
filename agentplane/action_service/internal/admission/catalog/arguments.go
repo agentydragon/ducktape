@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
@@ -52,7 +53,7 @@ func (noDocuments) Load(url string) (any, error) {
 // schema. It returns nil when they satisfy it, ErrInvalidArguments when they do not, and another error when the
 // schema is not one CompileSchema compiles.
 func (a ActionDefinition) CheckArguments(arguments any) error {
-	if a.InputSchemaWarning != "" {
+	if a.InputSchemaValidation.GetStatus() == action_servicepb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_NOT_ENFORCED {
 		return nil
 	}
 	document, err := jsonschema.UnmarshalJSON(bytes.NewReader(a.InputSchema))
@@ -67,6 +68,18 @@ func (a ActionDefinition) CheckArguments(arguments any) error {
 		return ErrInvalidArguments
 	}
 	return nil
+}
+
+// InspectSchema reports enforcement only after the schema compiles; failure is unknown for configured Actions.
+func InspectSchema(raw json.RawMessage) *action_servicepb.InputSchemaValidation {
+	document, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
+	if err != nil {
+		return nil
+	}
+	if _, err = CompileSchema(document); err != nil {
+		return nil
+	}
+	return &action_servicepb.InputSchemaValidation{Status: action_servicepb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_ENFORCED}
 }
 
 // DecodeArguments reads arguments into args once they satisfy schema, a schema CompileSchema compiled; it returns

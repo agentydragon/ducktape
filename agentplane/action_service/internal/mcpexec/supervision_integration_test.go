@@ -100,7 +100,7 @@ func TestAToolWithAnUnusableSchemaAndOtherToolsAreOffered(t *testing.T) {
 	groups := mcpGroup(t, httpConfig(u.url()))
 	supervise(t, groups, nil, executorTiming())
 	g := awaitGroup(t, groups, offering("test_good", "test_invalid"))
-	if g.Actions["test_invalid"].InputSchemaWarning == "" || g.Actions["test_good"].InputSchemaWarning != "" {
+	if g.Actions["test_invalid"].InputSchemaValidation.GetStatus() != action_servicepb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_NOT_ENFORCED || g.Actions["test_good"].InputSchemaValidation.GetStatus() != action_servicepb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_ENFORCED {
 		t.Errorf("warnings = %v", g.Actions)
 	}
 }
@@ -116,7 +116,7 @@ func TestAWarningClearsWhenTheServersSchemaIsFixed(t *testing.T) {
 	timing.Refresh = 50 * time.Millisecond
 	supervise(t, groups, nil, timing)
 	g := awaitGroup(t, groups, offering("test_invalid"))
-	if g.Actions["test_invalid"].InputSchemaWarning == "" {
+	if g.Actions["test_invalid"].InputSchemaValidation.GetStatus() != action_servicepb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_NOT_ENFORCED {
 		t.Fatal("unusable schema has no warning")
 	}
 
@@ -124,7 +124,7 @@ func TestAWarningClearsWhenTheServersSchemaIsFixed(t *testing.T) {
 	fixed.AddTool(&mcp.Tool{Name: "test_invalid", InputSchema: objectSchema}, answering(&calls{}, textResult("unused")))
 	u.server.Store(fixed)
 	awaitGroup(t, groups, func(g *catalog.Group) bool {
-		return offering("test_invalid")(g) && g.Actions["test_invalid"].InputSchemaWarning == ""
+		return offering("test_invalid")(g) && g.Actions["test_invalid"].InputSchemaValidation.GetStatus() == action_servicepb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_ENFORCED
 	})
 }
 

@@ -165,12 +165,13 @@ func (t *tools) directTool(group *pb.ActionGroup, action *pb.Action) *mcp.Tool {
 		title = action.GetTitle()
 	}
 	var schema any = map[string]any{"type": "object"}
-	if action.InputSchemaWarning == nil && len(action.GetInputSchema().GetFields()) > 0 {
+	notEnforced := action.GetInputSchemaValidation().GetStatus() == pb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_NOT_ENFORCED
+	if !notEnforced && len(action.GetInputSchema().GetFields()) > 0 {
 		schema = action.GetInputSchema()
 	}
 	description := action.GetDescription()
-	if action.InputSchemaWarning != nil {
-		description += "\n\nWarning: " + action.GetInputSchemaWarning() + ". Read the original schema with get_action."
+	if notEnforced {
+		description += "\n\nWarning: " + action.GetInputSchemaValidation().GetDetail() + " Read the original schema with get_action."
 	}
 	var annotations *mcp.ToolAnnotations
 	if hints := action.GetAnnotations(); hints != nil {

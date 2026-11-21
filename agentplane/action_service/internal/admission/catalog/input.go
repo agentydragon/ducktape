@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/invopop/jsonschema"
 	// Both schema libraries use the package name jsonschema.
 	validator "github.com/santhosh-tekuri/jsonschema/v6"
@@ -71,10 +72,11 @@ func NewInput[T any](options InputOptions) (Input[T], error) {
 	return Input[T]{
 		name: options.Name,
 		definition: ActionDefinition{
-			Description: options.Description,
-			InputSchema: document,
-			Title:       options.Title,
-			Annotations: options.Annotations,
+			Description:           options.Description,
+			InputSchema:           document,
+			InputSchemaValidation: &action_servicepb.InputSchemaValidation{Status: action_servicepb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_ENFORCED},
+			Title:                 options.Title,
+			Annotations:           options.Annotations,
 		},
 		validator: compiled,
 	}, nil
