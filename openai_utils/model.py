@@ -18,7 +18,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from openai_utils.api_shape import LLMApiShape
 from openai_utils.errors import translate_context_length
-from openai_utils.types import ReasoningEffort, ReasoningParams, build_reasoning_params
 
 
 class InputTokensDetails(BaseModel):
@@ -219,7 +218,6 @@ class ResponsesRequest(BaseModel):
     parallel_tool_calls: bool | None = None
     stream: bool = False
     store: bool | None = None
-    reasoning: ReasoningParams | None = None
     max_output_tokens: int | None = None
 
     # Allow unknown fields for forward-compat (timeouts, metadata, etc.)
@@ -353,21 +351,16 @@ class Model(ABC):
 
 
 class ResponsesModel(Model):
-    def __init__(self, *, client: AsyncOpenAI, model: str, reasoning_effort: ReasoningEffort | None = None) -> None:
+    def __init__(self, *, client: AsyncOpenAI, model: str) -> None:
         self._client = client
         self._model = model
-        self._reasoning_effort = reasoning_effort
 
     @property
     def model(self) -> str:
         return self._model
 
     def prepare(self, request: ResponsesRequest) -> ResponsesRequest:
-        kwargs = request.model_dump()
-        kwargs["model"] = self._model
-        if self._reasoning_effort and "reasoning" not in kwargs:
-            kwargs["reasoning"] = build_reasoning_params(effort=self._reasoning_effort)
-        return ResponsesRequest.model_validate(kwargs)
+        return ResponsesRequest.model_validate({**request.model_dump(), "model": self._model})
 
     async def sample(self, request: WireRequest) -> ResponsesResult:
         if not isinstance(request, ResponsesRequest):
