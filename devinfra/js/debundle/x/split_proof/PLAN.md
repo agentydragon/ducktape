@@ -80,6 +80,7 @@ What the statement forces:
 
 - How the four input files with a direct `eval("require")` are admitted: a check of the string, or an audited premise.
 - Whether a reviewed vendor table is worth its review cost. Alone it does not change which modules peel.
+- How readable names reach certified output. Near term: debundle emits its tree even unproved, and `translate` with the slice verdict referees it. The end state should not keep two referees (debundle's gate and Lean); which one remains is open.
 - Whether the vendor chunk becomes part of the program in the model. It removes most unknown code, and the model then has to run what the vendor code runs at start-up, regular expressions included.
 
 ## Next steps
@@ -92,6 +93,11 @@ Two tracks. The proof track is ordered: each step needs the one before. The engi
 
 - _Needs:_ classes in `Expr.allocOnly` (`allocOnly_keeps` and `allocOnly_local` for `evalMembers` and the static field initializers): 421 opaque units, most of them blocked by a standard global (251) or `extends` (162).
 - _Measured_ (2026-11-21, the verdict's moves case): the 886-module split runs 5,420,546 pairs out of order and 134,859 fail `MayMove`; the bundle-order split of 2,364 runs 2,571,190 and 1,395 fail. A split built with `MayMove` as one more conflict keeps 2,368 modules whole and the verdict names the moves slice for it.
+- _What blocks the reviewed tree_ (2026-11-21, against the tree's own module order; scripts in gaffer-private `certified-split/`): 1,961,504 of its 7,611,199 out-of-order pairs fail `MayMove`.
+  - About 1,110,000 pair a statement that only allocates with an opaque one whose footprint never reaches its names. A frame lemma for opaque code (a unit the world runs commutes with an allocation it cannot reach) covers them. The count is gated on footprints, not proved. On the bundle-order split it covers 889 of the 1,395.
+  - 141,696 reorder two statements that the footprint analysis calls effects. No `MayMove` rule covers these. The world calls commute, or the spec is wrong: decide case by case.
+  - Of the 718,365 failing pairs where neither statement is an effect, greedy by pairs resolved: classes 213,764; calls of bundle functions and IIFEs +119,877; pure expressions (operators, property reads, templates) +282,425; standard built-ins (`Map`, `Set`, `RegExp`, `Object.*`) +101,547.
+  - On the bundle-order split, by reviewed modules freed: classes 15, built-ins +23, pure expressions +27, calls of bundle functions +57, the world +3 (125 in all).
 - _Done when:_ the share is near the census's 73%, or the shortfall is explained by counted statement kinds.
 - _Then delete `MiniJS`_ ([`lean/Experiments/MiniJS.lean`](lean/Experiments/MiniJS.lean) and its two companions): `CoreJS` replaces it now that commutation is proved there.
 
