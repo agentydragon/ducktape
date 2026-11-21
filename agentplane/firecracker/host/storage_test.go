@@ -103,6 +103,32 @@ func TestCreateExt4CreatesImageAtRequestedSize(t *testing.T) {
 	}
 }
 
+func TestInstallStagedLeavesDestinationAloneWhenBuildFails(t *testing.T) {
+	directory := t.TempDir()
+	destination := filepath.Join(directory, "disk.img")
+	if err := os.WriteFile(destination, []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	failure := errors.New("build failed")
+	err := installStaged(destination, func(staging string) error {
+		if err := os.WriteFile(staging, []byte("partial"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return failure
+	})
+	if !errors.Is(err, failure) {
+		t.Fatalf("failed build returned %v, want %v", err, failure)
+	}
+	entries, err := os.ReadDir(directory)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("directory entries = %v, %v; want only the destination", entries, err)
+	}
+	got, err := os.ReadFile(destination)
+	if err != nil || string(got) != "old" {
+		t.Fatalf("destination = %q, %v; want it unchanged", got, err)
+	}
+}
+
 func testStorage(t *testing.T) *Storage {
 	t.Helper()
 	root := t.TempDir()
