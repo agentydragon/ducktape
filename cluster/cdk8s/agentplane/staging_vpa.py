@@ -1,7 +1,7 @@
-"""Resource request sizing for the static Agentplane staging services.
+"""Resource request sizing for static Agentplane staging services and the Haku relay.
 
-The namespace opts out of Goldilocks because it also contains dynamic Sandboxes.
-These VPAs are Flux-owned and target only the listed Deployments.
+Agentplane staging opts out of Goldilocks because it also contains dynamic Sandboxes.
+Haku CI opts out because it runs dynamically created Jobs.
 """
 
 from cdk8s import ApiObjectMetadata, App, Chart
@@ -17,6 +17,7 @@ from vpa_crds.io.k8s.autoscaling import (
 )
 
 from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE
+from cluster.cdk8s.haku_ci import egress_gateway, runner as haku_ci_runner
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "agentplane-staging-vpa"
@@ -82,4 +83,6 @@ def chart(app: App) -> Chart:
                 ),
             ),
         )
+    # The staging Deployment artifact already owns and health-checks the Haku relay.
+    egress_gateway.add_vpa(chart, haku_ci_runner.NAMESPACE)
     return chart

@@ -181,7 +181,7 @@ from cluster.cdk8s.haku import (
     workloads as haku_workloads,
     workspaces as haku_workspaces,
 )
-from cluster.cdk8s.haku_ci import egress_gateway as haku_ci_egress, runner as haku_ci_runner
+from cluster.cdk8s.haku_ci import runner as haku_ci_runner
 from cluster.cdk8s.home_assistant import (
     app as home_assistant_app,
     backup as home_assistant_backup,
@@ -2328,13 +2328,7 @@ def generate_manifests(root: Path) -> None:
     flux.flux_kustomization(
         flux_chart,
         staging_vpa.NAME,
-        # Staging also owns and health-checks the Haku relay Deployment.
-        write_directory(
-            root,
-            agentplane_staging_vpa_artifact,
-            staging_vpa.chart,
-            lambda app: haku_ci_egress.vpa_chart(app, haku_ci_runner.NAMESPACE),
-        ),
+        write_directory(root, agentplane_staging_vpa_artifact, staging_vpa.chart),
         depends_on=flux.flux_kustomization_depends_on_many(vpa_kustomization, agentplane_staging_kustomization),
     )
     agentplane_staging_delivery_artifact = artifact(

@@ -18,7 +18,9 @@ def _mib(quantity: str) -> int:
 
 
 def test_vpas_target_only_static_deployments(scratch_app: App, staging_manifests: list[dict[str, Any]]) -> None:
-    vpas = staging_vpa.chart(scratch_app).to_json()
+    resources = staging_vpa.chart(scratch_app).to_json()
+    assert {resource["metadata"]["namespace"] for resource in resources} == {"agentplane-staging", "haku-ci"}
+    vpas = [resource for resource in resources if resource["metadata"]["namespace"] == "agentplane-staging"]
     assert len(vpas) == 13
     assert all(vpa["apiVersion"] == "autoscaling.k8s.io/v1" and vpa["kind"] == "VerticalPodAutoscaler" for vpa in vpas)
     assert (

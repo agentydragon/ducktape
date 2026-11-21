@@ -15,7 +15,7 @@ egress proxy release it talks to.
 
 from pathlib import Path
 
-from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import ServiceAccount, k8s
 from constructs import Construct
 from vpa_crds.io.k8s.autoscaling import VerticalPodAutoscaler, VerticalPodAutoscalerSpecTargetRef
@@ -45,11 +45,10 @@ _WORKLOAD_CA_DIR = Path("/etc/agentplane-workload-ca")
 _ZONES = node_scheduling.HOME_AND_OVH_ZONES
 
 
-def vpa_chart(app: App, namespace: str) -> Chart:
+def add_vpa(scope: Construct, namespace: str) -> VerticalPodAutoscaler:
     """Size the relay's requests while Goldilocks stays disabled for runner Jobs."""
-    chart = Chart(app, f"{NAME}-vpa", disable_resource_name_hashes=True)
-    VerticalPodAutoscaler(
-        chart,
+    return VerticalPodAutoscaler(
+        scope,
         NAME,
         metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
         spec=initial_requests_spec(
@@ -57,7 +56,6 @@ def vpa_chart(app: App, namespace: str) -> Chart:
             container_name=sidecar_config.CONTAINER_NAME,
         ),
     )
-    return chart
 
 
 def service(namespace: str) -> ServiceRef:
