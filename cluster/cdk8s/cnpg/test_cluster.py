@@ -26,6 +26,16 @@ def test_database_cluster_namespace_and_reclaim_policy(scratch_chart: Chart) -> 
             owner="test_owner",
         )
 
+    retained = cluster.Database(
+        scratch_chart,
+        "retained",
+        metadata=ApiObjectMetadata(name="test-retained", namespace="test-data"),
+        cluster=postgres,
+        name="test_retained",
+        owner="test_owner",
+    )
+    assert retained.to_json()["spec"]["databaseReclaimPolicy"] == "retain"
+
     disposable = cluster.Database(
         scratch_chart,
         "disposable",
