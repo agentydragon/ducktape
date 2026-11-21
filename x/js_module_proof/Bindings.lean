@@ -7,6 +7,9 @@ structure CapturedLocal where
 
 inductive BindingStmt where
   | variable (name : String) (initial : Nat)
+  /- Its pre-initializer `undefined` phase is intentionally unmodeled; a read
+     before this declaration makes modeled initialization unavailable. -/
+  | hoistedVariable (name : String) (initial : Nat)
   | constant (name : String) (initial : Nat)
   | function (name target source : String)
   | reader (name source : String)
@@ -40,6 +43,7 @@ structure BindingModule where
 
 def declaredName : BindingStmt → Option String
   | .variable name _ => some name
+  | .hoistedVariable name _ => some name
   | .constant name _ => some name
   | .function name _ _ => some name
   | .reader name _ => some name
@@ -65,6 +69,7 @@ def isVariable (source : List BindingStmt) (name : String) : Bool :=
   | none => false
   | some statement => match statement with
     | .variable _ _ => true
+    | .hoistedVariable _ _ => true
     | .constant _ _ => false
     | .function _ _ _ => false
     | .reader _ _ => false
@@ -85,6 +90,7 @@ def isReadableBinding (source : List BindingStmt) (name : String) : Bool :=
   | none => false
   | some statement => match statement with
     | .variable _ _ => true
+    | .hoistedVariable _ _ => true
     | .constant _ _ => true
     | .function _ _ _ => false
     | .reader _ _ => false
@@ -105,6 +111,7 @@ def isFunction (source : List BindingStmt) (name : String) : Bool :=
   | none => false
   | some statement => match statement with
     | .variable _ _ => false
+    | .hoistedVariable _ _ => false
     | .constant _ _ => false
     | .function _ _ _ => true
     | .reader _ _ => true
@@ -130,6 +137,7 @@ def isThrower (source : List BindingStmt) (name : String) : Bool :=
     | .capturedClosure _ _ _ _ => false
     | .capturedAlias _ _ => false
     | .variable _ _ => false
+    | .hoistedVariable _ _ => false
     | .constant _ _ => false
     | .function _ _ _ => false
     | .reader _ _ => false
@@ -146,6 +154,7 @@ def isFactory (source : List BindingStmt) (name : String) : Bool :=
   | some statement => match statement with
     | .factory _ _ _ => true
     | .variable _ _ => false
+    | .hoistedVariable _ _ => false
     | .constant _ _ => false
     | .function _ _ _ => false
     | .reader _ _ => false
@@ -167,6 +176,7 @@ def isClosure (source : List BindingStmt) (name : String) : Bool :=
     | .closure _ _ => true
     | .factory _ _ _ => false
     | .variable _ _ => false
+    | .hoistedVariable _ _ => false
     | .constant _ _ => false
     | .function _ _ _ => false
     | .reader _ _ => false
@@ -505,6 +515,7 @@ def callableSyntax (source : List BindingStmt) (name : String) : Option (List St
     | .capturedAlias _ _ => none
     | .reader _ binding => some ([], .name binding)
     | .variable _ _ => none
+    | .hoistedVariable _ _ => none
     | .constant _ _ => none
     | .function _ _ _ => none
     | .thrower _ _ => none
@@ -592,6 +603,7 @@ def capturedFactoryData (source : List BindingStmt) (name : String) : Option (Li
   | some statement => match statement with
     | .capturedFactory _ parameters locals closureParameters body => some (parameters, locals, closureParameters, body)
     | .variable _ _ => none
+    | .hoistedVariable _ _ => none
     | .constant _ _ => none
     | .function _ _ _ => none
     | .reader _ _ => none
@@ -613,6 +625,7 @@ def capturedClosureDataFuel (source : List BindingStmt) : Nat → String → Opt
     | some statement => match statement with
       | .capturedClosure _ factory arguments keys => some (factory, arguments, keys)
       | .variable _ _ => none
+      | .hoistedVariable _ _ => none
       | .constant _ _ => none
       | .function _ _ _ => none
       | .reader _ _ => none
@@ -651,6 +664,7 @@ def capturedFactoryReferences (parameters : List String) (locals : List Captured
 def validRefs (source : List BindingStmt) (modules : List BindingModule) (index : Nat) (statement : BindingStmt) : Bool :=
   match statement with
   | .variable _ _ => true
+  | .hoistedVariable _ _ => true
   | .constant _ _ => true
   | .function _ target sourceName =>
     isVariable source target && isReadableBinding source sourceName &&
@@ -733,6 +747,7 @@ def resolveReference (modules : List BindingModule) (index : Nat) (name : String
 
 def referenceNames : BindingStmt → List String
   | .variable _ _ => []
+  | .hoistedVariable _ _ => []
   | .constant _ _ => []
   | .function _ target source => [target, source]
   | .thrower _ _ => []
@@ -764,6 +779,7 @@ def capturedKeys (source : List BindingStmt) : List String :=
     | .capturedClosure _ _ _ keys => keys
     | .capturedAlias _ _ => []
     | .variable _ _ => []
+    | .hoistedVariable _ _ => []
     | .constant _ _ => []
     | .function _ _ _ => []
     | .reader _ _ => []
@@ -880,6 +896,7 @@ def functionOperations (source : List BindingStmt) (name : String) (observeRetur
     | .factory _ _ _ => none
     | .recordCall _ => none
     | .variable _ _ => none
+    | .hoistedVariable _ _ => none
     | .constant _ _ => none
     | .call _ => none
     | .record _ => none
@@ -895,6 +912,7 @@ def capturedInitializers (prior : List (String × String)) : List CapturedLocal 
 def bindingOperations (source : List BindingStmt) (statement : BindingStmt) : Option (List Operation) :=
   match statement with
   | .variable name initial => some [.declareBinding name initial]
+  | .hoistedVariable name initial => some [.declareBinding name initial]
   | .constant name initial => some [.declareBinding name initial]
   | .function _ _ _ => some []
   | .reader _ _ => some []
@@ -916,6 +934,7 @@ def bindingOperations (source : List BindingStmt) (statement : BindingStmt) : Op
     match definition with
     | .factory _ _ sourceName => some [.copyBinding (closureCell name) sourceName]
     | .variable _ _ => none
+    | .hoistedVariable _ _ => none
     | .constant _ _ => none
     | .function _ _ _ => none
     | .reader _ _ => none
@@ -938,6 +957,7 @@ def bindingOperations (source : List BindingStmt) (statement : BindingStmt) : Op
       | .wrapper _ closureName => some closureName
       | .factory _ _ _ => none
       | .variable _ _ => none
+      | .hoistedVariable _ _ => none
       | .constant _ _ => none
       | .function _ _ _ => none
       | .reader _ _ => none
@@ -962,6 +982,7 @@ def runBindingStatements (source statements : List BindingStmt) : Option (Execut
 def canonicalBindingState (source : List BindingStmt) (state : ExecutionState Unit) : Option (ExecutionState Unit) := do
   let names := source.flatMap (fun statement => match statement with
     | .variable name _ => [name]
+    | .hoistedVariable name _ => [name]
     | .constant name _ => [name]
     | .function _ _ _ => []
     | .reader _ _ => []
@@ -1006,6 +1027,7 @@ def outputCaptureNamespace (renames : List (String × String)) : BindingStmt →
     .capturedClosure name factory arguments (keys.map (fun key =>
       ((renames.find? (fun pair => pair.1 == key)).map Prod.snd).getD key))
   | .variable name initial => .variable name initial
+  | .hoistedVariable name initial => .hoistedVariable name initial
   | .constant name initial => .constant name initial
   | .function name target source => .function name target source
   | .reader name source => .reader name source
@@ -1075,6 +1097,7 @@ def publicCallable (statements : List BindingStmt) (name : String) : Option Publ
         | none => none
       | none => none
     | .variable _ _ => none
+    | .hoistedVariable _ _ => none
     | .constant _ _ => none
     | .factory _ _ _ => none
     | .recordCall _ => none
@@ -1098,6 +1121,7 @@ def publicCapturedEnvironment (statements : List BindingStmt) (name : String) : 
       | some (parameters, locals, _, _) => some ((parameters ++ locals.map CapturedLocal.name).zip keys)
       | none => none
     | .variable _ _ => none
+    | .hoistedVariable _ _ => none
     | .constant _ _ => none
     | .function _ _ _ => none
     | .reader _ _ => none

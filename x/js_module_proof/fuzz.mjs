@@ -1126,7 +1126,7 @@ export function makeComposedCase(seed, index) {
     type: "Program",
     sourceType: "module",
     body: [
-      ...globals.map((name) => variable(name, rand(4))),
+      ...globals.map((name, i) => variable(name, rand(4), (index + i) % 7 === 0 ? "var" : "let")),
       ...functions,
       {
         type: "ExportNamedDeclaration",
@@ -1539,6 +1539,10 @@ export async function runFuzz({
     importAliasGeneratedCases: 0,
     importAliasComparedCases: 0,
     importAliasProvedCases: 0,
+    varCases: 0,
+    varGeneratedCases: 0,
+    varComparedCases: 0,
+    varProvedCases: 0,
     constantCases: 0,
     objectCases: 0,
     objectSourceExecuted: 0,
@@ -1608,6 +1612,7 @@ export async function runFuzz({
     const out = join(root, "out");
     let keep = true;
     let hasGeneratedImportAlias = false;
+    let hasVar = false;
     let phase = "generate-ast";
     try {
       const generated =
@@ -1630,12 +1635,14 @@ export async function runFuzz({
       const visit = (value) => {
         if (!value || typeof value !== "object") return;
         if (typeof value.type === "string") nodeTypes.add(value.type);
+        if (value.type === "VariableDeclaration" && value.kind === "var") hasVar = true;
         for (const child of Object.values(value)) {
           if (Array.isArray(child)) child.forEach(visit);
           else visit(child);
         }
       };
       visit(input.ast);
+      if (hasVar) summary.varCases++;
       for (const type of nodeTypes) summary.astNodeCases[type] = (summary.astNodeCases[type] ?? 0) + 1;
       const exports = input.ast.body.flatMap((node) =>
         node.type === "ExportNamedDeclaration" ? (node.specifiers ?? []) : []
@@ -1783,6 +1790,7 @@ export async function runFuzz({
       }
       if (input.invalidAssignment) throw new Error("invalid assignment unexpectedly accepted");
       summary.generated++;
+      if (hasVar) summary.varGeneratedCases++;
       if (modules.some((module) => module.aliasImports)) {
         const emitted = await Promise.all(
           Object.keys(input.spec.modules).map((name) => readFile(join(out, name), "utf8"))
@@ -1820,6 +1828,7 @@ export async function runFuzz({
       const equal = JSON.stringify(before) === JSON.stringify(after);
       await writeFile(join(root, "node.json"), JSON.stringify({ before, after }, null, 2) + "\n");
       summary.compared++;
+      if (hasVar) summary.varComparedCases++;
       if (hasGeneratedImportAlias) summary.importAliasComparedCases++;
       if (input.grammar === "parameter") {
         summary.parameterCompared++;
@@ -1894,6 +1903,7 @@ export async function runFuzz({
         }
         if (verdict.result === "proved under assumptions") {
           summary.proved++;
+          if (hasVar) summary.varProvedCases++;
           if (hasGeneratedImportAlias) summary.importAliasProvedCases++;
           if (input.grammar === "object") summary.objectProved++;
           if (input.grammar === "captured") summary.capturedProved++;

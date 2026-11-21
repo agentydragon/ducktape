@@ -171,6 +171,9 @@ by the proof. The generator can also emit candidate splits
 for some synchronous nested functions, parameters, blocks and branches after
 checking their lexical free references and rejecting imported writes. The
 validator returns `unknown` for those candidates; generation is not a proof.
+Top-level `var` declarations with one nonnegative numeric initializer are
+supported when modeled execution never reads the binding before that initializer;
+the earlier `undefined` phase remains outside the model.
 Public exports must be functions. The entry module may rename an exported
 function, including under multiple public names and captured closures. A module assignment may set `aliasImports: true` to import dependencies through
 generated public aliases while retaining their original local names. Renamed
@@ -274,7 +277,7 @@ Some trials mutate generated modules to exercise the validator;
 mutations cover binding initializers, function bodies, recorded effects,
 exports and import order, with separate counts for each kind. Coverage records
 renamed and multiply exported declarations, requested import aliases, and how
-many generated import aliases were compared and proved.
+many generated import aliases and `var` cases were compared and proved.
 Some trials generate supported parameterized captured closures or counter
 closures and check safe and unsafe
 splits against Node and Lean. Other trials generate programs with nested,

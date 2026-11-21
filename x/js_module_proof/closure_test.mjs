@@ -1358,6 +1358,70 @@ theorem imported_alias_live_cell :
   assert.match(replay.stdout, /'imported_alias_live_cell' does not depend on any axioms/);
 }
 
+if (shard === 5) {
+  const source = join(root, "var-bindings.mjs");
+  const spec = join(root, "var-bindings.json");
+  const out = join(root, "var-bindings-out");
+  await writeFile(
+    source,
+    `var count = 0;
+var amount = 1;
+function bump() { count += amount; }
+function read() { return count; }
+export { bump, read };
+`
+  );
+  await writeFile(
+    spec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0, 1, 2] },
+        "reader.mjs": { imports: ["state.mjs"], aliasImports: true, statements: [3] },
+        "entry.mjs": { imports: ["state.mjs", "reader.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", source, spec, out).result, "generated");
+  const proof = cli("validate", source, spec, out);
+  assert.equal(proof.result, "proved under assumptions", JSON.stringify(proof));
+  assert.match(proof.certificate, /\.hoistedVariable "count" 0/);
+  const calls = ["bump", "read", "bump", "read"];
+  const trace = execute(source, calls);
+  assert.deepEqual(trace, execute(join(out, "entry.mjs"), calls));
+  assert.deepEqual(trace.results[3], { value: 2 });
+  const state = join(out, "state.mjs");
+  await writeFile(state, (await readFile(state, "utf8")).replace("var count = 0", "var count = 3"));
+  const unsafe = cli("validate", source, spec, out);
+  assert.equal(unsafe.result, "unsafe", JSON.stringify(unsafe));
+  assert.notDeepEqual(execute(source, unsafe.calls), execute(join(out, "entry.mjs"), unsafe.calls));
+  const early = join(root, "var-early.mjs");
+  const earlySpec = join(root, "var-early.json");
+  const earlyOut = join(root, "var-early-out");
+  await writeFile(
+    early,
+    `globalThis.record(value);
+var value = 3;
+function read() { return value; }
+export { read };
+`
+  );
+  await writeFile(
+    earlySpec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "entry.mjs": { imports: [], statements: [0, 1, 2] },
+      },
+    })
+  );
+  assert.equal(cli("generate", early, earlySpec, earlyOut).result, "generated");
+  assert.deepEqual(execute(early, []).events, [{ undefined: true }]);
+  assert.equal(cli("validate", early, earlySpec, earlyOut).result, "unknown");
+}
+
 if (shard === 14) {
   const logicalSource = join(root, "logical-values.mjs");
   const logicalSpec = join(root, "logical-values.json");

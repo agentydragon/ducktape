@@ -334,6 +334,10 @@ if (shards === 4 && shard === 2) {
   assert.equal(checkedAlias.importAliasGeneratedCases, 1);
   assert.equal(checkedAlias.importAliasComparedCases, 1);
   assert.equal(checkedAlias.importAliasProvedCases, 1);
+  assert.equal(checkedAlias.varCases, 1);
+  assert.equal(checkedAlias.varGeneratedCases, 1);
+  assert.equal(checkedAlias.varComparedCases, 1);
+  assert.equal(checkedAlias.varProvedCases, 1);
   const asyncCampaign = await runFuzz({ seed: 37, cases: 8, outputDir: process.env.TEST_TMPDIR, grammarMode: "async" });
   assert.equal(asyncCampaign.asyncSourceExecuted, 8);
   assert.equal(asyncCampaign.inconclusive, 0);
@@ -420,6 +424,7 @@ assert.ok(new Set(composedPrograms.map((item) => item.source)).size > 120);
 assert.ok(composedPrograms.some((item) => item.source.includes(" as public_calculate")));
 assert.ok(composedPrograms.some((item) => item.source.includes(" as second_calculate")));
 assert.ok(composedPrograms.some((item) => item.spec.modules["logic.mjs"].aliasImports));
+assert.ok(composedPrograms.some((item) => item.source.includes("var global")));
 assert.ok(composedPrograms.some((item) => item.source.includes("const box =")));
 assert.ok(composedPrograms.some((item) => item.source.includes("function nested(")));
 assert.ok(composedPrograms.some((item) => item.source.includes("catch {")));

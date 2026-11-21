@@ -982,12 +982,16 @@ function statement(node) {
       check(name !== "globalThis", "globalThis cannot be locally declared");
       return { kind: "closure", name, factory: identifier(d.init.callee) };
     }
-    check(node.kind === "let" || node.kind === "const", "expected a lexical declaration");
+    check(["let", "const", "var"].includes(node.kind), "expected a supported declaration");
     check(
       name !== "globalThis" && d.init?.type === "Literal" && Number.isSafeInteger(d.init.value) && d.init.value >= 0,
       "expected a nonnegative safe integer initializer"
     );
-    return { kind: node.kind === "const" ? "constant" : "variable", name, value: d.init.value };
+    return {
+      kind: node.kind === "const" ? "constant" : node.kind === "var" ? "hoistedVariable" : "variable",
+      name,
+      value: d.init.value,
+    };
   }
   if (node.type === "FunctionDeclaration") {
     check(!node.async && !node.generator && node.params.length === 0, "expected a simple function");
@@ -1141,6 +1145,7 @@ function readSpec(spec, count) {
 const declarationName = (item) =>
   [
     "variable",
+    "hoistedVariable",
     "constant",
     "function",
     "reader",
@@ -1371,7 +1376,8 @@ function leanExpression(expression) {
 function leanStatement(item) {
   switch (item.kind) {
     case "variable":
-      return `.variable ${str(item.name)} ${item.value}`;
+    case "hoistedVariable":
+      return `.${item.kind} ${str(item.name)} ${item.value}`;
     case "constant":
       return `.constant ${str(item.name)} ${item.value}`;
     case "function":
@@ -1859,7 +1865,8 @@ theorem binding_export_difference :
   // state. Search short public-call sequences in fresh Node processes. The
   // conservative growth bound keeps every possible intermediate in range.
   const maximum = source.statements.reduce(
-    (max, item) => (item.ast.kind === "variable" || item.ast.kind === "constant" ? Math.max(max, item.ast.value) : max),
+    (max, item) =>
+      ["variable", "hoistedVariable", "constant"].includes(item.ast.kind) ? Math.max(max, item.ast.value) : max,
     1
   );
   const initialCalls = source.statements.filter((item) => ["call", "recordCall"].includes(item.ast.kind)).length;
