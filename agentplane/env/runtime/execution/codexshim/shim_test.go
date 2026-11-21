@@ -13,74 +13,27 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/native"
 	"github.com/coder/websocket"
 )
 
 func TestUnsupportedSandboxIsRejected(t *testing.T) {
-	core := native.New()
-	defer core.Close()
-	server := httptest.NewServer(Handler{Server: core})
-	defer server.Close()
 	ctx := context.Background()
-	ws, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http"), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ws.CloseNow()
-	call := func(msg string) map[string]any {
-		t.Helper()
-		if err := ws.Write(ctx, websocket.MessageText, []byte(msg)); err != nil {
-			t.Fatal(err)
-		}
-		_, b, err := ws.Read(ctx)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var v map[string]any
-		if err := json.Unmarshal(b, &v); err != nil {
-			t.Fatal(err)
-		}
-		return v
-	}
-	if v := call(`{"id":1,"method":"initialize","params":{"clientName":"test"}}`); v["result"] == nil {
+	ws := dialShim(t, ctx, serveShim(t, DefaultLimits()))
+	if v := shimCall(t, ctx, ws, 1, "initialize", map[string]any{"clientName": "test"}); v["result"] == nil {
 		t.Fatalf("initialize: %v", v)
 	}
-	v := call(`{"id":2,"method":"process/start","params":{"processId":"p","argv":["/bin/true"],"cwd":"file:///tmp","env":{},"sandbox":{"type":"workspaceWrite"}}}`)
+	v := shimCall(t, ctx, ws, 2, "process/start", map[string]any{"processId": "p", "argv": []string{"/bin/true"}, "cwd": "file:///tmp", "env": map[string]string{}, "sandbox": map[string]any{"type": "workspaceWrite"}})
 	if v["error"] == nil {
 		t.Fatalf("sandbox request accepted: %v", v)
 	}
 }
 
 func TestUnknownResumeUsesNativeRejection(t *testing.T) {
-	core := native.New()
-	defer core.Close()
-	server := httptest.NewServer(Handler{Server: core})
-	defer server.Close()
 	ctx := context.Background()
-	ws, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http"), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ws.CloseNow()
-	if err := ws.Write(ctx, websocket.MessageText, []byte(`{"id":1,"method":"initialize","params":{"clientName":"test","resumeSessionId":"missing"}}`)); err != nil {
-		t.Fatal(err)
-	}
-	_, b, err := ws.Read(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var v struct {
-		Error struct {
-			Code    int    `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	if err := json.Unmarshal(b, &v); err != nil {
-		t.Fatal(err)
-	}
-	if v.Error.Code != -32600 || v.Error.Message != "unknown session id missing" {
-		t.Fatalf("unexpected response: %s", b)
+	ws := dialShim(t, ctx, serveShim(t, DefaultLimits()))
+	v := shimCall(t, ctx, ws, 1, "initialize", map[string]any{"clientName": "test", "resumeSessionId": "missing"})
+	if e, _ := v["error"].(map[string]any); e["code"] != float64(-32600) || e["message"] != "unknown session id missing" {
+		t.Fatalf("unexpected response: %v", v)
 	}
 }
 
@@ -111,43 +64,21 @@ func TestFilesystemRoundTrip(t *testing.T) {
 }
 
 func TestProcessNotifications(t *testing.T) {
-	core := native.New()
-	defer core.Close()
-	server := httptest.NewServer(Handler{Server: core})
-	defer server.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	ws, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http"), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ws.CloseNow()
-	if err := ws.Write(ctx, websocket.MessageText, []byte(`{"id":1,"method":"initialize","params":{"clientName":"test"}}`)); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := ws.Read(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if err := ws.Write(ctx, websocket.MessageText, []byte(`{"id":2,"method":"process/start","params":{"processId":"p","argv":["/bin/sh","-c","printf hello"],"cwd":"file:///tmp","env":{}}}`)); err != nil {
-		t.Fatal(err)
+	ws := dialShim(t, ctx, serveShim(t, DefaultLimits()))
+	shimCall(t, ctx, ws, 1, "initialize", map[string]any{"clientName": "test"})
+	if v := shimCall(t, ctx, ws, 2, "process/start", map[string]any{"processId": "p", "argv": []string{"/bin/sh", "-c", "printf hello"}, "cwd": "file:///tmp", "env": map[string]string{}}); v["error"] != nil {
+		t.Fatalf("request failed: %v", v)
 	}
 	seen := map[string]bool{}
 	for !seen["process/closed"] {
-		_, b, err := ws.Read(ctx)
-		if err != nil {
-			t.Fatal(err)
+		msg := readShim(t, ctx, ws)
+		if msg["error"] != nil {
+			t.Fatalf("request failed: %v", msg)
 		}
-		var msg struct {
-			Method string `json:"method"`
-			Error  any    `json:"error"`
-		}
-		if err := json.Unmarshal(b, &msg); err != nil {
-			t.Fatal(err)
-		}
-		if msg.Error != nil {
-			t.Fatalf("request failed: %s", b)
-		}
-		seen[msg.Method] = true
+		method, _ := msg["method"].(string)
+		seen[method] = true
 	}
 	if !seen["process/output"] || !seen["process/exited"] {
 		t.Fatalf("missing notifications: %v", seen)
@@ -192,44 +123,17 @@ func TestDiscoveryAndCopy(t *testing.T) {
 }
 
 func TestFileHandlesDoNotSurviveReconnect(t *testing.T) {
-	core := native.New()
-	defer core.Close()
-	server := httptest.NewServer(Handler{Server: core})
-	defer server.Close()
+	wsURL := serveShim(t, DefaultLimits())
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	dial := func() *websocket.Conn {
-		t.Helper()
-		ws, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http"), nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return ws
-	}
-	call := func(ws *websocket.Conn, msg any) map[string]any {
-		t.Helper()
-		b, _ := json.Marshal(msg)
-		if err := ws.Write(ctx, websocket.MessageText, b); err != nil {
-			t.Fatal(err)
-		}
-		_, b, err := ws.Read(ctx)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var result map[string]any
-		if err := json.Unmarshal(b, &result); err != nil {
-			t.Fatal(err)
-		}
-		return result
-	}
-	ws := dial()
-	init := call(ws, map[string]any{"id": 1, "method": "initialize", "params": map[string]any{"clientName": "test"}})
+	ws := dialShim(t, ctx, wsURL)
+	init := shimCall(t, ctx, ws, 1, "initialize", map[string]any{"clientName": "test"})
 	id := init["result"].(map[string]any)["sessionId"].(string)
 	path := filepath.Join(t.TempDir(), "file")
 	if err := os.WriteFile(path, []byte("hello"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	opened := call(ws, map[string]any{"id": 2, "method": "fs/open", "params": map[string]any{"handleId": "file", "path": uri(path)}})
+	opened := shimCall(t, ctx, ws, 2, "fs/open", map[string]any{"handleId": "file", "path": uri(path)})
 	if opened["error"] != nil {
 		t.Fatalf("open: %v", opened)
 	}
@@ -237,8 +141,8 @@ func TestFileHandlesDoNotSurviveReconnect(t *testing.T) {
 	// Detach is asynchronous; retry only the handshake, which has no side effects when attached.
 	var resumed *websocket.Conn
 	for ctx.Err() == nil {
-		candidate := dial()
-		v := call(candidate, map[string]any{"id": 3, "method": "initialize", "params": map[string]any{"clientName": "test", "resumeSessionId": id}})
+		candidate := dialShim(t, ctx, wsURL)
+		v := shimCall(t, ctx, candidate, 3, "initialize", map[string]any{"clientName": "test", "resumeSessionId": id})
 		if v["error"] == nil {
 			resumed = candidate
 			break
@@ -249,8 +153,7 @@ func TestFileHandlesDoNotSurviveReconnect(t *testing.T) {
 	if resumed == nil {
 		t.Fatal("resume not available")
 	}
-	defer resumed.CloseNow()
-	got := call(resumed, map[string]any{"id": 4, "method": "fs/readBlock", "params": map[string]any{"handleId": "file", "offset": 0, "len": 10}})
+	got := shimCall(t, ctx, resumed, 4, "fs/readBlock", map[string]any{"handleId": "file", "offset": 0, "len": 10})
 	if got["error"] == nil {
 		t.Fatalf("old handle remained usable: %v", got)
 	}
@@ -303,44 +206,20 @@ func TestWalkFollowsDirectorySymlinks(t *testing.T) {
 }
 
 func TestWritableFileStream(t *testing.T) {
-	core := native.New()
-	defer core.Close()
-	server := httptest.NewServer(Handler{Server: core})
-	defer server.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	ws, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http"), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ws.CloseNow()
-	call := func(id int, method string, params any) map[string]any {
-		t.Helper()
-		b, _ := json.Marshal(map[string]any{"id": id, "method": method, "params": params})
-		if err := ws.Write(ctx, websocket.MessageText, b); err != nil {
-			t.Fatal(err)
-		}
-		_, b, err = ws.Read(ctx)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var result map[string]any
-		if err = json.Unmarshal(b, &result); err != nil {
-			t.Fatal(err)
-		}
-		return result
-	}
-	if got := call(1, "initialize", map[string]any{"clientName": "test"}); got["error"] != nil {
+	ws := dialShim(t, ctx, serveShim(t, DefaultLimits()))
+	if got := shimCall(t, ctx, ws, 1, "initialize", map[string]any{"clientName": "test"}); got["error"] != nil {
 		t.Fatal(got)
 	}
 	path := filepath.Join(t.TempDir(), "file")
-	if got := call(2, "fs/open", map[string]any{"handleId": "f", "path": uri(path), "mode": "replace"}); got["error"] != nil {
+	if got := shimCall(t, ctx, ws, 2, "fs/open", map[string]any{"handleId": "f", "path": uri(path), "mode": "replace"}); got["error"] != nil {
 		t.Fatal(got)
 	}
-	if got := call(3, "fs/writeBlock", map[string]any{"handleId": "f", "offset": 0, "chunk": []byte("hello")}); got["error"] != nil {
+	if got := shimCall(t, ctx, ws, 3, "fs/writeBlock", map[string]any{"handleId": "f", "offset": 0, "chunk": []byte("hello")}); got["error"] != nil {
 		t.Fatal(got)
 	}
-	if got := call(4, "fs/close", map[string]any{"handleId": "f"}); got["error"] != nil {
+	if got := shimCall(t, ctx, ws, 4, "fs/close", map[string]any{"handleId": "f"}); got["error"] != nil {
 		t.Fatal(got)
 	}
 	data, err := os.ReadFile(path)
@@ -358,47 +237,18 @@ func TestStreamedHTTPAndEnvHeader(t *testing.T) {
 		_, _ = w.Write([]byte("streamed"))
 	}))
 	defer upstream.Close()
-	core := native.New()
-	defer core.Close()
-	server := httptest.NewServer(Handler{Server: core})
-	defer server.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	ws, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http"), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ws.CloseNow()
-	send := func(v any) {
-		t.Helper()
-		b, _ := json.Marshal(v)
-		if err := ws.Write(ctx, websocket.MessageText, b); err != nil {
-			t.Fatal(err)
-		}
-	}
-	read := func() map[string]any {
-		t.Helper()
-		_, b, err := ws.Read(ctx)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var v map[string]any
-		if err = json.Unmarshal(b, &v); err != nil {
-			t.Fatal(err)
-		}
-		return v
-	}
-	send(map[string]any{"id": 1, "method": "initialize", "params": map[string]any{"clientName": "test"}})
-	if got := read(); got["error"] != nil {
+	ws := dialShim(t, ctx, serveShim(t, DefaultLimits()))
+	if got := shimCall(t, ctx, ws, 1, "initialize", map[string]any{"clientName": "test"}); got["error"] != nil {
 		t.Fatal(got)
 	}
-	send(map[string]any{"id": 2, "method": "http/request", "params": map[string]any{"requestId": "req", "method": "GET", "url": upstream.URL, "streamResponse": true, "headers": []any{map[string]any{"name": "X-Probe", "value": "Bearer ", "valueEnvVar": "TEST_EXEC_HTTP_KEY"}}}})
-	if got := read(); got["error"] != nil || got["result"] == nil {
+	if got := shimCall(t, ctx, ws, 2, "http/request", map[string]any{"requestId": "req", "method": "GET", "url": upstream.URL, "streamResponse": true, "headers": []any{map[string]any{"name": "X-Probe", "value": "Bearer ", "valueEnvVar": "TEST_EXEC_HTTP_KEY"}}}); got["error"] != nil || got["result"] == nil {
 		t.Fatalf("headers: %v", got)
 	}
 	var out []byte
 	for {
-		got := read()
+		got := readShim(t, ctx, ws)
 		if got["method"] != "http/request/bodyDelta" {
 			t.Fatalf("notification: %v", got)
 		}
@@ -415,8 +265,7 @@ func TestStreamedHTTPAndEnvHeader(t *testing.T) {
 	if string(out) != "streamed" {
 		t.Fatalf("body: %q", out)
 	}
-	send(map[string]any{"id": 3, "method": "http/request", "params": map[string]any{"requestId": "blocked", "method": "GET", "url": upstream.URL, "headers": []any{map[string]any{"name": "x", "value": "", "valueEnvVar": "OPENAI_API_KEY"}}}})
-	if got := read(); got["error"] == nil {
+	if got := shimCall(t, ctx, ws, 3, "http/request", map[string]any{"requestId": "blocked", "method": "GET", "url": upstream.URL, "headers": []any{map[string]any{"name": "x", "value": "", "valueEnvVar": "OPENAI_API_KEY"}}}); got["error"] == nil {
 		t.Fatal("allowed denied environment variable")
 	}
 }
