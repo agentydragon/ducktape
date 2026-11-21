@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     api_bearer_token: str
     config_path: Path = Field(default=Path("/etc/aiquota/config.toml"), validation_alias="AIQUOTA_CONFIG")
     cache_ttl_seconds: int = Field(default=120, ge=0)
+    claude_proxy: str | None = None
+    claude_proxy_ca: Path | None = None
     cli_proxy_api_key: SecretStr | None = Field(default=None, validation_alias="AIQUOTA_CLIPROXY_API_KEY")
     openai_platform_token: SecretStr | None = None
     anthropic_platform_token: SecretStr | None = None

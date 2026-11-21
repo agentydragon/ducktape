@@ -36,6 +36,8 @@ def main() -> None:
         cache_ttl=(
             settings.cache_ttl if polling.cache_ttl_seconds is None else timedelta(seconds=polling.cache_ttl_seconds)
         ),
+        claude_proxy=settings.claude_proxy,
+        claude_proxy_ca=settings.claude_proxy_ca,
         cli_proxy_api_key=settings.cli_proxy_api_key.get_secret_value() if settings.cli_proxy_api_key else None,
     )
     metrics = CollectorMetrics()

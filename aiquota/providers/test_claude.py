@@ -6,6 +6,7 @@ import httpx
 import pytest
 import pytest_bazel
 import respx
+from pydantic import SecretStr
 
 from aiquota.models import ClaudeResetGrant, FetchSuccess, PrepaidBalanceAvailable, PrepaidBalanceUnavailable
 from aiquota.providers.claude import (
@@ -119,18 +120,15 @@ def test_prepaid_credits_uses_exact_nested_minor_units_not_rounded_or_tranche_va
     assert balance == PrepaidBalanceAvailable(amount_minor=12345, exponent=2, currency="USD")
 
 
-def _stored_credentials(tmp_path: Path) -> ClaudeSettings:
-    """A Claude Code credential file whose access token has not expired."""
+async def test_explicit_token_is_read_only_and_never_refreshed(tmp_path: Path) -> None:
     path = tmp_path / "credentials.json"
-    path.write_text('{"claudeAiOauth":{"accessToken":"placeholder", "expiresAt":4102444800000}}')
-    return ClaudeSettings(credentials_path=path)
-
-
-async def test_unexpired_stored_credentials_authorize_direct_requests_without_refresh(tmp_path: Path) -> None:
-    provider = ClaudeProvider(_stored_credentials(tmp_path), provider_client())
+    path.write_text('{"claudeAiOauth":{"accessToken":"expired", "refreshToken":"refresh", "expiresAt":0}}')
+    provider = ClaudeProvider(
+        ClaudeSettings(credentials_path=path, access_token=SecretStr("placeholder")), provider_client()
+    )
 
     with respx.mock(assert_all_called=False) as mock:
-        post_route = mock.post(TOKEN_URL).mock(side_effect=AssertionError("an unexpired token must not refresh"))
+        post_route = mock.post(TOKEN_URL).mock(side_effect=AssertionError("read-only provider must not refresh"))
         usage_route = mock.get(USAGE_URL).mock(
             return_value=httpx.Response(
                 200, json={"five_hour": {"utilization": 10, "resets_at": "2026-08-20T05:00:00Z"}}
@@ -159,11 +157,12 @@ async def test_unexpired_stored_credentials_authorize_direct_requests_without_re
     assert profile_route.calls.last.request.headers["Authorization"] == "Bearer placeholder"
     assert balance_route.calls.last.request.headers["Authorization"] == "Bearer placeholder"
     assert balance_route.calls.last.request.headers["anthropic-beta"] == "oauth-2025-04-20"
+    assert "placeholder" not in path.read_text()
 
 
-async def test_management_api_uses_claude_auth_index_and_ignores_stored_credentials(tmp_path: Path) -> None:
+async def test_management_api_uses_claude_auth_index_and_does_not_use_legacy_token() -> None:
     provider = ClaudeProvider(
-        _stored_credentials(tmp_path),
+        ClaudeSettings(access_token=SecretStr("legacy-placeholder")),
         provider_client(),
         CLIProxyAPIManagementClient("http://cliproxy.test/v0/management", "management-key", provider_client()),
     )
@@ -221,8 +220,8 @@ async def test_management_api_uses_claude_auth_index_and_ignores_stored_credenti
     assert legacy_usage.call_count == 0
 
 
-async def test_rejected_reset_option_falls_back_to_plain_usage(tmp_path: Path) -> None:
-    provider = ClaudeProvider(_stored_credentials(tmp_path), provider_client())
+async def test_rejected_reset_option_falls_back_to_plain_usage() -> None:
+    provider = ClaudeProvider(ClaudeSettings(access_token=SecretStr("placeholder")), provider_client())
     with respx.mock(assert_all_called=False) as mock:
         mock.get(USAGE_URL).mock(return_value=httpx.Response(400))
         plain = mock.get(PLAIN_USAGE_URL).mock(
@@ -258,8 +257,8 @@ async def test_management_rejected_reset_option_falls_back_to_plain_usage() -> N
     assert [json.loads(call.request.content)["url"] for call in calls.calls][:2] == [USAGE_URL, PLAIN_USAGE_URL]
 
 
-async def test_prepaid_lookup_failure_keeps_successful_usage_and_marks_balance_unavailable(tmp_path: Path) -> None:
-    provider = ClaudeProvider(_stored_credentials(tmp_path), provider_client())
+async def test_prepaid_lookup_failure_keeps_successful_usage_and_marks_balance_unavailable() -> None:
+    provider = ClaudeProvider(ClaudeSettings(access_token=SecretStr("placeholder")), provider_client())
 
     with respx.mock(assert_all_called=False) as mock:
         mock.get(USAGE_URL).mock(return_value=httpx.Response(200, json={"five_hour": {"utilization": 10}}))
