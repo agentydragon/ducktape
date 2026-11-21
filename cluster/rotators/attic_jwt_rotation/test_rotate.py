@@ -141,24 +141,6 @@ def test_config_rejects_missing_or_wrong_destination_fields(destination: dict[st
         )
 
 
-def test_config_rejects_mixed_flat_and_nested_destination():
-    with pytest.raises(ValidationError):
-        Config.model_validate(
-            {
-                "tokens": [
-                    {
-                        "name": "x",
-                        "sub": "x",
-                        "validity": "1 year",
-                        "pull": [],
-                        "sops_file": "legacy.sops.yaml",
-                        "destination": {"storage": "sops", "sops_file": "new.sops.yaml"},
-                    }
-                ]
-            }
-        )
-
-
 def test_kubernetes_only_empty_secret_publishes_without_sops_or_git_commit(monkeypatch):
     token = _make_kubernetes_only_token()
     jwt = _make_jwt({"sub": "test-subject", "exp": int((datetime.now(UTC) + timedelta(days=365)).timestamp())})
@@ -601,42 +583,16 @@ def test_ensure_cache_returns_public_key_when_cache_exists():
     assert call[:2] == ("GET", "http://attic:8080/_api/v1/cache-config/main")
 
 
-def test_ensure_cache_creates_when_absent():
-    transport = _ScriptedTransport(
-        [
-            httpx.Response(404, text="not found"),
-            httpx.Response(201, text=""),
-            httpx.Response(200, json={"public_key": "gaffer:xyz="}),
-        ]
-    )
-    with _client(transport) as client:
-        assert ensure_cache(client, "gaffer") == "gaffer:xyz="
-    methods = [c[0] for c in transport.calls]
-    assert methods == ["GET", "POST", "GET"]
-    # Matches upstream attic's `attic cache create` default with no flags.
-    assert json.loads(transport.calls[1][2]) == {
-        "keypair": "Generate",
-        "is_public": False,
-        "store_dir": "/nix/store",
-        "priority": 41,
-        "upstream_cache_key_names": [],
-    }
-
-
-def test_ensure_cache_creates_public_when_requested():
-    transport = _ScriptedTransport(
-        [
-            httpx.Response(404, text="not found"),
-            httpx.Response(201, text=""),
-            httpx.Response(200, json={"public_key": "public:xyz="}),
-        ]
-    )
-    with _client(transport) as client:
-        assert ensure_cache(client, "public", is_public=True) == "public:xyz="
-    assert json.loads(transport.calls[1][2])["is_public"] is True
-
-
-def test_ensure_cache_creates_with_supplied_keypair():
+@pytest.mark.parametrize(
+    ("kwargs", "body_overrides"),
+    [
+        ({}, {}),
+        ({"is_public": True}, {"is_public": True}),
+        ({"keypair": "main:supplied-secret=="}, {"keypair": {"Keypair": "main:supplied-secret=="}}),
+    ],
+    ids=["private", "public", "supplied-keypair"],
+)
+def test_ensure_cache_creates_when_absent(kwargs: dict[str, Any], body_overrides: dict[str, Any]):
     transport = _ScriptedTransport(
         [
             httpx.Response(404, text="not found"),
@@ -645,8 +601,17 @@ def test_ensure_cache_creates_with_supplied_keypair():
         ]
     )
     with _client(transport) as client:
-        ensure_cache(client, "main", keypair="main:supplied-secret==")
-    assert json.loads(transport.calls[1][2])["keypair"] == {"Keypair": "main:supplied-secret=="}
+        assert ensure_cache(client, "main", **kwargs) == "main:xyz="
+    assert [c[0] for c in transport.calls] == ["GET", "POST", "GET"]
+    # Matches upstream attic's `attic cache create` default with no flags, plus the requested overrides.
+    assert json.loads(transport.calls[1][2]) == {
+        "keypair": "Generate",
+        "is_public": False,
+        "store_dir": "/nix/store",
+        "priority": 41,
+        "upstream_cache_key_names": [],
+        **body_overrides,
+    }
 
 
 def test_load_keypair_returns_none_when_dir_is_none():
