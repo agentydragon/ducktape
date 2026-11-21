@@ -94,8 +94,8 @@ def chart(app: App) -> Chart:
             "admissionController": _component(
                 memory_request="128Mi",
                 memory_limit="256Mi",
-                replicaCount=2,
-                podDisruptionBudget={"minAvailable": 1},
+                replicaCount=3,
+                podDisruptionBudget={"minAvailable": 2},
                 affinity={
                     "podAntiAffinity": {
                         "requiredDuringSchedulingIgnoredDuringExecution": [
