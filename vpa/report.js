@@ -476,8 +476,11 @@ function Report() {
           runner manager onto the new policy. The audit found unchanged
           unrelated VPA specs, Pod UIDs and Ready endpoints. At 07:12:53 UTC all
           eight policies matched, with four recommendation updates still
-          pending. Check generation and owner-matched admission after the
-          expected 07:15 cycle. ${" "}<${Anchor} href=${github + "pull/18519"}
+          pending. After the 07:15 cycle, all eight had current CPU and memory
+          targets at 07:16 UTC. All four newly reconciled targets passed
+          owner-matched server dry runs with unchanged limits and init
+          containers. Check admitted requests and readiness on ordinary
+          replacements. ${" "}<${Anchor} href=${github + "pull/18519"}
             >Application batch<//
           >.
         <//>
