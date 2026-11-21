@@ -20,11 +20,13 @@ from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
+from cluster.cdk8s.namespaces import initial_request_annotations
 from cluster.cdk8s.plaid_mcp.db import NAMESPACE, POSTGRES
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret, SecretStoreRef
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.vpa_policy import ContainerPolicy
 
 _NAME = "plaid-mcp"
 _CONFIG_MAP = "config"
@@ -147,7 +149,11 @@ def _deployment(chart: Chart) -> None:
                 "description": (
                     "Plaid Link UI authenticates users with Authentik OIDC; verified webhooks queue transaction"
                     " syncs, with the daily Cron catching up the mirror."
-                )
+                ),
+                # Web startup reached 48m CPU, and working set peaked at 316 MiB.
+                **initial_request_annotations(
+                    ContainerPolicy.cpu_and_memory_requests_only("plaid-web", cpu_floor="50m", memory_floor="384Mi")
+                ),
             },
         ),
         spec=k8s.DeploymentSpec(

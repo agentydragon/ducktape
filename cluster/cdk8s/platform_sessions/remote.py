@@ -432,6 +432,14 @@ def _provider_workload(chart: Chart, instance: str, *, provider_type: str, recor
             vpa_policy = ContainerPolicy.cpu_and_memory_requests_only("provider", memory_floor="416Mi")
         case "quest-scheduler":
             vpa_policy = ContainerPolicy.cpu_and_memory_requests_only("provider", memory_floor="576Mi")
+        case "myquest":
+            # The browser peaked at 986 MiB and used 158m CPU over five minutes during startup.
+            vpa_policy = ContainerPolicy.cpu_and_memory_requests_only("provider", cpu_floor="175m", memory_floor="1Gi")
+        case "thrive":
+            # Reserve above the 652 MiB sampled peak and retain the existing CPU reservation.
+            vpa_policy = ContainerPolicy.cpu_and_memory_requests_only(
+                "provider", cpu_floor=_CPU_REQUEST, memory_floor="768Mi"
+            )
         case _:
             vpa_policy = None
     _deployment(
