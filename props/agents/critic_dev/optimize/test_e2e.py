@@ -49,12 +49,12 @@ async def test_optimizer_orchestrates_critic(
     """Test optimizer can orchestrate critic runs with simulated grading.
 
     This e2e test verifies the full orchestration flow:
-    1. Optimizer container starts with DirectToolProvider tools
-    2. Optimizer calls run_critic tool (REST API to backend)
+    1. Optimizer container starts with its direct tools
+    2. Optimizer calls start_critic (REST API to backend)
     3. Registry spawns critic container with different model
     4. Critic runs, submits issues, completes
     5. Background snapshot grader processes edges
-    6. Optimizer's wait_until_graded_tool returns (polls database directly)
+    6. Optimizer's wait_until_graded returns (polls database directly)
     7. Optimizer reports success
 
     Uses multi-model FakeOpenAIServer to route optimizer and critic to different mocks.
@@ -146,7 +146,7 @@ async def test_optimizer_orchestrates_critic(
                 optimizer_run = session.get(AgentRun, run_id)
                 assert optimizer_run is not None, "Optimizer run not found in database"
                 assert optimizer_run.status == AgentRunStatus.EXITED, (
-                    f"Expected optimizer status COMPLETED, got {optimizer_run.status}"
+                    f"Expected optimizer status EXITED, got {optimizer_run.status}"
                 )
 
             # Verify a critic run was created and completed
@@ -161,7 +161,7 @@ async def test_optimizer_orchestrates_critic(
                 )
                 assert len(critic_runs) >= 1, "Expected at least one critic run spawned by optimizer"
                 for cr in critic_runs:
-                    assert cr.status == AgentRunStatus.EXITED, f"Critic run {cr.agent_run_id} should be COMPLETED"
+                    assert cr.status == AgentRunStatus.EXITED, f"Critic run {cr.agent_run_id} should be EXITED"
 
 
 if __name__ == "__main__":
