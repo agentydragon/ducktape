@@ -18,6 +18,7 @@ import yaml
 from python.runfiles import Runfiles
 
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT, PARKED_ROOT
+from cluster.cdk8s.testing.manifests import find_resource
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 _REGENERATE = "regenerate with `bb run //cluster/cdk8s:generate_manifests` and commit the result"
@@ -55,23 +56,22 @@ def parsed_yaml_documents(generated: Path) -> dict[Path, tuple[Any, ...]]:
     return {path: tuple(yaml.load_all(path.read_text(), Loader=yaml.CSafeLoader)) for path in generated.rglob("*.yaml")}
 
 
-def _generated_documents(generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]) -> list[dict[str, Any]]:
+@pytest.fixture(scope="module")
+def documents(generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]) -> list[dict[str, Any]]:
     """Objects written by cdk8s, including generated files beside hand-written inputs."""
     generated_root = generated / GENERATED_ROOT
     hand_written_root = generated / HAND_WRITTEN_ROOT
     return [
         doc
-        for path, documents in parsed_yaml_documents.items()
+        for path, docs in parsed_yaml_documents.items()
         if path.is_relative_to(generated_root)
         or (path.is_relative_to(hand_written_root) and path.name.endswith(".k8s.yaml"))
-        for doc in documents
+        for doc in docs
         if isinstance(doc, dict)
     ]
 
 
-def test_auto_vpa_namespaces_declare_a_resource_policy(
-    generated: Path, checkout: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
-) -> None:
+def test_auto_vpa_namespaces_declare_a_resource_policy(documents: list[dict[str, Any]], checkout: Path) -> None:
     # Parked third-party applications keep their hand-written manifests. Check those too,
     # so reviving one does not silently lose the default when the admission rule is retired.
     parked = [
@@ -82,7 +82,7 @@ def test_auto_vpa_namespaces_declare_a_resource_policy(
     ]
     namespaces = [
         doc
-        for doc in [*_generated_documents(generated, parsed_yaml_documents), *parked]
+        for doc in [*documents, *parked]
         if doc.get("kind") == "Namespace"
         and doc.get("metadata", {}).get("labels", {}).get("goldilocks.fairwinds.com/vpa-update-mode") == "auto"
     ]
@@ -112,19 +112,12 @@ def test_tofu_controller_accepts_external_artifacts(
 
 
 def test_kvm_worker_pool_members_are_selected_fenced_and_given_their_own_ssd_disk(
-    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
+    documents: list[dict[str, Any]],
 ) -> None:
-    documents = _generated_documents(generated, parsed_yaml_documents)
     pool = next(doc for doc in documents if doc["kind"] == "VirtualMachinePool")
     # /scale cannot read the pool if replicas is absent, even though its controller defaults to one.
     assert "replicas" in pool["spec"]
-    flux = next(
-        doc
-        for doc in documents
-        if doc.get("apiVersion") == "kustomize.toolkit.fluxcd.io/v1"
-        and doc.get("kind") == "Kustomization"
-        and doc["metadata"]["name"] == "buildbuddy-kvm-worker"
-    )
+    flux = find_resource(documents, "Kustomization", "buildbuddy-kvm-worker")
     assert flux["spec"]["ignore"] == [
         {
             "paths": ["/spec/replicas"],
@@ -167,21 +160,10 @@ def test_kvm_worker_pool_members_are_selected_fenced_and_given_their_own_ssd_dis
     assert all(not rule.get("toEntities") and not rule.get("toCIDR") for rule in fence["egress"])
 
 
-def test_kvm_worker_metrics_are_scrapable_only_by_node_local_alloy(
-    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
-) -> None:
-    documents = _generated_documents(generated, parsed_yaml_documents)
+def test_kvm_worker_metrics_are_scrapable_only_by_node_local_alloy(documents: list[dict[str, Any]]) -> None:
     pool = next(doc for doc in documents if doc["kind"] == "VirtualMachinePool")
-    service = next(
-        doc
-        for doc in documents
-        if doc["kind"] == "Service" and doc["metadata"]["name"] == "buildbuddy-kvm-worker-metrics"
-    )
-    monitor = next(
-        doc
-        for doc in documents
-        if doc["kind"] == "ServiceMonitor" and doc["metadata"]["name"] == "buildbuddy-kvm-worker"
-    )
+    service = find_resource(documents, "Service", "buildbuddy-kvm-worker-metrics")
+    monitor = find_resource(documents, "ServiceMonitor", "buildbuddy-kvm-worker")
     ports = {port["name"]: port for port in service["spec"]["ports"]}
     pod_labels = pool["spec"]["virtualMachineTemplate"]["spec"]["template"]["metadata"]["labels"]
     assert service["spec"]["selector"].items() <= pod_labels.items()
@@ -199,32 +181,19 @@ def test_kvm_worker_metrics_are_scrapable_only_by_node_local_alloy(
         assert {p["port"] for p in rule["toPorts"][0]["ports"]} == {str(port["port"]) for port in ports.values()}
 
 
-def test_cpap_guest_filesystem_metrics_are_scraped_only_by_alloy(
-    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
-) -> None:
-    documents = _generated_documents(generated, parsed_yaml_documents)
-    vm = next(doc for doc in documents if doc["kind"] == "VirtualMachine" and doc["metadata"]["name"] == "cpap-gateway")
+def test_cpap_guest_filesystem_metrics_are_scraped_only_by_alloy(documents: list[dict[str, Any]]) -> None:
+    vm = find_resource(documents, "VirtualMachine", "cpap-gateway")
     vm_template = vm["spec"]["template"]
     interface = vm_template["spec"]["domain"]["devices"]["interfaces"][0]
     assert {port["name"]: port["port"] for port in interface["ports"]} == {"http": 18080, "node-metrics": 9100}
 
-    service = next(
-        doc for doc in documents if doc["kind"] == "Service" and doc["metadata"]["name"] == "cpap-gateway-metrics"
-    )
-    monitor = next(
-        doc
-        for doc in documents
-        if doc["kind"] == "ServiceMonitor" and doc["metadata"]["name"] == "cpap-gateway-metrics"
-    )
+    service = find_resource(documents, "Service", "cpap-gateway-metrics")
+    monitor = find_resource(documents, "ServiceMonitor", "cpap-gateway-metrics")
     assert service["spec"]["selector"].items() <= vm_template["metadata"]["labels"].items()
     assert monitor["spec"]["selector"]["matchLabels"].items() <= service["metadata"]["labels"].items()
     assert monitor["spec"]["endpoints"] == [{"port": "node-metrics", "path": "/metrics"}]
 
-    policy = next(
-        doc
-        for doc in documents
-        if doc["kind"] == "CiliumNetworkPolicy" and doc["metadata"]["name"] == "guest-metrics-ingress"
-    )["spec"]
+    policy = find_resource(documents, "CiliumNetworkPolicy", "guest-metrics-ingress")["spec"]
     assert policy["endpointSelector"]["matchLabels"].items() <= vm_template["metadata"]["labels"].items()
     assert policy["ingress"] == [
         {
@@ -254,16 +223,11 @@ def test_cpap_guest_filesystem_metrics_are_scraped_only_by_alloy(
     assert "egress" not in policy
 
 
-def test_mcp_edge_removes_plaintext_service_and_ingress(
-    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
-) -> None:
-    documents = _generated_documents(generated, parsed_yaml_documents)
-    service = next(doc for doc in documents if doc["kind"] == "Service" and doc["metadata"]["name"] == "mcp-edge")
+def test_mcp_edge_removes_plaintext_service_and_ingress(documents: list[dict[str, Any]]) -> None:
+    service = find_resource(documents, "Service", "mcp-edge")
     assert {(port["name"], port["port"]) for port in service["spec"]["ports"]} == {("http", 8081), ("grpc-tls", 8443)}
 
-    policy = next(
-        doc for doc in documents if doc["kind"] == "CiliumNetworkPolicy" and doc["metadata"]["name"] == "mcp-edge"
-    )["spec"]
+    policy = find_resource(documents, "CiliumNetworkPolicy", "mcp-edge")["spec"]
     ingress_ports = {
         port["port"]
         for rule in policy["ingress"]
@@ -274,10 +238,7 @@ def test_mcp_edge_removes_plaintext_service_and_ingress(
     assert {"8081", "8443"} <= ingress_ports
 
 
-def test_kvm_worker_keeps_privileged_actions_inside_the_guest(
-    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
-) -> None:
-    documents = _generated_documents(generated, parsed_yaml_documents)
+def test_kvm_worker_keeps_privileged_actions_inside_the_guest(documents: list[dict[str, Any]]) -> None:
     pool = next(doc for doc in documents if doc["kind"] == "VirtualMachinePool")
     worker = pool["spec"]["virtualMachineTemplate"]["spec"]
     guest = worker["template"]["spec"]
@@ -320,15 +281,9 @@ def test_kvm_worker_keeps_privileged_actions_inside_the_guest(
     # Runtime bootstrap belongs in the immutable image; inline cloud-init could
     # reintroduce package downloads or a configuration reboot during scale-up.
     assert not any("cloudInitNoCloud" in volume for volume in guest["volumes"])
-    config_map = next(
-        doc for doc in documents if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "buildbuddy-kvm-worker"
-    )
+    config_map = find_resource(documents, "ConfigMap", "buildbuddy-kvm-worker")
     assert volumes[disks["bbconfig"]]["configMap"]["name"] == config_map["metadata"]["name"]
-    policy = next(
-        doc
-        for doc in documents
-        if doc["kind"] == "CiliumNetworkPolicy" and doc["metadata"]["name"] == "buildbuddy-kvm-worker"
-    )["spec"]
+    policy = find_resource(documents, "CiliumNetworkPolicy", "buildbuddy-kvm-worker")["spec"]
     # Ingress admits only named peers (the metrics scraper); the exact peer and port are pinned in
     # test_kvm_worker_metrics_are_scrapable_only_by_node_local_alloy.
     assert all(
@@ -369,15 +324,8 @@ def test_generated_tree_matches_committed_snapshot(generated: Path, checkout: Pa
     assert not failures, "\n\n".join(failures)
 
 
-def test_piraeus_storage_is_confined_to_prepared_nodes(
-    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
-) -> None:
-    documents = _generated_documents(generated, parsed_yaml_documents)
-    release = next(
-        doc
-        for doc in documents
-        if doc.get("kind") == "HelmRelease" and doc["metadata"].get("name") == "linstor-cluster"
-    )
+def test_piraeus_storage_is_confined_to_prepared_nodes(documents: list[dict[str, Any]]) -> None:
+    release = find_resource(documents, "HelmRelease", "linstor-cluster")
     values = release["spec"]["values"]
     controller_selector = {"storage.allegedly.works/piraeus-ready": "true", "topology.kubernetes.io/region": "hil"}
 
@@ -494,16 +442,8 @@ def test_piraeus_storage_is_confined_to_prepared_nodes(
             assert parameters["DrbdOptions/auto-diskful"] == "1"
             assert parameters["DrbdOptions/auto-diskful-allow-cleanup"] == "true"
 
-    operator_flux = next(
-        doc
-        for doc in documents
-        if doc.get("kind") == "Kustomization" and doc.get("metadata", {}).get("name") == "piraeus-operator"
-    )
-    cluster_flux = next(
-        doc
-        for doc in documents
-        if doc.get("kind") == "Kustomization" and doc.get("metadata", {}).get("name") == "piraeus-cluster"
-    )
+    operator_flux = find_resource(documents, "Kustomization", "piraeus-operator")
+    cluster_flux = find_resource(documents, "Kustomization", "piraeus-cluster")
     assert operator_flux["spec"]["prune"] is False
     assert operator_flux["spec"]["deletionPolicy"] == "Orphan"
     assert cluster_flux["spec"]["prune"] is False
@@ -515,13 +455,8 @@ def test_piraeus_storage_is_confined_to_prepared_nodes(
     ]
 
 
-def test_descheduler_protects_piraeus_node_local_storage_classes(
-    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
-) -> None:
-    documents = _generated_documents(generated, parsed_yaml_documents)
-    descheduler = next(
-        doc for doc in documents if doc.get("kind") == "HelmRelease" and doc["metadata"].get("name") == "descheduler"
-    )
+def test_descheduler_protects_piraeus_node_local_storage_classes(documents: list[dict[str, Any]]) -> None:
+    descheduler = find_resource(documents, "HelmRelease", "descheduler")
     [default_profile] = descheduler["spec"]["values"]["deschedulerPolicy"]["profiles"]
     default_evictor = next(config for config in default_profile["pluginConfig"] if config["name"] == "DefaultEvictor")
     protected_classes = {
@@ -534,18 +469,9 @@ def test_descheduler_protects_piraeus_node_local_storage_classes(
     assert {"piraeus-ssd-local", "piraeus-ssd-local-delete", "piraeus-hdd-local"} <= protected_classes
 
 
-def test_crossplane_core_waits_for_its_controller_and_retains_its_inventory(
-    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
-) -> None:
-    documents = _generated_documents(generated, parsed_yaml_documents)
-    release = next(
-        doc for doc in documents if doc.get("kind") == "HelmRelease" and doc["metadata"].get("name") == "crossplane"
-    )
-    kustomization = next(
-        doc
-        for doc in documents
-        if doc.get("kind") == "Kustomization" and doc.get("metadata", {}).get("name") == "crossplane"
-    )
+def test_crossplane_core_waits_for_its_controller_and_retains_its_inventory(documents: list[dict[str, Any]]) -> None:
+    release = find_resource(documents, "HelmRelease", "crossplane")
+    kustomization = find_resource(documents, "Kustomization", "crossplane")
 
     assert release["metadata"]["namespace"] == "crossplane-system"
     assert kustomization["spec"]["dependsOn"] == [{"name": "kyverno", "namespace": "ducktape-flux"}]
@@ -554,24 +480,11 @@ def test_crossplane_core_waits_for_its_controller_and_retains_its_inventory(
 
 
 def test_litellm_provider_waits_for_crossplane_health_before_exposing_its_resources(
-    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
+    documents: list[dict[str, Any]],
 ) -> None:
-    documents = _generated_documents(generated, parsed_yaml_documents)
-    provider = next(
-        doc for doc in documents if doc.get("kind") == "Provider" and doc["metadata"].get("name") == "provider-litellm"
-    )
-    pull_secret = next(
-        doc
-        for doc in documents
-        if doc.get("kind") == "ExternalSecret"
-        and doc["metadata"].get("name") == "forgejo-images-creds"
-        and doc["metadata"].get("namespace") == "crossplane-system"
-    )
-    kustomization = next(
-        doc
-        for doc in documents
-        if doc.get("kind") == "Kustomization" and doc.get("metadata", {}).get("name") == "crossplane-provider-litellm"
-    )
+    provider = find_resource(documents, "Provider", "provider-litellm")
+    pull_secret = find_resource(documents, "ExternalSecret", "forgejo-images-creds", namespace="crossplane-system")
+    kustomization = find_resource(documents, "Kustomization", "crossplane-provider-litellm")
 
     assert provider["apiVersion"] == "pkg.crossplane.io/v1"
     assert provider["spec"]["package"].startswith("git.allegedly.works/ducktape-ci/provider-litellm:")
@@ -581,31 +494,18 @@ def test_litellm_provider_waits_for_crossplane_health_before_exposing_its_resour
         "name": "kubernetes-crossplane-forgejo-images-creds-secret-store",
     }
     assert pull_secret["spec"]["target"]["template"]["type"] == "kubernetes.io/dockerconfigjson"
-    store = next(
-        doc
-        for doc in documents
-        if doc.get("kind") == "ClusterSecretStore"
-        and doc["metadata"].get("name") == "kubernetes-crossplane-forgejo-images-creds-secret-store"
-    )
+    store = find_resource(documents, "ClusterSecretStore", "kubernetes-crossplane-forgejo-images-creds-secret-store")
     assert store["spec"]["conditions"] == [{"namespaces": ["crossplane-system"]}]
     assert store["spec"]["provider"]["kubernetes"]["remoteNamespace"] == "forgejo-images"
     assert store["spec"]["provider"]["kubernetes"]["auth"]["serviceAccount"] == {
         "name": "crossplane-forgejo-images-creds-reader"
     }
-    reader_role = next(
-        doc
-        for doc in documents
-        if doc.get("kind") == "Role" and doc["metadata"].get("name") == "crossplane-forgejo-images-creds-reader"
-    )
+    reader_role = find_resource(documents, "Role", "crossplane-forgejo-images-creds-reader")
     assert reader_role["metadata"]["namespace"] == "forgejo-images"
     assert reader_role["rules"] == [
         {"apiGroups": [""], "resources": ["secrets"], "resourceNames": ["forgejo-images-creds"], "verbs": ["get"]}
     ]
-    reader_binding = next(
-        doc
-        for doc in documents
-        if doc.get("kind") == "RoleBinding" and doc["metadata"].get("name") == "crossplane-forgejo-images-creds-reader"
-    )
+    reader_binding = find_resource(documents, "RoleBinding", "crossplane-forgejo-images-creds-reader")
     assert reader_binding["subjects"] == [
         {
             "apiGroup": "",
@@ -638,37 +538,13 @@ def test_litellm_provider_waits_for_crossplane_health_before_exposing_its_resour
 
 
 def test_opentofu_workspace_takes_over_forgejo_root_after_tofu_and_preserves_state(
-    runfiles: Runfiles, generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
+    runfiles: Runfiles, documents: list[dict[str, Any]]
 ) -> None:
-    documents = _generated_documents(generated, parsed_yaml_documents)
-    provider = next(
-        doc for doc in documents if doc.get("kind") == "Provider" and doc["metadata"].get("name") == "provider-opentofu"
-    )
-    provider_kustomization = next(
-        doc
-        for doc in documents
-        if doc.get("kind") == "Kustomization" and doc.get("metadata", {}).get("name") == "crossplane-provider-opentofu"
-    )
-    provider_config = next(
-        doc
-        for doc in documents
-        if doc.get("apiVersion") == "opentofu.upbound.io/v1beta1"
-        and doc.get("kind") == "ProviderConfig"
-        and doc.get("metadata", {}).get("name") == "crossplane-forgejo-agentydragon"
-    )
-    workspace = next(
-        doc
-        for doc in documents
-        if doc.get("apiVersion") == "opentofu.upbound.io/v1beta1"
-        and doc.get("kind") == "Workspace"
-        and doc.get("metadata", {}).get("name") == "forgejo-agentydragon"
-    )
-    resources_kustomization = next(
-        doc
-        for doc in documents
-        if doc.get("kind", "").lower() == "kustomization"
-        and doc.get("metadata", {}).get("name") == "crossplane-forgejo-agentydragon"
-    )
+    provider = find_resource(documents, "Provider", "provider-opentofu")
+    provider_kustomization = find_resource(documents, "Kustomization", "crossplane-provider-opentofu")
+    provider_config = find_resource(documents, "ProviderConfig", "crossplane-forgejo-agentydragon")
+    workspace = find_resource(documents, "Workspace", "forgejo-agentydragon")
+    resources_kustomization = find_resource(documents, "Kustomization", "crossplane-forgejo-agentydragon")
     assert provider["spec"]["package"].startswith("xpkg.upbound.io/upbound/provider-opentofu:")
     assert provider_kustomization["spec"]["dependsOn"] == [{"name": "crossplane", "namespace": "ducktape-flux"}]
     assert provider_kustomization["spec"]["wait"] is True
@@ -715,10 +591,7 @@ def test_opentofu_workspace_takes_over_forgejo_root_after_tofu_and_preserves_sta
     )
 
 
-def test_litellm_crossplane_keys_retain_publication_after_handoff(
-    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
-) -> None:
-    documents = _generated_documents(generated, parsed_yaml_documents)
+def test_litellm_crossplane_keys_retain_publication_after_handoff(documents: list[dict[str, Any]]) -> None:
     kustomizations = {
         doc["metadata"]["name"]: doc
         for doc in documents
@@ -787,14 +660,8 @@ def test_litellm_crossplane_keys_retain_publication_after_handoff(
     assert teams["team-gemini-clients"]["spec"]["forProvider"]["routerSettings"]["fallbacks"]
 
 
-def test_piraeus_controller_network_policy_only_admits_api_tls(
-    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
-) -> None:
-    policy = next(
-        document
-        for document in _generated_documents(generated, parsed_yaml_documents)
-        if document.get("kind") == "NetworkPolicy" and document["metadata"].get("name") == "linstor-controller-api"
-    )
+def test_piraeus_controller_network_policy_only_admits_api_tls(documents: list[dict[str, Any]]) -> None:
+    policy = find_resource(documents, "NetworkPolicy", "linstor-controller-api")
 
     assert policy["metadata"]["namespace"] == "piraeus-datastore"
     assert policy["spec"]["podSelector"]["matchLabels"] == {"app.kubernetes.io/component": "linstor-controller"}
@@ -857,17 +724,12 @@ def test_ducktape_artifact_copy_sources_are_in_sparse_checkout(
 
 
 def test_session_archive_credentials_source_reaches_its_secret_generator(
-    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]], checkout: Path
+    generated: Path, documents: list[dict[str, Any]], checkout: Path
 ) -> None:
     credentials_source = "secrets/shared/session-backup.yaml"
     assert (checkout / credentials_source).is_file(), "the encrypted credentials source must be in the source checkout"
 
-    documents = _generated_documents(generated, parsed_yaml_documents)
-    generator = next(
-        document
-        for document in documents
-        if document.get("kind") == "ArtifactGenerator" and document["metadata"].get("name") == "ducktape-artifacts"
-    )
+    generator = find_resource(documents, "ArtifactGenerator", "ducktape-artifacts")
     archive_artifact = next(item for item in generator["spec"]["artifacts"] if item["name"] == "ai-session-archive")
     copies = archive_artifact["copy"]
     assert {(copy["from"], copy["to"]) for copy in copies} >= {
@@ -928,8 +790,7 @@ def test_goldilocks_explicit_decision(generated: Path, parsed_yaml_documents: di
     assert not missing, "Generated Namespaces must label their Goldilocks decision:\n" + "\n".join(missing)
 
 
-def test_policy_bindings_resolve_sets(generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]) -> None:
-    documents = _generated_documents(generated, parsed_yaml_documents)
+def test_policy_bindings_resolve_sets(documents: list[dict[str, Any]]) -> None:
     policy_sets = {
         (doc["metadata"].get("namespace", ""), doc["metadata"]["name"])
         for doc in documents
@@ -946,14 +807,8 @@ def test_policy_bindings_resolve_sets(generated: Path, parsed_yaml_documents: di
     assert not missing, "\n".join(missing)
 
 
-def test_cluster_diagnostics_kustomizations_are_read_only(
-    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
-) -> None:
-    role = next(
-        doc
-        for doc in _generated_documents(generated, parsed_yaml_documents)
-        if doc.get("kind") == "ClusterRole" and doc["metadata"]["name"] == "cluster-diagnostics-reader"
-    )
+def test_cluster_diagnostics_kustomizations_are_read_only(documents: list[dict[str, Any]]) -> None:
+    role = find_resource(documents, "ClusterRole", "cluster-diagnostics-reader")
     assert "aggregationRule" not in role
 
     def grants(group: str, resource: str, verb: str) -> bool:

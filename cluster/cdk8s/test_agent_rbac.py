@@ -15,7 +15,6 @@ import pytest
 import pytest_bazel
 import yaml
 from cdk8s import App, Testing as Cdk8sTesting
-from more_itertools import one
 
 from cluster.cdk8s import agent_namespace_rbac, agent_rbac_base, agent_shared_rbac, ducktape_flux, loki_read_proxy
 from cluster.cdk8s.agent_rbac_test_support import BoundRole, Permission, Rbac, uncovered
@@ -27,6 +26,7 @@ from cluster.cdk8s.haku.charts import console_chart
 from cluster.cdk8s.namespace_access import NAMESPACE_DIAGNOSTICS, AgentReadable
 from cluster.cdk8s.plaid_mcp import db as plaid_db, spend as plaid_spend
 from cluster.cdk8s.public_coder import app as public_coder_app
+from cluster.cdk8s.testing.manifests import find_resource
 
 _NAMESPACE = staging.ENV.namespace
 _ACCOUNTS_NAMESPACE = kubernetes_accounts_namespace(_NAMESPACE)
@@ -70,9 +70,7 @@ def _rendering(scratch_app_factory: Callable[[], App], *, identity_catalog: bool
     docs = [doc for chart in charts for doc in cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))]
 
     def config_map(name: str, key: str) -> Any:
-        return yaml.safe_load(
-            one(doc for doc in docs if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == name)["data"][key]
-        )
+        return yaml.safe_load(find_resource(docs, "ConfigMap", name)["data"][key])
 
     presets = config_map("app-config", "config.yaml")["sandbox_presets"]
     bindings = [doc for doc in docs if doc["kind"] == "PolicyBinding"]
