@@ -5,7 +5,7 @@ checks still run. `kyverno apply` has no operation flag, so an UPDATE is validat
 `request.operation` check read with the operation replaced."""
 
 import json
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
@@ -73,8 +73,8 @@ class Policies:
 
 
 @pytest.fixture(scope="module")
-def policy() -> Policies:
-    chart = Chart(App(), "test")
+def policy(scratch_app_factory: Callable[[], App]) -> Policies:
+    chart = Chart(scratch_app_factory(), "test")
     LauncherRelayPolicy(
         chart, "policy", namespace=NAMESPACE, template_name="relay-test-template", settings_config_map=RELAY_SETTINGS
     )
@@ -88,12 +88,15 @@ def policy() -> Policies:
     return Policies(mutation=mutation, validation=validation)
 
 
-def test_tls_injection_can_read_only_the_sandbox_and_its_credential_in_its_namespace() -> None:
-    chart = Chart(App(), "test-tls-reader")
+def test_tls_injection_can_read_only_the_sandbox_and_its_credential_in_its_namespace(scratch_chart: Chart) -> None:
     LauncherRelayPolicy(
-        chart, "policy", namespace=NAMESPACE, template_name="relay-test-template", settings_config_map=RELAY_SETTINGS
+        scratch_chart,
+        "policy",
+        namespace=NAMESPACE,
+        template_name="relay-test-template",
+        settings_config_map=RELAY_SETTINGS,
     )
-    documents = Cdk8sTesting.synth(chart)
+    documents = Cdk8sTesting.synth(scratch_chart)
     role = one(doc for doc in documents if doc["kind"] == "Role")
     assert role["metadata"]["namespace"] == NAMESPACE
     assert role["rules"] == [

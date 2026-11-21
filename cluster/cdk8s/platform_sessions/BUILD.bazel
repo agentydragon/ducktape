@@ -87,6 +87,7 @@ py_test(
         ":app",
         ":busybox_image",
         ":mitmproxy_image",
+        "//cluster/cdk8s:conftest",
         "//devinfra/oci",
         "//devinfra/testing:undeclared_outputs",
         "@pypi//cdk8s",

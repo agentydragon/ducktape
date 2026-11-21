@@ -2,7 +2,7 @@ from typing import Any
 
 import pytest
 import pytest_bazel
-from cdk8s import ApiObject, ApiObjectMetadata, App, Chart  # pytest auto-collects classes named Test*
+from cdk8s import ApiObject, ApiObjectMetadata, Chart  # pytest auto-collects classes named Test*
 from cdk8s_plus_34 import ContainerSecurityContextProps, Deployment, k8s
 from keda_scaledjob_crds.sh import keda
 
@@ -10,11 +10,6 @@ from cluster.cdk8s import pod_policy
 from cluster.cdk8s.node_scheduling import Placement
 
 _PLACEMENT = Placement(node_selector={"example.test/zone": "zone-a"})
-
-
-@pytest.fixture
-def chart(scratch_app: App) -> Chart:
-    return Chart(scratch_app, "test")
 
 
 def _deployment(chart: Chart) -> Deployment:
@@ -75,8 +70,8 @@ def _deployment_pod(deployment: Deployment) -> dict[str, Any]:
     return pod
 
 
-def test_harden_fills_only_what_each_dialect_leaves_unset(chart: Chart) -> None:
-    deployment, cron_job, scaled_job = _deployment(chart), _cron_job(chart), _scaled_job(chart)
+def test_harden_fills_only_what_each_dialect_leaves_unset(scratch_chart: Chart) -> None:
+    deployment, cron_job, scaled_job = _deployment(scratch_chart), _cron_job(scratch_chart), _scaled_job(scratch_chart)
     for workload in (deployment, cron_job, scaled_job):
         pod_policy.harden(workload)
 
@@ -99,10 +94,10 @@ def test_harden_fills_only_what_each_dialect_leaves_unset(chart: Chart) -> None:
     }
 
 
-def test_place_requires_the_placement_and_appends_the_control_plane_toleration(chart: Chart) -> None:
-    deployment = _deployment(chart)
+def test_place_requires_the_placement_and_appends_the_control_plane_toleration(scratch_chart: Chart) -> None:
+    deployment = _deployment(scratch_chart)
     existing = k8s.Toleration(key="example.test/roaming", operator="Exists")
-    cron_job = _cron_job(chart, tolerations=[existing])
+    cron_job = _cron_job(scratch_chart, tolerations=[existing])
     pod_policy.place(deployment, _PLACEMENT)
     pod_policy.place(cron_job, _PLACEMENT, tolerate_control_plane=True)
 
@@ -117,12 +112,12 @@ def test_place_requires_the_placement_and_appends_the_control_plane_toleration(c
     ]
 
 
-def test_place_refuses_a_placed_pod_and_both_refuse_an_unknown_kind(chart: Chart) -> None:
-    deployment = _deployment(chart)
+def test_place_refuses_a_placed_pod_and_both_refuse_an_unknown_kind(scratch_chart: Chart) -> None:
+    deployment = _deployment(scratch_chart)
     pod_policy.place(deployment, _PLACEMENT)
     with pytest.raises(ValueError, match="Deployment/app: already placed"):
         pod_policy.place(deployment, _PLACEMENT)
-    service = k8s.KubeService(chart, "service", metadata=k8s.ObjectMeta(name="app"))
+    service = k8s.KubeService(scratch_chart, "service", metadata=k8s.ObjectMeta(name="app"))
     with pytest.raises(KeyError):
         pod_policy.harden(service)
 
