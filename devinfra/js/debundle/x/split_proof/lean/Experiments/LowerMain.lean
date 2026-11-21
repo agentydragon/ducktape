@@ -12,7 +12,7 @@ def main (args : List String) : IO UInt32 := do
   let [path] := args | IO.eprintln "usage: lower <bundle.json> [--premises <file>]"; return 2
   let prem ← loadPremises premPath?
   let j ← IO.ofExcept (Json.parse (← IO.FS.readFile path))
-  let units := if isNull (fld j "units") then (items (fld j "statements")).map (fld · "ast") else items (fld j "units")
+  let units := if isNull (fld j "units") then dumpUnits j else items (fld j "units")
   -- the front end lists the exports; an ESTree dump has them in its `export` statements
   let exported :=
     if isNull (fld j "units") then (units.toList.flatMap exportedBindings).toArray

@@ -91,7 +91,7 @@ Guard anything added with the corpus' rejections that must stay rejected (`proxy
 
 - `Valid` knows what each `export` statement publishes (`Stmt.exports`) and keeps a module's export names apart (`ExportsUnique`). It does not say that the entry still exports what the bundle exported: glue adds names to the entry (`av$1` beside `av`), and nothing checks that the old names keep their bindings.
 - `Correct` adds: the entry's public surface (name → binding) is the bundle's, plus glue names. `mkPlan` could reuse `export { X as av }` for an importer of `X` (`import { av as X }`) and add fewer names.
-- The same step can fold the entry-only rule for `export` statements into `Valid` (TODO.md).
+- The same step can fold the entry-only rule for `import` and `export` statements into `Valid` (TODO.md).
 
 ### 5. Import-only edges for evaluation order (1 entry, likely more after step 1)
 
@@ -99,7 +99,8 @@ Guard anything added with the corpus' rejections that must stay rejected (`proxy
 
 ### 6. Imports and several chunks (18 entries: 12 multi-chunk, 4 `ImportDeclaration`, 2 specifier selectors)
 
-- Model `import { x } from "…"` as a hoisted definition of `x` plus a foreign module that evaluates first.
+- `lowersplit` takes a chunk with imports from outside modules: the `import` statements stay in the entry, which writes them first, and the order of evaluation is argued, not proved ([`README.md`](README.md) § What is not proved). Model it: `import { x } from "…"` as a hoisted definition of `x` plus a foreign module that evaluates first, so that `OrderOk` covers the order and a module that awaits at its top level is refused or handled.
+- The 4 `ImportDeclaration` entries need three things of the adapter: literal values in its dump (`lowersplit` reads an import's source from `lit`; `lowerDump` writes it), the modules written beside the chunk, where its relative imports resolve, and `import` statements left in the entry when debundle's spec moves one. A probe with the first two: `return_object_provider_import` is accepted and prints the chunk's output, `chunk_renames/named_imports` agrees, `chunk_rename_peeled_import` is rejected for an `import` outside the entry, `pruned_import_keeps_its_load_order` fails `OrderOk`.
 - Model several chunks as one bundle each, with import edges between them. `Plan.visit` and `OrderOk` run over the union.
 - Oracle for the evaluation order: `experiments/es_order/check.mjs` (500 random import graphs against Node). Add cross-chunk graphs.
 - Largest step. Do it last.

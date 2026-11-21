@@ -168,7 +168,7 @@ partial def visit (bound : List String) (inFn : Bool) (j : Json) : M Unit := do
     if isNull (fld j "source") then
       for s in items (fld j "specifiers") do visit bound inFn (fld s "local")
   | "ExportDefaultDeclaration" => visit bound inFn (fld j "declaration")
-  | "ImportDeclaration" | "ExportAllDeclaration" => pure ()
+  | "ExportAllDeclaration" => pure ()
   | t => noteFallback t; for c in children j do visit bound inFn c
 
 /-- Expression parts of a binding pattern: defaults and computed keys. -/
@@ -243,7 +243,6 @@ partial def topDefs (s : Json) : List String :=
   match typ s with
   | "FunctionDeclaration" | "ClassDeclaration" => binders (fld s "id")
   | "VariableDeclaration" => (items (fld s "declarations")).toList.flatMap fun d => binders (fld d "id")
-  | "ImportDeclaration" => (items (fld s "specifiers")).toList.map fun sp => str (fld (fld sp "local") "name")
   | "ExportNamedDeclaration" => if isNull (fld s "declaration") then [] else topDefs (fld s "declaration")
   | "ExportDefaultDeclaration" =>
     let d := fld s "declaration"

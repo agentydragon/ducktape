@@ -1,5 +1,5 @@
-// What a real chunk has and a hand-written bundle may not: `export` names that meet the glue's, and declarator
-// lists. Each case splits a small bundle with `lowersplit` and compares what Node
+// What a real chunk has and a hand-written bundle may not: `export` names that meet the glue's, `import`s from
+// outside modules, and declarator lists. Each case splits a small bundle with `lowersplit` and compares what Node
 // prints for the bundle and for the emitted entry: the output of evaluation, then the values of the public names.
 import { strict as assert } from "node:assert";
 import { spawnSync } from "node:child_process";
@@ -91,6 +91,75 @@ export { local };
   );
   assert.equal(text("entry.mjs").match(/^export /gm).length, 2);
   assert.match(text("peel.mjs"), /^import \{ base, local \} from "\.\/entry\.mjs";$/m);
+}
+
+// Imports from outside modules. Each outside module prints when it is evaluated: in the bundle that is before any
+// statement, in the order of the requests. `peel.mjs` prints too and uses a named, a default and a namespace import.
+const imports = {
+  code: `import two, { one as uno } from "./dep.mjs";
+import * as ns from "./dep.mjs";
+import "./side.mjs";
+console.log("first", uno);
+function all() { return [two(), ns.three]; }
+console.log("second", all());
+export { late } from "./late.mjs";
+`,
+  outside: {
+    "dep.mjs": `console.log("dep");
+export const one = 1;
+export default function two() { return 2; }
+export const three = 3;
+`,
+    "side.mjs": `console.log("side");\n`,
+    "late.mjs": `console.log("late");\nexport const late = 4;\n`,
+  },
+};
+{
+  const { text } = same(
+    "imports",
+    { ...imports, modules: { "entry.mjs": ["#0", "#1", "#2", "#5", "#6"], "peel.mjs": ["#3", "all"] } },
+    ["late"]
+  );
+  assert.deepEqual(text("peel.mjs").split("\n").slice(0, 3), [
+    'import two from "./dep.mjs";',
+    'import { one as uno } from "./dep.mjs";',
+    'import * as ns from "./dep.mjs";',
+  ]);
+  // every request of the bundle comes before the glue import, in the bundle's order
+  assert.deepEqual(
+    text("entry.mjs")
+      .split("\n")
+      .filter((line) => / from |^import /.test(line)),
+    [
+      'import two, { one as uno } from "./dep.mjs";',
+      'import * as ns from "./dep.mjs";',
+      'import "./side.mjs";',
+      'export { late } from "./late.mjs";',
+      'import { all } from "./peel.mjs";',
+    ]
+  );
+}
+
+// An `import` moved out of the entry is refused: written anyway, `side.mjs` runs after `late.mjs`.
+{
+  const fixture = { ...imports, modules: { "entry.mjs": ["#0", "#1", "#5", "#6"], "peel.mjs": ["#2", "#3", "all"] } };
+  const refused = split("import_outside_entry", fixture);
+  assert.equal(refused.checked.status, 1, refused.log);
+  assert.match(refused.checked.stdout, /FAIL\s+statement 2 is an `ImportDeclaration` outside the entry module/);
+  assert(!existsSync(path.join(refused.dir, "entry.mjs")));
+  const forced = split("import_outside_entry_forced", { ...fixture, force: true });
+  assert.equal(forced.checked.status, 1, forced.log);
+  assert.notEqual(observe(forced.dir, "entry.mjs", ["late"]), observe(forced.dir, "bundle.mjs", ["late"]));
+}
+
+// `export * from` stays outside the model.
+{
+  const refused = split("export_all", {
+    code: `export * from "./dep.mjs";\n`,
+    outside: imports.outside,
+    modules: { "entry.mjs": ["#0"] },
+  });
+  assert.equal(refused.checked.status, 3, refused.log);
 }
 
 // One statement per declarator, also under `export`: the declarators of a list go to different modules. A

@@ -10,6 +10,7 @@ import Std.Data.HashSet
 `bundle.json` is acorn's ESTree with trusted scope/literal metadata (`experiments/lowering/dump.mjs`). Lean computes the footprints
 (`Effects.lean`, under the premises in the file, if any), plans the split, runs the checks, writes the modules, and with `--lean` writes a
 Lean file whose `by decide +kernel` makes the kernel certify the same facts.
+The bundle may import from outside modules; those are loaded first, in their order, as in the bundle.
 `--force` writes the modules even when a check rejects the split, to see what Node does with them.
 `--replicate K` is for timing: K renamed copies of the bundle (the spec must cover K times as many statements).
 -/
@@ -95,8 +96,44 @@ def replicateBundle (K : Nat) (B : Bundle) : Bundle :=
     B.map fun s => { s with defs := s.defs.map r, eager := s.eager.map r, lazy := s.lazy.map r,
                             exports := s.exports.map fun (p, l) => (s!"{p}${k}", l.map r) }
 
-/-- Statement types the model does not cover. -/
-def unsupported (t : String) : Bool := t == "ImportDeclaration" || t == "ExportAllDeclaration"
+/-- A statement that asks for another module to be loaded: an `import`, or an `export … from`. -/
+def isRequest (s : Json) : Bool :=
+  Lower.typ s == "ImportDeclaration"
+    || (Lower.typ s == "ExportNamedDeclaration" && !Lower.isNull (Lower.fld s "source"))
+
+/-- The declarations that give a module the names it uses out of one top-level `import` declaration, with the
+original source, attributes and `imported as local` spelling. -/
+def importLines (decl : Json) (used : String → Bool) : List String :=
+  let name (j : Json) := if Lower.typ j == "Literal" then q (Lower.specName j) else Lower.specName j
+  let attrs := (Lower.items (Lower.fld decl "attributes")).toList.map fun a =>
+    s!"{name (Lower.fld a "key")}: {name (Lower.fld a "value")}"
+  let source := s!"from {name (Lower.fld decl "source")}{if attrs.isEmpty then "" else s!" with \{ {", ".intercalate attrs} }"};"
+  let specs := (Lower.items (Lower.fld decl "specifiers")).toList.filterMap fun sp =>
+    let l := Lower.specName (Lower.fld sp "local")
+    if used l then some (Lower.typ sp, name (Lower.fld sp "imported"), l) else none
+  let whole := specs.filterMap fun (t, _, l) =>
+    if t == "ImportDefaultSpecifier" then some s!"import {l} {source}"
+    else if t == "ImportNamespaceSpecifier" then some s!"import * as {l} {source}"
+    else none
+  let named := specs.filterMap fun (t, i, l) =>
+    if t == "ImportSpecifier" then some (if i == l then l else s!"{i} as {l}") else none
+  whole ++ (if named.isEmpty then [] else [s!"import \{ {", ".intercalate named} } {source}"])
+
+/-- Source text of a module of a bundle that has `import` statements (`imports`, with their statement numbers).
+What loads outside modules comes first, so that they still run before every statement of the bundle and in their
+order: the module's own `import` and `export … from` statements, which in the entry are all of the bundle's, and
+elsewhere an `import` of the outside names the module uses. Then the glue imports, the other statements verbatim,
+and the glue exports, as `Module.render` writes them. -/
+def renderModule (asts : Array Json) (imports : List (Nat × Json)) (B : Bundle) (P : Plan) (m : EsmSplit.Module) : String :=
+  let held := Std.HashSet.ofList m.stmts
+  let elsewhere := imports.filter fun (i, _) => !held.contains i
+  let outside :=
+    if elsewhere.isEmpty then [] else
+      let uses := Std.HashSet.ofList (m.stmts.flatMap fun i => (B.stmt i).eager ++ (B.stmt i).lazy)
+      elsewhere.flatMap fun (_, d) => importLines d uses.contains
+  let (requests, body) := m.stmts.partition fun i => isRequest (asts.getD i Json.null)
+  let text (is : List Nat) := is.map fun i => (B.stmt i).src
+  renderBlocks [text requests ++ outside ++ m.importLines P, text body, m.exportLines]
 
 /-- The footprints `lower` printed for this bundle (one JSON object per statement). The analysis takes minutes on a
 large bundle and does not depend on the split, so a run of many splits computes it once. The scan of the statements is
@@ -135,17 +172,21 @@ def main (args : List String) : IO UInt32 := do
   let j ← IO.ofExcept (Json.parse (← IO.FS.readFile bundlePath))
   let t1 ← lap "read + parse JSON" tStart
   let stmts := Lower.items (Lower.fld j "statements")
-  for s in stmts do
-    let t := Lower.typ (Lower.fld s "ast")
-    if unsupported t then
-      IO.eprintln s!"unsupported top-level statement: {t}"; return 3
-  let exported := stmts.toList.flatMap fun s => Lower.exportedBindings (Lower.fld s "ast")
+  let asts := stmts.map (Lower.fld · "ast")
+  for s in asts do
+    -- `export * from` publishes names that only the other module knows: a glue export could shadow one
+    if Lower.typ s == "ExportAllDeclaration" then
+      IO.eprintln "unsupported top-level statement: ExportAllDeclaration"; return 3
+    if Lower.typ s == "ImportDeclaration" && Lower.isNull (Lower.fld (Lower.fld s "source") "lit") then
+      IO.eprintln "unsupported top-level statement: an ImportDeclaration whose source has no `lit` (not a dump of `dump.mjs`)"; return 3
+  let units := Effects.dumpUnits j
+  let exported := units.toList.flatMap Lower.exportedBindings
   let fps ← match fpPath? with
     | some p => do
       IO.println s!"  footprints read from {p}: the premises printed by `lower` when it wrote them apply"
-      loadFootprints p (stmts.map fun s => Lower.fld s "ast")
+      loadFootprints p units
     | none => do
-      let (fps, analysis) ← IO.lazyPure fun _ => Effects.footprints (stmts.map fun s => Lower.fld s "ast") {} prem exported.toArray
+      let (fps, analysis) ← IO.lazyPure fun _ => Effects.footprints units (Effects.importsOf j) prem exported.toArray
       for line in Effects.premiseLines prem analysis do IO.println line
       pure fps
   let t2 ← lap "footprints (Lean analysis)" t1
@@ -160,10 +201,12 @@ def main (args : List String) : IO UInt32 := do
   -- A rule Lean does not check. It talks about the original statements, so `--replicate` skips it.
   let mut bad := false
   if replicate?.isNone then
-    -- An `export` is the entry module's interface: it must stay in the entry module.
-    for (st, i) in stmts.toList.zipIdx do
-      let t := Lower.typ (Lower.fld st "ast")
-      if (t == "ExportNamedDeclaration" || t == "ExportDefaultDeclaration") && S.moduleOf B i != some S.entry then
+    -- An `export` is the entry module's interface, and an `import` loads an outside module before any statement
+    -- of the bundle runs: both stay in the entry module, which writes the imports first (`renderModule`).
+    for (ast, i) in asts.toList.zipIdx do
+      let t := Lower.typ ast
+      if (t == "ImportDeclaration" || t == "ExportNamedDeclaration" || t == "ExportDefaultDeclaration")
+          && S.moduleOf B i != some S.entry then
         IO.println s!"  FAIL  statement {i} is an `{t}` outside the entry module"; bad := true
   let P ← IO.lazyPure fun _ => mkPlan B S
   let _ ← IO.lazyPure fun _ => P.mods.length + (P.mods.map (·.imports.length)).sum
@@ -177,7 +220,9 @@ def main (args : List String) : IO UInt32 := do
       IO.FS.writeFile l (instanceLean B S)
       IO.println s!"  wrote kernel certificate source to {l}"
   if force || (ok && !bad) then
-    writeModules B P out
+    let imports := asts.toList.zipIdx.filterMap fun (s, i) =>
+      if Lower.typ s == "ImportDeclaration" then some (i, s) else none
+    writeModules B P out (renderModule asts imports B P)
     let _ ← lap "render + write" t5
     IO.println s!"  [time] total: {(← IO.monoMsNow) - tStart} ms"
   if ok && !bad then return 0

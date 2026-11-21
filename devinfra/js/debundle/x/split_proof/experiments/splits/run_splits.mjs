@@ -93,8 +93,9 @@ async function worker() {
         footprints,
         "--force",
       ]);
-      const failed = [...checked.stdout.matchAll(/^\s+FAIL\s+(.*)$/gm)].map(([, what]) =>
-        /^statement \d+ is an/.test(what) ? "ExportOutsideEntry" : what.split(/\s+/)[0]
+      const failed = [...checked.stdout.matchAll(/^\s+FAIL\s+(.*)$/gm)].map(
+        ([, what]) =>
+          what.match(/^statement \d+ is an `(Import|Export)/)?.[1].concat("OutsideEntry") ?? what.split(/\s+/)[0]
       );
       const verdict = checked.code === 0 ? "accept" : "reject";
       let node = "error";

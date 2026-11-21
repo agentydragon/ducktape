@@ -209,7 +209,7 @@ The generated certificate is accepted by the kernel; its axioms are `propext`, `
   The principled endpoint is a typed ESTree with structural recursion: then `decide` can run the analysis inside the kernel and the certificate covers parse output → footprints → plan.
   That is a bigger build; section 2 is the template.
 - A semantics. The frame assumption is unchanged. Only its _footprint side_ moved into Lean.
-- Imports and exports in bundles (esbuild leaves some), top-level reassignment, and `import.meta`: rejected or guarded, not modeled.
+- Imports from outside modules, top-level reassignment, and `import.meta`: rejected or guarded, not modeled. `lowersplit` keeps a bundle's `import` statements in the entry and writes them first; that this keeps the order of evaluation is argued in the [README](../README.md#what-is-not-proved), not proved.
 
 Run it: `./run.sh --lowering` (installs esbuild, lodash-es, acorn, zod, semver, eslint-scope into `experiments/lowering/`).
 
