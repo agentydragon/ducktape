@@ -84,3 +84,16 @@ would remain a Home Manager service.
   and for auth/hosts if feasible.
 - git-worktree-switcher: absent from `nix/`. Find the current workflow (scripts? aliases?), migrate its settings,
   document best practices.
+
+## Bring the remaining hand-maintained config under Home Manager
+
+- `~/.profile`: conditional `PATH`, CUDA and machine-specific config.
+- Other `~/.config/*` application configs and `~/.local/bin/*` utility scripts.
+- Global npm tools `jscpd` and `madge`: not in nixpkgs, so install by hand with `pnpm add -g jscpd madge`.
+
+## Check the Oh-My-Posh session cache report
+
+Unverified: a session cache key appeared to use `CONFIG` without the config path, so a shell inheriting `POSH_SESSION_ID`
+might reuse another shell's config. Read in a local Oh-My-Posh checkout, not the pinned package; never reproduced.
+Clearing `~/.cache/oh-my-posh` was suggested, but nothing shows it helps and nothing in the repo does it. Reproduce with
+`USE_OHMYPOSH=1` (opt-in; Powerlevel10k is the default in `nix/home/shell/zsh-init.zsh`) before choosing a fix.

@@ -66,6 +66,12 @@ Shared data used by both home-manager and NixOS lives in `../lib/`:
 
 - **`inspection-commands.nix`**: System inspection commands requiring sudo
 
+## Atlas (Debian/Proxmox) gotchas
+
+- Debian's `/etc/profile` resets `PATH` unconditionally and breaks Nix paths: don't source it from shell init (`shell/`).
+- Failed root Nix installs leave backup files, `nixbld` users/groups and `/nix` behind, which block reinstalls. The `nix` Ansible role skips the install when `/nix` exists.
+- Multi-user Nix needs `NIX_REMOTE=daemon` for proper operation.
+
 ## Usage
 
 See <../README.md> for deployment commands.
