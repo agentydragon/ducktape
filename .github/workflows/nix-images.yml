@@ -143,10 +143,11 @@ on:
   workflow_dispatch:
 
 concurrency:
-  # Keep a skipped fork pull_request run from canceling its trusted pull_request_target run. A
-  # cancelled devel run loses nothing: the next one diffs from the last successful run.
+  # Keep pull_request and pull_request_target separate so fork checks keep their trusted run.
+  # Let the active devel push finish building and publishing. Pending pushes coalesce because
+  # image selection diffs against the last successful devel push.
   group: nix-images-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name != 'push' }}
 
 permissions:
   contents: read
