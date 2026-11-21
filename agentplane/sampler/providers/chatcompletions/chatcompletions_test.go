@@ -2,14 +2,69 @@ package chatcompletions
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"slices"
 	"strings"
 	"testing"
 
+	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 )
+
+type observationSink struct{ events []*eventpb.Event }
+
+func (s *observationSink) Record(_ context.Context, _ protocol.ProviderEvidence, events ...*eventpb.Event) error {
+	s.events = append(s.events, events...)
+	return nil
+}
+
+func TestStreamingReasoningObservations(t *testing.T) {
+	frames := []string{
+		`{"id":"chat","choices":[{"delta":{"reasoning_content":"First "}}]}`,
+		`{"id":"chat","choices":[{"delta":{"reasoning_content":"thought","content":"Answer"}}]}`,
+		`{"id":"chat","choices":[{"delta":{},"finish_reason":"stop"}]}`,
+		`[DONE]`,
+	}
+	for _, compact := range []bool{false, true} {
+		sink := &observationSink{}
+		result, err := readStream(t.Context(), sse(frames...), sink, compact, protocol.ProviderHooks{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(result.Record), `"reasoning_content":"First thought"`) {
+			t.Fatalf("reasoning missing from conversation record: %s", result.Record)
+		}
+		if compact {
+			if len(sink.events) != 0 {
+				t.Fatalf("compaction published observations: %v", sink.events)
+			}
+			continue
+		}
+		if len(sink.events) != 7 {
+			t.Fatalf("unexpected observations: %v", sink.events)
+		}
+		if start := sink.events[0].GetItemStarted(); start.GetItemId() != "chat#reasoning" || start.GetKind() != eventpb.ItemKind_ITEM_KIND_REASONING {
+			t.Fatalf("reasoning start: %v", start)
+		}
+		for i, want := range []string{"First ", "thought"} {
+			delta := sink.events[i+1].GetTextDelta()
+			if delta.GetItemId() != "chat#reasoning" || delta.GetText() != want {
+				t.Fatalf("reasoning delta: %v", delta)
+			}
+		}
+		if start := sink.events[3].GetItemStarted(); start.GetItemId() != "chat" || start.GetKind() != eventpb.ItemKind_ITEM_KIND_ASSISTANT_TEXT {
+			t.Fatalf("answer start: %v", start)
+		}
+		if completed := sink.events[5].GetItemCompleted(); completed.GetItemId() != "chat#reasoning" || completed.GetText() != "First thought" {
+			t.Fatalf("reasoning completion: %v", completed)
+		}
+		if completed := sink.events[6].GetItemCompleted(); completed.GetItemId() != "chat" || completed.GetText() != "Answer" {
+			t.Fatalf("answer completion: %v", completed)
+		}
+	}
+}
 
 func sse(frames ...string) *strings.Reader {
 	return strings.NewReader("data: " + strings.Join(frames, "\n\ndata: ") + "\n\n")
