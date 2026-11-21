@@ -1,25 +1,14 @@
-load("@rules_tf//tf:def.bzl", "tf_module", "tf_providers_versions")
+load("//devinfra/tf:defs.bzl", "tf_module")
 
 exports_files(["variables.tf"])
 
-tf_providers_versions(
-    name = "providers",
+tf_module(
+    name = "forgejo-images",
     providers = {
         "forgejo": "svalabs/forgejo:~>1.5",
         "kubernetes": "hashicorp/kubernetes:~>3.0",
         "restapi": "mastercard/restapi:~>2.0",
     },
-    tf_version = "1.12.6",
-)
-
-tf_module(
-    name = "forgejo-images",
-    providers = [
-        "forgejo",
-        "kubernetes",
-        "restapi",
-    ],
-    providers_versions = ":providers",
 )
 
 filegroup(

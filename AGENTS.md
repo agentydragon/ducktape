@@ -25,7 +25,7 @@ Default to [level 7](STYLE.md#level-7-for-human-facing-material) when discussing
 
 ## Infrastructure
 
-- **Terraform/OpenTofu** modules are Bazel-managed (`@rules_tf`): declare provider versions in the BUILD's `tf_providers_versions`, never in `terraform.tf`. `tf/gitops/**` roots are applied in-cluster, most as Crossplane `Workspace`s that cdk8s inlines (a `.tf` edit regenerates manifests; <cluster/docs/crossplane-opentofu-artifact-triggers.md>), the rest by the tofu-controller; `cluster/terraform/` by `bazel run //cluster:bootstrap`.
+- **Terraform/OpenTofu** modules are Bazel-managed (`@rules_tf`): declare provider versions in the BUILD's `tf_module(providers = {...})` (`//devinfra/tf:defs.bzl`, which also creates the `tf_providers_versions` target), never in `terraform.tf`. `tf/gitops/**` roots are applied in-cluster, most as Crossplane `Workspace`s that cdk8s inlines (a `.tf` edit regenerates manifests; <cluster/docs/crossplane-opentofu-artifact-triggers.md>), the rest by the tofu-controller; `cluster/terraform/` by `bazel run //cluster:bootstrap`.
 - **Terraform retirements.** Keep the controller's RBAC until an apply removes the retired resources from state. Remove the temporary grants afterward. Never delete state to bypass reconciliation.
 - **Haku Forgejo tokens** are owned by the GitOps Terraform controller — never mint/sync by hand. Fix wiring in <tf/gitops/haku-state> and <cluster/cdk8s/forgejo/gitops_modules.py>; manual `curl`/`tea`/`kubectl` is diagnostics only, followed by a PR making the controller own it.
 - **CI:** no root `buildbuddy.yaml`. `.github/workflows/ci.yml` runs `bazel-ci` first, then `release` and `push-images` on pushes; other workflows trigger independently. Container images: <cluster/docs/container-images.md>.

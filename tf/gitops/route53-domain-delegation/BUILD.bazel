@@ -1,21 +1,12 @@
-load("@rules_tf//tf:def.bzl", "tf_module", "tf_providers_versions")
+load("//devinfra/tf:defs.bzl", "tf_module")
 
 exports_files(["variables.tf"])
 
-tf_providers_versions(
-    name = "providers",
+tf_module(
+    name = "route53-domain-delegation",
     providers = {
         "aws": "hashicorp/aws:~>6.0",
     },
-    tf_version = "1.12.6",
-)
-
-tf_module(
-    name = "route53-domain-delegation",
-    providers = [
-        "aws",
-    ],
-    providers_versions = ":providers",
 )
 
 # Native HCL read by cdk8s when rendering the Inline Workspace.

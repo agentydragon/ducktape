@@ -1,12 +1,17 @@
-load("@rules_tf//tf:def.bzl", "tf_module", "tf_providers_versions")
+load("//devinfra/tf:defs.bzl", "tf_module")
 
 exports_files(
     ["cilium-values.yaml"],
     visibility = ["//cluster:__subpackages__"],
 )
 
-tf_providers_versions(
-    name = "providers",
+tf_module(
+    name = "main",
+    data = [
+        "//:nebula-mesh.json",
+        "//cluster:generated/talos-cloud-controller-manager/helmrelease.k8s.yaml",
+        "//cluster/k8s/flux/flux-system:flux_bootstrap_files",
+    ],
     providers = {
         "proxmox": "bpg/proxmox:~>0.113.0",
         "talos": "siderolabs/talos:~>0.11.0",
@@ -17,27 +22,6 @@ tf_providers_versions(
         "sops": "carlpett/sops:~>1.4.0",
         "ovh": "ovh/ovh:~>2.0",
     },
-    tf_version = "1.12.6",
-)
-
-tf_module(
-    name = "main",
-    data = [
-        "//:nebula-mesh.json",
-        "//cluster:generated/talos-cloud-controller-manager/helmrelease.k8s.yaml",
-        "//cluster/k8s/flux/flux-system:flux_bootstrap_files",
-    ],
-    providers = [
-        "proxmox",
-        "talos",
-        "kubernetes",
-        "helm",
-        "local",
-        "null",
-        "sops",
-        "ovh",
-    ],
-    providers_versions = ":providers",
     tflint_config = "//cluster:.tflint.hcl",
     deps = [
         "//tf/modules/nixos-image",
