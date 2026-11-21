@@ -1056,12 +1056,15 @@ function statement(node) {
   return { kind: "record", name: identifier(arg) };
 }
 
-function exportNames(node) {
+function exportMappings(node) {
   check(
-    node.specifiers.every((s) => s.type === "ExportSpecifier" && identifier(s.local) === identifier(s.exported)),
-    "export aliases are unsupported"
+    node.specifiers.every((specifier) => specifier.type === "ExportSpecifier"),
+    "unsupported export specifier"
   );
-  return node.specifiers.map((s) => identifier(s.local));
+  return node.specifiers.map((specifier) => ({
+    local: identifier(specifier.local),
+    public: identifier(specifier.exported),
+  }));
 }
 
 function functionDeclarations(bodies) {
@@ -1080,14 +1083,19 @@ function functionDeclarations(bodies) {
 function sourceAst(text) {
   const statements = [];
   const exports = [];
+  const mappings = [];
   const body = parseModule(text);
   const functions = functionDeclarations([body]);
   for (const node of body) {
-    if (node.type === "ExportNamedDeclaration" && !node.declaration && !node.source) exports.push(...exportNames(node));
-    else if (node.type === "ExportNamedDeclaration" && node.declaration && !node.source) {
+    if (node.type === "ExportNamedDeclaration" && !node.declaration && !node.source) {
+      const names = exportMappings(node);
+      mappings.push(...names);
+      exports.push(...names.map((mapping) => mapping.local));
+    } else if (node.type === "ExportNamedDeclaration" && node.declaration && !node.source) {
       const item = candidateStatement(node.declaration, functions);
       check(declarationName(item), "expected an exported declaration");
       exports.push(declarationName(item));
+      mappings.push({ local: declarationName(item), public: declarationName(item) });
       statements.push({ ast: item, source: text.slice(node.declaration.start, node.declaration.end) });
     } else statements.push({ ast: candidateStatement(node, functions), source: text.slice(node.start, node.end) });
   }
@@ -1095,7 +1103,8 @@ function sourceAst(text) {
     statements.length > 0 && statements.length <= 20 && exports.length > 0,
     "expected up to twenty statements and public exports"
   );
-  return { statements, exports };
+  check(new Set(exports).size === exports.length, "multiple public aliases of one declaration are unsupported");
+  return { statements, exports, mappings };
 }
 
 function readSpec(spec, count) {
@@ -1212,16 +1221,22 @@ function generateFiles(source, spec, names) {
       const item = source.statements[index];
       const binding = declarationName(item.ast);
       const shouldExport =
-        binding && neededExports.has(binding) && (name !== spec.entry || source.exports.includes(binding));
+        binding &&
+        neededExports.has(binding) &&
+        (name !== spec.entry ||
+          (source.mappings.every((item) => item.local === item.public) && source.exports.includes(binding)));
       return `${shouldExport ? "export " : ""}${item.source}`;
     });
     const reexports =
       name === spec.entry
-        ? source.exports
-            .filter((binding) => defs.get(binding) !== name)
-            .map((binding) => {
-              check(defs.has(binding), `missing exported definition: ${binding}`);
-              return `export { ${binding} } from ${str(`./${defs.get(binding)}`)};`;
+        ? source.mappings
+            .filter(
+              ({ local }) => defs.get(local) !== name || source.mappings.some((item) => item.local !== item.public)
+            )
+            .map(({ local, public: publicName }) => {
+              check(defs.has(local), `missing exported definition: ${local}`);
+              const suffix = defs.get(local) === name ? "" : ` from ${str(`./${defs.get(local)}`)}`;
+              return `export { ${local}${local === publicName ? "" : ` as ${publicName}`} }${suffix};`;
             })
         : [];
     result[name] = [...imports, ...declarations, ...reexports].join("\n") + "\n";
@@ -1232,6 +1247,7 @@ function generateFiles(source, spec, names) {
 function outputAst(text, names, functions) {
   const imports = [];
   const exports = [];
+  const mappings = [];
   const statements = [];
   const dependency = (node) => {
     check(typeof node.source?.value === "string" && node.source.value.startsWith("./"), "unsupported module path");
@@ -1255,12 +1271,18 @@ function outputAst(text, names, functions) {
         const ast = candidateStatement(node.declaration, functions);
         check(declarationName(ast), "unsupported exported declaration");
         exports.push(declarationName(ast));
+        mappings.push({ local: declarationName(ast), public: declarationName(ast) });
         statements.push(ast);
-      } else if (node.source) imports.push({ dep: dependency(node), locals: [], reexports: exportNames(node) });
-      else exports.push(...exportNames(node));
+      } else {
+        const mapped = exportMappings(node);
+        mappings.push(...mapped);
+        if (node.source)
+          imports.push({ dep: dependency(node), locals: [], reexports: mapped.map((item) => item.local) });
+        else exports.push(...mapped.map((item) => item.local));
+      }
     } else statements.push(candidateStatement(node, functions));
   }
-  return { imports, exports, statements };
+  return { imports, exports, statements, mappings };
 }
 
 const leanStrings = (values) => list(values.map(str));
@@ -1404,12 +1426,21 @@ export async function validateBindings(sourcePath, specPath, out) {
   const actual = files.map((text) => outputAst(text, names, functions));
   if (actual.some((module) => module.statements.some((item) => item.kind === "scopedFunction")))
     return { result: "unknown", reason: "scoped output function execution is not modeled" };
+  if (actual.some((module, i) => names[i] !== spec.entry && module.mappings.some((item) => item.local !== item.public)))
+    return { result: "unknown", reason: "aliases outside the entry module are unsupported" };
+  if (
+    source.mappings.some((item) => item.local !== item.public) &&
+    source.statements.some((item) => ["capturedFactory", "capturedClosure", "capturedAlias"].includes(item.ast.kind))
+  )
+    return { result: "unknown", reason: "aliased captured exports are not yet modeled" };
   const terms = actual.map((module, i) => leanModule(module, spec.modules[names[i]].statements));
+  const leanMappings = (mappings) =>
+    list(mappings.map(({ local, public: publicName }) => `(${str(local)}, ${str(publicName)})`));
   const digest = (content) => createHash("sha256").update(content).digest("hex");
-  const witnessPrefix = `\n-- Source SHA256: ${digest(text)}\n-- Output SHA256: ${names.map((name, i) => `${name}=${digest(files[i])}`).join(" ")}\ndef bindingSource : List BindingStmt := ${list(source.statements.map((item) => leanStatement(item.ast)))}\ndef bindingExports : List String := ${leanStrings(source.exports)}\ndef bindingModules : List BindingModule := ${list(terms)}\ndef bindingEntry : Nat := ${names.indexOf(spec.entry)}\ntheorem binding_source_ready : (sourceBindingState bindingSource).isSome = true := by decide\ntheorem binding_output_ready : (outputBindingState bindingSource bindingModules bindingEntry).isSome = true := by decide\n#print axioms lexical_nearest_binding\n#print axioms accepted_reference_owner\n#print axioms binding_source_ready\n#print axioms binding_output_ready\n`;
+  const witnessPrefix = `\n-- Source SHA256: ${digest(text)}\n-- Output SHA256: ${names.map((name, i) => `${name}=${digest(files[i])}`).join(" ")}\ndef bindingSource : List BindingStmt := ${list(source.statements.map((item) => leanStatement(item.ast)))}\ndef bindingExports : List String := ${leanStrings(source.exports)}\ndef bindingPublicMappings : List (String × String) := ${leanMappings(source.mappings)}\ndef bindingOutputMappings : List (String × String) := ${leanMappings(actual[names.indexOf(spec.entry)].mappings)}\ndef bindingModules : List BindingModule := ${list(terms)}\ndef bindingEntry : Nat := ${names.indexOf(spec.entry)}\ntheorem binding_source_ready : (sourceBindingState bindingSource).isSome = true := by decide\ntheorem binding_output_ready : (outputBindingState bindingSource bindingModules bindingEntry).isSome = true := by decide\n#print axioms lexical_nearest_binding\n#print axioms accepted_reference_owner\n#print axioms binding_source_ready\n#print axioms binding_output_ready\n`;
   const prefix =
     witnessPrefix +
-    `theorem binding_graph_valid : modulesValid bindingSource bindingExports bindingModules bindingEntry = true := by decide\n#print axioms binding_graph_valid\n`;
+    `theorem binding_graph_valid : modulesValid bindingSource bindingExports bindingModules bindingEntry = true := by decide\ntheorem binding_public_mappings : bindingPublicMappings.length = bindingOutputMappings.length ∧ bindingPublicMappings.all (fun mapping => bindingOutputMappings.contains mapping) = true := by decide\n#print axioms binding_graph_valid\n#print axioms binding_public_mappings\n`;
   const legacySame = `\ntheorem binding_initialization : sourceBindingState bindingSource = outputBindingState bindingSource bindingModules bindingEntry := by decide\ntheorem binding_public_table : publicFunctionTable bindingSource bindingExports = publicFunctionTable (outputDefinitions bindingModules) bindingExports := by decide\ntheorem binding_public_table_ready : (publicFunctionTable bindingSource bindingExports).isSome = true := by decide\ntheorem binding_future_calls (calls : List String) : (sourceBindingState bindingSource).bind (fun state => (publicFunctionTable bindingSource bindingExports).bind (fun table => runExportedCalls table state calls)) = (outputBindingState bindingSource bindingModules bindingEntry).bind (fun state => (publicFunctionTable (outputDefinitions bindingModules) bindingExports).bind (fun table => runExportedCalls table state calls)) := by\n  exact binding_calls_preserved _ _ _ _ binding_initialization binding_public_table calls\ntheorem binding_return_values (calls : List String) : ((sourceBindingState bindingSource).bind (fun state => (publicFunctionTable bindingSource bindingExports).bind (fun table => runExportedCalls table state calls))).map (fun state => state.returns) = ((outputBindingState bindingSource bindingModules bindingEntry).bind (fun state => (publicFunctionTable (outputDefinitions bindingModules) bindingExports).bind (fun table => runExportedCalls table state calls))).map (fun state => state.returns) := by\n  exact congrArg (fun result => result.map (fun state => state.returns)) (binding_future_calls calls)\ntheorem binding_throw_values (calls : List String) : ((sourceBindingState bindingSource).bind (fun state => (publicFunctionTable bindingSource bindingExports).bind (fun table => runExportedCalls table state calls))).map (fun state => state.thrown) = ((outputBindingState bindingSource bindingModules bindingEntry).bind (fun state => (publicFunctionTable (outputDefinitions bindingModules) bindingExports).bind (fun table => runExportedCalls table state calls))).map (fun state => state.thrown) := by\n  exact congrArg (fun result => result.map (fun state => state.thrown)) (binding_future_calls calls)\n#print axioms binding_throw_values\n#print axioms binding_initialization\n#print axioms binding_public_table\n#print axioms binding_public_table_ready\n#print axioms binding_future_calls\n#print axioms binding_return_values\n`;
   const hasExpressions = source.statements.some((item) =>
     ["expressionFunction", "capturedFactory", "capturedClosure", "capturedAlias"].includes(item.ast.kind)
@@ -1624,7 +1655,17 @@ theorem binding_captured_observations (calls : List (String × List Nat)) :
 #print axioms binding_captured_observations
 `
       : "";
-  const same = hasExpressions ? expressionSame : legacySame;
+  const aliasTable = hasExpressions ? "publicCallableTable" : "publicFunctionTable";
+  const aliasRunner = hasExpressions ? "runArgumentCalls" : "runExportedCalls";
+  const aliasCallType = hasExpressions ? "List (String × List Nat)" : "List String";
+  const aliasProof = `
+theorem binding_aliased_future_calls (calls : ${aliasCallType}) :
+  (sourceBindingState bindingSource).bind (fun state => (${aliasTable} bindingSource bindingExports).bind (fun table => (aliasPublicTable table bindingPublicMappings).bind (fun aliases => ${aliasRunner} aliases state calls))) =
+  (outputBindingState bindingSource bindingModules bindingEntry).bind (fun state => (${aliasTable} (outputDefinitions bindingModules) bindingExports).bind (fun table => (aliasPublicTable table bindingPublicMappings).bind (fun aliases => ${aliasRunner} aliases state calls))) := by
+  rw [binding_initialization, binding_public_table]
+#print axioms binding_aliased_future_calls
+`;
+  const same = (hasExpressions ? expressionSame : legacySame) + aliasProof;
   const model = (
     await Promise.all(
       ["Semantics.lean", "Effects.lean", "Bindings.lean"].map((name) =>
@@ -1660,6 +1701,8 @@ theorem binding_captured_observations (calls : List (String × List Nat)) :
   const legacyValid =
     proof.status === 0 &&
     [
+      "binding_public_mappings",
+      "binding_aliased_future_calls",
       "binding_initialization",
       "binding_public_table",
       "binding_public_table_ready",
@@ -1715,6 +1758,27 @@ theorem binding_captured_observations (calls : List (String × List Nat)) :
         "Supported thrown values are nonnegative safe integers other than negative zero, booleans, null, undefined or ASCII strings; a throw ends the observed call sequence",
       ],
     };
+  }
+  if (source.mappings.some((item) => item.local !== item.public)) {
+    const original = execute(sourcePath);
+    const output = execute(resolve(out, spec.entry));
+    const name = [...new Set([...original.exports, ...output.exports])].find(
+      (item) => original.exports.includes(item) !== output.exports.includes(item)
+    );
+    if (name) {
+      const certificate =
+        witnessPrefix +
+        `
+theorem binding_export_difference :
+  (bindingPublicMappings.map Prod.snd).contains ${str(name)} ≠
+    (bindingOutputMappings.map Prod.snd).contains ${str(name)} := by decide
+#print axioms binding_export_difference
+`;
+      const checked = runLean(certificate);
+      if (checked.status === 0 && has(checked, "binding_export_difference"))
+        return { result: "unsafe", original, output, certificate };
+    }
+    return { result: "unknown", reason: "aliased export difference could not be witnessed" };
   }
   const different = `\ntheorem binding_difference : sourceBindingState bindingSource ≠ outputBindingState bindingSource bindingModules bindingEntry := by decide\n#print axioms binding_difference\n`;
   let witnessFailure = proof.stdout || proof.stderr;

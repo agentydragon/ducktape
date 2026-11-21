@@ -75,7 +75,7 @@ function print(node) {
     case "ExportNamedDeclaration":
       return `export { ${node.specifiers.map(print).join(", ")} };`;
     case "ExportSpecifier":
-      return print(node.local);
+      return print(node.local) + (node.local.name === node.exported.name ? "" : ` as ${print(node.exported)}`);
     case "IfStatement":
       return `if (${print(node.test)}) ${print(node.consequent)}${node.alternate ? ` else ${print(node.alternate)}` : ""}`;
     case "TryStatement":
@@ -1109,6 +1109,7 @@ export function makeComposedCase(seed, index) {
   };
   const functionNames = Array.from({ length: 1 + rand(3) }, (_, i) => (i ? `calculate${i}` : "calculate"));
   const functions = functionNames.map(makeFunction);
+  const publicFunctionNames = functionNames.map((name, i) => (index % 3 === 0 && i === 0 ? `public_${name}` : name));
   const ast = {
     type: "Program",
     sourceType: "module",
@@ -1117,7 +1118,11 @@ export function makeComposedCase(seed, index) {
       ...functions,
       {
         type: "ExportNamedDeclaration",
-        specifiers: functionNames.map((name) => ({ type: "ExportSpecifier", local: id(name), exported: id(name) })),
+        specifiers: functionNames.map((name, i) => ({
+          type: "ExportSpecifier",
+          local: id(name),
+          exported: id(publicFunctionNames[i]),
+        })),
       },
     ],
   };
@@ -1139,7 +1144,7 @@ export function makeComposedCase(seed, index) {
       },
     },
     calls: Array.from({ length: 1 + rand(4) }, () => ({
-      name: functionNames[rand(functionNames.length)],
+      name: publicFunctionNames[rand(publicFunctionNames.length)],
       args: [rand(5)],
     })),
   };

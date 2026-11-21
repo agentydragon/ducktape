@@ -1007,6 +1007,12 @@ def namespacedOutputBindingState (renames : List (String × String)) (source : L
   let state ← runBindingStatements (namespacedOutputDefinitions renames modules) (statements.map (outputCaptureNamespace renames))
   canonicalBindingState (source.map (outputCaptureNamespace renames)) state
 
+/- Rename a table by public export name while retaining its declaration's
+   operation or closure. A missing local name makes the table unavailable. -/
+def aliasPublicTable {α : Type} (table : List (String × α)) (mappings : List (String × String)) : Option (List (String × α)) :=
+  mappings.mapM (fun mapping =>
+    (table.find? (fun entry => entry.1 == mapping.1)).map (fun entry => (mapping.2, entry.2)))
+
 def publicFunctionTable (statements : List BindingStmt) (names : List String) : Option (List (String × List Operation)) :=
   names.mapM (fun name => (functionOperations statements name true).map (fun ops => (name, ops)))
 

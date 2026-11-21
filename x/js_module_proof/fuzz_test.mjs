@@ -385,6 +385,7 @@ console.log(JSON.stringify(bulk));
 const parse = createRequire(import.meta.url)(process.env.JS_MODULE_PROOF_ACORN ?? "acorn").parse;
 const composedPrograms = Array.from({ length: 128 }, (_, i) => makeComposedCase(917, i));
 assert.ok(new Set(composedPrograms.map((item) => item.source)).size > 120);
+assert.ok(composedPrograms.some((item) => item.source.includes(" as public_calculate")));
 assert.ok(composedPrograms.some((item) => item.source.includes("const box =")));
 assert.ok(composedPrograms.some((item) => item.source.includes("function nested(")));
 assert.ok(composedPrograms.some((item) => item.source.includes("catch {")));

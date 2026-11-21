@@ -171,8 +171,10 @@ by the proof. The generator can also emit candidate splits
 for some synchronous nested functions, parameters, blocks and branches after
 checking their lexical free references and rejecting imported writes. The
 validator returns `unknown` for those candidates; generation is not a proof.
-Public exports must be functions. Imports and
-exports use unaliased names, source declarations have unique names, function
+Public exports must be functions. The entry module may rename an exported
+function, provided each declaration has one public name and the source has no
+modeled captured closures. Imports and non-entry exports use unaliased names.
+Source declarations have unique names, function
 writes must target a mutable local binding, and each module preserves its assigned
 statements' source order. Unsupported syntax, linking, cycles, or uninitialized
 reads return `unknown`.
@@ -180,7 +182,8 @@ reads return `unknown`.
 The Acorn frontend converts source and actual outputs into the same small AST.
 Lean checks that each emitted statement matches its assigned source statement,
 that imports resolve to the correct exported declarations, and that the entry
-exports match the source. For every reference it also computes the actual
+exports match the source, including their public-to-declaration name mappings.
+For every reference it also computes the actual
 output owner and its source statement index, and checks that the resolved
 declaration equals the source-side declaration. The axiom-free general theorem
 `accepted_reference_owner` proves that this holds for every reference in any

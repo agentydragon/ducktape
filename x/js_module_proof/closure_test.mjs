@@ -1036,6 +1036,81 @@ example : evaluateExpression [] [] (.shiftRight (.literal 2147483648) (.literal 
   }
 }
 
+if (shard === 2) {
+  const source = join(root, "export-alias.mjs");
+  const spec = join(root, "export-alias.json");
+  const out = join(root, "export-alias-out");
+  await writeFile(
+    source,
+    `let base = 4;
+function calculate(x) { return x + base; }
+export { calculate as compute };
+`
+  );
+  await writeFile(
+    spec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0] },
+        "functions.mjs": { imports: ["state.mjs"], statements: [1] },
+        "entry.mjs": { imports: ["functions.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", source, spec, out).result, "generated");
+  const proof = cli("validate", source, spec, out);
+  assert.equal(proof.result, "proved under assumptions", JSON.stringify(proof));
+  const calls = [{ name: "compute", args: [3] }];
+  assert.deepEqual(execute(source, calls), execute(join(out, "entry.mjs"), calls));
+  assert.deepEqual(execute(source, calls).results, [{ value: 7 }]);
+  const localSpec = join(root, "export-alias-local.json");
+  const localOut = join(root, "export-alias-local-out");
+  await writeFile(
+    localSpec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0] },
+        "entry.mjs": { imports: ["state.mjs"], statements: [1] },
+      },
+    })
+  );
+  assert.equal(cli("generate", source, localSpec, localOut).result, "generated");
+  assert.equal(cli("validate", source, localSpec, localOut).result, "proved under assumptions");
+  assert.deepEqual(execute(source, calls), execute(join(localOut, "entry.mjs"), calls));
+  const duplicate = join(root, "export-alias-duplicate.mjs");
+  await writeFile(
+    duplicate,
+    (await readFile(source, "utf8")).replace("calculate as compute", "calculate as compute, calculate as second")
+  );
+  assert.equal(cli("generate", duplicate, spec, join(root, "export-alias-duplicate-out")).result, "unknown");
+  const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
+    encoding: "utf8",
+    input:
+      models +
+      proof.certificate +
+      `
+theorem alias_observation :
+  ((sourceBindingState bindingSource).bind (fun state =>
+    (publicCallableTable bindingSource bindingExports).bind (fun table =>
+      (aliasPublicTable table bindingPublicMappings).bind (fun aliases =>
+        runArgumentCalls aliases state [("compute", [3])])))).map
+    (fun state => state.returns) = some [some 7] := by decide
+#print axioms alias_observation
+`,
+  });
+  assert.equal(replay.status, 0, replay.stdout + replay.stderr);
+  assert.match(replay.stdout, /'alias_observation' does not depend on any axioms/);
+  const entry = join(out, "entry.mjs");
+  await writeFile(entry, (await readFile(entry, "utf8")).replace("as compute", "as wrong"));
+  const unsafe = cli("validate", source, spec, out);
+  assert.equal(unsafe.result, "unsafe", JSON.stringify(unsafe));
+  assert.notDeepEqual(execute(source, []).exports, execute(entry, []).exports);
+}
+
 if (shard === 14) {
   const logicalSource = join(root, "logical-values.mjs");
   const logicalSpec = join(root, "logical-values.json");
