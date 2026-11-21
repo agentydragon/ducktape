@@ -265,40 +265,52 @@ def flux_ignore(files: Mapping[str, Blob], ignore: str | None, store: BlobStore)
     }
 
 
-def _glob_regex(pattern: str) -> re.Pattern[str]:
-    """doublestar glob: `**` spans directories, `*`/`?` do not, `{a,b}` alternates."""
+def _glob_regex(pattern: str, *, fs_glob: bool = False) -> re.Pattern[str]:
+    """Match doublestar excludes, or Go fs.Glob's segment-local source patterns."""
     out, i, depth = "", 0, 0
     while i < len(pattern):
         c = pattern[i]
-        if pattern.startswith("**/", i):
+        if not fs_glob and pattern.startswith("**/", i):
             out, i = out + "(?:.*/)?", i + 3
             continue
-        if pattern.startswith("**", i):
+        if not fs_glob and pattern.startswith("**", i):
             out, i = out + ".*", i + 2
             continue
-        if c == "*":
+        if c == "\\":
+            i += 1
+            if i >= len(pattern):
+                raise NotReproducibleError(f"invalid glob {pattern!r}: trailing escape")
+            out += re.escape(pattern[i])
+        elif c == "*":
             out += "[^/]*"
         elif c == "?":
             out += "[^/]"
         elif c == "[":
-            end = pattern.index("]", i + 1)
+            end = pattern.find("]", i + 1)
+            if end < 0:
+                raise RenderError(f"invalid glob {pattern!r}: unclosed character class")
             body = pattern[i + 1 : end]
-            out += "[" + ("^" + body[1:] if body.startswith(("!", "^")) else body) + "]"
+            if body.startswith("^") or (not fs_glob and body.startswith("!")):
+                body = "^" + body[1:]
+            out += f"[{body}]"
             i = end
-        elif c == "{":
+        elif c == "{" and not fs_glob:
             out, depth = out + "(?:", depth + 1
-        elif c == "}" and depth:
+        elif c == "}" and depth and not fs_glob:
             out, depth = out + ")", depth - 1
-        elif c == "," and depth:
+        elif c == "," and depth and not fs_glob:
             out += "|"
         else:
             out += re.escape(c)
         i += 1
-    return re.compile(out + r"\Z")
+    try:
+        return re.compile(out + r"\Z")
+    except re.error as exc:
+        raise RenderError(f"invalid glob {pattern!r}: {exc}") from exc
 
 
 def _has_glob(part: str) -> bool:
-    return any(c in part for c in "*?[{")
+    return any(c in part for c in "*?[")
 
 
 def apply_copy(sources: Mapping[str, Files], op: Mapping[str, Json], artifact: dict[str, Blob]) -> None:
@@ -310,38 +322,62 @@ def apply_copy(sources: Mapping[str, Files], op: Mapping[str, Json], artifact: d
     if not op["to"].startswith("@artifact/") or alias not in sources:
         raise NotReproducibleError(f"copy {op['from']} -> {op['to']}: unknown alias or destination")
     files = sources[alias]
+    excludes = [_glob_regex(x) for x in op.get("exclude", [])]
+
+    def excluded(path: str, base: str) -> bool:
+        relative = posixpath.relpath(path, base) if base and (path == base or path.startswith(base + "/")) else path
+        return any(
+            rx.match(path) or rx.match(relative) or ("/" not in x and rx.match(posixpath.basename(path)))
+            for x, rx in zip(op.get("exclude", []), excludes, strict=True)
+        )
+
+    def copy_tree(source: str, destination: str, base: str) -> None:
+        for path, blob in files.items():
+            if not path.startswith(source + "/"):
+                continue
+            relative = path[len(source) + 1 :]
+            parts = relative.split("/")
+            ancestors = [posixpath.join(source, *parts[:i]) for i in range(1, len(parts))]
+            if not any(excluded(part, base) for part in (*ancestors, path)):
+                artifact[posixpath.join(destination, relative)] = blob
+
     parts = pattern.split("/")
     split = next((i for i, part in enumerate(parts) if _has_glob(part)), None)
     if split is not None:
+        # The pinned source-watcher uses Go's fs.Glob for Overwrite, so ** has
+        # the same segment matching as *. Matched directories are copied recursively.
         base = "/".join(parts[:split])
-        regex = _glob_regex(pattern)
-        picked = {p: posixpath.relpath(p, base) if base else p for p in files if regex.match(p)}
-        dest_dir = dest
-    elif pattern.endswith("/") or (pattern not in files and any(p.startswith(pattern + "/") for p in files)):
-        base = pattern.rstrip("/")
-        picked = {
-            p: posixpath.join(posixpath.basename(base), p[len(base) + 1 :]) for p in files if p.startswith(base + "/")
-        }
-        dest_dir = dest
+        regex = _glob_regex(pattern, fs_glob=True)
+        directories = {p[:i] for p in files for i, char in enumerate(p) if char == "/"}
+        matches = sorted(p for p in files.keys() | directories if regex.match(p))
+        if not matches:
+            if op.get("optional", False):
+                return
+            raise RenderError(f"copy {op['from']} matched no files")
+        matches = [match for match in matches if not excluded(match, base)]
+        if not matches:
+            raise RenderError(f"copy {op['from']} excluded all matches")
+        recursive_prefix = pattern.removesuffix("/**") if pattern.endswith("/**") else None
+        for match in matches:
+            relative = (
+                match[len(recursive_prefix) + 1 :]
+                if recursive_prefix and match.startswith(recursive_prefix + "/")
+                else match
+            )
+            destination = posixpath.join(dest, relative)
+            if match in files:
+                artifact[destination] = files[match]
+            else:
+                copy_tree(match, destination, base)
+    elif pattern.rstrip("/") in (directories := {p[:i] for p in files for i, char in enumerate(p) if char == "/"}):
+        source = pattern.rstrip("/")
+        copy_tree(source, posixpath.join(dest, posixpath.basename(source)), source)
     elif pattern in files:
-        base = posixpath.dirname(pattern)
-        picked = {pattern: posixpath.basename(pattern)}
-        dest_dir = dest if dest.endswith("/") or not dest else None
-    else:
-        picked, base, dest_dir = {}, "", dest
-    excludes = [_glob_regex(x) for x in op.get("exclude", [])]
-    picked = {
-        src: rel
-        for src, rel in picked.items()
-        if not any(
-            rx.match(src) or rx.match(rel) or ("/" not in x and rx.match(posixpath.basename(src)))
-            for x, rx in zip(op.get("exclude", []), excludes, strict=True)
-        )
-    }
-    if not picked and not op.get("optional", False):
+        if not excluded(pattern, ""):
+            is_directory = dest.endswith("/") or not dest or any(p.startswith(dest + "/") for p in artifact)
+            artifact[posixpath.join(dest, posixpath.basename(pattern)) if is_directory else dest] = files[pattern]
+    elif not op.get("optional", False):
         raise RenderError(f"copy {op['from']} matched no files")
-    for src, rel in picked.items():
-        artifact[posixpath.join(dest_dir, rel) if dest_dir is not None else dest] = files[src]
 
 
 @dataclass

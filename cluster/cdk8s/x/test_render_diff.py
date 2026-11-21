@@ -12,6 +12,7 @@ from cluster.cdk8s.x.render_diff import (
     Failed,
     Graph,
     Renderer,
+    RenderError,
     Revision,
     apply_copy,
     compare,
@@ -209,6 +210,50 @@ def test_copy_semantics(op: dict[str, object], expected: set[str]) -> None:
     artifact: dict[str, Blob] = {}
     apply_copy({"r": {"d/a.yaml": blob, "d/sub/b.md": blob, "e/c.yaml": blob}}, op, artifact)
     assert set(artifact) == expected
+
+
+@pytest.mark.parametrize(
+    ("pattern", "expected"),
+    [
+        ("root/*.sops.yaml", {"out/root/a.sops.yaml"}),
+        ("root/*", {"out/root/a.sops.yaml", "out/root/one/b.yaml", "out/root/one/nested/c.yaml"}),
+        ("root/**", {"out/a.sops.yaml", "out/one/b.yaml", "out/one/nested/c.yaml"}),
+        ("root/*/**", {"out/root/one/b.yaml", "out/root/one/nested/c.yaml"}),
+    ],
+)
+def test_glob_copy_destinations_and_directory_matches(pattern: str, expected: set[str]) -> None:
+    blob = Blob(Path("/unused"), "0")
+    files = dict.fromkeys(("root/a.sops.yaml", "root/one/b.yaml", "root/one/nested/c.yaml"), blob)
+    artifact: dict[str, Blob] = {}
+    apply_copy({"r": files}, {"from": f"@r/{pattern}", "to": "@artifact/out/"}, artifact)
+    assert set(artifact) == expected
+
+
+def test_copy_excludes_prune_directories_and_allow_excluded_single_file() -> None:
+    blob = Blob(Path("/unused"), "0")
+    files = dict.fromkeys(("root/a.yaml", "root/sub/b.yaml", "root/sub/nested/c.yaml"), blob)
+    artifact: dict[str, Blob] = {}
+    apply_copy({"r": files}, {"from": "@r/root/**", "to": "@artifact/out/", "exclude": ["sub"]}, artifact)
+    assert set(artifact) == {"out/a.yaml"}
+    apply_copy({"r": files}, {"from": "@r/root/a.yaml", "to": "@artifact/out/", "exclude": ["a.yaml"]}, artifact)
+    assert set(artifact) == {"out/a.yaml"}
+    with pytest.raises(RenderError, match="excluded all matches"):
+        apply_copy({"r": files}, {"from": "@r/root/*.yaml", "to": "@artifact/out/", "exclude": ["*.yaml"]}, artifact)
+
+
+def test_copy_file_to_existing_destination_directory() -> None:
+    blob = Blob(Path("/unused"), "0")
+    artifact = {"out/existing.yaml": blob}
+    apply_copy({"r": {"root/a.yaml": blob}}, {"from": "@r/root/a.yaml", "to": "@artifact/out"}, artifact)
+    assert set(artifact) == {"out/a.yaml", "out/existing.yaml"}
+
+
+def test_source_glob_uses_go_character_class_negation() -> None:
+    blob = Blob(Path("/unused"), "0")
+    files = dict.fromkeys(("root/a.yaml", "root/b.yaml", "root/!.yaml"), blob)
+    artifact: dict[str, Blob] = {}
+    apply_copy({"r": files}, {"from": "@r/root/[^a].yaml", "to": "@artifact/out/"}, artifact)
+    assert set(artifact) == {"out/root/b.yaml", "out/root/!.yaml"}
 
 
 if __name__ == "__main__":

@@ -104,10 +104,9 @@ directories by the check named; recheck the others before relying on them.
   directories in `//cluster/validation:test_cluster_integration`).
 - Artifacts preserve repo paths, so a relative cross-root reference resolves the same in
   the checkout and in the artifact (_rechecked_: `cluster/cdk8s/x/render_diff.py` renders
-  the moved grocy artifacts to identical objects). The helper's `directory/**` copy is suitable. A
-  general `*.sops.yaml` glob retains its full path in source-watcher, while
-  `cluster/cdk8s/x/render_diff.py:apply_copy` strips the non-glob prefix for all globs.
-  Repair/test that mismatch before relying on such globs.
+  the moved grocy artifacts to identical objects). The helper's `directory/**` copy is suitable.
+  Unlike that recursive form, an ordinary `*.sops.yaml` glob preserves the source path
+  below the artifact destination (`//cluster/cdk8s/x:test_render_diff`).
 - Copies are ordered; a later one can overwrite an earlier file. A missing required
   file/glob can fail the entire ArtifactGenerator reconciliation, affecting unrelated
   artifacts. Validate inputs before introducing cross-root composition.
