@@ -5,14 +5,20 @@ import Experiments.CoreJS.Syntax
 # CoreJS: values, the state, and the operations that run no program code
 
 **Addresses.** An object or a binding lives at `(region, index)`. An allocation appends to the region the state names,
-and a top-level statement has a region of its own: region `i + 1` for the statement with identity `i`. Which address an allocation gets is not observable in
-JavaScript, so any policy that hands out unused ones is faithful. This one makes what a statement allocates independent
-of the statements that ran before it, so two statements that only allocate end in equal states in either order, with
-no renaming of addresses.
+and a top-level statement has a region of its own: region `i + 1` for the statement with identity `i`. Which address
+an allocation gets is not observable in JavaScript, so any policy that hands out unused ones is faithful. This one
+makes what a statement allocates independent of the statements that ran before it, so two statements that only
+allocate end in equal states in either order, with no renaming of addresses.
 
 **Unknown code.** `Val.host` is a value of the host that the model says nothing about, and `Val.error` an error object
-the engine made. Calling a host value, reading its properties or converting it ends the run with `Res.unknown`, and so
-does converting an object to a primitive (`valueOf` and `toString` are not run in this model).
+the engine or the host made. Converting a host value or comparing it ends the run with `Res.unknown`, and so does
+converting an object to a primitive (`valueOf` and `toString` are not run in this model).
+
+**The world.** A host function that works on primitives is in the model without a definition: the model asks the
+`World` it runs in (`hostCall`). Which functions those are is a table in this file (`worldFunction`): for each one the
+claim is that, called with a primitive receiver and primitive arguments, it returns a primitive or throws, and that
+it reads and changes nothing the program can reach. A call of any other host function, or one that would hand the
+host an object, ends the run with `Res.unknown`.
 -/
 
 namespace CoreJS
@@ -23,7 +29,7 @@ structure Addr where
   deriving DecidableEq, Repr
 
 inductive ErrorKind where
-  | type | reference | syntax
+  | type | reference | syntax | range | uri
   deriving DecidableEq, Repr
 
 inductive Val where
@@ -68,24 +74,67 @@ structure Binding where
   value : Option Val
   mutable : Bool
 
-structure State where
+/-- A primitive value: what the program and the host hand each other. -/
+inductive Primitive where
+  | undef
+  | null
+  | bool (b : Bool)
+  | num (n : Float)
+  | str (s : String)
+
+def Primitive.val : Primitive → Val
+  | .undef => .undef
+  | .null => .null
+  | .bool b => .bool b
+  | .num n => .num n
+  | .str s => .str s
+
+def Val.primitive? : Val → Option Primitive
+  | .undef => some .undef
+  | .null => some .null
+  | .bool b => some (.bool b)
+  | .num n => some (.num n)
+  | .str s => some (.str s)
+  | .obj _ | .error .. | .host _ => none
+
+/-- How a call of a host function ends: with a primitive, with a thrown primitive, or with a thrown error object. -/
+inductive HostResult where
+  | ret (v : Primitive)
+  | throw (v : Primitive)
+  | error (kind : ErrorKind) (msg : String)
+
+/-- **The world**: the host functions that work on primitives, without their definitions. It has a state of its own
+and one deterministic step: the host function `fn`, called with the receiver `this` and the arguments `args` in a
+state, ends as `step` says and leaves the next state. The model says which functions it asks the world about
+(`worldFunction`); a call that would hand the host an object ends the run as `unknown`. Everything proved about the
+model holds for every world. -/
+structure World where
+  σ : Type
+  init : σ
+  step : (fn : String) → (this : Primitive) → (args : List Primitive) → σ → HostResult × σ
+
+structure State (W : World) where
   heap : Array (Array Obj)
   cells : Array (Array Binding)
   /-- Where allocations go. -/
   region : Nat
   /-- One entry for each `console.log`. -/
   out : Array String
+  /-- The state of the world. -/
+  world : W.σ
 
 /-- How a computation ends. `unknown`: it reached code the model does not define. `fuel`: the bound ran out. -/
-inductive Res (α : Type) where
-  | ok (a : α) (s : State)
-  | throw (v : Val) (s : State)
-  | unknown (why : String) (s : State)
+inductive Res (W : World) (α : Type) where
+  | ok (a : α) (s : State W)
+  | throw (v : Val) (s : State W)
+  | unknown (why : String) (s : State W)
   | fuel
 
-def M (α : Type) : Type := State → Res α
+def M (W : World) (α : Type) : Type := State W → Res W α
 
-instance : Monad M where
+variable {W : World}
+
+instance : Monad (M W) where
   pure a := fun s => .ok a s
   bind m f := fun s =>
     match m s with
@@ -94,12 +143,12 @@ instance : Monad M where
     | .unknown why s' => .unknown why s'
     | .fuel => .fuel
 
-def getState : M State := fun s => .ok s s
-def modifyState (f : State → State) : M Unit := fun s => .ok () (f s)
-def throwVal {α : Type} (v : Val) : M α := fun s => .throw v s
-def throwErr {α : Type} (kind : ErrorKind) (msg : String) : M α := throwVal (.error kind msg)
-def unknown {α : Type} (why : String) : M α := fun s => .unknown why s
-def outOfFuel {α : Type} : M α := fun _ => .fuel
+def getState : M W (State W) := fun s => .ok s s
+def modifyState (f : State W → State W) : M W Unit := fun s => .ok () (f s)
+def throwVal {α : Type} (v : Val) : M W α := fun s => .throw v s
+def throwErr {α : Type} (kind : ErrorKind) (msg : String) : M W α := throwVal (.error kind msg)
+def unknown {α : Type} (why : String) : M W α := fun s => .unknown why s
+def outOfFuel {α : Type} : M W α := fun _ => .fuel
 
 /-- Why an operation on values does not give a value. -/
 inductive Abort where
@@ -107,40 +156,40 @@ inductive Abort where
   | unknown (why : String)
 
 /-- An operation on values that reads no state. -/
-def lift {α : Type} : Except Abort α → M α
+def lift {α : Type} : Except Abort α → M W α
   | .ok a => pure a
   | .error (.error kind msg) => throwErr kind msg
   | .error (.unknown why) => unknown why
 
 /-! ## The heap and the bindings -/
 
-def State.objAt (s : State) (a : Addr) : Option Obj := (s.heap[a.region]?).bind (·[a.index]?)
-def State.cellAt (s : State) (a : Addr) : Option Binding := (s.cells[a.region]?).bind (·[a.index]?)
+def State.objAt (s : State W) (a : Addr) : Option Obj := (s.heap[a.region]?).bind (·[a.index]?)
+def State.cellAt (s : State W) (a : Addr) : Option Binding := (s.cells[a.region]?).bind (·[a.index]?)
 
 /-- An address that is in use names an object; `model:` marks a state the rules cannot reach. -/
-def getObj (a : Addr) : M Obj := fun s =>
+def getObj (a : Addr) : M W Obj := fun s =>
   match s.objAt a with
   | some o => .ok o s
   | none => .unknown "model: no object at the address" s
 
-def alloc (o : Obj) : M Addr := fun s =>
+def alloc (o : Obj) : M W Addr := fun s =>
   match s.heap[s.region]? with
   | some objs => .ok ⟨s.region, objs.size⟩ { s with heap := s.heap.set! s.region (objs.push o) }
   | none => .unknown "model: no such region" s
 
-def modifyObj (a : Addr) (f : Obj → Obj) : M Unit := fun s =>
+def modifyObj (a : Addr) (f : Obj → Obj) : M W Unit := fun s =>
   .ok () { s with heap := s.heap.modify a.region (·.modify a.index f) }
 
-def newCell (b : Binding) : M Addr := fun s =>
+def newCell (b : Binding) : M W Addr := fun s =>
   match s.cells[s.region]? with
   | some bs => .ok ⟨s.region, bs.size⟩ { s with cells := s.cells.set! s.region (bs.push b) }
   | none => .unknown "model: no such region" s
 
-def setCell (a : Addr) (v : Val) : M Unit := fun s =>
+def setCell (a : Addr) (v : Val) : M W Unit := fun s =>
   .ok () { s with cells := s.cells.modify a.region (·.modify a.index fun b => { b with value := some v }) }
 
 /-- New bindings, in order: each name with where its binding is. -/
-def newCells : List (Name × Binding) → M (List (Name × Addr))
+def newCells : List (Name × Binding) → M W (List (Name × Addr))
   | [] => pure []
   | (x, b) :: rest => do
     let a ← newCell b
@@ -148,11 +197,11 @@ def newCells : List (Name × Binding) → M (List (Name × Addr))
     pure ((x, a) :: frame)
 
 /-- A new innermost frame. -/
-def declare (env : Env) (bs : List (Name × Binding)) : M Env := do
+def declare (env : Env) (bs : List (Name × Binding)) : M W Env := do
   let frame ← newCells bs
   pure { env with vars := frame ++ env.vars }
 
-def readVar (env : Env) (x : Name) : M Val := do
+def readVar (env : Env) (x : Name) : M W Val := do
   match env.vars.lookup x with
   | none => throwErr .reference s!"{x} is not defined"
   | some a =>
@@ -161,7 +210,7 @@ def readVar (env : Env) (x : Name) : M Val := do
     | _ => throwErr .reference s!"cannot access '{x}' before initialization"
 
 /-- An assignment to a name. In strict code one that does not resolve throws. -/
-def writeVar (env : Env) (x : Name) (v : Val) : M Unit := do
+def writeVar (env : Env) (x : Name) (v : Val) : M W Unit := do
   match env.vars.lookup x with
   | none => throwErr .reference s!"{x} is not defined"
   | some a =>
@@ -171,7 +220,7 @@ def writeVar (env : Env) (x : Name) (v : Val) : M Unit := do
     | _ => throwErr .reference s!"cannot access '{x}' before initialization"
 
 /-- The declaration of a name gives it its first value. -/
-def initVar (env : Env) (x : Name) (v : Val) : M Unit :=
+def initVar (env : Env) (x : Name) (v : Val) : M W Unit :=
   match env.vars.lookup x with
   | some a => setCell a v
   | none => unknown "model: a declaration outside its scope"
@@ -211,6 +260,83 @@ def builtins : Array Obj := #[
   { proto := some objectProto, array := true,
     props := ("length", .data (.num 0) true false false) :: hostMembers "Array.prototype" arrayProtoNames }]
 
+/-! ## The host functions the world answers for -/
+
+/-- The string-keyed members of `String.prototype`. A property of a string that is none of them is looked up on
+`Object.prototype`, which the program can change. -/
+def stringProtoNames : List String :=
+  ["length", "constructor", "anchor", "at", "big", "blink", "bold", "charAt", "charCodeAt", "codePointAt", "concat",
+    "endsWith", "fontcolor", "fontsize", "fixed", "includes", "indexOf", "isWellFormed", "italics", "lastIndexOf",
+    "link", "localeCompare", "match", "matchAll", "normalize", "padEnd", "padStart", "repeat", "replace", "replaceAll",
+    "search", "slice", "small", "split", "strike", "sub", "substr", "substring", "sup", "startsWith", "toString",
+    "toWellFormed", "trim", "trimStart", "trimLeft", "trimEnd", "trimRight", "toLocaleLowerCase", "toLocaleUpperCase",
+    "toLowerCase", "toUpperCase", "valueOf"]
+
+def numberProtoNames : List String :=
+  ["constructor", "toExponential", "toFixed", "toPrecision", "toString", "valueOf", "toLocaleString"]
+
+def booleanProtoNames : List String := ["constructor", "toString", "valueOf"]
+
+/-- The methods the world answers for, by prototype. Left out: `match`, `matchAll` and `split`, which return objects;
+the methods that depend on the locale of the host beyond `localeCompare`; the ones that write HTML. -/
+def worldMethodNames : List (String × List String) :=
+  [("String.prototype",
+      ["at", "charAt", "charCodeAt", "codePointAt", "concat", "endsWith", "includes", "indexOf", "isWellFormed",
+        "lastIndexOf", "localeCompare", "normalize", "padEnd", "padStart", "repeat", "replace", "replaceAll", "search",
+        "slice", "startsWith", "substr", "substring", "toLowerCase", "toString", "toUpperCase", "toWellFormed", "trim",
+        "trimEnd", "trimLeft", "trimRight", "trimStart", "valueOf"]),
+    ("Number.prototype", ["toExponential", "toFixed", "toPrecision", "toString", "valueOf"]),
+    ("Boolean.prototype", ["toString", "valueOf"])]
+
+/-- The globals of the host that hold functions the world answers for, with those members. A read of such a member
+gives the function: a program that had replaced it would have ended as `unknown` at the write. -/
+def hostNamespaces : List (String × List String) :=
+  [("Math",
+      ["abs", "acos", "acosh", "asin", "asinh", "atan", "atanh", "atan2", "ceil", "cbrt", "expm1", "clz32", "cos",
+        "cosh", "exp", "floor", "fround", "hypot", "imul", "log", "log1p", "log2", "log10", "max", "min", "pow",
+        "random", "round", "sign", "sin", "sinh", "sqrt", "tan", "tanh", "trunc"]),
+    ("Number", ["isFinite", "isInteger", "isNaN", "isSafeInteger", "parseFloat", "parseInt"]),
+    ("String", ["fromCharCode", "fromCodePoint"])]
+
+/-- The globals of the host that the world answers for when they are called. -/
+def hostFunctions : List String := ["Boolean", "Number", "isFinite", "isNaN", "parseFloat", "parseInt"]
+
+def qualified (table : List (String × List String)) : List String :=
+  table.flatMap fun (owner, members) => members.map fun k => s!"{owner}.{k}"
+
+/-- Does the world answer for the host function `name`? `some true`: a method, which also takes its receiver. -/
+def worldFunction (name : String) : Option Bool :=
+  if (qualified worldMethodNames).contains name then some true
+  else if hostFunctions.contains name || (qualified hostNamespaces).contains name then some false
+  else none
+
+/-- The receiver and the arguments the world gets, if it answers for `name` and all of them are primitives. A function
+that is not a method gets no receiver. -/
+def worldArgs (name : String) (this : Val) (args : List Val) : Option (Primitive × List Primitive) := do
+  let method ← worldFunction name
+  let this ← if method then this.primitive? else some .undef
+  pure (this, ← args.mapM Val.primitive?)
+
+/-- A string of the model has no character outside the Basic Multilingual Plane: the model counts code points, and
+JavaScript code units. -/
+def Primitive.inModel : Primitive → Bool
+  | .str s => s.toList.all fun c => c.toNat < 0x10000
+  | _ => true
+
+/-- What the world gave back, as the model's result. -/
+def fromWorld (s : State W) : HostResult → Res W Val
+  | .ret v => if v.inModel then .ok v.val s else .unknown "the host returns a string outside the Basic Multilingual Plane" s
+  | .throw v => if v.inModel then .throw v.val s else .unknown "the host throws a string outside the Basic Multilingual Plane" s
+  | .error kind msg => .throw (.error kind msg) s
+
+/-- A call of the host function `name`: the world's step, if the world answers for it. -/
+def hostCall (name : String) (this : Val) (args : List Val) : M W Val :=
+  match worldArgs name this args with
+  | none => unknown s!"host function {name} is called"
+  | some (this, args) => fun s =>
+    let (result, world) := W.step name this args s.world
+    fromWorld { s with world } result
+
 /-! ## Conversions and operators -/
 
 def needsPrimitive {α : Type} : Except Abort α := .error (.unknown "an object is converted to a primitive")
@@ -242,11 +368,11 @@ def toStr : Val → Except Abort String
   | .obj _ | .error .. => needsPrimitive
   | .host name => inspectsHost name
 
-def isCallable (s : State) : Val → Bool
+def isCallable (s : State W) : Val → Bool
   | .obj a => ((s.objAt a).bind (·.code)).isSome
   | _ => false
 
-def typeOf (s : State) : Val → Except Abort String
+def typeOf (s : State W) : Val → Except Abort String
   | .undef => pure "undefined"
   | .null => pure "object"
   | .bool _ => pure "boolean"
@@ -340,7 +466,7 @@ def binop (op : BinOp) (a b : Val) : Except Abort Val :=
   | .gt => .bool <$> relational (fun x y => decide (x > y)) (fun x y => decide (y < x)) a b
   | .ge => .bool <$> relational (fun x y => decide (x ≥ y)) (fun x y => !decide (x < y)) a b
 
-def unop (s : State) (op : UnOp) (v : Val) : Except Abort Val :=
+def unop (s : State W) (op : UnOp) (v : Val) : Except Abort Val :=
   match op with
   | .neg => (fun x => .num (-x)) <$> toNumber v
   | .pos => .num <$> toNumber v
@@ -365,7 +491,7 @@ def setOwn (props : List (String × Property)) (k : String) (p : Property) : Lis
   if props.any (·.1 == k) then props.map fun (k', p') => if k' == k then (k', p) else (k', p') else props ++ [(k, p)]
 
 /-- The first property named `k` on `a` and its prototypes. `steps` bounds the walk: a chain has no cycle, so the count of objects is enough. -/
-def findProp (s : State) : Nat → Addr → String → Option Property
+def findProp (s : State W) : Nat → Addr → String → Option Property
   | 0, _, _ => none
   | steps + 1, a, k =>
     match s.objAt a with
@@ -375,14 +501,14 @@ def findProp (s : State) : Nat → Addr → String → Option Property
       | some p => some p
       | none => o.proto.bind fun parent => findProp s steps parent k
 
-def State.objectCount (s : State) : Nat := s.heap.foldl (· + ·.size) 0
+def State.objectCount (s : State W) : Nat := s.heap.foldl (· + ·.size) 0
 
-def lookupProp (a : Addr) (k : String) : M (Option Property) := do
+def lookupProp (a : Addr) (k : String) : M W (Option Property) := do
   let s ← getState
   pure (findProp s s.objectCount a k)
 
 /-- A property key: a string, or a number as `ToString` writes it. -/
-def toKey (k : Val) : M String := lift (toStr k)
+def toKey (k : Val) : M W String := lift (toStr k)
 
 /-- The fields a property descriptor may have. -/
 structure Desc where
@@ -423,7 +549,7 @@ def applyDesc (current : Option Property) (d : Desc) : Except Abort (Option Prop
       else pure (some (.accessor (d.get.getD g) (d.set.getD st) e c))
 
 /-- `DefinePropertyOrThrow` on the object at `a`. -/
-def defineOwn (a : Addr) (k : String) (d : Desc) : M Unit := do
+def defineOwn (a : Addr) (k : String) (d : Desc) : M W Unit := do
   let o ← getObj a
   if o.array then unknown "a property is defined on an array" else
   match ← lift (applyDesc (o.props.lookup k) d) with
@@ -431,38 +557,52 @@ def defineOwn (a : Addr) (k : String) (d : Desc) : M Unit := do
   | none => throwErr .type s!"cannot redefine property: {k}"
 
 /-- `CreateDataPropertyOrThrow`. -/
-def createData (a : Addr) (k : String) (v : Val) : M Unit :=
+def createData (a : Addr) (k : String) (v : Val) : M W Unit :=
   defineOwn a k { value := some v, writable := some true, enumerable := some true, configurable := some true }
 
 /-- What a call does: the callee, `this`, the arguments. The operations below take it as a parameter. -/
-abbrev Call := Val → Val → List Val → M Val
+abbrev Call (W : World) := Val → Val → List Val → M W Val
+
+/-- What a string has itself: `length` and its characters. -/
+def stringOwn (s : String) (k : String) : Option Val :=
+  if k == "length" then some (.num (Float.ofNat s.length)) else
+    (k.toNat?.filter (toString · == k)).bind fun i => (s.toList[i]?).map fun c => .str (String.singleton c)
+
+/-- The property `k` of the object at `a`, read for `base`: a getter runs with `base` as `this`. -/
+def getFrom (call : Call W) (a : Addr) (base : Val) (k : String) : M W Val := do
+  match ← lookupProp a k with
+  | none => pure .undef
+  | some (.data v ..) => pure v
+  | some (.accessor .undef ..) => pure .undef
+  | some (.accessor getter ..) => call getter base []
+
+/-- A property of a primitive that it does not have itself: a member of its prototype `owner`, which is a value of
+the host, or else what `Object.prototype` has. -/
+def protoProp (call : Call W) (owner : String) (names : List String) (base : Val) (k : String) : M W Val :=
+  if names.contains k then pure (.host s!"{owner}.{k}") else getFrom call objectProto base k
+
+/-- A member of a global of the host: a function the world answers for. -/
+def hostMember (name k : String) : M W Val :=
+  if ((hostNamespaces.lookup name).getD []).contains k then pure (.host s!"{name}.{k}")
+  else unknown s!"a property of host value {name}"
 
 /-- `base[key]`. A getter runs with `base` as `this`. -/
-def getProp (call : Call) (base key : Val) : M Val := do
+def getProp (call : Call W) (base key : Val) : M W Val := do
   match base with
   | .undef | .null => throwErr .type "cannot read properties of undefined or null"
-  | .obj a =>
-    match ← lookupProp a (← toKey key) with
-    | none => pure .undef
-    | some (.data v ..) => pure v
-    | some (.accessor .undef ..) => pure .undef
-    | some (.accessor getter ..) => call getter base []
+  | .obj a => getFrom call a base (← toKey key)
   | .str s =>
     let k ← toKey key
-    let chars := s.toList
-    if k == "length" then pure (.num (Float.ofNat chars.length)) else
-    match k.toNat? with
-    | some i =>
-      match chars[i]? with
-      | some c => if toString i == k then pure (.str (String.singleton c)) else unknown "a property of String.prototype"
-      | none => unknown "a property of String.prototype"
-    | none => unknown "a property of String.prototype"
-  | .num _ | .bool _ => unknown "a property of a number or a boolean"
+    match stringOwn s k with
+    | some v => pure v
+    | none => protoProp call "String.prototype" stringProtoNames base k
+  | .num _ => protoProp call "Number.prototype" numberProtoNames base (← toKey key)
+  | .bool _ => protoProp call "Boolean.prototype" booleanProtoNames base (← toKey key)
   | .error .. => unknown "a property of an engine error"
-  | .host name => unknown s!"a property of host value {name}"
+  | .host name => hostMember name (← toKey key)
 
 /-- `base[key] = v` in strict code. A setter runs with `base` as `this`. -/
-def setProp (call : Call) (base key v : Val) : M Unit := do
+def setProp (call : Call W) (base key v : Val) : M W Unit := do
   match base with
   | .undef | .null => throwErr .type "cannot set properties of undefined or null"
   | .obj a =>
@@ -480,7 +620,7 @@ def setProp (call : Call) (base key v : Val) : M Unit := do
   | .host name => unknown s!"a property of host value {name}"
 
 /-- `delete base[key]` in strict code. -/
-def deleteProp (base key : Val) : M Val := do
+def deleteProp (base key : Val) : M W Val := do
   match base with
   | .undef | .null => throwErr .type "cannot convert undefined or null to object"
   | .obj a =>
@@ -497,7 +637,7 @@ def deleteProp (base key : Val) : M Val := do
   | .host name => unknown s!"a property of host value {name}"
 
 /-- `key in base`. -/
-def hasProp (key base : Val) : M Val := do
+def hasProp (key base : Val) : M W Val := do
   match base with
   | .obj a => pure (.bool (← lookupProp a (← toKey key)).isSome)
   | .error .. => unknown "a property of an engine error"
@@ -505,22 +645,22 @@ def hasProp (key base : Val) : M Val := do
   | _ => throwErr .type "cannot use 'in' to search in a primitive"
 
 /-- The object a value is, for a standard function that takes one. -/
-def requireObj (what : String) : Val → M Addr
+def requireObj (what : String) : Val → M W Addr
   | .obj a => pure a
   | .error .. => unknown "an engine error is inspected"
   | .host name => unknown s!"host value {name} is inspected"
   | _ => throwErr .type s!"{what} is not an object"
 
 /-- `ToPropertyDescriptor`: the fields are read in the specified order, and reading one may run a getter. -/
-def toDesc (call : Call) (v : Val) : M Desc := do
+def toDesc (call : Call W) (v : Val) : M W Desc := do
   let a ← requireObj "property description" v
-  let field (k : String) : M (Option Val) := do
+  let field (k : String) : M W (Option Val) := do
     if (← lookupProp a k).isSome then some <$> getProp call v (.str k) else pure none
-  let flag (k : String) : M (Option Bool) := do
+  let flag (k : String) : M W (Option Bool) := do
     match ← field k with
     | some x => some <$> lift (toBoolean x)
     | none => pure none
-  let callable (k : String) : M (Option Val) := do
+  let callable (k : String) : M W (Option Val) := do
     match ← field k with
     | some (.host name) => unknown s!"host value {name} is inspected"
     | some .undef => pure (some .undef)
@@ -543,11 +683,11 @@ def logArg : Val → Except Abort String
   | v => toStr v
 
 /-- Does a prototype chain come to `a`? -/
-def reaches (s : State) (a : Addr) : Nat → Option Addr → Bool
+def reaches (s : State W) (a : Addr) : Nat → Option Addr → Bool
   | _, none | 0, _ => false
   | steps + 1, some b => b == a || reaches s a steps ((s.objAt b).bind (·.proto))
 
-def prim (call : Call) (p : Prim) (args : List Val) : M Val := do
+def prim (call : Call W) (p : Prim) (args : List Val) : M W Val := do
   let arg (i : Nat) : Val := args.getD i .undef
   match p with
   | .log =>

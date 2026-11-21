@@ -10,7 +10,7 @@
 //     the standard library, so nearly no whole program is in the fragment. A program is cut down to the units the
 //     front end accepts alone and whose names are all declared by units that are kept, and one `console.log` is added
 //     for each binding (and each field of an object) that the generator gave a primitive type. A unit in which the
-//     model then reaches unknown code (a method of a string, say) is left out too, and the program is tried again.
+//     model then reaches unknown code (a method of an array, say) is left out too, and the program is tried again.
 //     The table counts the units of the generated programs (`units`), those the front end accepts alone
 //     (`unitsAccepted`), those in the programs that ran (`unitsRun`), and the programs with no unit left (`empty`);
 //   - splits by the real tool. K of the programs above that the model runs to the end (the hand-written ones first)
@@ -24,6 +24,16 @@
 //     bundle's order, which keeps every ending. The other accepted splits are counted apart; the model must still
 //     agree with Node on each of them. `splitCases` of `cases.mjs` has one of those as a named case;
 //   - the members of the host's prototypes: the model's lists must be Node's.
+//
+// The world. The model asks a world about the host functions that work on primitives (`worldFunction` of
+// `Value.lean`; `corejs --host-names` prints them). The world of this test is Node itself, as a recording: every
+// program runs in Node first, with those functions wrapped, and each call that has a primitive receiver and primitive
+// arguments is written down with how it ended (a call from Node's own code, which runs while a program is loaded, is
+// not: the caller has to be a file of the program). The model then runs in the world that answers exactly those calls
+// in that order (`replay` of `Run.lean`). So the model has to make the calls Node made, the same function with the
+// same receiver and arguments in the same order, and it gets Node's answers. A call of the model that is not the next
+// recorded one fails the test, and so does a recorded call the model did not make before it ended. A listed function
+// that returns an object fails it too: the list would be wrong.
 //
 // A run of the model ends "normal", "throw" (with the thrown value described as `describe` does below), "unknown" (it
 // reached code the model does not define; what it printed before must be the start of what Node prints) or "fuel".
@@ -42,7 +52,7 @@ import { generateProgram, renderProgram } from "../translation/gen/index.mjs";
 import { dumpOf } from "../translation/split_dump.mjs";
 import { cases, splitCases } from "./cases.mjs";
 import { moduleCases } from "./module_cases.mjs";
-import { Refused, toCore, toCoreProgram } from "./to_core.mjs";
+import { bits, HOST_GLOBALS, Refused, toCore, toCoreProgram } from "./to_core.mjs";
 
 const option = (name, fallback) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -89,19 +99,101 @@ function describe(v) {
   return `${typeof v}:${String(v)}`;
 }
 
-/** What the module `file` does in Node: `{ out, end, detail }`. */
+const failures = [];
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const sameRun = (a, b) => a.end === b.end && a.detail === b.detail && same(a.out, b.out);
+
+// The world: the host functions the model asks about, wrapped while a program runs in Node.
+const hostNames = spawnSync(corejs, ["--host-names"], { encoding: "utf8" });
+assert.equal(hostNames.status, 0, `corejs --host-names failed: ${hostNames.stderr}`);
+const host = JSON.parse(hostNames.stdout);
+const isPrimitive = (v) => v === null || ["undefined", "boolean", "number", "string"].includes(typeof v);
+/** A primitive as `Decode.primitive` of `Run.lean` reads it. */
+const encode = (v) => {
+  if (v === undefined) return ["u"];
+  if (v === null) return ["n"];
+  if (typeof v === "boolean") return ["b", v];
+  if (typeof v === "number") return ["d", bits(v)];
+  return /[\ud800-\udfff]/.test(v) ? ["x"] : ["s", v];
+};
+let recording = null; // the calls of the program that is running
+let inHost = false; // inside a recorded call, or inside this harness
+/**
+ * Is the function that called a wrapped host function a function of the program? Node's own code runs while a
+ * program is loaded and calls host functions too; a program is a file of the work directory.
+ */
+function calledByProgram() {
+  const prepare = Error.prepareStackTrace;
+  Error.prepareStackTrace = (_, sites) => sites;
+  const holder = {};
+  Error.captureStackTrace(holder, calledByProgram);
+  const sites = holder.stack;
+  Error.prepareStackTrace = prepare;
+  // sites[0] is the wrapper, sites[1] its caller
+  return (sites[1]?.getFileName() ?? "").includes(path.basename(work));
+}
+const wrapped = [...host.methods.map((name) => [name, true]), ...host.functions.map((name) => [name, false])].map(
+  ([name, method]) => {
+    const keys = name.split(".");
+    const key = keys.pop();
+    const owner = keys.reduce((o, k) => o[k], globalThis);
+    const descriptor = Object.getOwnPropertyDescriptor(owner, key);
+    assert.equal(typeof descriptor?.value, "function", `${name} is not a function of this Node`);
+    const proxy = new Proxy(descriptor.value, {
+      apply(target, receiver, args) {
+        if (recording === null || inHost) return Reflect.apply(target, receiver, args);
+        inHost = true;
+        try {
+          const self = method ? receiver : undefined;
+          if (!isPrimitive(self) || !args.every(isPrimitive) || !calledByProgram())
+            return Reflect.apply(target, receiver, args);
+          const call = { fn: name, this: encode(self), args: args.map(encode) };
+          recording.push(call);
+          try {
+            const result = Reflect.apply(target, receiver, args);
+            if (isPrimitive(result)) call.ret = encode(result);
+            else
+              failures.push(`${name} returned an object for primitives: the model's list of host functions is wrong`);
+            return result;
+          } catch (e) {
+            if (isPrimitive(e)) call.throw = encode(e);
+            else call.error = e.constructor.name;
+            throw e;
+          }
+        } finally {
+          inHost = false;
+        }
+      },
+    });
+    return { owner, key, descriptor, proxy };
+  }
+);
+
+/** What the module `file` does in Node: `{ out, end, detail, world }`, `world` being the host calls it made. */
 async function runFileInNode(file) {
   const out = [];
   const log = console.log;
-  console.log = (...args) => out.push(format(...args));
+  console.log = (...args) => {
+    const before = inHost;
+    inHost = true;
+    out.push(format(...args));
+    inHost = before;
+  };
+  recording = [];
+  for (const w of wrapped) Object.defineProperty(w.owner, w.key, { ...w.descriptor, value: w.proxy });
+  let ending;
   try {
     await import(pathToFileURL(file));
-    return { out, end: "normal", detail: "" };
+    ending = { end: "normal", detail: "" };
   } catch (e) {
-    return { out, end: "throw", detail: describe(e) };
-  } finally {
-    console.log = log;
+    ending = { end: "throw", detail: null, thrown: e };
   }
+  for (const w of wrapped) Object.defineProperty(w.owner, w.key, w.descriptor);
+  const world = recording;
+  recording = null;
+  console.log = log;
+  if (ending.thrown !== undefined || ending.detail === null) ending.detail = describe(ending.thrown);
+  return { out, end: ending.end, detail: ending.detail, world };
 }
 
 let directories = 0;
@@ -117,19 +209,42 @@ function writeFiles(files) {
 
 const runInNode = (source) => runFileInNode(path.join(writeFiles({ "main.mjs": source }), "main.mjs"));
 
+/** The host calls of a run in Node without their endings: what the program asked of the world, in order. */
+const asked = (node) => node.world.map(({ fn, this: receiver, args }) => [fn, receiver, args]);
+
+/** Sets `job.node` to what the program of `job` does in Node, for all `jobs`. */
+async function runNode(jobs) {
+  for (const job of jobs) job.node = job.entry ? await runFileInNode(job.entry) : await runInNode(job.source);
+}
+
+/** A translated module as a program of its own, statement `j` with the identity `j`. */
+const single = (t) => ({
+  entry: "main",
+  modules: [{ name: "main", imports: [], exports: [], ids: t.ids.map((_, j) => j), tokens: t.tokens }],
+});
+
 let modelSeconds = 0;
-/** Sets `job.result` to what the model does with `job.program`, for all `jobs` in one call of `corejs`. */
+/**
+ * Sets `job.result` to what the model does with `job.program` in the world `job.node` recorded, for all `jobs` in one
+ * call of `corejs`.
+ */
 function runModel(jobs) {
   if (jobs.length === 0) return;
   const input = path.join(work, "programs.jsonl");
-  writeFileSync(input, jobs.map((j) => JSON.stringify(j.program)).join("\n") + "\n");
+  writeFileSync(input, jobs.map((j) => JSON.stringify({ ...j.program, world: j.node.world })).join("\n") + "\n");
   const started = Date.now();
   const model = spawnSync(corejs, [input], { encoding: "utf8", maxBuffer: 1 << 28 });
   modelSeconds += (Date.now() - started) / 1000;
   assert.equal(model.status, 0, `corejs failed: ${model.stderr}`);
   const lines = model.stdout.trimEnd().split("\n");
   assert.equal(lines.length, jobs.length, "corejs did not answer every program");
-  jobs.forEach((job, i) => (job.result = JSON.parse(lines[i])));
+  jobs.forEach((job, i) => {
+    job.result = JSON.parse(lines[i]);
+    const { world, left, end } = job.result;
+    if (world !== "") failures.push(`${job.label}: ${world}\n${show ? job.source : ""}`);
+    else if (left !== 0 && (end === "normal" || end === "throw"))
+      failures.push(`${job.label}: the model ended ${left} host calls before Node's last one`);
+  });
 }
 
 /**
@@ -166,11 +281,7 @@ function slice(program, banned) {
   return { source, owner, units: program.units.length, acceptedUnits, keptUnits: kept.length };
 }
 
-const failures = [];
-const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-const sameRun = (a, b) => a.end === b.end && a.detail === b.detail && same(a.out, b.out);
-
-// { label, source | files, program, result, expectEnd, set }: `program` is what `corejs` reads
+// { label, source, entry, program, node, result, expectEnd, set }: `program` is what `corejs` reads
 const jobs = [];
 for (const c of cases) {
   const translated = accepted(c.source, { allowHost: c.allowHost ?? false });
@@ -178,7 +289,7 @@ for (const c of cases) {
   jobs.push({
     label: `case ${c.name}`,
     source: c.source,
-    program: translated.tokens,
+    program: single(translated),
     expectEnd: c.end ?? null,
     set: null,
   });
@@ -189,7 +300,7 @@ for (const c of splitCases) {
   jobs.push({
     label: `split case ${c.name}`,
     source: c.source,
-    program: translated.tokens,
+    program: single(translated),
     expectEnd: null,
     set: null,
     splitCase: c,
@@ -208,6 +319,7 @@ for (const c of moduleCases) {
     set: null,
   });
 }
+await runNode(jobs);
 runModel(jobs);
 
 const summary = SETS.map((families) => ({
@@ -245,9 +357,10 @@ for (let round = 0; pending.length > 0; round++) {
     job.source = job.cut.source;
     const translated = accepted(job.source);
     assert(translated !== null, `${job.label}: the kept units are refused together\n${job.source}`);
-    job.program = translated.tokens;
+    job.program = single(translated);
     tried.push(job);
   }
+  await runNode(tried);
   runModel(tried);
   pending = [];
   for (const job of tried) {
@@ -287,9 +400,11 @@ function planOrder(program) {
 
 const ends = {};
 let orders = 0;
+let hostCalls = 0;
 for (const job of jobs) {
   const got = job.result;
   ends[got.end] = (ends[got.end] ?? 0) + 1;
+  hostCalls += job.node.world.length - got.left;
   const fail = (why, node) =>
     failures.push(
       `${job.label}: ${why}\n  model: ${JSON.stringify(got)}\n  node:  ${JSON.stringify(node)}\n${show ? job.source : ""}`
@@ -300,7 +415,6 @@ for (const job of jobs) {
   }
   // a program that uses a host value prints in Node what the host does; only the model's ending is checked
   if (job.expectEnd === "unknown") continue;
-  job.node = job.entry ? await runFileInNode(job.entry) : await runInNode(job.source);
   const node = job.node;
   const s = job.set === null ? null : summary[job.set];
   if (got.end === "unknown") {
@@ -378,6 +492,7 @@ const tally = {
   unsupported: 0,
   agree: 0,
   orderKept: 0,
+  otherCalls: 0,
 };
 const apart = { splits: 0, differ: 0 }; // accepted splits that move code, of a bundle that does not end normally
 const wrongAccepts = [];
@@ -421,14 +536,20 @@ for (const [index, job] of candidates.slice(0, splitPrograms).entries()) {
   for (const [kind, spec] of Object.entries(specsFor(dump, next))) split(job, bundle, dump, kind, spec, null);
 }
 const bundleJobs = [...new Set(splitJobs.map((s) => s.of))];
-for (const job of bundleJobs) job.numbered = { program: splitJobs.find((s) => s.of === job).bundle.program };
+for (const job of bundleJobs)
+  job.numbered = { label: job.label, node: job.node, program: splitJobs.find((s) => s.of === job).bundle.program };
 runModel(bundleJobs.map((j) => j.numbered));
+await runNode(splitJobs);
 runModel(splitJobs);
 for (const job of splitJobs) {
   const files = () =>
     job.program.modules.map((m) => `// ${m.name}\n${readFileSync(path.join(path.dirname(job.entry), m.name), "utf8")}`);
   const text = () => `--- bundle\n${job.source}\n--- split\n${files().join("\n")}`;
-  const node = await runFileInNode(job.entry);
+  const node = job.node;
+  if (!same(asked(node), asked(job.of.node))) {
+    tally.otherCalls++;
+    if (show) console.log(`other host calls than the bundle: ${job.label}`);
+  }
   const runs = {
     "bundle in Node": job.of.node,
     "bundle in the model": job.of.numbered.result,
@@ -466,10 +587,11 @@ for (const job of splitJobs) {
   tally.agree++;
 }
 
-// The members the model gives the host's prototypes are the ones this Node has.
-const names = spawnSync(corejs, ["--host-names"], { encoding: "utf8" });
-assert.equal(names.status, 0, `corejs --host-names failed: ${names.stderr}`);
-for (const [owner, listed] of Object.entries(JSON.parse(names.stdout))) {
+// The members the model gives the host's prototypes are the ones this Node has, and the front end lets through the
+// globals the model has a rule for.
+if (!same([...host.globals].sort(), [...HOST_GLOBALS].sort()))
+  failures.push(`the front end lets through ${HOST_GLOBALS}, the model has rules for ${host.globals}`);
+for (const [owner, listed] of Object.entries(host.prototypes)) {
   const real = Object.getOwnPropertyNames(owner.split(".").reduce((o, k) => o[k], globalThis));
   if (!same([...listed].sort(), real.sort()))
     failures.push(`${owner}: the model lists ${listed.sort()}, Node has ${real}`);
@@ -488,7 +610,14 @@ console.log(
   `splits: ${tally.named[0]} named; ${tally.programs} programs; ${["cut", "ordered", "free"].map(verdicts).join("; ")}; ` +
     `${tally.unsupported} unsupported; ${tally.agree} accepted splits where the four runs agree, ` +
     `${tally.orderKept} of them with the statements in the bundle's order; ${apart.splits} accepted splits move code ` +
-    `of a bundle that does not end normally and are not compared with it (premise P4), ${apart.differ} of them differ`
+    `of a bundle that does not end normally and are not compared with it (premise P4), ${apart.differ} of them ` +
+    `differ; ${tally.otherCalls} accepted splits make other host calls than their bundle, or in another order`
+);
+const total = (key) => summary.reduce((sum, s) => sum + s[key], 0);
+console.log(
+  `generated units: ${total("units")}; accepted alone: ${total("unitsAccepted")}; in the programs that ran: ` +
+    `${total("unitsRun")} (${((100 * total("unitsRun")) / total("units")).toFixed(1)}%); ` +
+    `host calls recorded: ${hostCalls}`
 );
 if (wrongAccepts.length > 0) {
   console.error(
