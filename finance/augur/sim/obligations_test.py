@@ -31,6 +31,7 @@ from finance.augur.sim.results import (
 )
 from finance.augur.sim.schedule import Once, Recurring, Schedule
 from finance.augur.sim.session import ActionSession
+from finance.augur.sim.testing.accounts import account, ref
 from finance.augur.sim.testing.bills import biller
 from finance.augur.sim.testing.series import level_series
 from finance.augur.sim.testing.session import each, finish
@@ -39,15 +40,6 @@ from finance.augur.sim.world import World
 VTI = SecurityKey(symbol=SecuritySymbol("vti"))
 CHECKING_TARGET = {(AccountId("checking"), AssetId("vti")): 1}
 SCALE = quantity_scale_for_asset(VTI)
-
-
-def ref(agent_id: AgentId, account_id: AccountId = CHECKING) -> AccountRef:
-    return AccountRef(agent_id=agent_id, account_id=account_id)
-
-
-def account(agent_id: AgentId, account_id: AccountId = CHECKING, balance: Decimal | int = 0) -> tuple[AccountRef, int]:
-    """An account and its opening balance."""
-    return ref(agent_id, account_id), USD.quanta(balance)
 
 
 @dataclass(frozen=True)
@@ -290,7 +282,7 @@ def test_funding_uses_rollout_specific_prices(rent: Situation) -> None:
 
 
 def test_funding_consumes_only_selected_account_fifo_pool(rent: Situation) -> None:
-    rent.accounts[0] = account(AgentId("alice"), AccountId("taxable"))
+    rent.accounts[0] = account(AgentId("alice"), account_id=AccountId("taxable"))
     rent.claims[0] = bill(
         "rent_due", "rent", ref(AgentId("alice"), AccountId("taxable")), ref(AgentId("landlord")), Decimal(400)
     )

@@ -28,6 +28,7 @@ from finance.augur.sim.schedule import Once, Recurring, Schedule
 from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.tax_indexation import FixedNominalLaw
 from finance.augur.sim.tax_profile import TaxProfile, compile_profile
+from finance.augur.sim.testing.accounts import account, ref
 from finance.augur.sim.testing.bills import biller
 from finance.augur.sim.testing.scripted import Scripted
 from finance.augur.sim.world import World
@@ -39,15 +40,6 @@ ALICE = AgentId("alice")
 WORLD = AgentId("world")
 BROKERAGE = AccountId("brokerage")
 TAX = flat_income_tax(HYPOTHETICAL_FLAT_TAX, ordinary_rate=Decimal("0.20"), ltcg_rate=Decimal("0.10"))
-
-
-def ref(agent_id: AgentId, account_id: AccountId = CHECKING) -> AccountRef:
-    return AccountRef(agent_id=agent_id, account_id=account_id)
-
-
-def account(agent_id: AgentId, account_id: AccountId = CHECKING, balance: Decimal | int = 0) -> tuple[AccountRef, int]:
-    """An account and its opening balance."""
-    return ref(agent_id, account_id), USD.quanta(balance)
 
 
 def flat(asset: SecurityKey, price: Decimal | int, *, snapshots: int) -> Series:
@@ -365,7 +357,11 @@ def test_fifo_across_two_purchase_dates_preserves_basis_and_tax_character() -> N
                     values=(USD.quanta(100), USD.quanta(150)) + (USD.quanta(200),) * 12,
                 ),
             ),
-            accounts=(account(ALICE, balance=200), account(WORLD, balance=300), account(ALICE, AccountId("proceeds"))),
+            accounts=(
+                account(ALICE, balance=200),
+                account(WORLD, balance=300),
+                account(ALICE, account_id=AccountId("proceeds")),
+            ),
             lots=(),
             claims=(),
             transfers=(Contribution("later", month=1, amount=300),),

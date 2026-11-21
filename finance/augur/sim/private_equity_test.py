@@ -31,6 +31,7 @@ from finance.augur.sim.private_equity import TenderPolicy
 from finance.augur.sim.results import Rollout
 from finance.augur.sim.schedule import Recurring
 from finance.augur.sim.session import ActionSession
+from finance.augur.sim.testing.accounts import account
 from finance.augur.sim.testing.bills import biller
 from finance.augur.sim.testing.issuer_protocol import Code, Money, Rate, at_month, issuer_protocol
 from finance.augur.sim.testing.rollouts import book
@@ -49,11 +50,6 @@ ASSET_ID = AssetId("private_equity:acme")
 LOT_ID = LotId("acme_lot_a")
 ACME = PrivateEquityAssetKey(issuer_id=IssuerId(ISSUER))
 SCALE = quantity_scale_for_asset(ACME)
-
-
-def account(agent_id: AgentId, account_id: AccountId = CHECKING, balance: Decimal | int = 0) -> tuple[AccountRef, int]:
-    """An account and its opening balance."""
-    return AccountRef(agent_id=agent_id, account_id=account_id), USD.quanta(balance)
 
 
 def protocol(
@@ -433,7 +429,7 @@ def test_proceeds_land_in_the_account_the_policy_names() -> None:
     horizon = 12
     case = replace(
         holder(horizon_months=horizon, lnw_floor=0),
-        accounts=(account(ALICE, SAVINGS, balance=123), account(ALICE), account(SPEND_SINK)),
+        accounts=(account(ALICE, balance=123, account_id=SAVINGS), account(ALICE), account(SPEND_SINK)),
     )
     rollout = run(
         case,
