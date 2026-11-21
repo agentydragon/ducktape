@@ -69,12 +69,18 @@ let
     # 2026-11-20: Trial disabling animations to see how the UX feels: less
     # feedback that things are happening, but hopefully less lag in tmux.
     tui.animations = false;
+    # TODO: Consider trying TUI notifications and configuring the status line.
+    # TODO: Consider trying TUI prompt presets.
 
     features = {
       unified_exec = true;
       shell_tool = true; # enable `/shell`
       apply_patch_freeform = true; # freeform patch syntax
       memories = true; # experimental memory read/write pipeline
+      async_compaction = true;
+      wake_on_agent_messages = true;
+      send_message_to_user_async = true;
+      # TODO: Consider enabling current_time_reminder.
       # shell_snapshot ?  (keep off unless you want offline TUI snapshots)
     };
     # Persist command history to disk.
