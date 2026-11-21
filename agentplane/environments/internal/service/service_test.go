@@ -552,7 +552,7 @@ func TestRevalidateDescriptorRefreshesIdentityAfterSameUIDChange(t *testing.T) {
 	if err := objects.Update(t.Context(), resource); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, visible, err := service.revalidateDescriptor(t.Context(), descriptor, environmentCaller{}, true); err != nil || !visible || descriptor.GetIdentityName() != "new-agent" {
+	if visible, err := service.revalidateDescriptor(t.Context(), descriptor, environmentCaller{}, true); err != nil || !visible || descriptor.GetIdentityName() != "new-agent" {
 		t.Fatalf("revalidated identity = %q, visible %t, error %v; want new-agent", descriptor.GetIdentityName(), visible, err)
 	}
 	if err := objects.Get(t.Context(), key, resource); err != nil {
@@ -562,7 +562,7 @@ func TestRevalidateDescriptorRefreshesIdentityAfterSameUIDChange(t *testing.T) {
 	if err := objects.Update(t.Context(), resource); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, visible, err := service.revalidateDescriptor(t.Context(), descriptor, environmentCaller{}, true); err != nil || !visible || descriptor.IdentityName != nil {
+	if visible, err := service.revalidateDescriptor(t.Context(), descriptor, environmentCaller{}, true); err != nil || !visible || descriptor.IdentityName != nil {
 		t.Fatalf("revalidated unbound identity = %q, visible %t, error %v; want absent", descriptor.GetIdentityName(), visible, err)
 	}
 }

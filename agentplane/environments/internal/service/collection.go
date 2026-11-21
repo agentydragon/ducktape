@@ -265,7 +265,7 @@ func (s *Service) collection(ctx context.Context, caller environmentCaller, broa
 		if err != nil {
 			return nil, watchFailure(ctx, err)
 		}
-		_, _, visible, err := s.revalidateDescriptor(ctx, value, caller, broad)
+		visible, err := s.revalidateDescriptor(ctx, value, caller, broad)
 		if err != nil {
 			return nil, watchFailure(ctx, err)
 		}
@@ -322,7 +322,7 @@ func (s *Service) collectionItem(ctx context.Context, caller environmentCaller, 
 	if err != nil {
 		return nil, "", watchFailure(ctx, err)
 	}
-	_, _, visible, err := s.revalidateDescriptor(ctx, item, caller, broad)
+	visible, err := s.revalidateDescriptor(ctx, item, caller, broad)
 	if err != nil {
 		return nil, "", watchFailure(ctx, err)
 	}
