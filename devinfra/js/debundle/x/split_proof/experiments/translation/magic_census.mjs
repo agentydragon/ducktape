@@ -2,7 +2,10 @@
 // reflection, hooks the language calls on its own, patched standard objects, and what observes how code is spelled.
 // A count by syntax, to decide what a debundler supports ([`SUPPORT.md`](../../SUPPORT.md)).
 //
-//   node magic_census.mjs @LIST > census.md      (LIST: one path of a source file per line; or the files themselves)
+//   node magic_census.mjs [--list=TEXT] @LIST > census.md   (LIST: one path of a source file per line; or the files)
+//
+// `--list=TEXT` also prints, to standard error, each top-level site of the features whose name contains TEXT, as
+// `file:line: source`.
 //
 // A site is counted twice: in all, and "at the top level", outside every function body, where it runs when the module
 // is evaluated unless a condition skips it. A site inside a function may run then too (a function called at start-up),
@@ -51,6 +54,8 @@ const FEATURES = [
   ["`using` or `await using` declaration", "hooks the language calls"],
   ["`Symbol.dispose` or `Symbol.asyncDispose`", "hooks the language calls"],
   ["top-level `await`", "evaluation order"],
+  ["`throw` statement", "evaluation order"],
+  ["`throw` outside every function and every `try` block that has a `catch`", "evaluation order"],
   ["`WeakRef` or `FinalizationRegistry`", "nondeterminism"],
   ["`Atomics` or `SharedArrayBuffer`", "nondeterminism"],
   ["`arguments.callee` or `.caller`", "how code is spelled"],
@@ -64,8 +69,10 @@ const FEATURES = [
 const counts = new Map(
   FEATURES.map(([feature]) => [feature, { sites: 0, files: new Set(), topSites: 0, topFiles: new Set() }])
 );
+const listed = process.argv.find((arg) => arg.startsWith("--list="))?.slice("--list=".length);
 const files = process.argv
   .slice(2)
+  .filter((arg) => !arg.startsWith("--list="))
   .flatMap((arg) => (arg.startsWith("@") ? readFileSync(arg.slice(1), "utf8").split("\n").filter(Boolean) : [arg]));
 
 const staticKey = (member) =>
@@ -116,9 +123,10 @@ for (const file of files) {
       ? [globalName(node.object), staticKey(node)]
       : undefined;
 
-  const stack = [[ast, false, undefined]];
+  // `guarded`: inside the block of a `try` that has a `catch`, with no function in between
+  const stack = [[ast, false, undefined, false]];
   while (stack.length > 0) {
-    const [node, inFunction, parent] = stack.pop();
+    const [node, inFunction, parent, guarded] = stack.pop();
     const hit = (feature) => {
       const entry = counts.get(feature);
       entry.sites += 1;
@@ -126,6 +134,10 @@ for (const file of files) {
       if (!inFunction) {
         entry.topSites += 1;
         entry.topFiles.add(file);
+        if (listed !== undefined && feature.includes(listed)) {
+          const line = source.slice(0, node.start).split("\n").length;
+          console.error(`${file}:${line}: ${source.slice(node.start, node.end).replace(/\s+/g, " ").slice(0, 160)}`);
+        }
       }
     };
     switch (node.type) {
@@ -247,6 +259,10 @@ for (const file of files) {
       case "ForOfStatement":
         if (node.await && !inFunction) hit("top-level `await`");
         break;
+      case "ThrowStatement":
+        hit("`throw` statement");
+        if (!inFunction && !guarded) hit("`throw` outside every function and every `try` block that has a `catch`");
+        break;
       case "WithStatement":
         hit("`with` statement");
         break;
@@ -258,9 +274,11 @@ for (const file of files) {
     const inside = inFunction || FUNCTIONS.has(node.type);
     for (const key of Object.keys(node)) {
       const value = node[key];
+      const childGuarded = !inside && (guarded || (node.type === "TryStatement" && key === "block" && node.handler));
       if (Array.isArray(value)) {
-        for (const child of value) if (child && typeof child.type === "string") stack.push([child, inside, node]);
-      } else if (value && typeof value.type === "string") stack.push([value, inside, node]);
+        for (const child of value)
+          if (child && typeof child.type === "string") stack.push([child, inside, node, childGuarded]);
+      } else if (value && typeof value.type === "string") stack.push([value, inside, node, childGuarded]);
     }
   }
 }
