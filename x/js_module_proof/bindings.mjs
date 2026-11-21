@@ -1493,6 +1493,18 @@ function generateFiles(source, spec, names) {
                 (item, index) =>
                   isWrite(item) || (index === statement.block.body.length - 1 && item.type === "ThrowStatement")
               );
+            const completedBlock = (block) =>
+              block?.type === "BlockStatement" &&
+              block.body.length > 0 &&
+              ["ReturnStatement", "ThrowStatement"].includes(block.body.at(-1).type) &&
+              block.body.slice(0, -1).every(isWrite);
+            const terminalTry =
+              terminal?.type === "TryStatement" &&
+              completedBlock(terminal.block) &&
+              (terminal.handler === null ||
+                ((terminal.handler.param === null || terminal.handler.param.type === "Identifier") &&
+                  completedBlock(terminal.handler.body))) &&
+              (terminal.finalizer === null || terminal.finalizer.body.every(isWrite));
             const isLoop = (statement) =>
               statement.type === "ForStatement" &&
               statement.init?.type === "VariableDeclaration" &&
@@ -1510,7 +1522,7 @@ function generateFiles(source, spec, names) {
                     (statement.alternate.type === "BlockStatement" && statement.alternate.body.every(isWrite)))));
             check(
               node.params.every((parameter) => parameter.type === "Identifier") &&
-                (terminal?.type === "ReturnStatement" || terminalIf) &&
+                (["ReturnStatement", "ThrowStatement"].includes(terminal?.type) || terminalIf || terminalTry) &&
                 declarations.every(
                   (declaration) =>
                     ["const", "let"].includes(declaration.kind) &&
@@ -1579,20 +1591,23 @@ function generateFiles(source, spec, names) {
               );
               if (item.expression.type === "AssignmentExpression") visit(item.expression.right, shadowed);
             };
+            const visitTry = (item) => {
+              const visitPart = (part, shadowed = new Set()) => {
+                if (part.type === "ThrowStatement" || part.type === "ReturnStatement") visit(part.argument, shadowed);
+                else visitWrite(part, shadowed, shadowed);
+              };
+              item.block.body.forEach((part) => visitPart(part));
+              if (item.handler) {
+                const caught = item.handler.param?.name;
+                const catchNames = new Set(caught ? [caught] : []);
+                item.handler.body.body.forEach((part) => visitPart(part, catchNames));
+              }
+              if (item.finalizer) item.finalizer.body.forEach((write) => visitWrite(write));
+            };
             for (const item of prefix) {
               if (item.type === "VariableDeclaration") visit(item.declarations[0].init);
-              else if (item.type === "TryStatement") {
-                item.block.body.forEach((part) => {
-                  if (part.type === "ThrowStatement") visit(part.argument);
-                  else visitWrite(part);
-                });
-                if (item.handler) {
-                  const caught = item.handler.param?.name;
-                  const catchNames = new Set(caught ? [caught] : []);
-                  item.handler.body.body.forEach((write) => visitWrite(write, catchNames, catchNames));
-                }
-                if (item.finalizer) item.finalizer.body.forEach((write) => visitWrite(write));
-              } else if (item.type === "ForStatement") {
+              else if (item.type === "TryStatement") visitTry(item);
+              else if (item.type === "ForStatement") {
                 const loopName = item.init.declarations[0].id.name;
                 check(!localNames.has(loopName), "ambiguous loop binding");
                 item.body.body.forEach((write) => visitWrite(write, new Set([loopName])));
@@ -1604,7 +1619,8 @@ function generateFiles(source, spec, names) {
                 if (item.alternate) item.alternate.body.forEach((write) => visitWrite(write));
               } else visitWrite(item);
             }
-            if (terminalIf) {
+            if (terminalTry) visitTry(terminal);
+            else if (terminalIf) {
               visit(terminal.test);
               visit(returnBranch(terminal.consequent).argument);
               visit(returnBranch(terminal.alternate).argument);

@@ -164,6 +164,70 @@ if (runSection(2)) {
   assert.deepEqual(execute(other, ["plus", "extra"]), execute(join(otherOut, "entry.mjs"), ["plus", "extra"]));
 }
 
+if (runSection(2)) {
+  const source = join(root, "terminal-catch-source.mjs");
+  const spec = join(root, "terminal-catch-spec.json");
+  const out = join(root, "terminal-catch-out");
+  await writeFile(
+    source,
+    `let original = 3;\nlet alternate = 5;\nfunction compute() { try { throw original; } catch (alternate) { return alternate + original; } }\nexport { compute };\n`
+  );
+  await writeFile(
+    spec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "state.mjs": { imports: [], statements: [0, 1] },
+        "logic.mjs": { imports: ["state.mjs"], statements: [2], renameLocalImports: true },
+        "entry.mjs": { imports: ["logic.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", source, spec, out).value.result, "generated");
+  const state = join(out, "state.mjs");
+  await writeFile(state, (await readFile(state, "utf8")) + "export { alternate };\n");
+  const logic = join(out, "logic.mjs");
+  const text = await readFile(logic, "utf8");
+  assert.match(text, /catch \(alternate\).*alternate \+ __split_local_0/);
+  const unchanged = cli("validate", source, spec, out).value;
+  assert.equal(unchanged.result, "proved under assumptions", JSON.stringify(unchanged));
+  assert.deepEqual(
+    execute(source, [{ name: "compute", args: [] }]),
+    execute(join(out, "entry.mjs"), [{ name: "compute", args: [] }])
+  );
+  await writeFile(logic, text.replace("original as __split_local_0", "alternate as __split_local_0"));
+  const redirected = cli("validate", source, spec, out).value;
+  assert.equal(redirected.result, "unsafe", JSON.stringify(redirected));
+  assert.deepEqual(execute(source, redirected.calls), { events: [], results: [6] });
+  assert.deepEqual(execute(join(out, "entry.mjs"), redirected.calls), { events: [], results: [10] });
+
+  const throwingSource = join(root, "terminal-throw-source.mjs");
+  const throwingOut = join(root, "terminal-throw-out");
+  await writeFile(
+    throwingSource,
+    `let original = 3;\nlet alternate = 5;\nfunction compute() { throw original; }\nexport { compute };\n`
+  );
+  assert.equal(cli("generate", throwingSource, spec, throwingOut).value.result, "generated");
+  const throwingState = join(throwingOut, "state.mjs");
+  await writeFile(throwingState, (await readFile(throwingState, "utf8")) + "export { alternate };\n");
+  const throwingLogic = join(throwingOut, "logic.mjs");
+  const throwingText = await readFile(throwingLogic, "utf8");
+  const throwingUnchanged = cli("validate", throwingSource, spec, throwingOut).value;
+  assert.equal(throwingUnchanged.result, "proved under assumptions", JSON.stringify(throwingUnchanged));
+  await writeFile(throwingLogic, throwingText.replace("original as __split_local_0", "alternate as __split_local_0"));
+  const throwingRedirected = cli("validate", throwingSource, spec, throwingOut).value;
+  assert.equal(throwingRedirected.result, "unsafe", JSON.stringify(throwingRedirected));
+  const thrown = (path) => {
+    const code = `const m = await import(${JSON.stringify(pathToFileURL(path).href)}); try { m.compute(); } catch (value) { console.log(JSON.stringify(value)); }`;
+    const child = spawnSync(process.execPath, ["--input-type=module", "-e", code], { encoding: "utf8" });
+    assert.equal(child.status, 0, child.stderr);
+    return JSON.parse(child.stdout);
+  };
+  assert.equal(thrown(throwingSource), 3);
+  assert.equal(thrown(join(throwingOut, "entry.mjs")), 5);
+}
+
 if (runSection(1)) {
   // Exercise the real generator and validator with an exported getter, then
   // change the emitted getter so the bug appears only after a later call.

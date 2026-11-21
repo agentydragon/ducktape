@@ -21,14 +21,16 @@ const { assessCorpus } = await import("./real_corpus.mjs");
 const shard = Number(process.env.TEST_SHARD_INDEX ?? 0);
 const shards = Number(process.env.TEST_TOTAL_SHARDS ?? 1);
 if (shards === 4 && shard === 0) {
-  const exceptions = Array.from({ length: 7 }, (_, index) => makeExceptionCase(773, index));
-  assert.ok(exceptions.every((input) => input.withCatchBinding));
-  assert.equal(exceptions.filter((input) => input.catchShadow).length, 1);
+  const exceptions = Array.from({ length: 9 }, (_, index) => makeExceptionCase(773, index));
+  assert.equal(exceptions.filter((input) => input.withCatchBinding).length, 8);
+  assert.equal(exceptions.filter((input) => input.expectThrow).length, 1);
+  assert.equal(exceptions.filter((input) => input.catchShadow).length, 2);
+  assert.equal(exceptions.filter((input) => input.terminalCatch).length, 1);
   assert.equal(makeExceptionCase(773, 3).source, makeExceptionCase(773, 3).source);
   assert.notEqual(makeExceptionCase(773, 3).source, makeExceptionCase(774, 3).source);
   const generated = await runFuzz({
     seed: 773,
-    start: 1,
+    start: 7,
     cases: 1,
     outputDir: process.env.TEST_TMPDIR,
     grammarMode: "exception",
@@ -37,18 +39,32 @@ if (shards === 4 && shard === 0) {
   });
   assert.equal(generated.aliasBoundCatchComparedCases, 1);
   assert.equal(generated.aliasBoundCatchProvedCases, 1);
+  assert.equal(generated.terminalCatchComparedCases, 1);
+  assert.equal(generated.terminalCatchProvedCases, 1);
   assert.equal(generated.equal, 1);
   const redirected = await runFuzz({
     seed: 773,
-    start: 2,
+    start: 8,
     cases: 1,
     outputDir: process.env.TEST_TMPDIR,
     grammarMode: "exception",
     validateEvery: 1,
   });
   assert.equal(redirected.mutationKinds.localAliasNumericRedirect, 1);
+  assert.equal(redirected.directNumericThrowComparedCases, 1);
   assert.equal(redirected.mutatedDifferent, 1);
   assert.equal(redirected.mutatedVerdicts.unsafe, 1);
+  const unmodifiedThrow = await runFuzz({
+    seed: 773,
+    start: 8,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "exception",
+    mutationMode: "disabled",
+    validateEvery: 1,
+  });
+  assert.equal(unmodifiedThrow.directNumericThrowProvedCases, 1);
+  assert.equal(unmodifiedThrow.equal, 1);
 }
 if (shards === 4) {
   const aliases = await runFuzz({

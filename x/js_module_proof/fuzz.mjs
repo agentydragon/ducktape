@@ -1056,6 +1056,7 @@ export function makeLocalAliasCase(seed, index) {
   const withCatch = withThrow && index >= 1141;
   const withCatchBinding = withCatch && index >= 1237;
   const catchShadow = withCatchBinding && index >= 1813;
+  const terminalCatch = withCatchBinding && index >= 1909;
   const catchName = catchShadow ? "numericLeft" : "caught";
   const withLocal = numericBindings.length > 0 && ((index >= 61 && index % 48 === 13) || withTry);
   const aliasLoop = numericBindings.length > 0 && index >= 781 && index % 96 === 13;
@@ -1271,6 +1272,10 @@ export function makeLocalAliasCase(seed, index) {
           : [returnNode({ type: "BinaryExpression", operator: "+", left: id("offset"), right: numericBody })]),
       ]
     : [returnNode(numericBody)];
+  if (terminalCatch) {
+    const terminal = computedBody.pop();
+    computedBody.find((statement) => statement.type === "TryStatement").handler.body.body.push(terminal);
+  }
   const numeric = numericBindings.length ? [functionNode("compute", numericParameters, computedBody)] : [];
   const readerStart = state.length + observation.length + localState.length;
   const updateStart = readerStart + readers.length;
@@ -1350,6 +1355,7 @@ export function makeLocalAliasCase(seed, index) {
     withCatch,
     withCatchBinding,
     catchShadow,
+    terminalCatch,
     aliasBranch,
     aliasLoop,
     loopShadow,
@@ -1376,7 +1382,27 @@ export function makeLocalAliasCase(seed, index) {
 // exception shapes densely instead of waiting 96 cases for each one.
 export function makeExceptionCase(seed, index) {
   const variedSeed = (seed ^ Math.imul(index, 0x9e3779b9)) >>> 0;
-  return makeLocalAliasCase(variedSeed, 1237 + 96 * (index % 7));
+  const variant = index % 9;
+  const result = makeLocalAliasCase(variedSeed, 1237 + 96 * (variant % 8));
+  if (variant === 8) {
+    const fn = result.ast.body.find(
+      (statement) => statement.type === "FunctionDeclaration" && statement.id.name === "compute"
+    );
+    fn.body.body = [
+      {
+        type: "ThrowStatement",
+        argument: { type: "BinaryExpression", operator: "+", left: id("numericLeft"), right: id("numericRight") },
+      },
+    ];
+    result.source = print(result.ast);
+    result.withTry = false;
+    result.withCatch = false;
+    result.withCatchBinding = false;
+    result.composedAliasExpression = false;
+    result.expectThrow = true;
+    result.directNumericThrow = true;
+  }
+  return result;
 }
 
 export function makeComposedCase(seed, index) {
@@ -2464,6 +2490,12 @@ export async function runFuzz({
     catchShadowComparedCases: 0,
     catchShadowProvedCases: 0,
     catchShadowUnknownCases: 0,
+    terminalCatchCases: 0,
+    terminalCatchComparedCases: 0,
+    terminalCatchProvedCases: 0,
+    directNumericThrowCases: 0,
+    directNumericThrowComparedCases: 0,
+    directNumericThrowProvedCases: 0,
     loopShadowCases: 0,
     loopShadowComparedCases: 0,
     loopShadowUnknownCases: 0,
@@ -2723,6 +2755,8 @@ export async function runFuzz({
       if (input.withTry) summary.aliasTryCases++;
       if (input.withCatchBinding) summary.aliasBoundCatchCases++;
       if (input.catchShadow) summary.catchShadowCases++;
+      if (input.terminalCatch) summary.terminalCatchCases++;
+      if (input.directNumericThrow) summary.directNumericThrowCases++;
       if (input.loopShadow) summary.loopShadowCases++;
       if (modules.some((module) => module.renameReexports)) summary.renamedReexportRequestedCases++;
       const importCount = modules.reduce((count, module) => count + module.imports.length, 0);
@@ -2939,6 +2973,8 @@ export async function runFuzz({
       if (input.withTry) summary.aliasTryComparedCases++;
       if (input.withCatchBinding) summary.aliasBoundCatchComparedCases++;
       if (input.catchShadow) summary.catchShadowComparedCases++;
+      if (input.terminalCatch) summary.terminalCatchComparedCases++;
+      if (input.directNumericThrow) summary.directNumericThrowComparedCases++;
       if (input.loopShadow) summary.loopShadowComparedCases++;
       if (input.grammar === "alias" && input.numericArguments.length) {
         summary.parameterizedAliasComparedCases++;
@@ -3040,6 +3076,8 @@ export async function runFuzz({
           if (input.withTry) summary.aliasTryProvedCases++;
           if (input.withCatchBinding) summary.aliasBoundCatchProvedCases++;
           if (input.catchShadow) summary.catchShadowProvedCases++;
+          if (input.terminalCatch) summary.terminalCatchProvedCases++;
+          if (input.directNumericThrow) summary.directNumericThrowProvedCases++;
           if (input.grammar === "alias" && input.numericArguments.length) summary.parameterizedAliasProvedCases++;
           if (input.grammar === "alias" && input.numericArguments.length > 1)
             summary.multipleParameterAliasProvedCases++;
