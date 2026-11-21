@@ -1,8 +1,5 @@
-# HYBRID INFRASTRUCTURE
 # Talos cluster control plane currently runs on OVH Kimsufi bare metal.
 # Machine secrets are persistent across cluster lifecycles; see talos-machine-secrets.tf.
-
-# LOCALS: Shared configuration for all nodes
 
 locals {
   # Persistent machine secrets and client credentials.
@@ -246,8 +243,6 @@ locals {
   }
 }
 
-# TALOS BOOTSTRAP & KUBECONFIG
-
 # Bootstrap etcd. This resource records the already-bootstrapped cluster; the
 # endpoint is now an OVH control plane.
 resource "talos_machine_bootstrap" "cluster" {
@@ -289,8 +284,6 @@ data "talos_client_configuration" "cluster" {
   client_configuration = local.client_configuration
   endpoints            = local.all_controlplane_ips
 }
-
-# LOCAL FILES
 
 # Write kubeconfig to file (patched with real IP for external access)
 resource "local_file" "kubeconfig" {

@@ -2,8 +2,6 @@
 # No active Talos control planes are provisioned on Proxmox. The old
 # talos-pve-cp-0 VM is retired; remove its state after atlas is reachable.
 
-# TALOS IMAGE FACTORY - Generate custom Talos image with extensions
-
 # Shared schematic with just extensions (network config via cloud-init snippets)
 resource "talos_image_factory_schematic" "proxmox" {
   schematic = yamlencode({
@@ -28,8 +26,6 @@ data "talos_image_factory_urls" "proxmox" {
   architecture  = "amd64"
 }
 
-# PROXMOX DISK IMAGES
-
 # Standard disk image for non-GPU nodes
 resource "proxmox_virtual_environment_download_file" "talos_disk" {
   content_type = "import"
@@ -40,8 +36,6 @@ resource "proxmox_virtual_environment_download_file" "talos_disk" {
   file_name = "talos-${talos_image_factory_schematic.proxmox.id}-amd64.qcow2"
   overwrite = true
 }
-
-# CLOUD-INIT NETWORK SNIPPETS
 
 # Create per-node network-config snippets for cloud-init (all Proxmox nodes)
 resource "proxmox_virtual_environment_file" "network_config" {
@@ -71,8 +65,6 @@ resource "proxmox_virtual_environment_file" "network_config" {
     file_name = "talos-${each.key}-network.yaml"
   }
 }
-
-# PROXMOX VMS
 
 resource "proxmox_virtual_environment_vm" "talos" {
   for_each = local.proxmox_nodes
@@ -138,8 +130,6 @@ resource "proxmox_virtual_environment_vm" "talos" {
     network_data_file_id = proxmox_virtual_environment_file.network_config[each.key].id
   }
 }
-
-# TALOS MACHINE CONFIGURATION
 
 # Common config patch builder for all Proxmox nodes
 locals {
@@ -225,8 +215,6 @@ data "talos_machine_configuration" "proxmox" {
     [local.talos_node_logging_patch],
   )
 }
-
-# MACHINE CONFIGURATION APPLY
 
 resource "talos_machine_configuration_apply" "proxmox" {
   for_each = local.proxmox_nodes
