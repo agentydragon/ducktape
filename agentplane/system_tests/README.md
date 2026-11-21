@@ -53,6 +53,8 @@ because it scales the app to zero after OAuth consent.
 | [`//agentplane/system_tests/x/vm_kvm:test_vm_kvm`](x/vm_kvm/README.md) | Cold KVM comparison, manual                           |
 
 See [CI executor routing](../../devinfra/ci/README.md#where-bazel-ci-runs-tests) for pool selection and the paired evidence.
+The [VM fixture options](deployment/vm_fixture_architecture.md) record what each path retains,
+setup costs by cache state and the requirements for sharing cluster infrastructure.
 
 `test_vm_tcg`, `test_vm_manual`, `test_vm_oom`, `test_vm_kvm` and `test_vm_profile` carry the `manual` tag. The staging checks
 [`test_thread_latency`](suites/live/test_thread_latency.py) and
