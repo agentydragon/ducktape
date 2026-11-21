@@ -61,7 +61,7 @@ _oci_layout_py_src = rule(
     },
 )
 
-def oci_layout_py(name, image, visibility = None, testonly = False):
+def oci_layout_py(name, image, visibility = None, testonly = None):
     """A py_library exporting `LAYOUT_RLOCATION` and carrying `image` in its runfiles.
 
     One dep gives a test both the constant and the bytes it names:
@@ -79,7 +79,8 @@ def oci_layout_py(name, image, visibility = None, testonly = False):
         name: target and module name, e.g. "postgres_18" for `postgres_18.LAYOUT_RLOCATION`.
         image: the OCI image layout target, e.g. "@postgres_18_linux_amd64".
         visibility: target visibility.
-        testonly: mark the generated module and library testonly.
+        testonly: mark the generated module and library testonly. Unset follows the package's
+            `default_testonly`; pass `False` to opt out of it.
     """
     _oci_layout_py_src(
         name = name + "_src",
