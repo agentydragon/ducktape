@@ -94,7 +94,9 @@ class EnvironmentFirecrackerTemplate(Construct):
             ),
         )
         wiring = launcher_settings.pod_wiring(volume_name="firecracker-settings", env="FIRECRACKER_CONFIG_FILE")
-        memory = resources.guest_memory_bytes + 512 * 1024 * 1024
+        # Full snapshots write a new buffered file while guest RAM is resident.
+        # Leave room for a guest-sized snapshot and the launcher/VMM overhead.
+        memory = 2 * resources.guest_memory_bytes + 512 * 1024 * 1024
         launcher = k8s.Container(
             name="environment-runtime",
             image=LAUNCHER_IMAGE,
