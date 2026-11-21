@@ -129,3 +129,47 @@ spec:
     name: cdi-uploadproxy
   updatePolicy:
     updateMode: Initial
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: cdi-operator
+  namespace: cdi
+spec:
+  resourcePolicy:
+    containerPolicies:
+      - containerName: cdi-operator
+        controlledResources:
+          - cpu
+          - memory
+        controlledValues: RequestsOnly
+      - containerName: "*"
+        mode: "Off"
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: cdi-operator
+  updatePolicy:
+    updateMode: Initial
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: virt-handler
+  namespace: kubevirt
+spec:
+  resourcePolicy:
+    containerPolicies:
+      - containerName: virt-handler
+        controlledResources:
+          - cpu
+          - memory
+        controlledValues: RequestsOnly
+      - containerName: "*"
+        mode: "Off"
+  targetRef:
+    apiVersion: apps/v1
+    kind: DaemonSet
+    name: virt-handler
+  updatePolicy:
+    updateMode: Initial
