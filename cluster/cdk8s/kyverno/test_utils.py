@@ -20,7 +20,7 @@ _POLICY_BUILDERS = {
 }
 
 
-_POLICY_KINDS = {"ClusterPolicy", "MutatingPolicy", "ValidatingPolicy"}
+_POLICY_KINDS = {"MutatingPolicy", "ValidatingPolicy"}
 
 
 def manifest(name: str) -> Path:
