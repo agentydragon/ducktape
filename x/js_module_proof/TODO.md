@@ -96,4 +96,7 @@ cover only part of the grammar and split space described below.
       weaken the proof claim simply to increase the acceptance rate.
       `real_corpus.mjs` now measures three candidate assignments per input and
       reports generation refusals and validation unknowns by reason; expand the
-      corpus and investigate the most common reasons for unknown.
+      corpus and investigate the most common reasons for unknown. The current
+      browser fixture reaches `document.querySelector(...)` after its discarded
+      directive; modeling that requires host calls and reference-valued results
+      in the shared semantics, including their effects and observable identity.
