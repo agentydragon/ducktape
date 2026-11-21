@@ -22,17 +22,26 @@ from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_reposito
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa, VpaProfile
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
-from cluster.cdk8s.vpa_policy import ContainerPolicy, ControlledValues
+from cluster.cdk8s.vpa_policy import (
+    VPA_RESOURCE_POLICY_ANNOTATION,
+    ContainerPolicy,
+    ControlledValues,
+    resource_policy_annotation,
+)
 
 NAME = "cert-manager"
 OUTPUT_DIR = f"{GENERATED_ROOT}/cert-manager/app"
 _REPOSITORY_NAME = "jetstack"
 _REPOSITORY_NAMESPACE = "flux-system"
 _CPU_REQUEST = "10m"
+_CPU_LIMIT = "100m"
+_CONTROLLER_MEMORY_FLOOR = "112Mi"
 _CONTROLLER_MEMORY_LIMIT = "128Mi"
 # cainjector caches every CA-injected Certificate/CRD/webhook/APIService cluster-wide.
 # A 128Mi limit previously left it in an OOMKilled crash loop.
 _CAINJECTOR_MEMORY_LIMIT = "512Mi"
+_CAINJECTOR_MEMORY_FLOOR = "224Mi"
+_WEBHOOK_MEMORY_FLOOR = "64Mi"
 _WEBHOOK_MEMORY_LIMIT = "128Mi"
 # trust-manager installs from this repository too, from its own chart.
 JETSTACK_SOURCE_REF = helm_repository_source_ref(_REPOSITORY_NAME, _REPOSITORY_NAMESPACE)
@@ -79,8 +88,10 @@ def _readiness_patch(
     )
 
 
-def _auto_vpa_patch(deployment: str) -> HelmReleaseSpecPostRenderersKustomizePatches:
-    # Inherit the namespace's request policy without changing the Pod template.
+def _auto_vpa_patch(
+    deployment: str, container: str, *, cpu_floor: str, memory_floor: str, memory_limit: str
+) -> HelmReleaseSpecPostRenderersKustomizePatches:
+    # Keep CPU sizing on the Deployment, outside the startupapicheck Job's policy.
     return HelmReleaseSpecPostRenderersKustomizePatches(
         target=HelmReleaseSpecPostRenderersKustomizePatchesTarget(
             kind="Deployment", name=deployment, namespace=NAMESPACE
@@ -92,7 +103,19 @@ def _auto_vpa_patch(deployment: str) -> HelmReleaseSpecPostRenderersKustomizePat
                 "metadata": {
                     "name": deployment,
                     "namespace": NAMESPACE,
-                    "annotations": {namespaces.VPA_UPDATE_MODE_LABEL: Vpa.AUTO},
+                    "annotations": {
+                        namespaces.VPA_UPDATE_MODE_LABEL: Vpa.AUTO,
+                        VPA_RESOURCE_POLICY_ANNOTATION: resource_policy_annotation(
+                            ContainerPolicy(
+                                container_name=container,
+                                controlled_values=ControlledValues.REQUESTS_ONLY,
+                                controlled_resources=("cpu", "memory"),
+                                min_allowed={"cpu": cpu_floor, "memory": memory_floor},
+                                max_allowed={"cpu": _CPU_LIMIT, "memory": memory_limit},
+                            ),
+                            ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
+                        ),
+                    },
                 },
             }
         ),
@@ -136,7 +159,7 @@ def _values() -> dict[str, object]:
         # The ServiceMonitors are this chart's own objects, not the Helm chart's.
         "prometheus": {"enabled": True, "servicemonitor": {"enabled": False}},
         "resources": {
-            "limits": {"cpu": "100m", "memory": _CONTROLLER_MEMORY_LIMIT},
+            "limits": {"cpu": _CPU_LIMIT, "memory": _CONTROLLER_MEMORY_LIMIT},
             "requests": {"cpu": _CPU_REQUEST, "memory": "32Mi"},
         },
         "webhook": {
@@ -148,7 +171,7 @@ def _values() -> dict[str, object]:
                 "cert-manager-webhook.cert-manager.svc,cert-manager-webhook.cert-manager.svc.cluster.local"
             ],
             "resources": {
-                "limits": {"cpu": "100m", "memory": _WEBHOOK_MEMORY_LIMIT},
+                "limits": {"cpu": _CPU_LIMIT, "memory": _WEBHOOK_MEMORY_LIMIT},
                 "requests": {"cpu": _CPU_REQUEST, "memory": "32Mi"},
             },
         },
@@ -156,7 +179,7 @@ def _values() -> dict[str, object]:
             **_availability("cainjector", replicas=2, min_available=1),
             "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
             "resources": {
-                "limits": {"cpu": "100m", "memory": _CAINJECTOR_MEMORY_LIMIT},
+                "limits": {"cpu": _CPU_LIMIT, "memory": _CAINJECTOR_MEMORY_LIMIT},
                 "requests": {"cpu": _CPU_REQUEST, "memory": "128Mi"},
             },
         },
@@ -182,19 +205,19 @@ def chart(app: App) -> Chart:
                 ContainerPolicy.memory_requests_only(
                     "cert-manager-controller",
                     cpu_request=_CPU_REQUEST,
-                    memory_floor="112Mi",
+                    memory_floor=_CONTROLLER_MEMORY_FLOOR,
                     memory_limit=_CONTROLLER_MEMORY_LIMIT,
                 ),
                 ContainerPolicy.memory_requests_only(
                     "cert-manager-cainjector",
                     cpu_request=_CPU_REQUEST,
-                    memory_floor="224Mi",
+                    memory_floor=_CAINJECTOR_MEMORY_FLOOR,
                     memory_limit=_CAINJECTOR_MEMORY_LIMIT,
                 ),
                 ContainerPolicy.memory_requests_only(
                     "cert-manager-webhook",
                     cpu_request=_CPU_REQUEST,
-                    memory_floor="64Mi",
+                    memory_floor=_WEBHOOK_MEMORY_FLOOR,
                     memory_limit=_WEBHOOK_MEMORY_LIMIT,
                 ),
                 # The startupapicheck Job and any new containers stay outside the pilot.
@@ -225,9 +248,28 @@ def chart(app: App) -> Chart:
                         _readiness_patch(
                             f"{NAME}-cainjector", f"{NAME}-cainjector", {"tcpSocket": {"port": "http-metrics"}}
                         ),
-                        _auto_vpa_patch(f"{NAME}-cainjector"),
-                        _auto_vpa_patch(NAME),
-                        _auto_vpa_patch(f"{NAME}-webhook"),
+                        # Two-minute CPU peaks were 14m for cainjector and 16m for controller.
+                        _auto_vpa_patch(
+                            f"{NAME}-cainjector",
+                            f"{NAME}-cainjector",
+                            cpu_floor="20m",
+                            memory_floor=_CAINJECTOR_MEMORY_FLOOR,
+                            memory_limit=_CAINJECTOR_MEMORY_LIMIT,
+                        ),
+                        _auto_vpa_patch(
+                            NAME,
+                            f"{NAME}-controller",
+                            cpu_floor="20m",
+                            memory_floor=_CONTROLLER_MEMORY_FLOOR,
+                            memory_limit=_CONTROLLER_MEMORY_LIMIT,
+                        ),
+                        _auto_vpa_patch(
+                            f"{NAME}-webhook",
+                            f"{NAME}-webhook",
+                            cpu_floor=_CPU_REQUEST,
+                            memory_floor=_WEBHOOK_MEMORY_FLOOR,
+                            memory_limit=_WEBHOOK_MEMORY_LIMIT,
+                        ),
                     ]
                 )
             )

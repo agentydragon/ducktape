@@ -22,7 +22,12 @@ from cluster.cdk8s.haku_ci import runner
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa, VpaProfile
-from cluster.cdk8s.vpa_policy import ContainerPolicy, ControlledValues
+from cluster.cdk8s.vpa_policy import (
+    VPA_RESOURCE_POLICY_ANNOTATION,
+    ContainerPolicy,
+    ControlledValues,
+    resource_policy_annotation,
+)
 
 NAME = "keda"
 NAMESPACE = "keda"
@@ -59,6 +64,26 @@ def _deployment_annotations_patch(
         patch=yaml_config(
             {"apiVersion": "apps/v1", "kind": "Deployment", "metadata": {"name": name, "annotations": annotations}}
         ),
+    )
+
+
+def _auto_vpa_patch(name: str, resources: dict[str, dict[str, str]]) -> HelmReleaseSpecPostRenderersKustomizePatches:
+    return _deployment_annotations_patch(
+        name,
+        {
+            namespaces.VPA_UPDATE_MODE_LABEL: Vpa.AUTO,
+            VPA_RESOURCE_POLICY_ANNOTATION: resource_policy_annotation(
+                ContainerPolicy(
+                    container_name=name,
+                    controlled_values=ControlledValues.REQUESTS_ONLY,
+                    controlled_resources=("cpu", "memory"),
+                    min_allowed=resources["requests"],
+                    max_allowed=resources["limits"],
+                ),
+                ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
+                compact=True,
+            ),
+        },
     )
 
 
@@ -104,12 +129,8 @@ def chart(app: App) -> Chart:
             HelmReleaseSpecPostRenderers(
                 kustomize=HelmReleaseSpecPostRenderersKustomize(
                     patches=[
-                        _deployment_annotations_patch(
-                            "keda-admission-webhooks", {namespaces.VPA_UPDATE_MODE_LABEL: Vpa.AUTO}
-                        ),
-                        _deployment_annotations_patch(
-                            METRICS_SERVER_NAME, {namespaces.VPA_UPDATE_MODE_LABEL: Vpa.AUTO}
-                        ),
+                        _auto_vpa_patch("keda-admission-webhooks", webhook_resources),
+                        _auto_vpa_patch(METRICS_SERVER_NAME, metrics_resources),
                         _deployment_annotations_patch(
                             _OPERATOR_NAME,
                             namespaces.initial_request_annotations(

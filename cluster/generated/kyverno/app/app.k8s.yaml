@@ -38,7 +38,7 @@ spec:
   values:
     admissionController:
       annotations:
-        goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "kyverno", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "100m", "memory": "224Mi"}, "maxAllowed": {"cpu": "100m", "memory": "384Mi"}, "controlledResources": ["memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
+        goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "kyverno", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "100m", "memory": "224Mi"}, "maxAllowed": {"cpu": "2", "memory": "384Mi"}, "controlledResources": ["cpu", "memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
         goldilocks.fairwinds.com/vpa-update-mode: auto
       antiAffinity:
         enabled: true
