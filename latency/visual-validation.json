@@ -1,8 +1,8 @@
 {
-  "validated_at_utc": "2026-11-21T04:15:58.447273+00:00",
-  "validation_scope": "RBE Chromium preview of the exact report, evidence, shared assets and root navigation",
-  "invocation": "136ac02e-4470-43ca-a0c0-501092d7e76e",
-  "invocation_url": "https://app.buildbuddy.io/invocation/136ac02e-4470-43ca-a0c0-501092d7e76e",
+  "validated_at_utc": "2026-11-21T12:13:17.799039+00:00",
+  "validation_scope": "RBE Chromium preview of the report, evidence, shared assets and root navigation",
+  "invocation": "ba930dd9-a7f0-4308-a7e4-9c1a24be84f1",
+  "invocation_url": "https://app.buildbuddy.io/invocation/ba930dd9-a7f0-4308-a7e4-9c1a24be84f1",
   "target": "//devinfra/ci/x/latency_report_preview:test_preview",
   "cases": [
     "test_preview[desktop-light]",
@@ -10,19 +10,25 @@
     "test_preview[mobile-light]",
     "test_preview[mobile-dark]"
   ],
-  "screenshots_digest_verified": 40,
+  "screenshots_digest_verified": 44,
   "section_screenshot_sha256": {
+    "kvm-placement": {
+      "test_preview[mobile-dark]": "b6dc70122953f4fd860fb2528f91a187f443eedc47a0501db45616ba0c00994b",
+      "test_preview[desktop-dark]": "03dbf8968d4b8b17cdf3cbbe4429a9b446313a3af18062d4505b33e0b38c6d76",
+      "test_preview[desktop-light]": "ea10b87d21942cbbefe326963398726594c89ec6b3c904100e1d8f8623edb80b",
+      "test_preview[mobile-light]": "2a64c536139067d0eedda5a3f8f6859bc5fdac305863d69e41b1056ad8a24f5a"
+    },
     "kvm-cas": {
-      "test_preview[mobile-dark]": "d88a591cf9645390a1bb4ebe37bb9862859045eeddb915db914202adff217f4f",
-      "test_preview[mobile-light]": "e44f5ff9a5017f777bd0984a2bfa5b1fcbcc344534d2985d515fa648eb15d04c",
-      "test_preview[desktop-light]": "6b8856b03d2979858bbcd9bd5638948af7e1b1dca4917f29f837785c3c9c39df",
-      "test_preview[desktop-dark]": "74eb2f67f3ba82cd73dedd94bfb3ce0ce61f361a9ca95d096848d26e06c61b61"
+      "test_preview[mobile-dark]": "6cfe736f4cb8ef6d336be56a5909edf4ecfb7c368774fb5abe2f7f37787cbcca",
+      "test_preview[mobile-light]": "20c45c15018fcb3c3f78eaa3553bc818a0fa3fa8fa6077bd40deb37d0098a11a",
+      "test_preview[desktop-light]": "cff9bbb032a70d189b85e723b6203792db5bf793afe62516aafb4d64bb95d032",
+      "test_preview[desktop-dark]": "d0b7ed3da97d79140fca39f45e9f1f7b17e7ecccc43541a239ec8266220e9be9"
     },
     "firecracker-overlap": {
-      "test_preview[mobile-dark]": "8198499814ffece261d77bb1c13c319d13ef8ea8fa661991a6015e47bac3f8ca",
-      "test_preview[mobile-light]": "504347ceac20f6365377b73ecec05dc7d0665bbe8e42e8b3c331e6e93eefa8a1",
-      "test_preview[desktop-dark]": "4486af9fcce14e3caafdaf2841e783215721da6b9d4d5f99b55769c953cbc5bc",
-      "test_preview[desktop-light]": "c8ba8829a11c492debe66482b6036399e889719a65e00d195192ca18d1be4eb8"
+      "test_preview[mobile-dark]": "b277363ea15e041abeba45fe09121380573b0b6e53ba5829d158966fb2e6b7c3",
+      "test_preview[mobile-light]": "8f2cd0797d201f5da73cf90242e5001dfab4b276976ff1a731b75189f4d50e39",
+      "test_preview[desktop-dark]": "9ab639218bf7772b9928d22cc46a337bbc0510ef332c5b77f540dce7de2a7272",
+      "test_preview[desktop-light]": "0a329235334c51f81bed79ef1f12dc74e8403f51c0505343f582411f2f5bfe66"
     },
     "weekly-trend": {
       "test_preview[desktop-dark]": "bb6419da1c0ffe961ef097886cc4f90ab36fa9dea176ae28db2fd63b36b833ff",
@@ -30,25 +36,32 @@
       "test_preview[mobile-light]": "3abe69ffc9c77ce41b69812154e2382aba9719c22a9511ee5ba8a1f7429ab736",
       "test_preview[desktop-light]": "27d3648bffdc39fc51bb5d968e1fd2ff0936dd63cc559c3048d9ea33c0d01bdf"
     },
+    "navigation": {
+      "test_preview[desktop-light]": "34987f1f57ca0723e1fa9d029a7f9a7941bc5388a9cb21c1938ca52adb4a14f1",
+      "test_preview[mobile-dark]": "dcd58515e9d977f947b441b4cd264364f9a83a44d9ef6b0da53a62479f32d333",
+      "test_preview[desktop-dark]": "856aa8abc1aa491fd6518f287d0de545ae3d241f636ca80059c340eca272f0fb",
+      "test_preview[mobile-light]": "a6b5da43b324ad7f6e40a655d3c62c2df5a0d99a6cccbdec06584cef8e82777b"
+    },
     "report": {
-      "test_preview[mobile-dark]": "b6583beaa09ba8b3f56318a209b096e5a65931bc0327781d6185f874938dfca4",
-      "test_preview[desktop-light]": "22958e2743f1ff0b6541aab72c5e091c81f143d6026b90850224441bb5e974f1",
-      "test_preview[desktop-dark]": "10c688b7e48d62f3afb842ec9f220efab921aacc617e6beb9a4e2feea169eed7",
-      "test_preview[mobile-light]": "b92ebd301a2fae0d69b9dd4dd379b31a70166b2c299048841a51693776fca3c0"
+      "test_preview[mobile-dark]": "7432a6baed4a488a6fafda1c1ab0bc0fa8c4b36d18822b631decf8d1d1932492",
+      "test_preview[desktop-light]": "a74b6768ab6edfb31260ccb4e416b79c681b28bd4217061190203d1019052c56",
+      "test_preview[desktop-dark]": "726e3519ffceac09c522e0e5ed9bfff5c21b91d4b15b83dc93dae70b4be49aa0",
+      "test_preview[mobile-light]": "4dd2fff8944d0ea2f3890aa59f7bd91055f5c675bcb1215bbfc805fc489e0c5a"
     }
   },
   "rendered_sha256": {
-    "index.html": "6265e2cbb9e224452ff52a98f3ecc0bcd58611d665b9a441fb4141a5217ae0d5",
-    "latency/index.html": "2f654d54aad1632dd0a73e6a006164e3764c8a3965bc9bc5ae2f0b9f50c2ca9d",
-    "latency/evidence.json": "e047d35c58dab766894df1a0a8c3de28ed60f66d601657001564bab137f494de",
+    "index.html": "96151ac853cb583b3c9cd1c93b776e5d12920b962c203a53a0b67350e39cd4f0",
+    "latency/index.html": "92cc9cb2005e09b713958b3e306acd88416ff5b125db714d60d6778f5e7a6d78",
+    "latency/evidence.json": "22b798b2794e95d0068e2e222d637d0b6280a067aee07eb1d76fa729e134811f",
     "report.js": "ebc2503d323c1b760bec2df6f33b8e8a1e220275ccd5d199ac730551b045bef8",
     "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf"
   },
   "checks": [
-    "Manifest content hashes for the report and evidence",
-    "Live CDN charts and chart data",
-    "Desktop and mobile in both themes",
-    "Live color preference, Firecracker pairs and scheduler probe, census, disclosures, navigation and page overflow",
-    "Visual review of the CAS and Firecracker sections, weekly trend and report"
+    "Manifest hashes for the report and evidence",
+    "CDN assets and populated charts",
+    "Desktop and mobile in both themes, live color preference changes and no document overflow",
+    "Placement measurements, invocation and PR links, disclosure controls and navigation from the report index",
+    "No browser page errors or failed asset requests",
+    "Visual review of the placement section, report index and full report"
   ]
 }
