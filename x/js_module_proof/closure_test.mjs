@@ -863,6 +863,73 @@ export { counter };
   assert.equal(cli("generate", used, spec, join(root, "catch-binding-used-out")).result, "unknown");
 }
 
+if (shard === 13) {
+  const source = join(root, "bit-and.mjs");
+  const spec = join(root, "bit-and.json");
+  const out = join(root, "bit-and-out");
+  await writeFile(
+    source,
+    `function mask(x) { return x & 3; }
+function maskAssign(x) { let value = x; value &= 3; return value; }
+export { mask, maskAssign };
+`
+  );
+  await writeFile(
+    spec,
+    JSON.stringify({
+      kind: "bindings",
+      entry: "entry.mjs",
+      modules: {
+        "functions.mjs": { imports: [], statements: [0, 1] },
+        "entry.mjs": { imports: ["functions.mjs"], statements: [] },
+      },
+    })
+  );
+  assert.equal(cli("generate", source, spec, out).result, "generated");
+  const proof = cli("validate", source, spec, out);
+  assert.equal(proof.result, "proved under assumptions", JSON.stringify(proof));
+  assert.ok(proof.assumptions.some((assumption) => assumption.includes("bitwise results are nonnegative")));
+  const calls = [
+    { name: "mask", args: [4294967297] },
+    { name: "mask", args: [Number.MAX_SAFE_INTEGER] },
+    { name: "maskAssign", args: [4294967298] },
+  ];
+  const trace = execute(source, calls);
+  assert.deepEqual(trace.results, [{ value: 1 }, { value: 3 }, { value: 2 }]);
+  assert.deepEqual(execute(join(out, "entry.mjs"), calls), trace);
+  const replay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
+    encoding: "utf8",
+    input:
+      models +
+      proof.certificate +
+      `
+theorem bit_and_observation :
+  ((sourceBindingState bindingSource).bind (fun state =>
+    (publicCallableTable bindingSource bindingExports).bind (fun table =>
+      runArgumentCalls table state [("mask", [4294967297]), ("mask", [9007199254740991]), ("maskAssign", [4294967298])]))).map
+    (fun state => state.returns) = some [some 1, some 3, some 2] := by decide
+#print axioms bit_and_observation
+#print axioms bitAndFuel
+example : evaluateExpression [] [] (.bitAnd (.literal 2147483648) (.literal 2147483648)) = none := by decide
+`,
+  });
+  assert.equal(replay.status, 0, replay.stdout + replay.stderr);
+  assert.match(replay.stdout, /'bit_and_observation' does not depend on any axioms/);
+  assert.match(replay.stdout, /'bitAndFuel' does not depend on any axioms/);
+  const emitted = join(out, "functions.mjs");
+  const original = await readFile(emitted, "utf8");
+  await writeFile(emitted, original.replace("x & 3", "x & 1"));
+  const unsafe = cli("validate", source, spec, out);
+  assert.equal(unsafe.result, "unsafe", JSON.stringify(unsafe));
+  assert.notDeepEqual(execute(source, unsafe.calls), execute(join(out, "entry.mjs"), unsafe.calls));
+  const invalid = join(root, "bit-and-negative.mjs");
+  await writeFile(invalid, (await readFile(source, "utf8")).replace("x & 3", "2147483648 & 2147483648"));
+  const invalidOut = join(root, "bit-and-negative-out");
+  const generated = cli("generate", invalid, spec, invalidOut);
+  if (generated.result === "generated") assert.equal(cli("validate", invalid, spec, invalidOut).result, "unknown");
+  else assert.equal(generated.result, "unknown");
+}
+
 if (shard === 14) {
   const logicalSource = join(root, "logical-values.mjs");
   const logicalSpec = join(root, "logical-values.json");

@@ -312,7 +312,7 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
       check(!localFunctions.has(value), "local function identity escapes");
       return { kind: "name", name: value };
     }
-    if (node?.type === "BinaryExpression" && ["+", "*", "-", "%", "/"].includes(node.operator)) {
+    if (node?.type === "BinaryExpression" && ["+", "*", "-", "%", "/", "&"].includes(node.operator)) {
       check(
         !["%", "/"].includes(node.operator) || node.right?.type !== "Literal" || node.right.value !== 0,
         "zero divisor"
@@ -326,6 +326,14 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
         node.right.value !== 0
       )
         check(node.left.value % node.right.value === 0, "non-integral division");
+      if (
+        node.operator === "&" &&
+        node.left?.type === "Literal" &&
+        node.right?.type === "Literal" &&
+        Number.isSafeInteger(node.left.value) &&
+        Number.isSafeInteger(node.right.value)
+      )
+        check((node.left.value & node.right.value) >= 0, "negative bitwise result");
       return {
         kind:
           node.operator === "+"
@@ -336,7 +344,9 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
                 ? "subtract"
                 : node.operator === "%"
                   ? "remainder"
-                  : "divide",
+                  : node.operator === "/"
+                    ? "divide"
+                    : "bitAnd",
         left: expression(node.left),
         right: expression(node.right),
       };
@@ -554,7 +564,7 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
       let name, value;
       if (
         assignment?.type === "AssignmentExpression" &&
-        ["=", "+=", "*=", "-=", "%=", "/="].includes(assignment.operator)
+        ["=", "+=", "*=", "-=", "%=", "/=", "&="].includes(assignment.operator)
       ) {
         name = identifier(assignment.left);
         check(
@@ -575,7 +585,9 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
                     ? "subtract"
                     : assignment.operator === "%="
                       ? "remainder"
-                      : "divide",
+                      : assignment.operator === "/="
+                        ? "divide"
+                        : "bitAnd",
             left: { kind: "name", name },
             right: value,
           };
@@ -734,6 +746,7 @@ function expressionFunction(node, functions, stack = [], budget = { remaining: 5
       case "subtract":
       case "remainder":
       case "divide":
+      case "bitAnd":
       case "equal":
       case "less":
       case "greater":
@@ -1259,6 +1272,7 @@ function leanExpression(expression) {
     case "subtract":
     case "remainder":
     case "divide":
+    case "bitAnd":
     case "equal":
     case "less":
     case "greater":
@@ -1682,7 +1696,7 @@ theorem binding_captured_observations (calls : List (String × List Nat)) :
       assumptions: [
         "The Acorn-to-Lean conversion, including local object and array scalarization when used, faithfully represents the actual source and output files",
         "The modeled module loading, linking and execution match ECMAScript for the supported syntax",
-        "All binding values, arguments and intermediate arithmetic results remain nonnegative safe integers other than negative zero; remainder and division divisors are nonzero, and division results are integers",
+        "All binding values, arguments and intermediate arithmetic results remain nonnegative safe integers other than negative zero; remainder and division divisors are nonzero, division results are integers, and bitwise results are nonnegative",
         ...(hasExpressions
           ? [
               "Expression functions and captured closures receive exactly their declared number of numeric arguments; other exports are called without arguments",
@@ -1808,7 +1822,7 @@ theorem binding_captured_observations (calls : List (String × List Nat)) :
       const right = expressionBound(expression.right, bound);
       return [left, right, left * right].reduce((a, b) => (a > b ? a : b));
     }
-    if (expression.kind === "remainder" || expression.kind === "divide") {
+    if (expression.kind === "remainder" || expression.kind === "divide" || expression.kind === "bitAnd") {
       const left = expressionBound(expression.left, bound);
       const right = expressionBound(expression.right, bound);
       return left > right ? left : right;

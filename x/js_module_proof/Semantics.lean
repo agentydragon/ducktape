@@ -25,6 +25,7 @@ inductive NumericExpr where
   | subtract (left right : NumericExpr)
   | remainder (left right : NumericExpr)
   | divide (left right : NumericExpr)
+  | bitAnd (left right : NumericExpr)
   | equal (left right : NumericExpr)
   | less (left right : NumericExpr)
   | greater (left right : NumericExpr)
@@ -164,6 +165,15 @@ structure ExpressionResult (α : Type) where
   locals : List (String × Nat)
   completion : Except ThrownValue α
 
+/- A bounded, axiom-free 32-bit AND. Higher input bits are discarded, as in
+   JavaScript's ToInt32 coercion. -/
+def bitAndFuel : Nat → Nat → Nat → Nat
+  | 0, _, _ => 0
+  | fuel + 1, left, right =>
+    if left == 0 || right == 0 then 0
+    else (if left % 2 == 1 && right % 2 == 1 then 1 else 0) +
+      2 * bitAndFuel fuel (left / 2) (right / 2)
+
 mutual
 def evaluateExpression (locals globals : List (String × Nat)) : NumericExpr → Option (ExpressionResult Nat)
   | .literal value => some ⟨locals, .ok value⟩
@@ -217,6 +227,17 @@ def evaluateExpression (locals globals : List (String × Nat)) : NumericExpr →
       match rightResult.completion with
       | .error value => pure ⟨rightResult.locals, .error value⟩
       | .ok rightValue => pure ⟨rightResult.locals, .ok (leftValue * rightValue)⟩
+  | .bitAnd left right => do
+    let leftResult ← evaluateExpression locals globals left
+    match leftResult.completion with
+    | .error value => pure ⟨leftResult.locals, .error value⟩
+    | .ok leftValue =>
+      let rightResult ← evaluateExpression leftResult.locals globals right
+      match rightResult.completion with
+      | .error value => pure ⟨rightResult.locals, .error value⟩
+      | .ok rightValue =>
+        let bits := bitAndFuel 32 leftValue rightValue
+        if bits < 2147483648 then pure ⟨rightResult.locals, .ok bits⟩ else none
   | .divide left right => do
     let leftResult ← evaluateExpression locals globals left
     match leftResult.completion with
@@ -340,6 +361,7 @@ def evaluateArguments (locals globals : List (String × Nat)) : NumericExpr → 
   | .subtract _ _ => none
   | .remainder _ _ => none
   | .divide _ _ => none
+  | .bitAnd _ _ => none
   | .equal _ _ => none
   | .less _ _ => none
   | .greater _ _ => none
