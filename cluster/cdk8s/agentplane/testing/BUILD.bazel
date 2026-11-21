@@ -11,6 +11,7 @@ py_library(
     srcs = ["fixtures.py"],
     data = [":catalogs"],
     deps = [
+        "//:conftest",  # keep: provides the runfiles fixture
         "//cluster/cdk8s:conftest",  # keep: consuming tests also request the scratch fixtures
         "@pypi//pytest",
         "@rules_python//python/runfiles",
