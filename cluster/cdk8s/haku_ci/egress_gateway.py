@@ -201,7 +201,7 @@ def add_gateway(scope: Construct, env: Environment, *, clients: Pods) -> Identit
         "haku-ci-egress-service",
         metadata=k8s.ObjectMeta(name=gateway.name, namespace=namespace, labels=gateway.labels),
         spec=k8s.ServiceSpec(
-            selector=gateway.pods.selector, ports=[gateway.port.k8s_service_port()], traffic_distribution="PreferClose"
+            selector=gateway.pods.selector, ports=[gateway.k8s_service_port()], traffic_distribution="PreferClose"
         ),
     )
     k8s.KubePodDisruptionBudget(

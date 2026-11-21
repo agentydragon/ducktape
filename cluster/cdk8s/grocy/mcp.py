@@ -199,9 +199,7 @@ def _server(scope: Construct, household: str) -> None:
         "service",
         metadata=k8s.ObjectMeta(name=http.name, namespace=namespace, labels=http.labels),
         spec=k8s.ServiceSpec(
-            selector=http.pods.selector,
-            ports=[http.port.k8s_service_port(), metrics.port.k8s_service_port()],
-            type="ClusterIP",
+            selector=http.pods.selector, ports=[http.k8s_service_port(), metrics.k8s_service_port()], type="ClusterIP"
         ),
     )
     ServiceMonitor(

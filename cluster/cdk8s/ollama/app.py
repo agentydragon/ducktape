@@ -228,9 +228,7 @@ def _service(scope: Construct) -> None:
         "service",
         metadata=k8s.ObjectMeta(name=SERVICE.name, namespace=NAMESPACE, labels={"app": "ollama"}),
         spec=k8s.ServiceSpec(
-            type="ClusterIP",
-            selector=_PODS.selector,
-            ports=[SERVICE.port.k8s_service_port(), AUTH_PROXY.port.k8s_service_port()],
+            type="ClusterIP", selector=_PODS.selector, ports=[SERVICE.k8s_service_port(), AUTH_PROXY.k8s_service_port()]
         ),
     )
 

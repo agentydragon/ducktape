@@ -184,7 +184,7 @@ def _service(scope: Construct) -> None:
         scope,
         "service",
         metadata=k8s.ObjectMeta(name=SERVICE.name, namespace=NAMESPACE),
-        spec=k8s.ServiceSpec(type="ClusterIP", ports=[SERVICE.port.k8s_service_port()], selector=SERVICE.pods.selector),
+        spec=k8s.ServiceSpec(type="ClusterIP", ports=[SERVICE.k8s_service_port()], selector=SERVICE.pods.selector),
     )
     https_route(
         scope,
@@ -332,7 +332,7 @@ def _local_server(scope: Construct) -> None:
         scope,
         "candidate-service",
         metadata=k8s.ObjectMeta(name=_NEXT, namespace=NAMESPACE),
-        spec=k8s.ServiceSpec(type="ClusterIP", ports=[SERVICE.port.k8s_service_port()], selector=_NEXT_LABELS),
+        spec=k8s.ServiceSpec(type="ClusterIP", ports=[SERVICE.k8s_service_port()], selector=_NEXT_LABELS),
     )
     k8s.KubeJob(
         scope,

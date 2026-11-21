@@ -52,7 +52,7 @@ def test_cilium_rules_name_the_pods_port(scratch_chart: Chart) -> None:
 
 
 def test_port_renders_one_container_and_service_port_in_both_tiers(scratch_chart: Chart) -> None:
-    port = Port(name="http", number=8080)
+    port = Port(name="metrics", number=9090)
     deployment = Deployment(scratch_chart, "deployment", metadata=ApiObjectMetadata(name="test-app"))
     deployment.add_container(image="app.test.invalid/app", ports=[port.container_port()])
     Service(
@@ -74,15 +74,18 @@ def test_port_renders_one_container_and_service_port_in_both_tiers(scratch_chart
         scratch_chart,
         "raw-service",
         metadata=k8s.ObjectMeta(name="test-raw"),
-        spec=k8s.ServiceSpec(ports=[port.k8s_service_port()]),
+        spec=k8s.ServiceSpec(ports=[port.k8s_service_port(), _SERVICE.k8s_service_port()]),
     )
     rendered, service, raw_pod, raw_service = Cdk8sTesting.synth(scratch_chart)
-    container_port = {"name": "http", "containerPort": 8080, "protocol": "TCP"}
-    service_port = {"name": "http", "port": 8080, "targetPort": 8080, "protocol": "TCP"}
+    container_port = {"name": "metrics", "containerPort": 9090, "protocol": "TCP"}
+    service_port = {"name": "metrics", "port": 9090, "targetPort": 9090, "protocol": "TCP"}
     assert rendered["spec"]["template"]["spec"]["containers"][0]["ports"] == [container_port]
     assert raw_pod["spec"]["containers"][0]["ports"] == [container_port]
     assert service["spec"]["ports"] == [service_port]
-    assert raw_service["spec"]["ports"] == [service_port]
+    assert raw_service["spec"]["ports"] == [
+        service_port,
+        {"name": "http", "port": 80, "targetPort": 8080, "protocol": "TCP"},
+    ]
 
 
 def test_monitor_derives_service_selector_and_port_without_changing_custom_endpoints(scratch_chart: Chart) -> None:

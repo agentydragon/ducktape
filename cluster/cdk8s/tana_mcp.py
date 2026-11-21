@@ -354,7 +354,7 @@ def _facade(chart: Chart) -> None:
         metadata=k8s.ObjectMeta(name=_FACADE_HTTP.name, namespace=_NAMESPACE, labels=_FACADE_HTTP.labels),
         spec=k8s.ServiceSpec(
             selector=_FACADE_HTTP.pods.selector,
-            ports=[_FACADE_HTTP.port.k8s_service_port(), _FACADE_METRICS.port.k8s_service_port()],
+            ports=[_FACADE_HTTP.k8s_service_port(), _FACADE_METRICS.k8s_service_port()],
             type="ClusterIP",
         ),
     )
@@ -456,7 +456,7 @@ def chart(app: App) -> Chart:
         spec=k8s.ServiceSpec(
             type="ClusterIP",
             selector=MCP_PROXY.pods.selector,
-            ports=[MCP_PROXY.port.k8s_service_port(), _NOVNC.port.k8s_service_port()],
+            ports=[MCP_PROXY.k8s_service_port(), _NOVNC.k8s_service_port()],
         ),
     )
     _facade(chart)
