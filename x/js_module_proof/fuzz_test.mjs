@@ -235,6 +235,30 @@ if (shards === 4 && shard === 2) {
   assert.equal(unchangedEarly.equal, 1);
 }
 if (shards === 4 && shard === 3) {
+  const changedTerminal = await runFuzz({
+    seed: 773,
+    start: 685,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "alias",
+    validateEvery: 1,
+  });
+  assert.match(makeLocalAliasCase(773, 685).source, /if \(\(numericOther < numericLeft\)\)/);
+  assert.equal(changedTerminal.mutatedDifferent, 1);
+  assert.equal(changedTerminal.mutatedVerdicts.unsafe, 1);
+  const unchangedTerminal = await runFuzz({
+    seed: 773,
+    start: 685,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "alias",
+    mutationMode: "disabled",
+    validateEvery: 1,
+  });
+  assert.equal(unchangedTerminal.localImportAliasProvedCases, 1);
+  assert.equal(unchangedTerminal.equal, 1);
+}
+if (shards === 4 && shard === 3) {
   const changedCompound = await runFuzz({
     seed: 773,
     start: 301,

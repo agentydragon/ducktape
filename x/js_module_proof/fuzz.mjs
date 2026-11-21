@@ -1086,7 +1086,7 @@ export function makeLocalAliasCase(seed, index) {
               },
             ]
           : []),
-        ...(index >= 589 && index % 96 === 13
+        ...(index >= 589 && index < 685 && index % 96 === 13
           ? [
               {
                 type: "IfStatement",
@@ -1106,7 +1106,36 @@ export function makeLocalAliasCase(seed, index) {
               },
             ]
           : []),
-        returnNode({ type: "BinaryExpression", operator: "+", left: id("offset"), right: numericBody }),
+        ...(index >= 685 && index % 96 === 13
+          ? [
+              {
+                type: "IfStatement",
+                test: { type: "BinaryExpression", operator: "<", left: id("numericOther"), right: id("numericLeft") },
+                consequent: {
+                  type: "BlockStatement",
+                  body: [
+                    returnNode({
+                      type: "BinaryExpression",
+                      operator: "+",
+                      left: id("offset"),
+                      right: id("numericLeft"),
+                    }),
+                  ],
+                },
+                alternate: {
+                  type: "BlockStatement",
+                  body: [
+                    returnNode({
+                      type: "BinaryExpression",
+                      operator: "+",
+                      left: id("offset"),
+                      right: id("numericRight"),
+                    }),
+                  ],
+                },
+              },
+            ]
+          : [returnNode({ type: "BinaryExpression", operator: "+", left: id("offset"), right: numericBody })]),
       ]
     : [returnNode(numericBody)];
   const numeric = numericBindings.length ? [functionNode("compute", numericParameters, computedBody)] : [];

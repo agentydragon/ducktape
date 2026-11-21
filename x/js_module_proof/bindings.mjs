@@ -1446,6 +1446,12 @@ function generateFiles(source, spec, names) {
                 return statement.body[0];
               return null;
             };
+            const terminal = statements.at(-1);
+            const terminalIf =
+              terminal?.type === "IfStatement" &&
+              terminal.alternate &&
+              returnBranch(terminal.consequent) &&
+              returnBranch(terminal.alternate);
             const isBranch = (statement) =>
               statement.type === "IfStatement" &&
               ((statement.alternate === null && returnBranch(statement.consequent)) ||
@@ -1455,7 +1461,7 @@ function generateFiles(source, spec, names) {
                     (statement.alternate.type === "BlockStatement" && statement.alternate.body.every(isWrite)))));
             check(
               node.params.every((parameter) => parameter.type === "Identifier") &&
-                statements.at(-1)?.type === "ReturnStatement" &&
+                (terminal?.type === "ReturnStatement" || terminalIf) &&
                 declarations.every(
                   (declaration) =>
                     ["const", "let"].includes(declaration.kind) &&
@@ -1521,7 +1527,11 @@ function generateFiles(source, spec, names) {
                 if (item.alternate) item.alternate.body.forEach(visitWrite);
               } else visitWrite(item);
             }
-            visit(statements.at(-1).argument);
+            if (terminalIf) {
+              visit(terminal.test);
+              visit(returnBranch(terminal.consequent).argument);
+              visit(returnBranch(terminal.alternate).argument);
+            } else visit(terminal.argument);
             check(
               renamed.every((name) => edits.some((edit) => edit.name === name)),
               "missing imported expression reference"

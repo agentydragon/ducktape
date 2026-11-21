@@ -878,4 +878,16 @@ if (runSection(3)) {
   assert.equal(earlyResult.result, "proved under assumptions", JSON.stringify(earlyResult));
   assert.deepEqual(execute(earlySource, branchCalls), { events: [], results: [3, 4] });
   assert.deepEqual(execute(join(earlyOut, "entry.mjs"), branchCalls), { events: [], results: [3, 4] });
+
+  const terminalSource = join(root, "terminal-if-alias-source.mjs");
+  const terminalOut = join(root, "terminal-if-alias-out");
+  await writeFile(
+    terminalSource,
+    `let value = 3;\nlet other = 5;\nfunction compute(p) { if (p < value) { return value; } else { return p; } }\nexport { compute };\n`
+  );
+  assert.equal(cli("generate", terminalSource, constSpec, terminalOut).value.result, "generated");
+  const terminalResult = cli("validate", terminalSource, constSpec, terminalOut).value;
+  assert.equal(terminalResult.result, "proved under assumptions", JSON.stringify(terminalResult));
+  assert.deepEqual(execute(terminalSource, branchCalls), { events: [], results: [3, 4] });
+  assert.deepEqual(execute(join(terminalOut, "entry.mjs"), branchCalls), { events: [], results: [3, 4] });
 }
