@@ -10,6 +10,7 @@ import {
   Field,
   githubPresentation,
   GitHubItem,
+  RepoSlug,
   RepoTarget,
   repoInput,
   ResultRows,
@@ -155,11 +156,7 @@ export const githubMetadataRenderers: ReadonlyMap<string, ActionPresentation> = 
     githubPresentation({
       label: "Scan for secrets with GitHub",
       schema: scan,
-      compact: ({ args }) => (
-        <Text size="sm">
-          {args.owner}/{args.repo}
-        </Text>
-      ),
+      compact: RepoSlug,
       request: ({ args }) => (
         <Stack gap={4}>
           <RepoTarget repo={args} />

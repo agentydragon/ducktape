@@ -14,6 +14,7 @@ import {
   GitHubItem,
   pageInput,
   pagination,
+  RepoSlug,
   RepoTarget,
   repoInput,
   ResultRows,
@@ -301,11 +302,7 @@ export const issueRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
     githubPresentation({
       label: "List GitHub issues",
       schema: readList,
-      compact: ({ args }) => (
-        <Text size="sm">
-          {args.owner}/{args.repo}
-        </Text>
-      ),
+      compact: RepoSlug,
       request: ({ args }) => (
         <Stack gap={4}>
           <RepoTarget repo={args} path="/issues" />
@@ -516,11 +513,7 @@ export const issueRenderers: ReadonlyMap<string, ActionPresentation> = new Map([
     githubPresentation({
       label: "Edit GitHub issue comment",
       schema: editComment,
-      compact: ({ args }) => (
-        <Text size="sm">
-          {args.owner}/{args.repo}
-        </Text>
-      ),
+      compact: RepoSlug,
       request: ({ args }) => (
         <Stack gap={4}>
           <RepoTarget repo={args} />
