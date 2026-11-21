@@ -63,8 +63,8 @@ import/reset) and `POST /casino/{slots,roulette,blackjack}/*`; reads include `/c
 
 - Active timers live in client `localStorage`; completion and backfill actions create session rows,
   and `/actions/import` can also restore them.
-- Every action carries a `client_action_id`; a retry returns the original `ledger_events` row
-  without replaying the mutation.
+- Every action carries a `client_action_id`; a retry returns the original result (stored on its
+  `ledger_events` row) without replaying the mutation.
 - Historical rows keep their literals: `game_events` before 2026-05-07 have
   `source="client_reported"` (`server_resolved` after), pre-cutover `ledger_events` have
   `source="legacy_client_sync"`; both stay in `models.py` (`GameEventSource`, `LedgerEventSource`)

@@ -43,11 +43,9 @@ from study_casino.events import (
     GameEventMutation,
     GameEventRead,
     GameOutcome,
-    LedgerEventRead,
     RouletteOutcome,
     SlotsOutcome,
     game_event_from_row,
-    ledger_event_from_row,
 )
 from study_casino.games import RULES_VERSION, theoretical_bucket_rtp
 from study_casino.models import (
@@ -124,15 +122,6 @@ class ActionMutation:
     rng_version: str | None = None
 
 
-@dataclass(frozen=True)
-class ServerActionResult:
-    """Committed server action."""
-
-    event: LedgerEventRead
-    result: ActionResult
-    game_event: GameEventRead | None = None
-
-
 # Mutators take an open Session + the server's `now_ms` and return an
 # ActionMutation. They read/write ORM rows directly; the run_server_action
 # wrapper handles the surrounding transaction, idempotency check, snapshot,
@@ -195,18 +184,6 @@ class SqlStore:
         with self._Session() as s:
             return s.get(BalanceRow, username) is not None
 
-    def list_ledger_events(self, username: str, limit: int = 100) -> list[LedgerEventRead]:
-        with self._Session() as s:
-            rows = list(
-                s.scalars(
-                    select(LedgerEventRow)
-                    .where(LedgerEventRow.user_id == username)
-                    .order_by(LedgerEventRow.id.desc())
-                    .limit(limit)
-                ).all()
-            )
-            return [ledger_event_from_row(row) for row in rows]
-
     def casino_stats(self, username: str) -> CasinoStats:
         """Aggregate server-resolved `game_events` into per-game / per-wager-type
         and per-UTC-day buckets. `client_reported` rows are excluded — their
@@ -242,7 +219,7 @@ class SqlStore:
         mutator: ServerActionMutator,
         snapshot_reason: str | None = None,
         snapshot_note: str | None = None,
-    ) -> ServerActionResult:
+    ) -> ActionResult:
         """Run one idempotent, server-authoritative mutation for `username`.
 
         Idempotency: if a `ledger_events` row with this `(user_id,
@@ -259,20 +236,7 @@ class SqlStore:
                 )
             )
             if existing is not None:
-                game_event: GameEventRead | None = None
-                if existing.action_type.startswith("casino.") or existing.action_type.startswith("blackjack."):
-                    game_row = s.scalar(
-                        select(GameEventRow).where(
-                            GameEventRow.user_id == username, GameEventRow.client_event_id == client_action_id
-                        )
-                    )
-                    if game_row is not None:
-                        game_event = game_event_from_row(game_row)
-                return ServerActionResult(
-                    event=ledger_event_from_row(existing),
-                    result=_ACTION_RESULT_ADAPTER.validate_json(existing.result_json),
-                    game_event=game_event,
-                )
+                return _ACTION_RESULT_ADAPTER.validate_json(existing.result_json)
 
             now_ms = int(time.time() * 1000)
             balance = locked_balance(s, username)
@@ -325,12 +289,6 @@ class SqlStore:
                 s.add(game_event_row)
 
             s.flush()
-            s.refresh(event_row)
-            if game_event_row is not None:
-                s.refresh(game_event_row)
-                game_event_out = game_event_from_row(game_event_row)
-            else:
-                game_event_out = None
             if mutation.rng_audit is not None:
                 self._persist_rng_audit(
                     s=s,
@@ -342,9 +300,7 @@ class SqlStore:
                     audit=mutation.rng_audit,
                 )
 
-        return ServerActionResult(
-            event=ledger_event_from_row(event_row), result=mutation.result, game_event=game_event_out
-        )
+        return mutation.result
 
     def replace_state_for_import(self, s: Session, username: str, data: ImportData) -> None:
         """Wipe sessions/prizes/prize_log + reset balance for `username`, then
