@@ -87,13 +87,6 @@ impl ModuleClaims {
             && self.anonymous_selectors.is_empty()
             && self.source_matches.is_empty()
     }
-
-    pub fn extend(&mut self, other: ModuleClaims) {
-        self.bindings.extend(other.bindings);
-        self.member_selectors.extend(other.member_selectors);
-        self.anonymous_selectors.extend(other.anonymous_selectors);
-        self.source_matches.extend(other.source_matches);
-    }
 }
 
 pub fn is_module_yaml(path: &Path) -> bool {

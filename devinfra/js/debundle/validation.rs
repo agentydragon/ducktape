@@ -764,35 +764,6 @@ pub fn validate_assignment_with_priority(
     ))
 }
 
-/// Test oracle for comparing a supplied-priority validation with the historic
-/// schedule-existence reference. It is compiled only in tests.
-#[cfg(test)]
-pub fn validate_assignment_retaining_schedule(
-    dependency_graph: &DependencyGraph,
-    assignment: &ModuleAssignment,
-    module_path: &dyn Fn(ModuleId) -> ModulePath,
-    nodes: &BTreeSet<ModuleId>,
-) -> Result<
-    (AssignmentValidation, crate::esm_schedule::EsmImportSchedule),
-    crate::esm_schedule::ImportScheduleError,
-> {
-    let (verdict, schedule) = crate::realizability::check_realizability_retaining_schedule(
-        dependency_graph,
-        assignment,
-        nodes,
-    )?;
-    Ok((
-        validation_from_verdict(
-            dependency_graph,
-            assignment,
-            module_path,
-            verdict,
-            &schedule,
-        ),
-        schedule,
-    ))
-}
-
 /// Independently certify a constructed schedule against the canonical graph,
 /// without deriving the same schedule again. Target validation remains exact.
 pub fn validate_assignment_with_schedule(

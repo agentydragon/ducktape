@@ -124,13 +124,6 @@ impl SourceLineIndex {
         self.line_for_pos(span.lo())
     }
 
-    pub fn line_range_for_span(&self, span: swc_common::Span) -> Option<(usize, usize)> {
-        if span.is_dummy() {
-            return None;
-        }
-        Some((self.line_for_pos(span.lo())?, self.line_for_pos(span.hi())?))
-    }
-
     pub fn line_range_and_start_column_for_span(
         &self,
         span: swc_common::Span,
@@ -1234,10 +1227,11 @@ mod tests {
                     Some(parsed.cm.lookup_char_pos(span.lo()).line)
                 );
                 assert_eq!(
-                    line_index.line_range_for_span(span),
+                    line_index.line_range_and_start_column_for_span(span),
                     Some((
                         parsed.cm.lookup_char_pos(span.lo()).line,
                         parsed.cm.lookup_char_pos(span.hi()).line,
+                        parsed.cm.lookup_char_pos(span.lo()).col.0 + 1,
                     ))
                 );
             }
@@ -1251,7 +1245,10 @@ mod tests {
             let line_index = parsed.line_index();
 
             assert_eq!(line_index.line_for_span(DUMMY_SP), None);
-            assert_eq!(line_index.line_range_for_span(DUMMY_SP), None);
+            assert_eq!(
+                line_index.line_range_and_start_column_for_span(DUMMY_SP),
+                None
+            );
         });
     }
 
