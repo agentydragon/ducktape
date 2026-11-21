@@ -468,6 +468,16 @@ theorem decl_allocOnly (h : e.allocOnly = true) (fuel : Nat) (env : Env) (kind :
 
 However the expression ends, every object and binding that existed is unchanged and nothing is printed; what it made is new. A declaration with such an initializer changes no binding but its own. This is the footprint "binds its name, no effect", proved for that shape.
 
+[`Fuel.lean`](../lean/Experiments/CoreJS/Fuel.lean) proves that the bound on the depth is only a bound:
+
+```lean
+theorem fuel_mono (h : runProgram n ss = r) (hr : r ≠ .fuel) (hnm : n ≤ m) : runProgram m ss = r
+def Ends (ss : List Stmt) (r : Res Unit) : Prop := ∃ n, runProgram n ss = r ∧ r ≠ .fuel
+theorem Ends.unique (h : Ends ss r) (h' : Ends ss r') : r = r'
+```
+
+A run that ends with a value, a throw or unknown code ends the same way with any larger bound, so a program ends in at most one way. The proof compares the two runs rule by rule; no rule of the interpreter had to change for it.
+
 Not proved: the same for classes (the model runs them; the proof does not cover them yet), that such an expression never ends `unknown`, and that two such declarations commute. The last is written down as `AllocOnlyUnitsCommute`. It needs one more lemma, that the value depends only on the bindings the expression reads.
 
 **What the proof showed about the model's shape.**
