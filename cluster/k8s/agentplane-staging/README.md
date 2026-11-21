@@ -6,7 +6,7 @@ Kustomize input closure for staging; the Flux declaration itself remains owned
 by the root Kustomization and is excluded from the artifact.
 
 `agentplane-staging.k8s.yaml` is one generated chart for the whole environment (Namespace,
-quota, RBAC, the model-catalog ConfigMap, and the workload surface -- db, llm-ingress,
+RBAC, the model-catalog ConfigMap, and the workload surface -- db, llm-ingress,
 egress, app, actions) -- see `cluster/cdk8s/agentplane/`. SOPS-encrypted Actions data
 is decrypted by the environment-level Flux consumer. The consumer explicitly checks the
 trust-manager-generated CA ConfigMap and Bundle because the ConfigMap is created
@@ -15,23 +15,13 @@ asynchronously outside the artifact.
 ## Image automation
 
 The shared `all-images` automation owns the tags in `image-pins/` through Flux Setters
-markers. The runner-owned lifecycle promotion and deployed acceptance are complete;
-all service and runner image families have their markers restored. The Go Actions cutover
-promotes the Go service and Goose migrator with its generated-client app, Notification
-Service, runner disk, and Sandbox images. No staging starts hold remains. See the
+markers. See the
 [lifecycle contract](../../../agentplane/docs/runner_delivery_and_harness_design.md#rollout-and-rollback).
 
 The `agentplane-staging` and `agentplane-staging-delivery` Flux Kustomizations consume
 this Component from the repo source. A template update affects future Sandbox
 incarnations; it does not upgrade a running Sandbox. Keep existing Sandbox UIDs and
 storage when suspending/resuming to adopt a new runner image.
-
-The Actions Go cutover keeps the existing database, Connection and grant rows, and
-Sandbox storage. It does not reset or recreate them. The Go authorization server stores
-local opaque tokens as hashes and keeps recoverable upstream refresh tokens in PostgreSQL
-as plaintext, which the operator accepted for this rollout. Existing external MCP clients
-must authorize once after the service switch; reconnect through the app preserves the
-existing Connection identity after operator confirmation.
 
 ## Native executor rollout
 
@@ -74,14 +64,9 @@ agentplane session-dispatcher list --limit 1
 agentplane environments list --limit 1
 ```
 
-Before changing rollback pins, verify the staging image pull credential can fetch the selected
-canonical Sessions and Environments digests. The staging runtime and relay checks
-passed after Flux applied the [legacy Service retirement](https://github.com/agentydragon/ducktape/pull/17630).
-
 ## Action policies
 
-This environment's Git-managed Action policy sets and standing `PolicyBinding`s for the
-`claude-ai`, `haku-agent`, and paused public-coder OpenClaw Identities are defined in
+This environment's Git-managed Action policy sets and standing `PolicyBinding`s are defined in
 `cluster/cdk8s/agentplane/actions_staging_policies.py` and generated into
 `agentplane-staging.k8s.yaml`. OpenClaw's separate egress `PolicyBinding` is defined in
 `cluster/cdk8s/public_coder/egress.py`. A new set or caller binding is a PR to its owning Python
@@ -117,7 +102,7 @@ variable together; retain the encrypted key so re-enabling preserves subscriptio
 
 ## MCP OAuth callbacks
 
-MCP OAuth redirects in the `agentplane-actions-settings` ConfigMap's `settings.yaml`
+MCP OAuth redirects in the `actions-settings` ConfigMap's `settings.yaml`
 must return to the staging integration app's `/mcp-linkage/callback`. The app forwards
 completion to the Action Service using the operator's authenticated session, then
 returns the browser to the MCP servers page.

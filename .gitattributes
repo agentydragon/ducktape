@@ -54,8 +54,6 @@ cluster/k8s/authentik/app/kustomization.yaml linguist-generated=true
 cluster/k8s/clickhouse/cluster/kustomization.yaml linguist-generated=true
 cluster/k8s/clickhouse/operator/kustomization.yaml linguist-generated=true
 cluster/k8s/agentplane-staging/kustomization.yaml linguist-generated=true
-# Agentplane testing's root Kustomization is hand-maintained because Flux image
-# automation updates its inline `images:` pins.
 cluster/k8s/haku/console/kustomization.yaml linguist-generated=true
 cluster/k8s/haku/mailbox/kustomization.yaml linguist-generated=true
 cluster/k8s/ntfy/kustomization.yaml linguist-generated=true
