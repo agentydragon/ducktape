@@ -5,7 +5,7 @@
   "seven_day_queries_end_utc": "2026-11-20T03:03:48.752000+00:00",
   "scope": "Live VPA, workload, resource, scheduling and selected historical metrics snapshot; independently curated action plan.",
   "report_html_sha256": "8cf99f558c3ca594b394099d7a3c256183b71f3c1e39c3bab5d9eeef2935c775",
-  "report_script_sha256": "07197bc0033c47112bdc727b584d4e54da032bf183716e2cf65462d3e267e799",
+  "report_script_sha256": "815d905189b1a0d0388f5df3fd766c0e827bb9658686a66f659ee41c94057d47",
   "evidence_sha256": "c69cc4092a6f9640579e2dce32e0f2f37af78498b947522c2320f49698a86a28",
   "architecture_source_devel_commit": "d81bd68165097b089cace9ae168b6e8f202f1b7e",
   "architecture_reviewed_at_utc": "2026-11-20T03:36:52Z",
@@ -68,5 +68,6 @@
   "external_secrets_recommender_observed_at_utc": "2026-11-20T23:00:49Z",
   "kubeapi_proxy_reconcile_observed_at_utc": "2026-11-21T03:45:00Z",
   "metrics_server_endpoint_capacity_observed_at_utc": "2026-11-21T03:47:23Z",
-  "controller_vpa_wave_observed_at_utc": "2026-11-21T04:02:32Z"
+  "controller_vpa_wave_observed_at_utc": "2026-11-21T04:02:32Z",
+  "gitlab_registry_rollout_observed_at_utc": "2026-11-21T04:06:34Z"
 }

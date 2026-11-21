@@ -464,6 +464,20 @@ function Report() {
       <span id="batches"></span>
       <${Title} order=${2} mt="xl">Remaining work<//>
       <${Stack} gap="md" mt="md">
+        <${Paper} withBorder p="md" radius="md">
+          <${Title} order=${3} size="h4">GitLab registry rollout blocked<//>
+          <${Text} component="p" mb=${0}
+            >The ${" "}<${Anchor} href=${github + "pull/18458"}
+              >registry spread change<//
+            >${" "}has created one replacement: at 04:06 UTC on 21 November,
+            that Pod was crashing because its startup S3 marker write received
+            AccessDenied. The two existing Pods remained Ready. Keep the VPA in
+            Initial while the startup failure is resolved and two replacement
+            Pods pass spread, admission, and endpoint checks; the
+            ${" "}<${Anchor} href=${github + "pull/18465"}>Recreate follow-up<//
+            >${" "}is draft until those checks pass.<//
+          >
+        <//>
         <${Paper} withBorder p="md" radius="md"
           ><${Title} order=${3} size="h4"
             >1. Expand coverage in useful batches<//
