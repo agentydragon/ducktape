@@ -1,7 +1,7 @@
 """Post-infrastructure network readiness checks.
 
-Verifies Nebula mesh, Cilium health, and ClusterIP routing are converged
-before proceeding with service deployment.
+Verifies Cilium health and ClusterIP routing are converged before proceeding
+with service deployment.
 """
 
 import contextlib

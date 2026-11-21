@@ -109,8 +109,8 @@ When images fail to pull, trace the full pipeline:
 - Check if the image exists in its registry (ghcr.io, or the Forgejo registry at
   `git.allegedly.works`)
 - Check if the CI build that produces the image succeeded — look at GitHub Actions
-  workflows (`gh run list`), BuildBuddy invocations, or the relevant `buildbuddy.yaml`
-  / `.github/workflows/` pipeline
+  workflows (`gh run list`), BuildBuddy invocations, or the relevant
+  `.github/workflows/` pipeline
 - Check if the image push step succeeded (GitHub Actions logs)
 - Report where the pipeline broke (build failed, push failed, tag missing, auth issue)
 
