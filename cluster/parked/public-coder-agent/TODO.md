@@ -21,7 +21,7 @@ not infer. Two consequences, both logged once a minute:
 ```
 
 - [ ] Decide the system agent (`coder` is the Matrix-bound primary and the
-      obvious candidate) and set it in `app/openclaw.json5`. Confirm afterwards
+      obvious candidate) and set it in `cluster/cdk8s/public_coder/config.py`. Confirm afterwards
       that dreaming cron reconciles and heartbeats actually run — heartbeats have
       been off since the bump, so nothing has been exercising them.
 
