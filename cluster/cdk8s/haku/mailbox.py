@@ -232,7 +232,7 @@ def _add_services(chart: Chart) -> None:
                 )
             },
         ),
-        spec=k8s.ServiceSpec(selector=_SMTP.pods.selector, ports=[_SMTP.port.k8s_service_port()]),
+        spec=k8s.ServiceSpec(selector=_SMTP.pods.selector, ports=[_SMTP.k8s_service_port()]),
     )
     k8s.KubeService(
         chart,
@@ -249,9 +249,7 @@ def _add_services(chart: Chart) -> None:
                 )
             },
         ),
-        spec=k8s.ServiceSpec(
-            selector=HTTP.pods.selector, ports=[HTTP.port.k8s_service_port(), _IMAP.port.k8s_service_port()]
-        ),
+        spec=k8s.ServiceSpec(selector=HTTP.pods.selector, ports=[HTTP.k8s_service_port(), _IMAP.k8s_service_port()]),
     )
 
 

@@ -323,7 +323,7 @@ def _element(scope: Construct) -> None:
         "element-service",
         metadata=k8s.ObjectMeta(name=_ELEMENT_HTTP.name, namespace=NAMESPACE, labels=_ELEMENT_HTTP.labels),
         spec=k8s.ServiceSpec(
-            type="ClusterIP", ports=[_ELEMENT_HTTP.port.k8s_service_port()], selector=_ELEMENT_HTTP.pods.selector
+            type="ClusterIP", ports=[_ELEMENT_HTTP.k8s_service_port()], selector=_ELEMENT_HTTP.pods.selector
         ),
     )
     https_route(

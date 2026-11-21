@@ -186,7 +186,7 @@ def chart(app: App) -> Chart:
                 # Authenticated public entrypoint. The HTTPRoute for oci-cache.allegedly.works
                 # targets this port; in-cluster Docker mirrors must use the unauthenticated
                 # `http` port above.
-                _PUBLIC_AUTH.port.k8s_service_port(),
+                _PUBLIC_AUTH.k8s_service_port(),
             ],
         ),
     )

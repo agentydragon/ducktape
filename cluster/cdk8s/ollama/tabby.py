@@ -200,7 +200,7 @@ def add_tabbyapi(scope: Construct) -> None:
         scope,
         "tabbyapi-service",
         metadata=k8s.ObjectMeta(name=SERVICE.name, namespace=NAMESPACE, labels=_PODS.selector),
-        spec=k8s.ServiceSpec(selector=_PODS.selector, ports=[SERVICE.port.k8s_service_port()]),
+        spec=k8s.ServiceSpec(selector=_PODS.selector, ports=[SERVICE.k8s_service_port()]),
     )
     # The older pod serves unknown model IDs with its loaded stock model. The
     # candidate route must only reach the new pod, even if LiteLLM rolls first.
@@ -208,7 +208,7 @@ def add_tabbyapi(scope: Construct) -> None:
         scope,
         SWITCHING_SERVICE,
         metadata=k8s.ObjectMeta(name=SWITCHING_SERVICE, namespace=NAMESPACE, labels=_PODS.selector),
-        spec=k8s.ServiceSpec(selector={**_PODS.selector, **_SWITCHING_LABEL}, ports=[SERVICE.port.k8s_service_port()]),
+        spec=k8s.ServiceSpec(selector={**_PODS.selector, **_SWITCHING_LABEL}, ports=[SERVICE.k8s_service_port()]),
     )
     # LiteLLM authenticates clients; Gatus probes health and Alloy scrapes metrics.
     k8s.KubeNetworkPolicy(

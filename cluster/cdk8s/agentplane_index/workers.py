@@ -211,7 +211,7 @@ def _worker(
         chart,
         f"{instance}-service",
         metadata=k8s.ObjectMeta(name=worker.name, namespace=worker.pods.namespace),
-        spec=k8s.ServiceSpec(selector=worker.pods.selector, ports=[worker.port.k8s_service_port()]),
+        spec=k8s.ServiceSpec(selector=worker.pods.selector, ports=[worker.k8s_service_port()]),
     )
 
 

@@ -508,8 +508,7 @@ def service_chart(app: App) -> Chart:
             annotations={"description": "Stable client endpoint for the shared ClickHouse installation."},
         ),
         spec=k8s.ServiceSpec(
-            selector=client.HTTP.pods.selector,
-            ports=[client.HTTP.port.k8s_service_port(), client.NATIVE.port.k8s_service_port()],
+            selector=client.HTTP.pods.selector, ports=[client.HTTP.k8s_service_port(), client.NATIVE.k8s_service_port()]
         ),
     )
     return chart

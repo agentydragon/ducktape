@@ -207,7 +207,7 @@ def _kube_service(chart: Chart, service: ServiceRef) -> None:
         chart,
         f"{service.name}-service",
         metadata=k8s.ObjectMeta(name=service.name, namespace=_NAMESPACE, labels=service.labels),
-        spec=k8s.ServiceSpec(selector=service.pods.selector, ports=[service.port.k8s_service_port()]),
+        spec=k8s.ServiceSpec(selector=service.pods.selector, ports=[service.k8s_service_port()]),
     )
 
 

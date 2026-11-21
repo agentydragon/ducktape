@@ -240,15 +240,13 @@ def _service_and_route(chart: Chart) -> None:
         chart,
         "web-service",
         metadata=k8s.ObjectMeta(name=WEB_SERVICE.name, namespace=NAMESPACE),
-        spec=k8s.ServiceSpec(selector=_WEB_LABELS, ports=[WEB_SERVICE.port.k8s_service_port()], type="ClusterIP"),
+        spec=k8s.ServiceSpec(selector=_WEB_LABELS, ports=[WEB_SERVICE.k8s_service_port()], type="ClusterIP"),
     )
     k8s.KubeService(
         chart,
         "control-service",
         metadata=k8s.ObjectMeta(name=CONTROL_SERVICE.name, namespace=NAMESPACE),
-        spec=k8s.ServiceSpec(
-            selector=_CONTROL_LABELS, ports=[CONTROL_SERVICE.port.k8s_service_port()], type="ClusterIP"
-        ),
+        spec=k8s.ServiceSpec(selector=_CONTROL_LABELS, ports=[CONTROL_SERVICE.k8s_service_port()], type="ClusterIP"),
     )
     https_route(
         chart,
