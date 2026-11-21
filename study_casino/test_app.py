@@ -144,7 +144,7 @@ def test_changelog_ack_advances_cursor(client: TestClient) -> None:
     assert client.get("/state").json()["changelog_unacked"] == []
 
     # Acking an already-acked (older) id never rewinds the cursor.
-    r = client.post("/actions/changelog/ack", json={"client_action_id": "clog-2", "last_id": latest})
+    r = client.post("/actions/changelog/ack", json={"client_action_id": "clog-2", "last_id": 1})
     assert r.json()["result"]["acked_through"] == latest
     assert client.get("/state").json()["changelog_unacked"] == []
 
