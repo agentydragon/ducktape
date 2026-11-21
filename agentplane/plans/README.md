@@ -18,6 +18,8 @@ improvements alongside. Component TODOs and research plans do not set a competin
   credentials, background compaction, dynamic tools and optional Langfuse export
 - [Central sampler workflow gaps](../sampler/plans/codex_parity.md) — concrete reliability
   regressions and remaining delegation usability/exposure, followed by Codex feature candidates
+- [Stable sampler provider prefix](sampler_stable_prefix.md) — immutable per-conversation prompt
+  baseline, provider-native updates and fallbacks for unsupported changes
 - [Architecture overview](architecture_overview.md) — four whole directions for where Agentplane's
   objects and data live, the operator's workflows through each, what Agentplane borrows from
   Kubernetes and what each direction keeps or replaces, what is right under every direction, and the
