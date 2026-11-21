@@ -311,7 +311,7 @@ function Report() {
     setSelection((previous) => ({ group, revision: previous.revision + 1 }));
 
   useEffect(() => {
-    fetch("./inventory.json?v=20261121065658")
+    fetch("./inventory.json?v=20261121080640")
       .then((response) => {
         if (!response.ok)
           throw new Error(`Inventory request returned HTTP ${response.status}`);
