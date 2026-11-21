@@ -1183,6 +1183,26 @@ export function makeComposedCase(seed, index) {
   };
   const functionNames = Array.from({ length: 1 + rand(3) }, (_, i) => (i ? `calculate${i}` : "calculate"));
   const functions = functionNames.map(makeFunction);
+  if (index % 64 === 23) {
+    functionNames.push("fuzzThrower");
+    functions.push(
+      functionNode(
+        "fuzzThrower",
+        ["parameter"],
+        [
+          {
+            type: "IfStatement",
+            test: id("parameter"),
+            consequent: {
+              type: "BlockStatement",
+              body: [{ type: "ThrowStatement", argument: literal("generated-left") }],
+            },
+            alternate: { type: "BlockStatement", body: [returnNode(literal(0))] },
+          },
+        ]
+      )
+    );
+  }
   const publicFunctionNames = functionNames.map((name, i) => (index % 3 === 0 && i === 0 ? `public_${name}` : name));
   const extraAlias = index % 6 === 0 ? "second_calculate" : null;
   const earlyVar = index % 14 === 0;
@@ -1526,18 +1546,21 @@ export async function minimizeCase(input, fails) {
 async function mutateOutput(out, input, kind) {
   const modules = Object.keys(input.spec.modules);
   const files =
-    kind === "composedEffect"
-      ? ["state.mjs"]
-      : kind === "binding" || kind === "effect"
-        ? [input.cell0Owner]
-        : kind === "function"
-          ? modules
-          : [input.spec.entry];
+    kind === "throwValue"
+      ? ["logic.mjs"]
+      : kind === "composedEffect"
+        ? ["state.mjs"]
+        : kind === "binding" || kind === "effect"
+          ? [input.cell0Owner]
+          : kind === "function"
+            ? modules
+            : [input.spec.entry];
   for (const name of files) {
     const file = join(out, name);
     const original = await readFile(file, "utf8");
     let changed = original;
     if (kind === "binding") changed = original.replace(/let cell0 = (\d+);/, (_, n) => `let cell0 = ${Number(n) + 1};`);
+    else if (kind === "throwValue") changed = original.replace('throw "generated-left"', 'throw "generated-right"');
     else if (kind === "composedEffect") {
       const discarded = print(input.ast.body[0]);
       if (original.includes(discarded)) {
@@ -1774,7 +1797,7 @@ export async function runFuzz({
     equal: 0,
     different: 0,
     mutated: 0,
-    mutationKinds: { binding: 0, effect: 0, function: 0, export: 0, import: 0, composedEffect: 0 },
+    mutationKinds: { binding: 0, effect: 0, function: 0, export: 0, import: 0, composedEffect: 0, throwValue: 0 },
     splitCompared: 0,
     splitDifferent: 0,
     mutatedDifferent: 0,
@@ -1809,12 +1832,15 @@ export async function runFuzz({
             : makeCase(seed, index);
       const input = splitMode === "independent" ? independentSplit(generated, seed, index) : generated;
       const mutation =
-        input.grammar === "composed" && !input.independentSplit && input.hasDiscardedLiteral && index % 52 === 16
-          ? "composedEffect"
-          : !["composed", "async"].includes(input.grammar) && !input.independentSplit && index % 8 === 2
-            ? ["binding", "effect", "function", "export", "import"][Math.floor(index / 8) % 5]
-            : null;
+        input.grammar === "composed" && !input.independentSplit && index % 64 === 23
+          ? "throwValue"
+          : input.grammar === "composed" && !input.independentSplit && input.hasDiscardedLiteral && index % 52 === 16
+            ? "composedEffect"
+            : !["composed", "async"].includes(input.grammar) && !input.independentSplit && index % 8 === 2
+              ? ["binding", "effect", "function", "export", "import"][Math.floor(index / 8) % 5]
+              : null;
       if (mutation === "composedEffect") input.calls = [];
+      if (mutation === "throwValue") input.calls = [{ name: "fuzzThrower", args: [1] }];
       const independentCategory = input.invalidAssignment ? "invalidAssignment" : input.cyclic ? "cyclic" : "acyclic";
       if (input.independentSplit) {
         summary.independentRequested[independentCategory]++;
@@ -2151,10 +2177,14 @@ export async function runFuzz({
             events: trace.events,
             exports: trace.exports,
             ...(witnessCalls.length ? { results: trace.results.map((v) => (v.undefined ? null : v.value)) } : {}),
+            ...(witnessCalls.length && trace.error ? { thrown: trace.error.thrown } : {}),
           });
+          const invalidError = (trace) =>
+            trace.error &&
+            (!witnessCalls.length || trace.error.phase !== "call" || trace.error.thrown.kind === "opaque");
           if (
-            witnessBefore.error ||
-            witnessAfter.error ||
+            invalidError(witnessBefore) ||
+            invalidError(witnessAfter) ||
             JSON.stringify(witnessBefore) === JSON.stringify(witnessAfter) ||
             JSON.stringify(verdict.original) !== JSON.stringify(witness(witnessBefore)) ||
             JSON.stringify(verdict.output) !== JSON.stringify(witness(witnessAfter))

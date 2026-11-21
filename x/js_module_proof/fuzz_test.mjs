@@ -48,6 +48,17 @@ if (shards === 4 && shard === 1) {
   assert.equal(relay.bigIntegerObservationCases, 1);
   assert.equal(relay.bigIntegerObservationComparedCases, 1);
   assert.equal(relay.bigIntegerObservationProvedCases, 1);
+  const changedThrow = await runFuzz({
+    seed: 51981,
+    start: 23,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "composed",
+    validateEvery: 1,
+  });
+  assert.equal(changedThrow.mutationKinds.throwValue, 1);
+  assert.equal(changedThrow.mutatedDifferent, 1);
+  assert.equal(changedThrow.mutatedVerdicts.unsafe, 1);
 }
 if (shards === 4 && shard === 3) {
   const mutated = await runFuzz({
@@ -489,7 +500,8 @@ if (shards === 4 && shard === 0) {
 }
 if (shards === 4 && shard === 1) assert.equal(bulk.different, bulk.cases);
 if (shards === 4 && shard === 2)
-  for (const [kind, count] of Object.entries(bulk.mutationKinds)) if (kind !== "composedEffect") assert.ok(count > 0);
+  for (const [kind, count] of Object.entries(bulk.mutationKinds))
+    if (!["composedEffect", "throwValue"].includes(kind)) assert.ok(count > 0);
 if (shards === 4 && shard === 3) {
   assert.equal(bulk.closureSourceExecuted, bulk.closureCases);
   assert.ok(bulk.finallyCases > 0);

@@ -26,6 +26,26 @@ function cli(...args) {
 const models = (
   await Promise.all(["Semantics.lean", "Effects.lean", "Bindings.lean"].map((n) => readFile(join(here, n), "utf8")))
 ).join("\n");
+if (shard === 2) {
+  const throwRoot = await mkdtemp(join(process.env.TEST_TMPDIR, "throw-witness-"));
+  const throwSource = join(throwRoot, "source.mjs");
+  const throwSpec = join(throwRoot, "spec.json");
+  const throwOut = join(throwRoot, "out");
+  await writeFile(throwSource, "function fail() { throw 1; }\nexport { fail };\n");
+  await writeFile(
+    throwSpec,
+    JSON.stringify({ kind: "bindings", entry: "entry.mjs", modules: { "entry.mjs": { imports: [], statements: [0] } } })
+  );
+  assert.equal(cli("generate", throwSource, throwSpec, throwOut).result, "generated");
+  assert.equal(cli("validate", throwSource, throwSpec, throwOut).result, "proved under assumptions");
+  const output = join(throwOut, "entry.mjs");
+  await writeFile(output, (await readFile(output, "utf8")).replace("throw 1", "throw 2"));
+  const witness = cli("validate", throwSource, throwSpec, throwOut);
+  assert.equal(witness.result, "unsafe", JSON.stringify(witness));
+  assert.deepEqual(witness.calls, ["fail"]);
+  assert.deepEqual(execute(throwSource, witness.calls).error.thrown, { kind: "number", value: 1 });
+  assert.deepEqual(execute(output, witness.calls).error.thrown, { kind: "number", value: 2 });
+}
 if (shard === 10) {
   const textRoot = await mkdtemp(join(process.env.TEST_TMPDIR, "text-observation-"));
   const textSource = join(textRoot, "source.mjs");
@@ -722,6 +742,21 @@ export { maybe, text, boolean, nil, undef };
   });
   assert.equal(replay.status, 0, replay.stdout + replay.stderr);
   assert.match(replay.stdout, /'binding_throw_values' does not depend on any axioms/);
+  const logic = join(primitiveOut, "logic.mjs");
+  await writeFile(logic, (await readFile(logic, "utf8")).replace('throw "oops"', 'throw "changed"'));
+  const witness = cli("validate", primitiveSource, primitiveSpec, primitiveOut);
+  assert.equal(witness.result, "unsafe", JSON.stringify(witness));
+  assert.deepEqual(execute(primitiveSource, witness.calls).error.thrown, { kind: "string", value: "oops" });
+  assert.deepEqual(execute(join(primitiveOut, "entry.mjs"), witness.calls).error.thrown, {
+    kind: "string",
+    value: "changed",
+  });
+  const witnessReplay = spawnSync(process.env.JS_MODULE_PROOF_LEAN, ["-j", "1", "--trust=0", "--stdin"], {
+    encoding: "utf8",
+    input: models + witness.certificate,
+  });
+  assert.equal(witnessReplay.status, 0, witnessReplay.stdout + witnessReplay.stderr);
+  assert.match(witnessReplay.stdout, /'binding_witness_difference' does not depend on any axioms/);
 }
 
 if (shard === 4) {

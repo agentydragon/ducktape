@@ -261,7 +261,8 @@ modeled separately from host-recorded events; ignored top-level call results
 are not included in the return trace. An unsafe result includes a Lean proof of different modeled observations during
 initialization or later calls, and a Node witness. When initialization traces
 match, the validator also searches up to 64 sequences of one or two exported
-calls, provided a conservative numeric bound keeps every intermediate safe. Semantically equivalent
+calls, comparing return prefixes and supported primitive thrown values as well
+as recorded events, provided a conservative numeric bound keeps every intermediate safe. Semantically equivalent
 rewrites beyond this AST subset can return `unknown`.
 
 This result assumes correct Acorn conversion and correspondence between the

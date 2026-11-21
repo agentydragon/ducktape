@@ -1614,7 +1614,7 @@ export async function generateBindings(sourcePath, specPath, out) {
 }
 
 function execute(path, calls = []) {
-  const script = `const events=[];globalThis.record=v=>events.push(v===undefined?{undefined:true}:typeof v==='bigint'?{bigint:String(v)}:typeof v==='number'&&(Object.is(v,-0)||!Number.isFinite(v))?{number:Object.is(v,-0)?'-0':String(v)}:v);import(${str(pathToFileURL(resolve(path)).href)}).then(m=>{const exports=Object.keys(m);const results=${str(calls)}.map(call=>typeof call==='string'?m[call]():m[call.name](...call.args));console.log(JSON.stringify(${calls.length ? "{events,exports,results}" : "{events,exports}"}));});`;
+  const script = `const events=[];globalThis.record=v=>events.push(v===undefined?{undefined:true}:typeof v==='bigint'?{bigint:String(v)}:typeof v==='number'&&(Object.is(v,-0)||!Number.isFinite(v))?{number:Object.is(v,-0)?'-0':String(v)}:v);import(${str(pathToFileURL(resolve(path)).href)}).then(m=>{const exports=Object.keys(m),results=[];let thrown;for(const call of ${str(calls)}){try{results.push(typeof call==='string'?m[call]():m[call.name](...call.args));}catch(value){thrown=value===null?{kind:'null'}:value===undefined?{kind:'undefined'}:typeof value==='number'?{kind:'number',value:Number.isNaN(value)?'NaN':Object.is(value,-0)?'-0':Number.isFinite(value)?value:String(value)}:typeof value==='string'||typeof value==='boolean'?{kind:typeof value,value}:typeof value==='bigint'?{kind:'bigint',value:String(value)}:{kind:'opaque'};break;}}console.log(JSON.stringify(${calls.length ? "{events,exports,results,...(thrown?{thrown}:{})}" : "{events,exports}"}));});`;
   const child = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" });
   if (child.error || child.status !== 0) throw new Error(child.stderr || String(child.error));
   return JSON.parse(child.stdout);
@@ -2043,6 +2043,18 @@ theorem binding_export_difference :
       if (!trace.results.every((value) => value === null || (Number.isSafeInteger(value) && value >= 0))) return null;
       return list(trace.results.map((value) => (value === null ? "none" : `some ${value}`)));
     };
+    const thrown = (trace) => {
+      if (!Object.hasOwn(trace, "thrown")) return "none";
+      const value = trace.thrown;
+      if (value.kind === "undefined") return "some (.undefined : ThrownValue)";
+      if (value.kind === "null") return "some (.null : ThrownValue)";
+      if (value.kind === "boolean" && typeof value.value === "boolean") return `some (.boolean ${value.value})`;
+      if (value.kind === "string" && typeof value.value === "string" && !/[^\x20-\x7e]/.test(value.value))
+        return `some (.text ${str(value.value)})`;
+      if (value.kind === "number" && Number.isSafeInteger(value.value) && value.value >= 0)
+        return `some (.number ${value.value})`;
+      return null;
+    };
     const sourceEvents = events(original),
       outputEvents = events(output);
     if (sourceEvents === null || outputEvents === null) return null;
@@ -2054,17 +2066,20 @@ theorem binding_export_difference :
       expectedRight = `some ${outputEvents}`;
     } else {
       const sourceReturns = returns(original),
-        outputReturns = returns(output);
-      if (sourceReturns === null || outputReturns === null) return null;
+        outputReturns = returns(output),
+        sourceThrown = thrown(original),
+        outputThrown = thrown(output);
+      if (sourceReturns === null || outputReturns === null || sourceThrown === null || outputThrown === null)
+        return null;
       const leanCalls = hasExpressions
         ? list(calls.map((call) => `(${str(call.name)}, ${list(call.args.map(String))})`))
         : leanStrings(calls);
       const table = hasExpressions ? "publicCallableTable" : "publicFunctionTable";
       const runner = hasExpressions ? "runArgumentCalls" : "runExportedCalls";
-      left = `((sourceBindingState bindingSource).bind (fun state => (${table} bindingSource bindingExports).bind (fun table => (aliasPublicTable table bindingPublicMappings).bind (fun aliases => ${runner} aliases state ${leanCalls})))).map (fun state => (state.events, state.returns))`;
-      right = `((outputBindingState bindingSource bindingModules bindingEntry).bind (fun state => (${table} (outputDefinitions bindingModules) (bindingOutputMappings.map Prod.fst)).bind (fun table => (aliasPublicTable table bindingOutputMappings).bind (fun aliases => ${runner} aliases state ${leanCalls})))).map (fun state => (state.events, state.returns))`;
-      expectedLeft = `some (${sourceEvents}, ${sourceReturns})`;
-      expectedRight = `some (${outputEvents}, ${outputReturns})`;
+      left = `((sourceBindingState bindingSource).bind (fun state => (${table} bindingSource bindingExports).bind (fun table => (aliasPublicTable table bindingPublicMappings).bind (fun aliases => ${runner} aliases state ${leanCalls})))).map (fun state => (state.events, state.returns, state.thrown))`;
+      right = `((outputBindingState bindingSource bindingModules bindingEntry).bind (fun state => (${table} (outputDefinitions bindingModules) (bindingOutputMappings.map Prod.fst)).bind (fun table => (aliasPublicTable table bindingOutputMappings).bind (fun aliases => ${runner} aliases state ${leanCalls})))).map (fun state => (state.events, state.returns, state.thrown))`;
+      expectedLeft = `some (${sourceEvents}, ${sourceReturns}, ${sourceThrown})`;
+      expectedRight = `some (${outputEvents}, ${outputReturns}, ${outputThrown})`;
     }
     const witness = `\ntheorem binding_witness_original : ${left} = ${expectedLeft} := by decide\ntheorem binding_witness_output : ${right} = ${expectedRight} := by decide\ntheorem binding_witness_difference : ${left} ≠ ${right} := by decide\n#print axioms binding_witness_original\n#print axioms binding_witness_output\n#print axioms binding_witness_difference\n`;
     // Call observations can differ even when initialization states are equal,
@@ -2103,11 +2118,7 @@ theorem binding_export_difference :
     1
   );
   const initialCalls = source.statements.filter((item) => ["call", "recordCall"].includes(item.ast.kind)).length;
-  const callable = source.mappings
-    .filter(
-      (mapping) => !source.statements.some((item) => item.ast.kind === "thrower" && item.ast.name === mapping.local)
-    )
-    .map((mapping) => mapping.public);
+  const callable = source.mappings.map((mapping) => mapping.public);
   const resolveCapturedDefinition = (name) => {
     const seen = new Set();
     let definition = source.statements.find((item) => item.ast.name === name)?.ast;
