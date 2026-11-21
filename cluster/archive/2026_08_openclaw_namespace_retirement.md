@@ -36,10 +36,10 @@ credentials were re-encrypted into `claude-sandbox` and moved to
 - `openclaw-openai-api-key`
 - `openclaw-telegram-bot-token`
 
-They remain valid, GitOps-managed credentials but are not mounted by a workload or
-reflected into another namespace. The obsolete reflector destinations were removed
-from their source Secrets, and the two empty namespaces and their Flux
-Kustomizations were retired.
+The obsolete reflector destinations were removed from their source Secrets, and the
+two empty namespaces and their Flux Kustomizations were retired. Since then the
+Anthropic and OpenAI keys have been removed from the repository, and the Telegram
+token moved to `cluster/k8s/external-creds/`, where `claude-sandbox` reads it.
 
 The retired gateway's LiteLLM key remained only through the time-boxed `agent-lab` experiment and was
 removed with that namespace after the experiment ended.

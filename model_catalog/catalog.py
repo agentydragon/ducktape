@@ -569,7 +569,6 @@ _OLLAMA_ROUTE_GROUPS = (
     (_GEMMA4_128K.openai, _GEMMA4_128K.native),
 )
 OLLAMA_CHAT_ROUTES = tuple(route for group in _OLLAMA_ROUTE_GROUPS for route in group)
-OLLAMA_OPENAI_ROUTES = tuple(route for route in OLLAMA_CHAT_ROUTES if route.upstream == OLLAMA_OPENAI)
 # The proxy historically groups wires within each source; keys interleave wires per
 # context. Preserve both output orders while referencing exactly the same objects.
 _OLLAMA_PROXY_ROUTES = tuple(
