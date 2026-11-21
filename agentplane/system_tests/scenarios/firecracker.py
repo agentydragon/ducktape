@@ -221,6 +221,7 @@ async def preserves_live_guest(
         container for container in pod_json["spec"]["containers"] if container["name"] == "environment-runtime"
     ]
     memory_limit = int(launcher["resources"]["limits"]["memory"])
+    assert pod_json["status"]["qosClass"] == "Burstable"
 
     async def wait_for_checkpoint(cycle: int) -> dict[str, object]:
         async for attempt in AsyncRetrying(
