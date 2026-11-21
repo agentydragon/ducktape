@@ -117,13 +117,13 @@ class Holder:
 
 def holder(
     *,
-    initial_cash: Decimal | int,
-    monthly_spend: Decimal | int,
-    pe_units: Decimal | int,
-    pe_cost_basis_per_unit: Decimal | int,
-    pe_holding_period_months: int,
     horizon_months: int,
     lnw_floor: Decimal | int | None,
+    initial_cash: Decimal | int = 0,
+    monthly_spend: Decimal | int = 0,
+    pe_units: Decimal | int = 100,
+    pe_cost_basis_per_unit: Decimal | int = 10,
+    pe_holding_period_months: int = 36,
     taxed: bool = False,
 ) -> Holder:
     return Holder(
@@ -220,15 +220,7 @@ def test_a_position_with_no_opportunity_carries_through_untouched() -> None:
     """
 
     horizon = 24
-    case = holder(
-        initial_cash=100_000,
-        monthly_spend=0,
-        pe_units=100,
-        pe_cost_basis_per_unit=10,
-        pe_holding_period_months=36,
-        horizon_months=horizon,
-        lnw_floor=500_000,
-    )
+    case = holder(initial_cash=100_000, horizon_months=horizon, lnw_floor=500_000)
     rollout = run(case, protocol(horizon_months=horizon, initial_mark=Decimal(50)))
 
     assert units_held(rollout, month=horizon) == pytest.approx(100.0)
@@ -246,13 +238,7 @@ def test_a_tender_below_the_floor_sells_toward_it() -> None:
 
     horizon, tender_month = 12, 5
     case = holder(
-        initial_cash=Decimal(30_000),
-        monthly_spend=Decimal(1_000),
-        pe_units=100,
-        pe_cost_basis_per_unit=10,
-        pe_holding_period_months=36,
-        horizon_months=horizon,
-        lnw_floor=Decimal(50_000),
+        initial_cash=Decimal(30_000), monthly_spend=Decimal(1_000), horizon_months=horizon, lnw_floor=Decimal(50_000)
     )
     rollout = run(
         case,
@@ -280,15 +266,7 @@ def test_a_tender_above_the_floor_passes_without_a_sale() -> None:
     """An open window is not a reason to sell; a shortfall is."""
 
     horizon = 12
-    case = holder(
-        initial_cash=200_000,
-        monthly_spend=0,
-        pe_units=100,
-        pe_cost_basis_per_unit=10,
-        pe_holding_period_months=36,
-        horizon_months=horizon,
-        lnw_floor=50_000,
-    )
+    case = holder(initial_cash=200_000, horizon_months=horizon, lnw_floor=50_000)
     rollout = run(
         case, protocol(horizon_months=horizon, initial_mark=Decimal(50), tender_month=5, tender_mark=Decimal(60))
     )
@@ -304,15 +282,7 @@ def test_a_zero_floor_never_sells() -> None:
     """Liquid net worth is always at or above a floor of nothing."""
 
     horizon = 12
-    case = holder(
-        initial_cash=1_000,
-        monthly_spend=0,
-        pe_units=100,
-        pe_cost_basis_per_unit=10,
-        pe_holding_period_months=36,
-        horizon_months=horizon,
-        lnw_floor=0,
-    )
+    case = holder(initial_cash=1_000, horizon_months=horizon, lnw_floor=0)
     rollout = run(
         case, protocol(horizon_months=horizon, initial_mark=Decimal(50), tender_month=5, tender_mark=Decimal(60))
     )
@@ -324,15 +294,7 @@ def test_a_tender_with_no_policy_is_not_taken() -> None:
     """The opportunity is still traced, so "nobody asked" is distinguishable from "refused"."""
 
     horizon = 12
-    case = holder(
-        initial_cash=30_000,
-        monthly_spend=1_000,
-        pe_units=100,
-        pe_cost_basis_per_unit=10,
-        pe_holding_period_months=36,
-        horizon_months=horizon,
-        lnw_floor=None,
-    )
+    case = holder(initial_cash=30_000, monthly_spend=1_000, horizon_months=horizon, lnw_floor=None)
     rollout = run(
         case, protocol(horizon_months=horizon, initial_mark=Decimal(50), tender_month=5, tender_mark=Decimal(60))
     )
@@ -344,15 +306,7 @@ def test_a_tender_with_no_policy_is_not_taken() -> None:
 def unreachable_floor(*, horizon_months: int) -> Holder:
     """A floor no sale can close, so what is sold is whatever the protocol allows."""
 
-    return holder(
-        initial_cash=0,
-        monthly_spend=0,
-        pe_units=100,
-        pe_cost_basis_per_unit=10,
-        pe_holding_period_months=36,
-        horizon_months=horizon_months,
-        lnw_floor=1_000_000,
-    )
+    return holder(horizon_months=horizon_months, lnw_floor=1_000_000)
 
 
 def test_zero_capacity_is_traced_as_its_own_outcome() -> None:
@@ -425,15 +379,7 @@ def test_a_public_market_regime_lets_the_floor_sell_with_no_tender() -> None:
     """
 
     horizon = 12
-    case = holder(
-        initial_cash=0,
-        monthly_spend=0,
-        pe_units=100,
-        pe_cost_basis_per_unit=10,
-        pe_holding_period_months=36,
-        horizon_months=horizon,
-        lnw_floor=5_000,
-    )
+    case = holder(horizon_months=horizon, lnw_floor=5_000)
     rollout = run(
         case,
         protocol(
@@ -467,16 +413,7 @@ def test_a_forced_sale_still_books_its_capital_gain() -> None:
     """
 
     horizon = 12
-    case = holder(
-        initial_cash=0,
-        monthly_spend=0,
-        pe_units=100,
-        pe_cost_basis_per_unit=10,
-        pe_holding_period_months=36,
-        horizon_months=horizon,
-        lnw_floor=0,
-        taxed=True,
-    )
+    case = holder(horizon_months=horizon, lnw_floor=0, taxed=True)
     rollout = run(
         case,
         protocol(
@@ -495,15 +432,7 @@ def test_proceeds_land_in_the_account_the_policy_names() -> None:
 
     horizon = 12
     case = replace(
-        holder(
-            initial_cash=0,
-            monthly_spend=0,
-            pe_units=100,
-            pe_cost_basis_per_unit=10,
-            pe_holding_period_months=36,
-            horizon_months=horizon,
-            lnw_floor=0,
-        ),
+        holder(horizon_months=horizon, lnw_floor=0),
         accounts=(account(ALICE, SAVINGS, balance=123), account(ALICE), account(SPEND_SINK)),
     )
     rollout = run(
@@ -532,15 +461,7 @@ def test_a_recovery_cashout_takes_the_rest_of_the_position_for_a_stated_amount()
     """
 
     horizon = 12
-    case = holder(
-        initial_cash=0,
-        monthly_spend=0,
-        pe_units=100,
-        pe_cost_basis_per_unit=10,
-        pe_holding_period_months=36,
-        horizon_months=horizon,
-        lnw_floor=0,
-    )
+    case = holder(horizon_months=horizon, lnw_floor=0)
     rollout = run(
         case,
         protocol(
@@ -564,7 +485,6 @@ def test_a_disposition_carries_the_lot_it_consumed() -> None:
     horizon, tender_month = 12, 3
     case = holder(
         initial_cash=10_000,
-        monthly_spend=0,
         pe_units=200,
         pe_cost_basis_per_unit=20,
         pe_holding_period_months=24,
