@@ -732,7 +732,7 @@ func scanDispatch(row interface{ Scan(...any) error }) (*Dispatch, error) {
 }
 
 // EnqueueForCaller applies the Session's retained owner and target binding in the same transaction
-// that appends a command, including for Pod-bound privileged backends.
+// that appends a command, including for privileged service callers.
 func (s *Store) EnqueueForCaller(ctx context.Context, sessionID, sandboxName, sandboxUID string, command *commandpb.Command, wakeCaller *auth.Account, caller Caller) (*Dispatch, error) {
 	return s.enqueue(ctx, sessionID, sandboxName, sandboxUID, command, wakeCaller, caller)
 }

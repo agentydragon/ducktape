@@ -3698,8 +3698,8 @@ Dispatch reviewed migrations separately, rather than coupling them to package-di
 #### Authentication: waiting on a decision
 
 - **Pod-bound checks per route** ([identity plan open question 1](identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits)):
-  `IsPodBound` gates privilege in Dispatcher (`dispatcher/api.go`) and the lifecycle manager
-  (`environments/lifecycle/policy.go`). Once every workload is an Identity SVID with a
+  Dispatcher and the lifecycle manager no longer gate privilege on `IsPodBound`, which has no
+  caller left. Once every workload is an Identity SVID with a
   per-incarnation credential, each route decides whether a Pod proof still adds anything; the
   checks that do not are deleted then.
 
