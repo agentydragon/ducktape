@@ -49,6 +49,22 @@ To select the Codex-backed implementation instead, change the template's `implem
 `codex`, regenerate the staging manifest, and roll out a new Sandbox incarnation. Check the same
 execution flows after rollback. In-flight handles from the old backend cannot be resumed.
 
+## Systemd command placement rollout
+
+Before applying a template with `placement: systemd`, verify that the live runner-disk image
+contains a Runtime accepting `placement` and that the live VM root image contains
+`agentplane-commands.slice`. The placement field is also emitted for Pod executors, so the
+runner disk must advance before the template changes. Older images reject the new field.
+Firecracker needs a boot image containing the same slice. Check the published image revisions and
+the images selected by the staging templates, rather than relying on a completed source merge.
+
+In a fresh disposable VM or Firecracker Sandbox, verify the command and executor are in separate
+systemd slices. Run a memory-limited command and confirm that its OOM is reported and a subsequent
+command in the same execution session succeeds. Check ordinary output and suspend/resume as well.
+New templates apply to new incarnations; inventory and preserve retained data and in-flight work
+before replacing an existing Sandbox. To roll back placement, select `direct` and remove the
+`executor_workload` budget together, then verify a fresh Sandbox.
+
 ## Sessions and Environments rollout checks
 
 Check that the staging root and delivery Kustomizations have applied the intended source

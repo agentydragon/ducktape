@@ -180,7 +180,7 @@ _ANTHROPIC_MESSAGES = AnthropicMessagesConfig(
 )
 
 
-# Separate harness and executor caps leave 1 GiB below the service high watermark.
+# Separate harness, executor, and command caps leave 1 GiB below the service high watermark.
 # The outer service cap leaves 1 GiB for guest services and kernel work.
 STAGING_VM_RESOURCES = GuestResources(
     guest_memory_bytes=8_589_934_592,
@@ -210,8 +210,17 @@ STAGING_VM_RESOURCES = GuestResources(
     ),
     executor=ResourceLimits(
         cpu_quota_micros=100_000,
-        memory_max_bytes=3_221_225_472,
-        pids_max=512,
+        memory_max_bytes=1_073_741_824,
+        pids_max=128,
+        read_bps=52_428_800,
+        write_bps=20_971_520,
+        read_iops=1000,
+        write_iops=500,
+    ),
+    executor_workload=ResourceLimits(
+        cpu_quota_micros=100_000,
+        memory_max_bytes=2_147_483_648,
+        pids_max=384,
         read_bps=52_428_800,
         write_bps=20_971_520,
         read_iops=1000,
@@ -723,8 +732,7 @@ ENV = Environment(
     vm_sandboxes=True,
     vm_storage_class="piraeus-ssd-2-autodiskful",
     vm_resources=STAGING_VM_RESOURCES,
-    vm_executor_placement="direct",
-    omit_executor_placement_from_config=True,
+    vm_executor_placement="systemd",
 )
 
 

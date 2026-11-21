@@ -53,6 +53,11 @@ def test_firecracker_mounts_stay_on_the_correct_side(scratch_app: App) -> None:
     guest_config = find_resource(docs, "ConfigMap", "environment-firecracker-config")
     runtime = json.loads(guest_config["data"]["environment-runtime.json"])
     assert runtime["environment"]["block_devices"] == ["/dev/vdd"]
+    assert runtime["environment"]["executor"]["placement"] == "systemd"
+    assert staging.STAGING_VM_RESOURCES.executor_workload is not None
+    assert runtime["environment"]["resources"]["executor_workload"] == (
+        staging.STAGING_VM_RESOURCES.executor_workload.model_dump()
+    )
     assert runtime["harness_environment"]["values"]["HTTP_PROXY"] == "http://192.0.2.1:3128"
     relay_config = find_resource(docs, "ConfigMap", "environment-firecracker-relay")
     relay_settings = yaml.safe_load(relay_config["data"]["settings.yaml"])

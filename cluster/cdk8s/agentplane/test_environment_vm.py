@@ -114,7 +114,11 @@ def test_executor_selects_native_implementation(scratch_app: App) -> None:
     rendered = _environment_vm_manifests(app=scratch_app, console_autologin=False)
     executor = rendered["environment_runtime"]["environment"]["executor"]
     assert executor["implementation"] == "native"
-    assert executor["placement"] == "direct"
+    assert executor["placement"] == "systemd"
+    assert staging.STAGING_VM_RESOURCES.executor_workload is not None
+    assert rendered["environment_runtime"]["environment"]["resources"]["executor_workload"] == (
+        staging.STAGING_VM_RESOURCES.executor_workload.model_dump()
+    )
 
 
 def test_legacy_config_omits_executor_placement(scratch_app: App) -> None:
