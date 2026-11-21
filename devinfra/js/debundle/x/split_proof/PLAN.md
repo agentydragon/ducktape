@@ -7,7 +7,7 @@ Goal: turn a minified production bundle into readable modules, with a machine-ch
 
 The design is "untrusted search, trusted check". The footprint analysis is the one place that breaks it: `Effects.lean` is unproved, and the checker believes it.
 
-**Decided (2026-11-21).** The model of item 3 is being built now, as a longer-term investment beside fixing the known wrong rules. The first rule to prove against it is the allocation rule of item 4.
+**Decided (2026-11-21).** The model of item 3 is built up as a longer-term investment beside fixing the known wrong rules. Its first slice exists, and the first rule proved against it is the allocation rule of item 4.
 
 **Proposed, not decided.**
 
@@ -30,10 +30,11 @@ The design is "untrusted search, trusted check". The footprint analysis is the o
      - a ledger: the interpreter records which rules a unit's footprint used, and a verdict prints the unproved ones. "Units whose footprint used only proved rules" is then the measure of progress, and how often a rule fires on the large bundle orders the proofs.
 
 4. **Run it as a spike with a kill rule**, so it cannot become open-ended.
-   - _Exists:_ the model, `CoreJS` ([`experiments/README.md`](experiments/README.md) § 14): closures, objects with prototypes and accessors, plain classes and exceptions, as a total interpreter tested against Node, with unknown code as an outcome of its own. One rule is proved in it: a unit of literals, names, functions, object and array literals changes nothing that existed and binds only its name.
-   - _Next:_ the same rule for plain classes; that two such units commute (`AllocOnlyUnitsCommute` in [`Frame.lean`](lean/Experiments/CoreJS/Frame.lean), stated, not proved); then what a footprint means in this model, the invariant that relates `Effects.lean`'s abstract values to its states, including what unknown code may change. Which constructs to add to the model is decided by the first measurement below, not before it.
-   - _First measurement:_ which constructs run during module start-up on the large bundle. Only that code needs a precise model, and it may be much smaller than the syntax the inputs contain.
-   - _First rule to prove:_ a unit that only allocates has no footprint beyond the name it declares. Such a unit is built from literals, names, object and array literals, function and arrow expressions and plain classes; it runs no code but its own and changes nothing that existed. 7,123 of the 9,707 units of the large bundle have this shape ([`allocate_only_census.mjs`](experiments/translation/allocate_only_census.mjs)), and the modules that peel today are made of them. The hard part is what "the same result" means: two such units in the other order create the same objects at other addresses, so states are equal only up to a renaming of object identities. Settling that is the first piece of what a footprint means.
+   - _Exists:_ the model, `CoreJS` ([`experiments/README.md`](experiments/README.md) § 14): closures, objects with prototypes and accessors, plain classes and exceptions, as a total interpreter tested against Node, with unknown code as an outcome of its own.
+   - _First rule, proved in part:_ a unit that only allocates has no footprint beyond the name it declares. Proved for one unit built from literals, names, functions, object and array literals: it changes nothing that existed and binds only its name. 7,123 of the 9,707 units of the large bundle only allocate ([`allocate_only_census.mjs`](experiments/translation/allocate_only_census.mjs)); that count includes plain classes, which the proof does not cover yet.
+   - _Addresses are settled by the model:_ two such units in the other order create the same objects. The model gives each unit a region of its own to allocate in, so the two orders end in equal states and no renaming of object identities is needed.
+   - _Next:_ the same rule for plain classes; that two such units commute (`AllocOnlyUnitsCommute` in [`Frame.lean`](lean/Experiments/CoreJS/Frame.lean), stated, not proved); then what a footprint means in this model, the invariant that relates `Effects.lean`'s abstract values to its states, including what unknown code may change.
+   - _Measurement that decides what the model covers next:_ which constructs run during module start-up on the large bundle. Only that code needs a precise model, and it may be much smaller than the syntax the inputs contain.
    - _Second rule:_ unknown code cannot write a name declared later, except through an object that escaped earlier. It is the largest lever the peel probe measured, and it needs a statement of what unknown code may change.
    - _Success:_ commutation proved for closures, objects with prototypes, accessors and exceptions, and that fragment covers most of the units that get precise footprints today.
    - _Kill:_ the proof is not done within the budget set at the start, or coverage is under about half. Then the tested analysis stays, labelled as trusted.
@@ -45,7 +46,7 @@ The design is "untrusted search, trusted check". The footprint analysis is the o
 ## Order of work
 
 1. F1 to F6 (in progress).
-2. The model of item 3: a first slice checked against Node (in progress), then the allocation rule of item 4.
+2. The allocation rule of item 4 in the model: plain classes, then commutation of two units.
 3. `import.meta` ([`SUPPORT.md`](SUPPORT.md)): the one common feature the tools refuse.
 4. Which rules fire per unit at start-up: it decides what the model covers after the first slice.
 5. Then by measured yield: fewer ordering imports (item 5): per-unit reasons in `lower` ([`TODO.md`](TODO.md)), a vendor table by library family, a rule for decorator applications. A stack-safe interpreter comes before any analysis of library code.
