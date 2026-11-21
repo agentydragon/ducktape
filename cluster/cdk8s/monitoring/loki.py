@@ -136,7 +136,7 @@ def _loki_values() -> dict[str, object]:
             # through rollouts and voluntary evictions across the three OVH workers.
             "replicas": 3,
             "maxUnavailable": 1,
-            "annotations": _GOLDILOCKS_OFF,
+            "annotations": {**_GOLDILOCKS_OFF, namespaces.VPA_UPDATE_MODE_LABEL: Vpa.AUTO},
             "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
             "affinity": node_scheduling.PREFER_WORKERS,
             "extraEnvFrom": _CREDENTIALS_ENV_FROM,
