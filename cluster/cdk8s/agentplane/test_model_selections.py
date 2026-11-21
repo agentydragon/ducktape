@@ -39,6 +39,17 @@ def test_central_sampler_selection_is_opt_in() -> None:
     assert Harness.CENTRAL_SAMPLER not in catalog.harnesses
 
 
+def test_local_picker_matches_current_serving() -> None:
+    catalog = model_catalog(STAGING_APP_MODELS, central_sampler_enabled=True)
+    options = {option.model: option.display_name for option in catalog.models}
+    qwen_id = OLLAMA_QWEN_IQ4XS_256K.openai.id
+    assert options[qwen_id] == "Qwen3.8 Flash-Next EXL3 2.68 bpw (256K) — TabbyAPI"
+    assert options[f"{qwen_id}-chat-completions"] == (
+        "Qwen3.8 Flash-Next EXL3 2.68 bpw (256K) — TabbyAPI Chat Completions"
+    )
+    assert all(not model.startswith("ollama/") or model.startswith(qwen_id) for model in options)
+
+
 def test_direct_anthropic_api_models_are_only_selected_for_the_central_sampler() -> None:
     routes = set(ANTHROPIC_API_LATEST_ROUTES)
     assert routes.issubset(STAGING_APP_MODELS.central_sampler)

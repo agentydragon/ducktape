@@ -172,8 +172,8 @@ def config(
     # forgejo-haku, haku-mailbox; finance-agent: forgejo-finance-agent, plaid-pgweb). Preset order
     # here is the launch form's order.
     #
-    # Haku launches on the local Qwen3.8 route with the wider 256K window the runner is
-    # configured for; the OpenAI-compatible wire is the one that carries reasoning effort.
+    # Haku launches on the stock EXL3 TabbyAPI checkpoint via its compatibility ID, with the 256K window
+    # configured for the runner; the OpenAI-compatible wire carries reasoning effort.
     # Agentplane offers Qwen through the central sampler with standard Responses and JSON exec.
     # TODO(#9121): consider switching Haku back to a Claude default after validating the
     # Antigravity routes and their quotas in Agentplane. Existing Haku Threads retain

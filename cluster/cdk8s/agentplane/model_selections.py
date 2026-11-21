@@ -12,7 +12,6 @@ from model_catalog.catalog import (
     ANTIGRAVITY_SONNET,
     GPT6_RESPONSES_ROUTES,
     GPT6_SOL_RESPONSES,
-    OLLAMA_OPENAI_ROUTES,
     OLLAMA_QWEN_IQ4XS_128K,
     OLLAMA_QWEN_IQ4XS_256K,
     TABBYAPI_QWEN_ABLITERATED,
@@ -49,10 +48,8 @@ _AGENTPLANE_ANTIGRAVITY_ROUTES = (
     ANTIGRAVITY_GEMINI_38_FLASH_HIGH,
 )
 
-# The Agentplane Codex picker offers Qwen at 256K only.
-_AGENTPLANE_OLLAMA_OPENAI_ROUTES = tuple(
-    route for route in OLLAMA_OPENAI_ROUTES if route != OLLAMA_QWEN_IQ4XS_128K.openai
-)
+# Only the Qwen compatibility route is served; Ollama itself is scaled to zero.
+_AGENTPLANE_LOCAL_ROUTES = (OLLAMA_QWEN_IQ4XS_256K.openai,)
 
 # GPT-6 Sol remains served for other clients, but Agentplane exposes GPT-6.1 Sol instead.
 _AGENTPLANE_GPT6_RESPONSES_ROUTES = tuple(route for route in GPT6_RESPONSES_ROUTES if route != GPT6_SOL_RESPONSES)
@@ -73,13 +70,13 @@ STAGING_APP_MODELS = HarnessRoutes(
     codex=(
         *_AGENTPLANE_GPT6_RESPONSES_ROUTES,
         *_AGENTPLANE_ANTIGRAVITY_ROUTES,
-        *_AGENTPLANE_OLLAMA_OPENAI_ROUTES,
+        *_AGENTPLANE_LOCAL_ROUTES,
         TABBYAPI_QWEN_ABLITERATED,
     ),
     central_sampler=(
         *_AGENTPLANE_GPT6_RESPONSES_ROUTES,
         *_AGENTPLANE_ANTIGRAVITY_ROUTES,
-        *_AGENTPLANE_OLLAMA_OPENAI_ROUTES,
+        *_AGENTPLANE_LOCAL_ROUTES,
         *ANTHROPIC_API_LATEST_ROUTES,
     ),
 )

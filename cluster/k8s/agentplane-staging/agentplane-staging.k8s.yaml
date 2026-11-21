@@ -3175,42 +3175,6 @@ data:
             "medium"
           ]
         },
-        "ollama/oai-chat/gpt-oss-20b-128k": {
-          "connection": "llm-ingress",
-          "provider_model": "ollama/oai-chat/gpt-oss-20b-128k",
-          "api": "responses",
-          "responses": {
-            "dialect": "standard"
-          },
-          "exec_encoding": "json",
-          "reasoning_efforts": [
-            ""
-          ]
-        },
-        "ollama/oai-chat/gpt-oss-120b-128k": {
-          "connection": "llm-ingress",
-          "provider_model": "ollama/oai-chat/gpt-oss-120b-128k",
-          "api": "responses",
-          "responses": {
-            "dialect": "standard"
-          },
-          "exec_encoding": "json",
-          "reasoning_efforts": [
-            ""
-          ]
-        },
-        "ollama/oai-chat/gemma4-31b-it-q8_0-128k": {
-          "connection": "llm-ingress",
-          "provider_model": "ollama/oai-chat/gemma4-31b-it-q8_0-128k",
-          "api": "responses",
-          "responses": {
-            "dialect": "standard"
-          },
-          "exec_encoding": "json",
-          "reasoning_efforts": [
-            ""
-          ]
-        },
         "anthropic-api/ant-messages/claude-opus-5-5": {
           "connection": "anthropic-api",
           "provider_model": "claude-opus-5-5",
@@ -3753,20 +3717,11 @@ data:
             - xhigh
             - max
         - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
-          display_name: Qwen3.8 Flash Next IQ4_XS (256K) — cluster Ollama
+          display_name: Qwen3.8 Flash-Next EXL3 2.68 bpw (256K) — TabbyAPI
           reasoning_efforts:
             - low
             - medium
             - high
-        - model: ollama/oai-chat/gpt-oss-20b-128k
-          display_name: GPT-OSS 20B (128K) — cluster Ollama
-          reasoning_efforts: []
-        - model: ollama/oai-chat/gpt-oss-120b-128k
-          display_name: GPT-OSS 120B (128K) — cluster Ollama
-          reasoning_efforts: []
-        - model: ollama/oai-chat/gemma4-31b-it-q8_0-128k
-          display_name: Gemma 4 31B (128K) — cluster Ollama
-          reasoning_efforts: []
         - model: tabbyapi/oai-chat/qwen3.8-flash-next-abliterated
           display_name: Qwen3.8 Flash-Next Abliterated (EXL3 2.50 bpw) — TabbyAPI
           reasoning_efforts:
@@ -3806,7 +3761,7 @@ data:
             - xhigh
             - max
         - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k-chat-completions
-          display_name: Qwen3.8 Flash Next IQ4_XS (256K) — TabbyAPI Chat Completions
+          display_name: Qwen3.8 Flash-Next EXL3 2.68 bpw (256K) — TabbyAPI Chat Completions
           reasoning_efforts:
             - low
             - medium
@@ -3828,9 +3783,6 @@ data:
           - antigravity/ant-messages/gemini-3.5-flash-lite
           - antigravity/ant-messages/gemini-3.8-flash-high
           - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
-          - ollama/oai-chat/gpt-oss-20b-128k
-          - ollama/oai-chat/gpt-oss-120b-128k
-          - ollama/oai-chat/gemma4-31b-it-q8_0-128k
           - tabbyapi/oai-chat/qwen3.8-flash-next-abliterated
         HARNESS_CENTRAL_SAMPLER:
           - chatgpt-sub/oai-responses/gpt-6-astra
@@ -3842,9 +3794,6 @@ data:
           - antigravity/ant-messages/gemini-3.5-flash-lite
           - antigravity/ant-messages/gemini-3.8-flash-high
           - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
-          - ollama/oai-chat/gpt-oss-20b-128k
-          - ollama/oai-chat/gpt-oss-120b-128k
-          - ollama/oai-chat/gemma4-31b-it-q8_0-128k
           - anthropic-api/ant-messages/claude-opus-5-5
           - anthropic-api/ant-messages/claude-sonnet-5-5
           - anthropic-api/ant-messages/claude-haiku-5-5
@@ -6865,20 +6814,11 @@ data:
                 - xhigh
                 - max
             - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
-              display_name: Qwen3.8 Flash Next IQ4_XS (256K) — cluster Ollama
+              display_name: Qwen3.8 Flash-Next EXL3 2.68 bpw (256K) — TabbyAPI
               reasoning_efforts:
                 - low
                 - medium
                 - high
-            - model: ollama/oai-chat/gpt-oss-20b-128k
-              display_name: GPT-OSS 20B (128K) — cluster Ollama
-              reasoning_efforts: []
-            - model: ollama/oai-chat/gpt-oss-120b-128k
-              display_name: GPT-OSS 120B (128K) — cluster Ollama
-              reasoning_efforts: []
-            - model: ollama/oai-chat/gemma4-31b-it-q8_0-128k
-              display_name: Gemma 4 31B (128K) — cluster Ollama
-              reasoning_efforts: []
             - model: tabbyapi/oai-chat/qwen3.8-flash-next-abliterated
               display_name: Qwen3.8 Flash-Next Abliterated (EXL3 2.50 bpw) — TabbyAPI
               reasoning_efforts:
@@ -6918,7 +6858,7 @@ data:
                 - xhigh
                 - max
             - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k-chat-completions
-              display_name: Qwen3.8 Flash Next IQ4_XS (256K) — TabbyAPI Chat Completions
+              display_name: Qwen3.8 Flash-Next EXL3 2.68 bpw (256K) — TabbyAPI Chat Completions
               reasoning_efforts:
                 - low
                 - medium
@@ -6940,9 +6880,6 @@ data:
               - antigravity/ant-messages/gemini-3.5-flash-lite
               - antigravity/ant-messages/gemini-3.8-flash-high
               - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
-              - ollama/oai-chat/gpt-oss-20b-128k
-              - ollama/oai-chat/gpt-oss-120b-128k
-              - ollama/oai-chat/gemma4-31b-it-q8_0-128k
               - tabbyapi/oai-chat/qwen3.8-flash-next-abliterated
             HARNESS_CENTRAL_SAMPLER:
               - chatgpt-sub/oai-responses/gpt-6-astra
@@ -6954,9 +6891,6 @@ data:
               - antigravity/ant-messages/gemini-3.5-flash-lite
               - antigravity/ant-messages/gemini-3.8-flash-high
               - ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
-              - ollama/oai-chat/gpt-oss-20b-128k
-              - ollama/oai-chat/gpt-oss-120b-128k
-              - ollama/oai-chat/gemma4-31b-it-q8_0-128k
               - anthropic-api/ant-messages/claude-opus-5-5
               - anthropic-api/ant-messages/claude-sonnet-5-5
               - anthropic-api/ant-messages/claude-haiku-5-5
