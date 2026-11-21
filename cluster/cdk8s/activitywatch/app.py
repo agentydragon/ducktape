@@ -39,6 +39,7 @@ _NAMESPACE = "activitywatch"
 _IMAGE = "git.allegedly.works/ducktape-ci/aw-server:unset"
 _DATA_CLAIM = "data"
 _SERVER_PORT = 5600
+READ_HOSTNAME = "activitywatch-read.allegedly.works"
 _READONLY_CONFIG = ConfigMapArgs(
     name="activitywatch-readonly-proxy", namespace=_NAMESPACE, files=["default.conf=readonly-proxy.conf"]
 )
@@ -272,6 +273,6 @@ def chart(app: App) -> Chart:
     _route(chart, "write-route", backend=_WRITE, hostname="activitywatch-write.allegedly.works")
     # Public read route for the Haku agent. Reaches the bearer-gated read Service, which
     # allows read methods only, so even a leaked read token can't write.
-    _route(chart, "read-route", backend=READ, hostname="activitywatch-read.allegedly.works")
+    _route(chart, "read-route", backend=READ, hostname=READ_HOSTNAME)
     _network_policy(chart)
     return chart
