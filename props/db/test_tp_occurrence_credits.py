@@ -274,10 +274,10 @@ def test_aggregated_view_counts_by_status(synced_test_session: Session, example_
     assert result.status_counts[AgentRunStatus.TIMED_OUT] == 2
 
 
-def test_occurrence_statistics_has_correct_n_critic_runs(
+def test_recall_by_example_has_correct_n_critic_runs(
     synced_test_session: Session, subtract_file_example: SingleFileSetExample, tp_occurrence_single: tuple[str, str]
 ):
-    """Test that aggregated_recall_by_example counts critic runs correctly."""
+    """Test that recall_by_example counts critic runs correctly."""
     example = Example.from_spec(synced_test_session, subtract_file_example)
 
     # Critic run 1: graded 1 time (credit 0.8)

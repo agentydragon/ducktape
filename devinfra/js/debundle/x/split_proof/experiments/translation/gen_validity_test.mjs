@@ -44,12 +44,69 @@ const MUST_HAVE = {
     "function:async", "function:async-arrow", "param:default", "param:rest", "arguments", "yield", "yield:delegate", "await",
     "for-await", "call:iife", "object:method", "tagged-template", "tagged-template:expressions",
   ], // prettier-ignore
+  classes: [
+    "class:declaration", "class:expression", "class:named-expression", "class:extends", "class:extends-expression",
+    "class:extends-null", "class:constructor", "method", "method:static", "method:getter", "method:setter",
+    "method:static-getter", "method:static-setter", "method:computed", "method:generator", "method:async",
+    "method:async-generator", "method:private", "method:private-accessor", "method:static-private", "field",
+    "field:no-initializer", "field:static", "field:computed", "field:private", "field:static-private",
+    "field:arrow-initializer", "static-block", "new.target", "private-in", "member:private", "member:super", "call:super",
+    "new:no-arguments", "new:spread", "new:member",
+  ], // prettier-ignore
+  patterns: [
+    "pattern:default", "pattern:rest-object", "pattern:rest-array", "pattern:nested", "pattern:computed-key", "pattern:hole",
+    "pattern:default-array", "pattern:object-assign", "pattern:member-target", "param:destructured", "for-of:destructured",
+    "for-of:target", "for-in:target", "for-in:var", "declaration:several", "optional:call", "optional:chain-continues",
+    "optional:method-call", "optional:delete", "block:function", "call:spread",
+  ], // prettier-ignore
+  protocols: [
+    "object:getter", "object:setter", "object:async-method", "object:generator-method", "object:computed-method",
+    "object:proto", "object:shorthand", "yield:no-argument",
+  ], // prettier-ignore
+  modules: [
+    "import:default",
+    "import:named",
+    "import:alias",
+    "import:namespace",
+    "import:side-effect",
+    "import()",
+    "import.meta",
+  ],
+  unmodeled: ["literal:bigint"],
+};
+/** What a family must write besides the forms: calls have no form of their own. */
+const MUST_CONTAIN = {
+  protocols: [
+    /new Proxy\(/,
+    /Symbol\.toPrimitive/,
+    /Symbol\.iterator/,
+    /Object\.defineProperty\(/,
+    /Reflect\.\w+\(/,
+    /Object\.freeze\(/,
+    /Object\.create\(/,
+  ],
+  modules: [/new EventEmitter\(/, /createHash\(/],
+  unmodeled: [
+    /new (Uint8Array|Int16Array|Float64Array|Uint32Array|Int8Array)\(/,
+    /\.subarray\(/,
+    /new DataView\(/,
+    /\beval\(/,
+    /new Function\(/,
+    /queueMicrotask\(/,
+    /process\.nextTick\(/,
+    /new WeakRef\(/,
+    /new WeakMap\(/,
+  ],
 };
 // The families are tried cumulatively, each with the ones before it: the expressions make no unit by themselves. A set must
 // produce the forms of the families in it.
 const SETS = [
   ["expressions", "statements"],
   ["expressions", "statements", "functions"],
+  ["expressions", "statements", "functions", "classes"],
+  ["expressions", "statements", "functions", "classes", "patterns"],
+  ["expressions", "statements", "functions", "classes", "patterns", "protocols"],
+  ["expressions", "statements", "functions", "classes", "patterns", "protocols", "modules", "unmodeled"],
 ];
 assert.deepEqual([...new Set(SETS.flat())].sort(), Object.keys(FAMILIES).sort(), "a family is not tried");
 
@@ -94,22 +151,40 @@ function check(seed, families) {
   const again = run(renamed);
   assert.equal(again.status, 0, `seed ${seed}, renamed: ${again.stderr.split("\n").slice(0, 4).join("\n")}`);
   assert.equal(again.stdout, first.stdout, `seed ${seed}: renaming changes the output`);
-  return { units: program.units.length, features: featuresOf(ast) };
+  return { units: program.units.length, features: featuresOf(ast), source };
 }
 
 const summary = {};
 for (const families of SETS) {
   const found = new Set();
   const types = new Set();
+  const written = new Set();
   let units = 0;
+  const required = (family) => [...(MUST_HAVE[family] ?? []), ...(MUST_CONTAIN[family] ?? [])];
+  /** Is a requirement (a form, or a regular expression the source must match) met by the program? */
+  const meets = (requirement, forms, source) =>
+    typeof requirement === "string" ? forms.has(requirement) : requirement.test(source);
   for (let seed = firstSeed; seed < firstSeed + samples; seed++) {
     const r = check(seed, families);
     units += r.units;
     for (const f of r.features.forms.keys()) found.add(f);
     for (const t of r.features.types.keys()) types.add(t);
+    for (const requirement of families.flatMap(required))
+      if (meets(requirement, r.features.forms, r.source)) written.add(String(requirement));
   }
-  const missing = families.flatMap((family) => MUST_HAVE[family]).filter((f) => !found.has(f));
-  assert.deepEqual(missing, [], `families ${families}: ${samples} programs have no ${missing.join(", ")}`);
+  // a requirement that is rare in the programs that were run is looked for in more, which are only generated and parsed
+  let missing = families.flatMap(required).filter((q) => !written.has(String(q)));
+  const more = firstSeed + samples + 400;
+  for (let seed = firstSeed + samples; missing.length > 0 && seed < more; seed++) {
+    const source = renderProgram(generateProgram(seed, { families }));
+    const forms = featuresOf(parseModule(source)).forms;
+    missing = missing.filter((q) => !meets(q, forms, source));
+  }
+  assert.deepEqual(
+    missing,
+    [],
+    `families ${families}: ${more - firstSeed} programs have no ${missing.map(String).join(", ")}`
+  );
   summary[families.join("+")] = { programs: samples, units, nodeTypes: types.size, forms: found.size };
 }
 console.log("generator validity:", JSON.stringify(summary));

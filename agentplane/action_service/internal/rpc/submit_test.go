@@ -409,3 +409,38 @@ func TestTheHTTPFacadeSubmits(t *testing.T) {
 		}
 	}
 }
+
+// A schema evaluation timeout is a service failure, not a claim that the caller supplied invalid input.
+func TestSubmitReportsPatternEvaluationFailureAsUnavailable(t *testing.T) {
+	const definitions = `{"test-group":{"title":"t","description":"d","executor":{"kind":"mcp","description":"e"},"actions":{"test-action":{"description":"d","input_schema":{"type":"object","properties":{"value":{"not":{"pattern":"^(?=a)(a+)+$"}}}}}}}}`
+	s := serveWith(t, newCatalog(t, definitions))
+	request := envelope(t, "test-pattern-timeout", "test-group", "test-action", map[string]any{"value": strings.Repeat("a", 96) + "!"})
+	_, err := s.submitAs(t, callerCertificate, request)
+	wantCode(t, "a schema evaluation timeout", err, codes.Unavailable)
+	if got := s.listByKey(t, callerCertificate, request.GetIdempotencyKey()); len(got) != 0 {
+		t.Errorf("stored request after validation failure: %v", got)
+	}
+}
+
+// A failed first policy must not fall through to an otherwise approving later rule.
+func TestPolicyEvaluationFailureStopsLaterAutoApproval(t *testing.T) {
+	const definitions = `{"test-group":{"title":"t","description":"d","executor":{"kind":"mcp","description":"e"},"actions":{"test-action":{"description":"d","input_schema":{"type":"object"}}}}}`
+	s := serveWith(t, newCatalog(t, definitions))
+	s.bind(t, actionPolicy(policyapi.ActionPolicy{
+		Type: "argument_schema", Actions: map[string]policyapi.ActionNames{"test-group": {"test-action"}},
+		Schema: &runtime.RawExtension{Raw: []byte(`{"properties":{"value":{"not":{"pattern":"^(?=a)(a+)+$"}}}}`)},
+	}), exactActions("test-group", "test-action"))
+	args := map[string]any{"value": strings.Repeat("a", 96) + "!"}
+	request := envelope(t, "test-policy-pattern-timeout", "test-group", "test-action", args)
+	got, err := s.submitAs(t, callerCertificate, request)
+	if err != nil || got.GetState() != pending || got.GetDecision() != nil {
+		t.Fatalf("evaluation failure did not leave request pending: %v, %v", got, err)
+	}
+	request = envelope(t, "test-policy-pattern-timeout-decided", "test-group", "test-action", args)
+	request.DecidedOnly = true
+	_, err = s.submitAs(t, callerCertificate, request)
+	wantCode(t, "a decided-only request with indeterminate policy", err, codes.PermissionDenied)
+	if got := s.listByKey(t, callerCertificate, request.GetIdempotencyKey()); len(got) != 0 {
+		t.Errorf("stored decided-only request after policy failure: %v", got)
+	}
+}

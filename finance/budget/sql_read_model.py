@@ -41,6 +41,7 @@ from finance.budget.wire import (
     LumpyView,
     TransactionView,
 )
+from finance.calendar_months import offset_calendar_month
 from finance.plaid.db.models import AccountRow, LinkRow, TransactionRow
 
 # Mean Gregorian month in days; converts a window's per-day average into `window_monthly_avg`.
@@ -51,18 +52,13 @@ def _month_start(d: date) -> date:
     return date(d.year, d.month, 1)
 
 
-def _add_months(month: date, delta: int) -> date:
-    total = month.year * 12 + (month.month - 1) + delta
-    return date(total // 12, total % 12 + 1, 1)
-
-
 def _enumerate_months(start: date, end: date) -> tuple[date, ...]:
     months: list[date] = []
     cursor = _month_start(start)
     last = _month_start(end)
     while cursor <= last:
         months.append(cursor)
-        cursor = _add_months(cursor, 1)
+        cursor = offset_calendar_month(cursor, 1)
     return tuple(months)
 
 
@@ -131,32 +127,27 @@ def _rules_case(config: BudgetConfig, base_tx: CTE) -> ColumnElement[str]:
     buckets_by_id = {bucket.id: bucket for bucket in config.buckets}
     arms = [
         (
-            and_(_condition_expression(_rule_condition(rule), base_tx), _direction_gate(base_tx, bucket.direction)),
+            and_(
+                _condition_expression(_rule_condition(rule), base_tx),
+                _direction_gate(base_tx, buckets_by_id[rule.bucket_id].direction),
+            ),
             rule.bucket_id,
         )
         for rule in config.rules
-        if (bucket := buckets_by_id.get(rule.bucket_id)) is not None
     ]
     return case(*arms) if arms else literal(None, type_=String())
 
 
 def _match_overrides_case(config: BudgetConfig, base_tx: CTE) -> ColumnElement[str]:
-    bucket_ids = {bucket.id for bucket in config.buckets}
     arms = [
         (_condition_expression(match_override.condition, base_tx), match_override.bucket_id)
         for match_override in config.match_overrides
-        if match_override.bucket_id in bucket_ids
     ]
     return case(*arms) if arms else literal(None, type_=String())
 
 
 def _transaction_overrides_case(config: BudgetConfig, base_tx: CTE) -> ColumnElement[str]:
-    bucket_ids = {bucket.id for bucket in config.buckets}
-    arms = [
-        (base_tx.c.transaction_id == override.transaction_id, override.bucket_id)
-        for override in config.overrides
-        if override.bucket_id in bucket_ids
-    ]
+    arms = [(base_tx.c.transaction_id == override.transaction_id, override.bucket_id) for override in config.overrides]
     return case(*arms) if arms else literal(None, type_=String())
 
 

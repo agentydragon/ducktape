@@ -23,7 +23,7 @@
   debugging.
 - Add a first-class provider/model capability only if we route z.ai through
   Chat Completions again: its tool-call parser mishandles union-shaped tool
-  parameters, which its Anthropic Messages shape avoids (<docs/zai_api.md>).
+  parameters, which its Anthropic Messages shape avoids (<../docs/zai_api.md>).
 - Defer a dedicated `correlation_id` column until DB-to-Langfuse joins need it.
   Current correlation rides in injected props metadata.
 - Make the trace-metadata injection in `llm_proxy/routes.py` (`_merge_props_metadata`)
@@ -48,7 +48,7 @@
 ## Infrastructure
 
 - Decide the fate of the agent image push. The `props-agents` job in
-  <.github/workflows/push-images.yml> is disabled: it failed on every devel push against the
+  <../.github/workflows/push-images.yml> is disabled: it failed on every devel push against the
   down registry. Either props comes back and the job is re-enabled (delete the `false &&`),
   or it is not coming back and the job, `//props/agents:push_images_bin`, and the
   `PROPS_REGISTRY_*` CI secrets go with it. Leaving it disabled indefinitely is the one

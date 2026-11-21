@@ -4284,7 +4284,7 @@
    "arguments": {
     "name": "user"
    },
-   "go_outcome": "fault",
+   "go_outcome": "satisfied",
    "name": "a lookahead pattern",
    "schema": {
     "properties": {

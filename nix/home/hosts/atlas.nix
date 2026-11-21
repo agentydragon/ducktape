@@ -42,11 +42,7 @@ in
   # shared dual-recipient write token the cluster write-proxy checks.
   ducktape.activitywatch.sync = {
     enable = true;
-    dest = {
-      url = "https://activitywatch-write.allegedly.works";
-      device = "atlas";
-      tokenSopsFile = ../../../cluster/k8s/activitywatch/activitywatch-write-token.sops.yaml;
-    };
+    dest.device = "atlas";
   };
 
   # Atlas-specific configuration (Proxmox host with GUI)

@@ -75,9 +75,6 @@ homeassistant/**/*.yaml
 # Markdown posts
 *.markdown
 
-# JavaScript / TypeScript
-finance/worthy/worthy/graph.js
-
 # Text files (notes, todos, etc.)
 *.txt
 

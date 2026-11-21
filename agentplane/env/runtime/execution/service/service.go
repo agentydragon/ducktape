@@ -44,12 +44,12 @@ func runOwned(ctx context.Context, config Config, ready func(executorpb.Executor
 		return err
 	}
 	var supervisor *supervision.Supervisor
-	switch config.Backend {
-	case "companion":
+	switch config.Owner {
+	case codexexecserver.OwnerCompanion:
 		fence, finish := context.WithTimeout(ctx, 90*time.Second)
 		err = codexexecserver.FenceContainer(fence, config.ContainerSocket, "")
 		finish()
-	case "systemd":
+	case codexexecserver.OwnerSystemd:
 		supervisor = config.Supervisor
 	}
 	if err != nil {
@@ -63,7 +63,7 @@ func runOwned(ctx context.Context, config Config, ready func(executorpb.Executor
 	}
 	return runWithReady(ctx, config, codexexecserver.NativeStart(codexexecserver.NativeConfig{
 		Config: codexexecserver.Config{
-			URL: config.ExecutorURL, ContainerSocket: config.ContainerSocket,
+			URL: config.ExecutorURL, Owner: config.Owner, ContainerSocket: config.ContainerSocket,
 			Implementation: config.Implementation, LimitsJSON: config.LimitsJSON, Placement: config.Placement,
 		},
 		Binary: config.binary(), StateDir: config.WorkingDirectory, Environment: config.Environment, Supervisor: supervisor, CommandSupervisor: config.CommandSupervisor, LaunchProcess: launchProcess,

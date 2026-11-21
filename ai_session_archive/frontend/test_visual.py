@@ -324,8 +324,9 @@ async def test_codex_work_steps(visual: VisualHarness, width: int) -> None:
         await view.capture(name="steps")
 
         tool = history.locator('[data-activity-step="tool"]').filter(has_text="run_checks")
+        output = tool.get_by_role("region", name="Output", exact=True)
         await tool.get_by_role("button", name=re.compile("run_checks")).click()
-        await tool.get_by_role("region", name="Output", exact=True).scroll_into_view_if_needed()
+        await output.scroll_into_view_if_needed()
         await expect(tool).to_contain_text("PASS check 01")
         await expect(tool.locator('[data-clamped="true"]')).to_have_count(1)
         await tool.scroll_into_view_if_needed()
@@ -333,6 +334,14 @@ async def test_codex_work_steps(visual: VisualHarness, width: int) -> None:
         await view.capture(name="tool_output")
         await tool.get_by_role("button", name="Show all 48 lines", exact=True).click()
         await expect(tool.locator('[data-clamped="true"]')).to_have_count(0)
+        # CodeMirror measures only the lines it draws and its estimate for the rest is off for wrapped lines, so
+        # the output keeps changing height as scrolling draws them. `data-layout-settled` does not wait for that,
+        # and a scroll computed early lands elsewhere than a late one. Draw every line first, then scroll back so
+        # the raw records opened next start out of view.
+        await output.evaluate("element => element.scrollIntoView({ block: 'end' })")
+        await expect(output).to_contain_text("PASS check 48")
+        await output.evaluate("element => element.scrollIntoView({ block: 'start' })")
+        await expect(history).to_have_attribute("data-layout-settled", "true")
         await tool.hover()
         await tool.get_by_role("button", name="Raw JSONL record", exact=True).click()
         await expect(tool.get_by_role("region", name="Raw JSONL record")).to_have_count(2)

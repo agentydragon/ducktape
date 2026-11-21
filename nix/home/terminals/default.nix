@@ -32,45 +32,24 @@ let
     scheme: isLight:
     let
       p = scheme.palette;
-      colors =
-        if isLight then
-          [
-            p.base01
-            p.base08
-            p.base0B
-            p.base0A
-            p.base0D
-            p.base0E
-            p.base0C
-            p.base07
-            p.base00
-            p.base09
-            p.base02
-            p.base03
-            p.base04
-            p.base0F
-            p.base05
-            p.base06
-          ]
-        else
-          [
-            p.base01
-            p.base08
-            p.base0B
-            p.base0A
-            p.base0D
-            p.base0E
-            p.base0C
-            p.base06
-            p.base00
-            p.base09
-            p.base02
-            p.base03
-            p.base04
-            p.base0F
-            p.base05
-            p.base07
-          ];
+      colors = [
+        p.base01
+        p.base08
+        p.base0B
+        p.base0A
+        p.base0D
+        p.base0E
+        p.base0C
+        (if isLight then p.base07 else p.base06)
+        p.base00
+        p.base09
+        p.base02
+        p.base03
+        p.base04
+        p.base0F
+        p.base05
+        (if isLight then p.base06 else p.base07)
+      ];
       colorLines = lib.concatStringsSep "
 " (lib.imap0 (idx: hex: "color${toString idx} #${hex}") colors);
       selectionFg = if isLight then p.base07 else p.base06;

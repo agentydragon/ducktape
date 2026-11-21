@@ -1,5 +1,3 @@
-# Props has complex inter-package dependencies that are manually configured
-
 load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
 py_library(

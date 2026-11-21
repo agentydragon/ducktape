@@ -111,7 +111,7 @@ func runService(ctx context.Context, args []string, logLevel zap.AtomicLevel) er
 	defer shutdownTracing()
 	instance, err := newRuntime(coordinator.Config{
 		Control: settings.Control, StateDir: settings.StateDir, Launch: settings.Launch,
-		Supervision: settings.Supervision, PodPID1: settings.PodPID1, VMProcessLauncher: settings.VMProcessLauncher,
+		Supervision: settings.Supervision, SystemdLauncher: settings.SystemdLauncher,
 		CodexExecServer:    settings.CodexExecServer,
 		HarnessEnvironment: settings.HarnessEnvironment, InitializationCwd: settings.InitializationCwd,
 		HistoryIngress: ingress, SessionReconcileConcurrency: settings.SessionReconcileConcurrency,

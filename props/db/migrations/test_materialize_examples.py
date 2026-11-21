@@ -4,6 +4,7 @@ This module verifies the function-level workaround used by the migration.
 """
 
 from collections.abc import Generator
+from contextlib import ExitStack
 
 import pytest
 import pytest_bazel
@@ -21,12 +22,10 @@ pytest_plugins = ("testing.postgres_fixtures", "props.testing.fixtures.db")
 def blank_engine(postgres_base_config: DatabaseConfig, database_names: DatabaseNames) -> Generator[Engine]:
     """Engine for a fresh database with no migrations applied."""
     admin_url = postgres_base_config.with_database("postgres").url
-    with create_temporary_database(admin_url, database_names()) as url:
+    with create_temporary_database(admin_url, database_names()) as url, ExitStack() as cleanup:
         engine = create_engine(url)
-        try:
-            yield engine
-        finally:
-            engine.dispose()
+        cleanup.callback(engine.dispose)
+        yield engine
 
 
 def test_pg18_unqualified_table_in_function_fails_in_matview(blank_engine: Engine) -> None:

@@ -1,4 +1,4 @@
-"""Props backend - FastAPI unified server (dashboard, proxies, eval APIs)."""
+"""Props backend - FastAPI server (dashboard, run and ground-truth APIs)."""
 
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")

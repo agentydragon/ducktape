@@ -31,15 +31,10 @@ def test_migration_sequence_loads():
     # get_current_head() validates the entire chain and raises on:
     # - Invalid down_revision references (KeyError)
     # - Multiple heads (MultipleHeads exception)
-    head = script.get_current_head()
-    assert head is not None, "No migration head found"
+    script.get_current_head()
 
-    # Verify we can walk the entire chain
-    revisions = list(script.walk_revisions())
-    assert len(revisions) > 0, "No migrations found"
-
-    # Verify exactly one base (down_revision = None)
-    bases = [r for r in revisions if r.down_revision is None]
+    # Walking the chain must find exactly one base (down_revision = None); an empty chain finds none
+    bases = [r for r in script.walk_revisions() if r.down_revision is None]
     assert len(bases) == 1, f"Expected 1 base migration, found {len(bases)}: {[r.revision for r in bases]}"
 
 

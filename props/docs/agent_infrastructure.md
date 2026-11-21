@@ -39,9 +39,9 @@ exposed through `GET /api/runs/{id}/llm_requests`.
 
 ## Agent Images
 
-Agent images are built by Bazel as OCI images (`oci_image` rules in each agent's `BUILD.bazel`). Each image has a `CMD` that starts the agent's own loop.
+Agent images are built by Bazel as OCI images (`oci_image` rules in each agent's `BUILD.bazel`). Each image's `entrypoint` (`py_image_entrypoint`) starts the agent's own loop.
 
-Built-in images use the `builtin` tag (constant `BUILTIN_TAG` in `props/core/oci_utils.py`). Bazel pushes them through the registry proxy with admin auth.
+Built-in images use the `latest` tag (constant `BUILTIN_TAG` in `props/core/oci_utils.py`). Bazel pushes them through the registry proxy with admin auth.
 
 Critic-dev agents (optimizer, improvement) can also create custom critic images at runtime by layering onto the base image with `crane` and pushing to the registry proxy at `PROPS_REGISTRY_URL`. The registry proxy automatically creates `agent_definitions` rows for pushed images.
 
@@ -71,11 +71,12 @@ Repository names map trivially from the `AgentType` enum: `str(AgentType.CRITIC)
 ```text
 AgentRegistry:
   agent_type=CRITIC, ref="latest" (or custom digest for critic)
-      → resolve_image_ref(CRITIC, "latest") → digest
-      → store in agent_runs.image_digest
-      → build_oci_reference(CRITIC, digest) → "host:port/critic@sha256:abc..."
-      → pass to AgentEnvironment(image=full_ref)
-      → Docker pull/run
+      → resolve_image(CRITIC, "latest") → ResolvedImage(digest, oci_ref)
+          (tag → digest via the registry proxy; digest refs pass through)
+          oci_ref = build_oci_reference(CRITIC, digest) → "host:port/critic@sha256:abc..."
+      → store digest in agent_runs.image_digest
+      → executor.ensure_image(oci_ref), then run_container(...)
+      → Docker pull/run (Kubernetes: kubelet pulls)
 ```
 
 ## Registry Architecture
@@ -94,7 +95,7 @@ The proxy sits between agents and the registry, enforcing access control and tra
 
 **Responsibilities:**
 
-- Validates credentials against postgres (both agent temp users and admin)
+- Validates credentials against postgres (both agent roles and admin)
 - Determines caller type from username pattern (`postgres` = admin, `agent_{run_id}` = agent)
 - Enforces ACL based on caller type
 - Writes `agent_definitions` row on every manifest push
@@ -108,13 +109,13 @@ The proxy sits between agents and the registry, enforcing access control and tra
 | Critic-dev agent    | Yes  | Yes            | No          | No     |
 | Critic/grader agent | No   | No             | No          | No     |
 
-Agents push manifests by digest only (`PUT /v2/<name>/manifests/sha256:...`), enforcing immutability. Tags (like `critic:builtin`) are set administratively when Bazel pushes built-in images.
+Agents push manifests by digest only (`PUT /v2/<name>/manifests/sha256:...`), enforcing immutability. Tags (like `critic:latest`) are set administratively when Bazel pushes built-in images.
 
 ### Agent Workflows
 
 **Critic-dev agents (registry access via proxy):**
 
-1. Pull `critic:builtin` via proxy
+1. Pull `critic:latest` via proxy
 2. Create new layer with modified prompt/code using `crane`
 3. Push manifest by digest (proxy writes `agent_definitions` row)
 4. New digest returned, used as `definition_id` in `run_critic` tool call
@@ -131,8 +132,8 @@ Agents push manifests by digest only (`PUT /v2/<name>/manifests/sha256:...`), en
 | -------------------------------- | -------------------------------------------------- |
 | `props/registry_proxy/routes.py` | Registry route logic with ACL enforcement          |
 | `props/registry_proxy/`          | Standalone registry proxy app and image            |
-| `props/core/oci_utils.py`        | Tag resolution (`resolve_image_ref`) and utilities |
-| `props/orchestration/`           | Launch orchestration (`agent_registry`)            |
+| `props/core/oci_utils.py`        | Registry config, OCI references, `BUILTIN_TAG`     |
+| `props/orchestration/`           | Agent launch and tag resolution (`agent_registry`) |
 | `props/compose.yaml`             | Compose config for registry + proxy + postgres     |
 
 ## Testing

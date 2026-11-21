@@ -56,6 +56,8 @@ func (s *Service) SubmitActionRequest(ctx context.Context, request *action_servi
 		return nil, err
 	}
 	switch err := definition.CheckArguments(arguments); {
+	case errors.Is(err, catalog.ErrPatternEvaluation):
+		return nil, status.Error(codes.Unavailable, "the Action input schema could not be evaluated")
 	case errors.Is(err, catalog.ErrInvalidArguments):
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	case err != nil:

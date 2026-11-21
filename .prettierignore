@@ -1,7 +1,3 @@
-# HTML fragments that are intentionally incomplete
-finance/worthy/worthy/index_head.html
-finance/worthy/worthy/index_tail.html
-
 # Jinja2 templates - prettier mangles block/variable tag formatting
 **/*.j2
 

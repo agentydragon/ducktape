@@ -31,7 +31,7 @@ from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.action_service.sandbox.contract.actions import Action
 from agentplane.app.action_federation_settings import ExchangeFederationSettings
 from agentplane.app.settings import Settings
-from agentplane.env.config import GuestResources, ResourceLimits
+from agentplane.env.config import Executor, GuestResources, ResourceLimits, SystemdExecutorOwner
 from agentplane.identity.operator.settings import OperatorOidcSettings
 from agentplane.llm_ingress.models import AttributionConfig, AttributionField, AttributionJsonHeader, VerifiedClaim
 from agentplane.net.peertls.config import ACTIONS_URI, CENTRAL_SAMPLER_URI, LLM_INGRESS_URI, TLS
@@ -181,7 +181,7 @@ _ANTHROPIC_MESSAGES = AnthropicMessagesConfig(
 )
 
 
-# Separate harness and executor caps leave 1 GiB below the service high watermark.
+# Separate harness, executor, and command caps leave 1 GiB below the service high watermark.
 # The outer service cap leaves 1 GiB for guest services and kernel work.
 STAGING_VM_RESOURCES = GuestResources(
     guest_memory_bytes=8_589_934_592,
@@ -211,8 +211,17 @@ STAGING_VM_RESOURCES = GuestResources(
     ),
     executor=ResourceLimits(
         cpu_quota_micros=100_000,
-        memory_max_bytes=3_221_225_472,
-        pids_max=512,
+        memory_max_bytes=1_073_741_824,
+        pids_max=128,
+        read_bps=52_428_800,
+        write_bps=20_971_520,
+        read_iops=1000,
+        write_iops=500,
+    ),
+    executor_workload=ResourceLimits(
+        cpu_quota_micros=100_000,
+        memory_max_bytes=2_147_483_648,
+        pids_max=384,
         read_bps=52_428_800,
         write_bps=20_971_520,
         read_iops=1000,
@@ -726,8 +735,7 @@ ENV = Environment(
     firecracker_sandboxes=True,
     vm_storage_class="piraeus-ssd-2-autodiskful",
     vm_resources=STAGING_VM_RESOURCES,
-    vm_executor_placement="direct",
-    omit_executor_placement_from_config=True,
+    vm_executor=Executor(url="ws://127.0.0.1:4501", owner=SystemdExecutorOwner(), placement="systemd"),
 )
 
 

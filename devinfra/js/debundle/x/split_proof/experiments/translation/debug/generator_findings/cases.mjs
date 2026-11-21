@@ -6,7 +6,7 @@
 // `experiments/effects/cases_general.mjs`. See README.md for the table of causes.
 //
 // Premise P3 is on: it is the setting of the fuzzers and of the large bundle. F1 and F2 are the same as existing golden
-// cases (`cases_general.mjs`) with a pure reader added, or with P3 on instead of off. F3 was found by `gen/`.
+// cases (`cases_general.mjs`) with a pure reader added, or with P3 on instead of off. F3, F4 and F6 were found by `gen/`.
 export const premises = { noWorldHooks: true };
 
 const finding = (name, source, order) => ({
@@ -105,5 +105,147 @@ const seen = o.n;
 console.log(seen);
 `,
     [0, 1, 3, 2, 4]
+  ),
+  // F4: `delete a?.b` is a read of `a?.b` for the analysis: `eval` of a `UnaryExpression` `delete` handles a `MemberExpression` argument only
+  finding(
+    "F4 delete n?.[b] deletes a property of n",
+    `
+let n = true ? { a: 1, b: "s" } : null;
+delete n?.["b"];
+const seen = n.b;
+console.log(seen);
+`,
+    [0, 2, 1, 3]
+  ),
+  finding(
+    "F4 delete n?.inner?.x deletes a property of n.inner",
+    `
+let n = true ? { inner: { x: 1 } } : null;
+delete n?.inner?.x;
+const seen = n.inner.x;
+console.log(seen);
+`,
+    [0, 2, 1, 3]
+  ),
+  finding(
+    "F4 delete n?.b inside a function that is called",
+    `
+const n = { b: "s" };
+function drop() { delete n?.b; }
+drop();
+const seen = n.b;
+console.log(seen);
+`,
+    [0, 1, 3, 2, 4]
+  ),
+  finding(
+    "F4 delete n?.b inside a static getter that is read",
+    `
+const n = { b: "s" };
+class C { static get g() { delete n?.b; return 1; } }
+const x = C.g;
+const seen = n.b;
+console.log(seen);
+`,
+    [0, 1, 3, 2, 4]
+  ),
+  // F6: a Proxy is an object the world returned, and with premise P3 on a read of a property of such an object is pure; the traps are
+  // the program's own code, which the read runs. `set`, `deleteProperty`, `defineProperty`, `apply` and a method call through the
+  // proxy are refused. With P3 off every program here is refused.
+  finding(
+    "F6 get trap: a log of a field of the proxy",
+    `
+const hits = { n: 0 };
+const t = { f: 1 };
+const px = new Proxy(t, { get(target, key, receiver) { hits.n += 1; return Reflect.get(target, key, receiver); } });
+console.log(px.f);
+const seen = hits.n;
+console.log(seen);
+`,
+    [0, 1, 2, 4, 3, 5]
+  ),
+  finding(
+    "F6 get trap: a pure read of a field of the proxy",
+    `
+const hits = { n: 0 };
+const t = { f: 1 };
+const px = new Proxy(t, { get(target, key, receiver) { hits.n += 1; return Reflect.get(target, key, receiver); } });
+const x = px.f;
+const seen = hits.n;
+console.log(seen, x);
+`,
+    [0, 1, 2, 4, 3, 5]
+  ),
+  finding(
+    "F6 has trap: key in proxy",
+    `
+const hits = { n: 0 };
+const t = { f: 1 };
+const px = new Proxy(t, { has(target, key) { hits.n += 3; return Reflect.has(target, key); } });
+const x = "f" in px;
+const seen = hits.n;
+console.log(seen, x);
+`,
+    [0, 1, 2, 4, 3, 5]
+  ),
+  finding(
+    "F6 ownKeys trap: Object.keys of the proxy",
+    `
+const hits = { n: 0 };
+const t = { f: 1 };
+const px = new Proxy(t, { ownKeys(target) { hits.n += 5; return Reflect.ownKeys(target); } });
+const x = Object.keys(px).length;
+const seen = hits.n;
+console.log(seen, x);
+`,
+    [0, 1, 2, 4, 3, 5]
+  ),
+  finding(
+    "F6 getOwnPropertyDescriptor trap",
+    `
+const hits = { n: 0 };
+const t = { f: 1 };
+const px = new Proxy(t, { getOwnPropertyDescriptor(target, key) { hits.n += 6; return Reflect.getOwnPropertyDescriptor(target, key); } });
+const x = Object.getOwnPropertyDescriptor(px, "f").value;
+const seen = hits.n;
+console.log(seen, x);
+`,
+    [0, 1, 2, 4, 3, 5]
+  ),
+  finding(
+    "F6 getPrototypeOf trap: instanceof",
+    `
+const hits = { n: 0 };
+const t = { f: 1 };
+const px = new Proxy(t, { getPrototypeOf(target) { hits.n += 8; return Reflect.getPrototypeOf(target); } });
+const x = px instanceof Object;
+const seen = hits.n;
+console.log(seen, x);
+`,
+    [0, 1, 2, 4, 3, 5]
+  ),
+  finding(
+    "F6 get trap: a template literal of a field of the proxy",
+    `
+const hits = { n: 0 };
+const t = { f: 1 };
+const px = new Proxy(t, { get(target, key, receiver) { hits.n += 1; return Reflect.get(target, key, receiver); } });
+const x = \`\${px.f}\`;
+const seen = hits.n;
+console.log(seen, x);
+`,
+    [0, 1, 2, 4, 3, 5]
+  ),
+  finding(
+    "F6 get trap: spread of the proxy",
+    `
+const hits = { n: 0 };
+const t = { f: 1 };
+const px = new Proxy(t, { get(target, key, receiver) { hits.n += 1; return Reflect.get(target, key, receiver); } });
+const x = { ...px }.f;
+const seen = hits.n;
+console.log(seen, x);
+`,
+    [0, 1, 2, 4, 3, 5]
   ),
 ];

@@ -1,6 +1,9 @@
 // The footprint oracle: what its snapshot sees and does not see, what it refuses as input, how it compares with footprints,
 // and that it fails on a footprint that is wrong. None of it depends on the analysis being right or wrong today.
 import assert from "node:assert/strict";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { checkProgram, compare, instrument, observe } from "./footprint_oracle.mjs";
 
 /** What each unit of the program changed: `[changed, initialized]` per unit. */
@@ -246,5 +249,19 @@ const seen = a.n;
       [3, "unwritten", "b"],
     ]
   );
+}
+// ---- an analysis that does not finish on a valid program is a finding about the analysis, not an invalid input
+{
+  const dir = mkdtempSync(path.join(process.env.TEST_TMPDIR ?? os.tmpdir(), "footprint_oracle_crash_"));
+  const fake = path.join(dir, "lower");
+  writeFileSync(fake, `#!${process.execPath}\nprocess.exit(3);\n`);
+  chmodSync(fake, 0o755);
+  const result = await checkProgram("let a = 1;\n", { lower: fake, runs: 1 });
+  assert(!result.invalid, result.invalid);
+  assert.deepEqual(
+    result.findings.map((f) => f.kind),
+    ["crash"]
+  );
+  rmSync(dir, { recursive: true, force: true });
 }
 console.log("footprint oracle ok");

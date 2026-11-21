@@ -1039,7 +1039,7 @@ function renderBundle(bundle) {
       .replace(TOP, (_, n) => n)
       .replace(LOCAL, (_, n) => n)
       .replace(LITERAL, (_, n) => n);
-  const lines = bundle.units.map((u) => spell(u.src));
+  const lines = [...(bundle.imports ?? []), ...bundle.units.map((u) => spell(u.src))];
   if (bundle.exports.length > 0) lines.push(`export { ${bundle.exports.join(", ")} };`);
   return lines.join("\n") + "\n";
 }
@@ -1132,7 +1132,7 @@ function split(bundle, r, opts) {
   const used = order.map((list, m) => m === 0 || list.length > 0 || exportsOf[m].size > 0);
   for (let m = 0; m < modules; m++) {
     if (!used[m]) continue;
-    const lines = [];
+    const lines = [...(bundle.imports ?? [])]; // imports of the program are every module's own
     const sources = new Set(needs[m].keys());
     if (m === 0) for (let k = 1; k < modules; k++) if (used[k]) sources.add(k);
     let importOrder = [...sources].sort((a, b) => a - b);
@@ -1242,6 +1242,7 @@ async function main() {
   const wrongAccepts = [];
   const assumedAccepts = [];
   const wrongRejects = [];
+  const checkerCrashes = []; // trees on which the checker ended with a signal (it ran out of stack, say)
   let invalidBundles = 0;
   let refused = 0;
   const bump = (key) => (tally[key] = (tally[key] ?? 0) + 1);
@@ -1322,10 +1323,19 @@ async function main() {
         continue;
       }
       writeFileSync(certJson, JSON.stringify({ pairs: plan.mapping }));
-      const [checked, ran] = await Promise.all([
-        run(translate, [bundleJson, outputJson, certJson, "--premises", premisesJson]),
-        run(process.execPath, [path.join(treeDir, "entry.js")]),
-      ]);
+      let checked;
+      let ran;
+      try {
+        [checked, ran] = await Promise.all([
+          run(translate, [bundleJson, outputJson, certJson, "--premises", premisesJson]),
+          run(process.execPath, [path.join(treeDir, "entry.js")]),
+        ]);
+      } catch (error) {
+        // a checker that does not finish on a valid bundle is a finding about it, reported after the run, not a stop
+        if (!error.message.startsWith(`${translate} `)) throw error;
+        checkerCrashes.push({ round, tree: t, message: error.message.replace(/^.* terminated by /, "terminated by ") });
+        continue;
+      }
       const tree = behavior(ran);
       const same = sameBehavior(reference, tree);
       const outcome = checkerVerdicts.get(checked.status);
@@ -1521,7 +1531,10 @@ async function main() {
     .sort((a, b) => b[1] - a[1])
     .slice(0, 8))
     console.log(`  ${k}x ${reason}`);
+  console.log(`CHECKER CRASHES: ${checkerCrashes.length}`);
+  for (const c of checkerCrashes.slice(0, 5)) console.log(`  bundle ${c.round} tree ${c.tree}: ${c.message}`);
   if (wrongAccepts.length > 0) throw new Error(`${wrongAccepts.length} wrong accepts`);
+  if (checkerCrashes.length > 0) throw new Error(`${checkerCrashes.length} crashes of the checker`);
   if (args.includes("--require-accepted") && cell("accept", "same") === 0)
     throw new Error("no accepted tree matched its bundle");
 }
