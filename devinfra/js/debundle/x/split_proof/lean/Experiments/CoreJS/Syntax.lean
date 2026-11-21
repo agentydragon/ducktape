@@ -24,7 +24,7 @@ inductive UnOp where
   deriving DecidableEq, Repr
 
 inductive BinOp where
-  | add | sub | mul | div | mod | exp
+  | add | sub | mul | div | mod
   | bitAnd | bitOr | bitXor | shl | shr | ushr
   | eq | ne | strictEq | strictNe | lt | le | gt | ge
   deriving DecidableEq, Repr

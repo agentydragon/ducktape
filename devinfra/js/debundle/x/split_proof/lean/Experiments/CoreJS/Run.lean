@@ -5,9 +5,9 @@ import Experiments.CoreJS.Eval
 # CoreJS: the `corejs` executable
 
 `corejs programs.jsonl [--fuel N]` runs each line, a program as `to_core.mjs` writes it, and prints one line for it:
-`{"out": […], "end": "normal" | "throw" | "unknown" | "fuel" | "malformed", "detail": …}`. `out` has one entry for
-each `console.log`. `detail` describes a thrown value as `differential.mjs` describes Node's, or says which unknown
-code the run reached. `corejs --host-names` prints the members the model gives the host's prototypes.
+`{"out": […], "end": "normal" | "throw" | "unknown" | "fuel" | "malformed", "detail": …, "region": …}`. `out` has one
+entry for each `console.log`. `detail` describes a thrown value as `differential.mjs` describes Node's, or says which
+unknown code the run reached; `region` is 1 + the index of the unit it ended in. `corejs --host-names` prints the members the model gives the host's prototypes.
 -/
 
 open Lean (Json)
@@ -26,18 +26,19 @@ def describe (s : State) : Val → String
   | .error .reference _ => "ReferenceError"
   | .host _ => "host"
 
-def report (out : Array String) (ending detail : String) : String :=
-  (Json.mkObj [("out", Json.arr (out.map Json.str)), ("end", ending), ("detail", detail)]).compress
+/-- `s`: the state the run ended in. Its region says where: 0 before the first unit, `j + 1` in unit `j`. -/
+def report (s : State) (ending detail : String) : String :=
+  (Json.mkObj [("out", Json.arr (s.out.map Json.str)), ("end", ending), ("detail", detail), ("region", s.region)]).compress
 
 def runLine (fuel : Nat) (line : String) : String :=
   match Json.parse line >>= Decode.program with
-  | .error msg => report #[] "malformed" msg
+  | .error msg => report (initialState 0) "malformed" msg
   | .ok program =>
     match runProgram fuel program with
-    | .ok () s => report s.out "normal" ""
-    | .throw v s => report s.out "throw" (describe s v)
-    | .unknown why s => report s.out "unknown" why
-    | .fuel => report #[] "fuel" ""
+    | .ok () s => report s "normal" ""
+    | .throw v s => report s "throw" (describe s v)
+    | .unknown why s => report s "unknown" why
+    | .fuel => report (initialState 0) "fuel" ""
 
 def main (args : List String) : IO UInt32 := do
   match args with

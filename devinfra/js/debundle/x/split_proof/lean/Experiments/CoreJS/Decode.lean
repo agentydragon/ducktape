@@ -86,7 +86,7 @@ def unOp : String → D UnOp
 
 def binOp : String → D BinOp
   | "add" => pure .add | "sub" => pure .sub | "mul" => pure .mul | "div" => pure .div | "mod" => pure .mod
-  | "exp" => pure .exp | "bitAnd" => pure .bitAnd | "bitOr" => pure .bitOr | "bitXor" => pure .bitXor
+  | "bitAnd" => pure .bitAnd | "bitOr" => pure .bitOr | "bitXor" => pure .bitXor
   | "shl" => pure .shl | "shr" => pure .shr | "ushr" => pure .ushr | "eq" => pure .eq | "ne" => pure .ne
   | "strictEq" => pure .strictEq | "strictNe" => pure .strictNe | "lt" => pure .lt | "le" => pure .le
   | "gt" => pure .gt | "ge" => pure .ge

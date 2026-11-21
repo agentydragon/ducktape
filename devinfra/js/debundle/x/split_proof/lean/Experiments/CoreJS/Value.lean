@@ -314,7 +314,6 @@ def binop (op : BinOp) (a b : Val) : Except Abort Val :=
   | .mul => arith (· * ·)
   | .div => arith (· / ·)
   | .mod => arith Num.fmod
-  | .exp => arith Num.pow
   | .bitAnd => bits (· &&& ·)
   | .bitOr => bits (· ||| ·)
   | .bitXor => bits (· ^^^ ·)

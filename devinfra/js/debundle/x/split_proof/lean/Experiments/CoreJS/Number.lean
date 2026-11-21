@@ -4,7 +4,7 @@
 A JavaScript number is an IEEE double: Lean's `Float`. `+ - * /` and the comparisons are the processor's.
 What ECMAScript defines beyond them is computed here exactly, on the bits, with `Nat` arithmetic:
 `Number::toString` (the shortest digits that round to the number), `StringToNumber`, `%`, `ToInt32` and `ToUint32`.
-`**` is the C library's `pow` with ECMAScript's special cases.
+There is no `**`: the specification leaves its result to the implementation, and the C library's differs from V8's.
 -/
 
 namespace CoreJS.Num
@@ -58,13 +58,6 @@ def fmod (a b : Float) : Float :=
     let e := min ea eb
     let r := (ma <<< (ea - e).toNat) % (mb <<< (eb - e).toNat)
     if e ≥ 0 then ofRatio neg (r <<< e.toNat) 1 else ofRatio neg r (1 <<< (-e).toNat)
-
-/-- `a ** b` (`Number::exponentiate`). -/
-def pow (a b : Float) : Float :=
-  if b.isNaN then nan
-  else if b == 0.0 then 1.0
-  else if b.isInf && (a == 1.0 || a == -1.0) then nan
-  else Float.pow a b
 
 /--
 The shortest decimal digits `ds` and the exponent `n` with `x = 0.ds × 10^n`, for a finite `x > 0`: the fewest digits
