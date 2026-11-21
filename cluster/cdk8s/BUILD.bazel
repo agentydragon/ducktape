@@ -1542,6 +1542,16 @@ py_library(
 )
 
 py_library(
+    name = "flux_system_vpa",
+    srcs = ["flux_system_vpa.py"],
+    deps = [
+        ":manifest_roots",
+        "//cluster/cdk8s/providers/vpa:verticalpodautoscaler",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
     name = "vpa",
     srcs = ["vpa.py"],
     deps = [
@@ -1645,6 +1655,7 @@ py_library(
         ":flux_image_automation_ghcr",
         ":flux_monitoring",
         ":flux_sources",
+        ":flux_system_vpa",
         ":flux_webhook",
         ":flux_webhook_token",
         ":github_branch_protection",

@@ -1,0 +1,195 @@
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: helm-controller
+  namespace: flux-system
+spec:
+  resourcePolicy:
+    containerPolicies:
+      - containerName: manager
+        controlledResources:
+          - cpu
+          - memory
+        controlledValues: RequestsOnly
+        maxAllowed:
+          cpu: 175m
+          memory: 384Mi
+        minAllowed:
+          cpu: 100m
+          memory: 64Mi
+      - containerName: "*"
+        mode: "Off"
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: helm-controller
+  updatePolicy:
+    updateMode: Initial
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: image-automation-controller
+  namespace: flux-system
+spec:
+  resourcePolicy:
+    containerPolicies:
+      - containerName: manager
+        controlledResources:
+          - cpu
+          - memory
+        controlledValues: RequestsOnly
+        maxAllowed:
+          cpu: "1"
+          memory: 1Gi
+        minAllowed:
+          cpu: 100m
+          memory: 64Mi
+      - containerName: "*"
+        mode: "Off"
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: image-automation-controller
+  updatePolicy:
+    updateMode: Initial
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: image-reflector-controller
+  namespace: flux-system
+spec:
+  resourcePolicy:
+    containerPolicies:
+      - containerName: manager
+        controlledResources:
+          - cpu
+          - memory
+        controlledValues: RequestsOnly
+        maxAllowed:
+          cpu: 125m
+          memory: 864Mi
+        minAllowed:
+          cpu: 100m
+          memory: 64Mi
+      - containerName: "*"
+        mode: "Off"
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: image-reflector-controller
+  updatePolicy:
+    updateMode: Initial
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: kustomize-controller
+  namespace: flux-system
+spec:
+  resourcePolicy:
+    containerPolicies:
+      - containerName: manager
+        controlledResources:
+          - cpu
+          - memory
+        controlledValues: RequestsOnly
+        maxAllowed:
+          cpu: "1"
+          memory: 704Mi
+        minAllowed:
+          cpu: 100m
+          memory: 64Mi
+      - containerName: "*"
+        mode: "Off"
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: kustomize-controller
+  updatePolicy:
+    updateMode: Initial
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: notification-controller
+  namespace: flux-system
+spec:
+  resourcePolicy:
+    containerPolicies:
+      - containerName: manager
+        controlledResources:
+          - cpu
+          - memory
+        controlledValues: RequestsOnly
+        maxAllowed:
+          cpu: 125m
+          memory: 192Mi
+        minAllowed:
+          cpu: 100m
+          memory: 64Mi
+      - containerName: "*"
+        mode: "Off"
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: notification-controller
+  updatePolicy:
+    updateMode: Initial
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: source-controller
+  namespace: flux-system
+spec:
+  resourcePolicy:
+    containerPolicies:
+      - containerName: manager
+        controlledResources:
+          - cpu
+          - memory
+        controlledValues: RequestsOnly
+        maxAllowed:
+          cpu: "1"
+          memory: 1Gi
+        minAllowed:
+          cpu: 50m
+          memory: 64Mi
+      - containerName: "*"
+        mode: "Off"
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: source-controller
+  updatePolicy:
+    updateMode: Initial
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: source-watcher
+  namespace: flux-system
+spec:
+  resourcePolicy:
+    containerPolicies:
+      - containerName: manager
+        controlledResources:
+          - cpu
+          - memory
+        controlledValues: RequestsOnly
+        maxAllowed:
+          cpu: 100m
+          memory: 128Mi
+        minAllowed:
+          cpu: 50m
+          memory: 64Mi
+      - containerName: "*"
+        mode: "Off"
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: source-watcher
+  updatePolicy:
+    updateMode: Initial

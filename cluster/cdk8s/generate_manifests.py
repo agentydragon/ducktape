@@ -37,6 +37,7 @@ from cluster.cdk8s import (
     flux_image_automation_ghcr,
     flux_monitoring,
     flux_sources,
+    flux_system_vpa,
     flux_webhook,
     flux_webhook_token,
     gateway,
@@ -653,6 +654,13 @@ def generate_manifests(root: Path) -> None:
         write_directory(root, vpa_artifact, vpa.chart),
         timeout="5m",
         depends_on=flux.flux_kustomization_depends_on_many(kyverno_kustomization),
+    )
+    flux_system_vpa_artifact = artifact(flux_system_vpa.NAME, flux_system_vpa.OUTPUT_DIR)
+    flux.flux_kustomization(
+        flux_chart,
+        flux_system_vpa.NAME,
+        write_directory(root, flux_system_vpa_artifact, flux_system_vpa.chart),
+        depends_on=flux.flux_kustomization_depends_on_many(vpa_kustomization),
     )
     dcgm_exporter_artifact = artifact("dcgm-exporter", dcgm_exporter_exporter.OUTPUT_DIR)
     flux.flux_kustomization(
@@ -2527,6 +2535,7 @@ def generate_manifests(root: Path) -> None:
             user_agentydragon_artifact,
             talos_logs_artifact,
             vpa_artifact,
+            flux_system_vpa_artifact,
             agentplane_staging_vpa_artifact,
             website_artifact,
             home_switch_module,
