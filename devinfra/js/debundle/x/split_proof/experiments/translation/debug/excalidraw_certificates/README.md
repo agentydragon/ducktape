@@ -131,3 +131,15 @@ now records separately as `opaqueBodies`. Main/editor's module-identity guard an
 the rejected structural plans remain unchanged. The next roughjs obstruction is
 inheritance, which needs its own treatment of superclass evaluation and prototype
 access; it is not covered by the plain-class allocation proof.
+
+## Default-derived semantics result
+
+[Census and proof audit](https://app.buildbuddy.io/invocation/278a43b6-d8cf-4bd5-8aec-1ce30a373bee)
+passed with default-derived class semantics. Roughjs unit 9 is now modeled
+(`opaque: false`); it remains outside `allocatesOnly` and the binding certificate.
+The same alternating plan still has **7 missing proofs among 630 inverted pairs**,
+with the same endpoints listed above. The other plans retain their verdicts.
+
+The model covers this subclass's implicit constructor and opaque method body.
+Closing the seven proof gaps requires stable reads of the existing superclass and
+its prototype; the plain-class locality theorem does not permit those heap reads.
