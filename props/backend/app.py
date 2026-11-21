@@ -5,7 +5,7 @@ This is the props backend that includes:
 - Critic Run API: /api/runs/critic
 
 The data-plane proxies are separate services:
-- LLM proxy (/v1/responses and /v1/chat/completions): props/llm_proxy
+- LLM proxy (/v1/responses, /v1/chat/completions and /v1/messages): props/llm_proxy
 - Registry proxy (/v2/*): props/registry_proxy
 
 Note: wait_until_graded is implemented inside containers by polling the grading_pending

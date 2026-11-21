@@ -1,6 +1,6 @@
 """Critic agent main entry point for in-container execution.
 
-This is the CMD entrypoint for the critic container. It:
+This is the image entrypoint for the critic container. It:
 1. Fetches the snapshot to /workspace
 2. Renders the system prompt
 3. Runs the agent loop until submit succeeds or failure
