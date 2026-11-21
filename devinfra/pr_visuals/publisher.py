@@ -149,8 +149,6 @@ def _collection_issue_message(issue: CollectionIssue) -> str:
     if issue.output is not None:
         checkpoint = "<default>" if issue.output.checkpoint is None else issue.output.checkpoint
         details.extend((f"case {issue.output.case_id!r}", f"checkpoint {checkpoint!r}", f"role {issue.output.role!r}"))
-    if issue.artifact is not None:
-        details.append(f"artifact {issue.artifact!r}")
     if issue.record is not None:
         details.append(f"record {issue.record!r}")
     return issue.message if not details else f"{issue.message}: {', '.join(details)}"

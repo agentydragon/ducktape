@@ -44,7 +44,6 @@ K8S_USER / K8S_NAMESPACE env vars.
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import subprocess
 import sys
@@ -75,25 +74,16 @@ def _namespace() -> str:
     return os.environ.get("K8S_NAMESPACE", DEFAULT_NAMESPACE)
 
 
-def _sops_extract(sops_path: Path, key: str, *, sops_age_key: str | None) -> str:
-    env = {**os.environ}
-    if sops_age_key is not None:
-        env["SOPS_AGE_KEY"] = sops_age_key
-    result = subprocess.run(
-        ["sops", "-d", "--extract", json.dumps([key]), sops_path], capture_output=True, check=True, env=env
-    )
-    value = result.stdout.decode(errors="replace").strip()
-    if not value:
-        raise RuntimeError(f"sops decrypted empty {key} from {sops_path}")
-    return value
-
-
-def decrypt_jwt(project_dir: Path, *, sops_age_key: str | None = None) -> str:
+def decrypt_jwt(project_dir: Path) -> str:
     """Return the JWT from the SOPS-encrypted file."""
     sops_path = project_dir / _jwt_sops_path()
     if not sops_path.is_file():
         raise RuntimeError(f"k8s JWT SOPS file not found: {sops_path}")
-    return _sops_extract(sops_path, "jwt", sops_age_key=sops_age_key)
+    result = subprocess.run(["sops", "-d", "--extract", '["jwt"]', sops_path], capture_output=True, check=True)
+    value = result.stdout.decode(errors="replace").strip()
+    if not value:
+        raise RuntimeError(f"sops decrypted empty jwt from {sops_path}")
+    return value
 
 
 def build_kubeconfig(token: str) -> dict:
