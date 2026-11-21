@@ -234,7 +234,24 @@ if (shards === 4 && shard === 0) {
     composed.refused
   );
   assert.ok(composed.proved > 0);
+  assert.ok(composed.renamedExportCases > 0);
+  assert.ok(composed.multiplePublicNameCases > 0);
+  assert.equal(composed.importAliasRequestedCases, 4);
+  assert.ok(composed.importAliasGeneratedCases > 0);
+  assert.equal(composed.importAliasComparedCases, composed.importAliasGeneratedCases);
   assert.ok(composed.astNodeCases.IfStatement > 0);
+  const checkedAlias = await runFuzz({
+    seed: 51981,
+    start: 0,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "composed",
+    validateEvery: 1,
+  });
+  assert.equal(checkedAlias.importAliasRequestedCases, 1);
+  assert.equal(checkedAlias.importAliasGeneratedCases, 1);
+  assert.equal(checkedAlias.importAliasComparedCases, 1);
+  assert.equal(checkedAlias.importAliasProvedCases, 1);
   const asyncCampaign = await runFuzz({ seed: 37, cases: 8, outputDir: process.env.TEST_TMPDIR, grammarMode: "async" });
   assert.equal(asyncCampaign.asyncSourceExecuted, 8);
   assert.equal(asyncCampaign.inconclusive, 0);
@@ -284,6 +301,8 @@ if (shards === 4 && shard === 0) {
   const captured = await runFuzz({ seed: 123, start: 28, cases: 1, outputDir: process.env.TEST_TMPDIR });
   assert.equal(captured.capturedCompared, 1);
   assert.equal(captured.capturedProved, 1);
+  assert.equal(captured.renamedExportCases, 1);
+  assert.equal(captured.multiplePublicNameCases, 1);
   const namedCaptured = await runFuzz({ seed: 123, start: 156, cases: 1, outputDir: process.env.TEST_TMPDIR });
   assert.equal(namedCaptured.capturedCompared, 1);
   assert.equal(namedCaptured.capturedProved, 1);

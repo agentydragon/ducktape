@@ -1530,6 +1530,12 @@ export async function runFuzz({
     astNodeCases: {},
     moduleCountCases: {},
     importCountCases: {},
+    renamedExportCases: 0,
+    multiplePublicNameCases: 0,
+    importAliasRequestedCases: 0,
+    importAliasGeneratedCases: 0,
+    importAliasComparedCases: 0,
+    importAliasProvedCases: 0,
     constantCases: 0,
     objectCases: 0,
     objectSourceExecuted: 0,
@@ -1598,6 +1604,7 @@ export async function runFuzz({
     const spec = join(root, "spec.json");
     const out = join(root, "out");
     let keep = true;
+    let hasGeneratedImportAlias = false;
     let phase = "generate-ast";
     try {
       const generated =
@@ -1627,7 +1634,13 @@ export async function runFuzz({
       };
       visit(input.ast);
       for (const type of nodeTypes) summary.astNodeCases[type] = (summary.astNodeCases[type] ?? 0) + 1;
+      const exports = input.ast.body.flatMap((node) =>
+        node.type === "ExportNamedDeclaration" ? (node.specifiers ?? []) : []
+      );
+      if (exports.some((item) => item.local.name !== item.exported.name)) summary.renamedExportCases++;
+      if (new Set(exports.map((item) => item.local.name)).size < exports.length) summary.multiplePublicNameCases++;
       const modules = Object.values(input.spec.modules);
+      if (modules.some((module) => module.aliasImports)) summary.importAliasRequestedCases++;
       const importCount = modules.reduce((count, module) => count + module.imports.length, 0);
       summary.moduleCountCases[modules.length] = (summary.moduleCountCases[modules.length] ?? 0) + 1;
       summary.importCountCases[importCount] = (summary.importCountCases[importCount] ?? 0) + 1;
@@ -1767,6 +1780,13 @@ export async function runFuzz({
       }
       if (input.invalidAssignment) throw new Error("invalid assignment unexpectedly accepted");
       summary.generated++;
+      if (modules.some((module) => module.aliasImports)) {
+        const emitted = await Promise.all(
+          Object.keys(input.spec.modules).map((name) => readFile(join(out, name), "utf8"))
+        );
+        hasGeneratedImportAlias = emitted.some((text) => /__split_alias_+\d+ as [A-Za-z_$][\w$]*/.test(text));
+        if (hasGeneratedImportAlias) summary.importAliasGeneratedCases++;
+      }
       if (input.grammar === "closure") summary.closureGenerated++;
       const mutated = mutation !== null;
       if (mutated) {
@@ -1797,6 +1817,7 @@ export async function runFuzz({
       const equal = JSON.stringify(before) === JSON.stringify(after);
       await writeFile(join(root, "node.json"), JSON.stringify({ before, after }, null, 2) + "\n");
       summary.compared++;
+      if (hasGeneratedImportAlias) summary.importAliasComparedCases++;
       if (input.grammar === "parameter") {
         summary.parameterCompared++;
         if (
@@ -1870,6 +1891,7 @@ export async function runFuzz({
         }
         if (verdict.result === "proved under assumptions") {
           summary.proved++;
+          if (hasGeneratedImportAlias) summary.importAliasProvedCases++;
           if (input.grammar === "object") summary.objectProved++;
           if (input.grammar === "captured") summary.capturedProved++;
           if (input.grammar === "parameter") summary.parameterProved++;
