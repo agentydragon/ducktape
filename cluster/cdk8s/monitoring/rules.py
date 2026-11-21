@@ -8,6 +8,7 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import PrometheusRule, PrometheusRuleSpec
 from python.runfiles import Runfiles
 
+from cluster.cdk8s.monitoring import alloy_endpoints
 from cluster.cdk8s.monitoring.namespace import NAMESPACE
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Rule, group
 
@@ -489,15 +490,15 @@ _PIRAEUS = [
 _ROAMING_NODE_WORKLOAD = [
     Rule.alert(
         "AlloyNodeUnavailable",
-        dedent("""\
-            max by (node) (kube_node_status_condition{condition="Ready",status="true"} == 1)
+        dedent(f"""\
+            max by (node) (kube_node_status_condition{{condition="Ready",status="true"}} == 1)
             unless on (node)
             max by (node) (
-              kube_pod_info{namespace="monitoring",created_by_kind="DaemonSet",created_by_name="alloy-node"}
+              kube_pod_info{{namespace="{NAMESPACE}",created_by_kind="DaemonSet",created_by_name="{alloy_endpoints.NODE_NAME}"}}
               * on (namespace, pod) group_left
-                max by (namespace, pod) (kube_pod_status_ready{namespace="monitoring",condition="true"} == 1)
+                max by (namespace, pod) (kube_pod_status_ready{{namespace="{NAMESPACE}",condition="true"}} == 1)
               * on (namespace, pod) group_left
-                max by (namespace, pod) (up{namespace="monitoring",service="alloy-node"} == 1)
+                max by (namespace, pod) (up{{namespace="{NAMESPACE}",service="{alloy_endpoints.NODE_NAME}"}} == 1)
             )
         """).strip(),
         for_="10m",
@@ -510,9 +511,9 @@ _ROAMING_NODE_WORKLOAD = [
     ),
     Rule.alert(
         "AlloyNodeRolloutStalled",
-        dedent("""\
-            count(max by (node) (kube_node_status_condition{condition="Ready",status="true"} == 1))
-            > scalar(max(kube_daemonset_status_updated_number_scheduled{namespace="monitoring",daemonset="alloy-node"}))
+        dedent(f"""\
+            count(max by (node) (kube_node_status_condition{{condition="Ready",status="true"}} == 1))
+            > scalar(max(kube_daemonset_status_updated_number_scheduled{{namespace="{NAMESPACE}",daemonset="{alloy_endpoints.NODE_NAME}"}}))
         """).strip(),
         for_="15m",
         labels={"severity": "warning"},

@@ -29,10 +29,10 @@ from cluster.cdk8s.agentplane import (
     mcp_edge,
     runner_gateway,
     staging,
-    telemetry,
     workload_tls,
 )
 from cluster.cdk8s.agentplane.environment import SessionDelegationProps
+from cluster.cdk8s.monitoring import alloy_endpoints
 from cluster.cdk8s.public_coder import egress as public_coder_egress
 from cluster.cdk8s.testing.manifests import find_resource
 
@@ -267,7 +267,7 @@ def test_actions_push_otlp_metrics(staging_manifests: list[dict[str, Any]]) -> N
     env = {item["name"]: item.get("value") for item in container["env"]}
     assert env["OTEL_METRICS_EXPORTER"] == "otlp"
     assert env["OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE"] == "cumulative"
-    assert env["OTEL_EXPORTER_OTLP_ENDPOINT"] == telemetry.OTLP_GRPC_ENDPOINT
+    assert env["OTEL_EXPORTER_OTLP_ENDPOINT"] == alloy_endpoints.OTLP_GRPC_ENDPOINT
 
 
 def test_session_delegation_offers_all_reviewed_direct_tools(scratch_app: App) -> None:
