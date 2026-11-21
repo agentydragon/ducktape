@@ -59,7 +59,6 @@ class FakeCard:
     def walk(self) -> Iterator[FileEntry]:
         for path, f in self.files.items():
             yield FileEntry(
-                name=path.rsplit("\\", 1)[-1],
                 size=len(f.content),
                 create_time=f.create_time,
                 img_url=f"http://192.168.4.1/download?file={quote(path)}",
