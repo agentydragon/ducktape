@@ -24932,5 +24932,1193 @@
     },
     "rollback_guest_cache_target_verified": true,
     "all_trial_resources_and_storage_gone": true
+  },
+  "scheduler_pr_census": {
+    "window_utc": ["2026-11-21T01:54:27Z", "2026-11-21T03:53:13Z"],
+    "observed_at_utc": "2026-11-21T03:53:22+00:00",
+    "workflow_runs": 84,
+    "same_repository_run_heads": 84,
+    "eligible_prs": 46,
+    "ambiguous_head_associations": 0,
+    "gates": [
+      "Build artifacts + imports check",
+      "Pre-commit checks",
+      "bazel-ci / Test & Build"
+    ],
+    "overall": {
+      "outcomes": {
+        "green": 30,
+        "cancelled": 1,
+        "failed": 1,
+        "incomplete": 14
+      },
+      "n": 46,
+      "median_s": 395.0,
+      "p90_s": 872.0
+    },
+    "groups": {
+      "Agentplane backend": {
+        "outcomes": {
+          "green": 1,
+          "incomplete": 1
+        },
+        "n": 2,
+        "median_s": 576.0,
+        "p90_s": 576.0
+      },
+      "Agentplane tests / fixtures": {
+        "outcomes": {
+          "green": 1
+        },
+        "n": 1,
+        "median_s": 148.0,
+        "p90_s": 148.0
+      },
+      "Documentation": {
+        "outcomes": {
+          "green": 3,
+          "incomplete": 3
+        },
+        "n": 6,
+        "median_s": 763.0,
+        "p90_s": 1069.0
+      },
+      "Frontend": {
+        "outcomes": {
+          "green": 3,
+          "incomplete": 1
+        },
+        "n": 4,
+        "median_s": 459.0,
+        "p90_s": 1107.0
+      },
+      "Other code / tooling": {
+        "outcomes": {
+          "green": 12,
+          "failed": 1,
+          "incomplete": 6
+        },
+        "n": 19,
+        "median_s": 236.5,
+        "p90_s": 561.0
+      },
+      "Other infrastructure": {
+        "outcomes": {
+          "green": 5,
+          "incomplete": 1
+        },
+        "n": 6,
+        "median_s": 206.0,
+        "p90_s": 872.0
+      },
+      "cdk8s infrastructure": {
+        "outcomes": {
+          "green": 5,
+          "cancelled": 1,
+          "incomplete": 2
+        },
+        "n": 8,
+        "median_s": 558.0,
+        "p90_s": 1001.0
+      }
+    },
+    "rows": [
+      {
+        "pr": 18109,
+        "head": "e7f801cbd59982f73839f49e02c1e7a649c86f80",
+        "group": "Other code / tooling",
+        "start": "2026-11-21T03:17:43Z",
+        "last": ["Pre-commit checks"],
+        "feedback_s": 478.0,
+        "outcome": "green",
+        "run_ids": [44860372287],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18390,
+        "head": "afab049d721a826f88fa6e94bfc1c544d4502b89",
+        "group": "Other code / tooling",
+        "start": "2026-11-21T02:00:29Z",
+        "last": ["Pre-commit checks"],
+        "feedback_s": 754.0,
+        "outcome": "green",
+        "run_ids": [44853429686],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18394,
+        "head": "e1d45fd5134d4a3cff6659facb770b61c9298670",
+        "group": "cdk8s infrastructure",
+        "start": "2026-11-21T02:24:17Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 558.0,
+        "outcome": "green",
+        "run_ids": [44855699992],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18397,
+        "head": "a93e316afd3345bce321a210580c167380b905af",
+        "group": "Frontend",
+        "start": "2026-11-21T01:54:36Z",
+        "last": ["Pre-commit checks"],
+        "feedback_s": 1107.0,
+        "outcome": "green",
+        "run_ids": [44852898618],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18398,
+        "head": "505cf1d1304cd7350e9acef00ae406f7d85004c3",
+        "group": "cdk8s infrastructure",
+        "start": "2026-11-21T02:20:12Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 242.0,
+        "outcome": "green",
+        "run_ids": [44855319806],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18399,
+        "head": "f77bcd7cb05ce00e258ae332c0dc7f5de55ef926",
+        "group": "Other infrastructure",
+        "start": "2026-11-21T01:58:33Z",
+        "last": ["Pre-commit checks"],
+        "feedback_s": 872.0,
+        "outcome": "green",
+        "run_ids": [44853252407],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18400,
+        "head": "a120febef3b772f5efc66be168a01f026b4611b7",
+        "group": "Documentation",
+        "start": "2026-11-21T02:00:22Z",
+        "last": ["Pre-commit checks"],
+        "feedback_s": 763.0,
+        "outcome": "green",
+        "run_ids": [44853417501],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18401,
+        "head": "a3e2e799a23690dddbdc341c62d40c8088bbba8b",
+        "group": "Other code / tooling",
+        "start": "2026-11-21T02:05:23Z",
+        "last": ["Pre-commit checks"],
+        "feedback_s": 463.0,
+        "outcome": "green",
+        "run_ids": [44853912489],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18402,
+        "head": "292897b909f60b5141b0e6e0b5fe375239bfda9d",
+        "group": "cdk8s infrastructure",
+        "start": "2026-11-21T02:02:17Z",
+        "last": ["Pre-commit checks"],
+        "feedback_s": 648.0,
+        "outcome": "green",
+        "run_ids": [44853611328],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18403,
+        "head": "1748dc3c10e1e6d1bcd945b258f0006a9b6aaca0",
+        "group": "Other code / tooling",
+        "start": "2026-11-21T02:03:46Z",
+        "last": ["Pre-commit checks"],
+        "feedback_s": 561.0,
+        "outcome": "green",
+        "run_ids": [44853754148],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18404,
+        "head": "88d800ea1505271fa653cb39ba03c54f294fbd7c",
+        "group": "Other infrastructure",
+        "start": "2026-11-21T02:07:00Z",
+        "last": ["Pre-commit checks"],
+        "feedback_s": 366.0,
+        "outcome": "green",
+        "run_ids": [44854063755],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18406,
+        "head": "f496e0509954b2e3c69fd6da23cfe158fda3f666",
+        "group": "Other code / tooling",
+        "start": "2026-11-21T02:18:18Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 267.0,
+        "outcome": "green",
+        "run_ids": [44855139629],
+        "run_attempts": [2]
+      },
+      {
+        "pr": 18408,
+        "head": "a86c7fd03104c7c5bee668e43afd1b269919a42d",
+        "group": "Agentplane backend",
+        "start": "2026-11-21T02:38:50Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 576.0,
+        "outcome": "green",
+        "run_ids": [44857030650],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18409,
+        "head": "68d31b20dc547e7fd25f927565bea073aa106fb8",
+        "group": "Other code / tooling",
+        "start": "2026-11-21T02:26:13Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 116.0,
+        "outcome": "green",
+        "run_ids": [44855880265],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18410,
+        "head": "d926c0fafd33e12f16c77047aaec9412c14b1f01",
+        "group": "Other code / tooling",
+        "start": "2026-11-21T02:28:54Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 186.0,
+        "outcome": "green",
+        "run_ids": [44856120516],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18411,
+        "head": "fea32160a71c74f42a583cf8751924cfa76b6647",
+        "group": "Other code / tooling",
+        "start": "2026-11-21T02:36:55Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 206.0,
+        "outcome": "green",
+        "run_ids": [44856861977],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18412,
+        "head": "9d807dbb7864affc8e975cb99b7c1040b272107a",
+        "group": "Other infrastructure",
+        "start": "2026-11-21T02:37:08Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 182.0,
+        "outcome": "green",
+        "run_ids": [44856882438],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18413,
+        "head": "3f534cd55071bdd3d6942c1b8ab842d11dd31ad5",
+        "group": "Other code / tooling",
+        "start": "2026-11-21T02:40:13Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 178.0,
+        "outcome": "green",
+        "run_ids": [44857149047],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18414,
+        "head": "5b88ff2908150f09df697fe50ea06a896a206799",
+        "group": "Other infrastructure",
+        "start": "2026-11-21T02:42:43Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 206.0,
+        "outcome": "green",
+        "run_ids": [44857362732],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18415,
+        "head": "aeacd36a86716887285e31b242fa00ae0e1c3e41",
+        "group": "Documentation",
+        "start": "2026-11-21T02:56:32Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 111.0,
+        "outcome": "green",
+        "run_ids": [44858546536],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18416,
+        "head": "6522b37777747d893aae8cfa6cd22289a1c07bfd",
+        "group": "Other code / tooling",
+        "start": "2026-11-21T03:02:56Z",
+        "last": ["Build artifacts + imports check"],
+        "feedback_s": 128.0,
+        "outcome": "green",
+        "run_ids": [44859079329],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18417,
+        "head": "81bd4c3d0606dc266854610d3121d4d74313b780",
+        "group": "Other infrastructure",
+        "start": "2026-11-21T03:06:50Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 149.0,
+        "outcome": "green",
+        "run_ids": [44859417581],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18418,
+        "head": "809819bce87ea4ebc4efab6a9cbf36a0840c2bf4",
+        "group": "Agentplane tests / fixtures",
+        "start": "2026-11-21T03:07:28Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 148.0,
+        "outcome": "green",
+        "run_ids": [44859472887],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18419,
+        "head": "50a706aad570bc36915bd69f73adfa394a959229",
+        "group": "Frontend",
+        "start": "2026-11-21T03:07:49Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 157.0,
+        "outcome": "green",
+        "run_ids": [44859503108],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18420,
+        "head": "ff4e0ccfed30b6679e2a36134fe2b3efb4f151ce",
+        "group": "cdk8s infrastructure",
+        "start": "2026-11-21T03:09:07Z",
+        "last": ["Pre-commit checks"],
+        "feedback_s": 1001.0,
+        "outcome": "green",
+        "run_ids": [44859612099],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18421,
+        "head": "f5e20b9bf2a626628748f6eef347821a2fdc3aa3",
+        "group": "cdk8s infrastructure",
+        "start": "2026-11-21T03:29:51Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 424.0,
+        "outcome": "green",
+        "run_ids": [44861413135],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18422,
+        "head": "52a75aa35d8a5b97caa9e7241d06c50a2f77e255",
+        "group": "cdk8s infrastructure",
+        "start": "2026-11-21T03:30:28Z",
+        "last": [],
+        "feedback_s": null,
+        "outcome": "cancelled",
+        "run_ids": [44861470043],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18423,
+        "head": "6cbe357aeead7c5a5a8bcbaf0cfe30ee30677331",
+        "group": "Other code / tooling",
+        "start": "2026-11-21T03:24:44Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 203.0,
+        "outcome": "green",
+        "run_ids": [44860981446],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18424,
+        "head": "3e6c99cefbf13106f2f8884122a35f9aecd960ad",
+        "group": "Other code / tooling",
+        "start": "2026-11-21T03:31:09Z",
+        "last": [],
+        "feedback_s": null,
+        "outcome": "failed",
+        "run_ids": [44861534572],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18425,
+        "head": "223ae5830a5813d30545fbf1f73e1490bcbaa72e",
+        "group": "Documentation",
+        "start": "2026-11-21T03:33:22Z",
+        "last": ["Pre-commit checks"],
+        "feedback_s": 1069.0,
+        "outcome": "green",
+        "run_ids": [44861730226],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18436,
+        "head": "1b5ee2158eabb270a66f3677d3a3256a5f6f079a",
+        "group": "Frontend",
+        "start": "2026-11-21T03:44:54Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 459.0,
+        "outcome": "green",
+        "run_ids": [44862688981],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18437,
+        "head": "0b4df1c976ab677f5f764a104fd4ae378c529152",
+        "group": "Other code / tooling",
+        "start": "2026-11-21T03:45:14Z",
+        "last": ["bazel-ci / Test & Build"],
+        "feedback_s": 486.0,
+        "outcome": "green",
+        "run_ids": [44862718037],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18438,
+        "head": "cb243471d3b5e862aa825c032d5c9f1e694f3d55",
+        "group": "Frontend",
+        "start": "2026-11-21T03:45:16Z",
+        "last": [],
+        "feedback_s": null,
+        "outcome": "incomplete",
+        "run_ids": [44862720592],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18439,
+        "head": "90821dd43c9304c475b3fce96740d43d808cb080",
+        "group": "Other code / tooling",
+        "start": "2026-11-21T03:47:07Z",
+        "last": [],
+        "feedback_s": null,
+        "outcome": "incomplete",
+        "run_ids": [44862874468],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18440,
+        "head": "56a1ef2d1511b857d4a19352b01450f958aa27b7",
+        "group": "Other code / tooling",
+        "start": "2026-11-21T03:48:01Z",
+        "last": [],
+        "feedback_s": null,
+        "outcome": "incomplete",
+        "run_ids": [44862945986],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18441,
+        "head": "44f2937b77e19da1f64084a849b9cb1ab9a1f26e",
+        "group": "Agentplane backend",
+        "start": "2026-11-21T03:48:08Z",
+        "last": [],
+        "feedback_s": null,
+        "outcome": "incomplete",
+        "run_ids": [44862954940],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18442,
+        "head": "1f3e6ad0633202259913f10c68b47952908047f7",
+        "group": "Documentation",
+        "start": "2026-11-21T03:48:15Z",
+        "last": [],
+        "feedback_s": null,
+        "outcome": "incomplete",
+        "run_ids": [44862964483],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18443,
+        "head": "5469a6dbe930e485424400121e29aa97c8d66979",
+        "group": "cdk8s infrastructure",
+        "start": "2026-11-21T03:49:19Z",
+        "last": [],
+        "feedback_s": null,
+        "outcome": "incomplete",
+        "run_ids": [44863048129],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18444,
+        "head": "3e984ee74dc50d84fd6115f4a7139f4d6802558d",
+        "group": "Other code / tooling",
+        "start": "2026-11-21T03:50:40Z",
+        "last": [],
+        "feedback_s": null,
+        "outcome": "incomplete",
+        "run_ids": [44863156214],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18445,
+        "head": "78729618e7bfac7c6c028531b8d7e8e5be35bf9b",
+        "group": "Documentation",
+        "start": "2026-11-21T03:51:12Z",
+        "last": [],
+        "feedback_s": null,
+        "outcome": "incomplete",
+        "run_ids": [44863200333],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18446,
+        "head": "81e0d823797ae320a1ae74e5006dd1c1cfb8ac6f",
+        "group": "Documentation",
+        "start": "2026-11-21T03:51:14Z",
+        "last": [],
+        "feedback_s": null,
+        "outcome": "incomplete",
+        "run_ids": [44863202172],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18448,
+        "head": "e2e52c961a7a71534415f3e21dde32556f9677ef",
+        "group": "Other code / tooling",
+        "start": "2026-11-21T03:51:40Z",
+        "last": [],
+        "feedback_s": null,
+        "outcome": "incomplete",
+        "run_ids": [44863234904],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18449,
+        "head": "c7b94d2b07b6238d543b87676297258a91a774b6",
+        "group": "cdk8s infrastructure",
+        "start": "2026-11-21T03:51:49Z",
+        "last": [],
+        "feedback_s": null,
+        "outcome": "incomplete",
+        "run_ids": [44863246304],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18450,
+        "head": "d03d57f39fe7a14bcb44f29c8a0b9655e9bfb23e",
+        "group": "Other infrastructure",
+        "start": "2026-11-21T03:52:36Z",
+        "last": [],
+        "feedback_s": null,
+        "outcome": "incomplete",
+        "run_ids": [44863309589],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18451,
+        "head": "98eb6ccad36eb9f1a45d81520276fdc832228bd2",
+        "group": "Other code / tooling",
+        "start": "2026-11-21T03:52:57Z",
+        "last": [],
+        "feedback_s": null,
+        "outcome": "incomplete",
+        "run_ids": [44863336978],
+        "run_attempts": [1]
+      },
+      {
+        "pr": 18452,
+        "head": "793f5ed0f0718e313bdf19c3b7ad948b488c788a",
+        "group": "Other code / tooling",
+        "start": "2026-11-21T03:53:00Z",
+        "last": [],
+        "feedback_s": null,
+        "outcome": "incomplete",
+        "run_ids": [44863339679],
+        "run_attempts": [1]
+      }
+    ],
+    "method": "Same-repository current PR heads targeting devel, joined from CI workflow runs created in this window to exact-head GitHub check-run IDs. Excludes superseded heads, forks and runs without an unambiguous PR match. From first observed workflow creation in this window through the last of the three current required statuses; times conditional on green. In-progress and very recent heads are right-censored."
+  },
+  "firecracker_scheduler_followup": {
+    "matched_source_commit": "4c58b8af404080df5bb13fad66238e5beb9ba430",
+    "matched_patch_sha256": "459032f1366e6daa953e98f09292d14b2fe5444dd956e33b9f6db8f24a26a20e",
+    "matched_pairs": [
+      {
+        "host": "ovh-ns104952",
+        "fixture": "cold",
+        "input_root": {
+          "hash": "fb0ca784cabcd850795e217ccaf945bc249e8dc2911f1cb3c3435b22bc4259db",
+          "sizeBytes": "165"
+        },
+        "process_seconds_saved": -11.616,
+        "rows": {
+          "serial": {
+            "invocation": "0ab48629-a484-4cda-82a9-84cca870824e",
+            "process_s": 533.905,
+            "case_envelope_s": 282.325,
+            "case_overlap_s": 0,
+            "live_pod_schedule_s": 6.325,
+            "live_case_s": 206.943,
+            "passed_cases": 2
+          },
+          "concurrent": {
+            "invocation": "60ba4181-0f74-4a1e-8421-e50abd3e3915",
+            "process_s": 545.521,
+            "case_envelope_s": 256.362,
+            "case_overlap_s": 66.816,
+            "live_pod_schedule_s": 68.456,
+            "live_case_s": 256.362,
+            "passed_cases": 2
+          }
+        }
+      },
+      {
+        "host": "ovh-ns104952",
+        "fixture": "warm",
+        "input_root": {
+          "hash": "728869d8a2b4a2580c2cc7830a296b793d10d321d3d03b42f378aa5c5df1395d",
+          "sizeBytes": "165"
+        },
+        "process_seconds_saved": 47.322,
+        "rows": {
+          "serial": {
+            "invocation": "6fc9515a-42dd-44af-b8a4-687bd55bbbf9",
+            "process_s": 396.896,
+            "case_envelope_s": 280.269,
+            "case_overlap_s": 0,
+            "live_pod_schedule_s": 3.984,
+            "live_case_s": 205.544,
+            "passed_cases": 2
+          },
+          "concurrent": {
+            "invocation": "a5affe81-70c9-491f-9c05-dce240e1d774",
+            "process_s": 349.574,
+            "case_envelope_s": 231.314,
+            "case_overlap_s": 66.149,
+            "live_pod_schedule_s": 67.497,
+            "live_case_s": 231.314,
+            "passed_cases": 2
+          }
+        }
+      },
+      {
+        "host": "ovh-ns104963",
+        "fixture": "cold",
+        "input_root": {
+          "hash": "fb0ca784cabcd850795e217ccaf945bc249e8dc2911f1cb3c3435b22bc4259db",
+          "sizeBytes": "165"
+        },
+        "process_seconds_saved": 6.089,
+        "rows": {
+          "serial": {
+            "invocation": "7f7f5595-b323-4b37-9848-965d1b86c42d",
+            "process_s": 357.325,
+            "case_envelope_s": 195.395,
+            "case_overlap_s": 0,
+            "live_pod_schedule_s": 4.86,
+            "live_case_s": 156.27,
+            "passed_cases": 2
+          },
+          "concurrent": {
+            "invocation": "40095c64-a890-4997-889e-273e400f7dce",
+            "process_s": 351.236,
+            "case_envelope_s": 190.916,
+            "case_overlap_s": 47.64,
+            "live_pod_schedule_s": 49.31,
+            "live_case_s": 190.916,
+            "passed_cases": 2
+          }
+        }
+      },
+      {
+        "host": "ovh-ns104963",
+        "fixture": "warm",
+        "input_root": {
+          "hash": "728869d8a2b4a2580c2cc7830a296b793d10d321d3d03b42f378aa5c5df1395d",
+          "sizeBytes": "165"
+        },
+        "process_seconds_saved": -3.177,
+        "rows": {
+          "serial": {
+            "invocation": "1b5838e9-56d6-4743-8209-03d385456957",
+            "process_s": 264.518,
+            "case_envelope_s": 176.495,
+            "case_overlap_s": 0,
+            "live_pod_schedule_s": 3.059,
+            "live_case_s": 138.268,
+            "passed_cases": 2
+          },
+          "concurrent": {
+            "invocation": "15f090d2-262a-4e2f-a57d-0101b8c4bd1d",
+            "process_s": 267.695,
+            "case_envelope_s": 179.481,
+            "case_overlap_s": 34.18,
+            "live_pod_schedule_s": 37.239,
+            "live_case_s": 179.481,
+            "passed_cases": 2
+          }
+        }
+      }
+    ],
+    "matched_disposal": {
+      "a": true,
+      "c": true
+    },
+    "interrupted_arm": "886c7e2b-ac00-4dfa-8a6a-4c4330512ac2",
+    "retired_guest_and_disk_removed": true,
+    "staggered_probe": {
+      "source_commit": "a1bef327a08b51a34c26825a49d6a9620b8f3ac6",
+      "patch_sha256": "a6fb6646fc839af17d8bdbbd7b1ff33ac652481e2381d0199c379faa5508c09e",
+      "host": "ovh-ns104963",
+      "same_worker_and_retained_fixture": true,
+      "input_root": {
+        "hash": "a92a0e830e8b0cf301f4378e43ebdbad9b534c5ee1fdef8e4b45252d5c05484d",
+        "sizeBytes": "165"
+      },
+      "seed_invocation": "7bb594d5-6bac-4471-82a5-10d6df1bb36a",
+      "dispose_invocation": "320c4891-9752-4a2a-bcb0-933125154c7c",
+      "fixture_disposal_verified": true,
+      "arms": [
+        {
+          "mode": "serial",
+          "replay": false,
+          "disconnected_wrapper": false,
+          "invocation": "5417a5d8-646c-4612-a6da-0e45d6cc9e33",
+          "process_s": 303.008,
+          "input_s": 0.425,
+          "case_envelope_s": 206.103,
+          "case_task_overlap_s": 0,
+          "live_pod_schedule_s": 3.216,
+          "live_case_s": 153.643,
+          "pods": {
+            "live": {
+              "created_at": "2026-11-21T03:44:04Z",
+              "scheduled_at": "2026-11-21T03:44:07Z",
+              "creation_to_scheduled_s": 3.0,
+              "resources": [
+                {
+                  "container": "environment-runtime",
+                  "limits": {
+                    "cpu": "2",
+                    "devices.kubevirt.io/kvm": "1",
+                    "memory": "2147483648"
+                  },
+                  "requests": {
+                    "cpu": "2",
+                    "devices.kubevirt.io/kvm": "1",
+                    "memory": "2147483648"
+                  }
+                },
+                {
+                  "container": "egress-sidecar",
+                  "limits": {
+                    "cpu": "100m",
+                    "memory": "128Mi"
+                  },
+                  "requests": {
+                    "cpu": "10m",
+                    "memory": "32Mi"
+                  }
+                }
+              ],
+              "pod_overhead": null,
+              "observed_scheduler_reasons": []
+            },
+            "trust": {
+              "created_at": "2026-11-21T03:46:37Z",
+              "scheduled_at": "2026-11-21T03:46:42Z",
+              "creation_to_scheduled_s": 5.0,
+              "resources": [
+                {
+                  "container": "environment-runtime",
+                  "limits": {
+                    "cpu": "2",
+                    "devices.kubevirt.io/kvm": "1",
+                    "memory": "2147483648"
+                  },
+                  "requests": {
+                    "cpu": "2",
+                    "devices.kubevirt.io/kvm": "1",
+                    "memory": "2147483648"
+                  }
+                },
+                {
+                  "container": "egress-sidecar",
+                  "limits": {
+                    "cpu": "100m",
+                    "memory": "128Mi"
+                  },
+                  "requests": {
+                    "cpu": "10m",
+                    "memory": "32Mi"
+                  }
+                }
+              ],
+              "pod_overhead": null,
+              "observed_scheduler_reasons": []
+            }
+          },
+          "nested_nodes": [
+            {
+              "allocatable": {
+                "cpu": "4",
+                "devices.kubevirt.io/kvm": "1",
+                "ephemeral-storage": "73942812k",
+                "hugepages-1Gi": "0",
+                "hugepages-2Mi": "0",
+                "memory": "8115932Ki",
+                "pods": "110"
+              },
+              "capacity": {
+                "cpu": "4",
+                "devices.kubevirt.io/kvm": "1",
+                "ephemeral-storage": "76010292Ki",
+                "hugepages-1Gi": "0",
+                "hugepages-2Mi": "0",
+                "memory": "8115932Ki",
+                "pods": "110"
+              }
+            }
+          ],
+          "trust_launch_release_after_live_schedule_observed_s": 148.804,
+          "passed_cases": 2
+        },
+        {
+          "mode": "simultaneous",
+          "replay": false,
+          "disconnected_wrapper": false,
+          "invocation": "acb6118d-13c4-4cda-9043-a1a1099f21c5",
+          "process_s": 285.509,
+          "input_s": 0.773,
+          "case_envelope_s": 192.51,
+          "case_task_overlap_s": 39.062,
+          "live_pod_schedule_s": 41.023,
+          "live_case_s": 192.51,
+          "pods": {
+            "live": {
+              "created_at": "2026-11-21T03:50:01Z",
+              "scheduled_at": "2026-11-21T03:50:42Z",
+              "creation_to_scheduled_s": 41.0,
+              "resources": [
+                {
+                  "container": "environment-runtime",
+                  "limits": {
+                    "cpu": "2",
+                    "devices.kubevirt.io/kvm": "1",
+                    "memory": "2147483648"
+                  },
+                  "requests": {
+                    "cpu": "2",
+                    "devices.kubevirt.io/kvm": "1",
+                    "memory": "2147483648"
+                  }
+                },
+                {
+                  "container": "egress-sidecar",
+                  "limits": {
+                    "cpu": "100m",
+                    "memory": "128Mi"
+                  },
+                  "requests": {
+                    "cpu": "10m",
+                    "memory": "32Mi"
+                  }
+                }
+              ],
+              "pod_overhead": null,
+              "observed_scheduler_reasons": [
+                {
+                  "reason": "FailedScheduling",
+                  "message": "0/1 nodes are available: 1 Insufficient cpu, 1 Insufficient devices.kubevirt.io/kvm. no new claims to deallocate, preemption: 0/1 nodes are available: 1 No preemption victims found for incoming pod."
+                },
+                {
+                  "reason": "Unschedulable",
+                  "message": "0/1 nodes are available: 1 Insufficient cpu, 1 Insufficient devices.kubevirt.io/kvm. no new claims to deallocate, preemption: 0/1 nodes are available: 1 No preemption victims found for incoming pod."
+                }
+              ]
+            },
+            "trust": {
+              "created_at": "2026-11-21T03:50:00Z",
+              "scheduled_at": "2026-11-21T03:50:04Z",
+              "creation_to_scheduled_s": 4.0,
+              "resources": [
+                {
+                  "container": "environment-runtime",
+                  "limits": {
+                    "cpu": "2",
+                    "devices.kubevirt.io/kvm": "1",
+                    "memory": "2147483648"
+                  },
+                  "requests": {
+                    "cpu": "2",
+                    "devices.kubevirt.io/kvm": "1",
+                    "memory": "2147483648"
+                  }
+                },
+                {
+                  "container": "egress-sidecar",
+                  "limits": {
+                    "cpu": "100m",
+                    "memory": "128Mi"
+                  },
+                  "requests": {
+                    "cpu": "10m",
+                    "memory": "32Mi"
+                  }
+                }
+              ],
+              "pod_overhead": null,
+              "observed_scheduler_reasons": []
+            }
+          },
+          "nested_nodes": [
+            {
+              "allocatable": {
+                "cpu": "4",
+                "devices.kubevirt.io/kvm": "1",
+                "ephemeral-storage": "73942812k",
+                "hugepages-1Gi": "0",
+                "hugepages-2Mi": "0",
+                "memory": "8115932Ki",
+                "pods": "110"
+              },
+              "capacity": {
+                "cpu": "4",
+                "devices.kubevirt.io/kvm": "1",
+                "ephemeral-storage": "76010292Ki",
+                "hugepages-1Gi": "0",
+                "hugepages-2Mi": "0",
+                "memory": "8115932Ki",
+                "pods": "110"
+              }
+            }
+          ],
+          "trust_launch_release_after_live_schedule_observed_s": -44.561,
+          "passed_cases": 2
+        },
+        {
+          "mode": "staggered",
+          "replay": false,
+          "disconnected_wrapper": true,
+          "invocation": "2ba09fb8-b971-446c-8580-ec0fac8f16d3",
+          "process_s": 301.982,
+          "input_s": 0.588,
+          "case_envelope_s": 204.681,
+          "case_task_overlap_s": 165.489,
+          "live_pod_schedule_s": 3.467,
+          "live_case_s": 165.49,
+          "pods": {
+            "live": {
+              "created_at": "2026-11-21T04:04:41Z",
+              "scheduled_at": "2026-11-21T04:04:45Z",
+              "creation_to_scheduled_s": 4.0,
+              "resources": [
+                {
+                  "container": "environment-runtime",
+                  "limits": {
+                    "cpu": "2",
+                    "devices.kubevirt.io/kvm": "1",
+                    "memory": "2147483648"
+                  },
+                  "requests": {
+                    "cpu": "2",
+                    "devices.kubevirt.io/kvm": "1",
+                    "memory": "2147483648"
+                  }
+                },
+                {
+                  "container": "egress-sidecar",
+                  "limits": {
+                    "cpu": "100m",
+                    "memory": "128Mi"
+                  },
+                  "requests": {
+                    "cpu": "10m",
+                    "memory": "32Mi"
+                  }
+                }
+              ],
+              "pod_overhead": null,
+              "observed_scheduler_reasons": []
+            },
+            "trust": {
+              "created_at": "2026-11-21T04:04:49Z",
+              "scheduled_at": "2026-11-21T04:07:27Z",
+              "creation_to_scheduled_s": 158.0,
+              "resources": [
+                {
+                  "container": "environment-runtime",
+                  "limits": {
+                    "cpu": "2",
+                    "devices.kubevirt.io/kvm": "1",
+                    "memory": "2147483648"
+                  },
+                  "requests": {
+                    "cpu": "2",
+                    "devices.kubevirt.io/kvm": "1",
+                    "memory": "2147483648"
+                  }
+                },
+                {
+                  "container": "egress-sidecar",
+                  "limits": {
+                    "cpu": "100m",
+                    "memory": "128Mi"
+                  },
+                  "requests": {
+                    "cpu": "10m",
+                    "memory": "32Mi"
+                  }
+                }
+              ],
+              "pod_overhead": null,
+              "observed_scheduler_reasons": [
+                {
+                  "reason": "FailedScheduling",
+                  "message": "0/1 nodes are available: 1 Insufficient cpu, 1 Insufficient devices.kubevirt.io/kvm. no new claims to deallocate, preemption: 0/1 nodes are available: 1 No preemption victims found for incoming pod."
+                },
+                {
+                  "reason": "Unschedulable",
+                  "message": "0/1 nodes are available: 1 Insufficient cpu, 1 Insufficient devices.kubevirt.io/kvm. no new claims to deallocate, preemption: 0/1 nodes are available: 1 No preemption victims found for incoming pod."
+                }
+              ]
+            }
+          },
+          "nested_nodes": [
+            {
+              "allocatable": {
+                "cpu": "4",
+                "devices.kubevirt.io/kvm": "1",
+                "ephemeral-storage": "73942812k",
+                "hugepages-1Gi": "0",
+                "hugepages-2Mi": "0",
+                "memory": "8115932Ki",
+                "pods": "110"
+              },
+              "capacity": {
+                "cpu": "4",
+                "devices.kubevirt.io/kvm": "1",
+                "ephemeral-storage": "76010292Ki",
+                "hugepages-1Gi": "0",
+                "hugepages-2Mi": "0",
+                "memory": "8115932Ki",
+                "pods": "110"
+              }
+            }
+          ],
+          "trust_launch_release_after_live_schedule_observed_s": 0.0,
+          "passed_cases": 2
+        },
+        {
+          "mode": "staggered",
+          "replay": true,
+          "disconnected_wrapper": false,
+          "invocation": "704057f5-06c6-47c6-b2cd-d94bf7e9f0ed",
+          "process_s": 283.946,
+          "input_s": 0.402,
+          "case_envelope_s": 197.654,
+          "case_task_overlap_s": 157.505,
+          "live_pod_schedule_s": 3.151,
+          "live_case_s": 157.506,
+          "pods": {
+            "live": {
+              "created_at": "2026-11-21T04:09:34Z",
+              "scheduled_at": "2026-11-21T04:09:37Z",
+              "creation_to_scheduled_s": 3.0,
+              "resources": [
+                {
+                  "container": "environment-runtime",
+                  "limits": {
+                    "cpu": "2",
+                    "devices.kubevirt.io/kvm": "1",
+                    "memory": "2147483648"
+                  },
+                  "requests": {
+                    "cpu": "2",
+                    "devices.kubevirt.io/kvm": "1",
+                    "memory": "2147483648"
+                  }
+                },
+                {
+                  "container": "egress-sidecar",
+                  "limits": {
+                    "cpu": "100m",
+                    "memory": "128Mi"
+                  },
+                  "requests": {
+                    "cpu": "10m",
+                    "memory": "32Mi"
+                  }
+                }
+              ],
+              "pod_overhead": null,
+              "observed_scheduler_reasons": []
+            },
+            "trust": {
+              "created_at": "2026-11-21T04:09:38Z",
+              "scheduled_at": "2026-11-21T04:12:15Z",
+              "creation_to_scheduled_s": 157.0,
+              "resources": [
+                {
+                  "container": "environment-runtime",
+                  "limits": {
+                    "cpu": "2",
+                    "devices.kubevirt.io/kvm": "1",
+                    "memory": "2147483648"
+                  },
+                  "requests": {
+                    "cpu": "2",
+                    "devices.kubevirt.io/kvm": "1",
+                    "memory": "2147483648"
+                  }
+                },
+                {
+                  "container": "egress-sidecar",
+                  "limits": {
+                    "cpu": "100m",
+                    "memory": "128Mi"
+                  },
+                  "requests": {
+                    "cpu": "10m",
+                    "memory": "32Mi"
+                  }
+                }
+              ],
+              "pod_overhead": null,
+              "observed_scheduler_reasons": [
+                {
+                  "reason": "FailedScheduling",
+                  "message": "0/1 nodes are available: 1 Insufficient cpu, 1 Insufficient devices.kubevirt.io/kvm. no new claims to deallocate, preemption: 0/1 nodes are available: 1 No preemption victims found for incoming pod."
+                },
+                {
+                  "reason": "Unschedulable",
+                  "message": "0/1 nodes are available: 1 Insufficient cpu, 1 Insufficient devices.kubevirt.io/kvm. no new claims to deallocate, preemption: 0/1 nodes are available: 1 No preemption victims found for incoming pod."
+                }
+              ]
+            }
+          },
+          "nested_nodes": [
+            {
+              "allocatable": {
+                "cpu": "4",
+                "devices.kubevirt.io/kvm": "1",
+                "ephemeral-storage": "73942812k",
+                "hugepages-1Gi": "0",
+                "hugepages-2Mi": "0",
+                "memory": "8115932Ki",
+                "pods": "110"
+              },
+              "capacity": {
+                "cpu": "4",
+                "devices.kubevirt.io/kvm": "1",
+                "ephemeral-storage": "76010292Ki",
+                "hugepages-1Gi": "0",
+                "hugepages-2Mi": "0",
+                "memory": "8115932Ki",
+                "pods": "110"
+              }
+            }
+          ],
+          "trust_launch_release_after_live_schedule_observed_s": 0.0,
+          "passed_cases": 2
+        }
+      ],
+      "finding": "Staggering changed which pod waited. The live-guest pod reached PodScheduled in 3–4 seconds after creation, while proxy-trust waited 157–158 seconds. The staggered TestRunner took 302 and 284 seconds. That spread covers both the 285.5-second simultaneous control and much of the distance to the 303-second serial control.",
+      "scheduler_evidence": "The nested node advertised four CPUs and one KVM slot. Each launcher requested 2.01 CPUs including its sidecar and one KVM slot. The scheduler reported Insufficient cpu and Insufficient devices.kubevirt.io/kvm for the waiting pod. This establishes the scheduler’s placement constraint in the tested fixture.",
+      "action": "Keep required CI serial on the current fixture. If overlap is revisited, first measure a fixture with enough CPU and KVM capacity for both launchers and include full setup and teardown."
+    }
   }
 }
