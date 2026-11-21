@@ -30,7 +30,7 @@ _WORKLOADS = (
     ("app", "app", "128Mi", "160Mi", _CPU_AND_MEMORY),
     ("electric", "electric", "448Mi", "576Mi", _MEMORY),
     ("environments", "environments", "64Mi", "112Mi", _CPU_AND_MEMORY),
-    ("frontend", "frontend", "32Mi", "40Mi", _MEMORY),
+    ("frontend", "frontend", None, None, _CPU_AND_MEMORY),
     ("history-service", "history-service", "128Mi", "256Mi", _CPU_AND_MEMORY),
     ("llm-ingress", "ingress", "128Mi", "160Mi", _CPU_AND_MEMORY),
     ("mcp-edge", "mcp-edge", "128Mi", "160Mi", _CPU_AND_MEMORY),
@@ -64,12 +64,16 @@ def chart(app: App) -> Chart:
                                 "memory": VerticalPodAutoscalerSpecResourcePolicyContainerPoliciesMinAllowed.from_string(
                                     memory_floor
                                 )
-                            },
+                            }
+                            if memory_floor is not None
+                            else None,
                             max_allowed={
                                 "memory": VerticalPodAutoscalerSpecResourcePolicyContainerPoliciesMaxAllowed.from_string(
                                     memory_ceiling
                                 )
-                            },
+                            }
+                            if memory_ceiling is not None
+                            else None,
                         ),
                         # Future sidecars do not silently acquire a resource policy.
                         VerticalPodAutoscalerSpecResourcePolicyContainerPolicies(container_name="*", mode="Off"),
