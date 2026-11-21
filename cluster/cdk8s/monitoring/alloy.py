@@ -26,17 +26,15 @@ _OTLP_GRPC_PORT = telemetry.OTLP_GRPC_PORT
 _OTLP_HTTP_PORT = telemetry.OTLP_HTTP_PORT
 # The chart's default `alloy.listenPort`, serving Alloy's own /metrics.
 _HTTP_PORT = 12345
-_CONFIG_MAP = "alloy-config"
 _CONFIG_KEY = "config.alloy"
 _NODE_NAME = "alloy-node"
-_NODE_CONFIG_MAP = "alloy-node-config"
 _NODE_CONFIG_KEY = "node.alloy"
 # Node-local disk for the per-node WAL, so a buffered outage survives a pod restart.
 _NODE_STORAGE_PATH = "/var/lib/alloy-node"
 _JOURNAL_NAME = "alloy-journal"
+_JOURNAL_CONFIG_KEY = "journal.alloy"
 _JOURNAL_STORAGE_PATH = "/var/lib/alloy-journal"
 _SYSLOG_NAME = "alloy-syslog"
-_SYSLOG_CONFIG_MAP = "alloy-syslog-config"
 _SYSLOG_CONFIG_KEY = "syslog.alloy"
 # Bound on all of optiplex's addresses, its fixed LAN address (`HOME_LAN.optiplex`) among them.
 # The home switch sends here (`home_switch.py`).
@@ -59,37 +57,34 @@ _CONFIG_ENV = {
 
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
-    runfiles_root = Runfiles.CreateOrRaise().root()
-    config_map, node_config_map, syslog_config_map, journal_config_map = (
-        ConfigMap(
+    config_dir = Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/monitoring"
+
+    def make_config_map(release_name: str, key: str, *includes: str) -> ConfigMap:
+        name = f"{release_name}-config"
+        config = "".join((config_dir / file).read_text() for file in (key, *includes))
+        return ConfigMap(chart, name, metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE), data={key: config})
+
+    config_map = make_config_map(_NAME, _CONFIG_KEY)
+    node_config_map = make_config_map(_NODE_NAME, _NODE_CONFIG_KEY, "pod-logs.alloy")
+    syslog_config_map = make_config_map(_SYSLOG_NAME, _SYSLOG_CONFIG_KEY)
+    journal_config_map = make_config_map(_JOURNAL_NAME, _JOURNAL_CONFIG_KEY)
+
+    def release(name: str, *, values: dict[str, object]) -> None:
+        # All four collectors run the same chart and publish their own scrape target.
+        helm_release(
             chart,
             name,
-            metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
-            data={
-                key: (runfiles_root / f"ducktape/cluster/cdk8s/monitoring/{key}").read_text()
-                + (
-                    (runfiles_root / "ducktape/cluster/cdk8s/monitoring/pod-logs.alloy").read_text()
-                    if key == _NODE_CONFIG_KEY
-                    else ""
-                )
-            },
+            NAMESPACE,
+            repository=grafana_helmrepository.SOURCE_REF,
+            chart=_NAME,
+            version="1.x",
+            interval="30m",
+            chart_interval="12h",
+            values={**values, "serviceMonitor": {"enabled": True}},
         )
-        for name, key in (
-            (_CONFIG_MAP, _CONFIG_KEY),
-            (_NODE_CONFIG_MAP, _NODE_CONFIG_KEY),
-            (_SYSLOG_CONFIG_MAP, _SYSLOG_CONFIG_KEY),
-            ("alloy-journal-config", "journal.alloy"),
-        )
-    )
-    helm_release(
-        chart,
+
+    release(
         _NAME,
-        NAMESPACE,
-        repository=grafana_helmrepository.SOURCE_REF,
-        chart=_NAME,
-        version="1.x",
-        interval="30m",
-        chart_interval="12h",
         values={
             "alloy": {
                 "configMap": {"name": config_map.name, "key": _CONFIG_KEY, "create": False},
@@ -112,18 +107,10 @@ def chart(app: App) -> Chart:
                 # Mimir: on a home node, a home WAN outage would cut off the whole cluster's metrics.
                 "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
             },
-            "serviceMonitor": {"enabled": True},
         },
     )
-    helm_release(
-        chart,
+    release(
         _NODE_NAME,
-        NAMESPACE,
-        repository=grafana_helmrepository.SOURCE_REF,
-        chart=_NAME,
-        version="1.x",
-        interval="30m",
-        chart_interval="12h",
         values={
             # Its own name label, so neither the central release's selectors nor the OTLP
             # NetworkPolicy below match these pods.
@@ -162,36 +149,29 @@ def chart(app: App) -> Chart:
                 },
                 "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION, node_scheduling.ROAMING_TOLERATION],
             },
-            "serviceMonitor": {"enabled": True},
         },
     )
     # Journal paths and root journal-reader permissions stay off Talos nodes. A
     # separate Alloy is necessary because host mounts are a Pod-template property.
-    helm_release(
-        chart,
+    journal_volumes = (
+        ("positions", _JOURNAL_STORAGE_PATH, "DirectoryOrCreate"),
+        ("journal", "/var/log/journal", "Directory"),
+        ("machine-id", "/etc/machine-id", "File"),
+    )
+    release(
         _JOURNAL_NAME,
-        NAMESPACE,
-        repository=grafana_helmrepository.SOURCE_REF,
-        chart=_NAME,
-        version="1.x",
-        interval="30m",
-        chart_interval="12h",
         values={
             "nameOverride": _JOURNAL_NAME,
             "rbac": {"create": False},
             "serviceAccount": {"automountServiceAccountToken": False},
             "alloy": {
-                "configMap": {"name": journal_config_map.name, "key": "journal.alloy", "create": False},
+                "configMap": {"name": journal_config_map.name, "key": _JOURNAL_CONFIG_KEY, "create": False},
                 "storagePath": _JOURNAL_STORAGE_PATH,
                 "extraEnv": [{"name": "LOKI_PUSH_URL", "value": loki.PUSH_URL}],
                 "mounts": {
                     "extra": [
                         {"name": name, "mountPath": path, "readOnly": name != "positions"}
-                        for name, path in (
-                            ("positions", _JOURNAL_STORAGE_PATH),
-                            ("journal", "/var/log/journal"),
-                            ("machine-id", "/etc/machine-id"),
-                        )
+                        for name, path, _ in journal_volumes
                     ]
                 },
                 "securityContext": {
@@ -211,27 +191,14 @@ def chart(app: App) -> Chart:
                 "tolerations": [{"effect": "NoSchedule", "operator": "Exists"}],
                 "volumes": {
                     "extra": [
-                        {"name": name, "hostPath": {"path": path, "type": kind}}
-                        for name, path, kind in (
-                            ("positions", _JOURNAL_STORAGE_PATH, "DirectoryOrCreate"),
-                            ("journal", "/var/log/journal", "Directory"),
-                            ("machine-id", "/etc/machine-id", "File"),
-                        )
+                        {"name": name, "hostPath": {"path": path, "type": kind}} for name, path, kind in journal_volumes
                     ]
                 },
             },
-            "serviceMonitor": {"enabled": True},
         },
     )
-    helm_release(
-        chart,
+    release(
         _SYSLOG_NAME,
-        NAMESPACE,
-        repository=grafana_helmrepository.SOURCE_REF,
-        chart=_NAME,
-        version="1.x",
-        interval="30m",
-        chart_interval="12h",
         values={
             "nameOverride": _SYSLOG_NAME,
             "alloy": {
@@ -268,7 +235,6 @@ def chart(app: App) -> Chart:
                 # A surge pod could never schedule beside the old one holding the hostPort.
                 "updateStrategy": {"type": "Recreate"},
             },
-            "serviceMonitor": {"enabled": True},
         },
     )
     k8s.KubeNetworkPolicy(
@@ -327,18 +293,19 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def alloy(chart: Chart, directory: RenderedDirectory, monitoring_crds: Kustomization) -> Kustomization:
+def alloy(
+    chart: Chart,
+    directory: RenderedDirectory,
+    monitoring_crds: Kustomization,
+    *,
+    health_checks: list[KustomizationSpecHealthChecks],
+) -> Kustomization:
     return flux_kustomization(
         chart,
         _NAME,
         directory,
         wait=None,
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name=name, namespace=NAMESPACE
-            )
-            for name in (_NAME, _NODE_NAME, _JOURNAL_NAME, _SYSLOG_NAME)
-        ],
+        health_checks=health_checks,
         timeout="5m",
         # the chart's serviceMonitor
         depends_on=flux_kustomization_depends_on_many(monitoring_crds),

@@ -598,11 +598,14 @@ def generate_manifests(root: Path) -> None:
         ],
         description="Direct TCP and HTTPS connectivity probes from optiplex and wyrm2.",
     )
+    grafana_operator_app = App()
+    grafana_operator_chart = grafana_operator.chart(grafana_operator_app)
     grafana_operator_artifact = artifact("grafana-operator", grafana_operator.OUTPUT_DIR)
     grafana_operator_kustomization = grafana_operator.grafana_operator(
         flux_chart,
-        write_directory(root, grafana_operator_artifact, grafana_operator.chart),
+        write_directory(root, grafana_operator_artifact, app=grafana_operator_app),
         monitoring_namespace_kustomization,
+        health_checks=flux.health_checks(grafana_operator_chart, ["HelmRelease"]),
     )
     nvidia_device_plugin_artifact = artifact("nvidia-device-plugin", nvidia_device_plugin.OUTPUT_DIR)
     nvidia_device_plugin_kustomization = flux.flux_kustomization(
@@ -1264,16 +1267,19 @@ def generate_manifests(root: Path) -> None:
         timeout="10m",
         description="Manage Forgejo SSH keys with their existing OpenTofu state.",
     )
+    monitoring_stack_app = App()
+    monitoring_stack_chart = monitoring_stack.chart(monitoring_stack_app)
     monitoring_stack_artifact = artifact("monitoring-stack", monitoring_stack.OUTPUT_DIR)
     monitoring_stack_kustomization = monitoring_stack.monitoring_stack(
         flux_chart,
         # The SOPS sibling turns on Flux decryption.
         write_directory(
-            root, monitoring_stack_artifact, monitoring_stack.chart, siblings=["grafana-admin-password.sops.yaml"]
+            root, monitoring_stack_artifact, app=monitoring_stack_app, siblings=["grafana-admin-password.sops.yaml"]
         ),
         monitoring_namespace_kustomization,
         monitoring_crds_kustomization,
         kyverno_kustomization,
+        health_checks=flux.health_checks(monitoring_stack_chart, ["HelmRelease"]),
     )
     claude_sandbox_secrets_artifact = artifact("claude-sandbox-secrets", claude_sandbox_secrets.OUTPUT_DIR)
     flux.flux_kustomization(
@@ -1514,11 +1520,16 @@ def generate_manifests(root: Path) -> None:
         ),
         timeout="2m",
     )
+    monitoring_alloy_app = App()
+    monitoring_alloy_chart = alloy.chart(monitoring_alloy_app)
     monitoring_alloy_artifact = artifact("monitoring-alloy", alloy.OUTPUT_DIR)
     alloy.alloy(
         flux_chart,
-        write_directory(root, monitoring_alloy_artifact, alloy.chart, namespace=monitoring_namespace.NAMESPACE),
+        write_directory(
+            root, monitoring_alloy_artifact, app=monitoring_alloy_app, namespace=monitoring_namespace.NAMESPACE
+        ),
         monitoring_crds_kustomization,
+        health_checks=flux.health_checks(monitoring_alloy_chart, ["HelmRelease"]),
     )
     public_coder_agent_backup_artifact = artifact("public-coder-agent-backup", public_coder_backup.OUTPUT_DIR)
     public_coder_backup.public_coder_agent_backup(
@@ -1671,11 +1682,14 @@ def generate_manifests(root: Path) -> None:
         keda_kustomization,
         external_secrets_operator_kustomization,
     )
+    flux_annotations_app = App()
+    flux_annotations_chart = flux_annotations.chart(flux_annotations_app)
     flux_annotations_artifact = artifact("flux-grafana-secrets", flux_annotations.OUTPUT_DIR)
     flux_annotations.flux_annotations(
         flux_chart,
-        write_directory(root, flux_annotations_artifact, flux_annotations.chart),
+        write_directory(root, flux_annotations_artifact, app=flux_annotations_app),
         grafana_operator_kustomization,
+        health_checks=flux.health_checks(flux_annotations_chart, ["GrafanaServiceAccount"]),
     )
     clickhouse_grafana_artifact = artifact("clickhouse-grafana", aiquota_analytics.OUTPUT_DIR)
     flux.flux_kustomization(

@@ -16,7 +16,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 
-from cluster.cdk8s import node_scheduling
+from cluster.cdk8s import node_scheduling, ntfy
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
@@ -63,6 +63,7 @@ def _flux_state_metrics(
 
 
 def _alertmanager_config() -> dict[str, object]:
+    secret_dir = f"/etc/alertmanager/secrets/{ntfy.ALERTMANAGER_WEBHOOK.name}"
     return {
         "global": {"resolve_timeout": "5m"},
         "inhibit_rules": [
@@ -165,7 +166,7 @@ def _alertmanager_config() -> dict[str, object]:
                 "webhook_configs": [
                     {
                         "send_resolved": True,
-                        "url_file": "/etc/alertmanager/secrets/alertmanager-ntfy-webhook/address",
+                        "url_file": f"{secret_dir}/{ntfy.ALERTMANAGER_WEBHOOK_ADDRESS.key}",
                         # Select ntfy's built-in alertmanager message template (firing/
                         # resolved formatting) so previews show a readable title + body
                         # instead of the raw webhook JSON. Sent as a header rather than a
@@ -173,7 +174,7 @@ def _alertmanager_config() -> dict[str, object]:
                         # the ESO-managed Secret mounted below.
                         "http_config": {
                             "http_headers": {"X-Template": {"values": ["alertmanager"]}},
-                            "bearer_token_file": "/etc/alertmanager/secrets/alertmanager-ntfy-webhook/token",
+                            "bearer_token_file": f"{secret_dir}/{ntfy.ALERTMANAGER_WEBHOOK_TOKEN.key}",
                         },
                     }
                 ],
@@ -228,7 +229,7 @@ def _values() -> dict[str, object]:
             "podDisruptionBudget": {"enabled": True, "minAvailable": 1},
             "alertmanagerSpec": {
                 "replicas": 2,
-                "secrets": ["alertmanager-ntfy-webhook"],
+                "secrets": [ntfy.ALERTMANAGER_WEBHOOK.name],
                 "storage": {
                     "volumeClaimTemplate": {
                         "metadata": {"name": "db"},
@@ -461,20 +462,15 @@ def monitoring_stack(
     monitoring_namespace: Kustomization,
     monitoring_crds: Kustomization,
     kyverno: Kustomization,
+    *,
+    health_checks: list[KustomizationSpecHealthChecks],
 ) -> Kustomization:
     return flux_kustomization(
         chart,
         "monitoring-stack",
         directory,
         wait=None,
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="helm.toolkit.fluxcd.io/v2",
-                kind="HelmRelease",
-                name="kube-prometheus-stack",
-                namespace=NAMESPACE,
-            )
-        ],
+        health_checks=health_checks,
         timeout="10m",
         depends_on=flux_kustomization_depends_on_many(
             monitoring_namespace,
