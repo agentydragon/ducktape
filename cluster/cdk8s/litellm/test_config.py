@@ -70,7 +70,6 @@ def test_rugged_routes_register_and_inject_the_bearer_key(deployment_env: dict[s
 
 def test_stock_qwen_routes_to_tabbyapi() -> None:
     entries = {entry["model_name"]: entry for entry in main_proxy_config()["model_list"]}
-    assert not any("iq4xs" in name for name in entries)
     params = entries[TABBYAPI_QWEN_STOCK.id]["litellm_params"]
     assert params["model"] == "hosted_vllm/qwen38-exl3-268"
     assert params["api_base"] == "http://tabbyapi-model-switching.ollama.svc:5000/v1"

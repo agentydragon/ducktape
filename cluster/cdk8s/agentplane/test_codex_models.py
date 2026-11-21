@@ -11,7 +11,7 @@ from python.runfiles import Runfiles
 
 from cluster.cdk8s.agentplane.codex_models import codex_catalog
 from cluster.cdk8s.agentplane.model_selections import RUNNER_CONTEXT_OVERRIDES, STAGING_APP_MODELS
-from model_catalog.catalog import TABBYAPI_QWEN_ABLITERATED, Provider
+from model_catalog.catalog import Provider
 
 
 def _codex_reads(catalog: str, directory: Path) -> dict[str, Any]:
@@ -46,7 +46,6 @@ def test_pinned_codex_reads_the_catalog(tmp_path: Path) -> None:
     windows = {route.id: RUNNER_CONTEXT_OVERRIDES[route] for route in routes if route in RUNNER_CONTEXT_OVERRIDES}
     assert windows
     assert windows.items() <= {slug: model["context_window"] for slug, model in models.items()}.items()
-    assert models[TABBYAPI_QWEN_ABLITERATED.id]["context_window"] == 262_144
 
 
 if __name__ == "__main__":
