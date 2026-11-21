@@ -259,8 +259,12 @@ func invalidateInstallation(ctx context.Context, tx transaction.Tx, appID, insta
 	if err != nil {
 		return err
 	}
-	if err := invalidateGitHubCommitForInstallation(ctx, tx, appID, installationID); err != nil {
-		return err
+	for _, table := range []string{commitRefresh.Name, reviewRefresh.Name} {
+		if _, err := tx.ExecContext(ctx, `UPDATE `+table+` SET generation = generation + 1, last_success_at = NULL,
+			next_attempt = CASE WHEN error IS NOT NULL THEN next_attempt END, claim = NULL, claim_until = NULL
+			WHERE app_id = $1 AND installation_id = $2`, appID, installationID); err != nil {
+			return err
+		}
 	}
-	return invalidateGitHubReviewForInstallation(ctx, tx, appID, installationID)
+	return nil
 }
