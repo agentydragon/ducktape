@@ -237,4 +237,23 @@ if (runSection(2)) {
   const changed = cli("validate", aliasSource, aliasSpec, aliasOut).value;
   assert.notEqual(changed.result, "proved under assumptions", JSON.stringify(changed));
   assert.notDeepEqual(execute(aliasSource, ["current"]), execute(join(aliasOut, "entry.mjs"), ["current"]));
+
+  const relayPath = join(aliasOut, "relay.mjs");
+  const relay = await readFile(relayPath, "utf8");
+  assert.match(relay, /export \{ __split_alias_0 \}/);
+  await writeFile(relayPath, relay.replace("export { __split_alias_0 }", "export { __split_alias_0 as renamedFirst }"));
+  await writeFile(logicPath, logic.replace("__split_alias_0 as first", "renamedFirst as first"));
+  const renamed = cli("validate", aliasSource, aliasSpec, aliasOut).value;
+  assert.equal(renamed.result, "proved under assumptions", JSON.stringify(renamed));
+  assert.deepEqual(
+    execute(aliasSource, ["current", "other"]),
+    execute(join(aliasOut, "entry.mjs"), ["current", "other"])
+  );
+  await writeFile(
+    relayPath,
+    (await readFile(relayPath, "utf8")).replace("__split_alias_0 as renamedFirst", "__split_alias_1 as renamedFirst")
+  );
+  const wrongRelay = cli("validate", aliasSource, aliasSpec, aliasOut).value;
+  assert.notEqual(wrongRelay.result, "proved under assumptions", JSON.stringify(wrongRelay));
+  assert.notDeepEqual(execute(aliasSource, ["current"]), execute(join(aliasOut, "entry.mjs"), ["current"]));
 }

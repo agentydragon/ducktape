@@ -84,9 +84,11 @@ cover only part of the grammar and split space described below.
       semantics and frontend together, and test each slice end to end against Node
       on accepted, unsafe and unsupported examples. Avoid adding independent formal
       models for the fuzzer or for individual syntax features.
-- [ ] Extend import aliases to renamed local references and support renamed
-      reexports through non-entry modules. Extend the generator and counterexample
-      certificates instead of treating renamed exports as unrelated declarations.
+- [ ] Extend import aliases to renamed local references. Renamed reexports through
+      non-entry modules now retain their declaration identities in Lean and can be
+      generated and checked. A redirected reexport read by a simple reader now
+      has a Node-reproduced Lean counterexample; extend actual-declaration witness
+      lowering to expression functions and other statement forms.
 - [ ] State and test each slice's observation boundary and assumptions, including
       module loading, host behavior, numeric semantics and termination. Keep
       `unknown` when the checker cannot justify its claim, and document that Node

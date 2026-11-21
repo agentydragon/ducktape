@@ -1231,6 +1231,10 @@ function readSpec(spec, count) {
     );
     check(module.aliasImports === undefined || typeof module.aliasImports === "boolean", "invalid import alias option");
     check(
+      module.renameReexports === undefined || typeof module.renameReexports === "boolean",
+      "invalid reexport alias option"
+    );
+    check(
       module.reexports === undefined ||
         (module.reexports && typeof module.reexports === "object" && !Array.isArray(module.reexports)),
       "invalid reexport map"
@@ -1311,13 +1315,20 @@ function generateFiles(source, spec, names) {
       [...new Set(spec.modules[name].statements.flatMap((i) => references(source.statements[i].ast)))],
     ])
   );
+  let reexportPrefix = "__split_reexport_";
+  while ([...defs.keys()].some((binding) => binding.startsWith(reexportPrefix))) reexportPrefix += "_";
+  const renamedReexport = (moduleName, binding) =>
+    `${reexportPrefix}${names.indexOf(moduleName)}_${[...defs.keys()].indexOf(binding)}`;
   const provides = (moduleName, binding, seen = new Set()) => {
-    if (defs.get(binding) === moduleName) return true;
-    if (seen.has(moduleName)) return false;
+    if (defs.get(binding) === moduleName) return binding;
+    if (seen.has(moduleName)) return null;
     const next = new Set(seen).add(moduleName);
-    return Object.entries(spec.modules[moduleName].reexports ?? {}).some(
-      ([dependency, bindings]) => bindings.includes(binding) && provides(dependency, binding, next)
-    );
+    for (const [dependency, bindings] of Object.entries(spec.modules[moduleName].reexports ?? {})) {
+      if (!bindings.includes(binding)) continue;
+      const upstream = provides(dependency, binding, next);
+      if (upstream) return spec.modules[moduleName].renameReexports ? renamedReexport(moduleName, binding) : upstream;
+    }
+    return null;
   };
   const neededExports = new Set(source.exports);
   for (const name of names) {
@@ -1364,9 +1375,10 @@ function generateFiles(source, spec, names) {
     const module = spec.modules[name];
     const imports = module.imports.map((dep) => {
       const bindings = referencesByModule[name].filter((binding) => providers[name].get(binding) === dep);
-      const imported = bindings.map((binding) =>
-        module.aliasImports ? `${generatedAliases.get(binding)} as ${binding}` : binding
-      );
+      const imported = bindings.map((binding) => {
+        const exported = module.aliasImports ? generatedAliases.get(binding) : provides(dep, binding);
+        return exported === binding ? binding : `${exported} as ${binding}`;
+      });
       return bindings.length
         ? `import { ${imported.join(", ")} } from ${str(`./${dep}`)};`
         : `import ${str(`./${dep}`)};`;
@@ -1394,12 +1406,16 @@ function generateFiles(source, spec, names) {
             })
         : [];
     const relayed = Object.entries(module.reexports ?? {}).flatMap(([dependency, bindings]) =>
-      bindings.flatMap((binding) => [
-        `export { ${binding} } from ${str(`./${dependency}`)};`,
-        ...(aliasExports.has(binding)
-          ? [`export { ${generatedAliases.get(binding)} } from ${str(`./${dependency}`)};`]
-          : []),
-      ])
+      bindings.flatMap((binding) => {
+        const upstream = provides(dependency, binding);
+        const exported = module.renameReexports ? renamedReexport(name, binding) : upstream;
+        return [
+          `export { ${upstream}${exported === upstream ? "" : ` as ${exported}`} } from ${str(`./${dependency}`)};`,
+          ...(aliasExports.has(binding)
+            ? [`export { ${generatedAliases.get(binding)} } from ${str(`./${dependency}`)};`]
+            : []),
+        ];
+      })
     );
     const internalAliases = [...aliasExports]
       .filter((binding) => defs.get(binding) === name)
@@ -1429,7 +1445,7 @@ function outputAst(text, names, functions) {
         check(specifier.type === "ImportSpecifier", "unsupported import specifier");
         return { local: identifier(specifier.local), public: identifier(specifier.imported) };
       });
-      imports.push({ dep, locals: links.map((item) => item.local), links, reexports: [] });
+      imports.push({ dep, locals: links.map((item) => item.local), links, reexports: [], reexportLinks: [] });
     } else if (node.type === "ExportNamedDeclaration") {
       if (node.declaration) {
         const ast = candidateStatement(node.declaration, functions);
@@ -1443,7 +1459,13 @@ function outputAst(text, names, functions) {
         mappings.push(...mapped);
         if (node.source) {
           aliasedReexport ||= mapped.some((item) => item.local !== item.public);
-          imports.push({ dep: dependency(node), locals: [], links: [], reexports: mapped.map((item) => item.local) });
+          imports.push({
+            dep: dependency(node),
+            locals: [],
+            links: [],
+            reexports: mapped.map((item) => item.local),
+            reexportLinks: mapped,
+          });
         } else {
           directMappings.push(...mapped);
           exports.push(...mapped.map((item) => item.local));
@@ -1556,7 +1578,7 @@ function leanStatement(item) {
 function leanModule(module, assignment) {
   const imports = module.imports.map(
     (i) =>
-      `({ dependency := ${i.dep}, locals := ${leanStrings(i.locals)}, links := ${leanMappings(i.links)}, reexports := ${leanStrings(i.reexports)} } : BindingImport)`
+      `({ dependency := ${i.dep}, locals := ${leanStrings(i.locals)}, links := ${leanMappings(i.links)}, reexports := ${leanStrings(i.reexports)}, reexportLinks := ${leanMappings(i.reexportLinks)} } : BindingImport)`
   );
   return `({ imports := ${list(imports)}, exports := ${leanStrings(module.exports)}, exportMappings := ${leanMappings(module.directMappings)}, statements := ${list(module.statements.map(leanStatement))}, assignment := ${list(assignment)} } : BindingModule)`;
 }
@@ -1592,8 +1614,6 @@ export async function validateBindings(sourcePath, specPath, out) {
   const actual = files.map((text) => outputAst(text, names, functions));
   if (actual.some((module) => module.statements.some((item) => item.kind === "scopedFunction")))
     return { result: "unknown", reason: "scoped output function execution is not modeled" };
-  if (actual.some((module, i) => names[i] !== spec.entry && module.aliasedReexport))
-    return { result: "unknown", reason: "renamed reexports outside the entry module are unsupported" };
   const entryIndex = names.indexOf(spec.entry);
   if (
     actual[entryIndex].aliasedReexport &&
@@ -2054,7 +2074,7 @@ theorem binding_export_difference :
       const table = hasExpressions ? "publicCallableTable" : "publicFunctionTable";
       const runner = hasExpressions ? "runArgumentCalls" : "runExportedCalls";
       left = `((sourceBindingState bindingSource).bind (fun state => (${table} bindingSource bindingExports).bind (fun table => (aliasPublicTable table bindingPublicMappings).bind (fun aliases => ${runner} aliases state ${leanCalls})))).map (fun state => (state.events, state.returns, state.thrown))`;
-      right = `((outputBindingState bindingSource bindingModules bindingEntry).bind (fun state => (${table} (outputDefinitions bindingModules) (bindingOutputMappings.map Prod.fst)).bind (fun table => (aliasPublicTable table bindingOutputMappings).bind (fun aliases => ${runner} aliases state ${leanCalls})))).map (fun state => (state.events, state.returns, state.thrown))`;
+      right = `((outputBindingState bindingSource bindingModules bindingEntry).bind (fun state => (witnessedOutputDefinitions bindingModules).bind (fun definitions => (${table} definitions (bindingOutputMappings.map Prod.fst)).bind (fun table => (aliasPublicTable table bindingOutputMappings).bind (fun aliases => ${runner} aliases state ${leanCalls}))))).map (fun state => (state.events, state.returns, state.thrown))`;
       expectedLeft = `some (${sourceEvents}, ${sourceReturns}, ${sourceThrown})`;
       expectedRight = `some (${outputEvents}, ${outputReturns}, ${outputThrown})`;
     }

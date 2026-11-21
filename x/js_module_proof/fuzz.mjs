@@ -973,7 +973,10 @@ export function independentSplit(input, seed, index) {
 // each point. The program is generated before any optional repartitioning.
 export function makeComposedCase(seed, index) {
   const rand = random(seed ^ 0xc04f053, index);
-  const globals = Array.from({ length: 1 + rand(4) }, (_, i) => (i ? `global${i}` : "global"));
+  const globalCount = 1 + rand(4);
+  const globals = Array.from({ length: index % 64 === 59 ? Math.max(2, globalCount) : globalCount }, (_, i) =>
+    i ? `global${i}` : "global"
+  );
   let hasLocalVar = false;
   const makeFunction = (name) => {
     const scope = new Scope();
@@ -1245,7 +1248,13 @@ export function makeComposedCase(seed, index) {
       )
     );
   }
-  const publicFunctionNames = functionNames.map((name, i) => (index % 3 === 0 && i === 0 ? `public_${name}` : name));
+  if (index % 64 === 59) {
+    functionNames.unshift("fuzzRelayRead");
+    functions.unshift(functionNode("fuzzRelayRead", [], [returnNode(id("global"))]));
+  }
+  const publicFunctionNames = functionNames.map((name, i) =>
+    index % 3 === 0 && i === 0 && name !== "fuzzRelayRead" ? `public_${name}` : name
+  );
   const extraAlias = index % 6 === 0 ? "second_calculate" : null;
   const earlyVar = index % 14 === 0;
   const hasDiscardedLiteral = index % 13 === 3 && !earlyVar;
@@ -1282,7 +1291,9 @@ export function makeComposedCase(seed, index) {
     sourceType: "module",
     body: [
       ...prefix,
-      ...globals.map((name, i) => variable(name, rand(4), (index + i) % 7 === 0 ? "var" : "let")),
+      ...globals.map((name, i) =>
+        variable(name, index % 64 === 59 && i < 2 ? i + 1 : rand(4), (index + i) % 7 === 0 ? "var" : "let")
+      ),
       ...functions,
       {
         type: "ExportNamedDeclaration",
@@ -1327,14 +1338,28 @@ export function makeComposedCase(seed, index) {
           statements: Array.from({ length: prefix.length + globals.length }, (_, index) => index),
         },
         ...(index % 8 === 3
-          ? { "relay.mjs": { imports: ["state.mjs"], statements: [], reexports: { "state.mjs": globals } } }
+          ? {
+              "relay.mjs": {
+                imports: ["state.mjs"],
+                statements: [],
+                reexports: { "state.mjs": globals },
+                renameReexports: index % 32 === 27,
+              },
+            }
           : {}),
         ...(index % 16 === 11
-          ? { "relay2.mjs": { imports: ["relay.mjs"], statements: [], reexports: { "relay.mjs": globals } } }
+          ? {
+              "relay2.mjs": {
+                imports: ["relay.mjs"],
+                statements: [],
+                reexports: { "relay.mjs": globals },
+                renameReexports: index % 32 === 27,
+              },
+            }
           : {}),
         "logic.mjs": {
           imports: [index % 16 === 11 ? "relay2.mjs" : index % 8 === 3 ? "relay.mjs" : "state.mjs"],
-          aliasImports: index % 4 === 0 || index % 16 === 11,
+          aliasImports: index % 4 === 0 || index % 32 === 11,
           statements: functionNames.map((_, index) => prefix.length + globals.length + index),
         },
         "entry.mjs": { imports: ["logic.mjs"], statements: [] },
@@ -1591,20 +1616,24 @@ export async function minimizeCase(input, fails) {
 async function mutateOutput(out, input, kind) {
   const modules = Object.keys(input.spec.modules);
   const files =
-    kind === "throwValue"
-      ? ["logic.mjs"]
-      : kind === "composedEffect"
-        ? ["state.mjs"]
-        : kind === "binding" || kind === "effect"
-          ? [input.cell0Owner]
-          : kind === "function"
-            ? modules
-            : [input.spec.entry];
+    kind === "renamedReexport"
+      ? ["relay.mjs"]
+      : kind === "throwValue"
+        ? ["logic.mjs"]
+        : kind === "composedEffect"
+          ? ["state.mjs"]
+          : kind === "binding" || kind === "effect"
+            ? [input.cell0Owner]
+            : kind === "function"
+              ? modules
+              : [input.spec.entry];
   for (const name of files) {
     const file = join(out, name);
     const original = await readFile(file, "utf8");
     let changed = original;
     if (kind === "binding") changed = original.replace(/let cell0 = (\d+);/, (_, n) => `let cell0 = ${Number(n) + 1};`);
+    else if (kind === "renamedReexport")
+      changed = original.replace(/export \{ global as (__split_reexport_+\d+_\d+) \}/, "export { global1 as $1 }");
     else if (kind === "throwValue") {
       const start = original.indexOf("function fuzzThrower(");
       if (start >= 0) {
@@ -1768,6 +1797,10 @@ export async function runFuzz({
     reexportRelayGeneratedCases: 0,
     reexportRelayComparedCases: 0,
     reexportRelayProvedCases: 0,
+    renamedReexportRequestedCases: 0,
+    renamedReexportGeneratedCases: 0,
+    renamedReexportComparedCases: 0,
+    renamedReexportProvedCases: 0,
     discardedLiteralCases: 0,
     discardedLiteralComparedCases: 0,
     discardedLiteralProvedCases: 0,
@@ -1850,7 +1883,16 @@ export async function runFuzz({
     equal: 0,
     different: 0,
     mutated: 0,
-    mutationKinds: { binding: 0, effect: 0, function: 0, export: 0, import: 0, composedEffect: 0, throwValue: 0 },
+    mutationKinds: {
+      binding: 0,
+      effect: 0,
+      function: 0,
+      export: 0,
+      import: 0,
+      composedEffect: 0,
+      throwValue: 0,
+      renamedReexport: 0,
+    },
     splitCompared: 0,
     splitDifferent: 0,
     mutatedDifferent: 0,
@@ -1874,6 +1916,7 @@ export async function runFuzz({
     const out = join(root, "out");
     let keep = true;
     let hasGeneratedImportAlias = false;
+    let hasGeneratedRenamedReexport = false;
     let hasVar = false;
     let phase = "generate-ast";
     try {
@@ -1885,15 +1928,18 @@ export async function runFuzz({
             : makeCase(seed, index);
       const input = splitMode === "independent" ? independentSplit(generated, seed, index) : generated;
       const mutation =
-        input.grammar === "composed" && !input.independentSplit && index % 64 === 23
-          ? "throwValue"
-          : input.grammar === "composed" && !input.independentSplit && input.hasDiscardedLiteral && index % 52 === 16
-            ? "composedEffect"
-            : !["composed", "async"].includes(input.grammar) && !input.independentSplit && index % 8 === 2
-              ? ["binding", "effect", "function", "export", "import"][Math.floor(index / 8) % 5]
-              : null;
+        input.grammar === "composed" && !input.independentSplit && index % 64 === 59
+          ? "renamedReexport"
+          : input.grammar === "composed" && !input.independentSplit && index % 64 === 23
+            ? "throwValue"
+            : input.grammar === "composed" && !input.independentSplit && input.hasDiscardedLiteral && index % 52 === 16
+              ? "composedEffect"
+              : !["composed", "async"].includes(input.grammar) && !input.independentSplit && index % 8 === 2
+                ? ["binding", "effect", "function", "export", "import"][Math.floor(index / 8) % 5]
+                : null;
       if (mutation === "composedEffect") input.calls = [];
       if (mutation === "throwValue") input.calls = [{ name: "fuzzThrower", args: [1] }];
+      if (mutation === "renamedReexport") input.calls = [{ name: "fuzzRelayRead", args: [] }];
       const independentCategory = input.invalidAssignment ? "invalidAssignment" : input.cyclic ? "cyclic" : "acyclic";
       if (input.independentSplit) {
         summary.independentRequested[independentCategory]++;
@@ -1931,6 +1977,7 @@ export async function runFuzz({
       if (new Set(exports.map((item) => item.local.name)).size < exports.length) summary.multiplePublicNameCases++;
       const modules = Object.values(input.spec.modules);
       if (modules.some((module) => module.aliasImports)) summary.importAliasRequestedCases++;
+      if (modules.some((module) => module.renameReexports)) summary.renamedReexportRequestedCases++;
       const importCount = modules.reduce((count, module) => count + module.imports.length, 0);
       summary.moduleCountCases[modules.length] = (summary.moduleCountCases[modules.length] ?? 0) + 1;
       summary.importCountCases[importCount] = (summary.importCountCases[importCount] ?? 0) + 1;
@@ -2072,12 +2119,14 @@ export async function runFuzz({
       summary.generated++;
       if (input.hasReexportRelay && !input.independentSplit) summary.reexportRelayGeneratedCases++;
       if (hasVar) summary.varGeneratedCases++;
-      if (modules.some((module) => module.aliasImports)) {
+      if (modules.some((module) => module.aliasImports || module.renameReexports)) {
         const emitted = await Promise.all(
           Object.keys(input.spec.modules).map((name) => readFile(join(out, name), "utf8"))
         );
         hasGeneratedImportAlias = emitted.some((text) => /__split_alias_+\d+ as [A-Za-z_$][\w$]*/.test(text));
         if (hasGeneratedImportAlias) summary.importAliasGeneratedCases++;
+        hasGeneratedRenamedReexport = emitted.some((text) => /export \{ [^}]* as __split_reexport_+\d+_\d+/.test(text));
+        if (hasGeneratedRenamedReexport) summary.renamedReexportGeneratedCases++;
       }
       if (input.grammar === "closure") summary.closureGenerated++;
       const mutated = mutation !== null;
@@ -2127,6 +2176,7 @@ export async function runFuzz({
         if (!equal) summary.earlyVarDifferentCases++;
       }
       if (hasGeneratedImportAlias) summary.importAliasComparedCases++;
+      if (hasGeneratedRenamedReexport) summary.renamedReexportComparedCases++;
       if (input.grammar === "parameter") {
         summary.parameterCompared++;
         if (
@@ -2213,6 +2263,7 @@ export async function runFuzz({
           if (input.hasLocalVar) summary.localVarProvedCases++;
           if (input.earlyVar) summary.earlyVarProvedCases++;
           if (hasGeneratedImportAlias) summary.importAliasProvedCases++;
+          if (hasGeneratedRenamedReexport) summary.renamedReexportProvedCases++;
           if (input.grammar === "object") summary.objectProved++;
           if (input.grammar === "captured") summary.capturedProved++;
           if (input.grammar === "parameter") summary.parameterProved++;

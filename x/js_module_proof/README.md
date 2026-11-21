@@ -201,8 +201,9 @@ generated public aliases while retaining their original local names. A non-entry
 module may relay bindings using `reexports: { "dependency.mjs": ["binding"] }`
 alongside that dependency in `imports`. Chains are resolved to their original
 declarations with a bounded search; missing owners and cycles are refused.
-Generated import aliases can travel through those reexport chains. Renamed
-reexports outside the entry module remain unsupported.
+Generated import aliases can travel through those reexport chains. A relay may
+set `renameReexports: true` to export generated names; later relays and imports
+follow those names back to their original declarations.
 Source declarations have unique names, function
 writes must target a mutable local binding, and each module preserves its assigned
 statements' source order. Unsupported syntax, linking, cycles, or uninitialized

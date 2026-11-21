@@ -121,6 +121,31 @@ if (shards === 4 && shard === 0) {
     assert.equal(changedThrow.mutatedVerdicts.unsafe, 1);
   }
 }
+if (shards === 4 && shard === 2) {
+  const renamedRelay = await runFuzz({
+    seed: 51981,
+    start: 27,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "composed",
+    validateEvery: 1,
+  });
+  assert.equal(renamedRelay.renamedReexportRequestedCases, 1);
+  assert.equal(renamedRelay.renamedReexportGeneratedCases, 1);
+  assert.equal(renamedRelay.renamedReexportComparedCases, 1);
+  assert.equal(renamedRelay.renamedReexportProvedCases, 1);
+  const redirectedRelay = await runFuzz({
+    seed: 51981,
+    start: 59,
+    cases: 1,
+    outputDir: process.env.TEST_TMPDIR,
+    grammarMode: "composed",
+    validateEvery: 1,
+  });
+  assert.equal(redirectedRelay.mutationKinds.renamedReexport, 1);
+  assert.equal(redirectedRelay.mutatedDifferent, 1);
+  assert.equal(redirectedRelay.mutatedVerdicts.unsafe, 1);
+}
 if (shards === 4 && shard === 3) {
   // 848 includes isolated UTF-16 surrogates in the recorded trace.
   for (const start of [16, 848]) {
@@ -464,7 +489,7 @@ if (shards === 4 && shard === 2) {
   assert.ok(composed.proved > 0);
   assert.ok(composed.renamedExportCases > 0);
   assert.ok(composed.multiplePublicNameCases > 0);
-  assert.equal(composed.importAliasRequestedCases, 4);
+  assert.equal(composed.importAliasRequestedCases, 5);
   assert.ok(composed.importAliasGeneratedCases > 0);
   assert.equal(composed.importAliasComparedCases, composed.importAliasGeneratedCases);
   assert.ok(composed.astNodeCases.IfStatement > 0);
@@ -580,7 +605,7 @@ if (shards === 4 && shard === 0) {
 if (shards === 4 && shard === 1) assert.equal(bulk.different, bulk.cases);
 if (shards === 4 && shard === 2)
   for (const [kind, count] of Object.entries(bulk.mutationKinds))
-    if (!["composedEffect", "throwValue"].includes(kind)) assert.ok(count > 0);
+    if (!["composedEffect", "throwValue", "renamedReexport"].includes(kind)) assert.ok(count > 0);
 if (shards === 4 && shard === 0) {
   for (const start of [279, 343, 407, 471, 535]) {
     const changedThrow = await runFuzz({

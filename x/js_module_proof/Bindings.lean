@@ -33,6 +33,7 @@ structure BindingImport where
   locals : List String
   links : List (String × String) := []
   reexports : List String
+  reexportLinks : List (String × String) := []
   deriving DecidableEq, BEq, Repr
 
 structure BindingModule where
@@ -225,27 +226,34 @@ def importedMappings (imported : BindingImport) : List (String × String) :=
 def localDeclaration (module : BindingModule) (name : String) : Option (Nat × BindingStmt) :=
   (module.assignment.zip module.statements).find? (fun pair => declaredName pair.2 == some name)
 
-/- Follow explicit unrenamed reexports, bounded by the module count. A cycle
-   cannot manufacture an owner: without reaching a declaration it returns none. -/
-def resolveExportFuel (modules : List BindingModule) : Nat → Nat → String → String → Option (Nat × (Nat × BindingStmt))
-  | 0, _, _, _ => none
-  | fuel + 1, index, localName, publicName => do
+def reexportMappings (imported : BindingImport) : List (String × String) :=
+  if imported.reexportLinks.isEmpty then imported.reexports.map (fun name => (name, name))
+  else imported.reexportLinks
+
+/- Resolve the declaration actually exposed under a public name, without
+   assuming it is the source declaration expected by a valid split. -/
+def resolveActualExportFuel (modules : List BindingModule) : Nat → Nat → String → Option (Nat × (Nat × BindingStmt))
+  | 0, _, _ => none
+  | fuel + 1, index, publicName => do
     let module ← elementAt modules index
-    let direct := if (directExportMappings module).contains (localName, publicName) then
-      (localDeclaration module localName).map (fun declaration => (index, declaration)) else none
+    let direct := (directExportMappings module).findSome? fun link =>
+      if link.2 == publicName then (localDeclaration module link.1).map (fun declaration => (index, declaration)) else none
     match direct with
     | some declaration => some declaration
-    | none => module.imports.findSome? (fun imported =>
-      if imported.reexports.contains publicName then
-        resolveExportFuel modules fuel imported.dependency localName publicName
-      else none)
+    | none => module.imports.findSome? fun imported => do
+      let link ← (reexportMappings imported).find? (fun link => link.2 == publicName)
+      resolveActualExportFuel modules fuel imported.dependency link.1
+
+/- Follow the actual graph, then require the expected source declaration. -/
+def resolveExportFuel (modules : List BindingModule) (fuel index : Nat) (localName publicName : String) : Option (Nat × (Nat × BindingStmt)) := do
+  let resolved ← resolveActualExportFuel modules fuel index publicName
+  if declaredName resolved.2.2 == some localName then some resolved else none
 
 def ownsAliasedExport (modules : List BindingModule) (index : Nat) (localName publicName : String) : Bool :=
   (resolveExportFuel modules (modules.length + 1) index localName publicName).isSome
 
 def ownsExport (modules : List BindingModule) (index : Nat) (name : String) : Bool :=
-  (modules.flatMap fun module => module.statements.filterMap declaredName).any
-    (fun localName => ownsAliasedExport modules index localName name)
+  (resolveActualExportFuel modules (modules.length + 1) index name).isSome
 
 def visible (modules : List BindingModule) (index : Nat) (name : String) : Bool :=
   match elementAt modules index with
@@ -753,6 +761,7 @@ def moduleValid (source : List BindingStmt) (modules : List BindingModule) (inde
     module.imports.all (fun i =>
       decide ((importedMappings i).map Prod.fst = i.locals) &&
       (importedMappings i).all (fun link => ownsAliasedExport modules i.dependency link.1 link.2) &&
+      decide ((reexportMappings i).map Prod.fst = i.reexports) &&
       i.reexports.all (ownsExport modules i.dependency)) &&
     names.all (fun name => names.count name == 1) &&
     module.statements.all (validRefs source modules index)
@@ -773,13 +782,19 @@ def publicNames (module : BindingModule) : List String :=
 def sourceDeclaration (source : List BindingStmt) (name : String) : Option (Nat × BindingStmt) :=
   ((List.range source.length).zip source).find? (fun pair => declaredName pair.2 == some name)
 
-def resolveReference (modules : List BindingModule) (index : Nat) (name : String) : Option (Nat × (Nat × BindingStmt)) := do
+def resolveActualReference (modules : List BindingModule) (index : Nat) (name : String) : Option (Nat × (Nat × BindingStmt)) := do
   let module ← elementAt modules index
   match localDeclaration module name with
   | some declaration => some (index, declaration)
-  | none => module.imports.findSome? (fun imported => do
-      let link ← (importedMappings imported).find? (fun link => link.1 == name)
-      resolveExportFuel modules (modules.length + 1) imported.dependency link.1 link.2)
+  | none => module.imports.findSome? fun imported => do
+    let link ← (importedMappings imported).find? (fun link => link.1 == name)
+    resolveActualExportFuel modules (modules.length + 1) imported.dependency link.2
+
+
+/- Accepted references must resolve to the same source declaration. -/
+def resolveReference (modules : List BindingModule) (index : Nat) (name : String) : Option (Nat × (Nat × BindingStmt)) := do
+  let resolved ← resolveActualReference modules index name
+  if declaredName resolved.2.2 == some name then some resolved else none
 
 def referenceNames : BindingStmt → List String
   | .variable _ _ => []
@@ -1082,6 +1097,41 @@ def findAssignedStatement (modules : List BindingModule) (index : Nat) : Option 
 
 def outputDefinitions (modules : List BindingModule) : List BindingStmt :=
   modules.flatMap BindingModule.statements
+
+/- For a counterexample, resolve a simple reader's imported reference using the
+   actual output graph. Other operations continue to use the shared executor. -/
+/- The explicit cases avoid the axiom-using matcher generated for a catch-all
+   that returns the original inductive value. -/
+def witnessedOutputStatement (modules : List BindingModule) (index : Nat) : BindingStmt → Option BindingStmt
+  | .reader name source => do
+    let resolved ← resolveActualReference modules index source
+    let target ← declaredName resolved.2.2
+    some (.reader name target)
+  | .variable name value => some (.variable name value)
+  | .hoistedVariable name value => some (.hoistedVariable name value)
+  | .constant name value => some (.constant name value)
+  | .function name target source => some (.function name target source)
+  | .thrower name value => some (.thrower name value)
+  | .expressionFunction name parameters body => some (.expressionFunction name parameters body)
+  | .capturedFactory name parameters locals closureParameters body => some (.capturedFactory name parameters locals closureParameters body)
+  | .capturedClosure name factory arguments keys => some (.capturedClosure name factory arguments keys)
+  | .capturedAlias name target => some (.capturedAlias name target)
+  | .factory name localName source => some (.factory name localName source)
+  | .closure name factory => some (.closure name factory)
+  | .wrapper name target => some (.wrapper name target)
+  | .recordCall name => some (.recordCall name)
+  | .call name => some (.call name)
+  | .record name => some (.record name)
+  | .discardedLiteral => some .discardedLiteral
+  | .recordPrimitive value => some (.recordPrimitive value)
+
+def witnessedOutputModule (modules : List BindingModule) (index : Nat) : Option (List BindingStmt) := do
+  let module ← elementAt modules index
+  module.statements.mapM (witnessedOutputStatement modules index)
+
+def witnessedOutputDefinitions (modules : List BindingModule) : Option (List BindingStmt) := do
+  let grouped ← (List.range modules.length).mapM (witnessedOutputModule modules)
+  pure grouped.flatten
 
 def outputBindingState (source : List BindingStmt) (modules : List BindingModule) (entry : Nat) : Option (ExecutionState Unit) := do
   let order ← machineTrace (asEffectModules modules) entry
