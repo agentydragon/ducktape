@@ -5,7 +5,7 @@ import Experiments.CoreJS.Syntax
 /-!
 # CoreJS: reading a program
 
-`to_core.mjs` writes a program in postfix: a JSON array of tokens `[tag, operand…]`. A token takes its parts from a
+`to_core.mjs` writes the statements of a module in postfix: a JSON array of tokens `[tag, operand…]`. A token takes its parts from a
 stack of the trees built so far and puts one tree back, so reading is a fold over the tokens and needs no recursion.
 A number is the 16 hexadecimal digits of its bits, so no decimal is rounded on the way.
 -/
@@ -164,6 +164,7 @@ def token (tag : String) (args : List Json) : D Unit := do
     let k ← popExpr
     push (.expr (.delete (← popExpr) k))
   | "targetVar", [x] => do push (.target (.var (← str x)))
+  | "targetFrozen", [x] => do push (.target (.frozen (← str x)))
   | "targetMember", [] => do
     let k ← popExpr
     push (.target (.member (← popExpr) k))
@@ -231,8 +232,8 @@ def token (tag : String) (args : List Json) : D Unit := do
     push (.stmt (.tryFinally (← popStmt) finalizer))
   | _, _ => fail s!"unknown token {tag} with {args.length} operands"
 
-/-- The statements of a program, from its tokens. -/
-def program (j : Json) : Except String (List Stmt) := do
+/-- The statements of a module, from its tokens. -/
+def statements (j : Json) : Except String (List Stmt) := do
   let tokens ← j.getArr?
   let run : D Unit := tokens.forM fun t => do
     match (← liftM (m := Except String) t.getArr?).toList with
@@ -241,6 +242,36 @@ def program (j : Json) : Except String (List Stmt) := do
   let ((), stack) ← run.run []
   (stack.reverse.mapM fun
     | .stmt s => pure s
-    | _ => throw "a program is a list of statements")
+    | _ => throw "a module is a list of statements")
+
+def names (j : Json) : Except String (Name × Name) := do
+  match (← j.getArr?).toList with
+  | [a, b] => pure (← a.getStr?, ← b.getStr?)
+  | _ => throw "a pair of names was expected"
+
+def importOf (j : Json) : Except String Import := do
+  let source ← j.getObjValAs? String "source"
+  let pairs ← j.getObjVal? "names" >>= Json.getArr?
+  pure { source, names := ← pairs.toList.mapM names }
+
+/-- `{"name", "imports": [{"source", "names": [[exported, local], …]}, …], "exports": [[public, local], …], "ids", "tokens"}`:
+`ids` has the identity of each top-level statement. -/
+def module (j : Json) : Except String Module := do
+  let name ← j.getObjValAs? String "name"
+  let imports ← (← j.getObjVal? "imports" >>= Json.getArr?).toList.mapM importOf
+  let exports ← (← j.getObjVal? "exports" >>= Json.getArr?).toList.mapM names
+  let ids ← (← j.getObjVal? "ids" >>= Json.getArr?).toList.mapM Json.getNat?
+  let body ← statements (← j.getObjVal? "tokens")
+  if ids.length != body.length then throw s!"{name}: {ids.length} identities for {body.length} statements"
+  pure { name, imports, body := ids.zip body, exports }
+
+/-- A program: the tokens of its one module, or `{"entry": name, "modules": […]}`. -/
+def program (j : Json) : Except String Program :=
+  match j with
+  | .arr _ => Program.single <$> statements j
+  | _ => do
+    let entry ← j.getObjValAs? String "entry"
+    let modules ← (← j.getObjVal? "modules" >>= Json.getArr?).toList.mapM module
+    pure { entry, modules }
 
 end CoreJS.Decode

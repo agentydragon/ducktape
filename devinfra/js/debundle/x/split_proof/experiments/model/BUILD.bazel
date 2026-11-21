@@ -12,6 +12,7 @@ js_library(
     name = "sources",
     srcs = [
         "cases.mjs",
+        "module_cases.mjs",
         "to_core.mjs",
     ],
     visibility = ["//devinfra/js/debundle/x/split_proof/experiments/translation:__pkg__"],

@@ -244,25 +244,33 @@ theorem newCell_keeps (b : Binding) {base s : State} (hb : Extends base s) : (ne
   | unknown why s' => unfold newCell at h; split at h <;> cases h; exact hb
   | fuel => trivial
 
-theorem declare_keeps (env : Env) (bs : List (Name × Binding)) {base s : State} (hb : Extends base s) :
-    (declare env bs s).Keeps base := by
+theorem newCells_keeps (bs : List (Name × Binding)) {base s : State} (hb : Extends base s) :
+    (newCells bs s).Keeps base := by
   induction bs generalizing s with
   | nil => exact (inert_pure _).keeps hb
   | cons b rest ih =>
     obtain ⟨x, b⟩ := b
-    unfold declare
+    unfold newCells
     refine keeps_bind (newCell_keeps b hb) fun a s1 _ hb1 => ?_
-    refine keeps_bind (ih hb1) fun env1 s2 _ hb2 => ?_
+    refine keeps_bind (ih hb1) fun frame s2 _ hb2 => ?_
     exact (inert_pure _).keeps hb2
+
+theorem declare_keeps (env : Env) (bs : List (Name × Binding)) {base s : State} (hb : Extends base s) :
+    (declare env bs s).Keeps base := by
+  unfold declare
+  exact keeps_bind (newCells_keeps bs hb) fun frame s1 _ hb1 => (inert_pure _).keeps hb1
 
 /-- One declared name is first in the new scope, at an address that was free. -/
 theorem declare_one {env env' : Env} {x : Name} {b : Binding} {s s' : State}
     (h : declare env [(x, b)] s = .ok env' s') : ∃ c, env'.vars.lookup x = some c ∧ s.cellAt c = none := by
   unfold declare at h
-  obtain ⟨c, t, hc, h⟩ := bind_ok h
-  unfold declare at h
+  obtain ⟨frame, t, hf, h⟩ := bind_ok h
+  unfold newCells at hf
+  obtain ⟨c, t1, hc, hf⟩ := bind_ok hf
+  unfold newCells at hf
+  cases hf
   cases h
-  exact ⟨c, by simp [List.lookup], (newCell_ok hc).1⟩
+  exact ⟨c, by simp, (newCell_ok hc).1⟩
 
 theorem initVar_keeps {env : Env} {x : Name} {c : Addr} (v : Val) {base s : State} (hb : Extends base s)
     (hx : env.vars.lookup x = some c) (hc : base.cellAt c = none) : (initVar env x v s).Keeps base := by
@@ -522,16 +530,16 @@ def readsNowProps : List PropDef → List Name
   | _ :: ps => readsNowProps ps
 end
 
-/-- Units `i` and `j` declare different bindings by expressions that only allocate, and neither reads the binding the
-other declares. Then if `i` then `j` ends well, `j` then `i` ends well in the same state. -/
+/-- The statements with identities `i` and `j` declare different bindings by expressions that only allocate, and
+neither reads the binding the other declares. Then if `i` then `j` ends well, `j` then `i` ends well in the same
+state. -/
 def AllocOnlyUnitsCommute : Prop :=
-  ∀ (fuel : Nat) (env : Env) (ss : List Stmt) (i j : Nat) (ki kj : DeclKind) (x y : Name) (e e' : Expr) (s s' : State),
-    ss[i]? = some (.decl ki x e) → ss[j]? = some (.decl kj y e') → i ≠ j →
+  ∀ (fuel : Nat) (env : Env) (i j : Nat) (ki kj : DeclKind) (x y : Name) (e e' : Expr) (s s' : State), i ≠ j →
     e.allocOnly = true → e'.allocOnly = true → env.vars.lookup x ≠ env.vars.lookup y →
     (∀ z ∈ e.readsNow, env.vars.lookup z ≠ env.vars.lookup y) →
     (∀ z ∈ e'.readsNow, env.vars.lookup z ≠ env.vars.lookup x) →
-    (runUnit fuel env ss i >>= fun _ => runUnit fuel env ss j) s = .ok .normal s' →
-    (runUnit fuel env ss j >>= fun _ => runUnit fuel env ss i) s = .ok .normal s'
+    (runUnit fuel env i (.decl ki x e) >>= fun _ => runUnit fuel env j (.decl kj y e')) s = .ok .normal s' →
+    (runUnit fuel env j (.decl kj y e') >>= fun _ => runUnit fuel env i (.decl ki x e)) s = .ok .normal s'
 
 #print axioms allocOnly_extends
 #print axioms decl_allocOnly

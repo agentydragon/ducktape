@@ -8,7 +8,12 @@ What the front end rewrites, so that one construct here has one rule:
 - `while (c) s` is `for (; c; ) s`;
 - a template literal and `String(e)` are `+` over strings and `UnOp.toString`;
 - `o.k` is `o["k"]`, and a declaration list is one declaration per name;
-- `try … catch … finally` is a `tryCatch` inside a `tryFinally`.
+- `try … catch … finally` is a `tryCatch` inside a `tryFinally`;
+- an assignment to a name that an `import` binds has the target `Target.frozen`: which declaration a name means is
+  decided by the text, so the front end knows that the assignment has to throw.
+
+A program is a set of modules (`Program`). Each top-level statement of a module carries an identity, a number that no
+other statement of the program has. A program that is split into modules keeps the identities of its statements.
 -/
 
 namespace CoreJS
@@ -83,6 +88,8 @@ inductive Expr where
 
 inductive Target where
   | var (x : Name)
+  /-- A name that an `import` binds: it can be read and not assigned. -/
+  | frozen (x : Name)
   | member (o k : Expr)
 
 inductive PropDef where
@@ -128,6 +135,32 @@ def Func.kind : Func → FuncKind | .mk _ k .. => k
 def Func.self : Func → Bool | .mk _ _ s .. => s
 def Func.params : Func → List Name | .mk _ _ _ ps _ => ps
 def Func.body : Func → List Stmt | .mk _ _ _ _ b => b
+
+/-! ## Modules -/
+
+/-- `import { a as b } from "source"`: `names` has `(a, b)`, the name `source` exports and the local name. A bare
+`import "source"` has no names. -/
+structure Import where
+  source : String
+  names : List (Name × Name)
+
+/-- A module: its `import`s in source order, its top-level statements each with its identity, and what it exports,
+`(public, local)` for `export { local as public }`. -/
+structure Module where
+  name : String
+  imports : List Import
+  body : List (Nat × Stmt)
+  exports : List (Name × Name)
+
+/-- The modules of a program and the one that is loaded first. -/
+structure Program where
+  entry : String
+  modules : List Module
+
+/-- One module and nothing else: statement `j` has the identity `j`. -/
+def Program.single (ss : List Stmt) : Program where
+  entry := "main"
+  modules := [{ name := "main", imports := [], body := (List.range ss.length).zip ss, exports := [] }]
 
 /-! ## Hoisting: which names a scope declares -/
 

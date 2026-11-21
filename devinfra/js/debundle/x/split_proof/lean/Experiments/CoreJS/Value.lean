@@ -5,7 +5,7 @@ import Experiments.CoreJS.Syntax
 # CoreJS: values, the state, and the operations that run no program code
 
 **Addresses.** An object or a binding lives at `(region, index)`. An allocation appends to the region the state names,
-and a top-level statement runs with a region of its own. Which address an allocation gets is not observable in
+and a top-level statement has a region of its own: region `i + 1` for the statement with identity `i`. Which address an allocation gets is not observable in
 JavaScript, so any policy that hands out unused ones is faithful. This one makes what a statement allocates independent
 of the statements that ran before it, so two statements that only allocate end in equal states in either order, with
 no renaming of addresses.
@@ -23,7 +23,7 @@ structure Addr where
   deriving DecidableEq, Repr
 
 inductive ErrorKind where
-  | type | reference
+  | type | reference | syntax
   deriving DecidableEq, Repr
 
 inductive Val where
@@ -139,13 +139,18 @@ def newCell (b : Binding) : M Addr := fun s =>
 def setCell (a : Addr) (v : Val) : M Unit := fun s =>
   .ok () { s with cells := s.cells.modify a.region (·.modify a.index fun b => { b with value := some v }) }
 
-/-- A new innermost frame. -/
-def declare (env : Env) : List (Name × Binding) → M Env
-  | [] => pure env
+/-- New bindings, in order: each name with where its binding is. -/
+def newCells : List (Name × Binding) → M (List (Name × Addr))
+  | [] => pure []
   | (x, b) :: rest => do
     let a ← newCell b
-    let env ← declare env rest
-    pure { env with vars := (x, a) :: env.vars }
+    let frame ← newCells rest
+    pure ((x, a) :: frame)
+
+/-- A new innermost frame. -/
+def declare (env : Env) (bs : List (Name × Binding)) : M Env := do
+  let frame ← newCells bs
+  pure { env with vars := frame ++ env.vars }
 
 def readVar (env : Env) (x : Name) : M Val := do
   match env.vars.lookup x with

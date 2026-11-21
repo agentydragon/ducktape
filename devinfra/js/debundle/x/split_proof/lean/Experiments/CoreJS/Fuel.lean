@@ -87,15 +87,11 @@ theorem prim_le {call call' : Call} (h : Call.le call call') (p : Prim) (args : 
 
 theorem getRef_le {call call' : Call} (h : Call.le call call') (env : Env) (r : Ref) :
     getRef call env r ⊑ getRef call' env r := by
-  cases r <;> unfold getRef
-  · exact M.le_refl _
-  · exact getProp_le h _ _
+  cases r <;> first | exact M.le_refl _ | exact getProp_le h _ _
 
 theorem putRef_le {call call' : Call} (h : Call.le call call') (env : Env) (r : Ref) (v : Val) :
     putRef call env r v ⊑ putRef call' env r v := by
-  cases r <;> unfold putRef
-  · exact M.le_refl _
-  · exact setProp_le h _ _ _
+  cases r <;> first | exact M.le_refl _ | exact setProp_le h _ _ _
 
 /-- Every function of the interpreter with the bound `n`, against the same with the bound `m`. -/
 structure Mono (n m : Nat) : Prop where
@@ -236,32 +232,38 @@ theorem mono : ∀ n m, n ≤ m → Mono n m := by
       exact ⟨ih.expr_succ, ih.args_succ, ih.target_succ, ih.props_succ, ih.members_succ, ih.fields_succ, ih.call_succ,
         ih.construct_succ, ih.stmt_succ, ih.stmts_succ, ih.loop_succ⟩
 
-theorem runUnit_le {n m : Nat} (h : n ≤ m) (env : Env) (ss : List Stmt) (j : Nat) :
-    runUnit n env ss j ⊑ runUnit m env ss j := by
-  have ih := mono n m h
-  unfold runUnit
-  mono ih
-
-theorem runUnits_le {n m : Nat} (h : n ≤ m) (env : Env) (ss : List Stmt) (order : List Nat) :
-    runUnits n env ss order ⊑ runUnits m env ss order := by
-  induction order with
+theorem runBody_le {n m : Nat} (h : n ≤ m) (env : Env) (body : List (Nat × Stmt)) :
+    runBody n env body ⊑ runBody m env body := by
+  induction body with
   | nil => exact M.le_refl _
-  | cons j rest ih => exact M.le_bind (runUnit_le h env ss j) fun _ => ih
+  | cons unit rest ih =>
+    obtain ⟨id, s⟩ := unit
+    have hs := (mono n m h).stmt env s
+    unfold runBody runUnit inRegion
+    repeat' first | exact hs | exact ih | mono_step
+
+theorem runModules_le {n m : Nat} (h : n ≤ m) (linked : List (Module × Env)) :
+    runModules n linked ⊑ runModules m linked := by
+  induction linked with
+  | nil => exact M.le_refl _
+  | cons first rest ih =>
+    obtain ⟨md, env⟩ := first
+    exact M.le_bind (runBody_le h env md.body) fun _ => ih
 
 /-- **More fuel never changes a run that finished.** -/
-theorem fuel_mono {n m : Nat} {ss : List Stmt} {r : Res Unit} (h : runProgram n ss = r) (hr : r ≠ .fuel)
-    (hnm : n ≤ m) : runProgram m ss = r := by
-  have hle : (runProgram n ss).le (runProgram m ss) :=
-    M.le_bind (M.le_refl _) (fun env => runUnits_le hnm env ss _) (initialState ss.length)
+theorem fuel_mono {n m : Nat} {P : Program} {r : Res Unit} (h : runProgram n P = r) (hr : r ≠ .fuel) (hnm : n ≤ m) :
+    runProgram m P = r := by
+  have hle : (runProgram n P).le (runProgram m P) :=
+    M.le_bind (M.le_refl _) (fun linked => runModules_le hnm linked) (initialState P.regions)
   rcases hle with hf | he
   · exact absurd (h ▸ hf) hr
   · exact he ▸ h
 
 /-- The program ends with `r`: some bound on the depth is enough. -/
-def Ends (ss : List Stmt) (r : Res Unit) : Prop := ∃ n, runProgram n ss = r ∧ r ≠ .fuel
+def Ends (P : Program) (r : Res Unit) : Prop := ∃ n, runProgram n P = r ∧ r ≠ .fuel
 
 /-- A program ends in at most one way. -/
-theorem Ends.unique {ss : List Stmt} {r r' : Res Unit} (h : Ends ss r) (h' : Ends ss r') : r = r' := by
+theorem Ends.unique {P : Program} {r r' : Res Unit} (h : Ends P r) (h' : Ends P r') : r = r' := by
   obtain ⟨n, hn, hr⟩ := h
   obtain ⟨n', hn', hr'⟩ := h'
   rw [← fuel_mono hn hr (Nat.le_max_left n n'), ← fuel_mono hn' hr' (Nat.le_max_right n n')]
