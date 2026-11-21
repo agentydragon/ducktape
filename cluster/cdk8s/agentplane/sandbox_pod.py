@@ -58,13 +58,8 @@ def proxy_environment() -> list[k8s.EnvVar]:
     return [
         *(k8s.EnvVar(name=name, value=_MITM_PROXY_URL) for name in PROXY_VAR_NAMES),
         *(k8s.EnvVar(name=name, value=_NO_PROXY_HOSTS) for name in NO_PROXY_VAR_NAMES),
-        *trust_environment(),
+        *(k8s.EnvVar(name=name, value=_CA_BUNDLE_PATH) for name in CA_BUNDLE_VAR_NAMES),
     ]
-
-
-def trust_environment() -> list[k8s.EnvVar]:
-    """System CA paths for workloads that need trust without the egress proxy."""
-    return [k8s.EnvVar(name=name, value=_CA_BUNDLE_PATH) for name in CA_BUNDLE_VAR_NAMES]
 
 
 def workload_environment(env: Environment, existing: Sequence[k8s.EnvVar]) -> list[k8s.EnvVar]:

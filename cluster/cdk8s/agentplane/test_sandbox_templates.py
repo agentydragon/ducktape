@@ -40,7 +40,6 @@ def _runner_pod(
     isolated_executor: bool,
     environment_runtime_resources: k8s.ResourceRequirements,
     executor_resources: k8s.ResourceRequirements | None,
-    session_reconcile_concurrency: int | None = None,
 ) -> dict[str, Any]:
     chart = Chart(app, "runner-template-test")
     EnvironmentSandboxTemplate(
@@ -51,7 +50,6 @@ def _runner_pod(
         image="example.invalid/runner",
         environment_runtime_resources=environment_runtime_resources,
         executor_resources=executor_resources,
-        session_reconcile_concurrency=session_reconcile_concurrency,
     )
     template = one(doc for doc in Cdk8sTesting.synth(chart) if doc["kind"] == "SandboxTemplate")
     return cast(dict[str, Any], template["spec"]["pod"]["spec"])
@@ -363,10 +361,9 @@ def test_llm_sidecar_route_uses_the_svid_listener(staging_manifests: list[dict[s
     settings_volume = one(volume for volume in pod["volumes"] if volume["name"] == "egress-sidecar-settings")
     settings_doc = find_resource(staging_manifests, "ConfigMap", settings_volume["configMap"]["name"])
     settings = cast(dict[str, Any], yaml.safe_load(settings_doc["data"]["settings.yaml"]))
-    origin = llm_ingress.service(staging.ENV.namespace)
-    destination = llm_ingress.service(staging.ENV.namespace)
-    route = settings["workload_routes"][f"{origin.fqdn}:{origin.port.number}"]
-    assert route["upstream"] == f"{destination.fqdn}:{destination.pod_port}"
+    service = llm_ingress.service(staging.ENV.namespace)
+    route = settings["workload_routes"][f"{service.fqdn}:{service.port.number}"]
+    assert route["upstream"] == f"{service.fqdn}:{service.pod_port}"
     assert route["server_uri"] == LLM_INGRESS_URI
 
 

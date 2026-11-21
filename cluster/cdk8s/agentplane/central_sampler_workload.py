@@ -74,7 +74,6 @@ class CentralSampler(Construct):
         namespace = env.namespace
         self.env = env
         self.service = central_sampler.service(namespace)
-        self.llm_ingress = llm_ingress.service(namespace)
         self.history_ingress = history_service.service(namespace)
 
         settings = Settings(

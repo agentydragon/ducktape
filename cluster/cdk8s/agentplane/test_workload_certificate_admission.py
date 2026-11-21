@@ -61,14 +61,14 @@ def _record_uri(namespace: str, name: str = "test-agent") -> str:
     return f"spiffe://agentplane/{namespace}/{name}/{CREDENTIAL_ID}"
 
 
-def _certificate(*, uris: list[str], namespace: str = NAMESPACE, issuer: Body = ISSUER_REF) -> Body:
+def _certificate(*, uris: list[str], namespace: str = NAMESPACE) -> Body:
     return {
         "apiVersion": f"{GROUP}/{VERSION}",
         "kind": "Certificate",
         "metadata": {"name": "test-certificate", "namespace": namespace},
         "spec": {
             "secretName": "test-certificate",
-            "issuerRef": issuer,
+            "issuerRef": ISSUER_REF,
             "uris": uris,
             "usages": ["digital signature", "server auth", "client auth"],
         },
