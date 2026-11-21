@@ -28,6 +28,7 @@ py_test(
     deps = [
         ":audit_lib",
         "//:conftest",
+        "@pypi//httpx",
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

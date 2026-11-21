@@ -73,9 +73,8 @@ kubectl port-forward -n monitoring svc/mimir-querier 8080:8080 >/tmp/mimir-pf.lo
 kubectl port-forward -n loki svc/loki-read 3100:3100 >/tmp/loki-pf.log 2>&1 &
 ```
 
-Wait until both logs print `Forwarding from` before running. A failed Mimir or
-Loki query is swallowed and returns nothing, so a port-forward still booting
-silently drops that source from the report.
+Wait for `Forwarding from`. A failed Mimir or Loki query logs a warning and
+contributes no values to the report.
 
 Mimir needs the Flux controllers scraped: the PodMonitor in
 `cluster/cdk8s/flux_monitoring.py` (`kubectl get podmonitor -n flux-system flux-system`).
