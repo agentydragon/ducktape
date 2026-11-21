@@ -210,7 +210,9 @@ as `agentplane_codex_cli_linux_x64`. Divergence is allowed when newer model meta
 is needed without an app-server protocol upgrade; document the reason beside the pin
 and run `//cluster/cdk8s/agentplane:test_codex_models` against the native CLI.
 Currently the catalog is from 0.171.0 for GPT-6.2, while the native CLI stays at 0.166.0.
-The source JSON matches the 0.171.0 `debug models --bundled` output structurally.
+The source JSON is not the CLI-normalized `debug models --bundled` output: the CLI
+adds defaults and transforms fields. Regenerate manifests when changing the source;
+the compatibility test verifies that the pinned runtime accepts the served entries.
 To update, resolve the release tag to its source commit, download that file, update
 its URL and SHA-256, then follow the [manifest generation recipe](../cluster/docs/model_catalog.md).
 Native tests retain their harness pin's own bundled catalog.
