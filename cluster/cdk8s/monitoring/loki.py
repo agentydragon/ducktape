@@ -5,15 +5,7 @@ Grafana reaches Loki internally via the cluster Service.
 
 from __future__ import annotations
 
-from textwrap import dedent
-
 from cdk8s import ApiObjectMetadata, App, Chart
-from flux_helm.io.fluxcd.toolkit.helm import (
-    HelmReleaseSpecPostRenderers,
-    HelmReleaseSpecPostRenderersKustomize,
-    HelmReleaseSpecPostRenderersKustomizePatches,
-    HelmReleaseSpecPostRenderersKustomizePatchesTarget,
-)
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 
 from cluster.cdk8s import cilium, namespaces, node_scheduling
@@ -140,7 +132,10 @@ def _loki_values() -> dict[str, object]:
             "resources": {"requests": {"cpu": "100m", "memory": "1Gi"}, "limits": {"cpu": "500m", "memory": "2Gi"}},
         },
         "read": {
-            "replicas": 2,
+            # The chart rolls one unavailable Pod at a time. Keep two reads available
+            # through rollouts and voluntary evictions across the three OVH workers.
+            "replicas": 3,
+            "maxUnavailable": 1,
             "annotations": _GOLDILOCKS_OFF,
             "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
             "affinity": node_scheduling.PREFER_WORKERS,
@@ -219,32 +214,6 @@ def _helm_releases(chart: Chart) -> None:
         chart_interval="12h",
         install=RETRY_FAILED_INSTALL,
         values=_loki_values(),
-        # Loki 7.x's Deployment template hardcodes the rolling update strategy.
-        post_renderers=[
-            HelmReleaseSpecPostRenderers(
-                kustomize=HelmReleaseSpecPostRenderersKustomize(
-                    patches=[
-                        HelmReleaseSpecPostRenderersKustomizePatches(
-                            target=HelmReleaseSpecPostRenderersKustomizePatchesTarget(
-                                kind="Deployment", name="loki-read", namespace=NAME
-                            ),
-                            patch=dedent("""\
-                                apiVersion: apps/v1
-                                kind: Deployment
-                                metadata:
-                                  name: loki-read
-                                  namespace: loki
-                                spec:
-                                  strategy:
-                                    rollingUpdate:
-                                      maxSurge: 1
-                                      maxUnavailable: 0
-                                """),
-                        )
-                    ]
-                )
-            )
-        ],
     )
 
 

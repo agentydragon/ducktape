@@ -152,7 +152,6 @@ py_library(
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:vpa_policy",
         "//cluster/cdk8s/providers/cilium:network_policy",
-        "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/seaweedfs:s3",
         "@pypi//cdk8s",

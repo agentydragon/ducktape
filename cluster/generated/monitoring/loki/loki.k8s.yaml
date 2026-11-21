@@ -81,24 +81,6 @@ spec:
     remediation:
       retries: 3
   interval: 30m
-  postRenderers:
-    - kustomize:
-        patches:
-          - patch: |
-              apiVersion: apps/v1
-              kind: Deployment
-              metadata:
-                name: loki-read
-                namespace: loki
-              spec:
-                strategy:
-                  rollingUpdate:
-                    maxSurge: 1
-                    maxUnavailable: 0
-            target:
-              kind: Deployment
-              name: loki-read
-              namespace: loki
   values:
     backend:
       affinity:
@@ -242,9 +224,10 @@ spec:
       extraEnvFrom:
         - secretRef:
             name: loki-seaweedfs-credentials
+      maxUnavailable: 1
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
-      replicas: 2
+      replicas: 3
       resources:
         limits:
           cpu: 500m
