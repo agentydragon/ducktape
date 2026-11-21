@@ -9,7 +9,9 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { listThreadWindow } from "./client";
+import { listThreadMetadata } from "./client";
+import { SessionSchema } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
+import { SessionSummarySchema } from "../../../history_service/api/history/history_service_pb";
 import { Home } from "./home";
 import { RoutedThreadsLiveProvider } from "./live";
 import { SandboxesLiveProvider } from "../sandboxes/live";
@@ -20,7 +22,7 @@ import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 
 vi.mock("./client", async (importOriginal) => ({
   ...(await importOriginal<typeof ThreadClientModule>()),
-  listThreadWindow: vi.fn(),
+  listThreadMetadata: vi.fn(),
 }));
 
 let root: ReturnType<typeof createRoot>;
@@ -92,25 +94,30 @@ async function render(): Promise<string[]> {
         throw new Error(`Unexpected Thread watch route: ${pathname}`);
       }
       threadStreams.push(pathname);
-      watch.send(
-        pathname === "/upstream/dispatcher/v1/sessions:watch"
-          ? { caughtUp: {}, resumeToken: "test-snapshot-token" }
-          : pathname === "/upstream/app/v1/threads:watch"
-            ? { changed: {}, updatesConnected: true }
-            : { changed: {} }
-      );
+      if (pathname === "/upstream/dispatcher/v1/sessions:watch") {
+        for (const candidate of THREADS)
+          if (candidate.session)
+            watch.send({ session: toJson(SessionSchema, candidate.session), resumeToken: "test-session" });
+        watch.send({ caughtUp: {}, resumeToken: "test-snapshot-token" });
+      } else if (pathname === "/upstream/app/v1/threads:watch") {
+        watch.send({ changed: {}, updatesConnected: true });
+      } else {
+        const ids = watch.url.searchParams.getAll("selected.session_ids");
+        watch.send({
+          snapshot: {
+            summaries: THREADS.filter((row) => ids.includes(row.metadata.threadId)).map((row) =>
+              toJson(SessionSummarySchema, row.summary)
+            ),
+          },
+        });
+      }
       return Promise.resolve(watch.response);
     }
     return eventFetch(input, init);
   });
-  vi.mocked(listThreadWindow).mockImplementation(async (listing) => ({
-    threads: THREADS.filter(
-      (candidate) =>
-        listing.search === null || candidate.metadata.name?.toLowerCase().includes(listing.search.toLowerCase())
-    ),
-    more: false,
-    archived_count: 0,
-  }));
+  vi.mocked(listThreadMetadata).mockImplementation(
+    async () => new Map(THREADS.map((row) => [row.metadata.threadId, row.metadata]))
+  );
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -176,15 +183,10 @@ it("shares one search with the sidebar while reusing the generated update watche
   });
   expect(searchBox(sidebar()).value).toBe("beta");
   await act(async () => vi.runAllTimers());
-  expect(threadStreams).toEqual([
-    "/upstream/dispatcher/v1/sessions:watch",
-    "/upstream/app/v1/threads:watch",
-    "/upstream/history/v1/session-summaries:watch",
-  ]);
-  const searches = vi.mocked(listThreadWindow).mock.calls.map(([listing]) => listing.search);
-  expect(searches.at(-1)).toBe("beta");
-  expect(searches.filter((search) => search === "beta")).toHaveLength(1);
-  expect(searches.slice(0, -1).every((search) => search === null)).toBe(true);
+  expect(threadStreams.filter((path) => path === "/upstream/dispatcher/v1/sessions:watch")).toHaveLength(1);
+  expect(threadStreams.filter((path) => path === "/upstream/app/v1/threads:watch")).toHaveLength(1);
+  expect(threadStreams.filter((path) => path === "/upstream/history/v1/session-summaries:watch")).toHaveLength(2);
+  expect(listThreadMetadata).toHaveBeenCalledTimes(1);
   for (const scope of [home(), sidebar()]) {
     expect(row(scope, "Beta thread")).toBeDefined();
     expect(scope.textContent).not.toContain("Alpha thread");

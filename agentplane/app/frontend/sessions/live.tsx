@@ -11,9 +11,12 @@ import { backoff, type StreamConnection } from "../transport/stream_reader";
 import { useStreamStatus } from "../transport/stream_status";
 import { followWatch } from "../transport/watch_stream";
 import { WatchThreadMetadataResponseSchema } from "../../app_service_pb";
-import { WatchSessionSummariesResponseSchema } from "../../../history_service/api/history/history_service_pb";
+import {
+  WatchSessionSummariesResponseSchema,
+  type SessionSummary,
+} from "../../../history_service/api/history/history_service_pb";
 
-import { type ThreadView, listThreadWindow, type ThreadListing } from "./client";
+import { type ThreadView, listThreadMetadata, selectThreadWindow, type ThreadListing } from "./client";
 
 /** The Thread window. Sandboxes come from the EnvironmentService inventory watch (`SandboxesLiveProvider`), their one source. */
 export type ThreadsSnapshot = {
@@ -103,20 +106,29 @@ export function useThreadsLive(listing: ThreadListing | null, openThreadId: stri
     setRefreshError(null);
     if (!enabled) return;
     let closed = false;
-    let running = false;
-    let dirty = false;
-    let retryAttempt = 0;
-    let retryTimer: number | undefined;
+    let inventoryReady = false;
     let updatesConnected = false;
     let disconnectedSince: number | null = null;
-    let historyReady = false;
-    let metadataReady = false;
-    let inventoryReady = false;
+    let metadata: Awaited<ReturnType<typeof listThreadMetadata>> | null = null;
     const sessions = new Map<string, Session>();
-    let inventoryConnection: StreamConnection = { phase: "connecting", since: Date.now() };
+    const summaries = new Map<string, SessionSummary>();
     const lifetime = new AbortController();
-    let historyConnection: StreamConnection = { phase: "connecting", since: Date.now() };
+    let metadataRunning = false;
+    let metadataDirty = false;
+    let retryAttempt = 0;
+    let retryTimer: number | undefined;
+    let inventoryConnection: StreamConnection = { phase: "connecting", since: Date.now() };
     let metadataConnection: StreamConnection = { phase: "connecting", since: Date.now() };
+    let historyConnection: StreamConnection = { phase: "connecting", since: Date.now() };
+    let watchKey: string | null = null;
+    let stopSummaries: (() => void)[] = [];
+    let summaryConnections: StreamConnection[] = [];
+    let generation = 0;
+    let snapshotPending = false;
+
+    function reportConnections(): void {
+      setConnection(combinedConnection(historyConnection, metadataConnection, inventoryConnection));
+    }
 
     function publishActivity(): void {
       setState((previous) =>
@@ -136,63 +148,130 @@ export function useThreadsLive(listing: ThreadListing | null, openThreadId: stri
       );
     }
 
-    function reportConnections(): void {
-      publishActivity();
-      setConnection(combinedConnection(historyConnection, metadataConnection, inventoryConnection));
+    function publish(): void {
+      if (closed || snapshotPending || !inventoryReady || metadata === null || currentListing.current.listing === null)
+        return;
+      const { listing: selected, openThreadId: open } = currentListing.current;
+      const data = selectThreadWindow(selected!, open, [...sessions.values()], metadata, summaries);
+      if (updatesConnected) disconnectedSince = null;
+      else disconnectedSince ??= Date.now();
+      const watch = threadWatchHealth(updatesConnected, disconnectedSince);
+      setState({
+        snapshot: {
+          ...data,
+          activity_current: inventoryConnection.phase === "live",
+          sandbox_uid: selected!.sandboxUID,
+          updates_connected: updatesConnected,
+          watch,
+        },
+        health: watch,
+      });
     }
 
     function refresh(): void {
-      if (closed || !inventoryReady) return;
-      window.clearTimeout(retryTimer);
-      retryTimer = undefined;
-      dirty = true;
-      if (running) return;
-      running = true;
-      void (async () => {
-        while (dirty && !closed) {
-          dirty = false;
-          try {
-            const current = currentListing.current;
-            if (current.listing === null) return;
-            const windowData = await listThreadWindow(
-              current.listing,
-              current.openThreadId,
-              [...sessions.values()],
-              lifetime.signal
-            );
-            if (closed) return;
-            if (updatesConnected) disconnectedSince = null;
-            else disconnectedSince ??= Date.now();
-            const watch = threadWatchHealth(updatesConnected, disconnectedSince);
-            const snapshot = {
-              ...windowData,
-              // A watch upsert can arrive while the History join is in flight.
-              threads: windowData.threads.map((thread) => ({
-                ...thread,
-                session: sessions.get(thread.metadata.threadId),
-              })),
-              activity_current: inventoryReady && inventoryConnection.phase === "live",
-              sandbox_uid: current.listing.sandboxUID,
-              updates_connected: updatesConnected,
-              watch,
-            };
-            setState({ snapshot, health: watch });
-            setRefreshError(null);
-            retryAttempt = 0;
-          } catch (reason) {
-            if (closed || lifetime.signal.aborted) return;
-            dirty = false;
-            setRefreshError(displayableError(reason));
-            retryTimer = window.setTimeout(() => {
-              retryTimer = undefined;
-              refresh();
-            }, backoff(retryAttempt++));
-          }
+      if (closed || !inventoryReady || metadata === null || currentListing.current.listing === null) return;
+      const { listing: selected, openThreadId: open } = currentListing.current;
+      const data = selectThreadWindow(selected!, open, [...sessions.values()], metadata, summaries);
+      const ids = data.threads.map((thread) => thread.metadata.threadId).sort();
+      const key = ids.join(",");
+      if (key !== watchKey) {
+        watchKey = key;
+        generation++;
+        const current = generation;
+        stopSummaries.forEach((stop) => stop());
+        stopSummaries = [];
+        summaryConnections = [];
+        const staged = new Map(summaries);
+        const pending = new Set<number>();
+        for (let start = 0; start < ids.length; start += 200) pending.add(start / 200);
+        snapshotPending = pending.size > 0;
+        if (ids.length === 0) historyConnection = DISABLED_CONNECTION;
+        for (let start = 0; start < ids.length; start += 200) {
+          const group = ids.slice(start, start + 200);
+          const index = summaryConnections.length;
+          summaryConnections.push({ phase: "connecting", since: Date.now() });
+          const query = new URLSearchParams();
+          group.forEach((id) => query.append("selected.session_ids", id));
+          stopSummaries.push(
+            followWatch(`/upstream/history/v1/session-summaries:watch?${query}`, {
+              onOpen: () => {
+                if (current === generation) {
+                  pending.add(index);
+                  snapshotPending = true;
+                }
+              },
+              onFrame: (value) => {
+                if (closed || current !== generation) return;
+                const frame = fromJson(WatchSessionSummariesResponseSchema, value);
+                switch (frame.observation.case) {
+                  case "snapshot":
+                    group.forEach((id) => staged.delete(id));
+                    frame.observation.value.summaries.forEach((row) => staged.set(row.sessionId, row));
+                    pending.delete(index);
+                    break;
+                  case "summary":
+                    staged.set(frame.observation.value.sessionId, frame.observation.value);
+                    break;
+                  case "removedSessionId":
+                    staged.delete(frame.observation.value);
+                    break;
+                  case "reconnectRequired":
+                    return;
+                  default:
+                    throw new Error("History returned an empty selected summaries watch frame.");
+                }
+                if (pending.size === 0) {
+                  summaries.clear();
+                  staged.forEach((row, id) => summaries.set(id, row));
+                  snapshotPending = false;
+                  publish();
+                }
+              },
+              onConnection: (next) => {
+                if (current === generation) {
+                  summaryConnections[index] = next;
+                  const disconnected = summaryConnections.find((connection) => connection.phase !== "live");
+                  historyConnection = disconnected ?? {
+                    phase: "live",
+                    since: Math.max(...summaryConnections.map((connection) => connection.since)),
+                  };
+                  reportConnections();
+                }
+              },
+            })
+          );
         }
-        running = false;
-      })();
+      }
+      reportConnections();
+      publish();
     }
 
+    function reloadMetadata(): void {
+      if (closed) return;
+      metadataDirty = true;
+      window.clearTimeout(retryTimer);
+      if (metadataRunning) return;
+      metadataRunning = true;
+      void (async () => {
+        while (metadataDirty && !closed) {
+          metadataDirty = false;
+          try {
+            const next = await listThreadMetadata(lifetime.signal);
+            if (closed) return;
+            metadata = next;
+            retryAttempt = 0;
+            setRefreshError(null);
+            refresh();
+          } catch (reason) {
+            if (closed || lifetime.signal.aborted) return;
+            metadataDirty = false;
+            setRefreshError(displayableError(reason));
+            retryTimer = window.setTimeout(reloadMetadata, backoff(retryAttempt++));
+          }
+        }
+        metadataRunning = false;
+      })();
+    }
     refreshRef.current = refresh;
     const stopInventory = sessionDispatcherClient.watchSessions({
       onOpen: (snapshot) => {
@@ -213,63 +292,36 @@ export function useThreadsLive(listing: ThreadListing | null, openThreadId: stri
             publishActivity();
             return;
         }
-        if (inventoryReady) {
-          publishActivity();
-          refresh();
-        }
+        if (inventoryReady) refresh();
       },
       onConnection: (next) => {
         inventoryConnection = next;
         reportConnections();
+        publishActivity();
       },
     });
     const stopMetadata = followWatch("/upstream/app/v1/threads:watch", {
-      onOpen: () => {
-        metadataReady = false;
-      },
+      onOpen: () => {},
       onFrame: (value) => {
         const frame = fromJson(WatchThreadMetadataResponseSchema, value);
         if (frame.changed === undefined) throw new Error("App returned an empty Thread metadata watch frame.");
         updatesConnected = frame.updatesConnected;
-        metadataReady = true;
-        if (historyReady) refresh();
+        reloadMetadata();
       },
       onConnection: (next) => {
         metadataConnection = next;
         reportConnections();
       },
     });
-    const stopHistory = followWatch("/upstream/history/v1/session-summaries:watch", {
-      onOpen: () => {
-        historyReady = false;
-      },
-      onFrame: (value) => {
-        const frame = fromJson(WatchSessionSummariesResponseSchema, value);
-        switch (frame.observation.case) {
-          case "changed":
-          case "reconnectRequired":
-          case "sessionRecorded":
-            historyReady = true;
-            if (metadataReady) refresh();
-            break;
-          case undefined:
-            throw new Error("History Service returned an empty Session summary watch frame.");
-        }
-      },
-      onConnection: (next) => {
-        historyConnection = next;
-        reportConnections();
-      },
-    });
-
     return () => {
       closed = true;
+      generation++;
       refreshRef.current = () => undefined;
       window.clearTimeout(retryTimer);
       lifetime.abort();
       stopInventory();
-      stopHistory();
       stopMetadata();
+      stopSummaries.forEach((stop) => stop());
     };
   }, [enabled, sandboxUID]);
 

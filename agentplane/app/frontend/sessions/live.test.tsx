@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
-import { create } from "@bufbuild/protobuf";
+import { create, toJson } from "@bufbuild/protobuf";
+import { WatchSessionSummariesResponseSchema } from "../../../history_service/api/history/history_service_pb";
 import { act, type JSX } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
@@ -9,10 +10,9 @@ import {
 } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 import { sessionDispatcherClient } from "../transport/session_dispatcher_client";
 import { followWatch, type WatchHandlers } from "../transport/watch_stream";
-import { listThreadWindow, type ThreadWindow } from "./client";
+import { listThreadMetadata } from "./client";
 import { threadView } from "./testing/state";
 import { combinedConnection, useThreadsLive } from "./live";
-import { threadStatusFromSnapshot } from "./thread_status";
 import type * as ClientModule from "./client";
 
 it.each([
@@ -37,7 +37,7 @@ it.each([
 
 vi.mock("./client", async (importOriginal) => ({
   ...(await importOriginal<typeof ClientModule>()),
-  listThreadWindow: vi.fn(),
+  listThreadMetadata: vi.fn(),
 }));
 vi.mock("../transport/session_dispatcher_client", () => ({ sessionDispatcherClient: { watchSessions: vi.fn() } }));
 vi.mock("../transport/watch_stream", () => ({ followWatch: vi.fn() }));
@@ -50,7 +50,7 @@ afterEach(async () => {
   vi.resetAllMocks();
 });
 
-it("publishes activity during a delayed History join and invalidates it at watch loss", async () => {
+it("updates watched summaries without fetching metadata again", async () => {
   let inventory!: Parameters<typeof sessionDispatcherClient.watchSessions>[0];
   const watches = new Map<string, WatchHandlers>();
   vi.mocked(sessionDispatcherClient.watchSessions).mockImplementation((handlers) => {
@@ -63,103 +63,92 @@ it("publishes activity during a delayed History join and invalidates it at watch
   });
   const value = threadView();
   const id = value.metadata.threadId;
-  const observed = create(SessionSchema, {
-    sessionId: id,
-    placement: value.summary.attached!.spec!.placement,
-    status: {
-      activity: {
-        kind: {
-          case: "observed",
-          value: {
-            sessionId: id,
-            activeTurnId: "active-turn",
-            host: {
-              case: "environmentHosted",
-              value: {
-                setup: 1,
-                harness: { state: 3 },
-              },
-            },
-          },
-        },
-      },
-    },
-  });
-  vi.mocked(listThreadWindow).mockResolvedValue({
-    threads: [{ ...value, session: observed }],
-    more: false,
-    archived_count: 0,
-  });
+  const observed = create(SessionSchema, { sessionId: id, createdAt: value.metadata.createdAt });
+  vi.mocked(listThreadMetadata).mockResolvedValue(new Map([[id, value.metadata]]));
   const listing = { limit: 50, search: null, includeArchived: false };
   function Probe(): JSX.Element {
     const live = useThreadsLive(listing, null);
-    const status = threadStatusFromSnapshot(live.snapshot?.threads[0], live.snapshot?.activity_current === true);
-    return <span data-status={status.kind} />;
+    return <span data-cursor={String(live.snapshot?.threads[0]?.summary.foldedThrough ?? "missing")} />;
   }
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
   await act(async () => root!.render(<Probe />));
-  const frame = (session: typeof observed): void =>
-    inventory.onFrame(
-      create(WatchSessionsResponseSchema, {
-        frame: { case: "session", value: session },
-        resumeToken: "checkpoint",
-      })
-    );
   await act(async () => {
     inventory.onOpen(true);
     inventory.onConnection({ phase: "live", since: 0 });
-    frame(observed);
+    inventory.onFrame(create(WatchSessionsResponseSchema, { frame: { case: "session", value: observed } }));
     inventory.onFrame(create(WatchSessionsResponseSchema, { frame: { case: "caughtUp", value: {} } }));
-  });
-  expect(container.querySelector("span")!.dataset.status).toBe("running");
-
-  // An already-started join holds the old observation while a new upsert arrives.
-  let completeJoin!: (value: ThreadWindow) => void;
-  const delayedJoin = new Promise<ThreadWindow>((resolve) => {
-    completeJoin = resolve;
-  });
-  vi.mocked(listThreadWindow).mockReturnValueOnce(delayedJoin);
-  await act(async () => {
-    watches.get("/upstream/history/v1/session-summaries:watch")!.onFrame({ changed: {} });
     watches.get("/upstream/app/v1/threads:watch")!.onFrame({ changed: {}, updatesConnected: true });
   });
-  const unknownSession = create(SessionSchema, {
-    sessionId: id,
-    placement: observed.placement,
-    status: { activity: { kind: { case: "unknown", value: { reason: 2 } } } },
-  });
-  await act(async () => frame(unknownSession));
-  expect(container.querySelector("span")!.dataset.status).toBe("unknown");
-  await act(async () => completeJoin({ threads: [{ ...value, session: observed }], more: false, archived_count: 0 }));
-  expect(container.querySelector("span")!.dataset.status).toBe("unknown");
+  const selected = [...watches.entries()].find(([key]) => key.includes("selected.session_ids="))![1];
+  await act(async () =>
+    selected.onFrame(
+      toJson(
+        WatchSessionSummariesResponseSchema,
+        create(WatchSessionSummariesResponseSchema, {
+          observation: { case: "snapshot", value: { summaries: [value.summary] } },
+        })
+      )
+    )
+  );
+  const updated = { ...value.summary, foldedThrough: 123n };
+  await act(async () =>
+    selected.onFrame(
+      toJson(
+        WatchSessionSummariesResponseSchema,
+        create(WatchSessionSummariesResponseSchema, { observation: { case: "summary", value: updated } })
+      )
+    )
+  );
+  expect(container.querySelector("span")!.dataset.cursor).toBe("123");
+  expect(listThreadMetadata).toHaveBeenCalledTimes(1);
+});
 
-  await act(async () => frame(observed));
-  expect(container.querySelector("span")!.dataset.status).toBe("running");
-  await act(async () =>
-    watches
-      .get("/upstream/history/v1/session-summaries:watch")!
-      .onConnection({ phase: "reconnecting", since: 0, attempt: 1, lastError: "History rolled" })
-  );
-  expect(container.querySelector("span")!.dataset.status).toBe("running");
-  await act(async () =>
-    inventory.onConnection({ phase: "reconnecting", since: 0, attempt: 1, lastError: "Dispatcher rolled" })
-  );
-  expect(container.querySelector("span")!.dataset.status).toBe("unknown");
-  // A partial replacement snapshot cannot make its first upsert authoritative.
+it("marks Dispatcher activity stale when the inventory watch reconnects", async () => {
+  let inventory!: Parameters<typeof sessionDispatcherClient.watchSessions>[0];
+  const watches = new Map<string, WatchHandlers>();
+  vi.mocked(sessionDispatcherClient.watchSessions).mockImplementation((handlers) => {
+    inventory = handlers;
+    return () => {};
+  });
+  vi.mocked(followWatch).mockImplementation((path, handlers) => {
+    watches.set(String(path), handlers);
+    return () => {};
+  });
+  const value = threadView();
+  const observed = create(SessionSchema, { sessionId: value.metadata.threadId, createdAt: value.metadata.createdAt });
+  vi.mocked(listThreadMetadata).mockResolvedValue(new Map([[value.metadata.threadId, value.metadata]]));
+  const listing = { limit: 50, search: null, includeArchived: false };
+  function Probe(): JSX.Element {
+    const live = useThreadsLive(listing, null);
+    return <span data-current={String(live.snapshot?.activity_current)} />;
+  }
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  await act(async () => root!.render(<Probe />));
   await act(async () => {
     inventory.onOpen(true);
     inventory.onConnection({ phase: "live", since: 0 });
-    frame(observed);
+    inventory.onFrame(create(WatchSessionsResponseSchema, { frame: { case: "session", value: observed } }));
+    inventory.onFrame(create(WatchSessionsResponseSchema, { frame: { case: "caughtUp", value: {} } }));
+    watches.get("/upstream/app/v1/threads:watch")!.onFrame({ changed: {}, updatesConnected: true });
   });
-  expect(container.querySelector("span")!.dataset.status).toBe("unknown");
+  const selected = [...watches.entries()].find(([key]) => key.includes("selected.session_ids="))![1];
   await act(async () =>
-    inventory.onFrame(create(WatchSessionsResponseSchema, { frame: { case: "caughtUp", value: {} } }))
+    selected.onFrame(
+      toJson(
+        WatchSessionSummariesResponseSchema,
+        create(WatchSessionSummariesResponseSchema, {
+          observation: { case: "snapshot", value: { summaries: [value.summary] } },
+        })
+      )
+    )
   );
-  expect(container.querySelector("span")!.dataset.status).toBe("running");
+  expect(container.querySelector("span")!.dataset.current).toBe("true");
   await act(async () =>
-    inventory.onFrame(create(WatchSessionsResponseSchema, { frame: { case: "reconnectRequired", value: {} } }))
+    inventory.onConnection({ phase: "reconnecting", since: 0, attempt: 1, lastError: "disconnected" })
   );
-  expect(container.querySelector("span")!.dataset.status).toBe("unknown");
+  expect(container.querySelector("span")!.dataset.current).toBe("false");
 });

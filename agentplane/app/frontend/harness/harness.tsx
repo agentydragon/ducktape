@@ -4049,24 +4049,33 @@ routes.unshift(
   [
     "GET",
     /^\/upstream\/history\/v1\/session-summaries:watch$/,
-    (_match, _query, signal) =>
-      liveNdjsonWatch(
+    (_match, query, signal) => {
+      const wanted = new Set(query.getAll("selected.session_ids"));
+      const frames = () =>
+        wanted.size
+          ? [
+              {
+                snapshot: {
+                  summaries: THREADS_WITH_SANDBOXES.map(mapThread)
+                    .filter((thread) => wanted.has(thread.metadata.threadId))
+                    .map((thread) => toJson(SessionSummarySchema, thread.summary)),
+                },
+              },
+            ]
+          : [
+              toJson(
+                WatchSessionSummariesResponseSchema,
+                create(WatchSessionSummariesResponseSchema, { observation: { case: "changed", value: {} } })
+              ),
+            ];
+      return liveNdjsonWatch(
         "/upstream/history/v1/session-summaries:watch",
-        [
-          toJson(
-            WatchSessionSummariesResponseSchema,
-            create(WatchSessionSummariesResponseSchema, { observation: { case: "changed", value: {} } })
-          ),
-        ],
-        () => [
-          toJson(
-            WatchSessionSummariesResponseSchema,
-            create(WatchSessionSummariesResponseSchema, { observation: { case: "changed", value: {} } })
-          ),
-        ],
+        frames(),
+        frames,
         signal,
         flags.has("threadStreamDropped")
-      ),
+      );
+    },
   ]
 );
 

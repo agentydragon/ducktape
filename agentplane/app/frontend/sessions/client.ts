@@ -466,14 +466,8 @@ function validateThread(metadata: ThreadMetadata, summary: SessionSummary): void
   if (summary.lastTurnStatus !== undefined) assertKnownEnum(summary.lastTurnStatus, TurnStatusSchema, "TurnStatus");
 }
 
-/** Join the watched Dispatcher inventory with optional App metadata and History evidence. */
-export async function listThreadWindow(
-  listing: ThreadListing,
-  openThreadId: string | null,
-  sessions: readonly Session[],
-  signal?: AbortSignal
-): Promise<ThreadWindow> {
-  if (listing.limit < 1) throw new Error("Thread list limit must be positive");
+/** Read all App-owned metadata pages. */
+export async function listThreadMetadata(signal?: AbortSignal): Promise<Map<string, ThreadMetadata>> {
   const metadata = new Map<string, ThreadMetadata>();
   const tokens = new Set<string>();
   let token = "";
@@ -493,6 +487,16 @@ export async function listThreadWindow(
     token = page.nextPageToken;
     tokens.add(token);
   }
+  return metadata;
+}
+
+export function selectThreadWindow(
+  listing: ThreadListing,
+  openThreadId: string | null,
+  sessions: readonly Session[],
+  metadata: ReadonlyMap<string, ThreadMetadata>,
+  summaries: ReadonlyMap<string, SessionSummary>
+): ThreadWindow {
   const search = listing.search?.toLowerCase() ?? null;
   const candidates = sessions
     .filter((session) => {
@@ -518,6 +522,28 @@ export async function listThreadWindow(
   const visible = filtered.slice(0, listing.limit);
   const opened = sessions.find((session) => session.sessionId === openThreadId);
   if (opened && !visible.some((session) => session.sessionId === opened.sessionId)) visible.push(opened);
+  const threads = visible.map((session) => {
+    const row =
+      metadata.get(session.sessionId) ??
+      create(ThreadMetadataSchema, { threadId: session.sessionId, createdAt: session.createdAt });
+    const summary = summaries.get(session.sessionId) ?? create(SessionSummarySchema, { sessionId: session.sessionId });
+    validateThread(row, summary);
+    return { metadata: row, summary, session };
+  });
+  return { threads, more: filtered.length > listing.limit, archived_count: archivedCount };
+}
+
+/** Join watched inventory with metadata and History. */
+export async function listThreadWindow(
+  listing: ThreadListing,
+  openThreadId: string | null,
+  sessions: readonly Session[],
+  signal?: AbortSignal
+): Promise<ThreadWindow> {
+  if (listing.limit < 1) throw new Error("Thread list limit must be positive");
+  const metadata = await listThreadMetadata(signal);
+  const selected = selectThreadWindow(listing, openThreadId, sessions, metadata, new Map());
+  const visible = selected.threads.map((thread) => thread.session!);
   const summaries = new Map<string, SessionSummary>();
   for (let offset = 0; offset < visible.length; offset += 100) {
     const batch = visible.slice(offset, offset + 100);
@@ -539,18 +565,7 @@ export async function listThreadWindow(
     );
     for (const summary of response.summaries) summaries.set(summary.sessionId, summary);
   }
-  const threads = visible.map((session) => {
-    const row =
-      metadata.get(session.sessionId) ??
-      create(ThreadMetadataSchema, {
-        threadId: session.sessionId,
-        createdAt: session.createdAt,
-      });
-    const summary = summaries.get(session.sessionId) ?? create(SessionSummarySchema, { sessionId: session.sessionId });
-    validateThread(row, summary);
-    return { metadata: row, summary, session };
-  });
-  return { threads, more: filtered.length > listing.limit, archived_count: archivedCount };
+  return selectThreadWindow(listing, openThreadId, sessions, metadata, summaries);
 }
 
 export function sessionEnvironment(session: Session | undefined): ExactEnvironment | undefined {
