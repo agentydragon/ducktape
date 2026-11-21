@@ -18,7 +18,7 @@ Exit codes: `0` accepted. `1` rejected: the tree is not the bundle renamed and r
 
 `--premises` names the assumptions the footprints rest on, and the checker prints the ones it used: see [Footprints](#footprints). `--table` writes the list of rewrites it accepted (below).
 
-`--obligations` writes every obligation as `[runs first in the output, runs first in the bundle, reasons]`, one per line. `reasons` is the sum of 1 both units touch the world, 2 the later one binds a name the earlier one reads, 4 the earlier binds a name the later reads, 8 both bind a name. [`obligations_report.py`](obligations_report.py) groups them by the directory of the output tree: units, effect units, obligations inside a directory and across its border, by reason, and the units in the most obligations. A directory with no obligation can be moved freely.
+`--obligations` writes every obligation as `[runs first in the output, runs first in the bundle, reasons]`, one per line. `reasons` is the sum of 1 both units touch the world, 2 the later one binds a name the earlier one reads, 4 the earlier binds a name the later reads, 8 both bind a name. [`obligations_report.py`](obligations_report.py) counts them by set of reasons and, given the footprints `lower` printed, by how many names each unit may write. It then groups them by the directory of the output tree: units, effect units, obligations inside a directory and across its border, by reason, and the units in the most obligations. A directory with no obligation can be moved freely.
 
 ## Footprints
 
