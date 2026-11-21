@@ -1,8 +1,8 @@
 """Static spec of augur's public exogenous evidence sources.
 
 Single source of truth shared by the git scraper (`fetch`) and the runtime
-loader (`fit/evidence_data`): which public series exist, where each is fetched
-from, and the local filename `augur/fit/evidence_data.py` reads it back as.
+loader (`loading`): which public series exist, where each is fetched
+from, and the local filename `loading.source_bytes` reads it back as.
 Deliberately free of numpy/pandas/JAX so the scraper image stays slim and
 decoupled from the simulator.
 """

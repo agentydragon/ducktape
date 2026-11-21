@@ -29,9 +29,9 @@ export default function App(): JSX.Element {
     };
   }, [view]);
 
-  // The initial config load is the one thing rendered by the shell itself; a failure
-  // leaves nothing to frame, so it gets a persistent page-level message — except while the
-  // login redirect below is in flight, where the loader carries the handover instead.
+  // The initial config load is the one thing rendered by the shell itself; a failure leaves nothing
+  // to frame, so it gets a persistent page-level message — except during a login redirect
+  // (`displayableError` is null), where the loader carries the handover instead.
   if (error)
     return (
       <Text c="red" className="mx-auto max-w-3xl p-4">

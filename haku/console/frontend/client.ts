@@ -17,8 +17,7 @@ export const api: ReturnType<typeof createClient<paths>> = createClient<paths>({
 
 // App-owned operator auth: the /api/* guards answer 401 when there is no operator session, while
 // the SPA itself is served publicly — so a 401 bounces the browser to /auth/login, where Authentik's
-// application access policy decides who may complete it. With operator_oidc unset (dev/test) the
-// guards no-op and /api never 401s, so this never fires there.
+// application access policy decides who may complete it.
 api.use({
   onResponse({ response }) {
     if (response.status === 401 && typeof window !== "undefined") redirectToOperatorLogin();
