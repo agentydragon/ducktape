@@ -78,7 +78,8 @@ source policy. Neither shape infers graph edges or artifact membership. `artifac
 imports the deployed source-watcher CRD; `generate_manifests.py` builds each consumer's
 artifact before its Kustomization node, writes the directory with
 `generation.write_directory` as the node's `RenderedDirectory` argument, and hands every
-artifact to `artifact_generators.write_artifact_generators` last. A tofu-controller
+artifact a Kustomization reads to
+`artifact_generators.write_artifact_generators` last. A tofu-controller
 `Terraform` CR is built through `terraform.tofu_state_terraform` (a `tf/gitops` module's
 through `terraform.gitops_terraform`, from the module's own artifact, which the entry point
 builds with `terraform.gitops_module` and hands to the chart and to the ArtifactGenerator),
