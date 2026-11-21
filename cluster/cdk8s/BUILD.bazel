@@ -843,7 +843,6 @@ py_library(
     visibility = ["//cluster/cdk8s/public_coder:__pkg__"],
     deps = [
         ":agent_access_profiles",
-        ":flux",
         ":manifest_roots",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -875,7 +874,6 @@ py_library(
     name = "alloy_otlp_bearer",
     srcs = ["alloy_otlp_bearer.py"],
     deps = [
-        ":flux",
         ":manifest_roots",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "@pypi//cdk8s",
@@ -1076,7 +1074,6 @@ py_library(
     srcs = ["dns_automation.py"],
     deps = [
         ":external_creds",
-        ":flux",
         ":manifest_roots",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
@@ -1917,7 +1914,6 @@ py_library(
     visibility = ["//cluster/cdk8s/forgejo_registry:__pkg__"],
     deps = [
         ":ducktape_flux",
-        ":flux",
         ":image_automation",
         ":manifest_roots",
         "@pypi//cdk8s",
@@ -1930,7 +1926,6 @@ py_library(
     visibility = ["//cluster/cdk8s/forgejo_registry:__pkg__"],
     deps = [
         ":config_format",
-        ":flux",
         ":gateway",
         ":manifest_roots",
         ":ntfy",
