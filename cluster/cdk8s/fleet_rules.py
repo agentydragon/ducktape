@@ -39,7 +39,9 @@ def _pod_specs(objects: list[dict[str, Any]]) -> Iterator[tuple[str, dict[str, A
 
 
 def pod_hardening(objects: list[dict[str, Any]], *, unhardened: Collection[str]) -> list[str]:
-    """Every container runs under the RuntimeDefault seccomp profile (its own or the
+    """Every pod spec states automountServiceAccountToken, and states true only under a
+    ServiceAccount of its own: `default` is shared by every Pod in the namespace that names
+    no account. Every container runs under the RuntimeDefault seccomp profile (its own or the
     Pod's) and declares cpu/memory requests and a memory limit. CPU limits are left to
     the namespace LimitRange's default on purpose. `unhardened` names the workloads
     (`Kind/name`) waived until they are fixed."""
@@ -47,6 +49,11 @@ def pod_hardening(objects: list[dict[str, Any]], *, unhardened: Collection[str])
     for name, pod in _pod_specs(objects):
         if name in unhardened:
             continue
+        automount = pod.get("automountServiceAccountToken")
+        if automount is None:
+            errors.append(f"{name}: automountServiceAccountToken is unset")
+        elif automount and pod.get("serviceAccountName", "default") == "default":
+            errors.append(f"{name}: automountServiceAccountToken is true under the default ServiceAccount")
         pod_seccomp = pod.get("securityContext", {}).get("seccompProfile", {}).get("type")
         for container in [*pod.get("initContainers", []), *pod["containers"]]:
             own = f"{name} container {container['name']}"

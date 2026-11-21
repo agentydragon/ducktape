@@ -25,6 +25,7 @@ from cluster.cdk8s.namespaces import VPA_UPDATE_MODE_LABEL
 from cluster.cdk8s.vpa_policy import VPA_RESOURCE_POLICY_ANNOTATION
 
 _HARDENED = {"securityContext": {"seccompProfile": {"type": "RuntimeDefault"}}}
+_NO_TOKEN = {"automountServiceAccountToken": False}
 _RESOURCES = {"requests": {"cpu": "10m", "memory": "16Mi"}, "limits": {"cpu": "100m", "memory": "64Mi"}}
 
 
@@ -63,10 +64,11 @@ def _policy_for(name: str, egress: list[dict[str, Any]], *, namespace: str, labe
 def test_pod_hardening_names_the_container_and_what_it_lacks() -> None:
     objects = [
         _deployment("bare", containers=[{"name": "main", "resources": {"requests": {"cpu": "1"}}}]),
-        _deployment("ok", containers=[{"name": "main", "resources": _RESOURCES}], pod=_HARDENED),
-        _deployment("own-profile", containers=[{"name": "main", "resources": _RESOURCES, **_HARDENED}]),
+        _deployment("ok", containers=[{"name": "main", "resources": _RESOURCES}], pod={**_HARDENED, **_NO_TOKEN}),
+        _deployment("own-profile", containers=[{"name": "main", "resources": _RESOURCES, **_HARDENED}], pod=_NO_TOKEN),
     ]
     assert pod_hardening(objects, unhardened=set()) == [
+        "Deployment/bare: automountServiceAccountToken is unset",
         "Deployment/bare container main: seccomp profile is None, not RuntimeDefault",
         "Deployment/bare container main: resources.requests lacks ['memory']",
         "Deployment/bare container main: resources.limits lacks ['memory']",
@@ -79,14 +81,14 @@ def test_pod_hardening_covers_init_containers_and_crd_pod_templates() -> None:
         "apiVersion": "extensions.agents.x-k8s.io/v1alpha1",
         "kind": "SandboxTemplate",
         "metadata": {"name": "runner"},
-        "spec": {"podTemplate": {"spec": {**_HARDENED, "containers": [{"name": "runner"}]}}},
+        "spec": {"podTemplate": {"spec": {**_HARDENED, **_NO_TOKEN, "containers": [{"name": "runner"}]}}},
     }
     # Same kind, another group, another pod path.
     own_sandbox = {
         "apiVersion": "agentplane.allegedly.works/v1alpha1",
         "kind": "SandboxTemplate",
         "metadata": {"name": "own"},
-        "spec": {"pod": {"spec": {"containers": [{"name": "runner", "resources": _RESOURCES}]}}},
+        "spec": {"pod": {"spec": {**_NO_TOKEN, "containers": [{"name": "runner", "resources": _RESOURCES}]}}},
     }
     # KubeVirt builds a VM template's launcher Pod; the template holds no pod spec to check.
     own_vm_sandbox = {
@@ -99,12 +101,16 @@ def test_pod_hardening_covers_init_containers_and_crd_pod_templates() -> None:
         "apiVersion": "keda.sh/v1alpha1",
         "kind": "ScaledJob",
         "metadata": {"name": "ci"},
-        "spec": {"jobTargetRef": {"template": {"spec": {"containers": [{"name": "job", "resources": _RESOURCES}]}}}},
+        "spec": {
+            "jobTargetRef": {
+                "template": {"spec": {**_NO_TOKEN, "containers": [{"name": "job", "resources": _RESOURCES}]}}
+            }
+        },
     }
     deployment = _deployment(
         "with-init",
         containers=[{"name": "main", "resources": _RESOURCES}],
-        pod={**_HARDENED, "initContainers": [{"name": "migrate"}]},
+        pod={**_HARDENED, **_NO_TOKEN, "initContainers": [{"name": "migrate"}]},
     )
     assert [
         error.split(":")[0]
@@ -116,6 +122,30 @@ def test_pod_hardening_covers_init_containers_and_crd_pod_templates() -> None:
         "ScaledJob/ci container job",
         "Deployment/with-init container migrate",
         "Deployment/with-init container migrate",
+    ]
+
+
+def test_pod_hardening_mounts_a_token_only_where_stated_under_an_own_account() -> None:
+    containers = [{"name": "main", "resources": _RESOURCES}]
+    objects = [
+        _deployment("unstated", containers=containers, pod=_HARDENED),
+        _deployment("implicit-default", containers=containers, pod={**_HARDENED, "automountServiceAccountToken": True}),
+        _deployment(
+            "named-default",
+            containers=containers,
+            pod={**_HARDENED, "automountServiceAccountToken": True, "serviceAccountName": "default"},
+        ),
+        _deployment(
+            "own-account",
+            containers=containers,
+            pod={**_HARDENED, "automountServiceAccountToken": True, "serviceAccountName": "resigner"},
+        ),
+        _deployment("no-token", containers=containers, pod={**_HARDENED, **_NO_TOKEN}),
+    ]
+    assert pod_hardening(objects, unhardened=set()) == [
+        "Deployment/unstated: automountServiceAccountToken is unset",
+        "Deployment/implicit-default: automountServiceAccountToken is true under the default ServiceAccount",
+        "Deployment/named-default: automountServiceAccountToken is true under the default ServiceAccount",
     ]
 
 
@@ -182,7 +212,7 @@ def test_daemonsets_must_not_tolerate_out_of_service(toleration: dict[str, str],
 def test_waivers_name_objects_that_still_break_their_rule() -> None:
     objects = [
         _deployment("bare", containers=[{"name": "main"}]),
-        _deployment("ok", containers=[{"name": "main", "resources": _RESOURCES}], pod=_HARDENED),
+        _deployment("ok", containers=[{"name": "main", "resources": _RESOURCES}], pod={**_HARDENED, **_NO_TOKEN}),
         _policy("open", [_https({"toEntities": ["world"]})]),
         _policy("pinned", [_https({"toEntities": ["world"]}, ["a.example.test"])]),
     ]

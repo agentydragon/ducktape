@@ -276,12 +276,14 @@ whose object is gone or now passes.
   container-level is typed (`ContainerSecurityContextProps.seccomp_profile=SeccompProfile(type=SeccompProfileType.RUNTIME_DEFAULT)`),
   never a patch.
 - `cdk8s_plus_34` defaults: `automount_token=False` (ServiceAccount) and
-  `automount_service_account_token=False` (workload) — set both for a TokenReview caller;
-  `readOnlyRootFilesystem`/`runAsNonRoot` hardened (a container with unaudited writes
-  states `read_only_root_filesystem=False`); `allowPrivilegeEscalation: false` and
-  `privileged: false` always emitted, capabilities never (`pod_policy.harden` drops ALL
-  where unset). The Deployment selector is `cdk8s.io/metadata.addr`, not
-  `app.kubernetes.io/name`; `select=False` plus
+  `automount_service_account_token=False` (workload). Every pod spec states the latter,
+  `false` unless the Pod calls the API, and a Pod that states `true` runs as a
+  ServiceAccount of its own, never `default` (`fleet_rules.pod_hardening`); the Pod's
+  value overrides the ServiceAccount's. `readOnlyRootFilesystem`/`runAsNonRoot` hardened
+  (a container with unaudited writes states `read_only_root_filesystem=False`);
+  `allowPrivilegeEscalation: false` and `privileged: false` always emitted, capabilities
+  never (`pod_policy.harden` drops ALL where unset). The Deployment selector is
+  `cdk8s.io/metadata.addr`, not `app.kubernetes.io/name`; `select=False` plus
   `deployment.select(LabelSelector.of(labels=...))` keeps a hand-written selector
   (immutable on the live Deployment), and `Service(selector=deployment)` still selects the
   address label, which pods carry either way. `scheduling.attract(Node.labeled(...))` is
