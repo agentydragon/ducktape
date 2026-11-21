@@ -104,9 +104,8 @@ class _HistoryMetadata(BaseModel):
 
 
 class FluxReconcileHistoryEntry(BaseModel):
-    """One per-revision entry in `Kustomization.status.history` / `HelmRelease.status.history`
-    (Flux 2.7+). Each entry summarises every reconcile attempt against a single
-    `(revision, build digest)`:
+    """One entry in `Kustomization.status.history` (Flux 2.7+). Each entry summarises
+    reconcile attempts against a single `(revision, build digest)`:
 
     - `total_reconciliations` — count of attempts at this revision/digest.
     - `last_reconciled_status` — outcome of the most recent attempt
@@ -140,15 +139,10 @@ class FluxReconcileHistoryEntry(BaseModel):
         return parse_go_duration(self.last_reconciled_duration)
 
 
-class FluxKustomizationStatus(BaseModel):
-    """Parsed status from a live Flux Kustomization CR (live API responses only;
-    YAML on disk doesn't carry status). Same shape works for HelmRelease too —
-    the conditions / history fields are identical."""
-
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
+class FluxStatus(BaseModel):
+    """Current conditions reported by Flux controllers."""
 
     conditions: list[Condition] = []
-    history: list[FluxReconcileHistoryEntry] = []
 
     def condition(self, type_: str) -> Condition | None:
         """Return the first condition with the given type, or None."""
@@ -158,6 +152,12 @@ class FluxKustomizationStatus(BaseModel):
     def ready(self) -> Condition | None:
         """Convenience: the `Ready` condition, the one consumers want 99% of the time."""
         return self.condition("Ready")
+
+
+class FluxKustomizationStatus(FluxStatus):
+    """Live Kustomization status with its per-revision reconcile history."""
+
+    history: list[FluxReconcileHistoryEntry] = []
 
     def history_in_window(self, since: datetime) -> list[FluxReconcileHistoryEntry]:
         """History entries whose `last_reconciled` falls inside the window
