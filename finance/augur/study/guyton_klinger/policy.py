@@ -7,27 +7,8 @@ into `WORLD`'s checking. Opening wealth is everything the retiree holds except t
 Reviews fall at months 0, 12, …; the month after a review records the settled post-withdrawal
 wealth as the next investment-return denominator; other months only pay tax claims that fall due.
 
-Readings of the source contract's open decisions, recorded with reasons in that doc:
-
-- ORDER: the prior withdrawal is scaled by the preceding year's CPI ratio, deflation included; the
-  freeze withholds only an increase; then at most one guardrail is tested on that candidate against
-  opening wealth. The adjusted amount is next year's basis, not inflated again this year.
-- PORTFOLIO: a sleeve is its lots plus its unspent payouts. It is overweight by its value above its
-  target share of opening wealth, before this review's trades, and only if its total return over
-  the preceding year was positive. Funding follows `Stage` declaration order, drawing a sleeve's
-  payouts before selling its lots; the sweep sells what funding left of that excess into the cash
-  sleeve, and payouts nothing drew reinvest in the sleeve that paid them.
-- OPENING: targets cover all opening wealth, with no separate first-withdrawal reserve; year 0 knows
-  no returns, so nothing is overweight. Capital preservation applies while the zero-based year index
-  is below `years - PRESERVATION_OFF_FINAL_YEARS`.
-- TAXES, prior-year reserve: the withdrawal W is gross. Each review withholds from W what repays
-  earlier tax advances, then moves the last closed year's assessed tax (none before the first
-  close) into the tax reserve, and spends the rest. A due tax claim is paid from the reserve; what
-  the reserve cannot cover is funded through the `Stage` order (between reviews, without the
-  overweight stages) as a tax advance. At the review after a tax year closes and its claims are
-  paid, the reserve's remainder is spent. A year's spending, W less its reserve plus that remainder
-  less the advance its tax needed, is thus W less its tax, and the portfolio's outflow net of
-  repayments is W.
+The readings of the source contract's open decisions (ORDER, PORTFOLIO, OPENING and, for the taxed
+variant, TAXES) are in <README.md#policy-readings-of-the-three-sleeve-adaptation>, with their reasons.
 """
 
 from dataclasses import dataclass, field, replace
