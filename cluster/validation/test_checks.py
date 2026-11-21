@@ -353,6 +353,18 @@ def test_external_secret_without_rendered_namespace_is_reported() -> None:
     ]
 
 
+def test_cluster_external_secret_selector_with_runtime_label_is_reported() -> None:
+    namespace = {"kind": "Namespace", "metadata": {"name": "consumer"}}
+    secret = {
+        "kind": "ClusterExternalSecret",
+        "metadata": {"name": "credential"},
+        "spec": {"namespaceSelector": {"matchLabels": {"runtime": "yes"}}},
+    }
+    report = check_external_secret_store_wiring(_cluster_with(namespace, secret))
+    assert report.errors == []
+    assert any("cannot resolve selector for Namespace 'consumer'" in item for item in report.unresolved)
+
+
 def test_multiple_namespace_label_sets_are_not_treated_as_a_live_label_set() -> None:
     namespaces = [
         {"kind": "Namespace", "metadata": {"name": "consumer", "labels": {"team": team}}}

@@ -251,7 +251,7 @@ def test_external_secret_store_wiring_uses_each_flux_owners_target_namespace(tmp
     write(
         "cluster/generated/namespaces/resources.yaml",
         {"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "allowed", "labels": {"team": "approved"}}},
-        {"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "denied"}},
+        {"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "denied", "labels": {"team": "other"}}},
     )
     write(
         "cluster/generated/policy/resources.yaml",
