@@ -26,11 +26,11 @@ def image(name: str = "airlock", target: str = "//airlock:image", test: str | No
 
 
 def digest_output(label: str, path: str, uri: str = "bytestream://h/blobs/x/72") -> Output:
-    return Output(label=label, path=path, uri=uri, digest="ignored", size=72, output_group="default")
+    return Output(label=label, path=path, uri=uri, digest="ignored", output_group="default")
 
 
 def invocation(*outputs: Output) -> Invocation:
-    return Invocation(outputs=list(outputs), test_status={})
+    return Invocation(outputs=list(outputs))
 
 
 class FakeCrane(Crane):
