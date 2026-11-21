@@ -221,6 +221,11 @@ def expand_expression(expression: str, variables: dict[str, str], from_ms: int, 
     return expanded
 
 
+def has_unresolved_sql_variable(sql: str) -> bool:
+    without_macros = UNRESOLVED_MACRO.sub("", sql)
+    return bool(UNRESOLVED_VARIABLE.search(without_macros) or re.search(r"\$\{[^}]+\}", without_macros))
+
+
 def datasource_map(api: GrafanaApi) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
     entries = api.json_request("GET", "/api/datasources")
     by_name = {item["name"]: item for item in entries if item.get("name") and item.get("uid")}
@@ -372,13 +377,20 @@ def query_panels(
             report.append({"panel": panel_name(panel), "status": "skipped", "reason": "no targets"})
             continue
         for target in targets:
-            expression = target.get("expr")
-            if not isinstance(expression, str):
-                raise VerificationError(f"{panel_name(panel)} target {target.get('refId', '?')} has no expr")
-            expanded = expand_expression(expression, variables, from_ms, to_ms)
             datasource = datasource_for(panel, target, by_name, by_uid)
             query_target = copy.deepcopy(target)
-            query_target["expr"] = expanded
+            expression = target.get("expr")
+            raw_sql = target.get("rawSql")
+            if datasource["type"] == "grafana-clickhouse-datasource" and isinstance(raw_sql, str):
+                # The ClickHouse backend expands its own $__ macros, unlike PromQL.
+                # Dashboard variables require plugin-specific quoting; reject them
+                # until we can reproduce Grafana's interpolation faithfully.
+                if has_unresolved_sql_variable(raw_sql):
+                    raise VerificationError(f"unresolved Grafana variable in ClickHouse SQL: {raw_sql}")
+            elif isinstance(expression, str):
+                query_target["expr"] = expand_expression(expression, variables, from_ms, to_ms)
+            else:
+                raise VerificationError(f"{panel_name(panel)} target {target.get('refId', '?')} has no supported query")
             query_target["datasource"] = {"type": datasource["type"], "uid": datasource["uid"]}
             query_target.setdefault("refId", "A")
             query_target.setdefault("intervalMs", 15000)
@@ -397,6 +409,25 @@ def query_panels(
             result = response_body.get("results", {}).get(query_target["refId"], {})
             if result.get("error"):
                 raise VerificationError(f"{panel_name(panel)} target error: {result['error']}")
+            if datasource["type"] == "grafana-clickhouse-datasource":
+                frames = result.get("frames", [])
+                executed_queries = [
+                    frame.get("schema", {}).get("meta", {}).get("executedQueryString") for frame in frames
+                ]
+                if (
+                    isinstance(raw_sql, str)
+                    and UNRESOLVED_MACRO.search(raw_sql)
+                    and frames
+                    and not any(isinstance(sql, str) for sql in executed_queries)
+                ):
+                    raise VerificationError(f"{panel_name(panel)} did not report executed SQL for macro verification")
+                for executed in executed_queries:
+                    if isinstance(executed, str) and (
+                        UNRESOLVED_VARIABLE.search(executed) or re.search(r"\$\{[^}]+\}", executed)
+                    ):
+                        raise VerificationError(
+                            f"{panel_name(panel)} has unresolved macro or variable in executed SQL: {executed}"
+                        )
             has_data, all_zero = has_frame_data(result)
             report_item = {
                 "panel": panel_name(panel),
@@ -513,6 +544,9 @@ async def browser_verify(
                 expression = query.get("expr", "")
                 if UNRESOLVED_VARIABLE.search(expression):
                     bad_query_payloads.append(expression)
+                sql = query.get("rawSql")
+                if isinstance(sql, str) and has_unresolved_sql_variable(sql):
+                    bad_query_payloads.append(sql)
 
         page.on("request", inspect_request)
 
