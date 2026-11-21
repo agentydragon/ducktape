@@ -1,9 +1,7 @@
-"""Flux domain: models, parsing, and build execution."""
+"""Flux resource models and parsing."""
 
 from __future__ import annotations
 
-import asyncio
-from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -11,10 +9,9 @@ import durationpy
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
-from python.runfiles import Runfiles
 
 from cluster.cdk8s.manifest_roots import MANIFEST_ROOTS
-from cluster.validation.k8s import Condition, SecretRef, parse_k8s_resources
+from cluster.validation.k8s import Condition, SecretRef
 
 
 class DependsOn(BaseModel):
@@ -70,6 +67,7 @@ class FluxKustomizationSpec(BaseModel):
     # (no explicit namespace) in this namespace, so cross-namespace validation
     # needs it. Default "" means "unknown" — cross-namespace checks skip it.
     namespace: str = ""
+    target_namespace: str | None = None
     depends_on: list[DependsOn] = []
     health_checks: list[HealthCheck] = []
     source_ref: SourceRef | None = None
@@ -224,56 +222,3 @@ def parse_flux_kustomizations(flux_file: Path) -> dict[str, FluxKustomizationSpe
 # so parse_cluster indexes the generators instead.
 FLUX_SOURCE_KINDS = {"GitRepository", "OCIRepository", "HelmRepository", "HelmChart"}
 EXTERNAL_ARTIFACT_KIND = "ExternalArtifact"
-
-
-async def run_flux_build(k8s_dir: Path) -> tuple[int, str, str]:
-    """Run flux build and return (returncode, stdout, stderr)."""
-    kustomization_file = k8s_dir / "flux" / "flux-system" / "gotk-sync.yaml"
-
-    if not kustomization_file.exists():
-        raise FileNotFoundError(f"gotk-sync.yaml not found at {kustomization_file}")
-
-    flux_bin = Runfiles.CreateOrRaise().root() / "multitool/tools/flux/flux"
-    proc = await asyncio.create_subprocess_exec(
-        flux_bin,
-        "build",
-        "kustomization",
-        "flux-system",
-        "--path",
-        k8s_dir,
-        "--kustomization-file",
-        kustomization_file,
-        "--dry-run",
-        "--verbose",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    stdout_bytes, stderr_bytes = await asyncio.wait_for(proc.communicate(), timeout=60)
-    return await proc.wait(), stdout_bytes.decode(), stderr_bytes.decode()
-
-
-async def validate_flux_build(k8s_dir: Path) -> list[str]:
-    """Validate flux build."""
-    try:
-        returncode, stdout, stderr = await run_flux_build(k8s_dir)
-    except FileNotFoundError as e:
-        return [str(e)]
-
-    if returncode != 0:
-        return [f"flux build failed:\nk8s_dir: {k8s_dir}\nstdout:\n{stdout}\nstderr:\n{stderr}"]
-
-    if not stdout.strip():
-        return [f"flux build returned empty output:\nk8s_dir: {k8s_dir}\nstderr: {stderr.strip() or 'none'}"]
-
-    errors = []
-    resource_counts: Counter[str] = Counter()
-
-    for resource in parse_k8s_resources(yaml.safe_load_all(stdout)):
-        resource_counts[resource.kind] += 1
-
-    if resource_counts.get("Kustomization", 0) == 0:
-        errors.append("No Flux Kustomization resources found in flux build output")
-    if resource_counts.get("GitRepository", 0) == 0:
-        errors.append("No GitRepository resource found in flux build output")
-
-    return errors

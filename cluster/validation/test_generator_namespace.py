@@ -30,21 +30,14 @@ import pytest_bazel
 import yaml
 
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT, manifest_files
+from cluster.validation.flux import parse_flux_kustomizations
 
 GENERATOR_FIELDS = ("configMapGenerator", "secretGenerator")
 
 
 def _flux_target_namespaces(repo_root: Path) -> dict[str, str | None]:
     flux = repo_root / HAND_WRITTEN_ROOT / "flux/kustomizations.k8s.yaml"
-    result = {}
-    for doc in yaml.safe_load_all(flux.read_text()):
-        if not isinstance(doc, dict) or doc.get("kind") != "Kustomization":
-            continue
-        spec = doc.get("spec", {})
-        result[str(spec.get("path"))] = (
-            str(target_namespace) if (target_namespace := spec.get("targetNamespace")) else None
-        )
-    return result
+    return {spec.path: spec.target_namespace for spec in parse_flux_kustomizations(flux).values()}
 
 
 def test_generators_declare_a_namespace(repo_root: Path) -> None:
