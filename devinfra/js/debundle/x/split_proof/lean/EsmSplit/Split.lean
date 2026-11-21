@@ -5,7 +5,8 @@ import EsmSplit.Fast
 
 `mkPlan` turns a bundle and a spec into a plan: it places statements, derives `import`/`export`
 glue from the names each module uses, and orders imports by where the imported module's code first
-appeared in the bundle. Nothing here is proved. `Valid B S (mkPlan B S)` is what is checked.
+appeared in the bundle. A glue export keeps clear of the names the module's own `export` statements
+publish. Nothing here is proved. `Valid B S (mkPlan B S)` is what is checked.
 -/
 
 namespace EsmSplit
@@ -30,6 +31,27 @@ def Bundle.declIdx (B : Bundle) : Std.TreeMap Name (List Nat) :=
 def Selector.picks (decl : Std.TreeMap Name (List Nat)) (n : Nat) : Selector → List Nat
   | .name u => decl.getD u []
   | .stmt k => if k < n then [k] else []
+
+/-- The `k`-th other name for `u`. -/
+def aliasName (u : Name) (k : Nat) : Name := s!"{u}${k}"
+
+/-- The first of `u$k`, `u$(k+1)`, … that is not taken. `fuel`: more than there are taken names. -/
+def freshFrom (u : Name) (taken : NameSet) : Nat → Nat → Name
+  | 0, _ => u
+  | fuel + 1, k => if taken.contains (aliasName u k) then freshFrom u taken fuel (k + 1) else aliasName u k
+
+/-- A public name for a glue export of `u`: `u`, or the first of `u$1`, `u$2`, … when `u` is taken. -/
+def freshName (u : Name) (taken : NameSet) : Name :=
+  if taken.contains u then freshFrom u taken (taken.size + 1) 1 else u
+
+/-- Glue exports of the bindings `needed` from a module whose own `export` statements publish `pub`.
+A binding they publish under its own name (`export { u }`, `export const u`) needs none. -/
+def glueExports (pub : List (Name × Option Name)) (needed : List Name) : List (Name × Name) :=
+  let own : NameSet := pub.foldl (fun acc e => if e.2 == some e.1 then acc.insert e.1 else acc) ∅
+  ((needed.filter fun u => !own.contains u).foldl
+    (fun (acc : List (Name × Name) × NameSet) u =>
+      let p := freshName u acc.2
+      ((p, u) :: acc.1, acc.2.insert p)) ([], pub.foldl (fun acc e => acc.insert e.1) ∅)).1.reverse
 
 /-- Module that holds statement `i` (first claimant). -/
 def Spec.moduleOf (S : Spec) (B : Bundle) (i : Nat) : Option ModName :=
@@ -73,7 +95,9 @@ def mkPlan (B : Bundle) (S : Spec) : Plan :=
   -- a module exports exactly the names other modules import from it
   let imported : Std.TreeMap ModName (List Name) := base.foldl (fun acc o =>
     o.imports.foldl (fun acc e => acc.insert e.1 (e.2.reverse ++ acc.getD e.1 [])) acc) ∅
-  let withExports := base.map fun md => { md with exports := dedup (imported.getD md.name []).reverse }
+  let withExports := base.map fun md =>
+    { md with exports := glueExports (md.stmts.flatMap fun i => (arr.getD i default).exports)
+                           (dedup (imported.getD md.name []).reverse) }
   let p1 : Plan := { entry := S.entry, mods := withExports }
   -- a module nobody imports still has to run: the entry imports it for its effects
   let evalOrder := p1.evalOrder

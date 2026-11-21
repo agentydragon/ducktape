@@ -79,9 +79,7 @@ if (process.argv[2] !== "--worker") {
   for (let round = start; round < end; round++) {
     const choose = random((seed ^ 0xa341316c ^ Math.imul(round, 0x9e3779b1)) >>> 0);
     const { source } = generateAstBundle(seed, round);
-    const parsed = acorn.parse(source, { sourceType: "module", ecmaVersion: "latest" });
     const units = lowerDump(source, acorn, eslintScope);
-    assert.equal(units.statements.length, parsed.body.length);
     const original = path.join(tmp, `original-${round}.mjs`);
     writeFileSync(original, source);
     const expected = run(process.execPath, [original]);
@@ -98,7 +96,7 @@ if (process.argv[2] !== "--worker") {
       const modules = { "entry.mjs": [], "side-a.mjs": [], "side-b.mjs": [] };
       const names = Object.keys(modules);
       const prefixLength = 1 + choose(2);
-      parsed.body.forEach((unit, i) => {
+      units.statements.forEach(({ ast: unit }, i) => {
         // One randomized source prefix has a chance to preserve execution order;
         // the other plan scatters statements freely among modules.
         const target = unit.type.startsWith("Export")

@@ -7,8 +7,6 @@ Goal: turn a minified production bundle into readable modules, with a machine-ch
 
 The design is "untrusted search, trusted check". The footprint analysis is the one place that breaks it: `Effects.lean` is unproved, and the checker believes it.
 
-**Decided (2026-11-21).** Fix the two blockers that are not about footprints, before any precision work: glue exports that collide with the entry's own export names (step 4 below), and bundles with import statements and several declarators in a statement (parts of steps 2 and 6). In progress.
-
 **Proposed, not decided.**
 
 1. **No new precision rules in the unproved interpreter**, beyond the one or two that a measurement shows are blocking. Each such rule is one more unproved claim that a construct commutes. Fixing a wrong rule is always in scope: F1 to F3 in [`generator_findings`](experiments/translation/debug/generator_findings/README.md) are open, and so are F4 and F5 of ducktape#18429.
@@ -41,15 +39,14 @@ The design is "untrusted search, trusted check". The footprint analysis is the o
 
 ## Order of work
 
-1. Glue export names and chunk input (decided, in progress).
-2. The order-keeping planner of item 5, if agreed.
-3. F1 to F5.
-4. The spike of item 4, if started.
-5. Then by measured yield: per-unit reasons in `lower` ([`TODO.md`](TODO.md)), a vendor table by library family, a rule for decorator applications. A stack-safe interpreter comes before any analysis of library code.
+1. The order-keeping planner of item 5, if agreed.
+2. F1 to F6.
+3. The spike of item 4, if started.
+4. Then by measured yield: per-unit reasons in `lower` ([`TODO.md`](TODO.md)), a vendor table by library family, a rule for decorator applications. A stack-safe interpreter comes before any analysis of library code.
 
 ## More of debundle's cases through the Lean checker
 
-State: of 207 entries in `devinfra/js/debundle/e2e/cases`, 83 agree with debundle (68 accepts, 15 rejects), 8 disagree, 103 are not run.
+State: of 207 entries in `devinfra/js/debundle/e2e/cases`, 84 agree with debundle (69 accepts, 15 rejects), 7 disagree, 103 are not run.
 Causes: [`experiments/debundle_cases/README.md`](experiments/debundle_cases/README.md); numbers: [`results/summary.md`](experiments/debundle_cases/results/summary.md).
 
 Acceptance for every step, after `./run.sh --debundle-cases`:
@@ -66,14 +63,14 @@ The adapter resolves `binding` selectors and hole-free templates by exact AST sh
 
 - **Do not port the matcher.** 42 entries need holes, alpha-renaming and ranges. 24 need dataflow facts. debundle's resolver is a shape matcher plus a solver ([`docs/selector_resolution.md`](../../docs/selector_resolution.md)). A JS port would have to follow both.
 - **Read debundle's answer instead.** Run `debundle run` per entry and read the owner of every source unit. `modules.json` has `source_unit_ids` per module and `dependency_graph.json.gz` has `unit:N` nodes ([`docs/wire_format.md`](../../docs/wire_format.md)). Check whether the nodes carry input ranges. If not, add one side output to debundle: unit → input range → owner path.
-- The adapter maps units to statements (declarators after step 2) and writes the `lowersplit` spec as today.
+- The adapter maps units to statements (declarators, as in step 2) and writes the `lowersplit` spec as today.
 - This makes `Valid` an independent second opinion on debundle's gate for every spec debundle resolved.
 - The 12 refusal entries stay `refusal-test`.
 - Open: how the harness runs the `//devinfra/js/debundle:debundle` binary, and what one call costs.
 
-### 2. Declarator granularity and repeated `var` (6 comparable entries: 3 not run, 3 `strict-but-runs`; 2 more are refusal tests)
+### 2. Declarator granularity in the adapter, and repeated `var` (6 comparable entries: 3 not run, 3 `strict-but-runs`; 2 more are refusal tests)
 
-- Split `var`/`let`/`const a = …, b = …` into one statement per declarator before analysis. Both are sequential, so behavior is the same. debundle's units are declarators too. A destructuring declarator stays whole (debundle refuses to split one: `comma_list/destructure_split_across_modules_is_rejected`).
+- `lowering/dump.mjs` writes one statement per declarator of a `var`/`let`/`const` list, and a destructuring declarator stays whole (debundle refuses to split one: `comma_list/destructure_split_across_modules_is_rejected`). The adapter still parses on its own, a statement per list: take its statements from `lowerDump`, and let a template that matches a whole list claim each of its declarators.
 - `UniqueDefs` becomes "one module per name". Several `var` declarations of a name may sit in one module and keep their order, because they conflict. This changes `Semantics.lean`: the last declarer wins. `split_correct` needs a new proof.
 - Entries: 2 of the 4 `statement claimed by two modules` (the other 2 are refusal tests), `sibling_declarator_ownership`, and the 3 `UniqueDefs` rejections.
 
@@ -87,12 +84,11 @@ The adapter resolves `binding` selectors and hole-free templates by exact AST sh
 
 Guard anything added with the corpus' rejections that must stay rejected (`proxy_constructor/effectful_proxy_keys`, `freeze_effectful_argument`, `freeze_proxy_receiver`), the fuzzer and the mutation test.
 
-### 4. Model verbatim `export` names (2 entries, and the `ExportNames` guard goes)
+### 4. The entry's public surface
 
-- `Stmt` gains `exports : List (Name × Name)` (public name, local name).
-- `mkPlan` reuses a verbatim export when the public name is the local name, and aliases the glue otherwise (`export { av as av$1 }`, `import { av$1 as av }`).
-- `Valid` gets an `ExportsUnique` conjunct, and `Linkable` resolves imports through the export map. `Correct` adds: the entry's public surface (name → binding) is unchanged.
-- Delete the `ExportNames` rule in `LowerSplit.lean`. The same step can also fold `Reassign` and `ExportOutsideEntry` into `Valid` (TODO.md).
+- `Valid` knows what each `export` statement publishes (`Stmt.exports`) and keeps a module's export names apart (`ExportsUnique`). It does not say that the entry still exports what the bundle exported: glue adds names to the entry (`av$1` beside `av`), and nothing checks that the old names keep their bindings.
+- `Correct` adds: the entry's public surface (name → binding) is the bundle's, plus glue names. `mkPlan` could reuse `export { X as av }` for an importer of `X` (`import { av as X }`) and add fewer names.
+- The same step can fold the entry-only rule for `import` and `export` statements into `Valid` (TODO.md).
 
 ### 5. Import-only edges for evaluation order (1 entry, likely more after step 1)
 
@@ -100,7 +96,8 @@ Guard anything added with the corpus' rejections that must stay rejected (`proxy
 
 ### 6. Imports and several chunks (18 entries: 12 multi-chunk, 4 `ImportDeclaration`, 2 specifier selectors)
 
-- Model `import { x } from "…"` as a hoisted definition of `x` plus a foreign module that evaluates first.
+- `lowersplit` takes a chunk with imports from outside modules: the `import` statements stay in the entry, which writes them first, and the order of evaluation is argued, not proved ([`README.md`](README.md) § What is not proved). Model it: `import { x } from "…"` as a hoisted definition of `x` plus a foreign module that evaluates first, so that `OrderOk` covers the order and a module that awaits at its top level is refused or handled.
+- The 4 `ImportDeclaration` entries need three things of the adapter: literal values in its dump (`lowersplit` reads an import's source from `lit`; `lowerDump` writes it), the modules written beside the chunk, where its relative imports resolve, and `import` statements left in the entry when debundle's spec moves one. A probe with the first two: `return_object_provider_import` is accepted and prints the chunk's output, `chunk_renames/named_imports` agrees, `chunk_rename_peeled_import` is rejected for an `import` outside the entry, `pruned_import_keeps_its_load_order` fails `OrderOk`.
 - Model several chunks as one bundle each, with import edges between them. `Plan.visit` and `OrderOk` run over the union.
 - Oracle for the evaluation order: `experiments/es_order/check.mjs` (500 random import graphs against Node). Add cross-chunk graphs.
 - Largest step. Do it last.

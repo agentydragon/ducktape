@@ -76,7 +76,7 @@ theorem permutesB_iff (n : Nat) (ord : List Nat) :
 /-! ## Module tables
 
 `Hygienic` and `Linkable` ask, for each name a statement mentions or a module imports, what the
-module declares, exports and imports. Scanning the module for each answer is quadratic in its size.
+module declares, exports (`Module.exportsLocal`) and imports. Scanning the module for each answer is quadratic in its size.
 `Module.tab` answers all three with lookups. -/
 
 structure ModTab where
@@ -87,7 +87,8 @@ structure ModTab where
 
 def Module.tab (arr : Array Stmt) (m : Module) : ModTab where
   declared := m.stmts.foldl (fun acc i => (arr.getD i default).defs.foldl (·.insert ·) acc) ∅
-  exported := m.exports.foldl (·.insert ·) ∅
+  exported := (m.exports.map (·.2) ++ m.stmts.flatMap fun i =>
+    (arr.getD i default).exports.filterMap fun e => if e.2 == some e.1 then some e.1 else none).foldl (·.insert ·) ∅
   importedFrom := m.imports.foldr (fun e acc => e.2.foldr (fun u acc => acc.insert u e.1) acc) ∅
 
 private theorem mem_foldl_decl (arr : Array Stmt) : ∀ (l : List Nat) (acc : NameSet) (u : Name),
@@ -116,9 +117,20 @@ theorem Module.tab_declared (B : Bundle) (m : Module) (u : Name) :
     List.contains_iff_mem, Bundle.toArray_getD]
 
 theorem Module.tab_exported (B : Bundle) (m : Module) (u : Name) :
-    (m.tab B.toArray).exported.contains u = m.exports.contains u := by
+    (m.tab B.toArray).exported.contains u = m.exportsLocal B u := by
   rw [Bool.eq_iff_iff, ← Std.TreeSet.mem_iff_contains]
-  simp only [Module.tab, mem_foldl_insert, Std.TreeSet.not_mem_emptyc, false_or, List.contains_iff_mem]
+  simp only [Module.tab, mem_foldl_insert, Std.TreeSet.not_mem_emptyc, false_or, Module.exportsLocal,
+    Module.published, Bool.or_eq_true, List.mem_append, List.any_eq_true, List.contains_iff_mem, List.mem_map,
+    List.mem_flatMap, List.mem_filterMap, Bundle.toArray_getD, beq_iff_eq]
+  refine or_congr Iff.rfl ⟨?_, ?_⟩
+  · rintro ⟨i, hi, ⟨p, l⟩, he, h⟩
+    by_cases hl : l = some p
+    · subst hl
+      simp only [↓reduceIte, Option.some.injEq] at h
+      subst h; exact ⟨i, hi, he⟩
+    · simp [hl] at h
+  · rintro ⟨i, hi, he⟩
+    exact ⟨i, hi, (u, some u), he, by simp⟩
 
 private theorem foldr_insert_get (src : ModName) : ∀ (names : List Name) (acc : Std.TreeMap Name ModName) (u : Name),
     (names.foldr (fun u acc => acc.insert u src) acc)[u]? = if u ∈ names then some src else acc[u]?
@@ -191,7 +203,7 @@ theorem declaredInT_eq (B : Bundle) (P : Plan) (u : Name) :
 
 private theorem any_tab (B : Bundle) (u : Name) (o : Option Module) :
     (o.map (·.tab B.toArray)).any (fun s => s.declared.contains u && s.exported.contains u) =
-      (o.any (·.declares B u) && o.any (·.exports.contains u)) := by
+      (o.any (·.declares B u) && o.any (·.exportsLocal B u)) := by
   cases o <;> simp [Module.tab_declared, Module.tab_exported]
 
 theorem resolveT_eq (B : Bundle) (P : Plan) (m : Module) (u : Name) :
@@ -235,19 +247,18 @@ def linkModB (byName : Std.TreeMap ModName ModTab) (m : Module) (t : ModTab) : B
     && nodupB (m.imports.map (·.1))
     && nodupB (m.imports.flatMap (·.2))
     && m.imports.all (fun i => i.2.all fun u => !t.declared.contains u)
-    && nodupB m.exports
-    && m.exports.all t.declared.contains
+    && m.exports.all fun e => t.declared.contains e.2
 
 private theorem any_exported (B : Bundle) (u : Name) (o : Option Module) :
-    (o.map (·.tab B.toArray)).any (·.exported.contains u) = o.any (·.exports.contains u) := by
+    (o.map (·.tab B.toArray)).any (·.exported.contains u) = o.any (·.exportsLocal B u) := by
   cases o <;> simp [Module.tab_exported]
 
 theorem linkModB_iff (B : Bundle) (P : Plan) (m : Module) :
     linkModB (tabsByName (P.tabs B.toArray)) m (m.tab B.toArray) = true ↔
-      ((∀ e ∈ m.imports, e.1 ≠ m.name ∧ (P.find e.1).isSome = true ∧ ∀ u ∈ e.2, P.exportsName e.1 u = true)
+      ((∀ e ∈ m.imports, e.1 ≠ m.name ∧ (P.find e.1).isSome = true ∧ ∀ u ∈ e.2, P.exportsName B e.1 u = true)
         ∧ (m.imports.map (·.1)).Nodup ∧ (m.imports.flatMap (·.2)).Nodup
         ∧ (∀ e ∈ m.imports, ∀ u ∈ e.2, m.declares B u = false)
-        ∧ m.exports.Nodup ∧ (∀ u ∈ m.exports, m.declares B u = true)) := by
+        ∧ (∀ e ∈ m.exports, m.declares B e.2 = true)) := by
   simp only [linkModB, Bool.and_eq_true, List.all_eq_true, bne_iff_ne, ne_eq, nodupB_iff,
     Plan.tabsByName_get, Option.isSome_map, Module.tab_declared, Plan.exportsName, Bool.not_eq_true',
     any_exported, and_assoc]
@@ -352,6 +363,16 @@ theorem faithfulB_iff (B : Bundle) (S : Spec) (P : Plan) :
   simp only [faithfulB, Faithful, Bool.and_eq_true, decide_eq_true_eq, nodupB_iff, List.all_eq_true,
     List.mem_map, beq_iff_eq, forall_exists_index, and_imp, forall_apply_eq_imp_iff₂,
     Spec.claimantsT_eq, Selector.picksSomeT_iff, and_assoc, contains_foldl_insert, decide_eq_decide]
+/-! ## ExportsUnique, with a set -/
+
+def Plan.exportsUniqueB (arr : Array Stmt) (P : Plan) : Bool :=
+  P.mods.all fun m =>
+    nodupB ((m.stmts.flatMap fun i => (arr.getD i default).exports).map (·.1) ++ m.exports.map (·.1))
+
+theorem Plan.exportsUniqueB_iff (B : Bundle) (P : Plan) : P.exportsUniqueB B.toArray = true ↔ ExportsUnique B P := by
+  simp only [Plan.exportsUniqueB, ExportsUnique, List.all_eq_true, nodupB_iff, Module.publicNames,
+    Module.published, Bundle.toArray_getD]
+
 
 /-! ## OrderOk, with tables built once -/
 
@@ -365,6 +386,9 @@ instance (B : Bundle) (S : Spec) (P : Plan) : Decidable (Faithful B S P) :=
 
 instance (B : Bundle) (P : Plan) : Decidable (Linkable B P) :=
   decidable_of_iff _ (Plan.linkableB_iff B P)
+
+instance (B : Bundle) (P : Plan) : Decidable (ExportsUnique B P) :=
+  decidable_of_iff _ (Plan.exportsUniqueB_iff B P)
 
 instance (B : Bundle) (P : Plan) : Decidable (Hygienic B P) :=
   decidable_of_iff _ (Plan.hygienicB_iff B P)

@@ -48,6 +48,9 @@ structure Stmt where
   /-- Names, declared elsewhere, that the code of this statement assigns: while it runs, or in the function
       bodies it creates. Where this code sits matters for linking: an `import` is read-only. -/
   assigns : List Name := []
+  /-- What the statement publishes, if it is an `export`: each public name, with the top-level binding it stands
+      for (`none` for the value of `export default <expression>` and for a name re-exported from another module). -/
+  exports : List (Name × Option Name) := []
   /-- A `function` declaration: its binding exists before any code runs. -/
   hoisted : Bool := false
   /-- Touches the world: the environment, or code that is not known (a call into a library, a function it was handed).

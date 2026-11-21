@@ -90,10 +90,10 @@ theorem preserves_model (fuel : Nat) :
 theorem accepted : Valid Example.bundle Example.spec Example.plan := Example.plan_valid
 
 /-- Concrete source text produced by the actual renderer for this plan. -/
-theorem rendered_base : (Example.plan.find "base.mjs").map (Module.render Example.bundle) =
+theorem rendered_base : (Example.plan.find "base.mjs").map (Module.render Example.bundle Example.plan) =
     some "const one = 1;\n\nexport { one };\n" := by decide +kernel
 
-theorem rendered_entry : (Example.plan.find "main.mjs").map (Module.render Example.bundle) =
+theorem rendered_entry : (Example.plan.find "main.mjs").map (Module.render Example.bundle Example.plan) =
     some "import { one } from \"./base.mjs\";\n\nconst unused = 2;\nconst copy = one;\n" := by
   decide +kernel
 
