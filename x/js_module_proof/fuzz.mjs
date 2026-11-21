@@ -1932,6 +1932,7 @@ export async function runFuzz({
     unknownCases: [],
     unvalidated: 0,
     unexplainedDifferences: [],
+    certifiedWitnesses: [],
   };
   for (let index = start; index < start + cases; index++) {
     if (index % shards !== shard) continue;
@@ -2325,6 +2326,11 @@ export async function runFuzz({
             JSON.stringify(verdict.output) !== JSON.stringify(witness(witnessAfter))
           )
             throw new Error("unsafe witness does not match Node");
+          await writeFile(
+            join(root, "node-witness.json"),
+            JSON.stringify({ calls: witnessCalls, before: witnessBefore, after: witnessAfter }, null, 2) + "\n"
+          );
+          summary.certifiedWitnesses.push({ index, mutated, calls: witnessCalls, artifactPath });
         } else if (verdict.result === "unknown") {
           summary.unknown++;
           summary.unknownCases.push({
@@ -2334,8 +2340,8 @@ export async function runFuzz({
           });
         } else throw new Error(`unexpected validator result: ${verdict.result}`);
       } else summary.unvalidated++;
-      keep = !equal && (verdictName === "unknown" || verdictName === "unvalidated");
-      if (keep)
+      keep = verdictName === "unsafe" || (!equal && ["unknown", "unvalidated"].includes(verdictName));
+      if (keep && verdictName !== "unsafe")
         summary.unexplainedDifferences.push({ index, mutated, verdict: verdictName, artifacts: root, artifactPath });
     } catch (error) {
       await writeFile(

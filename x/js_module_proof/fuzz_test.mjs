@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { access, writeFile } from "node:fs/promises";
+import { access, readFile, writeFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import { createRequire } from "node:module";
 
@@ -145,8 +145,19 @@ if (shards === 4 && shard === 2) {
     });
     assert.equal(redirectedRelay.mutationKinds.renamedReexport, 1);
     assert.equal(redirectedRelay.mutatedDifferent, 1);
-    if (start === 123) assert.equal(redirectedRelay.mutatedVerdicts.unknown, 1);
-    else assert.equal(redirectedRelay.mutatedVerdicts.unsafe, 1);
+    assert.equal(redirectedRelay.mutatedVerdicts.unsafe, 1);
+    if (start === 123) {
+      assert.deepEqual(redirectedRelay.certifiedWitnesses[0].calls, [{ name: "fuzzRelayRead", args: [0] }]);
+      await access(join(process.env.TEST_TMPDIR, redirectedRelay.certifiedWitnesses[0].artifactPath, "verdict.json"));
+      const witness = JSON.parse(
+        await readFile(
+          join(process.env.TEST_TMPDIR, redirectedRelay.certifiedWitnesses[0].artifactPath, "node-witness.json"),
+          "utf8"
+        )
+      );
+      assert.deepEqual(witness.before.results, [{ value: 1 }]);
+      assert.deepEqual(witness.after.results, [{ value: 2 }]);
+    }
   }
 }
 if (shards === 4 && shard === 3) {
