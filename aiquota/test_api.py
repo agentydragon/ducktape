@@ -20,7 +20,7 @@ from aiquota.api import (
     _next_view_transition,
     create_app,
 )
-from aiquota.config import Config
+from aiquota.config import Config, load
 from aiquota.models import (
     AllQuotas,
     ClaudeResetGrant,
@@ -33,7 +33,7 @@ from aiquota.models import (
     RawUpstreamResponse,
 )
 from aiquota.providers.claude import USAGE_URL
-from aiquota.render.view_model import AllQuotasView
+from aiquota.render.view_model import AllQuotasView, refresh_view
 from aiquota.server_main import _frontend_dir
 from aiquota.settings import Settings
 from testing.asgi import serve_app_in_loop
@@ -538,6 +538,50 @@ async def test_background_collection_runs_without_clickhouse() -> None:
             assert feed.latest is not None
             assert (await client.get("/readyz")).status_code == 200
     assert not collector.is_running
+
+
+async def test_scheduled_only_polling_serves_every_read_from_the_collector(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        "[polling]\npoll_interval_seconds = 900\nhistory_interval_seconds = 7200\n"
+        "cache_ttl_seconds = 0\nrefresh_on_read = false\n"
+    )
+    polling = load(config_path).polling
+    assert polling.poll_interval_seconds == 900
+    assert polling.history_interval_seconds == 7200
+    assert polling.cache_ttl_seconds == 0
+
+    fetcher = FakeFetcher()
+    feed = SnapshotFeed(fetcher)
+    collector = BackgroundCollector(
+        feed, None, interval=timedelta(seconds=polling.poll_interval_seconds), metrics=CollectorMetrics()
+    )
+    app = create_app(
+        bearer_token="test-bearer", fetcher=feed, collector=collector, refresh_on_read=polling.refresh_on_read
+    )
+    headers = {"Authorization": "Bearer test-bearer"}
+    read_paths = ["/v1/quotas", "/v1/providers/claude/raw", "/v1/providers/claude/prepaid-balance/raw"]
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://aiquota.test", headers=headers) as client:
+        for path in [*read_paths, "/v1/events"]:
+            assert (await client.get(path)).status_code == 503
+        assert fetcher.calls == 0
+
+    async with serve_app_in_loop(app) as url, httpx.AsyncClient(base_url=url, headers=headers) as client:
+        await feed.wait_after(0)
+        quota_response = await client.get("/v1/quotas")
+        assert quota_response.status_code == 200
+        view = AllQuotasView.model_validate_json(quota_response.content)
+        observed_at = fetcher.snapshot.quotas.providers[0].last_output.fetched_at
+        stale_at = observed_at + timedelta(minutes=30)
+        assert view.providers[0].stale_at == stale_at
+        assert refresh_view(view, observed_at + timedelta(minutes=15)).providers[0].stale_since is None
+        for path in read_paths:
+            assert (await client.get(path)).status_code == 200
+        async with client.stream("GET", "/v1/events") as response:
+            assert response.status_code == 200
+            assert (await _read_view(response.aiter_lines())).providers[0].stale_at == stale_at
+        assert fetcher.calls == 1
 
 
 async def test_clickhouse_failure_does_not_block_snapshot_publication() -> None:

@@ -119,12 +119,17 @@ class AllQuotasView(BaseModel):
     providers: list[ProviderView]
 
 
-def to_view(quotas: AllQuotas, now: datetime | None = None) -> AllQuotasView:
+# Leave room for the next scheduled poll to finish before warning about staleness.
+_STALE_AFTER = timedelta(minutes=10)
+
+
+def to_view(quotas: AllQuotas, now: datetime | None = None, *, poll_interval: timedelta | None = None) -> AllQuotasView:
     moment = now or datetime.now(UTC)
+    stale_after = max(_STALE_AFTER, 2 * poll_interval) if poll_interval is not None else _STALE_AFTER
     return AllQuotasView(
         fetched_at=quotas.fetched_at,
         presentation_at=moment,
-        providers=[_provider_view(pq, moment) for pq in quotas.providers],
+        providers=[_provider_view(pq, moment, stale_after=stale_after) for pq in quotas.providers],
     )
 
 
@@ -142,6 +147,11 @@ def refresh_view(
                 moment,
                 selection=pv.display,
                 offline=connection_error is not None,
+                stale_after=(
+                    pv.stale_at - pv.display.observed_at
+                    if pv.stale_at is not None and pv.display.observed_at is not None
+                    else _STALE_AFTER
+                ),
             )
             for pv in view.providers
         ],
@@ -174,8 +184,6 @@ _PROVIDER_LABELS = {
     "openai_platform": "OpenAI API",
     "anthropic_platform": "Anthropic API",
 }
-# Two collector intervals avoid a stale warning during the normal five-minute poll boundary.
-_STALE_AFTER = timedelta(minutes=10)
 _PRODUCT_LABELS = {"claude_api": "Claude API", "claude_code": "Claude Code"}
 # The broad API promo scope in the observed account fixture. Unknown products or
 # model-specific qualifiers remain visible restrictions, never inferred as universal.
@@ -183,14 +191,19 @@ _BROAD_API_PRODUCTS = {"agent_sdk", "api", "batch", "console", "managed-agents",
 
 
 def _provider_view(
-    pq: ProviderQuota, now: datetime, *, selection: DisplaySelection | None = None, offline: bool = False
+    pq: ProviderQuota,
+    now: datetime,
+    *,
+    stale_after: timedelta,
+    selection: DisplaySelection | None = None,
+    offline: bool = False,
 ) -> ProviderView:
     selection = selection if selection is not None else _select_display(pq)
     observed_at = selection.observed_at
     stale_since = (
         observed_at
         if observed_at is not None
-        and (offline or selection.source == "last_success" or now - observed_at >= _STALE_AFTER)
+        and (offline or selection.source == "last_success" or now - observed_at >= stale_after)
         else None
     )
     source = selection.result
@@ -274,7 +287,7 @@ def _provider_view(
         balances=balances,
         grants=grants,
         stale_since=stale_since,
-        stale_at=observed_at + _STALE_AFTER if observed_at is not None else None,
+        stale_at=observed_at + stale_after if observed_at is not None else None,
         status=status,
         display=selection,
         last_output=pq.last_output,

@@ -29,9 +29,13 @@ def _frontend_dir() -> Path:
 
 def main() -> None:
     settings = Settings()
+    config = load_config(settings.config_path)
+    polling = config.polling
     service = QuotaAPIService(
-        load_config(settings.config_path),
-        cache_ttl=settings.cache_ttl,
+        config,
+        cache_ttl=(
+            settings.cache_ttl if polling.cache_ttl_seconds is None else timedelta(seconds=polling.cache_ttl_seconds)
+        ),
         claude_proxy=settings.claude_proxy,
         claude_proxy_ca=settings.claude_proxy_ca,
         cli_proxy_api_key=settings.cli_proxy_api_key.get_secret_value() if settings.cli_proxy_api_key else None,
@@ -50,10 +54,16 @@ def main() -> None:
             raw_table=settings.clickhouse_raw_table,
         )
         history_collector = HistoryCollector(
-            service, sink, interval=timedelta(seconds=settings.history_interval_seconds), metrics=metrics
+            service,
+            sink,
+            interval=timedelta(seconds=polling.history_interval_seconds or settings.history_interval_seconds),
+            metrics=metrics,
         )
     collector = BackgroundCollector(
-        feed, sink, interval=timedelta(seconds=settings.poll_interval_seconds), metrics=metrics
+        feed,
+        sink,
+        interval=timedelta(seconds=polling.poll_interval_seconds or settings.poll_interval_seconds),
+        metrics=metrics,
     )
     uvicorn.run(
         create_app(
@@ -62,6 +72,7 @@ def main() -> None:
             collector=collector,
             history_collector=history_collector,
             metrics=metrics,
+            refresh_on_read=polling.refresh_on_read,
             frontend_dir=_frontend_dir(),
             prepare_storage=None if sink is None else sink.apply_schema,
             browser_oauth=BrowserOAuth(
