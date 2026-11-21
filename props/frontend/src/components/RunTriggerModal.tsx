@@ -19,8 +19,7 @@ interface Props {
 export default function RunTriggerModal({ open, onClose, prefill }: Props): JSX.Element {
   const [mode, setMode] = useState<RunMode>("validation");
   const [loading, setLoading] = useState(false);
-  const [loadingDefinitions, setLoadingDefinitions] = useState(true);
-  const [loadingModels, setLoadingModels] = useState(true);
+  const [loadingData, setLoadingData] = useState(true);
   const [definitions, setDefinitions] = useState<DefinitionInfo[]>([]);
   const [modelIds, setModelIds] = useState<string[]>([]);
   const [resultMessage, setResultMessage] = useState<string | null>(null);
@@ -52,8 +51,7 @@ export default function RunTriggerModal({ open, onClose, prefill }: Props): JSX.
         toast.error(error instanceof Error ? error.message : "Failed to load data");
       })
       .finally(() => {
-        setLoadingDefinitions(false);
-        setLoadingModels(false);
+        setLoadingData(false);
       });
   }, [open]);
 
@@ -152,7 +150,7 @@ export default function RunTriggerModal({ open, onClose, prefill }: Props): JSX.
   }
 
   const modelSelectData = modelIds.map((id) => ({ value: id, label: id }));
-  const disabled = loading || loadingModels;
+  const disabled = loading || loadingData;
 
   return (
     <Modal opened={open} onClose={onClose} title="Launch Agent" centered size="md">
@@ -198,7 +196,7 @@ export default function RunTriggerModal({ open, onClose, prefill }: Props): JSX.
             <Tabs.Tab value="improve">Improve</Tabs.Tab>
           </Tabs.List>
           <Tabs.Panel value="validation" pt="md">
-            {loadingDefinitions ? (
+            {loadingData ? (
               <Text c="dimmed">Loading definitions…</Text>
             ) : (
               <Stack gap="sm">
