@@ -344,6 +344,24 @@ js_test(
 )
 
 js_test(
+    name = "effects_targeted_fuzz_test",
+    size = "medium",
+    args = [
+        "--permutations",
+        "3",
+        "--seed",
+        "20261121",
+    ],
+    data = _EFFECTS_CASES_DATA,
+    entry_point = _EFFECTS + ":run",
+    env = {
+        "CASES": "./targeted.mjs",
+        "LOWER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lower)",
+        "TRANSLATE": "$(rootpath " + _TRANSLATE + ")",
+    },
+)
+
+js_test(
     name = "prototype_guard_test",
     data = [
         "prototype_guard.mjs",
