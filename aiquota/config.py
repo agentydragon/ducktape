@@ -17,11 +17,6 @@ class AnthropicPlatformSettings(BaseModel):
 class ClaudeSettings(BaseModel):
     enabled: bool = True
     credentials_path: Path = Path.home() / ".claude" / ".credentials.json"
-    # An explicit token selects an externally owned, static credential source.
-    # A trusted credential-substitution proxy can replace a non-secret sentinel
-    # on the exact upstream Authorization header. This source is never
-    # refreshed or written by aiquota.
-    access_token: SecretStr | None = None
 
 
 class CodexSettings(BaseModel):

@@ -336,15 +336,7 @@ class HistoryCollector:
 class _CapturingClientFactory:
     """Provider HTTP client factory which captures only the declared endpoint bodies."""
 
-    def __init__(
-        self,
-        *,
-        claude_proxy: str | None,
-        claude_proxy_ca: Path | None,
-        transport: httpx.AsyncBaseTransport | None = None,
-    ) -> None:
-        self._claude_proxy = claude_proxy
-        self._claude_proxy_ca = claude_proxy_ca
+    def __init__(self, *, transport: httpx.AsyncBaseTransport | None = None) -> None:
         self._transport = transport
         self.responses: dict[str, RawUpstreamResponse] = {}
 
@@ -391,26 +383,12 @@ class _CapturingClientFactory:
         kwargs: dict[str, object] = {
             "timeout": timeout,
             "event_hooks": {"response": [capture]},
-            # Do not inherit a pod-wide HTTPS_PROXY. The legacy Claude
-            # credential-substitution proxy is used only for the direct-token
-            # fallback; CLIProxyAPI management calls must go directly to the
-            # in-cluster service.
+            # Do not inherit a pod-wide HTTPS_PROXY: CLIProxyAPI management
+            # calls must go directly to the in-cluster service.
             "trust_env": False,
         }
         if self._transport is not None:
             kwargs["transport"] = self._transport
-        # Route only direct Claude provider requests through the legacy
-        # credential-substitution proxy. Management calls have a local
-        # `/api-call` response URL even when their capture key names a Claude
-        # endpoint, so the key alone cannot select the proxy.
-        is_direct_claude_endpoint = capture_key == "claude_profile_direct" or (
-            capture_key in {"claude", "claude_prepaid_balance"}
-            and any(url.startswith("https://api.anthropic.com/") for url in response_urls)
-        )
-        if is_direct_claude_endpoint and self._claude_proxy:
-            kwargs["proxy"] = self._claude_proxy
-            if self._claude_proxy_ca is not None:
-                kwargs["verify"] = str(self._claude_proxy_ca)
         return httpx.AsyncClient(**kwargs)  # type: ignore[arg-type]
 
 
@@ -418,18 +396,10 @@ class QuotaAPIService:
     """In-memory, coalesced quota collector with no disk-backed cache."""
 
     def __init__(
-        self,
-        config: Config,
-        *,
-        cache_ttl: timedelta = timedelta(seconds=120),
-        claude_proxy: str | None = None,
-        claude_proxy_ca: Path | None = None,
-        cli_proxy_api_key: str | None = None,
+        self, config: Config, *, cache_ttl: timedelta = timedelta(seconds=120), cli_proxy_api_key: str | None = None
     ) -> None:
         self._config = config
         self._cache_ttl = cache_ttl
-        self._claude_proxy = claude_proxy
-        self._claude_proxy_ca = claude_proxy_ca
         self._cli_proxy_api_key = cli_proxy_api_key
         self._snapshot: QuotaSnapshot | None = None
         self._lock = asyncio.Lock()
@@ -442,7 +412,7 @@ class QuotaAPIService:
             if not force_refresh and self._is_fresh(self._snapshot):
                 assert self._snapshot is not None
                 return self._snapshot
-            factory = self._client_factory()
+            factory = _CapturingClientFactory()
             providers = _instantiate(self._config, client_factory=factory, cli_proxy_api_key=self._cli_proxy_api_key)
             outputs = await asyncio.gather(*(provider.fetch() for provider in providers))
             prior = {quota.provider: quota for quota in self._snapshot.quotas.providers} if self._snapshot else {}
@@ -463,7 +433,7 @@ class QuotaAPIService:
         runs on its own schedule and must not make a `/v1/quotas` caller wait.
         """
 
-        factory = self._client_factory()
+        factory = _CapturingClientFactory()
         providers = _instantiate(self._config, client_factory=factory, cli_proxy_api_key=self._cli_proxy_api_key)
         batches = await asyncio.gather(
             *(provider.fetch_history() for provider in providers if isinstance(provider, SupportsHistory))
@@ -472,12 +442,6 @@ class QuotaAPIService:
             observations=[observation for batch in batches for observation in batch],
             fetched_at=datetime.now(UTC),
             raw_responses=factory.responses,
-        )
-
-    def _client_factory(self) -> _CapturingClientFactory:
-        return _CapturingClientFactory(
-            claude_proxy=(self._claude_proxy if not self._config.cli_proxy_api.url else None),
-            claude_proxy_ca=(self._claude_proxy_ca if not self._config.cli_proxy_api.url else None),
         )
 
     def _is_fresh(self, snapshot: QuotaSnapshot | None) -> bool:

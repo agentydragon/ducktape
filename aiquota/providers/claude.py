@@ -296,17 +296,13 @@ class ClaudeProvider(Provider):
             return ProviderFetch(fetched_at=now, result=_to_success(usage, prepaid_balance))
 
         path = self.settings.credentials_path
-        creds, stored_token = _read_credentials(path)
-        configured_token = self.settings.access_token.get_secret_value() if self.settings.access_token else None
-        token = configured_token or stored_token
+        creds, token = _read_credentials(path)
         if not token:
             return ProviderFetch(fetched_at=now, result=FetchError(error="no credentials found"))
 
         try:
             async with self.client_factory(self.name, {USAGE_URL, PLAIN_USAGE_URL}, API_TIMEOUT_SECS) as client:
-                # An explicitly supplied token belongs to a proxy or another
-                # credential owner; never refresh or write it from this process.
-                if configured_token is None and _token_expired(creds):
+                if _token_expired(creds):
                     token = await _refresh_token(path, creds, client)
                     if not token:
                         return ProviderFetch(fetched_at=now, result=FetchError(error="token refresh failed"))
