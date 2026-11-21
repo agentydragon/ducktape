@@ -137,11 +137,8 @@ class ReasoningOutputTextItem(BaseModel):
     this as a distinct type (rather than widening ReasoningContentItem) so the
     OpenAI-standard model stays strict.
 
-    TODO: this is a workaround for a LiteLLM bridge mislabel. Prefer a real fix:
-    a LiteLLM config/version that emits "reasoning_text", or have props speak
-    chat/completions directly (it is currently Responses-API-only, see
-    props/backend/routes/llm.py) so reasoning doesn't round-trip through the
-    lossy Responses bridge at all. Track in props/TODO.md.
+    TODO: this is a workaround for a LiteLLM bridge mislabel. The real fix is a
+    LiteLLM config/version that emits "reasoning_text".
     """
 
     text: str
