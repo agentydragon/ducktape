@@ -311,7 +311,7 @@ function Report() {
     setSelection((previous) => ({ group, revision: previous.revision + 1 }));
 
   useEffect(() => {
-    fetch("./inventory.json?v=20261121051641")
+    fetch("./inventory.json?v=20261121055334")
       .then((response) => {
         if (!response.ok)
           throw new Error(`Inventory request returned HTTP ${response.status}`);
@@ -479,6 +479,19 @@ function Report() {
           admitted CPU and memory requests and limits.
         <//>
       <//>
+
+      <${Text} id="flux-request-wave" mt="md">
+        <strong>Flux controllers.</strong> Seven singleton Deployments have CPU
+        and memory request policies in Initial and were 1/1 Ready. The policy
+        Kustomization was Ready and Healthy at 05:53:35 UTC. At collection, 0 of
+        7 had CPU and memory targets. The next recommender cycle was expected
+        around 06:00 UTC. Once targets appear, check owner-matched admission and
+        ordinary replacements. The policy change records the operator recovery
+        steps if a Flux Pod cannot schedule. ${" "}<${Anchor}
+          href=${github + "pull/18494"}
+          >Flux policy and recovery<//
+        >.
+      <//>
     </section>
 
     <section id="remaining-work">
@@ -513,6 +526,33 @@ function Report() {
                 >
               <//>`,
           )}
+      <//>
+      <${Text} id="ha-replica-wave" mt="md">
+        <strong>Loki read and Kyverno cleanup.</strong> Both reached 3/3 Ready
+        replicas on distinct hosts in Initial. Their PDBs each allowed one
+        disruption at 05:53:35 UTC. The rollout check observed three Ready
+        endpoints per service, successful reads on all three Loki Pods, and
+        completed Kyverno cleanup migration with a renewing lease. Evaluate
+        recovery through a replacement before promoting either to Recreate.
+        ${" "}<${Anchor} href=${github + "pull/18495"}>Replica rollout<//>.
+      <//>
+      <${Text} id="nfd-request-wave" mt="md">
+        <strong>Node Feature Discovery.</strong> After this census, the GC,
+        master and worker policies moved to CPU and memory requests in Initial.
+        At 05:55:21 UTC the three live VPAs still awaited new CPU targets. Check
+        admission and worker readiness on natural replacements. ${" "}<${Anchor}
+          href=${github + "pull/18493"}
+          >NFD policy change<//
+        >.
+      <//>
+      <${Text} id="platform-request-wave" mt="md">
+        <strong>Platform Sessions and MCP.</strong> At 05:58:49 UTC, ten
+        post-census VPAs used Initial for CPU and memory requests. Their first
+        CPU targets were pending. All nine staging services in the earlier wave
+        had also dropped their explicit CPU bounds. Check both cohorts on
+        natural replacements. ${" "}<${Anchor} href=${github + "pull/18492"}
+          >Platform and staging policy change<//
+        >.
       <//>
       <${Title} order=${3} mt="lg">Apply these gates across the wave<//>
       <${Stack} gap="sm" mt="sm">
