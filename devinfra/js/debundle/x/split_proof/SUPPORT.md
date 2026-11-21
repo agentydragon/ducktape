@@ -32,6 +32,75 @@ The inventory is static and by name: it is a lower bound on the globals and an u
 
 Both lists say what the inputs contain, not what runs when a module is evaluated. A split only changes the order in which top-level code is evaluated, so a precise model is needed only for the code that runs then: the top-level statements and what they call. A function body that is not called at start-up still has to be parsed, carried over unchanged and scanned for the names it mentions and the standard objects it patches, and it counts for what unknown code can reach; it does not have to be evaluated. How much of the syntax and of the standard library runs at start-up is not measured yet. It decides how large a proved model has to be ([`PLAN.md`](PLAN.md) § Direction).
 
+## Features that are hard to reason about
+
+Code from strings, interception, reflection, hooks that the language calls on its own, patched standard objects, and what observes how code is spelled. [`experiments/translation/magic_census.mjs`](experiments/translation/magic_census.mjs) counts them by syntax. On 2026-11-21, over the 3,363 input files:
+
+| Feature                                                                                | Sites | Files | Sites at the top level | Files |
+| -------------------------------------------------------------------------------------- | ----: | ----: | ---------------------: | ----: |
+| **code from strings**                                                                  |       |       |                        |       |
+| direct `eval(…)`                                                                       |     4 |     4 |                      0 |     0 |
+| indirect eval: `(0, eval)(…)`, `globalThis.eval(…)`                                    |     1 |     1 |                      0 |     0 |
+| `eval` mentioned without a call                                                        |     2 |     2 |                      1 |     1 |
+| `Function(…)` or `new Function(…)`                                                     |    60 |    27 |                      8 |     5 |
+| **code loaded later**                                                                  |       |       |                        |       |
+| `import(…)`                                                                            |  2457 |   290 |                      1 |     1 |
+| `import.meta`                                                                          |  1749 |   267 |                    307 |    71 |
+| **interception**                                                                       |       |       |                        |       |
+| `new Proxy(…)` or `Proxy.revocable(…)`                                                 |    88 |    40 |                      3 |     3 |
+| getter or setter in an object literal or a class                                       |  8117 |   294 |                   4491 |   196 |
+| `Object.defineProperty` or `defineProperties` with an accessor in a literal descriptor |  2302 |    85 |                      4 |     3 |
+| `Object.defineProperty` or `defineProperties`, other                                   |  3324 |   153 |                    189 |    19 |
+| `__defineGetter__` or `__defineSetter__`                                               |     0 |     0 |                      0 |     0 |
+| **prototypes**                                                                         |       |       |                        |       |
+| `Object.setPrototypeOf` or `Reflect.setPrototypeOf`                                    |   207 |    44 |                      4 |     2 |
+| `__proto__` assigned, or as a key of an object literal                                 |   591 |    46 |                     62 |    22 |
+| assignment to a standard object or its prototype (`Array.prototype.x = …`)             |    50 |    16 |                      9 |     5 |
+| **reflection**                                                                         |       |       |                        |       |
+| `Reflect.…(…)`                                                                         |   631 |    84 |                      0 |     0 |
+| **hooks the language calls**                                                           |       |       |                        |       |
+| `Symbol.toPrimitive`, `species`, `hasInstance`, `unscopables` or `isConcatSpreadable`  |   135 |    24 |                     12 |     5 |
+| `Symbol.iterator` or `Symbol.asyncIterator`                                            |   805 |    79 |                     69 |    26 |
+| a method named `valueOf`, `toString` or `toJSON` in an object literal or a class       |   488 |    73 |                    321 |    42 |
+| `using` or `await using` declaration                                                   |    99 |    39 |                      0 |     0 |
+| `Symbol.dispose` or `Symbol.asyncDispose`                                              |   132 |    46 |                     31 |    15 |
+| **evaluation order**                                                                   |       |       |                        |       |
+| top-level `await`                                                                      |     0 |     0 |                      0 |     0 |
+| **nondeterminism**                                                                     |       |       |                        |       |
+| `WeakRef` or `FinalizationRegistry`                                                    |    55 |    35 |                      5 |     5 |
+| `Atomics` or `SharedArrayBuffer`                                                       |    44 |    11 |                      3 |     2 |
+| **how code is spelled**                                                                |       |       |                        |       |
+| `arguments.callee` or `.caller`                                                        |     2 |     2 |                      0 |     0 |
+| `Error.captureStackTrace` or `Error.prepareStackTrace`                                 |    87 |    32 |                      6 |     6 |
+| `.stack` read                                                                          |   859 |   186 |                      0 |     0 |
+| `Function.prototype.toString`                                                          |    23 |    13 |                      7 |     7 |
+| **scope**                                                                              |       |       |                        |       |
+| `with` statement                                                                       |     0 |     0 |                      0 |     0 |
+| `debugger` statement                                                                   |    14 |     2 |                      0 |     0 |
+
+A site at the top level is outside every function body: it runs when the module is evaluated, unless a condition skips it. A site inside a function may run then too, so the last two columns are a lower bound on what start-up runs. Getters, setters and hook methods are counted where they are defined, not where they run.
+
+**Proposed stance, not decided.** "Unknown code" means an effect that keeps its order against every other effect and may change everything it can reach.
+
+| Feature                                                                                | Proposal                                                                                        | Why                                                                                                                                     |
+| -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Direct `eval` at the top level                                                         | Not supported: refuse                                                                           | It sees the names around it by their spelling. No input has one.                                                                        |
+| Direct `eval` inside a function                                                        | Open. Today it is unknown code for the analysis, and `translate` rejects a tree with one        | The four sites are all `eval("require")` tricks that hide a `require` from a bundler.                                                   |
+| Indirect eval, `Function(…)`                                                           | Unknown code                                                                                    | It runs in the global scope and cannot see a module's bindings. The eight top-level sites are idioms such as `Function("return this")`. |
+| `import(…)`                                                                            | Unknown code when it runs; the module it names is another chunk                                 | 2,457 sites, one at the top level.                                                                                                      |
+| `import.meta`                                                                          | Needs real support: 307 top-level sites in 71 files                                             | Today `translate` rejects a unit that reads it, except `new URL("/absolute", import.meta.url)`.                                         |
+| `Proxy`                                                                                | Every operation on a value that may be a proxy is unknown code; premise P3 never covers one     | The program supplies the traps itself (finding F6).                                                                                     |
+| Getters, setters, `Object.defineProperty`                                              | Supported precisely for objects the program made                                                | They are everywhere: 8,117 definitions and 5,626 `defineProperty` calls.                                                                |
+| `setPrototypeOf`, `__proto__`                                                          | Supported precisely for objects the program made                                                | 798 sites.                                                                                                                              |
+| Assignment to a standard object                                                        | Supported at a cost in precision, when the patch is by name (premise P1)                        | 50 sites in 16 files, 9 at the top level.                                                                                               |
+| `Reflect`                                                                              | A row of the table of standard functions each, or unknown code                                  | 631 sites, none at the top level.                                                                                                       |
+| Hooks: `Symbol.toPrimitive`, `Symbol.iterator`, `valueOf`, `toString`, `toJSON`        | Supported: the model runs them where the language does                                          | 1,428 sites.                                                                                                                            |
+| `using`, `Symbol.dispose`                                                              | Open. Supported inside functions as part of the body; a top-level `using` refused until modeled | 99 declarations in 39 files, none at the top level. Node 22 cannot run them, so the oracles cannot test them yet.                       |
+| `WeakRef`, `FinalizationRegistry`, `Atomics`, `SharedArrayBuffer`                      | Unknown code                                                                                    | What they return depends on the garbage collector or on another thread.                                                                 |
+| `.stack`, `Function.prototype.toString`, `Error.captureStackTrace`, `arguments.callee` | Not preserved: a stated assumption                                                              | Renaming and moving code changes stack traces and function source text. 971 sites.                                                      |
+| `with`                                                                                 | Not supported                                                                                   | It cannot occur in a module.                                                                                                            |
+| `debugger`                                                                             | Kept as it is                                                                                   | 14 sites, none at the top level.                                                                                                        |
+
 ## Not supported
 
 A bundle with one of these is outside the accepted subset. "Refused" means a tool stops with an error; "not detected" means nothing checks it, so it is an assumption about the input.
