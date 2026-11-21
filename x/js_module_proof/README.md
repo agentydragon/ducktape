@@ -271,8 +271,8 @@ as recorded events, provided a conservative numeric bound keeps every intermedia
 rewrites beyond this AST subset can return `unknown`. Counterexample lowering
 resolves actual imports and public exports, keeps local identities distinct, and
 follows calls with bounded expansion. It can return `unknown` for duplicate
-output declaration names, redirected captured environments, missing numeric
-arguments, and other forms it cannot lower faithfully.
+output declaration names, redirected captured environments, observed missing
+numeric arguments, and other forms it cannot lower faithfully.
 
 This result assumes correct Acorn conversion and correspondence between the
 model and ECMAScript. Numeric bindings, exported-function arguments and modeled

@@ -1249,7 +1249,8 @@ export function makeComposedCase(seed, index) {
     );
   }
   const crossModuleReader = index % 512 === 379;
-  const missingArgument = index % 1024 === 571;
+  const missingArgument = index % 1024 === 571 || index % 1024 === 635;
+  const unusedMissingArgument = index % 1024 === 635;
   const redirectedCallee = index % 512 === 443 || index % 512 === 507 || missingArgument;
   const ignoredExtraArgument = index % 512 === 507;
   if (index % 64 === 59) {
@@ -1262,7 +1263,12 @@ export function makeComposedCase(seed, index) {
           [
             returnNode(
               missingArgument
-                ? { type: "BinaryExpression", operator: "+", left: id("parameter"), right: id("missing") }
+                ? {
+                    type: "BinaryExpression",
+                    operator: "+",
+                    left: id("parameter"),
+                    right: unusedMissingArgument ? literal(2) : id("missing"),
+                  }
                 : ignoredExtraArgument
                   ? literal(2)
                   : { type: "BinaryExpression", operator: "+", left: id("parameter"), right: literal(2) }

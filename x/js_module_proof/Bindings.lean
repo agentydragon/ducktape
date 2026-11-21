@@ -1137,6 +1137,43 @@ def witnessedName (modules : List BindingModule) (index : Nat) (bound : List (St
     let target ← declaredName resolved.2.2
     if bound.any (fun binding => binding.2 == target) then none else some target
 
+/- Missing parameters are represented by placeholders only when their names do
+   not occur in the callee body. Append them after all actual argument effects. -/
+def witnessedMissingArguments : Nat → NumericExpr
+  | 0 => .argumentsNil
+  | count + 1 => .argumentsCons (.literal 0) (witnessedMissingArguments count)
+
+def witnessedAppendArguments (tail : NumericExpr) : NumericExpr → Option NumericExpr
+  | .argumentsNil => some tail
+  | .argumentsCons head rest => (witnessedAppendArguments tail rest).map (NumericExpr.argumentsCons head)
+  | .literal _ => none
+  | .name _ => none
+  | .add _ _ => none
+  | .multiply _ _ => none
+  | .subtract _ _ => none
+  | .remainder _ _ => none
+  | .divide _ _ => none
+  | .bitAnd _ _ => none
+  | .bitOr _ _ => none
+  | .bitXor _ _ => none
+  | .unsignedShift _ _ => none
+  | .shiftLeft _ _ => none
+  | .shiftRight _ _ => none
+  | .equal _ _ => none
+  | .less _ _ => none
+  | .greater _ _ => none
+  | .conditional _ _ _ => none
+  | .guard _ _ _ => none
+  | .finally _ _ => none
+  | .catchError _ _ => none
+  | .followedBy _ _ => none
+  | .local _ _ _ _ => none
+  | .assign _ _ _ => none
+  | .raise _ => none
+  | .raisePrimitive _ => none
+  | .invoke _ _ _ _ => none
+  | .invokeLocal _ _ _ _ => none
+
 /- Fuel bounds callee expansion; a recursive or excessively deep output is unknown. -/
 def witnessedExpressionFuel (modules : List BindingModule) : Nat → Nat → List (String × String) → NumericExpr → Option NumericExpr
   | 0, _, _, _ => none
@@ -1195,14 +1232,14 @@ def witnessedExpressionFuel (modules : List BindingModule) : Nat → Nat → Lis
     let resolved ← resolveActualReference modules index name
     let target ← declaredName resolved.2.2
     let actual ← callableSyntax [resolved.2.2] target
-    /- JavaScript evaluates extra arguments even when the callee ignores them.
-       Fresh unused parameters preserve that evaluation. Missing parameters
-       require undefined semantics and remain outside this numeric subset. -/
-    if actual.1.length > parameters.length then none else do
+    let missing := actual.1.drop parameters.length
+    if missing.any (fun name => (expressionNames actual.2).contains name) then none else do
       let extended := actual.1 ++ List.replicate (parameters.length - actual.1.length) "#unused"
       let renamed := witnessedParameters extended []
-      if !renamed.all (fun binding => witnessedFreshAvailable modules binding.2) then none else
-        some (.invoke target (renamed.map Prod.snd) (← witnessedExpressionFuel modules fuel index bound arguments)
+      if !renamed.all (fun binding => witnessedFreshAvailable modules binding.2) then none else do
+        let transformed ← witnessedExpressionFuel modules fuel index bound arguments
+        let completed ← witnessedAppendArguments (witnessedMissingArguments missing.length) transformed
+        some (.invoke target (renamed.map Prod.snd) completed
           (← witnessedExpressionFuel modules fuel resolved.1 renamed.reverse actual.2))
   | fuel + 1, index, bound, .invokeLocal name parameters arguments body => do
     let renamed := witnessedParameters parameters bound
