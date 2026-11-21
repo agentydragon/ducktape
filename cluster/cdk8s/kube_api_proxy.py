@@ -64,8 +64,12 @@ def _deployment(chart: Chart) -> None:
                 VPA_UPDATE_MODE_LABEL: Vpa.AUTO,
                 VPA_RESOURCE_POLICY_ANNOTATION: resource_policy_annotation(
                     # Cap the global 100Mi recommendation floor for this small proxy.
-                    ContainerPolicy.memory_requests_only(
-                        "nginx", cpu_request=_NGINX_CPU_REQUEST, memory_floor=_NGINX_MEMORY_REQUEST, memory_limit="24Mi"
+                    ContainerPolicy(
+                        container_name="nginx",
+                        controlled_values=ControlledValues.REQUESTS_ONLY,
+                        controlled_resources=("cpu", "memory"),
+                        min_allowed={"cpu": _NGINX_CPU_REQUEST, "memory": _NGINX_MEMORY_REQUEST},
+                        max_allowed={"cpu": "100m", "memory": "24Mi"},
                     ),
                     ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
                 ),

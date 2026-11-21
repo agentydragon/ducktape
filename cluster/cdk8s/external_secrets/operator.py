@@ -17,12 +17,20 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa, VpaProfile
-from cluster.cdk8s.vpa_policy import ContainerPolicy, ControlledValues
+from cluster.cdk8s.vpa_policy import (
+    VPA_RESOURCE_POLICY_ANNOTATION,
+    ContainerPolicy,
+    ControlledValues,
+    resource_policy_annotation,
+)
 
 NAME = "external-secrets"
 NAMESPACE = "external-secrets-system"
 OUTPUT_DIR = f"{GENERATED_ROOT}/external-secrets/operator"
 _CONTROLLER_CPU_REQUEST = "100m"
+_CONTROLLER_CPU_LIMIT = "500m"
+_CONTROLLER_MEMORY_FLOOR = "256Mi"
+_CONTROLLER_MEMORY_CEILING = "384Mi"
 _SECRET_STORE_ADMISSION = "require-cluster-secret-store-namespaces"
 
 
@@ -42,8 +50,19 @@ def _values(webhook_issuer: str) -> dict[str, object]:
         # the Pods, which Goldilocks watches to pick up the Deployment annotation.
         "readinessProbe": {"enabled": True},
         "podDisruptionBudget": {"enabled": True, "minAvailable": 1},
-        # Keep the namespace's resource policy for both components.
-        "deploymentAnnotations": {namespaces.VPA_UPDATE_MODE_LABEL: Vpa.AUTO},
+        "deploymentAnnotations": {
+            namespaces.VPA_UPDATE_MODE_LABEL: Vpa.AUTO,
+            VPA_RESOURCE_POLICY_ANNOTATION: resource_policy_annotation(
+                ContainerPolicy(
+                    container_name=NAME,
+                    controlled_values=ControlledValues.REQUESTS_ONLY,
+                    controlled_resources=("cpu", "memory"),
+                    min_allowed={"cpu": _CONTROLLER_CPU_REQUEST, "memory": _CONTROLLER_MEMORY_FLOOR},
+                    max_allowed={"cpu": _CONTROLLER_CPU_LIMIT, "memory": _CONTROLLER_MEMORY_CEILING},
+                ),
+                ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
+            ),
+        },
         "concurrent": 8,
         # Size the limit above heap + the mapped binary, not just the heap. This
         # controller never OOM-kills when it runs out: the kernel can always meet the
@@ -55,8 +74,8 @@ def _values(webhook_issuer: str) -> dict[str, object]:
         # starves containerd's CRI calls past their deadlines and strands every pod
         # scheduled there. See docs/lessons_learned/2026_09_07_eso_memory_limit_thrash.md.
         "resources": {
-            "limits": {"cpu": "500m", "memory": "512Mi"},
-            "requests": {"cpu": _CONTROLLER_CPU_REQUEST, "memory": "256Mi"},
+            "limits": {"cpu": _CONTROLLER_CPU_LIMIT, "memory": "512Mi"},
+            "requests": {"cpu": _CONTROLLER_CPU_REQUEST, "memory": _CONTROLLER_MEMORY_FLOOR},
         },
         # Both settings below apply to the controller and, separately, to the webhook
         # under `webhook:` — the chart takes no inherited value.
@@ -114,8 +133,8 @@ def chart(app: App) -> Chart:
                     container_name="external-secrets",
                     controlled_values=ControlledValues.REQUESTS_ONLY,
                     controlled_resources=("memory",),
-                    min_allowed={"memory": "256Mi", "cpu": _CONTROLLER_CPU_REQUEST},
-                    max_allowed={"memory": "384Mi", "cpu": _CONTROLLER_CPU_REQUEST},
+                    min_allowed={"memory": _CONTROLLER_MEMORY_FLOOR, "cpu": _CONTROLLER_CPU_REQUEST},
+                    max_allowed={"memory": _CONTROLLER_MEMORY_CEILING, "cpu": _CONTROLLER_CPU_REQUEST},
                 ),
                 # The webhook has no CPU request. Its 30-day peak two-minute rate was 4.2m
                 # (3.1m at startup), and startup memory peaked at 179Mi.

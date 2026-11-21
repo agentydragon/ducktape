@@ -48,6 +48,7 @@ spec:
       create: false
     concurrent: 8
     deploymentAnnotations:
+      goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "external-secrets", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "100m", "memory": "256Mi"}, "maxAllowed": {"cpu": "500m", "memory": "384Mi"}, "controlledResources": ["cpu", "memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
       goldilocks.fairwinds.com/vpa-update-mode: auto
     installCRDs: false
     leaderElect: true

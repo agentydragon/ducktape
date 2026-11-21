@@ -32,7 +32,12 @@ from cluster.cdk8s.forgejo_registry.pull_credentials import (
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa, VpaProfile
-from cluster.cdk8s.vpa_policy import ContainerPolicy, ControlledValues
+from cluster.cdk8s.vpa_policy import (
+    VPA_RESOURCE_POLICY_ANNOTATION,
+    ContainerPolicy,
+    ControlledValues,
+    resource_policy_annotation,
+)
 
 NAME = "crossplane"
 NAMESPACE = "crossplane-system"
@@ -50,6 +55,8 @@ PROVIDER_HEALTH = KustomizationSpecHealthCheckExprs(
     current="has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'True')",
     failed="has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'False')",
 )
+_CORE_CPU_REQUEST = "100m"
+_CORE_MEMORY_FLOOR = "256Mi"
 _FORGEJO_PULL_SECRET_HEALTH = KustomizationSpecHealthCheckExprs(
     api_version="external-secrets.io/v1",
     kind="ExternalSecret",
@@ -61,6 +68,18 @@ _FORGEJO_PULL_SECRET_HEALTH = KustomizationSpecHealthCheckExprs(
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     core_selector = {"app": NAME, "release": NAME}
+    core_resource_policy = resource_policy_annotation(
+        # The RBAC manager uses the same container name and a fixed 100m limit.
+        ContainerPolicy(
+            container_name=NAME,
+            controlled_values=ControlledValues.REQUESTS_ONLY,
+            controlled_resources=("cpu", "memory"),
+            min_allowed={"cpu": _CORE_CPU_REQUEST, "memory": _CORE_MEMORY_FLOOR},
+            max_allowed={"cpu": "500m"},
+        ),
+        ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
+        compact=True,
+    )
     namespaces.namespace(
         chart,
         "namespace",
@@ -74,8 +93,8 @@ def chart(app: App) -> Chart:
                     container_name="crossplane",
                     controlled_values=ControlledValues.REQUESTS_ONLY,
                     controlled_resources=("memory",),
-                    min_allowed={"cpu": Cpu.millis(100).amount, "memory": Size.mebibytes(256).as_string()},
-                    max_allowed={"cpu": Cpu.millis(100).amount},
+                    min_allowed={"cpu": _CORE_CPU_REQUEST, "memory": _CORE_MEMORY_FLOOR},
+                    max_allowed={"cpu": _CORE_CPU_REQUEST},
                 ),
                 # Current provider runtimes have no template requests or limits; size both requests.
                 ContainerPolicy(
@@ -148,6 +167,7 @@ def chart(app: App) -> Chart:
                                   name: {NAME}
                                   annotations:
                                     {namespaces.VPA_UPDATE_MODE_LABEL}: {Vpa.AUTO}
+                                    {VPA_RESOURCE_POLICY_ANNOTATION}: '{core_resource_policy}'
                                 spec:
                                   template:
                                     spec:
