@@ -114,6 +114,9 @@ func wakeKey(caller *identitypb.ServiceAccountIdentity) wake.WakeBudgetKey {
 	return wake.WakeBudgetKey{Namespace: caller.GetAccount().GetNamespace(), Name: caller.GetAccount().GetName(), UID: caller.GetUid()}
 }
 
+// reserveWakeAttemptAsPreviousWriter reproduces the SQL shape deployed before
+// caller_uid existed: namespace/name locking, all-UID reads, and an INSERT that
+// relies on the migration's empty-UID default.
 func reserveWakeAttemptAsPreviousWriter(
 	ctx context.Context,
 	store *Store,
