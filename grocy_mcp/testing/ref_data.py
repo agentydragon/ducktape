@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 
 from fastmcp.client import Client
 
-from grocy_mcp.testing.results import unwrap_result
+from grocy_mcp.testing.results import call_tool
 
 
 @dataclass
@@ -34,52 +34,42 @@ async def create_ref_data(client: Client) -> RefData:
     qu_name = f"TestBag-{suffix}"
     group_name = f"TestGroup-{suffix}"
 
-    loc_results = unwrap_result(
-        await client.call_tool(
-            "locations_create",
-            {"items": [{"name": loc_name, "description": "e2e fixture location", "is_freezer": False}]},
-        )
+    loc_results = await call_tool(
+        client,
+        "locations_create",
+        {"items": [{"name": loc_name, "description": "e2e fixture location", "is_freezer": False}]},
     )
     assert loc_results[0]["kind"] == "ok", f"locations_create failed: {loc_results[0]}"
 
-    qu_results = unwrap_result(
-        await client.call_tool(
-            "quantity_units_create",
-            {"items": [{"name": qu_name, "name_plural": f"{qu_name}s", "description": "e2e fixture QU"}]},
-        )
+    qu_results = await call_tool(
+        client,
+        "quantity_units_create",
+        {"items": [{"name": qu_name, "name_plural": f"{qu_name}s", "description": "e2e fixture QU"}]},
     )
     assert qu_results[0]["kind"] == "ok", f"quantity_units_create failed: {qu_results[0]}"
 
-    group_results = unwrap_result(
-        await client.call_tool(
-            "product_groups_create", {"items": [{"name": group_name, "description": "e2e fixture group"}]}
-        )
+    group_results = await call_tool(
+        client, "product_groups_create", {"items": [{"name": group_name, "description": "e2e fixture group"}]}
     )
     assert group_results[0]["kind"] == "ok", f"product_groups_create failed: {group_results[0]}"
 
     product_names = [f"TestRice-{suffix}", f"TestFlour-{suffix}"]
-    create_results = unwrap_result(
-        await client.call_tool(
-            "products_create",
-            {
-                "items": [
-                    {
-                        "name": product_names[0],
-                        "stock_qu": qu_name,
-                        "location": loc_name,
-                        "min_stock_amount": 1,
-                        "default_best_before_days": 0,
-                        "description": "Test product for e2e",
-                    },
-                    {
-                        "name": product_names[1],
-                        "stock_qu": qu_name,
-                        "location": loc_name,
-                        "default_best_before_days": 0,
-                    },
-                ]
-            },
-        )
+    create_results = await call_tool(
+        client,
+        "products_create",
+        {
+            "items": [
+                {
+                    "name": product_names[0],
+                    "stock_qu": qu_name,
+                    "location": loc_name,
+                    "min_stock_amount": 1,
+                    "default_best_before_days": 0,
+                    "description": "Test product for e2e",
+                },
+                {"name": product_names[1], "stock_qu": qu_name, "location": loc_name, "default_best_before_days": 0},
+            ]
+        },
     )
     assert all(r["kind"] == "ok" for r in create_results), f"products_create failed: {create_results}"
 
