@@ -148,7 +148,6 @@ py_test(
     name = "test_notification_middleware",
     srcs = ["test_notification_middleware.py"],
     deps = [
-        ":conftest",
         ":notification_middleware",
         "//:conftest",
         "//props:conftest",
@@ -169,7 +168,6 @@ py_test(
     exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
-        ":conftest",
         "//:conftest",
         "//props:conftest",
         "//props/db:models",
@@ -194,7 +192,6 @@ py_test(
     exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
-        ":conftest",
         "//:conftest",
         "//props:conftest",
         "//props/testing/fixtures:db",
@@ -216,7 +213,6 @@ py_test(
     exec_properties = CONTAINER_E2E_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
-        ":conftest",
         ":drift_handler",
         ":tools",
         "//:conftest",
@@ -244,7 +240,6 @@ py_test(
     exec_properties = CONTAINER_E2E_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
-        ":conftest",
         ":drift_handler",
         ":tools",
         "//:conftest",
@@ -273,7 +268,6 @@ py_test(
     exec_properties = CONTAINER_E2E_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
-        ":conftest",
         ":drift_handler",
         ":tools",
         "//:conftest",
@@ -301,7 +295,6 @@ py_test(
     exec_properties = CONTAINER_E2E_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
-        ":conftest",
         "//:conftest",
         "//openai_utils/testing:responses",
         "//props:conftest",
@@ -346,16 +339,4 @@ oci_push(
     image = ":image",
     remote_tags = ["latest"],
     repository = "localhost:8000/grader",
-)
-
-py_library(
-    name = "conftest",
-    testonly = True,
-    srcs = ["conftest.py"],
-    visibility = ["//props:__subpackages__"],
-    deps = [
-        "//props/db:database",
-        "@pypi//pytest",
-        "@pypi//sqlalchemy",
-    ],
 )

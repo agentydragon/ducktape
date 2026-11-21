@@ -29,29 +29,29 @@ pytest_plugins = (
 
 
 @pytest.fixture
-def test_critic_run(session, example_subtract_orm):
+def test_critic_run(synced_test_session, example_subtract_orm):
     """Create a completed critic run for testing."""
     critic_run = make_fake_critic_run(
-        session=session, example=example_subtract_orm.to_example_spec(), status=AgentRunStatus.EXITED
+        session=synced_test_session, example=example_subtract_orm.to_example_spec(), status=AgentRunStatus.EXITED
     )
-    session.add(critic_run)
-    session.commit()
+    synced_test_session.add(critic_run)
+    synced_test_session.commit()
     return critic_run
 
 
 @pytest.fixture
-def test_grader_run(session, example_subtract_orm):
+def test_grader_run(synced_test_session, example_subtract_orm):
     """Create a grader run for testing edges."""
     grader_run = make_fake_grader_run(
-        session=session, snapshot_slug=example_subtract_orm.snapshot_slug, status=AgentRunStatus.IN_PROGRESS
+        session=synced_test_session, snapshot_slug=example_subtract_orm.snapshot_slug, status=AgentRunStatus.IN_PROGRESS
     )
-    session.add(grader_run)
-    session.commit()
+    synced_test_session.add(grader_run)
+    synced_test_session.commit()
     return grader_run
 
 
 @pytest.fixture
-def add_edge(session, test_grader_run, test_critic_run, example_subtract_orm):
+def add_edge(synced_test_session, test_grader_run, test_critic_run, example_subtract_orm):
     """Fixture factory for creating grading edges.
 
     Always creates a fresh ReportedIssue then the edge. Caller must ensure issue_id uniqueness.
@@ -59,7 +59,9 @@ def add_edge(session, test_grader_run, test_critic_run, example_subtract_orm):
 
     def _add(critique_issue_id: str, rationale: str = "Test edge", **kwargs):
         # Always create the ReportedIssue - caller must ensure unique issue_ids
-        make_reported_issues(agent_run_id=test_critic_run.agent_run_id, issue_ids=[critique_issue_id], session=session)
+        make_reported_issues(
+            agent_run_id=test_critic_run.agent_run_id, issue_ids=[critique_issue_id], session=synced_test_session
+        )
 
         edge = GradingEdge(
             grader_run_id=test_grader_run.agent_run_id,
@@ -69,47 +71,47 @@ def add_edge(session, test_grader_run, test_critic_run, example_subtract_orm):
             rationale=rationale,
             **kwargs,
         )
-        session.add(edge)
+        synced_test_session.add(edge)
         return edge
 
     return _add
 
 
-def test_edge_tp_match_valid(session, add_edge, tp_occurrence_single):
+def test_edge_tp_match_valid(synced_test_session, add_edge, tp_occurrence_single):
     """Valid: TP match with both tp_id and tp_occurrence_id."""
     tp_id, occ_id = tp_occurrence_single
     add_edge("issue-001", tp_id=tp_id, tp_occurrence_id=occ_id, credit=0.8, rationale="Matches TP")
-    session.commit()
+    synced_test_session.commit()
 
 
-def test_edge_fp_match_valid(session, add_edge, fp_occurrence):
+def test_edge_fp_match_valid(synced_test_session, add_edge, fp_occurrence):
     """Valid: FP match with both fp_id and fp_occurrence_id."""
     fp_id, fp_occ = fp_occurrence
     add_edge("issue-002", fp_id=fp_id, fp_occurrence_id=fp_occ, credit=1.0, rationale="Matches FP")
-    session.commit()
+    synced_test_session.commit()
 
 
-def test_edge_partial_tp_target_invalid(session, add_edge, tp_occurrence_single):
+def test_edge_partial_tp_target_invalid(synced_test_session, add_edge, tp_occurrence_single):
     """Invalid: TP match requires BOTH tp_id and tp_occurrence_id."""
     tp_id, _ = tp_occurrence_single
     add_edge("issue-001", tp_id=tp_id, credit=0.5, rationale="Invalid: incomplete TP target")
 
     with pytest.raises(IntegrityError):
-        session.commit()
-    session.rollback()
+        synced_test_session.commit()
+    synced_test_session.rollback()
 
 
-def test_edge_partial_fp_target_invalid(session, add_edge, fp_occurrence):
+def test_edge_partial_fp_target_invalid(synced_test_session, add_edge, fp_occurrence):
     """Invalid: FP match requires BOTH fp_id and fp_occurrence_id."""
     fp_id, _ = fp_occurrence
     add_edge("issue-002", fp_id=fp_id, credit=0.5, rationale="Invalid: incomplete FP target")
 
     with pytest.raises(IntegrityError):
-        session.commit()
-    session.rollback()
+        synced_test_session.commit()
+    synced_test_session.rollback()
 
 
-def test_edge_credit_range_valid(session, add_edge, tp_occurrences_multi):
+def test_edge_credit_range_valid(synced_test_session, add_edge, tp_occurrences_multi):
     """Valid: credit can be any value between 0.0 and 1.0.
 
     Uses unrestricted TPs (tp-003, tp-004, tp-005 which have NULL match_file_restriction)
@@ -129,56 +131,58 @@ def test_edge_credit_range_valid(session, add_edge, tp_occurrences_multi):
     ]
     for credit, issue_id, tp_id, occ_id in test_cases:
         add_edge(issue_id, tp_id=tp_id, tp_occurrence_id=occ_id, credit=credit, rationale=f"Valid credit: {credit}")
-    session.commit()
+    synced_test_session.commit()
 
 
-def test_edge_credit_negative_invalid(session, add_edge, tp_occurrence_single):
+def test_edge_credit_negative_invalid(synced_test_session, add_edge, tp_occurrence_single):
     """Invalid: credit cannot be negative."""
     tp_id, occ_id = tp_occurrence_single
     add_edge("issue-001", tp_id=tp_id, tp_occurrence_id=occ_id, credit=-0.5, rationale="Invalid: negative credit")
 
     with pytest.raises(IntegrityError):
-        session.commit()
-    session.rollback()
+        synced_test_session.commit()
+    synced_test_session.rollback()
 
 
-def test_credit_sum_trigger_enforces_limit_tp(session, add_edge, tp_occurrence_single):
+def test_credit_sum_trigger_enforces_limit_tp(synced_test_session, add_edge, tp_occurrence_single):
     """SQL trigger enforces credit sum ≤1.0 per TP occurrence."""
     tp_id, occ_id = tp_occurrence_single
     add_edge("issue-001", tp_id=tp_id, tp_occurrence_id=occ_id, credit=0.7, rationale="First match")
-    session.commit()
+    synced_test_session.commit()
 
     add_edge("issue-002", tp_id=tp_id, tp_occurrence_id=occ_id, credit=0.5, rationale="Second match")
 
     with pytest.raises(Exception, match=r"Credit sum .* would exceed 1\.0"):
-        session.commit()
-    session.rollback()
+        synced_test_session.commit()
+    synced_test_session.rollback()
 
 
-def test_credit_sum_trigger_allows_exactly_one(session, add_edge, tp_occurrence_single):
+def test_credit_sum_trigger_allows_exactly_one(synced_test_session, add_edge, tp_occurrence_single):
     """SQL trigger allows credit sum = 1.0 (boundary case)."""
     tp_id, occ_id = tp_occurrence_single
     add_edge("issue-001", tp_id=tp_id, tp_occurrence_id=occ_id, credit=0.6, rationale="First match")
-    session.commit()
+    synced_test_session.commit()
 
     add_edge("issue-002", tp_id=tp_id, tp_occurrence_id=occ_id, credit=0.4, rationale="Second match")
-    session.commit()
+    synced_test_session.commit()
 
 
-def test_credit_sum_trigger_enforces_limit_fp(session, add_edge, fp_occurrence):
+def test_credit_sum_trigger_enforces_limit_fp(synced_test_session, add_edge, fp_occurrence):
     """SQL trigger enforces credit sum ≤1.0 per FP occurrence."""
     fp_id, fp_occ = fp_occurrence
     add_edge("issue-001", fp_id=fp_id, fp_occurrence_id=fp_occ, credit=0.8, rationale="First FP match")
-    session.commit()
+    synced_test_session.commit()
 
     add_edge("issue-002", fp_id=fp_id, fp_occurrence_id=fp_occ, credit=0.3, rationale="Second FP match")
 
     with pytest.raises(Exception, match=r"Credit sum .* would exceed 1\.0"):
-        session.commit()
-    session.rollback()
+        synced_test_session.commit()
+    synced_test_session.rollback()
 
 
-def test_edge_overlap_not_containment_is_gradeable(session, test_critic_run, test_grader_run, example_subtract_orm):
+def test_edge_overlap_not_containment_is_gradeable(
+    synced_test_session, test_critic_run, test_grader_run, example_subtract_orm
+):
     """Regression: an edge whose critique reports files OVERLAPPING but not CONTAINED in
     a restricted occurrence's match_file_restriction must insert successfully.
 
@@ -189,8 +193,10 @@ def test_edge_overlap_not_containment_is_gradeable(session, test_critic_run, tes
     pill that crash-looped the grader.
     """
     issue_id = "overlap-not-containment"
-    session.add(ReportedIssue(agent_run_id=test_critic_run.agent_run_id, issue_id=issue_id, rationale="overlap test"))
-    session.add(
+    synced_test_session.add(
+        ReportedIssue(agent_run_id=test_critic_run.agent_run_id, issue_id=issue_id, rationale="overlap test")
+    )
+    synced_test_session.add(
         ReportedIssueOccurrence(
             agent_run_id=test_critic_run.agent_run_id,
             reported_issue_id=issue_id,
@@ -201,9 +207,9 @@ def test_edge_overlap_not_containment_is_gradeable(session, test_critic_run, tes
             ],
         )
     )
-    session.flush()
+    synced_test_session.flush()
 
-    session.add(
+    synced_test_session.add(
         GradingEdge(
             grader_run_id=test_grader_run.agent_run_id,
             critique_run_id=test_critic_run.agent_run_id,
@@ -215,7 +221,7 @@ def test_edge_overlap_not_containment_is_gradeable(session, test_critic_run, tes
             rationale="Overlaps subtract.py (in restriction), plus add.py (outside)",
         )
     )
-    session.commit()
+    synced_test_session.commit()
 
 
 if __name__ == "__main__":
