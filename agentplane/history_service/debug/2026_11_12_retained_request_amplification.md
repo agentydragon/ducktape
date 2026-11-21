@@ -1,8 +1,8 @@
 # Repeated content in staging History
 
 Read-only measurements on the `agentplane-staging` PostgreSQL replica, 2026-11-12,
-approximately 10:00 UTC. History still contains old sampler evidence after the
-[sampler reset and native-content cutover](../../sampler/debug/2026_11_12_native_storage_cutover.md).
+approximately 10:00 UTC. History still contains old sampler evidence after the sampler reset and
+native-content cutover ([PR #15718](https://github.com/agentydragon/ducktape/pull/15718)).
 That reset did not rewrite or clear History.
 
 ## Repeated content across hosted-harness logs and projections

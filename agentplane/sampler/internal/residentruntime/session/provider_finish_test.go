@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
-	"time"
 
 	runtimetesting "github.com/agentydragon/ducktape/agentplane/sampler/internal/residentruntime/testing"
 
@@ -21,12 +20,7 @@ import (
 func TestFinishProviderResolvesAmbiguousPersistenceWithoutResampling(t *testing.T) {
 	for _, committed := range []bool{false, true} {
 		t.Run(map[bool]string{false: "retry_persistence", true: "commit_reply_lost"}[committed], func(t *testing.T) {
-			store := runtimetesting.NewStore(t, integrationDatabase)
-			session := runtimetesting.OpenSessionForStore(t, store, "")
-			owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-			if err != nil {
-				t.Fatal(err)
-			}
+			store, session, owner := runtimetesting.ClaimedSession(t, integrationDatabase)
 			admitProviderCommand(t, store, owner, session.ID, "ambiguous-finish", false)
 			config := samplersettings.ModelConfig{
 				Connection: "fixture-connection", ProviderModel: "fixture-provider-model", API: protocol.APIStyleResponses,

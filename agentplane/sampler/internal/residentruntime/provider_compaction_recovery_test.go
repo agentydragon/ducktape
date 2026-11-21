@@ -196,7 +196,7 @@ func TestRuntimePermanentCompactionFailureLeavesNextInputUsable(t *testing.T) {
 	}
 
 	const inputCommandID = "input-after-permanent-compact-failure"
-	admitProviderSamplingCommand(t, store, session.ID, inputCommandID, "usable after compaction failure")
+	runtimetesting.AdmitInput(t, store, session.ID, inputCommandID, "usable after compaction failure")
 	runtime.Wake(session.ID)
 	inputBody := receiveProviderRequest(t, requests)
 	if !strings.Contains(string(inputBody), "usable after compaction failure") {

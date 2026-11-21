@@ -182,10 +182,7 @@ func TestExecutorDoesNotRebindWithoutMatchingSandboxEvidence(t *testing.T) {
 }
 
 func TestExecCommandExpectedIncarnationRejectsBeforeWorkspaceSetup(t *testing.T) {
-	store, owner, request := resumedExecutorStore(t, protocol.APIStyleResponses)
-	if err := store.SetExecutorSession(t.Context(), owner, "retained-executor", nil); err != nil {
-		t.Fatal(err)
-	}
+	store, owner, request := resumedStoreWithRetainedSession(t)
 	client := &execfake.Client{}
 	var opened *executorpb.OpenSessionRequest
 	starts := 0
@@ -235,10 +232,7 @@ func TestExecCommandExpectedIncarnationRejectsBeforeWorkspaceSetup(t *testing.T)
 }
 
 func TestExecCommandExpectedIncarnationFencesWorkspaceStartAtDispatch(t *testing.T) {
-	store, owner, request := resumedExecutorStore(t, protocol.APIStyleResponses)
-	if err := store.SetExecutorSession(t.Context(), owner, "retained-executor", nil); err != nil {
-		t.Fatal(err)
-	}
+	store, owner, request := resumedStoreWithRetainedSession(t)
 	client := &execfake.Client{}
 	starts, reads := 0, 0
 	var workspaceProcessID string
@@ -275,10 +269,7 @@ func TestExecCommandExpectedIncarnationFencesWorkspaceStartAtDispatch(t *testing
 }
 
 func TestExecCommandExpectedIncarnationKeepsMatchingRetainedSession(t *testing.T) {
-	store, owner, request := resumedExecutorStore(t, protocol.APIStyleResponses)
-	if err := store.SetExecutorSession(t.Context(), owner, "retained-executor", nil); err != nil {
-		t.Fatal(err)
-	}
+	store, owner, request := resumedStoreWithRetainedSession(t)
 	client := &execfake.Client{}
 	opens, starts := 0, 0
 	ready := false
@@ -325,10 +316,7 @@ func TestExecCommandExpectedIncarnationKeepsMatchingRetainedSession(t *testing.T
 }
 
 func TestExecCommandExpectedIncarnationReadFenceAbandonsWithoutReplay(t *testing.T) {
-	store, owner, request := resumedExecutorStore(t, protocol.APIStyleResponses)
-	if err := store.SetExecutorSession(t.Context(), owner, "retained-executor", nil); err != nil {
-		t.Fatal(err)
-	}
+	store, owner, request := resumedStoreWithRetainedSession(t)
 	client := &execfake.Client{}
 	starts, reads := 0, 0
 	client.OnStartProcess = func(_ context.Context, r *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
@@ -408,10 +396,7 @@ func TestExecCommandExpectedIncarnationReadFenceAbandonsWithoutReplay(t *testing
 }
 
 func TestExecCommandExpectedIncarnationRebindsOnlyAfterAuthenticatedOpen(t *testing.T) {
-	store, owner, request := resumedExecutorStore(t, protocol.APIStyleResponses)
-	if err := store.SetExecutorSession(t.Context(), owner, "retained-executor", nil); err != nil {
-		t.Fatal(err)
-	}
+	store, owner, request := resumedStoreWithRetainedSession(t)
 	if err := store.RegisterModelProcess(t.Context(), owner, "old-process", 1234, false); err != nil {
 		t.Fatal(err)
 	}
@@ -492,10 +477,7 @@ func TestExecCommandExpectedIncarnationRebindsOnlyAfterAuthenticatedOpen(t *test
 }
 
 func TestExecCommandExpectedIncarnationCrashBeforeRebindKeepsOldBinding(t *testing.T) {
-	store, owner, request := resumedExecutorStore(t, protocol.APIStyleResponses)
-	if err := store.SetExecutorSession(t.Context(), owner, "retained-executor", nil); err != nil {
-		t.Fatal(err)
-	}
+	store, owner, request := resumedStoreWithRetainedSession(t)
 	if err := store.RegisterModelProcess(t.Context(), owner, "old-process", 1234, false); err != nil {
 		t.Fatal(err)
 	}
@@ -652,10 +634,7 @@ func TestExecCommandExpectedIncarnationCrashBeforeRebindKeepsOldBinding(t *testi
 }
 
 func TestExecCommandExpectedIncarnationDoesNotRevealUIDOnAuthorizationFailure(t *testing.T) {
-	store, owner, request := resumedExecutorStore(t, protocol.APIStyleResponses)
-	if err := store.SetExecutorSession(t.Context(), owner, "retained-executor", nil); err != nil {
-		t.Fatal(err)
-	}
+	store, owner, request := resumedStoreWithRetainedSession(t)
 	client := &execfake.Client{OnOpenSession: func(context.Context, *executorpb.OpenSessionRequest) (grpc.ServerStreamingClient[executorpb.OpenSessionResponse], error) {
 		return nil, status.Error(codes.PermissionDenied, "target authorization denied")
 	}}
@@ -703,6 +682,17 @@ func resumedExecutorStore(t *testing.T, api protocol.APIStyle) (*sessionstore.St
 	}
 	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
 	if err != nil {
+		t.Fatal(err)
+	}
+	return store, owner, request
+}
+
+// resumedStoreWithRetainedSession is resumedExecutorStore for the Responses API with the
+// "retained-executor" session already bound.
+func resumedStoreWithRetainedSession(t *testing.T) (*sessionstore.Store, sessionstore.Owner, *sessionconfig.Configuration) {
+	t.Helper()
+	store, owner, request := resumedExecutorStore(t, protocol.APIStyleResponses)
+	if err := store.SetExecutorSession(t.Context(), owner, "retained-executor", nil); err != nil {
 		t.Fatal(err)
 	}
 	return store, owner, request

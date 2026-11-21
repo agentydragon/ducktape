@@ -118,9 +118,6 @@ func (h *Host) Controller() controller.QController { return &Controller{host: h}
 
 // requestNative records the immutable launch callback before publishing intent.
 func (h *Host) requestNative(ctx context.Context, id string, spec DesiredState, launch Launch) error {
-	if h == nil {
-		return errors.New("process host is not configured")
-	}
 	spec.Domain = h.domain
 	if id == "" {
 		return errors.New("process ID is required")

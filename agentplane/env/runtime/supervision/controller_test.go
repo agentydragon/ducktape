@@ -243,6 +243,19 @@ func waitProcessStatus(t *testing.T, f *processControllerTestRuntime, id, want s
 	return Status{}
 }
 
+func waitClosed(t *testing.T, signal <-chan struct{}, failure string) {
+	t.Helper()
+	for range 20 {
+		synctest.Wait()
+		select {
+		case <-signal:
+			return
+		default:
+		}
+	}
+	t.Fatal(failure)
+}
+
 func TestProcessControllerStartsOnceAndRetainsTerminalStatus(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		f := newProcessControllerTestRuntime(t)
@@ -510,16 +523,7 @@ func TestProcessTeardownWaitsForLateStartAndStopBarrier(t *testing.T) {
 			}}, nil
 		})
 
-		for range 20 {
-			synctest.Wait()
-			select {
-			case <-startEntered:
-				goto startEnteredLoop
-			default:
-			}
-		}
-		t.Fatal("process launch callback did not start")
-	startEnteredLoop:
+		waitClosed(t, startEntered, "process launch callback did not start")
 		stopDone := f.stop(id)
 		synctest.Wait()
 		select {
@@ -537,16 +541,7 @@ func TestProcessTeardownWaitsForLateStartAndStopBarrier(t *testing.T) {
 		}
 
 		releaseStartOnce.Do(func() { close(releaseStart) })
-		for range 20 {
-			synctest.Wait()
-			select {
-			case <-stopEntered:
-				goto stopEnteredLoop
-			default:
-			}
-		}
-		t.Fatal("late process instance did not enter its stop barrier")
-	stopEnteredLoop:
+		waitClosed(t, stopEntered, "late process instance did not enter its stop barrier")
 		stopping := waitProcessStatus(t, f, id, "stopping", func(current Status) bool {
 			return current.Phase == Stopping && current.PID == 456
 		})
@@ -662,16 +657,7 @@ func TestProcessNaturalExitFencesBeforeTerminalAndIsolatesSuccessor(t *testing.T
 		waitProcessStatus(t, f, "old", "running", func(current Status) bool { return current.Phase == Running })
 		oldDone <- errors.New("unexpected process exit")
 		close(oldDone)
-		for range 20 {
-			synctest.Wait()
-			select {
-			case <-oldStopEntered:
-				goto oldStopLoop
-			default:
-			}
-		}
-		t.Fatal("natural exit did not enter cleanup")
-	oldStopLoop:
+		waitClosed(t, oldStopEntered, "natural exit did not enter cleanup")
 		oldStopping := waitProcessStatus(t, f, "old", "fencing", func(current Status) bool {
 			return current.Phase == Stopping
 		})

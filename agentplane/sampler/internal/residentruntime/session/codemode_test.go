@@ -128,7 +128,6 @@ func TestCodeModeStoreFailureIsNotModelInputError(t *testing.T) {
 	}
 }
 
-// sendDelegate sends a blank notification: a store-free delegate round trip.
 func newFakeCodeModeManager(t *testing.T, acknowledge ...string) (*CodeModeHost, func() []*runtimetesting.CodeModePeer) {
 	t.Helper()
 	manager, peers, _ := newFakeCodeModeManagerWithLogDirectory(t, 2*time.Second, 300*time.Second, acknowledge...)
@@ -177,12 +176,7 @@ func TestCodeModeHostInstanceRotatesWhenHostProcessExits(t *testing.T) {
 }
 
 func TestCodeModeHostStampsOpenedHostWhenItFailsBeforeStamp(t *testing.T) {
-	store := runtimetesting.NewStore(t, integrationDatabase)
-	session := runtimetesting.OpenSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, session, owner := runtimetesting.ClaimedSession(t, integrationDatabase)
 	manager, peers := newFakeCodeModeManager(t)
 	atStamp := make(chan struct{})
 	allowStamp := make(chan struct{})
@@ -248,12 +242,7 @@ func openFakeSession(t *testing.T, manager *CodeModeHost, conversation string) *
 }
 
 func TestRecoveryUsesNewLogicalSessionWithoutRestartingSharedHost(t *testing.T) {
-	store := runtimetesting.NewStore(t, integrationDatabase)
-	session := runtimetesting.OpenSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, session, owner := runtimetesting.ClaimedSession(t, integrationDatabase)
 	manager, peers := newFakeCodeModeManager(t)
 	manager.store = store
 	first, err := manager.OpenSession(t.Context(), session.ConversationID, owner, &executor.Executor{})
@@ -753,12 +742,7 @@ func assertToolResultSucceeded(t *testing.T, store *sessionstore.Store, owner se
 
 func newCodeModeAdvanceFixture(t *testing.T, call protocol.ToolInvocation) (*sessionstore.Store, sessionstore.Owner, *Driver, *liveHost, *CodeMode, *runtimetesting.CodeModePeer) {
 	t.Helper()
-	store := runtimetesting.NewStore(t, integrationDatabase)
-	session := runtimetesting.OpenSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, session, owner := runtimetesting.ClaimedSession(t, integrationDatabase)
 	manager, peers := newFakeCodeModeManager(t)
 	manager.store = store
 	code, err := manager.OpenSession(t.Context(), session.ConversationID, owner, &executor.Executor{})
@@ -1015,12 +999,7 @@ func (j blockingStampJournal) StampHost(ctx context.Context, instanceID string) 
 func TestCodeModeObservationBudgetsBoundWedgedHostWithoutExpiringCaller(t *testing.T) {
 	for _, phase := range []string{"execute_ack", "execute_observation", "wait_observation"} {
 		t.Run(phase, func(t *testing.T) {
-			store := runtimetesting.NewStore(t, integrationDatabase)
-			session := runtimetesting.OpenSessionForStore(t, store, "")
-			owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-			if err != nil {
-				t.Fatal(err)
-			}
+			store, session, owner := runtimetesting.ClaimedSession(t, integrationDatabase)
 			manager, peers := newFakeCodeModeManagerWithBudgets(t, 2*time.Second, 20*time.Millisecond)
 			manager.store = store
 			code, err := manager.OpenSession(t.Context(), session.ConversationID, owner, &executor.Executor{})

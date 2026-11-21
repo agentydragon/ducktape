@@ -51,7 +51,7 @@ const (
 
 func templateText(text string) string { return strings.TrimSuffix(text, "\n") }
 
-// execToolDescription renders Codex rust-v0.162.1 code-mode-protocol/src/description.rs
+// ExecToolDescription renders Codex rust-v0.162.1 code-mode-protocol/src/description.rs
 // build_exec_tool_description as core/src/tools/spec_plan.rs calls it for this sampler: Code
 // Mode Only with freeform exec, the default
 // `unified_image_budget = false` (legacy image helper) and no model message overrides.
@@ -120,7 +120,7 @@ func WaitToolParameters() json.RawMessage {
 		`},"required":["cell_id"],"additionalProperties":false}`)
 }
 
-// hostToolDefinitions mirrors Codex rust-v0.162.1 core/src/tools/code_mode/tool_definitions.rs
+// HostToolDefinitions mirrors Codex rust-v0.162.1 core/src/tools/code_mode/tool_definitions.rs
 // prepare_code_mode_tool_definitions: the host receives each description augmented with its
 // TypeScript declaration (exposed through ALL_TOOLS) and no schemas.
 func HostToolDefinitions(definitions []protocol.CodeToolDefinition) ([]protocol.CodeToolDefinition, error) {
