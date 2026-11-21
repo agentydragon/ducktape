@@ -324,3 +324,24 @@ oci_push(
     remote_tags = ["latest"],
     repository = "localhost:8000/grader",
 )
+
+py_test(
+    name = "test_grader_tools",
+    size = "medium",
+    srcs = ["test_grader_tools.py"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
+    requires_docker = True,
+    deps = [
+        ":main",
+        ":tools",
+        "//:conftest",
+        "//props:conftest",
+        "//props/db:models",
+        "//props/db:snapshots",
+        "//props/testing/fixtures:db",
+        "//props/testing/fixtures:ground_truth",
+        "//props/testing/fixtures:runs",
+        "//testing:postgres_fixtures",
+        "@pypi//pytest_bazel",
+    ],
+)
