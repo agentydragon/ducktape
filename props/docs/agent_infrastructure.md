@@ -39,7 +39,7 @@ exposed through `GET /api/runs/{id}/llm_requests`.
 
 ## Agent Images
 
-Agent images are built by Bazel as OCI images (`oci_image` rules in each agent's `BUILD.bazel`). Each image has a `CMD` that starts the agent's own loop.
+Agent images are built by Bazel as OCI images (`oci_image` rules in each agent's `BUILD.bazel`). Each image's `entrypoint` (`py_image_entrypoint`) starts the agent's own loop.
 
 Built-in images use the `builtin` tag (constant `BUILTIN_TAG` in `props/core/oci_utils.py`). Bazel pushes them through the registry proxy with admin auth.
 
@@ -71,11 +71,12 @@ Repository names map trivially from the `AgentType` enum: `str(AgentType.CRITIC)
 ```text
 AgentRegistry:
   agent_type=CRITIC, ref="latest" (or custom digest for critic)
-      → resolve_image_ref(CRITIC, "latest") → digest
-      → store in agent_runs.image_digest
-      → build_oci_reference(CRITIC, digest) → "host:port/critic@sha256:abc..."
-      → pass to AgentEnvironment(image=full_ref)
-      → Docker pull/run
+      → resolve_image(CRITIC, "latest") → ResolvedImage(digest, oci_ref)
+          (tag → digest via the registry proxy; digest refs pass through)
+          oci_ref = build_oci_reference(CRITIC, digest) → "host:port/critic@sha256:abc..."
+      → store digest in agent_runs.image_digest
+      → executor.ensure_image(oci_ref), then run_container(...)
+      → Docker pull/run (Kubernetes: kubelet pulls)
 ```
 
 ## Registry Architecture
@@ -131,8 +132,8 @@ Agents push manifests by digest only (`PUT /v2/<name>/manifests/sha256:...`), en
 | -------------------------------- | -------------------------------------------------- |
 | `props/registry_proxy/routes.py` | Registry route logic with ACL enforcement          |
 | `props/registry_proxy/`          | Standalone registry proxy app and image            |
-| `props/core/oci_utils.py`        | Tag resolution (`resolve_image_ref`) and utilities |
-| `props/orchestration/`           | Launch orchestration (`agent_registry`)            |
+| `props/core/oci_utils.py`        | Registry config, OCI references, `BUILTIN_TAG`     |
+| `props/orchestration/`           | Agent launch and tag resolution (`agent_registry`) |
 | `props/compose.yaml`             | Compose config for registry + proxy + postgres     |
 
 ## Testing
