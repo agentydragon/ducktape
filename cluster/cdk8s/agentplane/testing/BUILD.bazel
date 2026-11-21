@@ -1,4 +1,5 @@
-load("//devinfra/python:defs.bzl", "py_library")
+load("@aspect_bazel_lib//lib:run_binary.bzl", "run_binary")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
 package(
     default_testonly = True,
@@ -8,11 +9,36 @@ package(
 py_library(
     name = "fixtures",
     srcs = ["fixtures.py"],
+    data = [":catalogs"],
     deps = [
-        "//cluster/cdk8s:conftest",  # keep: staging_manifests requests the scratch_app_factory fixture by name
+        "//cluster/cdk8s:conftest",  # keep: consuming tests also request the scratch fixtures
+        "@pypi//pytest",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_library(
+    name = "render_catalogs",
+    srcs = ["render_catalogs.py"],
+    deps = [
         "//cluster/cdk8s/agentplane:environment",
         "//cluster/cdk8s/agentplane:staging",
         "@pypi//cdk8s",
-        "@pypi//pytest",
     ],
+)
+
+py_binary(
+    name = "render_catalogs_bin",
+    main_module = "cluster.cdk8s.agentplane.testing.render_catalogs",
+    deps = [":render_catalogs"],
+)
+
+run_binary(
+    name = "catalogs",
+    srcs = ["@nodejs_linux_amd64//:bin/node"],
+    outs = ["catalogs.json"],
+    args = ["$(location :catalogs.json)"],
+    env = {"JSII_NODE": "$(execpath @nodejs_linux_amd64//:bin/node)"},
+    mnemonic = "SynthesizeAgentplaneCatalogs",
+    tool = ":render_catalogs_bin",
 )

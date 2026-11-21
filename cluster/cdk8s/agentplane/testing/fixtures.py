@@ -1,33 +1,29 @@
-"""Staging's chart synthesized in memory, for tests of the constructs' invariants."""
+"""Read staging charts synthesized from current sources by a shared Bazel action."""
 
-from __future__ import annotations
-
-from collections.abc import Callable
+import json
 from typing import Any, cast
 
 import pytest
-from cdk8s import App, Testing
-
-from cluster.cdk8s.agentplane import staging
-from cluster.cdk8s.agentplane.environment import Environment
+from python.runfiles import Runfiles
 
 
-def _synth(env: Environment, scratch_app_factory: Callable[[], App]) -> list[dict[str, Any]]:
-    # Two apps: both production chart functions name their chart "agentplane" (its manifest file).
-    return cast(list[dict[str, Any]], Testing.synth(staging.chart(scratch_app_factory(), env))) + cast(
-        list[dict[str, Any]], Testing.synth(staging.delivery_chart(scratch_app_factory(), env))
+@pytest.fixture(scope="session")
+def rendered_catalogs(runfiles: Runfiles) -> dict[str, list[dict[str, Any]]]:
+    return cast(
+        dict[str, list[dict[str, Any]]],
+        json.loads((runfiles.root() / "ducktape/cluster/cdk8s/agentplane/testing/catalogs.json").read_text()),
     )
 
 
 @pytest.fixture(scope="session")
-def staging_manifests(scratch_app_factory: Callable[[], App]) -> list[dict[str, Any]]:
-    return _synth(staging.ENV, scratch_app_factory)
+def staging_manifests(rendered_catalogs: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    return rendered_catalogs["staging"]
 
 
 @pytest.fixture(scope="session")
-def identity_catalog_manifests(scratch_app_factory: Callable[[], App]) -> list[dict[str, Any]]:
+def identity_catalog_manifests(rendered_catalogs: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
     """Staging with its policy catalog in the identity shapes, which staging does not render yet."""
-    return _synth(staging.environment(identity_catalog=True), scratch_app_factory)
+    return rendered_catalogs["identity_catalog"]
 
 
 @pytest.fixture(scope="session", params=[False, True], ids=["serviceaccount-catalog", "identity-catalog"])
