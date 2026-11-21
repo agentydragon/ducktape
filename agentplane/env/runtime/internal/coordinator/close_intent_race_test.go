@@ -159,10 +159,7 @@ func TestRuntimeCloseWaitsForRunningPreparationAndExecutionFence(t *testing.T) {
 	if successor.fences.Load() != 0 {
 		t.Fatal("Execution fence started before the Session component completed native shutdown")
 	}
-	if owner, err := openTestRuntimeStore(config.StateDir); err == nil {
-		_ = owner.Close()
-		t.Fatal("environment owner released while Running preparation was unsettled")
-	}
+	requireOwnerRetained(t, config.StateDir, "environment owner released while Running preparation was unsettled")
 	releaseDemand.Do(func() { close(store.release) })
 	waitSignal(t, successor.started, "successor Execution fence did not start")
 	select {
@@ -170,10 +167,7 @@ func TestRuntimeCloseWaitsForRunningPreparationAndExecutionFence(t *testing.T) {
 		t.Fatalf("Close returned before Execution fence completed: %v", err)
 	default:
 	}
-	if owner, err := openTestRuntimeStore(config.StateDir); err == nil {
-		_ = owner.Close()
-		t.Fatal("environment owner released before Execution fence")
-	}
+	requireOwnerRetained(t, config.StateDir, "environment owner released before Execution fence")
 	releaseFence.Do(func() { close(successor.release) })
 	if err := waitClose(t, closeDone); err != nil {
 		t.Fatalf("Close after preparation and fence settled: %v", err)
@@ -184,13 +178,7 @@ func TestRuntimeCloseWaitsForRunningPreparationAndExecutionFence(t *testing.T) {
 	if got := successor.fences.Load(); got != 1 {
 		t.Fatalf("successor Execution fence attempts = %d, want 1", got)
 	}
-	owner, err := openTestRuntimeStore(config.StateDir)
-	if err != nil {
-		t.Fatalf("environment owner retained after successful Close: %v", err)
-	}
-	if err := owner.Close(); err != nil {
-		t.Fatal(err)
-	}
+	requireOwnerReleased(t, config.StateDir, "environment owner retained after successful Close")
 }
 
 type blockedSuccessorClose struct {

@@ -284,19 +284,10 @@ func TestExecutionParentCloseJoinsRegisteredWorkerBeforeStoreRelease(t *testing.
 		t.Fatalf("Close returned before the registered worker joined: %v", err)
 	default:
 	}
-	if backing, err := openTestRuntimeStore(config.StateDir); err == nil {
-		_ = backing.Close()
-		t.Fatal("Runtime released its state store before joining its Execution worker")
-	}
+	requireOwnerRetained(t, config.StateDir, "Runtime released its state store before joining its Execution worker")
 	release.Do(func() { close(p.release) })
 	if err := waitClose(t, closeDone); err != nil {
 		t.Fatal(err)
 	}
-	backing, err := openTestRuntimeStore(config.StateDir)
-	if err != nil {
-		t.Fatalf("Runtime retained its store after the worker joined: %v", err)
-	}
-	if err := backing.Close(); err != nil {
-		t.Fatal(err)
-	}
+	requireOwnerReleased(t, config.StateDir, "Runtime retained its store after the worker joined")
 }

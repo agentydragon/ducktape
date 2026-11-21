@@ -65,10 +65,7 @@ func (s *Session) startProcess(ctx context.Context, adapter harness.ProcessAdapt
 	if err := s.recoverAdapter(ctx, adapter); err != nil {
 		return err
 	}
-	command, err := adapter.Command()
-	if err != nil {
-		return err
-	}
+	command := adapter.Command()
 	harnessEnv, err := adapter.Environment()
 	if err != nil {
 		return err

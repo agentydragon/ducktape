@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -55,10 +54,6 @@ func runCompanion(args []string) int {
 	if err := companion.Run(companion.Config{
 		Socket: *socket, Listen: *listen, Binary: *binary, HealthListen: *healthListen, CodexBinary: *codexBinary,
 	}); err != nil {
-		if errors.Is(err, companion.ErrNotPID1) {
-			fmt.Fprintln(os.Stderr, invalidCompanionUsage)
-			return 64
-		}
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}

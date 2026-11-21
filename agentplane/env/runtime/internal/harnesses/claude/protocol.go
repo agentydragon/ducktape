@@ -22,8 +22,6 @@ type claudeWireFrame struct {
 	Result          string                            `json:"result"`
 	TerminalReason  string                            `json:"terminal_reason"`
 	SessionID       string                            `json:"session_id"`
-	DurationMS      int64                             `json:"duration_ms"`
-	NumTurns        int                               `json:"num_turns"`
 	Event           anthropic.MessageStreamEventUnion `json:"event"`
 	Message         claudeWireMessage                 `json:"message"`
 }

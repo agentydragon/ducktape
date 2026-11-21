@@ -180,10 +180,7 @@ func TestRuntimeCloseUncertainExecutionFenceRetainsOwner(t *testing.T) {
 	if got := execution.fences.Load(); got != 1 {
 		t.Fatalf("Execution fence attempts = %d, want one", got)
 	}
-	if owner, err := openTestRuntimeStore(config.StateDir); err == nil {
-		_ = owner.Close()
-		t.Fatal("uncertain Execution fence released environment owner")
-	}
+	requireOwnerRetained(t, config.StateDir, "uncertain Execution fence released environment owner")
 }
 
 func TestRuntimeCloseRetainsOwnerAfterRejectedLiveExecutionStart(t *testing.T) {
@@ -251,10 +248,7 @@ func TestRuntimeCloseRetainsOwnerAfterRejectedLiveExecutionStart(t *testing.T) {
 			if !retained || !owned {
 				t.Fatalf("Close lost native handles: original owner retained=%t, rejected handle retained=%t", owned, retained)
 			}
-			if owner, err := openTestRuntimeStore(config.StateDir); err == nil {
-				_ = owner.Close()
-				t.Fatal("Close released environment owner after rejected live Execution start")
-			}
+			requireOwnerRetained(t, config.StateDir, "Close released environment owner after rejected live Execution start")
 		})
 	}
 }
@@ -355,10 +349,7 @@ func TestRuntimeCloseFailureRetainsOwnerAndDoesNotRetrySessionStop(t *testing.T)
 	if got := stops.Load(); got != 1 {
 		t.Fatalf("Session stop calls = %d, want one", got)
 	}
-	if owner, err := openTestRuntimeStore(config.StateDir); err == nil {
-		_ = owner.Close()
-		t.Fatal("failed Session join released environment owner")
-	}
+	requireOwnerRetained(t, config.StateDir, "failed Session join released environment owner")
 }
 
 type failedRuntimeWatchState struct {
@@ -393,11 +384,7 @@ func TestRuntimeRetainsOwnerAfterLifecycleEngineFailure(t *testing.T) {
 	if err := r.Close(ctx); !errors.Is(err, failure) {
 		t.Fatalf("Runtime Close after engine failure = %v", err)
 	}
-	owner, err := openTestRuntimeStore(config.StateDir)
-	if err == nil {
-		_ = owner.Close()
-		t.Fatal("Runtime released owner after lifecycle engine failed")
-	}
+	requireOwnerRetained(t, config.StateDir, "Runtime released owner after lifecycle engine failed")
 }
 
 func TestRuntimeCloseBeforeRunStartsAndJoinsLifecycleEngine(t *testing.T) {
@@ -427,11 +414,7 @@ func TestRuntimeCloseBeforeRunStartsAndJoinsLifecycleEngine(t *testing.T) {
 	if runErr != nil {
 		t.Fatalf("graceful Close recorded lifecycle engine failure: %v", runErr)
 	}
-	owner, err := openTestRuntimeStore(config.StateDir)
-	if err != nil {
-		t.Fatalf("closed Runtime retained environment owner: %v", err)
-	}
-	_ = owner.Close()
+	requireOwnerReleased(t, config.StateDir, "closed Runtime retained environment owner")
 }
 
 func TestRuntimeUsesOneEnvironmentDesiredResource(t *testing.T) {
@@ -490,10 +473,7 @@ func TestCanceledRuntimeCloseWaiterDoesNotStopNativeCleanup(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("canceled Close waiter remained blocked")
 	}
-	if owner, err := openTestRuntimeStore(config.StateDir); err == nil {
-		_ = owner.Close()
-		t.Fatal("Runtime released owner during native cleanup")
-	}
+	requireOwnerRetained(t, config.StateDir, "Runtime released owner during native cleanup")
 	second := make(chan error, 1)
 	go func() { second <- r.Close(ctx) }()
 	close(release)
@@ -505,11 +485,7 @@ func TestCanceledRuntimeCloseWaiterDoesNotStopNativeCleanup(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("Runtime Close did not finish native cleanup")
 	}
-	if owner, err := openTestRuntimeStore(config.StateDir); err != nil {
-		t.Fatalf("Runtime retained owner after joined cleanup: %v", err)
-	} else {
-		_ = owner.Close()
-	}
+	requireOwnerReleased(t, config.StateDir, "Runtime retained owner after joined cleanup")
 }
 
 func TestRuntimeRetainsOwnerWhenSessionCleanupFails(t *testing.T) {
@@ -528,11 +504,7 @@ func TestRuntimeRetainsOwnerWhenSessionCleanupFails(t *testing.T) {
 	if err := r.Close(ctx); !errors.Is(err, cleanupFailure) {
 		t.Fatalf("Runtime Close = %v, want Session cleanup failure", err)
 	}
-	owner, err := openTestRuntimeStore(config.StateDir)
-	if err == nil {
-		_ = owner.Close()
-		t.Fatal("Runtime released environment owner without Session cleanup proof")
-	}
+	requireOwnerRetained(t, config.StateDir, "Runtime released environment owner without Session cleanup proof")
 }
 
 func TestCloseCannotStartEngineDuringFailedSessionConstruction(t *testing.T) {
@@ -599,11 +571,7 @@ func TestCloseCannotStartEngineDuringFailedSessionConstruction(t *testing.T) {
 		t.Fatal("Runtime started partially constructed lifecycle engine")
 	default:
 	}
-	owner, err := openTestRuntimeStore(config.StateDir)
-	if err == nil {
-		_ = owner.Close()
-		t.Fatal("Runtime released owner after unsafe Session construction")
-	}
+	requireOwnerRetained(t, config.StateDir, "Runtime released owner after unsafe Session construction")
 }
 
 func TestCloseDuringSuccessfulSessionConstructionJoinsSharedEngine(t *testing.T) {
@@ -648,11 +616,7 @@ func TestCloseDuringSuccessfulSessionConstructionJoinsSharedEngine(t *testing.T)
 	case <-ctx.Done():
 		t.Fatal("Run did not return after concurrent Close")
 	}
-	owner, err := openTestRuntimeStore(config.StateDir)
-	if err != nil {
-		t.Fatalf("joined Runtime retained owner: %v", err)
-	}
-	_ = owner.Close()
+	requireOwnerReleased(t, config.StateDir, "joined Runtime retained owner")
 }
 
 func TestCloseCancelsBlockedAdoptionWithoutStartingSuccessor(t *testing.T) {
@@ -765,10 +729,7 @@ func TestEngineExitDuringCanceledExecutionStartJoinsTransitionAndRetainsOwner(t 
 			if unsafe == nil {
 				t.Fatal("engine exit did not record the unproved Execution fence")
 			}
-			if owner, err := openTestRuntimeStore(config.StateDir); err == nil {
-				_ = owner.Close()
-				t.Fatal("engine exit released environment owner without proving Execution fence")
-			}
+			requireOwnerRetained(t, config.StateDir, "engine exit released environment owner without proving Execution fence")
 		})
 	}
 }
@@ -853,10 +814,7 @@ func TestRuntimeCloseRetainsOwnerWhenSessionCleanupUnproved(t *testing.T) {
 	if got := stops.Load(); got != 1 {
 		t.Fatalf("Session stop calls = %d, want one", got)
 	}
-	if owner, err := openTestRuntimeStore(config.StateDir); err == nil {
-		_ = owner.Close()
-		t.Fatal("unproved native cleanup released environment owner")
-	}
+	requireOwnerRetained(t, config.StateDir, "unproved native cleanup released environment owner")
 }
 
 func TestRepeatedQuiesceKeepsCurrentLifecycleGeneration(t *testing.T) {
@@ -933,10 +891,7 @@ func TestBootstrapAndSetupCompleteOnCloseAndDoNotRerun(t *testing.T) {
 		t.Fatalf("Close returned during accepted setup: %v", err)
 	default:
 	}
-	if owner, err := openTestRuntimeStore(root); err == nil {
-		_ = owner.Close()
-		t.Fatal("Close released environment ownership while accepted Session setup remained")
-	}
+	requireOwnerRetained(t, root, "Close released environment ownership while accepted Session setup remained")
 	if err := os.WriteFile(setupRelease, nil, 0600); err != nil {
 		t.Fatal(err)
 	}
