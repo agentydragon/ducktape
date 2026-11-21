@@ -2,8 +2,8 @@ import base64
 import json
 import urllib.parse
 from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
 
 import httpx
 import pytest
@@ -166,10 +166,11 @@ def test_probe_rejects_token_sends_bearer_with_configured_method():
 
 
 def _probed_rotation(tmp_path: Path) -> Rotation:
-    """A rotation whose sops file is stamped fresh (2030) and that carries a probe."""
+    """A rotation whose SOPS file is stamped fresh and that carries a probe."""
     sops_file = tmp_path / "secrets" / "alloy-otlp-bearer-token.yaml"
     sops_file.parent.mkdir()
-    sops_file.write_text('expires_unencrypted: "2030-01-01T00:00:00Z"\ntoken: enc\n')
+    expires = datetime.now(UTC) + timedelta(days=30)
+    sops_file.write_text(f'expires_unencrypted: "{expires:%Y-%m-%dT%H:%M:%SZ}"\ntoken: enc\n')
     credentials_dir = tmp_path / "creds"
     credentials_dir.mkdir()
     return Rotation(
@@ -245,21 +246,23 @@ def test_rotate_one_missing_token_key_forces_remint(monkeypatch, tmp_path: Path)
 def test_rotation_uses_expected_claim_stamps(monkeypatch, tmp_path: Path, stamp_present: bool, covered: str):
     rotation = _probed_rotation(tmp_path)
     rotation.probe = None
-    claims: dict[str, Any] = {
+    audience = "test-audience"
+    email = "test-user@example.test"
+    claims = {
         "iss": rotation.expected_issuer,
-        "exp": 1_900_000_000,
-        "aud": "test-audience",
-        "email": "test-user@example.test",
+        "exp": int((datetime.now(UTC) + timedelta(days=365)).timestamp()),
+        "aud": audience,
+        "email": email,
     }
-    stamps: dict[str, Any] = {"expires_unencrypted": "2030-01-01T00:00:00Z"}
+    stamps = yaml.safe_load(rotation.sops_file.read_text())
     if covered == "audience":
-        rotation.expected_audiences = ["test-audience"]
+        rotation.expected_audiences = [audience]
         if stamp_present:
-            stamps["audiences_unencrypted"] = [claims["aud"]]
+            stamps["audiences_unencrypted"] = [audience]
     else:
-        rotation.expected_claims = {"email": claims["email"]}
+        rotation.expected_claims = {"email": email}
         if stamp_present:
-            stamps["claims_unencrypted"] = {"email": claims["email"]}
+            stamps["claims_unencrypted"] = {"email": email}
     rotation.sops_file.write_text(yaml.safe_dump(stamps))
     monkeypatch.setattr(rotate, "mint_jwt", lambda _client, _rotation: _make_jwt(claims))
     monkeypatch.setattr(rotate, "write_sops_yaml", lambda **_kwargs: None)
