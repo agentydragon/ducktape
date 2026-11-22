@@ -8,5 +8,7 @@ kind: ConfigMap
 metadata:
   name: static-metadata
   namespace: haku-console
+  annotations:
+    reloader.stakater.com/ignore: "true"
 data:
   image-tag: devel-20261121101223-480c270 # {"$imagepolicy": "flux-system:haku-console-static:tag"}
