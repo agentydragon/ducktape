@@ -29,11 +29,12 @@ const arrow = (params, body) => ({
   expression: body.type !== "BlockStatement",
 });
 const functionExpression = (params, body) => ({ type: "FunctionExpression", id: null, params, body });
-const variable = (kind, name, init) => ({
+const variables = (kind, bindings) => ({
   type: "VariableDeclaration",
   kind,
-  declarations: [{ type: "VariableDeclarator", id: id(name), init }],
+  declarations: bindings.map(([name, init]) => ({ type: "VariableDeclarator", id: id(name), init })),
 });
+const variable = (kind, name, init) => variables(kind, [[name, init]]);
 const property = (key, value) => ({
   type: "Property",
   key: id(key),
@@ -135,7 +136,16 @@ function generatedTryCase(seed) {
       const value = seed + 20;
       return {
         body: [
-          tryStatement(block([throws(literal(value))]), catchClause(id("caught"), block([returns(id("caught"))]))),
+          tryStatement(
+            block([
+              variables(seed === 0 ? "let" : "const", [
+                ["first", literal(value)],
+                ["second", id("first")],
+              ]),
+              throws(id("second")),
+            ]),
+            catchClause(id("caught"), block([returns(id("caught"))]))
+          ),
         ],
         expectedValue: value,
       };
@@ -151,7 +161,12 @@ function generatedTryCase(seed) {
       const value = seed + 20;
       return {
         body: [
-          variable("let", "local", literal(value)),
+          variables("var", [
+            ["readLater", arrow([], id("later"))],
+            ["later", literal(value)],
+            ["local", call(id("readLater"))],
+            ["local", null],
+          ]),
           tryStatement(
             block([throws(id("local"))]),
             catchClause(
@@ -332,6 +347,26 @@ for (let seed = 0; seed < 8; seed++) {
     assert.equal(mutated.verdict.status, "rejected", mutated.log);
     assert(mutated.verdict.reason, JSON.stringify(mutated.verdict));
   }
+}
+
+// The second lexical binding shadows the function parameter throughout the try block.
+{
+  const source = `const run = (later) => {
+    try { let first = later, later = 9; }
+    catch { return true; }
+    throw false;
+  };
+  export const observed = run(3);`;
+  const files = prepare(path.join(root, "group-hoisting-and-tdz"), {
+    source,
+    provider: "",
+    spec: { entry: "entry.mjs", modules: { "worker.mjs": ["#0"], "entry.mjs": ["#1"] }, order: ["worker.mjs"] },
+  });
+  const out = path.join(root, "group-hoisting-and-tdz", "out");
+  const { verdict, log } = lower(files.sourceFile, files.specFile, out);
+  assert.equal(verdict.status, "certified", log);
+  assert.deepEqual(observe(files.sourceFile, "observed"), { observed: true });
+  assert.deepEqual(observe(path.join(out, "entry.mjs"), "observed"), { observed: true });
 }
 
 // The catch binding is visible inside its handler, including a nested block.

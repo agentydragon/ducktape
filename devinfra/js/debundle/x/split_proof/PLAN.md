@@ -98,13 +98,13 @@ Two tracks. The proof track is ordered: each step needs the one before. The engi
 
 On 2026-11-22 the pairing covered all 9,707 body units in the archived review tree. The archived pairing assigns three occurrences of the same call to output positions that put two owners out of source order. Reassigning those occurrences in a scratch pairing preserved every output position and let the current adapter represent the full body-unit schedule. The calls have identical source syntax and resolve to the same callee. This checks placement representability only. Independently, the reviewed entry exposes all 268 original export names and 266 extra names. Recheck both the schedule and the public interface before treating this tree as a certification candidate.
 
-In isolation the first production statement now lowers through its function-body `try` and reaches a local `var` declaration with multiple declarators. Strict mode rejects it with `expected a single declarator`. The next lowering case should preserve function-wide hoisting and evaluate the initializers left to right. This probe covers only the isolated statement.
+Strict replay of the isolated first production statement now gets through the function-body `try` and the grouped local `var` declaration. It rejects the first initializer with `statement 0: unsupported linked expression ConditionalExpression`. The next lowering case is the conditional operator: evaluate its test once and only the selected arm. The production test expression itself contains further operations whose support has yet to be checked by this replay.
 
 ### Excalidraw (public intermediate milestone)
 
 Use the public editor and its real providers to exercise the same certification path on a public input. Run two placements through the ordinary splitter requesting `normal-completion`. Moving the single scroll arrow at unit 1337 (`Jb`) preserves all 611 public editor names in the diagnostic output. Aim to certify this split and run its emitted entry. The authored pair (1337 and 1338) currently adds five private names to the entry’s exports. Keep that output as a rejection case.
 
-The strict replay of the pair currently stops at statement 5 with `expected a single declarator`. Isolate the failing declaration before extending the lowering. For each extension, add a regression, generate programs using the feature, compare their behavior with Node and rerun both placements. Record the next blocker or the guarantee obtained. Defer `import.meta.url`.
+The strict replay of the pair currently stops at statement 5 with `unsupported linked expression MemberExpression`. Isolate the failing property access before extending the lowering. For each extension, add a regression, generate programs using the feature, compare their behavior with Node and rerun both placements. Record the next blocker or the guarantee obtained. Defer `import.meta.url`.
 
 An earlier pairwise diagnostic identified 14 of the 259 structural conflicts as calls to
 `Ve(callback)` (units 5–18). Applying the wrapper theorem to the full editor would require
