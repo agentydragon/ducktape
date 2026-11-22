@@ -102,7 +102,10 @@ py_library(
     name = "health_checks",
     testonly = True,
     srcs = ["health_checks.py"],
-    deps = [":cluster"],
+    deps = [
+        ":cluster",
+        ":k8s",
+    ],
 )
 
 py_library(

@@ -36,8 +36,9 @@ class SourceRef(BaseModel):
 class HealthCheck(BaseModel):
     """Flux Kustomization health check reference."""
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="ignore", alias_generator=to_camel, populate_by_name=True)
 
+    api_version: str = ""
     kind: str = ""
     name: str = ""
     namespace: str = ""
