@@ -270,6 +270,39 @@
               }
             }
           ]
+        },
+        "D": {
+          "frames": [
+            {
+              "schema": {
+                "refId": "D",
+                "fields": [
+                  {
+                    "name": "Time",
+                    "type": "time",
+                    "config": {
+                      "interval": 3600000
+                    }
+                  },
+                  {
+                    "name": "Value",
+                    "type": "number",
+                    "config": {
+                      "displayNameFromDS": "Shadow target workers"
+                    }
+                  }
+                ]
+              },
+              "data": {
+                "values": [
+                  {
+                    "$recorded_ref": "value_003"
+                  },
+                  [null, null, 2, 2, 2, 3, 3, 3, 4, 4, 3, 3, 3, 3, 4, 4, 3, 3, 3, 3, 2, 2, 2, 2, 2]
+                ]
+              }
+            }
+          ]
         }
       },
       "8": {

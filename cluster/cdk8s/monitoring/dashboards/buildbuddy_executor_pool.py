@@ -60,13 +60,15 @@ def _capacity() -> dashboard.Panel:
     panel = _chart(
         22,
         "Pool capacity and active tasks",
-        "Desired is the KubeVirt pool target. Registered counts executors reporting scheduler registration. "
+        "Desired is the KubeVirt pool target. Shadow target shows what the trial scale-up policy would request "
+        "without changing the pool. Registered counts executors reporting scheduler registration. "
         "Active tasks includes preparation, execution and upload on current workers. Missing samples leave gaps.",
         dashboard.GridPos(h=10, w=24),
         [
             ("Active tasks", f"sum({_tasks(_EXECUTOR)})"),
             ("Registered workers", f"sum({_registered(_EXECUTOR)})"),
             ("Desired workers", _DESIRED),
+            ("Shadow target workers", "buildbuddy_kvm:shadow_target_workers"),
         ],
     )
     panel.field_config = dashboard.FieldConfigSource(
@@ -93,9 +95,11 @@ def _capacity() -> dashboard.Panel:
                 "Desired workers",
                 {
                     "color": {"mode": "fixed", "fixedColor": "#9299a5"},
+                    "custom.lineWidth": 5,
                     "custom.lineStyle": {"fill": "dash", "dash": [7, 6]},
                 },
             ),
+            field_override("Shadow target workers", {"color": {"mode": "fixed", "fixedColor": "purple"}}),
         ],
     )
     return panel

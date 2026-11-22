@@ -84,6 +84,16 @@ the requested size and alerts if the condition persists. Missing pool metrics
 also hold the current count. Flux initializes `spec.replicas` to KEDA's minimum
 of two for the KubeVirt scale subresource, then ignores HPA changes to that field.
 
+The dashboard also plots a shadow recommendation, `buildbuddy_kvm:shadow_target_workers`.
+Mimir evaluates it against the required KubeVirt suite's four CPUs, 7 GiB of
+RAM and 50 GB of available work-disk space on the same healthy worker. A local
+reservation holds the desired count if a worker has room, or proposes one more
+VM otherwise, up to eight. Empty queues propose the number of busy workers with
+a floor of two. Incomplete worker telemetry or a VM still registering holds the
+requested size. Missing pool telemetry leaves a gap. Compare this series with
+actual queue-to-start latency and idle VM-hours before wiring it to KEDA. A
+reservation can represent a smaller action or duplicate an action already running.
+
 The executor advertises four CPUs and 7 GiB, leaving 1 GiB for the guest. Each
 KVM suite declares its scheduling estimates. The required Agentplane VM suite
 uses four CPUs, 7 GiB of memory and 50 GB of free disk. These allocations and
