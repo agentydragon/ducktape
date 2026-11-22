@@ -8,9 +8,29 @@ Given the original module graph, a proposed placement and a requested guarantee,
 
 The production acceptance run uses the private bundle, its dependencies and the reviewed placement. Record the certified guarantee for the complete split, which authored boundaries it realizes, and the result of running the emitted application through its browser smoke test. Until it certifies, record the first reproducible blocker on that input. Keep the bundle, selectors and run artifacts in the private repository.
 
-The work was parked on 2026-11-21. This file is the hand-over: what existed then, what to do next and in which order, and what was still owed. Measurements below remain historical results from that revision; they do not certify the current emitted artifacts. Use `lowersplit --diagnostic` to reproduce structural and model diagnostics. [`docs/lessons_learned.md`](docs/lessons_learned.md) has the experience behind it, [`SUPPORT.md`](SUPPORT.md) what a debundler has to support, [`translation/PLAN.md`](translation/PLAN.md) the plan of the translation checker, and [`TODO.md`](TODO.md) the smaller items.
+## Current priority: certify an authored change in initialization order
 
-## State when parked
+The 2026-11-22 survey of the private production bundle found that 2,766 of 9,707 body units lower individually. Of 2,793 authored modules, 161 lower every unit they own. For 141, lowering also succeeds across the dependencies found by the syntactic scan. Ten of those depend on another authored module. All ten now have linked CoreJS `normal-completion` certificates for dependency-closed **excerpts**. Eight exercise records and two call an imported formatter during initialization. The complete archived split remains uncertified.
+
+1. Pick an authored placement that reverses the evaluation order of two initializers. Minimize the excerpt while retaining their dependencies. Verify the crossing in the linked evaluation schedule; moving a statement to another file can leave initialization order unchanged.
+2. Run the ordinary splitter requesting `normal-completion`, check the emitted files with `--check-output`, and compare observable entry exports in Node. Keep the placement and public names fixed for a negative control: change one dependency so the two orders produce different observable results. Demonstrate the difference in Node and require the checker to refuse the control.
+3. Record the snapshot, placement, commands, verdicts and observations in the private repository. If the positive case fails, record the first reproducible blocker and the stage that refused it. Choose the next extension by the authored crossing it would unlock. Give any new rule a public, neutral end-to-end regression and generated programs that exercise both independent and dependent initializers.
+
+### Known blockers on the production input
+
+| Stage                         | Evidence and implication                                                                                                                                                                                                                                                                                                          |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Placement and entry interface | The archived occurrence pairing has two source-order inversions. A scratch reassignment makes the schedule representable. The archived entry independently exposes 266 extra names, violating the exact-export contract. See [private production replay](#private-production-replay).                                             |
+| Linked lowering               | Of the 6,941 units that refuse, the most frequent first diagnostics are function declarations (3,138), arrays (715), expected identifier (704), complex object property values (691), member access (544) and class declarations (437). Lowering stops at the first error in each unit, so accepting one form can expose another. |
+| Module linking                | A reduced case that re-exports an imported binding directly from the entry still refuses. Preserve the public binding identity when extending this case.                                                                                                                                                                          |
+| Host semantics                | The first isolated initializer reaches `typeof window`, then needs host reads, error construction and property access and mutation. The [host-contract design](#planned-host-contract) is pending.                                                                                                                                |
+| Reordering proof              | Moving an initializer across an opaque call or callback requires accounting for the state that code can reach and change. Use the minimized crossing to identify the specific proof obligation before widening a move rule.                                                                                                       |
+
+Excalidraw remains the [public intermediate milestone](#excalidraw-public-intermediate-milestone). Keep private selectors, source and replay artifacts in the private repository.
+
+## Historical baseline (2026-11-21)
+
+The following measurements and model diagnostics describe the earlier revision. The [translation plan](translation/PLAN.md), [support inventory](SUPPORT.md), [lessons learned](docs/lessons_learned.md) and [smaller tasks](TODO.md) give the supporting detail.
 
 The design is "untrusted search, trusted check": a planner proposes a split, and Lean checks it (`Valid`, nine checks; `Valid → Correct` is proved). The check trusts one input that is not proved, the footprint of each statement, which [`Effects.lean`](lean/EsmSplit/Effects.lean) computes by abstract interpretation.
 
@@ -92,11 +112,13 @@ What the statement forces:
 
 ## Next steps
 
-Two tracks. The proof track is ordered: each step needs the one before. The engineering track is independent of it and of itself, so its steps can run in parallel. Every step ends with its checks run and its numbers in the PR.
+Use the production milestone above to prioritize the proof and engineering tracks below. Record the checks and measurements for each completed step in its PR.
 
 ### Private production replay
 
 On 2026-11-22 the pairing covered all 9,707 body units in the archived review tree. The archived pairing assigns three occurrences of the same call to output positions that put two owners out of source order. Reassigning those occurrences in a scratch pairing preserved every output position and let the current adapter represent the full body-unit schedule. The calls have identical source syntax and resolve to the same callee. This checks placement representability only. Independently, the reviewed entry exposes all 268 original export names and 266 extra names. Recheck both the schedule and the public interface before treating this tree as a certification candidate.
+
+### Planned host contract
 
 Strict replay of the isolated first production statement stops at `statement 0: unsupported global window`. The first host-contract milestone is to certify the isolated `typeof window` comparison under explicit assumptions. The surrounding statement also reads host objects, constructs an error, reads properties and assigns a property.
 
