@@ -4,6 +4,7 @@ repository through the ducktape-automation GitHub App."""
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 
 from cdk8s import ApiObjectMetadata
@@ -40,8 +41,6 @@ from flux_imageupdateautomation_crds.io.fluxcd.toolkit.image import (
 
 from cluster.cdk8s.providers.flux.image_policy import ImagePolicy
 
-# CI pushes {branch}-YYYYMMDDHHMMSS-{sha7}; among devel builds, alphabetical order is chronological.
-_CI_TAG_PATTERN = r"^devel-\d{14}-[0-9a-f]{7}$"
 # The ducktape-automation GitHub App's credentials: a SOPS Secret Flux decrypts into flux-system
 # (cluster/k8s/flux/flux-system). A GitRepository's secretRef resolves in its own namespace.
 GITHUB_APP_NAMESPACE = "flux-system"
@@ -57,15 +56,14 @@ _COMMIT_MESSAGE = (
 )
 
 
-def newest_ci_tag_policy(scope: Construct, repository: ImageRepository) -> ImagePolicy:
-    """The ImagePolicy picking `repository`'s newest devel CI build, named after the repository and
-    in its namespace, where its by-name reference resolves."""
+def newest_ci_tag_policy(scope: Construct, repository: ImageRepository, *, prefix: str = "devel") -> ImagePolicy:
+    """Select the newest CI tag with the given prefix. The timestamp sorts chronologically."""
     return ImagePolicy(
         scope,
         f"image-policy-{repository.name}",
         metadata=ApiObjectMetadata(name=repository.name, namespace=repository.metadata.namespace),
         image_repository_ref=ImagePolicySpecImageRepositoryRef(name=repository.name),
-        filter_tags=ImagePolicySpecFilterTags(pattern=_CI_TAG_PATTERN),
+        filter_tags=ImagePolicySpecFilterTags(pattern=f"^{re.escape(prefix)}" + r"-\d{14}-[0-9a-f]{7}$"),
         policy=ImagePolicySpecPolicy(
             alphabetical=ImagePolicySpecPolicyAlphabetical(order=ImagePolicySpecPolicyAlphabeticalOrder.ASC)
         ),
