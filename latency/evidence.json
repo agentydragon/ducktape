@@ -45448,5 +45448,2433 @@
       "replay": "At each one-minute scrape, take the maximum observed desired replica count from that sample and the previous 15 minutes, including pre-window history. Sum the 240 counts. This prices delayed scale-in on the recorded demand trace. It does not simulate HPA recommendations, VM identity, routing or elapsed PR time.",
       "metrics": "https://grafana.allegedly.works/d/buildbuddy-executor-pool/buildbuddy-executor-pool?from=1795305600000&to=1795320000000"
     }
+  },
+  "kvm_scale_up_signal": {
+    "source_devel_commit": "62c72b0fe02b2c9a1c6b44dff2af36cbd35a3524",
+    "window_start_utc": "2026-11-21T04:47:00Z",
+    "window_end_utc": "2026-11-22T04:47:00Z",
+    "evaluation_step_seconds": 30,
+    "executor_scrape_seconds_approx": 60,
+    "possible_samples": 2881,
+    "usable_samples": 2859,
+    "live_pool_min_replicas": 2,
+    "live_pool_max_replicas": 8,
+    "live_max_concurrent_tasks_per_worker": 1,
+    "raw_increase_samples": 19,
+    "raw_increase_samples_with_cpu_idle_worker": 10,
+    "raw_increase_samples_with_full_size_headroom": 9,
+    "examples": [
+      {
+        "at_utc": "2026-11-21T11:09:00Z",
+        "desired": 2,
+        "reporting": 2,
+        "busy_by_assigned_cpu": 1,
+        "local_reservations": 3,
+        "raw_target": 4,
+        "workers_meeting_headroom_check": 1,
+        "available_work_disk_gb": 72
+      },
+      {
+        "at_utc": "2026-11-22T00:41:30Z",
+        "desired": 5,
+        "reporting": 5,
+        "busy_by_assigned_cpu": 2,
+        "local_reservations": 4,
+        "raw_target": 6,
+        "workers_meeting_headroom_check": 3,
+        "required_action_invocation": "01918835-66ec-569d-87c1-64d28a06e99b",
+        "both_required_actions_assigned_by_utc": "2026-11-22T00:41:02Z"
+      }
+    ],
+    "metrics_dashboard": "https://grafana.allegedly.works/d/buildbuddy-executor-pool",
+    "autoscaler_source": "https://github.com/agentydragon/ducktape/blob/62c72b0fe02b2c9a1c6b44dff2af36cbd35a3524/cluster/cdk8s/buildbuddy_kvm_worker.py#L75-L106",
+    "reported_count": "Current VMI-owned launcher pods with up=1, registered_to_scheduler=1 and an assigned CPU sample. Those series and pool desired replicas must be younger than 180 seconds.",
+    "raw_increase_filter": "Reporting equals desired, desired below eight, and sum(busy workers by positive assigned CPU) plus sum(local executor queue_length) exceeds desired. The queue falls back to zero on the absent aggregate, matching the scaler input. This is a pointwise comparison before the HPA policies.",
+    "full_size_headroom_filter": "For the CPU-idle subset, match a current nondeleting worker with fresh successful health checks and scrapes, 4 unassigned estimated CPUs, 7 GiB unassigned estimated RAM, at least 50 decimal GB available on /buildbuddy and no observed positive tasks_executing stage. An absent stage is counted as zero observed. Supplied samples can carry values forward across evaluation points.",
+    "earlier_isolated_reproduction": {
+      "issue": "https://github.com/agentydragon/ducktape/issues/15568",
+      "running_actions": 2,
+      "duplicate_local_reservations": 3,
+      "third_action_real_wait_s": 85.7,
+      "assigned_and_queued_cpu_matched_assigned_during_real_wait": true
+    },
+    "telemetry_limits": {
+      "hosted_metrics": "The authenticated execution metric inventory exposes the exported local queue gauge and duration metrics. No distinct pending execution count was found for the pool.",
+      "log_window_hours": 6,
+      "runner_lookups": 106,
+      "queue_add_debug_lines": 0,
+      "log_patterns": ["Looking for match", "Added task.*to pq"]
+    },
+    "two_task_draft_pr": 18877,
+    "full_size_shadow_replay": {
+      "covered_samples_below_limit": 2285,
+      "samples_with_reservations": 170,
+      "neither_signal_calls_for_growth": 145,
+      "both_signals_call_for_growth": 10,
+      "raw_target_only": 9,
+      "shadow_probe_only": 6,
+      "shadow_only_sample_times_utc": [
+        "2026-11-21T08:05:30Z",
+        "2026-11-21T08:06:00Z",
+        "2026-11-21T08:06:30Z",
+        "2026-11-21T08:07:00Z",
+        "2026-11-21T08:07:30Z",
+        "2026-11-21T08:08:00Z"
+      ],
+      "shadow_only_example": {
+        "at_utc": "2026-11-21T08:06:00Z",
+        "desired": 3,
+        "running": 2,
+        "idle_worker_available_work_disk_gb": 31.3,
+        "idle_worker_advertised_work_disk_gb": 70.1
+      },
+      "method": "Require desired below eight and complete current-worker coverage for registration, health, CPU, RAM and disk. Evaluate positive local reservations with no worker meeting 4 unassigned CPU, 7 GiB unassigned RAM and 50 GB filesystem thresholds. Filesystem availability is a proxy for suitability for the KubeVirt action, whose scratch request exceeds Firecracker’s 20 GB. This probe has no distinct execution IDs or shapes and does not predict scheduler admission."
+    }
+  },
+  "kvm_work_disk_requirements": {
+    "window_utc": ["2026-11-21T05:00:00Z", "2026-11-22T05:00:00Z"],
+    "source_devel_commit": "62c72b0fe02b2c9a1c6b44dff2af36cbd35a3524",
+    "executor_version": "v2.321.0",
+    "sources": {
+      "parser": "https://github.com/buildbuddy-io/buildbuddy/blob/v2.321.0/server/util/platform/platform.go#L713-L724",
+      "scheduler_node_fit": "https://github.com/buildbuddy-io/buildbuddy/blob/v2.321.0/enterprise/server/scheduling/scheduler_server/scheduler_server.go#L756-L769",
+      "docker_executor_task_fit": "https://github.com/buildbuddy-io/buildbuddy/blob/v2.321.0/enterprise/server/scheduling/priority_task_scheduler/priority_task_scheduler.go#L804-L847",
+      "runner_task_number": "https://github.com/buildbuddy-io/buildbuddy/blob/v2.321.0/proto/execution_stats.proto#L248-L259",
+      "work_disk_pvc": "https://github.com/agentydragon/ducktape/blob/62c72b0fe02b2c9a1c6b44dff2af36cbd35a3524/cluster/cdk8s/buildbuddy_kvm_worker.py#L219-L234",
+      "inherited_kubevirt_request": "https://github.com/agentydragon/ducktape/pull/15355",
+      "firecracker_post_run_disk": "https://github.com/agentydragon/ducktape/pull/15351"
+    },
+    "method": {
+      "invocation_sampling": "Order distinct invocation IDs by the first matching guest-console log receipt, then take 48 evenly spaced order statistics including the endpoints across 72 IDs. Fetch native BuildBuddy executions for the two required suite labels within selected invocations and deduplicate on execution ID.",
+      "receipt_logql": "{namespace=\"buildbuddy-executor\",container=\"guest-console-log\",app=~\"buildbuddy-kvm-worker-[0-9]+\"} |= \"Looking for match\"",
+      "worker_attribution": "Join each exact execution ID from the BuildBuddy record to a unique immutable launcher pod named in its executor guest-console receipt.",
+      "disk_promql": "node_filesystem_avail_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/buildbuddy\"}",
+      "scrape_sampling": "Evaluate at 30 seconds with timestamp() to recover physical scrape times. Deduplicate forwarded metric values by physical scrape time for each guest pod. Require latest pre-start scrape within 75 seconds, at least one in-window scrape, gaps of at most 75 seconds between accepted scrapes, and last in-window scrape within 75 seconds of worker completion. The minimum includes baseline. Net drop is baseline minus sampled minimum, in GiB.",
+      "verdict": "Require COMPLETED and complete worker clocks in native records. Use bb execution get <execution_id> --output=json to verify ExecuteResponse.status.code and ExecuteResponse.result.exitCode, both zero for a pass. Read runnerMetadata.taskNumber for each pass, where 1 is first assignment to that runner and values above 1 are later assignments.",
+      "percentile": "Nearest-rank p95, computed on per-execution values rounded to 0.001 GiB.",
+      "limits": "A single 24-hour sample from visible runner lookups. Minute scrapes can miss short-lived peaks. Net filesystem change may mask temporary writes, concurrent guest activity and cleanup, and does not measure total bytes written. The first-assignment split is at runner level. It does not prove cold worker, image or file caches. Production worker concurrency was one and the PVC was fixed at 80 GiB."
+    },
+    "invocation_population_count": 72,
+    "selected_invocations": [
+      "1cd9ee36-9f84-5265-b04e-cdeb996ca7ae",
+      "27fa07f3-3670-515c-8a8c-49b0d6974412",
+      "1267a3b9-601b-5ff8-8a09-63303e9a605d",
+      "38cf9145-9dee-5abf-8357-604551f5b555",
+      "d70c257a-659b-5fbf-b3ad-ed48f25037e4",
+      "7ea84bc8-c421-51fc-90e0-e8d39bf6ad4c",
+      "fbfa8634-4aad-56ff-9aeb-0fb9d8e3cc8c",
+      "b893d2af-2b0a-501e-9ad6-4b9effc72eda",
+      "e27adf26-a880-568b-b207-938c79ee2e43",
+      "b7d606a7-b7fb-569f-bd2e-af09dab8976f",
+      "62234875-6b27-5a44-a6d9-93f3cfcca357",
+      "d361d706-c789-5bb1-8ce2-9d0dad76e4e3",
+      "3c5402d4-c6b1-52f5-a375-02ec454637b2",
+      "efc4dc43-f8cf-5de0-ac04-9c6350692751",
+      "e3b2fb3c-4240-5f09-92e5-97b03d9b3113",
+      "bfa9bfce-dc40-575c-a29b-a4246f9ccb6e",
+      "1c5c7440-205d-5ea6-9d5e-835ea14a983e",
+      "6b92c6af-85be-5576-8922-69d1856b8a58",
+      "f34aa4f8-8d41-5282-b75f-17d3d94fed12",
+      "f827ad61-3bd4-5573-9c39-2305f3e6e10c",
+      "bd2c5ede-2271-5c54-9341-7948c7872231",
+      "df3093c2-8ef8-580b-9f54-d3a4a8a3c614",
+      "9a37c1f0-9d3e-5dd9-b93f-49213f924a61",
+      "eba4738c-26fe-5160-9bf7-7c479b016271",
+      "cadf44d2-e5bc-5c4d-a95f-f686b7133f12",
+      "74811a33-b9ac-4273-967a-4d86b119afee",
+      "fbe1e795-eeb0-5b89-9cad-b08c48fc5cac",
+      "ba35768b-c2ed-5565-8373-221f3f516185",
+      "4c92f22a-3759-571c-9518-ed3086cd6308",
+      "052c35e8-1b41-5b5a-84d4-6e6ac0db3570",
+      "64d86aaa-4fa8-5b9c-b030-89257c1b149b",
+      "70e4a372-0892-5cc1-8fd7-3120f7bf04c2",
+      "7a7810cc-9f23-5841-9deb-b8bef697d363",
+      "e04085e7-d119-5b49-a3cd-9154b6f93d0a",
+      "0f06a9da-748b-5868-bd88-2cdb648729fb",
+      "b32310ca-875c-5be7-95db-f52306e10f91",
+      "3f09b495-e7d9-5e12-873d-bf0c530d4e3e",
+      "8a5323e7-3dca-548d-9723-08c194acc4ea",
+      "01918835-66ec-569d-87c1-64d28a06e99b",
+      "41729653-16cd-5c38-9ce6-9dc173fd2963",
+      "a08f4260-f8b9-5bce-aa3d-6f5ef16b12f4",
+      "a7ef92f4-bf3f-532e-9f14-2c79e178d2e5",
+      "79d95b2c-38ac-5d32-8918-24671a5370d5",
+      "6e23f8af-38cf-5537-9ae8-e19467fd8d19",
+      "dd0d60a8-0742-407b-8ed1-06f7f5cae375",
+      "0b5493f6-ac65-5e3b-84cd-8ec6046a08c9",
+      "5f2e78c7-6897-5c89-92ac-f2d898ff3f6a",
+      "dc7c25fa-0c52-538d-9f4a-eec374d04da3"
+    ],
+    "distinct_native_records": 76,
+    "excluded_records": [
+      {
+        "execution_id": "/uploads/035aac67-1da7-4923-b4e1-5266b63a9b69/blobs/0bf219958ff39532c4a619b59882fadc082e7a2edad42f96ac447853afd261f8/1989",
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "reason": "non_success_or_incomplete"
+      },
+      {
+        "execution_id": "/uploads/146ebc1f-9668-44dd-9f87-026208712fa1/blobs/26b559ab8da5bf197fb13eb4bd3b7490cb9c59a02ebb080ace8e121dae49f5dc/1341",
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "reason": "non_success_or_incomplete"
+      },
+      {
+        "execution_id": "/uploads/38026d47-0019-4f0a-9723-9e6c5c43b7d1/blobs/c2d24f2de59a6a50a2581897ea351fdc3d9a6c64f2fd5215ed13236ecf4700c6/1341",
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "reason": "non_success_or_incomplete"
+      },
+      {
+        "execution_id": "/uploads/806a9f70-f645-4d3f-a520-50ec055a3933/blobs/0bf219958ff39532c4a619b59882fadc082e7a2edad42f96ac447853afd261f8/1989",
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "reason": "missing_endpoint_scrapes"
+      },
+      {
+        "execution_id": "/uploads/921984e5-4d23-4804-81a2-1f6454289be5/blobs/9548601a318606d6b8506e8eb820b748aec4681f48021b022916fe0b10c95a6e/1989",
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "reason": "non_success_or_incomplete"
+      },
+      {
+        "execution_id": "/uploads/957e1131-c6af-4cba-86a9-9ab5030445c8/blobs/cbef85e24860d9fd31535b147e9f48555b6e69b5a2fe56b1bfd5d9aacca57c1c/1341",
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "reason": "missing_endpoint_scrapes"
+      },
+      {
+        "execution_id": "/uploads/cc5e64c0-a1af-4a57-9cab-12c37fb8c8da/blobs/0043ffdb227b3b9644842934b7852c44b19b54bd331ff4a7f3d71717c4cbd6ee/1989",
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "reason": "non_success_or_incomplete"
+      },
+      {
+        "execution_id": "/uploads/ce82963d-2919-46fa-b8ac-f1fb7a231cc0/blobs/ae8ea30efbe0a6bd3d954704e7361e63af6bde84bab99abead799fe090fc6364/1341",
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "reason": "missing_endpoint_scrapes"
+      },
+      {
+        "execution_id": "/uploads/d61a0816-079f-4144-b487-49aec670617f/blobs/1efdbae3d4af9c3b1601bf2252cb6863d21355f9aac2c9e029a391e500ee1648/1989",
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "reason": "missing_endpoint_scrapes"
+      }
+    ],
+    "exclusions_by_reason": {
+      "non_success_or_incomplete": 5,
+      "missing_endpoint_scrapes": 4
+    },
+    "suites": {
+      "kubevirt": {
+        "declared_gib": 50,
+        "definition": "https://github.com/agentydragon/ducktape/blob/62c72b0fe02b2c9a1c6b44dff2af36cbd35a3524/agentplane/system_tests/vm/defs.bzl#L28-L34",
+        "all_passes": {
+          "passes": 30,
+          "starting_free_gib_range": [26.801, 70.999],
+          "started_below_declared_gib": 18,
+          "min_sampled_free_gib": 26.437,
+          "median_net_drop_gib": 1.803,
+          "p95_net_drop_gib": 11.26,
+          "max_net_drop_gib": 11.263
+        },
+        "first_assignment": {
+          "passes": 12,
+          "starting_free_gib_range": [45.424, 70.999],
+          "started_below_declared_gib": 2,
+          "min_sampled_free_gib": 38.202,
+          "median_net_drop_gib": 11.215,
+          "p95_net_drop_gib": 11.263,
+          "max_net_drop_gib": 11.263
+        },
+        "later_assignment": {
+          "passes": 18,
+          "starting_free_gib_range": [26.801, 60.062],
+          "started_below_declared_gib": 16,
+          "min_sampled_free_gib": 26.437,
+          "median_net_drop_gib": 1.418,
+          "p95_net_drop_gib": 2.465,
+          "max_net_drop_gib": 2.465
+        }
+      },
+      "firecracker": {
+        "declared_gib": 20,
+        "definition": "https://github.com/agentydragon/ducktape/blob/62c72b0fe02b2c9a1c6b44dff2af36cbd35a3524/agentplane/system_tests/firecracker/defs.bzl#L37-L42",
+        "all_passes": {
+          "passes": 33,
+          "starting_free_gib_range": [31.174, 70.999],
+          "started_below_declared_gib": 0,
+          "min_sampled_free_gib": 30.63,
+          "median_net_drop_gib": 3.291,
+          "p95_net_drop_gib": 17.576,
+          "max_net_drop_gib": 17.711
+        },
+        "first_assignment": {
+          "passes": 13,
+          "starting_free_gib_range": [37.632, 70.999],
+          "started_below_declared_gib": 0,
+          "min_sampled_free_gib": 37.632,
+          "median_net_drop_gib": 15.776,
+          "p95_net_drop_gib": 17.711,
+          "max_net_drop_gib": 17.711
+        },
+        "later_assignment": {
+          "passes": 20,
+          "starting_free_gib_range": [31.174, 53.381],
+          "started_below_declared_gib": 0,
+          "min_sampled_free_gib": 30.63,
+          "median_net_drop_gib": 1.3575,
+          "p95_net_drop_gib": 4.136,
+          "max_net_drop_gib": 4.728
+        }
+      }
+    },
+    "successful_executions": [
+      {
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "invocation": "01918835-66ec-569d-87c1-64d28a06e99b",
+        "execution_id": "/uploads/87fe8cc0-df98-4a8e-97c3-c4ce5ab97b0d/blobs/d7b16275ecfe81d002d595192bcad0546e7f6548384195cb7b510d920bc371d3/1341",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-0-bwrh5",
+        "worker_start_utc": "2026-11-22T00:41:01.606942Z",
+        "worker_end_utc": "2026-11-22T00:46:35.410333Z",
+        "baseline_free_gib": 53.013,
+        "minimum_free_gib": 38.003,
+        "net_drop_gib": 15.01,
+        "in_window_scrapes": 6,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 1
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "invocation": "01918835-66ec-569d-87c1-64d28a06e99b",
+        "execution_id": "/uploads/dc977b6e-730e-4b5b-9409-c14df02bd54b/blobs/8dfe662cad0d2358a74c238546e99387616699a2726aa80534d0c66025bdd6b8/1989",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-5-w9vhp",
+        "worker_start_utc": "2026-11-22T00:40:55.507771Z",
+        "worker_end_utc": "2026-11-22T00:50:45.767550Z",
+        "baseline_free_gib": 67.395,
+        "minimum_free_gib": 58.725,
+        "net_drop_gib": 8.671,
+        "in_window_scrapes": 10,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 1
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "invocation": "0b5493f6-ac65-5e3b-84cd-8ec6046a08c9",
+        "execution_id": "/uploads/8c523a97-204f-44d0-a5bb-8d51f5bf7615/blobs/add8a515dc3f76ea6a2e2984073db6523da195fee47003e244fb1621d3131aac/1341",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-7-5b495",
+        "worker_start_utc": "2026-11-22T03:36:55.021Z",
+        "worker_end_utc": "2026-11-22T03:44:04.223537Z",
+        "baseline_free_gib": 70.999,
+        "minimum_free_gib": 53.442,
+        "net_drop_gib": 17.557,
+        "in_window_scrapes": 7,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 1
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "invocation": "0b5493f6-ac65-5e3b-84cd-8ec6046a08c9",
+        "execution_id": "/uploads/323bf42b-c0fa-4447-a015-3964b1251721/blobs/0043ffdb227b3b9644842934b7852c44b19b54bd331ff4a7f3d71717c4cbd6ee/1989",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-3-ltpbg",
+        "worker_start_utc": "2026-11-22T03:45:16.119767Z",
+        "worker_end_utc": "2026-11-22T03:49:09.326295Z",
+        "baseline_free_gib": 26.801,
+        "minimum_free_gib": 26.437,
+        "net_drop_gib": 0.364,
+        "in_window_scrapes": 4,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 5
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "invocation": "1267a3b9-601b-5ff8-8a09-63303e9a605d",
+        "execution_id": "/uploads/b773bad4-d0d6-4bbb-a4cc-a1be216016ec/blobs/f6209f65c08ade295bbcbdc1f97c3915c3cae5294ee05a202faef026f25debad/1341",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-5-4969b",
+        "worker_start_utc": "2026-11-21T05:02:42.024790Z",
+        "worker_end_utc": "2026-11-21T05:13:43.581359Z",
+        "baseline_free_gib": 70.787,
+        "minimum_free_gib": 53.211,
+        "net_drop_gib": 17.576,
+        "in_window_scrapes": 12,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 1
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "invocation": "1c5c7440-205d-5ea6-9d5e-835ea14a983e",
+        "execution_id": "/uploads/f326a9cf-f292-4e78-807c-a2b97d14a407/blobs/80cdff6c2a1b576832757da38253dc9746c4f0ed72886382cb8f4135b5cacc75/1341",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-2-98975",
+        "worker_start_utc": "2026-11-21T06:41:09.933336Z",
+        "worker_end_utc": "2026-11-21T06:53:02.015625Z",
+        "baseline_free_gib": 42.516,
+        "minimum_free_gib": 40.784,
+        "net_drop_gib": 1.732,
+        "in_window_scrapes": 12,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 1
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "invocation": "1c5c7440-205d-5ea6-9d5e-835ea14a983e",
+        "execution_id": "/uploads/64cf87bb-5572-4f3d-a095-a1735f4b3b17/blobs/aa4828094b4a235fca3b947e40512a3bc930256893cd84146f7a5d06aee5bc31/1989",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-6-7zs9p",
+        "worker_start_utc": "2026-11-21T06:39:57.802478Z",
+        "worker_end_utc": "2026-11-21T06:45:32.462979Z",
+        "baseline_free_gib": 32.356,
+        "minimum_free_gib": 31.174,
+        "net_drop_gib": 1.182,
+        "in_window_scrapes": 5,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 6
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "invocation": "1cd9ee36-9f84-5265-b04e-cdeb996ca7ae",
+        "execution_id": "/uploads/04c169e0-c606-497f-a3c6-c05abcdbf8f9/blobs/0a0744a11144a0d41db75142288ed77cc4c39b772635d021cea52261e9bd41e9/1341",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-7-97xvg",
+        "worker_start_utc": "2026-11-21T05:00:34.641164Z",
+        "worker_end_utc": "2026-11-21T05:09:52.161497Z",
+        "baseline_free_gib": 58.276,
+        "minimum_free_gib": 42.975,
+        "net_drop_gib": 15.301,
+        "in_window_scrapes": 9,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 1
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "invocation": "38cf9145-9dee-5abf-8357-604551f5b555",
+        "execution_id": "/uploads/4e9cf88f-4723-490f-b4aa-c82ea6442e5c/blobs/dba332ab252f4c94e63eb60d2e87523d6894ee8a7affd0f8d4f5b5a67a622aa4/1341",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-2-zxjtl",
+        "worker_start_utc": "2026-11-21T05:05:11.943241Z",
+        "worker_end_utc": "2026-11-21T05:12:20.269659Z",
+        "baseline_free_gib": 38.15,
+        "minimum_free_gib": 36.972,
+        "net_drop_gib": 1.179,
+        "in_window_scrapes": 7,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 4
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "invocation": "38cf9145-9dee-5abf-8357-604551f5b555",
+        "execution_id": "/uploads/9db4b139-06f9-4775-900f-84242c4880ed/blobs/548eac25a7cbd38f3fe6539965ce85097dfadf8ff97d9b4f136102c8bcd48457/1989",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-6-7zs9p",
+        "worker_start_utc": "2026-11-21T05:02:42.671425Z",
+        "worker_end_utc": "2026-11-21T05:10:58.193874Z",
+        "baseline_free_gib": 45.424,
+        "minimum_free_gib": 38.202,
+        "net_drop_gib": 7.222,
+        "in_window_scrapes": 9,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 1
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "invocation": "3c5402d4-c6b1-52f5-a375-02ec454637b2",
+        "execution_id": "/uploads/4a38d7c7-9240-45ba-9945-81f6a2ee87a4/blobs/9ef0e6681a5831ada116c819d86eebf9475751fc327a4cdfc42f75a7b16a2fb0/1341",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-1-4ljc9",
+        "worker_start_utc": "2026-11-21T06:30:51.148545Z",
+        "worker_end_utc": "2026-11-21T06:41:54.591459Z",
+        "baseline_free_gib": 57.394,
+        "minimum_free_gib": 44.011,
+        "net_drop_gib": 13.383,
+        "in_window_scrapes": 11,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 1
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "invocation": "41729653-16cd-5c38-9ce6-9dc173fd2963",
+        "execution_id": "/uploads/669ba462-0f3e-4cf5-9e92-cd5428cd246a/blobs/26b559ab8da5bf197fb13eb4bd3b7490cb9c59a02ebb080ace8e121dae49f5dc/1341",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-0-bwrh5",
+        "worker_start_utc": "2026-11-22T00:58:44.409813Z",
+        "worker_end_utc": "2026-11-22T01:04:22.334508Z",
+        "baseline_free_gib": 37.632,
+        "minimum_free_gib": 37.632,
+        "net_drop_gib": 0.0,
+        "in_window_scrapes": 5,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 1
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "invocation": "5f2e78c7-6897-5c89-92ac-f2d898ff3f6a",
+        "execution_id": "/uploads/6f7ae0a9-79b3-4cb6-9194-eba8a8928f6f/blobs/77ca4f42b31e2105489439238c3b21d0bb1a3242420ba9d25ed9fb8f9c05d43e/1341",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-0-8kmhg",
+        "worker_start_utc": "2026-11-22T04:31:20.703598Z",
+        "worker_end_utc": "2026-11-22T04:45:30.954418Z",
+        "baseline_free_gib": 70.999,
+        "minimum_free_gib": 53.532,
+        "net_drop_gib": 17.467,
+        "in_window_scrapes": 14,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 1
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "invocation": "5f2e78c7-6897-5c89-92ac-f2d898ff3f6a",
+        "execution_id": "/uploads/e9a24682-74ad-4366-8ff1-98ccd0380bae/blobs/bac942713638c2aef385f207b0d8eca39492f3ef9a5cee1724828e20c5b4fec3/1989",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-2-vh4bj",
+        "worker_start_utc": "2026-11-22T04:31:20.927197Z",
+        "worker_end_utc": "2026-11-22T04:44:11.919765Z",
+        "baseline_free_gib": 70.999,
+        "minimum_free_gib": 59.81,
+        "net_drop_gib": 11.189,
+        "in_window_scrapes": 13,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 1
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "invocation": "62234875-6b27-5a44-a6d9-93f3cfcca357",
+        "execution_id": "/uploads/eb95b9d6-8c65-43a5-9eb2-5d6eb0e316e8/blobs/a9353a4cf6925674937ff028c023a46d73c3420f403525b4c1096f53db91b53b/1341",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-4-rpw28",
+        "worker_start_utc": "2026-11-21T06:25:06.578747Z",
+        "worker_end_utc": "2026-11-21T06:34:46.464122Z",
+        "baseline_free_gib": 59.853,
+        "minimum_free_gib": 44.077,
+        "net_drop_gib": 15.776,
+        "in_window_scrapes": 10,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 1
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "invocation": "62234875-6b27-5a44-a6d9-93f3cfcca357",
+        "execution_id": "/uploads/7f7ef043-138f-4b5e-bf78-f097a1332bf6/blobs/b1c8d1377a342e32706518bceb062f06a260919ef3dcc2b46e82b1d9ed77d1c9/1989",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-6-7zs9p",
+        "worker_start_utc": "2026-11-21T06:26:03.333964Z",
+        "worker_end_utc": "2026-11-21T06:31:32.803677Z",
+        "baseline_free_gib": 35.878,
+        "minimum_free_gib": 34.314,
+        "net_drop_gib": 1.563,
+        "in_window_scrapes": 5,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 5
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "invocation": "64d86aaa-4fa8-5b9c-b030-89257c1b149b",
+        "execution_id": "/uploads/a9529494-7643-4141-a6c2-c3ca9d59426d/blobs/26845ffde3df31b40fe0fbfd7c23f75673ffdcceb2e078b52d180ada17a871e2/1341",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-3-296ff",
+        "worker_start_utc": "2026-11-21T09:26:24.691064Z",
+        "worker_end_utc": "2026-11-21T09:32:30.156766Z",
+        "baseline_free_gib": 53.381,
+        "minimum_free_gib": 51.845,
+        "net_drop_gib": 1.536,
+        "in_window_scrapes": 6,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 2
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "invocation": "64d86aaa-4fa8-5b9c-b030-89257c1b149b",
+        "execution_id": "/uploads/738428d2-5069-43b8-9245-4125b87cafa2/blobs/6101f52056094a55dbca7079f1bd0b7ccc8487c7c92321a67483d930e33a607a/1989",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-1-g2f26",
+        "worker_start_utc": "2026-11-21T09:26:29.430423Z",
+        "worker_end_utc": "2026-11-21T09:29:35.398204Z",
+        "baseline_free_gib": 60.062,
+        "minimum_free_gib": 59.646,
+        "net_drop_gib": 0.416,
+        "in_window_scrapes": 4,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 2
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "invocation": "6b92c6af-85be-5576-8922-69d1856b8a58",
+        "execution_id": "/uploads/3a4392b9-4aa1-4089-b7df-1af8ac1f92e6/blobs/4fef18df9e11f5bf793cd33b04cde73ddb589a77d6df81a84174625c5cfdd9d4/1341",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-0-8h2ck",
+        "worker_start_utc": "2026-11-21T06:41:41.253219Z",
+        "worker_end_utc": "2026-11-21T06:47:45.808887Z",
+        "baseline_free_gib": 36.289,
+        "minimum_free_gib": 35.77,
+        "net_drop_gib": 0.519,
+        "in_window_scrapes": 6,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 4
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "invocation": "6b92c6af-85be-5576-8922-69d1856b8a58",
+        "execution_id": "/uploads/783af886-6378-4880-9b99-fd61813ab82d/blobs/292374217d4e3524512527b9c73f4215ccf717d56af133d25537f062b86444f6/1989",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-7-wfhvf",
+        "worker_start_utc": "2026-11-21T06:41:53.153649Z",
+        "worker_end_utc": "2026-11-21T06:48:33.397879Z",
+        "baseline_free_gib": 42.742,
+        "minimum_free_gib": 40.496,
+        "net_drop_gib": 2.246,
+        "in_window_scrapes": 6,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 2
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "invocation": "6e23f8af-38cf-5537-9ae8-e19467fd8d19",
+        "execution_id": "/uploads/9e45f556-9daa-48f0-b1b8-58a57659a24c/blobs/bfe7390938cefc229bb693b07852447ed513f9d0b1974f51de5d102e367cc3c7/1341",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-6-5pht4",
+        "worker_start_utc": "2026-11-22T03:07:15.431171Z",
+        "worker_end_utc": "2026-11-22T03:11:51.528005Z",
+        "baseline_free_gib": 53.353,
+        "minimum_free_gib": 49.217,
+        "net_drop_gib": 4.136,
+        "in_window_scrapes": 5,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 2
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "invocation": "6e23f8af-38cf-5537-9ae8-e19467fd8d19",
+        "execution_id": "/uploads/03836627-68fb-4fdc-8fb7-35ecf19058eb/blobs/cfff92ac3520b48b6d7039e428f9690e54dd307a28100a96db0cb66eb7ee4245/1989",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-3-ltpbg",
+        "worker_start_utc": "2026-11-22T03:07:15.722761Z",
+        "worker_end_utc": "2026-11-22T03:11:13.733445Z",
+        "baseline_free_gib": 27.648,
+        "minimum_free_gib": 26.883,
+        "net_drop_gib": 0.765,
+        "in_window_scrapes": 4,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 2
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "invocation": "70e4a372-0892-5cc1-8fd7-3120f7bf04c2",
+        "execution_id": "/uploads/4466d59c-edd6-4e10-9c27-33c16a454dd1/blobs/c122b725383416321d9c629e238ed7eb410689f3c1d7ed8082a28b0919911391/1989",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-4-t5fxt",
+        "worker_start_utc": "2026-11-21T10:06:48.420267Z",
+        "worker_end_utc": "2026-11-21T10:12:11.141903Z",
+        "baseline_free_gib": 70.999,
+        "minimum_free_gib": 59.747,
+        "net_drop_gib": 11.252,
+        "in_window_scrapes": 5,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 1
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "invocation": "70e4a372-0892-5cc1-8fd7-3120f7bf04c2",
+        "execution_id": "/uploads/c8ee50ee-03ae-4b4c-b87e-ef1ed35ed8e7/blobs/8f876450e1ae1b1a735bdbe22bd21a860eedabaa88e866aa53c497b471c32531/1341",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-3-296ff",
+        "worker_start_utc": "2026-11-21T10:06:51.757488Z",
+        "worker_end_utc": "2026-11-21T10:12:23.840709Z",
+        "baseline_free_gib": 51.91,
+        "minimum_free_gib": 47.182,
+        "net_drop_gib": 4.728,
+        "in_window_scrapes": 6,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 3
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "invocation": "74811a33-b9ac-4273-967a-4d86b119afee",
+        "execution_id": "/uploads/bc02dd94-2eec-481d-b12c-fbdafb6914aa/blobs/4844ebcba756af6a95109fd838161800382404edd16dbe809b58b81f10a84f7a/1341",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-7-wfhvf",
+        "worker_start_utc": "2026-11-21T07:09:44.843205Z",
+        "worker_end_utc": "2026-11-21T07:15:20.998729Z",
+        "baseline_free_gib": 33.445,
+        "minimum_free_gib": 33.069,
+        "net_drop_gib": 0.377,
+        "in_window_scrapes": 6,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 6
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "invocation": "79d95b2c-38ac-5d32-8918-24671a5370d5",
+        "execution_id": "/uploads/b7c06a1e-6329-4ff6-b1eb-4a0ee1d0d6cc/blobs/c2d24f2de59a6a50a2581897ea351fdc3d9a6c64f2fd5215ed13236ecf4700c6/1341",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-6-5pht4",
+        "worker_start_utc": "2026-11-22T02:48:07.387205Z",
+        "worker_end_utc": "2026-11-22T02:54:43.650834Z",
+        "baseline_free_gib": 70.999,
+        "minimum_free_gib": 53.288,
+        "net_drop_gib": 17.711,
+        "in_window_scrapes": 7,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 1
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "invocation": "7ea84bc8-c421-51fc-90e0-e8d39bf6ad4c",
+        "execution_id": "/uploads/4df80213-064c-413d-bbc2-741fad1ee1c4/blobs/f82c1b7c40feb807fa0bfc9aa4914e76195ddd5fd58608b07b9f3897a0019cae/1341",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-0-8h2ck",
+        "worker_start_utc": "2026-11-21T06:09:58.779720Z",
+        "worker_end_utc": "2026-11-21T06:17:08.418714Z",
+        "baseline_free_gib": 70.999,
+        "minimum_free_gib": 53.531,
+        "net_drop_gib": 17.468,
+        "in_window_scrapes": 7,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 1
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "invocation": "7ea84bc8-c421-51fc-90e0-e8d39bf6ad4c",
+        "execution_id": "/uploads/4bdcc5a6-aec4-4a53-a20c-6c87bc66c914/blobs/3769ff425c034866c4e1d3a5e0f19d9724363cacf3326bc02a8f9e0a28bc3e89/1989",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-2-98975",
+        "worker_start_utc": "2026-11-21T06:10:08.573667Z",
+        "worker_end_utc": "2026-11-21T06:18:22.206449Z",
+        "baseline_free_gib": 70.999,
+        "minimum_free_gib": 59.736,
+        "net_drop_gib": 11.263,
+        "in_window_scrapes": 8,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 1
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "invocation": "8a5323e7-3dca-548d-9723-08c194acc4ea",
+        "execution_id": "/uploads/c96ab6ed-a327-47ce-876b-386e067fbc2a/blobs/71227ef3ba7408c15dac5083129f72f8ea9cc4e8b2ea34010100761430ec75e6/1341",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-3-ltpbg",
+        "worker_start_utc": "2026-11-22T00:12:09.292049Z",
+        "worker_end_utc": "2026-11-22T00:17:25.597318Z",
+        "baseline_free_gib": 38.639,
+        "minimum_free_gib": 37.588,
+        "net_drop_gib": 1.051,
+        "in_window_scrapes": 5,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 5
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "invocation": "8a5323e7-3dca-548d-9723-08c194acc4ea",
+        "execution_id": "/uploads/18cfdca2-32f4-40ef-bdf6-6a59a8a8f8e7/blobs/dd9157114dff0e4af156fa0a75abf5644287bacd93f4de3eb60d151f002cc7c7/1989",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-4-fzggg",
+        "worker_start_utc": "2026-11-22T00:12:14.638727Z",
+        "worker_end_utc": "2026-11-22T00:17:48.090296Z",
+        "baseline_free_gib": 70.999,
+        "minimum_free_gib": 59.758,
+        "net_drop_gib": 11.241,
+        "in_window_scrapes": 5,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 1
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "invocation": "9a37c1f0-9d3e-5dd9-b93f-49213f924a61",
+        "execution_id": "/uploads/c161a1fc-dd8a-41a0-a3ee-ade562996216/blobs/0a112ed0718763379ea342a22593dafeabf2cda513c6d66181a87e92d61e1576/1989",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-1-4ljc9",
+        "worker_start_utc": "2026-11-21T06:56:57.091540Z",
+        "worker_end_utc": "2026-11-21T07:00:34.087231Z",
+        "baseline_free_gib": 37.259,
+        "minimum_free_gib": 35.713,
+        "net_drop_gib": 1.546,
+        "in_window_scrapes": 4,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 3
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "invocation": "9a37c1f0-9d3e-5dd9-b93f-49213f924a61",
+        "execution_id": "/uploads/33cb4082-c5d4-4140-868a-1d3610c0f4a0/blobs/54280de7c0472231e498a515a85c872410ce9469d5833c58733d9966560c849c/1341",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-7-wfhvf",
+        "worker_start_utc": "2026-11-21T06:57:00.467108Z",
+        "worker_end_utc": "2026-11-21T07:03:22.360701Z",
+        "baseline_free_gib": 37.189,
+        "minimum_free_gib": 33.695,
+        "net_drop_gib": 3.495,
+        "in_window_scrapes": 6,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 4
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "invocation": "a08f4260-f8b9-5bce-aa3d-6f5ef16b12f4",
+        "execution_id": "/uploads/c876a71a-5b5a-48f6-9e64-a823ee302cab/blobs/d14b1506257e4c5920e51a945fa9dbe09046807cca0c0b035259e3ae980a3337/1341",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-2-mbtzx",
+        "worker_start_utc": "2026-11-22T01:02:32.223667Z",
+        "worker_end_utc": "2026-11-22T01:12:09.918336Z",
+        "baseline_free_gib": 45.065,
+        "minimum_free_gib": 41.774,
+        "net_drop_gib": 3.291,
+        "in_window_scrapes": 9,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 2
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "invocation": "a08f4260-f8b9-5bce-aa3d-6f5ef16b12f4",
+        "execution_id": "/uploads/2e283dda-4a2f-41d9-9717-24f6655d6a39/blobs/7d85b806b04d1543c040e6c99d981442075349ee23b08ebda3dcb485106c7697/1989",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-7-r5wd9",
+        "worker_start_utc": "2026-11-22T01:10:09.249900Z",
+        "worker_end_utc": "2026-11-22T01:13:24.886714Z",
+        "baseline_free_gib": 60.057,
+        "minimum_free_gib": 58.419,
+        "net_drop_gib": 1.639,
+        "in_window_scrapes": 3,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 2
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "invocation": "a7ef92f4-bf3f-532e-9f14-2c79e178d2e5",
+        "execution_id": "/uploads/539d20d7-6478-48db-bbb4-1b349c3935aa/blobs/13148c6c4475cb8bb4b7697ad587e980319339f864870b5accf809557e22599f/1341",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-7-r5wd9",
+        "worker_start_utc": "2026-11-22T01:55:54.122396Z",
+        "worker_end_utc": "2026-11-22T02:02:13.971526Z",
+        "baseline_free_gib": 58.741,
+        "minimum_free_gib": 43.698,
+        "net_drop_gib": 15.043,
+        "in_window_scrapes": 7,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 1
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "invocation": "a7ef92f4-bf3f-532e-9f14-2c79e178d2e5",
+        "execution_id": "/uploads/66903b34-a311-4414-aa67-9c9328fc5d6a/blobs/8a42ee4dbe7f519e3fad2eee5b6f4e6ef2d59258d9eaabff5cd1c3b679fb13f6/1989",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-4-wmkgb",
+        "worker_start_utc": "2026-11-22T01:56:00.356724Z",
+        "worker_end_utc": "2026-11-22T02:02:08.371469Z",
+        "baseline_free_gib": 70.999,
+        "minimum_free_gib": 59.752,
+        "net_drop_gib": 11.247,
+        "in_window_scrapes": 6,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 1
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "invocation": "b7d606a7-b7fb-569f-bd2e-af09dab8976f",
+        "execution_id": "/uploads/e6a6d255-12cd-4878-9ab8-ef9af7be6914/blobs/ef6e1c42984ce33a7994401ce8b36d3e8708539a57821863af968479efbed7de/1341",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-5-ggwh8",
+        "worker_start_utc": "2026-11-21T06:22:06.190882Z",
+        "worker_end_utc": "2026-11-21T06:32:37.131693Z",
+        "baseline_free_gib": 67.387,
+        "minimum_free_gib": 51.094,
+        "net_drop_gib": 16.293,
+        "in_window_scrapes": 11,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 1
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "invocation": "b7d606a7-b7fb-569f-bd2e-af09dab8976f",
+        "execution_id": "/uploads/03b5f6b5-241f-416d-962e-46811d981978/blobs/738304771f9416f929ac3015cc1feaa9fd922c28a8ea9fe59674757b7b648c8a/1989",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-1-4ljc9",
+        "worker_start_utc": "2026-11-21T06:22:51.156673Z",
+        "worker_end_utc": "2026-11-21T06:30:50.470538Z",
+        "baseline_free_gib": 52.71,
+        "minimum_free_gib": 52.71,
+        "net_drop_gib": 0.0,
+        "in_window_scrapes": 8,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 1
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "invocation": "b893d2af-2b0a-501e-9ad6-4b9effc72eda",
+        "execution_id": "/uploads/e53c5188-53ed-4821-bd84-de7ae811db1b/blobs/ef95fef8c06a58385455e6a2555e73ad46e6c138e51898be18c34242142ca0d0/1989",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-4-rpw28",
+        "worker_start_utc": "2026-11-21T06:14:15.686251Z",
+        "worker_end_utc": "2026-11-21T06:24:56.866057Z",
+        "baseline_free_gib": 70.999,
+        "minimum_free_gib": 59.739,
+        "net_drop_gib": 11.26,
+        "in_window_scrapes": 11,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 1
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "invocation": "ba35768b-c2ed-5565-8373-221f3f516185",
+        "execution_id": "/uploads/835f809a-e4ee-4263-924f-3fddc2019ce2/blobs/3e78851f7719075f1f02c1e4654ae1e066f869758023359771d413adf1c6b303/1989",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-2-98975",
+        "worker_start_utc": "2026-11-21T07:23:44.116256Z",
+        "worker_end_utc": "2026-11-21T07:26:56.375380Z",
+        "baseline_free_gib": 35.945,
+        "minimum_free_gib": 35.206,
+        "net_drop_gib": 0.739,
+        "in_window_scrapes": 3,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 9
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "invocation": "ba35768b-c2ed-5565-8373-221f3f516185",
+        "execution_id": "/uploads/b84df647-9db2-4fa1-8dd1-0640b1b2128d/blobs/1adffc2107c5d081564246fe7d20e396188e4d61c9b373d7d1e3ba5c45a1dffa/1341",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-5-ggwh8",
+        "worker_start_utc": "2026-11-21T07:23:43.421908Z",
+        "worker_end_utc": "2026-11-21T07:28:37.209518Z",
+        "baseline_free_gib": 38.992,
+        "minimum_free_gib": 38.572,
+        "net_drop_gib": 0.42,
+        "in_window_scrapes": 5,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 4
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "invocation": "bd2c5ede-2271-5c54-9341-7948c7872231",
+        "execution_id": "/uploads/7e092853-0521-49c4-8ff6-0a151b98206b/blobs/d058579526c07ad02d130148d5fc50503dbcf28c85888fcef9ae4c5b9647ce52/1341",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-7-wfhvf",
+        "worker_start_utc": "2026-11-21T06:48:42.999854Z",
+        "worker_end_utc": "2026-11-21T06:56:41.057443Z",
+        "baseline_free_gib": 40.499,
+        "minimum_free_gib": 37.014,
+        "net_drop_gib": 3.485,
+        "in_window_scrapes": 8,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 3
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "invocation": "bd2c5ede-2271-5c54-9341-7948c7872231",
+        "execution_id": "/uploads/c421c101-4da4-42ab-9cca-4204e9b96ebe/blobs/4b1e2879001d752918e8495c7046d0880f8e57a697e6f550e0dc4ac6c80b364a/1989",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-1-4ljc9",
+        "worker_start_utc": "2026-11-21T06:51:13.592114Z",
+        "worker_end_utc": "2026-11-21T06:56:15.405013Z",
+        "baseline_free_gib": 39.132,
+        "minimum_free_gib": 36.939,
+        "net_drop_gib": 2.193,
+        "in_window_scrapes": 5,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 2
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "invocation": "bfa9bfce-dc40-575c-a29b-a4246f9ccb6e",
+        "execution_id": "/uploads/a8ffc890-2e97-445b-adf0-2e9d3415bf4d/blobs/9912c35e792df6c0c9edf327fa5fc7f119ee63450a4128b7681c8b1620ef3d8d/1989",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-3-vztt2",
+        "worker_start_utc": "2026-11-21T06:37:18.493447Z",
+        "worker_end_utc": "2026-11-21T06:41:25.279917Z",
+        "baseline_free_gib": 42.222,
+        "minimum_free_gib": 40.909,
+        "net_drop_gib": 1.313,
+        "in_window_scrapes": 4,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 2
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "invocation": "bfa9bfce-dc40-575c-a29b-a4246f9ccb6e",
+        "execution_id": "/uploads/067940e1-ff9f-4dd4-82e8-228cd9f1ea93/blobs/e9a25d26a8ef9eb0799facdef7a3f59e7731d9d8ead781d5bafce7f62bbeedad/1341",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-4-rpw28",
+        "worker_start_utc": "2026-11-21T06:36:00.716368Z",
+        "worker_end_utc": "2026-11-21T06:43:01.742419Z",
+        "baseline_free_gib": 44.142,
+        "minimum_free_gib": 40.759,
+        "net_drop_gib": 3.384,
+        "in_window_scrapes": 7,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 2
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "invocation": "cadf44d2-e5bc-5c4d-a95f-f686b7133f12",
+        "execution_id": "/uploads/2984d845-bd34-463e-a650-94a744cc3df4/blobs/8a610cbfc3975125ef467c81fab61652e51a1c282edb457a7fdb89e9c78d9255/1989",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-2-98975",
+        "worker_start_utc": "2026-11-21T07:09:42.147604Z",
+        "worker_end_utc": "2026-11-21T07:13:22.722800Z",
+        "baseline_free_gib": 36.701,
+        "minimum_free_gib": 35.876,
+        "net_drop_gib": 0.825,
+        "in_window_scrapes": 3,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 7
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "invocation": "cadf44d2-e5bc-5c4d-a95f-f686b7133f12",
+        "execution_id": "/uploads/71fe6c57-5db2-4cfc-b0a6-38e5b522d70f/blobs/73cd76c034fa32060b2c066b639b54c58d408d3956a68173c012e0c9324a75bb/1341",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-5-ggwh8",
+        "worker_start_utc": "2026-11-21T07:09:54.902338Z",
+        "worker_end_utc": "2026-11-21T07:16:14.341298Z",
+        "baseline_free_gib": 39.841,
+        "minimum_free_gib": 38.82,
+        "net_drop_gib": 1.021,
+        "in_window_scrapes": 6,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 3
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "invocation": "d361d706-c789-5bb1-8ce2-9d0dad76e4e3",
+        "execution_id": "/uploads/6ffca487-c93f-4c85-909a-e2dc00063a39/blobs/134fccc0a465249d230e6d6d389b641bce749cbc08d9242e9dad563b5e5b909c/1341",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-3-vztt2",
+        "worker_start_utc": "2026-11-21T06:25:51.355220Z",
+        "worker_end_utc": "2026-11-21T06:31:42.631547Z",
+        "baseline_free_gib": 51.678,
+        "minimum_free_gib": 51.022,
+        "net_drop_gib": 0.655,
+        "in_window_scrapes": 6,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 3
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "invocation": "d361d706-c789-5bb1-8ce2-9d0dad76e4e3",
+        "execution_id": "/uploads/e07818c9-d275-4968-ba68-82b6100447c1/blobs/2ec46ca1f6e4b9731c331063e5bb3aa42383faf994182c7bc44a390d55cf1451/1989",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-0-8h2ck",
+        "worker_start_utc": "2026-11-21T06:25:56.578672Z",
+        "worker_end_utc": "2026-11-21T06:31:30.482317Z",
+        "baseline_free_gib": 48.205,
+        "minimum_free_gib": 39.794,
+        "net_drop_gib": 8.411,
+        "in_window_scrapes": 6,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 1
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "invocation": "d70c257a-659b-5fbf-b3ad-ed48f25037e4",
+        "execution_id": "/uploads/33287205-908f-43d8-98f3-e21eeb6e4e64/blobs/6183748454614db63bf8f41aa1145cae227819c19d33deec211dc76afed9b550/1989",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-6-7zs9p",
+        "worker_start_utc": "2026-11-21T06:07:35.887624Z",
+        "worker_end_utc": "2026-11-21T06:11:15.282307Z",
+        "baseline_free_gib": 38.519,
+        "minimum_free_gib": 37.41,
+        "net_drop_gib": 1.109,
+        "in_window_scrapes": 4,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 2
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "invocation": "dd0d60a8-0742-407b-8ed1-06f7f5cae375",
+        "execution_id": "/uploads/6dcbdf85-2775-4280-a1cc-d0431f520f16/blobs/273c0759215642e0d7b326d7ed3e7420e8a6bd26c49fe9b24896a2d59cef1078/1989",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-3-ltpbg",
+        "worker_start_utc": "2026-11-22T03:34:22.241091Z",
+        "worker_end_utc": "2026-11-22T03:37:29.087849Z",
+        "baseline_free_gib": 26.854,
+        "minimum_free_gib": 26.499,
+        "net_drop_gib": 0.355,
+        "in_window_scrapes": 3,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 4
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "invocation": "df3093c2-8ef8-580b-9f54-d3a4a8a3c614",
+        "execution_id": "/uploads/0bdd5b26-e2e5-4d50-910c-d41fbeb311b0/blobs/23e283c3460ee9b618f058ac5513959fb31f37379d59876ee840c24aa34f0a42/1341",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-3-vztt2",
+        "worker_start_utc": "2026-11-21T06:51:13.312984Z",
+        "worker_end_utc": "2026-11-21T06:57:13.892193Z",
+        "baseline_free_gib": 37.833,
+        "minimum_free_gib": 36.994,
+        "net_drop_gib": 0.839,
+        "in_window_scrapes": 6,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 5
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "invocation": "df3093c2-8ef8-580b-9f54-d3a4a8a3c614",
+        "execution_id": "/uploads/dcd83949-11ef-4143-8cc3-3f92e1c3484c/blobs/d0b0a3ca6579b6be53e3f0d8bb0d59be3ebddd3c1144e5ea7fbe9669e80f9d0d/1989",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-6-7zs9p",
+        "worker_start_utc": "2026-11-21T06:53:57.081426Z",
+        "worker_end_utc": "2026-11-21T06:59:26.497649Z",
+        "baseline_free_gib": 30.74,
+        "minimum_free_gib": 28.79,
+        "net_drop_gib": 1.95,
+        "in_window_scrapes": 5,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 7
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "invocation": "e3b2fb3c-4240-5f09-92e5-97b03d9b3113",
+        "execution_id": "/uploads/f7f25b56-ef0f-458c-a36c-95ed6db9a959/blobs/79d6d774a230634107430ea8fddd982d5bf21cc5735071d1877ae0c22f1b645e/1341",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-7-wfhvf",
+        "worker_start_utc": "2026-11-21T06:34:38.844174Z",
+        "worker_end_utc": "2026-11-21T06:41:43.269280Z",
+        "baseline_free_gib": 44.743,
+        "minimum_free_gib": 42.568,
+        "net_drop_gib": 2.175,
+        "in_window_scrapes": 7,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 2
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "invocation": "e3b2fb3c-4240-5f09-92e5-97b03d9b3113",
+        "execution_id": "/uploads/32f9221e-1541-4463-b293-9d82e3df69c6/blobs/85a919cd7e76028b22d49d97404a0f5a679353eb8f25b131262fd575c55ab46f/1989",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-5-ggwh8",
+        "worker_start_utc": "2026-11-21T06:34:43.953832Z",
+        "worker_end_utc": "2026-11-21T06:44:25.474155Z",
+        "baseline_free_gib": 51.16,
+        "minimum_free_gib": 42.467,
+        "net_drop_gib": 8.693,
+        "in_window_scrapes": 10,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 1
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "invocation": "eba4738c-26fe-5160-9bf7-7c479b016271",
+        "execution_id": "/uploads/bec4b574-64c1-4581-a7f1-112c6ab1b8fb/blobs/98491a7ec1b1befe201926eec90ecd8bc03580d546826a98c74c769255e0fe42/1989",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-2-98975",
+        "worker_start_utc": "2026-11-21T06:58:48.917771Z",
+        "worker_end_utc": "2026-11-21T07:02:28.401837Z",
+        "baseline_free_gib": 38.639,
+        "minimum_free_gib": 37.117,
+        "net_drop_gib": 1.523,
+        "in_window_scrapes": 3,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 5
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "invocation": "eba4738c-26fe-5160-9bf7-7c479b016271",
+        "execution_id": "/uploads/dd63fbba-89de-4022-a3eb-abe338b45f6e/blobs/c6a8947c96b71f5ecc24421c4b773bae54973c5172063af5e415320372b2d0d4/1341",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-0-8h2ck",
+        "worker_start_utc": "2026-11-21T06:59:10.920928Z",
+        "worker_end_utc": "2026-11-21T07:04:25.086182Z",
+        "baseline_free_gib": 33.626,
+        "minimum_free_gib": 33.082,
+        "net_drop_gib": 0.545,
+        "in_window_scrapes": 6,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 6
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "invocation": "efc4dc43-f8cf-5de0-ac04-9c6350692751",
+        "execution_id": "/uploads/311c174e-5027-4323-ba45-4ab15f5d815c/blobs/681c427a96c8df59faa1c42c71a8a0f4822942216eda89c01e9d4d60c93fd018/1341",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-0-8h2ck",
+        "worker_start_utc": "2026-11-21T06:31:31.426839Z",
+        "worker_end_utc": "2026-11-21T06:37:51.357848Z",
+        "baseline_free_gib": 39.893,
+        "minimum_free_gib": 37.226,
+        "net_drop_gib": 2.668,
+        "in_window_scrapes": 6,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 3
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "invocation": "f34aa4f8-8d41-5282-b75f-17d3d94fed12",
+        "execution_id": "/uploads/b60a4190-2f09-43b6-a2f3-91254b0670b8/blobs/3e30bff95c4b0871ea74567db2380d0367b2191d975ccf0cac961c5ccdb02f72/1341",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-6-7zs9p",
+        "worker_start_utc": "2026-11-21T06:45:48.474219Z",
+        "worker_end_utc": "2026-11-21T06:53:55.110557Z",
+        "baseline_free_gib": 31.174,
+        "minimum_free_gib": 30.63,
+        "net_drop_gib": 0.544,
+        "in_window_scrapes": 9,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 7
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "invocation": "f827ad61-3bd4-5573-9c39-2305f3e6e10c",
+        "execution_id": "/uploads/769dc200-e90b-446f-843d-d912add9e1df/blobs/2eb835b6301e829edbb9ac62daeef318189c49891b0120954154a07a05d35a40/1341",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-5-ggwh8",
+        "worker_start_utc": "2026-11-21T06:46:02.534079Z",
+        "worker_end_utc": "2026-11-21T06:54:58.870413Z",
+        "baseline_free_gib": 42.784,
+        "minimum_free_gib": 39.664,
+        "net_drop_gib": 3.119,
+        "in_window_scrapes": 9,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 2
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "invocation": "f827ad61-3bd4-5573-9c39-2305f3e6e10c",
+        "execution_id": "/uploads/ce89e03e-49d7-4432-80c5-3160158c32ab/blobs/a937d97172b06b5ec3de7db2f953184b6efc7ebdeed8a56b2890b821cf3a2f6d/1989",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-3-vztt2",
+        "worker_start_utc": "2026-11-21T06:47:09.020079Z",
+        "worker_end_utc": "2026-11-21T06:51:11.791257Z",
+        "baseline_free_gib": 40.183,
+        "minimum_free_gib": 37.719,
+        "net_drop_gib": 2.465,
+        "in_window_scrapes": 4,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 3
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "invocation": "fbe1e795-eeb0-5b89-9cad-b08c48fc5cac",
+        "execution_id": "/uploads/6ae5ce5c-11e5-4637-96eb-90ef35c3658a/blobs/0a186db83c793d34866730bfc2e5aaab139b63cdec3677ba799e304274c92279/1989",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-1-4ljc9",
+        "worker_start_utc": "2026-11-21T07:10:57.135975Z",
+        "worker_end_utc": "2026-11-21T07:15:01.784019Z",
+        "baseline_free_gib": 36.024,
+        "minimum_free_gib": 34.368,
+        "net_drop_gib": 1.656,
+        "in_window_scrapes": 4,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 4
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "invocation": "fbfa8634-4aad-56ff-9aeb-0fb9d8e3cc8c",
+        "execution_id": "/uploads/c509191e-6f52-46a7-a00d-fc720f638742/blobs/f9f9ac65db12dfa7aacddfd7b540329e7cca0309cf46cdc3248943e8007c81f7/1989",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-7-wfhvf",
+        "worker_start_utc": "2026-11-21T06:13:47.480064Z",
+        "worker_end_utc": "2026-11-21T06:24:10.045337Z",
+        "baseline_free_gib": 70.999,
+        "minimum_free_gib": 59.747,
+        "net_drop_gib": 11.252,
+        "in_window_scrapes": 10,
+        "exit_code": 0,
+        "reapi_status_code": 0,
+        "runner_task_number": 1
+      }
+    ],
+    "timed_nonzero_exit_diagnostics": "The four exact test.xml artifacts show setup, HTTP 503 or teardown failures. None mentioned ENOSPC, no space left on device, DiskPressure or insufficient ephemeral storage.",
+    "timed_nonzero_exits": [
+      {
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "invocation": "a08f4260-f8b9-5bce-aa3d-6f5ef16b12f4",
+        "execution_id": "/uploads/e6b2abd6-3837-4f1b-962c-4ca453f6f160/blobs/7d85b806b04d1543c040e6c99d981442075349ee23b08ebda3dcb485106c7697/1989",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-1-zmz9k",
+        "worker_start_utc": "2026-11-22T01:02:27.322928Z",
+        "worker_end_utc": "2026-11-22T01:10:09.057784Z",
+        "baseline_free_gib": 70.999,
+        "minimum_free_gib": 59.986,
+        "net_drop_gib": 11.013,
+        "in_window_scrapes": 8,
+        "exit_code": 1,
+        "reapi_status_code": 0,
+        "runner_task_number": 1
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "invocation": "b893d2af-2b0a-501e-9ad6-4b9effc72eda",
+        "execution_id": "/uploads/37548a1b-40ab-4b4b-96be-f3762b7212c6/blobs/9beb57e5ecf8b947a4a5aaeae98605958b05563cb05c78530a3a98afe0e2b1f3/1341",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-5-ggwh8",
+        "worker_start_utc": "2026-11-21T06:13:54.680106Z",
+        "worker_end_utc": "2026-11-21T06:20:40.885149Z",
+        "baseline_free_gib": 70.999,
+        "minimum_free_gib": 60.473,
+        "net_drop_gib": 10.526,
+        "in_window_scrapes": 7,
+        "exit_code": 1,
+        "reapi_status_code": 0,
+        "runner_task_number": 1
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "invocation": "d70c257a-659b-5fbf-b3ad-ed48f25037e4",
+        "execution_id": "/uploads/a9e8f6a0-e08d-40e3-abca-5eaac0fe6900/blobs/9ef0e6681a5831ada116c819d86eebf9475751fc327a4cdfc42f75a7b16a2fb0/1341",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-1-4ljc9",
+        "worker_start_utc": "2026-11-21T06:07:35.892797Z",
+        "worker_end_utc": "2026-11-21T06:13:06.032453Z",
+        "baseline_free_gib": 53.059,
+        "minimum_free_gib": 51.147,
+        "net_drop_gib": 1.912,
+        "in_window_scrapes": 5,
+        "exit_code": 1,
+        "reapi_status_code": 0,
+        "runner_task_number": 2
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "invocation": "fbfa8634-4aad-56ff-9aeb-0fb9d8e3cc8c",
+        "execution_id": "/uploads/328b700a-37a3-4746-bc8d-928030072b1b/blobs/681c427a96c8df59faa1c42c71a8a0f4822942216eda89c01e9d4d60c93fd018/1341",
+        "worker_pod": "virt-launcher-buildbuddy-kvm-worker-1-4ljc9",
+        "worker_start_utc": "2026-11-21T06:13:45.714507Z",
+        "worker_end_utc": "2026-11-21T06:22:42.742440Z",
+        "baseline_free_gib": 67.013,
+        "minimum_free_gib": 52.71,
+        "net_drop_gib": 14.304,
+        "in_window_scrapes": 9,
+        "exit_code": 1,
+        "reapi_status_code": 0,
+        "runner_task_number": 1
+      }
+    ],
+    "all_worker_disk_scrapes": {
+      "samples": 5520,
+      "guest_pods": 49,
+      "min_free_gib": 20.47,
+      "median_free_gib": 53.3,
+      "samples_below_30_gib": 278
+    },
+    "shadow_threshold_sensitivity": {
+      "comparison": "Same exact replay and 1,441 evaluation ticks, changing only the threshold from 50 GiB to 30 GiB.",
+      "ticks_unchanged": 1439,
+      "ticks_target_decreased_by_one": 2
+    },
+    "shadow_unit_sensitivity": {
+      "shadow_pr": "https://github.com/agentydragon/ducktape/pull/18894",
+      "correction_pr": "https://github.com/agentydragon/ducktape/pull/18898",
+      "correction_source": "https://github.com/agentydragon/ducktape/commit/559c7bef445937a254526036a51200eab6ccc4fa",
+      "window_utc": ["2026-11-21T04:47:00Z", "2026-11-22T04:47:00Z"],
+      "step_seconds": 60,
+      "samples": 1441,
+      "old_threshold_bytes": 50000000000,
+      "corrected_threshold_bytes": 53687091200,
+      "method": "Inline the proposed worker-fit expression into the shadow-target rule and query the same historical Mimir data with the decimal and binary threshold. The 30-second historical full-size headroom probe above retains its original decimal threshold.",
+      "changes": [
+        {
+          "at_utc": "2026-11-22T00:42:00Z",
+          "decimal_workers": 5,
+          "binary_workers": 6
+        }
+      ],
+      "unchanged_examples": [
+        {
+          "at_utc": "2026-11-21T08:06:00Z",
+          "workers": 4
+        },
+        {
+          "at_utc": "2026-11-21T11:09:00Z",
+          "workers": 2
+        }
+      ]
+    }
+  },
+  "kvm_stack_disk_breakdown": {
+    "source_commit": "b1c7910291eb1262c79331a8da0847632b22fd56",
+    "historical_actions": {
+      "vm-first": {
+        "suite": "KubeVirt",
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "invocation": "7ea84bc8-c421-51fc-90e0-e8d39bf6ad4c",
+        "execution_id": "/uploads/4bdcc5a6-aec4-4a53-a20c-6c87bc66c914/blobs/3769ff425c034866c4e1d3a5e0f19d9724363cacf3326bc02a8f9e0a28bc3e89/1989",
+        "outer_net_drop_gib": 11.263,
+        "task_number": 1,
+        "runner_receipt_reports_preceding_action": false,
+        "baseline_outcome": "cold",
+        "before_import": {
+          "inner_used_bytes": 269008896,
+          "overlay_snapshot_bytes": 8192,
+          "inner_containerd_bytes": 151552
+        },
+        "final": {
+          "inner_used_bytes": 6368509952,
+          "overlay_snapshot_bytes": 3389480960,
+          "content_bytes": 2654248960,
+          "inner_containerd_bytes": 6048702464
+        }
+      },
+      "vm-later": {
+        "suite": "KubeVirt",
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "invocation": "f827ad61-3bd4-5573-9c39-2305f3e6e10c",
+        "execution_id": "/uploads/ce89e03e-49d7-4432-80c5-3160158c32ab/blobs/a937d97172b06b5ec3de7db2f953184b6efc7ebdeed8a56b2890b821cf3a2f6d/1989",
+        "outer_net_drop_gib": 2.465,
+        "task_number": 3,
+        "runner_receipt_reports_preceding_action": true,
+        "baseline_outcome": "warm",
+        "before_import": {
+          "inner_used_bytes": 6403334144,
+          "overlay_snapshot_bytes": 3388227584,
+          "content_bytes": 2654244864,
+          "inner_containerd_bytes": 6047371264
+        },
+        "final": {
+          "inner_used_bytes": 6405156864,
+          "overlay_snapshot_bytes": 3389497344,
+          "content_bytes": 2654253056,
+          "inner_containerd_bytes": 6049230848
+        }
+      },
+      "fc-first": {
+        "suite": "Firecracker",
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "invocation": "7ea84bc8-c421-51fc-90e0-e8d39bf6ad4c",
+        "execution_id": "/uploads/4df80213-064c-413d-bbc2-741fad1ee1c4/blobs/f82c1b7c40feb807fa0bfc9aa4914e76195ddd5fd58608b07b9f3897a0019cae/1341",
+        "outer_net_drop_gib": 17.468,
+        "task_number": 1,
+        "runner_receipt_reports_preceding_action": false,
+        "baseline_outcome": "cold",
+        "before_import": {
+          "inner_used_bytes": 268873728,
+          "overlay_snapshot_bytes": 8192,
+          "inner_containerd_bytes": 151552
+        },
+        "final": {
+          "inner_used_bytes": 4412727296,
+          "overlay_snapshot_bytes": 2339287040,
+          "content_bytes": 1773662208,
+          "inner_containerd_bytes": 4116639744
+        }
+      },
+      "fc-later": {
+        "suite": "Firecracker",
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "invocation": "70e4a372-0892-5cc1-8fd7-3120f7bf04c2",
+        "execution_id": "/uploads/c8ee50ee-03ae-4b4c-b87e-ef1ed35ed8e7/blobs/8f876450e1ae1b1a735bdbe22bd21a860eedabaa88e866aa53c497b471c32531/1341",
+        "outer_net_drop_gib": 4.728,
+        "task_number": 3,
+        "runner_receipt_reports_preceding_action": true,
+        "baseline_outcome": "warm",
+        "before_import": {
+          "inner_used_bytes": 4424474624,
+          "overlay_snapshot_bytes": 2338336768,
+          "content_bytes": 1773383680,
+          "inner_containerd_bytes": 4115275776
+        },
+        "final": {
+          "inner_used_bytes": 4426493952,
+          "overlay_snapshot_bytes": 2339733504,
+          "content_bytes": 1773383680,
+          "inner_containerd_bytes": 4117336064
+        }
+      }
+    },
+    "worker_docker_images": {
+      "executor": {
+        "image_id": "sha256:4902cb0f887aff105dbfa15bd69c7c71b69ebc3b065bfc5e1a2252fe5b19c8e7",
+        "layers": {
+          "sha256:81754f5dc87d69b94c676f0252b4d2de8771ff46ec56aefc7abf6e8c4028c905": 133914624,
+          "sha256:99910ec8e0a141bd45eabae9e4479af99f504deb79950b4dc1a4a317b0408777": 286040064,
+          "sha256:9a0742591a3eeb1f1cc27601ccae7108126979517343b579322d5ded4d2b9999": 351248384,
+          "sha256:38634767b2c26e9ef08a3c93c5951c467a4a13107019fb49578bf72bc97fd87d": 28672,
+          "sha256:f6cb6dd69a2b92eb8df73f5e477c8eacbe74a0a7394da95ab063132bee1044ef": 7548928,
+          "sha256:c09343d88bd90c306489994e0251ccaaccbaee9d9d2141f4ce9c374f74d9a01f": 16384,
+          "sha256:c758e5752e14ba9d8386a8045df757668448280670982f0c6104fb713ce2d855": 81588224,
+          "sha256:a90042bd21303bec74d09afc2d8ad9c3e5004d1a4f3fa97f5581fd8309795f72": 13099008,
+          "sha256:df83874bff555478b3721ab55bdeff35f19831b9ab7c6c08f3318e233f5dee29": 7622656,
+          "sha256:f6c5db13e74e41b2b4de6ef0cf7f3dde5f0632d5a50d928af6ca48fe24eeb20b": 72871936,
+          "sha256:c6d507ef9a9d001948e8d75bc1f413473756f7df7df68559a37ecaa6de95e684": 8192,
+          "sha256:fd1173e01f2479ae1b675fdd536c57c71e40e9d6549110c386b80fa33f900b43": 626716672,
+          "sha256:fcc76ff44324ac98bde7555c0787de2a2828f9f45d849c58db7fc84e334769a7": 4096
+        },
+        "allocated_bytes": 1580707840
+      },
+      "rbe": {
+        "image_id": "sha256:eabfaae9d1277143c0a1079569fad0c0e8051413628bcbc540bc80e1a6331c0b",
+        "layers": {
+          "sha256:45a01f98e78ce09e335b30d7a3080eecab7f50dfa0b38ca44a9dee2654ac0530": 87576576,
+          "sha256:81f305257d83c467399eae819b7ad2fb9be35c5de48d08ea157a40f33207a7ec": 126533632,
+          "sha256:d784ee0050b279b26fe5b5fe9a1c0512f2f0533575d58caf7db9b6c9004b27de": 1990656,
+          "sha256:1a3a7a461bed1252c43406dc8a89058903d8755bbcd0a86e9131564fa610099a": 297496576,
+          "sha256:96bf002aa10b8f5e130a27c4bdea4d6a66f3ac0c80ab8fe91d8e3250a3b21d21": 226869248,
+          "sha256:75ce3bbfdd6c492ef475d8b98cc4d805d9e30a3def1ff41373dafb058295c3b0": 402219008,
+          "sha256:df33b7e1621afd4c146cb0b938590ae798a10c62bf4fcba48e8aa9dfe251e2fa": 22994944,
+          "sha256:299aae0acba67177c204a28a6c1dab89cec69652af881235f5ad0ba115964d61": 53248,
+          "sha256:e8be8f6243b41e077e4aacece447c35c484998bda9fba2b51e9dfdf70e9156e5": 204800,
+          "sha256:654e67ec0042767404381858f075311828d5822ff39417a4677cd8a316424a68": 81920,
+          "sha256:c0d62bfd62d4ebdfacdcb1f49d866e40345fc6dcc5bc312e3febc0167731c97a": 537407488,
+          "sha256:33b4bc14aeb3060f2013b4c063f3baeab63cea5e54bdcfa576bc1fa252992d7e": 16384,
+          "sha256:7aa90fda397d2ffb6bdfa7093039aecd36da85e4e861342db28e26641c18a23a": 83787776
+        },
+        "allocated_bytes": 1787232256
+      }
+    },
+    "sources": {
+      "worker_paths": "https://github.com/agentydragon/ducktape/blob/b1c7910291eb1262c79331a8da0847632b22fd56/devinfra/buildbuddy/kvm/worker/executor.yaml#L15-L33",
+      "worker_docker": "https://github.com/agentydragon/ducktape/blob/b1c7910291eb1262c79331a8da0847632b22fd56/devinfra/buildbuddy/kvm/worker/daemon.json",
+      "backing_disk": "https://github.com/agentydragon/ducktape/blob/b1c7910291eb1262c79331a8da0847632b22fd56/agentplane/system_tests/k3s/build_data_disk.py#L13-L34",
+      "worker_mount": "https://github.com/agentydragon/ducktape/blob/b1c7910291eb1262c79331a8da0847632b22fd56/devinfra/buildbuddy/kvm/x/nixos_worker/nixos.nix",
+      "recycling_probe": "https://github.com/agentydragon/ducktape/blob/b1c7910291eb1262c79331a8da0847632b22fd56/agentplane/system_tests/k3s/recycling_probe.py",
+      "guest_workspace": "https://github.com/agentydragon/ducktape/blob/b1c7910291eb1262c79331a8da0847632b22fd56/agentplane/system_tests/vm/block_storage.py",
+      "firecracker_storage": "https://github.com/agentydragon/ducktape/blob/b1c7910291eb1262c79331a8da0847632b22fd56/agentplane/firecracker/host/storage.go#L322-L411",
+      "image_evidence": "https://github.com/agentydragon/ducktape/blob/b1c7910291eb1262c79331a8da0847632b22fd56/devinfra/buildbuddy/debug/kvm_pool_rollout/2026_11_21_kvm_worker_placement.md#image-inventory-and-import-time"
+    },
+    "transfer_receipts": [
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/87fe8cc0-df98-4a8e-97c3-c4ce5ab97b0d/blobs/d7b16275ecfe81d002d595192bcad0546e7f6548384195cb7b510d920bc371d3/1341",
+        "first_assignment": true,
+        "download_bytes": 949342056,
+        "upload_bytes": 14614392
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/dc977b6e-730e-4b5b-9409-c14df02bd54b/blobs/8dfe662cad0d2358a74c238546e99387616699a2726aa80534d0c66025bdd6b8/1989",
+        "first_assignment": true,
+        "download_bytes": 1976892929,
+        "upload_bytes": 37789977
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/8c523a97-204f-44d0-a5bb-8d51f5bf7615/blobs/add8a515dc3f76ea6a2e2984073db6523da195fee47003e244fb1621d3131aac/1341",
+        "first_assignment": true,
+        "download_bytes": 2043581608,
+        "upload_bytes": 14627937
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/323bf42b-c0fa-4447-a015-3964b1251721/blobs/0043ffdb227b3b9644842934b7852c44b19b54bd331ff4a7f3d71717c4cbd6ee/1989",
+        "first_assignment": false,
+        "download_bytes": 28057,
+        "upload_bytes": 48637424
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/b773bad4-d0d6-4bbb-a4cc-a1be216016ec/blobs/f6209f65c08ade295bbcbdc1f97c3915c3cae5294ee05a202faef026f25debad/1341",
+        "first_assignment": true,
+        "download_bytes": 2058442336,
+        "upload_bytes": 15927274
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/f326a9cf-f292-4e78-807c-a2b97d14a407/blobs/80cdff6c2a1b576832757da38253dc9746c4f0ed72886382cb8f4135b5cacc75/1341",
+        "first_assignment": true,
+        "download_bytes": 328060849,
+        "upload_bytes": 16822238
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/64cf87bb-5572-4f3d-a095-a1735f4b3b17/blobs/aa4828094b4a235fca3b947e40512a3bc930256893cd84146f7a5d06aee5bc31/1989",
+        "first_assignment": false,
+        "download_bytes": 302382454,
+        "upload_bytes": 49772821
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/04c169e0-c606-497f-a3c6-c05abcdbf8f9/blobs/0a0744a11144a0d41db75142288ed77cc4c39b772635d021cea52261e9bd41e9/1341",
+        "first_assignment": true,
+        "download_bytes": 965051180,
+        "upload_bytes": 15659220
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/4e9cf88f-4723-490f-b4aa-c82ea6442e5c/blobs/dba332ab252f4c94e63eb60d2e87523d6894ee8a7affd0f8d4f5b5a67a622aa4/1341",
+        "first_assignment": false,
+        "download_bytes": 385265354,
+        "upload_bytes": 22332640
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/9db4b139-06f9-4775-900f-84242c4880ed/blobs/548eac25a7cbd38f3fe6539965ce85097dfadf8ff97d9b4f136102c8bcd48457/1989",
+        "first_assignment": true,
+        "download_bytes": 416040839,
+        "upload_bytes": 35793345
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/4a38d7c7-9240-45ba-9945-81f6a2ee87a4/blobs/9ef0e6681a5831ada116c819d86eebf9475751fc327a4cdfc42f75a7b16a2fb0/1341",
+        "first_assignment": true,
+        "download_bytes": 0,
+        "upload_bytes": 16157080
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/669ba462-0f3e-4cf5-9e92-cd5428cd246a/blobs/26b559ab8da5bf197fb13eb4bd3b7490cb9c59a02ebb080ace8e121dae49f5dc/1341",
+        "first_assignment": true,
+        "download_bytes": 0,
+        "upload_bytes": 14579302
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/6f7ae0a9-79b3-4cb6-9194-eba8a8928f6f/blobs/77ca4f42b31e2105489439238c3b21d0bb1a3242420ba9d25ed9fb8f9c05d43e/1341",
+        "first_assignment": true,
+        "download_bytes": 2043195135,
+        "upload_bytes": 16420453
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/e9a24682-74ad-4366-8ff1-98ccd0380bae/blobs/bac942713638c2aef385f207b0d8eca39492f3ef9a5cee1724828e20c5b4fec3/1989",
+        "first_assignment": true,
+        "download_bytes": 2900124172,
+        "upload_bytes": 37072358
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/eb95b9d6-8c65-43a5-9eb2-5d6eb0e316e8/blobs/a9353a4cf6925674937ff028c023a46d73c3420f403525b4c1096f53db91b53b/1341",
+        "first_assignment": true,
+        "download_bytes": 1500769010,
+        "upload_bytes": 15820740
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/7f7ef043-138f-4b5e-bf78-f097a1332bf6/blobs/b1c8d1377a342e32706518bceb062f06a260919ef3dcc2b46e82b1d9ed77d1c9/1989",
+        "first_assignment": false,
+        "download_bytes": 472894333,
+        "upload_bytes": 49002683
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/a9529494-7643-4141-a6c2-c3ca9d59426d/blobs/26845ffde3df31b40fe0fbfd7c23f75673ffdcceb2e078b52d180ada17a871e2/1341",
+        "first_assignment": false,
+        "download_bytes": 286973,
+        "upload_bytes": 21499848
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/738428d2-5069-43b8-9245-4125b87cafa2/blobs/6101f52056094a55dbca7079f1bd0b7ccc8487c7c92321a67483d930e33a607a/1989",
+        "first_assignment": false,
+        "download_bytes": 277563,
+        "upload_bytes": 46745477
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/3a4392b9-4aa1-4089-b7df-1af8ac1f92e6/blobs/4fef18df9e11f5bf793cd33b04cde73ddb589a77d6df81a84174625c5cfdd9d4/1341",
+        "first_assignment": false,
+        "download_bytes": 415012177,
+        "upload_bytes": 22550205
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/783af886-6378-4880-9b99-fd61813ab82d/blobs/292374217d4e3524512527b9c73f4215ccf717d56af133d25537f062b86444f6/1989",
+        "first_assignment": false,
+        "download_bytes": 390857245,
+        "upload_bytes": 47725437
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/9e45f556-9daa-48f0-b1b8-58a57659a24c/blobs/bfe7390938cefc229bb693b07852447ed513f9d0b1974f51de5d102e367cc3c7/1341",
+        "first_assignment": false,
+        "download_bytes": 132337063,
+        "upload_bytes": 21011791
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/03836627-68fb-4fdc-8fb7-35ecf19058eb/blobs/cfff92ac3520b48b6d7039e428f9690e54dd307a28100a96db0cb66eb7ee4245/1989",
+        "first_assignment": false,
+        "download_bytes": 65853476,
+        "upload_bytes": 46909197
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/4466d59c-edd6-4e10-9c27-33c16a454dd1/blobs/c122b725383416321d9c629e238ed7eb410689f3c1d7ed8082a28b0919911391/1989",
+        "first_assignment": true,
+        "download_bytes": 2945048350,
+        "upload_bytes": 34720857
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/c8ee50ee-03ae-4b4c-b87e-ef1ed35ed8e7/blobs/8f876450e1ae1b1a735bdbe22bd21a860eedabaa88e866aa53c497b471c32531/1341",
+        "first_assignment": false,
+        "download_bytes": 1228,
+        "upload_bytes": 22113418
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/bc02dd94-2eec-481d-b12c-fbdafb6914aa/blobs/4844ebcba756af6a95109fd838161800382404edd16dbe809b58b81f10a84f7a/1341",
+        "first_assignment": false,
+        "download_bytes": 177828135,
+        "upload_bytes": 23728421
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/b7c06a1e-6329-4ff6-b1eb-4a0ee1d0d6cc/blobs/c2d24f2de59a6a50a2581897ea351fdc3d9a6c64f2fd5215ed13236ecf4700c6/1341",
+        "first_assignment": true,
+        "download_bytes": 2043582124,
+        "upload_bytes": 14601415
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/4df80213-064c-413d-bbc2-741fad1ee1c4/blobs/f82c1b7c40feb807fa0bfc9aa4914e76195ddd5fd58608b07b9f3897a0019cae/1341",
+        "first_assignment": true,
+        "download_bytes": 2058432530,
+        "upload_bytes": 14829480
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/4bdcc5a6-aec4-4a53-a20c-6c87bc66c914/blobs/3769ff425c034866c4e1d3a5e0f19d9724363cacf3326bc02a8f9e0a28bc3e89/1989",
+        "first_assignment": true,
+        "download_bytes": 2945327669,
+        "upload_bytes": 35236512
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/c96ab6ed-a327-47ce-876b-386e067fbc2a/blobs/71227ef3ba7408c15dac5083129f72f8ea9cc4e8b2ea34010100761430ec75e6/1341",
+        "first_assignment": false,
+        "download_bytes": 883530521,
+        "upload_bytes": 22500717
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/18cfdca2-32f4-40ef-bdf6-6a59a8a8f8e7/blobs/dd9157114dff0e4af156fa0a75abf5644287bacd93f4de3eb60d151f002cc7c7/1989",
+        "first_assignment": true,
+        "download_bytes": 2941631303,
+        "upload_bytes": 34853580
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/c161a1fc-dd8a-41a0-a3ee-ade562996216/blobs/0a112ed0718763379ea342a22593dafeabf2cda513c6d66181a87e92d61e1576/1989",
+        "first_assignment": false,
+        "download_bytes": 404427498,
+        "upload_bytes": 47660896
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/33cb4082-c5d4-4140-868a-1d3610c0f4a0/blobs/54280de7c0472231e498a515a85c872410ce9469d5833c58733d9966560c849c/1341",
+        "first_assignment": false,
+        "download_bytes": 373666611,
+        "upload_bytes": 22811381
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/c876a71a-5b5a-48f6-9e64-a823ee302cab/blobs/d14b1506257e4c5920e51a945fa9dbe09046807cca0c0b035259e3ae980a3337/1341",
+        "first_assignment": false,
+        "download_bytes": 1119929870,
+        "upload_bytes": 22101417
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/2e283dda-4a2f-41d9-9717-24f6655d6a39/blobs/7d85b806b04d1543c040e6c99d981442075349ee23b08ebda3dcb485106c7697/1989",
+        "first_assignment": false,
+        "download_bytes": 417331510,
+        "upload_bytes": 46467206
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/539d20d7-6478-48db-bbb4-1b349c3935aa/blobs/13148c6c4475cb8bb4b7697ad587e980319339f864870b5accf809557e22599f/1341",
+        "first_assignment": true,
+        "download_bytes": 1013167981,
+        "upload_bytes": 14792297
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/66903b34-a311-4414-aa67-9c9328fc5d6a/blobs/8a42ee4dbe7f519e3fad2eee5b6f4e6ef2d59258d9eaabff5cd1c3b679fb13f6/1989",
+        "first_assignment": true,
+        "download_bytes": 2941671694,
+        "upload_bytes": 34588454
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/e6a6d255-12cd-4878-9ab8-ef9af7be6914/blobs/ef6e1c42984ce33a7994401ce8b36d3e8708539a57821863af968479efbed7de/1341",
+        "first_assignment": true,
+        "download_bytes": 623116807,
+        "upload_bytes": 15853748
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/03b5f6b5-241f-416d-962e-46811d981978/blobs/738304771f9416f929ac3015cc1feaa9fd922c28a8ea9fe59674757b7b648c8a/1989",
+        "first_assignment": true,
+        "download_bytes": 2387661667,
+        "upload_bytes": 35456132
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/e53c5188-53ed-4821-bd84-de7ae811db1b/blobs/ef95fef8c06a58385455e6a2555e73ad46e6c138e51898be18c34242142ca0d0/1989",
+        "first_assignment": true,
+        "download_bytes": 2945327669,
+        "upload_bytes": 36296468
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/835f809a-e4ee-4263-924f-3fddc2019ce2/blobs/3e78851f7719075f1f02c1e4654ae1e066f869758023359771d413adf1c6b303/1989",
+        "first_assignment": false,
+        "download_bytes": 128546195,
+        "upload_bytes": 49756511
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/b84df647-9db2-4fa1-8dd1-0640b1b2128d/blobs/1adffc2107c5d081564246fe7d20e396188e4d61c9b373d7d1e3ba5c45a1dffa/1341",
+        "first_assignment": false,
+        "download_bytes": 194129804,
+        "upload_bytes": 22186646
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/7e092853-0521-49c4-8ff6-0a151b98206b/blobs/d058579526c07ad02d130148d5fc50503dbcf28c85888fcef9ae4c5b9647ce52/1341",
+        "first_assignment": false,
+        "download_bytes": 623106567,
+        "upload_bytes": 22465864
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/c421c101-4da4-42ab-9cca-4204e9b96ebe/blobs/4b1e2879001d752918e8495c7046d0880f8e57a697e6f550e0dc4ac6c80b364a/1989",
+        "first_assignment": false,
+        "download_bytes": 521247061,
+        "upload_bytes": 47113049
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/a8ffc890-2e97-445b-adf0-2e9d3415bf4d/blobs/9912c35e792df6c0c9edf327fa5fc7f119ee63450a4128b7681c8b1620ef3d8d/1989",
+        "first_assignment": false,
+        "download_bytes": 180983361,
+        "upload_bytes": 46286389
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/067940e1-ff9f-4dd4-82e8-228cd9f1ea93/blobs/e9a25d26a8ef9eb0799facdef7a3f59e7731d9d8ead781d5bafce7f62bbeedad/1341",
+        "first_assignment": false,
+        "download_bytes": 261585952,
+        "upload_bytes": 21630309
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/2984d845-bd34-463e-a650-94a744cc3df4/blobs/8a610cbfc3975125ef467c81fab61652e51a1c282edb457a7fdb89e9c78d9255/1989",
+        "first_assignment": false,
+        "download_bytes": 140432051,
+        "upload_bytes": 48543422
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/71fe6c57-5db2-4cfc-b0a6-38e5b522d70f/blobs/73cd76c034fa32060b2c066b639b54c58d408d3956a68173c012e0c9324a75bb/1341",
+        "first_assignment": false,
+        "download_bytes": 598004614,
+        "upload_bytes": 22012902
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/6ffca487-c93f-4c85-909a-e2dc00063a39/blobs/134fccc0a465249d230e6d6d389b641bce749cbc08d9242e9dad563b5e5b909c/1341",
+        "first_assignment": false,
+        "download_bytes": 472894333,
+        "upload_bytes": 21898011
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/e07818c9-d275-4968-ba68-82b6100447c1/blobs/2ec46ca1f6e4b9731c331063e5bb3aa42383faf994182c7bc44a390d55cf1451/1989",
+        "first_assignment": true,
+        "download_bytes": 1914769698,
+        "upload_bytes": 34932483
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/33287205-908f-43d8-98f3-e21eeb6e4e64/blobs/6183748454614db63bf8f41aa1145cae227819c19d33deec211dc76afed9b550/1989",
+        "first_assignment": false,
+        "download_bytes": 247478738,
+        "upload_bytes": 46337305
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/6dcbdf85-2775-4280-a1cc-d0431f520f16/blobs/273c0759215642e0d7b326d7ed3e7420e8a6bd26c49fe9b24896a2d59cef1078/1989",
+        "first_assignment": false,
+        "download_bytes": 46674,
+        "upload_bytes": 48352544
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/0bdd5b26-e2e5-4d50-910c-d41fbeb311b0/blobs/23e283c3460ee9b618f058ac5513959fb31f37379d59876ee840c24aa34f0a42/1341",
+        "first_assignment": false,
+        "download_bytes": 199504414,
+        "upload_bytes": 23153028
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/dcd83949-11ef-4143-8cc3-3f92e1c3484c/blobs/d0b0a3ca6579b6be53e3f0d8bb0d59be3ebddd3c1144e5ea7fbe9669e80f9d0d/1989",
+        "first_assignment": false,
+        "download_bytes": 230265301,
+        "upload_bytes": 50326135
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/f7f25b56-ef0f-458c-a36c-95ed6db9a959/blobs/79d6d774a230634107430ea8fddd982d5bf21cc5735071d1877ae0c22f1b645e/1341",
+        "first_assignment": false,
+        "download_bytes": 120733085,
+        "upload_bytes": 21770008
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/32f9221e-1541-4463-b293-9d82e3df69c6/blobs/85a919cd7e76028b22d49d97404a0f5a679353eb8f25b131262fd575c55ab46f/1989",
+        "first_assignment": true,
+        "download_bytes": 1980578587,
+        "upload_bytes": 35589047
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/bec4b574-64c1-4581-a7f1-112c6ab1b8fb/blobs/98491a7ec1b1befe201926eec90ecd8bc03580d546826a98c74c769255e0fe42/1989",
+        "first_assignment": false,
+        "download_bytes": 411779416,
+        "upload_bytes": 45782854
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/dd63fbba-89de-4022-a3eb-abe338b45f6e/blobs/c6a8947c96b71f5ecc24421c4b773bae54973c5172063af5e415320372b2d0d4/1341",
+        "first_assignment": false,
+        "download_bytes": 381018529,
+        "upload_bytes": 23672229
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/311c174e-5027-4323-ba45-4ab15f5d815c/blobs/681c427a96c8df59faa1c42c71a8a0f4822942216eda89c01e9d4d60c93fd018/1341",
+        "first_assignment": false,
+        "download_bytes": 701459456,
+        "upload_bytes": 22070905
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/b60a4190-2f09-43b6-a2f3-91254b0670b8/blobs/3e30bff95c4b0871ea74567db2380d0367b2191d975ccf0cac961c5ccdb02f72/1341",
+        "first_assignment": false,
+        "download_bytes": 715921379,
+        "upload_bytes": 23620154
+      },
+      {
+        "suite": "test_firecracker",
+        "action": "/uploads/769dc200-e90b-446f-843d-d912add9e1df/blobs/2eb835b6301e829edbb9ac62daeef318189c49891b0120954154a07a05d35a40/1341",
+        "first_assignment": false,
+        "download_bytes": 701479936,
+        "upload_bytes": 21612991
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/ce89e03e-49d7-4432-80c5-3160158c32ab/blobs/a937d97172b06b5ec3de7db2f953184b6efc7ebdeed8a56b2890b821cf3a2f6d/1989",
+        "first_assignment": false,
+        "download_bytes": 732240823,
+        "upload_bytes": 47961206
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/6ae5ce5c-11e5-4637-96eb-90ef35c3658a/blobs/0a186db83c793d34866730bfc2e5aaab139b63cdec3677ba799e304274c92279/1989",
+        "first_assignment": false,
+        "download_bytes": 457365058,
+        "upload_bytes": 48664171
+      },
+      {
+        "suite": "test_vm",
+        "action": "/uploads/c509191e-6f52-46a7-a00d-fc720f638742/blobs/f9f9ac65db12dfa7aacddfd7b540329e7cca0309cf46cdc3248943e8007c81f7/1989",
+        "first_assignment": true,
+        "download_bytes": 2945317429,
+        "upload_bytes": 36260576
+      }
+    ],
+    "largest_inputs": {
+      "vm": {
+        "invocation": "7ea84bc8-c421-51fc-90e0-e8d39bf6ad4c",
+        "unique_files": 7515,
+        "unique_bytes": 2945327669,
+        "largest_files": [
+          {
+            "path": "bazel-out/k8-fastbuild/bin/agentplane/system_tests/suites/test_vm.runfiles/_main/agentplane/system_tests/vm/guest/root_disk.tar",
+            "digest": {
+              "hash": "0b4688de55ea33da653798bca6f46bde052636e07a5362609556c76dd480c1ba",
+              "sizeBytes": "560568320"
+            },
+            "isExecutable": true
+          },
+          {
+            "path": "bazel-out/k8-fastbuild/bin/agentplane/system_tests/suites/test_vm.runfiles/+image_pins+kubevirt_virt_launcher_linux_amd64/layout/blobs/sha256/d6315e4bb7c91761df69392edac18ffaf789fac56200aff5e0d3922ba133c485",
+            "digest": {
+              "hash": "d6315e4bb7c91761df69392edac18ffaf789fac56200aff5e0d3922ba133c485",
+              "sizeBytes": "383675392"
+            },
+            "isExecutable": true
+          },
+          {
+            "path": "bazel-out/k8-fastbuild/bin/agentplane/system_tests/suites/test_vm.runfiles/+image_pins+kubevirt_virt_handler_linux_amd64/layout/blobs/sha256/2e9ffaf2dd16b662e9f23caaa5d1ae9a8f58f7b1e7f99242bc2c7db42f3e2216",
+            "digest": {
+              "hash": "2e9ffaf2dd16b662e9f23caaa5d1ae9a8f58f7b1e7f99242bc2c7db42f3e2216",
+              "sizeBytes": "176030208"
+            },
+            "isExecutable": true
+          },
+          {
+            "path": "bazel-out/k8-fastbuild/bin/agentplane/system_tests/suites/test_vm.runfiles/+image_pins+kubevirt_virt_launcher_linux_amd64/layout/blobs/sha256/99f4381c1cbf676f26a538fe09ce70ee9760f7397692158f813ee9fbe9d0e7b3",
+            "digest": {
+              "hash": "99f4381c1cbf676f26a538fe09ce70ee9760f7397692158f813ee9fbe9d0e7b3",
+              "sizeBytes": "143194112"
+            },
+            "isExecutable": true
+          },
+          {
+            "path": "bazel-out/k8-fastbuild/bin/agentplane/system_tests/suites/test_vm.runfiles/+image_pins+kubevirt_virt_operator_linux_amd64/layout/blobs/sha256/cb862572df62ad009569fca15accca6a32e320d56cb3ee5336a203347bee77a9",
+            "digest": {
+              "hash": "cb862572df62ad009569fca15accca6a32e320d56cb3ee5336a203347bee77a9",
+              "sizeBytes": "125009920"
+            },
+            "isExecutable": true
+          },
+          {
+            "path": "bazel-out/k8-fastbuild/bin/agentplane/system_tests/suites/test_vm.runfiles/_main/agentplane/system_tests/vm/test_runner_disk_bin.tar",
+            "digest": {
+              "hash": "6cd56291a85a8cc32ebdf3ce8f7c417ec2d8ce3d6309882934ffcfa860af5c60",
+              "sizeBytes": "90490880"
+            },
+            "isExecutable": true
+          },
+          {
+            "path": "bazel-out/k8-fastbuild/bin/agentplane/system_tests/suites/test_vm.runfiles/_main/agentplane/system_tests/vm/test_runner_disk_image/blobs/sha256/b78af69b0788c53dc23989b5f8d38147136dbee6185af3998a859a3afa075d3a",
+            "digest": {
+              "hash": "b78af69b0788c53dc23989b5f8d38147136dbee6185af3998a859a3afa075d3a",
+              "sizeBytes": "90490880"
+            },
+            "isExecutable": true
+          },
+          {
+            "path": "bazel-out/k8-fastbuild/bin/agentplane/system_tests/suites/test_vm.runfiles/rules_python++python+python_3_14_x86_64-unknown-linux-gnu/bin/python",
+            "digest": {
+              "hash": "a3c5f01bf9e5cd625b74fd700bb58a579c82df228c50b57d2485d006582a8b01",
+              "sizeBytes": "78816800"
+            },
+            "isExecutable": true
+          }
+        ]
+      },
+      "firecracker": {
+        "invocation": "1267a3b9-601b-5ff8-8a09-63303e9a605d",
+        "unique_files": 7467,
+        "unique_bytes": 2058442336,
+        "largest_files": [
+          {
+            "path": "bazel-out/k8-fastbuild/bin/agentplane/system_tests/suites/test_firecracker.runfiles/_main/agentplane/system_tests/firecracker/boot_image/blobs/sha256/21f5d64c516e29b45b9438007add238e3b7a98e5136745114323bd700e954868",
+            "digest": {
+              "hash": "21f5d64c516e29b45b9438007add238e3b7a98e5136745114323bd700e954868",
+              "sizeBytes": "747991040"
+            },
+            "isExecutable": true
+          },
+          {
+            "path": "bazel-out/k8-fastbuild/bin/agentplane/system_tests/suites/test_firecracker.runfiles/rules_python++python+python_3_14_x86_64-unknown-linux-gnu/bin/python",
+            "digest": {
+              "hash": "a3c5f01bf9e5cd625b74fd700bb58a579c82df228c50b57d2485d006582a8b01",
+              "sizeBytes": "78816800"
+            },
+            "isExecutable": true
+          },
+          {
+            "path": "bazel-out/k8-fastbuild/bin/agentplane/system_tests/suites/test_firecracker.runfiles/+artifact_pins+k3s_linux_amd64/file/k3s",
+            "digest": {
+              "hash": "ef1df26b26276c0f6d962391c94e12f9362d1f1e30ec7a7926e9ddb84b0d66ce",
+              "sizeBytes": "78000290"
+            },
+            "isExecutable": true
+          },
+          {
+            "path": "bazel-out/k8-fastbuild/bin/agentplane/system_tests/suites/test_firecracker.runfiles/_main/agentplane/firecracker/image/blobs/sha256/115b5cb519c185b420247dd1222a50a3bb94a6c54c21414bd58ed2ba1caa8ce8",
+            "digest": {
+              "hash": "115b5cb519c185b420247dd1222a50a3bb94a6c54c21414bd58ed2ba1caa8ce8",
+              "sizeBytes": "75533312"
+            },
+            "isExecutable": true
+          },
+          {
+            "path": "bazel-out/k8-fastbuild/bin/agentplane/system_tests/suites/test_firecracker.runfiles/_main/agentplane/env/images/disk_bin.tar",
+            "digest": {
+              "hash": "37eb48ad105346e44404f9805875904992625b822c9fc72c50a4dc19d3ad5510",
+              "sizeBytes": "75110400"
+            },
+            "isExecutable": true
+          },
+          {
+            "path": "bazel-out/k8-fastbuild/bin/agentplane/system_tests/suites/test_firecracker.runfiles/_main/agentplane/env/images/disk_image/blobs/sha256/efa7a0817be73590167550b2c4c5dfff8600a418ed55af6e49881d7e20b666c3",
+            "digest": {
+              "hash": "efa7a0817be73590167550b2c4c5dfff8600a418ed55af6e49881d7e20b666c3",
+              "sizeBytes": "75110400"
+            },
+            "isExecutable": true
+          },
+          {
+            "path": "bazel-out/k8-fastbuild/bin/agentplane/system_tests/suites/test_firecracker.runfiles/_main/agentplane/action_service/service_binary_layer.tar",
+            "digest": {
+              "hash": "56f4975aae98066a32005b876ccd0211fb75c47801cbf46f90e9d9fa088728a6",
+              "sizeBytes": "66467840"
+            },
+            "isExecutable": true
+          },
+          {
+            "path": "bazel-out/k8-fastbuild/bin/agentplane/system_tests/suites/test_firecracker.runfiles/_main/agentplane/app/app_binary_layer.tar",
+            "digest": {
+              "hash": "1ad6120355f8b5e06f606973a711f5bd35f9fb8bb4bc24556644116dccbe5341",
+              "sizeBytes": "65802240"
+            },
+            "isExecutable": true
+          }
+        ]
+      }
+    },
+    "host_summary": {
+      "vm": {
+        "backing_allocated_bytes": 6585667584,
+        "inner_used_bytes": 6370648064,
+        "local_path_bytes": 20635648,
+        "retained_backing_bytes": 6585946112,
+        "retained_inner_bytes": 6353592320,
+        "content_bytes": 2650656768,
+        "overlay_snapshot_bytes": 3384606720,
+        "retained_state": "paused",
+        "fs_loop_discard_max_bytes": null,
+        "peak_guest_workspace_logical_bytes": 21474836480,
+        "peak_guest_workspace_allocated_bytes": 147390464,
+        "peak_guest_qcow2_allocated_bytes": 802816,
+        "outer_at_selected_sample": {
+          "utc": "2026-11-22T05:31:48.350073795Z",
+          "bytes": 15181139968,
+          "outer_containerd_bytes": 229376,
+          "docker_bytes": 10588725248,
+          "filecache_bytes": 4520357888,
+          "worker_shared_k3s_bytes": 4096,
+          "unique_workspace_bytes": 72609792,
+          "workspace_gross_bytes": 2985943040,
+          "owned_upperdirs_bytes": [7216271360, 36864]
+        }
+      },
+      "firecracker": {
+        "backing_allocated_bytes": 14777552896,
+        "inner_used_bytes": 9688498176,
+        "local_path_bytes": 5344157696,
+        "retained_backing_bytes": 14777798656,
+        "retained_inner_bytes": 4378783744,
+        "content_bytes": 1758851072,
+        "overlay_snapshot_bytes": 2323197952,
+        "retained_state": "paused",
+        "fs_loop_discard_max_bytes": 4294966784,
+        "peak_ram_checkpoint_allocated_bytes": 3221237760,
+        "peak_live_root_allocated_bytes": 617373696,
+        "peak_root_copies_allocated_bytes": 1852121088,
+        "outer_at_selected_sample": {
+          "utc": "2026-11-22T05:38:24.757755300Z",
+          "bytes": 30200242176,
+          "outer_containerd_bytes": 278528,
+          "docker_bytes": 25559748608,
+          "filecache_bytes": 4555296768,
+          "worker_shared_k3s_bytes": 4096,
+          "unique_workspace_bytes": 84865024,
+          "workspace_gross_bytes": 2144768000,
+          "owned_upperdirs_bytes": [15251689472, 6935470080, 36864]
+        }
+      },
+      "shared_workspace_bytes": 2913333248,
+      "unique_workspace_bytes": 72609792
+    },
+    "manual_actions": {
+      "vm": {
+        "invocation": "1b5b6635-d8b1-48ed-9cc4-313684260dff",
+        "bbr_checkout_commit": "b1c7910291eb1262c79331a8da0847632b22fd56",
+        "bbr_patch_digest": "06639ca22e1114f0add7f63083211913c50a59258608149f33a2aaf0993c2b4c",
+        "execution_id": "/uploads/0686d872-7e6b-4bfd-8a9d-61b1840ced16/blobs/e6292b381c1b57b771411363301ffe8ab618badda4477710a0eb0f4fee62c9e0/1986",
+        "native_stage": "COMPLETED",
+        "process_start_utc": "2026-11-22T05:27:58.444747Z",
+        "process_end_utc": "2026-11-22T05:32:31.166234Z",
+        "outer_start_utc": "2026-11-22T05:27:48.974746Z",
+        "outer_end_utc": "2026-11-22T05:32:32.019627Z",
+        "exit_code": 0,
+        "status_code": 0,
+        "task_number": "1"
+      },
+      "firecracker": {
+        "invocation": "a4e801c6-1b9f-44e3-bf83-f3bf94e977a7",
+        "bbr_checkout_commit": "b1c7910291eb1262c79331a8da0847632b22fd56",
+        "bbr_patch_digest": "06639ca22e1114f0add7f63083211913c50a59258608149f33a2aaf0993c2b4c",
+        "execution_id": "/uploads/a9fb95cf-04d9-4526-94ab-2ff2c170bae2/blobs/a02c0cbb97cc3f8501f36449eb5997de8bda70f3b7633f8dc2bc71a2189a02c4/1360",
+        "native_stage": "COMPLETED",
+        "process_start_utc": "2026-11-22T05:32:33.374811Z",
+        "process_end_utc": "2026-11-22T05:38:54.710757Z",
+        "outer_start_utc": "2026-11-22T05:32:32.693783Z",
+        "outer_end_utc": "2026-11-22T05:38:55.394732Z",
+        "exit_code": 0,
+        "status_code": 0,
+        "task_number": "1"
+      }
+    },
+    "cleanup_runs": {
+      "vm": {
+        "invocation": "ce417e4f-f689-432d-a280-75125a8b070e",
+        "resume_task_number": "2",
+        "runner_id_matches": true,
+        "discard_requested": true,
+        "exit_code": 0,
+        "collection_only": true
+      },
+      "firecracker": {
+        "invocation": "e36b224c-7617-4ec1-a7c5-c9da324ce31b",
+        "resume_task_number": "2",
+        "runner_id_matches": true,
+        "discard_requested": true,
+        "exit_code": 0,
+        "collection_only": true
+      }
+    },
+    "earlier_trim_attempt": {
+      "invocation": "6472ac44-f4db-4ad4-9394-d1b11ab0ad11",
+      "failure": "Both scenarios reached pytest teardown. The trim command was absent from the Bazel test PATH and never executed. The runner followed its owned disposal path."
+    },
+    "method": {
+      "historical_examples": "Sampled worker net drop comes from kvm_work_disk_requirements. The BuildBuddy test outputs storage/before-import and storage/final provide GNU df -B1 for the nested ext4 and GNU du -B1 -x for its containerd store. recycled-runner.json establishes whether each runner had a prior action.",
+      "transfers": "BuildBuddy execution response ioStats fileDownloadSizeBytes and fileUploadSizeBytes. Largest inputs come from exact GetExecutionDownloads receipts, deduplicated by digest.",
+      "manual_routing": "The source worktree starts on the recorded devel commit. A unique recycling key and zero-length ownership marker isolate the manual test runner. No production config changed. Native TestRunner receipts and the guest scheduler receipt identify the exact SSD worker. One active slot serializes the two fresh fixtures.",
+      "observer": "Trusted QEMU guest agent reads /buildbuddy inside the worker VM. Filesystem totals use df -B1, and outer category totals use one ordered du -sx -B1 invocation with FileCache before remotebuilds so shared inodes count in FileCache. Independent workspace du measures gross blocks.",
+      "loop_files": "File allocation equals Linux st_blocks times stat block unit; filesystem use comes from statfs. The process root is inspected only for the temporary TestRunner ownership marker. tmp workspace backing files are separate from their mounts. Where kubelet bind mounts refer to the same PVC files, the PVC tree is counted once.",
+      "docker_image_layers": "Docker inspect provides DiffIDs. Reconstruct overlay2 ChainIDs and resolve the layerdb cache IDs, then read each layer's diff allocation. These two base image IDs had no shared ChainID; their layer sum is within Docker store allocation.",
+      "limits": "Finite unsynchronized storage reads can miss peaks or observe files changing during scans. Metadata and deleted-but-open files can account for filesystem use outside path sums. The worker PVC figures do not establish physical allocation on the Kubernetes node or backend."
+    },
+    "selected_allocation_samples": {
+      "vm_active_earliest": {
+        "utc": "2026-11-22T05:28:12.094044200Z",
+        "outer_used_bytes": 8518799360,
+        "state": "running",
+        "guest_disks": [],
+        "workspace_block_devices": [],
+        "backing_allocated_bytes": 269508608,
+        "backing_logical_bytes": 34359738368,
+        "overlay_snapshot_bytes": 8192,
+        "qcow2_allocated_bytes": 0
+      },
+      "vm_peak_inner": {
+        "utc": "2026-11-22T05:31:39.547361898Z",
+        "outer_used_bytes": 15177957376,
+        "state": "running",
+        "guest_disks": [],
+        "workspace_block_devices": [
+          {
+            "logical_bytes": 10737418240,
+            "allocated_bytes": 73695232
+          },
+          {
+            "logical_bytes": 10737418240,
+            "allocated_bytes": 73695232
+          }
+        ],
+        "backing_allocated_bytes": 6571794432,
+        "backing_logical_bytes": 34359738368,
+        "inner_used_bytes": 6370648064,
+        "inner_available_bytes": 27114332160,
+        "content_bytes": 2650656768,
+        "overlay_snapshot_bytes": 3387019264,
+        "local_path_bytes": 20635648,
+        "qcow2_allocated_bytes": 802816
+      },
+      "vm_peak_backing": {
+        "utc": "2026-11-22T05:32:24.284064960Z",
+        "outer_used_bytes": 15058075648,
+        "state": "running",
+        "guest_disks": [],
+        "workspace_block_devices": [
+          {
+            "logical_bytes": 10737418240,
+            "allocated_bytes": 73695232
+          },
+          {
+            "logical_bytes": 10737418240,
+            "allocated_bytes": 73695232
+          }
+        ],
+        "backing_allocated_bytes": 6585667584,
+        "backing_logical_bytes": 34359738368,
+        "inner_used_bytes": 6352310272,
+        "inner_available_bytes": 27132669952,
+        "content_bytes": 2650656768,
+        "overlay_snapshot_bytes": 3384606720,
+        "local_path_bytes": 4096,
+        "qcow2_allocated_bytes": 0
+      },
+      "vm_after_cleanup": {
+        "utc": "2026-11-22T05:32:33.001736761Z",
+        "outer_used_bytes": 14863503360,
+        "state": "paused",
+        "guest_disks": [],
+        "workspace_block_devices": [],
+        "backing_allocated_bytes": 6585946112,
+        "backing_logical_bytes": 34359738368,
+        "inner_used_bytes": 6353592320,
+        "inner_available_bytes": 27131387904,
+        "content_bytes": 2650656768,
+        "overlay_snapshot_bytes": 3384606720,
+        "local_path_bytes": 4096,
+        "qcow2_allocated_bytes": 0
+      },
+      "firecracker_active_earliest": {
+        "utc": "2026-11-22T05:32:42.741096961Z",
+        "outer_used_bytes": 14939373568,
+        "state": "running",
+        "guest_disks": [],
+        "workspace_block_devices": [],
+        "backing_allocated_bytes": 6701056,
+        "backing_logical_bytes": 34359738368,
+        "qcow2_allocated_bytes": 0
+      },
+      "firecracker_peak_inner": {
+        "utc": "2026-11-22T05:36:45.039398608Z",
+        "outer_used_bytes": 25941487616,
+        "state": "running",
+        "guest_disks": [
+          {
+            "logical_bytes": 1610612736,
+            "allocated_bytes": 1610616832,
+            "category": "other",
+            "file": "memory"
+          },
+          {
+            "logical_bytes": 20577,
+            "allocated_bytes": 24576,
+            "category": "other",
+            "file": "vmstate"
+          },
+          {
+            "logical_bytes": 1610612736,
+            "allocated_bytes": 1610620928,
+            "category": "generation",
+            "file": "memory"
+          },
+          {
+            "logical_bytes": 8589934592,
+            "allocated_bytes": 8597504,
+            "category": "generation",
+            "file": "workspace"
+          },
+          {
+            "logical_bytes": 75091968,
+            "allocated_bytes": 74813440,
+            "category": "generation",
+            "file": "runner"
+          },
+          {
+            "logical_bytes": 718233600,
+            "allocated_bytes": 617373696,
+            "category": "generation",
+            "file": "rootfs"
+          },
+          {
+            "logical_bytes": 2147483648,
+            "allocated_bytes": 8802304,
+            "category": "generation",
+            "file": "state"
+          },
+          {
+            "logical_bytes": 25672,
+            "allocated_bytes": 28672,
+            "category": "generation",
+            "file": "vmstate"
+          },
+          {
+            "logical_bytes": 8589934592,
+            "allocated_bytes": 8757248,
+            "category": "generation",
+            "file": "workspace"
+          },
+          {
+            "logical_bytes": 30736384,
+            "allocated_bytes": 30646272,
+            "category": "generation",
+            "file": "runner"
+          },
+          {
+            "logical_bytes": 718233600,
+            "allocated_bytes": 617373696,
+            "category": "generation",
+            "file": "rootfs"
+          },
+          {
+            "logical_bytes": 75091968,
+            "allocated_bytes": 74813440,
+            "category": "live",
+            "file": "runner.img"
+          },
+          {
+            "logical_bytes": 718233600,
+            "allocated_bytes": 617373696,
+            "category": "live",
+            "file": "rootfs.ext4"
+          },
+          {
+            "logical_bytes": 2147483648,
+            "allocated_bytes": 11264000,
+            "category": "other",
+            "file": "disk.img"
+          },
+          {
+            "logical_bytes": 8589934592,
+            "allocated_bytes": 8757248,
+            "category": "other",
+            "file": "disk.img"
+          }
+        ],
+        "workspace_block_devices": [],
+        "backing_allocated_bytes": 10526703616,
+        "backing_logical_bytes": 34359738368,
+        "inner_used_bytes": 9688498176,
+        "inner_available_bytes": 23796482048,
+        "loop_discard_max_bytes": 4294966784,
+        "content_bytes": 1758851072,
+        "overlay_snapshot_bytes": 2324496384,
+        "local_path_bytes": 5344157696,
+        "qcow2_allocated_bytes": 0
+      },
+      "firecracker_peak_backing": {
+        "utc": "2026-11-22T05:38:50.855638960Z",
+        "outer_used_bytes": 30072094720,
+        "state": "running",
+        "guest_disks": [],
+        "workspace_block_devices": [],
+        "backing_allocated_bytes": 14777552896,
+        "backing_logical_bytes": 34359738368,
+        "inner_used_bytes": 4379598848,
+        "inner_available_bytes": 29105381376,
+        "loop_discard_max_bytes": 4294966784,
+        "content_bytes": 1758851072,
+        "overlay_snapshot_bytes": 2323787776,
+        "local_path_bytes": 4096,
+        "qcow2_allocated_bytes": 0
+      },
+      "firecracker_after_cleanup": {
+        "utc": "2026-11-22T05:38:56.297591040Z",
+        "outer_used_bytes": 30002139136,
+        "state": "paused",
+        "guest_disks": [],
+        "workspace_block_devices": [],
+        "backing_allocated_bytes": 14777798656,
+        "backing_logical_bytes": 34359738368,
+        "inner_used_bytes": 4378783744,
+        "inner_available_bytes": 29106196480,
+        "loop_discard_max_bytes": 4294966784,
+        "content_bytes": 1758851072,
+        "overlay_snapshot_bytes": 2323197952,
+        "local_path_bytes": 4096,
+        "qcow2_allocated_bytes": 0
+      }
+    },
+    "manual_window_utc": [
+      "2026-11-22T05:28:12.094044200Z",
+      "2026-11-22T05:38:56.297591040Z"
+    ],
+    "findings": {
+      "guest_disks": "The two 10 GiB KubeVirt workspace files used at most 141 MiB in total. The four guest QCOW2 overlays used less than 1 MiB. Firecracker\u2019s live root copy used 589 MiB. At the busiest observed checkpoint the old RAM snapshot and the new capture together took 3.00 GiB. The live and checkpoint root copies occupied up to 1.72 GiB together.",
+      "shared_disk": "The unshared BuildBuddy executor and RBE action image layers occupied 1.47 GiB and 1.66 GiB. At the KubeVirt point the worker held 4.21 GiB in the input cache and 9.86 GiB in Docker including the image layers and the runner\u2019s backing file. Docker accounts for the outer backing file once. The inner image stores, PVCs and snapshots occupy blocks within it.",
+      "reclaim": "Trim Firecracker\u2019s private ext4 after workload cleanup. In one disposable full-suite repeat, trim returned 9.45 GiB of worker allocation in 0.44s (13.65 GiB to 4.20 GiB) with inner free space unchanged. A teardown trim returns space for the next assignment. The trial disposed the runner after trimming. Verify warm reuse after trim and measure runtime peak before changing the disk request.",
+      "diagnostic_method": "22 November UTC. Read-only worker samples roughly every nine seconds on one SSD worker. The temporary Docker runner keys forced fresh K3s fixtures while the outer worker could reuse cached data. A TestRunner result confirmed each scenario independently of the outer Bazel result. The first KubeVirt invocation hit a separate Mypy scheduling error. Reported peaks are sampled maxima. QGA reads report guest filesystem allocation. Physical allocation on the storage node is outside this study."
+    },
+    "trim_trial": {
+      "invocation": "d1619fea-e730-497e-84db-d18faebf56a1",
+      "bbr_checkout_commit": "4e06d0bbf646fbeb671f3818aa3d10d4564bbcc0",
+      "bbr_patch_digest": "26f9e14d46d903b0eeb46e454455bc080379afaa5f40433fdaee198b673a9472",
+      "test_runner_exit_code": 0,
+      "cases_passed": 2,
+      "fixture": "cold",
+      "process_start_utc": "2026-11-22T05:54:00.913596752Z",
+      "process_end_utc": "2026-11-22T06:00:00.684053030Z",
+      "dispose_requested": true,
+      "returned_worker_bytes": 10145415168,
+      "measurement": "Across /usr/sbin/fstrim after workload cleanup and before private runner disposal. st_blocks * 512 on the sparse backing determines actual reclaimed allocation; util-linux verbose output measures discard extents submitted.",
+      "before": {
+        "backing_bytes": 14652747776,
+        "logical_bytes": 34359738368,
+        "inner_free_bytes": 29105147904
+      },
+      "after": {
+        "backing_bytes": 4507332608,
+        "logical_bytes": 34359738368,
+        "inner_free_bytes": 29105147904
+      },
+      "seconds": 0.4387702980002359,
+      "returncode": 0,
+      "stdout": "/var/lib/k3s-recycled: 27.1 GiB (29103013888 bytes) trimmed\n",
+      "stderr": ""
+    }
   }
 }
