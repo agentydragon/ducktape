@@ -508,121 +508,7 @@
                     "name": "Value",
                     "type": "number",
                     "config": {
-                      "displayNameFromDS": "registered_to_scheduler"
-                    },
-                    "labels": {
-                      "health_check_name": "registered_to_scheduler"
-                    }
-                  }
-                ]
-              },
-              "data": {
-                "$recorded_ref": "value_004"
-              }
-            },
-            {
-              "schema": {
-                "refId": "A",
-                "fields": [
-                  {
-                    "name": "Time",
-                    "type": "time",
-                    "config": {
-                      "interval": 3600000
-                    }
-                  },
-                  {
-                    "name": "Value",
-                    "type": "number",
-                    "config": {
-                      "displayNameFromDS": "executor_disk_usage"
-                    },
-                    "labels": {
-                      "health_check_name": "executor_disk_usage"
-                    }
-                  }
-                ]
-              },
-              "data": {
-                "$recorded_ref": "value_004"
-              }
-            },
-            {
-              "schema": {
-                "refId": "A",
-                "fields": [
-                  {
-                    "name": "Time",
-                    "type": "time",
-                    "config": {
-                      "interval": 3600000
-                    }
-                  },
-                  {
-                    "name": "Value",
-                    "type": "number",
-                    "config": {
-                      "displayNameFromDS": "grpc_app_connection"
-                    },
-                    "labels": {
-                      "health_check_name": "grpc_app_connection"
-                    }
-                  }
-                ]
-              },
-              "data": {
-                "$recorded_ref": "value_004"
-              }
-            },
-            {
-              "schema": {
-                "refId": "A",
-                "fields": [
-                  {
-                    "name": "Time",
-                    "type": "time",
-                    "config": {
-                      "interval": 3600000
-                    }
-                  },
-                  {
-                    "name": "Value",
-                    "type": "number",
-                    "config": {
-                      "displayNameFromDS": "grpc_cache_connection"
-                    },
-                    "labels": {
-                      "health_check_name": "grpc_cache_connection"
-                    }
-                  }
-                ]
-              },
-              "data": {
-                "$recorded_ref": "value_004"
-              }
-            }
-          ]
-        }
-      },
-      "2": {
-        "A": {
-          "frames": [
-            {
-              "schema": {
-                "refId": "A",
-                "fields": [
-                  {
-                    "name": "Time",
-                    "type": "time",
-                    "config": {
-                      "interval": 3600000
-                    }
-                  },
-                  {
-                    "name": "Value",
-                    "type": "number",
-                    "config": {
-                      "displayNameFromDS": "Executor"
+                      "displayNameFromDS": "Executor scrape"
                     }
                   }
                 ]
@@ -650,13 +536,125 @@
                     "name": "Value",
                     "type": "number",
                     "config": {
-                      "displayNameFromDS": "Guest"
+                      "displayNameFromDS": "Guest scrape"
                     }
                   }
                 ]
               },
               "data": {
                 "$recorded_ref": "value_006"
+              }
+            }
+          ]
+        },
+        "C": {
+          "frames": [
+            {
+              "schema": {
+                "refId": "C",
+                "fields": [
+                  {
+                    "name": "Time",
+                    "type": "time",
+                    "config": {
+                      "interval": 3600000
+                    }
+                  },
+                  {
+                    "name": "Value",
+                    "type": "number",
+                    "config": {
+                      "displayNameFromDS": "registered_to_scheduler"
+                    },
+                    "labels": {
+                      "health_check_name": "registered_to_scheduler"
+                    }
+                  }
+                ]
+              },
+              "data": {
+                "$recorded_ref": "value_004"
+              }
+            },
+            {
+              "schema": {
+                "refId": "C",
+                "fields": [
+                  {
+                    "name": "Time",
+                    "type": "time",
+                    "config": {
+                      "interval": 3600000
+                    }
+                  },
+                  {
+                    "name": "Value",
+                    "type": "number",
+                    "config": {
+                      "displayNameFromDS": "executor_disk_usage"
+                    },
+                    "labels": {
+                      "health_check_name": "executor_disk_usage"
+                    }
+                  }
+                ]
+              },
+              "data": {
+                "$recorded_ref": "value_004"
+              }
+            },
+            {
+              "schema": {
+                "refId": "C",
+                "fields": [
+                  {
+                    "name": "Time",
+                    "type": "time",
+                    "config": {
+                      "interval": 3600000
+                    }
+                  },
+                  {
+                    "name": "Value",
+                    "type": "number",
+                    "config": {
+                      "displayNameFromDS": "grpc_app_connection"
+                    },
+                    "labels": {
+                      "health_check_name": "grpc_app_connection"
+                    }
+                  }
+                ]
+              },
+              "data": {
+                "$recorded_ref": "value_004"
+              }
+            },
+            {
+              "schema": {
+                "refId": "C",
+                "fields": [
+                  {
+                    "name": "Time",
+                    "type": "time",
+                    "config": {
+                      "interval": 3600000
+                    }
+                  },
+                  {
+                    "name": "Value",
+                    "type": "number",
+                    "config": {
+                      "displayNameFromDS": "grpc_cache_connection"
+                    },
+                    "labels": {
+                      "health_check_name": "grpc_cache_connection"
+                    }
+                  }
+                ]
+              },
+              "data": {
+                "$recorded_ref": "value_004"
               }
             }
           ]
